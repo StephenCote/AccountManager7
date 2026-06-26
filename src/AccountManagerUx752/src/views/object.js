@@ -13,6 +13,18 @@ import { summarize, vectorize, reimage, reimageApparel, memberCloud, adoptCharac
  *           object copy, tab navigation, form definitions from formDef.js,
  *           fullMode, design mode, commands, table editing, picker, membership.
  */
+// Resolve the participation `field` arg for am7client.member(): the server only uses a named field to
+// disambiguate multiple participation fields of the SAME participant model type (those that define
+// `participantModel`, e.g. person.dependents). For default participations and virtual/ephemeral UI list
+// fields (e.g. auth.role.members) it MUST be null, or ParticipationFactory NPEs ("Null field schema for
+// <model>.<field>"). Flags live on the MODEL field, so resolve from the container's model.
+function participationFieldName(containerType, fieldName) {
+    let mf = (containerType && fieldName) ? am7model.getModelField(containerType, fieldName) : null;
+    if (!mf) return null;
+    if (mf.virtual || mf.ephemeral) return null;
+    return mf.participantModel ? fieldName : null;
+}
+
 function newObjectPage() {
     let objectPage = {};
     let entity, inst;
@@ -609,7 +621,10 @@ function newObjectPage() {
 
         // Get items from entity
         let items = null;
-        if (field.foreign && field.function && objectPage[field.function]) {
+        // Function-driven list fields (e.g. auth.role.members → objectMembers) must load via their function
+        // whenever one is defined — NOT only when `foreign` is set. The members field is virtual/ephemeral
+        // (foreign is undefined), so gating on field.foreign skipped the load and the list fell through empty.
+        if (field.function && objectPage[field.function]) {
             if (foreignData[name]) {
                 items = foreignData[name];
             } else {
@@ -672,11 +687,12 @@ function newObjectPage() {
                     }
                     preparePicker(tableType, function(members) {
                         let aP = [];
+                        let fn = participationFieldName(mlEntity[am7model.jsonModelKey], name);
                         members.forEach(function(mem) {
                             aP.push(new Promise(function(res) {
                                 am7client.member(
                                     mlEntity[am7model.jsonModelKey], mlEntity.objectId,
-                                    name,
+                                    fn,
                                     mem[am7model.jsonModelKey], mem.objectId,
                                     true,
                                     function(v) { res(v); }
@@ -737,10 +753,11 @@ function newObjectPage() {
                         if (!item) return;
                         toRemove.push(idx);
                         if (item.objectId) {
+                            let fn = participationFieldName(mlEntity[am7model.jsonModelKey], name);
                             aP.push(new Promise(function(res) {
                                 am7client.member(
                                     mlEntity[am7model.jsonModelKey], mlEntity.objectId,
-                                    name,
+                                    fn,
                                     item[am7model.jsonModelKey], item.objectId,
                                     false,
                                     function(v) { res(v); }

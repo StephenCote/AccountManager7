@@ -13,6 +13,28 @@ import { am7view } from '../core/view.js';
 function getClient() { return am7model._client; }
 function getPage() { return am7model._page; }
 
+/**
+ * Resolve the participation `field` argument for am7client.member().
+ *
+ * The server only uses a named participation field to DISAMBIGUATE multiple participation fields of the SAME
+ * participant model type — i.e. fields that define `participantModel` (e.g. identity.person `dependents` →
+ * participantModel "person.dependent"). For everything else — the default participation (distinct participant
+ * types), virtual/ephemeral UI list fields (e.g. auth.role.members), and data.tag — the field MUST be null,
+ * otherwise ParticipationFactory fails with "Null field schema for <model>.<field>".
+ *
+ * The `participantModel`/`virtual` flags live on the MODEL field, not the form-field config that ctx.field
+ * often is — so resolve from the model field of the container entity.
+ */
+function participationField(containerEntity, fieldName, ctxField) {
+    if (ctxField && ctxField.baseModel === "data.tag") return null;
+    let mf = (containerEntity && containerEntity[am7model.jsonModelKey] && fieldName)
+        ? am7model.getModelField(containerEntity[am7model.jsonModelKey], fieldName) : null;
+    let f = mf || ctxField;
+    if (!f) return null;
+    if (f.virtual || f.ephemeral) return null;
+    return f.participantModel ? fieldName : null;
+}
+
 // ── Member Operations ───────────────────────────────────────────────
 
 function pickMember(ctx, members) {
@@ -32,8 +54,8 @@ function pickMember(ctx, members) {
                     e2 = t;
                     a2 = entity;
                 }
-                // For tags and virtual fields, don't pass field name
-                let fn = (field.baseModel !== "data.tag" && !field.virtual) ? field.name : null;
+                // Only pass a named participation field when the model field defines participantModel.
+                let fn = participationField(e2, field.name, field);
                 am7client.member(
                     e2[am7model.jsonModelKey], e2.objectId,
                     fn,
@@ -106,7 +128,7 @@ function deleteMember(ctx, name, field, tableType, tableForm) {
         if (state.selected) {
             if (foreignData[state.attribute]) {
                 let obj = foreignData[state.attribute][state.index];
-                let fn = (field.virtual || field.ephemeral) ? null : name;
+                let fn = participationField(entity, name, field);
                 aP.push(new Promise(function(res) {
                     am7client.member(
                         entity[am7model.jsonModelKey], entity.objectId,
@@ -128,13 +150,13 @@ function deleteMember(ctx, name, field, tableType, tableForm) {
                 let per = vProp[name][state.index];
 
                 if (am7model.hasIdentity(entity)) {
-                    let fn = (field.baseModel !== "data.tag" && !field.virtual) ? field.name : null;
                     let obj = entity;
                     let act = per;
                     if (per[am7model.jsonModelKey] === "data.tag") {
                         obj = per;
                         act = entity;
                     }
+                    let fn = participationField(obj, field.name, field);
                     aP.push(new Promise(function(res) {
                         am7client.member(
                             obj[am7model.jsonModelKey], obj.objectId,
@@ -236,12 +258,15 @@ function pickEntity(ctx, name, data) {
         ctx.caller.callback('update', ctx.objectPage, ctx.inst, name, ctx.parentProperty);
     } else {
         if (am7model.hasIdentity(entity)) {
+            // Pass a named participation field only when the model field defines participantModel; null for
+            // default/virtual fields (e.g. auth.role.members) — else ParticipationFactory NPEs on the field schema.
+            let fn = participationField(entity, name, field);
             let aP = [];
             data.forEach(function(v) {
                 aP.push(new Promise(function(res) {
                     am7client.member(
                         entity[am7model.jsonModelKey], entity.objectId,
-                        name,
+                        fn,
                         v[am7model.jsonModelKey], v.objectId,
                         true,
                         function(r) { res(r); }
@@ -304,10 +329,12 @@ function deleteEntity(ctx, name, field, tableType, tableForm, props) {
             let per = vProp[name][state.index];
 
             if (am7model.hasIdentity(entity)) {
+                // Named participation field only when the model field defines participantModel; else null.
+                let fn = participationField(entity, name, field);
                 aP.push(new Promise(function(res) {
                     am7client.member(
                         entity[am7model.jsonModelKey], entity.objectId,
-                        name,
+                        fn,
                         per[am7model.jsonModelKey], per.objectId,
                         false,
                         function(v) { res(v); }

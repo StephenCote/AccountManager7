@@ -86,6 +86,27 @@ if (typeof window !== 'undefined') {
     window.am7model = am7model;
     window.am7client = am7client;
     window.m = m;
+
+    // Dedicated debug entry point — inspect what the Ux is actually using, from the browser console.
+    //   am7dbg.object()  → live object-view context { type, objectId, isNew, entity, inst, pinst, foreignData, valuesState }
+    //   am7dbg.roles()   → page.context().roles
+    //   am7dbg.list()    → the object page's pagination state (pages())
+    //   am7dbg.page / .model / .client → the core singletons
+    window.am7dbg = {
+        object: function () { return (page && typeof page.objectContext === 'function') ? page.objectContext() : null; },
+        // The wrapped instance (am7model.prepareInstance) for the current object view — has the .api accessor
+        // methods (getters/setters) the Ux uses, e.g. am7dbg.objectInstance().api.name().
+        objectInstance: function () { let c = (page && typeof page.objectContext === 'function') ? page.objectContext() : null; return c ? c.inst : null; },
+        roles: function () { return (page && page.context && page.context()) ? page.context().roles : null; },
+        list: function () {
+            try { return (page.objectPage && page.objectPage.pagination) ? page.objectPage.pagination().pages() : null; }
+            catch (e) { return null; }
+        },
+        page: page,
+        model: am7model,
+        client: am7client
+    };
+    console.info('[am7] debug ready: am7dbg.object() = current object view (entity/inst/foreignData/…); am7dbg.objectInstance() = wrapped inst w/ .api accessors; also am7dbg.roles(), am7dbg.list().');
 }
 
 // Start the application
