@@ -621,9 +621,8 @@ function newObjectPage() {
 
         // Get items from entity
         let items = null;
-        // Function-driven list fields (e.g. auth.role.members → objectMembers) must load via their function
-        // whenever one is defined — NOT only when `foreign` is set. The members field is virtual/ephemeral
-        // (foreign is undefined), so gating on field.foreign skipped the load and the list fell through empty.
+        // Load via the field's function whenever one is defined (not only for `foreign` fields) — e.g. the
+        // virtual auth.role.members field uses objectMembers.
         if (field.function && objectPage[field.function]) {
             if (foreignData[name]) {
                 items = foreignData[name];
@@ -700,12 +699,12 @@ function newObjectPage() {
                             }));
                         });
                         Promise.all(aP).then(function() {
-                            if (!mlEntity[name]) mlEntity[name] = [];
-                            members.forEach(function(mem) {
-                                if (!mlEntity[name].some(function(e) { return e.objectId === mem.objectId; })) {
-                                    mlEntity[name].push(mem);
-                                }
-                            });
+                            // Invalidate cached member lists/counts for the container type AND each added
+                            // member's type, then drop the loaded list so it re-queries — otherwise the new
+                            // member won't appear (stale cache) and pickers keep filtering against old data.
+                            am7client.clearCache(mlEntity[am7model.jsonModelKey], true);
+                            members.forEach(function(mem) { am7client.clearCache(mem[am7model.jsonModelKey], true); });
+                            delete foreignData[name];
                             foreignData[selKey] = {};
                             m.redraw();
                         });
@@ -765,11 +764,19 @@ function newObjectPage() {
                             }));
                         }
                     });
+                    let removedTypes = toRemove.map(function(idx) { return items[idx] && items[idx][am7model.jsonModelKey]; });
                     toRemove.forEach(function(idx) {
                         if (mlEntity[name]) mlEntity[name].splice(idx, 1);
                     });
                     foreignData[selKey] = {};
-                    Promise.all(aP).then(function() { m.redraw(); });
+                    Promise.all(aP).then(function() {
+                        // Invalidate cached member lists/counts for the container + removed member types, then
+                        // drop the loaded list so it re-queries (removed member must disappear / become pickable).
+                        am7client.clearCache(mlEntity[am7model.jsonModelKey], true);
+                        removedTypes.forEach(function(t) { if (t) am7client.clearCache(t, true); });
+                        delete foreignData[name];
+                        m.redraw();
+                    });
                 }
             }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, commands.delete.icon || "delete_outline")));
         }

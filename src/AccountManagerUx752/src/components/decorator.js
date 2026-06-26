@@ -309,6 +309,9 @@ function getHeadersView(ctl, map) {
                         pages.sort = h;
                         pages.order = "ascending";
                     }
+                    // Explicitly re-query with the new sort. The full list view also re-queries via onupdate,
+                    // but the embedded popup picker (renderContent, no lifecycle) does not — so trigger it here.
+                    if (ctl.pagination && ctl.pagination.resort) ctl.pagination.resort();
                 }
             }, sico);
         }

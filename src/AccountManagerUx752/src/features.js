@@ -63,7 +63,12 @@ const features = {
         required: false,
         deps: ['core', 'chat'],
         routes: () => import('./features/iso42001/routes.js'),
-        menuItems: [{ icon: 'policy', label: 'Compliance', route: '/compliance', section: 'aside' }]
+        menuItems: [
+            { icon: 'policy', label: 'Compliance', route: '/compliance', section: 'aside' },
+            { icon: 'science', label: 'ISO Test Runs', route: '/iso42001/run', section: 'aside' },
+            { icon: 'summarize', label: 'ISO Reports', route: '/iso42001/report', section: 'aside' },
+            { icon: 'verified', label: 'ISO Certifications', route: '/iso42001/cert', section: 'aside' }
+        ]
     },
     biometrics: {
         id: 'biometrics',

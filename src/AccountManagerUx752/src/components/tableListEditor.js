@@ -105,10 +105,8 @@ function getValues(ctx) {
     let field = ctx.field;
     let entity = ctx.entity;
 
-    // Function-driven list fields (e.g. auth.role.members → objectMembers) load via their function. This must
-    // fire whenever a function is defined — NOT only for `foreign` fields. The members field is virtual/ephemeral
-    // (foreign is undefined), so gating the function-load on field.foreign skipped it entirely and the table
-    // fell through to inst.api[name]() (empty) — no query was ever made.
+    // Load via the field's function whenever one is defined (not only for `foreign` fields) — e.g. the
+    // virtual auth.role.members field uses objectMembers.
     if (field.function && ctx.objectPage && ctx.objectPage[field.function]) {
         if (ctx.foreignData && ctx.foreignData[name]) {
             return ctx.foreignData[name];

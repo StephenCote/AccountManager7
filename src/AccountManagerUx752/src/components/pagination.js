@@ -516,6 +516,10 @@ function newPaginationControl() {
     // True when the user changed sort/order but it hasn't been applied (re-queried) yet. Lets the list's
     // update() proceed past its embedded/picker early-return so sorting works in the popup picker too.
     sortPending: function () { return (entity.sort !== pages.sort || entity.order !== pages.order); },
+    // Re-run the current list with the current sort/order (updateList detects the sortChange, clears the page
+    // cache + re-queries). Used by the column-sort click so sorting works in contexts without an onupdate
+    // re-query cycle (e.g. the embedded popup picker, which renders via renderContent, not a mounted component).
+    resort: function () { return updateList(pages.resultType, pages.containerId, pages.navigateByParent, pages.filter, 0, pages.recordCount, pages.listSystem); },
     allResults: allResults,
     loadNextPage: loadNextPage,
     hasMorePages: hasMorePages,
