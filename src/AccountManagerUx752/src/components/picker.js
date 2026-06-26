@@ -118,8 +118,30 @@ const ObjectPicker = {
      * Starts at user's own path (~/group) with toggle to shared library.
      */
     open: async function(opts) {
+        // Normalize the requested type at this single chokepoint: callers may hand us a participant ENUM
+        // (USER/ACCOUNT/PERSON, e.g. from a role/group member field) rather than a model name. Map it to the
+        // real model (user→system.user, account→identity.account, person→identity.person) so container
+        // resolution AND the embedded list/pagination use a known type — otherwise getModel(type) is null,
+        // the list crashes (am7model.inherits(null)) and the server NPEs on ModelSchema.getFields().
+        // typeToModel passes through values that are already model names.
+        if (opts && opts.type) {
+            let mapped = am7view.typeToModel(opts.type);
+            if (mapped && am7model.getModel(mapped)) opts.type = mapped;
+        }
         pickerState.handler = opts.onSelect || null;
         pickerState.title = opts.title || "Select";
+
+        // Some types are NOT group/parent-contained (e.g. system.user, identity.account, identity.person —
+        // org-scoped). For those, do NOT resolve or require a container: list org-scoped. Only group/parent/
+        // groupId-bearing types (and auth.role/permission) use a container. Resolving a bogus container for a
+        // user 404s loading it as a system.user.
+        // Containerized = the model is a directory (has groupId / data.directory) or a parent-hierarchy type.
+        // (auth.role/permission inherit common.parent → isParent; identity.account/person inherit data.directory
+        // → isGroup; system.user is neither → org-scoped, no container.) Pure model-function checks, no type strings.
+        let pmodel = am7model.getModel(opts.type);
+        let usesContainer = !!pmodel && (
+            am7model.hasField(opts.type, "groupId") || am7model.isGroup(pmodel) || am7model.isParent(pmodel)
+        );
 
         // Resolve containers: user path, library, favorites
         let userContainerId = opts.userContainerId || null;
@@ -127,7 +149,7 @@ const ObjectPicker = {
         let favoritesContainerId = opts.favoritesContainerId || null;
         let containerId = opts.containerId || null;
 
-        if (!containerId) {
+        if (!containerId && usesContainer) {
             // Resolve model default path (~/Colors), library (/Library/Colors), favorites
             if (!userContainerId) userContainerId = await resolveUserContainer(opts.type);
             if (!libraryContainerId) {
@@ -144,7 +166,7 @@ const ObjectPicker = {
             containerId = userContainerId || libraryContainerId || await resolveContainer(opts.type);
         }
 
-        if (!containerId) {
+        if (!containerId && usesContainer) {
             page.toast("warn", "Could not resolve container for " + opts.type);
             return;
         }

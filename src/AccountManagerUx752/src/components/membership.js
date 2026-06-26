@@ -59,7 +59,10 @@ function addMember(ctx, name, tableType, tableForm, props) {
 
     if (type === "$flex") {
         if (field.foreignType && ctx.inst) {
-            type = ctx.inst.api[field.foreignType]();
+            // foreignType points at an enum attribute (e.g. auth.role/auth.group `type` = USER/ACCOUNT/PERSON);
+            // convert that enum to its model name (USER → system.user) so the picker/list resolves a real model.
+            // Mirrors objectMembers' own typeToModel(entity[foreignType]) resolution for the load path.
+            type = am7view.typeToModel(ctx.inst.api[field.foreignType]());
         } else {
             return Promise.resolve(null);
         }
@@ -67,6 +70,18 @@ function addMember(ctx, name, tableType, tableForm, props) {
 
     if (props.typeAttribute && ctx.entity) {
         type = am7view.typeToModel(ctx.entity[props.typeAttribute]);
+    }
+
+    // Never open the picker with an unresolved/non-model type — that crashes the embedded list/pagination
+    // (am7model.getModel(type) === null → inherits(null)). Resolve defensively.
+    if (!type || type === "$flex" || !am7model.getModel(type)) {
+        let resolved = am7view.typeToModel(type);
+        if (resolved && am7model.getModel(resolved)) {
+            type = resolved;
+        } else {
+            console.warn("[membership] addMember: cannot resolve a model type for field '" + (field && field.name) + "' (got '" + type + "')");
+            return Promise.resolve(null);
+        }
     }
 
     if (props.picker && ctx.preparePicker) {

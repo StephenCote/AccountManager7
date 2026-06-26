@@ -292,7 +292,8 @@ public class ModelService {
 			return Response.status(404).entity(null).build();
 		}
 		Query query = new Query(imp);
-		
+		enforceContextOrganization(user, query);
+
 		QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, query);
 		String ops = null;
 		if(qr != null) {
@@ -313,8 +314,36 @@ public class ModelService {
 			return Response.status(404).entity(null).build();
 		}
 		Query query = new Query(imp);
-		
+		enforceContextOrganization(user, query);
+
 		int count = IOSystem.getActiveContext().getAccessPoint().count(user, query);
 		return Response.status(200).entity(count).build();
+	}
+
+	/**
+	 * SECURITY: scope a client-supplied query to the context user's organization when the client did not
+	 * provide one. Without this, count/list of org-scoped types that are NOT container-bound (e.g. system.user)
+	 * returns/counts records across ALL organizations (cross-org data leak; also makes membership pickers
+	 * filter members globally rather than per-org). Only applied when the model actually carries an
+	 * organizationId field and the query has not already constrained it.
+	 */
+	private static void enforceContextOrganization(BaseRecord user, Query query) {
+		if(user == null || query == null) {
+			return;
+		}
+		String type = query.getType();
+		if(type == null) {
+			return;
+		}
+		ModelSchema ms = RecordFactory.getSchema(type);
+		if(ms == null || !ms.hasField(FieldNames.FIELD_ORGANIZATION_ID)) {
+			return;
+		}
+		if(!query.hasQueryField(FieldNames.FIELD_ORGANIZATION_ID)) {
+			Object orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+			if(orgId != null) {
+				query.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			}
+		}
 	}
 }

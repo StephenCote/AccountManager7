@@ -40,6 +40,7 @@ function newListControl() {
     let modType;
     let navigateByParent = false;
     let systemList = false;
+    let lastRouteKey = null;
     let navContainerId = null;
     let navFilter = null;
     let pickerMode = false;
@@ -940,7 +941,9 @@ function newListControl() {
                     ])
                 ]),
                 // breadcrumb rendered by navigation.js (Ux7 pattern)
-                m('div', { class: 'flex-1 min-h-0' }, content)
+                // overflow-auto so the list body scrolls when content exceeds the pane height
+                // (flex-1 + min-h-0 lets this child shrink; without overflow it clipped instead of scrolling).
+                m('div', { class: 'flex-1 min-h-0 overflow-auto' }, content)
             ])
         ]);
     }
@@ -974,7 +977,11 @@ function newListControl() {
         if (modType && modType.group && containerMode && !listType.match(/^auth\.group$/gi)) {
             listType = 'auth.group';
         }
-        listContainerId = navContainerId || vnode.attrs.objectId || m.route.param('objectId');
+        // In picker/embedded mode the container comes ONLY from the explicit attrs/nav — never from the
+        // underlying route's objectId (that is the host object being viewed, e.g. the role, not the picker's
+        // container). Falling back to it made the picker try to load the host id as its list container (404).
+        listContainerId = navContainerId || vnode.attrs.objectId
+            || ((embeddedMode || pickerMode) ? null : m.route.param('objectId'));
         if (!embeddedMode && !pickerMode && !containerMode) navContainerId = null;
     }
 
@@ -984,7 +991,9 @@ function newListControl() {
         if (listFilter) listFilter = decodeURI(listFilter);
 
         let pg = pagination.pages();
-        if ((embeddedMode || pickerMode) && pg.counted && pg.currentPage > 0) return;
+        // Embedded/picker lists don't re-query on every redraw — EXCEPT when a sort change is pending,
+        // otherwise sorting in the popup picker never re-queries (updateList detects the sortChange + re-fetches).
+        if ((embeddedMode || pickerMode) && pg.counted && pg.currentPage > 0 && !pagination.sortPending()) return;
 
         // In infinite scroll mode, don't re-trigger pagination.update once initial load is done
         // (otherwise doSearchPage recalculates page from URL startRecord and resets currentPage)

@@ -46,6 +46,13 @@ function newPaginationControl() {
 
   async function getSearchQuery() {
     if (!pages.resultType) return null;
+    // Never build a query for an unknown/unresolved model type (e.g. a "$flex" placeholder or a raw enum
+    // that failed to map to a model). Sending it makes the server NPE on ModelSchema.getFields(). Returning
+    // null here yields an empty list instead of a bad backend call.
+    if (!am7model.getModel(pages.resultType)) {
+      console.warn("[pagination] Unknown model type '" + pages.resultType + "' — skipping query (returning empty).");
+      return null;
+    }
     let q = am7client.newQuery(pages.resultType);
     q.entity.request = getRequestFields(pages.resultType);
 
@@ -506,6 +513,9 @@ function newPaginationControl() {
     setEmbeddedMode: function (bEmbed) { embeddedMode = bEmbed; },
     setInfiniteScroll: function (b) { infiniteScroll = b; },
     isInfiniteScroll: function () { return infiniteScroll; },
+    // True when the user changed sort/order but it hasn't been applied (re-queried) yet. Lets the list's
+    // update() proceed past its embedded/picker early-return so sorting works in the popup picker too.
+    sortPending: function () { return (entity.sort !== pages.sort || entity.order !== pages.order); },
     allResults: allResults,
     loadNextPage: loadNextPage,
     hasMorePages: hasMorePages,

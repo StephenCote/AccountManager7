@@ -247,6 +247,7 @@ import Base64 from './base64.js';
 	am7model.inherits = function (o, i) {
 		let b = false;
 		if (typeof o == "string") o = am7model.getModel(o);
+		if (!o) return false;
 		if (o.inherits) {
 			if (o.inherits.includes(i) || (o.likeInherits && o.likeInherits.includes(i))) {
 				b = true;
@@ -288,6 +289,7 @@ import Base64 from './base64.js';
 
 	am7model.isGroup = function (o) {
 		if (typeof o == "string") o = am7model.getModel(o);
+		if (!o) return false;
 		return (am7model.inherits(o, "data.directory") || o.name == 'auth.group');
 	};
 

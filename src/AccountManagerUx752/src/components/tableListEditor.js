@@ -158,6 +158,16 @@ function resolveTableType(ctx) {
     if (tableType === '$self') {
         tableType = ctx.entity[am7model.jsonModelKey];
     }
+    else if (tableType === '$flex' && ctx.field && ctx.field.foreignType && ctx.entity) {
+        // $flex participant type is discriminated by the entity's foreignType attribute (e.g. auth.role/
+        // auth.group `type` = USER/ACCOUNT/PERSON). Resolve to a real model (USER → system.user) so the
+        // member list/picker queries a known type — otherwise the server receives "$flex" and NPEs on
+        // ModelSchema.getFields(). Mirrors renderEditorPanel's typeToModel(entity[foreignType]) resolution.
+        let resolved = am7view.typeToModel(ctx.entity[ctx.field.foreignType]);
+        if (resolved && am7model.getModel(resolved)) {
+            tableType = resolved;
+        }
+    }
     return tableType;
 }
 

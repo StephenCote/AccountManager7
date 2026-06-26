@@ -43,6 +43,11 @@
 		<param-value>true</param-value>
 	</context-param>
 	<context-param>
+		<description>Drop orphaned columns during schema check (off by default; flip deliberately to clean up removed fields)</description>
+		<param-name>database.dropColumns</param-name>
+		<param-value>false</param-value>
+	</context-param>
+	<context-param>
 		<description>File Store Path</description>
 		<param-name>store.path</param-name>
 		<param-value>c:/projects/data/am7</param-value>
@@ -105,22 +110,22 @@
 		<context-param>
 		<description>Face Server</description>
 		<param-name>face.server</param-name>
-		<param-value>http://localhost:8003</param-value>
+		<param-value>http://192.168.1.42:8003</param-value>
 	</context-param>
 	<context-param>
 		<description>Tag Server</description>
 		<param-name>tag.server</param-name>
-		<param-value>http://localhost:8000</param-value>
+		<param-value>http://192.168.1.42:8000</param-value>
 	</context-param>
 	<context-param>
 		<description>Voice Server TTS</description>
 		<param-name>voice.tts.server</param-name>
-		<param-value>http://127.0.0.1:8001</param-value>
+		<param-value>http://192.168.1.42:8001</param-value>
 	</context-param>
 	<context-param>
 		<description>Voice Server STT</description>
 		<param-name>voice.stt.server</param-name>
-		<param-value>http://127.0.0.1:8002</param-value>
+		<param-value>http://192.168.1.42:8002</param-value>
 	</context-param>
 
 	<context-param>
@@ -136,7 +141,7 @@
 	<context-param>
 		<description>Embedding Server</description>
 		<param-name>embedding.server</param-name>
-		<param-value>http://127.0.0.1:8123</param-value>
+		<param-value>http://192.168.1.42:8123</param-value>
 	</context-param>
 	<context-param>
 		<description>Embedding Server Type</description>
@@ -147,6 +152,16 @@
 		<description>Embedding Server Authorization Token</description>
 		<param-name>embedding.authorizationToken</param-name>
 		<param-value></param-value>
+	</context-param>
+	<context-param>
+		<description>Vector DB support master switch. When false, the pgvector extension is disabled regardless of embedding-server health. When true (default), vector support stays enabled even if the embedding-server startup probe fails (a transient embedding outage no longer turns vector support off for the session).</description>
+		<param-name>vector.enabled</param-name>
+		<param-value>true</param-value>
+	</context-param>
+	<context-param>
+		<description>Whether to probe the embedding server at startup (informational health check only — a failed probe is logged as a warning and does NOT disable vector support).</description>
+		<param-name>vector.probe.embedding</param-name>
+		<param-value>true</param-value>
 	</context-param>
 	<context-param>
 		<description>Task Server</description>

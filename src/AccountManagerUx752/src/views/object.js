@@ -25,6 +25,20 @@ function newObjectPage() {
     let pickerMode = { enabled: false, type: null, callback: null };
     let pinst = {}; // Cached sub-object instances for model ref forms
 
+    // --- Debug accessor -------------------------------------------------
+    // Live view of this object page's context for browser-console inspection.
+    // Reachable as: __am7page.objectContext()  (window.__am7page is set in main.js).
+    // The closure returns CURRENT values (entity/inst are reassigned on load), so it
+    // always reflects what the Ux is actually using — handy for spotting bad/missing fields.
+    objectPage.objectContext = function () {
+        return {
+            type: objectType, objectId: objectId, isNew: objectNew, tabIndex: tabIndex,
+            entity: entity, inst: inst, pinst: pinst,
+            foreignData: foreignData, valuesState: valuesState
+        };
+    };
+    page.objectContext = objectPage.objectContext;
+
     // --- Entity loading ---
 
     /** Build a blank primitive, inheriting groupId/parentId from context container. */
@@ -391,6 +405,13 @@ function newObjectPage() {
         }
 
         if (!type || type.match(/^unknown$/i)) return;
+
+        // The resolved type may be a participant ENUM (USER/ACCOUNT/PERSON, lowercased above) rather than a
+        // model name — e.g. role/group member pickers driven by the entity's `type`. Map it to a real model
+        // (user → system.user, account → identity.account, person → identity.person) so the picker's list
+        // queries a known type; otherwise the client sends "user" and the server NPEs on ModelSchema.getFields().
+        // typeToModel passes through values that are already model names (e.g. data.data).
+        type = am7view.typeToModel(type);
 
         // Pass pickerProperty.path as library container hint so picker resolves user default first
         let pickerLibPath = field.pickerProperty ? field.pickerProperty.path : null;
