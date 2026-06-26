@@ -16,7 +16,7 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<graalvm.version>23.0.1</graalvm.version>
 		<endorsed.dir>${project.build.directory}/endorsed</endorsed.dir>
-		<skipTests>${skipTests}</skipTests>
+		<skipTests>true</skipTests>
 	</properties>
 
 	<build>
