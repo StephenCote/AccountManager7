@@ -1,0 +1,61 @@
+function footify(){
+/// Add link to https://stop to stop processing
+let iiter = 0;
+// 1. Gather all external links
+let allLinks = [...document.querySelectorAll("a[href]")].filter(
+  (a) => a && a.href.match(/^http/) && !a.href.match(/substack/)
+);
+
+let links = [];
+let biblio = [];
+
+// 2. Loop through links and break early if "https://stop" is hit
+for (let a of allLinks) {
+  if (a.href === "https://stop" || a.href === "https://stop/") {
+    console.log("Stop URL encountered. Halting footnote processing.");
+    break;
+  }
+  
+  // Apply your original filtering logic
+  let fn = getFootRef(a, iiter + 1);
+  if (fn) {
+    iiter++;
+    links.push(a);
+    biblio.push(a.href);
+  }
+}
+
+function getFootRef(a, i){
+  if(!a) return;
+  if(!i) i = "0";
+  let foot; // Fixed a small typo here from your original code (changed 'foo'/'foot' discrepancy)
+  
+  if(!a.nextSibling || !a.nextSibling.nodeName.match(/^em$/i)){
+    console.log("Creating footie");
+    let e = document.createElement("em");
+    let s = document.createElement("sup");
+    e.appendChild(s);
+    s.appendChild(document.createTextNode("-1"));
+    a.insertAdjacentElement("afterend", e);
+    foot = e;
+  }
+  else{
+    foot = a.nextSibling;
+  }
+  
+  if(!a.nextSibling || !a.nextSibling.nodeName.match(/^em$/i)){
+    console.warn("Failed to footify", a);
+    return;
+  }
+  
+  if(!foot || foot.firstChild == null || foot.firstChild.firstChild == null){
+    console.warn("Footered", i, a, foot);
+    return;
+  }
+  
+  foot.firstChild.firstChild.nodeValue = "" + i;
+  return foot;
+}
+console.log(biblio.join("\n"));
+}
+footify();
