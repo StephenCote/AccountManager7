@@ -23,7 +23,10 @@ export const iso42001Client = {
     modules: () => req('GET', ISO + '/modules'),
     endpoints: () => req('GET', ISO + '/endpoints'),
 
-    // ── Test config + run ──
+    // ── Test config (campaign) + run ──
+    // Create goes through the ISO service (RBAC-gated, returns the full record). Update/delete are done by the
+    // view via the shared page client (page.patchObject / page.deleteObject → am7client, cache-aware) rather
+    // than a feature-local REST call, so all model mutation uses one battle-tested transport.
     createConfig: (config) => req('POST', ISO + '/config', config),
     getConfig: (objectId) => req('GET', ISO + '/config/' + objectId),
     startRun: (testConfigId) => req('POST', ISO + '/run', { testConfigId: testConfigId }),
@@ -47,10 +50,13 @@ export const iso42001Client = {
     verify: (objectId) => req('POST', ISO + '/certification/verify/' + objectId),
 
     // ── Generic org-scoped list (for the browse/list views) ──
+    // cache:false — the server caches /model/search by query key; without this the ISO list views (campaigns,
+    // runs, reports, requests) serve stale results and miss just-created/edited/deleted records.
     list: (type, fields, startRecord, recordCount) => {
         let query = {
             schema: 'io.query',
             type: type,
+            cache: false,
             request: fields || ['id', 'objectId', 'name', 'organizationId'],
             startRecord: startRecord || 0,
             recordCount: recordCount || 50

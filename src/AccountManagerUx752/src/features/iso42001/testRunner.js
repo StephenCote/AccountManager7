@@ -1,6 +1,7 @@
 /**
- * ISO 42001 Test Runner (design §9A.5) — list test runs, configure + launch a new run.
- * Visible to iso42001Tester / iso42001Admin (server enforces; the menu item is role-gated too).
+ * ISO 42001 Test Runner (design §9A.5) — list test runs and launch a new run against a saved campaign
+ * (iso42001.testConfig). Campaign create/edit/delete lives in campaignsView.js; this view no longer mints a
+ * throwaway config per launch. Visible to iso42001Tester / iso42001Admin (server enforces; menu is gated too).
  */
 import m from 'mithril';
 import { page } from '../../core/pageClient.js';
@@ -10,10 +11,9 @@ import { isoRoles, statusPill, sectionHeader, loadingOrEmpty, btn } from './iso4
 let runs = [];
 let loading = false;
 let showNew = false;
-let modules = [];
-let endpoints = [];
+let campaigns = [];
+let selectedConfigId = '';
 let busy = false;
-let form = { moduleId: 'BIAS', endpointName: '', tier: 1, samplesPerGroup: 30, randomSeed: 0 };
 
 async function loadRuns() {
     loading = true; m.redraw();
@@ -27,35 +27,24 @@ async function loadRuns() {
 
 async function openNew() {
     showNew = true;
-    try { let mo = await iso42001Client.modules(); modules = mo ? Object.keys(mo) : []; } catch (e) { modules = []; }
-    try { let ep = await iso42001Client.endpoints(); endpoints = Array.isArray(ep) ? ep : []; } catch (e) { endpoints = []; }
+    try {
+        let r = await iso42001Client.list('iso42001.testConfig',
+            ['objectId', 'name', 'moduleId', 'endpointName'], 0, 100);
+        campaigns = (r && r.results) ? r.results : [];
+    } catch (e) { campaigns = []; }
+    if (!selectedConfigId && campaigns.length) selectedConfigId = campaigns[0].objectId;
     m.redraw();
 }
 
 async function launch() {
-    if (busy) return;
+    if (busy || !selectedConfigId) return;
     busy = true; m.redraw();
     try {
-        // Create the test config, then start a run against it (the shim resolves module + endpoint).
-        let cfg = {
-            schema: 'iso42001.testConfig',
-            name: 'run-' + Date.now().toString(36),
-            moduleId: form.moduleId,
-            endpointName: form.endpointName,
-            endpointType: 'ollama',
-            tier: Number(form.tier) || 0,
-            samplesPerGroup: Number(form.samplesPerGroup) || 30,
-            randomSeed: Number(form.randomSeed) || 0
-        };
-        let created = await iso42001Client.createConfig(cfg);
-        if (!created || !created.objectId) {
-            page.toast && page.toast('error', 'Could not create test config (check ISO Tester role).');
-            busy = false; m.redraw(); return;
-        }
-        let run = await iso42001Client.startRun(created.objectId);
+        let run = await iso42001Client.startRun(selectedConfigId);
         showNew = false; busy = false;
         await loadRuns();
         if (run && run.objectId) m.route.set('/iso42001/results/' + run.objectId);
+        else page.toast && page.toast('error', 'Launch failed (config not found, endpoint unresolved, or access denied).');
     } catch (e) {
         busy = false;
         page.toast && page.toast('error', 'Launch failed: ' + (e && e.message ? e.message : e));
@@ -63,35 +52,35 @@ async function launch() {
     }
 }
 
-function field(label, key, type) {
-    return m('label', { class: 'flex flex-col gap-1 text-sm' }, [
-        m('span', { class: 'text-gray-600 dark:text-gray-300' }, label),
-        m('input', {
-            type: type || 'text',
-            class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800',
-            value: form[key],
-            oninput: e => { form[key] = e.target.value; }
-        })
-    ]);
-}
-
 function newRunModal() {
     return m('div', { class: 'fixed inset-0 bg-black/40 flex items-center justify-center z-50', onclick: e => { if (e.target === e.currentTarget) showNew = false; } }, [
         m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg p-6 w-96 max-w-full space-y-3' }, [
             m('h3', { class: 'text-lg font-semibold text-gray-800 dark:text-white' }, 'New Test Run'),
-            m('label', { class: 'flex flex-col gap-1 text-sm' }, [
-                m('span', { class: 'text-gray-600 dark:text-gray-300' }, 'Test ID / Module'),
-                m('select', { class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800', value: form.moduleId, onchange: e => { form.moduleId = e.target.value; } },
-                    ['BIAS'].concat(modules).filter((v, i, a) => a.indexOf(v) === i).map(mo => m('option', { value: mo }, mo)))
-            ]),
-            field('LLM Endpoint (chatConfig name)', 'endpointName'),
-            field('Tier (0=both,1=system,2=conversation)', 'tier', 'number'),
-            field('Samples / Group', 'samplesPerGroup', 'number'),
-            field('Random Seed (0=auto)', 'randomSeed', 'number'),
-            m('div', { class: 'flex justify-end gap-2 pt-2' }, [
-                btn('Cancel', null, () => { showNew = false; }),
-                btn(busy ? 'Launching…' : 'Launch Run', 'play_circle', launch, { primary: true, disabled: busy })
-            ])
+            campaigns.length === 0
+                ? m('div', { class: 'space-y-3' }, [
+                    m('div', { class: 'text-sm text-gray-500 dark:text-gray-400' }, 'No campaigns exist yet. Create one first, then launch runs against it.'),
+                    m('div', { class: 'flex justify-end gap-2 pt-2' }, [
+                        btn('Cancel', null, () => { showNew = false; }),
+                        btn('Manage Campaigns', 'campaign', () => { showNew = false; m.route.set('/iso42001/campaigns'); }, { primary: true })
+                    ])
+                ])
+                : m('div', { class: 'space-y-3' }, [
+                    m('label', { class: 'flex flex-col gap-1 text-sm' }, [
+                        m('span', { class: 'text-gray-600 dark:text-gray-300' }, 'Campaign'),
+                        m('select', {
+                            class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800',
+                            value: selectedConfigId, onchange: e => { selectedConfigId = e.target.value; }
+                        }, campaigns.map(c => m('option', { value: c.objectId },
+                            c.name + ' — ' + (c.moduleId || '?') + ' / ' + (c.endpointName || '?'))))
+                    ]),
+                    m('div', { class: 'flex justify-between items-center pt-2' }, [
+                        btn('Manage', 'campaign', () => { showNew = false; m.route.set('/iso42001/campaigns'); }),
+                        m('div', { class: 'flex gap-2' }, [
+                            btn('Cancel', null, () => { showNew = false; }),
+                            btn(busy ? 'Launching…' : 'Launch Run', 'play_circle', launch, { primary: true, disabled: busy })
+                        ])
+                    ])
+                ])
         ])
     ]);
 }
@@ -118,7 +107,10 @@ export const testRunnerView = {
         let roles = isoRoles();
         let canRun = roles.tester || roles.admin;
         return m('div', { class: 'max-w-5xl mx-auto p-6 space-y-4' }, [
-            sectionHeader('Test Runs', canRun ? btn('New Run', 'add', openNew, { primary: true }) : null),
+            sectionHeader('Test Runs', m('div', { class: 'flex gap-2' }, [
+                btn('Campaigns', 'campaign', () => m.route.set('/iso42001/campaigns')),
+                canRun ? btn('New Run', 'add', openNew, { primary: true }) : null
+            ])),
             (!canRun) ? m('div', { class: 'text-sm text-amber-600' }, 'You need the ISO 42001 Tester role to launch runs; runs are shown read-only.') : null,
             loadingOrEmpty(loading, runs.length === 0, 'No test runs yet.') ||
             m('table', { class: 'w-full' }, [

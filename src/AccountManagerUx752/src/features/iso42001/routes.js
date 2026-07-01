@@ -5,6 +5,7 @@
  */
 import { layout, pageLayout } from '../../router.js';
 import { dashboardView } from './dashboard.js';
+import { campaignsView } from './campaignsView.js';
 import { testRunnerView } from './testRunner.js';
 import { resultsView } from './resultsBrowser.js';
 import { reportView } from './reportViewer.js';
@@ -20,6 +21,8 @@ function wrap(viewObj) {
 export const routes = {
     '/compliance': wrap(dashboardView),
     '/iso42001': wrap(dashboardView),
+    '/iso42001/campaigns': wrap(campaignsView),
+    '/iso42001/campaigns/:configId': wrap(campaignsView),
     '/iso42001/run': wrap(testRunnerView),
     '/iso42001/results/:runId': wrap(resultsView),
     '/iso42001/results/:runId/:resultId': wrap(resultsView),

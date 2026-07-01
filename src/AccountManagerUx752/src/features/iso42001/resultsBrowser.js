@@ -3,13 +3,34 @@
  * Visible to any ISO role. Routes: /iso42001/results/:runId, /iso42001/results/:runId/:resultId.
  */
 import m from 'mithril';
+import { page } from '../../core/pageClient.js';
 import { iso42001Client } from './iso42001Client.js';
-import { verdictBadge, statusPill, sectionHeader, loadingOrEmpty, btn } from './iso42001Common.js';
+import { isoRoles, verdictBadge, statusPill, sectionHeader, loadingOrEmpty, btn } from './iso42001Common.js';
 
 let run = null;
 let results = [];
 let loading = false;
 let loadedRunId = null;
+let busy = false;
+
+async function generateReport() {
+    if (busy || !run) return;
+    let name = window.prompt('Report name:', (run.name || 'Run') + ' report ' + new Date().toISOString().slice(0, 10));
+    if (name === null) return;
+    busy = true; m.redraw();
+    try {
+        let rpt = await iso42001Client.generateReport(name, 'COMPLIANCE', [run.objectId]);
+        if (rpt && rpt.objectId) {
+            page.toast && page.toast('success', 'Report generated.');
+            m.route.set('/iso42001/report/' + rpt.objectId);
+        } else {
+            page.toast && page.toast('error', 'Report generation failed (need ISO Reporter role).');
+        }
+    } catch (e) {
+        page.toast && page.toast('error', 'Report generation failed: ' + (e && e.message ? e.message : e));
+    }
+    busy = false; m.redraw();
+}
 
 async function load(runId) {
     if (!runId) return;
@@ -85,7 +106,12 @@ export const resultsView = {
                         m('span', (run.passCount || 0) + ' PASS · ' + (run.flagCount || 0) + ' FLAG · ' + (run.failCount || 0) + ' FAIL')
                     ]) : null
                 ]),
-                btn('Test Runs', 'arrow_back', () => m.route.set('/iso42001/run'))
+                m('div', { class: 'flex gap-2' }, [
+                    (run && run.status === 'COMPLETED' && (isoRoles().reporter || isoRoles().admin))
+                        ? btn(busy ? '…' : 'Generate Report', 'summarize', generateReport, { primary: true, disabled: busy })
+                        : null,
+                    btn('Test Runs', 'arrow_back', () => m.route.set('/iso42001/run'))
+                ])
             ]),
             loadingOrEmpty(loading, results.length === 0, 'No results for this run.') ||
             m('table', { class: 'w-full' }, [

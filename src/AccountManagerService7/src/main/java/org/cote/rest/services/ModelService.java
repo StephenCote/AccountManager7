@@ -75,7 +75,7 @@ public class ModelService {
 	
 	@RolesAllowed({"user"})
 	@GET
-	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}")
+	@Path("/{type:[A-Za-z0-9\\.]+}/{objectId:[0-9A-Za-z\\-]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getModelByObjectId(@PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
@@ -90,7 +90,7 @@ public class ModelService {
 	
 	@RolesAllowed({"user"})
 	@GET
-	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/full")
+	@Path("/{type:[A-Za-z0-9\\.]+}/{objectId:[0-9A-Za-z\\-]+}/full")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getFullModelByObjectId(@PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
@@ -106,7 +106,7 @@ public class ModelService {
 	
 	@RolesAllowed({"user"})
 	@GET
-	@Path("/{type:[A-Za-z\\.]+}/user/{objectType:[A-Za-z]+}")
+	@Path("/{type:[A-Za-z0-9\\.]+}/user/{objectType:[A-Za-z]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getUserModelRoot(@PathParam("type") String type, @PathParam("objectType") String objectType, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
@@ -120,7 +120,7 @@ public class ModelService {
 	
 	@RolesAllowed({"user"})
 	@DELETE
-	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}")
+	@Path("/{type:[A-Za-z0-9\\.]+}/{objectId:[0-9A-Za-z\\-]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response deleteModel(@PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
@@ -243,7 +243,7 @@ public class ModelService {
 	
 	@RolesAllowed({"user"})
 	@GET
-	@Path("/{type:[A-Za-z\\.]+}/{parentId:[0-9A-Za-z\\-]+}/{name: [\\(\\)@%\\sa-zA-Z_0-9\\-\\.]+}")
+	@Path("/{type:[A-Za-z0-9\\.]+}/{parentId:[0-9A-Za-z\\-]+}/{name: [\\(\\)@%\\sa-zA-Z_0-9\\-\\.]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getObjectByNameInParent(@PathParam("type") String type, @PathParam("parentId") String parentId,@PathParam(FieldNames.FIELD_NAME) String name,@Context HttpServletRequest request){
 		BaseRecord rec = ServiceUtil.generateRecordQueryResponse(type, parentId, name, request);
@@ -258,7 +258,7 @@ public class ModelService {
 	///
 	@RolesAllowed({"user"})
 	@GET
-	@Path("/{type:[A-Za-z\\.]+}/parent/{parentId:[0-9A-Za-z\\-]+}/{name: [\\(\\)@%\\sa-zA-Z_0-9\\-\\.]+}")
+	@Path("/{type:[A-Za-z0-9\\.]+}/parent/{parentId:[0-9A-Za-z\\-]+}/{name: [\\(\\)@%\\sa-zA-Z_0-9\\-\\.]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getGroupedObjectByNameInParent(@PathParam("type") String type, @PathParam("parentId") String parentId,@PathParam(FieldNames.FIELD_NAME) String name,@Context HttpServletRequest request){
 		BaseRecord rec = ServiceUtil.generateRecordQueryResponse(type, parentId, name, request);
