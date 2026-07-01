@@ -287,7 +287,7 @@ public class ChatService {
 
 	@RolesAllowed({"admin","user"})
 	@GET
-	@Path("/library/chat/{name:[\\.A-Za-z0-9%\\s]+}")
+	@Path("/library/chat/{name:[\\.A-Za-z0-9%\\s\\-_]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getLibraryChatConfig(@PathParam(FieldNames.FIELD_NAME) String name, @QueryParam("group") String group, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
@@ -298,7 +298,7 @@ public class ChatService {
 
 	@RolesAllowed({"admin","user"})
 	@GET
-	@Path("/library/prompt/{name:[\\.A-Za-z0-9%\\s]+}")
+	@Path("/library/prompt/{name:[\\.A-Za-z0-9%\\s\\-_]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getLibraryPromptConfig(@PathParam(FieldNames.FIELD_NAME) String name, @QueryParam("group") String group, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
@@ -309,7 +309,7 @@ public class ChatService {
 
 	@RolesAllowed({"admin","user"})
 	@GET
-	@Path("/library/template/{name:[\\.A-Za-z0-9%\\s]+}")
+	@Path("/library/template/{name:[\\.A-Za-z0-9%\\s\\-_]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getLibraryPromptTemplate(@PathParam(FieldNames.FIELD_NAME) String name, @QueryParam("group") String group, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
