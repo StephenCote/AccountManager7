@@ -103,8 +103,7 @@ public class ISO42001CertificationRequestFactory {
 				msgs = new ArrayList<>();
 			}
 			msgs.add(message(user, text, orgId));
-			full.set(FieldNames.FIELD_MESSAGES, msgs);
-			return ap.update(user, full);
+			return ap.update(user, minimalUpdate(full, msgs, null, null));
 		} catch (Exception e) {
 			logger.error("appendMessage failed", e);
 			return null;
@@ -142,9 +141,8 @@ public class ISO42001CertificationRequestFactory {
 				msgs = new ArrayList<>();
 			}
 			msgs.add(message(certifier, "Approved: " + (note != null ? note : ""), orgId));
-			full.set(FieldNames.FIELD_MESSAGES, msgs);
-			full.set(FieldNames.FIELD_APPROVAL_STATUS, ApprovalResponseEnumType.APPROVE);
-			BaseRecord approved = ap.update(certifier, full);
+			BaseRecord approved = ap.update(certifier,
+				minimalUpdate(full, msgs, ApprovalResponseEnumType.APPROVE, null));
 			if (approved == null) {
 				logger.error("approveRequest: approvalStatus update denied for " + certifier.get(FieldNames.FIELD_NAME));
 				return null;
@@ -161,13 +159,9 @@ public class ISO42001CertificationRequestFactory {
 			return null;
 		}
 
-		/// Link resultingCertification onto the request.
+		/// Link resultingCertification onto the request (minimal update — identity + the one field).
 		try {
-			BaseRecord toLink = readRequestCommon(certifier, oid, orgId);
-			if (toLink != null) {
-				toLink.set("resultingCertification", certification);
-				ap.update(certifier, toLink);
-			}
+			ap.update(certifier, minimalUpdate(full, null, null, certification));
 		} catch (Exception e) {
 			logger.warn("approveRequest could not link resultingCertification", e);
 		}
@@ -193,9 +187,7 @@ public class ISO42001CertificationRequestFactory {
 				msgs = new ArrayList<>();
 			}
 			msgs.add(message(certifier, "Denied: " + (reason != null ? reason : ""), orgId));
-			full.set(FieldNames.FIELD_MESSAGES, msgs);
-			full.set(FieldNames.FIELD_APPROVAL_STATUS, ApprovalResponseEnumType.DENY);
-			return ap.update(certifier, full);
+			return ap.update(certifier, minimalUpdate(full, msgs, ApprovalResponseEnumType.DENY, null));
 		} catch (Exception e) {
 			logger.error("denyRequest failed", e);
 			return null;
@@ -211,11 +203,33 @@ public class ISO42001CertificationRequestFactory {
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
 	}
 
-	private BaseRecord readRequestCommon(BaseRecord user, String oid, long orgId) {
-		Query q = QueryUtil.createQuery(ISO42001ModelNames.MODEL_CERTIFICATION_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
-		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-		q.planCommon(true);
-		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	/**
+	 * Build a minimal update record: identity ({@code id/objectId/groupId/organizationId}) plus only the
+	 * fields being changed. This avoids re-persisting the request's foreign refs ({@code report},
+	 * {@code requestedCertifier} → a groupless {@code system.user}, {@code resultingCertification}) — a full
+	 * re-update would trigger the dynamic auth check on those referenced objects, which (absent a group on the
+	 * referenced record) falls back to role access and denies a legitimate certifier's MODIFY.
+	 */
+	private BaseRecord minimalUpdate(BaseRecord full, List<BaseRecord> msgs, ApprovalResponseEnumType status,
+			BaseRecord resultingCertification) throws Exception {
+		BaseRecord upd = RecordFactory.model(ISO42001ModelNames.MODEL_CERTIFICATION_REQUEST).newInstance();
+		upd.set(FieldNames.FIELD_ID, full.get(FieldNames.FIELD_ID));
+		upd.set(FieldNames.FIELD_OBJECT_ID, full.get(FieldNames.FIELD_OBJECT_ID));
+		Object gid = full.get(FieldNames.FIELD_GROUP_ID);
+		if (gid != null) {
+			upd.set(FieldNames.FIELD_GROUP_ID, gid);
+		}
+		upd.set(FieldNames.FIELD_ORGANIZATION_ID, full.get(FieldNames.FIELD_ORGANIZATION_ID));
+		if (msgs != null) {
+			upd.set(FieldNames.FIELD_MESSAGES, msgs);
+		}
+		if (status != null) {
+			upd.set(FieldNames.FIELD_APPROVAL_STATUS, status);
+		}
+		if (resultingCertification != null) {
+			upd.set("resultingCertification", resultingCertification);
+		}
+		return upd;
 	}
 
 	/** Build an (unpersisted) {@code message.spool} thread entry attributed to {@code sender}. */
