@@ -46,8 +46,21 @@ export const iso42001Client = {
             { reportId: reportId, certifierId: certifierId, justification: justification }),
     approve: (requestId, note) => req('POST', ISO + '/certification/approve/' + requestId, { note: note }),
     deny: (requestId, reason) => req('POST', ISO + '/certification/deny/' + requestId, { reason: reason }),
+    getRequest: (objectId) => req('GET', ISO + '/certification/request/' + objectId),
+    appendMessage: (requestId, text) => req('POST', ISO + '/certification/request/' + requestId + '/message', { text: text }),
     getCertification: (objectId) => req('GET', ISO + '/certification/' + objectId),
     verify: (objectId) => req('POST', ISO + '/certification/verify/' + objectId),
+    revoke: (certId, reason) => req('POST', ISO + '/certification/' + certId + '/revoke', { reason: reason }),
+
+    // Simple user search for the certifier picker (name prefix). RBAC on read applies server-side.
+    searchUsers: (nameLike) => {
+        let query = {
+            schema: 'io.query', type: 'system.user', cache: false,
+            fields: [{ name: 'name', comparator: 'like', value: (nameLike || '') + '%' }],
+            request: ['objectId', 'name'], startRecord: 0, recordCount: 10
+        };
+        return req('POST', REST + '/model/search', query);
+    },
 
     // ── Generic org-scoped list (for the browse/list views) ──
     // cache:false — the server caches /model/search by query key; without this the ISO list views (campaigns,

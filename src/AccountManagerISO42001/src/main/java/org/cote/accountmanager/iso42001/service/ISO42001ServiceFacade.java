@@ -175,6 +175,35 @@ public class ISO42001ServiceFacade {
 		return new ISO42001CertificationRequestFactory().denyRequest(user, request, reason);
 	}
 
+	/**
+	 * Append a message to a certification request's spool thread (delegates to
+	 * {@link ISO42001CertificationRequestFactory#appendMessage}). Model RBAC gates the update to
+	 * Certifiers/Administrators, so a non-certifier is denied. Returns the updated request, or {@code null}.
+	 */
+	public static BaseRecord appendRequestMessage(BaseRecord user, String requestId, String text) {
+		BaseRecord request = findByObjectId(user, ISO42001ModelNames.MODEL_CERTIFICATION_REQUEST, requestId);
+		if (request == null) {
+			return null;
+		}
+		return new ISO42001CertificationRequestFactory().appendMessage(user, request, text);
+	}
+
+	/**
+	 * Revoke a certification (delegates to {@link ISO42001CertificationFactory#revokeCertification}); model
+	 * RBAC gates the update to Administrators. Returns the re-read certification on success, else {@code null}.
+	 */
+	public static BaseRecord revoke(BaseRecord user, String certificationId, String reason) {
+		BaseRecord cert = findByObjectId(user, ISO42001ModelNames.MODEL_CERTIFICATION, certificationId);
+		if (cert == null) {
+			return null;
+		}
+		boolean ok = new ISO42001CertificationFactory().revokeCertification(user, cert, reason);
+		if (!ok) {
+			return null;
+		}
+		return findByObjectId(user, ISO42001ModelNames.MODEL_CERTIFICATION, certificationId);
+	}
+
 	/** Verify a certification (delegates to {@link ISO42001CertificationFactory#verifyCertification}). */
 	public static CertificationVerification verify(BaseRecord user, String certificationId) {
 		BaseRecord cert = findByObjectId(user, ISO42001ModelNames.MODEL_CERTIFICATION, certificationId);

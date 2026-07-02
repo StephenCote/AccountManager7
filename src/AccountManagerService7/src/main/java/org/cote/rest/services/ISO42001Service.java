@@ -316,10 +316,58 @@ public class ISO42001Service {
 
 	@RolesAllowed({ "user", "admin" })
 	@GET
+	@Path("/certification/request/{id}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getCertificationRequest(@PathParam("id") String id, @Context HttpServletRequest request) {
+		return findResponse(request, ISO42001ModelNames.MODEL_CERTIFICATION_REQUEST, id, "Certification request not found");
+	}
+
+	@RolesAllowed({ "user", "admin" })
+	@POST
+	@Path("/certification/request/{id}/message")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response appendRequestMessage(@PathParam("id") String id, String json,
+			@Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		if (user == null) {
+			return unauthorized();
+		}
+		String text = text(body(json), "text");
+		if (text == null || text.isBlank()) {
+			return badRequest("'text' is required");
+		}
+		BaseRecord updated = ISO42001ServiceFacade.appendRequestMessage(user, id, text);
+		if (updated == null) {
+			return badRequest("Append failed (request not found, not a certifier, or access denied)");
+		}
+		return ok(updated.toFullString());
+	}
+
+	@RolesAllowed({ "user", "admin" })
+	@GET
 	@Path("/certification/{id}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getCertification(@PathParam("id") String id, @Context HttpServletRequest request) {
 		return findResponse(request, ISO42001ModelNames.MODEL_CERTIFICATION, id, "Certification not found");
+	}
+
+	@RolesAllowed({ "user", "admin" })
+	@POST
+	@Path("/certification/{id}/revoke")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response revoke(@PathParam("id") String id, String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		if (user == null) {
+			return unauthorized();
+		}
+		String reason = text(body(json), "reason");
+		BaseRecord cert = ISO42001ServiceFacade.revoke(user, id, reason != null ? reason : "Revoked");
+		if (cert == null) {
+			return badRequest("Revoke failed (certification not found, not an administrator, or access denied)");
+		}
+		return ok(cert.toFullString());
 	}
 
 	@RolesAllowed({ "user", "admin" })

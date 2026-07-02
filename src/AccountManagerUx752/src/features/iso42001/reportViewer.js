@@ -13,6 +13,8 @@ let report = null;
 let loading = false;
 let loadedId = null;
 let busy = false;
+// Certification-request modal: { justification, certifierQuery, certifierResults, certifierId, certifierName }
+let reqModal = null;
 
 async function loadList() {
     loading = true; m.redraw();
@@ -43,15 +45,37 @@ async function exportPdf(id) {
     busy = false; m.redraw();
 }
 
-async function requestCert(id) {
-    if (busy) return;
-    let justification = window.prompt('Justification for certification request:');
-    if (justification === null) return;
+function openRequestModal() {
+    reqModal = { justification: '', certifierQuery: '', certifierResults: [], certifierId: null, certifierName: '' };
+    m.redraw();
+}
+
+async function searchCertifiers() {
+    if (!reqModal) return;
+    if (!reqModal.certifierQuery.trim()) { reqModal.certifierResults = []; m.redraw(); return; }
+    try {
+        let r = await iso42001Client.searchUsers(reqModal.certifierQuery.trim());
+        reqModal.certifierResults = (r && r.results) ? r.results : [];
+    } catch (e) { reqModal.certifierResults = []; }
+    m.redraw();
+}
+
+function pickCertifier(u) {
+    reqModal.certifierId = u.objectId;
+    reqModal.certifierName = u.name;
+    reqModal.certifierResults = [];
+    m.redraw();
+}
+
+async function submitRequest(id) {
+    if (busy || !reqModal) return;
     busy = true; m.redraw();
     try {
-        let req = await iso42001Client.requestCertification(id, null, justification);
+        let req = await iso42001Client.requestCertification(id, reqModal.certifierId,
+            reqModal.justification.trim() || 'Certification requested');
         if (req && req.objectId) {
             page.toast && page.toast('success', 'Certification requested.');
+            reqModal = null;
             m.route.set('/iso42001/cert/request/' + req.objectId);
         } else {
             page.toast && page.toast('error', 'Request failed (need ISO Reporter role).');
@@ -60,6 +84,52 @@ async function requestCert(id) {
         page.toast && page.toast('error', 'Request failed: ' + (e && e.message ? e.message : e));
     }
     busy = false; m.redraw();
+}
+
+function requestModal() {
+    if (!reqModal) return null;
+    return m('div', {
+        class: 'fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4',
+        onclick: e => { if (e.target === e.currentTarget) reqModal = null; }
+    }, [
+        m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg p-6 w-full max-w-md space-y-3' }, [
+            m('h3', { class: 'text-lg font-semibold text-gray-800 dark:text-white' }, 'Request Certification'),
+            m('label', { class: 'flex flex-col gap-1 text-sm' }, [
+                m('span', { class: 'text-gray-600 dark:text-gray-300' }, 'Justification'),
+                m('textarea', {
+                    name: 'req_justification', rows: 3,
+                    class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800',
+                    value: reqModal.justification, oninput: e => { reqModal.justification = e.target.value; }
+                })
+            ]),
+            m('label', { class: 'flex flex-col gap-1 text-sm' }, [
+                m('span', { class: 'text-gray-600 dark:text-gray-300' }, 'Requested certifier (optional)'),
+                reqModal.certifierId
+                    ? m('div', { class: 'flex items-center gap-2' }, [
+                        m('span', { class: 'text-sm px-2 py-1 rounded bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' }, reqModal.certifierName),
+                        btn('Clear', null, () => { reqModal.certifierId = null; reqModal.certifierName = ''; })
+                    ])
+                    : m('input', {
+                        name: 'req_certifier', type: 'text', placeholder: 'Search users by name…',
+                        class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800',
+                        value: reqModal.certifierQuery,
+                        oninput: e => { reqModal.certifierQuery = e.target.value; searchCertifiers(); }
+                    })
+            ]),
+            (reqModal.certifierResults && reqModal.certifierResults.length)
+                ? m('div', { class: 'max-h-32 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded' },
+                    reqModal.certifierResults.map(u => m('div', {
+                        key: u.objectId,
+                        class: 'px-2 py-1 text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800',
+                        onclick: () => pickCertifier(u)
+                    }, u.name)))
+                : null,
+            m('div', { class: 'flex justify-end gap-2 pt-2' }, [
+                btn('Cancel', null, () => { reqModal = null; }),
+                btn(busy ? '…' : 'Request', 'approval', () => submitRequest(report.objectId), { primary: true, disabled: busy })
+            ])
+        ])
+    ]);
 }
 
 function reportRow(r) {
@@ -115,11 +185,12 @@ function detail() {
         ]),
         m('div', { class: 'flex gap-2' }, [
             canExport ? btn(busy ? '…' : 'Export PDF', 'picture_as_pdf', () => exportPdf(report.objectId), { disabled: busy }) : null,
-            canRequest ? btn('Request Certification', 'approval', () => requestCert(report.objectId), { disabled: busy }) : null
+            canRequest ? btn('Request Certification', 'approval', openRequestModal, { disabled: busy }) : null
         ]),
         m('div', { class: 'space-y-4' }, renderSections()),
         sectionHeader('Certification'),
-        certBlock()
+        certBlock(),
+        requestModal()
     ]);
 }
 
