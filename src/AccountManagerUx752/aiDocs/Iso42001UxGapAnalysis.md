@@ -117,7 +117,9 @@ Per the standing DB rule, **no schema resets**; these are additive endpoints/fie
 
 ### 5a. Backend backlog discovered during Phase 1 (group resolution)
 
-Two related "Group could not be found" (PolicyUtil) defects surfaced while wiring campaign management. Both are backend items — the UI has workarounds where possible:
+Defects surfaced while wiring campaign management. Backend items — the UI has workarounds where possible:
+
+- **B-TYPE-REGEX (FIXED in source, needs redeploy):** `ModelService` routed by-id `GET` / `/full` / `DELETE` through `@Path("/{type:[A-Za-z\.]+}/...")`. The `{type}` regex excluded digits, so every digit-bearing model type (`iso42001.*`, etc.) 404'd on those routes — which is why generic delete-by-objectId failed. Fixed to `[A-Za-z0-9\.]+` on all six `{type}` routes in `ModelService.java`. Requires a Service7 rebuild + redeploy to take effect. Delete-by-objectId (`page.deleteObject`) then works normally.
 
 - **B-PATCH-ID:** `PATCH /rest/model` with a body of `{schema, objectId, <changed fields>}` (i.e. keyed by `objectId` alone, no numeric `id`/`groupId`) fails to resolve the record's group → `PolicyUtil "Group could not be found"` → `AccessPoint.update` returns null → `patchModel` responds `200 false` and nothing is saved. **Expected:** `objectId` alone should be sufficient to resolve the record for update. **UI workaround (campaignsView):** the editor loads the full record and sends the full identity set (`id/objectId/urn/groupId/organizationId`) with the patch. Remove the workaround once the backend resolves records by `objectId` alone.
 - **B-RUN-GROUP:** at launch, an `iso42001.testRun` reaches policy authorization serialized as just `{ "schema": "iso42001.testRun" }` (no `groupId`) → `PolicyUtil "Group could not be found"`. The run should inherit the campaign's (`testConfig`) group at create time. This is in the run-creation path (`TestRunner` / `ISO42001ServiceFacade.runFromConfig`), not the UI. Needs backend investigation — a run with no group can't be authorized or later listed/scoped correctly.

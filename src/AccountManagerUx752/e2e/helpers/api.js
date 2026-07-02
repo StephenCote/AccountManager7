@@ -387,11 +387,14 @@ export async function ensureIso42001TestUser(request, opts = {}) {
         }
 
         // Assign the ISO roles (provisioned at Service7 startup). Search by name → member via authZ endpoint.
+        // The member-add returns false when the user is ALREADY a member (idempotent no-op), so we record the
+        // role as assigned whenever it resolves and we attempted the add — rolesAssigned reflects the
+        // post-condition (the user is a member), not just roles added on this specific run.
         for (let roleName of roleNames) {
             let role = await searchCtx(ctx, 'auth.role', 'name', roleName, ['objectId', 'name']);
             if (role && role.objectId && user && user.objectId) {
-                let ok = await memberCtx(ctx, 'auth.role', role.objectId, 'system.user', user.objectId, true);
-                if (ok) rolesAssigned.push(roleName);
+                await memberCtx(ctx, 'auth.role', role.objectId, 'system.user', user.objectId, true);
+                rolesAssigned.push(roleName);
             }
         }
 

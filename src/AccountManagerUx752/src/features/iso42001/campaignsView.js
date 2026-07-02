@@ -64,11 +64,16 @@ async function loadList() {
 async function loadOne(id) {
     loading = true; current = null; runs = []; m.redraw();
     try { current = await iso42001Client.getConfig(id); } catch (e) { current = null; }
-    // The campaign's runs: list runs and keep those whose testConfig points back here. (No server-side
-    // foreign-key filter is exposed on the shim, so filter client-side; the projection includes testConfig.)
+    // The campaign's runs: scope the query to the campaign's group so policy can resolve a group (an un-scoped
+    // list of a data.directory type logs "Group could not be found"). Runs launched from this campaign land in
+    // its group. Keep the client-side testConfig filter so a campaign shows only its own runs — campaigns share
+    // the ~/ISO42001 group, so groupId alone would mix runs from sibling campaigns.
     try {
+        let filters = (current && current.groupId != null)
+            ? [{ name: 'groupId', comparator: 'equals', value: String(current.groupId) }] : undefined;
         let r = await iso42001Client.list('iso42001.testRun',
-            ['objectId', 'name', 'status', 'modelEndpoint', 'passCount', 'flagCount', 'failCount', 'testConfig'], 0, 100);
+            ['objectId', 'name', 'status', 'modelEndpoint', 'passCount', 'flagCount', 'failCount', 'testConfig'],
+            0, 100, filters);
         let all = (r && r.results) ? r.results : [];
         runs = all.filter(x => x.testConfig && x.testConfig.objectId === id);
     } catch (e) { runs = []; }

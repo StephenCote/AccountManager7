@@ -52,7 +52,10 @@ export const iso42001Client = {
     // ── Generic org-scoped list (for the browse/list views) ──
     // cache:false — the server caches /model/search by query key; without this the ISO list views (campaigns,
     // runs, reports, requests) serve stale results and miss just-created/edited/deleted records.
-    list: (type, fields, startRecord, recordCount) => {
+    // `filters` (optional) — array of {name, comparator, value} field conditions; passing a groupId condition
+    // scopes the query to a directory so policy can resolve a group (an un-scoped list of a data.directory
+    // type makes the server policy-check a bare {schema} instance → "Group could not be found" log noise).
+    list: (type, fields, startRecord, recordCount, filters) => {
         let query = {
             schema: 'io.query',
             type: type,
@@ -61,6 +64,9 @@ export const iso42001Client = {
             startRecord: startRecord || 0,
             recordCount: recordCount || 50
         };
+        if (filters && filters.length) {
+            query.fields = filters;
+        }
         return req('POST', REST + '/model/search', query);
     }
 };

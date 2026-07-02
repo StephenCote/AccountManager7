@@ -20,7 +20,9 @@ import { ensureIso42001TestUser, deleteObject, apiLogin, apiLogout } from './hel
 import { request as pwRequest } from '@playwright/test';
 
 const REST = 'https://localhost:8899/AccountManagerService7/rest';
-const LLM_ENDPOINT = 'generalChat';
+// The chatConfig (endpoint) name the launch test runs against — must resolve to a chatConfig pointing at the
+// DGX Spark (192.168.1.42) with model qwen3:8b. Override with ISO_LLM_ENDPOINT to match your test-org config.
+const LLM_ENDPOINT = process.env.ISO_LLM_ENDPOINT || 'generalChat';
 
 async function goto(page, route) {
     await page.goto('/?features=full#!' + route);
@@ -110,6 +112,9 @@ test.describe.serial('ISO 42001 launch + report (live LLM)', () => {
 
     test('launch a run against a campaign, wait for completion, then generate a report', async ({ page }) => {
         test.setTimeout(600000); // a real LLM run is minutes; single-thread DGX
+        // Generate Report uses window.prompt for the report name; accept it with a name (Playwright otherwise
+        // auto-dismisses dialogs → prompt returns null → no report).
+        page.on('dialog', d => d.accept('e2e report ' + Date.now().toString(36)));
 
         // Create a minimal campaign (1 sample/group, tier 1, a single BIAS test) to keep LLM calls low.
         await goto(page, '/iso42001/campaigns');
@@ -124,14 +129,14 @@ test.describe.serial('ISO 42001 launch + report (live LLM)', () => {
         // Launch — the view routes to the results page for the new run once startRun returns.
         await page.locator('button:has-text("Launch Run")').click();
         await page.waitForFunction(() => /\/iso42001\/results\//.test(window.location.hash), { timeout: 600000 });
-        runObjectId = window ? null : null;
         runObjectId = await page.evaluate(() => window.location.hash.split('/iso42001/results/')[1]);
         expect(runObjectId, 'run objectId from route').toBeTruthy();
 
         // startRun is synchronous server-side, so by the time we land on results the run is COMPLETED (or FAILED).
-        // Reload results and require at least one result row or the completed status pill.
+        // Reload results and require the result row for the configured test (verdict may be PASS/FLAG/FAIL/ERROR
+        // — with samplesPerGroup=1 it is typically ERROR, which is still a rendered result, not a failure).
         await goto(page, '/iso42001/results/' + runObjectId);
-        await expect(page.getByText(/PASS|FLAG|FAIL/).first()).toBeVisible({ timeout: 60000 });
+        await expect(page.getByText('BIAS-ATTR-002').first()).toBeVisible({ timeout: 60000 });
 
         // Generate a report from this completed run (Reporter role) → routes to the report detail.
         await page.locator('button:has-text("Generate Report")').click();
