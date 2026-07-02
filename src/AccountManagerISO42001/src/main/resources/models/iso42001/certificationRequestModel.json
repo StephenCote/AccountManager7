@@ -20,7 +20,14 @@
 			"baseModel": "iso42001.report",
 			"type": "model",
 			"foreign": true,
-			"description": "The report to be certified"
+			"description": "The report to be certified",
+			"access": {
+				"roles": {
+					"create": ["ISO42001Reporters", "ISO42001Administrators"],
+					"read": ["ISO42001Readers", "ISO42001Auditors", "ISO42001Reporters", "ISO42001Certifiers", "ISO42001Administrators"],
+					"update": ["ISO42001Certifiers", "ISO42001Administrators"]
+				}
+			}
 		},
 		{
 			"name": "requestedCertifier",
@@ -31,7 +38,8 @@
 			"access": {
 				"roles": {
 					"create": ["ISO42001Reporters", "ISO42001Administrators"],
-					"read": ["ISO42001Readers", "ISO42001Certifiers", "ISO42001Administrators"]
+					"read": ["ISO42001Readers", "ISO42001Certifiers", "ISO42001Administrators"],
+					"update": ["ISO42001Certifiers", "ISO42001Administrators"]
 				}
 			}
 		},
@@ -46,7 +54,14 @@
 			"baseModel": "iso42001.certification",
 			"type": "model",
 			"foreign": true,
-			"description": "The certification created upon approval"
+			"description": "The certification created upon approval",
+			"access": {
+				"roles": {
+					"create": ["ISO42001Certifiers", "ISO42001Administrators"],
+					"read": ["ISO42001Readers", "ISO42001Auditors", "ISO42001Reporters", "ISO42001Certifiers", "ISO42001Administrators"],
+					"update": ["ISO42001Certifiers", "ISO42001Administrators"]
+				}
+			}
 		}
 	]
 }

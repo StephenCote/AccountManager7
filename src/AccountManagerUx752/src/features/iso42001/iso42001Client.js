@@ -5,6 +5,7 @@
  */
 import m from 'mithril';
 import { applicationPath } from '../../core/config.js';
+import { page } from '../../core/pageClient.js';
 
 const REST = applicationPath + '/rest';
 const ISO = REST + '/iso42001';
@@ -65,10 +66,17 @@ export const iso42001Client = {
     // ── Generic org-scoped list (for the browse/list views) ──
     // cache:false — the server caches /model/search by query key; without this the ISO list views (campaigns,
     // runs, reports, requests) serve stale results and miss just-created/edited/deleted records.
-    // `filters` (optional) — array of {name, comparator, value} field conditions; passing a groupId condition
-    // scopes the query to a directory so policy can resolve a group (an un-scoped list of a data.directory
-    // type makes the server policy-check a bare {schema} instance → "Group could not be found" log noise).
+    // An explicit organizationId condition is ALWAYS added: PBAC needs an org context for the role lookup, and
+    // without it a list of a data.directory type makes the server policy-check a bare {schema} instance
+    // ("Group could not be found" log noise). `filters` (optional) adds further conditions (e.g. a groupId to
+    // compartmentalize) — combined with AND.
     list: (type, fields, startRecord, recordCount, filters) => {
+        let conds = Array.isArray(filters) ? filters.slice() : [];
+        let orgId = page && page.user ? page.user.organizationId : null;
+        if (orgId != null && !conds.some(c => c.name === 'organizationId')) {
+            // Numeric value — organizationId is a long; a string "2" does not match the long field.
+            conds.push({ name: 'organizationId', comparator: 'equals', value: Number(orgId) });
+        }
         let query = {
             schema: 'io.query',
             type: type,
@@ -77,8 +85,8 @@ export const iso42001Client = {
             startRecord: startRecord || 0,
             recordCount: recordCount || 50
         };
-        if (filters && filters.length) {
-            query.fields = filters;
+        if (conds.length) {
+            query.fields = conds;
         }
         return req('POST', REST + '/model/search', query);
     }

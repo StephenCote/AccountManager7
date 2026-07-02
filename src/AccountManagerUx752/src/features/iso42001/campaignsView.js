@@ -70,7 +70,7 @@ async function loadOne(id) {
     // the ~/ISO42001 group, so groupId alone would mix runs from sibling campaigns.
     try {
         let filters = (current && current.groupId != null)
-            ? [{ name: 'groupId', comparator: 'equals', value: String(current.groupId) }] : undefined;
+            ? [{ name: 'groupId', comparator: 'equals', value: Number(current.groupId) }] : undefined;
         let r = await iso42001Client.list('iso42001.testRun',
             ['objectId', 'name', 'status', 'modelEndpoint', 'passCount', 'flagCount', 'failCount', 'testConfig'],
             0, 100, filters);
