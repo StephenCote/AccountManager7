@@ -1,8 +1,27 @@
 {
   "permissions": {
     "allow": [
-      "Bash(tr '\\\\\\\\n' '\\\\n')",
-      "Bash(npm test)"
+      "Bash(bash .claude/loop/verify.sh:*)",
+      "Bash(mvn:*)",
+      "Bash(npm run:*)",
+      "Bash(npm test)",
+      "Bash(npx playwright test:*)",
+      "Bash(npx vitest run)",
+      "Bash(tr '\\\\\\\\n' '\\\\n')"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/stop_verify.sh\"",
+            "timeout": 1200,
+            "statusMessage": "Running verification gate…"
+          }
+        ]
+      }
     ]
   }
 }
