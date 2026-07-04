@@ -68,11 +68,20 @@ public class ISO42001Provisioning {
 		BaseRecord admins = role(adminUser, ROLE_ADMINISTRATORS, orgId);
 		BaseRecord requestUpdaters = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUEST_UPDATERS, RoleEnumType.USER.toString(), orgId);
 		BaseRecord approvers = AccessSchema.getSystemRole(AccessSchema.ROLE_APPROVERS, RoleEnumType.USER.toString(), orgId);
+		BaseRecord accountUsersReaders = AccessSchema.getSystemRole(AccessSchema.ROLE_ACCOUNT_USERS_READERS, RoleEnumType.USER.toString(), orgId);
 
 		grantRoleToRole(adminUser, requestUpdaters, certifiers);
 		grantRoleToRole(adminUser, approvers, certifiers);
 		grantRoleToRole(adminUser, requestUpdaters, admins);
 		grantRoleToRole(adminUser, approvers, admins);
+
+		// A certificationRequest carries a requestedCertifier (system.user) foreign ref. Because system.user is
+		// groupless, updating the request (approve/deny/append) makes the dynamic auth checker validate that
+		// reference — and system.user's foreign sub-fields (homeDirectory, contactInformation) are read-gated
+		// to AccountUsersReaders. Without this, a legitimate certifier's MODIFY is AUDIT-DENIED. Grant the ISO
+		// updater roles read access to users via the system AccountUsersReaders role.
+		grantRoleToRole(adminUser, accountUsersReaders, certifiers);
+		grantRoleToRole(adminUser, accountUsersReaders, admins);
 	}
 
 	/** Create (idempotent) and return an ISO role at the org role root ({@code /Name}). */
