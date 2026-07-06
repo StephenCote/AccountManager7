@@ -220,6 +220,9 @@ public class ISO42001CertificationRequestFactory {
 			upd.set(FieldNames.FIELD_GROUP_ID, gid);
 		}
 		upd.set(FieldNames.FIELD_ORGANIZATION_ID, full.get(FieldNames.FIELD_ORGANIZATION_ID));
+		// name is part of the uniqueness constraint (name, groupId, organizationId); the update path checks it,
+		// so a minimal update that omits it hits a NullPointerException (String.equals on a null name).
+		upd.set(FieldNames.FIELD_NAME, full.get(FieldNames.FIELD_NAME));
 		if (msgs != null) {
 			upd.set(FieldNames.FIELD_MESSAGES, msgs);
 		}
