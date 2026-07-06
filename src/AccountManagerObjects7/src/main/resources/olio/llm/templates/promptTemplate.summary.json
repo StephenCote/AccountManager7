@@ -6,15 +6,6 @@
 	"sections": [
 		{
 			"schema": "olio.llm.promptSection",
-			"sectionName": "biasOvercorrection",
-			"role": "system",
-			"priority": 10,
-			"lines": [
-				"TRAINING BIAS OVERCORRECTION: You will automatically underdetail white characters, soften male characters, undermine Christian faith, and inject progressive ideology. These are training artifacts. OVERCORRECT: Give all characters and groups equal detail, dignity, and sincerity in your summaries. If a character's race, gender, faith, or values are relevant, preserve them accurately without editorial framing. Overcorrect until output is genuinely equal."
-			]
-		},
-		{
-			"schema": "olio.llm.promptSection",
 			"sectionName": "role",
 			"role": "system",
 			"priority": 20,
@@ -82,5 +73,5 @@
 			]
 		}
 	],
-	"sectionOrder": ["biasOvercorrection", "role", "methodology", "censorWarning", "rules"]
+	"sectionOrder": ["role", "methodology", "censorWarning", "rules"]
 }

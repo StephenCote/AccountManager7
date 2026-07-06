@@ -14,8 +14,10 @@ CLAUDE.md; this file is the source of truth for design review.
   Objects7/ISO42001. Depends on Objects7 + ISO42001.
 - `AccountManagerAgent7` (jar) — agent runtime over the LLM services. Depends on Objects7's prompt templates.
 - `AccountManagerConsole7` (jar) — CLI entry points.
-- `AccountManagerUx7` (web, not a Maven module) — legacy Mithril monolith; the **reference implementation**.
-- `AccountManagerUx752` (web, Vite+Mithril, not a Maven module) — active frontend refactor.
+- `AccountManagerUx752` (web, Vite+Mithril, not a Maven module) — active frontend refactor and the
+  **primary/canonical UI reference implementation**. Read before writing UI.
+- `AccountManagerUx7` (web, not a Maven module) — **deprecated** legacy Mithril monolith; legacy
+  reference only, at `deprecated/AccountManagerUx7/client/`. Superseded by Ux752.
 
 **Layering (must not be violated):**
 - Dependencies point *downward* toward Objects7. Never the reverse.
@@ -49,11 +51,10 @@ CLAUDE.md; this file is the source of truth for design review.
   the live backend. No fake tests. If you can't test it, say so. **Never use the admin user** — use
   `ensureSharedTestUser()` / `ensureIso42001TestUser()` from `e2e/helpers/api.js`. Never claim a fix
   without a passing end-to-end test.
-- **Always read the Ux7 reference (`../AccountManagerUx7/client/`) before writing UI code.** Ux7 needs
-  cleanup, not replacement; investigate before changing (8 regressions came from ignoring Ux7 patterns).
-- **LLM prompt integrity (project policy, non-optional):** every LLM system prompt must begin with the
-  `TRAINING BIAS OVERCORRECTION` directive. Never sanitize, filter, genericize group names, or soften it
-  at the service layer. Applies to all five LLM call paths.
+- **Always read the reference UI before writing UI code.** `AccountManagerUx752/` is the primary/canonical
+  reference; `deprecated/AccountManagerUx7/client/` is the deprecated legacy reference (consult it to
+  understand a pattern's origin). The legacy code needs cleanup, not replacement; investigate before
+  changing (8 regressions came from ignoring Ux7 patterns).
 
 ## Conventions
 
@@ -72,11 +73,16 @@ CLAUDE.md; this file is the source of truth for design review.
 - Server change: compiled (`mvn compile`), relevant unit tests run (`mvn test -Dtest=...`), `BUILD SUCCESS`
   observed. Server-side changes must be covered by unit tests.
 - UI change: `npx vite build` + `npx vitest run`, and Playwright for behavior (`--workers=1` for LLM paths).
-- LLM/bias output: the **swap test** — swap race/gender/religion; if the response changes, it's biased.
 - Validation tooling: `RecordValidator.validate()`, `HierarchyValidator.checkHierarchy()`, `ValidationUtil`.
 
-## Known doc gaps (for the librarian, not design rules)
+## Doc organization notes (for the librarian, not design rules)
 
-- `Ux7` module + its CLAUDE.md are absent from this checkout though other docs reference it.
-- `Console7` and `ISO42001` have no own CLAUDE.md (described only in `src/CLAUDE.md`).
-- `Objects7`/`Service7` ship both `CLAUDE.md` and lowercase `claude.md` duplicates.
+- The `Ux7` module is present under `deprecated/AccountManagerUx7/` (not `../AccountManagerUx7/`); it is
+  deprecated legacy reference. Ux752 is the primary UI reference.
+- Every module now has its own `CLAUDE.md` (including `Console7` and `ISO42001`). All are uppercase
+  `CLAUDE.md` for reliable auto-loading on case-sensitive filesystems (previously `Objects7`/`Service7`/
+  legacy `Ux7` used lowercase `claude.md`, a single file each — never a duplicate pair).
+- Shared LLM working-discipline rules (honesty/testing/conduct) are centralized in
+  `.claude/rules/llm-conduct.md`; module CLAUDE.md files link to it rather than copying it. Bias/ideology
+  policy is intentionally not in the docs — it lives in the ISO 42001 code and runtime prompt templates.
+- aiDocs index: `src/aiDocs/README.md`; ISO doc index: `src/aiDocs/ISO42001/README.md`.
