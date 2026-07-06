@@ -12,7 +12,7 @@ Module orientation: `../../AccountManagerISO42001/CLAUDE.md`.
 | `iso42001-prompt-template.md` | Prompt template reference for the ISO evaluators | design |
 | `iso42001-enduser-tests.md` | End-user / acceptance test scenarios | test |
 | `enterpriseReadiness.md` | Enterprise-readiness checklist / gaps | design |
-| `../ISO42001Plan.md` | ISO 42001 compliance dashboard — design & implementation plan (top-level aiDocs) | plan |
+| `../archive/ISO42001Plan.md` | ISO 42001 compliance dashboard plan — **archived** (Ux75-parented; superseded by this subdir + the Ux752 gap analysis) | historical |
 
 Related, cross-linked:
 - `../../AccountManagerUx752/aiDocs/Iso42001UxGapAnalysis.md` — UX gap analysis + backend backlog for the ISO 42001 UI.

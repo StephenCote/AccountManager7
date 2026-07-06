@@ -3,76 +3,82 @@
 Design, plan, and reference docs for AccountManager7. Behavioral/working-discipline rules live in
 `../.claude/rules/llm-conduct.md`; architecture in `../.claude/rules/architecture.md`.
 
-Status legend: **active** (current, in use) · **design** (design/reference, likely still relevant) ·
-**plan** (implementation plan) · **historical** (superseded/completed, kept for record) ·
-**uncertain** (status unclear — needs Stephen's call before archiving).
+Status legend: **active** (current, in use) · **reference** (living design/domain reference) ·
+**uncertain** (status unclear — needs Stephen's call before archiving). Superseded plans, completed
+implementation plans, dated issue logs, and session handoffs live in `archive/`.
 
-## Frontend (Ux752 / Ux7)
+## Frontend (Ux752)
 
 | File | Purpose | Status |
 |---|---|---|
-| `Ux752Plan.md` | Ux752 focused-refactor plan, standing orders, guiding principles | active |
-| `Ux752ImplementationPlan.md` | Ux752 5-phase implementation plan + change register | active |
-| `ConnectionRefactorPlan.md` | Connection model refactor + Ux752 list-view bug fixes | active |
-| `Ux7Redesign.md` | Original Ux7 redesign document (led to Ux75/Ux752) | uncertain |
+| `Ux752Plan.md` | Ux752 focused-refactor standing orders / guiding principles (parent doc) | active |
+| `Ux752ImplementationPlan.md` | Ux752 file-by-file implementation plan (4 files) | active |
+| `ConnectionRefactorPlan.md` | Connection model refactor + Ux752 list-view bug fixes (2026-06-17) | active |
 
 ## Backend / platform
 
 | File | Purpose | Status |
 |---|---|---|
-| `BackendPlan.md` | Backend implementation plan (cited source for `architecture.md`) | uncertain |
-| `SCIM.md` | SCIM REST service implementation plan | design |
-| `MCP.md` | MCP (Model Context Protocol) integration plan | design |
-| `KnownIssues.md` | **Current** known-issues / backlog | active |
+| `KnownIssues.md` | **Current** known-issues / backlog (2026-06-26) | active |
+| `SCIM.md` | SCIM 2.0 → AccountManager model mapping reference | reference |
+| `MCP.md` | MCP integration strategy + injection-pattern reference | uncertain |
 
-## Chat / prompt system
+## Games / RPG
 
 | File | Purpose | Status |
 |---|---|---|
-| `chatRefactor.md` | Chat & prompt template system refactor design | uncertain |
-| `chatRefactor2.md` | Chat refactor phase 2 (image drop, Agent7 bridge, memory sharing) | uncertain |
-| `ConversationQualityPlan.md` | Conversation quality backend plan | design |
-| `ConversationQualityBaseline.md` | Conversation quality baseline (Phase 0) | design |
+| `RPG.md` | Turn-based RPG design & build plan (living design document) | reference |
+| `PictureBookDesign.md` | Picture Book feature — surviving design/architecture reference | reference |
+
+## Chat / prompt / conversation quality
+
+| File | Purpose | Status |
+|---|---|---|
+| `chatRefactor.md` | Chat & prompt template system — primary design reference (incl. NO-CENSORSHIP directive) | reference |
+| `chatRefactor2.md` | Chat refactor Phase 2 (image drop, Agent7 bridge, memory sharing) — targets Ux7 paths | uncertain |
+| `ConversationQualityPlan.md` | Conversation-quality backend plan (Phases 0-6 shipped; 5.1 deferred) | reference |
+| `ConversationQualityBaseline.md` | Conversation-quality metric baseline (regression reference) | reference |
 
 ## Memory subsystem
 
 | File | Purpose | Status |
 |---|---|---|
 | `MEMORY.md` | Project memory — detailed API/domain reference (see note below) | active |
-| `MEMORY_INTEGRATION_DESIGN.md` | Automatic memory integration in conversations — design | design |
-| `MemoryRefactor2.md` | Memory system refactor v2 — design | design |
-| `MemoryKeyframeDecouplingPlan.md` | Memory / keyframe decoupling plan | design |
-| `MemoryOllamaInvestigation.md` | Issue #14 memory/Ollama infinite-loop investigation | uncertain |
-
-## Games / content features
-
-| File | Purpose | Status |
-|---|---|---|
-| `RPG.md` | Turn-based RPG design & build plan | design |
-| `PictureBookDesign.md` | Picture Book completion design | design |
-| `PictureBookImplementationPlan.md` | Picture Book implementation plan | design |
-| `PictureBookRevisions.md` | Picture Book revision plan | design |
-| `PictureBookTestPlan.md` | Picture Book comprehensive test plan | design |
-| `PictureBookIssues-2026-03-31.md` | Picture Book post-implementation issue list (dated) | uncertain |
+| `MEMORY_INTEGRATION_DESIGN.md` | Automatic memory injection in conversations — design reference | reference |
+| `MemoryKeyframeDecouplingPlan.md` | Memory / keyframe decoupling plan (2026-05-30, draft) | active |
+| `MemoryRefactor2.md` | Memory system refactor v2 (2026-02-21 draft; scope incl. deprecated Ux7) | uncertain |
 
 ## ISO 42001
 
-See `ISO42001/README.md` for the ISO doc set. Top-level: `ISO42001Plan.md` (compliance dashboard
-design & implementation plan — plan).
+See `ISO42001/README.md` for the ISO doc set. (The old Ux75-parented `ISO42001Plan.md` has been
+archived — superseded by the `ISO42001/` subdir and `AccountManagerUx752/aiDocs/Iso42001UxGapAnalysis.md`.)
 
-## Archive
+## Archive (`archive/` — superseded/completed, moved never deleted)
 
-`archive/` holds superseded/completed docs, kept for record (moved, never deleted):
-- `archive/OpenIssues.md` — March 2026 bug-fix sprint list (superseded by `KnownIssues.md`)
-- `archive/Ux75ImplementationPlan.md` — Ux75 implementation plan/status (Ux75 superseded by Ux752)
-- `archive/PictureBookNextSession.md` — one-off session handoff prompt
+| File | Why archived |
+|---|---|
+| `BackendPlan.md` | Ux75-era backend plan; Status "Priorities 2-6 COMPLETE, 1 separated" — work done |
+| `ISO42001Plan.md` | Ux75-parented dashboard plan; superseded by `ISO42001/` subdir + Ux752 gap analysis |
+| `Ux7Redesign.md` | Ux7→Ux75 redesign/port status doc; Ux75 line superseded by Ux752 |
+| `Ux75ImplementationPlan.md` | Ux75 implementation plan/status; Ux75 superseded by Ux752 |
+| `OpenIssues.md` | March 2026 bug-fix sprint list; superseded by current `KnownIssues.md` |
+| `MemoryOllamaInvestigation.md` | Issue #14 diagnostic plan; overtaken by later memory refactor work |
+| `PictureBookImplementationPlan.md` | Picture Book impl steps; feature built (per Design "backend COMPLETE") |
+| `PictureBookRevisions.md` | Picture Book revision plan; superseded by post-impl issue closeout |
+| `PictureBookTestPlan.md` | One-off Picture Book test-execution plan (session artifact) |
+| `PictureBookIssues-2026-03-31.md` | Dated Picture Book post-implementation issue log |
+| `PictureBookNextSession.md` | One-off session handoff prompt |
 
 ---
 
+### Uncertain — needs Stephen's call
+- `MCP.md` — a "plan," but MCP transport now exists in Service7; may be superseded or may still be the living reference for the injection-pattern refactor.
+- `chatRefactor2.md` — Phase-2 feature plan whose client snippets target `AccountManagerUx7/client/` (now deprecated); unclear whether the features were built in Ux752.
+- `MemoryRefactor2.md` — Feb 2026 "DRAFT awaiting review" whose scope includes deprecated Ux7 and which appears partly superseded by the May decoupling/integration docs; large, may still hold unmigrated rationale.
+
 ### Note on `MEMORY.md`
 `aiDocs/MEMORY.md` is a detailed API/domain reference (apparel/store participation, enum
-serialization, LLM library system, etc.). It is **distinct** from — and does not conflict with — the
-auto-loaded user memory index at `~/.claude/projects/<project>/memory/MEMORY.md`, which is a short
-operational index (never-reset-DB, LLM test endpoint, Maven TLS workaround, AM6.5 PKI). One stale
-cross-reference: `MEMORY.md` line 97 points to `aiDocs/Ux75ImplementationPlan.md`, now at
-`aiDocs/archive/Ux75ImplementationPlan.md`. Left as-is for Stephen to reconcile (not silently edited).
+serialization, LLM library system, etc.), distinct from the small auto-loaded user memory index at
+`~/.claude/projects/<project>/memory/MEMORY.md`. Two of its cross-references now point into `archive/`
+(`Ux75ImplementationPlan.md` line 97; `Ux7Redesign.md` line 96) — left as-is for Stephen to reconcile,
+not silently edited.

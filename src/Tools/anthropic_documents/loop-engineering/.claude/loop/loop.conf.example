@@ -1,0 +1,15 @@
+# loop.conf — per-repo command overrides for the loop-engineering system.
+# Copy to .claude/loop/loop.conf and edit. Anything you set here wins over
+# auto-detection. Leave a variable unset to keep the detected default; set it
+# to "" to skip that phase entirely.
+#
+# These are shell assignments (this file is sourced by detect.sh).
+
+# Example for a Java (Maven) + Postgres + JS app with Playwright UX tests:
+# BUILD_CMD="mvn -q -B -DskipTests compile"
+# TEST_CMD="mvn -q -B test"          # JUnit / system tests
+# LINT_CMD="mvn -q -B spotless:check"
+# E2E_CMD="npx playwright test"      # UX tests (run in the full loop, skipped by --quick)
+
+# Multi-step commands are fine:
+# TEST_CMD="mvn -q -B test && npm test --silent"
