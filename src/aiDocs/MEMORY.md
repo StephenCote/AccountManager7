@@ -93,8 +93,8 @@ Detailed reference for LLM assistants working on this project. Auto-loaded summa
 - Library status endpoint: `/rest/chat/library/status` — returns `initialized`, `promptInitialized`, `promptTemplateInitialized`, `policyInitialized`
 
 ## Ux75 Implementation Status (2026-03-06)
-- **Design doc:** `aiDocs/Ux7Redesign.md` (Sections 1-13: requirements/design)
-- **Implementation plan:** `aiDocs/Ux75ImplementationPlan.md` (status, phases, gaps, quick start)
+- **Design doc:** `aiDocs/archive/Ux7Redesign.md` (Sections 1-13: requirements/design)
+- **Implementation plan:** `aiDocs/archive/Ux75ImplementationPlan.md` (status, phases, gaps, quick start)
 - **Phases 0-3 COMPLETE** (foundation, dialogs, panel, features), Ux7 file port ~99%
 - **127 source files, 69,000 lines**, builds in ~4s, 55 Vitest tests pass
 - **NEXT PHASE: 3.5** — Runtime Validation + Dialog Workflow Port (CRITICAL)

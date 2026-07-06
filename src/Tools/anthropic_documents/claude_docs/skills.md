@@ -1,4 +1,4 @@
-<!-- source: https://docs.claude.com/en/docs/claude-code/slash-commands.md -->
+<!-- source: https://docs.claude.com/en/docs/claude-code/skills.md -->
 
 > ## Documentation Index
 > Fetch the complete documentation index at: https://code.claude.com/docs/llms.txt

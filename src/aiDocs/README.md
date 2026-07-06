@@ -21,7 +21,6 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 |---|---|---|
 | `KnownIssues.md` | **Current** known-issues / backlog (2026-06-26) | active |
 | `SCIM.md` | SCIM 2.0 → AccountManager model mapping reference | reference |
-| `MCP.md` | MCP integration strategy + injection-pattern reference | uncertain |
 
 ## Games / RPG
 
@@ -35,7 +34,6 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 | File | Purpose | Status |
 |---|---|---|
 | `chatRefactor.md` | Chat & prompt template system — primary design reference (incl. NO-CENSORSHIP directive) | reference |
-| `chatRefactor2.md` | Chat refactor Phase 2 (image drop, Agent7 bridge, memory sharing) — targets Ux7 paths | uncertain |
 | `ConversationQualityPlan.md` | Conversation-quality backend plan (Phases 0-6 shipped; 5.1 deferred) | reference |
 | `ConversationQualityBaseline.md` | Conversation-quality metric baseline (regression reference) | reference |
 
@@ -46,7 +44,6 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 | `MEMORY.md` | Project memory — detailed API/domain reference (see note below) | active |
 | `MEMORY_INTEGRATION_DESIGN.md` | Automatic memory injection in conversations — design reference | reference |
 | `MemoryKeyframeDecouplingPlan.md` | Memory / keyframe decoupling plan (2026-05-30, draft) | active |
-| `MemoryRefactor2.md` | Memory system refactor v2 (2026-02-21 draft; scope incl. deprecated Ux7) | uncertain |
 
 ## ISO 42001
 
@@ -68,13 +65,11 @@ archived — superseded by the `ISO42001/` subdir and `AccountManagerUx752/aiDoc
 | `PictureBookTestPlan.md` | One-off Picture Book test-execution plan (session artifact) |
 | `PictureBookIssues-2026-03-31.md` | Dated Picture Book post-implementation issue log |
 | `PictureBookNextSession.md` | One-off session handoff prompt |
+| `MCP.md` | MCP integration plan; MCP transport now exists in Service7 — work landed (Stephen's call) |
+| `chatRefactor2.md` | Phase-2 chat plan targeting the now-deprecated `AccountManagerUx7/client/` (Stephen's call) |
+| `MemoryRefactor2.md` | Feb-2026 draft superseded by the May memory decoupling/integration docs (Stephen's call) |
 
 ---
-
-### Uncertain — needs Stephen's call
-- `MCP.md` — a "plan," but MCP transport now exists in Service7; may be superseded or may still be the living reference for the injection-pattern refactor.
-- `chatRefactor2.md` — Phase-2 feature plan whose client snippets target `AccountManagerUx7/client/` (now deprecated); unclear whether the features were built in Ux752.
-- `MemoryRefactor2.md` — Feb 2026 "DRAFT awaiting review" whose scope includes deprecated Ux7 and which appears partly superseded by the May decoupling/integration docs; large, may still hold unmigrated rationale.
 
 ### Note on `MEMORY.md`
 `aiDocs/MEMORY.md` is a detailed API/domain reference (apparel/store participation, enum

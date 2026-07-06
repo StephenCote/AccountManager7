@@ -1,6 +1,6 @@
 # AccountManager7 — Architecture rules
 
-Distilled from the module CLAUDE.md files, BackendPlan.md, and ConnectionRefactorPlan.md.
+Distilled from the module CLAUDE.md files, aiDocs/archive/BackendPlan.md, and aiDocs/ConnectionRefactorPlan.md.
 This is the canonical, deduplicated reference. For depth, see each module's own
 CLAUDE.md; this file is the source of truth for design review.
 

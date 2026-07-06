@@ -57,6 +57,10 @@ SLUGS = [
     "agent-sdk/overview", # custom programmatic loop (Agent SDK)
     "agent-sdk/python",   # Python SDK
     "agent-sdk/typescript", # TypeScript SDK
+    # --- third batch: multi-agent orchestration ---
+    "agent-teams",        # peer teammate collaboration (vs hub-and-spoke subagents)
+    "goal",               # /goal: session-scoped prompt-based Stop hook
+    "worktrees",          # subagent isolation via git worktrees
 ]
 
 # URL templates tried in order for each slug. {s} = slug.

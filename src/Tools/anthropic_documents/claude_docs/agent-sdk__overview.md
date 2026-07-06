@@ -1,4 +1,4 @@
-<!-- source: https://docs.claude.com/en/docs/claude-code/sdk -->
+<!-- source: https://docs.claude.com/en/docs/claude-code/agent-sdk/overview.md -->
 
 > ## Documentation Index
 > Fetch the complete documentation index at: https://code.claude.com/docs/llms.txt
