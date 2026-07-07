@@ -559,6 +559,11 @@ function renderStep1() {
                     )
             ]),
 
+            extracting ? m('div', { class: 'flex items-center gap-2 px-4 py-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded' }, [
+                m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
+                m('span', 'Extracting scenes...')
+            ]) : null,
+
             extractError ? m('div', { class: 'text-red-500 text-sm' }, extractError) : null
         ]) : m('div', { class: 'text-sm text-gray-500 italic' }, 'Manual scene entry — proceed to add scenes.')
     ]);

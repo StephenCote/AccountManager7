@@ -416,14 +416,27 @@ public class RecordUtil {
 		if(!isIdentityRecord(rec) || !isIdentityRecord(rec2)) {
 			return false;
 		}
-		if(rec.hasField(FieldNames.FIELD_ID) && rec2.hasField(FieldNames.FIELD_ID)) {
-			return (long)rec.get(FieldNames.FIELD_ID) == (long)rec2.get(FieldNames.FIELD_ID);
+		// Null-safe: an id-only partial (e.g. a PATCH record) may carry objectId/urn fields that are
+		// present-but-null. Fall through to whichever identity field is actually set on BOTH records
+		// rather than NPEing on a null cast. See model-api.md (id-only PATCH is a documented pattern).
+		Long id1 = rec.get(FieldNames.FIELD_ID);
+		Long id2 = rec2.get(FieldNames.FIELD_ID);
+		if(rec.hasField(FieldNames.FIELD_ID) && rec2.hasField(FieldNames.FIELD_ID) && id1 != null && id2 != null && id1 > 0L && id2 > 0L) {
+			return id1.longValue() == id2.longValue();
 		}
 		if(rec.hasField(FieldNames.FIELD_OBJECT_ID) && rec2.hasField(FieldNames.FIELD_OBJECT_ID)) {
-			return ((String)rec.get(FieldNames.FIELD_OBJECT_ID)).equals((String)rec2.get(FieldNames.FIELD_OBJECT_ID));
+			Object oid1 = rec.get(FieldNames.FIELD_OBJECT_ID);
+			Object oid2 = rec2.get(FieldNames.FIELD_OBJECT_ID);
+			if(oid1 != null && oid2 != null) {
+				return oid1.equals(oid2);
+			}
 		}
 		if(rec.hasField(FieldNames.FIELD_URN) && rec2.hasField(FieldNames.FIELD_URN)) {
-			return ((String)rec.get(FieldNames.FIELD_URN)).equals((String)rec2.get(FieldNames.FIELD_URN));
+			Object urn1 = rec.get(FieldNames.FIELD_URN);
+			Object urn2 = rec2.get(FieldNames.FIELD_URN);
+			if(urn1 != null && urn2 != null) {
+				return urn1.equals(urn2);
+			}
 		}
 		return false;
 
