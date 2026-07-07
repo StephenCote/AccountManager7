@@ -129,6 +129,15 @@ public class SWUtil {
 	/// @param settingDesc   Setting/location description from chatConfig
 	/// @param sdConfig      SD config record (for kontextModel override); may be null
 	public static SWTxt2Img newKontextSceneTxt2Img(String sysCharDesc, String usrCharDesc, String sceneDesc, String settingDesc, BaseRecord sdConfig) {
+		return newKontextSceneTxt2Img(sysCharDesc, usrCharDesc, sceneDesc, settingDesc, null, null, sdConfig);
+	}
+
+	/// Style/mood-aware overload of the FLUX Kontext scene request builder.
+	/// When style is null/empty AND mood is null/empty the produced prompt is BYTE-IDENTICAL to the
+	/// legacy 5-arg output, so existing callers (ChatService, tests) are unaffected.
+	/// @param style   user-selected style (see configModel.json style limit); may be null/empty
+	/// @param mood    per-scene mood; appended as a clause when non-empty; may be null/empty
+	public static SWTxt2Img newKontextSceneTxt2Img(String sysCharDesc, String usrCharDesc, String sceneDesc, String settingDesc, String style, String mood, BaseRecord sdConfig) {
 		SWTxt2Img s2i = newKontextBase(sdConfig);
 
 		/// Strip SDXL-style prompt weighting — FLUX doesn't support ((...:1.5)) syntax
@@ -150,12 +159,50 @@ public class SWUtil {
 		if (settingDesc != null && !settingDesc.isEmpty()) {
 			prompt.append("The setting is ").append(settingDesc).append(". ");
 		}
+		if (mood != null && !mood.isEmpty()) {
+			prompt.append("The mood is ").append(mood).append(". ");
+		}
 		prompt.append("Maintain their exact appearances, clothing, and features. ");
-		prompt.append("Natural lighting consistent with the background. High quality photograph.");
+		prompt.append(styleClause(style));
 
 		s2i.setPrompt(prompt.toString());
 		s2i.setNegativePrompt("");
 		return s2i;
+	}
+
+	/// Map a configModel.json style value to short natural-language FLUX phrasing.
+	/// The default (null/empty/unknown) is the legacy photograph phrasing, so the byte-identical
+	/// guarantee of the legacy Kontext prompt holds. Comparison is case-insensitive.
+	public static String styleClause(String style) {
+		String photo = "Natural lighting consistent with the background. High quality photograph.";
+		if (style == null) return photo;
+		String s = style.trim().toLowerCase();
+		if (s.isEmpty()) return photo;
+		switch (s) {
+			case "photograph":
+			case "selfie":
+			case "custom":
+				return photo;
+			case "illustration":
+				return "Rendered as a detailed illustration.";
+			case "art":
+			case "digitalart":
+				return "Digital painting art style.";
+			case "movie":
+				return "Cinematic film still.";
+			case "anime":
+				return "Anime art style.";
+			case "comic":
+				return "Comic book art style.";
+			case "portrait":
+				return "Studio portrait photograph.";
+			case "fashion":
+				return "High fashion editorial photograph.";
+			case "vintage":
+				return "Vintage film photograph aesthetic.";
+			default:
+				return photo;
+		}
 	}
 
 	/// Create base Kontext SWTxt2Img with model and optimal defaults.

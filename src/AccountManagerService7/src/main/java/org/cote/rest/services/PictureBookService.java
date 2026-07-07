@@ -2,11 +2,15 @@ package org.cote.rest.services;
 
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -86,6 +90,11 @@ public class PictureBookService {
 
     private static final String NEG_PROMPT =
         "blurry, lowres, bad anatomy, extra limbs, watermark, text, logo, cartoon, anime, nsfw, deformed, disfigured, ugly, duplicate, mutated, out of frame";
+
+    // Allowed style values — mirrors configModel.json's style `limit`. Client-supplied style is
+    // clamped to this set at parse time so no arbitrary text flows into LLM/FLUX prompt vars.
+    private static final Set<String> ALLOWED_STYLES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+        "art", "movie", "photograph", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage", "custom", "illustration")));
 
     // Genre → SD theme mapping
     private static final Map<String, String> GENRE_THEME_MAP = new HashMap<>();
@@ -1179,6 +1188,8 @@ public class PictureBookService {
         String sdRefinerSampler = null;
         String sdRefinerScheduler = null;
         List<String> sdLoras = null;
+        // Default to "illustration" to preserve prior behavior when sdConfig omits style
+        String style = "illustration";
 
         if (json != null && !json.trim().isEmpty()) {
             try {
@@ -1202,8 +1213,16 @@ public class PictureBookService {
                     Object rsmpv = sdConf.get("refinerSampler"); if (rsmpv instanceof String) sdRefinerSampler = (String) rsmpv;
                     Object rschv = sdConf.get("refinerScheduler"); if (rschv instanceof String) sdRefinerScheduler = (String) rschv;
                     Object lorasV = sdConf.get("loras"); if (lorasV instanceof List) sdLoras = (List<String>) lorasV;
+                    Object styv = sdConf.get("style"); if (styv instanceof String && !((String) styv).isEmpty()) style = (String) styv;
                 }
             } catch (Exception e) { logger.warn("Failed to parse generate request: " + e.getMessage()); }
+        }
+
+        // Clamp client-supplied style to the allowed set once, so both the FLUX and landscape-LLM
+        // paths only ever see a valid value (the model's `limit` is not enforced on this in-memory record).
+        final String parsedStyle = style;
+        if (parsedStyle == null || ALLOWED_STYLES.stream().noneMatch(s -> s.equalsIgnoreCase(parsedStyle))) {
+            style = "illustration";
         }
 
         String sdApiType = context.getInitParameter("sd.server.apiType");
@@ -1237,6 +1256,7 @@ public class PictureBookService {
             if (sdRefinerSampler != null && !sdRefinerSampler.isEmpty()) sdConfigRec.set("refinerSampler", sdRefinerSampler);
             if (sdRefinerScheduler != null && !sdRefinerScheduler.isEmpty()) sdConfigRec.set("refinerScheduler", sdRefinerScheduler);
             if (sdLoras != null && !sdLoras.isEmpty()) sdConfigRec.set("loras", sdLoras);
+            if (style != null && !style.isEmpty()) sdConfigRec.set("style", style);
         } catch (Exception e) {
             logger.error("Failed to create sdConfig: " + e.getMessage());
             return Response.status(500).entity("{\"error\":\"SD config error\"}").build();
@@ -1249,8 +1269,10 @@ public class PictureBookService {
         // promptOverride: skip pipeline, direct SDXL generation
         if (promptOverride != null && !promptOverride.isEmpty()) {
             try {
+                WebSocketService.chirpUser(user, new String[] { "bgActivity", "image", "Generating image..." });
                 sdConfigRec.set("description", promptOverride);
-                sdConfigRec.set("style", "illustration");
+                // Flow the user-selected style through (defaults to "illustration" when absent)
+                sdConfigRec.set("style", style);
                 String imageName = "scene_" + sceneObjectId + "_" + System.currentTimeMillis();
                 List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, sdConfigRec, imageName, 1, hires, -1);
                 if (images == null || images.isEmpty())
@@ -1267,6 +1289,9 @@ public class PictureBookService {
             } catch (Exception e) {
                 logger.error("Override SD generation failed: " + e.getMessage());
                 return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+            } finally {
+                // Clear the activity bar on ALL exits (early 500, success, catch 500)
+                WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
             }
         }
 
@@ -1276,6 +1301,10 @@ public class PictureBookService {
             // Characters may be stored as [{name:...}] maps or as objectId strings
             List<byte[]> portraitBytesList = new ArrayList<>();
             List<String> portraitPromptList = new ArrayList<>();
+            // Persist+link+reuse portraits only for real books (scene group under /Scenes).
+            // For the ~/Chat fallback (no /Scenes segment) keep legacy render-use-delete behavior
+            // so portraits are not scattered/orphaned outside a book.
+            boolean isBook = sceneGroupPath.contains("/Scenes");
             Object charsObj = sceneData.get("characters");
             if (charsObj instanceof List) {
                 @SuppressWarnings("unchecked")
@@ -1297,7 +1326,7 @@ public class PictureBookService {
                         if (charOid != null) {
                             Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charOid);
                             cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                            cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender"});
+                            cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile"});
                             cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
                         } else if (cname != null) {
                             // Search by name — scope to scene's parent group's Characters/ sibling
@@ -1309,7 +1338,7 @@ public class PictureBookService {
                                 Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, cname);
                                 cq.field(FieldNames.FIELD_GROUP_ID, charGrp.get(FieldNames.FIELD_ID));
                                 cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                                cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender"});
+                                cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile"});
                                 cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
                             }
                         }
@@ -1333,6 +1362,40 @@ public class PictureBookService {
                         logger.warn("No portrait prompt (narrative) for: " + cname + " — skipping portrait");
                         continue;
                     }
+
+                    // B1: Populate the character's profile + portrait (with byteStore) so we can
+                    // reuse an already-persisted portrait rather than regenerating it every scene.
+                    BaseRecord profile = cp.get("profile");
+                    if (profile == null) {
+                        try {
+                            IOSystem.getActiveContext().getReader().populate(cp, new String[] { "profile" });
+                            profile = cp.get("profile");
+                        } catch (Exception e) {
+                            logger.warn("Failed to populate profile for " + cname + ": " + e.getMessage());
+                        }
+                    }
+                    byte[] existingPortraitBytes = null;
+                    if (profile != null) {
+                        try {
+                            IOSystem.getActiveContext().getReader().populate(profile, new String[] { "portrait" });
+                            BaseRecord existingPortrait = profile.get("portrait");
+                            if (existingPortrait != null) {
+                                IOSystem.getActiveContext().getReader().populate(existingPortrait, new String[] { FieldNames.FIELD_BYTE_STORE });
+                                existingPortraitBytes = existingPortrait.get(FieldNames.FIELD_BYTE_STORE);
+                            }
+                        } catch (Exception e) {
+                            logger.warn("Failed to populate portrait for " + cname + ": " + e.getMessage());
+                        }
+                    }
+
+                    // Reuse branch: a book character with a persisted portrait — no re-render.
+                    if (isBook && existingPortraitBytes != null && existingPortraitBytes.length > 0) {
+                        portraitBytesList.add(existingPortraitBytes);
+                        portraitPromptList.add(SWUtil.stripSDXLWeighting(portraitPrompt2));
+                        logger.info("Reusing persisted portrait for " + cname + " (no re-render)");
+                        continue;
+                    }
+
                     try {
                         // Portrait inherits user's SD config (model, sampler, scheduler) but forces hires=false
                         BaseRecord portCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
@@ -1346,16 +1409,50 @@ public class PictureBookService {
                         if (sdSampler != null && !sdSampler.isEmpty()) portCfg.set("sampler", sdSampler);
                         if (sdScheduler != null && !sdScheduler.isEmpty()) portCfg.set("scheduler", sdScheduler);
                         String portName = "portrait_" + cname.replace(" ", "_") + "_" + System.currentTimeMillis();
-                        List<BaseRecord> portImages = sdu.createImage(user, sceneGroupPath, portCfg, portName, 1, false, -1);
+                        // Render book portraits into the book's Characters/ group (not the Scenes group);
+                        // the fallback (~/Chat) renders in place and is deleted below.
+                        String portraitGroupPath = isBook ? sceneGroupPath.replace("/Scenes", "/Characters") : sceneGroupPath;
+                        List<BaseRecord> portImages = sdu.createImage(user, portraitGroupPath, portCfg, portName, 1, false, -1);
                         if (portImages == null || portImages.isEmpty()) { logger.warn("Portrait generation failed: " + cname); continue; }
                         byte[] portBytes = portImages.get(0).get(FieldNames.FIELD_BYTE_STORE);
                         if (portBytes == null || portBytes.length == 0) {
+                            // Unusable image — delete regardless of book/fallback
                             try { IOSystem.getActiveContext().getAccessPoint().delete(user, portImages.get(0)); } catch (Exception ignored) {}
                             continue;
                         }
                         portraitBytesList.add(portBytes);
                         portraitPromptList.add(SWUtil.stripSDXLWeighting(portraitPrompt2));
-                        try { IOSystem.getActiveContext().getAccessPoint().delete(user, portImages.get(0)); } catch (Exception ignored) {}
+
+                        if (isBook) {
+                            // Persist+link: attach the rendered portrait to the character via a
+                            // PBAC-safe partial identity.profile update (id + portrait only) — do NOT
+                            // re-persist the full charPerson graph (avoids groupless denial).
+                            BaseRecord newImage = portImages.get(0);
+                            try {
+                                Long profIdObj = (profile != null) ? profile.get(FieldNames.FIELD_ID) : null;
+                                long profId = (profIdObj != null) ? profIdObj.longValue() : 0L;
+                                if (profId > 0L) {
+                                    BaseRecord profilePatch = RecordFactory.newInstance(ModelNames.MODEL_PROFILE);
+                                    profilePatch.set(FieldNames.FIELD_ID, profId);
+                                    // Also set objectId: cache invalidation (RecordUtil.matchIdentityRecords)
+                                    // compares objectId and NPEs if it is present-but-null on an id-only patch.
+                                    String profOid = profile.get(FieldNames.FIELD_OBJECT_ID);
+                                    if (profOid != null) profilePatch.set(FieldNames.FIELD_OBJECT_ID, profOid);
+                                    profilePatch.set("portrait", newImage);
+                                    IOSystem.getActiveContext().getAccessPoint().update(user, profilePatch);
+                                    logger.info("Persisted+linked portrait for " + cname + " (profile id " + profId + ")");
+                                } else {
+                                    // No usable profile id — keep the persisted image in the Characters/
+                                    // group (do NOT delete, do NOT attempt a planMost charPerson update).
+                                    logger.warn("Character " + cname + " has no persisted profile id — portrait kept in group but left unlinked");
+                                }
+                            } catch (Exception e) {
+                                logger.warn("Failed to link portrait to character " + cname + ": " + e.getMessage());
+                            }
+                        } else {
+                            // Legacy fallback: not a book — image is only used for the composite, delete it
+                            try { IOSystem.getActiveContext().getAccessPoint().delete(user, portImages.get(0)); } catch (Exception ignored) {}
+                        }
                     } catch (Exception e) {
                         logger.warn("Portrait generation error for " + cname + ": " + e.getMessage());
                     }
@@ -1369,7 +1466,7 @@ public class PictureBookService {
             landVars.put("setting", setting);
             landVars.put("mood", mood);
             landVars.put("time", "");
-            landVars.put("style", "illustration");
+            landVars.put("style", (style != null && !style.isEmpty()) ? style : "illustration");
             String landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars, promptTemplateOverride);
             if (landscapePrompt == null || landscapePrompt.isBlank()) {
                 logger.warn("Landscape prompt failed — falling back to setting text");
@@ -1399,7 +1496,7 @@ public class PictureBookService {
             WebSocketService.chirpUser(user, new String[] { "bgActivity", "image", "Compositing scene..." });
             String leftDesc  = !portraitPromptList.isEmpty() ? portraitPromptList.get(0) : "";
             String rightDesc = portraitPromptList.size() > 1  ? portraitPromptList.get(1) : "";
-            SWTxt2Img kontextReq = SWUtil.newKontextSceneTxt2Img(leftDesc, rightDesc, action, setting, sdConfigRec);
+            SWTxt2Img kontextReq = SWUtil.newKontextSceneTxt2Img(leftDesc, rightDesc, action, setting, style, mood, sdConfigRec);
             List<String> promptImages = new ArrayList<>();
             promptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(refComposite));
             kontextReq.setPromptImages(promptImages);

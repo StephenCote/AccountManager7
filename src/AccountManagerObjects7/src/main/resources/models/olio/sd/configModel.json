@@ -180,7 +180,7 @@
 		{
 			"name": "style",
 			"type": "string",
-			"limit": ["art", "movie", "photograph", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage", "custom"]
+			"limit": ["art", "movie", "photograph", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage", "custom", "illustration"]
 		},
 		{
 			"name": "artStyle",

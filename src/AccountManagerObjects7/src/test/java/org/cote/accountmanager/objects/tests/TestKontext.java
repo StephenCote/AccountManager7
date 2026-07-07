@@ -1,6 +1,7 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -149,6 +150,129 @@ public class TestKontext extends BaseTest {
 
 		logger.info("Serialized JSON length: " + json.length());
 		logger.info("JSON: " + json.substring(0, Math.min(500, json.length())));
+	}
+
+	/// A. styleClause mapping — every configModel.json style limit value (plus illustration),
+	/// case-insensitivity, and the null/empty/unknown fallback to the exact photograph default.
+	@Test
+	public void testStyleClauseMapping() {
+		logger.info("testStyleClauseMapping");
+
+		String photo = "Natural lighting consistent with the background. High quality photograph.";
+
+		/// Values that fall back to the photograph default
+		assertEquals("photograph -> photo default", photo, SWUtil.styleClause("photograph"));
+		assertEquals("selfie -> photo default", photo, SWUtil.styleClause("selfie"));
+		assertEquals("custom -> photo default", photo, SWUtil.styleClause("custom"));
+
+		/// Distinct style phrasing
+		assertEquals("illustration", "Rendered as a detailed illustration.", SWUtil.styleClause("illustration"));
+		assertEquals("art", "Digital painting art style.", SWUtil.styleClause("art"));
+		assertEquals("digitalArt", "Digital painting art style.", SWUtil.styleClause("digitalArt"));
+		assertEquals("movie", "Cinematic film still.", SWUtil.styleClause("movie"));
+		assertEquals("anime", "Anime art style.", SWUtil.styleClause("anime"));
+		assertEquals("comic", "Comic book art style.", SWUtil.styleClause("comic"));
+		assertEquals("portrait", "Studio portrait photograph.", SWUtil.styleClause("portrait"));
+		assertEquals("fashion", "High fashion editorial photograph.", SWUtil.styleClause("fashion"));
+		assertEquals("vintage", "Vintage film photograph aesthetic.", SWUtil.styleClause("vintage"));
+
+		/// Fallbacks: null, empty, whitespace, unknown
+		assertEquals("null -> photo default", photo, SWUtil.styleClause(null));
+		assertEquals("empty -> photo default", photo, SWUtil.styleClause(""));
+		assertEquals("whitespace -> photo default", photo, SWUtil.styleClause("   "));
+		assertEquals("unknown -> photo default", photo, SWUtil.styleClause("banana"));
+
+		/// Case-insensitivity
+		assertEquals("Anime (mixed case)", "Anime art style.", SWUtil.styleClause("Anime"));
+		assertEquals("ANIME (upper)", "Anime art style.", SWUtil.styleClause("ANIME"));
+		assertEquals("anime (lower)", "Anime art style.", SWUtil.styleClause("anime"));
+		assertEquals("DigitalArt (mixed case)", "Digital painting art style.", SWUtil.styleClause("DigitalArt"));
+		assertEquals("  Movie  (padded)", "Cinematic film still.", SWUtil.styleClause("  Movie  "));
+
+		logger.info("testStyleClauseMapping PASSED");
+	}
+
+	/// B. 7-arg overload appends style + mood clauses and drops the photograph default.
+	@Test
+	public void testKontextOverloadAddsStyleAndMood() {
+		logger.info("testKontextOverloadAddsStyleAndMood");
+
+		SWTxt2Img s2i = SWUtil.newKontextSceneTxt2Img(
+			"a tall man with brown hair",
+			"a short woman with red hair",
+			"walking through a meadow",
+			"a sunlit countryside",
+			"anime",
+			"tense",
+			null
+		);
+		assertNotNull("SWTxt2Img should not be null", s2i);
+
+		String prompt = s2i.getPrompt();
+		assertNotNull("Prompt should not be null", prompt);
+		logger.info("Style+mood prompt: " + prompt);
+
+		assertTrue("Prompt should contain the anime style clause", prompt.contains("Anime art style."));
+		assertTrue("Prompt should contain the mood clause", prompt.contains("The mood is tense."));
+		assertFalse("Prompt should NOT contain the photograph default when a style is set",
+			prompt.contains("High quality photograph."));
+		/// mood clause must come after the setting sentence
+		assertTrue("Setting sentence should precede mood clause",
+			prompt.indexOf("The setting is a sunlit countryside.") < prompt.indexOf("The mood is tense."));
+	}
+
+	/// C. Backward-compat regression guard — legacy 5-arg and 7-arg(null,null) must produce the
+	/// legacy output: ends with the exact photograph line and carries no mood clause.
+	@Test
+	public void testKontextBackwardCompatRegression() {
+		logger.info("testKontextBackwardCompatRegression");
+
+		String legacyTail = "Natural lighting consistent with the background. High quality photograph.";
+
+		/// Legacy 5-arg
+		SWTxt2Img legacy = SWUtil.newKontextSceneTxt2Img(
+			"a tall man with brown hair",
+			"a short woman with red hair",
+			"walking through a meadow",
+			"a sunlit countryside",
+			null
+		);
+		String legacyPrompt = legacy.getPrompt();
+		assertNotNull("Legacy prompt should not be null", legacyPrompt);
+		assertTrue("Legacy prompt should end with the exact photograph line",
+			legacyPrompt.endsWith(legacyTail));
+		assertFalse("Legacy prompt should have no mood clause", legacyPrompt.contains("The mood is"));
+
+		/// 7-arg with null style + null mood must be byte-identical to legacy
+		SWTxt2Img delegated = SWUtil.newKontextSceneTxt2Img(
+			"a tall man with brown hair",
+			"a short woman with red hair",
+			"walking through a meadow",
+			"a sunlit countryside",
+			null,
+			null,
+			null
+		);
+		String delegatedPrompt = delegated.getPrompt();
+		assertEquals("7-arg(null style, null mood) must be byte-identical to legacy 5-arg",
+			legacyPrompt, delegatedPrompt);
+
+		/// Empty-string style/mood must also fall back to legacy tail with no mood clause
+		SWTxt2Img empties = SWUtil.newKontextSceneTxt2Img(
+			"a tall man with brown hair",
+			"a short woman with red hair",
+			"walking through a meadow",
+			"a sunlit countryside",
+			"",
+			"",
+			null
+		);
+		String emptiesPrompt = empties.getPrompt();
+		assertTrue("Empty style/mood should end with the photograph line",
+			emptiesPrompt.endsWith(legacyTail));
+		assertFalse("Empty mood should add no mood clause", emptiesPrompt.contains("The mood is"));
+
+		logger.info("Legacy prompt: " + legacyPrompt);
 	}
 
 	@Test

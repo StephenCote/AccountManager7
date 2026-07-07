@@ -65,6 +65,14 @@ Two distinct causes:
 ### KI-8. List overflow/scroll not showing when the browser console is open — OPEN
 With the dev console open (reduced viewport height), the list body doesn't show its overflow/scroll — content is clipped without a scrollbar. Likely a layout/overflow class issue (a flex child needs `min-h-0` / `overflow-auto`, or a Tailwind class was dropped/needs a rebuild). Needs visual inspection at a constrained height; check the list body container's overflow + the flex chain in `views/list.js renderContent` / `pageLayout`.
 
+### KI-9. List view empty after switching back from group/parent navigation — OPEN (2026-07-06, Stephen)
+Switching the list toolbar toggle from "navigate by group/parent" back to plain **list view** shows an initially **empty** list; a manual refresh populates it. Switching to **icon view** works correctly, so the data/query is fine — it looks like the list-view path misses a pagination reset (start/count or query key) following the group/parent-navigation change. Fix direction: when toggling back to list view after a group/parent nav change, reset list pagination and re-run the query (compare the icon-view toggle path, which resets correctly, against the list-view toggle path). Likely in `views/list.js` toggle handling / `pagination.js` state carried over from the parent-nav mode.
+
+## Picture Book (2026-07-06, Stephen)
+
+### KI-10. Cancel does not actually stop scene extraction or image generation — OPEN (2026-07-06, Stephen)
+Hitting cancel during scene extraction or image generation does not abort the in-flight backend operation — it keeps running to completion. The picture-book generate/extract endpoints in `AccountManagerService7/.../PictureBookService.java` run synchronously with no cancellation/interrupt token, so a client "cancel" only affects the UI, not the server work (mirrors the ISO 42001 run model, which is also synchronous with no cancel endpoint). Fix direction: introduce a cancellation signal the long-running loops (chunked extraction, per-scene image pipeline) check between stages — e.g. a per-request/per-book cancel flag set via a small endpoint or WebSocket chirp, polled at chunk/stage boundaries — and have the UI cancel button hit it. Client side, ensure the cancel also stops awaiting/rendering the in-flight request. Related: KI (portrait persistence/reuse) work in the same service.
+
 ## Ux752 — Debug tooling (2026-06-24)
 
 ### KI-6. List view: favorites / system-library mode not resetting on reload (FIXED)
