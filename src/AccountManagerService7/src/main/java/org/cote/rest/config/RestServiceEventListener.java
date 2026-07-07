@@ -219,9 +219,16 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
 			String authToken = context.getInitParameter("embedding.authorizationToken");
 			if (authToken != null && authToken.length() == 0) authToken = null;
-			ioContext.setVectorUtil(new VectorUtil(
+			VectorUtil vectorUtil = new VectorUtil(
 					LLMServiceEnumType.valueOf(context.getInitParameter("embedding.type").toUpperCase()),
-					context.getInitParameter("embedding.server"), authToken));
+					context.getInitParameter("embedding.server"), authToken);
+			/// Configurable embedding dimensions, synced to the common.vectorExt.embedding column
+			/// (setEmbeddingDimensions enforces the match and throws on mismatch).
+			String embeddingDimensions = context.getInitParameter("embedding.dimensions");
+			if (embeddingDimensions != null && embeddingDimensions.trim().length() > 0) {
+				vectorUtil.getEmbedUtil().setEmbeddingDimensions(Integer.parseInt(embeddingDimensions.trim()));
+			}
+			ioContext.setVectorUtil(vectorUtil);
 			authToken = context.getInitParameter("voice.authorizationToken");
 			
 			if (authToken != null && authToken.length() == 0) authToken = null;

@@ -1,0 +1,46 @@
+{
+"name": "data.pageIndex",
+"inherits": ["data.directory", "common.dateTime"],
+"query": ["sourceReference", "sourceReferenceType", "nodeCount"],
+"hints": ["sourceReference, sourceReferenceType"],
+"constraints": ["sourceReference, sourceReferenceType, organizationId"],
+"description": "Optional per-document container/root descriptor for a PageIndex tree, addressing the root node and generation metadata.",
+"fields": [
+	{
+		"name": "sourceReference",
+		"baseModel": "$flex",
+		"type": "model",
+		"foreign": true,
+		"foreignType": "sourceReferenceType",
+		"access": {
+			"roles": {
+				"read": ["AccountUsers"]
+			}
+		}
+	},
+	{
+		"name": "sourceReferenceType",
+		"type": "string",
+		"maxLength": 64
+	},
+	{
+		"name": "rootNode",
+		"baseModel": "data.pageIndexNode",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "nodeCount",
+		"type": "int",
+		"default": 0
+	},
+	{
+		"name": "generationModel",
+		"type": "string",
+		"maxLength": 128
+	},
+	{
+		"name": "generatedDate",
+		"type": "zonetime"
+	}
+]}

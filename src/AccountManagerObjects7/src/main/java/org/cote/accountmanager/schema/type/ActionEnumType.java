@@ -65,7 +65,8 @@ public enum ActionEnumType {
     CLOSE,
     OPEN,
     REOPEN,
-    VECTORIZE
+    VECTORIZE,
+    PAGE_INDEX
     ;
 
     public String value() {

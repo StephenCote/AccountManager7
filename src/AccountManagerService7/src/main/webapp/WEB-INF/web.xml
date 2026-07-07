@@ -154,6 +154,11 @@
 		<param-value></param-value>
 	</context-param>
 	<context-param>
+		<description>Embedding vector dimensions requested from the embedding model (OPENAI branch). Must match the common.vectorExt.embedding column width (maxLength); a mismatch throws at startup. Leave blank to use the code default (768).</description>
+		<param-name>embedding.dimensions</param-name>
+		<param-value>768</param-value>
+	</context-param>
+	<context-param>
 		<description>Vector DB support master switch. When false, the pgvector extension is disabled regardless of embedding-server health. When true (default), vector support stays enabled even if the embedding-server startup probe fails (a transient embedding outage no longer turns vector support off for the session).</description>
 		<param-name>vector.enabled</param-name>
 		<param-value>true</param-value>

@@ -3899,6 +3899,17 @@ public class Chat {
 		String penField = ChatUtil.getPresencePenaltyField(chatConfig);
 		ignoreFields.addAll(Arrays.asList(new String[] {"presence_penalty"}).stream().filter(f -> !f.equals(penField)).collect(Collectors.toList()));
 
+		/// Defect #1: olio.llm.openai.openaiRequest declares `think` with default false, and
+		/// getPrunedRequest -> toFullString serializes it onto the wire. Azure/OpenAI reject any
+		/// unknown parameter ("Unknown parameter: 'think'") and non-thinking Ollama models reject
+		/// `think` in ANY form. `think` is an Ollama-only extension that applyChatOptions only ever
+		/// sets true when explicitly enabled, so prune it from the wire request unless this is an
+		/// OLLAMA request that explicitly enabled thinking (req.think == true).
+		boolean keepThink = (serviceType == LLMServiceEnumType.OLLAMA && Boolean.TRUE.equals(req.get("think")));
+		if(!keepThink) {
+			ignoreFields.add("think");
+		}
+
 		boolean forwardToClient = (boolean) req.get("stream");
 		logger.info("[DIAG] chatInternal() entered: streamMode=" + streamMode + " forwardToClient=" + forwardToClient
 			+ " model=" + req.getModel() + " msgCount=" + (req.getMessages() != null ? req.getMessages().size() : 0));

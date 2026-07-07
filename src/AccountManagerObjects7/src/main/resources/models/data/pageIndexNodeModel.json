@@ -1,0 +1,62 @@
+{
+"name": "data.pageIndexNode",
+"inherits": ["common.parent", "data.directory", "common.dateTime", "common.vectorExt"],
+"query": ["parentId", "sourceReference", "sourceReferenceType", "nodeType", "level", "ordinal"],
+"hints": ["sourceReference, sourceReferenceType"],
+"constraints": ["sourceReference, sourceReferenceType, ordinal, parentId, organizationId"],
+"description": "A node in a hierarchical PageIndex table-of-contents tree (root -> sections -> leaf chunks) built over a source document's content.",
+"fields": [
+	{
+		"name": "nodeType",
+		"baseClass": "org.cote.accountmanager.schema.type.PageIndexNodeEnumType",
+		"type": "enum",
+		"maxLength": 32,
+		"default": "UNKNOWN"
+	},
+	{
+		"name": "title",
+		"type": "string",
+		"maxLength": 512
+	},
+	{
+		"name": "summary",
+		"type": "string"
+	},
+	{
+		"name": "startOffset",
+		"type": "int",
+		"default": 0
+	},
+	{
+		"name": "endOffset",
+		"type": "int",
+		"default": 0
+	},
+	{
+		"name": "level",
+		"type": "int",
+		"default": 0
+	},
+	{
+		"name": "ordinal",
+		"type": "int",
+		"default": 0
+	},
+	{
+		"name": "sourceReference",
+		"baseModel": "$flex",
+		"type": "model",
+		"foreign": true,
+		"foreignType": "sourceReferenceType",
+		"access": {
+			"roles": {
+				"read": ["AccountUsers"]
+			}
+		}
+	},
+	{
+		"name": "sourceReferenceType",
+		"type": "string",
+		"maxLength": 64
+	}
+]}

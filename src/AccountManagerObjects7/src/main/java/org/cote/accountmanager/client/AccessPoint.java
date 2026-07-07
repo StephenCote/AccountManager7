@@ -32,6 +32,7 @@ import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.FieldLockUtil;
 import org.cote.accountmanager.util.FieldUtil;
+import org.cote.accountmanager.util.PageIndexUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.VectorUtil;
@@ -724,6 +725,50 @@ public class AccessPoint {
 	
 		return outBool;
 	}
-	
-	
+
+	public boolean pageIndex(BaseRecord user, String model, String objectId) {
+
+		logger.info("Request to page index " + model + " " + objectId);
+		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId);
+
+		/// Mirror vectorize(): avoid re-persisting the older-style groupless contactInformation graph.
+		q.planMost(false, Arrays.asList(new String[] {FieldNames.FIELD_CONTACT_INFORMATION}));
+		BaseRecord rec = find(user, q);
+
+		ActionEnumType aet = ActionEnumType.PAGE_INDEX;
+		BaseRecord audit = AuditUtil.startAudit(user, aet, user, rec);
+		AuditUtil.query(audit, q.key());
+		if(rec == null) {
+			audit.setValue(FieldNames.FIELD_RESOURCE_TYPE, model);
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Object " + objectId + " could not be read");
+			return false;
+		}
+
+		PolicyResponseType prt = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, rec);
+		if(prt.getType() != PolicyResponseEnumType.PERMIT) {
+			AuditUtil.closeAudit(audit, prt, "Not authorized to modify object");
+			return false;
+		}
+
+		boolean outBool = false;
+		try {
+			logger.info("Creating page index for " + objectId);
+			/// Unlike flat vectors, PageIndexUtil.createPageIndex persists the tree itself (level-order, so
+			/// child parentId can reference the generated parent id); it returns the persisted node list.
+			List<BaseRecord> nodes = PageIndexUtil.createPageIndex(user, rec);
+			if(nodes.size() > 0) {
+				AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, "Created page index");
+				outBool = true;
+			}
+			else {
+				AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Failed to create page index");
+			}
+		} catch (FieldException e) {
+			logger.error(e);
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, e.getMessage());
+		}
+
+		return outBool;
+	}
+
 }

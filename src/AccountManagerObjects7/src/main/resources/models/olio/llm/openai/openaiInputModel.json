@@ -7,6 +7,10 @@
 		{
 			"name": "input",
 			"type": "string"
+		},
+		{
+			"name": "dimensions",
+			"type": "int"
 		}
 	]
 }

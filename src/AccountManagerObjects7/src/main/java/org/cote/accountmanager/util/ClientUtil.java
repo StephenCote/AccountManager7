@@ -107,7 +107,21 @@ public class ClientUtil {
 	}
 	
 	public static <T> T postJSON(Class<T> cls, WebTarget resource, String jsonText, MediaType responseType){
-		Response response = getRequestBuilder(resource).accept(responseType).post(Entity.json(jsonText));
+		return postJSON(cls, resource, null, jsonText, responseType);
+	}
+
+	/// Raw-string POST variant that also sets the Azure/OpenAI "api-key" header when an
+	/// authorization token is supplied (mirrors post(..., authorizationToken, ...)). Unlike
+	/// post(cls,...), this reads the entity directly via readEntity(cls) and does NOT run
+	/// JSONUtil.importObject — so requesting String.class returns the raw JSON body untouched
+	/// (post(String.class,...) throws on a JSON-object body). Used by EmbeddingUtil's OPENAI
+	/// branch so the raw response reaches its own openaiResponse parse code.
+	public static <T> T postJSON(Class<T> cls, WebTarget resource, String authorizationToken, String jsonText, MediaType responseType){
+		Builder bld = getRequestBuilder(resource).accept(responseType);
+		if(authorizationToken != null) {
+			bld.header("api-key", authorizationToken);
+		}
+		Response response = bld.post(Entity.json(jsonText));
 
 		T outObj = null;
 		if(response != null) {
@@ -116,6 +130,7 @@ public class ClientUtil {
 			}
 			else {
 				logger.warn("Received response: " + response.getStatus() + " for " + resource.getUri());
+				logger.warn(response.readEntity(String.class));
 			}
 		}
 		else {

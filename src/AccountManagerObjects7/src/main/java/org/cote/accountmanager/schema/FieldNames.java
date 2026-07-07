@@ -349,4 +349,19 @@ public class FieldNames {
 		public static final String FIELD_EMBEDDING = "embedding";
 		public static final String FIELD_CONTENT = "content";
 		public static final String FIELD_VECTORS = "vectors";
+
+		// PageIndex
+		public static final String FIELD_SOURCE_REFERENCE = "sourceReference";
+		public static final String FIELD_SOURCE_REFERENCE_TYPE = "sourceReferenceType";
+		public static final String FIELD_SUMMARY = "summary";
+		public static final String FIELD_TITLE = "title";
+		public static final String FIELD_START_OFFSET = "startOffset";
+		public static final String FIELD_END_OFFSET = "endOffset";
+		public static final String FIELD_LEVEL = "level";
+		public static final String FIELD_ORDINAL = "ordinal";
+		public static final String FIELD_NODE_TYPE = "nodeType";
+		public static final String FIELD_ROOT_NODE = "rootNode";
+		public static final String FIELD_NODE_COUNT = "nodeCount";
+		public static final String FIELD_GENERATION_MODEL = "generationModel";
+		public static final String FIELD_GENERATED_DATE = "generatedDate";
 }

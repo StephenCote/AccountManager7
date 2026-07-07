@@ -12,6 +12,9 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.LLMConnectionManager;
 
@@ -20,7 +23,15 @@ import jakarta.ws.rs.core.MediaType;
 
 public class EmbeddingUtil {
 	public static final Logger logger = LogManager.getLogger(EmbeddingUtil.class);
-	
+
+	/// Dimension requested from OpenAI/Azure embedding models. Kept in lockstep with the
+	/// common.vectorExt.embedding column (maxLength in vectorExtModel.json) and the local
+	/// all-mpnet-base-v2 model so stored vectors match the column width. Only applied to the
+	/// OPENAI branch (and only when > 0); the LOCAL branch is unaffected. Configurable via
+	/// setEmbeddingDimensions(...) from test/service config; defaults to 768.
+	public static final int DEFAULT_EMBEDDING_DIMENSIONS = 768;
+	private int embeddingDimensions = DEFAULT_EMBEDDING_DIMENSIONS;
+
 	private String serverUrl = null;
 	private String authorizationToken = null;
 	private LLMServiceEnumType serviceType = LLMServiceEnumType.UNKNOWN;
@@ -30,9 +41,46 @@ public class EmbeddingUtil {
 		this.authorizationToken = token;
 		this.serviceType = type;
 	}
-	
+
 	public LLMServiceEnumType getServiceType() {
 		return serviceType;
+	}
+
+	public int getEmbeddingDimensions() {
+		return embeddingDimensions;
+	}
+
+	public void setEmbeddingDimensions(int embeddingDimensions) {
+		enforceModelDimensionSync(embeddingDimensions);
+		this.embeddingDimensions = embeddingDimensions;
+	}
+
+	/// Model-sync enforcement (fail fast): the configured embedding dimension MUST match the
+	/// width of the common.vectorExt.embedding VECTOR column (maxLength). A mismatch guarantees
+	/// the stored vector overflows or is silently truncated, corrupting every cosine comparison.
+	/// Log an ERROR naming both values and throw. Skips the check when the configured value is
+	/// <= 0 (means "let the model decide", no dimension sent) or when the schema/field/column
+	/// width cannot be resolved (nothing to compare against).
+	public static void enforceModelDimensionSync(int dimensions) {
+		if(dimensions <= 0) {
+			return;
+		}
+		ModelSchema ms = RecordFactory.getSchema(ModelNames.MODEL_VECTOR_EXT);
+		if(ms == null) {
+			return;
+		}
+		FieldSchema fs = ms.getFieldSchema(FieldNames.FIELD_EMBEDDING);
+		if(fs == null) {
+			return;
+		}
+		int columnWidth = fs.getMaxLength();
+		if(columnWidth > 0 && columnWidth != dimensions) {
+			logger.error("Embedding dimension mismatch: configured embedding.dimensions=" + dimensions
+				+ " does not match " + ModelNames.MODEL_VECTOR_EXT + "." + FieldNames.FIELD_EMBEDDING
+				+ " column width (maxLength=" + columnWidth + "). This guarantees vector overflow/truncation.");
+			throw new IllegalStateException("Embedding dimension mismatch: configured=" + dimensions
+				+ " vs " + ModelNames.MODEL_VECTOR_EXT + "." + FieldNames.FIELD_EMBEDDING + " maxLength=" + columnWidth);
+		}
 	}
 
 	/// Phase 5.3 (ConversationQualityPlan): track this sync HTTP call with
@@ -120,7 +168,19 @@ public class EmbeddingUtil {
 			else if(serviceType == LLMServiceEnumType.OPENAI) {
 				BaseRecord inp = RecordFactory.newInstance(OlioModelNames.MODEL_OPENAI_INPUT);
 				inp.set("input", content);
-				String respStr = ClientUtil.post(String.class, ClientUtil.getResource(serverUrl), authorizationToken, inp.toFullString(), MediaType.APPLICATION_JSON_TYPE);
+				/// Bug 2: text-embedding-3-small returns 1536 dims by default, but the
+				/// common.vectorExt.embedding column is a fixed width. Request the configured
+				/// dimension count from Azure (text-embedding-3-small supports the "dimensions"
+				/// parameter) so the stored vector matches the column and does not overflow/truncate.
+				/// Only send it when > 0 (0/negative means "let the model decide").
+				if(embeddingDimensions > 0) {
+					inp.set("dimensions", embeddingDimensions);
+				}
+				/// Bug 1: read the raw JSON response string. post(String.class,...) runs
+				/// JSONUtil.importObject(json, String.class) which throws on a JSON-object body,
+				/// so it returned null and this branch never parsed the response. postJSON reads
+				/// the entity directly and forwards the raw body to the parse code below.
+				String respStr = ClientUtil.postJSON(String.class, ClientUtil.getResource(serverUrl), authorizationToken, inp.toFullString(), MediaType.APPLICATION_JSON_TYPE);
 				if(respStr != null) {
 					BaseRecord resp = RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, respStr);
 					if(resp != null) {

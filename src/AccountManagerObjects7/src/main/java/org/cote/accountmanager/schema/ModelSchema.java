@@ -40,6 +40,7 @@ public class ModelSchema {
 	
 	private String factory = null;
 	private String vector = null;
+	private String pageIndex = null;
 	
 	private ModelAccess access = null;
 	private ModelIO io = null;
@@ -73,6 +74,14 @@ public class ModelSchema {
 
 	public void setVector(String vector) {
 		this.vector = vector;
+	}
+
+	public String getPageIndex() {
+		return pageIndex;
+	}
+
+	public void setPageIndex(String pageIndex) {
+		this.pageIndex = pageIndex;
 	}
 
 	public OrderEnumType getSortOrder() {

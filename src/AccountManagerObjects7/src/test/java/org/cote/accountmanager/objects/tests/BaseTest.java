@@ -152,7 +152,12 @@ public class BaseTest {
 			else {
 				logger.debug("Working with existing organization " + organizationPath);
 			}
-			ioContext.setVectorUtil(new VectorUtil(LLMServiceEnumType.valueOf(testProperties.getProperty("test.embedding.type").toUpperCase()), testProperties.getProperty("test.embedding.server"), testProperties.getProperty("test.embedding.authorizationToken")));
+			VectorUtil vectorUtil = new VectorUtil(LLMServiceEnumType.valueOf(testProperties.getProperty("test.embedding.type").toUpperCase()), testProperties.getProperty("test.embedding.server"), testProperties.getProperty("test.embedding.authorizationToken"));
+			/// Configurable embedding dimensions, synced to the common.vectorExt.embedding column
+			/// (setEmbeddingDimensions enforces the match and throws on mismatch).
+			int embeddingDimensions = Integer.parseInt(testProperties.getProperty("test.embedding.dimensions", String.valueOf(org.cote.accountmanager.tools.EmbeddingUtil.DEFAULT_EMBEDDING_DIMENSIONS)));
+			vectorUtil.getEmbedUtil().setEmbeddingDimensions(embeddingDimensions);
+			ioContext.setVectorUtil(vectorUtil);
 		} catch (StackOverflowError | Exception e) {
 			logger.error(e);
 			e.printStackTrace();

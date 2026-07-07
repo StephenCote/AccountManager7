@@ -463,7 +463,7 @@ LIMIT ?
     	return vchunks;
     }
     
-    private List<String> chunkBySentence(String block, int chunkSize) {
+    public List<String> chunkBySentence(String block, int chunkSize) {
     	
     	
     	BreakIterator iterator = BreakIterator.getSentenceInstance(Locale.US);
