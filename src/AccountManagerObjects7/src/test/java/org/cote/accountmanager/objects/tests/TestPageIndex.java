@@ -221,56 +221,175 @@ public class TestPageIndex extends BaseTest {
 		assertTrue("Expected >=1 CHUNK leaf (got " + stats.chunks + ")", stats.chunks >= 1);
 		assertTrue("Expected tree depth > 1 (root->section->chunk), got maxLevel=" + stats.maxLevel, stats.maxLevel >= 2);
 
-		/// Retrieval targeting one specific section (Power Systems / geothermal).
-		List<BaseRecord> hits = PageIndexUtil.retrieve(doc, "How is the station's electricity generated?", 5);
-		reportRetrieval(hits, "How is the station's electricity generated?");
-		for(BaseRecord h : hits) {
-			assertTrue("retrieve returned a non-CHUNK node", h.getEnum(FieldNames.FIELD_NODE_TYPE) == PageIndexNodeEnumType.CHUNK);
-		}
-		boolean relevant = hits.stream().anyMatch(h -> {
-			String c = h.get(FieldNames.FIELD_CONTENT);
-			return c != null && (c.toLowerCase().contains("geothermal") || c.toLowerCase().contains("power") || c.toLowerCase().contains("turbine"));
-		});
-		logger.info("[RETRIEVE][MARKDOWN] top leaf mentions the Power Systems topic (geothermal/power/turbine)? " + relevant);
-		assertTrue("retrieve returned no leaves. DEFECT: PageIndexUtil.loadRoots/loadChildren project the "
-			+ "'embedding' VECTOR field (requestNodeFields), and reading that projection throws "
-			+ "ReaderException: 'Unhandled type: VECTOR' (PageIndexUtil.java:599) — so every query returns "
-			+ "empty and retrieve() always yields 0. The persisted tree itself is correct (see [DIAG] BFS "
-			+ "which reaches all nodes projecting only id+nodeType). Fix: drop FIELD_EMBEDDING from the "
-			+ "retrieval projection (nodeEmbedding() already re-derives it) or read vectors via the VectorUtil path.",
+		/// Content-specific retrieval targeting exactly ONE section (Power Systems / geothermal). The answer
+		/// to "how is electricity generated" lives only in the Power Systems body ("geothermal turbine ...").
+		String q = "How is the station's electricity generated?";
+		List<BaseRecord> hits = PageIndexUtil.retrieve(doc, q, 5);
+		reportRetrieval(hits, q);
+		assertAllChunks(hits, "MARKDOWN");
+		assertTrue("[MARKDOWN] retrieve returned no leaves — retrieval regressed (build/persist is correct; see [DIAG])",
 			!hits.isEmpty());
+		/// Top-ranked leaf must be the Power Systems passage, not merely any leaf.
+		assertTopChunkContains(hits, "MARKDOWN", "geothermal", "turbine", "power");
+		/// Real cosine ranking: the best-scored leaf outranks the worst-scored returned leaf.
+		assertDescendingScores(hits, "MARKDOWN");
 	}
 
 	/* ------------------------------------------------------------------ media docs ------------------------------------------------------------------ */
 
+	/// Prose PDF (AIME.pdf): an avant-garde Valentine's Day story about attending "The AI And Me" singles
+	/// event where your date is your own AI assistant / phone. No markdown headers → the NEW LLM-TOC path
+	/// must synthesize a real section hierarchy. Content-specific retrieval targets the one passage that
+	/// restricts enabling the AI assistant's "share nearby" mode.
 	@Test
-	public void TestPageIndexShortDocx() {
-		runMediaDoc("./media/Vore.docx", "SHORT DOCX", "What happens in the story?");
-	}
-
-	@Test
-	public void TestPageIndexMediumPdf() {
-		runMediaDoc("./media/AIME.pdf", "MEDIUM PDF", "What is the main subject of this document?");
-	}
-
-	@Test
-	public void TestPageIndexLongDocx() {
-		runMediaDoc("./media/The Verse.docx", "LONG DOCX", "Who is Mark Lucean?");
-	}
-
-	private void runMediaDoc(String path, String label, String question) {
+	public void TestPageIndexAimePdf() {
 		assumeTrue("PAGEINDEX_LLM not set — skipping live LLM PageIndex test", llmEnabled());
-		logger.info("=== TestPageIndex media: " + label + " (" + path + ") ===");
+		logger.info("=== TestPageIndex AIME.pdf (prose PDF; LLM-TOC hierarchy + content retrieval) ===");
 
-		File f = new File(path);
-		assumeTrue("Media file not present: " + path, f.exists());
+		BaseRecord testUser = pageIndexTestUser();
+		OrganizationContext octx = getTestOrganization("/Development/PageIndex");
+		ensureAzureContentAnalysis(octx, testUser);
 
+		MediaBuild mb = buildMediaDoc(testUser, "./media/AIME.pdf", "AIME");
+
+		/// (2) Real LLM-TOC hierarchy on a prose doc: a genuine tree, not flat.
+		assertTrue("[AIME] expected the LLM-TOC path to produce >=1 SECTION node (got " + mb.stats.sections
+			+ ") — prose hierarchy did not build", mb.stats.sections > 0);
+		assertTrue("[AIME] expected tree depth maxLevel >= 2 (root->section->chunk), got " + mb.stats.maxLevel,
+			mb.stats.maxLevel >= 2);
+
+		/// (1) Content-specific retrieval: the answer ("enabling ... share nearby mode is strongly discouraged,
+		/// nay, restricted, and will lead to being excused from the event") lives in ONE passage. The query
+		/// targets that unique restriction/"excused" concept (avoiding the generic "singles event" phrase that
+		/// collides with the event-intro chunk).
+		String q = "Are attendees allowed to enable their AI assistant's share nearby mode?";
+		List<BaseRecord> hits = retrieveReport(mb.doc, "AIME", q);
+		assertTopChunkContains(hits, "AIME", "share nearby", "nearby");
+		assertDescendingScores(hits, "AIME");
+	}
+
+	/// Prose DOCX (Vore.docx): a dystopian story set in the Lawrencium Arcology; its distinctive concept is
+	/// the "cybervore" (a human overruled by cybernetic implants that consumes implants). Its extracted prose
+	/// exceeds one LLM-TOC group (PAGEINDEX_TOC_GROUP_CHARS=16000), so this case exercises MULTI-GROUP LLM-TOC
+	/// live and asserts the resulting multi-group tree is still one connected ROOT with resolvable parents.
+	@Test
+	public void TestPageIndexVoreDocx() {
+		assumeTrue("PAGEINDEX_LLM not set — skipping live LLM PageIndex test", llmEnabled());
+		logger.info("=== TestPageIndex Vore.docx (multi-group prose LLM-TOC + content retrieval) ===");
+
+		BaseRecord testUser = pageIndexTestUser();
+		OrganizationContext octx = getTestOrganization("/Development/PageIndex");
+		ensureAzureContentAnalysis(octx, testUser);
+
+		MediaBuild mb = buildMediaDoc(testUser, "./media/Vore.docx", "VORE");
+
+		/// (3) Multi-group LLM-TOC executed live: the extracted text must exceed one TOC group so
+		/// splitIntoGroups produced >1 group. This closes the "multi-group not executed live" gap.
+		int expectedGroups = expectedTocGroups(mb.extractedLen);
+		logger.info("[VORE] extractedLen=" + mb.extractedLen + " PAGEINDEX_TOC_GROUP_CHARS="
+			+ PageIndexUtil.PAGEINDEX_TOC_GROUP_CHARS + " overlap=" + PageIndexUtil.PAGEINDEX_TOC_GROUP_OVERLAP
+			+ " => computed LLM-TOC groups=" + expectedGroups);
+		assertTrue("[VORE] extracted text (" + mb.extractedLen + " chars) must exceed one TOC group ("
+			+ PageIndexUtil.PAGEINDEX_TOC_GROUP_CHARS + ") to genuinely exercise multi-group LLM-TOC",
+			mb.extractedLen > PageIndexUtil.PAGEINDEX_TOC_GROUP_CHARS);
+		assertTrue("[VORE] expected multi-group (>1) TOC processing, computed " + expectedGroups, expectedGroups > 1);
+
+		/// (2) A valid connected tree with real hierarchy (buildAndInspect already asserted single ROOT +
+		/// parentId resolution + leaf offsets/content).
+		assertTrue("[VORE] expected the LLM-TOC path to produce >=1 SECTION node (got " + mb.stats.sections + ")",
+			mb.stats.sections > 0);
+		assertTrue("[VORE] expected tree depth maxLevel >= 2, got " + mb.stats.maxLevel, mb.stats.maxLevel >= 2);
+
+		/// (1) Content-specific retrieval: the "cybervore" definition passage.
+		String q = "What is a cybervore and what does it consume?";
+		List<BaseRecord> hits = retrieveReport(mb.doc, "VORE", q);
+		assertTopChunkContains(hits, "VORE", "cybervore");
+		assertDescendingScores(hits, "VORE");
+	}
+
+	/// The Verse.docx (~407K chars) is very expensive: many LLM-TOC groups + ~1200 embeddings (~7min+). Gate
+	/// it behind an explicit heavy flag so the default PAGEINDEX_LLM run stays reasonable. Enable with
+	/// PAGEINDEX_HEAVY=1 (in addition to PAGEINDEX_LLM=1).
+	@Test
+	public void TestPageIndexVerseDocx() {
+		assumeTrue("PAGEINDEX_LLM not set — skipping live LLM PageIndex test", llmEnabled());
+		assumeTrue("PAGEINDEX_HEAVY not set — skipping the expensive The Verse.docx case", heavyEnabled());
+		logger.info("=== TestPageIndex The Verse.docx (HEAVY: multi-group prose LLM-TOC + content retrieval) ===");
+
+		BaseRecord testUser = pageIndexTestUser();
+		OrganizationContext octx = getTestOrganization("/Development/PageIndex");
+		ensureAzureContentAnalysis(octx, testUser);
+
+		MediaBuild mb = buildMediaDoc(testUser, "./media/The Verse.docx", "VERSE");
+
+		assertTrue("[VERSE] expected the LLM-TOC path to produce >=1 SECTION node (got " + mb.stats.sections + ")",
+			mb.stats.sections > 0);
+		assertTrue("[VERSE] expected tree depth maxLevel >= 2, got " + mb.stats.maxLevel, mb.stats.maxLevel >= 2);
+
+		String q = "Who is Mark Lucean?";
+		List<BaseRecord> hits = retrieveReport(mb.doc, "VERSE", q);
+		assertTopChunkContains(hits, "VERSE", "lucean", "mark");
+		assertDescendingScores(hits, "VERSE");
+	}
+
+	/// (4) Fallback-to-flat path exercised LIVE (not inspection-only). Point the 'contentAnalysis' chat config
+	/// at an unreachable (connection-refused) endpoint so callChat fails for every TOC group and summarization
+	/// call: buildLlmTocTree returns false and the build degrades to the flat ROOT->CHUNK tree WITHOUT hard
+	/// failing. Asserts a valid flat tree (one ROOT, CHUNK leaves, zero SECTION, maxLevel 1).
+	@Test
+	public void TestPageIndexFlatFallbackWhenLlmTocUnavailable() {
+		assumeTrue("PAGEINDEX_LLM not set — skipping live LLM PageIndex test", llmEnabled());
+		logger.info("=== TestPageIndex flat-fallback (LLM-TOC forced to fail via dead chat connection) ===");
+
+		BaseRecord testUser = pageIndexTestUser();
+		OrganizationContext octx = getTestOrganization("/Development/PageIndex");
+
+		BaseRecord dead = pointContentAnalysisAtDead(octx, testUser);
+		assertNotNull("[FALLBACK] contentAnalysis config did not resolve after repointing at dead connection", dead);
+
+		String prose = buildProseDoc();
+		assertTrue("[FALLBACK] prose fixture too short to produce multiple leaf chunks", prose.length() > 1000);
+		BaseRecord doc = getCreateData(testUser, "Fallback-Prose.txt", "text/plain", prose.getBytes(), "~/PageIndex", octx.getOrganizationId());
+		assertNotNull("[FALLBACK] source doc is null", doc);
+
+		PageIndexStats stats = buildAndInspect(testUser, doc, "FALLBACK");
+
+		assertTrue("[FALLBACK] expected exactly one ROOT (got " + stats.roots + ")", stats.roots == 1);
+		assertTrue("[FALLBACK] expected multiple CHUNK leaves in the flat tree (got " + stats.chunks + ")", stats.chunks > 1);
+		assertTrue("[FALLBACK] expected ZERO SECTION nodes (flat tree) but the LLM-TOC path produced "
+			+ stats.sections + " — the dead connection did NOT force the flat fallback", stats.sections == 0);
+		assertTrue("[FALLBACK] flat tree should be shallow (root->chunk => maxLevel 1), got maxLevel="
+			+ stats.maxLevel, stats.maxLevel == 1);
+		logger.info("[FALLBACK] flat ROOT->CHUNK tree built without hard-fail: ROOT=" + stats.roots
+			+ " SECTION=" + stats.sections + " CHUNK=" + stats.chunks + " maxLevel=" + stats.maxLevel);
+	}
+
+	/* ---------------------------------------------------------- media build + retrieval helpers ---------------------------------------------------------- */
+
+	private boolean heavyEnabled() {
+		return System.getenv("PAGEINDEX_HEAVY") != null;
+	}
+
+	private BaseRecord pageIndexTestUser() {
 		Factory mf = ioContext.getFactory();
 		OrganizationContext octx = getTestOrganization("/Development/PageIndex");
 		BaseRecord testUser = mf.getCreateUser(octx.getAdminUser(), "testUser1", octx.getOrganizationId());
 		assertNotNull("Test user is null", testUser);
+		return testUser;
+	}
 
-		ensureAzureContentAnalysis(octx, testUser);
+	/// Holder for a built media index: the source doc, its shape stats, and the extracted-text length.
+	private static class MediaBuild {
+		BaseRecord doc;
+		PageIndexStats stats;
+		long extractedLen;
+	}
+
+	/// Extract + store the media doc, build the index through AccessPoint.pageIndex, inspect shared invariants,
+	/// and report the actual split path taken (LLM-TOC hierarchy vs flat fallback). Returns shape stats.
+	private MediaBuild buildMediaDoc(BaseRecord testUser, String path, String label) {
+		File f = new File(path);
+		assumeTrue("Media file not present: " + path, f.exists());
 
 		/// Honesty check: report extraction result up front.
 		String extracted = path.endsWith(".pdf") ? DocumentUtil.readPDF(path) : DocumentUtil.readDocument(path);
@@ -281,7 +400,7 @@ public class TestPageIndex extends BaseTest {
 		}
 		assertTrue("[MEDIA][" + label + "] no text extracted from " + path + " — genuine extraction failure", extractedLen > 0);
 
-		/// getCreateDocument extracts + stores as text/plain data (no markdown headers survive).
+		/// getCreateDocument extracts + stores as text/plain data (no markdown headers survive → LLM-TOC path).
 		BaseRecord doc = getCreateDocument(testUser, path);
 		assertNotNull("Source doc is null for " + path, doc);
 
@@ -290,26 +409,178 @@ public class TestPageIndex extends BaseTest {
 		long buildMs = System.currentTimeMillis() - t0;
 		logger.info("[MEDIA][" + label + "] build+persist+embed elapsed=" + buildMs + "ms");
 
-		/// Build must succeed with a valid (possibly flat) tree.
 		assertTrue("[MEDIA][" + label + "] expected exactly one ROOT (got " + stats.roots + ")", stats.roots == 1);
 		assertTrue("[MEDIA][" + label + "] expected >=1 CHUNK leaf (got " + stats.chunks + ")", stats.chunks >= 1);
-		logger.info("[MEDIA][" + label + "] tree shape: ROOT=" + stats.roots + " SECTION=" + stats.sections
-			+ " CHUNK=" + stats.chunks + " maxLevel=" + stats.maxLevel
-			+ (stats.sections == 0 ? "  => FLAT ROOT->CHUNK (no ATX headers; expected for extracted PDF/DOCX prose)"
-				: "  => hierarchical (extracted text contained '#' header-like lines)"));
 
+		/// Correct path-taken reporting (fixes the prior mislabeled '#' header-line log). Extracted PDF/DOCX
+		/// prose has NO ATX markdown headers, so a hierarchy here is the LLM-TOC path; zero SECTION is the flat
+		/// fallback. It is never the markdown-header path for these docs.
+		String pathTaken = (stats.sections > 0
+			? "LLM-TOC hierarchy (prose split synthesized " + stats.sections + " SECTION node(s), maxLevel " + stats.maxLevel + ")"
+			: "FLAT ROOT->CHUNK fallback (LLM-TOC produced no usable sections)");
+		logger.info("[MEDIA][" + label + "] tree shape: ROOT=" + stats.roots + " SECTION=" + stats.sections
+			+ " CHUNK=" + stats.chunks + " maxLevel=" + stats.maxLevel + "  => " + pathTaken);
+
+		MediaBuild mb = new MediaBuild();
+		mb.doc = doc;
+		mb.stats = stats;
+		mb.extractedLen = extractedLen;
+		return mb;
+	}
+
+	/// Run retrieve(), log elapsed + hits, assert the shortlist is non-empty and all CHUNK leaves. Returns hits.
+	private List<BaseRecord> retrieveReport(BaseRecord doc, String label, String query) {
 		long r0 = System.currentTimeMillis();
-		List<BaseRecord> hits = PageIndexUtil.retrieve(doc, question, 5);
+		List<BaseRecord> hits = PageIndexUtil.retrieve(doc, query, 5);
 		logger.info("[MEDIA][" + label + "] retrieve elapsed=" + (System.currentTimeMillis() - r0) + "ms");
-		reportRetrieval(hits, question);
+		reportRetrieval(hits, query);
+		assertAllChunks(hits, label);
+		assertTrue("[" + label + "] retrieve returned no leaves — retrieval regressed (build/persist correct; see [DIAG])",
+			!hits.isEmpty());
+		return hits;
+	}
+
+	private void assertAllChunks(List<BaseRecord> hits, String label) {
 		for(BaseRecord h : hits) {
-			assertTrue("[MEDIA][" + label + "] retrieve returned a non-CHUNK node",
+			assertTrue("[" + label + "] retrieve returned a non-CHUNK node",
 				h.getEnum(FieldNames.FIELD_NODE_TYPE) == PageIndexNodeEnumType.CHUNK);
 		}
-		assertTrue("[MEDIA][" + label + "] retrieve returned no leaves. DEFECT: PageIndexUtil retrieval "
-			+ "projects the 'embedding' VECTOR field which throws 'Unhandled type: VECTOR' on read "
-			+ "(PageIndexUtil.java:599); retrieve() always yields 0. Build/persist is correct (see [DIAG]).",
-			!hits.isEmpty());
+	}
+
+	/// Relevance assertion: the TOP-ranked returned CHUNK must actually contain the expected answer text (any
+	/// of the given key terms, case-insensitive) — not merely that some leaf came back.
+	private void assertTopChunkContains(List<BaseRecord> hits, String label, String... terms) {
+		assertTrue("[" + label + "] retrieve returned no leaves — cannot assert relevance", !hits.isEmpty());
+		BaseRecord top = hits.get(0);
+		String content = top.get(FieldNames.FIELD_CONTENT);
+		String lc = (content == null ? "" : content.toLowerCase());
+		boolean match = false;
+		StringBuilder ts = new StringBuilder();
+		for(String t : terms) {
+			ts.append(" \"").append(t).append("\"");
+			if(t != null && lc.contains(t.toLowerCase())) {
+				match = true;
+			}
+		}
+		String snip = (content == null ? "(null)" : content.substring(0, Math.min(300, content.length())).replaceAll("\\s+", " "));
+		logger.info("[RETRIEVE][" + label + "] top chunk (score=" + scoreOf(top) + ") vs expected term(s)" + ts + " => matched=" + match);
+		logger.info("[RETRIEVE][" + label + "] top chunk text: " + snip);
+		assertTrue("[" + label + "] top-ranked CHUNK does not contain any expected term" + ts
+			+ " — retrieval returned an irrelevant passage. Top chunk was: \"" + snip + "\"", match);
+	}
+
+	/// Real descending order: with >=2 results the best-scored leaf must strictly outrank the worst-scored
+	/// returned leaf (scores are the ephemeral cosine doubles set during descent), proving ranking is not
+	/// degenerate/all-equal.
+	private void assertDescendingScores(List<BaseRecord> hits, String label) {
+		if(hits.size() < 2) {
+			logger.info("[RETRIEVE][" + label + "] only " + hits.size() + " result(s); descending-score assertion N/A");
+			return;
+		}
+		double first = scoreOf(hits.get(0));
+		double last = scoreOf(hits.get(hits.size() - 1));
+		logger.info("[RETRIEVE][" + label + "] descending-score check: first=" + first + " > last=" + last);
+		assertTrue("[" + label + "] returned scores are NOT in real descending order (first " + first
+			+ " !> last " + last + ") — cosine ranking is degenerate/all-equal", first > last);
+	}
+
+	private double scoreOf(BaseRecord node) {
+		Object s = node.get(FieldNames.FIELD_SCORE);
+		return (s instanceof Double ? (Double) s : 0.0);
+	}
+
+	/// Mirror of PageIndexUtil.splitIntoGroups so the test can assert (and report) how many LLM-TOC groups a
+	/// document of the given extracted length produces — the deterministic proof multi-group code ran.
+	private int expectedTocGroups(long len) {
+		int group = PageIndexUtil.PAGEINDEX_TOC_GROUP_CHARS;
+		int overlap = PageIndexUtil.PAGEINDEX_TOC_GROUP_OVERLAP;
+		if(len <= group) {
+			return 1;
+		}
+		int groups = 0;
+		long pos = 0;
+		while(pos < len) {
+			long end = Math.min(pos + group, len);
+			groups++;
+			if(end >= len) {
+				break;
+			}
+			long nextPos = end - overlap;
+			pos = (nextPos > pos ? nextPos : end);
+		}
+		return groups;
+	}
+
+	/// Point the shared 'contentAnalysis' chat config at an unreachable (connection-refused) endpoint so both
+	/// the LLM-TOC extraction and summarization Chat calls fail fast, deterministically forcing the flat
+	/// fallback. Mirrors ensureAzureContentAnalysis's create/update pattern but with a dead connection and no
+	/// live proof. (Every other test re-points contentAnalysis at Azure at its start, so this does not leak.)
+	private BaseRecord pointContentAnalysisAtDead(OrganizationContext octx, BaseRecord testUser) {
+		BaseRecord adminUser = octx.getAdminUser();
+		String model = testProperties.getProperty("test.llm.openai.model");
+		String version = testProperties.getProperty("test.llm.openai.version");
+
+		ChatLibraryUtil.getCreateChatConfigLibrary(adminUser);
+		ChatLibraryUtil.getCreateConnectionLibrary(adminUser);
+
+		/// Connection-refused target (localhost port 1) => callChat throws/errors immediately and returns null.
+		BaseRecord deadConn = OlioTestUtil.getCreateConnection(testUser, "Dead PageIndex Conn", "http://127.0.0.1:1", "dead-key", 20);
+		assertNotNull("[FALLBACK] dead connection could not be created", deadConn);
+
+		BaseRecord cfg = ChatUtil.getLibraryConfig(testUser, OlioModelNames.MODEL_CHAT_CONFIG, LIB_CONTENT_ANALYSIS);
+		try {
+			if(cfg == null) {
+				BaseRecord chatLibDir = ChatLibraryUtil.findLibraryDir(adminUser, ChatLibraryUtil.LIBRARY_CHAT_CONFIGS);
+				assertNotNull("[FALLBACK] chat config library dir is null", chatLibDir);
+				ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, chatLibDir.get("path"));
+				plist.parameter(FieldNames.FIELD_NAME, LIB_CONTENT_ANALYSIS);
+				cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, adminUser, null, plist);
+				ChatUtil.applyChatConfigTemplate(cfg, LIB_CONTENT_ANALYSIS);
+				cfg.set("connection", deadConn);
+				cfg.set("serviceType", LLMServiceEnumType.OPENAI);
+				cfg.set("apiVersion", version);
+				cfg.set("model", model);
+				cfg = IOSystem.getActiveContext().getAccessPoint().create(adminUser, cfg);
+			}
+			else {
+				cfg.set("connection", deadConn);
+				cfg.set("serviceType", LLMServiceEnumType.OPENAI);
+				cfg.set("apiVersion", version);
+				cfg.set("model", model);
+				cfg = IOSystem.getActiveContext().getAccessPoint().update(adminUser, cfg);
+			}
+		}
+		catch(Exception e) {
+			logger.error("[FALLBACK] Failed to point contentAnalysis at dead connection", e);
+		}
+
+		BaseRecord resolved = ChatUtil.getLibraryConfig(testUser, OlioModelNames.MODEL_CHAT_CONFIG, LIB_CONTENT_ANALYSIS);
+		logger.info("[FALLBACK] contentAnalysis repointed at dead connection: url="
+			+ describeConnectionUrl(testUser, resolved != null ? resolved.get("connection") : null));
+		return resolved;
+	}
+
+	/// Plain prose (NO markdown headers) for the fallback test: several paragraphs so the flat tree has
+	/// multiple leaf chunks and the ROOT summary exercises the excerpt fallback.
+	private String buildProseDoc() {
+		StringBuilder sb = new StringBuilder();
+		sb.append("The lighthouse keeper woke before dawn, as he had every morning for thirty years. ")
+			.append("He climbed the spiral stair, checked the great lamp, and wiped the salt film from the glass. ")
+			.append("The sea beyond the rocks was grey and restless, and a low fog pressed against the shore. ")
+			.append("He noted the wind in his logbook and set a kettle to boil on the small iron stove.\n\n");
+		sb.append("By midmorning a fishing boat limped into the cove with a torn sail and a cracked rudder. ")
+			.append("The keeper rowed out to meet it and towed the two exhausted fishermen back to the pier. ")
+			.append("He gave them dry blankets and hot broth and listened while they described the sudden squall ")
+			.append("that had caught them far past the headland where the charts warned of shifting sandbars.\n\n");
+		sb.append("In the afternoon the keeper repaired the boat's rudder with spare oak from the boathouse. ")
+			.append("He explained that the currents near the headland changed with the season and that no map ")
+			.append("could be fully trusted after a storm. The younger fisherman wrote down every word, ")
+			.append("determined never to be caught unprepared by the treacherous water again.\n\n");
+		sb.append("That night the fog lifted and the stars burned cold and clear above the tower. ")
+			.append("The keeper lit the lamp, watched its beam sweep the black water, and felt the old ")
+			.append("satisfaction of a light held steady against the dark. The fishermen slept soundly, ")
+			.append("and in the morning they sailed home with a mended boat and a hard-won lesson.\n\n");
+		return sb.toString();
 	}
 
 	/* ------------------------------------------------------------------ shared core ------------------------------------------------------------------ */

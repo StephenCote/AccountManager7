@@ -3,7 +3,7 @@
 	"rating": "RC",
 	"prune": false,
 	"assist": false,
-	"stream": false,
+	"stream": true,
 	"includeScene": false,
 	"messageTrim": 40,
 	"keyframeEvery": 0,

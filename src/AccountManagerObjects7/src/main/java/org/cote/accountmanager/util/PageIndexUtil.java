@@ -19,7 +19,10 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatUtil;
+import org.cote.accountmanager.olio.llm.IChatHandler;
+import org.cote.accountmanager.olio.llm.IChatListener;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -33,6 +36,10 @@ import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.PageIndexNodeEnumType;
 import org.cote.accountmanager.tools.EmbeddingUtil;
 import org.cote.accountmanager.validator.HierarchyValidator;
+
+import com.fasterxml.jackson.core.json.JsonReadFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * PageIndex build + retrieval utility, the companion to {@link VectorUtil}. Builds a hierarchical
@@ -62,6 +69,15 @@ public class PageIndexUtil {
 	/// Below this character count an interior node stores its aggregated text directly as the summary
 	/// (mirrors the reference's summary_token_threshold behavior); above it the Chat client summarizer runs.
 	public static final int SUMMARY_CHAR_THRESHOLD = 800;
+
+	/// LLM-TOC group sizing (prose path). When extracted prose has no markdown headers the text is split
+	/// into ordered char-length groups (with a small overlap so a section straddling a boundary is still
+	/// seen whole by one group) and each group is sent to the Chat client for TOC extraction. Char-based
+	/// analogue of the reference's ~20k-token page groups (page_index.py page_list_to_group_text). For v1 a
+	/// doc that fits one group is a single call; multi-group processing is option (a) below.
+	public static final int PAGEINDEX_TOC_GROUP_CHARS = 16000;
+	/// Overlap (chars) carried from the end of one TOC group into the start of the next.
+	public static final int PAGEINDEX_TOC_GROUP_OVERLAP = 500;
 
 	private static final Pattern HEADER_PATTERN = Pattern.compile("^(#{1,6})\\s+(.+)$");
 	private static final Pattern CODE_FENCE_PATTERN = Pattern.compile("^```");
@@ -108,11 +124,14 @@ public class PageIndexUtil {
 			throw new FieldException("Content is null or empty");
 		}
 
-		PINode root = buildTree(model, content);
-
 		/// Resolve a connection-configured chatConfig once (same library "contentAnalysis" config ChatUtil
-		/// uses for summarization); the Chat client resolves the connection (OpenAI or local) from it.
+		/// uses for summarization); the Chat client resolves the connection (OpenAI or local) from it. Resolved
+		/// BEFORE the split because the prose (no-markdown) split strategy also drives the Chat client to build
+		/// an LLM table of contents; if it can't be resolved that strategy is simply unavailable and the split
+		/// degrades to the flat fallback.
 		BaseRecord chatConfig = resolveChatConfig(user);
+
+		PINode root = buildTree(model, content, user, chatConfig);
 
 		/// Bottom-up summarization of interior nodes (leaf -> section -> root) via the Chat client.
 		summarize(root, user, chatConfig);
@@ -150,7 +169,17 @@ public class PageIndexUtil {
 		return DocumentUtil.getStringContent(model);
 	}
 
-	private static PINode buildTree(BaseRecord model, String content) throws FieldException {
+	/**
+	 * Structural split strategy. Chooses, in order:
+	 * <ol>
+	 *   <li><b>Markdown headers present</b> — the deterministic, free/fast ATX-header split (unchanged).</li>
+	 *   <li><b>No markdown headers (prose)</b> — the LLM-TOC builder ({@link #buildLlmTocTree}) drives the
+	 *       Chat client to produce a hierarchical table of contents and nests real SECTION nodes.</li>
+	 *   <li><b>LLM-TOC unavailable / fails</b> (no chatConfig, chat error, unparseable output, no locatable
+	 *       markers) — the flat ROOT + sentence-chunked-leaves fallback. A build NEVER hard-fails on LLM issues.</li>
+	 * </ol>
+	 */
+	private static PINode buildTree(BaseRecord model, String content, BaseRecord user, BaseRecord chatConfig) throws FieldException {
 		long orgId = (model.hasField(FieldNames.FIELD_ORGANIZATION_ID) ? (long)model.get(FieldNames.FIELD_ORGANIZATION_ID) : 0L);
 		long groupId = (model.hasField(FieldNames.FIELD_GROUP_ID) ? (long)model.get(FieldNames.FIELD_GROUP_ID) : 0L);
 		long ownerId = (model.hasField(FieldNames.FIELD_OWNER_ID) ? (long)model.get(FieldNames.FIELD_OWNER_ID) : 0L);
@@ -171,7 +200,13 @@ public class PageIndexUtil {
 		List<String> headerTitles = extractHeaderTitles(content); // parallel titles
 
 		if(headers.isEmpty()) {
-			/// No markdown structure: attach leaf chunks directly to the root.
+			/// No markdown structure (prose). Strategy 2: try the LLM-TOC builder to synthesize a real
+			/// section hierarchy. Strategy 3: if that is unavailable or fails, degrade to the flat
+			/// ROOT + sentence-chunked leaves. A build must NEVER hard-fail on LLM issues.
+			if(buildLlmTocTree(root, model, orgId, groupId, ownerId, content, user, chatConfig, seq)) {
+				return root;
+			}
+			logger.info("LLM-TOC unavailable/failed for " + model.getSchema() + "; using flat ROOT->CHUNK fallback");
 			int[] ord = new int[] {0};
 			addLeafChunks(root, model, orgId, groupId, ownerId, content, 0, ord, seq);
 			return root;
@@ -320,6 +355,249 @@ public class PageIndexUtil {
 		return titles;
 	}
 
+	/* --------------------------------------------------------------- LLM table-of-contents (prose split) --------------------------------------------------------------- */
+
+	/// A parsed LLM-TOC entry: an invented section title, a nesting level (1 = top), and a VERBATIM
+	/// startMarker copied from the source text used to locate the section's char offset.
+	private static final class TocEntry {
+		private final String title;
+		private final int level;
+		private final String startMarker;
+		private int startOffset = -1;
+		private int endOffset = -1;
+		private TocEntry(String title, int level, String startMarker) {
+			this.title = title;
+			this.level = level;
+			this.startMarker = startMarker;
+		}
+	}
+
+	/**
+	 * Prose split strategy: ask the Chat client for a hierarchical table of contents, map each entry to a
+	 * char span via its verbatim startMarker, and nest SECTION nodes by level (mirroring the markdown stack
+	 * builder). Returns true on success (real hierarchy attached to root); false when the LLM path is
+	 * unavailable or unusable so the caller degrades to the flat fallback. Never throws on LLM issues.
+	 *
+	 * <p><b>Offset mapping:</b> section titles are LLM-invented and do not appear verbatim, so each section
+	 * is located by its startMarker via {@link String#indexOf(String,int)} searching forward from the
+	 * previous section's start. Markers that cannot be located are dropped (never fabricated). endOffset is
+	 * the next located section's start (flat order), or end-of-text for the last.
+	 *
+	 * <p><b>Multi-group:</b> option (a) — groups are processed independently and their entries appended in
+	 * document order under ROOT. The forward-only marker search naturally de-duplicates the overlap region
+	 * and preserves order. Levels are per-group (a later group's level-1 becomes a new top-level section);
+	 * true cross-group outline continuation (reference generate_toc_continue, option (b)) is deferred.
+	 */
+	private static boolean buildLlmTocTree(PINode root, BaseRecord model, long orgId, long groupId, long ownerId, String content, BaseRecord user, BaseRecord chatConfig, AtomicInteger seq) throws FieldException {
+		if(user == null || chatConfig == null) {
+			return false;
+		}
+		List<TocEntry> entries = generateToc(content, user, chatConfig);
+		if(entries == null || entries.isEmpty()) {
+			return false;
+		}
+
+		/// Locate each entry's verbatim startMarker, searching forward from the previous located start.
+		int searchFrom = 0;
+		List<TocEntry> located = new ArrayList<>();
+		for(TocEntry e : entries) {
+			int idx = content.indexOf(e.startMarker, searchFrom);
+			if(idx < 0) {
+				logger.warn("Dropping TOC entry; startMarker not located: \"" + snippet(e.startMarker) + "\"");
+				continue;
+			}
+			e.startOffset = idx;
+			searchFrom = idx + e.startMarker.length();
+			located.add(e);
+		}
+		if(located.isEmpty()) {
+			return false;
+		}
+
+		/// endOffset = next located entry's start (flat document order), or end-of-text for the last.
+		for(int i = 0; i < located.size(); i++) {
+			located.get(i).endOffset = (i + 1 < located.size() ? located.get(i + 1).startOffset : content.length());
+		}
+
+		/// Preamble before the first section becomes leaf chunks on the root (parallels the markdown builder).
+		if(located.get(0).startOffset > 0) {
+			String preamble = content.substring(0, located.get(0).startOffset);
+			if(preamble.trim().length() > 0) {
+				int[] ord = new int[] {0};
+				addLeafChunks(root, model, orgId, groupId, ownerId, preamble, 0, ord, seq);
+			}
+		}
+
+		/// Nest SECTION nodes by level using the same stack algorithm as the markdown builder.
+		List<PINode> stack = new ArrayList<>();
+		stack.add(root);
+		for(TocEntry e : located) {
+			int level = Math.max(1, e.level);
+			String body = content.substring(e.startOffset, e.endOffset);
+
+			PINode section = new PINode();
+			section.nodeType = PageIndexNodeEnumType.SECTION;
+			section.level = level;
+			section.text = body;
+
+			while(stack.size() > 1 && stack.get(stack.size() - 1).level >= level) {
+				stack.remove(stack.size() - 1);
+			}
+			PINode parent = stack.get(stack.size() - 1);
+			int ordinal = parent.children.size();
+			section.record = newNode(model, orgId, groupId, ownerId, PageIndexNodeEnumType.SECTION, e.title, null, e.startOffset, e.endOffset, level, ordinal, seq);
+			parent.children.add(section);
+			stack.add(section);
+
+			/// The section's own local body (its span up to the next flat entry) becomes leaf chunks. Unlike
+			/// markdown there is no header line to skip — the marker is prose, so the body starts at startOffset.
+			if(body.trim().length() > 0) {
+				int[] leafOrd = new int[] {0};
+				addLeafChunks(section, model, orgId, groupId, ownerId, body, e.startOffset, leafOrd, seq);
+			}
+		}
+		return true;
+	}
+
+	/// Split prose into ordered char-length groups (with overlap) and call the Chat client per group for a
+	/// TOC. Entries are concatenated in document order (multi-group option (a)). Returns null/empty if no
+	/// group produced usable structure so the caller falls back.
+	private static List<TocEntry> generateToc(String content, BaseRecord user, BaseRecord chatConfig) {
+		List<String> groups = splitIntoGroups(content);
+		List<TocEntry> all = new ArrayList<>();
+		for(String group : groups) {
+			String raw = callChat(user, chatConfig, TOC_SYSTEM_PROMPT, TOC_USER_PROMPT + group + TOC_USER_SUFFIX);
+			if(raw == null || raw.trim().length() == 0) {
+				logger.warn("LLM-TOC: chat returned no text for a group; skipping it");
+				continue;
+			}
+			List<TocEntry> entries = parseToc(raw);
+			if(entries != null) {
+				all.addAll(entries);
+			}
+		}
+		return all;
+	}
+
+	/// Char-based grouping analogue of the reference page_list_to_group_text: single group if it fits,
+	/// otherwise fixed-size windows with PAGEINDEX_TOC_GROUP_OVERLAP carried into the next window.
+	private static List<String> splitIntoGroups(String content) {
+		List<String> groups = new ArrayList<>();
+		if(content.length() <= PAGEINDEX_TOC_GROUP_CHARS) {
+			groups.add(content);
+			return groups;
+		}
+		int pos = 0;
+		while(pos < content.length()) {
+			int end = Math.min(pos + PAGEINDEX_TOC_GROUP_CHARS, content.length());
+			groups.add(content.substring(pos, end));
+			if(end >= content.length()) {
+				break;
+			}
+			int nextPos = end - PAGEINDEX_TOC_GROUP_OVERLAP;
+			pos = (nextPos > pos ? nextPos : end);
+		}
+		return groups;
+	}
+
+	/// Parse the LLM's TOC JSON into ordered entries. Robust to ```json fences (ports utils.py extract_json)
+	/// and to a wrapping object ({"table_of_contents":[...]}). Returns null on unparseable/empty output so
+	/// the caller falls back. Entries without a usable startMarker are skipped.
+	private static List<TocEntry> parseToc(String raw) {
+		String json = stripJsonFences(raw);
+		JsonNode node = readJsonLenient(json);
+		if(node == null) {
+			logger.warn("LLM-TOC: could not parse JSON from chat output");
+			return null;
+		}
+		JsonNode arr = node;
+		if(node.isObject()) {
+			/// Tolerate a wrapping object: use the first array-valued field (e.g. table_of_contents).
+			arr = null;
+			java.util.Iterator<JsonNode> it = node.elements();
+			while(it.hasNext()) {
+				JsonNode v = it.next();
+				if(v.isArray()) {
+					arr = v;
+					break;
+				}
+			}
+		}
+		if(arr == null || !arr.isArray()) {
+			logger.warn("LLM-TOC: parsed JSON is not an array");
+			return null;
+		}
+		List<TocEntry> entries = new ArrayList<>();
+		for(JsonNode e : arr) {
+			String marker = textOrNull(e, "startMarker");
+			if(marker == null || marker.trim().length() == 0) {
+				continue;
+			}
+			String title = textOrNull(e, "title");
+			int level = (e.has("level") && e.get("level").canConvertToInt() ? e.get("level").asInt() : 1);
+			if(title == null || title.trim().length() == 0) {
+				title = "Section";
+			}
+			entries.add(new TocEntry(title.trim(), level, marker.trim()));
+		}
+		return entries.isEmpty() ? null : entries;
+	}
+
+	private static String textOrNull(JsonNode e, String field) {
+		JsonNode v = e.get(field);
+		return (v != null && !v.isNull() ? v.asText(null) : null);
+	}
+
+	/// Lenient JSON read: try as-is, then retry after stripping trailing commas (ports the extract_json
+	/// second-chance cleanup). Returns null if still unparseable.
+	private static JsonNode readJsonLenient(String json) {
+		ObjectMapper mapper = new ObjectMapper();
+		mapper.enable(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES.mappedFeature());
+		try {
+			return mapper.readTree(json);
+		}
+		catch(Exception e1) {
+			try {
+				String cleaned = json.replace(",]", "]").replace(",}", "}");
+				return mapper.readTree(cleaned);
+			}
+			catch(Exception e2) {
+				return null;
+			}
+		}
+	}
+
+	/// Strip ```json ... ``` (or plain ``` ... ```) fences the way the reference get_json_content does:
+	/// content after the opening fence, up to the last closing fence.
+	private static String stripJsonFences(String content) {
+		if(content == null) {
+			return "";
+		}
+		String s = content.trim();
+		int start = s.indexOf("```json");
+		if(start != -1) {
+			s = s.substring(start + 7);
+		}
+		else {
+			int genericStart = s.indexOf("```");
+			if(genericStart != -1) {
+				s = s.substring(genericStart + 3);
+			}
+		}
+		int end = s.lastIndexOf("```");
+		if(end != -1) {
+			s = s.substring(0, end);
+		}
+		return s.trim();
+	}
+
+	private static String snippet(String s) {
+		if(s == null) {
+			return "";
+		}
+		return s.length() > 60 ? s.substring(0, 60) + "..." : s;
+	}
+
 	private static BaseRecord newNode(BaseRecord model, long orgId, long groupId, long ownerId, PageIndexNodeEnumType nodeType, String title, String content, int startOffset, int endOffset, int level, int ordinal, AtomicInteger seq) throws FieldException {
 		try {
 			BaseRecord node = RecordFactory.newInstance(ModelNames.MODEL_PAGE_INDEX_NODE);
@@ -366,6 +644,31 @@ public class PageIndexUtil {
 		+ System.lineSeparator() + "Partial Document Text:" + System.lineSeparator();
 	private static final String SUMMARY_USER_SUFFIX =
 		System.lineSeparator() + System.lineSeparator() + "Directly return the description, do not include any other text.";
+
+	/// NEW LLM prompt path (prose TOC extraction). Plain structural instruction only — no policy/bias
+	/// content. Mirrors the intent of the reference's no-TOC generate path (page_index.py generate_toc_init)
+	/// but asks for strict JSON with a verbatim startMarker so offsets can be located in the extracted text.
+	private static final String TOC_SYSTEM_PROMPT =
+		"You are a document structure analysis assistant. You extract a hierarchical table of contents from "
+		+ "prose text and return it as strict JSON. Return only the JSON, with no other text.";
+	private static final String TOC_USER_PROMPT =
+		"You are given the text of a document that has no explicit headings. Identify the natural hierarchical "
+		+ "section structure of the document and return it as a table of contents." + System.lineSeparator()
+		+ System.lineSeparator()
+		+ "Return a STRICT JSON array. Each entry must be an object with exactly these keys:" + System.lineSeparator()
+		+ "  \"title\": a short descriptive section title you compose (the document has no headings, so you "
+		+ "invent a concise title)." + System.lineSeparator()
+		+ "  \"level\": an integer nesting depth, where 1 is a top-level section, 2 is a subsection of the "
+		+ "preceding level-1 section, and so on." + System.lineSeparator()
+		+ "  \"startMarker\": a VERBATIM snippet of 5 to 12 words copied EXACTLY from the document text marking "
+		+ "where this section begins. Copy the words exactly as they appear, including punctuation and casing. "
+		+ "Do not paraphrase. The snippet MUST be findable by an exact substring search of the document." + System.lineSeparator()
+		+ System.lineSeparator()
+		+ "Order the entries in the order the sections appear in the document. Produce a genuine hierarchy with "
+		+ "subsections where the content supports it, not a flat list." + System.lineSeparator()
+		+ System.lineSeparator() + "Document text:" + System.lineSeparator();
+	private static final String TOC_USER_SUFFIX =
+		System.lineSeparator() + System.lineSeparator() + "Return only the JSON array, do not include any other text.";
 
 	/// Resolve a connection-configured chatConfig the same way ChatUtil does for summarization: the shared
 	/// library "contentAnalysis" chat config. The Chat client resolves the actual connection (OpenAI or
@@ -417,29 +720,129 @@ public class PageIndexUtil {
 		return summary;
 	}
 
-	/// One-shot, non-streaming summary via the Chat client (buffer mode), mirroring
-	/// ChatUtil.summarizeChunk's use of the connection-configured Chat. Returns null on any error or empty
-	/// response so the caller can fall back to a deterministic excerpt.
+	/// Summary via the Chat client's STREAMING path, mirroring how ChatUtil.summarizeChunk invokes the
+	/// connection-configured Chat (setLlmSystemPrompt -> newRequest -> newMessage -> chat) but consuming
+	/// the SSE stream instead of buffer mode. Buffer/non-streaming mode returns empty content against
+	/// Azure gpt-5.4 (the SSE reader treats the first empty delta as completion), so summaries silently
+	/// fell back to deterministic excerpts. In streaming mode Chat.chat() returns null and forwards chunks
+	/// to the listener; SummaryStreamListener accumulates them and yields the completed text synchronously
+	/// via a latch. Returns null on any error or empty response so the caller can fall back to an excerpt.
 	private static String summarizeViaChat(BaseRecord user, BaseRecord chatConfig, String content) {
+		return callChat(user, chatConfig, SUMMARY_SYSTEM_PROMPT, SUMMARY_USER_PROMPT + content + SUMMARY_USER_SUFFIX);
+	}
+
+	/// Shared connection-configured Chat invocation used by BOTH summarization and LLM-TOC extraction.
+	/// Mirrors ChatUtil's pattern (setLlmSystemPrompt -> newRequest -> newMessage -> chat), honoring the
+	/// config-driven stream flag as the single source of truth (do NOT hardcode stream): in streaming mode
+	/// chat() returns null and drives the listener asynchronously (accumulate via latch); in buffer mode it
+	/// returns the completed response synchronously. Returns null on any error or empty response so callers
+	/// can fall back (excerpt for summaries, flat tree for TOC). Never throws.
+	private static String callChat(BaseRecord user, BaseRecord chatConfig, String systemPrompt, String userMessage) {
 		if(user == null || chatConfig == null) {
 			return null;
 		}
 		try {
 			Chat chat = new Chat(user, chatConfig, null);
-			chat.setLlmSystemPrompt(SUMMARY_SYSTEM_PROMPT);
+			chat.setLlmSystemPrompt(systemPrompt);
+			SummaryStreamListener sl = new SummaryStreamListener();
+			chat.setListener(sl);
 			OpenAIRequest req = chat.newRequest(chat.getModel());
-			req.setStream(false);
-			String cmd = SUMMARY_USER_PROMPT + content + SUMMARY_USER_SUFFIX;
-			chat.newMessage(req, cmd, Chat.userRole);
+			chat.newMessage(req, userMessage, Chat.userRole);
 			OpenAIResponse resp = chat.chat(req);
-			if(resp != null && resp.getMessage() != null) {
-				return resp.getMessage().getContent();
+			if(req.isStream()) {
+				String streamed = sl.await(chat.getRequestTimeout());
+				if(streamed != null && streamed.trim().length() > 0) {
+					return streamed;
+				}
+			}
+			else {
+				if(resp != null && resp.getMessage() != null) {
+					String buffered = resp.getMessage().get(FieldNames.FIELD_CONTENT);
+					if(buffered != null && buffered.trim().length() > 0) {
+						return buffered;
+					}
+				}
 			}
 		}
 		catch(Exception e) {
-			logger.warn("Chat summarization failed, falling back to excerpt: " + e.getMessage());
+			logger.warn("Chat call failed: " + e.getMessage());
 		}
 		return null;
+	}
+
+	/// Minimal IChatListener that accumulates a streamed summary and exposes the completed text
+	/// synchronously. Chunks arrive on onupdate(); the final accumulated message arrives on oncomplete().
+	/// A CountDownLatch lets summarizeViaChat block until the stream finishes (or errors/times out).
+	private static final class SummaryStreamListener implements IChatListener {
+		private final StringBuilder sb = new StringBuilder();
+		private final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+		private volatile String finalContent = null;
+		private volatile String error = null;
+
+		@Override
+		public OpenAIRequest sendMessageToServer(BaseRecord user, ChatRequest request) { return null; }
+		@Override
+		public ChatRequest getMessage(BaseRecord user, ChatRequest messageRequest) { return null; }
+		@Override
+		public void onupdate(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String message) {
+			if(message != null) {
+				sb.append(message);
+			}
+		}
+		@Override
+		public void oncomplete(BaseRecord user, OpenAIRequest request, OpenAIResponse response) {
+			try {
+				BaseRecord msg = (response != null ? response.getMessage() : null);
+				if(msg != null) {
+					String c = msg.get(FieldNames.FIELD_CONTENT);
+					if(c != null && c.length() > 0) {
+						finalContent = c;
+					}
+				}
+			}
+			catch(Exception e) {
+				logger.warn("SummaryStreamListener.oncomplete: " + e.getMessage());
+			}
+			finally {
+				latch.countDown();
+			}
+		}
+		@Override
+		public void onerror(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String msg) {
+			error = msg;
+			latch.countDown();
+		}
+		@Override
+		public boolean isStopStream(OpenAIRequest request) { return false; }
+		@Override
+		public void stopStream(OpenAIRequest request) { /* no-op */ }
+		@Override
+		public boolean isRequesting(OpenAIRequest request) { return false; }
+		@Override
+		public void addChatHandler(IChatHandler handler) { /* no-op */ }
+
+		/// Block until the stream completes, errors, or times out; return the completed text
+		/// (preferring the final accumulated message, else the chunk buffer), or null.
+		String await(int timeoutSeconds) {
+			try {
+				int wait = timeoutSeconds > 0 ? timeoutSeconds + 5 : 300;
+				if(!latch.await(wait, java.util.concurrent.TimeUnit.SECONDS)) {
+					logger.warn("Summary stream timed out after " + wait + "s");
+					return sb.length() > 0 ? sb.toString() : null;
+				}
+			}
+			catch(InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return null;
+			}
+			if(error != null) {
+				logger.warn("Summary stream error: " + error);
+			}
+			if(finalContent != null && finalContent.trim().length() > 0) {
+				return finalContent;
+			}
+			return sb.length() > 0 ? sb.toString() : null;
+		}
 	}
 
 	private static void embed(PINode node, EmbeddingUtil eu) {
@@ -568,19 +971,17 @@ public class PageIndexUtil {
 	private static List<BaseRecord> loadRoots(BaseRecord model, long orgId) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_PAGE_INDEX_NODE, FieldNames.FIELD_SOURCE_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		q.field(FieldNames.FIELD_SOURCE_REFERENCE_TYPE, model.getSchema());
-		if(orgId > 0L) {
-			q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-		}
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
 		q.field(FieldNames.FIELD_NODE_TYPE, PageIndexNodeEnumType.ROOT.toString());
+		q.setCache(false);
 		requestNodeFields(q);
 		return runQuery(q);
 	}
 
 	private static List<BaseRecord> loadChildren(long parentId, long orgId) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_PAGE_INDEX_NODE, FieldNames.FIELD_PARENT_ID, parentId);
-		if(orgId > 0L) {
-			q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-		}
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setCache(false);
 		requestNodeFields(q);
 		return runQuery(q);
 	}
@@ -681,6 +1082,7 @@ public class PageIndexUtil {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_PAGE_INDEX_NODE, FieldNames.FIELD_SOURCE_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		q.field(FieldNames.FIELD_SOURCE_REFERENCE_TYPE, model.getSchema());
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.setCache(false);
 		return IOSystem.getActiveContext().getSearch().count(q);
 	}
 
@@ -690,11 +1092,13 @@ public class PageIndexUtil {
 			Query nodeQ = QueryUtil.createQuery(ModelNames.MODEL_PAGE_INDEX_NODE, FieldNames.FIELD_SOURCE_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
 			nodeQ.field(FieldNames.FIELD_SOURCE_REFERENCE_TYPE, model.getSchema());
 			nodeQ.field(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
+			nodeQ.setCache(false);
 			del = IOSystem.getActiveContext().getWriter().delete(nodeQ);
 
 			Query contQ = QueryUtil.createQuery(ModelNames.MODEL_PAGE_INDEX, FieldNames.FIELD_SOURCE_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
 			contQ.field(FieldNames.FIELD_SOURCE_REFERENCE_TYPE, model.getSchema());
 			contQ.field(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
+			contQ.setCache(false);
 			IOSystem.getActiveContext().getWriter().delete(contQ);
 		}
 		catch(WriterException e) {

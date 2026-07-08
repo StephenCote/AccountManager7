@@ -4142,6 +4142,17 @@ public class Chat {
 
 		List<BaseRecord> choices = asyncResp.get("choices");
 		if (choices.isEmpty()) {
+			/// OpenAI/Azure: the FIRST streamed SSE event is a content-filter PREAMBLE
+			/// with an empty `choices` array (e.g. {"choices":[],"prompt_filter_results":[...]}).
+			/// This is NOT end-of-stream — skip this chunk and keep reading. Real OpenAI/Azure
+			/// termination is signaled elsewhere and is preserved: the `data: [DONE]` sentinel
+			/// (handled above at the top of this method) and/or a `finish_reason` on the last
+			/// choice (handled in the else branch below). Returning true here — as the old code
+			/// did — terminated every Azure/OpenAI stream after one line with zero content,
+			/// breaking all chat completions (empty message=null).
+			if (serviceType == LLMServiceEnumType.OPENAI) {
+				return false;
+			}
 			/// Ollama format: message at top level
 			BaseRecord deltaMessage = asyncResp.get("message");
 			if (deltaMessage == null) {

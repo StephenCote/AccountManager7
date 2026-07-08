@@ -105,7 +105,8 @@ Analogous to a vector list: `sourceReference`/`sourceReferenceType`, `rootNode` 
   `START_OFFSET`, `END_OFFSET`, `LEVEL`, `ORDINAL`, `NODE_TYPE`) — reuse existing where present.
 - `PageIndexNodeEnumType` under `schema/type`.
 - `ActionEnumType.PAGE_INDEX` — follow the manual `VECTORIZE` precedent (`ActionEnumType.java:68`) and
-  also add it to the source XSD so it survives a JAXB schema regen.
+  hand-maintain the `@XmlEnum` annotation like the peer enums (there are no `.xsd` files in the repo, so
+  there is no source schema to regenerate from — the "add to XSD" step does not apply).
 - Being core `data.*` models, they load with the standard `ModelNames` set (no `OlioModelNames.use()`).
 
 ---
@@ -164,14 +165,33 @@ later, optional Service7 change (out of scope here).
    `EmbeddingUtil`) against the query; descend into the top-k relevant children; recurse to leaves.
 3. Return the matching leaf `CHUNK` nodes (and/or their ancestor summaries) up to `limit`.
 
-In-process — it repeatedly reads child nodes under PBAC on each hop, so retrieval **must** stay in
-Objects7 (via `IOSystem...getSearch()` + `AccessPoint`). Reads go through the existing `Query`/`ISearch`
-system; this is a new util, not a new query engine.
+In-process — it repeatedly reads child nodes on each hop, so retrieval **must** stay in Objects7. It
+reads via `IOSystem.getActiveContext().getSearch()` directly — the documented **utility-bypass** pattern
+(same as `VectorUtil`), NOT through `AccessPoint`. `retrieve()` takes no `user` and does not enforce
+PBAC on the reads; today it has no caller outside tests and no REST surface, so this is not exploitable.
+**Rule:** any future REST/Service7 exposure of `retrieve()` MUST gate through `AccessPoint.find`/`canRead`
+(resolve the source record's authorization first, as the build path `AccessPoint.pageIndex` already does)
+or add a `user` param and authorize the node reads. Node queries (`loadRoots`/`loadChildren`/`countPageIndex`/
+`deletePageIndex`) carry an explicit `organizationId` condition and `cache:false` for fresh reads.
+
+**Known v1 inefficiency:** the persisted node `embedding` cannot be projected by the standard reader
+(VECTOR type), so `nodeEmbedding()` re-embeds each visited node's title+summary live during retrieval —
+an extra embedding call per node, and the stored embedding is never read back. Acceptable v1; a follow-up
+would read vectors via the raw-SQL path `VectorUtil` uses.
 
 **Deferred variant — LLM tree-search:** the reference's canonical retrieval is LLM-driven traversal.
 Its prompt (returns `{"thinking": ..., "node_list": [node_id, ...]}` given the tree + query) is
-available verbatim if higher quality is wanted later. That path is a new LLM prompt path → must route
-through `resources/olio/llm/` templates and get security-reviewer sign-off; not in v1.
+available verbatim if higher quality is wanted later; not in v1.
+
+**Prompt-location convention (reconciled with precedent).** The shipped summary + TOC prompts are inline
+Java constants in `PageIndexUtil` — this is **consistent with established Objects7 precedent**:
+`ChatUtil` keeps ad-hoc *structural/creative* task prompts inline (`autoScenePrompt`, `vprompt`,
+`iprompt`, the summarize sysPrompt). The `resources/olio/llm/` templates are reserved for
+**policy/bias/narrative-shaping** prompts (prompt configs, the `compliance.json` bias directive, narrate
+templates) that ISO 42001 / security must maintain centrally. So the rule is: a new prompt path that
+carries policy/bias or reshapes narrative MUST live under `resources/olio/llm/` and get security-reviewer
+sign-off; a plain structural instruction (like these) may be an inline constant. The deferred LLM
+tree-search variant would need that gate only if it introduces policy/bias content.
 
 ---
 
@@ -186,9 +206,10 @@ The reference has **two independent tree builders** — this drives the bake-in-
 - **PDF builder** (`pageindex/page_index.py`, ~1150 lines) — **heavily LLM-driven**: per-page TOC
   detection, TOC transformation, physical-page-offset matching, self-healing verification with
   fallback across three modes (with-page-numbers → no-page-numbers → no-TOC), recursive large-node
-  splitting. This is the natural **pluggable Python light-service** (`/build_page_index` beside
-  `/generate_embedding`), called via `EmbeddingUtil`/`ClientUtil`, returning a node tree that Objects7
-  persists through `AccessPoint`. Reimplementing it in Java is large and low-value.
+  splitting. We took the concept of its **no-TOC generate path** (`generate_toc_init`/`continue`) and
+  reimplemented it in Java as the LLM-TOC builder (see §5/§9) — NOT via Python. **Content extraction is
+  handled by the existing Objects7 `DocumentUtil.getStringContent` (Java, PDF + DOCX + text); no Python
+  is used anywhere in the implementation.**
 
 **Node schema (reference → Objects7):** `title`→`title`; `node_id` (4-digit)→`objectId`/`ordinal`
 (keep `node_id` only if mirroring their traversal); `start_index`/`end_index` (PDF pages) or `line_num`
@@ -212,25 +233,30 @@ strict JSON.
 
 ---
 
-## 9. Bake-in-Java vs. Python light-service
+## 9. Implementation is fully Java-native (Python not used)
 
-The split is **not** either/or — persistence, PBAC, and retrieval **must** be in Objects7 regardless
-(a Python service can only *return* a tree; it can't own persistence or per-node PBAC traversal).
-Python only replaces the **chunking + summarization** step.
+The final implementation is 100% Java in Objects7 — **no Python**. This settled the earlier
+bake-in-Java vs. Python-light-service question decisively in favor of Java, because:
+- **Content extraction** already exists in Objects7: `DocumentUtil.getStringContent(model)` extracts
+  PDF, DOCX, and text natively (verified on AIME.pdf, Vore.docx, The Verse.docx). No external service
+  needed for extraction.
+- **Persistence, PBAC, and retrieval must be in Objects7 regardless** — a Python service could only
+  *return* a tree; it can't own persistence or per-node PBAC traversal.
+- **Structural chunking** is done in Java: a deterministic markdown/header splitter for docs with
+  headers, and an **LLM-TOC builder** (Chat client, porting the reference's no-TOC generate concept)
+  for prose PDFs/DOCXs, with a deterministic flat fallback. Summarization is the Chat client too.
 
-- **Port to Java now, no LLM:** the markdown/header structural builder, node-id assignment,
-  list-to-tree nesting, end-index logic, large-node thresholding, page/line-range slicing.
-- **Keep as the pluggable Python seam:** the PDF TOC pipeline (genuinely LLM-heavy, self-healing).
-- **Recommendation:** default to the Java structural splitter + `/generate_summary` behind a clean
-  interface with a deterministic in-Java fallback; leave the seam to route PDF-heavy documents to a
-  Python `/build_page_index` endpoint later if the Java splitter's tree quality is insufficient.
+So every stage — extract → split (header or LLM-TOC → flat fallback) → summarize → embed → persist →
+retrieve — runs in-process in Objects7 against the existing DocumentUtil / Chat / EmbeddingUtil /
+AccessPoint infrastructure. The Python `/build_page_index` seam considered during design was **not
+built and will not be used.**
 
 ---
 
 ## 10. Implementation steps
 
 1. `ModelSchema.pageIndex` attribute + getter/setter.
-2. `ModelNames`/`FieldNames` constants, `PageIndexNodeEnumType`, `ActionEnumType.PAGE_INDEX` (+ XSD).
+2. `ModelNames`/`FieldNames` constants, `PageIndexNodeEnumType`, `ActionEnumType.PAGE_INDEX` (hand-added, per the `VECTORIZE` precedent — no XSD in the repo).
 3. `pageIndexNodeModel.json` (+ optional `pageIndexModel.json`).
 4. `PageIndexProvider implements IProvider` (`describe()` → `DocumentUtil.getStringContent`; empty
    `provide()`).
@@ -253,10 +279,26 @@ Python only replaces the **chunking + summarization** step.
 - `mvn -o -pl AccountManagerObjects7 -Dtest=TestPageIndex test` → `BUILD SUCCESS`. **Never** reset/drop
   schema (new tables are additive; Stephen owns destructive changes).
 
-## 12. Risks / open items
+## 12. Risks / open items / known gaps
 
-- **PDF chunk quality:** the Java structural splitter won't match the reference's LLM TOC pipeline on
-  messy PDFs — the explicit reason for the pluggable Python seam. Acceptable v1 trade-off.
+- **PDF/DOCX extraction does NOT handle OCR or hard encodings (known gap).** Extraction uses
+  `DocumentUtil.getStringContent` (programmatic text extraction). It fails or yields garbage on:
+  scanned / image-only PDFs (no embedded text layer), PDFs with custom/subset font encodings that need
+  downcasting to ASCII, and other non-plain-text sources. When extraction returns empty/garbage, the
+  whole PageIndex tree for that document is empty/meaningless — there is no OCR fallback today.
+  **Future mitigation (a separate, extraction-preprocessing Python service — distinct from the TOC seam
+  in §9 that was rejected):** a service that routes each document to the right extraction strategy —
+  (a) programmatic text-block extraction, (b) custom-font → ASCII downcasting, (c) OCR via Tesseract,
+  or (d) a robust cloud extractor such as **Azure Document Intelligence** — and returns clean text that
+  `DocumentUtil`/`PageIndexUtil` then consume unchanged. This is an *input-quality* concern, not a
+  structuring one; the Java LLM-TOC pipeline is unaffected by where the clean text comes from.
+- **LLM-TOC quality/cost:** the LLM-TOC builder depends on the model returning well-formed JSON with
+  locatable verbatim `startMarker`s; unlocatable markers are dropped, and a doc that yields none falls
+  back to a flat tree. Build cost scales with document size (one+ TOC chat call per ~16K-char group,
+  plus per-node summaries + embeddings) — expensive on very large docs (e.g. The Verse.docx).
+- **Multi-group continuation is order-append only (v1):** groups are structured independently and
+  appended in document order (forward-only marker search de-dupes overlap); true cross-group outline
+  continuation (reference `generate_toc_continue`) is deferred.
 - **Staleness:** like vectors today, editing the source doesn't auto-invalidate the index —
   `deletePageIndex` + re-`pageIndex` is the rebuild story (same limitation vectors have).
 - **Summarization provider:** summaries go through the `Chat`/`LLMConnectionManager` client, which is

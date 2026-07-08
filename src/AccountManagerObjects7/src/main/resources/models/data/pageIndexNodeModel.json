@@ -58,5 +58,10 @@
 		"name": "sourceReferenceType",
 		"type": "string",
 		"maxLength": 64
+	},
+	{
+		"name": "score",
+		"type": "double",
+		"ephemeral": true
 	}
 ]}

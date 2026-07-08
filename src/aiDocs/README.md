@@ -20,7 +20,8 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 | File | Purpose | Status |
 |---|---|---|
 | `KnownIssues.md` | **Current** known-issues / backlog (2026-06-26) | active |
-| `PageIndexDesign.md` | PageIndex hierarchical TOC index for Objects7 — design (approved, not yet built, 2026-07-07) | active |
+| `PageIndexDesign.md` | PageIndex hierarchical TOC index for Objects7 — core engine design (implemented & verified, 2026-07-07) | active |
+| `PageIndexIntegrationPlan.md` | PageIndex REST/chat/MCP/Ux752 integration — phased plan mirroring the vector pattern (not started, 2026-07-08) | active |
 | `SCIM.md` | SCIM 2.0 → AccountManager model mapping reference | reference |
 
 ## Games / RPG
