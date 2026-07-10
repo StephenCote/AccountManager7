@@ -23,6 +23,7 @@ import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.IChatHandler;
 import org.cote.accountmanager.olio.llm.IChatListener;
+import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -507,7 +508,8 @@ public class PageIndexUtil {
 		String json = stripJsonFences(raw);
 		JsonNode node = readJsonLenient(json);
 		if(node == null) {
-			logger.warn("LLM-TOC: could not parse JSON from chat output");
+			logger.warn("LLM-TOC: could not parse JSON from chat output. rawLen=" + (raw != null ? raw.length() : -1)
+				+ " rawHead=" + debugHead(raw) + " rawTail=" + debugTail(raw) + " strippedHead=" + debugHead(json));
 			return null;
 		}
 		JsonNode arr = node;
@@ -589,6 +591,23 @@ public class PageIndexUtil {
 			s = s.substring(0, end);
 		}
 		return s.trim();
+	}
+
+	/// Wider head/tail previews (vs snippet()'s 60 chars) for the LLM-TOC parse-failure warning, so a
+	/// genuine future failure (bad fences, truncation, unexpected model output) is diagnosable from logs
+	/// alone instead of requiring a live re-run with ad hoc logging.
+	private static String debugHead(String s) {
+		if(s == null) {
+			return "(null)";
+		}
+		return s.substring(0, Math.min(400, s.length())).replaceAll("\\s+", " ");
+	}
+
+	private static String debugTail(String s) {
+		if(s == null) {
+			return "(null)";
+		}
+		return s.substring(Math.max(0, s.length() - 200)).replaceAll("\\s+", " ");
 	}
 
 	private static String snippet(String s) {
@@ -747,17 +766,25 @@ public class PageIndexUtil {
 			SummaryStreamListener sl = new SummaryStreamListener();
 			chat.setListener(sl);
 			OpenAIRequest req = chat.newRequest(chat.getModel());
+			/// Force reasoning off on hybrid-thinking Ollama models (e.g. qwen3), which otherwise default
+			/// to thinking-on and prefix the response with unstructured chain-of-thought prose — breaking
+			/// strict-JSON parsing (LLM-TOC) and polluting stored summaries. Explicitly populating "think"
+			/// (vs leaving it untouched) is what lets Chat.chatInternal forward false onto the wire instead
+			/// of pruning it; non-OLLAMA services ignore the field entirely.
+			if(chatConfig.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) {
+				req.set("think", false);
+			}
 			chat.newMessage(req, userMessage, Chat.userRole);
 			OpenAIResponse resp = chat.chat(req);
 			if(req.isStream()) {
-				String streamed = sl.await(chat.getRequestTimeout());
+				String streamed = stripThinking(sl.await(chat.getRequestTimeout()));
 				if(streamed != null && streamed.trim().length() > 0) {
 					return streamed;
 				}
 			}
 			else {
 				if(resp != null && resp.getMessage() != null) {
-					String buffered = resp.getMessage().get(FieldNames.FIELD_CONTENT);
+					String buffered = stripThinking(resp.getMessage().get(FieldNames.FIELD_CONTENT));
 					if(buffered != null && buffered.trim().length() > 0) {
 						return buffered;
 					}
@@ -768,6 +795,23 @@ public class PageIndexUtil {
 			logger.warn("Chat call failed: " + e.getMessage());
 		}
 		return null;
+	}
+
+	private static final Pattern THINK_PATTERN = Pattern.compile("<think>.*?</think>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+	private static final Pattern THOUGHT_PATTERN = Pattern.compile("<thought>.*?</thought>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+	/// Reasoning models (e.g. Ollama qwen3) inline their chain-of-thought as literal <think>...</think>
+	/// markers in the response content (Chat.chatInternal wraps thinking deltas this way for the UI to
+	/// strip on display, per ChatUtil's THINK_PATTERN convention). Callers here consume raw chat text
+	/// programmatically (JSON parsing for LLM-TOC, stored text for summaries), so strip it the same way
+	/// before use — an un-stripped thinking preamble breaks strict-JSON parsing and pollutes summaries.
+	private static String stripThinking(String content) {
+		if(content == null) {
+			return null;
+		}
+		String s = THINK_PATTERN.matcher(content).replaceAll("");
+		s = THOUGHT_PATTERN.matcher(s).replaceAll("");
+		return s.trim();
 	}
 
 	/// Minimal IChatListener that accumulates a streamed summary and exposes the completed text
@@ -986,18 +1030,22 @@ public class PageIndexUtil {
 		return runQuery(q);
 	}
 
-	private static void requestNodeFields(Query q) {
-		/// Defect #2: the standard Query/ISearch reader cannot project the pgvector VECTOR type
-		/// (ReaderException: "Unhandled type: VECTOR") — VectorUtil only ever reads embeddings via
-		/// raw pgvector SQL, never through a field projection. Projecting FIELD_EMBEDDING here made
-		/// every root/child query throw, so retrieve() always returned 0. Omit the embedding from
-		/// the projection; nodeEmbedding() re-derives it from title+summary when absent.
-		q.setRequest(new String[] {
+	/// Safe, non-embedding node fields (Defect #2: the standard Query/ISearch reader cannot project the
+	/// pgvector VECTOR type — "Unhandled type: VECTOR" — VectorUtil only ever reads embeddings via raw
+	/// pgvector SQL, never through a field projection; nodeEmbedding() re-derives it from title+summary
+	/// when absent). Public so Service7's bespoke node-read endpoints can request the identical safe
+	/// projection through AccessPoint.find/list — they must NEVER project FIELD_EMBEDDING either.
+	public static String[] safeNodeRequestFields() {
+		return new String[] {
 			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_ORGANIZATION_ID,
-			FieldNames.FIELD_NODE_TYPE, FieldNames.FIELD_TITLE, FieldNames.FIELD_SUMMARY, FieldNames.FIELD_CONTENT,
-			FieldNames.FIELD_LEVEL, FieldNames.FIELD_ORDINAL,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_NODE_TYPE, FieldNames.FIELD_TITLE, FieldNames.FIELD_SUMMARY,
+			FieldNames.FIELD_CONTENT, FieldNames.FIELD_LEVEL, FieldNames.FIELD_ORDINAL,
 			FieldNames.FIELD_START_OFFSET, FieldNames.FIELD_END_OFFSET
-		});
+		};
+	}
+
+	private static void requestNodeFields(Query q) {
+		q.setRequest(safeNodeRequestFields());
 	}
 
 	private static List<BaseRecord> runQuery(Query q) {
@@ -1074,6 +1122,34 @@ public class PageIndexUtil {
 			return 0.0;
 		}
 		return dot / (Math.sqrt(na) * Math.sqrt(nb));
+	}
+
+	/**
+	 * Returns every node for the given source as a flat, safely-projected list (never the VECTOR
+	 * embedding field, via {@link #requestNodeFields(Query)}), ordered by level then ordinal so a
+	 * caller can rebuild the ROOT -&gt; SECTION -&gt; CHUNK tree by walking {@code parentId} without a
+	 * nested response shape. Callers (e.g. {@code AccessPoint.pageIndexTree}) are responsible for PBAC.
+	 */
+	public static List<BaseRecord> getTree(BaseRecord model) {
+		long orgId = (model.hasField(FieldNames.FIELD_ORGANIZATION_ID) ? (long)model.get(FieldNames.FIELD_ORGANIZATION_ID) : 0L);
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_PAGE_INDEX_NODE, FieldNames.FIELD_SOURCE_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
+		q.field(FieldNames.FIELD_SOURCE_REFERENCE_TYPE, model.getSchema());
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setCache(false);
+		q.setRequestRange(0, 20000);
+		requestNodeFields(q);
+		List<BaseRecord> nodes = runQuery(q);
+		nodes.sort((a, b) -> {
+			int la = a.get(FieldNames.FIELD_LEVEL);
+			int lb = b.get(FieldNames.FIELD_LEVEL);
+			if(la != lb) {
+				return Integer.compare(la, lb);
+			}
+			int oa = a.get(FieldNames.FIELD_ORDINAL);
+			int ob = b.get(FieldNames.FIELD_ORDINAL);
+			return Integer.compare(oa, ob);
+		});
+		return nodes;
 	}
 
 	/* ------------------------------------------------------------------ count / delete ------------------------------------------------------------------ */

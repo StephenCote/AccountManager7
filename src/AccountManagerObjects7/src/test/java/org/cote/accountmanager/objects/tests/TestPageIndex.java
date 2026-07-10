@@ -39,7 +39,8 @@ import org.junit.Test;
 ///
 /// Exercises the ACTUAL pipeline against the live backend:
 ///   - live PostgreSQL/pgvector (new additive tables A7_data_pageIndexNode_0 / A7_data_pageIndex_0)
-///   - live Azure OpenAI chat (summarization) and Azure OpenAI embeddings (cosine retrieval)
+///   - live Ollama chat on the DGX Spark (qwen3:8b, summarization/LLM-TOC) and the local
+///     embedding light-service (cosine retrieval)
 ///
 /// Never uses the admin user as the acting user: a non-admin "testUser1" is created (via the admin
 /// user, as every other Objects7 test does) and is the actor for pageIndex/retrieve. The admin user is
@@ -51,7 +52,7 @@ public class TestPageIndex extends BaseTest {
 
 	private static final String LIB_CONTENT_ANALYSIS = "contentAnalysis";
 
-	/// Set by ensureAzureContentAnalysis: whether the LIVE Azure summarization call actually returned
+	/// Set by ensureOllamaContentAnalysis: whether the LIVE Ollama summarization call actually returned
 	/// text. When false, PageIndexUtil summaries come from the deterministic excerpt/aggregate fallback
 	/// (NOT the LLM) — we must not claim LLM summarization was exercised.
 	private boolean summarizationLive = false;
@@ -64,15 +65,13 @@ public class TestPageIndex extends BaseTest {
 	/* ------------------------------------------------------------------ STEP 0 ------------------------------------------------------------------ */
 
 	/// Report + verify what ChatUtil.getLibraryConfig(user, MODEL_CHAT_CONFIG, "contentAnalysis")
-	/// resolves to, and repoint it at the working Azure OpenAI chat connection (mirroring
-	/// OlioTestUtil.getOpenAIConfig) so PageIndexUtil's summarization path genuinely hits Azure.
-	/// Then instantiate the exact Chat client PageIndexUtil uses and make one real Azure call.
-	private BaseRecord ensureAzureContentAnalysis(OrganizationContext octx, BaseRecord testUser) {
+	/// resolves to, and repoint it at the working Ollama (DGX Spark) chat connection (mirroring
+	/// OlioTestUtil.getOllamaOpenAIConfig) so PageIndexUtil's summarization path genuinely hits Ollama.
+	/// Then instantiate the exact Chat client PageIndexUtil uses and make one real Ollama call.
+	private BaseRecord ensureOllamaContentAnalysis(OrganizationContext octx, BaseRecord testUser) {
 		BaseRecord adminUser = octx.getAdminUser();
-		String server = testProperties.getProperty("test.llm.openai.server");
-		String model = testProperties.getProperty("test.llm.openai.model");
-		String version = testProperties.getProperty("test.llm.openai.version");
-		String token = testProperties.getProperty("test.llm.openai.authorizationToken");
+		String server = testProperties.getProperty("test.llm.ollama.server");
+		String model = testProperties.getProperty("test.llm.ollama.model");
 
 		/// --- STEP 0 report: what does contentAnalysis resolve to BEFORE any fixture change? ---
 		BaseRecord before = ChatUtil.getLibraryConfig(testUser, OlioModelNames.MODEL_CHAT_CONFIG, LIB_CONTENT_ANALYSIS);
@@ -87,15 +86,15 @@ public class TestPageIndex extends BaseTest {
 				+ " connectionUrl=" + curl);
 		}
 
-		/// --- Ensure shared libraries exist, then repoint contentAnalysis at Azure ---
+		/// --- Ensure shared libraries exist, then repoint contentAnalysis at Ollama (DGX Spark) ---
 		ChatLibraryUtil.getCreateChatConfigLibrary(adminUser);
 		ChatLibraryUtil.getCreateConnectionLibrary(adminUser);
 
-		/// Azure connection owned by the test user (so the non-admin actor can read/decrypt apiKey),
-		/// mirroring OlioTestUtil.getOpenAIConfig / getCreateConnection. getCreateConnection is idempotent
-		/// and vault-encrypts apiKey on create; do NOT update it again (that would re-vault and corrupt it).
-		BaseRecord azureConn = OlioTestUtil.getCreateConnection(testUser, "Azure PageIndex Conn", server, token, 120);
-		assertNotNull("Azure connection could not be created", azureConn);
+		/// Ollama connection owned by the test user (so the non-admin actor can read it), mirroring
+		/// OlioTestUtil.getOllamaOpenAIConfig / getCreateConnection. No API key/token — Ollama is
+		/// unauthenticated on the local network. getCreateConnection is idempotent.
+		BaseRecord ollamaConn = OlioTestUtil.getCreateConnection(testUser, "Ollama PageIndex Conn", server, null, 120);
+		assertNotNull("Ollama connection could not be created", ollamaConn);
 
 		BaseRecord cfg = ChatUtil.getLibraryConfig(testUser, OlioModelNames.MODEL_CHAT_CONFIG, LIB_CONTENT_ANALYSIS);
 		try {
@@ -106,24 +105,22 @@ public class TestPageIndex extends BaseTest {
 				plist.parameter(FieldNames.FIELD_NAME, LIB_CONTENT_ANALYSIS);
 				cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, adminUser, null, plist);
 				ChatUtil.applyChatConfigTemplate(cfg, LIB_CONTENT_ANALYSIS);
-				cfg.set("connection", azureConn);
-				cfg.set("serviceType", LLMServiceEnumType.OPENAI);
-				cfg.set("apiVersion", version);
+				cfg.set("connection", ollamaConn);
+				cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
 				cfg.set("model", model);
 				cfg = IOSystem.getActiveContext().getAccessPoint().create(adminUser, cfg);
-				logger.info("[STEP0] Created 'contentAnalysis' library config pointed at Azure.");
+				logger.info("[STEP0] Created 'contentAnalysis' library config pointed at Ollama (DGX Spark).");
 			}
 			else {
-				cfg.set("connection", azureConn);
-				cfg.set("serviceType", LLMServiceEnumType.OPENAI);
-				cfg.set("apiVersion", version);
+				cfg.set("connection", ollamaConn);
+				cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
 				cfg.set("model", model);
 				cfg = IOSystem.getActiveContext().getAccessPoint().update(adminUser, cfg);
-				logger.info("[STEP0] Repointed existing 'contentAnalysis' library config at Azure.");
+				logger.info("[STEP0] Repointed existing 'contentAnalysis' library config at Ollama (DGX Spark).");
 			}
 		}
 		catch(Exception e) {
-			logger.error("[STEP0] Failed to configure contentAnalysis at Azure", e);
+			logger.error("[STEP0] Failed to configure contentAnalysis at Ollama", e);
 		}
 
 		/// Re-fetch as the test user (the exact resolution PageIndexUtil.resolveChatConfig performs).
@@ -132,16 +129,16 @@ public class TestPageIndex extends BaseTest {
 		logger.info("[STEP0] Resolved 'contentAnalysis' (as testUser): serviceType=" + resolved.getEnum("serviceType")
 			+ " model=" + resolved.get("model") + " connectionUrl=" + describeConnectionUrl(testUser, resolved.get("connection")));
 
-		/// --- Independent live proof: use the EXACT Chat client PageIndexUtil uses, hit Azure once. ---
+		/// --- Independent live proof: use the EXACT Chat client PageIndexUtil uses, hit Ollama once. ---
 		String live = liveSummaryCall(testUser, resolved,
 			"The station's electricity is produced by a geothermal turbine drawing heat from a deep magma vent.");
 		summarizationLive = (live != null && live.trim().length() > 0);
 		if(summarizationLive) {
-			summarizationFinding = "LLM summarization LIVE against Azure — sample: \"" + live.trim() + "\"";
+			summarizationFinding = "LLM summarization LIVE against Ollama (DGX Spark) — sample: \"" + live.trim() + "\"";
 			logger.info("[STEP0] " + summarizationFinding);
 		}
 		else {
-			summarizationFinding = "LLM summarization NOT exercised: the live Azure Chat call returned no text (see HTTP "
+			summarizationFinding = "LLM summarization NOT exercised: the live Ollama Chat call returned no text (see HTTP "
 				+ "status/error above). PageIndexUtil summaries therefore come from the deterministic excerpt/aggregate "
 				+ "fallback, NOT the LLM. Do NOT claim LLM summarization was tested.";
 			logger.error("[STEP0][FINDING] " + summarizationFinding);
@@ -205,7 +202,7 @@ public class TestPageIndex extends BaseTest {
 		BaseRecord testUser = mf.getCreateUser(octx.getAdminUser(), "testUser1", octx.getOrganizationId());
 		assertNotNull("Test user is null", testUser);
 
-		BaseRecord cfg = ensureAzureContentAnalysis(octx, testUser);
+		BaseRecord cfg = ensureOllamaContentAnalysis(octx, testUser);
 		assertNotNull("contentAnalysis not resolved", cfg);
 
 		String md = buildMarkdownDoc();
@@ -248,7 +245,7 @@ public class TestPageIndex extends BaseTest {
 
 		BaseRecord testUser = pageIndexTestUser();
 		OrganizationContext octx = getTestOrganization("/Development/PageIndex");
-		ensureAzureContentAnalysis(octx, testUser);
+		ensureOllamaContentAnalysis(octx, testUser);
 
 		MediaBuild mb = buildMediaDoc(testUser, "./media/AIME.pdf", "AIME");
 
@@ -279,7 +276,7 @@ public class TestPageIndex extends BaseTest {
 
 		BaseRecord testUser = pageIndexTestUser();
 		OrganizationContext octx = getTestOrganization("/Development/PageIndex");
-		ensureAzureContentAnalysis(octx, testUser);
+		ensureOllamaContentAnalysis(octx, testUser);
 
 		MediaBuild mb = buildMediaDoc(testUser, "./media/Vore.docx", "VORE");
 
@@ -318,7 +315,7 @@ public class TestPageIndex extends BaseTest {
 
 		BaseRecord testUser = pageIndexTestUser();
 		OrganizationContext octx = getTestOrganization("/Development/PageIndex");
-		ensureAzureContentAnalysis(octx, testUser);
+		ensureOllamaContentAnalysis(octx, testUser);
 
 		MediaBuild mb = buildMediaDoc(testUser, "./media/The Verse.docx", "VERSE");
 
@@ -362,6 +359,65 @@ public class TestPageIndex extends BaseTest {
 			+ stats.maxLevel, stats.maxLevel == 1);
 		logger.info("[FALLBACK] flat ROOT->CHUNK tree built without hard-fail: ROOT=" + stats.roots
 			+ " SECTION=" + stats.sections + " CHUNK=" + stats.chunks + " maxLevel=" + stats.maxLevel);
+	}
+
+	/* ------------------------------------------------------------- AccessPoint PBAC gate (prerequisite) ------------------------------------------------------------- */
+
+	/// Verifies the integration-plan PREREQUISITE: AccessPoint.pageIndexRetrieve/pageIndexTree/pageIndexDelete
+	/// authorize against the SOURCE record (canRead for retrieve/tree, canUpdate for delete) before touching
+	/// PageIndexUtil, which itself has no user/authorization concept. Positive: the owning user (testUser1)
+	/// can read/retrieve/delete. Negative: an unrelated same-org user (testUser2, no membership on testUser1's
+	/// home group) is denied and gets back an empty list / false rather than data or an exception.
+	@Test
+	public void TestPageIndexAccessPointGate() {
+		assumeTrue("PAGEINDEX_LLM not set — skipping live LLM PageIndex test", llmEnabled());
+		logger.info("=== TestPageIndexAccessPointGate (AccessPoint.pageIndexRetrieve/Tree/Delete PBAC) ===");
+
+		Factory mf = ioContext.getFactory();
+		OrganizationContext octx = getTestOrganization("/Development/PageIndex");
+		BaseRecord testUser1 = pageIndexTestUser();
+		BaseRecord testUser2 = mf.getCreateUser(octx.getAdminUser(), "testUser2", octx.getOrganizationId());
+		assertNotNull("Second test user is null", testUser2);
+
+		String prose = buildProseDoc();
+		BaseRecord doc = getCreateData(testUser1, "Gate-Prose.txt", "text/plain", prose.getBytes(), "~/PageIndex", octx.getOrganizationId());
+		assertNotNull("[GATE] source doc is null", doc);
+		String objectId = doc.get(FieldNames.FIELD_OBJECT_ID);
+
+		buildAndInspect(testUser1, doc, "GATE");
+		int builtCount = PageIndexUtil.countPageIndex(doc);
+		assertTrue("[GATE] expected a built index prior to gate checks", builtCount > 0);
+
+		/// --- Positive: owner reads/retrieves through the PBAC-gated AccessPoint wrappers. ---
+		List<BaseRecord> tree = IOSystem.getActiveContext().getAccessPoint().pageIndexTree(testUser1, "data.data", objectId);
+		assertTrue("[GATE] owner pageIndexTree returned no nodes", !tree.isEmpty());
+		assertTrue("[GATE] pageIndexTree node count (" + tree.size() + ") does not match countPageIndex (" + builtCount + ")",
+			tree.size() == builtCount);
+
+		String q = "lighthouse keeper";
+		List<BaseRecord> hits = IOSystem.getActiveContext().getAccessPoint().pageIndexRetrieve(testUser1, "data.data", objectId, q, 5);
+		assertTrue("[GATE] owner pageIndexRetrieve returned no results", !hits.isEmpty());
+		assertAllChunks(hits, "GATE-owner");
+
+		/// --- Negative: an unrelated user in the same org is denied (empty list / false), not an exception,
+		/// and cannot read or delete the index. ---
+		List<BaseRecord> deniedTree = IOSystem.getActiveContext().getAccessPoint().pageIndexTree(testUser2, "data.data", objectId);
+		assertTrue("[GATE] second user's pageIndexTree should be denied (empty), got " + deniedTree.size() + " node(s)",
+			deniedTree.isEmpty());
+
+		List<BaseRecord> deniedHits = IOSystem.getActiveContext().getAccessPoint().pageIndexRetrieve(testUser2, "data.data", objectId, q, 5);
+		assertTrue("[GATE] second user's pageIndexRetrieve should be denied (empty), got " + deniedHits.size() + " result(s)",
+			deniedHits.isEmpty());
+
+		boolean deniedDelete = IOSystem.getActiveContext().getAccessPoint().pageIndexDelete(testUser2, "data.data", objectId);
+		assertTrue("[GATE] second user's pageIndexDelete should be denied (false)", !deniedDelete);
+		assertTrue("[GATE] second user's denied delete must not have removed nodes",
+			PageIndexUtil.countPageIndex(doc) == builtCount);
+
+		/// --- Positive: owner can delete (mirrors build's canUpdate gate). ---
+		boolean ownerDelete = IOSystem.getActiveContext().getAccessPoint().pageIndexDelete(testUser1, "data.data", objectId);
+		assertTrue("[GATE] owner pageIndexDelete should succeed", ownerDelete);
+		assertTrue("[GATE] index should be empty after owner delete", PageIndexUtil.countPageIndex(doc) == 0);
 	}
 
 	/* ---------------------------------------------------------- media build + retrieval helpers ---------------------------------------------------------- */
@@ -513,8 +569,8 @@ public class TestPageIndex extends BaseTest {
 
 	/// Point the shared 'contentAnalysis' chat config at an unreachable (connection-refused) endpoint so both
 	/// the LLM-TOC extraction and summarization Chat calls fail fast, deterministically forcing the flat
-	/// fallback. Mirrors ensureAzureContentAnalysis's create/update pattern but with a dead connection and no
-	/// live proof. (Every other test re-points contentAnalysis at Azure at its start, so this does not leak.)
+	/// fallback. Mirrors ensureOllamaContentAnalysis's create/update pattern but with a dead connection and no
+	/// live proof. (Every other test re-points contentAnalysis at Ollama at its start, so this does not leak.)
 	private BaseRecord pointContentAnalysisAtDead(OrganizationContext octx, BaseRecord testUser) {
 		BaseRecord adminUser = octx.getAdminUser();
 		String model = testProperties.getProperty("test.llm.openai.model");
@@ -700,7 +756,7 @@ public class TestPageIndex extends BaseTest {
 		logger.info("[" + label + "] leaves(CHUNK): total=" + stats.chunks + " withOffsets(end>start)=" + leafWithOffsets
 			+ " withNonEmptyContent=" + leafWithContent);
 		logger.info("[" + label + "] interior nodes=" + interiorCount + " withNonEmptySummary=" + interiorWithSummary);
-		logger.info("[" + label + "] SUMMARIZATION MODE: " + (summarizationLive ? "LLM (Azure Chat, verified live in STEP0)"
+		logger.info("[" + label + "] SUMMARIZATION MODE: " + (summarizationLive ? "LLM (Ollama Chat, verified live in STEP0)"
 			: "FALLBACK excerpt/aggregate (LLM path NOT exercised) -- " + summarizationFinding));
 
 		/// Diagnostic: localize any retrieve() gap by mirroring PageIndexUtil.loadRoots (nodeType="ROOT"

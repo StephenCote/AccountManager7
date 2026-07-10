@@ -2062,6 +2062,7 @@
       "group": "Data",
       "icon": "data_object",
       "label": "Data",
+      "pageIndex": true,
       "dedicatedParticipation": true,
       "sortField": "name",
       "sortOrder": "ASCENDING",
@@ -4759,6 +4760,7 @@
       "label": "Note",
       "description": "Generic note model used to store text-based notes.",
       "vectorize": true,
+      "pageIndex": true,
       "fields": [
         {
           "name": "text",
@@ -8887,6 +8889,11 @@
         {
           "name": "useJailBreak",
           "type": "boolean"
+        },
+        {
+          "name": "usePageIndex",
+          "type": "boolean",
+          "description": "When true, PageIndex-ranked leaves from attached documents that already have a built PageIndex are also injected into chat context alongside vector citations."
         },
         {
           "name": "prune",

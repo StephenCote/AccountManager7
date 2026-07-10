@@ -3,7 +3,7 @@ import { am7model } from '../core/model.js';
 import { am7view } from '../core/view.js';
 import { am7client } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
-import { summarize, vectorize, reimage, reimageApparel, memberCloud, adoptCharacter, outfitBuilder, pictureBook } from '../workflows/index.js';
+import { summarize, vectorize, pageIndex, reimage, reimageApparel, memberCloud, adoptCharacter, outfitBuilder, pictureBook } from '../workflows/index.js';
 // Navigation is handled by router's pageLayout wrapper
 
 /**
@@ -913,6 +913,7 @@ function newObjectPage() {
 
     objectPage.summarize = summarize;
     objectPage.vectorize = vectorize;
+    objectPage.pageIndex = pageIndex;
     objectPage.reimage = reimage;
     objectPage.reimageApparel = reimageApparel;
     objectPage.memberCloud = function (entity, inst, cmd) {

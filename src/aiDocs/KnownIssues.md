@@ -4,6 +4,23 @@ Running list of known issues and out-of-scope refactors surfaced during developm
 
 ---
 
+## Ux752 — Cross-view consistency (2026-07-09, Stephen)
+
+### KI-13. Many Ux752 views are inconsistent — comprehensive refactor needed — OPEN
+Stephen's assessment: a significant number of views across Ux752 have drifted inconsistent with each
+other — patterns, conventions, and behaviors that should be uniform across the object/list/form views
+have diverged view-by-view (see the KI-2/KI-3/KI-7/KI-9 series above for concrete examples of this class
+of drift already found and partly fixed piecemeal — picker/list/pagination/toggle state handling each
+had their own divergent bug). This entry is the umbrella: the piecemeal fixes are treating symptoms:
+**a comprehensive cross-view audit + refactor is needed**, not filed as specific bugs yet.
+**Fix direction:** before refactoring, run a discovery pass across `src/views/*.js` and
+`src/components/*.js` to catalogue where the same concern (query/pagination state, picker/container
+resolution, cache invalidation, list-vs-icon-view toggling, embedded/picker-mode gating, etc.) is
+implemented differently in different views, then converge on one shared implementation per concern
+(likely consolidating into `views/list.js`/`components/pagination.js`/`components/picker.js` helpers that
+every view calls, rather than each view re-implementing its own variant). Scope and sequencing TBD —
+this is a backlog placeholder, not a plan.
+
 ## Ux752 — Role & Group membership
 
 ### KI-1. `auth.group` needs a member picker + list for PERSON / ACCOUNT / USER (2026-06-24, Stephen)
@@ -72,6 +89,39 @@ Switching the list toolbar toggle from "navigate by group/parent" back to plain 
 
 ### KI-10. Cancel does not actually stop scene extraction or image generation — OPEN (2026-07-06, Stephen)
 Hitting cancel during scene extraction or image generation does not abort the in-flight backend operation — it keeps running to completion. The picture-book generate/extract endpoints in `AccountManagerService7/.../PictureBookService.java` run synchronously with no cancellation/interrupt token, so a client "cancel" only affects the UI, not the server work (mirrors the ISO 42001 run model, which is also synchronous with no cancel endpoint). Fix direction: introduce a cancellation signal the long-running loops (chunked extraction, per-scene image pipeline) check between stages — e.g. a per-request/per-book cancel flag set via a small endpoint or WebSocket chirp, polled at chunk/stage boundaries — and have the UI cancel button hit it. Client side, ensure the cancel also stops awaiting/rendering the in-flight request. Related: KI (portrait persistence/reuse) work in the same service.
+
+## Service7 — Credential Service (2026-07-09, discovered during PageIndex REST verification)
+
+### KI-14. `CredentialService.newPrimaryCredential` hardcodes the password to the literal "password" — OPEN
+`POST /rest/credential/{type}/{objectId}` (`CredentialService.java:82`) never reads the password actually
+sent in the request body. `authReq.get(FieldNames.FIELD_CREDENTIAL)` is parsed but discarded — the
+parameter list passed to the credential factory is hardcoded: `plist.parameter("password", "password")`.
+Every credential created or replaced through this endpoint silently becomes the literal string
+`"password"`, regardless of what the caller requested. Discovered while live-verifying the new
+`PageIndexService` REST surface: created two test users with a distinct password via this endpoint, both
+got `true` (success) responses, but login with that password failed — only `"password"` worked.
+**Impact:** any admin/API-created `system.user` credential (test fixtures, provisioning scripts, an admin
+resetting a user's password) ends up with a trivial, identical, predictable password no matter what was
+specified. Security-relevant; not fixed as part of the PageIndex work (out of scope, deserves a deliberate
+fix + test, not a drive-by change). **Fix direction:** replace the hardcoded `"password"` literal with the
+actual submitted credential, e.g. `plist.parameter("password", new String((byte[])authReq.get(FieldNames.FIELD_CREDENTIAL)))`
+(mirroring how `LoginService`/`getAuthenticatedToken` decode the same field), then add a JUnit/REST test
+that creates a credential with a specific password and asserts login succeeds with THAT password and fails
+with `"password"` (to catch a regression back to the hardcoded literal).
+
+### KI-15. Same method, `cred.set(FieldNames.FIELD_PRIMARY_KEY, false)` sets a field that doesn't exist on `auth.credential` — OPEN
+`CredentialService.java:108` (the "replace active credential" branch, hit when a credential already exists
+and the caller is a model administrator) calls `cred.set(FieldNames.FIELD_PRIMARY_KEY, false)`.
+`FieldNames.FIELD_PRIMARY_KEY` = `"primaryKey"`, but `auth.credential`'s actual field
+(`credentialModel.json`) is named `"primary"` — there is no `FIELD_PRIMARY` constant. Setting a field name
+absent from the schema drives `BaseRecord.checkField` → `RecordFactory.newFieldInstance` →
+`ErrorUtil.printStackTrace()`, i.e. a full stack trace logged at ERROR on every credential replace, though
+the call doesn't hard-fail (best-effort fallback). Observed live in the Tomcat log during the same
+PageIndex REST verification session (2026-07-09) — surfaced together with KI-14 because they're the same
+method and the same incidental discovery, not because they're the same bug. **Fix direction:** add
+`FieldNames.FIELD_PRIMARY = "primary"` and use it at `CredentialService.java:108` (or use the raw string
+`"primary"` if a new constant is out of scope), then verify no `ErrorUtil.printStackTrace()` fires on a
+credential-replace call.
 
 ## Ux752 — Debug tooling (2026-06-24)
 

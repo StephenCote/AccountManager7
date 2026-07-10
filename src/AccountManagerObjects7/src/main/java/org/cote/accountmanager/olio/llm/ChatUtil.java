@@ -61,6 +61,7 @@ import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.mcp.McpContextFilter;
 import org.cote.accountmanager.mcp.McpContextParser;
 import org.cote.accountmanager.mcp.McpFilterResult;
+import org.cote.accountmanager.util.PageIndexUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 
@@ -735,9 +736,16 @@ public class ChatUtil {
 		else {
 			uri = uri + "/citations/chunk/" + chunk.get("chunk");
 		}
-		String refType = storeChunk.get(FieldNames.FIELD_VECTOR_REFERENCE_TYPE);
-		Long refIdObj = storeChunk.get(FieldNames.FIELD_VECTOR_REFERENCE + "." + FieldNames.FIELD_ID);
-		long refId = refIdObj != null ? refIdObj : 0L;
+		/// Guard with hasField (top-level, no embedded path) before touching vectorReference[.id]: this method
+		/// is now also called with data.pageIndexNode chunks (PageIndex chat-RAG citations), which don't
+		/// inherit data.vectorModelStore and have no vectorReference field at all. An unguarded embedded get()
+		/// on a field absent from the schema logs an error + stack trace (BaseRecord.getEmbedded), not just null.
+		String refType = storeChunk.hasField(FieldNames.FIELD_VECTOR_REFERENCE_TYPE) ? storeChunk.get(FieldNames.FIELD_VECTOR_REFERENCE_TYPE) : null;
+		long refId = 0L;
+		if(storeChunk.hasField(FieldNames.FIELD_VECTOR_REFERENCE)) {
+			Long refIdObj = storeChunk.get(FieldNames.FIELD_VECTOR_REFERENCE + "." + FieldNames.FIELD_ID);
+			refId = refIdObj != null ? refIdObj : 0L;
+		}
 		Map<String, Object> data = new HashMap<>();
 		data.put("content", cnt);
 		data.put("chunk", chunk.get("chunk"));
@@ -1395,6 +1403,12 @@ public class ChatUtil {
 		List<BaseRecord> tags = new ArrayList<>();
 		List<BaseRecord> frecs = new ArrayList<>();
 
+		/// Opt-in (default off): inject PageIndex-ranked leaves alongside flat-vector citations for any
+		/// attached doc that already has a built PageIndex. Off by default because PageIndex retrieval
+		/// re-embeds per node and costs more per turn than flat-vector citations (PageIndexDesign.md §7/§12).
+		BaseRecord chatConfig = OlioUtil.getFullRecord(creq.getChatConfig());
+		boolean usePageIndex = (chatConfig != null && Boolean.TRUE.equals(chatConfig.get("usePageIndex")));
+
 		/// Merge persisted contextRefs into the working set alongside ephemeral data
 		List<String> contextRefs = creq.get("contextRefs");
 		List<String> allRefs = new ArrayList<>();
@@ -1488,6 +1502,15 @@ public class ChatUtil {
 							vects.addAll(chunks);
 							//vects.addAll(vu.find(summaryNote, summaryNote.getSchema(), new BaseRecord[0], new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 5, 0.6));
 						}
+					}
+					/// PageIndex branch: frec already came from AccessPoint.find with the authorized user
+					/// above, so PageIndexUtil.retrieve (the unauthenticated utility) is safe to call directly
+					/// here — do NOT re-resolve/re-authorize. countPageIndex gate avoids a wasted retrieve call
+					/// (and its query-embedding cost) for docs that were never indexed.
+					if(usePageIndex && PageIndexUtil.countPageIndex(frec) > 0) {
+						List<BaseRecord> piHits = PageIndexUtil.retrieve(frec, msg, 5);
+						logger.info("Adding " + piHits.size() + " PageIndex citation(s) for " + frec.getSchema());
+						vects.addAll(piHits);
 					}
 				}
 			}

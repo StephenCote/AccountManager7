@@ -19,6 +19,8 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.PageIndexNodeEnumType;
+import org.cote.accountmanager.util.PageIndexUtil;
 import org.cote.accountmanager.util.VectorUtil;
 
 /**
@@ -75,6 +77,30 @@ public class Am7ToolProvider implements IToolProvider {
 			buildSessionContextSchema()
 		));
 
+		tools.add(new McpJsonRpc.Tool(
+			"am7_pageindex_search",
+			"Ranked search over a document's PageIndex (hierarchical table-of-contents index) — returns the most relevant leaf passages for a query",
+			buildPageIndexSearchSchema()
+		));
+
+		tools.add(new McpJsonRpc.Tool(
+			"am7_pageindex_structure",
+			"Read a document's PageIndex structure — the full ROOT/SECTION/CHUNK outline with titles and summaries, for reasoning over document organization before drilling into content",
+			buildPageIndexStructureSchema()
+		));
+
+		tools.add(new McpJsonRpc.Tool(
+			"am7_pageindex_section",
+			"List the child nodes of a PageIndex node (navigate one level down the outline)",
+			buildPageIndexSectionSchema()
+		));
+
+		tools.add(new McpJsonRpc.Tool(
+			"am7_pageindex_content",
+			"Read the full text content of a PageIndex leaf (CHUNK) node",
+			buildPageIndexContentSchema()
+		));
+
 		return tools;
 	}
 
@@ -96,6 +122,14 @@ public class Am7ToolProvider implements IToolProvider {
 					return sessionDetach(session, arguments);
 				case "am7_session_context":
 					return sessionContext(session, arguments);
+				case "am7_pageindex_search":
+					return pageIndexSearch(session, arguments);
+				case "am7_pageindex_structure":
+					return pageIndexStructure(session, arguments);
+				case "am7_pageindex_section":
+					return pageIndexSection(session, arguments);
+				case "am7_pageindex_content":
+					return pageIndexContent(session, arguments);
 				default:
 					return McpJsonRpc.ToolResult.error("Unknown tool: " + toolName);
 			}
@@ -516,6 +550,156 @@ public class Am7ToolProvider implements IToolProvider {
 		}
 	}
 
+	private McpJsonRpc.ToolResult pageIndexSearch(McpSession session, Map<String, Object> arguments) {
+		String type = (String) arguments.get("type");
+		String objectId = (String) arguments.get("objectId");
+		String query = (String) arguments.get("query");
+		if (type == null || type.isEmpty()) return McpJsonRpc.ToolResult.error("'type' parameter is required");
+		if (objectId == null || objectId.isEmpty()) return McpJsonRpc.ToolResult.error("'objectId' parameter is required");
+		if (query == null || query.isEmpty()) return McpJsonRpc.ToolResult.error("'query' parameter is required");
+
+		int limit = getIntArg(arguments, "limit", 5);
+		BaseRecord user = session.getUser();
+
+		try {
+			/// PBAC-gated: resolves + authorizes (canRead) the source doc before touching PageIndexUtil.retrieve.
+			List<BaseRecord> hits = IOSystem.getActiveContext().getAccessPoint().pageIndexRetrieve(user, type, objectId, query, limit);
+
+			StringBuilder sb = new StringBuilder();
+			sb.append("Found ").append(hits.size()).append(" PageIndex result(s) for: ").append(query).append("\n\n");
+			for (int i = 0; i < hits.size(); i++) {
+				BaseRecord node = hits.get(i);
+				Object score = node.get(FieldNames.FIELD_SCORE);
+				String content = node.get(FieldNames.FIELD_CONTENT);
+				String nodeId = node.get(FieldNames.FIELD_OBJECT_ID);
+
+				sb.append("--- Result ").append(i + 1).append(" ---\n");
+				sb.append("nodeId: ").append(nodeId).append("\n");
+				sb.append("Score: ").append(score != null ? String.format("%.4f", (double) score) : "n/a").append("\n");
+				sb.append("Content: ").append(content != null ? content : "").append("\n\n");
+			}
+			return McpJsonRpc.ToolResult.success(sb.toString());
+		}
+		catch (Exception e) {
+			logger.error("Error searching PageIndex: " + type + "/" + objectId, e);
+			return McpJsonRpc.ToolResult.error("Failed to search PageIndex: " + e.getMessage());
+		}
+	}
+
+	private McpJsonRpc.ToolResult pageIndexStructure(McpSession session, Map<String, Object> arguments) {
+		String type = (String) arguments.get("type");
+		String objectId = (String) arguments.get("objectId");
+		if (type == null || type.isEmpty()) return McpJsonRpc.ToolResult.error("'type' parameter is required");
+		if (objectId == null || objectId.isEmpty()) return McpJsonRpc.ToolResult.error("'objectId' parameter is required");
+
+		BaseRecord user = session.getUser();
+		try {
+			/// PBAC-gated: resolves + authorizes (canRead) the source doc before touching PageIndexUtil.getTree.
+			List<BaseRecord> nodes = IOSystem.getActiveContext().getAccessPoint().pageIndexTree(user, type, objectId);
+			if (nodes.isEmpty()) {
+				return McpJsonRpc.ToolResult.success("No PageIndex found for " + type + "/" + objectId + " (not built yet, or not accessible).");
+			}
+
+			StringBuilder sb = new StringBuilder();
+			sb.append("PageIndex structure for ").append(type).append("/").append(objectId).append(" (").append(nodes.size()).append(" node(s)):\n\n");
+			for (BaseRecord node : nodes) {
+				appendStructureLine(sb, node);
+			}
+			return McpJsonRpc.ToolResult.success(sb.toString());
+		}
+		catch (Exception e) {
+			logger.error("Error reading PageIndex structure: " + type + "/" + objectId, e);
+			return McpJsonRpc.ToolResult.error("Failed to read PageIndex structure: " + e.getMessage());
+		}
+	}
+
+	private void appendStructureLine(StringBuilder sb, BaseRecord node) {
+		PageIndexNodeEnumType nodeType = node.getEnum(FieldNames.FIELD_NODE_TYPE);
+		int level = node.get(FieldNames.FIELD_LEVEL);
+		String title = node.get(FieldNames.FIELD_TITLE);
+		String summary = node.get(FieldNames.FIELD_SUMMARY);
+		String nodeId = node.get(FieldNames.FIELD_OBJECT_ID);
+
+		for (int i = 0; i < level; i++) sb.append("  ");
+		sb.append("[").append(nodeType).append("] ");
+		if (title != null && !title.isEmpty()) sb.append(title).append(" ");
+		sb.append("(nodeId=").append(nodeId).append(")\n");
+		if (summary != null && !summary.isEmpty()) {
+			for (int i = 0; i < level; i++) sb.append("  ");
+			sb.append("  ").append(snippet(summary, 200)).append("\n");
+		}
+	}
+
+	private McpJsonRpc.ToolResult pageIndexSection(McpSession session, Map<String, Object> arguments) {
+		String nodeId = (String) arguments.get("nodeId");
+		if (nodeId == null || nodeId.isEmpty()) return McpJsonRpc.ToolResult.error("'nodeId' parameter is required");
+
+		BaseRecord user = session.getUser();
+		try {
+			BaseRecord node = resolvePageIndexNode(user, nodeId);
+			if (node == null) return McpJsonRpc.ToolResult.error("PageIndex node not found or not accessible: " + nodeId);
+
+			long parentId = node.get(FieldNames.FIELD_ID);
+			long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+			Query cq = QueryUtil.createQuery(ModelNames.MODEL_PAGE_INDEX_NODE, FieldNames.FIELD_PARENT_ID, parentId);
+			cq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			cq.setRequest(PageIndexUtil.safeNodeRequestFields());
+			cq.setCache(false);
+			QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, cq);
+
+			StringBuilder sb = new StringBuilder();
+			BaseRecord[] children = (qr != null ? qr.getResults() : new BaseRecord[0]);
+			sb.append("Children of nodeId=").append(nodeId).append(" (").append(children.length).append("):\n\n");
+			for (BaseRecord child : children) {
+				appendStructureLine(sb, child);
+			}
+			return McpJsonRpc.ToolResult.success(sb.toString());
+		}
+		catch (Exception e) {
+			logger.error("Error reading PageIndex section: " + nodeId, e);
+			return McpJsonRpc.ToolResult.error("Failed to read PageIndex section: " + e.getMessage());
+		}
+	}
+
+	private McpJsonRpc.ToolResult pageIndexContent(McpSession session, Map<String, Object> arguments) {
+		String nodeId = (String) arguments.get("nodeId");
+		if (nodeId == null || nodeId.isEmpty()) return McpJsonRpc.ToolResult.error("'nodeId' parameter is required");
+
+		BaseRecord user = session.getUser();
+		try {
+			BaseRecord node = resolvePageIndexNode(user, nodeId);
+			if (node == null) return McpJsonRpc.ToolResult.error("PageIndex node not found or not accessible: " + nodeId);
+
+			PageIndexNodeEnumType nodeType = node.getEnum(FieldNames.FIELD_NODE_TYPE);
+			if (nodeType != PageIndexNodeEnumType.CHUNK) {
+				return McpJsonRpc.ToolResult.error("nodeId " + nodeId + " is a " + nodeType + ", not a CHUNK leaf — use am7_pageindex_section to navigate to its children first");
+			}
+			String content = node.get(FieldNames.FIELD_CONTENT);
+			return McpJsonRpc.ToolResult.success(content != null ? content : "");
+		}
+		catch (Exception e) {
+			logger.error("Error reading PageIndex content: " + nodeId, e);
+			return McpJsonRpc.ToolResult.error("Failed to read PageIndex content: " + e.getMessage());
+		}
+	}
+
+	/// Resolve a single data.pageIndexNode by objectId with the safe (non-embedding) field projection,
+	/// authorized via AccessPoint.find (canRead, using the node's groupId shortcut) — mirrors
+	/// PageIndexService.findSafeNode in Service7 (kept separate per module: MCP is Objects7-side transport).
+	private BaseRecord resolvePageIndexNode(BaseRecord user, String nodeObjectId) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_PAGE_INDEX_NODE, FieldNames.FIELD_OBJECT_ID, nodeObjectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.setRequest(PageIndexUtil.safeNodeRequestFields());
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	private String snippet(String s, int maxLen) {
+		if (s == null) return "";
+		String trimmed = s.replaceAll("\\s+", " ").trim();
+		return trimmed.length() > maxLen ? trimmed.substring(0, maxLen) + "..." : trimmed;
+	}
+
 	/// Find a record by objectId within the user's organization.
 	private BaseRecord findByObjectId(BaseRecord user, String modelName, String objectId) {
 		try {
@@ -627,6 +811,58 @@ public class Am7ToolProvider implements IToolProvider {
 
 		schema.put("properties", props);
 		schema.put("required", List.of("sessionId"));
+		return schema;
+	}
+
+	private Map<String, Object> buildPageIndexSearchSchema() {
+		Map<String, Object> schema = new HashMap<>();
+		schema.put("type", "object");
+
+		Map<String, Object> props = new HashMap<>();
+		props.put("type", Map.of("type", "string", "description", "Model type of the source document (e.g. 'data.data')"));
+		props.put("objectId", Map.of("type", "string", "description", "objectId of the source document"));
+		props.put("query", Map.of("type", "string", "description", "Search query text"));
+		props.put("limit", Map.of("type", "integer", "description", "Maximum number of leaf results (default: 5)", "default", 5));
+
+		schema.put("properties", props);
+		schema.put("required", List.of("type", "objectId", "query"));
+		return schema;
+	}
+
+	private Map<String, Object> buildPageIndexStructureSchema() {
+		Map<String, Object> schema = new HashMap<>();
+		schema.put("type", "object");
+
+		Map<String, Object> props = new HashMap<>();
+		props.put("type", Map.of("type", "string", "description", "Model type of the source document (e.g. 'data.data')"));
+		props.put("objectId", Map.of("type", "string", "description", "objectId of the source document"));
+
+		schema.put("properties", props);
+		schema.put("required", List.of("type", "objectId"));
+		return schema;
+	}
+
+	private Map<String, Object> buildPageIndexSectionSchema() {
+		Map<String, Object> schema = new HashMap<>();
+		schema.put("type", "object");
+
+		Map<String, Object> props = new HashMap<>();
+		props.put("nodeId", Map.of("type", "string", "description", "objectId of the PageIndex node whose children to list (from am7_pageindex_structure or a prior am7_pageindex_section call)"));
+
+		schema.put("properties", props);
+		schema.put("required", List.of("nodeId"));
+		return schema;
+	}
+
+	private Map<String, Object> buildPageIndexContentSchema() {
+		Map<String, Object> schema = new HashMap<>();
+		schema.put("type", "object");
+
+		Map<String, Object> props = new HashMap<>();
+		props.put("nodeId", Map.of("type", "string", "description", "objectId of a PageIndex CHUNK (leaf) node whose text content to read"));
+
+		schema.put("properties", props);
+		schema.put("required", List.of("nodeId"));
 		return schema;
 	}
 

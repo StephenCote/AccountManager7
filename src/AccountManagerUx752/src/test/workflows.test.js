@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summarize, vectorize, reimage, reimageApparel, memberCloud, adoptCharacter, outfitBuilder } from '../workflows/index.js';
+import { summarize, vectorize, pageIndex, reimage, reimageApparel, memberCloud, adoptCharacter, outfitBuilder } from '../workflows/index.js';
 
 describe('workflow module exports', () => {
     it('should export summarize as a function', () => {
@@ -8,6 +8,10 @@ describe('workflow module exports', () => {
 
     it('should export vectorize as a function', () => {
         expect(typeof vectorize).toBe('function');
+    });
+
+    it('should export pageIndex as a function', () => {
+        expect(typeof pageIndex).toBe('function');
     });
 
     it('should export reimage as a function', () => {

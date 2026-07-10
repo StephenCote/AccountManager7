@@ -3902,10 +3902,12 @@ public class Chat {
 		/// Defect #1: olio.llm.openai.openaiRequest declares `think` with default false, and
 		/// getPrunedRequest -> toFullString serializes it onto the wire. Azure/OpenAI reject any
 		/// unknown parameter ("Unknown parameter: 'think'") and non-thinking Ollama models reject
-		/// `think` in ANY form. `think` is an Ollama-only extension that applyChatOptions only ever
-		/// sets true when explicitly enabled, so prune it from the wire request unless this is an
-		/// OLLAMA request that explicitly enabled thinking (req.think == true).
-		boolean keepThink = (serviceType == LLMServiceEnumType.OLLAMA && Boolean.TRUE.equals(req.get("think")));
+		/// `think` in ANY form. `think` is an Ollama-only extension, so prune it from the wire
+		/// request unless the caller EXPLICITLY populated it (req.hasField, not just the schema
+		/// default) on an OLLAMA request — true to request thinking, or false to force it off on a
+		/// hybrid reasoning model (e.g. qwen3) that otherwise defaults to thinking-on. A caller that
+		/// never touches the field gets the old safe-omit behavior.
+		boolean keepThink = (serviceType == LLMServiceEnumType.OLLAMA && req.hasField("think"));
 		if(!keepThink) {
 			ignoreFields.add("think");
 		}

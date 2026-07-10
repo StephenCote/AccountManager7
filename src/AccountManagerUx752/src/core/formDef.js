@@ -15,6 +15,7 @@
  */
 import m from 'mithril';
 import { am7model } from './model.js';
+import { PageIndexTree } from '../components/pageIndexTree.js';
 
     /// TODO: Currently out of date
     let forms = {
@@ -660,7 +661,18 @@ import { am7model } from './model.js';
             }
         },
         //["name", "description", "createdDate", "modifiedDate", "expiryDate", "mimeType", "dataBytesStore"],
-        forms: ["groupdateinfo", "tags", "ctlattributes", "execute"]
+        forms: ["groupdateinfo", "tags", "ctlattributes", "execute", "pageindex"]
+    };
+
+    // PageIndex tab — mirrors the (removed) vectorize button's role, but as its own tab since
+    // PageIndex has a tree viewer + query UI rather than a one-shot action. Gated to models that
+    // opt in via `pageIndex: true` in modelDef.js (data.data, data.note) by only listing "pageindex"
+    // in THEIR forms arrays — same mechanism as any other named sub-form tab.
+    forms.pageindex = {
+        label: "PageIndex",
+        render: function (entity, inst, foreignData, objectPage) {
+            return m(PageIndexTree, { entity: entity, inst: inst });
+        }
     };
 
 
@@ -2052,7 +2064,7 @@ import { am7model } from './model.js';
                 format: "textarea"
             }
         },
-        forms: ["grouptypeinfo", "attributes"]
+        forms: ["grouptypeinfo", "attributes", "pageindex"]
     };
     forms.trait = {
         label: "Trait",
@@ -5322,6 +5334,11 @@ import { am7model } from './model.js';
             nlpCommand: {
                 layout: "third",
                 label: "Command"
+            },
+            usePageIndex: {
+                layout: "one",
+                label: "Use PageIndex",
+                hint: "Inject PageIndex-ranked leaves from attached documents (that already have a built PageIndex) alongside vector citations."
             },
 
             // requestTimeout moved to the system.connection sub-record (ConnectionRefactorPlan)

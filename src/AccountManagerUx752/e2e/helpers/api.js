@@ -179,6 +179,9 @@ export async function findPath(request, type, subType, dirPath) {
 export async function createNote(request, groupPath, name, text) {
     return createNoteCtx(request, groupPath, name, text);
 }
+export async function createObject(request, schema, data) {
+    return createObjectCtx(request, schema, data);
+}
 export async function deleteObject(request, type, objectId) {
     return deleteObjectCtx(request, type, objectId);
 }

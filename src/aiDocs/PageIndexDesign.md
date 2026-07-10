@@ -1,6 +1,7 @@
 # PageIndex — Design
 
-**Status:** design (approved, not yet implemented) · **Date:** 2026-07-07 · **Target module:** AccountManagerObjects7
+**Status:** implemented & verified (engine + PBAC-gate prerequisite) · **Date:** 2026-07-07 (engine),
+2026-07-09 (PBAC gate + Ollama fixes) · **Target module:** AccountManagerObjects7
 
 A hierarchical table-of-contents index capability for Objects7: for any model that opts in, build and
 persist a tree of summary nodes (root → sections → leaf chunks) over the model's document content, and
@@ -167,12 +168,18 @@ later, optional Service7 change (out of scope here).
 
 In-process — it repeatedly reads child nodes on each hop, so retrieval **must** stay in Objects7. It
 reads via `IOSystem.getActiveContext().getSearch()` directly — the documented **utility-bypass** pattern
-(same as `VectorUtil`), NOT through `AccessPoint`. `retrieve()` takes no `user` and does not enforce
-PBAC on the reads; today it has no caller outside tests and no REST surface, so this is not exploitable.
-**Rule:** any future REST/Service7 exposure of `retrieve()` MUST gate through `AccessPoint.find`/`canRead`
-(resolve the source record's authorization first, as the build path `AccessPoint.pageIndex` already does)
-or add a `user` param and authorize the node reads. Node queries (`loadRoots`/`loadChildren`/`countPageIndex`/
-`deletePageIndex`) carry an explicit `organizationId` condition and `cache:false` for fresh reads.
+(same as `VectorUtil`), NOT through `AccessPoint`. `retrieve()` itself still takes no `user` and does not
+enforce PBAC on the reads directly.
+
+**PBAC gate — DONE (2026-07-09, see `aiDocs/PageIndexIntegrationPlan.md`).** `AccessPoint.pageIndexRetrieve`/
+`pageIndexTree`/`pageIndexDelete` now sit in front of `retrieve()`/`getTree()`/`deletePageIndex()`: each
+resolves the source record via `find(user, q)` and authorizes it (`canRead` for retrieve/tree, `canUpdate`
+for delete — mirroring the build path's `canUpdate`) before calling into the unauthenticated utility
+methods. **Rule (unchanged):** any caller outside these three `AccessPoint` wrappers (a new REST endpoint,
+an MCP tool, a chat-RAG code path) MUST go through them rather than calling `PageIndexUtil.retrieve`/
+`getTree`/`deletePageIndex` directly — those utility methods remain intentionally unauthenticated, exactly
+like `VectorUtil`. Node queries (`loadRoots`/`loadChildren`/`countPageIndex`/`deletePageIndex`) carry an
+explicit `organizationId` condition and `cache:false` for fresh reads.
 
 **Known v1 inefficiency:** the persisted node `embedding` cannot be projected by the standard reader
 (VECTOR type), so `nodeEmbedding()` re-embeds each visited node's title+summary live during retrieval —
@@ -302,12 +309,28 @@ built and will not be used.**
 - **Staleness:** like vectors today, editing the source doesn't auto-invalidate the index —
   `deletePageIndex` + re-`pageIndex` is the rebuild story (same limitation vectors have).
 - **Summarization provider:** summaries go through the `Chat`/`LLMConnectionManager` client, which is
-  connection-configured (OpenAI or local) — NOT the local-only `EmbeddingUtil.getSummary()`
+  connection-configured (OpenAI, Ollama, or local) — NOT the local-only `EmbeddingUtil.getSummary()`
   (`/generate_summary`, which returns null for non-LOCAL types). Graceful fallback to a content excerpt
-  if the call fails. (During current work the local LLMs are unavailable, so tests run against OpenAI
-  via the connection/config in `AccountManagerObjects7/src/test/resources/resource.properties`; the
-  test chat config + connection settings must be pointed at OpenAI, and separately for any Ux testing
-  since that uses a different DB.)
+  if the call fails. (As of 2026-07-09, `TestPageIndex` points the `contentAnalysis` library config at
+  **Ollama on the DGX Spark, `qwen3:8b`** — the Azure/OpenAI credentials in the committed test properties
+  are blank. Any Ux-side testing of PageIndex would need its own chat config pointed at a working
+  connection, since Ux752 e2e runs against a different DB than the Objects7 unit tests.)
+- **Hybrid-reasoning Ollama models need `think:false`, not just tag-stripping (fixed 2026-07-09).**
+  `qwen3:8b` (and other Qwen3-family hybrid-reasoning models) defaults to thinking-on and returns
+  chain-of-thought prose inline with the answer — sometimes as literal `<think>...</think>` markers,
+  sometimes as unwrapped prose with no tags at all. Left unhandled, this broke the LLM-TOC builder's
+  strict-JSON parse (`could not parse JSON from chat output`) and polluted stored summaries with reasoning
+  text. Fix (in `PageIndexUtil.callChat`, both the TOC and summarization call sites): explicitly
+  `req.set("think", false)` for `OLLAMA`-serviced chat configs — this required a companion fix in
+  `Chat.chatInternal` (`Chat.java`), whose `think`-field wire gate previously only ever forwarded
+  `think:true` and silently pruned everything else (some non-thinking local Ollama models reject the
+  `think` parameter in *any* form, including `false`). The gate now checks `req.hasField("think")`
+  (explicitly populated vs left at schema default) rather than `==true`, so an explicit `false` reaches
+  the wire while callers that never touch the field keep the old safe-omit behavior. `stripThinking()`
+  (regex-stripping `<think>`/`<thought>` blocks) is kept as defense-in-depth. **Any future LLM-calling
+  code in Objects7 that talks to a hybrid-reasoning Ollama model and needs clean/parseable text should do
+  the same** — set `think:false` explicitly rather than relying on prompt instructions ("return only the
+  JSON") or output tag-stripping alone, since the model may not emit tags at all.
 - **Offset fidelity:** offsets are meaningful relative to the extracted string, not the original
   binary, across PDF/docx extraction.
 

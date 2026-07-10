@@ -274,6 +274,10 @@ let _uploadMode = false;
 let _attachTypes = [
     { label: "Upload File", icon: "cloud_upload", type: "upload", attachType: "upload" },
     { label: "Document", icon: "description", type: "data.data", attachType: "context" },
+    // PageIndex-eligible content (modelDef.js `pageIndex: true`) — attaching rides the same
+    // contextRefs flow as Document; the chatConfig's usePageIndex flag decides whether the
+    // backend also pulls PageIndex-ranked leaves for whichever of these are already built.
+    { label: "Note", icon: "note", type: "data.note", attachType: "context" },
     { label: "Tag", icon: "label", type: "data.tag", attachType: "tag" },
     { label: "Character", icon: "person", type: "olio.charPerson", attachType: "systemCharacter" },
     { label: "Chat Config", icon: "settings", type: "olio.llm.chatConfig", attachType: "chatConfig" },

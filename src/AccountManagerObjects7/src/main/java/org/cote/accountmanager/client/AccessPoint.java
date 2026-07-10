@@ -771,4 +771,115 @@ public class AccessPoint {
 		return outBool;
 	}
 
+	/// PBAC-gated retrieval: resolves + authorizes (canRead) the source record before running
+	/// PageIndexUtil.retrieve, which itself has no user/authorization concept (utility bypass).
+	/// Authorizing the source doc once is sufficient because nodes live in the source's group.
+	public List<BaseRecord> pageIndexRetrieve(BaseRecord user, String model, String objectId, String query, int limit) {
+		List<BaseRecord> results = new ArrayList<>();
+		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.planMost(false, Arrays.asList(new String[] {FieldNames.FIELD_CONTACT_INFORMATION}));
+		BaseRecord rec = find(user, q);
+
+		ActionEnumType aet = ActionEnumType.READ;
+		BaseRecord audit = AuditUtil.startAudit(user, aet, user, rec);
+		AuditUtil.query(audit, q.key());
+		if(rec == null) {
+			audit.setValue(FieldNames.FIELD_RESOURCE_TYPE, model);
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Object " + objectId + " could not be read");
+			return results;
+		}
+
+		PolicyResponseType prt = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, rec);
+		if(prt.getType() != PolicyResponseEnumType.PERMIT) {
+			AuditUtil.closeAudit(audit, prt, "Not authorized to read object");
+			return results;
+		}
+
+		results = PageIndexUtil.retrieve(rec, query, limit);
+		AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, "Retrieved " + results.size() + " page index result(s)");
+		return results;
+	}
+
+	/// PBAC-gated tree read: mirrors pageIndexRetrieve's authorization, backing the tree-viewer surface.
+	public List<BaseRecord> pageIndexTree(BaseRecord user, String model, String objectId) {
+		List<BaseRecord> results = new ArrayList<>();
+		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.planMost(false, Arrays.asList(new String[] {FieldNames.FIELD_CONTACT_INFORMATION}));
+		BaseRecord rec = find(user, q);
+
+		ActionEnumType aet = ActionEnumType.READ;
+		BaseRecord audit = AuditUtil.startAudit(user, aet, user, rec);
+		AuditUtil.query(audit, q.key());
+		if(rec == null) {
+			audit.setValue(FieldNames.FIELD_RESOURCE_TYPE, model);
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Object " + objectId + " could not be read");
+			return results;
+		}
+
+		PolicyResponseType prt = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, rec);
+		if(prt.getType() != PolicyResponseEnumType.PERMIT) {
+			AuditUtil.closeAudit(audit, prt, "Not authorized to read object");
+			return results;
+		}
+
+		results = PageIndexUtil.getTree(rec);
+		AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, "Retrieved " + results.size() + " page index node(s)");
+		return results;
+	}
+
+	/// PBAC-gated count (mirrors pageIndexTree's canRead gate) — backs the REST rebuild-flow "does an
+	/// index already exist" check without exposing the unauthenticated PageIndexUtil.countPageIndex directly.
+	public int pageIndexCount(BaseRecord user, String model, String objectId) {
+		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.planMost(false, Arrays.asList(new String[] {FieldNames.FIELD_CONTACT_INFORMATION}));
+		BaseRecord rec = find(user, q);
+
+		ActionEnumType aet = ActionEnumType.READ;
+		BaseRecord audit = AuditUtil.startAudit(user, aet, user, rec);
+		AuditUtil.query(audit, q.key());
+		if(rec == null) {
+			audit.setValue(FieldNames.FIELD_RESOURCE_TYPE, model);
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Object " + objectId + " could not be read");
+			return 0;
+		}
+
+		PolicyResponseType prt = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, rec);
+		if(prt.getType() != PolicyResponseEnumType.PERMIT) {
+			AuditUtil.closeAudit(audit, prt, "Not authorized to read object");
+			return 0;
+		}
+
+		int count = PageIndexUtil.countPageIndex(rec);
+		AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, "Counted " + count + " page index node(s)");
+		return count;
+	}
+
+	/// PBAC-gated delete: canUpdate (not canDelete) is deliberate — the index is derived data on the
+	/// source doc, so its removal is gated on modify-rights to the source, consistent with build (pageIndex
+	/// also uses canUpdate).
+	public boolean pageIndexDelete(BaseRecord user, String model, String objectId) {
+		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.planMost(false, Arrays.asList(new String[] {FieldNames.FIELD_CONTACT_INFORMATION}));
+		BaseRecord rec = find(user, q);
+
+		ActionEnumType aet = ActionEnumType.PAGE_INDEX;
+		BaseRecord audit = AuditUtil.startAudit(user, aet, user, rec);
+		AuditUtil.query(audit, q.key());
+		if(rec == null) {
+			audit.setValue(FieldNames.FIELD_RESOURCE_TYPE, model);
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Object " + objectId + " could not be read");
+			return false;
+		}
+
+		PolicyResponseType prt = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, rec);
+		if(prt.getType() != PolicyResponseEnumType.PERMIT) {
+			AuditUtil.closeAudit(audit, prt, "Not authorized to modify object");
+			return false;
+		}
+
+		int deleted = PageIndexUtil.deletePageIndex(rec);
+		AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, "Deleted " + deleted + " page index node(s)");
+		return true;
+	}
+
 }

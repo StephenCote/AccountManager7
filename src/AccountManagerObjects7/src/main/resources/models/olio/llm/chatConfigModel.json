@@ -83,6 +83,11 @@
 			"type": "boolean"
 		},
 		{
+			"name": "usePageIndex",
+			"type": "boolean",
+			"description": "Opt-in: inject PageIndex-ranked leaf passages (in addition to flat-vector citations) into getDataCitations for any attached document that already has a built PageIndex. Off by default — PageIndex retrieval re-embeds per node and costs more than flat-vector citations."
+		},
+		{
 			"name": "prune",
 			"type": "boolean"
 		},

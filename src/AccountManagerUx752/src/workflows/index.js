@@ -6,6 +6,7 @@
 
 export { summarize } from './summarize.js';
 export { vectorize } from './vectorize.js';
+export { pageIndex, buildPageIndex, deletePageIndex } from './pageIndex.js';
 export { reimage } from './reimage.js';
 export { reimageApparel } from './reimageApparel.js';
 export { memberCloud } from './memberCloud.js';
