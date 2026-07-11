@@ -537,3 +537,36 @@ given `deleteForeignReferences`'s existing default and the orphan-file risk of g
 (deleting a file a *different* still-live record's stream also points at, if streams are ever shared —
 not confirmed either way here, worth checking before implementing). Filed here per the tracker's own
 header for scoping/sequencing later, not committed to a timeline.
+
+### KI-21. Soft delete — DESIGN NOTE / open architectural question (2026-07-11, Stephen)
+
+Raised while writing KI-20: today's delete model — a container's delete only removes that one record,
+with a separate orphan-cleanup process reaping abandoned children independently — is a deliberate,
+long-standing design choice, not an oversight (see the design note inside KI-20). It works well for the
+"reap what's abandoned, eventually" model. But **an enterprise deployment may need an actual soft-delete
+concept** (mark-as-deleted with a retention/undo window, audit trail of who deleted what and when,
+exclusion from normal queries without physical removal, eventual hard-delete or archive after a
+retention period) — and Stephen was explicit that this would be **an entirely new concept**, not an
+extension of the existing hard-delete-plus-orphan-cleanup model.
+
+**Not researched or scoped here** — no grounding file:line citations yet, deliberately, since this is
+architecture-level and needs a real design pass, not a patch. Things a future design pass should
+resolve before any implementation:
+- Where the "deleted" flag/timestamp would live — a field on `common.base`/`system.primaryKey` (every
+  model), or an opt-in mixin model (`common.softDeleteExt` or similar) the way `data.journalExt`/
+  `crypto.vaultExt` are opt-in today?
+- How PBAC/`AccessPoint` and the query layer (`Query`/`QueryPlan`/`ISearch`) treat soft-deleted records
+  by default — excluded from every query unless explicitly asked for (an `includeDeleted` query flag),
+  mirroring how `data.directory`-derived queries already require an explicit `organizationId` condition?
+- Interaction with the existing orphan-cleanup process (KI-20's design note) — does orphan cleanup
+  soft-delete first and hard-delete later, or are they two independent mechanisms?
+- Interaction with KI-20's stream-file cleanup — a soft-deleted `data.data` almost certainly should
+  *not* have its stream file deleted yet (defeats "undo"), so KI-20's file-cleanup hook would need to
+  fire at hard-delete/retention-expiry time, not at soft-delete time, if both land.
+- Whether this is global (every model) or scoped to specific high-value domains first (e.g. `data.*`,
+  `identity.*`) given "entirely new concept" implies real schema/migration cost across the whole model
+  set.
+
+**Scope note:** explicitly filed as a design question, not a committed feature or even a scoped feature
+request yet — per the tracker's own header, this is here so the question doesn't get lost, not because
+an implementation approach has been chosen.
