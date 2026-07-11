@@ -629,7 +629,10 @@ renderers["object-link"] = function(ctx) {
                 client.dotPath(client.currentOrganization) + "/" +
                 modelKey + useEntity.groupPath + "/" + useEntity.name;
         } else {
-            uri = client.base() + "/rest/model/" + modelKey + "/" + useEntity.objectId;
+            // client.base() already includes "/rest" — appending another "/rest/..." here
+            // produced a broken "/rest/rest/model/..." URI (KI-19). "/full" is required to get
+            // the fully-populated record (planMost) instead of the default minimal-field stub.
+            uri = client.base() + "/model/" + modelKey + "/" + useEntity.objectId + "/full";
         }
         label = useEntity.name;
     }

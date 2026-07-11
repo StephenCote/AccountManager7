@@ -664,6 +664,36 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         forms: ["groupdateinfo", "tags", "ctlattributes", "execute", "pageindex"]
     };
 
+    // KI-19: data.groupExport had no formDef.js entry at all, so every field — including the
+    // system.primaryKey uri/link field — fell onto a single unstructured default tab instead of
+    // being split into a proper Info sub-tab (the pattern every other data.directory model follows).
+    forms.groupExport = {
+        label: "Export",
+        fields: {
+            // Not format:"object-link" — that renderer resolves ctx.useEntity/ctx.entity to the
+            // *containing* record, not this field's own foreign value, so it produced a link/label
+            // pointing back at the groupExport container itself under both fields (found live via
+            // e2e/objectLinkFix.spec.js). Leave these on the default foreign-model field renderer.
+            sourceGroup: {
+                layout: "half",
+                readOnly: true
+            },
+            archive: {
+                layout: "half",
+                readOnly: true
+            },
+            itemCount: {
+                layout: "third",
+                readOnly: true
+            },
+            generatedDate: {
+                layout: "third",
+                readOnly: true
+            }
+        },
+        forms: ["groupdateinfo"]
+    };
+
     // PageIndex tab — mirrors the (removed) vectorize button's role, but as its own tab since
     // PageIndex has a tree viewer + query UI rather than a one-shot action. Gated to models that
     // opt in via `pageIndex: true` in modelDef.js (data.data, data.note) by only listing "pageindex"

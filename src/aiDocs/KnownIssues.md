@@ -300,7 +300,8 @@ a download link in the gallery view instead of (or alongside) the Export button.
 
 **Scope note:** this is a genuinely new feature (new model field, two new REST endpoints, new server-side ZIP-writing utility, new Ux button + state) — not a small patch. Filed here per the tracker's own header ("a tracker, not a commitment") for scoping/sequencing later, not committed to a timeline.
 
-**Status: DONE — backend + Ux752 implemented and live-verified end to end (2026-07-10/11).**
+**Status: DONE — backend + both Ux752 gallery surfaces (`views/list.js` toolbar and
+`page.imageGallery()` pop-in) implemented and live-verified end to end (2026-07-10/11).**
 - `AccountManagerObjects7/.../util/ZipUtil.java` — extended (not a new class, per Stephen) with
   `createArchive(Map<String,byte[]>)` / `newOrderedEntries()` (`java.util.zip.ZipOutputStream`/`ZipEntry`);
   4 pure unit tests (`TestZipUtil`, no DB) verify round-trip, insertion order, empty map, null-content entries.
@@ -360,6 +361,34 @@ a download link in the gallery view instead of (or alongside) the Export button.
   since `TestGroupExport` (Objects7 JUnit) already verifies real ZIP entries/content server-side; the e2e
   test's job is proving the UI wiring (button → dialog → REST → toast → download button → REST), which the
   response status/headers check already does.
+- **Second gallery surface covered (2026-07-11):** Stephen flagged that `views/list.js`'s toolbar isn't
+  the only gallery entry point — `page.imageGallery()` (`src/core/pageClient.js`, opened via the
+  `photo_library` button on `olio.charPerson` views, `src/views/object.js:1208`) is a separate pop-in
+  dialog (character portrait gallery) that doesn't go through `list.js` at all. Added three raw REST
+  helpers directly in `pageClient.js` (`checkGroupExportStatus`/`buildGroupExportRaw`/
+  `downloadGroupExportRaw` — NOT imported from `workflows/groupExport.js`, since workflows import
+  `page`/`am7client` from `pageClient.js` and importing back would cycle), resolved the gallery's
+  backing group's `objectId` (the REST contract is objectId-keyed; `imageGallery` otherwise only ever
+  had the numeric `id`), and replaced the dialog's static `actions` array with a reactive
+  `actions: { view: buildDialogActions }` (confirmed via `dialogCore.js` lines 116-123 that `actions`
+  supports the same `{view: fn}` component form as `content`) so the Download button appears
+  immediately after Export completes, without closing/reopening the dialog.
+  Live-verified: new `e2e/charGalleryExport.spec.js` (`ensureSharedTestUser`, never admin) — creates a
+  minimal `olio.charPerson` (no portrait, so `imageGallery` falls back to `~/Gallery`) plus one real
+  image in `~/Gallery`, opens the character view, clicks `photo_library`, confirms the Export button
+  inside the gallery dialog, clicks it, waits for the real "Export complete" toast (genuine `POST
+  /groupExport/data.data/{groupObjectId}` round-trip), confirms the Download button then appears, clicks
+  it, and asserts the REST response is a real `200` with `zip` content-type and `attachment` disposition
+  — passes twice in a row against the live Tomcat + Vite stack.
+  Locator gotcha found here, not present in the `list.js` version: the dialog renders as a sibling of
+  `<main>`, not nested inside it (confirmed via Playwright's accessibility snapshot) — scoping locators
+  to `page.getByRole('main')` (the pattern `groupExport.spec.js` used to dodge a duplicate-DOM quirk)
+  finds nothing here. Scope to `page.getByRole('dialog')` instead for anything inside the pop-in; the
+  "Export complete" toast itself isn't inside the dialog either, so it's asserted unscoped.
+  KI-18's backdrop-intercepts-clicks issue did not reproduce for this dialog's own Export/Download
+  buttons (plain, unforced clicks worked) — consistent with KI-18 being specifically about a
+  `Dialog.confirm` sub-dialog stacked on top of another already-open dialog, not a single dialog's own
+  action-bar buttons.
 
 ### KI-18. `am7-dialog` primary-button clicks can be intercepted by the dialog's own backdrop — OPEN (2026-07-11)
 Found writing `e2e/groupExport.spec.js`: clicking a dialog's primary button (`.am7-dialog-btn-primary`)
@@ -380,3 +409,119 @@ for a `pointer-events` or `z-index` rule that only takes effect post-animation-c
 with a real browser + devtools element-picker at the button's coordinates to see what's actually on top.
 Possibly related to the broader KI-13 cross-view consistency umbrella (dialog usage may have drifted
 inconsistent across call sites the same way sliders did in KI-16) — or a standalone dialogCore.js bug.
+
+### KI-19. `uri`/object-link field: broken URI + wrong tab placement — FIXED (2026-07-11, Stephen)
+Stephen flagged, while checking KI-17's `data.groupExport` records: the generic `uri` field (added to
+`system.primaryKey` — every model inherits it — rendered via `formFieldRenderers.js`'s `object-link`
+format: a link + a `file_json` print icon) showed up **directly on the object's main/default tab**
+instead of tucked into the "Info" sub-tab like every other model, and the link itself was broken two
+ways: (a) the built URI duplicated `/rest` (`client.base()` already returns `.../rest` — see
+`am7client.js`'s `sBase = applicationPath + "/rest"` — so appending another `/rest/model/...` produced
+`.../rest/rest/model/...`), and (b) it pointed at the default minimal-field stub instead of `/full`
+(the fully-populated record — see `model-api.md`'s field-projection rules).
+
+**Root cause of the tab-placement bug:** `data.groupExport` (added for KI-17) had **zero** entries in
+`AccountManagerUx752/src/core/modelDef.js` or `formDef.js` — every other model in the schema maps its
+`uri`/`urn`/`objectId`/date fields to a named Info sub-form (`groupinfo`/`groupdateinfo`/`dateinfo`,
+looked up via `am7model.forms[type.split('.').pop()]` in `model.js:734`); with no `forms.groupExport`
+entry at all, every field — including `uri` — fell onto a single unstructured tab.
+
+**Fixed:**
+- `AccountManagerUx752/src/components/formFieldRenderers.js` (`renderers["object-link"]`) — corrected the
+  URI to `client.base() + "/model/" + modelKey + "/" + objectId + "/full"` (no more double `/rest`, now
+  requests the full record). This is the shared renderer for every model's `uri` field, not just
+  `data.groupExport`'s — the fix applies everywhere the link is used.
+- `AccountManagerUx752/src/core/modelDef.js` — added the missing `data.groupExport` schema entry
+  (mirrors the real model at `AccountManagerObjects7/.../models/data/groupExportModel.json`: inherits
+  `data.directory` + `common.dateTime`; fields `sourceGroup`/`archive`/`itemCount`/`generatedDate`).
+- `AccountManagerUx752/src/core/formDef.js` — added `forms.groupExport` (label "Export") with
+  `sourceGroup`/`archive`/`itemCount`/`generatedDate` on the main tab and `forms: ["groupdateinfo"]` for
+  the Info sub-tab (same pattern `forms.data` already uses), so `uri`/`urn`/`objectId`/`organizationPath`/
+  the three dates/`groupPath` land in Info like everywhere else.
+- **Real bug caught while fixing this, not by inspection:** originally gave `sourceGroup`/`archive` their
+  own `format: "object-link"` too (they're foreign single-model fields, seemed like a natural fit for a
+  "here's a link to the referenced record" affordance) — live-tested and found the renderer resolves
+  `ctx.useEntity || ctx.entity` to the **containing** record for these fields, not the field's own foreign
+  value, so both fields rendered a link/label pointing back at the groupExport container itself (visible
+  proof: both showed the same href and the same label, the container's own name). **`object-link` is only
+  correct for a field bound to the record's own identity (like the top-level `uri` field), not for
+  arbitrary nested foreign-model fields** — reverted `sourceGroup`/`archive` to the default foreign-field
+  renderer (no custom format).
+- **Known follow-up, not fixed here (logged, not silently dropped):** the default renderer for a foreign
+  single-`model` field with no custom format just stringifies the object, so `sourceGroup`/`archive` on
+  `data.groupExport`'s main tab currently display literally `[object Object]` in a disabled textbox —
+  functionally harmless (the fields are read-only anyway) but not informative. A real fix needs either a
+  small dedicated renderer (name + link, without the `object-link` bug above) or reuse of whatever
+  read-only "foreign record summary" pattern (if any) exists elsewhere in Ux752 — not investigated further
+  here since it wasn't the reported issue.
+- **Live-verified:** new `e2e/objectLinkFix.spec.js` (`ensureSharedTestUser`, never admin) — builds a real
+  export via `POST /groupExport/data.data/{groupObjectId}`, navigates to the resulting
+  `data.groupExport` record's view page, confirms the main/"Export" tab does **not** carry the `uri` link,
+  clicks the "Info" tab, confirms the link is there, and asserts its `href` has no `/rest/rest` and ends in
+  `/full`. Locators had to be scoped with the `:visible` pseudo-class, not just `page.getByRole('main')` —
+  this app mounts a second, offscreen/hidden copy of the DOM (the same pre-existing quirk noted in
+  `e2e/groupExport.spec.js`), and the hidden copy matched the plain locator too, producing a false failure
+  before the `:visible` scoping was added.
+- `npx vite build` clean; `npx vitest run` — 299 passed (same 1 pre-existing unrelated `dialog.test.js`
+  failure as KI-17, confirmed unrelated via `git stash` there).
+
+### KI-20. Deleting a stream-backed `data.data` never deletes the underlying file(s) — FEATURE REQUEST (2026-07-11, Stephen)
+
+Add a gated system property (`resource.properties` for test/console, `web.xml` context-param for the
+backend — mirroring the existing `test.db.reset`/`database.dropColumns` opt-in pattern) that, when
+enabled, deletes the physical on-disk file(s) backing a `data.data`'s stream when that record is
+deleted — including any currently-"unboxed" (decrypted) copy, not just the encrypted `.box` file.
+
+**Grounding research (file:line):**
+
+- **Where the bytes actually live:** despite the model name, there is no `data.stream_segment` DB
+  table — `data.streamSegment` is declared `"ephemeral": true`
+  (`AccountManagerObjects7/.../models/data/streamSegmentModel.json:3`) with custom
+  `StreamSegmentReader`/`Writer`/`Search` IO classes, and `SchemaUtil.java:206` skips ephemeral models
+  when generating DB tables. The real bytes are one file per stream, written by
+  `StreamSegmentWriter.writeFileSegment` (`.../io/stream/StreamSegmentWriter.java:126-161`) to a path
+  from `StreamSegmentUtil.getFileStreamPath(stream)` (`.../io/stream/StreamSegmentUtil.java:133-201`,
+  pattern `IOFactory.DEFAULT_FILE_BASE/.streams/<org>/<groupId>/<objectId><ext>`), cached onto the
+  stream's (encrypted) `streamSource` field.
+- **What "unboxed" means (not `VaultService.unvaultField` — a distinct, stream-file-specific concept):**
+  `StreamUtil.boxStream`/`unboxStream` (`.../util/StreamUtil.java:201-270`, `rebox` at 272-326) encrypt/
+  decrypt the **entire physical stream file in place**: `boxStream` deletes the plaintext and leaves only
+  `<path>.box`; `unboxStream` writes the plaintext back out to `<path>` (no `.box`) alongside it.
+  `isStreamUnboxed`/`unboxedMap` (lines 126-147) track which streams currently have a live plaintext
+  copy on disk. Cleanup already exists but is **manual/opt-in only**: `clearUnboxedStream` (162-197,
+  single stream) and `clearAllUnboxedStreams` (162-180, sweeps the whole `.streams/` tree via
+  `DirectoryUtil` deleting any non-`.box` file) — normal upload (`streamToData`, lines 450-546) calls
+  `boxStream` + `clearUnboxedStream` right after writing (530-533), so the plaintext copy is
+  conventionally short-lived, but **nothing forces that**, and **nothing ties either the `.box` file or
+  a lingering unboxed copy to record deletion**.
+- **What delete does today — confirmed it touches neither the `data.stream` row nor any file:**
+  `AccessPoint.delete(...)` (`AccountManagerObjects7/.../client/AccessPoint.java:320-396`) →
+  `RecordUtil.deleteRecord` (`.../util/RecordUtil.java:744-759`) → `DBWriter.delete`
+  (`.../io/db/DBWriter.java:101-144`) deletes only the `data.data` row itself; the foreign-key cascade
+  path (`StatementUtil.getForeignDeleteTemplate`, gated by `deleteForeignReferences`, default `false`,
+  never set `true` anywhere in the codebase) only nulls/cascades **other** tables' FKs pointing *at* the
+  deleted row — it does not follow the deleted row's *own* FK (`data.data.stream` → `data.stream`), a
+  gap `StatementUtil.java:104`'s own comment acknowledges ("there's the possibility that orphans would
+  be left"). Even if the `data.stream` row itself were deleted, `StreamSegmentWriter.delete(...)`
+  (`.../io/stream/StreamSegmentWriter.java:79-82`) is a hard-coded no-op (`// TODO`) — there is currently
+  **no code path anywhere that deletes the on-disk file**, boxed, unboxed, or otherwise.
+- **Precedent for the gated property (mirror this exactly):** test/console side —
+  `test.db.reset`/`db.schema.dropColumns` in
+  `AccountManagerObjects7/src/test/resources/resource.properties:5,7`, read via
+  `Boolean.parseBoolean(testProperties.getProperty(...))` in
+  `AccountManagerObjects7/.../tests/BaseTest.java:88,135`. Backend side — `database.dropColumns`
+  (`AccountManagerService7/src/main/webapp/WEB-INF/web.xml:47-49`) and `vector.enabled`
+  (lines 163-165) both read via `context.getInitParameter(...)` in
+  `RestServiceEventListener.java:214,240` (the latter using a `parseBoolean(str, default)` helper that
+  supports a non-false default, worth reusing if this property should default to a specific value); the
+  existing `stream.cutoff` param (web.xml:57-59, read at `RestServiceEventListener.java:198-201` via
+  `StreamUtil.setStreamCutoff`) is the closest existing precedent for a *stream-specific* config knob
+  and the natural place to add the new one alongside it.
+
+**Scope note:** genuinely new behavior (a delete-time hook wiring `data.data` deletion to
+`StreamUtil`'s existing box/unbox-aware file paths, plus the new gated property on both the test/console
+and backend config surfaces) — not a small patch, and the flag should very likely default to **off**
+given `deleteForeignReferences`'s existing default and the orphan-file risk of getting this wrong
+(deleting a file a *different* still-live record's stream also points at, if streams are ever shared —
+not confirmed either way here, worth checking before implementing). Filed here per the tracker's own
+header for scoping/sequencing later, not committed to a timeline.

@@ -2080,6 +2080,46 @@
       ]
     },
     {
+      "name": "data.groupExport",
+      "inherits": [
+        "data.directory",
+        "common.dateTime"
+      ],
+      "group": "Data",
+      "icon": "archive",
+      "label": "Group Export",
+      "sortField": "generatedDate",
+      "sortOrder": "DESCENDING",
+      "query": [
+        "sourceGroup",
+        "itemCount"
+      ],
+      "description": "Generated ZIP export of a group/gallery's contents (KI-17). One export per source group per organization; rebuilding replaces the existing archive rather than accumulating duplicates.",
+      "fields": [
+        {
+          "name": "sourceGroup",
+          "baseModel": "auth.group",
+          "type": "model",
+          "foreign": true
+        },
+        {
+          "name": "archive",
+          "baseModel": "data.data",
+          "type": "model",
+          "foreign": true
+        },
+        {
+          "name": "itemCount",
+          "type": "int",
+          "default": 0
+        },
+        {
+          "name": "generatedDate",
+          "type": "zonetime"
+        }
+      ]
+    },
+    {
       "name": "policy.control",
       "inherits": [
         "common.nameId",
