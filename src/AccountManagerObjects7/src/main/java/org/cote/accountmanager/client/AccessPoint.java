@@ -32,6 +32,7 @@ import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.FieldLockUtil;
 import org.cote.accountmanager.util.FieldUtil;
+import org.cote.accountmanager.util.GroupExportUtil;
 import org.cote.accountmanager.util.PageIndexUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.accountmanager.util.RecordUtil;
@@ -880,6 +881,60 @@ public class AccessPoint {
 		int deleted = PageIndexUtil.deletePageIndex(rec);
 		AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, "Deleted " + deleted + " page index node(s)");
 		return true;
+	}
+
+	/// PBAC-gated group export (KI-17): resolves + authorizes (canUpdate — mirrors pageIndex()/vectorize(),
+	/// a derived artifact is being created on the group) the source group before calling into
+	/// GroupExportUtil, which has no user/authorization concept of its own.
+	public BaseRecord exportGroup(BaseRecord user, String groupObjectId, String type) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_OBJECT_ID, groupObjectId);
+		BaseRecord group = find(user, q);
+
+		ActionEnumType aet = ActionEnumType.EXPORT;
+		BaseRecord audit = AuditUtil.startAudit(user, aet, user, group);
+		AuditUtil.query(audit, q.key());
+		if(group == null) {
+			audit.setValue(FieldNames.FIELD_RESOURCE_TYPE, ModelNames.MODEL_GROUP);
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Group " + groupObjectId + " could not be read");
+			return null;
+		}
+
+		PolicyResponseType prt = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, group);
+		if(prt.getType() != PolicyResponseEnumType.PERMIT) {
+			AuditUtil.closeAudit(audit, prt, "Not authorized to modify group");
+			return null;
+		}
+
+		BaseRecord container = null;
+		try {
+			container = GroupExportUtil.exportGroup(user, group, type);
+			if(container != null) {
+				AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, "Exported group");
+			}
+			else {
+				AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Nothing to export (no " + type + " children)");
+			}
+		}
+		catch(Exception e) {
+			logger.error(e);
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, e.getMessage());
+		}
+		return container;
+	}
+
+	/// PBAC-gated export lookup (canRead — this is a read, unlike the canUpdate-gated build above) —
+	/// backs the "does an export already exist, show the download link" check.
+	public BaseRecord findGroupExport(BaseRecord user, String groupObjectId) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_OBJECT_ID, groupObjectId);
+		BaseRecord group = find(user, q);
+		if(group == null) {
+			return null;
+		}
+		PolicyResponseType prt = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, group);
+		if(prt.getType() != PolicyResponseEnumType.PERMIT) {
+			return null;
+		}
+		return GroupExportUtil.findGroupExport(group);
 	}
 
 }

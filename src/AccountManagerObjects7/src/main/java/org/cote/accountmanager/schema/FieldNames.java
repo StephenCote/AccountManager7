@@ -364,4 +364,8 @@ public class FieldNames {
 		public static final String FIELD_NODE_COUNT = "nodeCount";
 		public static final String FIELD_GENERATION_MODEL = "generationModel";
 		public static final String FIELD_GENERATED_DATE = "generatedDate";
+
+		public static final String FIELD_SOURCE_GROUP = "sourceGroup";
+		public static final String FIELD_ARCHIVE = "archive";
+		public static final String FIELD_ITEM_COUNT = "itemCount";
 }
