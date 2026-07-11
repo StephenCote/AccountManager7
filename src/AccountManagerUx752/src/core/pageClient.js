@@ -488,6 +488,32 @@ function pageCount(q) {
     });
 }
 
+/// KI-17 (Gallery/Group export) raw REST helpers, used by imageGallery below. Deliberately NOT imported
+/// from workflows/groupExport.js: pageClient.js is a core module that workflows/* import FROM (e.g.
+/// `page`/`am7client`), so importing a workflow module here would be circular. Duplicating these three
+/// small m.request wrappers mirrors the existing convention in this codebase (pageIndexTree.js's
+/// component-level tree/retrieve calls are likewise separate from pageIndex.js's workflow-level
+/// build/delete calls) rather than forcing a shared module that doesn't fit either layer cleanly.
+function checkGroupExportStatus(type, groupObjectId) {
+    return m.request({
+        method: 'GET',
+        url: am7client.base() + '/groupExport/' + type + '/' + groupObjectId,
+        withCredentials: true
+    }).catch(function () { return null; });
+}
+
+function buildGroupExportRaw(type, groupObjectId) {
+    return m.request({
+        method: 'POST',
+        url: am7client.base() + '/groupExport/' + type + '/' + groupObjectId,
+        withCredentials: true
+    });
+}
+
+function downloadGroupExportRaw(type, groupObjectId) {
+    window.open(am7client.base() + '/groupExport/' + type + '/' + groupObjectId + '/download', '_blank');
+}
+
 function deleteObject(type, objectId) {
     return new Promise(function (resolve) {
         am7client.delete(type, objectId, function (v) {
@@ -812,6 +838,23 @@ const page = {
             }
         }
 
+        // KI-17: resolve the group's objectId (the export REST contract is objectId-keyed, not
+        // numeric id) and check whether an export already exists, so the dialog's action bar can offer
+        // Export always and Download only once one has actually been built.
+        let galleryGroupObjectId = null;
+        let exportStatus = null;
+        let exporting = false;
+        if (galleryGroupId) {
+            let gq = am7client.newQuery('auth.group');
+            gq.field('id', galleryGroupId);
+            gq.entity.request = ['id', 'objectId', 'name'];
+            let gqr = await pageSearch(gq);
+            if (gqr && gqr.results && gqr.results.length) {
+                galleryGroupObjectId = gqr.results[0].objectId;
+                exportStatus = await checkGroupExportStatus('data.data', galleryGroupObjectId);
+            }
+        }
+
         // Count total items first
         if (galleryGroupId) {
             let cq = am7client.newQuery('data.data');
@@ -954,14 +997,57 @@ const page = {
             });
         }
 
+        // KI-17: Export/Download for the gallery's backing group — this dialog is exactly the kind of
+        // "gallery view outside a standard list view" (e.g. the character portrait gallery) the export
+        // affordance needs to reach, not just views/list.js's grid mode.
+        async function doExport() {
+            if (!galleryGroupObjectId || exporting) return;
+            exporting = true;
+            m.redraw();
+            addToast('info', 'Exporting gallery...');
+            try {
+                let container = await buildGroupExportRaw('data.data', galleryGroupObjectId);
+                if (container && container.objectId) {
+                    exportStatus = container;
+                    addToast('success', 'Export complete — ' + (container.itemCount || 0) + ' item(s)');
+                } else {
+                    addToast('error', 'Export failed — no exportable content found');
+                }
+            } catch (e) {
+                addToast('error', 'Export failed: ' + (e.message || e));
+            }
+            exporting = false;
+            m.redraw();
+        }
+
         /// Custom actions (e.g. SceneGenerator's "Generate" button) prepend
         /// the Close button so they're more prominent. Each entry follows the
         /// standard Dialog action shape: { label, icon, onclick, primary }.
-        let dialogActions = [];
-        if (opts.extraActions && opts.extraActions.length) {
-            dialogActions = dialogActions.concat(opts.extraActions);
+        /// Built as a function (Dialog supports actions: {view: fn} the same way it does content)
+        /// rather than a static array, so exportStatus/exporting changes after Export is clicked
+        /// (e.g. the Download button appearing) are reflected without closing/reopening the dialog.
+        function buildDialogActions() {
+            let actions = [];
+            if (opts.extraActions && opts.extraActions.length) {
+                actions = actions.concat(opts.extraActions);
+            }
+            if (galleryGroupObjectId) {
+                actions.push({
+                    label: exporting ? 'Exporting…' : (exportStatus ? 'Re-export' : 'Export'),
+                    icon: 'archive',
+                    onclick: doExport
+                });
+                if (exportStatus && exportStatus.objectId) {
+                    actions.push({
+                        label: 'Download',
+                        icon: 'download',
+                        onclick: function() { downloadGroupExportRaw('data.data', galleryGroupObjectId); }
+                    });
+                }
+            }
+            actions.push({ label: 'Close', icon: 'close', onclick: function() { Dialog.close(); } });
+            return actions;
         }
-        dialogActions.push({ label: 'Close', icon: 'close', onclick: function() { Dialog.close(); } });
 
         let title = opts.title || ('Gallery (' + totalCount + ' images)');
 
@@ -970,7 +1056,7 @@ const page = {
             size: 'xl',
             content: { view: renderGallery },
             closable: true,
-            actions: dialogActions
+            actions: { view: buildDialogActions }
         });
 
         /// Return diagnostics so callers can react to empty state, e.g.

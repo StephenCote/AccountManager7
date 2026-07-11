@@ -13,6 +13,7 @@ import { FullCanvasViewer, GridPreview, renderContent, injectCSS as ivCSS } from
 // to "System library not initialized" instead of auto-loading the library.
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { ChatSetupWizard } from '../chat/ChatSetupWizard.js';
+import { exportGroup, checkGroupExport, downloadGroupExport } from '../workflows/groupExport.js';
 // breadcrumb is now a component in navigation.js (Ux7 pattern), not inline
 
 // ---------------------------------------------------------------------------
@@ -64,6 +65,12 @@ function newListControl() {
 
     // Tagging batch state
     let taggingInProgress = false;
+
+    // Group export (KI-17) state — lazily checked per (type, groupObjectId), cached until that changes.
+    let exportInProgress = false;
+    let exportStatusKey = null;
+    let exportStatusContainer = null;
+    let exportStatusChecking = false;
 
     // Grid/gallery mode state
     let gridSelectedIdx = 0;
@@ -795,6 +802,56 @@ function newListControl() {
         return buttons;
     }
 
+    // Group export (KI-17): lazily check whether an export already exists for (type, groupObjectId),
+    // caching until that key changes so the check doesn't refire on every redraw.
+    function ensureExportStatus(type, groupObjectId) {
+        let key = type + '|' + groupObjectId;
+        if (exportStatusKey === key || exportStatusChecking) return;
+        exportStatusKey = key;
+        exportStatusChecking = true;
+        checkGroupExport(type, groupObjectId).then(function (container) {
+            exportStatusChecking = false;
+            exportStatusContainer = container;
+            m.redraw();
+        });
+    }
+
+    async function doExportGroup(type) {
+        let pg = pagination.pages();
+        if (!pg.container || !pg.container.objectId) { page.toast('error', 'No group selected'); return; }
+        let groupObjectId = pg.container.objectId;
+        exportInProgress = true;
+        m.redraw();
+        try {
+            let container = await exportGroup(type, groupObjectId, pg.container.name);
+            if (container) {
+                exportStatusContainer = container;
+                exportStatusKey = type + '|' + groupObjectId;
+            }
+        } finally {
+            exportInProgress = false;
+            m.redraw();
+        }
+    }
+
+    function doDownloadExport(type) {
+        let pg = pagination.pages();
+        if (!pg.container || !pg.container.objectId) return;
+        downloadGroupExport(type, pg.container.objectId);
+    }
+
+    function getExportButtons(type) {
+        let buttons = [];
+        let pg = pagination.pages();
+        if (!type || !pg.container || !pg.container.objectId) return buttons;
+        ensureExportStatus(type, pg.container.objectId);
+        buttons.push(pagination.button('button' + (exportInProgress ? ' active' : ''), 'archive', '', function () { doExportGroup(type); }));
+        if (exportStatusContainer && exportStatusContainer.objectId) {
+            buttons.push(pagination.button('button', 'download', '', function () { doDownloadExport(type); }));
+        }
+        return buttons;
+    }
+
     function getOlioButtons() {
         let buttons = [];
         let cnt = pagination.pages().container;
@@ -854,6 +911,7 @@ function newListControl() {
         buttons.push(getPickerButtons());
         buttons.push(getAdminButtons(type));
         buttons.push(getActionButtons(type));
+        buttons.push(getExportButtons(type));
         buttons.push(getOlioButtons());
         buttons.push(getFavoriteButtons());
         buttons.push(getOptionButtons(type));

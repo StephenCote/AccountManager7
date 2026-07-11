@@ -300,7 +300,7 @@ a download link in the gallery view instead of (or alongside) the Export button.
 
 **Scope note:** this is a genuinely new feature (new model field, two new REST endpoints, new server-side ZIP-writing utility, new Ux button + state) — not a small patch. Filed here per the tracker's own header ("a tracker, not a commitment") for scoping/sequencing later, not committed to a timeline.
 
-**Status: backend implemented + JUnit-verified (2026-07-10); Ux752 + live REST verification not started.**
+**Status: DONE — backend + Ux752 implemented and live-verified end to end (2026-07-10/11).**
 - `AccountManagerObjects7/.../util/ZipUtil.java` — extended (not a new class, per Stephen) with
   `createArchive(Map<String,byte[]>)` / `newOrderedEntries()` (`java.util.zip.ZipOutputStream`/`ZipEntry`);
   4 pure unit tests (`TestZipUtil`, no DB) verify round-trip, insertion order, empty map, null-content entries.
@@ -333,7 +333,50 @@ a download link in the gallery view instead of (or alongside) the Export button.
   /groupExport/{type}/{groupObjectId}` (build/rebuild), `GET .../{type}/{groupObjectId}` (status/metadata,
   404 with "POST .../export first" if none built yet — mirrors `ISO42001Service`'s PDF pattern), `GET
   .../{type}/{groupObjectId}/download` (byte-store-or-stream-reconstructed response with
-  `Content-Disposition: attachment`). Compiles clean against the installed Objects7 jar; **not yet
-  live-verified over HTTP** — Tomcat was stopped for this work session; verify via curl (mirroring how
-  Tier 1 of the PageIndex REST surface was verified) once it's back up.
-- **Not started:** the Ux752 button/download-link UI (the insertion points below are still accurate/unchanged).
+  `Content-Disposition: attachment`).
+- **Ux752:** `src/workflows/groupExport.js` (new — `exportGroup`/`buildGroupExport`/`checkGroupExport`/
+  `downloadGroupExport`, mirroring `pageIndex.js`'s Dialog→REST→toast shape), wired into
+  `src/views/list.js`'s toolbar (`getExportButtons`, added to `getActionButtonBar`) — an Export icon
+  button (confirm dialog → `POST /groupExport/{type}/{groupObjectId}`, toasts item count) shown whenever
+  a group's contents are being viewed, plus a Download icon button that appears once
+  `GET /groupExport/{type}/{groupObjectId}` confirms an export already exists (checked lazily, cached per
+  `type+groupObjectId` key so it doesn't refire every redraw); clicking Download opens
+  `.../download` in a new tab (`Content-Disposition: attachment` — no client-side blob assembly needed,
+  unlike the `exportPipeline.js`/JSZip precedent, since the server already builds and serves the archive).
+- **Live-verified**: `npx vite build` clean; `npx vitest run` — 299 passed (the 1 failing suite,
+  `dialog.test.js`, is pre-existing on unmodified `main`, confirmed via `git stash`, unrelated to this
+  work); new `e2e/groupExport.spec.js` (`ensureSharedTestUser`, never admin) passes live against the real
+  Tomcat + Vite stack — navigates into a group's list view, clicks Export, confirms the dialog, waits for
+  the real "Export complete" toast (a genuine `POST` round-trip through `AccessPoint.exportGroup` →
+  `GroupExportUtil` → persisted ZIP), then clicks Download and asserts the REST response is a real `200`
+  with a `zip` content-type and `attachment` disposition.
+- Two real, non-obvious things found and fixed while writing the e2e test (see KI-18 for the first —
+  logged separately since it's a general Ux752 dialog issue, not specific to this feature):
+  a Playwright `context.waitForEvent('response', filter)` armed *after* `Promise.all([waitForEvent('popup'), click()])`
+  resolves can miss a fast response entirely — arm every listener before the triggering action, in the
+  same `Promise.all`; and Chromium hands an `attachment`-disposition response straight to its download
+  manager, after which `Network.getResponseBody` (and Playwright's `response.body()`) legitimately 404s —
+  that's a browser mechanic, not a bug, and re-verifying the downloaded bytes isn't worth fighting it here
+  since `TestGroupExport` (Objects7 JUnit) already verifies real ZIP entries/content server-side; the e2e
+  test's job is proving the UI wiring (button → dialog → REST → toast → download button → REST), which the
+  response status/headers check already does.
+
+### KI-18. `am7-dialog` primary-button clicks can be intercepted by the dialog's own backdrop — OPEN (2026-07-11)
+Found writing `e2e/groupExport.spec.js`: clicking a dialog's primary button (`.am7-dialog-btn-primary`)
+via Playwright fails actionability with *"button ... from `<div class="am7-dialog-backdrop am7-animate-in">`
+subtree intercepts pointer events"* — not a transient animation-timing flake, it persists for a full 60s
+retry window regardless of viewport/scroll state. The dialog renders visually correct (confirmed via
+screenshot — title, message, Cancel/Export buttons all in the expected place with no visible overlap), so
+this is specifically a **pointer-events/z-index/stacking-context mismatch between the backdrop and its own
+button**, not a layout bug — something in the backdrop's subtree (possibly a click-outside-to-close
+overlay layer, or the `am7-animate-in` transform/transition class leaving a stale hit-test region) sits
+above the button in the browser's actual hit-testing order even though the button paints on top. Worked
+around in the e2e test with `.click({ force: true })`; a real user might or might not hit this depending on
+exact cursor position within the button's bounds — unverified whether this affects real usage or is a
+Playwright-only artifact (e.g. of headless rendering not running CSS transitions), so treat as **investigate
+first, don't assume force-click is required for humans too**. **Fix direction:** inspect `dialogCore.js`'s
+backdrop/button DOM structure and CSS (`am7-dialog-backdrop`, `am7-animate-in`, `am7-dialog-btn-primary`)
+for a `pointer-events` or `z-index` rule that only takes effect post-animation-class-application; reproduce
+with a real browser + devtools element-picker at the button's coordinates to see what's actually on top.
+Possibly related to the broader KI-13 cross-view consistency umbrella (dialog usage may have drifted
+inconsistent across call sites the same way sliders did in KI-16) — or a standalone dialogCore.js bug.
