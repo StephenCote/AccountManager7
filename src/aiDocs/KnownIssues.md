@@ -505,6 +505,18 @@ deleted — including any currently-"unboxed" (decrypted) copy, not just the enc
   be left"). Even if the `data.stream` row itself were deleted, `StreamSegmentWriter.delete(...)`
   (`.../io/stream/StreamSegmentWriter.java:79-82`) is a hard-coded no-op (`// TODO`) — there is currently
   **no code path anywhere that deletes the on-disk file**, boxed, unboxed, or otherwise.
+
+  **Design note (Stephen, 2026-07-11): this non-cascading behavior is intentional, not a gap in
+  general.** Deleting a container (a group, or any object with children/contained objects) has always
+  been by design a delete of *only that object* — it does not recursively delete the group's contents.
+  A separate **orphan cleanup process** is responsible for finding and deleting objects that have been
+  abandoned by their parent/container and reaping them independently, on its own schedule, rather than
+  as a synchronous side effect of the parent's delete. KI-20's ask is narrower than "make delete
+  cascade": it's specifically about the *physical file* backing a stream having no cleanup path at all
+  today, not the DB-row orphan case, which the existing orphan-cleanup process already covers by design.
+  Any implementation of KI-20 should plug into that same orphan-cleanup rhythm (or at minimum not
+  contradict it) rather than introducing ad hoc synchronous cascade-on-delete behavior — see KI-21 for
+  the bigger architectural question this raises for an enterprise deployment.
 - **Precedent for the gated property (mirror this exactly):** test/console side —
   `test.db.reset`/`db.schema.dropColumns` in
   `AccountManagerObjects7/src/test/resources/resource.properties:5,7`, read via
