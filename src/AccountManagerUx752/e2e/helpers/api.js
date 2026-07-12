@@ -419,6 +419,31 @@ export async function ensureIso42001TestUser(request, opts = {}) {
 }
 
 /**
+ * Assign an existing user (e.g. the shared test user) to a named system role, using an admin context
+ * purely for the provisioning step (mirrors ensureIso42001TestUser's role-assignment loop) — the caller
+ * still performs the actual UI-driven test as the non-admin user. Idempotent (member-add is a no-op if
+ * already a member).
+ * @returns {boolean} true if the role was found and the member-add call was made.
+ */
+export async function addUserToRole(request, userObjectId, roleName, opts = {}) {
+    const org = opts.org || '/Development';
+    let ctx = await newApiContext();
+    try {
+        await loginCtx(ctx, { org });
+        let role = await searchCtx(ctx, 'auth.role', 'name', roleName, ['objectId', 'name']);
+        let ok = false;
+        if (role && role.objectId && userObjectId) {
+            await memberCtx(ctx, 'auth.role', role.objectId, 'system.user', userObjectId, true);
+            ok = true;
+        }
+        await logoutCtx(ctx);
+        return ok;
+    } finally {
+        await ctx.dispose();
+    }
+}
+
+/**
  * Setup workflow test data: create test user + charPerson + data.data objects.
  * Uses its own isolated APIRequestContext.
  * Returns { user, testUserName, testPassword, charPerson, dataObject, note }.

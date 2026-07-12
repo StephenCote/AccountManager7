@@ -44,6 +44,30 @@ function newPaginationControl() {
 
   let pages = newPagination();
 
+  // Client-side sort for lists served from a pre-loaded array (e.g. system roles/permissions/policies,
+  // see updatePage()'s pages.listSystem branch) rather than the search API — the server never sees these,
+  // so the sort field/order picked in the column header has to be applied here or it's a no-op (KI-7).
+  function sortClientList(list, sortField, order) {
+    if (!Array.isArray(list) || !sortField) return list;
+    let desc = (String(order || "").toLowerCase().indexOf("desc") === 0);
+    let out = list.slice();
+    out.sort(function (a, b) {
+      let av = a ? a[sortField] : undefined;
+      let bv = b ? b[sortField] : undefined;
+      if (av == null && bv == null) return 0;
+      if (av == null) return desc ? 1 : -1;
+      if (bv == null) return desc ? -1 : 1;
+      if (typeof av === "string" && typeof bv === "string") {
+        let c = av.localeCompare(bv);
+        return desc ? -c : c;
+      }
+      if (av < bv) return desc ? 1 : -1;
+      if (av > bv) return desc ? -1 : 1;
+      return 0;
+    });
+    return out;
+  }
+
   async function getSearchQuery() {
     if (!pages.resultType) return null;
     // Never build a query for an unknown/unresolved model type (e.g. a "$flex" placeholder or a raw enum
@@ -206,9 +230,10 @@ function newPaginationControl() {
         if (uType.match(/y$/)) fType = uType.slice(0, uType.length - 1) + "ies";
         let v;
         if ((v = page.application["system" + fType])) {
+          let sorted = sortClientList(v, pages.sort, pages.order);
           let i = parseInt(pages.startRecord);
           let c = parseInt(pages.recordCount);
-          let modList = v.slice(i, i + c);
+          let modList = sorted.slice(i, i + c);
           handleList(modList);
         }
       }
