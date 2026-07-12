@@ -399,16 +399,19 @@ public class PageIndexUtil {
 		}
 
 		/// Locate each entry's verbatim startMarker, searching forward from the previous located start.
+		/// locateMarker() tries an exact match first, then a tolerant fallback (see its javadoc) before
+		/// giving up - so a marker is only dropped when it genuinely cannot be found even loosely, not
+		/// merely because the LLM's "verbatim" echo normalized a curly quote/dash or a whitespace run.
 		int searchFrom = 0;
 		List<TocEntry> located = new ArrayList<>();
 		for(TocEntry e : entries) {
-			int idx = content.indexOf(e.startMarker, searchFrom);
-			if(idx < 0) {
+			int[] hit = locateMarker(content, e.startMarker, searchFrom);
+			if(hit == null) {
 				logger.warn("Dropping TOC entry; startMarker not located: \"" + snippet(e.startMarker) + "\"");
 				continue;
 			}
-			e.startOffset = idx;
-			searchFrom = idx + e.startMarker.length();
+			e.startOffset = hit[0];
+			searchFrom = hit[0] + hit[1];
 			located.add(e);
 		}
 		if(located.isEmpty()) {
@@ -458,6 +461,85 @@ public class PageIndexUtil {
 			}
 		}
 		return true;
+	}
+
+	/// Locate `marker` in `content` starting at `searchFrom`. Tries an exact substring match first (the
+	/// fast path that handles the overwhelming majority of cases); if that fails, falls back to a
+	/// tolerant regex match that treats common typographic variants (apostrophe/quote style, dash style)
+	/// as equivalent and collapses whitespace runs to a single boundary, so a marker that differs from
+	/// the source only in "cosmetic" punctuation/whitespace is still located rather than dropped. This
+	/// matters because docx/PDF extraction and LLM "verbatim" echoing don't reliably agree on curly vs.
+	/// straight quotes, en/em dash vs. hyphen, or double-vs-single internal spacing, even though
+	/// DocumentUtil.replaceSmartQuotes now normalizes the most common of these at extraction time (see
+	/// its javadoc) - this is defense in depth for whatever it doesn't cover (e.g. an LLM that emits an
+	/// en dash where the source has a plain hyphen, the reverse direction). Never fabricates a location:
+	/// if no tolerant match exists either, returns null - callers still drop the entry, they just drop
+	/// fewer of them. Returns {startOffset, matchedLength}; callers must advance their forward search
+	/// cursor by matchedLength (not marker.length()), since the tolerant path's actual match span can
+	/// differ in length from the marker (e.g. a collapsed double-space in the source vs. a single space
+	/// in the marker).
+	private static int[] locateMarker(String content, String marker, int searchFrom) {
+		if(marker == null || marker.length() == 0 || content == null) {
+			return null;
+		}
+		int idx = content.indexOf(marker, searchFrom);
+		if(idx >= 0) {
+			return new int[] {idx, marker.length()};
+		}
+		Pattern tolerant = buildTolerantMarkerPattern(marker);
+		if(tolerant == null) {
+			return null;
+		}
+		try {
+			Matcher m = tolerant.matcher(content);
+			if(m.find(searchFrom)) {
+				return new int[] {m.start(), m.end() - m.start()};
+			}
+		}
+		catch(Exception e) {
+			logger.warn("Tolerant marker match failed: " + e.getMessage());
+		}
+		return null;
+	}
+
+	/// Builds a regex that matches `marker` literally except: any run of whitespace becomes `\s+`
+	/// (tolerates single-vs-double space, straight vs. wrapped lines), and apostrophe/quote/dash
+	/// characters are widened to a character class covering their common Unicode look-alikes. Every
+	/// other character is matched literally via Pattern.quote. Returns null if the marker fails to
+	/// compile as a pattern for any reason (defensive - this must never throw into the caller).
+	private static Pattern buildTolerantMarkerPattern(String marker) {
+		StringBuilder re = new StringBuilder();
+		boolean lastWasSpace = false;
+		for(int i = 0; i < marker.length(); i++) {
+			char c = marker.charAt(i);
+			if(Character.isWhitespace(c)) {
+				if(!lastWasSpace) {
+					re.append("\\s+");
+					lastWasSpace = true;
+				}
+				continue;
+			}
+			lastWasSpace = false;
+			if(c == '\'' || c == '‘' || c == '’' || c == '`' || c == '´') {
+				re.append("['‘’`´]");
+			}
+			else if(c == '"' || c == '“' || c == '”') {
+				re.append("[\"“”]");
+			}
+			else if(c == '-' || c == '‐' || c == '‑' || c == '‒' || c == '–' || c == '—') {
+				re.append("[-‐‑‒–—]");
+			}
+			else {
+				re.append(Pattern.quote(String.valueOf(c)));
+			}
+		}
+		try {
+			return Pattern.compile(re.toString());
+		}
+		catch(Exception e) {
+			logger.warn("Could not build tolerant marker pattern: " + e.getMessage());
+			return null;
+		}
 	}
 
 	/// Split prose into ordered char-length groups (with overlap) and call the Chat client per group for a
@@ -542,7 +624,19 @@ public class PageIndexUtil {
 			}
 			entries.add(new TocEntry(title.trim(), level, marker.trim()));
 		}
-		return entries.isEmpty() ? null : entries;
+		/// A syntactically valid but EMPTY (or all-unusable-marker) array is a real, silent failure mode
+		/// distinct from unparseable JSON: the model responded, produced valid JSON, but that group
+		/// contributed zero usable structure. Previously this fell through with no log at all, making a
+		/// whole group's content silently collapse into the flat preamble with no diagnostic trail (see
+		/// the catatone.docx investigation notes on buildLlmTocTree). Log it so a future large-document
+		/// "most content ended up in one section" report is diagnosable from logs alone.
+		if(entries.isEmpty()) {
+			logger.warn("LLM-TOC: parsed JSON array had zero usable entries (all missing startMarker, or "
+				+ "a genuinely empty array) for this group. rawLen=" + (raw != null ? raw.length() : -1)
+				+ " rawHead=" + debugHead(raw));
+			return null;
+		}
+		return entries;
 	}
 
 	private static String textOrNull(JsonNode e, String field) {
@@ -781,6 +875,8 @@ public class PageIndexUtil {
 				if(streamed != null && streamed.trim().length() > 0) {
 					return streamed;
 				}
+				logger.warn("LLM chat call (streaming) produced no usable text (timeout/empty stream) for model "
+					+ chat.getModel());
 			}
 			else {
 				if(resp != null && resp.getMessage() != null) {
@@ -789,6 +885,12 @@ public class PageIndexUtil {
 						return buffered;
 					}
 				}
+				/// Previously fell through here with NO log at all on a null resp/message or empty content
+				/// (e.g. a request timeout that the Chat client swallows without throwing) — a whole
+				/// LLM-TOC group (or a summarization call) would silently contribute nothing, with zero
+				/// trace in the logs. Log it so that failure mode is diagnosable without re-instrumenting.
+				logger.warn("LLM chat call (buffered) produced no usable text (null response/message, or empty "
+					+ "content) for model " + chat.getModel());
 			}
 		}
 		catch(Exception e) {

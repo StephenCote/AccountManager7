@@ -54,22 +54,23 @@ vi.mock('../core/am7client.js', () => ({
     }
 }));
 
-// The systemRoles array pagination.js reads from page.application["system" + fType] — unsorted by
-// design (mirrors real server insertion order, which is creation order, not alphabetical).
-const systemRoles = [
-    { id: 1, name: 'RoleReaders' },
-    { id: 2, name: 'AccountAdministrators' },
-    { id: 3, name: 'ZetaRole' },
-    { id: 4, name: 'MidRole' }
-];
-
 vi.mock('../core/pageClient.js', () => ({
     page: {
         uid: vi.fn(() => 'test-uid-' + Math.random()),
         user: { organizationId: 'test-org' },
         getRawUrl: vi.fn(() => '#!/list/auth.role'),
         uriStem: vi.fn(() => ''),
-        application: { systemRoles },
+        // The systemRoles array pagination.js reads from page.application["system" + fType] —
+        // unsorted by design (mirrors real server insertion order, which is creation order, not
+        // alphabetical).
+        application: {
+            systemRoles: [
+                { id: 1, name: 'RoleReaders' },
+                { id: 2, name: 'AccountAdministrators' },
+                { id: 3, name: 'ZetaRole' },
+                { id: 4, name: 'MidRole' }
+            ]
+        },
         iconButton: vi.fn(),
         checkFavorites: vi.fn(),
         components: { decorator: null }
@@ -77,6 +78,8 @@ vi.mock('../core/pageClient.js', () => ({
 }));
 
 import { newPaginationControl } from '../components/pagination.js';
+import { page } from '../core/pageClient.js';
+const systemRoles = page.application.systemRoles;
 
 describe('System-role/permission list — client-side sort (KI-7)', () => {
     let pagination;

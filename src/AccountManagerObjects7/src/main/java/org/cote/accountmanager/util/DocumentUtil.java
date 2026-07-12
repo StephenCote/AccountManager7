@@ -271,8 +271,25 @@ public class DocumentUtil {
     	return out;
     }
 	
+	/// Normalizes Word/Tika-introduced "smart" typography to plain ASCII so downstream consumers that
+	/// treat extracted text as a literal source-of-truth (PageIndexUtil's LLM-TOC verbatim startMarker
+	/// location via String.indexOf, in particular) aren't defeated by punctuation an LLM naturally
+	/// "cleans up" when it echoes text back. Previously only right-double/right-single quotes were
+	/// normalized; left-single quotes (U+2018 - Word sometimes emits these for possessive apostrophes,
+	/// e.g. "Duña‘s"), en/em dashes, and ellipsis are common in prose docx/pdf content and were
+	/// passed through verbatim, silently breaking exact-substring marker lookups (see PageIndexUtil's
+	/// buildLlmTocTree/locateMarker). All substitutions here except the ellipsis are 1:1 character
+	/// replacements, so callers that rely on stable character offsets into the returned string are unaffected.
 	public static String replaceSmartQuotes(String txt) {
-		return txt.replaceAll("[“”]", "\"").replaceAll("’", "'");
+		if(txt == null) {
+			return txt;
+		}
+		return txt
+			.replaceAll("[“”]", "\"")
+			.replaceAll("[‘’]", "'")
+			.replaceAll("[–—]", "-")
+			.replaceAll("…", "...")
+			.replaceAll(" ", " ");
 	}
 
 	public static String readPDF(byte[] pdfBytes) {
