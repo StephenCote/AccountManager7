@@ -198,6 +198,53 @@ renderers.heightFeetInches = function(ctx) {
 
 // ── Range Slider ────────────────────────────────────────────────────
 
+// Canonical slider+spinner markup (KI-16 Finding C convergence target): a single <input type=range>
+// paired with a companion numeric spinner, sr-only label, oninput-driven live updates. Accepts a
+// plain {value, onInput, min, max, step, label, disabled, fieldClass, name} contract so callers that
+// edit plain config objects (image-gen workflow panels, SdConfigPanel, ...) rather than am7model
+// instances can use the exact same widget as the schema-driven `renderers.range` below, instead of
+// each maintaining its own bespoke single-input-with-no-spinner variant.
+function renderRangeSliderSpinner(opts) {
+    opts = opts || {};
+    let { value, onInput, min, max, step, disabled, label, fieldClass, name } = opts;
+
+    let rangeAttrs = {
+        type: "range",
+        class: (fieldClass || "") + " range-field-full flex-1",
+        name: name,
+        value: value,
+        min: min,
+        max: max,
+        step: step,
+        oninput: onInput
+    };
+    if (disabled) rangeAttrs.disabled = true;
+
+    let numberAttrs = {
+        type: "number",
+        class: "text-field-compact w-20 text-right text-sm",
+        name: name ? name + "_num" : undefined,
+        value: value,
+        min: min,
+        max: max,
+        step: step,
+        oninput: onInput
+    };
+    if (disabled) numberAttrs.disabled = true;
+
+    return m("div", { class: "flex items-center gap-2 mb-1" }, [
+        m("label", { class: "sr-only" }, label || "Range"),
+        m("input", rangeAttrs),
+        m("input", numberAttrs)
+    ]);
+}
+
+// Plain-contract entry point — for callers that don't have an am7model `inst`/schema field, just a
+// plain config object + a min/max/step they already know. Renders identically to renderers.range.
+function renderRange(opts) {
+    return [renderRangeSliderSpinner(opts)];
+}
+
 renderers.range = function(ctx) {
     let isDouble = ctx.field && ctx.field.type === "double";
     let min = 0, max = isDouble ? 1 : 100;
@@ -241,35 +288,17 @@ renderers.range = function(ctx) {
 
     let displayVal = ctx.defVal != null ? ctx.defVal : "";
 
-    let rangeAttrs = {
-        type: "range",
-        class: (ctx.fieldClass || "") + " range-field-full flex-1",
+    return [renderRangeSliderSpinner({
+        value: displayVal,
+        onInput: ctx.fHandler,
+        min: min,
+        max: max,
+        step: step,
+        disabled: ctx.disabled,
+        fieldClass: ctx.fieldClass,
         name: ctx.useName,
-        value: displayVal,
-        min: min,
-        max: max,
-        step: step,
-        oninput: ctx.fHandler
-    };
-    if (ctx.disabled) rangeAttrs.disabled = true;
-
-    let numberAttrs = {
-        type: "number",
-        class: "text-field-compact w-20 text-right text-sm",
-        name: ctx.useName + "_num",
-        value: displayVal,
-        min: min,
-        max: max,
-        step: step,
-        oninput: ctx.fHandler
-    };
-    if (ctx.disabled) numberAttrs.disabled = true;
-
-    return [m("div", { class: "flex items-center gap-2 mb-1" }, [
-        m("label", { class: "sr-only" }, "Range"),
-        m("input", rangeAttrs),
-        m("input", numberAttrs)
-    ])];
+        label: "Range"
+    })];
 };
 
 // ── Progress Bar ────────────────────────────────────────────────────
@@ -970,8 +999,11 @@ const formFieldRenderers = {
     render: render,
     has: hasRenderer,
     get: getRenderer,
-    register: register
+    register: register,
+    // Plain-contract slider+spinner (KI-16 Finding C) — {value, onInput, min, max, step, label,
+    // disabled, fieldClass, name}. For callers editing plain config objects, not am7model instances.
+    renderRange: renderRange
 };
 
-export { formFieldRenderers };
+export { formFieldRenderers, renderRange };
 export default formFieldRenderers;

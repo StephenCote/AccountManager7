@@ -76,16 +76,22 @@ test.describe('Group export (KI-17)', () => {
         await expect(exportBtn).toBeVisible({ timeout: 15000 });
         await exportBtn.click();
 
-        await expect(main.locator('text=Export Group')).toBeVisible({ timeout: 5000 });
-        // force: true — Playwright's actionability check reports the dialog's own backdrop subtree
-        // intercepting pointer events at the button's coordinates indefinitely (not a transient
-        // animation timing issue — it never resolves within a 60s retry window). The button is
-        // confirmed visually correct and in the expected place (see the captured failure screenshot
-        // from before this fix), so this is a pre-existing dialog-backdrop layering quirk unrelated to
-        // the export feature itself — logged as KI-18, not papered over silently.
-        await main.locator('.am7-dialog-btn-primary:has-text("Export")').click({ force: true });
+        // KI-18 (fixed): the dialog renders via router.js's global OverlayGuard, which mounts it as a
+        // SIBLING of <main>, not nested inside it (confirmed via document.elementFromPoint() at the
+        // button's coordinates) — so dialog content is scoped to page.getByRole('dialog'), not `main`.
+        // (Previously views/list.js's renderContent() ALSO mounted its own duplicate
+        // page.components.dialog.loadDialogs() nested inside <main>, so a `main`-scoped locator used to
+        // resolve to that duplicate copy while the real, outside-<main>, later-painted OverlayGuard copy
+        // silently won every click hit-test over it — hence the old `{force:true}` workaround. Fixed in
+        // views/list.js: renderContent no longer double-mounts the overlay, so there is now only one
+        // live copy, and a plain click works.)
+        let dialog = page.getByRole('dialog');
+        await expect(dialog.locator('text=Export Group')).toBeVisible({ timeout: 5000 });
+        await dialog.locator('.am7-dialog-btn-primary:has-text("Export")').click();
 
-        await expect(main.locator('text=/Export complete/')).toBeVisible({ timeout: 20000 });
+        // The "Export complete" toast isn't inside the dialog (same as KI-19's finding for this app's
+        // toast system) — assert it unscoped.
+        await expect(page.locator('text=/Export complete/')).toBeVisible({ timeout: 20000 });
 
         let downloadBtn = main.locator('button:has-text("download")').first();
         if (await downloadBtn.count() === 0) {

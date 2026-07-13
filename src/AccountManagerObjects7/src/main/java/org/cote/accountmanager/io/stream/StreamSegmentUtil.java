@@ -3,6 +3,7 @@ package org.cote.accountmanager.io.stream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -77,7 +78,52 @@ public class StreamSegmentUtil {
 		}
 		return baos.toByteArray();
 	}
-	
+
+	/// Fixed-size chunked read/write, added to fix an OutOfMemoryError exporting large groups (KI-17
+	/// follow-up, GroupExportUtil). Unlike streamToEnd(streamId, 0, 0) - which, because a zero length
+	/// tells readFileSegment "read to end of file", pulls the ENTIRE remaining stream content into one
+	/// ByteArrayOutputStream/byte[] in a single read - this pages through the file `chunkSize` bytes at a
+	/// time and writes each chunk straight to `out`, so at most one chunk is resident in memory
+	/// regardless of the stream's total size. Intended for a caller that's itself writing `out`
+	/// incrementally (e.g. a ZipOutputStream backed by a file, not another in-memory buffer).
+	public void streamToOutput(String streamId, OutputStream out, int chunkSize) throws IOException {
+		BaseRecord stream = getStream(streamId);
+		if(stream == null) {
+			return;
+		}
+		try {
+			StreamUtil.unboxStream(stream, false);
+		}
+		catch(ModelException e) {
+			logger.error(e);
+		}
+		long position = 0L;
+		try {
+			while(true) {
+				BaseRecord seg = newSegment(streamId, position, chunkSize);
+				BaseRecord rseg = IOSystem.getActiveContext().getReader().read(seg);
+				if(rseg == null) {
+					break;
+				}
+				long size = rseg.get(FieldNames.FIELD_SIZE);
+				if(size <= 0L) {
+					break;
+				}
+				byte[] data = rseg.get(FieldNames.FIELD_STREAM);
+				out.write(data, 0, (int) size);
+				position += size;
+				if(size < chunkSize) {
+					/// Short read (less than the requested chunk) means end-of-file - avoid one extra
+					/// round-trip that would just come back empty.
+					break;
+				}
+			}
+		}
+		catch(ReaderException e) {
+			throw new IOException(e);
+		}
+	}
+
 	public 	BaseRecord newSegment(String streamId) {
 		return newSegment(streamId, 0L, 0L);
 	}

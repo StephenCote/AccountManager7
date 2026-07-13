@@ -1127,14 +1127,32 @@ function newListControl() {
         }
     };
 
-    // renderContent — called by router.js. Must include the ChatSetupWizard mount
-    // (and dialog/toast overlays) the same way listPage.view.view() does, otherwise
-    // the wizard's _visible flag is set but the component is never in the tree.
+    // renderContent — called by router.js. Must include the ChatSetupWizard mount so the wizard's
+    // _visible flag being set actually has the component in the tree to react to it.
+    //
+    // KI-18: this used to ALSO render page.components.dialog.loadDialogs() + page.loadToast() here —
+    // but every router-driven route (router.js `layout()`) already wraps its content in the shared
+    // `OverlayGuard`, which renders those same two things globally, once, as a sibling of <main>. For
+    // the list routes specifically (the only ones that also call renderContent() directly), that meant
+    // TWO fully live, pixel-identical `.am7-dialog-backdrop` copies existed simultaneously whenever a
+    // dialog was open — one nested inside <main> (from here), one outside it (from OverlayGuard) —
+    // confirmed live via document.elementFromPoint() at a dialog button's exact coordinates: the
+    // (later-painted, outside-<main>) OverlayGuard copy's button silently won every hit-test over the
+    // inside-<main> copy that `main`-scoped locators (Playwright or otherwise) resolve to. Not a CSS
+    // animation-timing artifact — a structural duplicate-render bug. Fixed by not rendering a second
+    // copy here at all; only genuinely embedded/picker usage (which has no ambient OverlayGuard of its
+    // own) still needs it.
     listPage.renderContent = function (vnode) {
         let type = (vnode && vnode.attrs && vnode.attrs.type) || m.route.param('type') || listType;
         let inner = getListViewInner(type);
-        if ((vnode && vnode.attrs && (vnode.attrs.pickerMode || vnode.attrs.embeddedMode))) return inner;
-        return [inner, page.components.dialog.loadDialogs(), page.loadToast(), m(ChatSetupWizard.WizardView)];
+        // Check both the vnode attrs (router-driven picker/embedded routes) and the internal
+        // pickerMode/embeddedMode state — components/picker.js's dedicated list instance calls
+        // renderContent() directly (bypassing vnode.attrs entirely) after openForPicker() sets the
+        // internal state, so the attrs-only check alone never caught that path.
+        if ((vnode && vnode.attrs && (vnode.attrs.pickerMode || vnode.attrs.embeddedMode)) || pickerMode || embeddedMode) {
+            return inner;
+        }
+        return [inner, m(ChatSetupWizard.WizardView)];
     };
 
     listPage.closeView = function () {

@@ -283,6 +283,16 @@ function newPaginationControl() {
 
   function stopPaginating() {
     pagination.paginating = false;
+    // Reset `requesting` too, not just `pages` — otherwise an in-flight async fetch (e.g. the
+    // container-lookup promise in updateList()) that resolves AFTER this reset takes its
+    // "stale, discard" branch (reqPages !== pages) without ever clearing `requesting`, and every
+    // future pagination.update() call permanently no-ops at its `if (requesting) return;` guard
+    // until something else happens to call pagination.new() again. This is exactly what left the
+    // list view empty after toggling container/group-nav mode back off (KI-9): the route change
+    // unmounts the old list vnode (onremove -> stopPaginating) while a container-lookup fetch
+    // kicked off just beforehand is still in flight; toggleGrid's icon-view path never hit this
+    // because it re-queries synchronously without an intervening route change/unmount.
+    requesting = false;
     pages = newPagination();
     containerCache = {};
   }

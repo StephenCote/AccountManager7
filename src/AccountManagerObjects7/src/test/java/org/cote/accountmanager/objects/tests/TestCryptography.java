@@ -282,7 +282,52 @@ public class TestCryptography extends BaseTest {
 		assertFalse("Didn't expect hashes to match", hash1.equals(hash3));
 		assertFalse("Didn't expect hashes to match", hash2.equals(hash3));
 	}
-	
+
+	/// Regression test for a live Tomcat crash: CryptoUtil.getDigest(alg, bytes, salt) resolved a shared,
+	/// cached MessageDigest singleton (getMessageDigest(alg, true)) and called reset()/update()/digest() on
+	/// it. MessageDigest is stateful and not thread-safe, so concurrent request threads interleaving those
+	/// calls corrupted the internal buffer, throwing "ArrayIndexOutOfBoundsException: arraycopy: length -103
+	/// is negative" from sun.security.provider.DigestBase.engineUpdate/engineDigest. Hammer the same code
+	/// path from many threads at once; each thread must get back the correct digest for its own input with
+	/// no exception, proving the fix (per-thread MessageDigest via ThreadLocal) actually removed the race.
+	@Test
+	public void TestConcurrentDigest() throws InterruptedException {
+		int threadCount = 16;
+		int iterations = 200;
+		java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threadCount);
+		java.util.List<java.util.concurrent.Future<Exception>> futures = new java.util.ArrayList<>();
+		for (int t = 0; t < threadCount; t++) {
+			final int threadId = t;
+			futures.add(pool.submit(() -> {
+				try {
+					String demoText = "thread-" + threadId + "-payload";
+					byte[] expected = CryptoUtil.getDigest(demoText.getBytes(StandardCharsets.UTF_8), new byte[0]);
+					for (int i = 0; i < iterations; i++) {
+						byte[] actual = CryptoUtil.getDigest(demoText.getBytes(StandardCharsets.UTF_8), new byte[0]);
+						if (!Arrays.equals(expected, actual)) {
+							return new Exception("Digest mismatch on thread " + threadId + " iteration " + i);
+						}
+					}
+					return null;
+				}
+				catch (Exception e) {
+					return e;
+				}
+			}));
+		}
+		pool.shutdown();
+		assertTrue("Thread pool did not terminate in time", pool.awaitTermination(60, java.util.concurrent.TimeUnit.SECONDS));
+		for (java.util.concurrent.Future<Exception> f : futures) {
+			try {
+				Exception ex = f.get();
+				assertTrue("Concurrent digest computation threw/mismatched: " + ex, ex == null);
+			}
+			catch (java.util.concurrent.ExecutionException e) {
+				throw new AssertionError("Unexpected execution failure", e);
+			}
+		}
+	}
+
 	@Test
 	public void TestPassKey() {
 		logger.info("Test RSA");

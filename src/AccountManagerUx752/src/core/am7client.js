@@ -361,7 +361,12 @@ import { cacheDb } from './cacheDb.js';
 				q.entity.startRecord || 0,
 				q.entity.recordCount || 10,
 				am7model._page?.user?.objectId || "000",
-				q.keyField(q.entity.fields)
+				q.keyField(q.entity.fields),
+				// Field projection MUST be part of the cache key — otherwise two queries with the
+				// same type/filter/sort/paging but different `request` field lists (e.g. a narrow
+				// list-preview query vs. a full-field sub-form fix-up fetch) collide on the same key
+				// and can silently serve each other's differently-shaped payload (KI-16 Finding A).
+				r
 			];
 			return k.join("-");
 		};

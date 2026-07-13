@@ -10,7 +10,7 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
-import { setupTestUser, cleanupTestUser } from './helpers/api.js';
+import { setupTestUser, cleanupTestUserFull } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
 const BASE_URL = 'https://localhost:8899';
@@ -91,7 +91,13 @@ test.describe('List control — Phase 4 behavioral tests', () => {
     });
 
     test.afterAll(async ({ request }) => {
-        await cleanupTestUser(request, testInfo.user?.objectId, { userName: testInfo.testUserName });
+        // cleanupTestUserFull (not cleanupTestUser): deleting the ~/Notes group never cascades to
+        // its 15 notes (deliberate AM7 design, aiDocs/KnownIssues.md KI-20/21) - plain cleanupTestUser
+        // left them orphaned with a dangling groupId every run, which PolicyUtil/PathProvider later
+        // tripped over live ("Group could not be found", groupPath degrading to "/" + name).
+        // cleanupTestUserFull runs the existing server-side orphan sweep (RecordFactory.cleanupOrphans
+        // via GET /rest/model/cleanup) that actually removes them.
+        await cleanupTestUserFull(request, testInfo.user?.objectId, { userName: testInfo.testUserName });
     });
 
     test.beforeEach(async ({ page }) => {

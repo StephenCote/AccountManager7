@@ -304,6 +304,108 @@ public class TestPageIndex extends BaseTest {
 		assertDescendingScores(hits, "VORE");
 	}
 
+	/// Regression test for the "everything collapses into one trailing section, breakdown reflects only
+	/// front matter" bug: prose DOCX (catatone.docx) whose extracted text contains un-normalized
+	/// typographic characters (a left single quote U+2018 used as a possessive apostrophe - "Duña‘s" -
+	/// plus other curly punctuation) that an LLM's "verbatim" startMarker echo will not reproduce
+	/// byte-for-byte, causing buildLlmTocTree's exact-match marker location to fail and drop entries en
+	/// masse for a whole 16000-char TOC group, leaving that entire span as flat leaf CHUNKs directly on
+	/// ROOT (the "preamble" bucket) instead of nested under real SECTION nodes. Root-caused by live
+	/// reproduction (see aiDocs/KnownIssues.md investigation notes): DocumentUtil.replaceSmartQuotes was
+	/// only normalizing right single/double curly quotes, not left single quotes/en-dashes/em-dashes/
+	/// ellipsis, AND buildLlmTocTree's marker search was a strict String.indexOf with no tolerance for
+	/// the punctuation/whitespace drift an LLM's "verbatim" echo commonly introduces even when told not
+	/// to paraphrase. Fixed on both sides: DocumentUtil.replaceSmartQuotes now normalizes the additional
+	/// characters, and PageIndexUtil.locateMarker adds a tolerant regex fallback (widened
+	/// quote/dash character classes + collapsed whitespace runs) before a marker is dropped.
+	///
+	/// Assertion strategy (not a rigid section-count expectation, since an 8B local model's per-group
+	/// TOC output is genuinely non-deterministic run to run - proven live during this investigation: the
+	/// same group produced a rich ~15-entry hierarchy on one call and an empty/timed-out response on
+	/// another): assert that the document's leaf CHUNK content is NOT overwhelmingly concentrated as
+	/// flat "preamble" children directly on ROOT (the exact shape of the reported bug - nearly the whole
+	/// document past a single successfully-located marker collapsing into one bucket). A healthy build,
+	/// LLM-TOC or flat-fallback alike, either nests most content under real SECTION nodes, or - if the
+	/// model genuinely produced no usable structure for this run - degrades to the FLAT fallback (zero
+	/// SECTION nodes, per buildTree's design), which is a legitimate, already-tested outcome distinct
+	/// from the bug (partial, lopsided structure with most content silently orphaned as ROOT preamble).
+	@Test
+	public void TestPageIndexCatatoneDocxContentDistribution() {
+		assumeTrue("PAGEINDEX_LLM not set — skipping live LLM PageIndex test", llmEnabled());
+		logger.info("=== TestPageIndexCatatoneDocxContentDistribution (prose DOCX with un-normalized typography) ===");
+
+		BaseRecord testUser = pageIndexTestUser();
+		OrganizationContext octx = getTestOrganization("/Development/PageIndex");
+		ensureOllamaContentAnalysis(octx, testUser);
+
+		MediaBuild mb = buildMediaDoc(testUser, "./media/catatone.docx", "CATATONE");
+
+		long orgId = mb.doc.get(FieldNames.FIELD_ORGANIZATION_ID);
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_PAGE_INDEX_NODE, FieldNames.FIELD_SOURCE_REFERENCE,
+			mb.doc.copyRecord(new String[] { FieldNames.FIELD_ID }));
+		q.field(FieldNames.FIELD_SOURCE_REFERENCE_TYPE, mb.doc.getSchema());
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_NODE_TYPE,
+			FieldNames.FIELD_START_OFFSET, FieldNames.FIELD_END_OFFSET });
+		q.setRequestRange(0, 20000);
+		QueryResult qr = null;
+		try {
+			qr = IOSystem.getActiveContext().getSearch().find(q);
+		}
+		catch(Exception e) {
+			logger.error("[CATATONE] node query failed", e);
+		}
+		assertNotNull("[CATATONE] node query returned null", qr);
+		List<BaseRecord> nodes = new ArrayList<>(java.util.Arrays.asList(qr.getResults()));
+		assertTrue("[CATATONE] no nodes persisted", !nodes.isEmpty());
+
+		long rootId = -1L;
+		for(BaseRecord n : nodes) {
+			if(n.getEnum(FieldNames.FIELD_NODE_TYPE) == PageIndexNodeEnumType.ROOT) {
+				rootId = n.get(FieldNames.FIELD_ID);
+			}
+		}
+		assertTrue("[CATATONE] no ROOT node found", rootId >= 0L);
+
+		long totalChunkLen = 0L;
+		long rootDirectChunkLen = 0L;
+		for(BaseRecord n : nodes) {
+			if(n.getEnum(FieldNames.FIELD_NODE_TYPE) != PageIndexNodeEnumType.CHUNK) {
+				continue;
+			}
+			int so = n.get(FieldNames.FIELD_START_OFFSET);
+			int eo = n.get(FieldNames.FIELD_END_OFFSET);
+			long len = Math.max(0, eo - so);
+			totalChunkLen += len;
+			long pid = (n.get(FieldNames.FIELD_PARENT_ID) != null ? (long) n.get(FieldNames.FIELD_PARENT_ID) : -1L);
+			if(pid == rootId) {
+				rootDirectChunkLen += len;
+			}
+		}
+		assertTrue("[CATATONE] total leaf CHUNK content is zero", totalChunkLen > 0);
+		double rootDirectPct = 100.0 * rootDirectChunkLen / totalChunkLen;
+		logger.info("[CATATONE] sections=" + mb.stats.sections + " totalChunkLen=" + totalChunkLen
+			+ " rootDirectChunkLen(preamble bucket)=" + rootDirectChunkLen
+			+ " rootDirectPct=" + String.format("%.1f", rootDirectPct) + "%");
+
+		if(mb.stats.sections == 0) {
+			/// Legitimate flat fallback for this run (LLM produced no usable structure at all) - by
+			/// buildTree's design every leaf is then a ROOT-direct preamble chunk, which is the expected,
+			/// already-covered-by-other-tests shape, not the bug under test here.
+			logger.info("[CATATONE] LLM-TOC produced zero SECTION nodes this run (flat fallback) - "
+				+ "content-collapse assertion N/A, this is the legitimate flat shape, not the reported bug");
+			return;
+		}
+		/// The reported bug: SOME structure exists (sections > 0) but it's a thin sliver (e.g. only the
+		/// back-matter/"About the Author" tail) while nearly all real body content silently piled up as
+		/// ROOT-direct preamble. 85% is deliberately generous (a document can legitimately have a longer
+		/// unstructured lead-in before its first real section) - the bug reproduced live at ~88%+.
+		assertTrue("[CATATONE] " + String.format("%.1f", rootDirectPct) + "% of leaf content is ROOT-direct "
+			+ "preamble despite " + mb.stats.sections + " SECTION node(s) existing — content is collapsing "
+			+ "outside the structure almost entirely, the exact shape of the reported bug",
+			rootDirectPct < 85.0);
+	}
+
 	/// The Verse.docx (~407K chars) is very expensive: many LLM-TOC groups + ~1200 embeddings (~7min+). Gate
 	/// it behind an explicit heavy flag so the default PAGEINDEX_LLM run stays reasonable. Enable with
 	/// PAGEINDEX_HEAVY=1 (in addition to PAGEINDEX_LLM=1).
@@ -359,6 +461,79 @@ public class TestPageIndex extends BaseTest {
 			+ stats.maxLevel, stats.maxLevel == 1);
 		logger.info("[FALLBACK] flat ROOT->CHUNK tree built without hard-fail: ROOT=" + stats.roots
 			+ " SECTION=" + stats.sections + " CHUNK=" + stats.chunks + " maxLevel=" + stats.maxLevel);
+	}
+
+	/// Regression test for a live crash surfaced while investigating Bug 1 (catatone.docx): a real
+	/// PostgreSQL "duplicate key value violates unique constraint ..._ne_gd_od_2_idx" thrown from a batch
+	/// INSERT into A7_data_pageIndexNode, colliding on (name, groupId, organizationId) for a node named
+	/// "pin-<sourceId>-1" - i.e. TWO createPageIndex builds for the SAME source, each starting its own
+	/// AtomicInteger seq at 0 (see buildTree), generated identically-named nodes and raced through the
+	/// count-check/delete/insert sequence. Confirmed this can't come from this investigation's own JUnit
+	/// runs (those talk to the DB directly, single-threaded, never through Tomcat) - it's a genuine
+	/// concurrency gap: two overlapping createPageIndex calls for the same source (a double-submitted UI
+	/// click, a retried REST call, two independent processes targeting the same document) had no
+	/// serialization point at all. Fixed with a per-source lock (PageIndexUtil.buildLockFor/BUILD_LOCKS).
+	/// This test drives two threads to build the SAME source concurrently and asserts: (a) neither throws
+	/// (the crash reproduced live), and (b) the final persisted state is exactly one coherent index (no
+	/// duplicate/orphaned rows from an interleaved half-build) - proving the lock actually serializes them
+	/// rather than merely happening not to collide. Uses the dead-connection flat-fallback path (like
+	/// TestPageIndexFlatFallbackWhenLlmTocUnavailable) so this is fast and deterministic, not dependent on
+	/// live LLM timing - the race is in the count/delete/insert sequence, not in anything LLM-specific.
+	@Test
+	public void TestPageIndexConcurrentRebuildDoesNotCollide() throws Exception {
+		assumeTrue("PAGEINDEX_LLM not set — skipping live LLM PageIndex test", llmEnabled());
+		logger.info("=== TestPageIndexConcurrentRebuildDoesNotCollide (per-source build lock regression) ===");
+
+		BaseRecord testUser = pageIndexTestUser();
+		OrganizationContext octx = getTestOrganization("/Development/PageIndex");
+		pointContentAnalysisAtDead(octx, testUser);
+
+		String prose = buildProseDoc();
+		BaseRecord doc = getCreateData(testUser, "Concurrent-Rebuild-Prose.txt", "text/plain", prose.getBytes(), "~/PageIndex", octx.getOrganizationId());
+		assertNotNull("[CONCURRENT] source doc is null", doc);
+		String objectId = doc.get(FieldNames.FIELD_OBJECT_ID);
+
+		int threadCount = 4;
+		java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threadCount);
+		java.util.concurrent.CountDownLatch startLatch = new java.util.concurrent.CountDownLatch(1);
+		List<java.util.concurrent.Future<Boolean>> futures = new ArrayList<>();
+		List<Throwable> failures = new java.util.concurrent.CopyOnWriteArrayList<>();
+		for(int i = 0; i < threadCount; i++) {
+			futures.add(pool.submit(() -> {
+				try {
+					startLatch.await();
+					return IOSystem.getActiveContext().getAccessPoint().pageIndex(testUser, "data.data", objectId);
+				}
+				catch(Throwable t) {
+					failures.add(t);
+					return false;
+				}
+			}));
+		}
+		startLatch.countDown();
+		int trueCount = 0;
+		for(java.util.concurrent.Future<Boolean> f : futures) {
+			if(Boolean.TRUE.equals(f.get(120, java.util.concurrent.TimeUnit.SECONDS))) {
+				trueCount++;
+			}
+		}
+		pool.shutdown();
+
+		for(Throwable t : failures) {
+			logger.error("[CONCURRENT] a concurrent pageIndex() call threw", t);
+		}
+		assertTrue("[CONCURRENT] " + failures.size() + " of " + threadCount + " concurrent pageIndex() calls threw "
+			+ "(the exact live crash under test - see logged stack traces above) instead of serializing via the "
+			+ "per-source build lock", failures.isEmpty());
+		assertTrue("[CONCURRENT] expected at least one concurrent build to report success, got " + trueCount, trueCount > 0);
+
+		/// The final state must be exactly ONE coherent index - no duplicate-named rows (which the DB
+		/// would have rejected anyway) and no orphaned partial tree from an interleaved half-build.
+		PageIndexStats stats = buildAndInspect(testUser, doc, "CONCURRENT-final");
+		assertTrue("[CONCURRENT] expected exactly one ROOT in the final state, got " + stats.roots, stats.roots == 1);
+		logger.info("[CONCURRENT] " + threadCount + " concurrent pageIndex() calls for the same source completed "
+			+ "with 0 exceptions, " + trueCount + " reporting success, final state: ROOT=" + stats.roots
+			+ " SECTION=" + stats.sections + " CHUNK=" + stats.chunks);
 	}
 
 	/* ------------------------------------------------------------- AccessPoint PBAC gate (prerequisite) ------------------------------------------------------------- */

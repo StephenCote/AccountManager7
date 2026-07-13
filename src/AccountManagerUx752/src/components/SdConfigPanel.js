@@ -8,6 +8,7 @@
  *   m(SdConfigPanel, { config: sdConfig, models: sdModels, loras: loraList, onChange: saveConfig })
  */
 import m from 'mithril';
+import { formFieldRenderers } from './formFieldRenderers.js';
 
 const STYLE_OPTIONS = ['art', 'movie', 'photograph', 'selfie', 'anime', 'portrait', 'comic', 'digitalArt', 'fashion', 'vintage', 'custom'];
 
@@ -92,15 +93,18 @@ function numberInput(config, key, min, max, step, onChange) {
     });
 }
 
+// Converged onto the canonical slider+spinner widget (KI-16 Finding C) — this was previously its own
+// bespoke single-input-with-no-spinner variant, the fourth near-copy of the same pattern cataloged
+// across reimage.js/reimageApparel.js/pictureBook.js, only here already deduplicated into one local
+// helper reused by its own callers below.
 function rangeInput(config, key, min, max, step, onChange) {
-    return m("input", {
-        type: "range",
+    return formFieldRenderers.renderRange({
+        value: config[key] != null ? config[key] : min,
         min: min,
         max: max,
         step: step || 1,
-        class: "w-full",
-        value: config[key] != null ? config[key] : min,
-        oninput: function(e) {
+        label: key,
+        onInput: function(e) {
             config[key] = (step && step < 1) ? parseFloat(e.target.value) : parseInt(e.target.value);
             if (onChange) onChange();
         }

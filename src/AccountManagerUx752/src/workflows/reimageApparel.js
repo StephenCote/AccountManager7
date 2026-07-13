@@ -4,6 +4,7 @@ import { am7client } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import { getOrCreateSharingTag } from './reimage.js';
+import { formFieldRenderers } from '../components/formFieldRenderers.js';
 
 /**
  * Reimage Apparel workflow — generates mannequin images for apparel items.
@@ -41,23 +42,27 @@ async function reimageApparel(entity, inst) {
             m('div', { class: 'grid grid-cols-2 gap-3' }, [
                 m('div', [
                     m('label', { class: 'field-label' }, 'Steps: ' + cinst.api.steps()),
-                    m('input', { class: 'w-full', type: 'range', min: 1, max: 150, value: cinst.api.steps(), oninput: function (e) { cinst.api.steps(parseInt(e.target.value) || 20); } })
+                    formFieldRenderers.renderRange({ value: cinst.api.steps(), min: 1, max: 150, step: 1, label: 'Steps', onInput: function (e) { cinst.api.steps(parseInt(e.target.value) || 20); } })
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Refiner Steps: ' + cinst.api.refinerSteps()),
-                    m('input', { class: 'w-full', type: 'range', min: 0, max: 150, value: cinst.api.refinerSteps(), oninput: function (e) { cinst.api.refinerSteps(parseInt(e.target.value) || 20); } })
+                    formFieldRenderers.renderRange({ value: cinst.api.refinerSteps(), min: 0, max: 150, step: 1, label: 'Refiner Steps', onInput: function (e) { cinst.api.refinerSteps(parseInt(e.target.value) || 20); } })
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'CFG: ' + (cinst.api.cfg ? cinst.api.cfg() : 5)),
-                    m('input', { class: 'w-full', type: 'range', min: 1, max: 30, step: 0.5,
+                    formFieldRenderers.renderRange({
                         value: cinst.api.cfg ? cinst.api.cfg() : 5,
-                        oninput: function (e) { if (cinst.api.cfg) cinst.api.cfg(parseFloat(e.target.value) || 5); } })
+                        min: 1, max: 30, step: 0.5, label: 'CFG',
+                        onInput: function (e) { if (cinst.api.cfg) cinst.api.cfg(parseFloat(e.target.value) || 5); }
+                    })
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Denoising: ' + (cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 0.75)),
-                    m('input', { class: 'w-full', type: 'range', min: 0, max: 1, step: 0.05,
+                    formFieldRenderers.renderRange({
                         value: cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 0.75,
-                        oninput: function (e) { if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(parseFloat(e.target.value) || 0.75); } })
+                        min: 0, max: 1, step: 0.05, label: 'Denoising',
+                        onInput: function (e) { if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(parseFloat(e.target.value) || 0.75); }
+                    })
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Model'),

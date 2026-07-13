@@ -9,6 +9,7 @@ import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.service.util.ServiceUtil;
 
 import jakarta.annotation.security.DeclareRoles;
@@ -84,13 +85,32 @@ public class GroupExportService {
 		String archiveObjectId = archiveRef.get(FieldNames.FIELD_OBJECT_ID);
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, archiveObjectId);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_STREAM, FieldNames.FIELD_CONTENT_TYPE });
+		/// ByteModelUtil.getValue() transparently decompresses/deciphers an inline byte store - but it
+		/// decides HOW purely from fields on this SAME record instance (FIELD_COMPRESSION_TYPE,
+		/// FIELD_VAULTED, FIELD_ENCIPHERED/FIELD_KEYS for cipher lookup), each read via
+		/// `d.get(fieldName, default)` which silently falls back to its default ("NONE"/false) if the
+		/// field wasn't in this query's projection. The original field list here omitted
+		/// FIELD_COMPRESSION_TYPE, so compressionType always read back as "NONE" and gunzip was never
+		/// invoked - a raw field read would then return the STILL-GZIP-COMPRESSED bytes whenever the
+		/// persisted archive exceeds ByteModelUtil's 512-byte auto-compress threshold (real bug found
+		/// while extending the Objects7-layer OOM fix's test coverage: "zip"'s registered content type,
+		/// "multipart/x-zip", doesn't match any of ByteModelUtil.tryCompress()'s exemption prefixes, so
+		/// ANY export over 512 bytes - i.e. almost any real-world one - is gzip-wrapped on persist and
+		/// would download here as an unreadable file, not a plain .zip, without this fix).
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_STREAM,
+			FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_COMPRESSION_TYPE, FieldNames.FIELD_VAULTED, FieldNames.FIELD_ENCIPHERED, FieldNames.FIELD_KEYS });
 		BaseRecord archive = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		if(archive == null) {
 			return Response.status(404).entity("Export archive not found or not accessible").build();
 		}
 
-		byte[] bytes = archive.get(FieldNames.FIELD_BYTE_STORE);
+		byte[] bytes = null;
+		try {
+			bytes = ByteModelUtil.getValue(archive);
+		}
+		catch(Exception e) {
+			logger.error(e);
+		}
 		if(bytes == null || bytes.length == 0) {
 			/// Larger archives are stream-backed (StreamUtil.streamToData's size cutoff) rather than
 			/// held inline — reconstruct from the stream the same way GroupExportUtil/ExportAction do.

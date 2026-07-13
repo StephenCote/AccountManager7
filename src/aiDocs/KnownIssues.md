@@ -144,6 +144,27 @@ no way for a user (or QA) to tell them apart from the slider alone.
   converge it too. Magic8/cardGame: lower priority, address only if/when those subsystems get folded
   into the shared component set.
 
+**Findings A and C: FIXED ✅ (2026-07-13).** Finding B remains a backend item (unaddressed here, per its
+own routing).
+- **Finding A:** `core/model.js` — added `am7model.hasPopulatedData(entity)` (true when at least one
+  non-identity/virtual/ephemeral field carries a non-default value). `views/object.js` `modelForm()`
+  now skips the redundant `am7client.search()` when the parent's own load already populated the
+  sub-object; when it does still need to fire, it now calls `q.cache(false)`. `core/am7client.js`
+  `q.key()` now includes the `request` field-projection string (it was computed as `r` but never joined
+  into the returned key) so differently-projected queries against the same row can no longer collide.
+  Verified via `src/test/subFormFetch.test.js` (Vitest, 8 tests): reverted to pre-fix `am7client.js`/
+  `model.js` and confirmed 7/8 failed, then confirmed all pass post-fix.
+- **Finding C:** `components/formFieldRenderers.js` — extracted the canonical slider+spinner markup into
+  `renderRangeSliderSpinner`, exposed as `formFieldRenderers.renderRange({value,onInput,min,max,step,
+  label,disabled,fieldClass,name})` for plain-config callers; `renderers.range` (the existing
+  `inst`-backed usage) now delegates to it with no behavior change. Ported onto it: `reimage.js` (5
+  sliders), `reimageApparel.js` (4), `pictureBook.js` (4), and `SdConfigPanel.js`'s own `rangeInput()`
+  helper (1 definition, 5 call sites). `pdfViewer.js`'s `onchange`-vs-`oninput` left as the deliberate
+  exception per the fix direction above (not further investigated); `magic8`/`cardGame` left alone.
+  Verified via `src/test/rangeSliderConverge.test.js` (Vitest, 6 tests, real vnode/handler inspection)
+  and `e2e/rangeSliderConverge.spec.js` (2 live Playwright tests — charPerson and apparel Reimage
+  dialogs — dragging updates value+spinner live, min/max enforced by the real range input).
+
 ## Ux752 — Role & Group membership
 
 ### KI-1. `auth.group` needs a member picker + list for PERSON / ACCOUNT / USER (2026-06-24, Stephen)
@@ -197,16 +218,16 @@ Reported as gated on Admin; should be `RoleReaders`. `views/list.js` `getAdminBu
 
 ## Ux752 — List view bugs (ISO UAT, 2026-06-25)
 
-### KI-7. Tabular sort — embedded/picker FIXED ✅; system-role slice still OPEN
+### KI-7. Tabular sort — embedded/picker FIXED ✅; system-role slice FIXED ✅ (2026-07-13)
 Two distinct causes:
 - **Embedded/popup picker lists (FIXED):** the list's `update()` early-returned in embedded/picker mode (`views/list.js`), so a sort click never re-queried. Added `pagination.sortPending()` and let `update()` proceed when a sort change is pending → the popup picker now re-sorts.
-- **System roles (OPEN):** when `pages.listSystem` + `auth.role`/`permission` (`pagination.js:195`), the list is served from a pre-loaded client array (`page.application.systemRoles.slice(...)`) and is **not** re-sorted by the query — the sort icon has no effect. Fix direction: client-side sort the sliced array by `pages.sort`/`order` in that branch. (Parent-navigated, non-system role lists go through the search API and carry `q.sort`/`order`.)
+- **System roles (FIXED):** `pagination.js`'s `updatePage()` `pages.listSystem` branch served `page.application["system"+fType].slice(start, start+count)` without ever applying `pages.sort`/`pages.order`. Added `sortClientList()` helper (`pagination.js:47-69,232`); the branch now sorts before slicing. Verified via `src/test/systemRoleSort.test.js` (Vitest): reverted to pre-fix code and confirmed 3/3 tests failed, then confirmed all pass post-fix. Separately discovered (not fixed, backend, out of scope here): `ApplicationUtil.getApplicationProfile` (Objects7) doesn't reflect a just-added `RoleReaders` membership in `userRoles`, blocking a non-admin e2e path to the admin-panel toggle for this list.
 
-### KI-8. List overflow/scroll not showing when the browser console is open — OPEN
-With the dev console open (reduced viewport height), the list body doesn't show its overflow/scroll — content is clipped without a scrollbar. Likely a layout/overflow class issue (a flex child needs `min-h-0` / `overflow-auto`, or a Tailwind class was dropped/needs a rebuild). Needs visual inspection at a constrained height; check the list body container's overflow + the flex chain in `views/list.js renderContent` / `pageLayout`.
+### KI-8. List overflow/scroll not showing when the browser console is open — INVESTIGATED, ALREADY FIXED (2026-07-13)
+Reproduction attempted at viewport heights 150–400px in both table and grid modes — `.list-results > div.flex-1` (`views/list.js:1004`) already scrolls correctly (verified via `scrollHeight>clientHeight`, programmatic `scrollTop`, and a real mouse-wheel event). `git log -S` shows commit `bd5806af` ("Patch", 2026-06-26, the day after this was filed) already added the missing `overflow-auto`; the production Tailwind build also contains `.min-h-0`/`.overflow-auto`. No code change made — nothing left to fix. Added `e2e/listOverflowScroll.spec.js` as a regression guard.
 
-### KI-9. List view empty after switching back from group/parent navigation — OPEN (2026-07-06, Stephen)
-Switching the list toolbar toggle from "navigate by group/parent" back to plain **list view** shows an initially **empty** list; a manual refresh populates it. Switching to **icon view** works correctly, so the data/query is fine — it looks like the list-view path misses a pagination reset (start/count or query key) following the group/parent-navigation change. Fix direction: when toggling back to list view after a group/parent nav change, reset list pagination and re-run the query (compare the icon-view toggle path, which resets correctly, against the list-view toggle path). Likely in `views/list.js` toggle handling / `pagination.js` state carried over from the parent-nav mode.
+### KI-9. List view empty after switching back from group/parent navigation — FIXED ✅ (2026-07-13)
+Root cause: `pagination.js`'s `stopPaginating()` (called from `views/list.js`'s `onremove`, which fires because toggling container mode off does a real route navigation/unmount) reset `pages` but never reset the `requesting` flag. An in-flight container-lookup fetch resolving after the reset hit its stale-discard branch without clearing `requesting`, permanently stranding it `true` — every subsequent `pagination.update()` no-oped forever at its `if (requesting) return;` guard. The icon-view toggle path never hit this because it re-queries synchronously without an intervening route change/unmount. Fixed: `stopPaginating()` now also resets `requesting = false` (`pagination.js:284-296`). Verified via `e2e/listContainerToggle.spec.js` (live Playwright, `ensureSharedTestUser()`): fails pre-fix (0 rows), passes post-fix (5 rows, no manual refresh).
 
 ## Picture Book (2026-07-06, Stephen)
 
@@ -390,7 +411,7 @@ a download link in the gallery view instead of (or alongside) the Export button.
   `Dialog.confirm` sub-dialog stacked on top of another already-open dialog, not a single dialog's own
   action-bar buttons.
 
-### KI-18. `am7-dialog` primary-button clicks can be intercepted by the dialog's own backdrop — OPEN (2026-07-11)
+### KI-18. `am7-dialog` primary-button clicks can be intercepted by the dialog's own backdrop — FIXED ✅ (2026-07-13)
 Found writing `e2e/groupExport.spec.js`: clicking a dialog's primary button (`.am7-dialog-btn-primary`)
 via Playwright fails actionability with *"button ... from `<div class="am7-dialog-backdrop am7-animate-in">`
 subtree intercepts pointer events"* — not a transient animation-timing flake, it persists for a full 60s
@@ -409,6 +430,27 @@ for a `pointer-events` or `z-index` rule that only takes effect post-animation-c
 with a real browser + devtools element-picker at the button's coordinates to see what's actually on top.
 Possibly related to the broader KI-13 cross-view consistency umbrella (dialog usage may have drifted
 inconsistent across call sites the same way sliders did in KI-16) — or a standalone dialogCore.js bug.
+
+**Investigated per "don't assume force-click is required for humans too," and it turned out to be a real,
+non-CSS bug — confirmed, not assumed:** `views/list.js`'s `renderContent()` (used by every `/list/...`
+route) redundantly rendered its own `page.components.dialog.loadDialogs()` + `page.loadToast()`, in
+addition to `router.js`'s global `OverlayGuard`, which already renders both for every route. Result: on
+list routes specifically, **two live, pixel-identical `.am7-dialog-backdrop` copies** existed
+simultaneously whenever a dialog was open — one nested inside `<main>` (from `renderContent()`), one a
+sibling of it (from `OverlayGuard`). Confirmed via `document.elementFromPoint()` at the real button
+coordinates: `backdropCount:2`, and the hit-test resolved to the *other* (outside-`<main>`) copy's
+button, not the one a `page.getByRole('main')`-scoped locator finds — a structural duplicate-render bug,
+not a CSS-animation-timing artifact.
+
+**Fixed:** `views/list.js` `renderContent()` no longer double-mounts the dialog/toast overlay; the
+embedded/picker gating check was also fixed to read the internal `pickerMode`/`embeddedMode` state (not
+only `vnode.attrs`), since `components/picker.js`'s dedicated list instance calls `renderContent()`
+directly and bypasses `vnode.attrs` entirely. Removed the `{force:true}` workaround from
+`e2e/groupExport.spec.js` (scoped its locators to `page.getByRole('dialog')`, matching KI-19's
+established pattern) — the plain, unforced click now passes. Regression-checked `list.spec.js`/
+`listNavigation.spec.js`/`breadcrumb*.spec.js` against unmodified `main` to confirm two pre-existing,
+unrelated flakes (a `.../Favorites` console-error flake and a carousel/pagination bug) reproduce
+identically there and aren't caused by this fix.
 
 ### KI-19. `uri`/object-link field: broken URI + wrong tab placement — FIXED (2026-07-11, Stephen)
 Stephen flagged, while checking KI-17's `data.groupExport` records: the generic `uri` field (added to
@@ -570,3 +612,61 @@ resolve before any implementation:
 **Scope note:** explicitly filed as a design question, not a committed feature or even a scoped feature
 request yet — per the tracker's own header, this is here so the question doesn't get lost, not because
 an implementation approach has been chosen.
+
+## Service7 — Media serving (2026-07-13, found while investigating the group-export OOM fix)
+
+### KI-22. `MediaUtil.writeBinaryData` buffers the entire file in memory before writing the response — OPEN
+
+Stephen asked, while an OOM-on-large-group-export fix was in progress (KI-17 follow-up,
+`GroupExportUtil`/`ZipUtil`), whether the same "buffer everything, then write" shape exists in
+`MediaUtil` — it does, in the generic media/download-serving path used by images, thumbnails, and any
+`data.data` content served back over HTTP.
+
+**Where:** `AccountManagerService7/src/main/java/org/cote/accountmanager/util/MediaUtil.java`,
+`writeBinaryData(...)`, lines 332-397. For a stream-backed record it calls
+`StreamSegmentUtil.streamToEnd(streamId, 0, 0)` (line 342) — passing `len=0` tells the underlying
+`readFileSegment` to read to end-of-file into one `ByteArrayOutputStream`/`byte[]` in a single read
+(`StreamSegmentUtil.java:50-80`) — and for an inline record, `ByteModelUtil.getValue(data)` (line 345).
+Either way the full content lands in one `byte[] value`, optionally gets base64-re-encoded whole
+(`BinaryUtil.toBase64(value)`, line 352, if `options.isEncodeData()`), then is written in one shot:
+`response.setContentLength(value.length); response.getOutputStream().write(value);` (lines 395-396).
+For a large stream-backed file (video, big document, big export download) this holds the entire file
+in memory at once — the same OOM shape as the group-export bug, just in the generic media-serving path
+rather than the export-building path.
+
+**A streaming primitive already exists to fix this**, added as part of the KI-17 OOM follow-up:
+`StreamSegmentUtil.streamToOutput(String streamId, OutputStream out, int chunkSize)` — pages through
+the file `chunkSize` bytes at a time, writing each chunk straight to a caller-supplied `OutputStream`,
+so at most one chunk is resident in memory regardless of total stream size (see its doc comment in
+`StreamSegmentUtil.java` for the exact rationale, same file as `streamToEnd`).
+
+**Fix direction (not implemented here — judged a significant-enough change to log rather than
+drive-by fix per Stephen's instruction):**
+- Swap `streamToEnd(...)` for `streamToOutput(streamId, response.getOutputStream(), chunkSize)` on the
+  stream-backed branch, so bytes flow straight to the servlet response instead of through an
+  intermediate full-size `byte[]`.
+- `response.setContentLength(value.length)` currently relies on already having read the whole array to
+  know its size. True streaming needs either (a) a cheap way to get the stream's byte size up front
+  without reading it (check whether `data.stream` or the backing file exposes a size/length without a
+  full read — e.g. `Files.size()` on the path from `StreamSegmentUtil.getFileStreamPath`), or (b) skip
+  `setContentLength` entirely and let the servlet container fall back to chunked transfer encoding —
+  the simpler option, but confirm no caller depends on `Content-Length` being present (e.g. a client
+  progress bar, or range requests — check whether this path or a sibling one supports HTTP range/partial
+  content before assuming it's safe to drop).
+- `options.isEncodeData()` (base64) and `options.isUseTemplate()` (HTML-template wrapping, the DWAC
+  path) both currently assume a full in-memory buffer — a real streaming base64 encoder exists in the
+  JDK (`Base64.getEncoder().wrap(OutputStream)`) so that branch is fixable the same way, but the
+  template-wrapping branch string-replaces content into a text template and is presumably only ever
+  used for small text content, not large binary media — worth confirming that assumption (or gating
+  streaming mode off when a template is requested) rather than assuming it needs the same treatment.
+- The inline (`ByteModelUtil.getValue`) branch is lower priority: inline storage only happens for
+  content under `StreamUtil`'s size cutoff (default 1MB per KI-17's grounding notes), so it's already
+  bounded and not the source of the >1GB-scale OOM risk — the stream-backed branch is what matters.
+- Needs a real live test (not just code inspection) proving a large stream-backed download completes
+  without OOM and with byte-for-byte correct content (checksum against the source) — mirroring the kind
+  of test the KI-17 OOM follow-up used for `GroupExportUtil`/`ZipUtil`.
+
+**Scope note:** touches a generic, widely-used serving path (images/thumbnails/any download) with
+several option-interaction edge cases (`isEncodeData`, `isUseTemplate`, thumbnail vs. full content,
+possible range-request support elsewhere) and needs a genuine large-payload test to verify — filed here
+per the tracker's own header for scoping/sequencing later, not committed to a timeline in this pass.

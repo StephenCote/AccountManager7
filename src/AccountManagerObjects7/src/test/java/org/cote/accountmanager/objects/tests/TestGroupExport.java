@@ -1,5 +1,6 @@
 package org.cote.accountmanager.objects.tests;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -23,6 +24,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.junit.Test;
 
@@ -50,17 +52,41 @@ public class TestGroupExport extends BaseTest {
 		return entries;
 	}
 
-	private byte[] readArchiveBytes(BaseRecord testUser, BaseRecord container) {
+	private byte[] readArchiveBytes(BaseRecord testUser, BaseRecord container) throws Exception {
 		BaseRecord archiveRef = container.get(FieldNames.FIELD_ARCHIVE);
 		assertNotNull("[GROUPEXPORT] container has no archive FK", archiveRef);
 		String archiveObjectId = archiveRef.get(FieldNames.FIELD_OBJECT_ID);
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, archiveObjectId);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
-		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_STREAM, FieldNames.FIELD_CONTENT_TYPE });
+		/// ByteModelUtil.getValue() decides whether/how to decompress (and decipher) purely from fields
+		/// on the SAME record instance - FIELD_COMPRESSION_TYPE, FIELD_VAULTED, FIELD_ENCIPHERED - via
+		/// `d.get(fieldName, default)` calls that silently fall back to their default ("NONE"/false) if
+		/// the field was never requested/populated in this query's projection. The original field list
+		/// here omitted FIELD_COMPRESSION_TYPE entirely, so compressionType always read back as the
+		/// default "NONE" and ZipUtil.gunzipBytes was never called - for a SMALL archive (under
+		/// ByteModelUtil's 512-byte auto-compress threshold, e.g. the other tests' 2-tiny-file archives)
+		/// nothing was ever gzipped in the first place so this silently "worked" by accident; only once
+		/// this test's archive genuinely exceeded 512 bytes did the gap surface as "0 zip entries" (the
+		/// still-gzip-compressed bytes don't parse as a zip). Root-caused by direct inspection: gunzip-ing
+		/// the raw returned bytes by hand (outside the JVM) revealed a perfectly valid, fully intact
+		/// 3-entry zip - proving the archive-building/streaming path itself was correct all along and the
+		/// bug was purely in this read helper's field projection.
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_STREAM,
+			FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_COMPRESSION_TYPE, FieldNames.FIELD_VAULTED, FieldNames.FIELD_ENCIPHERED, FieldNames.FIELD_KEYS });
+		q.setCache(false);
 		BaseRecord archive = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
 		assertNotNull("[GROUPEXPORT] archive data.data not readable", archive);
-		byte[] bytes = archive.get(FieldNames.FIELD_BYTE_STORE);
+		/// ByteModelUtil.getValue() transparently decompresses/deciphers when the fields above say to -
+		/// a raw field read (the original form of this helper) would return the STILL-COMPRESSED bytes
+		/// whenever the persisted archive exceeds ByteModelUtil's 512-byte auto-gzip threshold, since
+		/// "zip"'s registered content type ("multipart/x-zip") doesn't match any of tryCompress()'s
+		/// exemption prefixes (image/, application/ (except json), audio/, video) and so gets
+		/// transparently gzipped on persist like any other type. GroupExportService.download() had (and
+		/// still needed) the identical fix - both are corrected to request the fields decompression
+		/// depends on, not just to call the decompressing accessor.
+		byte[] bytes = ByteModelUtil.getValue(archive);
 		assertNotNull("[GROUPEXPORT] archive byte store is null (small archive should be inline, not stream-backed)", bytes);
+		assertTrue("[GROUPEXPORT] archive byte store is empty", bytes.length > 0);
 		return bytes;
 	}
 
@@ -206,5 +232,92 @@ public class TestGroupExport extends BaseTest {
 		String containerObjectId = container.get(FieldNames.FIELD_OBJECT_ID);
 		String stillThereObjectId = stillThere.get(FieldNames.FIELD_OBJECT_ID);
 		assertEquals(containerObjectId, stillThereObjectId);
+	}
+
+	/// Regression test for the >1GB group export OutOfMemoryError (KI-17 follow-up). Doesn't push a
+	/// literal 1GB through (impractical for CI time), but exercises the exact code path that mattered:
+	/// SEVERAL stream-backed (i.e. over StreamUtil's ~1MB inline cutoff) source files, each spanning
+	/// multiple EXPORT_STREAM_CHUNK_SIZE (1MB) chunks, exported together. Proves correctness (every
+	/// byte round-trips through the streaming archive build) with a real, passing test; the "doesn't
+	/// materialize everything in memory at once" claim for content beyond what's practical to push
+	/// through a unit test is additionally backed by reading the changed code (GroupExportUtil no
+	/// longer builds a Map<String,byte[]> of every child - see its class javadoc and buildEntrySource -
+	/// and StreamSegmentUtil#streamToOutput pages a stream-backed file in fixed chunks instead of
+	/// reading it whole), not merely by this test passing.
+	@Test
+	public void TestExportGroupLargeStreamBackedContent() throws Exception {
+		logger.info("=== TestExportGroupLargeStreamBackedContent ===");
+		Factory mf = ioContext.getFactory();
+		OrganizationContext octx = getTestOrganization("/Development/GroupExport");
+		BaseRecord testUser1 = mf.getCreateUser(octx.getAdminUser(), "testUser1", octx.getOrganizationId());
+		assertNotNull(testUser1);
+
+		/// Unique path per run: StreamUtil.streamToData (unlike BaseTest#getCreateData) hard-fails if a
+		/// same-named record already exists in the target group, and the live DB is never reset between
+		/// runs - a fixed path would collide with a prior run's leftover fixture.
+		String path = "~/GalleryExportLargeTest-" + java.util.UUID.randomUUID();
+		long orgId = octx.getOrganizationId();
+		int fileSize = 2 * 1024 * 1024 + 12345; // ~2MB + odd remainder, each file spans multiple 1MB chunks
+		int fileCount = 3;
+		Map<String, byte[]> expected = new HashMap<>();
+		for(int i = 0; i < fileCount; i++) {
+			String name = "large-" + i + ".bin";
+			byte[] content = deterministicBytes(fileSize, i);
+			BaseRecord streamRec = createStreamBackedFile(testUser1, path, name, content, orgId);
+			assertNotNull("[GROUPEXPORT-LARGE] stream-backed file " + name + " was not created", streamRec);
+			assertNotNull("[GROUPEXPORT-LARGE] " + name + " unexpectedly has no stream FK (stayed inline)",
+				streamRec.get(FieldNames.FIELD_STREAM));
+			expected.put(name, content);
+		}
+
+		BaseRecord group = ioContext.getPathUtil().findPath(testUser1, ModelNames.MODEL_GROUP, path, "DATA", orgId);
+		assertNotNull(group);
+		String groupObjectId = group.get(FieldNames.FIELD_OBJECT_ID);
+
+		long t0 = System.currentTimeMillis();
+		BaseRecord container = IOSystem.getActiveContext().getAccessPoint().exportGroup(testUser1, groupObjectId, "data.data");
+		long elapsed = System.currentTimeMillis() - t0;
+		assertNotNull("[GROUPEXPORT-LARGE] exportGroup returned null", container);
+		assertEquals(fileCount, (int) container.get(FieldNames.FIELD_ITEM_COUNT));
+		logger.info("[GROUPEXPORT-LARGE] exported " + fileCount + " files (~" + (fileCount * fileSize / (1024 * 1024))
+			+ "MB total) in " + elapsed + "ms");
+
+		byte[] zipBytes = readArchiveBytes(testUser1, container);
+		Map<String, byte[]> entries = readZip(zipBytes);
+		assertEquals("[GROUPEXPORT-LARGE] expected " + fileCount + " zip entries", fileCount, entries.size());
+		for(Map.Entry<String, byte[]> e : expected.entrySet()) {
+			byte[] actual = entries.get(e.getKey());
+			assertNotNull("[GROUPEXPORT-LARGE] missing entry " + e.getKey(), actual);
+			assertEquals("[GROUPEXPORT-LARGE] size mismatch for " + e.getKey(), e.getValue().length, actual.length);
+			assertArrayEquals("[GROUPEXPORT-LARGE] content mismatch for " + e.getKey() + " - chunked "
+				+ "stream read/write corrupted data", e.getValue(), actual);
+		}
+	}
+
+	/// Deterministic, non-degenerate (not all-zero) content so a truncated/corrupted chunk boundary would
+	/// actually be detectable via assertArrayEquals rather than accidentally matching.
+	private byte[] deterministicBytes(int size, int seed) {
+		byte[] b = new byte[size];
+		for(int i = 0; i < size; i++) {
+			b[i] = (byte) ((i * 31 + seed * 17 + 7) & 0xFF);
+		}
+		return b;
+	}
+
+	/// Creates a genuinely stream-backed data.data record (bypassing the inline-byte-store path that
+	/// BaseTest#getCreateData uses) via the same StreamUtil.streamToData entry point real uploads use,
+	/// so `content.length` must exceed StreamUtil's ~1MB inline cutoff for the returned record to carry a
+	/// `stream` FK - callers should assert on that FK to confirm the fixture is shaped as intended.
+	private BaseRecord createStreamBackedFile(BaseRecord user, String path, String name, byte[] content, long orgId) throws Exception {
+		boolean ok = org.cote.accountmanager.util.StreamUtil.streamToData(user, name, "Large export fixture", path, 0L, new ByteArrayInputStream(content));
+		assertTrue("[GROUPEXPORT-LARGE] streamToData failed for " + name, ok);
+		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, path, "DATA", orgId);
+		BaseRecord[] match = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_DATA, (long) dir.get(FieldNames.FIELD_ID), name);
+		assertTrue("[GROUPEXPORT-LARGE] could not re-read newly streamed file " + name, match != null && match.length > 0);
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, (String) match[0].get(FieldNames.FIELD_OBJECT_ID));
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.planMost(true, java.util.Arrays.asList(FieldNames.FIELD_BYTE_STORE));
+		q.setCache(false);
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 }

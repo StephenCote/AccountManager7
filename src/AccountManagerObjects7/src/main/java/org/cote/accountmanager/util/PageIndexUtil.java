@@ -101,6 +101,26 @@ public class PageIndexUtil {
 
 	/* ---------------------------------------------------------------------- build ---------------------------------------------------------------------- */
 
+	/// Serializes createPageIndex per SOURCE record (schema + id), keyed lock registry. Root cause of a
+	/// live "duplicate key value violates unique constraint ..._ne_gd_od_2_idx" crash reproduced against
+	/// catatone.docx (never from this investigation's own JUnit runs - those talk to the DB directly,
+	/// never through Tomcat): two concurrent createPageIndex calls for the SAME source each start their
+	/// own AtomicInteger seq at 0 (see buildTree), so BOTH generate identically-named nodes
+	/// ("pin-<sourceId>-0", "pin-<sourceId>-1", ...); whichever's batch INSERT lands second collides with
+	/// the first's already-committed row on the (name, groupId, organizationId) unique constraint. The
+	/// count-check/delete/rebuild sequence has no other serialization point (DBWriter's write/delete
+	/// don't take any application-level lock), so two overlapping rebuild requests for the same source
+	/// (a double-submitted UI click, a retried REST call, two independent processes targeting the same
+	/// document) can race straight through it. A per-source lock makes the second caller wait for the
+	/// first to fully finish (see/replace its committed state) rather than interleave with it; distinct
+	/// sources still build fully concurrently (the lock is keyed, not global).
+	private static final java.util.concurrent.ConcurrentHashMap<String, Object> BUILD_LOCKS = new java.util.concurrent.ConcurrentHashMap<>();
+
+	private static Object buildLockFor(BaseRecord model) {
+		String key = model.getSchema() + ":" + (model.hasField(FieldNames.FIELD_ID) ? (Object) model.get(FieldNames.FIELD_ID) : model.get(FieldNames.FIELD_OBJECT_ID));
+		return BUILD_LOCKS.computeIfAbsent(key, k -> new Object());
+	}
+
 	/**
 	 * Build and persist a PageIndex tree for the given source model. Replaces any existing index. Returns the
 	 * full list of persisted nodes (root first), each carrying its generated id.
@@ -113,47 +133,51 @@ public class PageIndexUtil {
 			throw new FieldException("Model is missing identity");
 		}
 
-		if(countPageIndex(model) > 0) {
-			logger.info("Replacing page index for " + model.getSchema());
-			if(deletePageIndex(model) == 0) {
-				throw new FieldException("Page index already exists and was not deleted.");
+		/// See buildLockFor's javadoc: serializes concurrent rebuilds of the SAME source so their
+		/// count-check/delete/insert sequences can't interleave and collide.
+		synchronized(buildLockFor(model)) {
+			if(countPageIndex(model) > 0) {
+				logger.info("Replacing page index for " + model.getSchema());
+				if(deletePageIndex(model) == 0) {
+					throw new FieldException("Page index already exists and was not deleted.");
+				}
 			}
+
+			String content = extractContent(model);
+			if(content == null || content.length() == 0) {
+				throw new FieldException("Content is null or empty");
+			}
+
+			/// Resolve a connection-configured chatConfig once (same library "contentAnalysis" config ChatUtil
+			/// uses for summarization); the Chat client resolves the connection (OpenAI or local) from it. Resolved
+			/// BEFORE the split because the prose (no-markdown) split strategy also drives the Chat client to build
+			/// an LLM table of contents; if it can't be resolved that strategy is simply unavailable and the split
+			/// degrades to the flat fallback.
+			BaseRecord chatConfig = resolveChatConfig(user);
+
+			PINode root = buildTree(model, content, user, chatConfig);
+
+			/// Bottom-up summarization of interior nodes (leaf -> section -> root) via the Chat client.
+			summarize(root, user, chatConfig);
+
+			/// Optionally embed each node's title+summary/content for the cosine shortlist.
+			EmbeddingUtil eu = getEmbedUtil();
+			if(eu != null) {
+				embed(root, eu);
+			}
+
+			List<BaseRecord> persisted = persist(root);
+
+			/// Optional per-document container/root descriptor (data.pageIndex).
+			try {
+				writeContainer(model, root.record, persisted.size(), eu);
+			}
+			catch(Exception e) {
+				logger.warn("Failed to write page index container: " + e.getMessage());
+			}
+
+			return persisted;
 		}
-
-		String content = extractContent(model);
-		if(content == null || content.length() == 0) {
-			throw new FieldException("Content is null or empty");
-		}
-
-		/// Resolve a connection-configured chatConfig once (same library "contentAnalysis" config ChatUtil
-		/// uses for summarization); the Chat client resolves the connection (OpenAI or local) from it. Resolved
-		/// BEFORE the split because the prose (no-markdown) split strategy also drives the Chat client to build
-		/// an LLM table of contents; if it can't be resolved that strategy is simply unavailable and the split
-		/// degrades to the flat fallback.
-		BaseRecord chatConfig = resolveChatConfig(user);
-
-		PINode root = buildTree(model, content, user, chatConfig);
-
-		/// Bottom-up summarization of interior nodes (leaf -> section -> root) via the Chat client.
-		summarize(root, user, chatConfig);
-
-		/// Optionally embed each node's title+summary/content for the cosine shortlist.
-		EmbeddingUtil eu = getEmbedUtil();
-		if(eu != null) {
-			embed(root, eu);
-		}
-
-		List<BaseRecord> persisted = persist(root);
-
-		/// Optional per-document container/root descriptor (data.pageIndex).
-		try {
-			writeContainer(model, root.record, persisted.size(), eu);
-		}
-		catch(Exception e) {
-			logger.warn("Failed to write page index container: " + e.getMessage());
-		}
-
-		return persisted;
 	}
 
 	/// Extract the content to index. If the model opts in with a (possibly custom-subclassed) pageIndex

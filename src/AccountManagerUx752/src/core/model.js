@@ -563,6 +563,24 @@ import Base64 from './base64.js';
 		}).length > 0;
 	};
 
+	// True when `entity` carries at least one non-identity/virtual/ephemeral field set to a
+	// non-default value — i.e. it looks like a genuinely (at least partially) populated record, not
+	// just a bare identity stub. Used to skip a redundant re-fetch when the parent record's own load
+	// (e.g. am7client.getFull()) already came back with the sub-object's data (KI-16 Finding A).
+	am7model.hasPopulatedData = function (entity) {
+		let type = entity && entity[am7model.jsonModelKey];
+		if (!type) return false;
+		let fields = am7model.getModelFields(type) || [];
+		return fields.some(f => {
+			if (f.identity || f.virtual || f.ephemeral) return false;
+			let v = entity[f.name];
+			if (v === undefined || v === null) return false;
+			if (Array.isArray(v)) return v.length > 0;
+			if (typeof v === 'object') return Object.keys(v).length > 0;
+			return v !== am7model.defaultValue(f) && v !== '';
+		});
+	};
+
 
 
 	let dateTimeDecorator = {

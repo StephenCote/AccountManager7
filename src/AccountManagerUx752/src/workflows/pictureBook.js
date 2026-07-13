@@ -11,6 +11,7 @@ import {
 } from './sceneExtractor.js';
 import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
+import { formFieldRenderers } from '../components/formFieldRenderers.js';
 
 /**
  * Picture Book workflow — multi-step wizard launched from a data.data or data.note object.
@@ -752,13 +753,13 @@ function renderSdConfig() {
         m('div', { class: 'grid grid-cols-3 gap-2' }, [
             m('div', [
                 m('label', { class: 'field-label text-xs' }, 'Steps: ' + sdSteps),
-                m('input', { class: 'w-full', type: 'range', min: 1, max: 150,
-                    value: sdSteps, oninput: function (e) { sdSteps = parseInt(e.target.value) || 20; } })
+                formFieldRenderers.renderRange({ value: sdSteps, min: 1, max: 150, step: 1, label: 'Steps',
+                    onInput: function (e) { sdSteps = parseInt(e.target.value) || 20; } })
             ]),
             m('div', [
                 m('label', { class: 'field-label text-xs' }, 'CFG: ' + sdCfg),
-                m('input', { class: 'w-full', type: 'range', min: 1, max: 30, step: 0.5,
-                    value: sdCfg, oninput: function (e) { sdCfg = parseFloat(e.target.value) || 5; } })
+                formFieldRenderers.renderRange({ value: sdCfg, min: 1, max: 30, step: 0.5, label: 'CFG',
+                    onInput: function (e) { sdCfg = parseFloat(e.target.value) || 5; } })
             ]),
             m('div', [
                 m('label', { class: 'field-label text-xs' }, 'Seed'),
@@ -778,8 +779,8 @@ function renderSdConfig() {
             ]),
             m('div', [
                 m('label', { class: 'field-label text-xs' }, 'Refiner Steps: ' + sdRefinerSteps),
-                m('input', { class: 'w-full', type: 'range', min: 0, max: 150,
-                    value: sdRefinerSteps, oninput: function (e) { sdRefinerSteps = parseInt(e.target.value) || 0; } })
+                formFieldRenderers.renderRange({ value: sdRefinerSteps, min: 0, max: 150, step: 1, label: 'Refiner Steps',
+                    onInput: function (e) { sdRefinerSteps = parseInt(e.target.value) || 0; } })
             ]),
             m('div', { class: 'flex items-end pb-1' }, [
                 m('label', { class: 'flex items-center gap-1 text-xs cursor-pointer' }, [
@@ -790,9 +791,8 @@ function renderSdConfig() {
             ]),
             m('div', [
                 m('label', { class: 'field-label text-xs' }, 'Denoising: ' + sdDenoisingStrength.toFixed(2)),
-                m('input', { class: 'w-full', type: 'range', min: 0, max: 1, step: 0.05,
-                    value: sdDenoisingStrength,
-                    oninput: function (e) { sdDenoisingStrength = parseFloat(e.target.value) || 0.65; } })
+                formFieldRenderers.renderRange({ value: sdDenoisingStrength, min: 0, max: 1, step: 0.05, label: 'Denoising',
+                    onInput: function (e) { sdDenoisingStrength = parseFloat(e.target.value) || 0.65; } })
             ])
         ]),
         // Model dropdowns

@@ -1094,13 +1094,22 @@ function newObjectPage() {
                 minst = am7model.prepareInstance(mo);
                 pinst[form.property] = minst;
 
-                // If the sub-object has identity, load full data
-                if (am7model.hasIdentity(mo) && !pinst[form.property + '_loaded']) {
+                // If the sub-object has identity but the parent's own load (e.g. am7client.getFull(),
+                // which recursively populates nested foreign models via planMost) didn't already bring
+                // its data along, fetch it explicitly. Skipping this when `mo` already looks populated
+                // avoids a redundant search every time a model:true sub-form tab is first activated
+                // (KI-16 Finding A) — every one of these forms (statistics, personality, profile, ...)
+                // was unconditionally re-fetching data the parent already had.
+                if (am7model.hasIdentity(mo) && !am7model.hasPopulatedData(mo) && !pinst[form.property + '_loaded']) {
                     pinst[form.property + '_loaded'] = true;
                     let subType = mf.baseModel;
                     let q = am7view.viewQuery(am7model.newInstance(subType));
                     if (mo.objectId) q.field('objectId', mo.objectId);
                     else if (mo.id) q.field('id', mo.id);
+                    // Bypass the query cache for this fix-up fetch — belt-and-suspenders alongside the
+                    // request-field-aware cache key (am7client.js q.key()) so a narrowly-projected list
+                    // query elsewhere can never collide with this full-field fetch.
+                    q.cache(false);
                     am7client.search(q, function (qr) {
                         if (qr && qr.count) {
                             // Merge fresh data into existing instance to preserve pending changes
@@ -1117,6 +1126,10 @@ function newObjectPage() {
                             }
                         }
                     });
+                } else if (am7model.hasIdentity(mo)) {
+                    // Already has non-identity data from the parent's own load — mark as loaded so we
+                    // never re-check/re-fetch on subsequent renders of this tab.
+                    pinst[form.property + '_loaded'] = true;
                 }
             } else {
                 minst = pinst[form.property];

@@ -5,6 +5,7 @@ import { am7view } from '../core/view.js';
 import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import { am7sd } from '../components/sdConfig.js';
+import { formFieldRenderers } from '../components/formFieldRenderers.js';
 
 /**
  * Reimage workflow — opens SD config dialog, generates images for
@@ -292,9 +293,10 @@ async function reimage(entity, inst) {
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Denoising: ' + (cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75)),
-                    m('input', { class: 'text-field-compact', type: 'range', min: 0, max: 100, step: 5,
+                    formFieldRenderers.renderRange({
                         value: String(cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75),
-                        oninput: function (e) {
+                        min: 0, max: 100, step: 5, label: 'Denoising',
+                        onInput: function (e) {
                             let v = parseInt(e.target.value);
                             if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(v);
                             else cinst.entity.denoisingStrength = v / 100;
@@ -352,19 +354,19 @@ async function reimage(entity, inst) {
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Steps: ' + cinst.api.steps()),
-                    m('input', { class: 'w-full', type: 'range', min: 1, max: 100, value: cinst.api.steps(), oninput: function (e) { cinst.api.steps(parseInt(e.target.value) || 20); } })
+                    formFieldRenderers.renderRange({ value: cinst.api.steps(), min: 1, max: 100, step: 1, label: 'Steps', onInput: function (e) { cinst.api.steps(parseInt(e.target.value) || 20); } })
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Refiner Steps: ' + cinst.api.refinerSteps()),
-                    m('input', { class: 'w-full', type: 'range', min: 0, max: 100, value: cinst.api.refinerSteps(), oninput: function (e) { cinst.api.refinerSteps(parseInt(e.target.value) || 20); } })
+                    formFieldRenderers.renderRange({ value: cinst.api.refinerSteps(), min: 0, max: 100, step: 1, label: 'Refiner Steps', onInput: function (e) { cinst.api.refinerSteps(parseInt(e.target.value) || 20); } })
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'CFG: ' + cinst.api.cfg()),
-                    m('input', { class: 'w-full', type: 'range', min: 1, max: 30, step: 0.5, value: cinst.api.cfg(), oninput: function (e) { cinst.api.cfg(parseFloat(e.target.value) || 5); } })
+                    formFieldRenderers.renderRange({ value: cinst.api.cfg(), min: 1, max: 30, step: 0.5, label: 'CFG', onInput: function (e) { cinst.api.cfg(parseFloat(e.target.value) || 5); } })
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Refiner CFG: ' + cinst.api.refinerCfg()),
-                    m('input', { class: 'w-full', type: 'range', min: 1, max: 30, step: 0.5, value: cinst.api.refinerCfg(), oninput: function (e) { cinst.api.refinerCfg(parseFloat(e.target.value) || 5); } })
+                    formFieldRenderers.renderRange({ value: cinst.api.refinerCfg(), min: 1, max: 30, step: 0.5, label: 'Refiner CFG', onInput: function (e) { cinst.api.refinerCfg(parseFloat(e.target.value) || 5); } })
                 ]),
                 m('div', [
                     m('label', { class: 'field-label' }, 'Sampler'),

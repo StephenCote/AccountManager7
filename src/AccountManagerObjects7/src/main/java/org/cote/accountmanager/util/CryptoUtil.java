@@ -32,9 +32,9 @@ import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Signature;
 import java.security.SignatureException;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -63,7 +63,13 @@ public class CryptoUtil {
 	private static SecureRandom secureRandom = null;
 	private static Random random = null;
 	public static final boolean USESECURERANDOM = true;
-	private static Map<String, MessageDigest> digestInstance = new HashMap<>();
+	/// MessageDigest is stateful and not thread-safe: sharing one instance across concurrent Tomcat
+	/// request threads (via getMessageDigest(alg, true)) let one thread's reset()/update() interleave
+	/// with another's digest(), corrupting the internal buffer and throwing
+	/// "ArrayIndexOutOfBoundsException: arraycopy: length -103 is negative" from engineDigest/engineUpdate.
+	/// A ThreadLocal per algorithm keeps the "avoid repeated getInstance() lookups" benefit without sharing
+	/// mutable state across threads.
+	private static Map<String, ThreadLocal<MessageDigest>> digestInstance = new ConcurrentHashMap<>();
 	
 	private static String defaultHashAlgorithm = "SHA-512";
 	private static String defaultPRNG = "SHA1PRNG";
@@ -123,7 +129,18 @@ public class CryptoUtil {
 		return getMessageDigest(defaultHashAlgorithm, false);
 	}
 	private static MessageDigest getMessageDigest(String hashAlgorithm, boolean useSingleton){
-		if(useSingleton && digestInstance.containsKey(hashAlgorithm)) return digestInstance.get(hashAlgorithm);
+		if(useSingleton){
+			ThreadLocal<MessageDigest> tl = digestInstance.computeIfAbsent(hashAlgorithm, alg -> ThreadLocal.withInitial(() -> {
+				try{
+					return MessageDigest.getInstance(alg);
+				}
+				catch(NoSuchAlgorithmException e){
+					logger.error(GeneralException.TRACE_EXCEPTION,e);
+					return null;
+				}
+			}));
+			return tl.get();
+		}
 		MessageDigest digest = null;
 		try{
 			digest = MessageDigest.getInstance(hashAlgorithm);
@@ -131,7 +148,6 @@ public class CryptoUtil {
 		catch(NoSuchAlgorithmException e){
 			logger.error(GeneralException.TRACE_EXCEPTION,e);
 		}
-		if(useSingleton && digest != null) digestInstance.put(hashAlgorithm, digest);
 		return digest;
 	}
 	public static String getDigestAsString(String inStr) {
