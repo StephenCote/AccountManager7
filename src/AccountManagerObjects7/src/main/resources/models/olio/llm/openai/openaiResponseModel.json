@@ -16,6 +16,14 @@
 			"type": "string"
 		},
 		{
+			"name": "service_tier",
+			"type": "string"
+		},
+		{
+			"name": "obfuscation",
+			"type": "string"
+		},
+		{
 			"name": "created",
 			"type": "long"
 		},
