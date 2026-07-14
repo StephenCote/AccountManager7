@@ -23,6 +23,9 @@
  *******************************************************************************/
 package org.cote.accountmanager.util;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
@@ -38,6 +41,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
+import javax.crypto.CipherInputStream;
+import javax.crypto.CipherOutputStream;
 import javax.crypto.IllegalBlockSizeException;
 
 import org.apache.logging.log4j.LogManager;
@@ -246,9 +251,58 @@ public class CryptoUtil {
 		catch (IllegalBlockSizeException | BadPaddingException e) {
 			logger.error(e.getMessage());
 			logger.error(GeneralException.TRACE_EXCEPTION,e);
-			
-		} 
+
+		}
 		return ret;
+	}
+
+	/// Streaming counterpart to decipher(CryptoBean, byte[]) - added to fix StreamUtil.rebox()
+	/// buffering an entire boxed stream file into one byte[] to decrypt it (KI-23, the same
+	/// buffer-everything OOM shape as KI-17/KI-22, one layer deeper). CipherInputStream is the JDK's own
+	/// streaming wrapper around a Cipher - this wraps the SAME already-initialized Cipher
+	/// CryptoFactory.getDecryptCipherKey() produces for decipher(), so it is not a new crypto
+	/// implementation, just a different (streaming) way of driving the existing one. Caller owns
+	/// closing `in`/`out`; closing the returned success path also closes both (CipherInputStream/`in`
+	/// via transferTo, `out` via its own lifecycle) - safe to close again.
+	public static boolean decipherStream(CryptoBean bean, InputStream in, OutputStream out) {
+		boolean bECD = ((String)bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC)).startsWith("EC");
+		Cipher cipher = CryptoFactory.getInstance().getDecryptCipherKey(bean);
+		if(cipher == null || ((!bECD && bean.getSecretKey() == null) && (bean.getPrivateKey() == null))) {
+			logger.error("Expected keys not present");
+			if(cipher == null) logger.error("Null cipher");
+			return false;
+		}
+		try(CipherInputStream cis = new CipherInputStream(in, cipher)) {
+			cis.transferTo(out);
+		}
+		catch (IOException e) {
+			logger.error(GeneralException.TRACE_EXCEPTION, e);
+			logger.error(e.getMessage());
+			return false;
+		}
+		return true;
+	}
+
+	/// Streaming counterpart to encipher(CryptoBean, byte[]) - see decipherStream() for rationale.
+	/// CipherOutputStream.close() is what triggers the cipher's doFinal() (final block/padding), so the
+	/// transfer must complete before this method returns, not merely be flushed.
+	public static boolean encipherStream(CryptoBean bean, InputStream in, OutputStream out) {
+		boolean bECD = ((String)bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC)).startsWith("EC");
+		Cipher cipher = CryptoFactory.getInstance().getEncryptCipherKey(bean);
+		if(cipher == null || ((!bECD && bean.getSecretKey() == null) && (bean.getPublicKey() == null))) {
+			logger.error("Expected keys not present");
+			if(cipher == null) logger.error("Null cipher");
+			return false;
+		}
+		try(CipherOutputStream cos = new CipherOutputStream(out, cipher)) {
+			in.transferTo(cos);
+		}
+		catch (IOException e) {
+			logger.error(GeneralException.TRACE_EXCEPTION, e);
+			logger.error(e.getMessage());
+			return false;
+		}
+		return true;
 	}
 	public static byte[] encrypt(CryptoBean bean, byte[] data){
 		PublicKey key = bean.getPublicKey();

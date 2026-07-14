@@ -670,3 +670,114 @@ drive-by fix per Stephen's instruction):**
 several option-interaction edge cases (`isEncodeData`, `isUseTemplate`, thumbnail vs. full content,
 possible range-request support elsewhere) and needs a genuine large-payload test to verify — filed here
 per the tracker's own header for scoping/sequencing later, not committed to a timeline in this pass.
+
+**Status:** FIXED ✅ (2026-07-13) — see below.
+
+`writeBinaryData`'s stream-backed branch now calls `StreamSegmentUtil.streamToOutput(streamId,
+response.getOutputStream(), MEDIA_STREAM_CHUNK_SIZE)` directly instead of `streamToEnd(...)`, so at
+most one 1MB chunk is resident at a time. Content-Length is set up front via
+`StreamSegmentUtil.getFileStreamSize(stream)` (a cheap `FileChannel.size()` call, no read of the file
+content) when it returns a positive size; otherwise the container falls back to chunked transfer
+encoding — no HTTP range/partial-content support existed on this path before or after this change, so
+nothing regressed there. Per the fix-direction notes above, `isEncodeData()` (base64) and
+`isUseTemplate()` requests still fall through to the original buffered `streamToEnd(...)` +
+`byte[]` path unchanged — both are bounded/small-content use cases, not the >1GB-scale risk this
+issue was about, and streaming-safe base64/template rewrites are deferred rather than drive-by'd here.
+Real end-to-end JUnit coverage (`AccountManagerService7`, `TestMediaUtilStreaming`) exercises
+`MediaUtil.writeBinaryData` directly against a live-DB stream-backed fixture spanning multiple chunks
+and asserts byte-for-byte content via checksum, plus a regression case proving the small/inline and
+`isEncodeData`/`isUseTemplate` branches are unaffected.
+
+## Objects7 — Vault/crypto (2026-07-13, found while verifying KI-22's fix doesn't route through another buffer-everything path)
+
+### KI-23. `StreamUtil.unboxStream`/`boxStream` decrypt or encrypt an entire boxed stream file into one `byte[]` in memory — OPEN
+
+While confirming that KI-22's fix (`StreamSegmentUtil.streamToOutput`) doesn't itself hit a hidden
+buffer-everything path, traced what `streamToOutput` calls before paging chunks:
+`StreamUtil.unboxStream(stream, false)` (`StreamSegmentUtil.java:95`, and identically at line 55 in the
+pre-existing `streamToEnd`). `unboxStream` is a cheap no-op in the common case — it returns immediately
+if the stream isn't `StreamEnumType.FILE`, or if `isStreamUnboxed(stream)` says the plaintext file
+already exists on disk (`StreamUtil.java:126-147`, backed by an in-memory `unboxedMap` cache after the
+first check). But when a stream's plaintext file does NOT yet exist and only the encrypted `.box` file
+does — i.e. the very first read after the file was boxed (encrypted at rest) — it falls into
+`rebox(stream, f2, path, false)` (`StreamUtil.java:269`), which does:
+
+```java
+// StreamUtil.java:307-313
+byte[] eval = new byte[0];
+if(enc) {
+    eval = CryptoUtil.encipher(key, fileHandleToBytes(f1));
+} else {
+    eval = CryptoUtil.decipher(key, fileHandleToBytes(f1));
+}
+```
+
+`fileHandleToBytes(File)` (`StreamUtil.java:96-112`) reads the entire file into one
+`ByteArrayOutputStream`/`byte[]` via `copyStream(FileInputStream, baos)`, `CryptoUtil.decipher`/
+`encipher` (`CryptoUtil.java:206-234`) then run byte[]-in/byte[]-out over the whole thing, and the
+result is written back out whole. Same OOM shape as KI-17/KI-22, one layer deeper: a large boxed stream
+file being unboxed for the first time holds two full copies of the file in memory at once (ciphertext +
+plaintext `byte[]`), on top of whatever `CryptoUtil` allocates internally for the cipher operation.
+
+**This is pre-existing and NOT a regression from the KI-22 fix** — both the old `streamToEnd` and the
+new `streamToOutput` call the identical `unboxStream(stream, false)` line before reading, so exposure is
+unchanged either way.
+
+**Why not drive-by fixed here:** `CryptoUtil` has no streaming cipher primitives at all (`encipher`/
+`decipher` are exclusively `byte[] -> byte[]`, confirmed by grep — no `CipherInputStream`/
+`CipherOutputStream` usage anywhere in the class). A correct fix means adding genuine streaming
+cipher support (`CipherOutputStream`/`CipherInputStream` chained to `FileInputStream`/`FileOutputStream`)
+to security-sensitive vault/crypto code — IV handling, auth-tag placement for authenticated modes, and
+chunk-boundary correctness all need care and dedicated crypto-focused tests, not a quick swap. Matches
+the same judgment call already made for KI-22 (log significant, security/crypto-adjacent changes rather
+than drive-by fixing them).
+
+**Correction — this is NOT theoretical, it fires on every real upload.** An initial grep for
+`StreamUtil.boxStream(...)` (dotted call form) found only test callers and this doc originally
+(wrongly) called it a test-only exposure. Re-checked by actually running the KI-22 regression test
+against a live H2-backed instance: creating a stream-backed file via `StreamUtil.streamToData(...)` —
+the same entry point real uploads use — logs `Boxing ./am7/.streams/.../<id>.a.box ...` and deletes the
+plaintext file every time. The call site is `StreamUtil.java:531`, inside `streamToData` itself:
+`boxStream(streamRec, false); clearUnboxedStream(streamRec);` — an undotted same-class call the first
+grep missed. So **every** stream-backed upload is boxed (encrypted at rest) immediately, and the
+*first* read after upload always takes the `rebox()`/`fileHandleToBytes` full-buffer path described
+above before any chunked reading can begin — confirmed directly: the KI-22 regression test below hit a
+`FileNotFoundException` on the plaintext path until `unboxStream`'s rebox ran.
+
+**Consequence for the KI-22 fix above:** `MediaUtil`'s new `streamToOutput` call only pages the file in
+chunks once the plaintext copy already exists on disk. For a file's first read after upload,
+`unboxStream` (called at the top of both `streamToEnd` and `streamToOutput`, unchanged either way) still
+buffers the whole file once during unboxing before any chunking helps. The KI-22 fix is real and
+correct for what it targets — the read-time serving path — but does NOT close the full OOM risk for a
+stream-backed file's first read; that gap is this issue, one layer down.
+
+**Scope note:** filed for scoping/sequencing later, not committed to a timeline in this pass. Given this
+fires on every upload rather than an edge case, this should be prioritized above where it might otherwise
+sit on the backlog.
+
+**Status:** FIXED ✅ (2026-07-13) — see below.
+
+`StreamUtil.rebox()` (`StreamUtil.java`, the shared method behind both `boxStream` and `unboxStream`) no
+longer calls `fileHandleToBytes(f1)` to pull the whole source file into one `byte[]` before handing it to
+`CryptoUtil.encipher`/`decipher`. It now opens a `FileInputStream`/`FileOutputStream` pair on the source
+and destination paths and drives them through two new methods on `CryptoUtil`:
+`decipherStream(CryptoBean, InputStream, OutputStream)` and `encipherStream(CryptoBean, InputStream,
+OutputStream)`. Both wrap the exact same already-initialized `Cipher` that `CryptoFactory.getDecrypt/
+EncryptCipherKey()` already produces for the byte[] `decipher()`/`encipher()` methods — via
+`CipherInputStream`/`CipherOutputStream`, the JDK's own streaming primitives for a `Cipher` — so this is
+not a new crypto implementation, just driving the existing cipher a chunk at a time instead of calling
+`doFinal()` on a whole-file buffer. Confirmed via `CryptoFactory.getCipherKey()` that the stream/file
+cipher path always uses a symmetric secret key + `IvParameterSpec` (not the asymmetric EC/IES branch,
+which is for small field-level values elsewhere), so this is an ordinary block-cipher stream, well within
+what `CipherInputStream`/`CipherOutputStream` are designed for.
+
+Real test coverage: `TestStreamEncryption#TestStreamEncryptionLargeRoundTrip`
+(`AccountManagerObjects7`) uploads a ~3MB stream-backed fixture spanning multiple 1MB
+`StreamSegmentUtil` chunks (confirming it gets boxed immediately per the finding above), force-unboxes
+it through the new `CipherInputStream` path, and asserts byte-for-byte + SHA-256 checksum equality
+against the original content — then re-boxes (streaming encipher) and re-unboxes (streaming decipher)
+a second time to prove both directions of the new streaming path, not just one. `TestMediaUtilStreaming`
+(`AccountManagerService7`, from the KI-22 fix) independently exercises the same code path end-to-end
+through `MediaUtil.writeBinaryData`'s first read after upload. Pre-existing `TestGroupExport` and
+`TestStreamEncryption` (original methods) suites re-ran clean against the change (7/7 passing) —
+confirming the KI-17 export path and existing box/unbox behavior are unaffected.

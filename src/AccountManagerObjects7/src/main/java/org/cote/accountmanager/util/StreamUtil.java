@@ -27,6 +27,7 @@ import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -303,24 +304,31 @@ public class StreamUtil {
 		
 		logger.info((enc ? "B" : "Unb") + "oxing " + path + " ...");
 
-		/// read source file
-		byte[] eval = new byte[0];
-		if(enc) {
-			eval = CryptoUtil.encipher(key,  fileHandleToBytes(f1));
-		}
-		else {
-			eval = CryptoUtil.decipher(key,  fileHandleToBytes(f1));
-		}
-		if (eval == null || eval.length == 0) {
-			logger.error("Failed to decipher file");
+		/// Stream cipher I/O directly between the source and destination files instead of buffering the
+		/// whole file into one byte[] to encipher/decipher it (KI-23 - same buffer-everything OOM shape
+		/// as KI-17/KI-22, one layer deeper: boxStream/unboxStream is called on every stream read via
+		/// StreamSegmentUtil, and StreamUtil.streamToData boxes every stream-backed upload immediately,
+		/// so a large file's first read after upload used to hold two full in-memory copies at once).
+		/// CryptoUtil.encipherStream/decipherStream wrap the CipherOutputStream/CipherInputStream around
+		/// the same Cipher CryptoFactory already produces for the byte[] encipher()/decipher() - not a
+		/// new crypto implementation, just driving the existing cipher a chunk at a time.
+		String parentPath = path.substring(0, path.lastIndexOf(File.separator));
+		if(!FileUtil.makePath(parentPath)) {
+			logger.error("Failed to create path: " + parentPath);
 			return false;
 		}
-
-		try {
-			writeFile(path, eval, 0);
-			outBool = true;
-		} catch (ValueException e) {
+		try(
+			FileInputStream fis = new FileInputStream(f1);
+			FileOutputStream fos = new FileOutputStream(path)
+		) {
+			outBool = enc ? CryptoUtil.encipherStream(key, fis, fos) : CryptoUtil.decipherStream(key, fis, fos);
+		}
+		catch (IOException e) {
 			logger.error(e);
+			return false;
+		}
+		if(!outBool) {
+			logger.error("Failed to " + (enc ? "encipher" : "decipher") + " file");
 		}
 		return outBool;
 	}

@@ -72,6 +72,9 @@ public class MediaUtil {
 	private static boolean checkConfig = false;
 	private static boolean checkConfigDataPoint = false;
 	private static Map<String, String> templateContents = new HashMap<>();
+	/// KI-22 fix: chunk size for streaming stream-backed media straight to the response, mirroring
+	/// GroupExportUtil.EXPORT_STREAM_CHUNK_SIZE from the KI-17 OOM follow-up.
+	private static final int MEDIA_STREAM_CHUNK_SIZE = 1048576;
 
 	protected static boolean getRestrictImageSize(HttpServletRequest request) {
 		if (checkConfig)
@@ -329,14 +332,35 @@ public class MediaUtil {
 						+ " in " + data.get(FieldNames.FIELD_GROUP_ID));
 		response.setContentType(data.get(FieldNames.FIELD_CONTENT_TYPE));
 
-		byte[] value = new byte[0];
 		if(data.hasField(FieldNames.FIELD_MODIFIED_DATE)) {
 			Date mod = data.get(FieldNames.FIELD_MODIFIED_DATE);
 			if(mod != null) {
 				response.setDateHeader("Last-Modified", mod.getTime());
 			}
 		}
-		if (data.hasField(FieldNames.FIELD_STREAM) && data.get(FieldNames.FIELD_STREAM) != null) {
+
+		boolean streamBacked = data.hasField(FieldNames.FIELD_STREAM) && data.get(FieldNames.FIELD_STREAM) != null;
+		boolean useTemplate = options.isUseTemplate() && options.getTemplatePath() != null;
+
+		/// KI-22: stream-backed media (images, thumbnails, video, large downloads) is written straight
+		/// to the response instead of buffering the whole file into one byte[] first - the same OOM
+		/// shape the KI-17 group-export fix addressed. Base64 encoding and template wrapping still need
+		/// the full buffer, but those options are only ever used for small/bounded content, so fall
+		/// through to the buffered path when either is requested.
+		if (streamBacked && !options.isEncodeData() && !useTemplate) {
+			BaseRecord stream = data.get(FieldNames.FIELD_STREAM);
+			StreamSegmentUtil ssu = new StreamSegmentUtil();
+			long size = ssu.getFileStreamSize(stream);
+			if (size > 0) {
+				response.setContentLengthLong(size);
+			}
+			ssu.streamToOutput(stream.get(FieldNames.FIELD_OBJECT_ID), response.getOutputStream(), MEDIA_STREAM_CHUNK_SIZE);
+			response.flushBuffer();
+			return;
+		}
+
+		byte[] value = new byte[0];
+		if (streamBacked) {
 			BaseRecord stream = data.get(FieldNames.FIELD_STREAM);
 			StreamSegmentUtil ssu = new StreamSegmentUtil();
 			value = ssu.streamToEnd(stream.get(FieldNames.FIELD_OBJECT_ID), 0, 0);
@@ -351,7 +375,7 @@ public class MediaUtil {
 		if (options.isEncodeData()) {
 			value = BinaryUtil.toBase64(value);
 		}
-		if (options.isUseTemplate() && options.getTemplatePath() != null) {
+		if (useTemplate) {
 
 			InputStream resourceContent = null;
 			String template = null;
