@@ -1887,6 +1887,67 @@ public class ChatUtil {
 		return presencePenField;
 	}
 
+	/// gpt-5 and o-series ("o1", "o3", ...) reasoning models only support the
+	/// default sampling parameters and reject a custom temperature/top_p/
+	/// frequency_penalty with HTTP 400 ("Unsupported value: 'temperature' does
+	/// not support 0.9 with this model. Only the default (1) value is supported.").
+	/// Ollama and other OpenAI-compatible models accept them. Mirrors the model
+	/// nuance handling in getMaxTokenField / getPresencePenaltyField.
+	public static boolean supportsSamplingParams(BaseRecord cfg) {
+		if(cfg == null) {
+			return true;
+		}
+		String modelName = cfg.get("model");
+		if(modelName == null) {
+			return true;
+		}
+		if(cfg.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) {
+			return true;
+		}
+		return !(modelName.startsWith("gpt-5") || modelName.startsWith("o"));
+	}
+
+	/// Extract a human-readable message from an LLM provider's HTTP error body.
+	/// OpenAI/Azure return {"error":{"message":..,"code":..,"param":..}} (often
+	/// pretty-printed across several lines). Falls back to the raw (truncated)
+	/// body when it isn't the expected shape so the caller always gets something
+	/// actionable rather than a null/blocked response.
+	@SuppressWarnings("unchecked")
+	public static String extractLLMError(String body, int statusCode) {
+		String prefix = "LLM call failed (HTTP " + statusCode + ")";
+		if(body == null || body.trim().isEmpty()) {
+			return prefix;
+		}
+		try {
+			Map<String, Object> parsed = JSONUtil.importObject(body, Map.class);
+			if(parsed != null) {
+				Object err = parsed.get("error");
+				if(err instanceof Map) {
+					Map<String, Object> em = (Map<String, Object>) err;
+					Object msg = em.get("message");
+					Object code = em.get("code");
+					if(msg != null) {
+						return prefix + ": " + msg + (code != null ? " [" + code + "]" : "");
+					}
+				}
+				else if(err instanceof String) {
+					return prefix + ": " + err;
+				}
+				Object msg = parsed.get("message");
+				if(msg != null) {
+					return prefix + ": " + msg;
+				}
+			}
+		} catch(Exception e) {
+			logger.debug("extractLLMError: could not parse error body: " + e.getMessage());
+		}
+		String trimmed = body.trim();
+		if(trimmed.length() > 500) {
+			trimmed = trimmed.substring(0, 500) + "...";
+		}
+		return prefix + ": " + trimmed;
+	}
+
 	public static void applyChatOptions(OpenAIRequest req, BaseRecord cfg) {
 		String modelName = null;
 		BaseRecord opts = null;

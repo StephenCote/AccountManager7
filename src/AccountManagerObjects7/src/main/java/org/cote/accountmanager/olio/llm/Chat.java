@@ -3899,6 +3899,15 @@ public class Chat {
 		String penField = ChatUtil.getPresencePenaltyField(chatConfig);
 		ignoreFields.addAll(Arrays.asList(new String[] {"presence_penalty"}).stream().filter(f -> !f.equals(penField)).collect(Collectors.toList()));
 
+		/// gpt-5 and o-series reasoning models reject non-default sampling params
+		/// (temperature/top_p/frequency_penalty) with HTTP 400 "unsupported_value".
+		/// Strip them from the wire request only — the persisted request/chatOptions
+		/// are left intact. Mirrors the gpt-5 handling in getMaxTokenField /
+		/// getPresencePenaltyField.
+		if (!ChatUtil.supportsSamplingParams(chatConfig)) {
+			ignoreFields.addAll(Arrays.asList("temperature", "top_p", "frequency_penalty"));
+		}
+
 		/// Defect #1: olio.llm.openai.openaiRequest declares `think` with default false, and
 		/// getPrunedRequest -> toFullString serializes it onto the wire. Azure/OpenAI reject any
 		/// unknown parameter ("Unknown parameter: 'think'") and non-thinking Ollama models reject
@@ -3939,6 +3948,7 @@ public class Chat {
 		CountDownLatch latch = forwardToClient ? null : new CountDownLatch(1);
 		final OpenAIResponse[] bufferResult = new OpenAIResponse[] { null };
 		final String[] bufferError = new String[] { null };
+		final boolean[] errorHandled = new boolean[] { false };
 		logger.info(ser);
 		CompletableFuture<HttpResponse<Stream<String>>> streamFuture = ClientUtil.postToRecordAndStream(serviceUrl, authorizationToken, ser);
 
@@ -3969,9 +3979,6 @@ public class Chat {
 					logger.info("[DIAG] Buffer mode LLM call HTTP status: " + response.statusCode()
 						+ " headers: " + response.headers().map());
 				}
-				if (!forwardToClient && response.statusCode() != 200) {
-					logger.warn("Buffer mode LLM call returned HTTP " + response.statusCode());
-				}
 				/// Global registry: track HTTP response for abort
 				LLMConnectionManager.registerHttpResponse(streamId, response);
 				/// Phase 12: OI-27 — Register HTTP response for server-side abort on cancel
@@ -3980,6 +3987,26 @@ public class Chat {
 					if (oid2 != null) {
 						((ChatListener) listener).registerHttpResponse(oid2, response);
 					}
+				}
+				/// HTTP error (non-200): the body is a single JSON error object
+				/// (e.g. {"error":{"message":"Unsupported value: 'temperature'...",
+				/// "code":"unsupported_value"}}) pretty-printed across several lines —
+				/// NOT an SSE chunk stream. Feeding it line-by-line to processStreamChunk
+				/// spams one parse failure per line and never surfaces the error, leaving
+				/// the caller with a null message (contentLength=null) and a null summary
+				/// downstream. Drain the whole body, extract the provider error, and
+				/// surface it once via onerror (interactive) or bufferError (buffer mode).
+				if (response.statusCode() != 200) {
+					String body = response.body().collect(Collectors.joining("\n"));
+					String errMsg = ChatUtil.extractLLMError(body, response.statusCode());
+					logger.error("LLM call returned HTTP " + response.statusCode() + ": " + errMsg);
+					errorHandled[0] = true;
+					if (forwardToClient && listener != null) {
+						listener.onerror(user, req, aresp, errMsg);
+					} else {
+						bufferError[0] = errMsg;
+					}
+					return;
 				}
 				boolean hasListener = listener != null;
 				java.util.Iterator<String> streamIt = response.body().iterator();
@@ -4064,7 +4091,12 @@ public class Chat {
 					bufferError[0] = errMsg;
 				}
 			} else {
-				if (forwardToClient && listener != null) {
+				if (errorHandled[0]) {
+					/// HTTP error already surfaced via onerror/bufferError in
+					/// thenAccept — don't also fire the success completion path
+					/// (which would run handleResponse on an empty response).
+					logger.debug("Skipping completion callback — HTTP error already handled");
+				} else if (forwardToClient && listener != null) {
 					listener.oncomplete(user, req, aresp);
 				} else {
 					bufferResult[0] = aresp;
