@@ -16,6 +16,18 @@ COPY AccountManagerConsole7 AccountManagerConsole7
 COPY AccountManagerService7 AccountManagerService7
 RUN mvn -q -pl AccountManagerObjects7,AccountManagerAgent7,AccountManagerISO42001,AccountManagerService7 \
     -am package -DskipTests
+# The WAR marks bcprov-jdk18on as `provided` (AccountManagerService7/pom.xml) --
+# on the dev box BouncyCastle is a container/JVM-level security provider, so it
+# is deliberately excluded from WEB-INF/lib. The container has no such provider,
+# so IOSystem.open() dies with NoClassDefFoundError: BouncyCastleProvider. Stage
+# the bcprov jar here and copy it into WEB-INF/lib in the runtime stage. Resolve
+# the version from Objects7's own dependency graph (copy-dependencies filtered to
+# bcprov) rather than hardcoding it, so it can never drift from the bcpkix/bcutil
+# version the WAR actually ships -- a version skew across signed/sealed BC jars in
+# the same classloader would trip JCE signature verification at runtime.
+RUN mvn -q -pl AccountManagerObjects7 dependency:copy-dependencies \
+    -DincludeArtifactIds=bcprov-jdk18on \
+    -DoutputDirectory=/build/bclib
 
 ########################################
 # Stage 2: build Ux752. node_modules is kept (not just dist/) because the
@@ -63,6 +75,11 @@ COPY --from=java-build /build/AccountManagerService7/target/AccountManagerServic
 RUN unzip -q /tmp/app.war -d "$CATALINA_HOME/webapps/${APP_CONTEXT}" && rm /tmp/app.war \
     && rm -f "$CATALINA_HOME/webapps/${APP_CONTEXT}/META-INF/context.xml" \
              "$CATALINA_HOME/webapps/${APP_CONTEXT}/WEB-INF/web.xml"
+
+# bcprov-jdk18on: excluded from the WAR by its `provided` scope; supplied here
+# so BouncyCastleProvider is on the webapp classpath (see java-build stage note).
+# Wildcard because the version is resolved from Objects7's dependency graph.
+COPY --from=java-build /build/bclib/bcprov-jdk18on-*.jar "$CATALINA_HOME/webapps/${APP_CONTEXT}/WEB-INF/lib/"
 
 COPY docker/context.xml.template "$CATALINA_HOME/webapps/${APP_CONTEXT}/META-INF/context.xml.template"
 COPY docker/web.xml.template "$CATALINA_HOME/webapps/${APP_CONTEXT}/WEB-INF/web.xml.template"

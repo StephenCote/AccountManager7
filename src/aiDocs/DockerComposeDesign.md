@@ -1,6 +1,11 @@
 # Single-container Docker Compose (Service7 + Ux752) — Design & Status
 
-**Status: in progress, not yet verified working.** Last updated 2026-07-14.
+**Status: verified working end-to-end.** Last updated 2026-07-15.
+
+The image builds, the container boots all three processes (Tomcat + nginx + vite preview),
+Tomcat deploys the webapp, the schema is created on a fresh Postgres, and nginx `:8443`
+reverse-proxies both the REST API and the Ux752 UI. Verified against a disposable
+`pgvector/pgvector:pg17` container (see "Verification 2026-07-15" below).
 
 ## Goal
 
@@ -63,16 +68,104 @@ stays external (matches `setup/dockerNotes.txt` precedent of running it as its o
 `docker/server.xml`, `docker/setenv.sh`, `docker/supervisord.conf`, `docker/context.xml.template`,
 `docker/web.xml.template`.
 
-## Current status / next steps
+## Verification 2026-07-15 (bugs found & fixed while getting it running)
 
-- Image builds successfully (`docker build -t am7:test .` — Maven package + `vite build` both
-  succeed).
-- First `docker run` smoke test failed at the Tomcat startup step due to the `server.xml` comment
-  bug above (just fixed, not yet rebuilt/re-run).
-- **Not yet done**: rebuild with the `server.xml` fix, re-run the container against the existing dev
-  Postgres container (`postgres`, port 15432) or a disposable instance, confirm Tomcat actually
-  deploys the webapp (JAAS/`setenv.sh` wiring is unverified), curl the REST API and the Ux752 UI
-  through nginx's `:8443`, and get final `verifier` + `architect` sign-off.
-- Known non-blocking follow-ups for Stephen to decide on later: regenerate
-  `AccountManagerUx752/package-lock.json`; consider running the container as non-root; consider
-  escaping `envsubst` inputs.
+Rebuilt with the `server.xml` fix and ran against a disposable `pgvector/pgvector:pg17`
+(`-p 15432:5432`, DB `am72db`). Two real bugs surfaced and were fixed:
+
+1. **CRLF line endings crash-looped the container.** On a Windows checkout every `docker/*` file
+   had CRLF endings. `exec /usr/local/bin/entrypoint.sh` failed with `no such file or directory`
+   (a `\r` in the shebang makes the kernel look for interpreter `/bin/bash\r`); a trailing `\r` on
+   a supervisord `command=` line would likewise corrupt the launched process's args. Fixed by adding
+   `src/.gitattributes` forcing `eol=lf` on `*.sh` and everything under `docker/**`, and normalizing
+   the working copies. **This is the reason the "first run" on the dev box worked but a fresh
+   Windows clone did not.**
+
+2. **`NoClassDefFoundError: org/bouncycastle/jce/provider/BouncyCastleProvider`** at
+   `RestServiceEventListener.initializeAccountManager` line 219 (`IOSystem.open`). `bcprov-jdk18on`
+   is declared `<scope>provided</scope>` in `AccountManagerService7/pom.xml` (on the dev box BC is a
+   container/JVM-level security provider) so it is deliberately excluded from the WAR — but the
+   image had no such provider. Because it is an `Error` (not an `Exception`) it slipped past the
+   `catch (Exception e)` in `initializeAccountManager`, so nothing was logged to the console; it only
+   showed up in Tomcat's JULI `localhost.<date>.log` as a `SEVERE Servlet.init()` failure, which then
+   made **every** REST request re-run servlet init and return HTTP 500. Fixed in the Dockerfile:
+   `mvn dependency:copy-dependencies -DincludeArtifactIds=bcprov-jdk18on` resolves the jar from
+   Objects7's own dependency graph in the java-build stage (so the version can never drift from the
+   `bcpkix`/`bcutil` the WAR actually ships) and it is copied into `WEB-INF/lib` via a version-glob —
+   kept beside the other `bc*` jars in the same classloader, since BC jars are signed/sealed and
+   splitting them across classloaders trips JCE signature verification.
+
+**What was verified (all green):**
+- Image builds; container runs all three supervised processes (Tomcat, nginx, `vite preview`).
+- Tomcat deploys the webapp; `setenv.sh` puts `-Djava.security.auth.login.config=.../jaas.conf` on
+  the JVM (confirmed on the live command line).
+- On a fresh DB, `IOSystem.open` created **132 `a7_*` tables** and initialized the org vault.
+- **DB init is a deliberate step, not automatic at startup** — run it via `AccountManagerConsole7`
+  or the REST setup endpoint. `POST /rest/setup/` takes a credential like the Ux login payload
+  (`{"schema":"auth.credential","credential":"<base64(password)>","type":"hashed_password"}`); it
+  created the admin credential for `/System`, `/Development`, `/Public` and returned `true`.
+- Through nginx `:8443` (tested from a real Linux curl client against the container to bypass a
+  Windows-curl-only TLS quirk, below): UI `/` → 200 `text/html`; `GET /rest/setup/` → `true`;
+  `GET /rest/schema` → 200 `application/json`; `POST /rest/setup/` and `POST /rest/login`
+  (admin/System, container-init smoke check) → 200 `true`. Confirms the double-TLS nginx→Tomcat
+  passthrough handles GET, POST-with-body, and JAAS auth.
+- **UI works behind a real domain name.** A request with `Host: am7.example.com` returns the app
+  (200, real `index.html`) rather than Vite 6 preview's "Blocked request. This host is not allowed."
+  page — because `nginx.conf`'s `location /` pins the upstream `Host` to `localhost:8899` (see the
+  fix below), which is always in Vite's allowed set.
+- **Key/state persistence survives container recreation.** With the `am7-data` volume mounted,
+  recreating the container against the same DB + volume re-initializes cleanly ("Working with
+  existing organization /System, /Development, /Public", **no** "Failed to initialize key stores").
+  Verified the failure mode too: running **without** the volume against a DB that already has orgs
+  gives "Organization already exists" + "Failed to initialize key stores" + "Organizations are not
+  configured" — i.e. the on-disk keystores and the DB org records are a **matched pair**; you cannot
+  keep one without the other. See the storage map below.
+
+## Storage map (what MUST persist)
+
+All mutable state lives under two mounts (already declared in `docker-compose.yml`):
+
+| Volume | Container path | Holds |
+|--------|----------------|-------|
+| `am7-data` | `/data/am7` | keystores, streams, seed/datagen, sessions, file store |
+| `am7-certs` | `/etc/am7/certs` | the self-signed TLS cert/key pair nginx + Tomcat share |
+
+Inside `/data/am7` (all defaulted by `entrypoint.sh`; every path param in the templates resolves
+here — nothing writes state outside it):
+
+- `store/.jks/{orgId}` and `store/.vault/{orgId}` — **the org key material.** Note the gotcha: the
+  keystores live under **`STORE_PATH`**, *not* under the `VAULT_PATH` env dir (`/data/am7/vault`,
+  which stays empty despite its name). Losing these while keeping the DB orphans every org
+  (see the matched-pair failure above), so they are the single most important thing to persist.
+- `store/.streams` — stream/media byte storage (`IOFactory` permitted path; created on first write).
+- `datagen/` — seed / data-generator files (`DATAGEN_PATH`).
+- `sessions/` — Tomcat `PersistentManager` `FileStore` (`SESSION_STORE_PATH`).
+
+Because keystores, streams, and seed data all sit under `/data/am7`, the single `am7-data` mount
+covers them. If key material needs independent backup/rotation from bulk data later, it can be split
+onto its own volume via sub-path mounts (`am7-keys:/data/am7/store/.jks`, `.../store/.vault`).
+
+**Windows host note (not a container defect):** from the Windows host, `curl https://localhost:8443`
+returns `HTTP 000` because curl's schannel TLS backend loops on renegotiation against nginx's
+self-signed cert, and because a local dev Tomcat may also be bound to `[::1]:8443` (IPv6). The
+container's `:8443` is correct — proven from an external Linux curl client hitting the container IP.
+Browsers are unaffected.
+
+## Known non-blocking follow-ups
+
+- **`log4j2.xml` hardcodes `<Property name="log-path">c:/projects/logs</Property>`** (a Windows path).
+  In the Linux container the `RollingFile` appenders create a junk relative `c:/projects/logs/`
+  directory under Tomcat's CWD. Not breaking — the `console-log`/`SYSTEM_OUT` appender is wired into
+  Root, so app logs still reach `docker logs`. Left as-is here to avoid changing shared Service7
+  source; a safe fix is to make the property `${sys:log-path:-c:/projects/logs}` and set
+  `-Dlog-path=/data/am7/logs` from `setenv.sh` (backwards-compatible — default unchanged off the dev box).
+- Regenerate `AccountManagerUx752/package-lock.json` (out of sync; Dockerfile uses `npm install`).
+- **Pinned Tomcat download will eventually 404.** `dlcdn.apache.org` only serves the current patch
+  release; once `TOMCAT_VERSION` (11.0.24) is superseded, the runtime-stage `curl` breaks with no
+  code change. An `|| curl … archive.apache.org …` fallback was drafted but reverted — it forces a
+  fresh download to re-verify, which can't complete while a VPN/corporate TLS proxy is intercepting
+  HTTPS (curl can't verify the substituted cert; do **not** add `curl -k`, that would MITM-expose the
+  Tomcat binary). Re-add the archive fallback on the next legitimate `TOMCAT_VERSION` bump (which
+  re-downloads anyway), and/or stage the tarball via a local download cache/mirror.
+- Consider running the container as non-root (supervisord children run as root).
+- Consider escaping `envsubst` inputs (`"`, `<`, `>`, `&` in an env value could corrupt the XML).
