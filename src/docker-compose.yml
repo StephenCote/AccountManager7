@@ -1,0 +1,41 @@
+services:
+  am7:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: am7:latest
+    ports:
+      - "8443:8443"
+    environment:
+      # External Postgres/pgvector (NOT started by this compose file -- run it
+      # separately per setup/dockerNotes.txt, e.g.
+      # `docker run -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=password
+      #  --name postgres -p 15432:5432 -d pgvector/pgvector`).
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-15432}
+      DB_NAME: ${DB_NAME:-am72db}
+      DB_USER: ${DB_USER:-am7user}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+
+      TASK_SERVER: ${TASK_SERVER:-https://localhost:8443/AccountManagerService7}
+      SD_SERVER: ${SD_SERVER:-http://192.168.1.42:7801}
+      FACE_SERVER: ${FACE_SERVER:-http://192.168.1.42:8003}
+      TAG_SERVER: ${TAG_SERVER:-http://192.168.1.42:8000}
+      VOICE_TTS_SERVER: ${VOICE_TTS_SERVER:-http://192.168.1.42:8001}
+      VOICE_STT_SERVER: ${VOICE_STT_SERVER:-http://192.168.1.42:8002}
+      EMBEDDING_SERVER: ${EMBEDDING_SERVER:-http://192.168.1.42:8123}
+      # Must include whatever origin the browser actually uses to reach nginx.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8899,http://localhost,http://localhost:8080,http://localhost:8888,https://localhost:8899,https://localhost,https://localhost:8443,https://localhost:8888,https://192.168.1.12:8899,https://192.168.1.12:8443}
+    volumes:
+      - am7-data:/data/am7
+      - am7-certs:/etc/am7/certs
+    extra_hosts:
+      # Makes host.docker.internal resolve on Linux hosts too (Docker Desktop
+      # on Windows/Mac already provides it); lets the container reach the
+      # separately-run Postgres container via its host-published port.
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  am7-data:
+  am7-certs:

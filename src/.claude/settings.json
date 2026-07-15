@@ -138,7 +138,15 @@
       "Bash(mvn -o -pl AccountManagerService7 -Dtest=TestMediaUtilStreaming test)",
       "Bash(mvn -o -pl AccountManagerService7 -Dtest=TestMediaUtilStreaming -DskipTests=false test)",
       "Bash(mvn -o -pl AccountManagerObjects7 -Dtest=TestGroupExport,TestStreamEncryption -DskipTests=false test)",
-      "Bash(mvn -o -pl AccountManagerObjects7 -Dtest=TestStreamEncryption -DskipTests=false test)"
+      "Bash(mvn -o -pl AccountManagerObjects7 -Dtest=TestStreamEncryption -DskipTests=false test)",
+      "WebFetch(domain:dlcdn.apache.org)",
+      "Bash(docker rm *)",
+      "Bash(docker run *)",
+      "Bash(docker build *)",
+      "Bash(echo \"EXIT_CODE=$?\")",
+      "Bash(curl -sk -o /tmp/api_resp.txt -w \"HTTP_STATUS:%{http_code}\\\\n\" https://localhost:18443/AccountManagerService7/rest/setup/check)",
+      "Bash(curl -sk -o /tmp/ui_resp.txt -w \"HTTP_STATUS:%{http_code}\\\\n\" https://localhost:18443/)",
+      "Bash(docker exec *)"
     ],
     "additionalDirectories": [
       "\\tmp",

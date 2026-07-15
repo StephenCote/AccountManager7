@@ -1,0 +1,11 @@
+.git/
+**/target/
+**/node_modules/
+**/dist/
+**/.vscode/
+**/*.log
+deprecated/
+Tools/
+aiDocs/
+setup/
+docker/certs/

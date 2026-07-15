@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Context encoding="UTF-8">
+ <Realm className="org.apache.catalina.realm.JAASRealm"
+    appName="AccountManagerService"
+    useContextClassLoader="true"
+    userClassNames="org.cote.accountmanager.data.security.UserPrincipal"
+    roleClassNames="org.cote.accountmanager.data.security.RolePrincipal" />
+    <Resources
+        cachingAllowed="true"
+        cacheMaxSize="100000"
+    />
+
+    <Resource name="tomcat/datasources/postgresDS"
+          auth="Container"
+          type="javax.sql.DataSource"
+          factory="org.apache.tomcat.jdbc.pool.DataSourceFactory"
+          testWhileIdle="true"
+          testOnBorrow="true"
+          testOnReturn="false"
+          validationQuery="SELECT 1"
+          validationInterval="30000"
+          timeBetweenEvictionRunsMillis="30000"
+          maxActive="150"
+          minIdle="20"
+          maxWait="10000"
+          initialSize="10"
+          removeAbandonedTimeout="60"
+          removeAbandoned="true"
+          abandonWhenPercentageFull="50"
+          logAbandoned="true"
+          minEvictableIdleTimeMillis="30000"
+          jmxEnabled="true"
+          jdbcInterceptors="org.apache.tomcat.jdbc.pool.interceptor.ConnectionState;
+            org.apache.tomcat.jdbc.pool.interceptor.StatementFinalizer"
+          username="${DB_USER}"
+          password="${DB_PASSWORD}"
+          driverClassName="org.postgresql.Driver"
+          url="jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}"
+          closeMethod="close"
+          />
+
+    <Manager className="org.apache.catalina.session.PersistentManager" maxIdleBackup="1">
+   <Store className="org.apache.catalina.session.FileStore" directory="${SESSION_STORE_PATH}"/>
+   <CookieProcessor sameSiteCookies="none" />
+</Manager>
+
+</Context>

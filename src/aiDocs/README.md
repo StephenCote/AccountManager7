@@ -23,6 +23,7 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 | `PageIndexDesign.md` | PageIndex hierarchical TOC index for Objects7 — core engine design (implemented & verified, 2026-07-07) | active |
 | `PageIndexIntegrationPlan.md` | PageIndex REST/chat/MCP/Ux752 integration — phased plan mirroring the vector pattern (not started, 2026-07-08) | active |
 | `SCIM.md` | SCIM 2.0 → AccountManager model mapping reference | reference |
+| `DockerComposeDesign.md` | Single-container Docker Compose (Service7 + Ux752 + nginx) — design & implementation status (2026-07-14, in progress) | active |
 
 ## Games / RPG
 

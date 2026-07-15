@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Server port="8005" shutdown="SHUTDOWN">
+  <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
+  <Listener className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="off" />
+  <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
+  <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener" />
+  <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
+
+  <GlobalNamingResources>
+    <Resource name="UserDatabase" auth="Container"
+              type="org.apache.catalina.UserDatabase"
+              description="User database that can be updated and saved"
+              factory="org.apache.catalina.users.MemoryUserDatabaseFactory"
+              pathname="conf/tomcat-users.xml" />
+  </GlobalNamingResources>
+
+  <Service name="Catalina">
+    <!--
+      Internal-only HTTPS connector (bound to 127.0.0.1, never published to the
+      host). nginx is the externally-facing endpoint on :8443 and reverse-proxies
+      to this connector over HTTPS with certificate verification disabled
+      (double-TLS passthrough); see docker/nginx.conf. Tomcat's own cert stays
+      authoritative for the application's HTTPS identity, matching the connector
+      setup documented in AccountManagerService7/ssl/readme.txt, just moved off
+      :8443 to make room for nginx.
+    -->
+    <Connector port="8444" protocol="org.apache.coyote.http11.Http11NioProtocol"
+               address="127.0.0.1"
+               maxThreads="150" SSLEnabled="true"
+               maxParameterCount="1000">
+      <UpgradeProtocol className="org.apache.coyote.http2.Http2Protocol" />
+      <SSLHostConfig>
+        <Certificate
+            certificateFile="/etc/am7/certs/server.cert"
+            certificateKeyFile="/etc/am7/certs/server.key" />
+      </SSLHostConfig>
+    </Connector>
+
+    <Engine name="Catalina" defaultHost="localhost">
+      <Realm className="org.apache.catalina.realm.LockOutRealm">
+        <Realm className="org.apache.catalina.realm.UserDatabaseRealm"
+               resourceName="UserDatabase"/>
+      </Realm>
+
+      <Host name="localhost" appBase="webapps"
+            unpackWARs="false" autoDeploy="true">
+        <Valve className="org.apache.catalina.valves.ErrorReportValve"
+               showReport="false" showServerInfo="false" />
+      </Host>
+    </Engine>
+  </Service>
+</Server>
