@@ -13,6 +13,12 @@
 			"baseModel": "olio.pictureBookScene"
 		},
 		{ "name": "extractedAt", "type": "string", "maxLength": 64 },
-		{ "name": "generatedAt", "type": "string", "maxLength": 64 }
+		{ "name": "generatedAt", "type": "string", "maxLength": 64 },
+		{
+			"name": "failedCharacters",
+			"type": "list",
+			"baseType": "string",
+			"description": "Names of characters whose createCharPerson() failed during extraction — a 200 response never silently implies 0 failures."
+		}
 	]
 }

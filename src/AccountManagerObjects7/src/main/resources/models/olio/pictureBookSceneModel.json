@@ -13,6 +13,7 @@
 		{ "name": "blurb", "type": "string" },
 		{ "name": "diffusionPrompt", "type": "string" },
 		{ "name": "imageObjectId", "type": "string", "maxLength": 64 },
+		{ "name": "landscapeObjectId", "type": "string", "maxLength": 64 },
 		{ "name": "sceneIndex", "type": "int" },
 		{ "name": "userEdited", "type": "boolean" },
 		{

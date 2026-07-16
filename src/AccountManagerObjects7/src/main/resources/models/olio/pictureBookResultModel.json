@@ -12,6 +12,17 @@
 		{ "name": "extractionComplete", "type": "boolean" },
 		{ "name": "chunksProcessed", "type": "int" },
 		{
+			"name": "failedCharacters",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "failedPortraits",
+			"type": "list",
+			"baseType": "string",
+			"description": "Character names whose portrait could not be resolved/linked during scene generation — never silently swallowed."
+		},
+		{
 			"name": "sceneList",
 			"type": "list",
 			"baseType": "model",

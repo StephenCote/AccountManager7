@@ -146,7 +146,22 @@
       "Bash(echo \"EXIT_CODE=$?\")",
       "Bash(curl -sk -o /tmp/api_resp.txt -w \"HTTP_STATUS:%{http_code}\\\\n\" https://localhost:18443/AccountManagerService7/rest/setup/check)",
       "Bash(curl -sk -o /tmp/ui_resp.txt -w \"HTTP_STATUS:%{http_code}\\\\n\" https://localhost:18443/)",
-      "Bash(docker exec *)"
+      "Bash(docker exec *)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -Dtest=TestPortraitReuse,TestPortraitReuseSceneFetch test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPortraitReuse,TestPortraitReuseSceneFetch test)",
+      "Bash(mvn -o -pl AccountManagerService7 clean compile)",
+      "Bash(curl -s --max-time 5 http://192.168.1.42:11434/api/tags)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(m['name']\\) for m in d['models']]\")",
+      "Bash(curl -s -X POST http://192.168.1.42:7801/API/ListModels -H \"Content-Type: application/json\" -d '{\"path\":\"\",\"depth\":1,\"subtype\":\"Stable-Diffusion\"}')",
+      "Bash(curl -s -X POST http://192.168.1.42:7801/API/ListModels -H 'Content-Type: application/json' -d '{\"session_id\":\"241574ea325bf3614fb75aa158e85cc999676261\",\"path\":\"\",\"depth\":1,\"subtype\":\"Stable-Diffusion\"}')",
+      "Bash(SID=\"241574ea325bf3614fb75aa158e85cc999676261\" *)",
+      "Bash(grep -rn \"assumeTrue\\\\|System.getProperty\\(\\\\\"test\\\\\\\\.\" --include=\"*.java\" AccountManagerObjects7/src/test AccountManagerService7/src/test)",
+      "Bash(mvn -o -q -pl AccountManagerService7 -am test-compile -DskipTests=true)",
+      "Bash(PICTUREBOOK_E2E=1 mvn -o -pl AccountManagerService7 -Dtest=TestPictureBookServiceE2E -DskipTests=false -Dsurefire.timeout=900 test)",
+      "Bash(grep -rn \"\\\\\\\\\\\\\\\\S\" AccountManagerObjects7/src/main/resources/models/)",
+      "Bash(grep -rn \"pattern \\\\\\\\\\\\\\\\S\\\\|\\\\\"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\S\\\\\"\\\\|validateRange\\\\|getPattern\" AccountManagerObjects7/src/main/java/org/cote/accountmanager/util/RecordValidator.java)",
+      "Bash(PICTUREBOOK_E2E=1 mvn -o -pl AccountManagerService7 -Dtest=TestPictureBookServiceE2E -DskipTests=false test)",
+      "Bash(echo \"EXIT=$?\")"
     ],
     "additionalDirectories": [
       "\\tmp",

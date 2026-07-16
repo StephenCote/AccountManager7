@@ -31,6 +31,12 @@
 			"maxLength": 256
 		},
 		{
+			"name": "isBook",
+			"type": "boolean",
+			"default": true,
+			"description": "Explicit flag driving portrait reuse/persist-vs-delete behavior in scene image generation. Replaces inferring book-vs-fallback intent from scene group path text."
+		},
+		{
 			"name": "sdConfig",
 			"type": "model",
 			"baseModel": "olio.sd.config",

@@ -39,7 +39,9 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
+import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 import org.cote.sockets.WebSocketService;
@@ -265,11 +267,11 @@ public class PictureBookService {
     }
 
     /**
-     * Update a scene note's text JSON with the generated imageObjectId.
-     * This persists the image reference so the viewer fallback can find it.
+     * Update a scene note's text JSON with a single key/value pair, preserving existing keys.
+     * Used to persist generated image object ids so the viewer fallback can find them.
      */
     @SuppressWarnings("unchecked")
-    private void updateSceneImageId(BaseRecord user, BaseRecord scene, String imageObjectId) {
+    private void updateSceneTextField(BaseRecord user, BaseRecord scene, String key, String value) {
         try {
             String existingText = scene.get("text");
             Map<String, Object> textData = new LinkedHashMap<>();
@@ -278,12 +280,29 @@ public class PictureBookService {
                     textData = JSONUtil.getMap(existingText.getBytes(), String.class, Object.class);
                 } catch (Exception ex) { /* ignore parse errors */ }
             }
-            textData.put("imageObjectId", imageObjectId);
+            textData.put(key, value);
             scene.set("text", JSONUtil.exportObject(textData));
             IOSystem.getActiveContext().getAccessPoint().update(user, scene);
         } catch (Exception e) {
-            logger.warn("Failed to update scene imageObjectId: " + e.getMessage());
+            logger.warn("Failed to update scene " + key + ": " + e.getMessage());
         }
+    }
+
+    /**
+     * Update a scene note's text JSON with the generated imageObjectId.
+     * This persists the image reference so the viewer fallback can find it.
+     */
+    private void updateSceneImageId(BaseRecord user, BaseRecord scene, String imageObjectId) {
+        updateSceneTextField(user, scene, "imageObjectId", imageObjectId);
+    }
+
+    /**
+     * Update a scene note's text JSON with the generated landscape's objectId (see
+     * pictureBookSceneModel.json#landscapeObjectId). The landscape record is no longer deleted
+     * after use (see #3 in the fix plan) — this persists the reference to the retained record.
+     */
+    private void updateSceneLandscapeId(BaseRecord user, BaseRecord scene, String landscapeObjectId) {
+        updateSceneTextField(user, scene, "landscapeObjectId", landscapeObjectId);
     }
 
     /**
@@ -538,6 +557,21 @@ public class PictureBookService {
     }
 
     /**
+     * Clamp free-text LLM-extracted gender to exactly one of MALE/FEMALE/UNKNOWN
+     * (Stephen's explicit decision — no other values). identity.person.gender is a plain
+     * string with maxLength 10, so all three values always fit; this is a logic fix, not a
+     * schema change. Never throws — any unrecognized/blank input maps to UNKNOWN so a bad LLM
+     * value can never abort character creation.
+     */
+    private String normalizeGender(String raw) {
+        if (raw == null) return "UNKNOWN";
+        String g = raw.trim().toLowerCase();
+        if (g.equals("male") || g.equals("m")) return "MALE";
+        if (g.equals("female") || g.equals("f")) return "FEMALE";
+        return "UNKNOWN";
+    }
+
+    /**
      * Determine genre theme from genre hint string.
      */
     private String genreToTheme(String genre) {
@@ -614,6 +648,65 @@ public class PictureBookService {
     }
 
     /**
+     * Create and persist a foreign-model instance (e.g. olio.narrative, identity.profile) with
+     * a resolvable group path — mirrors CharPersonFactory's nested-model path convention
+     * ("~/" + schema.getGroup()). Unlike CharPersonFactory's in-memory placeholders (which rely
+     * on autoCreateForeignReference cascading — NOT enabled for olio.charPerson — so they are
+     * silently never persisted), this goes through AccessPoint so the record gets a real
+     * id/objectId immediately and can be safely linked to a parent via a PATCH-shaped update.
+     */
+    private BaseRecord createPersistedForeignInstance(BaseRecord user, String modelName) {
+        try {
+            ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH,
+                    "~/" + RecordFactory.getSchema(modelName).getGroup());
+            BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(modelName, user, null, plist);
+            BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, inst);
+            if (created == null) {
+                logger.error("Failed to persist new " + modelName + " instance — AccessPoint.create returned null (denied or persist failure)");
+            }
+            return created;
+        } catch (Exception e) {
+            logger.error("Failed to create persisted " + modelName + " instance: " + e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * PATCH-shaped update: identity fields (id, objectId) + a single foreign field on
+     * olio.charPerson. Deliberately avoids a full-object update on a shallow/partially
+     * populated charPerson record, which would risk re-persisting other foreign refs (e.g. a
+     * groupless system.user reference) and a PBAC denial that silently drops the intended
+     * change. See .claude/rules/model-api.md — PATCH / partial updates.
+     *
+     * IMPORTANT: must use RecordFactory.newInstance(schema, fieldNames) — NOT the no-arg
+     * newInstance(schema) — to build the patch. olio.charPerson inherits identity.person ->
+     * data.directory -> common.nameId -> common.name, whose "name" field is
+     * required/$notEmpty. RecordFactory.newInstance(schema) with no explicit field list
+     * instantiates EVERY schema field (including "name", present-but-null since it was never
+     * set), and RecordValidator.validate() validates every field present in
+     * record.getFields() — so a bare newInstance(schema) patch always fails $notEmpty on
+     * "name" even though we never intended to touch it. Passing an explicit fieldNames array
+     * restricts getFields() to only the identity + changed fields, so "name" is never
+     * instantiated and never validated. (identity.profile's equivalent patch in
+     * createPersistedForeignInstance/TestPortraitReuse works with the bare newInstance(schema)
+     * form only because identity.profile does not — real "inherits", not "likeInherits" —
+     * pull in common.name at all, so it has no required "name" field to trip on.)
+     */
+    private BaseRecord patchCharPersonField(BaseRecord user, BaseRecord charPerson, String fieldName, BaseRecord value) {
+        try {
+            BaseRecord patch = RecordFactory.newInstance(OlioModelNames.MODEL_CHAR_PERSON,
+                    new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, fieldName });
+            patch.set(FieldNames.FIELD_ID, charPerson.get(FieldNames.FIELD_ID));
+            patch.set(FieldNames.FIELD_OBJECT_ID, charPerson.get(FieldNames.FIELD_OBJECT_ID));
+            patch.set(fieldName, value);
+            return IOSystem.getActiveContext().getAccessPoint().update(user, patch);
+        } catch (Exception e) {
+            logger.error("Failed to PATCH charPerson." + fieldName + ": " + e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
      * Create an olio.charPerson for an extracted character, apply outfit, call narrate.
      */
     @SuppressWarnings("unchecked")
@@ -648,11 +741,11 @@ public class PictureBookService {
             if (!firstName.isEmpty()) charPerson.set("firstName", firstName);
             if (!lastName.isEmpty()) charPerson.set("lastName", lastName);
 
-            // Apply gender if available
+            // Apply gender — clamped to MALE/FEMALE/UNKNOWN only, never a raw/unrecognized
+            // LLM value (see normalizeGender()). Must happen before create() so a bad LLM
+            // value never aborts character creation.
             String gender = (String) charData.get("gender");
-            if (gender != null && !gender.isEmpty()) {
-                charPerson.set("gender", gender.toUpperCase());
-            }
+            charPerson.set("gender", normalizeGender(gender));
 
             charPerson = IOSystem.getActiveContext().getAccessPoint().create(user, charPerson);
             if (charPerson == null) return null;
@@ -677,22 +770,57 @@ public class PictureBookService {
                 if (!role.isEmpty()) portraitPrompt += ", " + role;
                 portraitPrompt += ", detailed face, cinematic lighting, high quality";
             }
+            // Ensure the profile is a real *persisted* record. CharPersonFactory only builds an
+            // in-memory placeholder (a path-scoped identity.profile with no id) and olio.charPerson
+            // does not set autoCreateForeignReference, so that placeholder is never cascaded into
+            // the database on create — profile.id stays 0/null forever unless we persist it here
+            // explicitly. Without this, portraits can never be linked to the character later.
+            BaseRecord profile = charPerson.get("profile");
+            Long existingProfileId = (profile != null) ? profile.get(FieldNames.FIELD_ID) : null;
+            if (profile == null || existingProfileId == null || existingProfileId <= 0L) {
+                BaseRecord newProfile = createPersistedForeignInstance(user, ModelNames.MODEL_PROFILE);
+                if (newProfile == null) {
+                    logger.error("Failed to create persisted profile for charPerson " + name);
+                    return null;
+                }
+                BaseRecord profileLinked = patchCharPersonField(user, charPerson, "profile", newProfile);
+                if (profileLinked == null) {
+                    logger.error("Failed to link persisted profile to charPerson " + name);
+                    return null;
+                }
+                charPerson.set("profile", newProfile);
+            }
+
+            // Ensure the narrative is a real *persisted* record and carries the SD portrait
+            // prompt, then attach it via a PATCH-shaped update (identity + narrative only) —
+            // NOT a full-object update on the shallow (planMost(false)) charPerson, which would
+            // risk re-persisting other foreign refs and a silent PBAC denial.
             try {
                 BaseRecord narrative = charPerson.get("narrative");
-                if (narrative == null) {
-                    narrative = RecordFactory.newInstance(OlioModelNames.MODEL_NARRATIVE);
-                    charPerson.set("narrative", narrative);
+                Long existingNarrativeId = (narrative != null) ? narrative.get(FieldNames.FIELD_ID) : null;
+                if (narrative == null || existingNarrativeId == null || existingNarrativeId <= 0L) {
+                    narrative = createPersistedForeignInstance(user, OlioModelNames.MODEL_NARRATIVE);
+                    if (narrative == null) {
+                        logger.error("Failed to create persisted narrative for charPerson " + name);
+                        return null;
+                    }
                 }
                 narrative.set("sdPrompt", portraitPrompt);
                 narrative.set("physicalDescription", portraitPrompt);
-                IOSystem.getActiveContext().getAccessPoint().update(user, charPerson);
+                BaseRecord narrativeLinked = patchCharPersonField(user, charPerson, "narrative", narrative);
+                if (narrativeLinked == null) {
+                    logger.error("Failed to attach narrative to charPerson " + name + " — AccessPoint.update denied or failed (PBAC/persist)");
+                    return null;
+                }
+                charPerson.set("narrative", narrative);
             } catch (Exception e) {
-                logger.warn("Failed to set portrait prompt for " + name + ": " + e.getMessage(), e);
+                logger.error("Failed to set portrait prompt/narrative for " + name + ": " + e.getMessage(), e);
+                return null;
             }
             return charPerson;
 
         } catch (Exception e) {
-            logger.error("Failed to create charPerson " + name + ": " + e.getMessage());
+            logger.error("Failed to create charPerson " + name + ": " + e.getMessage(), e);
             return null;
         }
     }
@@ -938,6 +1066,9 @@ public class PictureBookService {
 
         // Extract character details and create charPerson records
         Map<String, String> charObjectIds = new LinkedHashMap<>();
+        // createCharPerson() failures are never silently dropped — collected here so a 200
+        // response can never mean "silently 0 characters created" (see #5 in the fix plan).
+        List<String> failedCharacters = new ArrayList<>();
         int charIdx = 0;
         for (Map.Entry<String, Map<String, Object>> entry : uniqueChars.entrySet()) {
             String cname = entry.getKey();
@@ -954,6 +1085,9 @@ public class PictureBookService {
             BaseRecord cp = createCharPerson(user, charData, charsGroup, genre);
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
+            } else {
+                logger.error("createCharPerson failed for '" + cname + "' during /extract — character will be absent from the book");
+                failedCharacters.add(cname);
             }
         }
 
@@ -972,6 +1106,9 @@ public class PictureBookService {
         // Build and save .pictureBookMeta
         WebSocketService.chirpUser(user, new String[] { "bgActivity", "save", "Saving book..." });
         BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
+        if (!failedCharacters.isEmpty()) {
+            try { meta.set("failedCharacters", failedCharacters); } catch (Exception e) { logger.warn("Failed to record failedCharacters on meta: " + e.getMessage()); }
+        }
         saveMeta(user, bookGroupPath, meta);
         WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
 
@@ -1096,6 +1233,9 @@ public class PictureBookService {
 
         // Create charPerson records — use LLM for detail extraction if needed
         Map<String, String> charObjectIds = new LinkedHashMap<>();
+        // createCharPerson() failures are never silently dropped — collected here so a 200
+        // response can never mean "silently 0 characters created" (see #5 in the fix plan).
+        List<String> failedCharacters = new ArrayList<>();
         int cfsCharIdx = 0;
         for (Map<String, Object> charData : charDataList) {
             String cname = (String) charData.get("name");
@@ -1125,6 +1265,9 @@ public class PictureBookService {
             BaseRecord cp = createCharPerson(user, charData, charsGroup, genre);
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
+            } else {
+                logger.error("createCharPerson failed for '" + cname + "' during /create-from-scenes — character will be absent from the book");
+                failedCharacters.add(cname);
             }
         }
 
@@ -1142,6 +1285,9 @@ public class PictureBookService {
 
         WebSocketService.chirpUser(user, new String[] { "bgActivity", "save", "Saving book..." });
         BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
+        if (!failedCharacters.isEmpty()) {
+            try { meta.set("failedCharacters", failedCharacters); } catch (Exception e) { logger.warn("Failed to record failedCharacters on meta: " + e.getMessage()); }
+        }
         saveMeta(user, bookGroupPath, meta);
         WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
 
@@ -1190,6 +1336,11 @@ public class PictureBookService {
         List<String> sdLoras = null;
         // Default to "illustration" to preserve prior behavior when sdConfig omits style
         String style = "illustration";
+        // Explicit book/fallback flag — defaults to true (all current picture-book scenes are
+        // created under .../Scenes/); the client may pass isBook:false for the legacy ~/Chat
+        // fallback that should not persist/reuse portraits. Replaces inferring intent from
+        // scene group path text (see #4 in the fix plan).
+        Boolean isBookOverride = null;
 
         if (json != null && !json.trim().isEmpty()) {
             try {
@@ -1198,6 +1349,8 @@ public class PictureBookService {
                 chatConfigName = params.get("chatConfig");
                 promptOverride = params.get("promptOverride");
                 promptTemplateOverride = params.get("promptTemplate");
+                Object ibv = params.get("isBook");
+                if (ibv instanceof Boolean) isBookOverride = (Boolean) ibv;
                 BaseRecord sdConf = params.get("sdConfig");
                 if (sdConf != null) {
                     Object sv = sdConf.get("steps"); if (sv instanceof Number) steps = ((Number) sv).intValue();
@@ -1279,6 +1432,9 @@ public class PictureBookService {
                     return Response.status(500).entity("{\"error\":\"SD generation failed\"}").build();
                 BaseRecord image = images.get(0);
                 String imageOid = image.get(FieldNames.FIELD_OBJECT_ID);
+                // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption
+                // (see ByteModelUtil.getValue(); data.data inherits crypto.cryptoByteStore).
+                byte[] overrideBytes = ByteModelUtil.getValue(image);
                 IOSystem.getActiveContext().getAccessPoint().member(user, scene, image, null, true);
                 updateSceneImageId(user, scene, imageOid);
                 BaseRecord genResult = buildResult();
@@ -1301,10 +1457,12 @@ public class PictureBookService {
             // Characters may be stored as [{name:...}] maps or as objectId strings
             List<byte[]> portraitBytesList = new ArrayList<>();
             List<String> portraitPromptList = new ArrayList<>();
-            // Persist+link+reuse portraits only for real books (scene group under /Scenes).
-            // For the ~/Chat fallback (no /Scenes segment) keep legacy render-use-delete behavior
-            // so portraits are not scattered/orphaned outside a book.
-            boolean isBook = sceneGroupPath.contains("/Scenes");
+            // Persist+link+reuse portraits only for real books; the caller drives this
+            // explicitly via isBook (default true) rather than inferring intent from scene
+            // group path text. false selects the legacy ~/Chat fallback render-use-delete
+            // behavior so portraits are not scattered/orphaned outside a book.
+            boolean isBook = (isBookOverride != null) ? isBookOverride : true;
+            List<String> failedPortraits = new ArrayList<>();
             Object charsObj = sceneData.get("characters");
             if (charsObj instanceof List) {
                 @SuppressWarnings("unchecked")
@@ -1381,7 +1539,9 @@ public class PictureBookService {
                             BaseRecord existingPortrait = profile.get("portrait");
                             if (existingPortrait != null) {
                                 IOSystem.getActiveContext().getReader().populate(existingPortrait, new String[] { FieldNames.FIELD_BYTE_STORE });
-                                existingPortraitBytes = existingPortrait.get(FieldNames.FIELD_BYTE_STORE);
+                                // Must go through ByteModelUtil — a raw .get() bypasses
+                                // decompression/decryption (see ByteModelUtil.getValue()).
+                                existingPortraitBytes = ByteModelUtil.getValue(existingPortrait);
                             }
                         } catch (Exception e) {
                             logger.warn("Failed to populate portrait for " + cname + ": " + e.getMessage());
@@ -1414,7 +1574,8 @@ public class PictureBookService {
                         String portraitGroupPath = isBook ? sceneGroupPath.replace("/Scenes", "/Characters") : sceneGroupPath;
                         List<BaseRecord> portImages = sdu.createImage(user, portraitGroupPath, portCfg, portName, 1, false, -1);
                         if (portImages == null || portImages.isEmpty()) { logger.warn("Portrait generation failed: " + cname); continue; }
-                        byte[] portBytes = portImages.get(0).get(FieldNames.FIELD_BYTE_STORE);
+                        // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption.
+                        byte[] portBytes = ByteModelUtil.getValue(portImages.get(0));
                         if (portBytes == null || portBytes.length == 0) {
                             // Unusable image — delete regardless of book/fallback
                             try { IOSystem.getActiveContext().getAccessPoint().delete(user, portImages.get(0)); } catch (Exception ignored) {}
@@ -1431,30 +1592,59 @@ public class PictureBookService {
                             try {
                                 Long profIdObj = (profile != null) ? profile.get(FieldNames.FIELD_ID) : null;
                                 long profId = (profIdObj != null) ? profIdObj.longValue() : 0L;
+                                String profOid = (profile != null) ? profile.get(FieldNames.FIELD_OBJECT_ID) : null;
+
+                                if (profId <= 0L) {
+                                    // No usable profile id — this character predates the createCharPerson()
+                                    // fix that persists a real profile up-front. Resolve/create one now
+                                    // rather than leaving the rendered portrait silently unlinked.
+                                    BaseRecord newProfile = createPersistedForeignInstance(user, ModelNames.MODEL_PROFILE);
+                                    if (newProfile != null) {
+                                        BaseRecord linked = patchCharPersonField(user, cp, "profile", newProfile);
+                                        if (linked != null) {
+                                            Long newIdObj = newProfile.get(FieldNames.FIELD_ID);
+                                            profId = (newIdObj != null) ? newIdObj.longValue() : 0L;
+                                            profOid = newProfile.get(FieldNames.FIELD_OBJECT_ID);
+                                            logger.info("Resolved missing profile for " + cname + " (new profile id " + profId + ")");
+                                        } else {
+                                            logger.error("Failed to link newly-created profile to charPerson " + cname);
+                                        }
+                                    } else {
+                                        logger.error("Failed to create a replacement profile for " + cname);
+                                    }
+                                }
+
                                 if (profId > 0L) {
                                     BaseRecord profilePatch = RecordFactory.newInstance(ModelNames.MODEL_PROFILE);
                                     profilePatch.set(FieldNames.FIELD_ID, profId);
                                     // Also set objectId: cache invalidation (RecordUtil.matchIdentityRecords)
                                     // compares objectId and NPEs if it is present-but-null on an id-only patch.
-                                    String profOid = profile.get(FieldNames.FIELD_OBJECT_ID);
                                     if (profOid != null) profilePatch.set(FieldNames.FIELD_OBJECT_ID, profOid);
                                     profilePatch.set("portrait", newImage);
-                                    IOSystem.getActiveContext().getAccessPoint().update(user, profilePatch);
-                                    logger.info("Persisted+linked portrait for " + cname + " (profile id " + profId + ")");
+                                    BaseRecord portraitLinked = IOSystem.getActiveContext().getAccessPoint().update(user, profilePatch);
+                                    if (portraitLinked == null) {
+                                        logger.error("Failed to link portrait to character " + cname + " — AccessPoint.update denied or failed (profile id " + profId + ")");
+                                        failedPortraits.add(cname);
+                                    } else {
+                                        logger.info("Persisted+linked portrait for " + cname + " (profile id " + profId + ")");
+                                    }
                                 } else {
-                                    // No usable profile id — keep the persisted image in the Characters/
-                                    // group (do NOT delete, do NOT attempt a planMost charPerson update).
-                                    logger.warn("Character " + cname + " has no persisted profile id — portrait kept in group but left unlinked");
+                                    // Fail loudly rather than leave a silently-unlinked portrait.
+                                    logger.error("Character " + cname + " has no persisted profile id even after resolution — portrait kept in group but left unlinked",
+                                            new IllegalStateException("unresolved profile for " + cname));
+                                    failedPortraits.add(cname);
                                 }
                             } catch (Exception e) {
-                                logger.warn("Failed to link portrait to character " + cname + ": " + e.getMessage());
+                                logger.error("Failed to link portrait to character " + cname + ": " + e.getMessage(), e);
+                                failedPortraits.add(cname);
                             }
                         } else {
                             // Legacy fallback: not a book — image is only used for the composite, delete it
                             try { IOSystem.getActiveContext().getAccessPoint().delete(user, portImages.get(0)); } catch (Exception ignored) {}
                         }
                     } catch (Exception e) {
-                        logger.warn("Portrait generation error for " + cname + ": " + e.getMessage());
+                        logger.error("Portrait generation error for " + cname + ": " + e.getMessage(), e);
+                        failedPortraits.add(cname);
                     }
                 }
             }
@@ -1479,10 +1669,16 @@ public class PictureBookService {
                     "landscape_" + sceneObjectId + "_" + System.currentTimeMillis(), landReq, null, null);
             if (landImages == null || landImages.isEmpty())
                 return Response.status(500).entity("{\"error\":\"Landscape generation failed\"}").build();
-            byte[] landscapeBytes = landImages.get(0).get(FieldNames.FIELD_BYTE_STORE);
-            try { IOSystem.getActiveContext().getAccessPoint().delete(user, landImages.get(0)); } catch (Exception ignored) {}
+            BaseRecord landscapeImage = landImages.get(0);
+            // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption.
+            byte[] landscapeBytes = ByteModelUtil.getValue(landscapeImage);
             if (landscapeBytes == null || landscapeBytes.length == 0)
                 return Response.status(500).entity("{\"error\":\"Empty landscape image\"}").build();
+            // Retain the persisted landscape record (previously deleted immediately after use,
+            // which meant only the final composite ever survived — see #3 in the fix plan) and
+            // record its objectId on the scene so it is discoverable/reusable like the composite.
+            String landscapeOid = landscapeImage.get(FieldNames.FIELD_OBJECT_ID);
+            updateSceneLandscapeId(user, scene, landscapeOid);
 
             // Stage 3: Stitch reference composite [portrait1 | portrait2|landscape | landscape]
             WebSocketService.chirpUser(user, new String[] { "bgActivity", "auto_awesome_mosaic", "Stitching reference..." });
@@ -1506,6 +1702,8 @@ public class PictureBookService {
                 return Response.status(500).entity("{\"error\":\"Kontext composite generation failed\"}").build();
             BaseRecord finalImage = finalImages.get(0);
             String finalImageOid = finalImage.get(FieldNames.FIELD_OBJECT_ID);
+            // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption.
+            byte[] finalBytes = ByteModelUtil.getValue(finalImage);
             IOSystem.getActiveContext().getAccessPoint().member(user, scene, finalImage, null, true);
             updateSceneImageId(user, scene, finalImageOid);
             String compositePrompt = action + " " + setting;
@@ -1514,6 +1712,9 @@ public class PictureBookService {
             genResult.set("imageObjectId", finalImageOid);
             genResult.set("prompt", compositePrompt);
             genResult.set("seed", extractSeedFromImage(finalImage));
+            if (!failedPortraits.isEmpty()) {
+                genResult.set("failedPortraits", failedPortraits);
+            }
             return Response.status(200).entity(toJson(genResult)).build();
         } catch (Exception e) {
             WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
