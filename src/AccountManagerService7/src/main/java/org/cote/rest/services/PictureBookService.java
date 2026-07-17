@@ -54,6 +54,7 @@ import jakarta.ws.rs.core.Response;
  *   POST /scene/{sceneObjectId}/blurb         — Regenerate scene blurb via LLM
  *   GET  /{bookObjectId}/scenes               — Ordered scene list from .pictureBookMeta (bookObjectId = book group objectId)
  *   GET  /{bookObjectId}/settings              — Last-used image generation settings for this book
+ *   POST /{bookObjectId}/prepare-images        — Batch-resolve landscape prompts for a set of scenes, then flush idle Ollama models once
  *   PUT  /{bookObjectId}/scenes/order         — Reorder scenes
  *   PUT  /scene/{sceneObjectId}/status        — Persist a client-driven scene status (accepted/skipped/pending/...)
  *   DELETE /{bookObjectId}/reset              — Delete entire book group
@@ -352,6 +353,55 @@ public class PictureBookService {
         try {
             BaseRecord genResult = PictureBookUtil.generateSceneImage(user, sceneObjectId, sgp, sdApiType, sdServer);
             return Response.status(200).entity(toJson(genResult)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/prepare-images
+     * Batch-resolve (and cache) the landscape prompt for every listed scene, then flush idle
+     * Ollama models ONCE — so a "Generate All" run does all of its LLM calls up front instead of
+     * interleaving one LLM call per scene between rounds of GPU-heavy SD calls. Call this before
+     * looping the per-scene /generate calls. bookObjectId is accepted for routing symmetry with
+     * the other book-scoped endpoints but isn't otherwise used — the scene objectIds carry
+     * everything PictureBookUtil needs.
+     * Body: { sceneObjectIds: [...], chatConfig, promptTemplate, sdConfig: { style } }
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/prepare-images")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response prepareSceneImagePrompts(@PathParam("bookObjectId") String bookObjectId,
+            String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+        List<String> sceneObjectIds = new ArrayList<>();
+        String chatConfigName = null;
+        String promptTemplateOverride = null;
+        String style = null;
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            chatConfigName = params.get("chatConfig");
+            promptTemplateOverride = params.get("promptTemplate");
+            Object idsObj = params.get("sceneObjectIds");
+            if (idsObj instanceof List) {
+                for (Object o : (List<?>) idsObj) {
+                    if (o instanceof String) sceneObjectIds.add((String) o);
+                }
+            }
+            BaseRecord sdConf = params.get("sdConfig");
+            if (sdConf != null) {
+                Object styv = sdConf.get("style");
+                if (styv instanceof String && !((String) styv).isEmpty()) style = (String) styv;
+            }
+        }
+
+        try {
+            PictureBookUtil.prepareSceneImagePrompts(user, sceneObjectIds, chatConfigName, style, promptTemplateOverride);
+            BaseRecord result = PictureBookUtil.buildResult();
+            return Response.status(200).entity(toJson(result)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }

@@ -60,6 +60,12 @@
 			"type": "string",
 			"maxLength": 32,
 			"description": "Client-driven scene status for PUT /scene/{sceneObjectId}/status (pending/generating/done/error/accepted/skipped)."
+		},
+		{
+			"name": "sceneObjectIds",
+			"type": "list",
+			"baseType": "string",
+			"description": "Scene objectIds for POST /{bookObjectId}/prepare-images — batch-resolve landscape prompts before any SD calls."
 		}
 	]
 }

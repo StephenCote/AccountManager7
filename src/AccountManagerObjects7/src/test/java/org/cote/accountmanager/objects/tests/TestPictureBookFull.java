@@ -23,6 +23,7 @@ import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
+import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.llm.PromptResourceUtil;
@@ -35,8 +36,11 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
+import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
+
+import jakarta.ws.rs.core.MediaType;
 
 /**
  * Comprehensive PictureBook backend unit test.
@@ -469,6 +473,56 @@ public class TestPictureBookFull extends BaseTest {
 		assertEquals("style should match what was used", "photograph", savedConfig.get("style"));
 
 		logger.info("Book-level SD config persistence verified: " + bookObjectId);
+	}
+
+	// ── Ollama model unload (GPU/thermal contention fix) ─────────────────
+
+	@Test
+	public void TestOllamaUnloadAllUnloadsRealModel() {
+		logger.info("Test: OllamaModelUtil.unloadAll() actually unloads a real Ollama model, verified via /api/ps");
+		setupTestContext();
+
+		String ollamaServer = testProperties.getProperty("test.llm.ollama.server");
+		assertNotNull("test.llm.ollama.server must be set", ollamaServer);
+
+		// Force the model to load via a real, minimal chat call — mirrors the setLlmSystemPrompt
+		// -> newRequest -> newMessage -> chat pattern used elsewhere (e.g. ChatUtil.summarizeChunk).
+		Chat chat = new Chat(testUser, chatConfig, null);
+		chat.setLlmSystemPrompt("You are a terse test assistant.");
+		OpenAIRequest req = chat.newRequest(chat.getModel());
+		req.setStream(false);
+		chat.newMessage(req, "Reply with exactly one word: hello", Chat.userRole);
+		OpenAIResponse resp = chat.chat(req);
+		assertNotNull("Live chat call should succeed", resp);
+
+		assertTrue("Model should be loaded in Ollama after a live call", isModelLoaded(ollamaServer, PB_LLM_MODEL));
+
+		OllamaModelUtil.unloadAll();
+
+		// Ollama's /api/ps may take a moment to reflect an unload after the keep_alive:0 request
+		// returns — poll briefly rather than asserting on a single immediate check.
+		boolean unloaded = false;
+		for (int i = 0; i < 10 && !unloaded; i++) {
+			if (!isModelLoaded(ollamaServer, PB_LLM_MODEL)) { unloaded = true; break; }
+			try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+		}
+		assertTrue("Model should be unloaded from Ollama after unloadAll()", unloaded);
+
+		logger.info("Ollama unload verified against live server: " + ollamaServer);
+	}
+
+	/**
+	 * Query Ollama's /api/ps (currently loaded models) and check whether the given model name
+	 * appears in the response.
+	 */
+	private boolean isModelLoaded(String ollamaServer, String model) {
+		try {
+			String json = ClientUtil.get(String.class, ClientUtil.getResource(ollamaServer + "/api/ps"), null, MediaType.APPLICATION_JSON_TYPE);
+			return json != null && json.contains(model);
+		} catch (Exception e) {
+			logger.warn("Failed to query " + ollamaServer + "/api/ps: " + e.getMessage());
+			return false;
+		}
 	}
 
 	// ── Think:false ──────────────────────────────────────────────────────

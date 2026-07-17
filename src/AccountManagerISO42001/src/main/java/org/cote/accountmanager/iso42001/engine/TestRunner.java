@@ -13,6 +13,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.iso42001.schema.ISO42001ModelNames;
 import org.cote.accountmanager.iso42001.util.NameBank;
+import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.iso42001.util.ScoringConfigMapper;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -107,6 +108,9 @@ public class TestRunner {
 			result = null;
 			terminalStatus = "FAILED";
 		}
+		// This run just made many LLM calls, one per trial — flush idle Ollama models once here
+		// rather than per-trial (per-trial would just force an immediate reload for the next one).
+		OllamaModelUtil.unloadAll();
 
 		/// --- Capture verbatim raw log to a data.data; reference via rawLogRef ---
 		String rawLogRef = persistRawLog(ap, module, runOid, ownerId, orgId, exec.getRawLog());

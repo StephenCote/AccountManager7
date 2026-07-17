@@ -130,6 +130,31 @@ async function generateSceneImage(sceneObjectId, sdConfig, chatConfigName, promp
 }
 
 /**
+ * Batch-resolve (and cache) the landscape prompt for a set of scenes, then flush idle Ollama
+ * models once. Call this before looping per-scene generateSceneImage() calls in a "Generate All"
+ * run, so every LLM call for the batch happens before any GPU-heavy SD call — avoids a large
+ * model sitting loaded in VRAM across the whole batch (see PictureBookUtil.prepareSceneImagePrompts).
+ * @param {string} bookObjectId - book group objectId
+ * @param {string[]} sceneObjectIds
+ * @param {string|null} chatConfigName
+ * @param {string|null} style
+ * @param {string|null} promptTemplateOverride
+ */
+async function prepareSceneImagePrompts(bookObjectId, sceneObjectIds, chatConfigName, style, promptTemplateOverride) {
+    let body = { schema: 'olio.pictureBookRequest', sceneObjectIds: sceneObjectIds };
+    if (chatConfigName) body.chatConfig = chatConfigName;
+    if (promptTemplateOverride) body.promptTemplate = promptTemplateOverride;
+    if (style) body.sdConfig = { style: style };
+    let resp = await fetch(pbBase() + '/' + bookObjectId + '/prepare-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) throw new Error('Prepare image prompts failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
  * Regenerate scene blurb via LLM.
  * @returns {Promise<{blurb: string}>}
  */
@@ -311,6 +336,7 @@ export {
     fullExtract,
     createFromScenes,
     generateSceneImage,
+    prepareSceneImagePrompts,
     regenerateBlurb,
     loadPictureBook,
     getBookSdConfig,

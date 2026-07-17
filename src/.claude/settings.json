@@ -196,7 +196,11 @@
       "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestGenerateSceneImagePersistsBookSdConfig test)",
       "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestSetSceneStatusPersistsAndMerges+TestGenerateSceneImageErrorPersistsStatus+TestGenerateSceneImagePersistsBookSdConfig test)",
       "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull test)",
-      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestThinkFalseOnChatOptions test)"
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestThinkFalseOnChatOptions test)",
+      "Bash(mvn -o -q -pl AccountManagerISO42001 compile)",
+      "Bash(mvn -o -q -pl AccountManagerISO42001 install -DskipTests)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestOllamaUnloadAllUnloadsRealModel test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestSetSceneStatusPersistsAndMerges+TestGenerateSceneImageErrorPersistsStatus+TestGenerateSceneImagePersistsBookSdConfig+TestOllamaUnloadAllUnloadsRealModel test)"
     ],
     "additionalDirectories": [
       "\\tmp",

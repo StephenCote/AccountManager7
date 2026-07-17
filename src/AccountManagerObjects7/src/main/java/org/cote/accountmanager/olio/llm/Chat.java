@@ -3938,6 +3938,16 @@ public class Chat {
 		String ser = JSONUtil.exportObject(wireReq, RecordSerializerConfig.getHiddenForeignUnfilteredModule());
 
 		String serviceUrl = getServiceUrl(req);
+		/// Track (server, model) usage for every OLLAMA-serviced request, chat or not, so
+		/// non-chat callers (PictureBook, summarization, ISO 42001 bias trials) can later flush
+		/// idle models before GPU-heavy work via OllamaModelUtil.unloadAll(). Live chat never
+		/// calls unloadAll() itself, but recording here is unconditional — the registry should
+		/// always reflect reality regardless of who loaded a given model. Record the bare server
+		/// base URL (getServerUrl()), NOT serviceUrl — serviceUrl already has "/api/chat" (or
+		/// "/api/generate") appended, and unloadAll() appends its own "/api/generate" suffix.
+		if (serviceType == LLMServiceEnumType.OLLAMA) {
+			OllamaModelUtil.recordUsage(getServerUrl(), req.getModel());
+		}
 		if (!forwardToClient) {
 			logger.info("[DIAG] chat() buffer mode: url=" + serviceUrl + " model=" + req.getModel()
 				+ " serLength=" + (ser != null ? ser.length() : "null")

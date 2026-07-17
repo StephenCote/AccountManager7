@@ -21,6 +21,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
+import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.llm.PromptResourceUtil;
@@ -354,6 +355,50 @@ public class PictureBookUtil {
     }
 
     /**
+     * Read a single key back out of a scene note's text JSON blob, or null if absent/unparseable.
+     * Read-side counterpart to updateSceneTextField.
+     */
+    private static String getSceneTextField(BaseRecord scene, String key) {
+        try {
+            String existingText = scene.get("text");
+            if (existingText == null || existingText.isEmpty()) return null;
+            Map<String, Object> textData = JSONUtil.getMap(existingText.getBytes(), String.class, Object.class);
+            Object v = textData.get(key);
+            return v instanceof String ? (String) v : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Resolve (and cache) the landscape prompt for a scene. If prepareSceneImagePrompts() already
+     * computed one for this scene, reuse it (no LLM call); otherwise call the LLM live, falling
+     * back to the raw setting text on failure, and persist the result either way so a later call
+     * (retry, or the SD stages later in this same pipeline run) never re-triggers the LLM. Callers
+     * MUST invoke this — and OllamaModelUtil.unloadAll() — before any SD call in the same pipeline
+     * run, so a large model isn't still resident in VRAM when the heavy composite/img2img SD call
+     * happens (see generateSceneImage's Stage 0).
+     */
+    private static String resolveLandscapePrompt(BaseRecord user, BaseRecord scene, BaseRecord chatConfig,
+            String setting, String mood, String style, String promptTemplateOverride) {
+        String cached = getSceneTextField(scene, "landscapePrompt");
+        if (cached != null && !cached.isBlank()) return cached;
+
+        Map<String, String> landVars = new LinkedHashMap<>();
+        landVars.put("setting", setting);
+        landVars.put("mood", mood);
+        landVars.put("time", "");
+        landVars.put("style", (style != null && !style.isEmpty()) ? style : "illustration");
+        String landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars, promptTemplateOverride);
+        if (landscapePrompt == null || landscapePrompt.isBlank()) {
+            logger.warn("Landscape prompt failed — falling back to setting text");
+            landscapePrompt = setting.isEmpty() ? "A detailed environment" : setting;
+        }
+        updateSceneTextField(user, scene, "landscapePrompt", landscapePrompt);
+        return landscapePrompt;
+    }
+
+    /**
      * Update a scene note's text JSON with the generated imageObjectId.
      * This persists the image reference so the viewer fallback can find it.
      */
@@ -627,6 +672,9 @@ public class PictureBookUtil {
             }
         }
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
+        // Chunked extraction can make many LLM calls in a row — flush once at the end rather
+        // than per-chunk (per-chunk would just force an immediate reload for the next chunk).
+        OllamaModelUtil.unloadAll();
         return sceneList;
     }
 
@@ -1011,6 +1059,7 @@ public class PictureBookUtil {
             }
         }
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
+        OllamaModelUtil.unloadAll();
         return new ScenesOnlyResult(scenes, false);
     }
 
@@ -1149,6 +1198,9 @@ public class PictureBookUtil {
         }
         saveMeta(user, bookGroupPath, meta);
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
+        // Many LLM calls happen above (scene extraction + one per unique character) — flush once
+        // at the very end, not per-call.
+        OllamaModelUtil.unloadAll();
 
         return meta;
     }
@@ -1280,6 +1332,8 @@ public class PictureBookUtil {
         }
         saveMeta(user, bookGroupPath, meta);
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
+        // One LLM call per character needing detail extraction above — flush once at the end.
+        OllamaModelUtil.unloadAll();
 
         return meta;
     }
@@ -1369,6 +1423,9 @@ public class PictureBookUtil {
 
         // promptOverride: skip pipeline, direct SDXL generation
         if (params.promptOverride != null && !params.promptOverride.isEmpty()) {
+            // No LLM call in this branch (the caller supplied the prompt directly), but flush
+            // defensively before the SD call anyway — cheap no-op if nothing is tracked as loaded.
+            OllamaModelUtil.unloadAll();
             try {
                 PictureBookProgressNotifier.getInstance().notifyProgress(user, "image", "Generating image...");
                 sdConfigRec.set("description", params.promptOverride);
@@ -1405,6 +1462,12 @@ public class PictureBookUtil {
         }
 
         try {
+            // Stage 0: Resolve (and cache) the landscape prompt BEFORE any SD calls — keeps every
+            // LLM call ahead of every GPU-heavy SD call so the model can be unloaded once instead
+            // of sitting loaded in VRAM across the whole portrait/landscape/composite sequence.
+            String landscapePrompt = resolveLandscapePrompt(user, scene, chatConfig, setting, mood, style, params.promptTemplateOverride);
+            OllamaModelUtil.unloadAll();
+
             // Stage 1: Portrait bytes for up to 2 scene characters
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "face", "Generating portraits...");
             // Characters may be stored as [{name:...}] maps or as objectId strings
@@ -1629,18 +1692,9 @@ public class PictureBookUtil {
             }
             logger.info("Stage 1 complete: " + portraitBytesList.size() + " portraits generated");
 
-            // Stage 2: Landscape generation
+            // Stage 2: Landscape generation — prompt was already resolved (LLM or cache) in Stage 0
+            // above, before the model was unloaded, so this is pure SD work.
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "landscape", "Generating landscape...");
-            Map<String, String> landVars = new LinkedHashMap<>();
-            landVars.put("setting", setting);
-            landVars.put("mood", mood);
-            landVars.put("time", "");
-            landVars.put("style", (style != null && !style.isEmpty()) ? style : "illustration");
-            String landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars, params.promptTemplateOverride);
-            if (landscapePrompt == null || landscapePrompt.isBlank()) {
-                logger.warn("Landscape prompt failed — falling back to setting text");
-                landscapePrompt = setting.isEmpty() ? "A detailed environment" : setting;
-            }
             SWTxt2Img landReq = SWUtil.newSceneTxt2Img(landscapePrompt, NEG_PROMPT, sdConfigRec);
             landReq.setWidth(1024);
             landReq.setHeight(768);
@@ -1765,6 +1819,47 @@ public class PictureBookUtil {
     }
 
     /**
+     * Batch-resolve (and cache) the landscape prompt for every listed scene, then flush idle
+     * Ollama models ONCE — so a multi-scene "Generate All" run does all of its LLM calls up front
+     * instead of interleaving one LLM call per scene between rounds of GPU-heavy SD calls (which
+     * keeps a model like a large gpt-oss variant resident in VRAM for the whole batch). Each
+     * subsequent generateSceneImage() call picks up the cached prompt automatically (see
+     * resolveLandscapePrompt) and skips its own LLM call. Per-scene failures are logged and
+     * skipped — a scene that can't get an LLM-generated prompt still falls back to its setting
+     * text (same behavior as a live call), so this never blocks the batch.
+     */
+    public static void prepareSceneImagePrompts(BaseRecord user, List<String> sceneObjectIds,
+            String chatConfigName, String style, String promptTemplateOverride) {
+        BaseRecord chatConfig = null;
+        if (chatConfigName != null) {
+            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
+        }
+        final String requestedStyle = style;
+        String effectiveStyle = (requestedStyle == null || ALLOWED_STYLES.stream().noneMatch(s -> s.equalsIgnoreCase(requestedStyle)))
+                ? "illustration" : requestedStyle;
+        for (String sceneObjectId : sceneObjectIds) {
+            try {
+                Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneObjectId);
+                sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+                sq.planMost(false);
+                BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+                if (scene == null) {
+                    logger.warn("prepareSceneImagePrompts: scene not found: " + sceneObjectId);
+                    continue;
+                }
+                String sceneText = scene.get("text");
+                Map<String, Object> sceneData = sceneText != null ? parseLlmJsonObject(sceneText) : new LinkedHashMap<>();
+                String setting = (String) sceneData.getOrDefault("setting", "");
+                String mood = (String) sceneData.getOrDefault("mood", "");
+                resolveLandscapePrompt(user, scene, chatConfig, setting, mood, effectiveStyle, promptTemplateOverride);
+            } catch (Exception e) {
+                logger.warn("prepareSceneImagePrompts: failed for scene " + sceneObjectId + ": " + e.getMessage());
+            }
+        }
+        OllamaModelUtil.unloadAll();
+    }
+
+    /**
      * Regenerate scene blurb via LLM. Updates data.note.text (blurb key), returns the
      * pictureBookResult carrying the new blurb.
      */
@@ -1833,6 +1928,7 @@ public class PictureBookUtil {
             // than silently swallowed.
             logger.warn("Failed to set blurb field on result record: " + e.getMessage());
         }
+        OllamaModelUtil.unloadAll();
         return blurbResult;
     }
 

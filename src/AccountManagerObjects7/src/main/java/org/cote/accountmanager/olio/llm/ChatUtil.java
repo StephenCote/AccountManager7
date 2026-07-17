@@ -219,9 +219,11 @@ public class ChatUtil {
 			Queue.queueUpdate(cfg, new String[] {"scene", "systemNarrative", "userNarrative"});
 		}
 		Queue.processQueue();
-		
+		// Several one-shot LLM calls happen above (outfit x2, description x2/3, scene) — flush
+		// once at the end rather than after each call.
+		OllamaModelUtil.unloadAll();
 	}
-	
+
 	private static String getChatResponse(BaseRecord pcfg, BaseRecord cfg, String model, String prompt) {
 		OpenAIRequest req = new OpenAIRequest();
 		// req.setOptions(Chat.getChatOptions());
@@ -1085,6 +1087,10 @@ public class ChatUtil {
 		catch(Exception e) {
 			logger.error(e);
 		}
+		// Map phase (many concurrent per-chunk LLM calls) and reduce phase (hierarchical merge,
+		// more LLM calls) are both fully done at this point — flush once here rather than after
+		// each chunk/merge, which would just force an immediate reload for the next one.
+		OllamaModelUtil.unloadAll();
 		return summaries;
 	}
 

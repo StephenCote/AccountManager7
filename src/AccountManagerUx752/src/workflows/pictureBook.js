@@ -5,7 +5,7 @@ import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import {
     DEFAULT_SD_CONFIG,
-    extractScenes, fullExtract, createFromScenes, generateSceneImage,
+    extractScenes, fullExtract, createFromScenes, generateSceneImage, prepareSceneImagePrompts,
     regenerateBlurb, loadPictureBook, getBookSdConfig, resetPictureBook, setSceneStatus,
     resolveImageUrl, resolveAllImageUrls
 } from './sceneExtractor.js';
@@ -380,6 +380,23 @@ async function doGenerateAll() {
     genCancelled = false;
     m.redraw();
     let targets = scenes.length ? scenes : extractedScenes;
+
+    // Batch-resolve every pending scene's landscape prompt (all LLM calls) up front, then flush
+    // idle Ollama models once, before any of this run's GPU-heavy SD calls start — instead of
+    // letting each scene's own LLM call interleave with the previous/next scene's SD work.
+    if (bookObjectId) {
+        let pendingOids = targets
+            .filter(function (s) { return s.objectId && genProgress[s.objectId] !== 'accepted' && genProgress[s.objectId] !== 'skipped'; })
+            .map(function (s) { return s.objectId; });
+        if (pendingOids.length) {
+            try {
+                await prepareSceneImagePrompts(bookObjectId, pendingOids, chatConfigName(), sdStyle, getPromptTemplate('landscapePrompt'));
+            } catch (e) {
+                console.warn('[PictureBook] prepareSceneImagePrompts failed (non-fatal, each scene will resolve its own prompt):', e);
+            }
+        }
+    }
+
     let i = 0;
     while (i < targets.length) {
         if (genCancelled) break;
