@@ -138,7 +138,22 @@ public class SWUtil {
 	/// @param style   user-selected style (see configModel.json style limit); may be null/empty
 	/// @param mood    per-scene mood; appended as a clause when non-empty; may be null/empty
 	public static SWTxt2Img newKontextSceneTxt2Img(String sysCharDesc, String usrCharDesc, String sceneDesc, String settingDesc, String style, String mood, BaseRecord sdConfig) {
-		SWTxt2Img s2i = newKontextBase(sdConfig);
+		return newKontextSceneTxt2Img(sysCharDesc, usrCharDesc, sceneDesc, settingDesc, style, mood, sdConfig, null, null, null);
+	}
+
+	/// Full overload accepting explicit steps/cfgScale/negativePrompt overrides. Added so callers
+	/// that already resolve their own generation params (e.g. PictureBookUtil's params.steps/cfg)
+	/// aren't silently ignored by Kontext the way every other stage (portraits, landscape, classic
+	/// pipeline) respects them. Passing null for steps/cfgScale/negativePrompt reproduces the exact
+	/// legacy behavior (steps=28, cfgScale=1, negativePrompt="") that ChatService.generateScene and
+	/// existing tests (TestKontext, TestPictureBookPipeline) depend on byte-for-byte — this overload
+	/// is purely additive, no existing call site's behavior changes.
+	/// @param steps          explicit sampling steps; null preserves the legacy hardcoded 28
+	/// @param cfgScale       explicit CFG scale; null preserves the legacy hardcoded 1
+	/// @param negativePrompt explicit negative prompt; null preserves the legacy hardcoded ""
+	public static SWTxt2Img newKontextSceneTxt2Img(String sysCharDesc, String usrCharDesc, String sceneDesc, String settingDesc,
+			String style, String mood, BaseRecord sdConfig, Integer steps, Integer cfgScale, String negativePrompt) {
+		SWTxt2Img s2i = newKontextBase(sdConfig, steps, cfgScale);
 
 		/// Strip SDXL-style prompt weighting — FLUX doesn't support ((...:1.5)) syntax
 		String cleanSys = stripSDXLWeighting(sysCharDesc);
@@ -166,7 +181,7 @@ public class SWUtil {
 		prompt.append(styleClause(style));
 
 		s2i.setPrompt(prompt.toString());
-		s2i.setNegativePrompt("");
+		s2i.setNegativePrompt(negativePrompt != null ? negativePrompt : "");
 		return s2i;
 	}
 
@@ -207,6 +222,13 @@ public class SWUtil {
 
 	/// Create base Kontext SWTxt2Img with model and optimal defaults.
 	private static SWTxt2Img newKontextBase(BaseRecord sdConfig) {
+		return newKontextBase(sdConfig, null, null);
+	}
+
+	/// Same as {@link #newKontextBase(BaseRecord)} but with optional explicit steps/cfgScale
+	/// overrides — null preserves the legacy hardcoded 28/1 (see
+	/// {@link #newKontextSceneTxt2Img(String, String, String, String, String, String, BaseRecord, Integer, Integer, String)}).
+	private static SWTxt2Img newKontextBase(BaseRecord sdConfig, Integer steps, Integer cfgScale) {
 		SWTxt2Img s2i = new SWTxt2Img();
 
 		String kontextModel = null;
@@ -218,8 +240,8 @@ public class SWUtil {
 		}
 		s2i.setModel(kontextModel);
 
-		s2i.setSteps(28);
-		s2i.setCfgScale(1);
+		s2i.setSteps(steps != null ? steps : 28);
+		s2i.setCfgScale(cfgScale != null ? cfgScale : 1);
 		s2i.setSampler("euler");
 		s2i.setScheduler("simple");
 		s2i.setSeed(Math.abs(rand.nextInt()));

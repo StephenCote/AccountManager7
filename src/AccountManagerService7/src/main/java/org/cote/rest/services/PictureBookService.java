@@ -1,47 +1,21 @@
 package org.cote.rest.services;
 
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.ParameterList;
-import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.FieldType;
-import org.cote.accountmanager.olio.llm.Chat;
-import org.cote.accountmanager.olio.llm.ChatUtil;
-import org.cote.accountmanager.olio.llm.OpenAIRequest;
-import org.cote.accountmanager.olio.llm.OpenAIResponse;
-import org.cote.accountmanager.olio.llm.PromptResourceUtil;
-import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.picturebook.IPictureBookProgressHandler;
+import org.cote.accountmanager.olio.picturebook.PictureBookException;
+import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
+import org.cote.accountmanager.olio.picturebook.PictureBookProgressNotifier;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
-import org.cote.accountmanager.olio.sd.SDAPIEnumType;
-import org.cote.accountmanager.olio.sd.SDUtil;
-import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
-import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
-import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.GroupEnumType;
-import org.cote.accountmanager.util.AttributeUtil;
-import org.cote.accountmanager.util.ByteModelUtil;
-import org.cote.accountmanager.util.DocumentUtil;
-import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 import org.cote.sockets.WebSocketService;
@@ -63,8 +37,15 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 /**
- * PictureBookService — REST service for generating illustrated picture books from documents.
- * Auto-registered via RestServiceConfig packages("org.cote.rest.services").
+ * PictureBookService — thin REST transport for generating illustrated picture books from
+ * documents. Auto-registered via RestServiceConfig packages("org.cote.rest.services").
+ *
+ * All business logic (LLM prompt orchestration, character/scene extraction, the 4-stage SD image
+ * pipeline, meta persistence, etc.) lives in Objects7's {@link PictureBookUtil} — see
+ * .claude/rules/architecture.md ("no business logic in Service7") and that class's javadoc. This
+ * class's only jobs are: parse the incoming request JSON, call into PictureBookUtil with the
+ * authenticated user, and build the HTTP Response — mirroring {@code GroupExportService}'s split
+ * from {@code GroupExportUtil}.
  *
  * Endpoints under /olio/picture-book:
  *   POST /{workObjectId}/extract              — Full LLM extraction: scenes + characters → creates ~/PictureBooks/{bookName}/
@@ -81,36 +62,36 @@ public class PictureBookService {
 
     private static final Logger logger = LogManager.getLogger(PictureBookService.class);
 
-    // SD generation defaults — enforced unless pictureBook.hq feature flag is true
-    private static final int DEFAULT_STEPS = 20;
-    private static final int DEFAULT_REFINER_STEPS = 20;
-    private static final int DEFAULT_CFG = 5;
-    private static final boolean DEFAULT_HIRES = false;
+    private static final String PB_REQUEST_SCHEMA = "olio.pictureBookRequest";
 
-    // Default scene count when not specified — LLM decides actual count
-    private static final int MAX_SCENES_DEFAULT = 10;
+    // ----- WebSocket progress-forwarding registration --------------------
 
-    private static final String NEG_PROMPT =
-        "blurry, lowres, bad anatomy, extra limbs, watermark, text, logo, cartoon, anime, nsfw, deformed, disfigured, ugly, duplicate, mutated, out of frame";
+    /**
+     * Lazily registers a handler with {@link PictureBookProgressNotifier} that forwards each
+     * progress event to {@code WebSocketService.chirpUser} — mirrors
+     * {@code GameStreamHandler.getHandlerInstance()}'s registration with {@code GameEventNotifier}.
+     * Objects7's {@code PictureBookUtil} has no dependency on Service7's WebSocket transport; this
+     * is the one place that bridges the two.
+     */
+    private static volatile boolean progressHandlerRegistered = false;
 
-    // Allowed style values — mirrors configModel.json's style `limit`. Client-supplied style is
-    // clamped to this set at parse time so no arbitrary text flows into LLM/FLUX prompt vars.
-    private static final Set<String> ALLOWED_STYLES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-        "art", "movie", "photograph", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage", "custom", "illustration")));
-
-    // Genre → SD theme mapping
-    private static final Map<String, String> GENRE_THEME_MAP = new HashMap<>();
-    static {
-        GENRE_THEME_MAP.put("fantasy", "dark-medieval");
-        GENRE_THEME_MAP.put("sci-fi", "sci-fi");
-        GENRE_THEME_MAP.put("contemporary", "modern");
-        GENRE_THEME_MAP.put("historical", "period");
+    private static synchronized void ensureProgressHandlerRegistered() {
+        if (progressHandlerRegistered) return;
+        PictureBookProgressNotifier.getInstance().addHandler(new IPictureBookProgressHandler() {
+            @Override
+            public void onProgress(BaseRecord user, String icon, String message) {
+                WebSocketService.chirpUser(user, new String[] { "bgActivity", icon, message });
+            }
+        });
+        progressHandlerRegistered = true;
+        logger.info("PictureBookService progress handler registered with PictureBookProgressNotifier");
     }
 
-    // ----- Helpers -------------------------------------------------------
+    public PictureBookService() {
+        ensureProgressHandlerRegistered();
+    }
 
-    private static final String PB_REQUEST_SCHEMA = "olio.pictureBookRequest";
-    private static final String PICTURE_BOOKS_DIR = "PictureBooks";
+    // ----- Request JSON parsing helpers (transport only) ------------------
 
     /**
      * Ensure the JSON body has a schema field so the deserializer can parse it.
@@ -126,733 +107,26 @@ public class PictureBookService {
         return json;
     }
 
-    /**
-     * Resolve the work record (source document) from its objectId.
-     */
-    private BaseRecord findWork(BaseRecord user, String workObjectId) {
-        Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, workObjectId);
-        q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        q.planMost(true);
-        BaseRecord found = IOSystem.getActiveContext().getAccessPoint().find(user, q);
-        if (found == null) {
-            // Also try data.note
-            q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, workObjectId);
-            q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-            q.planMost(true);
-            found = IOSystem.getActiveContext().getAccessPoint().find(user, q);
-        }
-        return found;
-    }
-
-    /**
-     * Find the ~/PictureBooks/ parent directory, creating it if needed.
-     */
-    private BaseRecord ensurePictureBooksDir(BaseRecord user) {
-        long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
-        return IOSystem.getActiveContext().getPathUtil().makePath(user,
-                ModelNames.MODEL_GROUP, "~/Data/" + PICTURE_BOOKS_DIR, GroupEnumType.DATA.toString(), orgId);
-    }
-
-    /**
-     * Find or create a named book group under ~/PictureBooks/{bookName}/.
-     */
-    private BaseRecord ensureBookGroup(BaseRecord user, String bookName) {
-        long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
-        String bookPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + bookName;
-        BaseRecord grp = IOSystem.getActiveContext().getPathUtil().makePath(user,
-                ModelNames.MODEL_GROUP, bookPath, GroupEnumType.DATA.toString(), orgId);
-        if (grp != null) {
-            try { grp.set(FieldNames.FIELD_PATH, bookPath); } catch (Exception e) { /* already set */ }
-        }
-        return grp;
-    }
-
-    /**
-     * Find a book group by its objectId (auth.group).
-     */
-    private BaseRecord findBookGroup(BaseRecord user, String bookGroupObjectId) {
-        Query q = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_OBJECT_ID, bookGroupObjectId);
-        q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        q.planMost(true);
-        return IOSystem.getActiveContext().getAccessPoint().find(user, q);
-    }
-
-    /**
-     * Extract text from a work record. Uses DocumentUtil.getStringContent for PDF/DOCX/text,
-     * falling back to description/text fields for plain records.
-     */
-    private String extractWorkText(BaseRecord user, BaseRecord work) {
-        if (work == null) return null;
-
-        // Try DocumentUtil.getStringContent — handles PDF, DOCX, and text/* automatically
+    private BaseRecord parseParams(String json) {
+        if (json == null || json.trim().isEmpty()) return null;
         try {
-            String extracted = DocumentUtil.getStringContent(work);
-            if (extracted != null && !extracted.isEmpty()) return extracted;
+            return JSONUtil.importObject(ensureSchema(json), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
         } catch (Exception e) {
-            logger.warn("Failed to extract document content: " + e.getMessage());
-        }
-
-        // Plain text — try description, then text field
-        String text = work.get(FieldNames.FIELD_DESCRIPTION);
-        if (text != null && !text.isEmpty()) return text;
-        text = work.get("text");
-        if (text != null && !text.isEmpty()) return text;
-        return null;
-    }
-
-    /**
-     * Find or create a sub-group under a given parent group path.
-     */
-    private BaseRecord ensureSubGroup(BaseRecord user, String parentGroupPath, String subName) {
-        if (parentGroupPath == null || parentGroupPath.isEmpty()) return null;
-        String subPath = parentGroupPath + "/" + subName;
-        BaseRecord grp = IOSystem.getActiveContext().getPathUtil().makePath(user,
-                ModelNames.MODEL_GROUP, subPath, GroupEnumType.DATA.toString(),
-                (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        if (grp != null) {
-            try { grp.set(FieldNames.FIELD_PATH, subPath); } catch (Exception e) { /* already set */ }
-        }
-        return grp;
-    }
-
-    /**
-     * Load the .pictureBookMeta record from a group path.
-     * Uses data.note (text field has no length limit).
-     */
-    private BaseRecord loadMeta(BaseRecord user, String groupPath) {
-        if (groupPath == null) return null;
-        BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
-                ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(),
-                (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        if (grp == null) return null;
-
-        Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
-        q.field(FieldNames.FIELD_NAME, ".pictureBookMeta");
-        q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        q.planMost(true);
-        return IOSystem.getActiveContext().getAccessPoint().find(user, q);
-    }
-
-    /**
-     * Save .pictureBookMeta JSON to a group as a data.note (text field, no length limit).
-     */
-    private BaseRecord saveMeta(BaseRecord user, String groupPath, BaseRecord meta) {
-        if (groupPath == null) return null;
-        String metaJson = toJson(meta);
-
-        BaseRecord existing = loadMeta(user, groupPath);
-        if (existing != null) {
-            try {
-                existing.set("text", metaJson);
-                IOSystem.getActiveContext().getAccessPoint().update(user, existing);
-                return existing;
-            } catch (Exception e) {
-                logger.error("Failed to update meta: " + e.getMessage());
-                return null;
-            }
-        }
-
-        // Create new data.note
-        ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
-        plist.parameter(FieldNames.FIELD_NAME, ".pictureBookMeta");
-        try {
-            BaseRecord newRec = IOSystem.getActiveContext().getFactory().newInstance(
-                    ModelNames.MODEL_NOTE, user, null, plist);
-            newRec.set("text", metaJson);
-            return IOSystem.getActiveContext().getAccessPoint().create(user, newRec);
-        } catch (Exception e) {
-            logger.error("Failed to create meta: " + e.getMessage());
+            logger.warn("Failed to parse request body: " + e.getMessage());
             return null;
         }
     }
 
-    /**
-     * Update a scene note's text JSON with a single key/value pair, preserving existing keys.
-     * Used to persist generated image object ids so the viewer fallback can find them.
-     */
-    @SuppressWarnings("unchecked")
-    private void updateSceneTextField(BaseRecord user, BaseRecord scene, String key, String value) {
-        try {
-            String existingText = scene.get("text");
-            Map<String, Object> textData = new LinkedHashMap<>();
-            if (existingText != null && !existingText.isEmpty()) {
-                try {
-                    textData = JSONUtil.getMap(existingText.getBytes(), String.class, Object.class);
-                } catch (Exception ex) { /* ignore parse errors */ }
-            }
-            textData.put(key, value);
-            scene.set("text", JSONUtil.exportObject(textData));
-            IOSystem.getActiveContext().getAccessPoint().update(user, scene);
-        } catch (Exception e) {
-            logger.warn("Failed to update scene " + key + ": " + e.getMessage());
-        }
-    }
-
-    /**
-     * Update a scene note's text JSON with the generated imageObjectId.
-     * This persists the image reference so the viewer fallback can find it.
-     */
-    private void updateSceneImageId(BaseRecord user, BaseRecord scene, String imageObjectId) {
-        updateSceneTextField(user, scene, "imageObjectId", imageObjectId);
-    }
-
-    /**
-     * Update a scene note's text JSON with the generated landscape's objectId (see
-     * pictureBookSceneModel.json#landscapeObjectId). The landscape record is no longer deleted
-     * after use (see #3 in the fix plan) — this persists the reference to the retained record.
-     */
-    private void updateSceneLandscapeId(BaseRecord user, BaseRecord scene, String landscapeObjectId) {
-        updateSceneTextField(user, scene, "landscapeObjectId", landscapeObjectId);
-    }
-
-    /**
-     * Parse LLM JSON response into a list of maps, stripping markdown fences if present.
-     */
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> parseLlmJsonArray(String response) {
-        if (response == null || response.isEmpty()) return new ArrayList<>();
-        String trimmed = response.trim();
-        // Strip markdown code fences
-        if (trimmed.startsWith("```")) {
-            int nl = trimmed.indexOf('\n');
-            if (nl >= 0) trimmed = trimmed.substring(nl + 1);
-            if (trimmed.endsWith("```")) trimmed = trimmed.substring(0, trimmed.lastIndexOf("```")).trim();
-        }
-        // Find first [ ... ] array
-        int start = trimmed.indexOf('[');
-        int end = trimmed.lastIndexOf(']');
-        if (start < 0 || end < 0 || end <= start) return new ArrayList<>();
-        trimmed = trimmed.substring(start, end + 1);
-        try {
-            List<Map<String, Object>> parsed = JSONUtil.getList(trimmed, Map.class, null);
-            if (parsed != null) return parsed;
-        } catch (Exception e) {
-            logger.warn("Failed to parse LLM JSON array: " + e.getMessage());
-        }
-        return new ArrayList<>();
-    }
-
-    /**
-     * Parse a single LLM JSON object response.
-     */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> parseLlmJsonObject(String response) {
-        if (response == null || response.isEmpty()) return new LinkedHashMap<>();
-        String trimmed = response.trim();
-        // Strip <think>...</think> blocks (Qwen3 etc. may ignore think:false)
-        trimmed = trimmed.replaceAll("(?s)<think>.*?</think>", "").trim();
-        if (trimmed.startsWith("```")) {
-            int nl = trimmed.indexOf('\n');
-            if (nl >= 0) trimmed = trimmed.substring(nl + 1);
-            if (trimmed.endsWith("```")) trimmed = trimmed.substring(0, trimmed.lastIndexOf("```")).trim();
-        }
-        int start = trimmed.indexOf('{');
-        int end = trimmed.lastIndexOf('}');
-        if (start < 0 || end < 0 || end <= start) return new LinkedHashMap<>();
-        trimmed = trimmed.substring(start, end + 1);
-        try {
-            return JSONUtil.getMap(trimmed.getBytes(), String.class, Object.class);
-        } catch (Exception e) {
-            logger.warn("Failed to parse LLM JSON object: " + e.getMessage());
-        }
-        return new LinkedHashMap<>();
-    }
-
-    /**
-     * Call the LLM with a prompt template substitution.
-     * Resolves prompt by: 1) user's ~/Chat group, 2) system library, 3) classpath resource.
-     */
-    /**
-     * Call LLM with optional prompt template override name.
-     */
-    private String callLlm(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars, String overrideName) {
-        if (overrideName != null && !overrideName.isEmpty()) {
-            promptName = overrideName;
-        }
-        return callLlmInternal(user, chatConfig, promptName, vars);
-    }
-
-    private String callLlm(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars) {
-        return callLlmInternal(user, chatConfig, promptName, vars);
-    }
-
-    private String callLlmInternal(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars) {
-        String system = null;
-        String userTpl = null;
-
-        // Try user-customizable prompt template first (user's group → system library)
-        try {
-            BaseRecord pt = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_PROMPT_TEMPLATE, promptName, null);
-            if (pt != null) {
-                // Compose system and user strings from sections
-                @SuppressWarnings("unchecked")
-                List<BaseRecord> sections = pt.get("sections");
-                if (sections != null) {
-                    StringBuilder sysBuf = new StringBuilder();
-                    StringBuilder usrBuf = new StringBuilder();
-                    for (BaseRecord sec : sections) {
-                        String role = sec.get("role");
-                        @SuppressWarnings("unchecked")
-                        List<String> lines = sec.get("lines");
-                        if (lines == null) continue;
-                        String text = String.join("\n", lines);
-                        if ("system".equals(role)) sysBuf.append(text).append("\n");
-                        else if ("user".equals(role)) usrBuf.append(text).append("\n");
-                    }
-                    if (sysBuf.length() > 0) system = sysBuf.toString().trim();
-                    if (usrBuf.length() > 0) userTpl = usrBuf.toString().trim();
-                }
-            }
-        } catch (Exception e) {
-            logger.debug("Prompt template lookup failed for " + promptName + ": " + e.getMessage());
-        }
-
-        // Fallback to classpath resource
-        if (system == null) system = PromptResourceUtil.getString(promptName, "system");
-        if (userTpl == null) userTpl = PromptResourceUtil.getString(promptName, "user");
-        if (system == null || userTpl == null) {
-            logger.warn("Prompt template not found: " + promptName);
-            return null;
-        }
-        if (vars != null) {
-            for (Map.Entry<String, String> e : vars.entrySet()) {
-                if (e.getValue() != null) {
-                    userTpl = userTpl.replace("{" + e.getKey() + "}", e.getValue());
-                }
-            }
-        }
-        try {
-            // Fall back to default chat config if none provided
-            if (chatConfig == null) {
-                chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, "generalChat", null);
-            }
-            if (chatConfig == null) {
-                logger.error("No chat config available — cannot call LLM for " + promptName);
-                return null;
-            }
-            Chat chat = new Chat(user, chatConfig, null);
-            OpenAIRequest req = chat.newRequest(chat.getModel());
-            req.setStream(false);
-            // Disable thinking for structured extraction tasks (Qwen3, etc.)
-            try {
-                BaseRecord reqOpts = req.get("options");
-                if (reqOpts == null) {
-                    reqOpts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
-                    req.set("options", reqOpts);
-                }
-                reqOpts.set("think", false);
-            } catch (Exception ex) { /* ignore if field doesn't exist */ }
-            chat.newMessage(req, system, Chat.systemRole);
-            chat.newMessage(req, userTpl);
-            OpenAIResponse resp = chat.chat(req);
-            if (resp != null && resp.getMessage() != null) {
-                return resp.getMessage().getContent();
-            }
-        } catch (Exception e) {
-            logger.error("LLM call failed for " + promptName + ": " + e.getMessage());
-        }
-        return null;
-    }
-
-    /**
-     * Internal chunked extraction — shared by extract-scenes-only (auto-chunk) and extract-chunked.
-     */
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text) {
-        int chunkSize = 2000;
-        int overlap = 200;
-        List<String> chunks = new ArrayList<>();
-        int pos = 0;
-        while (pos < text.length()) {
-            int end = Math.min(pos + chunkSize, text.length());
-            if (end < text.length()) {
-                int lastPeriod = text.lastIndexOf('.', end);
-                int lastNewline = text.lastIndexOf('\n', end);
-                int breakAt = Math.max(lastPeriod, lastNewline);
-                if (breakAt > pos + chunkSize / 2) end = breakAt + 1;
-            }
-            chunks.add(text.substring(pos, end));
-            pos = end - overlap;
-            if (pos < 0) pos = 0;
-            if (end >= text.length()) break;
-        }
-
-        List<Map<String, Object>> sceneList = new ArrayList<>();
-        for (int ci = 0; ci < chunks.size(); ci++) {
-            WebSocketService.chirpUser(user, new String[] {
-                "bgActivity", "auto_awesome", "Extracting chunk " + (ci + 1) + "/" + chunks.size() + "..."
-            });
-            String previousJson = sceneList.isEmpty() ? "[]" : JSONUtil.exportObject(sceneList);
-            Map<String, String> vars = new LinkedHashMap<>();
-            vars.put("previousScenes", previousJson);
-            vars.put("chunk", chunks.get(ci));
-            String llmResp = callLlm(user, chatConfig, "pictureBook.extract-chunk", vars);
-            if (llmResp == null || llmResp.isEmpty()) continue;
-            Map<String, Object> chunkResult = parseLlmJsonObject(llmResp);
-            if (chunkResult == null || chunkResult.isEmpty()) {
-                logger.warn("Chunk " + (ci + 1) + "/" + chunks.size() + " returned unparseable LLM response — skipping");
-                continue;
-            }
-
-            Object addObj = chunkResult.get("additions");
-            if (addObj instanceof List) {
-                List<Map<String, Object>> additions = (List<Map<String, Object>>) addObj;
-                for (Map<String, Object> scene : additions) {
-                    scene.put("index", sceneList.size());
-                    scene.put("userEdited", false);
-                    sceneList.add(scene);
-                }
-            }
-            Object revObj = chunkResult.get("revisions");
-            if (revObj instanceof List) {
-                List<Map<String, Object>> revisions = (List<Map<String, Object>>) revObj;
-                for (Map<String, Object> rev : revisions) {
-                    String revTitle = (String) rev.get("title");
-                    if (revTitle == null) continue;
-                    for (int si = 0; si < sceneList.size(); si++) {
-                        String existingTitle = (String) sceneList.get(si).get("title");
-                        if (revTitle.equals(existingTitle)) {
-                            Map<String, Object> existing = sceneList.get(si);
-                            for (Map.Entry<String, Object> e : rev.entrySet()) {
-                                if (!"title".equals(e.getKey()) && e.getValue() != null) {
-                                    existing.put(e.getKey(), e.getValue());
-                                }
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-            Object remObj = chunkResult.get("removals");
-            if (remObj instanceof List) {
-                List<String> removals = (List<String>) remObj;
-                sceneList.removeIf(s -> removals.contains(s.get("title")));
-            }
-            logger.info("Chunk " + (ci + 1) + "/" + chunks.size() + " processed: " + sceneList.size() + " scenes total");
-        }
-        for (int i = 0; i < sceneList.size(); i++) {
-            Map<String, Object> scene = sceneList.get(i);
-            scene.put("index", i);
-            // Normalize: LLM may return "summary" instead of "blurb"
-            if (scene.get("blurb") == null && scene.get("summary") != null) {
-                scene.put("blurb", scene.get("summary"));
-            }
-        }
-        WebSocketService.chirpUser(user, new String[] {
-            "bgActivity", "", ""
-        });
-        return sceneList;
-    }
-
-    /**
-     * Extract the actual seed from a generated image record's attributes.
-     * SDUtil stores it as AttributeUtil.addAttribute(data, "seed", seedl).
-     */
-    private int extractSeedFromImage(BaseRecord image) {
-        try {
-            int seedVal = AttributeUtil.getAttributeValue(image, "seed", -1);
-            if (seedVal > 0) return seedVal;
-        } catch (Exception e) { /* attribute may not exist */ }
-        return -1;
-    }
-
-    /**
-     * Clamp free-text LLM-extracted gender to exactly one of MALE/FEMALE/UNKNOWN
-     * (Stephen's explicit decision — no other values). identity.person.gender is a plain
-     * string with maxLength 10, so all three values always fit; this is a logic fix, not a
-     * schema change. Never throws — any unrecognized/blank input maps to UNKNOWN so a bad LLM
-     * value can never abort character creation.
-     */
-    private String normalizeGender(String raw) {
-        if (raw == null) return "UNKNOWN";
-        String g = raw.trim().toLowerCase();
-        if (g.equals("male") || g.equals("m")) return "MALE";
-        if (g.equals("female") || g.equals("f")) return "FEMALE";
-        return "UNKNOWN";
-    }
-
-    /**
-     * Determine genre theme from genre hint string.
-     */
-    private String genreToTheme(String genre) {
-        if (genre == null) return null;
-        return GENRE_THEME_MAP.getOrDefault(genre.toLowerCase(), null);
-    }
-
-    /**
-     * Build a pictureBookMeta record using the typed model.
-     */
-    private BaseRecord buildMeta(String sourceObjectId, String bookObjectId, String workName, List<BaseRecord> scenes) {
-        try {
-            BaseRecord meta = RecordFactory.newInstance(OlioModelNames.MODEL_PICTURE_BOOK_META);
-            meta.set("sourceObjectId", sourceObjectId);
-            meta.set("bookObjectId", bookObjectId);
-            meta.set("workName", workName);
-            meta.set("sceneCount", scenes.size());
-            meta.set("scenes", scenes);
-            meta.set("extractedAt", ZonedDateTime.now().toString());
-            return meta;
-        } catch (Exception e) {
-            logger.error("Failed to build meta: " + e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Build a pictureBookScene record from scene data + note objectId.
-     */
-    @SuppressWarnings("unchecked")
-    private BaseRecord buildSceneEntry(BaseRecord note, Map<String, Object> sceneData, int idx, Map<String, String> charObjectIds) {
-        try {
-            BaseRecord scene = RecordFactory.newInstance(OlioModelNames.MODEL_PICTURE_BOOK_SCENE);
-            scene.set(FieldNames.FIELD_OBJECT_ID, note.get(FieldNames.FIELD_OBJECT_ID));
-            scene.set("index", idx);
-            scene.set("title", sceneData.getOrDefault("title", "Scene " + idx));
-            String desc = (String) sceneData.getOrDefault("blurb", sceneData.getOrDefault("summary", sceneData.getOrDefault("description", "")));
-            scene.set(FieldNames.FIELD_DESCRIPTION, desc);
-            List<String> charIds = new ArrayList<>();
-            Object charsObj = sceneData.get("characters");
-            if (charsObj instanceof List && charObjectIds != null) {
-                for (Object sc : (List<Object>) charsObj) {
-                    String cn = null;
-                    if (sc instanceof Map) cn = (String) ((Map<String, Object>) sc).get("name");
-                    else if (sc instanceof String) cn = (String) sc;
-                    if (cn != null && charObjectIds.containsKey(cn)) charIds.add(charObjectIds.get(cn));
-                }
-            }
-            scene.set("characters", charIds);
-            return scene;
-        } catch (Exception e) {
-            logger.error("Failed to build scene entry: " + e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Build a pictureBookResult response record.
-     */
-    private BaseRecord buildResult() {
-        try {
-            return RecordFactory.newInstance(OlioModelNames.MODEL_PICTURE_BOOK_RESULT);
-        } catch (Exception e) {
-            logger.error("Failed to create result: " + e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Serialize a model record to JSON for HTTP response.
-     */
     private String toJson(BaseRecord rec) {
         return rec.toFullString();
     }
 
-    /**
-     * Create and persist a foreign-model instance (e.g. olio.narrative, identity.profile) with
-     * a resolvable group path — mirrors CharPersonFactory's nested-model path convention
-     * ("~/" + schema.getGroup()). Unlike CharPersonFactory's in-memory placeholders (which rely
-     * on autoCreateForeignReference cascading — NOT enabled for olio.charPerson — so they are
-     * silently never persisted), this goes through AccessPoint so the record gets a real
-     * id/objectId immediately and can be safely linked to a parent via a PATCH-shaped update.
-     */
-    private BaseRecord createPersistedForeignInstance(BaseRecord user, String modelName) {
-        try {
-            ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH,
-                    "~/" + RecordFactory.getSchema(modelName).getGroup());
-            BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(modelName, user, null, plist);
-            BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, inst);
-            if (created == null) {
-                logger.error("Failed to persist new " + modelName + " instance — AccessPoint.create returned null (denied or persist failure)");
-            }
-            return created;
-        } catch (Exception e) {
-            logger.error("Failed to create persisted " + modelName + " instance: " + e.getMessage(), e);
-            return null;
-        }
+    private Response errorResponse(int status, String message) {
+        return Response.status(status).entity("{\"error\":\"" + message + "\"}").build();
     }
 
-    /**
-     * PATCH-shaped update: identity fields (id, objectId) + a single foreign field on
-     * olio.charPerson. Deliberately avoids a full-object update on a shallow/partially
-     * populated charPerson record, which would risk re-persisting other foreign refs (e.g. a
-     * groupless system.user reference) and a PBAC denial that silently drops the intended
-     * change. See .claude/rules/model-api.md — PATCH / partial updates.
-     *
-     * IMPORTANT: must use RecordFactory.newInstance(schema, fieldNames) — NOT the no-arg
-     * newInstance(schema) — to build the patch. olio.charPerson inherits identity.person ->
-     * data.directory -> common.nameId -> common.name, whose "name" field is
-     * required/$notEmpty. RecordFactory.newInstance(schema) with no explicit field list
-     * instantiates EVERY schema field (including "name", present-but-null since it was never
-     * set), and RecordValidator.validate() validates every field present in
-     * record.getFields() — so a bare newInstance(schema) patch always fails $notEmpty on
-     * "name" even though we never intended to touch it. Passing an explicit fieldNames array
-     * restricts getFields() to only the identity + changed fields, so "name" is never
-     * instantiated and never validated. (identity.profile's equivalent patch in
-     * createPersistedForeignInstance/TestPortraitReuse works with the bare newInstance(schema)
-     * form only because identity.profile does not — real "inherits", not "likeInherits" —
-     * pull in common.name at all, so it has no required "name" field to trip on.)
-     */
-    private BaseRecord patchCharPersonField(BaseRecord user, BaseRecord charPerson, String fieldName, BaseRecord value) {
-        try {
-            BaseRecord patch = RecordFactory.newInstance(OlioModelNames.MODEL_CHAR_PERSON,
-                    new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, fieldName });
-            patch.set(FieldNames.FIELD_ID, charPerson.get(FieldNames.FIELD_ID));
-            patch.set(FieldNames.FIELD_OBJECT_ID, charPerson.get(FieldNames.FIELD_OBJECT_ID));
-            patch.set(fieldName, value);
-            return IOSystem.getActiveContext().getAccessPoint().update(user, patch);
-        } catch (Exception e) {
-            logger.error("Failed to PATCH charPerson." + fieldName + ": " + e.getMessage(), e);
-            return null;
-        }
-    }
-
-    /**
-     * Create an olio.charPerson for an extracted character, apply outfit, call narrate.
-     */
-    @SuppressWarnings("unchecked")
-    private BaseRecord createCharPerson(BaseRecord user, Map<String, Object> charData, BaseRecord charsGroup, String genre) {
-        String name = (String) charData.get("name");
-        if (name == null || name.isEmpty()) return null;
-
-        // Split name into first/last
-        String firstName = name;
-        String lastName = "";
-        int sp = name.lastIndexOf(' ');
-        if (sp > 0) {
-            firstName = name.substring(0, sp).trim();
-            lastName = name.substring(sp + 1).trim();
-        }
-
-        // Check existing
-        Query eq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, name);
-        eq.field(FieldNames.FIELD_GROUP_ID, charsGroup.get(FieldNames.FIELD_ID));
-        eq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        BaseRecord existing = IOSystem.getActiveContext().getAccessPoint().find(user, eq);
-        if (existing != null) return existing;
-
-        try {
-            ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH,
-                    charsGroup.get(FieldNames.FIELD_PATH));
-            plist.parameter(FieldNames.FIELD_NAME, name);
-            BaseRecord charPerson = IOSystem.getActiveContext().getFactory().newInstance(
-                    OlioModelNames.MODEL_CHAR_PERSON, user, null, plist);
-
-            charPerson.set(FieldNames.FIELD_NAME, name);
-            if (!firstName.isEmpty()) charPerson.set("firstName", firstName);
-            if (!lastName.isEmpty()) charPerson.set("lastName", lastName);
-
-            // Apply gender — clamped to MALE/FEMALE/UNKNOWN only, never a raw/unrecognized
-            // LLM value (see normalizeGender()). Must happen before create() so a bad LLM
-            // value never aborts character creation.
-            String gender = (String) charData.get("gender");
-            charPerson.set("gender", normalizeGender(gender));
-
-            charPerson = IOSystem.getActiveContext().getAccessPoint().create(user, charPerson);
-            if (charPerson == null) return null;
-
-            // Re-fetch the full record — create returns identity-only partial
-            String cpOid = charPerson.get(FieldNames.FIELD_OBJECT_ID);
-            Query refetch = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, cpOid);
-            refetch.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-            refetch.planMost(false);
-            charPerson = IOSystem.getActiveContext().getAccessPoint().find(user, refetch);
-            if (charPerson == null) return null;
-
-            // Build SD portrait prompt from extracted character data.
-            // narrative is a foreign model (olio.narrative) — set sdPrompt on it, not a raw string.
-            String portraitPrompt = NarrativeUtil.buildPortraitPromptFromExtractedData(name, charData);
-            if (portraitPrompt == null || portraitPrompt.isEmpty()) {
-                String appearance = (String) charData.getOrDefault("appearance", "");
-                String role = (String) charData.getOrDefault("role", "");
-                String gender2 = (String) charData.getOrDefault("gender", "person");
-                portraitPrompt = "portrait of " + name + ", " + gender2;
-                if (!appearance.isEmpty()) portraitPrompt += ", " + appearance;
-                if (!role.isEmpty()) portraitPrompt += ", " + role;
-                portraitPrompt += ", detailed face, cinematic lighting, high quality";
-            }
-            // Ensure the profile is a real *persisted* record. CharPersonFactory only builds an
-            // in-memory placeholder (a path-scoped identity.profile with no id) and olio.charPerson
-            // does not set autoCreateForeignReference, so that placeholder is never cascaded into
-            // the database on create — profile.id stays 0/null forever unless we persist it here
-            // explicitly. Without this, portraits can never be linked to the character later.
-            BaseRecord profile = charPerson.get("profile");
-            Long existingProfileId = (profile != null) ? profile.get(FieldNames.FIELD_ID) : null;
-            if (profile == null || existingProfileId == null || existingProfileId <= 0L) {
-                BaseRecord newProfile = createPersistedForeignInstance(user, ModelNames.MODEL_PROFILE);
-                if (newProfile == null) {
-                    logger.error("Failed to create persisted profile for charPerson " + name);
-                    return null;
-                }
-                BaseRecord profileLinked = patchCharPersonField(user, charPerson, "profile", newProfile);
-                if (profileLinked == null) {
-                    logger.error("Failed to link persisted profile to charPerson " + name);
-                    return null;
-                }
-                charPerson.set("profile", newProfile);
-            }
-
-            // Ensure the narrative is a real *persisted* record and carries the SD portrait
-            // prompt, then attach it via a PATCH-shaped update (identity + narrative only) —
-            // NOT a full-object update on the shallow (planMost(false)) charPerson, which would
-            // risk re-persisting other foreign refs and a silent PBAC denial.
-            try {
-                BaseRecord narrative = charPerson.get("narrative");
-                Long existingNarrativeId = (narrative != null) ? narrative.get(FieldNames.FIELD_ID) : null;
-                if (narrative == null || existingNarrativeId == null || existingNarrativeId <= 0L) {
-                    narrative = createPersistedForeignInstance(user, OlioModelNames.MODEL_NARRATIVE);
-                    if (narrative == null) {
-                        logger.error("Failed to create persisted narrative for charPerson " + name);
-                        return null;
-                    }
-                }
-                narrative.set("sdPrompt", portraitPrompt);
-                narrative.set("physicalDescription", portraitPrompt);
-                BaseRecord narrativeLinked = patchCharPersonField(user, charPerson, "narrative", narrative);
-                if (narrativeLinked == null) {
-                    logger.error("Failed to attach narrative to charPerson " + name + " — AccessPoint.update denied or failed (PBAC/persist)");
-                    return null;
-                }
-                charPerson.set("narrative", narrative);
-            } catch (Exception e) {
-                logger.error("Failed to set portrait prompt/narrative for " + name + ": " + e.getMessage(), e);
-                return null;
-            }
-            return charPerson;
-
-        } catch (Exception e) {
-            logger.error("Failed to create charPerson " + name + ": " + e.getMessage(), e);
-            return null;
-        }
-    }
-
-    /**
-     * Create a data.note record for a scene.
-     */
-    @SuppressWarnings("unchecked")
-    private BaseRecord createSceneNote(BaseRecord user, BaseRecord scenesGroup, Map<String, Object> sceneData, int idx) {
-        String title = (String) sceneData.getOrDefault("title", "Scene " + idx);
-        String summary = (String) sceneData.getOrDefault("summary", "");
-
-        try {
-            ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH,
-                    scenesGroup.get(FieldNames.FIELD_PATH));
-            plist.parameter(FieldNames.FIELD_NAME, title);
-            BaseRecord note = IOSystem.getActiveContext().getFactory().newInstance(
-                    ModelNames.MODEL_NOTE, user, null, plist);
-            note.set(FieldNames.FIELD_NAME, title);
-
-            // Store scene metadata + summary as JSON in the text field
-            // (data.note has no 'description' field — summary goes in the metadata)
-            Map<String, Object> sceneStore = new LinkedHashMap<>(sceneData);
-            sceneStore.put("sceneIndex", idx);
-            sceneStore.put("blurb", summary);
-            note.set("text", JSONUtil.exportObject(sceneStore));
-
-            return IOSystem.getActiveContext().getAccessPoint().create(user, note);
-        } catch (Exception e) {
-            logger.error("Failed to create scene note: " + e.getMessage());
-            return null;
-        }
+    private Response handlePictureBookException(PictureBookException e) {
+        return errorResponse(e.getStatus(), e.getMessage());
     }
 
     // ----- Endpoints -----------------------------------------------------
@@ -871,70 +145,41 @@ public class PictureBookService {
     public Response extractScenesOnly(@PathParam("workObjectId") String workObjectId,
             String json, @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord work = findWork(user, workObjectId);
-        if (work == null) return Response.status(404).entity("{\"error\":\"Work not found\"}").build();
 
-        int count = MAX_SCENES_DEFAULT;
+        int count = PictureBookUtil.MAX_SCENES_DEFAULT;
         String chatConfigName = null;
         String promptTemplateOverride = null;
-        if (json != null && !json.trim().isEmpty()) {
-            try {
-                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-                Object countObj = params.get("count");
-                if (countObj instanceof Number) count = ((Number) countObj).intValue();
-                chatConfigName = params.get("chatConfig");
-                promptTemplateOverride = params.get("promptTemplate");
-            } catch (Exception e) {
-                logger.warn("Failed to parse extract request body: " + e.getMessage());
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            Object countObj = params.get("count");
+            if (countObj instanceof Number) count = ((Number) countObj).intValue();
+            chatConfigName = params.get("chatConfig");
+            promptTemplateOverride = params.get("promptTemplate");
+        }
+
+        try {
+            PictureBookUtil.ScenesOnlyResult result = PictureBookUtil.extractScenesOnly(
+                    user, workObjectId, count, chatConfigName, promptTemplateOverride);
+            if (result.chunked) {
+                BaseRecord out = PictureBookUtil.buildResult();
+                try {
+                    out.set("sceneList", result.scenes);
+                    out.set("extractionComplete", true);
+                    out.set("chunksProcessed", -1);
+                    out.set("chunked", true);
+                } catch (Exception e) { logger.warn("Failed to build chunked result: " + e.getMessage()); }
+                return Response.status(200).entity(toJson(out)).build();
             }
+            return Response.status(200).entity(JSONUtil.exportObject(result.scenes,
+                    RecordSerializerConfig.getForeignUnfilteredModuleRecurse())).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
         }
-
-        String text = extractWorkText(user, work);
-        if (text == null || text.isEmpty()) {
-            return Response.status(400).entity("{\"error\":\"No text content found in work\"}").build();
-        }
-
-        BaseRecord chatConfig = null;
-        if (chatConfigName != null) {
-            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
-        }
-
-        // Auto-chunk if text exceeds 8000 chars
-        if (text.length() > 8000) {
-            List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text);
-            BaseRecord result = buildResult();
-            try {
-                result.set("sceneList", sceneList);
-                result.set("extractionComplete", true);
-                result.set("chunksProcessed", -1);
-                result.set("chunked", true);
-            } catch (Exception e) { logger.warn("Failed to build chunked result: " + e.getMessage()); }
-            return Response.status(200).entity(toJson(result)).build();
-        }
-
-        // Short text — single-shot extraction
-        WebSocketService.chirpUser(user, new String[] { "bgActivity", "auto_awesome", "Extracting scenes..." });
-        Map<String, String> vars = new LinkedHashMap<>();
-        vars.put("count", String.valueOf(count));
-        vars.put("text", text);
-
-        String llmResponse = callLlm(user, chatConfig, "pictureBook.extract-scenes", vars, promptTemplateOverride);
-        List<Map<String, Object>> scenes = parseLlmJsonArray(llmResponse);
-        // Normalize: LLM may return "summary" instead of "blurb"
-        for (Map<String, Object> scene : scenes) {
-            if (scene.get("blurb") == null && scene.get("summary") != null) {
-                scene.put("blurb", scene.get("summary"));
-            }
-        }
-        WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
-
-        return Response.status(200).entity(JSONUtil.exportObject(scenes,
-                RecordSerializerConfig.getForeignUnfilteredModuleRecurse())).build();
     }
 
     /**
      * POST /{workObjectId}/extract-chunked
-     * Chunked scene extraction — delegates to extractChunkedInternal.
+     * Chunked scene extraction — delegates to PictureBookUtil.extractChunked.
      * Kept for backward compatibility; extract-scenes-only now auto-chunks.
      */
     @RolesAllowed({"admin", "user"})
@@ -945,38 +190,19 @@ public class PictureBookService {
     public Response extractChunked(@PathParam("workObjectId") String workObjectId,
             String json, @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord work = findWork(user, workObjectId);
-        if (work == null) return Response.status(404).entity("{\"error\":\"Work not found\"}").build();
 
         String chatConfigName = null;
-        if (json != null && !json.trim().isEmpty()) {
-            try {
-                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
-                        RecordDeserializerConfig.getUnfilteredModule());
-                chatConfigName = params.get("chatConfig");
-            } catch (Exception e) {
-                logger.warn("Failed to parse chunked extract request: " + e.getMessage());
-            }
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            chatConfigName = params.get("chatConfig");
         }
 
-        String text = extractWorkText(user, work);
-        if (text == null || text.isEmpty()) {
-            return Response.status(400).entity("{\"error\":\"No text content found\"}").build();
-        }
-
-        BaseRecord chatConfig = null;
-        if (chatConfigName != null) {
-            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
-        }
-
-        List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text);
-        BaseRecord result = buildResult();
         try {
-            result.set("sceneList", sceneList);
-            result.set("extractionComplete", true);
-            result.set("chunksProcessed", -1);
-        } catch (Exception e) { logger.warn("Failed to build chunked result: " + e.getMessage()); }
-        return Response.status(200).entity(toJson(result)).build();
+            BaseRecord result = PictureBookUtil.extractChunked(user, workObjectId, chatConfigName);
+            return Response.status(200).entity(toJson(result)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
     }
 
     /**
@@ -992,127 +218,26 @@ public class PictureBookService {
     public Response extract(@PathParam("workObjectId") String workObjectId,
             String json, @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord work = findWork(user, workObjectId);
-        if (work == null) return Response.status(404).entity("{\"error\":\"Work not found\"}").build();
 
-        int count = MAX_SCENES_DEFAULT;
+        int count = PictureBookUtil.MAX_SCENES_DEFAULT;
         String chatConfigName = null;
         String genre = null;
         String bookName = null;
-        if (json != null && !json.trim().isEmpty()) {
-            try {
-                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
-                        RecordDeserializerConfig.getUnfilteredModule());
-                Object countObj = params.get("count");
-                if (countObj instanceof Number) count = ((Number) countObj).intValue();
-                chatConfigName = params.get("chatConfig");
-                genre = params.get("genre");
-                bookName = params.get("bookName");
-            } catch (Exception e) {
-                logger.warn("Failed to parse extract request: " + e.getMessage());
-            }
-        }
-        if (count > MAX_SCENES_DEFAULT) count = MAX_SCENES_DEFAULT;
-
-        String text = extractWorkText(user, work);
-        if (text == null || text.isEmpty()) {
-            return Response.status(400).entity("{\"error\":\"No text content found\"}").build();
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            Object countObj = params.get("count");
+            if (countObj instanceof Number) count = ((Number) countObj).intValue();
+            chatConfigName = params.get("chatConfig");
+            genre = params.get("genre");
+            bookName = params.get("bookName");
         }
 
-        BaseRecord chatConfig = null;
-        if (chatConfigName != null) {
-            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
+        try {
+            BaseRecord meta = PictureBookUtil.extract(user, workObjectId, count, chatConfigName, genre, bookName);
+            return Response.status(200).entity(toJson(meta)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
         }
-
-        // Create book group under ~/PictureBooks/{bookName}/
-        String effectiveBookName = (bookName != null && !bookName.isEmpty()) ? bookName : work.get(FieldNames.FIELD_NAME);
-        BaseRecord bookGroup = ensureBookGroup(user, effectiveBookName);
-        if (bookGroup == null) {
-            return Response.status(500).entity("{\"error\":\"Failed to create book group\"}").build();
-        }
-        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
-        if (bookGroupPath == null) bookGroupPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + effectiveBookName;
-
-        // Ensure sub-groups under book group
-        BaseRecord scenesGroup = ensureSubGroup(user, bookGroupPath, "Scenes");
-        BaseRecord charsGroup = ensureSubGroup(user, bookGroupPath, "Characters");
-        if (scenesGroup == null || charsGroup == null) {
-            return Response.status(500).entity("{\"error\":\"Failed to create sub-groups\"}").build();
-        }
-
-        // Extract scenes
-        WebSocketService.chirpUser(user, new String[] { "bgActivity", "auto_awesome", "Extracting scenes..." });
-        Map<String, String> sceneVars = new LinkedHashMap<>();
-        sceneVars.put("count", String.valueOf(count));
-        sceneVars.put("text", text.length() > 8000 ? text.substring(0, 8000) : text);
-        String llmScenes = callLlm(user, chatConfig, "pictureBook.extract-scenes", sceneVars);
-        List<Map<String, Object>> extractedScenes = parseLlmJsonArray(llmScenes);
-
-        // Collect unique character names across all scenes
-        Map<String, Map<String, Object>> uniqueChars = new LinkedHashMap<>();
-        for (Map<String, Object> scene : extractedScenes) {
-            Object charsObj = scene.get("characters");
-            if (charsObj instanceof List) {
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> sceneChars = (List<Map<String, Object>>) charsObj;
-                for (Map<String, Object> sc : sceneChars) {
-                    String cname = (String) sc.get("name");
-                    if (cname != null && !cname.isEmpty() && !uniqueChars.containsKey(cname)) {
-                        uniqueChars.put(cname, sc);
-                    }
-                }
-            }
-        }
-
-        // Extract character details and create charPerson records
-        Map<String, String> charObjectIds = new LinkedHashMap<>();
-        // createCharPerson() failures are never silently dropped — collected here so a 200
-        // response can never mean "silently 0 characters created" (see #5 in the fix plan).
-        List<String> failedCharacters = new ArrayList<>();
-        int charIdx = 0;
-        for (Map.Entry<String, Map<String, Object>> entry : uniqueChars.entrySet()) {
-            String cname = entry.getKey();
-            charIdx++;
-            WebSocketService.chirpUser(user, new String[] { "bgActivity", "person", "Extracting character " + charIdx + "/" + uniqueChars.size() + ": " + cname });
-            Map<String, String> charVars = new LinkedHashMap<>();
-            charVars.put("name", cname);
-            charVars.put("text", text.length() > 8000 ? text.substring(0, 8000) : text);
-            String llmChar = callLlm(user, chatConfig, "pictureBook.extract-character", charVars);
-            Map<String, Object> charData = parseLlmJsonObject(llmChar);
-            if (charData.isEmpty()) charData = new LinkedHashMap<>(entry.getValue());
-            if (!charData.containsKey("name")) charData.put("name", cname);
-
-            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre);
-            if (cp != null) {
-                charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
-            } else {
-                logger.error("createCharPerson failed for '" + cname + "' during /extract — character will be absent from the book");
-                failedCharacters.add(cname);
-            }
-        }
-
-        // Create scene data.note records
-        List<BaseRecord> metaScenes = new ArrayList<>();
-        int idx = 0;
-        for (Map<String, Object> sceneData : extractedScenes) {
-            BaseRecord note = createSceneNote(user, scenesGroup, sceneData, idx);
-            if (note != null) {
-                BaseRecord sceneEntry = buildSceneEntry(note, sceneData, idx, charObjectIds);
-                if (sceneEntry != null) metaScenes.add(sceneEntry);
-            }
-            idx++;
-        }
-
-        // Build and save .pictureBookMeta
-        WebSocketService.chirpUser(user, new String[] { "bgActivity", "save", "Saving book..." });
-        BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
-        if (!failedCharacters.isEmpty()) {
-            try { meta.set("failedCharacters", failedCharacters); } catch (Exception e) { logger.warn("Failed to record failedCharacters on meta: " + e.getMessage()); }
-        }
-        saveMeta(user, bookGroupPath, meta);
-        WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
-
-        return Response.status(200).entity(toJson(meta)).build();
     }
 
     /**
@@ -1130,177 +255,56 @@ public class PictureBookService {
     public Response createFromScenes(@PathParam("workObjectId") String workObjectId,
             String json, @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord work = findWork(user, workObjectId);
-        if (work == null) return Response.status(404).entity("{\"error\":\"Work not found\"}").build();
 
         String chatConfigName = null;
         String genre = null;
         String bookName = null;
         List<Map<String, Object>> sceneList = new ArrayList<>();
         List<Map<String, Object>> charDataList = new ArrayList<>();
-        if (json != null && !json.trim().isEmpty()) {
-            try {
-                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
-                        RecordDeserializerConfig.getUnfilteredModule());
-                chatConfigName = params.get("chatConfig");
-                genre = params.get("genre");
-                bookName = params.get("bookName");
-                Object sl = params.get("sceneList");
-                if (sl instanceof List) {
-                    for (Object item : (List<?>) sl) {
-                        if (item instanceof BaseRecord) {
-                            BaseRecord r = (BaseRecord) item;
-                            Map<String, Object> m = new LinkedHashMap<>();
-                            for (FieldType f : r.getFields()) m.put(f.getName(), r.get(f.getName()));
-                            sceneList.add(m);
-                        } else if (item instanceof Map) {
-                            sceneList.add((Map<String, Object>) item);
-                        }
-                    }
-                }
-                Object cl = params.get("characters");
-                if (cl instanceof List) {
-                    for (Object item : (List<?>) cl) {
-                        if (item instanceof BaseRecord) {
-                            BaseRecord r = (BaseRecord) item;
-                            Map<String, Object> m = new LinkedHashMap<>();
-                            for (FieldType f : r.getFields()) m.put(f.getName(), r.get(f.getName()));
-                            charDataList.add(m);
-                        } else if (item instanceof Map) {
-                            charDataList.add((Map<String, Object>) item);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                logger.warn("Failed to parse create-from-scenes request: " + e.getMessage());
-            }
-        }
-        if (sceneList.isEmpty()) {
-            return Response.status(400).entity("{\"error\":\"sceneList is required\"}").build();
-        }
-
-        String effectiveBookName = (bookName != null && !bookName.isEmpty()) ? bookName : work.get(FieldNames.FIELD_NAME);
-        BaseRecord bookGroup = ensureBookGroup(user, effectiveBookName);
-        if (bookGroup == null) {
-            return Response.status(500).entity("{\"error\":\"Failed to create book group\"}").build();
-        }
-        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
-        if (bookGroupPath == null) bookGroupPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + effectiveBookName;
-
-        BaseRecord scenesGroup = ensureSubGroup(user, bookGroupPath, "Scenes");
-        BaseRecord charsGroup = ensureSubGroup(user, bookGroupPath, "Characters");
-        if (scenesGroup == null || charsGroup == null) {
-            return Response.status(500).entity("{\"error\":\"Failed to create sub-groups\"}").build();
-        }
-
-        BaseRecord chatConfig = null;
-        if (chatConfigName != null) {
-            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
-        }
-
-        // Extract text for LLM character extraction (if no pre-built character data)
-        String text = extractWorkText(user, work);
-
-        // If character data was provided from Step 3, use it directly; otherwise extract from scenes
-        if (charDataList.isEmpty()) {
-            // Collect unique character names from scene list
-            Map<String, Map<String, Object>> uniqueChars = new LinkedHashMap<>();
-            for (Map<String, Object> scene : sceneList) {
-                Object charsObj = scene.get("characters");
-                if (charsObj instanceof List) {
-                    List<Object> sceneChars = (List<Object>) charsObj;
-                    for (Object sc : sceneChars) {
-                        String cname = null;
-                        Map<String, Object> cmap = null;
-                        if (sc instanceof Map) {
-                            cmap = (Map<String, Object>) sc;
-                            cname = (String) cmap.get("name");
-                        } else if (sc instanceof String) {
-                            cname = (String) sc;
-                            cmap = new LinkedHashMap<>();
-                            cmap.put("name", cname);
-                        }
-                        if (cname != null && !cname.isEmpty() && !uniqueChars.containsKey(cname)) {
-                            uniqueChars.put(cname, cmap);
-                        }
-                    }
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            chatConfigName = params.get("chatConfig");
+            genre = params.get("genre");
+            bookName = params.get("bookName");
+            Object sl = params.get("sceneList");
+            if (sl instanceof List) {
+                for (Object item : (List<?>) sl) {
+                    sceneList.add(toMap(item));
                 }
             }
-            for (Map.Entry<String, Map<String, Object>> entry : uniqueChars.entrySet()) {
-                charDataList.add(entry.getValue());
-            }
-        }
-
-        // Create charPerson records — use LLM for detail extraction if needed
-        Map<String, String> charObjectIds = new LinkedHashMap<>();
-        // createCharPerson() failures are never silently dropped — collected here so a 200
-        // response can never mean "silently 0 characters created" (see #5 in the fix plan).
-        List<String> failedCharacters = new ArrayList<>();
-        int cfsCharIdx = 0;
-        for (Map<String, Object> charData : charDataList) {
-            String cname = (String) charData.get("name");
-            if (cname == null || cname.isEmpty()) continue;
-            cfsCharIdx++;
-            WebSocketService.chirpUser(user, new String[] { "bgActivity", "person", "Creating character " + cfsCharIdx + "/" + charDataList.size() + ": " + cname });
-
-            // If appearance is missing and we have text, use LLM to extract details
-            if ((charData.get("appearance") == null || ((String) charData.getOrDefault("appearance", "")).isEmpty())
-                    && text != null && !text.isEmpty() && chatConfig != null) {
-                Map<String, String> charVars = new LinkedHashMap<>();
-                charVars.put("name", cname);
-                charVars.put("text", text.length() > 8000 ? text.substring(0, 8000) : text);
-                String llmChar = callLlm(user, chatConfig, "pictureBook.extract-character", charVars);
-                Map<String, Object> llmData = parseLlmJsonObject(llmChar);
-                if (!llmData.isEmpty()) {
-                    // Merge LLM data without overwriting user edits
-                    for (Map.Entry<String, Object> e : llmData.entrySet()) {
-                        if (!charData.containsKey(e.getKey()) || charData.get(e.getKey()) == null
-                                || ((charData.get(e.getKey()) instanceof String) && ((String) charData.get(e.getKey())).isEmpty())) {
-                            charData.put(e.getKey(), e.getValue());
-                        }
-                    }
+            Object cl = params.get("characters");
+            if (cl instanceof List) {
+                for (Object item : (List<?>) cl) {
+                    charDataList.add(toMap(item));
                 }
             }
-
-            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre);
-            if (cp != null) {
-                charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
-            } else {
-                logger.error("createCharPerson failed for '" + cname + "' during /create-from-scenes — character will be absent from the book");
-                failedCharacters.add(cname);
-            }
         }
 
-        // Create scene notes
-        List<BaseRecord> metaScenes = new ArrayList<>();
-        int idx = 0;
-        for (Map<String, Object> sceneData : sceneList) {
-            BaseRecord note = createSceneNote(user, scenesGroup, sceneData, idx);
-            if (note != null) {
-                BaseRecord sceneEntry = buildSceneEntry(note, sceneData, idx, charObjectIds);
-                if (sceneEntry != null) metaScenes.add(sceneEntry);
-            }
-            idx++;
+        try {
+            BaseRecord meta = PictureBookUtil.createFromScenes(user, workObjectId, chatConfigName, genre, bookName,
+                    sceneList, charDataList);
+            return Response.status(200).entity(toJson(meta)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
         }
+    }
 
-        WebSocketService.chirpUser(user, new String[] { "bgActivity", "save", "Saving book..." });
-        BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
-        if (!failedCharacters.isEmpty()) {
-            try { meta.set("failedCharacters", failedCharacters); } catch (Exception e) { logger.warn("Failed to record failedCharacters on meta: " + e.getMessage()); }
+    /** Converts a deserialized list item (BaseRecord or Map) into a plain Map for PictureBookUtil. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> toMap(Object item) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        if (item instanceof BaseRecord) {
+            BaseRecord r = (BaseRecord) item;
+            for (FieldType f : r.getFields()) m.put(f.getName(), r.get(f.getName()));
+        } else if (item instanceof Map) {
+            m.putAll((Map<String, Object>) item);
         }
-        saveMeta(user, bookGroupPath, meta);
-        WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
-
-        return Response.status(200).entity(toJson(meta)).build();
+        return m;
     }
 
     /**
      * POST /scene/{sceneObjectId}/generate
-     * Generate SD image for one scene using the 4-stage pipeline:
-     *   Stage 1: SDXL portrait generation per scene character (uses narrative prompt stored on charPerson)
-     *   Stage 2: SDXL landscape generation via LLM prompt
-     *   Stage 3: Stitch 3-panel reference composite [portrait1 | portrait2|landscape | landscape]
-     *   Stage 4: Flux Kontext composite from reference + scene description
+     * Generate SD image for one scene using the 4-stage pipeline (see PictureBookUtil.generateSceneImage).
      * Body: { chatConfig, sdConfig: {steps,refinerSteps,cfg,hires}, promptOverride }
      */
     @RolesAllowed({"admin", "user"})
@@ -1312,420 +316,48 @@ public class PictureBookService {
             String json, @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
-        Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneObjectId);
-        sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        sq.planMost(false);
-        BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
-        if (scene == null) return Response.status(404).entity("{\"error\":\"Scene not found\"}").build();
-
-        String chatConfigName = null;
-        String promptOverride = null;
-        String promptTemplateOverride = null;
-        int steps = DEFAULT_STEPS;
-        int refinerSteps = DEFAULT_REFINER_STEPS;
-        int cfg = DEFAULT_CFG;
-        boolean hires = DEFAULT_HIRES;
-        int seed = -1;
-        String sdModelName = null;
-        String sdRefinerModelName = null;
-        double denoisingStrength = -1;
-        String sdSampler = null;
-        String sdScheduler = null;
-        String sdRefinerSampler = null;
-        String sdRefinerScheduler = null;
-        List<String> sdLoras = null;
-        // Default to "illustration" to preserve prior behavior when sdConfig omits style
-        String style = "illustration";
-        // Explicit book/fallback flag — defaults to true (all current picture-book scenes are
-        // created under .../Scenes/); the client may pass isBook:false for the legacy ~/Chat
-        // fallback that should not persist/reuse portraits. Replaces inferring intent from
-        // scene group path text (see #4 in the fix plan).
-        Boolean isBookOverride = null;
-
-        if (json != null && !json.trim().isEmpty()) {
-            try {
-                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
-                        RecordDeserializerConfig.getUnfilteredModule());
-                chatConfigName = params.get("chatConfig");
-                promptOverride = params.get("promptOverride");
-                promptTemplateOverride = params.get("promptTemplate");
-                Object ibv = params.get("isBook");
-                if (ibv instanceof Boolean) isBookOverride = (Boolean) ibv;
-                BaseRecord sdConf = params.get("sdConfig");
-                if (sdConf != null) {
-                    Object sv = sdConf.get("steps"); if (sv instanceof Number) steps = ((Number) sv).intValue();
-                    Object rv = sdConf.get("refinerSteps"); if (rv instanceof Number) refinerSteps = ((Number) rv).intValue();
-                    Object cv = sdConf.get("cfg"); if (cv instanceof Number) cfg = ((Number) cv).intValue();
-                    Object hv = sdConf.get("hires"); if (hv instanceof Boolean) hires = (Boolean) hv;
-                    Object seedV = sdConf.get("seed"); if (seedV instanceof Number) seed = ((Number) seedV).intValue();
-                    Object mv = sdConf.get("model"); if (mv instanceof String) sdModelName = (String) mv;
-                    Object rmv = sdConf.get("refinerModel"); if (rmv instanceof String) sdRefinerModelName = (String) rmv;
-                    Object dv = sdConf.get("denoisingStrength"); if (dv instanceof Number) denoisingStrength = ((Number) dv).doubleValue();
-                    Object smpv = sdConf.get("sampler"); if (smpv instanceof String) sdSampler = (String) smpv;
-                    Object schv = sdConf.get("scheduler"); if (schv instanceof String) sdScheduler = (String) schv;
-                    Object rsmpv = sdConf.get("refinerSampler"); if (rsmpv instanceof String) sdRefinerSampler = (String) rsmpv;
-                    Object rschv = sdConf.get("refinerScheduler"); if (rschv instanceof String) sdRefinerScheduler = (String) rschv;
-                    Object lorasV = sdConf.get("loras"); if (lorasV instanceof List) sdLoras = (List<String>) lorasV;
-                    Object styv = sdConf.get("style"); if (styv instanceof String && !((String) styv).isEmpty()) style = (String) styv;
-                }
-            } catch (Exception e) { logger.warn("Failed to parse generate request: " + e.getMessage()); }
-        }
-
-        // Clamp client-supplied style to the allowed set once, so both the FLUX and landscape-LLM
-        // paths only ever see a valid value (the model's `limit` is not enforced on this in-memory record).
-        final String parsedStyle = style;
-        if (parsedStyle == null || ALLOWED_STYLES.stream().noneMatch(s -> s.equalsIgnoreCase(parsedStyle))) {
-            style = "illustration";
+        PictureBookUtil.SceneGenerationParams sgp = new PictureBookUtil.SceneGenerationParams();
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            sgp.chatConfigName = params.get("chatConfig");
+            sgp.promptOverride = params.get("promptOverride");
+            sgp.promptTemplateOverride = params.get("promptTemplate");
+            Object ibv = params.get("isBook");
+            if (ibv instanceof Boolean) sgp.isBookOverride = (Boolean) ibv;
+            BaseRecord sdConf = params.get("sdConfig");
+            if (sdConf != null) {
+                Object sv = sdConf.get("steps"); if (sv instanceof Number) sgp.steps = ((Number) sv).intValue();
+                Object rv = sdConf.get("refinerSteps"); if (rv instanceof Number) sgp.refinerSteps = ((Number) rv).intValue();
+                Object cv = sdConf.get("cfg"); if (cv instanceof Number) sgp.cfg = ((Number) cv).intValue();
+                Object hv = sdConf.get("hires"); if (hv instanceof Boolean) sgp.hires = (Boolean) hv;
+                Object seedV = sdConf.get("seed"); if (seedV instanceof Number) sgp.seed = ((Number) seedV).intValue();
+                Object mv = sdConf.get("model"); if (mv instanceof String) sgp.sdModelName = (String) mv;
+                Object rmv = sdConf.get("refinerModel"); if (rmv instanceof String) sgp.sdRefinerModelName = (String) rmv;
+                Object dv = sdConf.get("denoisingStrength"); if (dv instanceof Number) sgp.denoisingStrength = ((Number) dv).doubleValue();
+                Object smpv = sdConf.get("sampler"); if (smpv instanceof String) sgp.sdSampler = (String) smpv;
+                Object schv = sdConf.get("scheduler"); if (schv instanceof String) sgp.sdScheduler = (String) schv;
+                Object rsmpv = sdConf.get("refinerSampler"); if (rsmpv instanceof String) sgp.sdRefinerSampler = (String) rsmpv;
+                Object rschv = sdConf.get("refinerScheduler"); if (rschv instanceof String) sgp.sdRefinerScheduler = (String) rschv;
+                @SuppressWarnings("unchecked")
+                Object lorasV = sdConf.get("loras"); if (lorasV instanceof List) sgp.sdLoras = (List<String>) lorasV;
+                Object styv = sdConf.get("style"); if (styv instanceof String && !((String) styv).isEmpty()) sgp.style = (String) styv;
+            }
         }
 
         String sdApiType = context.getInitParameter("sd.server.apiType");
         String sdServer  = context.getInitParameter("sd.server");
-        if (sdApiType == null || sdServer == null)
-            return Response.status(500).entity("{\"error\":\"SD server not configured\"}").build();
-
-        String sceneText = scene.get("text");
-        Map<String, Object> sceneData = sceneText != null ? parseLlmJsonObject(sceneText) : new LinkedHashMap<>();
-        String setting = (String) sceneData.getOrDefault("setting", "");
-        String action  = (String) sceneData.getOrDefault("action", "");
-        String mood    = (String) sceneData.getOrDefault("mood", "");
-
-        BaseRecord chatConfig = null;
-        if (chatConfigName != null)
-            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
-
-        BaseRecord sdConfigRec;
-        try {
-            sdConfigRec = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-            sdConfigRec.set("steps", steps);
-            sdConfigRec.set("refinerSteps", refinerSteps);
-            sdConfigRec.set("cfg", cfg);
-            sdConfigRec.set("hires", hires);
-            sdConfigRec.set("seed", seed);
-            if (sdModelName != null && !sdModelName.isEmpty()) sdConfigRec.set("model", sdModelName);
-            if (sdRefinerModelName != null && !sdRefinerModelName.isEmpty()) sdConfigRec.set("refinerModel", sdRefinerModelName);
-            if (denoisingStrength >= 0) sdConfigRec.set("denoisingStrength", denoisingStrength);
-            if (sdSampler != null && !sdSampler.isEmpty()) sdConfigRec.set("sampler", sdSampler);
-            if (sdScheduler != null && !sdScheduler.isEmpty()) sdConfigRec.set("scheduler", sdScheduler);
-            if (sdRefinerSampler != null && !sdRefinerSampler.isEmpty()) sdConfigRec.set("refinerSampler", sdRefinerSampler);
-            if (sdRefinerScheduler != null && !sdRefinerScheduler.isEmpty()) sdConfigRec.set("refinerScheduler", sdRefinerScheduler);
-            if (sdLoras != null && !sdLoras.isEmpty()) sdConfigRec.set("loras", sdLoras);
-            if (style != null && !style.isEmpty()) sdConfigRec.set("style", style);
-        } catch (Exception e) {
-            logger.error("Failed to create sdConfig: " + e.getMessage());
-            return Response.status(500).entity("{\"error\":\"SD config error\"}").build();
-        }
-
-        String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
-        if (sceneGroupPath == null) sceneGroupPath = "~/Chat";
-        SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType), sdServer);
-
-        // promptOverride: skip pipeline, direct SDXL generation
-        if (promptOverride != null && !promptOverride.isEmpty()) {
-            try {
-                WebSocketService.chirpUser(user, new String[] { "bgActivity", "image", "Generating image..." });
-                sdConfigRec.set("description", promptOverride);
-                // Flow the user-selected style through (defaults to "illustration" when absent)
-                sdConfigRec.set("style", style);
-                String imageName = "scene_" + sceneObjectId + "_" + System.currentTimeMillis();
-                List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, sdConfigRec, imageName, 1, hires, -1);
-                if (images == null || images.isEmpty())
-                    return Response.status(500).entity("{\"error\":\"SD generation failed\"}").build();
-                BaseRecord image = images.get(0);
-                String imageOid = image.get(FieldNames.FIELD_OBJECT_ID);
-                // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption
-                // (see ByteModelUtil.getValue(); data.data inherits crypto.cryptoByteStore).
-                byte[] overrideBytes = ByteModelUtil.getValue(image);
-                IOSystem.getActiveContext().getAccessPoint().member(user, scene, image, null, true);
-                updateSceneImageId(user, scene, imageOid);
-                BaseRecord genResult = buildResult();
-                genResult.set("imageObjectId", imageOid);
-                genResult.set("prompt", promptOverride);
-                genResult.set("seed", extractSeedFromImage(image));
-                return Response.status(200).entity(toJson(genResult)).build();
-            } catch (Exception e) {
-                logger.error("Override SD generation failed: " + e.getMessage());
-                return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
-            } finally {
-                // Clear the activity bar on ALL exits (early 500, success, catch 500)
-                WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
-            }
-        }
 
         try {
-            // Stage 1: Portrait bytes for up to 2 scene characters
-            WebSocketService.chirpUser(user, new String[] { "bgActivity", "face", "Generating portraits..." });
-            // Characters may be stored as [{name:...}] maps or as objectId strings
-            List<byte[]> portraitBytesList = new ArrayList<>();
-            List<String> portraitPromptList = new ArrayList<>();
-            // Persist+link+reuse portraits only for real books; the caller drives this
-            // explicitly via isBook (default true) rather than inferring intent from scene
-            // group path text. false selects the legacy ~/Chat fallback render-use-delete
-            // behavior so portraits are not scattered/orphaned outside a book.
-            boolean isBook = (isBookOverride != null) ? isBookOverride : true;
-            List<String> failedPortraits = new ArrayList<>();
-            Object charsObj = sceneData.get("characters");
-            if (charsObj instanceof List) {
-                @SuppressWarnings("unchecked")
-                List<Object> charItems = (List<Object>) charsObj;
-                for (Object charItem : charItems) {
-                    if (portraitBytesList.size() >= 2) break;
-                    String cname = null;
-                    String charOid = null;
-                    if (charItem instanceof Map) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> cmap = (Map<String, Object>) charItem;
-                        cname = (String) cmap.get("name");
-                    } else if (charItem instanceof String) {
-                        charOid = (String) charItem;
-                    }
-
-                    BaseRecord cp = null;
-                    try {
-                        if (charOid != null) {
-                            Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charOid);
-                            cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                            cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile"});
-                            cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
-                        } else if (cname != null) {
-                            // Search by name — scope to scene's parent group's Characters/ sibling
-                            String charGroupPath = sceneGroupPath.replace("/Scenes", "/Characters");
-                            BaseRecord charGrp = IOSystem.getActiveContext().getPathUtil().findPath(user,
-                                    ModelNames.MODEL_GROUP, charGroupPath, GroupEnumType.DATA.toString(),
-                                    (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                            if (charGrp != null) {
-                                Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, cname);
-                                cq.field(FieldNames.FIELD_GROUP_ID, charGrp.get(FieldNames.FIELD_ID));
-                                cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                                cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile"});
-                                cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
-                            }
-                        }
-                    } catch (Exception e) {
-                        logger.warn("Failed to find character: " + (cname != null ? cname : charOid) + ": " + e.getMessage());
-                        continue;
-                    }
-
-                    if (cp == null) continue;
-                    if (cname == null) cname = cp.get(FieldNames.FIELD_NAME);
-                    // narrative is a foreign model (olio.narrative) — read sdPrompt from it
-                    String portraitPrompt2 = null;
-                    BaseRecord cpNarrative = cp.get("narrative");
-                    if (cpNarrative != null) {
-                        portraitPrompt2 = cpNarrative.get("sdPrompt");
-                        if (portraitPrompt2 == null || portraitPrompt2.isBlank()) {
-                            portraitPrompt2 = cpNarrative.get("physicalDescription");
-                        }
-                    }
-                    if (portraitPrompt2 == null || portraitPrompt2.isBlank()) {
-                        logger.warn("No portrait prompt (narrative) for: " + cname + " — skipping portrait");
-                        continue;
-                    }
-
-                    // B1: Populate the character's profile + portrait (with byteStore) so we can
-                    // reuse an already-persisted portrait rather than regenerating it every scene.
-                    BaseRecord profile = cp.get("profile");
-                    if (profile == null) {
-                        try {
-                            IOSystem.getActiveContext().getReader().populate(cp, new String[] { "profile" });
-                            profile = cp.get("profile");
-                        } catch (Exception e) {
-                            logger.warn("Failed to populate profile for " + cname + ": " + e.getMessage());
-                        }
-                    }
-                    byte[] existingPortraitBytes = null;
-                    if (profile != null) {
-                        try {
-                            IOSystem.getActiveContext().getReader().populate(profile, new String[] { "portrait" });
-                            BaseRecord existingPortrait = profile.get("portrait");
-                            if (existingPortrait != null) {
-                                IOSystem.getActiveContext().getReader().populate(existingPortrait, new String[] { FieldNames.FIELD_BYTE_STORE });
-                                // Must go through ByteModelUtil — a raw .get() bypasses
-                                // decompression/decryption (see ByteModelUtil.getValue()).
-                                existingPortraitBytes = ByteModelUtil.getValue(existingPortrait);
-                            }
-                        } catch (Exception e) {
-                            logger.warn("Failed to populate portrait for " + cname + ": " + e.getMessage());
-                        }
-                    }
-
-                    // Reuse branch: a book character with a persisted portrait — no re-render.
-                    if (isBook && existingPortraitBytes != null && existingPortraitBytes.length > 0) {
-                        portraitBytesList.add(existingPortraitBytes);
-                        portraitPromptList.add(SWUtil.stripSDXLWeighting(portraitPrompt2));
-                        logger.info("Reusing persisted portrait for " + cname + " (no re-render)");
-                        continue;
-                    }
-
-                    try {
-                        // Portrait inherits user's SD config (model, sampler, scheduler) but forces hires=false
-                        BaseRecord portCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-                        portCfg.set("steps", steps);
-                        portCfg.set("cfg", cfg);
-                        portCfg.set("hires", false);
-                        portCfg.set("seed", seed);
-                        portCfg.set("description", portraitPrompt2);
-                        portCfg.set("negativePrompt", NEG_PROMPT);
-                        if (sdModelName != null && !sdModelName.isEmpty()) portCfg.set("model", sdModelName);
-                        if (sdSampler != null && !sdSampler.isEmpty()) portCfg.set("sampler", sdSampler);
-                        if (sdScheduler != null && !sdScheduler.isEmpty()) portCfg.set("scheduler", sdScheduler);
-                        String portName = "portrait_" + cname.replace(" ", "_") + "_" + System.currentTimeMillis();
-                        // Render book portraits into the book's Characters/ group (not the Scenes group);
-                        // the fallback (~/Chat) renders in place and is deleted below.
-                        String portraitGroupPath = isBook ? sceneGroupPath.replace("/Scenes", "/Characters") : sceneGroupPath;
-                        List<BaseRecord> portImages = sdu.createImage(user, portraitGroupPath, portCfg, portName, 1, false, -1);
-                        if (portImages == null || portImages.isEmpty()) { logger.warn("Portrait generation failed: " + cname); continue; }
-                        // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption.
-                        byte[] portBytes = ByteModelUtil.getValue(portImages.get(0));
-                        if (portBytes == null || portBytes.length == 0) {
-                            // Unusable image — delete regardless of book/fallback
-                            try { IOSystem.getActiveContext().getAccessPoint().delete(user, portImages.get(0)); } catch (Exception ignored) {}
-                            continue;
-                        }
-                        portraitBytesList.add(portBytes);
-                        portraitPromptList.add(SWUtil.stripSDXLWeighting(portraitPrompt2));
-
-                        if (isBook) {
-                            // Persist+link: attach the rendered portrait to the character via a
-                            // PBAC-safe partial identity.profile update (id + portrait only) — do NOT
-                            // re-persist the full charPerson graph (avoids groupless denial).
-                            BaseRecord newImage = portImages.get(0);
-                            try {
-                                Long profIdObj = (profile != null) ? profile.get(FieldNames.FIELD_ID) : null;
-                                long profId = (profIdObj != null) ? profIdObj.longValue() : 0L;
-                                String profOid = (profile != null) ? profile.get(FieldNames.FIELD_OBJECT_ID) : null;
-
-                                if (profId <= 0L) {
-                                    // No usable profile id — this character predates the createCharPerson()
-                                    // fix that persists a real profile up-front. Resolve/create one now
-                                    // rather than leaving the rendered portrait silently unlinked.
-                                    BaseRecord newProfile = createPersistedForeignInstance(user, ModelNames.MODEL_PROFILE);
-                                    if (newProfile != null) {
-                                        BaseRecord linked = patchCharPersonField(user, cp, "profile", newProfile);
-                                        if (linked != null) {
-                                            Long newIdObj = newProfile.get(FieldNames.FIELD_ID);
-                                            profId = (newIdObj != null) ? newIdObj.longValue() : 0L;
-                                            profOid = newProfile.get(FieldNames.FIELD_OBJECT_ID);
-                                            logger.info("Resolved missing profile for " + cname + " (new profile id " + profId + ")");
-                                        } else {
-                                            logger.error("Failed to link newly-created profile to charPerson " + cname);
-                                        }
-                                    } else {
-                                        logger.error("Failed to create a replacement profile for " + cname);
-                                    }
-                                }
-
-                                if (profId > 0L) {
-                                    BaseRecord profilePatch = RecordFactory.newInstance(ModelNames.MODEL_PROFILE);
-                                    profilePatch.set(FieldNames.FIELD_ID, profId);
-                                    // Also set objectId: cache invalidation (RecordUtil.matchIdentityRecords)
-                                    // compares objectId and NPEs if it is present-but-null on an id-only patch.
-                                    if (profOid != null) profilePatch.set(FieldNames.FIELD_OBJECT_ID, profOid);
-                                    profilePatch.set("portrait", newImage);
-                                    BaseRecord portraitLinked = IOSystem.getActiveContext().getAccessPoint().update(user, profilePatch);
-                                    if (portraitLinked == null) {
-                                        logger.error("Failed to link portrait to character " + cname + " — AccessPoint.update denied or failed (profile id " + profId + ")");
-                                        failedPortraits.add(cname);
-                                    } else {
-                                        logger.info("Persisted+linked portrait for " + cname + " (profile id " + profId + ")");
-                                    }
-                                } else {
-                                    // Fail loudly rather than leave a silently-unlinked portrait.
-                                    logger.error("Character " + cname + " has no persisted profile id even after resolution — portrait kept in group but left unlinked",
-                                            new IllegalStateException("unresolved profile for " + cname));
-                                    failedPortraits.add(cname);
-                                }
-                            } catch (Exception e) {
-                                logger.error("Failed to link portrait to character " + cname + ": " + e.getMessage(), e);
-                                failedPortraits.add(cname);
-                            }
-                        } else {
-                            // Legacy fallback: not a book — image is only used for the composite, delete it
-                            try { IOSystem.getActiveContext().getAccessPoint().delete(user, portImages.get(0)); } catch (Exception ignored) {}
-                        }
-                    } catch (Exception e) {
-                        logger.error("Portrait generation error for " + cname + ": " + e.getMessage(), e);
-                        failedPortraits.add(cname);
-                    }
-                }
-            }
-            logger.info("Stage 1 complete: " + portraitBytesList.size() + " portraits generated");
-
-            // Stage 2: Landscape generation
-            WebSocketService.chirpUser(user, new String[] { "bgActivity", "landscape", "Generating landscape..." });
-            Map<String, String> landVars = new LinkedHashMap<>();
-            landVars.put("setting", setting);
-            landVars.put("mood", mood);
-            landVars.put("time", "");
-            landVars.put("style", (style != null && !style.isEmpty()) ? style : "illustration");
-            String landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars, promptTemplateOverride);
-            if (landscapePrompt == null || landscapePrompt.isBlank()) {
-                logger.warn("Landscape prompt failed — falling back to setting text");
-                landscapePrompt = setting.isEmpty() ? "A detailed environment" : setting;
-            }
-            SWTxt2Img landReq = SWUtil.newSceneTxt2Img(landscapePrompt, NEG_PROMPT, sdConfigRec);
-            landReq.setWidth(1024);
-            landReq.setHeight(768);
-            List<BaseRecord> landImages = sdu.createSceneImage(user, sceneGroupPath,
-                    "landscape_" + sceneObjectId + "_" + System.currentTimeMillis(), landReq, null, null);
-            if (landImages == null || landImages.isEmpty())
-                return Response.status(500).entity("{\"error\":\"Landscape generation failed\"}").build();
-            BaseRecord landscapeImage = landImages.get(0);
-            // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption.
-            byte[] landscapeBytes = ByteModelUtil.getValue(landscapeImage);
-            if (landscapeBytes == null || landscapeBytes.length == 0)
-                return Response.status(500).entity("{\"error\":\"Empty landscape image\"}").build();
-            // Retain the persisted landscape record (previously deleted immediately after use,
-            // which meant only the final composite ever survived — see #3 in the fix plan) and
-            // record its objectId on the scene so it is discoverable/reusable like the composite.
-            String landscapeOid = landscapeImage.get(FieldNames.FIELD_OBJECT_ID);
-            updateSceneLandscapeId(user, scene, landscapeOid);
-
-            // Stage 3: Stitch reference composite [portrait1 | portrait2|landscape | landscape]
-            WebSocketService.chirpUser(user, new String[] { "bgActivity", "auto_awesome_mosaic", "Stitching reference..." });
-            byte[] leftBytes   = !portraitBytesList.isEmpty() ? portraitBytesList.get(0) : landscapeBytes;
-            byte[] centerBytes = portraitBytesList.size() > 1  ? portraitBytesList.get(1) : landscapeBytes;
-            byte[] refComposite = SDUtil.stitchSceneImages(leftBytes, centerBytes, landscapeBytes, 1024);
-            if (refComposite == null)
-                return Response.status(500).entity("{\"error\":\"Stitch failed\"}").build();
-
-            // Stage 4: Flux Kontext composite
-            WebSocketService.chirpUser(user, new String[] { "bgActivity", "image", "Compositing scene..." });
-            String leftDesc  = !portraitPromptList.isEmpty() ? portraitPromptList.get(0) : "";
-            String rightDesc = portraitPromptList.size() > 1  ? portraitPromptList.get(1) : "";
-            SWTxt2Img kontextReq = SWUtil.newKontextSceneTxt2Img(leftDesc, rightDesc, action, setting, style, mood, sdConfigRec);
-            List<String> promptImages = new ArrayList<>();
-            promptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(refComposite));
-            kontextReq.setPromptImages(promptImages);
-            List<BaseRecord> finalImages = sdu.createSceneImage(user, sceneGroupPath,
-                    "scene_" + sceneObjectId + "_" + System.currentTimeMillis(), kontextReq, null, null);
-            if (finalImages == null || finalImages.isEmpty())
-                return Response.status(500).entity("{\"error\":\"Kontext composite generation failed\"}").build();
-            BaseRecord finalImage = finalImages.get(0);
-            String finalImageOid = finalImage.get(FieldNames.FIELD_OBJECT_ID);
-            // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption.
-            byte[] finalBytes = ByteModelUtil.getValue(finalImage);
-            IOSystem.getActiveContext().getAccessPoint().member(user, scene, finalImage, null, true);
-            updateSceneImageId(user, scene, finalImageOid);
-            String compositePrompt = action + " " + setting;
-            WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
-            BaseRecord genResult = buildResult();
-            genResult.set("imageObjectId", finalImageOid);
-            genResult.set("prompt", compositePrompt);
-            genResult.set("seed", extractSeedFromImage(finalImage));
-            if (!failedPortraits.isEmpty()) {
-                genResult.set("failedPortraits", failedPortraits);
-            }
+            BaseRecord genResult = PictureBookUtil.generateSceneImage(user, sceneObjectId, sgp, sdApiType, sdServer);
             return Response.status(200).entity(toJson(genResult)).build();
-        } catch (Exception e) {
-            WebSocketService.chirpUser(user, new String[] { "bgActivity", "", "" });
-            logger.error("Scene image generation pipeline failed: " + e.getMessage(), e);
-            return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
         }
     }
 
     /**
      * POST /scene/{sceneObjectId}/blurb
-     * Regenerate scene blurb via LLM. Updates data.note.description.
+     * Regenerate scene blurb via LLM. Updates data.note.text (blurb key).
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -1736,79 +368,17 @@ public class PictureBookService {
             String json, @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
-        Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneObjectId);
-        sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        sq.planMost(false);
-        BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
-        if (scene == null) return Response.status(404).entity("{\"error\":\"Scene not found\"}").build();
-
         String chatConfigName = null;
-        if (json != null && !json.trim().isEmpty()) {
-            try {
-                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
-                        RecordDeserializerConfig.getUnfilteredModule());
-                chatConfigName = params.get("chatConfig");
-            } catch (Exception e) {
-                logger.warn("Failed to parse blurb request: " + e.getMessage());
-            }
-        }
-
-        String sceneText = scene.get("text");
-        Map<String, Object> sceneData = sceneText != null ? parseLlmJsonObject(sceneText) : new LinkedHashMap<>();
-        String title = (String) sceneData.getOrDefault("title", scene.get(FieldNames.FIELD_NAME));
-        String setting = (String) sceneData.getOrDefault("setting", "");
-        String action = (String) sceneData.getOrDefault("action", "");
-        String charList = "";
-        Object charsObj = sceneData.get("characters");
-        if (charsObj instanceof List) {
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> cs = (List<Map<String, Object>>) charsObj;
-            List<String> names = new ArrayList<>();
-            for (Map<String, Object> c : cs) {
-                String cname = (String) c.get("name");
-                if (cname != null) names.add(cname);
-            }
-            charList = String.join(", ", names);
-        }
-
-        BaseRecord chatConfig = null;
-        if (chatConfigName != null) {
-            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
-        }
-
-        Map<String, String> vars = new LinkedHashMap<>();
-        vars.put("title", title != null ? title : "");
-        vars.put("setting", setting);
-        vars.put("action", action);
-        vars.put("characterList", charList);
-        String blurb = callLlm(user, chatConfig, "pictureBook.scene-blurb", vars);
-        if (blurb == null || blurb.isEmpty()) {
-            return Response.status(500).entity("{\"error\":\"Blurb generation failed\"}").build();
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            chatConfigName = params.get("chatConfig");
         }
 
         try {
-            // data.note has no 'description' field — store blurb in the text JSON blob
-            String existingText = scene.get("text");
-            Map<String, Object> textData = new LinkedHashMap<>();
-            if (existingText != null && !existingText.isEmpty()) {
-                try {
-                    textData = JSONUtil.getMap(existingText.getBytes(), String.class, Object.class);
-                } catch (Exception ex) { /* ignore parse errors */ }
-            }
-            textData.put("blurb", blurb.trim());
-            scene.set("text", JSONUtil.exportObject(textData));
-            IOSystem.getActiveContext().getAccessPoint().update(user, scene);
-        } catch (Exception e) {
-            logger.error("Failed to update scene blurb: " + e.getMessage());
-            return Response.status(500).entity("{\"error\":\"Failed to save blurb\"}").build();
-        }
-
-        try {
-            BaseRecord blurbResult = buildResult();
-            blurbResult.set("blurb", blurb.trim());
+            BaseRecord blurbResult = PictureBookUtil.regenerateBlurb(user, sceneObjectId, chatConfigName);
             return Response.status(200).entity(toJson(blurbResult)).build();
-        } catch (Exception ex) {
-            return Response.status(200).entity("{\"blurb\":" + JSONUtil.exportObject(blurb.trim()) + "}").build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
         }
     }
 
@@ -1824,65 +394,11 @@ public class PictureBookService {
     public Response listScenes(@PathParam("bookObjectId") String bookObjectId,
             @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
-        if (bookGroup == null) return Response.status(404).entity("{\"error\":\"Book not found\"}").build();
-        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
-
-        BaseRecord metaRec = loadMeta(user, bookGroupPath);
-        if (metaRec == null) {
-            // No meta yet — return empty
-            return Response.status(200).entity("[]").build();
-        }
-
-        String metaJson = metaRec.get("text");
-        if (metaJson == null || metaJson.isEmpty()) {
-            return Response.status(200).entity("[]").build();
-        }
-
         try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> meta = JSONUtil.getMap(metaJson.getBytes(), String.class, Object.class);
-            Object scenesObj = meta.get("scenes");
-            if (scenesObj == null) return Response.status(200).entity("[]").build();
-
-            // Merge current blurb from each scene note into the meta's description field
-            // so blurb edits persist across page reloads
-            if (scenesObj instanceof List) {
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> scenesList = (List<Map<String, Object>>) scenesObj;
-                for (Map<String, Object> scene : scenesList) {
-                    String sceneOid = (String) scene.get("objectId");
-                    if (sceneOid == null) continue;
-                    try {
-                        Query noteQ = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneOid);
-                        noteQ.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                        noteQ.planMost(true);
-                        BaseRecord sceneNote = IOSystem.getActiveContext().getAccessPoint().find(user, noteQ);
-                        if (sceneNote != null) {
-                            String text = sceneNote.get("text");
-                            if (text != null && !text.isEmpty()) {
-                                Map<String, Object> textData = JSONUtil.getMap(text.getBytes(), String.class, Object.class);
-                                String blurb = (String) textData.get("blurb");
-                                if (blurb != null && !blurb.isEmpty()) {
-                                    scene.put("description", blurb);
-                                }
-                                // Also merge imageObjectId if present
-                                String imgOid = (String) textData.get("imageObjectId");
-                                if (imgOid != null) {
-                                    scene.put("imageObjectId", imgOid);
-                                }
-                            }
-                        }
-                    } catch (Exception e) {
-                        // Non-fatal — scene keeps its original description
-                    }
-                }
-            }
-
-            return Response.status(200).entity(JSONUtil.exportObject(scenesObj)).build();
-        } catch (Exception e) {
-            logger.error("Failed to parse meta: " + e.getMessage());
-            return Response.status(500).entity("{\"error\":\"Failed to read meta\"}").build();
+            List<Map<String, Object>> scenes = PictureBookUtil.listScenes(user, bookObjectId);
+            return Response.status(200).entity(JSONUtil.exportObject(scenes)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
         }
     }
 
@@ -1898,69 +414,29 @@ public class PictureBookService {
     public Response reorderScenes(@PathParam("bookObjectId") String bookObjectId,
             String json, @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
-        if (bookGroup == null) return Response.status(404).entity("{\"error\":\"Book not found\"}").build();
 
         List<String> newOrder = new ArrayList<>();
-        if (json != null && !json.trim().isEmpty()) {
-            try {
-                BaseRecord params = JSONUtil.importObject(ensureSchema(json), LooseRecord.class,
-                        RecordDeserializerConfig.getUnfilteredModule());
-                Object scenesObj = params.get("scenes");
-                if (scenesObj instanceof List) {
-                    @SuppressWarnings("unchecked")
-                    List<Object> sl = (List<Object>) scenesObj;
-                    for (Object o : sl) {
-                        if (o instanceof String) newOrder.add((String) o);
-                    }
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            Object scenesObj = params.get("scenes");
+            if (scenesObj instanceof List) {
+                for (Object o : (List<?>) scenesObj) {
+                    if (o instanceof String) newOrder.add((String) o);
                 }
-            } catch (Exception e) {
-                logger.warn("Failed to parse reorder request: " + e.getMessage());
             }
         }
 
-        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
-        BaseRecord metaRec = loadMeta(user, bookGroupPath);
-        if (metaRec == null) return Response.status(404).entity("{\"error\":\"Meta not found\"}").build();
-
-        String metaJson = metaRec.get("text");
         try {
-            BaseRecord meta = JSONUtil.importObject(metaJson, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-            if (meta == null) return Response.status(400).entity("{\"error\":\"Failed to parse meta\"}").build();
-
-            @SuppressWarnings("unchecked")
-            List<BaseRecord> scenes = meta.get("scenes");
-            if (scenes == null || scenes.isEmpty()) return Response.status(400).entity("{\"error\":\"No scenes in meta\"}").build();
-
-            // Rebuild list in new order
-            List<BaseRecord> reordered = new ArrayList<>();
-            for (int i = 0; i < newOrder.size(); i++) {
-                final String oid = newOrder.get(i);
-                final int newIdx = i;
-                scenes.stream()
-                        .filter(s -> oid.equals(s.get("objectId")))
-                        .findFirst()
-                        .ifPresent(s -> {
-                            try { s.set("index", newIdx); } catch (Exception ex) { /* ignore */ }
-                            reordered.add(s);
-                        });
-            }
-            meta.set("scenes", reordered);
-            saveMeta(user, bookGroupPath, meta);
-
-            BaseRecord result = buildResult();
-            result.set("reordered", true);
+            BaseRecord result = PictureBookUtil.reorderScenes(user, bookObjectId, newOrder);
             return Response.status(200).entity(toJson(result)).build();
-        } catch (Exception e) {
-            logger.error("Failed to reorder scenes: " + e.getMessage());
-            return Response.status(500).entity("{\"error\":\"" + e.getMessage() + "\"}").build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
         }
     }
 
     /**
      * DELETE /{bookObjectId}/reset
      * Delete the book group contents (Scenes/, Characters/, meta) then the group itself.
-     * Explicit child deletion — AccessPoint.delete on a group does NOT cascade.
      */
     @RolesAllowed({"admin", "user"})
     @DELETE
@@ -1969,48 +445,14 @@ public class PictureBookService {
     public Response reset(@PathParam("bookObjectId") String bookObjectId,
             @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
-        if (bookGroup == null) return Response.status(404).entity("{\"error\":\"Book not found\"}").build();
-
-        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
-        boolean ok = true;
-
-        // Delete sub-groups (Scenes/, Characters/) and their contents
-        for (String sub : new String[]{"Scenes", "Characters"}) {
-            String subPath = bookGroupPath + "/" + sub;
-            BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
-                    ModelNames.MODEL_GROUP, subPath, GroupEnumType.DATA.toString(),
-                    (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
-            if (grp != null) {
-                try {
-                    IOSystem.getActiveContext().getAccessPoint().delete(user, grp);
-                } catch (Exception e) {
-                    logger.warn("Failed to delete " + sub + " group: " + e.getMessage());
-                    ok = false;
-                }
-            }
-        }
-
-        // Delete .pictureBookMeta record
-        BaseRecord metaRec = loadMeta(user, bookGroupPath);
-        if (metaRec != null) {
-            try {
-                IOSystem.getActiveContext().getAccessPoint().delete(user, metaRec);
-            } catch (Exception e) {
-                logger.warn("Failed to delete meta: " + e.getMessage());
-            }
-        }
-
-        // Delete the book group itself
+        boolean ok;
         try {
-            IOSystem.getActiveContext().getAccessPoint().delete(user, bookGroup);
-        } catch (Exception e) {
-            logger.warn("Failed to delete book group: " + e.getMessage());
-            ok = false;
+            ok = PictureBookUtil.reset(user, bookObjectId);
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
         }
-
         try {
-            BaseRecord resetResult = buildResult();
+            BaseRecord resetResult = PictureBookUtil.buildResult();
             resetResult.set("reset", ok);
             return Response.status(200).entity(toJson(resetResult)).build();
         } catch (Exception ex) {

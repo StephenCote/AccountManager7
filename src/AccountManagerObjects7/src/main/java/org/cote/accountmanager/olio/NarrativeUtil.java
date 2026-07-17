@@ -1860,6 +1860,23 @@ public class NarrativeUtil {
 	}
 
 	/**
+	 * Treats common LLM placeholder tokens (literal "null", "n/a", "none", "unknown", "unspecified")
+	 * as equivalent to blank/absent. LLM extraction pipelines frequently emit these literal strings
+	 * for fields they could not determine, rather than omitting the key or returning a real blank
+	 * string — a plain {@code != null && !isBlank()} check does not catch this.
+	 *
+	 * @param s value to check
+	 * @return true if s is non-null, non-blank, and not a recognized placeholder token
+	 */
+	private static boolean isMeaningful(String s) {
+		if (s == null) return false;
+		String t = s.trim();
+		if (t.isEmpty()) return false;
+		String lower = t.toLowerCase();
+		return !lower.equals("null") && !lower.equals("n/a") && !lower.equals("none") && !lower.equals("unknown") && !lower.equals("unspecified");
+	}
+
+	/**
 	 * Build an SDXL-weighted portrait prompt from LLM-extracted character data.
 	 * Used by PictureBookService for characters that don't have full Olio PersonalityProfile data.
 	 * The extracted map is expected to contain: gender, age_approx, outfit_notes,
@@ -1880,22 +1897,22 @@ public class NarrativeUtil {
 		String eyes       = phys != null ? (String) phys.getOrDefault("eyes", "") : "";
 		String skin       = phys != null ? (String) phys.getOrDefault("skin", "") : "";
 		String outfitNotes = (String) charData.getOrDefault("outfit_notes", "");
-		boolean isMale = gender != null && gender.toLowerCase().contains("male") && !gender.toLowerCase().contains("female");
+		boolean isMale = isMeaningful(gender) && gender.toLowerCase().contains("male") && !gender.toLowerCase().contains("female");
 		String pronoun = isMale ? "He" : "She";
 		String label   = isMale ? "man" : "woman";
-		if (outfitNotes == null || outfitNotes.isBlank()) {
+		if (!isMeaningful(outfitNotes)) {
 			outfitNotes = "fully clothed in appropriate attire";
 			logger.warn("buildPortraitPromptFromExtractedData: no outfit_notes for {} — using fallback", name);
 		}
 		StringBuilder min = new StringBuilder();
 		min.append("a");
-		if (build != null && !build.isBlank()) min.append(" (").append(build).append(")");
+		if (isMeaningful(build)) min.append(" (").append(build).append(")");
 		min.append(" ((");
-		if (ageApprox != null && !ageApprox.isBlank()) min.append(ageApprox).append(":1.5) (");
-		if (skin != null && !skin.isBlank()) min.append(skin.toLowerCase()).append(") (");
+		if (isMeaningful(ageApprox)) min.append(ageApprox).append(":1.5) (");
+		if (isMeaningful(skin)) min.append(skin.toLowerCase()).append(") (");
 		min.append(label).append("))");
-		if (hair != null && !hair.isBlank()) min.append(" with ((").append(hair).append("))");
-		if (eyes != null && !eyes.isBlank()) min.append(" and (").append(eyes).append(" eyes)");
+		if (isMeaningful(hair)) min.append(" with ((").append(hair).append("))");
+		if (isMeaningful(eyes)) min.append(" and (").append(eyes).append(" eyes)");
 		min.append(". ").append(pronoun).append(" is (((").append(outfitNotes).append("))).");
 		return "8k highly detailed ((highest quality)) ((ultra realistic)) ((professional portrait)) of " + min;
 	}
