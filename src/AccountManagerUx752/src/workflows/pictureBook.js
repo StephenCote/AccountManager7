@@ -6,7 +6,7 @@ import { Dialog } from '../components/dialogCore.js';
 import {
     DEFAULT_SD_CONFIG,
     extractScenes, fullExtract, createFromScenes, generateSceneImage,
-    regenerateBlurb, loadPictureBook, resetPictureBook,
+    regenerateBlurb, loadPictureBook, getBookSdConfig, resetPictureBook, setSceneStatus,
     resolveImageUrl, resolveAllImageUrls
 } from './sceneExtractor.js';
 import { ObjectPicker } from '../components/picker.js';
@@ -343,16 +343,57 @@ function buildSdConfig() {
     return cfg;
 }
 
+/**
+ * Pause the batch on a scene error and let the user choose how to proceed.
+ * @returns {Promise<'cancel'|'retry'|'resume'>}
+ */
+function showGenerationErrorDialog(scene, message) {
+    return new Promise(function (resolve) {
+        Dialog.open({
+            title: 'Image Generation Failed',
+            size: 'sm',
+            closable: false,
+            content: m('div', { class: 'space-y-2' }, [
+                m('p', { class: 'text-sm' }, 'Scene "' + (scene.title || 'Untitled') + '" failed to generate:'),
+                m('p', { class: 'text-red-500 text-xs' }, message || 'Unknown error')
+            ]),
+            actions: [
+                {
+                    label: 'Cancel', icon: 'cancel', destructive: true,
+                    onclick: function () { Dialog.close(); resolve('cancel'); }
+                },
+                {
+                    label: 'Try Again', icon: 'refresh',
+                    onclick: function () { Dialog.close(); resolve('retry'); }
+                },
+                {
+                    label: 'Resume', icon: 'play_arrow', primary: true,
+                    onclick: function () { Dialog.close(); resolve('resume'); }
+                }
+            ]
+        });
+    });
+}
+
 async function doGenerateAll() {
     generating = true;
     genCancelled = false;
     m.redraw();
     let targets = scenes.length ? scenes : extractedScenes;
-    for (let s of targets) {
+    let i = 0;
+    while (i < targets.length) {
         if (genCancelled) break;
+        let s = targets[i];
         let oid = s.objectId;
-        if (!oid || genProgress[oid] === 'accepted' || genProgress[oid] === 'skipped') continue;
+        if (!oid || genProgress[oid] === 'accepted' || genProgress[oid] === 'skipped') { i++; continue; }
         await doGenerateOne(s);
+        if (genProgress[oid] === 'error') {
+            let choice = await showGenerationErrorDialog(s, sceneErrors[oid]);
+            if (choice === 'cancel') { genCancelled = true; break; }
+            if (choice === 'retry') { continue; } // same index — retry this scene, don't advance
+            // 'resume' — leave this scene as 'error' (still individually retryable) and move on
+        }
+        i++;
     }
     generating = false;
     m.redraw();
@@ -392,22 +433,33 @@ async function doGenerateOne(s) {
     m.redraw();
 }
 
-function acceptScene(oid) {
-    genProgress[oid] = 'accepted';
+/**
+ * Update local progress state immediately (for a responsive UI) and persist the same status
+ * to the scene note server-side (fire-and-forget) so it survives a reload/reopen. Server-driven
+ * statuses (generating/done/error) are already persisted inside generateSceneImage itself —
+ * this covers the purely client-driven decisions (accept/reject/skip/undo).
+ */
+function persistSceneStatus(oid, status) {
+    genProgress[oid] = status;
     m.redraw();
+    setSceneStatus(oid, status).catch(function (e) {
+        console.warn('[PictureBook] Failed to persist scene status:', e);
+    });
+}
+
+function acceptScene(oid) {
+    persistSceneStatus(oid, 'accepted');
 }
 
 function rejectScene(s) {
     let oid = s.objectId;
     s.imageObjectId = null;
     delete sceneImageUrls[oid];
-    genProgress[oid] = 'pending';
-    m.redraw();
+    persistSceneStatus(oid, 'pending');
 }
 
 function skipScene(oid) {
-    genProgress[oid] = 'skipped';
-    m.redraw();
+    persistSceneStatus(oid, 'skipped');
 }
 
 // ── Render functions ──────────────────────────────────────────────────
@@ -1023,13 +1075,13 @@ function renderStep4() {
                         // Accepted — allow undo
                         status === 'accepted' ? m('button', {
                             class: 'text-xs text-gray-400 hover:text-gray-600',
-                            onclick: function () { genProgress[oid] = 'done'; m.redraw(); }
+                            onclick: function () { persistSceneStatus(oid, 'done'); }
                         }, 'Undo accept') : null,
 
                         // Skipped — allow undo
                         status === 'skipped' ? m('button', {
                             class: 'text-xs text-gray-400 hover:text-gray-600',
-                            onclick: function () { genProgress[oid] = 'pending'; m.redraw(); }
+                            onclick: function () { persistSceneStatus(oid, 'pending'); }
                         }, 'Undo skip') : null
                     ]),
 
@@ -1333,6 +1385,73 @@ function buildActions() {
 
 // ── Entry point ───────────────────────────────────────────────────────
 
+/**
+ * If `id` is an existing picture book's group objectId (e.g. "Edit Book"/"Generate" reopened
+ * from the viewer), rehydrate scenes/progress/errors from the persisted status/error fields and
+ * jump the wizard to the right step instead of restarting blank at step 1. No-ops (leaves the
+ * wizard at its fresh step-1 state) when `id` is a genuine source document with no book yet —
+ * loadPictureBook() rejects (404) in that case.
+ */
+/**
+ * Apply a book's persisted image generation settings (see getBookSdConfig) onto the wizard's
+ * SD state vars, so a resumed/reopened book defaults to the same settings it last generated
+ * with instead of the wizard's hardcoded defaults.
+ */
+function applySdConfig(cfg) {
+    if (cfg.steps != null) sdSteps = cfg.steps;
+    if (cfg.refinerSteps != null) sdRefinerSteps = cfg.refinerSteps;
+    if (cfg.cfg != null) sdCfg = cfg.cfg;
+    if (cfg.hires != null) sdHires = cfg.hires;
+    if (cfg.style) sdStyle = cfg.style;
+    if (cfg.sampler) sdSampler = cfg.sampler;
+    if (cfg.scheduler) sdScheduler = cfg.scheduler;
+    if (cfg.refinerSampler) sdRefinerSampler = cfg.refinerSampler;
+    if (cfg.refinerScheduler) sdRefinerScheduler = cfg.refinerScheduler;
+    if (cfg.model) sdModel = cfg.model;
+    if (cfg.refinerModel) sdRefinerModel = cfg.refinerModel;
+    if (cfg.denoisingStrength != null) sdDenoisingStrength = cfg.denoisingStrength;
+    if (cfg.loras) sdLoras = cfg.loras;
+    if (cfg.seed != null && cfg.seed >= 0) sdSeed = cfg.seed;
+}
+
+async function tryResumeExistingBook(id) {
+    let existingScenes;
+    try {
+        existingScenes = await loadPictureBook(id);
+    } catch (e) {
+        return;
+    }
+    if (!existingScenes || !existingScenes.length) return;
+
+    bookObjectId = id;
+    metaScenes = existingScenes;
+    scenes = existingScenes;
+
+    try {
+        let savedSdConfig = await getBookSdConfig(id);
+        if (savedSdConfig) applySdConfig(savedSdConfig);
+    } catch (e) { /* non-fatal — wizard defaults still apply */ }
+
+    existingScenes.forEach(function (s) {
+        if (!s.objectId) return;
+        if (s.status) genProgress[s.objectId] = s.status;
+        else if (s.imageObjectId) genProgress[s.objectId] = 'done';
+        if (s.error) sceneErrors[s.objectId] = s.error;
+    });
+
+    let allResolved = existingScenes.every(function (s) {
+        let st = s.objectId ? genProgress[s.objectId] : null;
+        return st === 'accepted' || st === 'skipped';
+    });
+
+    if (allResolved) {
+        try { step5ImageUrls = await resolveAllImageUrls(existingScenes); } catch (e) { /* non-fatal */ }
+        step = 5;
+    } else {
+        step = 4;
+    }
+}
+
 async function pictureBook(entity, inst) {
     if (!inst) {
         page.toast('error', 'No instance provided');
@@ -1351,6 +1470,10 @@ async function pictureBook(entity, inst) {
 
     // Look up system defaults from the shared library (async — UI renders "Loading default..." meanwhile)
     loadDefaults();
+
+    // Resume detection: the passed id may actually be an existing book's group objectId rather
+    // than a fresh source document — see tryResumeExistingBook().
+    await tryResumeExistingBook(workObjectId);
 
     Dialog.open({
         title: 'Picture Book — ' + workName,

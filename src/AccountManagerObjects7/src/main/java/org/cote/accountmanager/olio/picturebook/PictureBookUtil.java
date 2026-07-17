@@ -284,6 +284,54 @@ public class PictureBookUtil {
     }
 
     /**
+     * Re-parse .pictureBookMeta's JSON blob back into a typed olio.pictureBookMeta record using
+     * the schema embedded in the JSON (written by buildMeta()'s meta.toFullString()) — mirrors
+     * reorderScenes()'s load/mutate/save pattern, so nested fields (scenes, sdConfig) round-trip
+     * as proper typed models rather than raw maps.
+     */
+    private static BaseRecord loadTypedMeta(BaseRecord user, String bookGroupPath) {
+        BaseRecord metaRec = loadMeta(user, bookGroupPath);
+        if (metaRec == null) return null;
+        String metaJson = metaRec.get("text");
+        if (metaJson == null || metaJson.isEmpty()) return null;
+        try {
+            return JSONUtil.importObject(metaJson, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+        } catch (Exception e) {
+            logger.error("Failed to parse meta: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Persist the last-used image generation settings for a book, so images can be recreated
+     * with the same settings later. Best-effort: a failure here must not fail the actual
+     * generation request the caller is in the middle of servicing.
+     */
+    private static void persistBookSdConfig(BaseRecord user, String bookGroupPath, BaseRecord sdConfig) {
+        try {
+            BaseRecord meta = loadTypedMeta(user, bookGroupPath);
+            if (meta == null) return;
+            meta.set("sdConfig", sdConfig);
+            saveMeta(user, bookGroupPath, meta);
+        } catch (Exception e) {
+            logger.warn("Failed to persist book sdConfig: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Read back the last-used image generation settings for a book (see persistBookSdConfig),
+     * or null if the book has never generated an image / has no meta yet.
+     */
+    public static BaseRecord getBookSdConfig(BaseRecord user, String bookObjectId) {
+        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        if (bookGroup == null) throw new PictureBookException(404, "Book not found");
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+        BaseRecord meta = loadTypedMeta(user, bookGroupPath);
+        if (meta == null) return null;
+        return meta.get("sdConfig");
+    }
+
+    /**
      * Update a scene note's text JSON with a single key/value pair, preserving existing keys.
      * Used to persist generated image object ids so the viewer fallback can find them.
      */
@@ -320,6 +368,34 @@ public class PictureBookUtil {
      */
     private static void updateSceneLandscapeId(BaseRecord user, BaseRecord scene, String landscapeObjectId) {
         updateSceneTextField(user, scene, "landscapeObjectId", landscapeObjectId);
+    }
+
+    private static final Set<String> ALLOWED_SCENE_STATUSES = new HashSet<>(Arrays.asList(
+            "pending", "generating", "done", "error", "accepted", "skipped"));
+
+    /**
+     * Update a scene note's text JSON with its generation status and (optionally) an error
+     * message, so the wizard's progress survives a reload/reopen. Mirrors updateSceneImageId's
+     * pattern. A null/empty error clears any previously stored error (e.g. on a successful retry).
+     */
+    private static void updateSceneStatus(BaseRecord user, BaseRecord scene, String status, String error) {
+        updateSceneTextField(user, scene, "status", status);
+        updateSceneTextField(user, scene, "error", error);
+    }
+
+    /**
+     * Persist a client-driven scene status (accepted/skipped/pending/etc.) — the counterpart to
+     * the server-driven statuses (generating/done/error) written inside generateSceneImage.
+     */
+    public static void setSceneStatus(BaseRecord user, String sceneObjectId, String status) {
+        if (status == null || !ALLOWED_SCENE_STATUSES.contains(status)) {
+            throw new PictureBookException(400, "Invalid status: " + status);
+        }
+        Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneObjectId);
+        sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+        if (scene == null) throw new PictureBookException(404, "Scene not found");
+        updateSceneStatus(user, scene, status, null);
     }
 
     /**
@@ -444,6 +520,7 @@ public class PictureBookUtil {
                 return null;
             }
             Chat chat = new Chat(user, chatConfig, null);
+            chat.setLlmSystemPrompt(system);
             OpenAIRequest req = chat.newRequest(chat.getModel());
             req.setStream(false);
             // Disable thinking for structured extraction tasks (Qwen3, etc.)
@@ -455,7 +532,6 @@ public class PictureBookUtil {
                 }
                 reqOpts.set("think", false);
             } catch (Exception ex) { /* ignore if field doesn't exist */ }
-            chat.newMessage(req, system, Chat.systemRole);
             chat.newMessage(req, userTpl);
             OpenAIResponse resp = chat.chat(req);
             if (resp != null && resp.getMessage() != null) {
@@ -1279,6 +1355,18 @@ public class PictureBookUtil {
         if (sceneGroupPath == null) sceneGroupPath = "~/Chat";
         SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType), sdServer);
 
+        // Mark generation started — persisted so the wizard's progress survives a reload
+        // (see listScenes()'s status/error merge and .claude/rules/model-api.md's PATCH pattern).
+        updateSceneStatus(user, scene, "generating", null);
+
+        // Auto-capture these settings on the book so images can be recreated with the same
+        // settings later (see persistBookSdConfig) — only for real book scenes (under .../Scenes),
+        // not the ~/Chat single-image fallback which has no book meta to attach settings to.
+        if (sceneGroupPath.endsWith("/Scenes")) {
+            String bookGroupPath = sceneGroupPath.substring(0, sceneGroupPath.length() - "/Scenes".length());
+            persistBookSdConfig(user, bookGroupPath, sdConfigRec);
+        }
+
         // promptOverride: skip pipeline, direct SDXL generation
         if (params.promptOverride != null && !params.promptOverride.isEmpty()) {
             try {
@@ -1297,15 +1385,18 @@ public class PictureBookUtil {
                 ByteModelUtil.getValue(image);
                 IOSystem.getActiveContext().getAccessPoint().member(user, scene, image, null, true);
                 updateSceneImageId(user, scene, imageOid);
+                updateSceneStatus(user, scene, "done", null);
                 BaseRecord genResult = buildResult();
                 genResult.set("imageObjectId", imageOid);
                 genResult.set("prompt", params.promptOverride);
                 genResult.set("seed", extractSeedFromImage(image));
                 return genResult;
             } catch (PictureBookException pbe) {
+                updateSceneStatus(user, scene, "error", pbe.getMessage());
                 throw pbe;
             } catch (Exception e) {
                 logger.error("Override SD generation failed: " + e.getMessage());
+                updateSceneStatus(user, scene, "error", e.getMessage());
                 throw new PictureBookException(500, e.getMessage());
             } finally {
                 // Clear the activity bar on ALL exits (early 500, success, catch 500)
@@ -1651,6 +1742,7 @@ public class PictureBookUtil {
             ByteModelUtil.getValue(finalImage);
             IOSystem.getActiveContext().getAccessPoint().member(user, scene, finalImage, null, true);
             updateSceneImageId(user, scene, finalImageOid);
+            updateSceneStatus(user, scene, "done", null);
             String compositePrompt = action + " " + setting;
             BaseRecord genResult = buildResult();
             genResult.set("imageObjectId", finalImageOid);
@@ -1661,9 +1753,11 @@ public class PictureBookUtil {
             }
             return genResult;
         } catch (PictureBookException pbe) {
+            updateSceneStatus(user, scene, "error", pbe.getMessage());
             throw pbe;
         } catch (Exception e) {
             logger.error("Scene image generation pipeline failed: " + e.getMessage(), e);
+            updateSceneStatus(user, scene, "error", e.getMessage());
             throw new PictureBookException(500, e.getMessage());
         } finally {
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
@@ -1791,6 +1885,16 @@ public class PictureBookUtil {
                                 String imgOid = (String) textData.get("imageObjectId");
                                 if (imgOid != null) {
                                     scene.put("imageObjectId", imgOid);
+                                }
+                                // Also merge generation status/error so the wizard can resume
+                                // (pending/generating/done/error/accepted/skipped — see updateSceneStatus)
+                                String status = (String) textData.get("status");
+                                if (status != null && !status.isEmpty()) {
+                                    scene.put("status", status);
+                                }
+                                String error = (String) textData.get("error");
+                                if (error != null && !error.isEmpty()) {
+                                    scene.put("error", error);
                                 }
                             }
                         }

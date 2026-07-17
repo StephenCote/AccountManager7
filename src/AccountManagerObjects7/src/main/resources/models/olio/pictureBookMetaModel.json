@@ -19,6 +19,14 @@
 			"type": "list",
 			"baseType": "string",
 			"description": "Names of characters whose createCharPerson() failed during extraction — a 200 response never silently implies 0 failures."
+		},
+		{
+			"name": "sdConfig",
+			"type": "model",
+			"baseModel": "olio.sd.config",
+			"foreign": false,
+			"ephemeral": true,
+			"description": "Last-used image generation settings for this book, auto-captured on every generateSceneImage call so images can be recreated with the same settings later."
 		}
 	]
 }

@@ -54,6 +54,12 @@
 			"type": "list",
 			"baseType": "model",
 			"baseModel": "olio.pictureBookScene"
+		},
+		{
+			"name": "status",
+			"type": "string",
+			"maxLength": 32,
+			"description": "Client-driven scene status for PUT /scene/{sceneObjectId}/status (pending/generating/done/error/accepted/skipped)."
 		}
 	]
 }

@@ -18,6 +18,8 @@ import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.picturebook.PictureBookException;
+import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
@@ -309,6 +311,164 @@ public class TestPictureBookFull extends BaseTest {
 		} catch (Exception e) {
 			fail("Meta persistence failed: " + e.getMessage());
 		}
+	}
+
+	// ── Scene Status Persistence (progress tracking / pause-resume) ──────
+
+	/**
+	 * Builds a minimal book group + one scene note + .pictureBookMeta referencing it, mirroring
+	 * TestSceneNoteCreation/TestMetaPersistence's fixture pattern. Returns [bookGroup, sceneNote].
+	 */
+	private BaseRecord[] createMinimalBookAndScene(String bookPath, String sceneTitle) throws Exception {
+		BaseRecord bookGroup = ensureGroup(bookPath);
+		BaseRecord scenesGroup = ensureGroup(bookPath + "/Scenes");
+		assertNotNull("Book group", bookGroup);
+		assertNotNull("Scenes group", scenesGroup);
+
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, bookPath + "/Scenes");
+		plist.parameter(FieldNames.FIELD_NAME, sceneTitle);
+		BaseRecord sceneNote = IOSystem.getActiveContext().getFactory().newInstance(
+			ModelNames.MODEL_NOTE, testUser, null, plist);
+		Map<String, Object> sceneData = new LinkedHashMap<>();
+		sceneData.put("title", sceneTitle);
+		sceneData.put("setting", "A quiet room");
+		sceneNote.set("text", JSONUtil.exportObject(sceneData));
+		BaseRecord createdScene = IOSystem.getActiveContext().getAccessPoint().create(testUser, sceneNote);
+		assertNotNull("Scene note created", createdScene);
+
+		// Build meta via the typed model + toFullString() — matching PictureBookUtil.buildMeta()'s
+		// real production path (embeds "schema":"olio.pictureBookMeta" so loadTypedMeta()/
+		// reorderScenes() can round-trip it via JSONUtil.importObject). A hand-rolled schema-less
+		// Map here would NOT be representative of real book meta and breaks the typed read path.
+		BaseRecord sceneEntry = RecordFactory.newInstance(OlioModelNames.MODEL_PICTURE_BOOK_SCENE);
+		sceneEntry.set(FieldNames.FIELD_OBJECT_ID, createdScene.get(FieldNames.FIELD_OBJECT_ID));
+		sceneEntry.set("title", sceneTitle);
+		BaseRecord meta = RecordFactory.newInstance(OlioModelNames.MODEL_PICTURE_BOOK_META);
+		meta.set("bookObjectId", bookGroup.get(FieldNames.FIELD_OBJECT_ID));
+		meta.set("scenes", java.util.Collections.singletonList(sceneEntry));
+		ParameterList metaPlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, bookPath);
+		metaPlist.parameter(FieldNames.FIELD_NAME, ".pictureBookMeta");
+		BaseRecord metaNote = IOSystem.getActiveContext().getFactory().newInstance(
+			ModelNames.MODEL_NOTE, testUser, null, metaPlist);
+		metaNote.set("text", meta.toFullString());
+		assertNotNull(".pictureBookMeta created", IOSystem.getActiveContext().getAccessPoint().create(testUser, metaNote));
+
+		return new BaseRecord[] { bookGroup, createdScene };
+	}
+
+	@Test
+	public void TestSetSceneStatusPersistsAndMerges() throws Exception {
+		logger.info("Test: setSceneStatus persists to the scene note and listScenes() merges it back");
+		setupTestContext();
+
+		String bookPath = "~/Data/PictureBooks/UnitTest-Status-" + System.currentTimeMillis();
+		BaseRecord[] fixture = createMinimalBookAndScene(bookPath, "Status Test Scene");
+		BaseRecord bookGroup = fixture[0];
+		BaseRecord sceneNote = fixture[1];
+		String bookObjectId = bookGroup.get(FieldNames.FIELD_OBJECT_ID);
+		String sceneOid = sceneNote.get(FieldNames.FIELD_OBJECT_ID);
+
+		// Sanity: a fresh scene has no status yet
+		List<Map<String, Object>> before = PictureBookUtil.listScenes(testUser, bookObjectId);
+		assertEquals("One scene expected", 1, before.size());
+		assertNull("No status persisted yet", before.get(0).get("status"));
+
+		// Act
+		PictureBookUtil.setSceneStatus(testUser, sceneOid, "accepted");
+
+		// Assert — status merged back by listScenes()
+		List<Map<String, Object>> after = PictureBookUtil.listScenes(testUser, bookObjectId);
+		assertEquals("One scene expected", 1, after.size());
+		assertEquals("accepted", after.get(0).get("status"));
+
+		// Invalid status is rejected with a 400
+		try {
+			PictureBookUtil.setSceneStatus(testUser, sceneOid, "not-a-real-status");
+			fail("Invalid status should throw PictureBookException");
+		} catch (PictureBookException e) {
+			assertEquals(400, e.getStatus());
+		}
+
+		// Unknown scene objectId is a 404
+		try {
+			PictureBookUtil.setSceneStatus(testUser, "00000000-0000-0000-0000-000000000000", "accepted");
+			fail("Unknown scene should throw PictureBookException");
+		} catch (PictureBookException e) {
+			assertEquals(404, e.getStatus());
+		}
+
+		logger.info("Scene status persistence verified: " + sceneOid);
+	}
+
+	@Test
+	public void TestGenerateSceneImageErrorPersistsStatus() throws Exception {
+		logger.info("Test: a failed generateSceneImage call persists status=error + message, visible via listScenes()");
+		setupTestContext();
+
+		String bookPath = "~/Data/PictureBooks/UnitTest-ErrorStatus-" + System.currentTimeMillis();
+		BaseRecord[] fixture = createMinimalBookAndScene(bookPath, "Error Test Scene");
+		BaseRecord bookGroup = fixture[0];
+		BaseRecord sceneNote = fixture[1];
+		String bookObjectId = bookGroup.get(FieldNames.FIELD_OBJECT_ID);
+		String sceneOid = sceneNote.get(FieldNames.FIELD_OBJECT_ID);
+
+		PictureBookUtil.SceneGenerationParams params = new PictureBookUtil.SceneGenerationParams();
+		// No chatConfigName — callLlm() gracefully falls back to the setting text when no LLM
+		// config resolves, so the deliberately-unreachable SD server below is what fails the call.
+
+		try {
+			PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", "http://127.0.0.1:1");
+			fail("Generation against an unreachable SD server should fail");
+		} catch (PictureBookException e) {
+			logger.info("Expected generation failure: " + e.getMessage());
+		}
+
+		List<Map<String, Object>> scenes = PictureBookUtil.listScenes(testUser, bookObjectId);
+		assertEquals("One scene expected", 1, scenes.size());
+		assertEquals("error", scenes.get(0).get("status"));
+		assertNotNull("Error message should be persisted", scenes.get(0).get("error"));
+
+		logger.info("Error status persistence verified: " + sceneOid);
+	}
+
+	@Test
+	public void TestGenerateSceneImagePersistsBookSdConfig() throws Exception {
+		logger.info("Test: generateSceneImage auto-captures its SD settings onto the book, even when generation itself fails");
+		setupTestContext();
+
+		String bookPath = "~/Data/PictureBooks/UnitTest-SdConfig-" + System.currentTimeMillis();
+		BaseRecord[] fixture = createMinimalBookAndScene(bookPath, "SD Config Test Scene");
+		BaseRecord bookGroup = fixture[0];
+		BaseRecord sceneNote = fixture[1];
+		String bookObjectId = bookGroup.get(FieldNames.FIELD_OBJECT_ID);
+		String sceneOid = sceneNote.get(FieldNames.FIELD_OBJECT_ID);
+
+		// Sanity: a fresh book has no saved settings yet
+		assertNull("No sdConfig saved before any generation", PictureBookUtil.getBookSdConfig(testUser, bookObjectId));
+
+		PictureBookUtil.SceneGenerationParams params = new PictureBookUtil.SceneGenerationParams();
+		params.steps = 33;
+		params.cfg = 9;
+		params.sdModelName = "unit-test-model.safetensors";
+		params.style = "photograph"; // must be one of PictureBookUtil.ALLOWED_STYLES
+
+		try {
+			PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", "http://127.0.0.1:1");
+			fail("Generation against an unreachable SD server should fail");
+		} catch (PictureBookException e) {
+			logger.info("Expected generation failure (settings should still be captured): " + e.getMessage());
+		}
+
+		BaseRecord savedConfig = PictureBookUtil.getBookSdConfig(testUser, bookObjectId);
+		assertNotNull("sdConfig should be persisted on the book even though generation failed", savedConfig);
+		int savedSteps = savedConfig.get("steps");
+		assertEquals("steps should match what was used", 33, savedSteps);
+		int savedCfg = savedConfig.get("cfg");
+		assertEquals("cfg should match what was used", 9, savedCfg);
+		assertEquals("model should match what was used", "unit-test-model.safetensors", savedConfig.get("model"));
+		assertEquals("style should match what was used", "photograph", savedConfig.get("style"));
+
+		logger.info("Book-level SD config persistence verified: " + bookObjectId);
 	}
 
 	// ── Think:false ──────────────────────────────────────────────────────

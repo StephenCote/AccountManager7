@@ -188,7 +188,15 @@
       "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPortraitReuse,TestPortraitReuseSceneFetch,TestNarrativeUtilPortraitPrompt,TestKontext test)",
       "Bash(grep -o 'steps[^,}]\\\\{0,20\\\\}' \"C:/Users/Steve/AppData/Local/Temp/claude/c--Projects-GitHub-AccountManager7-src/22fcbfc9-b7e3-4dd7-87a7-6abc38a8e511/tasks/bcvi2d8ej.output\")",
       "Bash(grep -o 'cfgscale[^,}]\\\\{0,20\\\\}' \"C:/Users/Steve/AppData/Local/Temp/claude/c--Projects-GitHub-AccountManager7-src/22fcbfc9-b7e3-4dd7-87a7-6abc38a8e511/tasks/bcvi2d8ej.output\")",
-      "Bash(grep -o 'negativeprompt[^,}]\\\\{0,80\\\\}' \"C:/Users/Steve/AppData/Local/Temp/claude/c--Projects-GitHub-AccountManager7-src/22fcbfc9-b7e3-4dd7-87a7-6abc38a8e511/tasks/bcvi2d8ej.output\")"
+      "Bash(grep -o 'negativeprompt[^,}]\\\\{0,80\\\\}' \"C:/Users/Steve/AppData/Local/Temp/claude/c--Projects-GitHub-AccountManager7-src/22fcbfc9-b7e3-4dd7-87a7-6abc38a8e511/tasks/bcvi2d8ej.output\")",
+      "Bash(mvn -o -pl AccountManagerObjects7 -Dtest=TestPictureBookFull#TestSetSceneStatusPersistsAndMerges+TestGenerateSceneImageErrorPersistsStatus test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestSetSceneStatusPersistsAndMerges+TestGenerateSceneImageErrorPersistsStatus test)",
+      "Bash(curl -sk -b /tmp/pb_cookies.txt -X PUT \"https://localhost:8443/AccountManagerService7/rest/olio/picture-book/scene/00000000-0000-0000-0000-000000000000/status\" -H \"Content-Type: application/json\" -d \"{\\\\\"status\\\\\":\\\\\"accepted\\\\\"}\" -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\")",
+      "Bash(rm -f /tmp/pb_cookies.txt)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestGenerateSceneImagePersistsBookSdConfig test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestSetSceneStatusPersistsAndMerges+TestGenerateSceneImageErrorPersistsStatus+TestGenerateSceneImagePersistsBookSdConfig test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestThinkFalseOnChatOptions test)"
     ],
     "additionalDirectories": [
       "\\tmp",

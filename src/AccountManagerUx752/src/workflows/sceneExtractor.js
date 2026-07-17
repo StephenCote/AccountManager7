@@ -159,6 +159,22 @@ async function loadPictureBook(bookObjectId) {
 }
 
 /**
+ * Load the last-used image generation settings for a book (auto-captured server-side on every
+ * scene generation), so a resumed/reopened wizard can default to the same settings instead of
+ * the wizard's hardcoded defaults. Returns null if the book has never generated an image.
+ * @param {string} bookObjectId - book group objectId
+ * @returns {Promise<object|null>}
+ */
+async function getBookSdConfig(bookObjectId) {
+    let resp = await fetch(pbBase() + '/' + bookObjectId + '/settings', {
+        credentials: 'include'
+    });
+    if (!resp.ok) return null;
+    let sdConfig = await resp.json();
+    return (sdConfig && Object.keys(sdConfig).length) ? sdConfig : null;
+}
+
+/**
  * Reorder scenes.
  * @param {string} bookObjectId - book group objectId
  * @param {string[]} orderedObjectIds
@@ -170,6 +186,23 @@ async function reorderScenes(bookObjectId, orderedObjectIds) {
         body: JSON.stringify({ scenes: orderedObjectIds })
     });
     if (!resp.ok) throw new Error('Reorder failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
+ * Persist a client-driven scene status (accepted/skipped/pending/...) so wizard progress
+ * survives a reload/reopen. Server-driven statuses (generating/done/error) are written
+ * automatically inside generateSceneImage — this is only for pure UI decisions.
+ * @param {string} sceneObjectId
+ * @param {string} status
+ */
+async function setSceneStatus(sceneObjectId, status) {
+    let resp = await fetch(pbBase() + '/scene/' + sceneObjectId + '/status', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ status: status })
+    });
+    if (!resp.ok) throw new Error('Set scene status failed: ' + resp.status);
     return resp.json();
 }
 
@@ -280,7 +313,9 @@ export {
     generateSceneImage,
     regenerateBlurb,
     loadPictureBook,
+    getBookSdConfig,
     reorderScenes,
+    setSceneStatus,
     resetPictureBook,
     buildMeta,
     resolveImageUrl,

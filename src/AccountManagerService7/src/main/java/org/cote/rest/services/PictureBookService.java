@@ -53,7 +53,9 @@ import jakarta.ws.rs.core.Response;
  *   POST /scene/{sceneObjectId}/generate      — Generate SD image for one scene
  *   POST /scene/{sceneObjectId}/blurb         — Regenerate scene blurb via LLM
  *   GET  /{bookObjectId}/scenes               — Ordered scene list from .pictureBookMeta (bookObjectId = book group objectId)
+ *   GET  /{bookObjectId}/settings              — Last-used image generation settings for this book
  *   PUT  /{bookObjectId}/scenes/order         — Reorder scenes
+ *   PUT  /scene/{sceneObjectId}/status        — Persist a client-driven scene status (accepted/skipped/pending/...)
  *   DELETE /{bookObjectId}/reset              — Delete entire book group
  */
 @DeclareRoles({"admin", "user"})
@@ -403,6 +405,27 @@ public class PictureBookService {
     }
 
     /**
+     * GET /{bookObjectId}/settings
+     * Returns the last-used image generation settings for this book (auto-captured on every
+     * scene generation — see PictureBookUtil.persistBookSdConfig), or {} if none have been
+     * saved yet (a fresh book that hasn't generated an image).
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/settings")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getBookSdConfig(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            BaseRecord sdConfig = PictureBookUtil.getBookSdConfig(user, bookObjectId);
+            return Response.status(200).entity(sdConfig != null ? toJson(sdConfig) : "{}").build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
      * PUT /{bookObjectId}/scenes/order
      * Reorder scenes. Body: { scenes: ["objectId1", ...] }
      */
@@ -428,6 +451,30 @@ public class PictureBookService {
 
         try {
             BaseRecord result = PictureBookUtil.reorderScenes(user, bookObjectId, newOrder);
+            return Response.status(200).entity(toJson(result)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * PUT /scene/{sceneObjectId}/status
+     * Persist a client-driven scene status (accepted/skipped/pending/etc.) so the wizard's
+     * progress survives a reload/reopen. Body: { status: "accepted" }
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/status")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response setSceneStatus(@PathParam("sceneObjectId") String sceneObjectId,
+            String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord params = parseParams(json);
+        String status = params != null ? params.get("status") : null;
+        try {
+            PictureBookUtil.setSceneStatus(user, sceneObjectId, status);
+            BaseRecord result = PictureBookUtil.buildResult();
             return Response.status(200).entity(toJson(result)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
