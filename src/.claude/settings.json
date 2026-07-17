@@ -200,7 +200,10 @@
       "Bash(mvn -o -q -pl AccountManagerISO42001 compile)",
       "Bash(mvn -o -q -pl AccountManagerISO42001 install -DskipTests)",
       "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestOllamaUnloadAllUnloadsRealModel test)",
-      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestSetSceneStatusPersistsAndMerges+TestGenerateSceneImageErrorPersistsStatus+TestGenerateSceneImagePersistsBookSdConfig+TestOllamaUnloadAllUnloadsRealModel test)"
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestSetSceneStatusPersistsAndMerges+TestGenerateSceneImageErrorPersistsStatus+TestGenerateSceneImagePersistsBookSdConfig+TestOllamaUnloadAllUnloadsRealModel test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestLiveSwarmMinimalDiagnosticProbe test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestLiveSwarmCompositeImg2ImgDiagnosticProbe test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestSetSceneStatusPersistsAndMerges+TestGenerateSceneImageErrorPersistsStatus+TestGenerateSceneImagePersistsBookSdConfig+TestOllamaUnloadAllUnloadsRealModel+TestLiveSwarmMinimalDiagnosticProbe+TestLiveSwarmCompositeImg2ImgDiagnosticProbe test)"
     ],
     "additionalDirectories": [
       "\\tmp",

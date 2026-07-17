@@ -134,15 +134,47 @@ public class SDUtil {
 		return ClientUtil.post(Auto1111Response.class, ClientUtil.getResource(autoserver + "/sdapi/v1/txt2img"), JSONUtil.exportObject(req), MediaType.APPLICATION_JSON_TYPE);
 	}
 	
+	/// Shared across ALL SDUtil instances/requests, keyed by server URL — a fresh anonymous
+	/// session used to be minted on every single txt2img/listModels/listLoras call (never reused,
+	/// never closed), which meant a single multi-scene PictureBook "Generate All" run (2-4 SD
+	/// calls per scene: up to 2 portraits + landscape + composite) accumulated one lingering
+	/// Swarm session per call — observed as 8 simultaneous sessions from one client on a small
+	/// book. Reusing one session per server until Swarm itself rejects it fixes that.
+	private static final java.util.concurrent.ConcurrentHashMap<String, String> sessionCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+	private String getOrCreateSession() {
+		return sessionCache.computeIfAbsent(autoserver, SWUtil::getAnonymousSession);
+	}
+
+	private void invalidateSession() {
+		sessionCache.remove(autoserver);
+	}
+
 	public SWImageResponse txt2img(SWTxt2Img req) {
 		if (req.getSession_id() == null || req.getSession_id().isEmpty()) {
-			String sess = SWUtil.getAnonymousSession(autoserver);
+			String sess = getOrCreateSession();
 			if (sess == null || sess.isEmpty()) {
 				logger.error("Could not obtain anonymous session");
 				return null;
 			}
 			req.setSession_id(sess);
 		}
+		SWImageResponse resp = doTxt2Img(req);
+		// The reused session may have expired/been invalidated server-side since it was cached —
+		// retry exactly once with a freshly-minted session before giving up.
+		if (resp != null && resp.getError() != null && !resp.getError().isEmpty()) {
+			logger.warn("txt2img error (\"" + resp.getError() + "\") — retrying once with a fresh session");
+			invalidateSession();
+			String freshSess = getOrCreateSession();
+			if (freshSess != null && !freshSess.isEmpty()) {
+				req.setSession_id(freshSess);
+				resp = doTxt2Img(req);
+			}
+		}
+		return resp;
+	}
+
+	private SWImageResponse doTxt2Img(SWTxt2Img req) {
 		String payload = JSONUtil.exportObject(req);
 		int payloadLen = payload != null ? payload.length() : 0;
 		boolean hasPromptImages = req.getPromptImages() != null && !req.getPromptImages().isEmpty();
@@ -159,11 +191,11 @@ public class SDUtil {
 		}
 		return resp;
 	}
-	
+
 	public List<String> listModels() {
 		List<String> models = new ArrayList<>();
 		try {
-			String sess = SWUtil.getAnonymousSession(autoserver);
+			String sess = getOrCreateSession();
 			if (sess == null || sess.isEmpty()) {
 				logger.warn("Could not obtain anonymous session for listing models");
 				return models;
@@ -191,7 +223,7 @@ public class SDUtil {
 	public List<String> listLoras() {
 		List<String> loras = new ArrayList<>();
 		try {
-			String sess = SWUtil.getAnonymousSession(autoserver);
+			String sess = getOrCreateSession();
 			if (sess == null || sess.isEmpty()) {
 				logger.warn("Could not obtain anonymous session for listing LORAs");
 				return loras;

@@ -36,6 +36,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
@@ -523,6 +524,121 @@ public class TestPictureBookFull extends BaseTest {
 			logger.warn("Failed to query " + ollamaServer + "/api/ps: " + e.getMessage());
 			return false;
 		}
+	}
+
+	// ── Live Swarm diagnostic (thermal investigation) ─────────────────────
+
+	/**
+	 * Smallest reasonable real generation against the actual DGX Spark Swarm server
+	 * (192.168.1.42:7801, same host as the Ollama address used elsewhere in this file) —
+	 * 512x512, 8 steps, no refiner, plain text2img. Every other SD test in this repo either
+	 * points at an unreachable address (this file's error-path tests) or at localhost
+	 * (AccountManagerObjects7's own test.swarm.server property) — this is deliberately the
+	 * first test to put real load on the specific box the user reported thermal shutdowns on.
+	 * Logs elapsed time so a hang/slowdown is directly visible in the test output.
+	 */
+	@Test
+	public void TestLiveSwarmMinimalDiagnosticProbe() throws Exception {
+		logger.info("Test: minimal real SD call against the live DGX Spark Swarm server (thermal diagnostic)");
+		setupTestContext();
+
+		String swarmServer = "http://192.168.1.42:7801"; // matches AccountManagerService7/web.xml's sd.server
+		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
+
+		BaseRecord sdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		sdConfig.set("steps", 8);
+		sdConfig.set("cfg", 5);
+		sdConfig.set("hires", false);
+		sdConfig.set("width", 512);
+		sdConfig.set("height", 512);
+		sdConfig.set("style", "illustration");
+
+		org.cote.accountmanager.olio.sd.swarm.SWTxt2Img s2i = org.cote.accountmanager.olio.sd.swarm.SWUtil.newSceneTxt2Img(
+			"A single small pebble on a plain white background, minimal test image",
+			"blurry, lowres, watermark, text",
+			sdConfig
+		);
+
+		long start = System.currentTimeMillis();
+		List<BaseRecord> images = null;
+		try {
+			images = sdu.createSceneImage(testUser, "~/Chat", "diag_minimal_" + start, s2i, null, null);
+		} finally {
+			long elapsed = System.currentTimeMillis() - start;
+			logger.info("Minimal diagnostic SD call took " + elapsed + "ms, returned "
+				+ (images != null ? images.size() : 0) + " image(s)");
+		}
+
+		assertNotNull("Should get a response list", images);
+		assertFalse("Should generate at least one image", images.isEmpty());
+	}
+
+	/**
+	 * Reproduces PictureBook's exact composite/img2img call — the specific stage that hung for
+	 * 6 minutes in the user-reported log before timing out. A plain text2img call was confirmed
+	 * fine (TestLiveSwarmMinimalDiagnosticProbe); this isolates whether img2img itself (large
+	 * base64 init image + initImageCreativity=0.85) is what's different about "PictureBook
+	 * images specifically". Generates a real landscape first to use as a genuine init image
+	 * (not a synthetic placeholder), then runs the composite call at PictureBook's exact
+	 * production settings: 1024x768, 20 steps, hires=false, initImageCreativity=0.85.
+	 */
+	@Test
+	public void TestLiveSwarmCompositeImg2ImgDiagnosticProbe() throws Exception {
+		logger.info("Test: real img2img call at PictureBook's exact composite-stage settings against the live DGX Spark Swarm server");
+		setupTestContext();
+
+		String swarmServer = "http://192.168.1.42:7801";
+		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
+
+		// Step 1: generate a real landscape image to feed the composite as its init image —
+		// mirrors PictureBookUtil's Stage 2 output feeding Stage 3/4.
+		BaseRecord landConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		landConfig.set("steps", 20);
+		landConfig.set("cfg", 5);
+		landConfig.set("hires", false);
+		landConfig.set("width", 1024);
+		landConfig.set("height", 768);
+		landConfig.set("style", "illustration");
+		org.cote.accountmanager.olio.sd.swarm.SWTxt2Img landReq = org.cote.accountmanager.olio.sd.swarm.SWUtil.newSceneTxt2Img(
+			"A quiet forest clearing at dawn, minimal test image", "blurry, lowres, watermark, text", landConfig);
+
+		long landStart = System.currentTimeMillis();
+		List<BaseRecord> landImages = sdu.createSceneImage(testUser, "~/Chat", "diag_land_" + landStart, landReq, null, null);
+		long landElapsed = System.currentTimeMillis() - landStart;
+		logger.info("Landscape text2img (1024x768, 20 steps) took " + landElapsed + "ms, returned "
+			+ (landImages != null ? landImages.size() : 0) + " image(s)");
+		assertNotNull("Landscape image list should not be null", landImages);
+		assertFalse("Should generate a landscape image", landImages.isEmpty());
+		byte[] landscapeBytes = ByteModelUtil.getValue(landImages.get(0));
+		assertNotNull("Landscape image should have byte data", landscapeBytes);
+
+		// Step 2: composite img2img at PictureBook's exact classic-pipeline settings.
+		logger.info("Starting composite img2img call — this is the stage that hung 6 minutes in the original report.");
+		BaseRecord compConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		compConfig.set("steps", 20);
+		compConfig.set("cfg", 5);
+		compConfig.set("hires", false);
+		compConfig.set("width", 1024);
+		compConfig.set("height", 768);
+		compConfig.set("style", "illustration");
+		org.cote.accountmanager.olio.sd.swarm.SWTxt2Img compReq = org.cote.accountmanager.olio.sd.swarm.SWUtil.newSceneTxt2Img(
+			"A quiet forest clearing at dawn with a small figure standing in it, minimal test image",
+			"blurry, lowres, watermark, text", compConfig);
+		compReq.setInitImage("data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(landscapeBytes));
+		compReq.setInitImageCreativity(0.85);
+
+		long compStart = System.currentTimeMillis();
+		List<BaseRecord> compImages = null;
+		try {
+			compImages = sdu.createSceneImage(testUser, "~/Chat", "diag_composite_" + compStart, compReq, null, null);
+		} finally {
+			long compElapsed = System.currentTimeMillis() - compStart;
+			logger.info("Composite img2img (1024x768, 20 steps, initImageCreativity=0.85) took " + compElapsed
+				+ "ms, returned " + (compImages != null ? compImages.size() : 0) + " image(s)");
+		}
+
+		assertNotNull("Should get a response list", compImages);
+		assertFalse("Should generate at least one composite image", compImages.isEmpty());
 	}
 
 	// ── Think:false ──────────────────────────────────────────────────────

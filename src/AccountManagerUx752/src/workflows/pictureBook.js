@@ -375,6 +375,14 @@ function showGenerationErrorDialog(scene, message) {
     });
 }
 
+// Let the GPU recover between generations — PictureBook's SD calls run on shared hardware
+// that has hit thermal-critical under sustained back-to-back load with no cooldown.
+const SCENE_COOLDOWN_MS = 5000;
+
+function sleep(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
 async function doGenerateAll() {
     generating = true;
     genCancelled = false;
@@ -398,11 +406,19 @@ async function doGenerateAll() {
     }
 
     let i = 0;
+    let firstGeneration = true;
     while (i < targets.length) {
         if (genCancelled) break;
         let s = targets[i];
         let oid = s.objectId;
         if (!oid || genProgress[oid] === 'accepted' || genProgress[oid] === 'skipped') { i++; continue; }
+
+        if (!firstGeneration) {
+            await sleep(SCENE_COOLDOWN_MS);
+            if (genCancelled) break;
+        }
+        firstGeneration = false;
+
         await doGenerateOne(s);
         if (genProgress[oid] === 'error') {
             let choice = await showGenerationErrorDialog(s, sceneErrors[oid]);
