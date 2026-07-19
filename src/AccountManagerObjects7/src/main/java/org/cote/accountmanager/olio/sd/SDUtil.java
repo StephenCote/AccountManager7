@@ -181,6 +181,35 @@ public class SDUtil {
 		boolean hasInitImage = req.getInitImage() != null && !req.getInitImage().isEmpty();
 		logger.info("txt2img request: payloadSize=" + payloadLen + " hasPromptImages=" + hasPromptImages + " hasInitImage=" + hasInitImage);
 
+		// TEMPORARY diagnostic logging (thermal investigation) — every SD-config parameter
+		// actually placed on the outgoing request, so a unit-test run and a real Ux-driven run
+		// can be compared line-for-line. Image/promptImages payloads are logged as size/count
+		// only (the base64 bodies are megabytes and not the parameter in question). Remove once
+		// the Ux-vs-unit-test discrepancy is found.
+		logger.info("txt2img sdConfig: model=" + req.getModel()
+			+ " steps=" + req.getSteps()
+			+ " cfgScale=" + req.getCfgScale()
+			+ " sampler=" + req.getSampler()
+			+ " scheduler=" + req.getScheduler()
+			+ " width=" + req.getWidth()
+			+ " height=" + req.getHeight()
+			+ " images=" + req.getImages()
+			+ " seed=" + req.getSeed()
+			+ " refinerModel=" + req.getRefinerModel()
+			+ " refinerSteps=" + req.getRefinerSteps()
+			+ " refinerCfgScale=" + req.getRefinerCfgScale()
+			+ " refinerSampler=" + req.getRefinerSampler()
+			+ " refinerScheduler=" + req.getRefinerScheduler()
+			+ " refinerMethod=" + req.getRefinerMethod()
+			+ " refinerUpscale=" + req.getRefinerUpscale()
+			+ " refinerUpscaleMethod=" + req.getRefinerUpscaleMethod()
+			+ " refinerControlPercentage=" + req.getRefinerControlPercentage()
+			+ " initImageCreativity=" + req.getInitImageCreativity()
+			+ " hasInitImage=" + hasInitImage + " initImageChars=" + (req.getInitImage() != null ? req.getInitImage().length() : 0)
+			+ " hasPromptImages=" + hasPromptImages + " promptImagesCount=" + (req.getPromptImages() != null ? req.getPromptImages().size() : 0)
+			+ " negativePrompt=" + req.getNegativePrompt()
+			+ " prompt=" + req.getPrompt());
+
 		SWImageResponse resp = ClientUtil.post(SWImageResponse.class, ClientUtil.getResource(autoserver + "/API/GenerateText2Image"), payload, MediaType.APPLICATION_JSON_TYPE);
 		if (resp == null) {
 			logger.error("txt2img: null response from Swarm — check ClientUtil warnings for HTTP status/body");
@@ -1106,9 +1135,14 @@ public class SDUtil {
 	/// @param canvasHeight Target canvas height (e.g. 768)
 	/// @return Composite PNG bytes, or the original landscape if no portraits available
 	public static byte[] compositeSceneCanvas(byte[] landscapeBytes, byte[] leftPortraitBytes, byte[] rightPortraitBytes, int canvasWidth, int canvasHeight) {
-		if (leftPortraitBytes == null && rightPortraitBytes == null) {
-			return landscapeBytes;
-		}
+		// No early-return-the-landscape-unchanged shortcut here even when there are no portraits
+		// to draw: the landscape may have come back from a hires/refiner pass already upscaled
+		// well past canvasWidth/canvasHeight (e.g. 1024x768 requested, refinerUpscale=2 ->
+		// actually 2048x1536), and this method's own resize-to-target-dimensions logic below
+		// already handles null portraits correctly (both drawImage blocks are individually
+		// null-guarded) — so there's nothing this shortcut saved except skipping that resize,
+		// which is exactly the bug: an oversized "composite" then feeds an img2img call that
+		// itself requests another hires/refiner/upscale pass on top, compounding.
 		try {
 			java.awt.image.BufferedImage canvas;
 			if (landscapeBytes != null) {

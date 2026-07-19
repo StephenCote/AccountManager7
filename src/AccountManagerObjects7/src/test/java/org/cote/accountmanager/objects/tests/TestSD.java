@@ -1,5 +1,6 @@
 package org.cote.accountmanager.objects.tests;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -343,5 +344,78 @@ public class TestSD extends BaseTest {
 			byte[] data = BinaryUtil.fromBase64(bai.getBytes());
 			FileUtil.emitFile("./img-" + seed + "-" + (counter++) + ".png", data);
 		}
+	}
+
+	/**
+	 * Pure-Java, no-network regression test for a real bug found via live diagnostics: when a
+	 * scene has no portraits to composite, compositeSceneCanvas used to return the landscape
+	 * bytes completely unresized. A landscape generated with hires=true + refinerUpscale=2 comes
+	 * back 2x larger than requested (e.g. 1024x768 requested -> actually 2048x1536), so that
+	 * oversized image was being sent straight through as the composite stage's img2img init
+	 * image — which itself ALSO requests a hires/refiner/upscale pass, compounding. Confirmed
+	 * live against the DGX Spark (TestPictureBookFull#TestGenerateSceneImageForcesRefinerOffForComposite
+	 * measured exactly this: 1024x1024 requested, 2048x1536 actual, 0 portraits). Deliberately
+	 * synthetic/offline — the whole point is verifying the fix WITHOUT submitting another heavy
+	 * img2img+hires+refiner request to the live server.
+	 */
+	@Test
+	public void TestCompositeSceneCanvasResizesOversizedLandscape() throws Exception {
+		logger.info("Test: compositeSceneCanvas resizes an oversized (already-upscaled) landscape down to the requested canvas size, with and without portraits — exports actual PNGs for visual inspection, not just a dimension assertion");
+
+		String outDir = "target/diagnostic-images";
+		FileUtil.makePath(outDir);
+
+		// Grid + label pattern (not a flat color) so resizing/distortion/portrait-placement is
+		// actually visible when the exported PNGs are opened, not just asserted numerically.
+		byte[] oversizedLandscapeBytes = renderGridImage(2048, 1536, "LANDSCAPE 2048x1536 (oversized)");
+		FileUtil.emitFile(outDir + "/before_landscape_2048x1536.png", oversizedLandscapeBytes);
+
+		byte[] leftPortrait = renderGridImage(512, 768, "LEFT");
+		byte[] rightPortrait = renderGridImage(512, 768, "RIGHT");
+		FileUtil.emitFile(outDir + "/before_portrait_left.png", leftPortrait);
+		FileUtil.emitFile(outDir + "/before_portrait_right.png", rightPortrait);
+
+		// Case 1: no portraits — exactly the scenario from both real hung/critical requests
+		// ("Stage 1 complete: 0 portraits generated").
+		byte[] noPortraitResult = SDUtil.compositeSceneCanvas(oversizedLandscapeBytes, null, null, 1024, 768);
+		assertNotNull("compositeSceneCanvas should return bytes", noPortraitResult);
+		FileUtil.emitFile(outDir + "/after_composite_no_portraits.png", noPortraitResult);
+		java.awt.image.BufferedImage decodedNoPortrait = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(noPortraitResult));
+		assertEquals("Composite (no portraits) should be resized to the requested canvas width", 1024, decodedNoPortrait.getWidth());
+		assertEquals("Composite (no portraits) should be resized to the requested canvas height", 768, decodedNoPortrait.getHeight());
+
+		// Case 2: with both portraits — confirms the fix doesn't disturb the already-working
+		// portrait-compositing path.
+		byte[] withPortraitsResult = SDUtil.compositeSceneCanvas(oversizedLandscapeBytes, leftPortrait, rightPortrait, 1024, 768);
+		assertNotNull("compositeSceneCanvas should return bytes", withPortraitsResult);
+		FileUtil.emitFile(outDir + "/after_composite_with_portraits.png", withPortraitsResult);
+		java.awt.image.BufferedImage decodedWithPortraits = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(withPortraitsResult));
+		assertEquals("Composite (with portraits) should be resized to the requested canvas width", 1024, decodedWithPortraits.getWidth());
+		assertEquals("Composite (with portraits) should be resized to the requested canvas height", 768, decodedWithPortraits.getHeight());
+
+		String absPath = new java.io.File(outDir).getAbsolutePath();
+		logger.info("Diagnostic images written to: " + absPath);
+		logger.info("  before_landscape_2048x1536.png (" + oversizedLandscapeBytes.length + " bytes) — synthetic oversized input");
+		logger.info("  after_composite_no_portraits.png (" + noPortraitResult.length + " bytes, " + decodedNoPortrait.getWidth() + "x" + decodedNoPortrait.getHeight() + ") — the exact bug scenario, now fixed");
+		logger.info("  after_composite_with_portraits.png (" + withPortraitsResult.length + " bytes, " + decodedWithPortraits.getWidth() + "x" + decodedWithPortraits.getHeight() + ") — with portraits drawn on top");
+	}
+
+	private byte[] renderGridImage(int width, int height, String label) throws IOException {
+		java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB);
+		java.awt.Graphics2D g = img.createGraphics();
+		g.setColor(new java.awt.Color(30, 60, 120));
+		g.fillRect(0, 0, width, height);
+		g.setColor(java.awt.Color.WHITE);
+		int gridSize = 64;
+		for (int x = 0; x < width; x += gridSize) g.drawLine(x, 0, x, height);
+		for (int y = 0; y < height; y += gridSize) g.drawLine(0, y, width, y);
+		g.setColor(java.awt.Color.YELLOW);
+		g.drawRect(0, 0, width - 1, height - 1);
+		g.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, Math.max(14, width / 20)));
+		g.drawString(label, 10, Math.max(24, height / 20));
+		g.dispose();
+		java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+		javax.imageio.ImageIO.write(img, "png", baos);
+		return baos.toByteArray();
 	}
 }

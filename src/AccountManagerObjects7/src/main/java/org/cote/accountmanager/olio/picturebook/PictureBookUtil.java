@@ -77,6 +77,18 @@ public class PictureBookUtil {
     public static final int DEFAULT_CFG = 5;
     public static final boolean DEFAULT_HIRES = false;
 
+    // Let the GPU recover between the pipeline's own heavy SD stages (portraits -> landscape ->
+    // composite) — with hires/refiner enabled these can each be a full base+refiner pass, and
+    // running them back-to-back with zero gap (the composite is the heaviest of the three, and
+    // runs immediately after the landscape pass) was implicated in a real thermal-critical event
+    // on shared GPU hardware. Same 5s value as the Ux752 wizard's between-SCENE cooldown — this
+    // is the within-scene, between-STAGE counterpart to that.
+    private static final long STAGE_COOLDOWN_MS = 5000;
+
+    private static void stageCooldown() {
+        try { Thread.sleep(STAGE_COOLDOWN_MS); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+    }
+
     // Default scene count when not specified — LLM decides actual count
     public static final int MAX_SCENES_DEFAULT = 10;
 
@@ -1691,6 +1703,11 @@ public class PictureBookUtil {
                 }
             }
             logger.info("Stage 1 complete: " + portraitBytesList.size() + " portraits generated");
+            if (!portraitBytesList.isEmpty()) {
+                // Only cool down if Stage 1 actually did GPU work — nothing to recover from if
+                // zero portraits were generated (the common case for landscape-only scenes).
+                stageCooldown();
+            }
 
             // Stage 2: Landscape generation — prompt was already resolved (LLM or cache) in Stage 0
             // above, before the model was unloaded, so this is pure SD work.
@@ -1712,6 +1729,12 @@ public class PictureBookUtil {
             // scene so it is discoverable/reusable like the composite.
             String landscapeOid = landscapeImage.get(FieldNames.FIELD_OBJECT_ID);
             updateSceneLandscapeId(user, scene, landscapeOid);
+
+            // Landscape generation is a full hires/refiner pass when enabled — let the GPU
+            // recover before the composite stage, which is heavier still (img2img on top of its
+            // own base+refiner pass) and runs immediately after with zero gap otherwise. This is
+            // the specific back-to-back sequence implicated in a real thermal-critical event.
+            stageCooldown();
 
             // Stage 3/4: Composite scene — branch between Kontext (stitch-and-prompt) and classic
             // (Graphics2D composite + SDXL img2img) pipelines. Unlike ChatService.generateScene
@@ -1779,8 +1802,24 @@ public class PictureBookUtil {
                 classicPrompt.append(SWUtil.styleClause(style));
 
                 SWTxt2Img classicReq = SWUtil.newSceneTxt2Img(classicPrompt.toString(), NEG_PROMPT, sdConfigRec);
+                logger.info("generateSceneImage: requesting composite canvas at " + classicReq.getWidth() + "x" + classicReq.getHeight()
+                        + " (landscapeBytes=" + (landscapeBytes != null ? landscapeBytes.length : 0)
+                        + " leftBytes=" + (leftBytes != null ? leftBytes.length : 0)
+                        + " centerBytes=" + (centerBytes != null ? centerBytes.length : 0) + ")");
                 byte[] compositeBytes = SDUtil.compositeSceneCanvas(landscapeBytes, leftBytes, centerBytes,
                         classicReq.getWidth(), classicReq.getHeight());
+                // TEMPORARY diagnostic (thermal investigation): decode the ACTUAL composited image
+                // and log its real pixel dimensions — the user observed a ~3000x1000/6MB merge
+                // image being sent, which doesn't match the requested canvas size above.
+                if (compositeBytes != null) {
+                    try {
+                        java.awt.image.BufferedImage decoded = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(compositeBytes));
+                        logger.info("generateSceneImage: actual composite image decoded as " + decoded.getWidth() + "x" + decoded.getHeight()
+                                + " (" + compositeBytes.length + " bytes)");
+                    } catch (Exception e) {
+                        logger.warn("generateSceneImage: failed to decode composite image for diagnostic logging: " + e.getMessage());
+                    }
+                }
                 if (compositeBytes != null) {
                     classicReq.setInitImage("data:image/png;base64," + Base64.getEncoder().encodeToString(compositeBytes));
                     classicReq.setInitImageCreativity(sceneCreativity);

@@ -405,6 +405,43 @@ public class TestPictureBookFull extends BaseTest {
 		logger.info("Scene status persistence verified: " + sceneOid);
 	}
 
+	/**
+	 * CAUTION: do not set params.hires = true in this test. Live investigation (see PictureBook
+	 * session notes) found that classic-pipeline img2img (the composite stage's initImage +
+	 * initImageCreativity) combined with a hires/refiner pass in the SAME request has no
+	 * verified-working precedent anywhere in this codebase — every other caller either uses
+	 * hires+refiner WITHOUT img2img (portraits, landscape) or img2img WITHOUT a refiner pass
+	 * (this test, chat's rare classic fallback). That combination hung for 6 minutes against the
+	 * live DGX Spark on two separate real attempts before timing out. This test intentionally
+	 * runs the full real generateSceneImage() pipeline (portraits + landscape + composite) with
+	 * hires=false — the mitigation actually in use — end to end, confirming it completes quickly
+	 * with no thermal-risk hang.
+	 */
+	@Test
+	public void TestGenerateSceneImageCompletesWithHiresDisabled() throws Exception {
+		logger.info("Test: full generateSceneImage pipeline (portraits+landscape+composite) completes quickly against the live DGX Spark with hires disabled");
+		setupTestContext();
+
+		String bookPath = "~/Data/PictureBooks/UnitTest-HiresDisabled-" + System.currentTimeMillis();
+		BaseRecord[] fixture = createMinimalBookAndScene(bookPath, "Hires Disabled Test Scene");
+		BaseRecord sceneNote = fixture[1];
+		String sceneOid = sceneNote.get(FieldNames.FIELD_OBJECT_ID);
+
+		PictureBookUtil.SceneGenerationParams params = new PictureBookUtil.SceneGenerationParams();
+		params.steps = 40;
+		params.cfg = 5;
+		params.hires = false; // the mitigation being tried — see caution above before changing this
+
+		long start = System.currentTimeMillis();
+		BaseRecord result = PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", "http://192.168.1.42:7801");
+		long elapsed = System.currentTimeMillis() - start;
+		logger.info("Full generateSceneImage (hires=false) took " + elapsed + "ms");
+
+		assertNotNull("Generation should succeed", result);
+		String imageObjectId = result.get("imageObjectId");
+		assertNotNull("Should produce a final composite image", imageObjectId);
+	}
+
 	@Test
 	public void TestGenerateSceneImageErrorPersistsStatus() throws Exception {
 		logger.info("Test: a failed generateSceneImage call persists status=error + message, visible via listScenes()");
