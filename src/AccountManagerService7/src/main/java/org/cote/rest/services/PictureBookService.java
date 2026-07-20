@@ -455,6 +455,59 @@ public class PictureBookService {
     }
 
     /**
+     * GET /{bookObjectId}/characters
+     * List a book's extracted characters for the "Manage Characters" review/edit screen —
+     * objectId/name/gender/hasPortrait/apparelCount/per-apparel scene tags/failedApparel-or-
+     * Statistics flags.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/characters")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listCharacters(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            List<Map<String, Object>> characters = PictureBookUtil.listCharacters(user, bookObjectId);
+            return Response.status(200).entity(JSONUtil.exportObject(characters)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * PUT /character/{objectId}/apparel/{apparelObjectId}/scene-tag
+     * Tag an apparel entry with the scene index it should first apply from (see
+     * PictureBookUtil.selectSceneApparel). Used by the character editor after generating a new
+     * outfit via the existing outfitBuilder.js flow. Body: { sceneIndex: n }
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/character/{objectId:[0-9A-Za-z\\-]+}/apparel/{apparelObjectId:[0-9A-Za-z\\-]+}/scene-tag")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response tagApparelSceneIndex(@PathParam("objectId") String objectId,
+            @PathParam("apparelObjectId") String apparelObjectId,
+            String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord params = parseParams(json);
+        Integer sceneIndex = params != null ? params.get("sceneIndex") : null;
+        if (sceneIndex == null) {
+            return Response.status(400).entity("{\"error\":true,\"message\":\"sceneIndex is required\"}").build();
+        }
+        try {
+            boolean ok = PictureBookUtil.tagApparelSceneIndex(user, apparelObjectId, sceneIndex);
+            BaseRecord result = PictureBookUtil.buildResult();
+            result.set("tagged", ok);
+            return Response.status(200).entity(toJson(result)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (Exception e) {
+            return Response.status(500).entity("{\"error\":true,\"message\":\"" + e.getMessage() + "\"}").build();
+        }
+    }
+
+    /**
      * GET /{bookObjectId}/settings
      * Returns the last-used image generation settings for this book (auto-captured on every
      * scene generation — see PictureBookUtil.persistBookSdConfig), or {} if none have been

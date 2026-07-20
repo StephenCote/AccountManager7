@@ -6,6 +6,9 @@ import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -149,9 +152,120 @@ public class StatisticsUtil {
 		catch(ModelNotFoundException | FieldException | ValueException | ReaderException e) {
 			logger.error(e);
 		}
-		
+
 	}
-	
+
+	private static final Pattern HEIGHT_FEET_INCHES = Pattern.compile("(\\d+)\\s*(?:['’]|ft|feet)\\s*(\\d{1,2})");
+	private static final Pattern HEIGHT_CM = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*cm");
+	private static final Pattern HEIGHT_FEET_ONLY = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet)\\b");
+
+	/**
+	 * Parse a free-text height description (e.g. {@code 5'8"}, {@code 172cm}, {@code 5.5 ft})
+	 * into the schema's compound feet.inches double format (5.10 = 5ft 10in — see
+	 * statisticsModel.json). Deliberately conservative: returns {@code null} for anything
+	 * prose-like ("tall", "average height") rather than guessing, per the same "be conservative"
+	 * instruction {@link #rollHeight} already follows for its own random distribution.
+	 */
+	private static Double parseHeightToFeetInches(String text) {
+		if (text == null || text.isBlank()) return null;
+		String t = text.trim();
+		Matcher m = HEIGHT_FEET_INCHES.matcher(t);
+		if (m.find()) {
+			try {
+				int feet = Integer.parseInt(m.group(1));
+				int inches = Integer.parseInt(m.group(2));
+				if (feet >= 1 && feet <= 8 && inches >= 0 && inches < 12) {
+					return feet + (inches / 100.0);
+				}
+			} catch (NumberFormatException ignored) { /* fall through to other patterns */ }
+		}
+		m = HEIGHT_CM.matcher(t);
+		if (m.find()) {
+			try {
+				double cm = Double.parseDouble(m.group(1));
+				double totalInches = cm / 2.54;
+				int feet = (int) (totalInches / 12);
+				int inches = (int) Math.round(totalInches % 12);
+				if (inches >= 12) { feet++; inches = 0; }
+				if (feet >= 1 && feet <= 8) return feet + (inches / 100.0);
+			} catch (NumberFormatException ignored) { /* fall through */ }
+		}
+		m = HEIGHT_FEET_ONLY.matcher(t);
+		if (m.find()) {
+			try {
+				double feet = Double.parseDouble(m.group(1));
+				if (feet >= 1 && feet <= 8) return feet + 0.00;
+			} catch (NumberFormatException ignored) { /* not parseable */ }
+		}
+		return null;
+	}
+
+	/**
+	 * Nudge physicalStrength/agility/physicalEndurance (±3-4, clamped 0-20) off keyword matches in
+	 * a free-text build description, on top of whatever baseline rollStatistics() already rolled.
+	 * This is what actually varies BodyStatsProvider's computed weight per character (driven by
+	 * physicalStrength/agility/maximumHealth, not height alone) — without this, every character
+	 * estimated via this path would still get an identical computed weight.
+	 */
+	private static void applyBuildKeywords(BaseRecord stats, String build) {
+		if (build == null || build.isBlank()) return;
+		String b = build.toLowerCase();
+		int dStrength = 0, dAgility = 0, dEndurance = 0;
+		if (b.matches(".*(muscular|athletic|broad|burly|brawny|strong).*")) {
+			dStrength += 3; dEndurance += 3;
+		}
+		if (b.matches(".*(slender|thin|lean|lithe|willowy|slight|petite).*")) {
+			dAgility += 3; dStrength -= 3;
+		}
+		if (b.matches(".*(heavyset|stocky|portly|overweight|heavy|large).*")) {
+			dEndurance += 4; dAgility -= 3;
+		}
+		if (b.matches(".*(frail|weak|delicate|fragile).*")) {
+			dStrength -= 4; dEndurance -= 4;
+		}
+		if (dStrength != 0) nudgeStat(stats, OlioFieldNames.FIELD_PHYSICAL_STRENGTH, dStrength);
+		if (dAgility != 0) nudgeStat(stats, OlioFieldNames.FIELD_AGILITY, dAgility);
+		if (dEndurance != 0) nudgeStat(stats, OlioFieldNames.FIELD_PHYSICAL_ENDURANCE, dEndurance);
+	}
+
+	private static void nudgeStat(BaseRecord stats, String fieldName, int delta) {
+		try {
+			Integer cur = stats.get(fieldName);
+			int val = (cur != null ? cur : 0) + delta;
+			val = Math.max(0, Math.min(20, val));
+			stats.set(fieldName, val);
+		} catch (Exception e) {
+			logger.warn("Failed to nudge statistic " + fieldName + ": " + e.getMessage());
+		}
+	}
+
+	/**
+	 * Best-effort mapping of an extracted character's free-text {@code physical} description
+	 * (from the pictureBook.extract-character LLM prompt: height/build/etc.) onto a persisted
+	 * olio.statistics record. Always rolls a random baseline first (avoids the degenerate
+	 * all-zero/all-default case), then overrides height/build-driven stats only where the
+	 * extracted text actually parses to something concrete — never guesses on prose text.
+	 */
+	@SuppressWarnings("unchecked")
+	public static void estimateFromExtractedPhysical(BaseRecord stats, Map<String, Object> physical, String gender, int age) {
+		rollStatistics(stats, age);
+		if (physical == null) return;
+		Object heightObj = physical.get("height");
+		Double parsedHeight = (heightObj instanceof String) ? parseHeightToFeetInches((String) heightObj) : null;
+		if (parsedHeight != null) {
+			try {
+				stats.set(OlioFieldNames.FIELD_HEIGHT, parsedHeight);
+			} catch (Exception e) {
+				logger.warn("Failed to set parsed height: " + e.getMessage());
+			}
+		} else {
+			rollHeight(stats, null, gender, age);
+		}
+		Object buildObj = physical.get("build");
+		if (buildObj instanceof String) {
+			applyBuildKeywords(stats, (String) buildObj);
+		}
+	}
 
 }
 

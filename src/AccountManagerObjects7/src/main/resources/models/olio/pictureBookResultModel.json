@@ -8,6 +8,7 @@
 		{ "name": "blurb", "type": "string" },
 		{ "name": "reordered", "type": "boolean" },
 		{ "name": "reset", "type": "boolean" },
+		{ "name": "tagged", "type": "boolean" },
 		{ "name": "chunked", "type": "boolean" },
 		{ "name": "extractionComplete", "type": "boolean" },
 		{ "name": "chunksProcessed", "type": "int" },

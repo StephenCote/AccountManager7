@@ -47,16 +47,27 @@ Quick reminders (full text in `llm-conduct.md`):
 mvn -o -q -pl AccountManagerISO42001 install -DskipTests   # rebuild+install a jar so dependents pick it up
 mvn -o -pl AccountManagerService7 compile                   # compile the WAR against installed jars
 ```
-Editing an ISO model JSON or facade means: `install` the ISO jar, then **rebuild+redeploy the Service7 WAR to Tomcat** (Stephen does the deploy). Run a single backend test with `mvn -o -pl <module> -Dtest=ClassName#method test` — but backend tests are integration tests that hit the live DB/LLM; **never reset the DB schema** (no `-Dreset`/drop — Stephen does that himself).
+Editing an ISO model JSON or facade means: `install` the ISO jar, then **rebuild+redeploy the Service7 WAR to Tomcat**. Run a single backend test with `mvn -o -pl <module> -Dtest=ClassName#method test` — but backend tests are integration tests that hit the live DB/LLM; **never reset the DB schema** (no `-Dreset`/drop — Stephen does that himself). Pure Objects7 JUnit tests (talk to DB/Ollama directly via `IOSystem`) do **not** need Service7/Tomcat running at all.
+
+**Service7/Tomcat for testing: use the Docker setup, not a manually-run local Tomcat.** A verified
+working `docker-compose.yml` + `Dockerfile` at the repo root packages Service7 (Tomcat) + Ux752
+behind nginx on `:8443` — see `aiDocs/DockerComposeDesign.md` for what's verified, the storage map
+(`am7-data`/`am7-certs` volumes), and known follow-ups. Any task that needs a live Service7/Ux752
+stack for testing (Playwright E2E, manual REST checks, etc.) should bring this up via
+`docker-compose up` rather than assuming/depending on an ad hoc locally-managed Tomcat instance.
 
 **Frontend (`AccountManagerUx752/`).**
 ```
 npx vite build              # build (fastest correctness check for JS changes)
 npx vitest run              # unit tests
-npx playwright test         # e2e (auto-starts the Vite dev server on :8899, which proxies to Tomcat :8443)
+npx playwright test         # e2e (needs the Docker stack up — see above — plus the Vite dev server on :8899, which proxies to :8443)
 npx playwright test e2e/foo.spec.js -g "name" --workers=1 --project=chromium   # single e2e, serial
 ```
-E2E needs both live: Tomcat at `:8443` and the Vite dev server at `:8899` (proxy). **Never test as `admin`** — use `ensureSharedTestUser()` / `ensureIso42001TestUser()` from `e2e/helpers/api.js`. LLM-touching tests use the DGX Spark at `192.168.1.42` and must run single-threaded (`--workers=1`); gate them behind an env flag so the default 4-worker suite never fires parallel runs at it.
+E2E needs both live: the Service7/Tomcat stack (via Docker, at `:8443`) and the Vite dev server at
+`:8899` (proxy). **Never test as `admin`** — use `ensureSharedTestUser()` / `ensureIso42001TestUser()`
+from `e2e/helpers/api.js`. LLM-touching tests use the DGX Spark at `192.168.1.42` and must run
+single-threaded (`--workers=1`); gate them behind an env flag so the default 4-worker suite never
+fires parallel runs at it.
 
 ## Cross-cutting model/PBAC gotchas (bite across layers; learned the hard way)
 

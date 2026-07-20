@@ -113,9 +113,11 @@ async function createFromScenes(workObjectId, chatConfigName, genre, bookName, s
  * @param {object|null} sdConfig  overrides — merged with DEFAULT_SD_CONFIG
  * @param {string|null} chatConfigName
  * @param {string|null} promptOverride  skip LLM prompt build if set
+ * @param {string|null} promptTemplateOverride
+ * @param {AbortSignal|null} signal  lets the caller actually cancel an in-flight request
  * @returns {Promise<{imageObjectId: string}>}
  */
-async function generateSceneImage(sceneObjectId, sdConfig, chatConfigName, promptOverride, promptTemplateOverride) {
+async function generateSceneImage(sceneObjectId, sdConfig, chatConfigName, promptOverride, promptTemplateOverride, signal) {
     let body = { schema: 'olio.pictureBookRequest', sdConfig: Object.assign({}, DEFAULT_SD_CONFIG, sdConfig || {}) };
     if (chatConfigName) body.chatConfig = chatConfigName;
     if (promptOverride) body.promptOverride = promptOverride;
@@ -123,7 +125,7 @@ async function generateSceneImage(sceneObjectId, sdConfig, chatConfigName, promp
     let resp = await fetch(pbBase() + '/scene/' + sceneObjectId + '/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify(body)
+        body: JSON.stringify(body), signal
     });
     if (!resp.ok) throw new Error('Scene image generation failed: ' + resp.status);
     return resp.json();
@@ -244,6 +246,37 @@ async function resetPictureBook(bookObjectId) {
     return resp.json();
 }
 
+/**
+ * List a book's extracted characters (for the "Manage Characters" review/edit screen).
+ * @param {string} bookObjectId - book group objectId
+ * @returns {Promise<Array>}
+ */
+async function listCharacters(bookObjectId) {
+    let resp = await fetch(pbBase() + '/' + bookObjectId + '/characters', {
+        credentials: 'include'
+    });
+    if (!resp.ok) throw new Error('List characters failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
+ * Tag an apparel entry with the scene index it should first apply from (see
+ * PictureBookUtil.selectSceneApparel) — used after generating a new outfit via the outfit
+ * builder, to retroactively mark which scene it belongs to.
+ * @param {string} characterObjectId
+ * @param {string} apparelObjectId
+ * @param {number} sceneIndex
+ */
+async function tagApparelSceneIndex(characterObjectId, apparelObjectId, sceneIndex) {
+    let resp = await fetch(pbBase() + '/character/' + characterObjectId + '/apparel/' + apparelObjectId + '/scene-tag', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ sceneIndex: sceneIndex })
+    });
+    if (!resp.ok) throw new Error('Scene-tag apparel failed: ' + resp.status);
+    return resp.json();
+}
+
 // ── Image URL resolution ─────────────────────────────────────────────
 // Scene meta stores imageObjectId (UUID) but media URLs require groupPath + name.
 // Fetch the image record once, cache it, build URL using am7client.currentOrganization.
@@ -343,6 +376,8 @@ export {
     reorderScenes,
     setSceneStatus,
     resetPictureBook,
+    listCharacters,
+    tagApparelSceneIndex,
     buildMeta,
     resolveImageUrl,
     resolveAllImageUrls,

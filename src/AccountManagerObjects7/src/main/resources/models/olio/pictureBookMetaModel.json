@@ -21,6 +21,18 @@
 			"description": "Names of characters whose createCharPerson() failed during extraction — a 200 response never silently implies 0 failures."
 		},
 		{
+			"name": "failedApparel",
+			"type": "list",
+			"baseType": "string",
+			"description": "Names of characters whose best-effort apparel-wizard step failed during createCharPerson() — the character itself was still created; only apparel is missing."
+		},
+		{
+			"name": "failedStatistics",
+			"type": "list",
+			"baseType": "string",
+			"description": "Names of characters whose best-effort statistics-estimation step failed during createCharPerson() — the character itself was still created with default statistics."
+		},
+		{
 			"name": "sdConfig",
 			"type": "model",
 			"baseModel": "olio.sd.config",

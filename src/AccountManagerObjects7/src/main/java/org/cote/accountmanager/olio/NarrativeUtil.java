@@ -268,9 +268,19 @@ public class NarrativeUtil {
 		return buff.toString();
 	}
 	public static String describeOutfit(PersonalityProfile pp, boolean includeOuterArms) {
-			
+		return describeOutfit(pp.getRecord(), includeOuterArms);
+	}
+
+	/**
+	 * Plain-BaseRecord overload — lets callers describe a character's current outfit (e.g.
+	 * PictureBookUtil.createCharPerson) without needing a full PersonalityProfile wrapper. Only
+	 * ever calls plain-BaseRecord APIs (ApparelUtil.getWearing/describeWearable), so this is a
+	 * mechanical extraction of the original PersonalityProfile-based body, not new prompt logic.
+	 */
+	public static String describeOutfit(BaseRecord person, boolean includeOuterArms) {
+
 		StringBuilder buff = new StringBuilder();
-		List<BaseRecord> wearl = ApparelUtil.getWearing(pp.getRecord());
+		List<BaseRecord> wearl = ApparelUtil.getWearing(person);
 		if(wearl.size() == 0) {
 			buff.append("naked/nude, wearing no clothes");
 		}
@@ -1868,7 +1878,7 @@ public class NarrativeUtil {
 	 * @param s value to check
 	 * @return true if s is non-null, non-blank, and not a recognized placeholder token
 	 */
-	private static boolean isMeaningful(String s) {
+	public static boolean isMeaningful(String s) {
 		if (s == null) return false;
 		String t = s.trim();
 		if (t.isEmpty()) return false;
@@ -1887,16 +1897,40 @@ public class NarrativeUtil {
 	 * @return SDXL portrait prompt string, or null if charData is null/empty
 	 */
 	@SuppressWarnings("unchecked")
+	/**
+	 * Strip LLM-leaked reasoning/citations from an extracted field value before it goes into an
+	 * SD prompt — confirmed live against a real document (catatone.docx): despite the
+	 * pictureBook.extract-character system prompt saying "no prose, no commentary", a field value
+	 * itself can still come back as e.g. {@code "broad shoulders, muscular (implied by 'balled his
+	 * fists' and 'Spanish Legionnaire' background)"} instead of a short factual label. Strips
+	 * parenthetical clauses (where this reasoning consistently showed up) and hard-caps length as
+	 * a backstop for anything the parenthetical strip doesn't catch — legitimate physical/costume
+	 * descriptors are always short phrases; multi-sentence prose is never a correct value here.
+	 */
+	private static String sanitizeExtractedField(String value, int maxLen) {
+		if (value == null) return null;
+		String v = value;
+		// Run twice — handles one level of a clause containing its own parenthetical aside.
+		v = v.replaceAll("\\([^()]*\\)", " ");
+		v = v.replaceAll("\\([^()]*\\)", " ");
+		v = v.replaceAll("\\s+", " ").trim();
+		if (v.length() > maxLen) v = v.substring(0, maxLen).trim();
+		// Trim a dangling trailing comma/semicolon left by truncation or clause removal.
+		v = v.replaceAll("[,;:\\s]+$", "");
+		return v;
+	}
+
+	@SuppressWarnings("unchecked")
 	public static String buildPortraitPromptFromExtractedData(String name, Map<String, Object> charData) {
 		if (charData == null || name == null) return null;
 		Map<String, Object> phys = (Map<String, Object>) charData.get("physical");
 		String gender     = (String) charData.getOrDefault("gender", "");
-		String ageApprox  = (String) charData.getOrDefault("age_approx", "");
-		String build      = phys != null ? (String) phys.getOrDefault("build", "") : "";
-		String hair       = phys != null ? (String) phys.getOrDefault("hair", "") : "";
-		String eyes       = phys != null ? (String) phys.getOrDefault("eyes", "") : "";
-		String skin       = phys != null ? (String) phys.getOrDefault("skin", "") : "";
-		String outfitNotes = (String) charData.getOrDefault("outfit_notes", "");
+		String ageApprox  = sanitizeExtractedField((String) charData.getOrDefault("age_approx", ""), 40);
+		String build      = sanitizeExtractedField(phys != null ? (String) phys.getOrDefault("build", "") : "", 60);
+		String hair       = sanitizeExtractedField(phys != null ? (String) phys.getOrDefault("hair", "") : "", 60);
+		String eyes       = sanitizeExtractedField(phys != null ? (String) phys.getOrDefault("eyes", "") : "", 40);
+		String skin       = sanitizeExtractedField(phys != null ? (String) phys.getOrDefault("skin", "") : "", 40);
+		String outfitNotes = sanitizeExtractedField((String) charData.getOrDefault("outfit_notes", ""), 120);
 		boolean isMale = isMeaningful(gender) && gender.toLowerCase().contains("male") && !gender.toLowerCase().contains("female");
 		String pronoun = isMale ? "He" : "She";
 		String label   = isMale ? "man" : "woman";

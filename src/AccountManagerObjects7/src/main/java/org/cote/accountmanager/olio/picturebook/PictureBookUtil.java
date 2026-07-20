@@ -18,13 +18,17 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.CivilUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.llm.PromptResourceUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
@@ -36,6 +40,7 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
@@ -383,6 +388,284 @@ public class PictureBookUtil {
     }
 
     /**
+     * A scene-referenced character resolved to its actual charPerson record + portrait prompt text.
+     * Shared holder so Stage 0 (building the scene-image LLM prompt's charNarrations, before any
+     * SD call) and Stage 1 (actually rendering the portrait) resolve a character exactly once via
+     * resolveSceneCharacter(), rather than duplicating the lookup/narrative-resolution logic twice.
+     */
+    private static final class ResolvedCharacter {
+        final BaseRecord charPerson;
+        final String name;
+        final String portraitPrompt;
+        ResolvedCharacter(BaseRecord charPerson, String name, String portraitPrompt) {
+            this.charPerson = charPerson;
+            this.name = name;
+            this.portraitPrompt = portraitPrompt;
+        }
+    }
+
+    /**
+     * Resolve one scene-referenced character (a {name:...} map or a bare objectId string, per
+     * buildSceneEntry()'s persisted shape) to its charPerson record and portrait prompt text.
+     * Pure DB lookups — no LLM/SD calls — so this is safe to call from Stage 0 (prompt-building,
+     * before the LLM flush) as well as Stage 1 (portrait rendering).
+     */
+    @SuppressWarnings("unchecked")
+    private static ResolvedCharacter resolveSceneCharacter(BaseRecord user, Object charItem, String sceneGroupPath) {
+        String cname = null;
+        String charOid = null;
+        if (charItem instanceof Map) {
+            cname = (String) ((Map<String, Object>) charItem).get("name");
+        } else if (charItem instanceof String) {
+            charOid = (String) charItem;
+        }
+
+        BaseRecord cp = null;
+        try {
+            if (charOid != null) {
+                Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charOid);
+                cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+                cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile", FieldNames.FIELD_STORE});
+                cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+            } else if (cname != null) {
+                // Case-insensitive, whitespace-tolerant (ILIKE, trimmed) — the LLM's own scene-character
+                // name and the name createCharPerson actually persisted aren't guaranteed to match on
+                // case (confirmed live: an exact-match EQUALS query silently missed "Jideon" this way).
+                String charGroupPath = sceneGroupPath.replace("/Scenes", "/Characters");
+                BaseRecord charGrp = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                        ModelNames.MODEL_GROUP, charGroupPath, GroupEnumType.DATA.toString(),
+                        (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
+                if (charGrp != null) {
+                    Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
+                    cq.field(FieldNames.FIELD_NAME, ComparatorEnumType.ILIKE, cname.trim());
+                    cq.field(FieldNames.FIELD_GROUP_ID, charGrp.get(FieldNames.FIELD_ID));
+                    cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+                    cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile", FieldNames.FIELD_STORE});
+                    cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+                } else {
+                    logger.warn("No Characters group found at " + charGroupPath + " while resolving scene character '" + cname + "'");
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to find character: " + (cname != null ? cname : charOid) + ": " + e.getMessage());
+            return null;
+        }
+
+        if (cp == null) {
+            logger.warn("Could not resolve scene character '" + (cname != null ? cname : charOid)
+                    + "' to a charPerson record — this character's portrait will be skipped");
+            return null;
+        }
+        if (cname == null) cname = cp.get(FieldNames.FIELD_NAME);
+
+        // narrative is a foreign model (olio.narrative) — read sdPrompt from it
+        String portraitPrompt = null;
+        BaseRecord cpNarrative = cp.get("narrative");
+        if (cpNarrative != null) {
+            portraitPrompt = cpNarrative.get("sdPrompt");
+            if (portraitPrompt == null || portraitPrompt.isBlank()) {
+                portraitPrompt = cpNarrative.get("physicalDescription");
+            }
+            // The charPerson query above requests the bare "narrative" field name (no nested
+            // dot-path/plan), which — per .claude/rules/model-api.md — only returns the foreign
+            // model's default query fields. olio.narrative's "query" array is just ["id","groupId"],
+            // so sdPrompt/physicalDescription come back null here even though they are persisted in
+            // the DB. Mirror the profile->portrait two-step populate() pattern: explicitly re-populate
+            // the narrative record itself for the fields actually needed.
+            if (portraitPrompt == null || portraitPrompt.isBlank()) {
+                try {
+                    IOSystem.getActiveContext().getReader().populate(cpNarrative, new String[] { "sdPrompt", "physicalDescription" });
+                    portraitPrompt = cpNarrative.get("sdPrompt");
+                    if (portraitPrompt == null || portraitPrompt.isBlank()) {
+                        portraitPrompt = cpNarrative.get("physicalDescription");
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to populate narrative sdPrompt/physicalDescription for " + cname + ": " + e.getMessage());
+                }
+            }
+        }
+        if (portraitPrompt == null || portraitPrompt.isBlank()) {
+            logger.warn("No portrait prompt (narrative) for: " + cname + " — skipping portrait");
+            return null;
+        }
+        return new ResolvedCharacter(cp, cname, portraitPrompt);
+    }
+
+    /**
+     * Resolve (and cache) the scene-image (composite) prompt for a scene, combining resolved scene
+     * characters' portrait descriptions with setting/action/mood into a proper SD tag-style prompt
+     * via the pictureBook.scene-image-prompt template — rather than the old raw narrative-sentence
+     * concatenation. Same cache/fallback/persist shape as resolveLandscapePrompt: check the scene
+     * note's cached "scenePrompt" first, call the LLM, fall back to a raw concatenation (never leave
+     * the composite with no prompt at all) on failure, cache either way. Callers MUST invoke this —
+     * and OllamaModelUtil.unloadAll() — before any SD call in the same pipeline run (Stage 0).
+     */
+    private static String resolveScenePrompt(BaseRecord user, BaseRecord scene, BaseRecord chatConfig,
+            String action, String setting, String mood, String style, List<String> charNarrations, String promptTemplateOverride) {
+        String cached = getSceneTextField(scene, "scenePrompt");
+        if (cached != null && !cached.isBlank()) return cached;
+
+        String charNarrationsText = String.join("\n", charNarrations);
+        Map<String, String> vars = new LinkedHashMap<>();
+        vars.put("setting", setting);
+        vars.put("action", action);
+        vars.put("mood", mood);
+        vars.put("charNarrations", charNarrationsText.isEmpty() ? "(no characters in this scene)" : charNarrationsText);
+        String scenePrompt = callLlm(user, chatConfig, "pictureBook.scene-image-prompt", vars, promptTemplateOverride);
+        if (scenePrompt == null || scenePrompt.isBlank()) {
+            logger.warn("Scene-image prompt LLM call failed — falling back to raw concatenation");
+            StringBuilder fallback = new StringBuilder();
+            if (!charNarrationsText.isEmpty()) fallback.append(charNarrationsText).append(". ");
+            if (action != null && !action.isEmpty()) fallback.append("They are ").append(action).append(". ");
+            if (setting != null && !setting.isEmpty()) fallback.append("Setting: ").append(setting).append(". ");
+            if (mood != null && !mood.isEmpty()) fallback.append("Mood: ").append(mood).append(". ");
+            fallback.append(SWUtil.styleClause(style));
+            scenePrompt = fallback.toString();
+        }
+        updateSceneTextField(user, scene, "scenePrompt", scenePrompt);
+        return scenePrompt;
+    }
+
+    /**
+     * Resolve a scene's ordinal position within its book. data.note scene records have no "index"
+     * field — the ordinal only exists on the olio.pictureBookScene DTO inside the book's
+     * .pictureBookMeta JSON blob (see buildSceneEntry()). Returns 0 (safe default — matches
+     * "always eligible" for scene-tagged apparel with sceneIndex 0) if it can't be resolved, e.g.
+     * for the ~/Chat single-image fallback which has no book meta at all.
+     */
+    @SuppressWarnings("unchecked")
+    private static int resolveCurrentSceneIndex(BaseRecord user, String sceneGroupPath, String sceneObjectId) {
+        if (sceneGroupPath == null || !sceneGroupPath.endsWith("/Scenes")) return 0;
+        String bookGroupPath = sceneGroupPath.substring(0, sceneGroupPath.length() - "/Scenes".length());
+        try {
+            BaseRecord metaRec = loadMeta(user, bookGroupPath);
+            if (metaRec == null) return 0;
+            String metaJson = metaRec.get("text");
+            if (metaJson == null || metaJson.isEmpty()) return 0;
+            Map<String, Object> meta = JSONUtil.getMap(metaJson.getBytes(), String.class, Object.class);
+            Object scenesObj = meta.get("scenes");
+            if (scenesObj instanceof List) {
+                for (Object so : (List<Object>) scenesObj) {
+                    if (so instanceof Map) {
+                        Map<String, Object> sm = (Map<String, Object>) so;
+                        if (sceneObjectId.equals(sm.get("objectId"))) {
+                            Object idxObj = sm.get("index");
+                            if (idxObj instanceof Number) return ((Number) idxObj).intValue();
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to resolve current scene index for " + sceneObjectId + ": " + e.getMessage());
+        }
+        return 0;
+    }
+
+    /**
+     * Scene-tagged apparel selection: pick the highest sceneIndex-tagged apparel entry
+     * &lt;= currentSceneIndex, set it inuse=true and every other *tagged* entry inuse=false
+     * (toggle only the inuse boolean — never unlink/replace, so every scene outfit stays in
+     * store.apparel for reuse as the user moves through scenes). Returns whether the character
+     * has ANY scene-tagged apparel at all — false means "leave everything exactly as-is," which
+     * is the common case (untagged base outfit from the wizard) and must never regress existing
+     * behavior for books/characters not using this feature.
+     */
+    private static boolean selectSceneApparel(BaseRecord user, BaseRecord charPerson, int currentSceneIndex) {
+        BaseRecord storeRef = charPerson.get(FieldNames.FIELD_STORE);
+        Long storeId = (storeRef != null) ? storeRef.get(FieldNames.FIELD_ID) : null;
+        if (storeId == null || storeId <= 0L) return false;
+
+        // reader.populate() is a no-op here — store.apparel/apparel.attributes are list fields
+        // that BaseRecord already default-instantiates to an empty list, so populate() sees the
+        // field as "already set" and never actually queries the DB (confirmed live: a second
+        // apparel linked via member() never appeared, and a tagged sceneIndex attribute never
+        // resolved, until switched to an explicit fresh Query — the exact same class of gotcha as
+        // .claude/rules/model-api.md's "list schema loss"/cache-staleness notes, just triggered by
+        // populate()'s own "already populated" skip instead of a search-result cache).
+        Query storeQ = QueryUtil.createQuery(OlioModelNames.MODEL_STORE, FieldNames.FIELD_ID, storeId);
+        storeQ.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        storeQ.setCache(false);
+        storeQ.planMost(true);
+        BaseRecord store = IOSystem.getActiveContext().getAccessPoint().find(user, storeQ);
+        if (store == null) return false;
+        List<BaseRecord> appl = store.get(OlioFieldNames.FIELD_APPAREL);
+        if (appl == null || appl.isEmpty()) return false;
+
+        BaseRecord best = null;
+        int bestIdx = Integer.MIN_VALUE;
+        boolean anyTagged = false;
+        for (BaseRecord a : appl) {
+            try {
+                Long apparelId = a.get(FieldNames.FIELD_ID);
+                Query attrQ = QueryUtil.createQuery(OlioModelNames.MODEL_APPAREL, FieldNames.FIELD_ID, apparelId);
+                attrQ.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+                attrQ.setCache(false);
+                attrQ.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_ATTRIBUTES });
+                BaseRecord aFresh = IOSystem.getActiveContext().getAccessPoint().find(user, attrQ);
+                Integer si = (aFresh != null) ? AttributeUtil.getAttributeValue(aFresh, "sceneIndex", null) : null;
+                if (si == null) continue;
+                anyTagged = true;
+                if (si <= currentSceneIndex && si > bestIdx) { bestIdx = si; best = a; }
+            } catch (Exception e) {
+                logger.warn("Failed to read sceneIndex attribute on apparel: " + e.getMessage());
+            }
+        }
+        if (!anyTagged || best == null) return false;
+
+        for (BaseRecord a : appl) {
+            boolean shouldUse = (a == best);
+            Boolean cur = a.get(OlioFieldNames.FIELD_IN_USE);
+            if (cur == null || cur.booleanValue() != shouldUse) {
+                try {
+                    a.setValue(OlioFieldNames.FIELD_IN_USE, shouldUse);
+                    BaseRecord patch = a.copyRecord(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_IN_USE });
+                    IOSystem.getActiveContext().getAccessPoint().update(user, patch);
+                } catch (Exception e) {
+                    logger.warn("Failed to persist apparel inuse flip: " + e.getMessage());
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Tag an apparel entry with the scene index it should first apply from (see
+     * selectSceneApparel). Used by the character-editor UI after generating a new outfit via the
+     * existing outfitBuilder.js flow — retroactively tags the freshly-generated apparel.
+     */
+    public static boolean tagApparelSceneIndex(BaseRecord user, String apparelObjectId, int sceneIndex) {
+        Query q = QueryUtil.createQuery(OlioModelNames.MODEL_APPAREL, FieldNames.FIELD_OBJECT_ID, apparelObjectId);
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_ORGANIZATION_ID,
+                FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ATTRIBUTES });
+        BaseRecord apparel = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+        if (apparel == null) throw new PictureBookException(404, "Apparel not found");
+        try {
+            // Attributes are referenced-table storage, not a normal column — folding them into a
+            // parent-record patch (copyRecord + AccessPoint.update) never actually cascades the
+            // write (confirmed live: the attribute silently never persisted, even after fixing an
+            // earlier empty-SQL-SET-clause bug in that same approach). The only proven pattern for
+            // persisting an attribute is to create/update the attribute record ITSELF directly —
+            // see LibraryUtil.java:45, `ctx.getRecordUtil().createRecord(AttributeUtil.addAttribute(...))`.
+            BaseRecord existing = AttributeUtil.getAttribute(apparel, "sceneIndex");
+            boolean ok;
+            if (existing != null) {
+                existing.setFlex(FieldNames.FIELD_VALUE, sceneIndex);
+                ok = IOSystem.getActiveContext().getRecordUtil().updateRecord(existing);
+            } else {
+                BaseRecord newAttr = AttributeUtil.addAttribute(apparel, "sceneIndex", sceneIndex);
+                ok = IOSystem.getActiveContext().getRecordUtil().createRecord(newAttr);
+            }
+            return ok;
+        } catch (PictureBookException pbe) {
+            throw pbe;
+        } catch (Exception e) {
+            logger.error("Failed to tag apparel " + apparelObjectId + " with sceneIndex " + sceneIndex + ": " + e.getMessage(), e);
+            throw new PictureBookException(500, e.getMessage());
+        }
+    }
+
+    /**
      * Resolve (and cache) the landscape prompt for a scene. If prepareSceneImagePrompts() already
      * computed one for this scene, reuse it (no LLM call); otherwise call the LLM live, falling
      * back to the raw setting text on failure, and persist the result either way so a later call
@@ -458,10 +741,33 @@ public class PictureBookUtil {
     /**
      * Parse LLM JSON response into a list of maps, stripping markdown fences if present.
      */
+    /**
+     * Strip a `&lt;think&gt;...&lt;/think&gt;` reasoning block some models emit even when the
+     * request set think:false (a hybrid-reasoning model may ignore that option entirely). Shared
+     * by every LLM-response path in this class — JSON extraction paths already needed this;
+     * callLlmInternal's raw-text path (landscape prompt, blurb, scene prompt) did not, which is
+     * how raw chain-of-thought ended up inside an actual SD prompt sent to Swarm.
+     */
+    public static String stripThink(String text) {
+        if (text == null) return null;
+        String result = text.replaceAll("(?s)<think>.*?</think>", "");
+        // Some models (confirmed live against a real landscape-prompt call, qwen3-vl:8b-instruct)
+        // emit a full reasoning trace ("We need to output...", "Let's craft:...") followed by a
+        // bare closing </think> tag with NO matching opening tag at all — the regex above only
+        // matches a *paired* <think>...</think> block, so an orphan closing tag (and everything
+        // before it) sails straight through untouched. If one is present, treat everything up to
+        // and including the LAST closing tag as reasoning and keep only what follows it.
+        int lastClose = result.lastIndexOf("</think>");
+        if (lastClose >= 0) {
+            result = result.substring(lastClose + "</think>".length());
+        }
+        return result.trim();
+    }
+
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> parseLlmJsonArray(String response) {
         if (response == null || response.isEmpty()) return new ArrayList<>();
-        String trimmed = response.trim();
+        String trimmed = stripThink(response.trim());
         // Strip markdown code fences
         if (trimmed.startsWith("```")) {
             int nl = trimmed.indexOf('\n');
@@ -488,9 +794,7 @@ public class PictureBookUtil {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> parseLlmJsonObject(String response) {
         if (response == null || response.isEmpty()) return new LinkedHashMap<>();
-        String trimmed = response.trim();
-        // Strip <think>...</think> blocks (Qwen3 etc. may ignore think:false)
-        trimmed = trimmed.replaceAll("(?s)<think>.*?</think>", "").trim();
+        String trimmed = stripThink(response.trim());
         if (trimmed.startsWith("```")) {
             int nl = trimmed.indexOf('\n');
             if (nl >= 0) trimmed = trimmed.substring(nl + 1);
@@ -567,6 +871,15 @@ public class PictureBookUtil {
                 }
             }
         }
+        // These prompt templates put /no_think at the end of the SYSTEM prompt, but Qwen's own
+        // documented convention for this inline toggle checks the LATEST USER message, not the
+        // system prompt — confirmed live that think:false (already sent both at the top-level
+        // OpenAIRequest.think field and in options.think) did not stop a real reasoning-trace leak
+        // from qwen3-vl:8b-instruct. Appending it to the user turn too is a cheap additional
+        // attempt at suppressing it; stripThink() below remains the actual backstop regardless.
+        if (system != null && system.contains("/no_think") && !userTpl.contains("/no_think")) {
+            userTpl = userTpl + "\n/no_think";
+        }
         try {
             // Fall back to default chat config if none provided
             if (chatConfig == null) {
@@ -592,7 +905,7 @@ public class PictureBookUtil {
             chat.newMessage(req, userTpl);
             OpenAIResponse resp = chat.chat(req);
             if (resp != null && resp.getMessage() != null) {
-                return resp.getMessage().getContent();
+                return stripThink(resp.getMessage().getContent());
             }
         } catch (Exception e) {
             logger.error("LLM call failed for " + promptName + ": " + e.getMessage());
@@ -715,6 +1028,24 @@ public class PictureBookUtil {
         if (g.equals("male") || g.equals("m")) return "MALE";
         if (g.equals("female") || g.equals("f")) return "FEMALE";
         return "UNKNOWN";
+    }
+
+    /**
+     * Parse the LLM-extracted "age_approx" field (free text — "mid-30s", "25", "elderly", etc.)
+     * into a plain int. Returns 0 (StatisticsUtil's own "adult, no special-case" convention —
+     * see rollStatistics/rollHeight's own age&lt;=0 checks) for anything that doesn't start with a
+     * parseable number, rather than guessing.
+     */
+    private static int parseAgeApprox(Map<String, Object> charData) {
+        Object ageObj = charData.get("age_approx");
+        if (!(ageObj instanceof String)) return 0;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)").matcher((String) ageObj);
+        if (m.find()) {
+            try {
+                return Integer.parseInt(m.group(1));
+            } catch (NumberFormatException ignored) { /* fall through */ }
+        }
+        return 0;
     }
 
     /**
@@ -861,7 +1192,8 @@ public class PictureBookUtil {
      * Create an olio.charPerson for an extracted character, apply outfit, call narrate.
      */
     @SuppressWarnings("unchecked")
-    private static BaseRecord createCharPerson(BaseRecord user, Map<String, Object> charData, BaseRecord charsGroup, String genre) {
+    private static BaseRecord createCharPerson(BaseRecord user, Map<String, Object> charData, BaseRecord charsGroup, String genre,
+            List<String> failedApparelOut, List<String> failedStatisticsOut) {
         String name = (String) charData.get("name");
         if (name == null || name.isEmpty()) return null;
 
@@ -897,6 +1229,27 @@ public class PictureBookUtil {
             // value never aborts character creation.
             String gender = (String) charData.get("gender");
             charPerson.set("gender", normalizeGender(gender));
+
+            // Age/ethnicity/skills — plain columns on identity.person/charPerson (not foreign/
+            // referenced records), so these can be set directly before create(), same as gender.
+            // NarrativeUtil.isMeaningful() filters literal placeholder strings the LLM emits for
+            // fields it couldn't determine ("null", "n/a", "unknown", etc. — confirmed live: this
+            // extraction prompt returns the literal text "null" for ethnicity far more often than
+            // a real JSON null, which a plain != null/isBlank() check would not catch).
+            int age = parseAgeApprox(charData);
+            if (age > 0) charPerson.set("age", age);
+            Object ethnicityObj = charData.get("ethnicity");
+            if (ethnicityObj instanceof String && NarrativeUtil.isMeaningful((String) ethnicityObj)) {
+                charPerson.set("ethnicity", Arrays.asList(((String) ethnicityObj).trim()));
+            }
+            Object skillsObj = charData.get("skills");
+            if (skillsObj instanceof List) {
+                List<String> skills = new ArrayList<>();
+                for (Object s : (List<?>) skillsObj) {
+                    if (s instanceof String && NarrativeUtil.isMeaningful((String) s)) skills.add(((String) s).trim());
+                }
+                if (!skills.isEmpty()) charPerson.set("trades", skills);
+            }
 
             charPerson = IOSystem.getActiveContext().getAccessPoint().create(user, charPerson);
             if (charPerson == null) return null;
@@ -993,6 +1346,116 @@ public class PictureBookUtil {
                 logger.error("Failed to set portrait prompt/narrative for " + name + ": " + e.getMessage(), e);
                 return null;
             }
+
+            // Ensure statistics/store are real *persisted* records — same gap as profile/narrative
+            // above (olio.charPerson has no autoCreateForeignReference, so CharPersonFactory's
+            // in-memory placeholders never cascade into the DB on create). Unlike profile/narrative,
+            // these are hard prerequisites for the statistics-estimation and apparel-wizard steps
+            // below, not independently optional — if either fails to persist, abort character
+            // creation the same way a profile/narrative failure already does, rather than letting
+            // the statistics/apparel steps silently patch a record with id<=0.
+            BaseRecord statistics = charPerson.get(OlioFieldNames.FIELD_STATISTICS);
+            Long existingStatsId = (statistics != null) ? statistics.get(FieldNames.FIELD_ID) : null;
+            if (statistics == null || existingStatsId == null || existingStatsId <= 0L) {
+                BaseRecord newStats = createPersistedForeignInstance(user, OlioModelNames.MODEL_CHAR_STATISTICS);
+                if (newStats == null) {
+                    logger.error("Failed to create persisted statistics for charPerson " + name);
+                    return null;
+                }
+                BaseRecord statsLinked = patchCharPersonField(user, charPerson, OlioFieldNames.FIELD_STATISTICS, newStats);
+                if (statsLinked == null) {
+                    logger.error("Failed to link persisted statistics to charPerson " + name);
+                    return null;
+                }
+                charPerson.set(OlioFieldNames.FIELD_STATISTICS, newStats);
+                statistics = newStats;
+            }
+
+            BaseRecord store = charPerson.get(FieldNames.FIELD_STORE);
+            Long existingStoreId = (store != null) ? store.get(FieldNames.FIELD_ID) : null;
+            if (store == null || existingStoreId == null || existingStoreId <= 0L) {
+                BaseRecord newStore = createPersistedForeignInstance(user, OlioModelNames.MODEL_STORE);
+                if (newStore == null) {
+                    logger.error("Failed to create persisted store for charPerson " + name);
+                    return null;
+                }
+                BaseRecord storeLinked = patchCharPersonField(user, charPerson, FieldNames.FIELD_STORE, newStore);
+                if (storeLinked == null) {
+                    logger.error("Failed to link persisted store to charPerson " + name);
+                    return null;
+                }
+                charPerson.set(FieldNames.FIELD_STORE, newStore);
+                store = newStore;
+            }
+
+            // Best-effort statistics estimation + apparel wizard — enhancements on top of an
+            // already-usable character (Stage 1 already runs fine with empty store.apparel/default
+            // statistics), unlike profile/narrative/store/statistics above which are hard-required.
+            // Failures here are logged and degrade gracefully rather than aborting creation.
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> physical = (Map<String, Object>) charData.get("physical");
+                StatisticsUtil.estimateFromExtractedPhysical(statistics, physical, normalizeGender(gender), parseAgeApprox(charData));
+                BaseRecord statsPatch = statistics.copyRecord(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID,
+                        "unit", "height", "physicalStrength", "physicalEndurance", "manualDexterity", "agility", "speed" });
+                BaseRecord statsPersisted = IOSystem.getActiveContext().getAccessPoint().update(user, statsPatch);
+                if (statsPersisted == null) {
+                    logger.warn("Failed to persist estimated statistics for " + name + " — AccessPoint.update denied or failed");
+                    if (failedStatisticsOut != null) failedStatisticsOut.add(name);
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to estimate statistics for " + name + ": " + e.getMessage());
+                if (failedStatisticsOut != null) failedStatisticsOut.add(name);
+            }
+
+            try {
+                BaseRecord apparel = ApparelUtil.contextApparel(null, charPerson, 2, CivilUtil.ClimateType.TEMPERATE);
+                if (apparel != null) {
+                    // contextApparel() alone does NOT mark the apparel or its wearables `inuse` —
+                    // ApparelUtil.getWearing()/NarrativeUtil.describeOutfit() both filter on
+                    // inuse==true (apparel AND per-wearable), falling back to literal
+                    // "naked/nude, wearing no clothes" text otherwise. Both real precedents
+                    // (applyAutfit, outfitAndStage) explicitly set this on both levels — mirror
+                    // them exactly, or every character renders/describes as nude regardless of
+                    // how much wardrobe logic ran.
+                    apparel.setValue(OlioFieldNames.FIELD_IN_USE, true);
+                    List<BaseRecord> wearables = apparel.get(OlioFieldNames.FIELD_WEARABLES);
+                    if (wearables != null) {
+                        for (BaseRecord w : wearables) w.setValue(OlioFieldNames.FIELD_IN_USE, true);
+                    }
+                    IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
+                    IOSystem.getActiveContext().getMemberUtil().member(user, store, OlioFieldNames.FIELD_APPAREL, apparel, null, true);
+                    // member() only writes the participation link to the DB — it does NOT mutate
+                    // store's own in-memory apparel list. Without this, ApparelUtil.getWearing()
+                    // (called by describeOutfit() just below, on this same in-memory charPerson)
+                    // reads a stale empty list and falls back to "naked/nude, wearing no clothes"
+                    // even though the apparel is correctly persisted+linked — confirmed live.
+                    List<BaseRecord> storeApparelList = store.get(OlioFieldNames.FIELD_APPAREL);
+                    if (storeApparelList != null) storeApparelList.add(apparel);
+
+                    // Makes the existing, unmodified charPerson reimage command's
+                    // am7olio.setNarDescription() (builds its SD prompt from
+                    // narrative.physicalDescription + narrative.outfitDescription) pick up this
+                    // apparel automatically, with no frontend change needed.
+                    BaseRecord narrativeForOutfit = charPerson.get("narrative");
+                    if (narrativeForOutfit != null) {
+                        narrativeForOutfit.set("outfitDescription", NarrativeUtil.describeOutfit(charPerson, false));
+                        BaseRecord outfitPatch = narrativeForOutfit.copyRecord(
+                                new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "outfitDescription" });
+                        BaseRecord outfitPersisted = IOSystem.getActiveContext().getAccessPoint().update(user, outfitPatch);
+                        if (outfitPersisted == null) {
+                            logger.warn("Failed to persist narrative.outfitDescription for " + name);
+                        }
+                    }
+                } else {
+                    logger.warn("Apparel wizard returned no apparel for " + name);
+                    if (failedApparelOut != null) failedApparelOut.add(name);
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to generate apparel for " + name + ": " + e.getMessage());
+                if (failedApparelOut != null) failedApparelOut.add(name);
+            }
+
             return charPerson;
 
         } catch (Exception e) {
@@ -1167,6 +1630,8 @@ public class PictureBookUtil {
         // createCharPerson() failures are never silently dropped — collected here so a 200
         // response can never mean "silently 0 characters created".
         List<String> failedCharacters = new ArrayList<>();
+        List<String> failedApparel = new ArrayList<>();
+        List<String> failedStatistics = new ArrayList<>();
         int charIdx = 0;
         for (Map.Entry<String, Map<String, Object>> entry : uniqueChars.entrySet()) {
             String cname = entry.getKey();
@@ -1181,7 +1646,7 @@ public class PictureBookUtil {
             if (charData.isEmpty()) charData = new LinkedHashMap<>(entry.getValue());
             if (!charData.containsKey("name")) charData.put("name", cname);
 
-            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre);
+            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre, failedApparel, failedStatistics);
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
             } else {
@@ -1207,6 +1672,12 @@ public class PictureBookUtil {
         BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
         if (!failedCharacters.isEmpty()) {
             try { meta.set("failedCharacters", failedCharacters); } catch (Exception e) { logger.warn("Failed to record failedCharacters on meta: " + e.getMessage()); }
+        }
+        if (!failedApparel.isEmpty()) {
+            try { meta.set("failedApparel", failedApparel); } catch (Exception e) { logger.warn("Failed to record failedApparel on meta: " + e.getMessage()); }
+        }
+        if (!failedStatistics.isEmpty()) {
+            try { meta.set("failedStatistics", failedStatistics); } catch (Exception e) { logger.warn("Failed to record failedStatistics on meta: " + e.getMessage()); }
         }
         saveMeta(user, bookGroupPath, meta);
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
@@ -1289,6 +1760,8 @@ public class PictureBookUtil {
         // createCharPerson() failures are never silently dropped — collected here so a 200
         // response can never mean "silently 0 characters created".
         List<String> failedCharacters = new ArrayList<>();
+        List<String> failedApparel = new ArrayList<>();
+        List<String> failedStatistics = new ArrayList<>();
         int cfsCharIdx = 0;
         for (Map<String, Object> charData : charDataList) {
             String cname = (String) charData.get("name");
@@ -1316,7 +1789,7 @@ public class PictureBookUtil {
                 }
             }
 
-            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre);
+            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre, failedApparel, failedStatistics);
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
             } else {
@@ -1341,6 +1814,12 @@ public class PictureBookUtil {
         BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
         if (!failedCharacters.isEmpty()) {
             try { meta.set("failedCharacters", failedCharacters); } catch (Exception e) { logger.warn("Failed to record failedCharacters on meta: " + e.getMessage()); }
+        }
+        if (!failedApparel.isEmpty()) {
+            try { meta.set("failedApparel", failedApparel); } catch (Exception e) { logger.warn("Failed to record failedApparel on meta: " + e.getMessage()); }
+        }
+        if (!failedStatistics.isEmpty()) {
+            try { meta.set("failedStatistics", failedStatistics); } catch (Exception e) { logger.warn("Failed to record failedStatistics on meta: " + e.getMessage()); }
         }
         saveMeta(user, bookGroupPath, meta);
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
@@ -1474,11 +1953,31 @@ public class PictureBookUtil {
         }
 
         try {
-            // Stage 0: Resolve (and cache) the landscape prompt BEFORE any SD calls — keeps every
-            // LLM call ahead of every GPU-heavy SD call so the model can be unloaded once instead
-            // of sitting loaded in VRAM across the whole portrait/landscape/composite sequence.
+            // Stage 0: Resolve (and cache) the landscape prompt AND the scene-image (composite)
+            // prompt BEFORE any SD calls — keeps every LLM call ahead of every GPU-heavy SD call
+            // so the model can be unloaded once instead of sitting loaded in VRAM across the whole
+            // portrait/landscape/composite sequence. Scene characters are resolved here (DB-only,
+            // no LLM/SD calls) purely to build charNarrations for the scene-image prompt; Stage 1
+            // resolves them again (same resolveSceneCharacter helper) when it actually renders.
             String landscapePrompt = resolveLandscapePrompt(user, scene, chatConfig, setting, mood, style, params.promptTemplateOverride);
+            Object charsObjForPrompt = sceneData.get("characters");
+            List<String> charNarrationsForPrompt = new ArrayList<>();
+            if (charsObjForPrompt instanceof List) {
+                for (Object charItem : (List<Object>) charsObjForPrompt) {
+                    if (charNarrationsForPrompt.size() >= 2) break;
+                    ResolvedCharacter rc = resolveSceneCharacter(user, charItem, sceneGroupPath);
+                    if (rc != null) {
+                        charNarrationsForPrompt.add(rc.name + ": " + SWUtil.stripSDXLWeighting(rc.portraitPrompt));
+                    }
+                }
+            }
+            String scenePrompt = resolveScenePrompt(user, scene, chatConfig, action, setting, mood, style,
+                    charNarrationsForPrompt, params.promptTemplateOverride);
             OllamaModelUtil.unloadAll();
+
+            // Resolved once for the whole call — used by Stage 1's per-character scene-tagged
+            // apparel selection below (no-ops entirely for every character/book not using it).
+            int currentSceneIndex = resolveCurrentSceneIndex(user, sceneGroupPath, sceneObjectId);
 
             // Stage 1: Portrait bytes for up to 2 scene characters
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "face", "Generating portraits...");
@@ -1496,73 +1995,22 @@ public class PictureBookUtil {
                 List<Object> charItems = (List<Object>) charsObj;
                 for (Object charItem : charItems) {
                     if (portraitBytesList.size() >= 2) break;
-                    String cname = null;
-                    String charOid = null;
-                    if (charItem instanceof Map) {
-                        Map<String, Object> cmap = (Map<String, Object>) charItem;
-                        cname = (String) cmap.get("name");
-                    } else if (charItem instanceof String) {
-                        charOid = (String) charItem;
-                    }
+                    ResolvedCharacter rc = resolveSceneCharacter(user, charItem, sceneGroupPath);
+                    if (rc == null) continue;
+                    BaseRecord cp = rc.charPerson;
+                    String cname = rc.name;
+                    String portraitPrompt2 = rc.portraitPrompt;
 
-                    BaseRecord cp = null;
-                    try {
-                        if (charOid != null) {
-                            Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charOid);
-                            cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                            cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile"});
-                            cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
-                        } else if (cname != null) {
-                            // Search by name — scope to scene's parent group's Characters/ sibling
-                            String charGroupPath = sceneGroupPath.replace("/Scenes", "/Characters");
-                            BaseRecord charGrp = IOSystem.getActiveContext().getPathUtil().findPath(user,
-                                    ModelNames.MODEL_GROUP, charGroupPath, GroupEnumType.DATA.toString(),
-                                    (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                            if (charGrp != null) {
-                                Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, cname);
-                                cq.field(FieldNames.FIELD_GROUP_ID, charGrp.get(FieldNames.FIELD_ID));
-                                cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                                cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile"});
-                                cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
-                            }
+                    // Scene-tagged apparel: pick the highest sceneIndex-tagged outfit <= this
+                    // scene's index, flip inuse, and fold its description into the portrait prompt.
+                    // Returns false (no-op) for every character/book not using this feature — the
+                    // common case, and the existing reuse-cache below must fire exactly as before.
+                    boolean hasSceneApparel = selectSceneApparel(user, cp, currentSceneIndex);
+                    if (hasSceneApparel) {
+                        String outfitDesc = NarrativeUtil.describeOutfit(cp, false);
+                        if (outfitDesc != null && !outfitDesc.isBlank()) {
+                            portraitPrompt2 = portraitPrompt2 + ", " + outfitDesc;
                         }
-                    } catch (Exception e) {
-                        logger.warn("Failed to find character: " + (cname != null ? cname : charOid) + ": " + e.getMessage());
-                        continue;
-                    }
-
-                    if (cp == null) continue;
-                    if (cname == null) cname = cp.get(FieldNames.FIELD_NAME);
-                    // narrative is a foreign model (olio.narrative) — read sdPrompt from it
-                    String portraitPrompt2 = null;
-                    BaseRecord cpNarrative = cp.get("narrative");
-                    if (cpNarrative != null) {
-                        portraitPrompt2 = cpNarrative.get("sdPrompt");
-                        if (portraitPrompt2 == null || portraitPrompt2.isBlank()) {
-                            portraitPrompt2 = cpNarrative.get("physicalDescription");
-                        }
-                        // The charPerson query above requests the bare "narrative" field name
-                        // (no nested dot-path / plan), which — per .claude/rules/model-api.md —
-                        // only returns the foreign model's default query fields. olio.narrative's
-                        // "query" array is just ["id","groupId"], so sdPrompt/physicalDescription
-                        // come back null here even though they are persisted in the DB. Mirror the
-                        // profile->portrait two-step populate() pattern used just below: explicitly
-                        // re-populate the narrative record itself for the fields actually needed.
-                        if (portraitPrompt2 == null || portraitPrompt2.isBlank()) {
-                            try {
-                                IOSystem.getActiveContext().getReader().populate(cpNarrative, new String[] { "sdPrompt", "physicalDescription" });
-                                portraitPrompt2 = cpNarrative.get("sdPrompt");
-                                if (portraitPrompt2 == null || portraitPrompt2.isBlank()) {
-                                    portraitPrompt2 = cpNarrative.get("physicalDescription");
-                                }
-                            } catch (Exception e) {
-                                logger.warn("Failed to populate narrative sdPrompt/physicalDescription for " + cname + ": " + e.getMessage());
-                            }
-                        }
-                    }
-                    if (portraitPrompt2 == null || portraitPrompt2.isBlank()) {
-                        logger.warn("No portrait prompt (narrative) for: " + cname + " — skipping portrait");
-                        continue;
                     }
 
                     // B1: Populate the character's profile + portrait (with byteStore) so we can
@@ -1593,7 +2041,9 @@ public class PictureBookUtil {
                     }
 
                     // Reuse branch: a book character with a persisted portrait — no re-render.
-                    if (isBook && existingPortraitBytes != null && existingPortraitBytes.length > 0) {
+                    // Bypassed when this character has scene-tagged apparel in use, or the outfit
+                    // would never actually change across scenes.
+                    if (isBook && !hasSceneApparel && existingPortraitBytes != null && existingPortraitBytes.length > 0) {
                         portraitBytesList.add(existingPortraitBytes);
                         portraitPromptList.add(SWUtil.stripSDXLWeighting(portraitPrompt2));
                         logger.info("Reusing persisted portrait for " + cname + " (no re-render)");
@@ -1793,15 +2243,10 @@ public class PictureBookUtil {
                 // controlled creativity/denoise strength — the real portrait pixels are physically
                 // present in the input before refinement, which is what actually preserves identity.
                 PictureBookProgressNotifier.getInstance().notifyProgress(user, "image", "Compositing scene...");
-                StringBuilder classicPrompt = new StringBuilder();
-                if (!leftDesc.isEmpty()) classicPrompt.append(leftDesc).append(". ");
-                if (!rightDesc.isEmpty()) classicPrompt.append(rightDesc).append(". ");
-                if (!action.isEmpty()) classicPrompt.append("They are ").append(action).append(". ");
-                if (!setting.isEmpty()) classicPrompt.append("Setting: ").append(setting).append(". ");
-                if (!mood.isEmpty()) classicPrompt.append("Mood: ").append(mood).append(". ");
-                classicPrompt.append(SWUtil.styleClause(style));
-
-                SWTxt2Img classicReq = SWUtil.newSceneTxt2Img(classicPrompt.toString(), NEG_PROMPT, sdConfigRec);
+                // Resolved once in Stage 0 (LLM-generated SD tag-style prompt via
+                // pictureBook.scene-image-prompt, with its own raw-concatenation fallback) — no
+                // longer a hand-built narrative-sentence StringBuilder here.
+                SWTxt2Img classicReq = SWUtil.newSceneTxt2Img(scenePrompt, NEG_PROMPT, sdConfigRec);
                 logger.info("generateSceneImage: requesting composite canvas at " + classicReq.getWidth() + "x" + classicReq.getHeight()
                         + " (landscapeBytes=" + (landscapeBytes != null ? landscapeBytes.length : 0)
                         + " leftBytes=" + (leftBytes != null ? leftBytes.length : 0)
@@ -1889,8 +2334,22 @@ public class PictureBookUtil {
                 String sceneText = scene.get("text");
                 Map<String, Object> sceneData = sceneText != null ? parseLlmJsonObject(sceneText) : new LinkedHashMap<>();
                 String setting = (String) sceneData.getOrDefault("setting", "");
+                String action = (String) sceneData.getOrDefault("action", "");
                 String mood = (String) sceneData.getOrDefault("mood", "");
                 resolveLandscapePrompt(user, scene, chatConfig, setting, mood, effectiveStyle, promptTemplateOverride);
+
+                String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
+                if (sceneGroupPath == null) sceneGroupPath = "~/Chat";
+                Object charsObj = sceneData.get("characters");
+                List<String> charNarrations = new ArrayList<>();
+                if (charsObj instanceof List) {
+                    for (Object charItem : (List<Object>) charsObj) {
+                        if (charNarrations.size() >= 2) break;
+                        ResolvedCharacter rc = resolveSceneCharacter(user, charItem, sceneGroupPath);
+                        if (rc != null) charNarrations.add(rc.name + ": " + SWUtil.stripSDXLWeighting(rc.portraitPrompt));
+                    }
+                }
+                resolveScenePrompt(user, scene, chatConfig, action, setting, mood, effectiveStyle, charNarrations, promptTemplateOverride);
             } catch (Exception e) {
                 logger.warn("prepareSceneImagePrompts: failed for scene " + sceneObjectId + ": " + e.getMessage());
             }
@@ -1969,6 +2428,82 @@ public class PictureBookUtil {
         }
         OllamaModelUtil.unloadAll();
         return blurbResult;
+    }
+
+    /**
+     * List a book's extracted characters (for the "Manage Characters" review/edit screen) —
+     * objectId/name/gender/hasPortrait/apparelCount/per-apparel scene tags, plus failedApparel/
+     * failedStatistics flags cross-referenced from the book's own meta (set during
+     * extract()/createFromScenes() when createCharPerson's best-effort steps fail).
+     */
+    @SuppressWarnings("unchecked")
+    public static List<Map<String, Object>> listCharacters(BaseRecord user, String bookObjectId) {
+        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        if (bookGroup == null) throw new PictureBookException(404, "Book not found");
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+        String charsGroupPath = bookGroupPath + "/Characters";
+        BaseRecord charsGroup = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                ModelNames.MODEL_GROUP, charsGroupPath, GroupEnumType.DATA.toString(),
+                (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        if (charsGroup == null) return new ArrayList<>();
+
+        Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, charsGroup.get(FieldNames.FIELD_ID));
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        q.planMost(true);
+        BaseRecord[] chars = IOSystem.getActiveContext().getSearch().findRecords(q);
+
+        Set<String> failedApparel = new HashSet<>();
+        Set<String> failedStatistics = new HashSet<>();
+        BaseRecord metaRec = loadMeta(user, bookGroupPath);
+        if (metaRec != null) {
+            try {
+                String metaJson = metaRec.get("text");
+                if (metaJson != null && !metaJson.isEmpty()) {
+                    Map<String, Object> meta = JSONUtil.getMap(metaJson.getBytes(), String.class, Object.class);
+                    Object fa = meta.get("failedApparel");
+                    if (fa instanceof List) for (Object o : (List<Object>) fa) failedApparel.add(String.valueOf(o));
+                    Object fs = meta.get("failedStatistics");
+                    if (fs instanceof List) for (Object o : (List<Object>) fs) failedStatistics.add(String.valueOf(o));
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to read failedApparel/failedStatistics from meta: " + e.getMessage());
+            }
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (BaseRecord cp : chars) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            String cname = cp.get(FieldNames.FIELD_NAME);
+            entry.put("objectId", cp.get(FieldNames.FIELD_OBJECT_ID));
+            entry.put("name", cname);
+            entry.put("gender", cp.get("gender"));
+            BaseRecord profile = cp.get("profile");
+            entry.put("hasPortrait", profile != null && profile.get("portrait") != null);
+            BaseRecord store = cp.get(FieldNames.FIELD_STORE);
+            List<BaseRecord> appl = (store != null) ? store.get(OlioFieldNames.FIELD_APPAREL) : null;
+            entry.put("apparelCount", appl != null ? appl.size() : 0);
+            List<Map<String, Object>> sceneTags = new ArrayList<>();
+            if (appl != null) {
+                for (BaseRecord a : appl) {
+                    try {
+                        IOSystem.getActiveContext().getReader().populate(a, new String[] { FieldNames.FIELD_ATTRIBUTES });
+                        Integer si = AttributeUtil.getAttributeValue(a, "sceneIndex", null);
+                        Map<String, Object> tag = new LinkedHashMap<>();
+                        tag.put("apparelObjectId", a.get(FieldNames.FIELD_OBJECT_ID));
+                        tag.put("sceneIndex", si);
+                        tag.put("inuse", a.get(OlioFieldNames.FIELD_IN_USE));
+                        sceneTags.add(tag);
+                    } catch (Exception e) {
+                        logger.warn("Failed to read apparel scene tag: " + e.getMessage());
+                    }
+                }
+            }
+            entry.put("sceneTags", sceneTags);
+            entry.put("failedApparel", failedApparel.contains(cname));
+            entry.put("failedStatistics", failedStatistics.contains(cname));
+            result.add(entry);
+        }
+        return result;
     }
 
     /**

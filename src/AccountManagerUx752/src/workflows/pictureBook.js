@@ -9,6 +9,7 @@ import {
     regenerateBlurb, loadPictureBook, getBookSdConfig, resetPictureBook, setSceneStatus,
     resolveImageUrl, resolveAllImageUrls
 } from './sceneExtractor.js';
+import { openCharacterManager } from './pictureBookCharacters.js';
 import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { formFieldRenderers } from '../components/formFieldRenderers.js';
@@ -74,6 +75,7 @@ let scenes = [];  // from meta or Step 2
 let generating = false;
 let genProgress = {};  // objectId → 'pending'|'generating'|'done'|'error'|'accepted'|'skipped'
 let genCancelled = false;
+let currentAbortController = null; // aborts the in-flight generateSceneImage fetch — genCancelled alone only stops the *next* scene from starting
 let sceneErrors = {};   // objectId → error message
 let sceneOverrides = {}; // objectId → { promptOverride, steps, cfg, seed } or null
 let sceneImageUrls = {}; // objectId → resolved thumbnail URL
@@ -438,6 +440,8 @@ async function doGenerateOne(s) {
     genProgress[oid] = 'generating';
     sceneErrors[oid] = null;
     m.redraw();
+    let controller = new AbortController();
+    currentAbortController = controller;
     try {
         let overrides = sceneOverrides[oid];
         let sdCfg = buildSdConfig();
@@ -448,7 +452,7 @@ async function doGenerateOne(s) {
             if (overrides.seed) sdCfg.seed = overrides.seed;
             if (overrides.promptOverride) promptOvr = overrides.promptOverride;
         }
-        let result = await generateSceneImage(oid, sdCfg, chatConfigName(), promptOvr, getPromptTemplate('landscapePrompt'));
+        let result = await generateSceneImage(oid, sdCfg, chatConfigName(), promptOvr, getPromptTemplate('landscapePrompt'), controller.signal);
         s.imageObjectId = result.imageObjectId;
         if (result.seed && lastUsedSeed < 0) lastUsedSeed = result.seed;
         if (result.prompt) lastPrompt = result.prompt;
@@ -460,8 +464,17 @@ async function doGenerateOne(s) {
             });
         }
     } catch (e) {
-        genProgress[oid] = 'error';
-        sceneErrors[oid] = e.message || 'Generation failed';
+        if (e.name === 'AbortError') {
+            // Clean cancellation, not a generation failure — back to 'pending' so it's retryable
+            // and doesn't show a scary error message the user didn't cause.
+            genProgress[oid] = 'pending';
+            sceneErrors[oid] = null;
+        } else {
+            genProgress[oid] = 'error';
+            sceneErrors[oid] = e.message || 'Generation failed';
+        }
+    } finally {
+        if (currentAbortController === controller) currentAbortController = null;
     }
     m.redraw();
 }
@@ -1321,6 +1334,12 @@ function buildActions() {
             }
         });
     } else if (step === 4) {
+        if (bookObjectId) {
+            actions.push({
+                label: 'Manage Characters', icon: 'group',
+                onclick: function () { openCharacterManager(bookObjectId); }
+            });
+        }
         let targets = scenes.length ? scenes : extractedScenes;
         let allResolved = targets.length > 0 && targets.every(function (s) {
             if (!s.objectId) return true;
@@ -1381,7 +1400,10 @@ function buildActions() {
             if (generating) {
                 actions.push({
                     label: 'Cancel', icon: 'stop',
-                    onclick: function () { genCancelled = true; }
+                    onclick: function () {
+                        genCancelled = true;
+                        if (currentAbortController) currentAbortController.abort();
+                    }
                 });
             }
         }
@@ -1400,6 +1422,12 @@ function buildActions() {
             });
         }
     } else if (step === 5) {
+        if (bookObjectId) {
+            actions.push({
+                label: 'Manage Characters', icon: 'group',
+                onclick: function () { openCharacterManager(bookObjectId); }
+            });
+        }
         actions.push({
             label: 'Open in Viewer', icon: 'open_in_new',
             onclick: function () {
