@@ -61,33 +61,43 @@ test.describe('Picture Book Wizard — real UX flow', () => {
         // chatConfig is silently ignored by Chat.configureChat(), which only reads it off the
         // linked connection. Create the connection first, then link it on chatConfig create.
         let chatDir = await ensurePath(request, 'auth.group', 'data', '~/Chat');
-        if (chatDir && chatDir.id) {
-            let connResp = await request.post(REST + '/model', {
-                data: {
-                    schema: 'system.connection',
-                    name: 'contentAnalysis Connection',
-                    groupId: chatDir.id,
-                    groupPath: chatDir.path,
-                    serverUrl: 'http://192.168.1.42:11434',
-                    requestTimeout: 120
-                }
-            });
-            let conn = await connResp.json().catch(() => null);
-            if (conn && conn.objectId) {
-                await request.post(REST + '/model', {
-                    data: {
-                        schema: 'olio.llm.chatConfig',
-                        name: 'contentAnalysis',
-                        groupId: chatDir.id,
-                        groupPath: chatDir.path,
-                        model: 'qwen3-vl:8b-instruct',
-                        analyzeModel: 'qwen3-vl:8b-instruct',
-                        serviceType: 'ollama',
-                        stream: false,
-                        connection: { schema: 'system.connection', id: conn.id, objectId: conn.objectId }
-                    }
-                });
+        if (!chatDir || !chatDir.id) {
+            throw new Error('beforeAll: could not ensure ~/Chat directory — chatDir=' + JSON.stringify(chatDir));
+        }
+        let connResp = await request.post(REST + '/model', {
+            data: {
+                schema: 'system.connection',
+                name: 'contentAnalysis Connection',
+                groupId: chatDir.id,
+                groupPath: chatDir.path,
+                serverUrl: 'http://192.168.1.42:11434',
+                requestTimeout: 120
             }
+        });
+        let connBody = await connResp.text();
+        if (!connResp.ok()) {
+            throw new Error('beforeAll: system.connection create failed (' + connResp.status() + '): ' + connBody);
+        }
+        let conn = JSON.parse(connBody);
+        if (!conn || !conn.objectId) {
+            throw new Error('beforeAll: system.connection create returned no objectId: ' + connBody);
+        }
+        let cfgResp = await request.post(REST + '/model', {
+            data: {
+                schema: 'olio.llm.chatConfig',
+                name: 'contentAnalysis',
+                groupId: chatDir.id,
+                groupPath: chatDir.path,
+                model: 'qwen3-vl:8b-instruct',
+                analyzeModel: 'qwen3-vl:8b-instruct',
+                serviceType: 'ollama',
+                stream: false,
+                connection: { schema: 'system.connection', id: conn.id, objectId: conn.objectId }
+            }
+        });
+        let cfgBody = await cfgResp.text();
+        if (!cfgResp.ok()) {
+            throw new Error('beforeAll: olio.llm.chatConfig create failed (' + cfgResp.status() + '): ' + cfgBody);
         }
 
         await apiLogout(request);
@@ -101,7 +111,8 @@ test.describe('Picture Book Wizard — real UX flow', () => {
         expect(noteObjectId, 'note was not created in beforeAll').toBeTruthy();
 
         page.on('response', async (resp) => {
-            if (resp.url().includes('/picture-book/') && resp.url().includes('extract')) {
+            if ((resp.url().includes('/picture-book/') && resp.url().includes('extract'))
+                || resp.url().includes('/chat/library/')) {
                 let body = '';
                 try { body = (await resp.text()).substring(0, 2000); } catch (e) { body = '<unreadable>'; }
                 console.log('[NETWORK] ' + resp.status() + ' ' + resp.url() + '\n' + body);
@@ -158,8 +169,13 @@ test.describe('Picture Book Wizard — real UX flow', () => {
 
         // Step 3 renders pictureBookCharacters.js inline. Wait (real per-character LLM
         // enrichment calls) for either a real character name or the "no characters" empty state.
-        let emptyState = page.locator('text=No characters extracted yet.');
-        let anyCharacterCard = page.locator('div.font-medium.text-sm').first();
+        // Scoped to the dialog: an unscoped 'div.font-medium.text-sm' also matches the top-nav
+        // user-avatar badge (first in DOM order, rendered behind the modal backdrop), which is a
+        // real match but the wrong element entirely -- not a duplicate-dialog bug (confirmed via
+        // .am7-dialog-backdrop count == 1), just an under-scoped locator.
+        let dialog = page.getByRole('dialog');
+        let emptyState = dialog.locator('text=No characters extracted yet.');
+        let anyCharacterCard = dialog.locator('div.font-medium.text-sm').first();
         await Promise.race([
             emptyState.waitFor({ state: 'visible', timeout: 480000 }),
             anyCharacterCard.waitFor({ state: 'visible', timeout: 480000 })
@@ -169,8 +185,27 @@ test.describe('Picture Book Wizard — real UX flow', () => {
         let isEmpty = await emptyState.isVisible().catch(() => false);
         expect(isEmpty, 'Manage Characters showed the empty state — characters were not created').toBe(false);
 
-        let characterCount = await page.locator('div.font-medium.text-sm').count();
+        let characterCount = await dialog.locator('div.font-medium.text-sm').count();
         expect(characterCount).toBeGreaterThan(0);
+
+        // Select the first character to reveal the detail panel, then confirm "Open Full Editor ->"
+        // opens a NEW TAB (not an in-place navigation) -- there's no back nav that would restore
+        // the in-progress wizard state (extracted scenes, created book/characters) otherwise.
+        await dialog.locator('div.font-medium.text-sm').first().click();
+        let openEditorLink = dialog.locator('text=Open Full Editor');
+        await expect(openEditorLink).toBeVisible({ timeout: 10000 });
+        let [editorPopup] = await Promise.all([
+            page.context().waitForEvent('page'),
+            openEditorLink.click()
+        ]);
+        await editorPopup.waitForLoadState();
+        expect(editorPopup.url()).toMatch(/#!\/view\/olio\.charPerson\//);
+        await screenshot(page, 'wizardux-step3-open-full-editor-newtab');
+        await editorPopup.close();
+        // Original tab/wizard must still be on Step 3 with the wizard dialog intact -- proving the
+        // new-tab open didn't navigate the current tab away from the in-progress wizard.
+        await expect(page.locator('text=Picture Book —').first()).toBeVisible({ timeout: 5000 });
+        await expect(openEditorLink).toBeVisible({ timeout: 5000 });
 
         // Continue to Images (Step 4) confirms Step 3 -> Step 4 advance still works post-reorder
         await page.locator('button:has-text("Continue to Images")').click();

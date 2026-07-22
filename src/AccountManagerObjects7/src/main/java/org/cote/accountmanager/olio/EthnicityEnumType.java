@@ -35,7 +35,8 @@ public enum EthnicityEnumType {
 	ELEVEN("British"),
 	TWELVE("French"),
 	THIRTEEN("German"),
-	FOURTEEN("Russian");
+	FOURTEEN("Russian"),
+	FIFTEEN("Spanish");
 	
 
 	private String val = null;

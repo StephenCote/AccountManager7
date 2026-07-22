@@ -59,8 +59,12 @@ import jakarta.servlet.http.HttpServletResponse;
 
 public class MediaUtil {
 	public static final Logger logger = LogManager.getLogger(MediaUtil.class);
+	// Org path (group 1) and subPath/name (group 3) additionally allow \p{L}/\p{N} (Unicode
+	// letters/digits) so names/paths containing accented or non-Latin characters (e.g. "Duña",
+	// "François") don't 404 with "Unexpected path construct" -- the original ASCII-only classes
+	// are left in place for the group-2 model type, which is always an ASCII model name.
 	private static Pattern recPattern = Pattern.compile(
-			"^\\/([\\sA-Za-z0-9\\.]+)\\/([\\w\\.]+)([%-_\\/\\s\\.A-Za-z0-9]+)$",
+			"^\\/([\\sA-Za-z0-9\\.\\p{L}\\p{N}]+)\\/([\\w\\.]+)([%-_\\/\\s\\.A-Za-z0-9\\p{L}\\p{N}]+)$",
 			Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
 	private static Pattern dimPattern = Pattern.compile("(\\/\\d+x\\d+)$",
 			Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);

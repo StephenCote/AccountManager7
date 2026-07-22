@@ -90,20 +90,24 @@ async function doOutfitBuilder() {
 }
 
 /**
+ * Open a record's full generic editor in a new tab rather than navigating the current one: this
+ * screen renders inside the PictureBook wizard's Dialog (either inline at Step 3, or as the Steps
+ * 4/5 stacked popup), and there's no route-based back nav that would restore the in-progress
+ * wizard state (extracted scenes, created book/characters, etc.) if we navigated away in place.
+ * A new tab leaves the wizard exactly as it is.
+ */
+function openInNewTab(type, objectId) {
+    let url = window.location.origin + window.location.pathname + '#!/view/' + type + '/' + objectId;
+    window.open(url, '_blank');
+}
+
+/**
  * Open the full generic charPerson editor for a character — gives access to every field
  * (including anything this screen doesn't expose a dedicated panel for, e.g. a manually-edited
- * narrative.sdPrompt/outfitDescription) without duplicating the generic editor here. Closing this
- * Dialog first matches the convention used elsewhere for leaving a Dialog to navigate
- * (see pictureBook.js's "Open in Viewer" action).
+ * narrative.sdPrompt/outfitDescription) without duplicating the generic editor here.
  */
 function openFullEditor(entity) {
-    // Dialog.closeAll() (not close()) — this content renders both inline inside the wizard's own
-    // single Dialog (PictureBook step 3) and inside a separate stacked popup Dialog (steps 4/5's
-    // "Manage Characters" button); closeAll() is correct in both cases (pops whatever is open),
-    // whereas close() would only pop the top of the stack and leave the wizard dialog orphaned
-    // behind the route navigation when opened from the stacked-popup context.
-    Dialog.closeAll();
-    m.route.set('/view/' + entity[am7model.jsonModelKey] + '/' + entity.objectId, { key: entity.objectId });
+    openInNewTab(entity[am7model.jsonModelKey], entity.objectId);
 }
 
 async function tagApparel(apparelObjectId) {
@@ -182,6 +186,13 @@ function renderApparelPanel() {
                 m('div', { class: 'text-xs text-gray-500' },
                     (a.inuse ? 'in use' : 'not in use') + (sceneIndex != null ? ' — scene ' + sceneIndex : ' — untagged'))
             ]),
+            m('a', {
+                href: '#', class: 'text-xs text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap',
+                // Apparel list items may not carry their own "schema" field (list serialization
+                // only guarantees it on the first entry) — the model is always olio.apparel here,
+                // so use it directly rather than am7model.jsonModelKey off the item.
+                onclick: function (e) { e.preventDefault(); openInNewTab('olio.apparel', a.objectId); }
+            }, 'Open →'),
             m('input', {
                 type: 'number', min: '0', placeholder: 'scene #',
                 class: 'text-field-compact w-20',

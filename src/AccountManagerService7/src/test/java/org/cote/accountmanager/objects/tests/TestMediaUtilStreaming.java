@@ -4,12 +4,16 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayInputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.security.MessageDigest;
 import java.util.Collections;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import jakarta.servlet.ServletContext;
 
@@ -158,5 +162,30 @@ public class TestMediaUtilStreaming extends BaseTest {
 
 		assertNull("[MEDIAUTIL-STREAM] unexpected sendError: " + response.getErrorCode(), response.getErrorCode());
 		assertArrayEquals("[MEDIAUTIL-STREAM] inline content path regressed", content, response.getWrittenBytes());
+	}
+
+	/// Real regression test for the fix to recPattern's character classes (originally
+	/// A-Za-z0-9-only, which 404'd with "Unexpected path construct" for any org/type/subPath/name
+	/// segment containing a non-ASCII letter, e.g. "Duña" or "François"). Reaches the actual
+	/// compiled Pattern field via reflection -- no HttpServletRequest/response mocking needed since
+	/// this is purely a regex-matching concern, not an I/O concern.
+	@Test
+	public void TestRecPatternMatchesNonAsciiNames() throws Exception {
+		Field f = MediaUtil.class.getDeclaredField("recPattern");
+		f.setAccessible(true);
+		Pattern recPattern = (Pattern) f.get(null);
+
+		String[] paths = new String[] {
+			"/Development/data.data/Gallery/François.png",
+			"/Development/data.data/Gallery/Duña.png",
+			"/Development/data.data/Gallery/plain-ascii-name.png"
+		};
+		for (String path : paths) {
+			Matcher m = recPattern.matcher(path);
+			assertTrue("[MEDIAUTIL-REGEX] expected a match for path: " + path, m.find());
+			assertEquals("[MEDIAUTIL-REGEX] expected 3 groups for path: " + path, 3, m.groupCount());
+			assertEquals("[MEDIAUTIL-REGEX] group1 (org path) mismatch for: " + path, "Development", m.group(1).trim());
+			assertEquals("[MEDIAUTIL-REGEX] group2 (type) mismatch for: " + path, "data.data", m.group(2).trim());
+		}
 	}
 }

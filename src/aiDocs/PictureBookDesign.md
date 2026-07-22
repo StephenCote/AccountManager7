@@ -7,6 +7,52 @@
 
 ---
 
+## Update — 2026-07-22: wizard step reorder + character-creation fix
+
+The 5-step wizard's step semantics changed from what's described below (Sections 5-6 describe the
+viewer, which is unaffected). Current step meaning, per `workflows/pictureBook.js`'s own docstring:
+
+1. **Source & Method** — chat config, scene count, genre, prompt templates.
+2. **Scene Preview** — review/edit extracted scenes. **"Continue" now creates the book + real
+   `olio.charPerson` records (`createFromScenes`) before advancing** — this used to happen at the
+   Step 3→4 transition; moved one step earlier per Stephen's spec: "extracted characters → manage
+   characters → generate images." Guarded (`if (bookObjectId) { step = 3; return; }`) so
+   Back-then-Continue doesn't re-run character creation.
+3. **Manage Characters** — renders `pictureBookCharacters.js`'s real list/detail panel (portrait via
+   `reimage`, statistics, apparel/outfit builder, "Open Full Editor →" link to the real `charPerson`
+   record) **inline**, operating on the real characters created in step 2. Previously this step
+   hand-edited a pre-creation stub (name/gender/role/appearance/outfit/portraitPrompt) with no link
+   to a real character and no way to use per-character SD settings — removed per Stephen's review:
+   "there's no point doing a character portrait prompt here because ... could/should be reused off
+   the charPerson reimage ... apparel and stats aren't confirmed ... no way to use the per character
+   sd settings you get if you'd just use the existing code."
+4. **Image Generation** — per-scene image generation (unchanged).
+5. **Picture Book View** — gallery with reorder + blurb edit (unchanged; see Sections 5-8 above).
+
+Steps 4/5's own "Manage Characters" button still opens the same `pictureBookCharacters.js` UI as a
+stacked popup (`openCharacterManager`) — useful for a quick tweak without leaving that context; step
+3 is the dedicated full-width screen for spending real time here. Both entry points share one
+implementation (`initCharacterManager`/`renderCharacterManagerContent`/`openCharacterManager`).
+
+**Two real bugs found and fixed as part of this reorder** — see `KnownIssues.md` KI-24 (character
+data silently dropped during deserialization — the reorder's actual motivating bug) and KI-25 (scene
+count silently defaulted to 0 instead of 10, found while live-verifying KI-24 through the real UX).
+Both verified end-to-end via a real Playwright click-through against the live Tomcat + Vite stack
+(`e2e/pictureBookWizardUx.spec.js`), not just backend JUnit tests — per this repo's working-discipline
+rules, "tested" requires exercising the actual UX, not just the API underneath it.
+
+**Follow-up (same day):** both "Open Full Editor →" (character) and the apparel panel's new "Open →"
+link now open the target record's full generic editor in a **new browser tab** (`window.open(url,
+'_blank')`) instead of navigating the current tab via `m.route.set(...)`. Rationale: this screen
+renders inside the wizard's own Dialog, and there's no route-based back nav that would restore the
+in-progress wizard state (extracted scenes, created book/characters) if the current tab navigated
+away. Both links share one helper, `openInNewTab(type, objectId)`, in `pictureBookCharacters.js`.
+Accepted as build-verified (clean `vite build`, straightforward code) rather than a final clean live
+run — see `KnownIssues.md` KI-27 for the unrelated, unresolved test-setup flake that blocked the last
+mile of live verification for this specific change.
+
+---
+
 ## 1. What Exists vs. What Was Specified
 
 ### Backend (COMPLETE — matches spec, no changes needed)
