@@ -33,6 +33,8 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -193,6 +195,146 @@ public class TestPictureBookFull extends BaseTest {
 			logger.info("pictureBookRequest model fields verified");
 		} catch (Exception e) {
 			fail("Request model failed: " + e.getMessage());
+		}
+	}
+
+	/**
+	 * Regression test for a real bug found live: pictureBookRequestModel.json's "characters"
+	 * field declared baseModel="olio.pictureBookScene" (the SCENE model, not a character shape).
+	 * Every nested character JSON object got deserialized against the scene's field set instead —
+	 * none of {name,gender,role} exist there, so RecordDeserializer silently dropped every field
+	 * of every character (logged "Invalid field: olio.pictureBookScene.name ..." and skipped it).
+	 * Result: createFromScenes received N completely empty maps, "name" was null for every one,
+	 * and the character-creation loop's own continue-on-null-name check swallowed all of them
+	 * silently — zero olio.charPerson records ever got created, no error surfaced. This mirrors
+	 * PictureBookService.parseParams()'s exact deserialization call.
+	 */
+	@Test
+	public void TestPictureBookRequestCharactersFieldRoundTrips() {
+		logger.info("Test: pictureBookRequest.characters field round-trips character stub data "
+			+ "(regression for the baseModel=olio.pictureBookScene bug that silently dropped every field)");
+		// Deliberately NO "schema" key on the nested character items — matches exactly what the
+		// real client (sceneExtractor.js's createFromScenes) actually sends. Without an explicit
+		// per-item schema, the deserializer resolves each item's type from the "characters"
+		// field's own declared baseModel — which is exactly the mechanism the original bug broke.
+		String json = "{\"schema\":\"olio.pictureBookRequest\",\"sceneList\":[],\"characters\":["
+			+ "{\"name\":\"Elena\",\"gender\":\"FEMALE\",\"role\":\"protagonist\"},"
+			+ "{\"name\":\"Marcus\",\"gender\":\"MALE\",\"role\":\"companion\"}]}";
+		BaseRecord req = org.cote.accountmanager.util.JSONUtil.importObject(json, LooseRecord.class,
+			RecordDeserializerConfig.getUnfilteredModule());
+		assertNotNull("Request should deserialize", req);
+		List<BaseRecord> chars = req.get("characters");
+		assertNotNull("characters field should deserialize as a list", chars);
+		assertEquals("Both characters should survive deserialization — this is exactly what the "
+			+ "wrong baseModel silently zeroed out", 2, chars.size());
+		assertEquals("Elena", chars.get(0).get("name"));
+		assertEquals("FEMALE", chars.get(0).get("gender"));
+		assertEquals("protagonist", chars.get(0).get("role"));
+		assertEquals("Marcus", chars.get(1).get("name"));
+		assertEquals("MALE", chars.get(1).get("gender"));
+		assertEquals("companion", chars.get(1).get("role"));
+	}
+
+	/**
+	 * Live end-to-end proof that the model fix actually restores real character creation through
+	 * the createFromScenes path (the wizard's "Continue" action, not extract()'s own auto path
+	 * already covered by TestExtractCreatesMatchingCharacterRecords) — using a minimal client stub
+	 * list ({name, gender, role} only, no "appearance") to also prove the per-character LLM
+	 * enrichment call fires and produces real detail from the source text.
+	 */
+	@Test
+	public void TestCreateFromScenesWithClientCharacterStubsCreatesRealCharacters() throws Exception {
+		logger.info("Test: createFromScenes with minimal client character stubs creates real charPerson "
+			+ "records via the per-character LLM enrichment path (regression for the characters-field "
+			+ "deserialization bug — this is the exact call shape the wizard's Step 2->3 transition uses)");
+		setupTestContext();
+
+		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, "CFS Stub Test Story " + System.currentTimeMillis());
+		BaseRecord work = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, testUser, null, plist);
+		work.set("text", TEST_STORY);
+		BaseRecord createdWork = IOSystem.getActiveContext().getAccessPoint().create(testUser, work);
+		assertNotNull(createdWork);
+		String workObjectId = createdWork.get(FieldNames.FIELD_OBJECT_ID);
+
+		List<Map<String, Object>> sceneList = new ArrayList<>();
+		Map<String, Object> scene0 = new LinkedHashMap<>();
+		scene0.put("title", "Elena Enters the Forest");
+		scene0.put("blurb", "Elena and Marcus enter the ancient forest.");
+		scene0.put("setting", "ancient forest");
+		scene0.put("action", "walking cautiously");
+		scene0.put("mood", "tense");
+		sceneList.add(scene0);
+
+		// Minimal stubs — {name, gender, role} ONLY, deliberately no "appearance" — this is what
+		// proves createCharPerson's enrichment LLM call fires and fills in real detail from
+		// TEST_STORY rather than the client having to pre-build it.
+		List<Map<String, Object>> charDataList = new ArrayList<>();
+		Map<String, Object> elenaStub = new LinkedHashMap<>();
+		elenaStub.put("name", "Elena");
+		elenaStub.put("gender", "FEMALE");
+		elenaStub.put("role", "protagonist");
+		charDataList.add(elenaStub);
+		Map<String, Object> marcusStub = new LinkedHashMap<>();
+		marcusStub.put("name", "Marcus");
+		marcusStub.put("gender", "MALE");
+		marcusStub.put("role", "companion");
+		charDataList.add(marcusStub);
+
+		BaseRecord meta = PictureBookUtil.createFromScenes(testUser, workObjectId, chatConfigName, null,
+			"CFS Stub Test Book " + System.currentTimeMillis(), sceneList, charDataList);
+		assertNotNull("createFromScenes should return meta", meta);
+		String bookObjectId = meta.get("bookObjectId");
+		assertNotNull("Meta should have a bookObjectId", bookObjectId);
+
+		List<Object> failedCharacters = meta.get("failedCharacters");
+		logger.info("createFromScenes failedCharacters: " + (failedCharacters != null ? failedCharacters : "(none)"));
+		assertTrue("Both stub characters should create successfully — failedCharacters=" + failedCharacters,
+			failedCharacters == null || failedCharacters.isEmpty());
+
+		List<Map<String, Object>> listed = PictureBookUtil.listCharacters(testUser, bookObjectId);
+		logger.info("listCharacters returned: " + listed.size() + " characters");
+		for (Map<String, Object> c : listed) logger.info("  - " + c.get("name") + " (" + c.get("objectId") + ")");
+		assertEquals("Exactly 2 charPerson records should exist — not 0 (the historical bug, characters "
+			+ "silently dropped during deserialization) and not doubled by the sceneList-derived fallback "
+			+ "also firing", 2, listed.size());
+
+		// Re-fetch each by name and confirm real enrichment happened (profile/narrative/statistics/
+		// store all persisted with id>0, same shape as TestExtractCreatesMatchingCharacterRecords).
+		for (String expectedName : new String[] { "Elena", "Marcus" }) {
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, expectedName);
+			q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			q.planMost(true);
+			BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
+			assertNotNull("Character " + expectedName + " should be resolvable by name", cp);
+
+			BaseRecord profile = cp.get("profile");
+			assertNotNull(expectedName + " must have a persisted profile", profile);
+			Long profileId = profile.get(FieldNames.FIELD_ID);
+			assertTrue(expectedName + " profile must be a real persisted record", profileId != null && profileId > 0L);
+
+			BaseRecord narrative = cp.get("narrative");
+			assertNotNull(expectedName + " must have a persisted narrative", narrative);
+			String sdPrompt = narrative.get("sdPrompt");
+			if (sdPrompt == null || sdPrompt.isBlank()) {
+				IOSystem.getActiveContext().getReader().populate(narrative, new String[] { "sdPrompt", "physicalDescription" });
+				sdPrompt = narrative.get("sdPrompt");
+			}
+			assertNotNull(expectedName + " must have a real portrait prompt (proves the enrichment LLM "
+				+ "call ran off TEST_STORY, not just the bare {name,gender,role} stub)", sdPrompt);
+			logger.info(expectedName + " narrative.sdPrompt=" + sdPrompt.substring(0, Math.min(80, sdPrompt.length())) + "...");
+
+			BaseRecord statistics = cp.get("statistics");
+			assertNotNull(expectedName + " must have a persisted statistics record", statistics);
+			Long statsId = statistics.get(FieldNames.FIELD_ID);
+			assertTrue(expectedName + " statistics must be a real persisted record", statsId != null && statsId > 0L);
+
+			BaseRecord store = cp.get(FieldNames.FIELD_STORE);
+			assertNotNull(expectedName + " must have a persisted store record", store);
+			Long storeId = store.get(FieldNames.FIELD_ID);
+			assertTrue(expectedName + " store must be a real persisted record", storeId != null && storeId > 0L);
 		}
 	}
 

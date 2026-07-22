@@ -1,0 +1,10 @@
+{
+	"name": "olio.pictureBookCharacterStub",
+	"ioConstraints": ["unknown"],
+	"description": "Minimal client-supplied character hint for PictureBookUtil.createFromScenes — name/gender/role only. Deliberately does not carry appearance/outfit/portraitPrompt: those are dead weight (createCharPerson never reads them in production) and omitting appearance is what makes the per-character LLM enrichment call fire and build real detail from the source text instead.",
+	"fields": [
+		{ "name": "name", "type": "string", "maxLength": 256 },
+		{ "name": "gender", "type": "string", "maxLength": 16 },
+		{ "name": "role", "type": "string", "maxLength": 128 }
+	]
+}

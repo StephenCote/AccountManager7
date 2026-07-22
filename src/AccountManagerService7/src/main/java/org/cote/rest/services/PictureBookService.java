@@ -154,8 +154,17 @@ public class PictureBookService {
         String promptTemplateOverride = null;
         BaseRecord params = parseParams(json);
         if (params != null) {
-            Object countObj = params.get("count");
-            if (countObj instanceof Number) count = ((Number) countObj).intValue();
+            /// params.get("count") returns 0 (the int field's unset primitive default) when the
+            /// client never included "count" in the request body at all -- e.g. the wizard's
+            /// doExtract() -> extractScenes(workObjectId, chatConfigName(), null, ...) never sends
+            /// count, relying on this endpoint's own default. The old `countObj instanceof Number`
+            /// check couldn't tell "field absent" from "field present with value 0" and silently
+            /// asked the LLM for the 0 most notable scenes, which returns an empty (but valid,
+            /// fast) array -- masquerading as "no scenes returned" with no error anywhere.
+            if (params.hasField("count")) {
+                Object countObj = params.get("count");
+                if (countObj instanceof Number) count = ((Number) countObj).intValue();
+            }
             chatConfigName = params.get("chatConfig");
             promptTemplateOverride = params.get("promptTemplate");
         }
@@ -228,8 +237,14 @@ public class PictureBookService {
         String bookName = null;
         BaseRecord params = parseParams(json);
         if (params != null) {
-            Object countObj = params.get("count");
-            if (countObj instanceof Number) count = ((Number) countObj).intValue();
+            /// See extractScenesOnly()'s identical guard: params.get("count") returns 0 (the int
+            /// field's unset primitive default) when the client never sent "count" at all, which
+            /// silently asked the LLM for the 0 most notable scenes instead of falling back to
+            /// MAX_SCENES_DEFAULT.
+            if (params.hasField("count")) {
+                Object countObj = params.get("count");
+                if (countObj instanceof Number) count = ((Number) countObj).intValue();
+            }
             chatConfigName = params.get("chatConfig");
             genre = params.get("genre");
             bookName = params.get("bookName");

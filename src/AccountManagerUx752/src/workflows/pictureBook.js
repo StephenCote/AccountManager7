@@ -9,7 +9,7 @@ import {
     regenerateBlurb, loadPictureBook, getBookSdConfig, resetPictureBook, setSceneStatus,
     resolveImageUrl, resolveAllImageUrls
 } from './sceneExtractor.js';
-import { openCharacterManager } from './pictureBookCharacters.js';
+import { openCharacterManager, initCharacterManager, renderCharacterManagerContent } from './pictureBookCharacters.js';
 import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { formFieldRenderers } from '../components/formFieldRenderers.js';
@@ -18,8 +18,11 @@ import { formFieldRenderers } from '../components/formFieldRenderers.js';
  * Picture Book workflow — multi-step wizard launched from a data.data or data.note object.
  * Steps:
  *   1 — Source & Method (auto vs manual, chat config, scene count, genre)
- *   2 — Scene Preview (auto path: review/edit extracted scenes)
- *   3 — Character Review (list characters, confirm charPerson creation)
+ *   2 — Scene Preview (auto path: review/edit extracted scenes). "Continue" creates the book +
+ *       real charPerson records (createFromScenes) before advancing — real characters exist by
+ *       the time Step 3 renders.
+ *   3 — Manage Characters (real charPerson records: portrait, statistics, apparel, "Open Full
+ *       Editor" link — renders pictureBookCharacters.js inline, same UI as the steps 4/5 popup)
  *   4 — Image Generation (generate per-scene images)
  *   5 — Picture Book View (gallery with reorder + blurb edit)
  */
@@ -65,9 +68,8 @@ let extractedScenes = [];
 let extracting = false;
 let extractError = null;
 
-// Step 3
-let characters = [];
-let charProgress = {};  // name → 'pending'|'creating'|'done'|'error'
+// Step 3 (Manage Characters — real charPerson records created at the Step 2→3 transition;
+// pictureBookCharacters.js owns its own list/detail state once initCharacterManager() runs)
 let creatingChars = false;
 
 // Step 4
@@ -118,8 +120,6 @@ function resetState() {
     extractedScenes = [];
     extracting = false;
     extractError = null;
-    characters = [];
-    charProgress = {};
     creatingChars = false;
     scenes = [];
     generating = false;
@@ -202,8 +202,16 @@ function chatConfigName() {
     return chatConfigRef ? chatConfigRef.name : null;
 }
 
-function collectCharacters() {
+/**
+ * Minimal client-side character hints for createFromScenes — {name, gender, role} only. No
+ * appearance/outfit/portraitPrompt: those were dead weight (createCharPerson never read them in
+ * production) and omitting appearance is what makes the real per-character LLM enrichment call
+ * fire and build real detail from the source text, instead of a hand-typed guess made before any
+ * real charPerson (or its statistics/apparel/narrative) exists.
+ */
+function buildCharacterStubs() {
     let seen = {};
+    let stubs = [];
     for (let s of extractedScenes) {
         if (!Array.isArray(s.characters)) continue;
         for (let c of s.characters) {
@@ -211,35 +219,10 @@ function collectCharacters() {
             if (!name || seen[name]) continue;
             seen[name] = true;
             let obj = typeof c === 'object' ? c : {};
-            let firstName = name, lastName = '';
-            let sp = name.lastIndexOf(' ');
-            if (sp > 0) { firstName = name.substring(0, sp); lastName = name.substring(sp + 1); }
-            characters.push({
-                name: name,
-                firstName: firstName,
-                lastName: lastName,
-                gender: obj.gender || '',
-                appearance: obj.appearance || obj.physicalDescription || '',
-                outfit: obj.outfit || obj.clothing || '',
-                role: obj.role || '',
-                portraitPrompt: '',
-                status: 'pending'
-            });
+            stubs.push({ name: name, gender: obj.gender || '', role: obj.role || '' });
         }
     }
-}
-
-function addCharacter() {
-    characters.push({
-        name: 'New Character', firstName: 'New', lastName: 'Character',
-        gender: '', appearance: '', outfit: '', role: '', portraitPrompt: '', status: 'pending'
-    });
-    m.redraw();
-}
-
-function removeCharacter(idx) {
-    characters.splice(idx, 1);
-    m.redraw();
+    return stubs;
 }
 
 /**
@@ -265,7 +248,6 @@ async function doExtract() {
             extractError = 'No scenes returned by LLM';
         } else {
             extractedScenes = sceneArray;
-            collectCharacters();
             step = 2;
         }
     } catch (e) {
@@ -293,7 +275,6 @@ async function doFullExtract() {
             characters: (s.characters || []).map(id => ({ name: id })),
             objectId: s.objectId
         }));
-        collectCharacters();
         step = 2;
     } catch (e) {
         extractError = e.message || 'Extraction failed';
@@ -743,94 +724,12 @@ function renderStep2() {
 }
 
 function renderStep3() {
-    return m('div', { class: 'p-4 space-y-3' }, [
-        m('div', { class: 'flex justify-between items-center mb-2' }, [
-            m('h3', { class: 'font-medium' }, 'Characters (' + characters.length + ')'),
-            m('button', { class: 'btn text-xs', onclick: addCharacter }, [
-                m('span', { class: 'material-symbols-outlined text-xs mr-1' }, 'add'), 'Add Character'
-            ])
-        ]),
-        characters.length === 0
-            ? m('div', { class: 'text-sm text-gray-500 italic' }, 'No characters found. Add manually or proceed to images.')
-            : m('div', { class: 'space-y-3 max-h-[32rem] overflow-y-auto' },
-                characters.map(function (c, i) {
-                    let status = charProgress[c.name] || c.status || 'pending';
-                    return m('div', {
-                        key: 'char-' + i,
-                        class: 'border dark:border-gray-700 rounded p-3 text-sm space-y-2'
-                    }, [
-                        // Header: name + status + remove
-                        m('div', { class: 'flex gap-2 items-center' }, [
-                            m('input', {
-                                class: 'text-field-full text-sm font-medium flex-1',
-                                value: c.name,
-                                placeholder: 'Character name',
-                                oninput: function (e) {
-                                    c.name = e.target.value;
-                                    let sp = c.name.lastIndexOf(' ');
-                                    if (sp > 0) { c.firstName = c.name.substring(0, sp); c.lastName = c.name.substring(sp + 1); }
-                                    else { c.firstName = c.name; c.lastName = ''; }
-                                }
-                            }),
-                            m('select', {
-                                class: 'text-field-compact text-xs w-24',
-                                value: c.gender,
-                                onchange: function (e) { c.gender = e.target.value; }
-                            }, [
-                                m('option', { value: '' }, 'Gender'),
-                                m('option', { value: 'MALE' }, 'Male'),
-                                m('option', { value: 'FEMALE' }, 'Female'),
-                                m('option', { value: 'OTHER' }, 'Other')
-                            ]),
-                            m('span', {
-                                class: 'text-xs px-2 py-0.5 rounded ' + (
-                                    status === 'done' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
-                                    status === 'creating' ? 'bg-blue-100 text-blue-600' :
-                                    status === 'error' ? 'bg-red-100 text-red-600' :
-                                    'bg-gray-100 text-gray-500'
-                                )
-                            }, status),
-                            m('button', {
-                                class: 'text-red-400 hover:text-red-600 p-0.5',
-                                onclick: function () { removeCharacter(i); }
-                            }, m('span', { class: 'material-symbols-outlined text-sm' }, 'close'))
-                        ]),
-                        // Role
-                        m('input', {
-                            class: 'w-full text-field-full text-xs',
-                            value: c.role,
-                            placeholder: 'Role (e.g., protagonist, antagonist)',
-                            oninput: function (e) { c.role = e.target.value; }
-                        }),
-                        // Appearance
-                        m('textarea', {
-                            class: 'w-full text-field-full text-xs', rows: 2,
-                            value: c.appearance,
-                            placeholder: 'Physical appearance (hair, skin, build, distinguishing features)',
-                            oninput: function (e) { c.appearance = e.target.value; }
-                        }),
-                        // Outfit
-                        m('textarea', {
-                            class: 'w-full text-field-full text-xs', rows: 1,
-                            value: c.outfit,
-                            placeholder: 'Outfit / clothing',
-                            oninput: function (e) { c.outfit = e.target.value; }
-                        }),
-                        // Portrait prompt (collapsible)
-                        m('details', { class: 'text-xs' }, [
-                            m('summary', { class: 'cursor-pointer text-gray-500 hover:text-gray-700' }, 'Portrait Prompt'),
-                            m('textarea', {
-                                class: 'w-full text-field-full text-xs mt-1', rows: 2,
-                                value: c.portraitPrompt,
-                                placeholder: 'SD portrait prompt (auto-generated if empty)',
-                                oninput: function (e) { c.portraitPrompt = e.target.value; }
-                            })
-                        ])
-                    ]);
-                })
-            ),
-        creatingChars ? m('div', { class: 'text-sm text-blue-500' }, 'Creating characters...') : null
-    ]);
+    // Step 3 IS the Manage Characters screen now — real charPerson records already exist by the
+    // time this renders (created at the Step 2→3 transition), so this just renders
+    // pictureBookCharacters.js's list/detail UI inline instead of a disconnected pre-creation
+    // stub editor. See pictureBookCharacters.js for the actual list/statistics/apparel/portrait
+    // panels and the "Open Full Editor →" link to the real charPerson record.
+    return renderCharacterManagerContent();
 }
 
 function loadSdModels() {
@@ -1301,37 +1200,42 @@ function buildActions() {
         }
     } else if (step === 2) {
         actions.push({
-            label: 'Continue', icon: 'arrow_forward', primary: true,
-            onclick: function () {
-                characters = [];
-                collectCharacters();
-                step = 3;
-                m.redraw();
-            }
-        });
-    } else if (step === 3) {
-        actions.push({
-            label: creatingChars ? 'Creating...' : 'Continue to Images',
+            label: creatingChars ? 'Creating characters...' : 'Continue',
             icon: 'arrow_forward', primary: true,
             disabled: creatingChars,
             onclick: async function () {
+                // Characters (and the book/scenes) already exist if the user went Back from
+                // Step 3 then Continue again — createCharPerson's by-name dedup only protects
+                // against duplicates *within* one createFromScenes call, not across repeated
+                // calls, so never re-run it once bookObjectId is set.
+                if (bookObjectId) {
+                    step = 3;
+                    m.redraw();
+                    return;
+                }
                 creatingChars = true;
                 m.redraw();
                 try {
                     let meta = await createFromScenes(
                         workObjectId, chatConfigName(), genre || null,
-                        bookName || workName, extractedScenes, characters
+                        bookName || workName, extractedScenes, buildCharacterStubs()
                     );
                     bookObjectId = meta.bookObjectId || null;
                     metaScenes = meta.scenes || [];
                     scenes = metaScenes;
-                    step = 4;
+                    await initCharacterManager(bookObjectId);
+                    step = 3;
                 } catch (e) {
-                    page.toast('error', 'Failed to create book: ' + (e.message || ''));
+                    page.toast('error', 'Failed to create characters: ' + (e.message || ''));
                 }
                 creatingChars = false;
                 m.redraw();
             }
+        });
+    } else if (step === 3) {
+        actions.push({
+            label: 'Continue to Images', icon: 'arrow_forward', primary: true,
+            onclick: function () { step = 4; m.redraw(); }
         });
     } else if (step === 4) {
         if (bookObjectId) {

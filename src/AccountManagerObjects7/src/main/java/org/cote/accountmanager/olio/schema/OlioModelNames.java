@@ -75,6 +75,7 @@ public class OlioModelNames extends ModelNames {
 	public static final String MODEL_PICTURE_BOOK_META = "olio.pictureBookMeta";
 	public static final String MODEL_PICTURE_BOOK_SCENE = "olio.pictureBookScene";
 	public static final String MODEL_PICTURE_BOOK_RESULT = "olio.pictureBookResult";
+	public static final String MODEL_PICTURE_BOOK_CHARACTER_STUB = "olio.pictureBookCharacterStub";
 	
 	//static {
 	private static boolean prep = false; 
@@ -92,7 +93,8 @@ public class OlioModelNames extends ModelNames {
 		MODEL_PICTURE_BOOK_REQUEST,
 		MODEL_PICTURE_BOOK_META,
 		MODEL_PICTURE_BOOK_SCENE,
-		MODEL_PICTURE_BOOK_RESULT
+		MODEL_PICTURE_BOOK_RESULT,
+		MODEL_PICTURE_BOOK_CHARACTER_STUB
 	);
 	
 	public static void use() {

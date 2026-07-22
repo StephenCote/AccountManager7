@@ -375,12 +375,6 @@ public class Chat {
 			long connId = (conn != null ? conn.get(FieldNames.FIELD_ID) : 0L);
 			if (connId > 0L) {
 				Query cq = QueryUtil.createQuery(ModelNames.MODEL_CONNECTION, FieldNames.FIELD_ID, connId);
-				/// Scope to the acting user's organization: PBAC needs an org context for the role lookup, so an
-				/// id-only query is denied for a non-admin user (find returns null → serverUrl unset → the request
-				/// URI has an undefined scheme). Admins bypass, which is why this only bites scoped users.
-				if (user != null && user.get(FieldNames.FIELD_ORGANIZATION_ID) != null) {
-					cq.field(FieldNames.FIELD_ORGANIZATION_ID, (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
-				}
 				cq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "serverUrl", "requestTimeout", "apiKey" });
 				BaseRecord fullConn = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
 				if (fullConn != null) {

@@ -53,7 +53,7 @@
 			"name": "characters",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "olio.pictureBookScene"
+			"baseModel": "olio.pictureBookCharacterStub"
 		},
 		{
 			"name": "status",

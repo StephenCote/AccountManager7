@@ -97,7 +97,12 @@ async function doOutfitBuilder() {
  * (see pictureBook.js's "Open in Viewer" action).
  */
 function openFullEditor(entity) {
-    Dialog.close();
+    // Dialog.closeAll() (not close()) — this content renders both inline inside the wizard's own
+    // single Dialog (PictureBook step 3) and inside a separate stacked popup Dialog (steps 4/5's
+    // "Manage Characters" button); closeAll() is correct in both cases (pops whatever is open),
+    // whereas close() would only pop the top of the stack and leave the wizard dialog orphaned
+    // behind the route navigation when opened from the stacked-popup context.
+    Dialog.closeAll();
     m.route.set('/view/' + entity[am7model.jsonModelKey] + '/' + entity.objectId, { key: entity.objectId });
 }
 
@@ -261,25 +266,43 @@ function renderContent() {
 }
 
 /**
- * Open the Manage Characters dialog for a book.
+ * Initialize character-manager state for a book WITHOUT opening a Dialog — used by the PictureBook
+ * wizard's Step 3, which renders renderCharacterManagerContent() inline inside its own already-open
+ * Dialog. Fires the initial character-list fetch.
  * @param {string} theBookObjectId - book group objectId
  */
-async function openCharacterManager(theBookObjectId) {
+async function initCharacterManager(theBookObjectId) {
     resetState();
     bookObjectId = theBookObjectId;
     loading = true;
-    Dialog.open({
-        title: 'Manage Characters',
-        size: 'xl',
-        content: { view: renderContent },
-        actions: [
-            { label: 'Close', icon: 'close', primary: true, onclick: function () { Dialog.close(); } }
-        ]
-    });
+    m.redraw();
     await refreshList();
     loading = false;
     m.redraw();
 }
 
-export { openCharacterManager };
+/** Dialog-agnostic list+detail view — usable inline (wizard step 3) or inside a Dialog (popup). */
+function renderCharacterManagerContent() {
+    return renderContent();
+}
+
+/**
+ * Open Manage Characters as its own stacked Dialog — used by the wizard's steps 4/5 "Manage
+ * Characters" button (a quick one-off tweak while generating/viewing, on top of the wizard's own
+ * open Dialog), independent of Step 3's inline rendering of the exact same content.
+ * @param {string} theBookObjectId - book group objectId
+ */
+async function openCharacterManager(theBookObjectId) {
+    Dialog.open({
+        title: 'Manage Characters',
+        size: 'xl',
+        content: { view: renderCharacterManagerContent },
+        actions: [
+            { label: 'Close', icon: 'close', primary: true, onclick: function () { Dialog.close(); } }
+        ]
+    });
+    await initCharacterManager(theBookObjectId);
+}
+
+export { openCharacterManager, initCharacterManager, renderCharacterManagerContent };
 export default openCharacterManager;
