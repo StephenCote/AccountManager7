@@ -4,6 +4,7 @@ import static org.junit.Assert.*;
 import static org.junit.Assume.assumeTrue;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +29,7 @@ import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.llm.PromptResourceUtil;
+import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
@@ -42,6 +44,7 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.ClientUtil;
+import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
@@ -284,7 +287,8 @@ public class TestPictureBookFull extends BaseTest {
 		charDataList.add(marcusStub);
 
 		BaseRecord meta = PictureBookUtil.createFromScenes(testUser, workObjectId, chatConfigName, null,
-			"CFS Stub Test Book " + System.currentTimeMillis(), sceneList, charDataList);
+			"CFS Stub Test Book " + System.currentTimeMillis(), sceneList, charDataList,
+			testProperties.getProperty("test.datagen.path"));
 		assertNotNull("createFromScenes should return meta", meta);
 		String bookObjectId = meta.get("bookObjectId");
 		assertNotNull("Meta should have a bookObjectId", bookObjectId);
@@ -336,6 +340,110 @@ public class TestPictureBookFull extends BaseTest {
 			Long storeId = store.get(FieldNames.FIELD_ID);
 			assertTrue(expectedName + " store must be a real persisted record", storeId != null && storeId > 0L);
 		}
+	}
+
+	/**
+	 * KI-30 regression test: createCharPerson() must call CharacterUtil.randomPerson() (via
+	 * OlioContextUtil.getOlioContext(user, dataPath)) FIRST to build a fully-populated baseline,
+	 * then apply the LLM-extracted overrides on top — not build the charPerson from an almost-
+	 * empty record. race/alignment/instinct/personality/state are the strongest regression signal:
+	 * before this fix, createCharPerson() never set race/alignment at all and never created
+	 * instinct/personality/state as persisted foreign sub-records (they stayed permanently null) —
+	 * unlike statistics, whose non-zero physicalStrength/agility values (also asserted below, per
+	 * the fix spec) turn out to ALREADY have existed pre-fix via a separate, unrelated call
+	 * (StatisticsUtil.estimateFromExtractedPhysical -> rollStatistics, unconditional regardless of
+	 * this fix) — confirmed by the swap test described in this method's fix note in KnownIssues.md.
+	 */
+	@Test
+	public void TestCreateFromScenesSeedsRandomBaselineOnCharacter() throws Exception {
+		logger.info("Test: createCharPerson() runs CharacterUtil.randomPerson() baseline first (KI-30) — "
+			+ "race/alignment/instinct/personality/state must be populated/persisted, not left null "
+			+ "(previously never set/created at all)");
+		setupTestContext();
+
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be set for KI-30's OlioContext baseline generation", dataPath);
+
+		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, "KI30 Baseline Test Story " + System.currentTimeMillis());
+		BaseRecord work = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, testUser, null, plist);
+		work.set("text", TEST_STORY);
+		BaseRecord createdWork = IOSystem.getActiveContext().getAccessPoint().create(testUser, work);
+		assertNotNull(createdWork);
+		String workObjectId = createdWork.get(FieldNames.FIELD_OBJECT_ID);
+
+		List<Map<String, Object>> sceneList = new ArrayList<>();
+		Map<String, Object> scene0 = new LinkedHashMap<>();
+		scene0.put("title", "Elena Enters the Forest");
+		scene0.put("blurb", "Elena and Marcus enter the ancient forest.");
+		scene0.put("setting", "ancient forest");
+		scene0.put("action", "walking cautiously");
+		scene0.put("mood", "tense");
+		sceneList.add(scene0);
+
+		String elenaName = "Elena KI30 " + System.currentTimeMillis();
+		List<Map<String, Object>> charDataList = new ArrayList<>();
+		Map<String, Object> elenaStub = new LinkedHashMap<>();
+		elenaStub.put("name", elenaName);
+		elenaStub.put("gender", "FEMALE");
+		elenaStub.put("role", "protagonist");
+		charDataList.add(elenaStub);
+
+		BaseRecord meta = PictureBookUtil.createFromScenes(testUser, workObjectId, chatConfigName, null,
+			"KI30 Baseline Test Book " + System.currentTimeMillis(), sceneList, charDataList, dataPath);
+		assertNotNull("createFromScenes should return meta", meta);
+
+		List<Object> failedCharacters = meta.get("failedCharacters");
+		assertTrue("Character should create successfully — failedCharacters=" + failedCharacters,
+			failedCharacters == null || failedCharacters.isEmpty());
+
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, elenaName);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.planMost(true);
+		BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
+		assertNotNull("Character should be resolvable by name", cp);
+
+		// KI-30 primary regression signal: race/alignment — never set on charPerson at all before
+		// this fix.
+		List<String> race = cp.get(OlioFieldNames.FIELD_RACE);
+		assertTrue("race must be populated from the random baseline (KI-30) — was never set before this fix",
+			race != null && !race.isEmpty());
+		Object alignment = cp.get(FieldNames.FIELD_ALIGNMENT);
+		assertNotNull("alignment must be populated from the random baseline (KI-30) — was never set before this fix",
+			alignment);
+
+		// KI-30 primary regression signal: instinct/personality/state — never created as persisted
+		// foreign sub-records before this fix (charPerson.instinct/personality/state stayed
+		// permanently null/unpersisted).
+		BaseRecord instinct = cp.get(OlioFieldNames.FIELD_INSTINCT);
+		assertNotNull("instinct must be a real persisted record seeded from the random baseline (KI-30)", instinct);
+		Long instinctId = instinct.get(FieldNames.FIELD_ID);
+		assertTrue("instinct must be persisted (id>0), not an in-memory placeholder", instinctId != null && instinctId > 0L);
+
+		BaseRecord personality = cp.get(FieldNames.FIELD_PERSONALITY);
+		assertNotNull("personality must be a real persisted record seeded from the random baseline (KI-30)", personality);
+		Long personalityId = personality.get(FieldNames.FIELD_ID);
+		assertTrue("personality must be persisted (id>0), not an in-memory placeholder", personalityId != null && personalityId > 0L);
+
+		BaseRecord state = cp.get(FieldNames.FIELD_STATE);
+		assertNotNull("state must be a real persisted record seeded from the random baseline (KI-30)", state);
+		Long stateId = state.get(FieldNames.FIELD_ID);
+		assertTrue("state must be persisted (id>0), not an in-memory placeholder", stateId != null && stateId > 0L);
+
+		// Fix-spec's own suggested signal: statistics carry real rolled values, not schema-default
+		// zeros (see this method's javadoc note on why this one alone isn't proof of THIS fix).
+		BaseRecord statistics = cp.get("statistics");
+		assertNotNull(statistics);
+		int strength = statistics.get("physicalStrength");
+		int agility = statistics.get("agility");
+		assertTrue("physicalStrength should be a real rolled value (>0), not left at schema default 0", strength > 0);
+		assertTrue("agility should be a real rolled value (>0), not left at schema default 0", agility > 0);
+
+		logger.info("KI-30 verified: race=" + race + " alignment=" + alignment
+			+ " instinct.id=" + instinctId + " personality.id=" + personalityId + " state.id=" + stateId
+			+ " statistics.physicalStrength=" + strength + " agility=" + agility);
 	}
 
 	// ── Group Hierarchy Tests ────────────────────────────────────────────
@@ -689,7 +797,7 @@ public class TestPictureBookFull extends BaseTest {
 		String workObjectId = createdWork.get(FieldNames.FIELD_OBJECT_ID);
 
 		BaseRecord meta = PictureBookUtil.extract(testUser, workObjectId, 3, chatConfigName, null,
-			"E2E Character Test Book " + System.currentTimeMillis());
+			"E2E Character Test Book " + System.currentTimeMillis(), testProperties.getProperty("test.datagen.path"));
 		assertNotNull("extract() should return meta", meta);
 
 		String bookObjectId = meta.get("bookObjectId");
@@ -890,7 +998,7 @@ public class TestPictureBookFull extends BaseTest {
 		String workObjectId = createdWork.get(FieldNames.FIELD_OBJECT_ID);
 
 		BaseRecord meta = PictureBookUtil.extract(testUser, workObjectId, 3, chatConfigName, "sci-fi",
-			"Catatone Test Book " + System.currentTimeMillis());
+			"Catatone Test Book " + System.currentTimeMillis(), testProperties.getProperty("test.datagen.path"));
 		assertNotNull("extract() should return meta", meta);
 		String bookObjectId = meta.get("bookObjectId");
 		assertNotNull(bookObjectId);
@@ -985,7 +1093,7 @@ public class TestPictureBookFull extends BaseTest {
 		String workObjectId = createdWork.get(FieldNames.FIELD_OBJECT_ID);
 
 		BaseRecord meta = PictureBookUtil.extract(testUser, workObjectId, 3, chatConfigName, null,
-			"E2E Apparel Scene Test Book " + System.currentTimeMillis());
+			"E2E Apparel Scene Test Book " + System.currentTimeMillis(), testProperties.getProperty("test.datagen.path"));
 		String bookObjectId = meta.get("bookObjectId");
 
 		List<Map<String, Object>> scenes = PictureBookUtil.listScenes(testUser, bookObjectId);
@@ -1743,4 +1851,777 @@ public class TestPictureBookFull extends BaseTest {
 
 		logger.info("Chunked " + longText.length() + " chars into " + chunks.size() + " chunks");
 	}
+
+	// ── reset() recursive delete (KI-32) ─────────────────────────────────
+
+	/**
+	 * Regression test for KI-32: PictureBookUtil.reset() used to delete exactly 4 top-level rows
+	 * (Scenes group, Characters group, .pictureBookMeta note, book group) via single-record
+	 * AccessPoint.delete() calls with NO recursion — every scene note and character nested under
+	 * Scenes/Characters was left orphaned in the database, which later surfaced as PathProvider
+	 * "Parent auth.group index not found" log spam for any surviving record whose parentId chain
+	 * climbed through one of those now-missing intermediate groups.
+	 *
+	 * <p>This builds a minimal book with one scene note (under Scenes/) and one charPerson (under
+	 * Characters/) directly (no LLM call — just Factory.newInstance + AccessPoint.create, the same
+	 * pattern TestBulkOperation.java uses for a bare olio.charPerson fixture), calls reset(), then
+	 * proves via direct queries that the scene note, the character, AND the Scenes/Characters
+	 * groups themselves are actually gone — not just the top-level book group, which is exactly
+	 * the bug: pre-fix, only the group shells would disappear from view via findPath (since a
+	 * child would already be orphaned once its parent group row was deleted) while the child rows
+	 * themselves remained in the database, resolvable directly by objectId. If reset() genuinely
+	 * deleted the child rows first, an ID-based lookup afterward returns null; if it just deleted
+	 * the parent group (old behavior) the child row would still resolve by objectId.
+	 */
+	@Test
+	public void TestResetRecursivelyDeletesNestedSceneAndCharacter() throws Exception {
+		logger.info("Test: PictureBookUtil.reset() recursively deletes nested scene notes and "
+			+ "characters under Scenes/Characters, not just the 4 top-level rows (KI-32 regression)");
+		setupTestContext();
+
+		String bookName = "KI32-Reset-Test-" + System.currentTimeMillis();
+		String bookPath = "~/Data/PictureBooks/" + bookName;
+
+		BaseRecord bookGroup = ensureGroup(bookPath);
+		assertNotNull("Book group should be created", bookGroup);
+		BaseRecord scenesGroup = ensureGroup(bookPath + "/Scenes");
+		assertNotNull("Scenes group should be created", scenesGroup);
+		BaseRecord charsGroup = ensureGroup(bookPath + "/Characters");
+		assertNotNull("Characters group should be created", charsGroup);
+
+		String bookObjectId = bookGroup.get(FieldNames.FIELD_OBJECT_ID);
+
+		// One scene note nested under Scenes/
+		ParameterList scenePlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, bookPath + "/Scenes");
+		scenePlist.parameter(FieldNames.FIELD_NAME, "KI-32 Reset Test Scene");
+		BaseRecord sceneNote = IOSystem.getActiveContext().getFactory().newInstance(
+			ModelNames.MODEL_NOTE, testUser, null, scenePlist);
+		Map<String, Object> sceneData = new LinkedHashMap<>();
+		sceneData.put("title", "KI-32 Reset Test Scene");
+		sceneData.put("setting", "A quiet room");
+		sceneNote.set("text", JSONUtil.exportObject(sceneData));
+		BaseRecord createdScene = IOSystem.getActiveContext().getAccessPoint().create(testUser, sceneNote);
+		assertNotNull("Scene note should be created", createdScene);
+		String sceneObjectId = createdScene.get(FieldNames.FIELD_OBJECT_ID);
+
+		// One bare charPerson nested under Characters/ — no LLM enrichment needed for this test,
+		// which is exercising the delete path, not character creation (mirrors
+		// TestBulkOperation.TestLikelyBrokenParticipations's bare-charPerson fixture pattern).
+		ParameterList charPlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, bookPath + "/Characters");
+		charPlist.parameter(FieldNames.FIELD_NAME, "KI-32 Reset Test Character");
+		BaseRecord charPerson = IOSystem.getActiveContext().getFactory().newInstance(
+			OlioModelNames.MODEL_CHAR_PERSON, testUser, null, charPlist);
+		charPerson.set(FieldNames.FIELD_GENDER, "female");
+		BaseRecord createdChar = IOSystem.getActiveContext().getAccessPoint().create(testUser, charPerson);
+		assertNotNull("Character should be created", createdChar);
+		String charObjectId = createdChar.get(FieldNames.FIELD_OBJECT_ID);
+
+		// Sanity: everything actually exists before reset()
+		assertNotNull("Scene note should resolve before reset()",
+			findNoteByObjectId(sceneObjectId));
+		assertNotNull("Character should resolve before reset()",
+			findCharByObjectId(charObjectId));
+		assertNotNull("Scenes group should resolve before reset()", findGroupByPath(bookPath + "/Scenes"));
+		assertNotNull("Characters group should resolve before reset()", findGroupByPath(bookPath + "/Characters"));
+
+		// Act
+		boolean ok = PictureBookUtil.reset(testUser, bookObjectId);
+		assertTrue("reset() should report success", ok);
+
+		// Assert — the nested scene note and character are ACTUALLY gone (this is the KI-32
+		// regression: pre-fix, these direct-by-objectId lookups would still resolve since only
+		// the top-level group/meta rows were ever deleted)
+		assertNull("Scene note must be deleted, not just orphaned, after reset()",
+			findNoteByObjectId(sceneObjectId));
+		assertNull("Character must be deleted, not just orphaned, after reset()",
+			findCharByObjectId(charObjectId));
+
+		// Assert — the Scenes/Characters groups themselves are gone too
+		assertNull("Scenes group must be deleted after reset()", findGroupByPath(bookPath + "/Scenes"));
+		assertNull("Characters group must be deleted after reset()", findGroupByPath(bookPath + "/Characters"));
+
+		// Assert — the book group itself is gone (pre-existing behavior, sanity check)
+		assertNull("Book group must be deleted after reset()", findGroupByPath(bookPath));
+
+		logger.info("KI-32 regression verified: scene note, character, and both sub-groups were "
+			+ "all actually removed by reset(), not just orphaned");
+	}
+
+	/**
+	 * KI-32 follow-up regression test: reset() must also delete a character's own dedicated
+	 * foreign single-model sub-records (profile/narrative/statistics/store/instinct/personality/
+	 * state — see createPersistedForeignInstance) — these live in the acting user's shared
+	 * ~/Profiles, ~/Narratives, etc. buckets rather than nested under the book's Characters
+	 * subtree, so the group-subtree walk in TestResetRecursivelyDeletesNestedSceneAndCharacter
+	 * above never exercises this path (that test's bare charPerson fixture has none of these
+	 * sub-records at all). Builds a real character via createFromScenes (same as
+	 * TestCreateFromScenesSeedsRandomBaselineOnCharacter) so all seven sub-records are genuinely
+	 * persisted, captures each one's objectId, calls reset(), then asserts every one of them
+	 * — not just the character itself — is actually gone afterward.
+	 */
+	@Test
+	public void TestResetDeletesCharacterForeignSubRecords() throws Exception {
+		logger.info("Test: PictureBookUtil.reset() also deletes a character's own foreign "
+			+ "sub-records (profile/narrative/statistics/store/instinct/personality/state) — KI-32 follow-up");
+		setupTestContext();
+
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be set", dataPath);
+
+		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, "KI32-SubRecord-Test-" + System.currentTimeMillis());
+		BaseRecord work = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, testUser, null, plist);
+		work.set("text", TEST_STORY);
+		BaseRecord createdWork = IOSystem.getActiveContext().getAccessPoint().create(testUser, work);
+		assertNotNull(createdWork);
+		String workObjectId = createdWork.get(FieldNames.FIELD_OBJECT_ID);
+
+		List<Map<String, Object>> sceneList = new ArrayList<>();
+		Map<String, Object> scene0 = new LinkedHashMap<>();
+		scene0.put("title", "Elena Enters the Forest");
+		scene0.put("blurb", "Elena and Marcus enter the ancient forest.");
+		scene0.put("setting", "ancient forest");
+		scene0.put("action", "walking cautiously");
+		scene0.put("mood", "tense");
+		sceneList.add(scene0);
+
+		String elenaName = "Elena KI32Sub " + System.currentTimeMillis();
+		List<Map<String, Object>> charDataList = new ArrayList<>();
+		Map<String, Object> elenaStub = new LinkedHashMap<>();
+		elenaStub.put("name", elenaName);
+		elenaStub.put("gender", "FEMALE");
+		elenaStub.put("role", "protagonist");
+		charDataList.add(elenaStub);
+
+		BaseRecord meta = PictureBookUtil.createFromScenes(testUser, workObjectId, chatConfigName, null,
+			"KI32-SubRecord-Test-Book-" + System.currentTimeMillis(), sceneList, charDataList, dataPath);
+		assertNotNull("createFromScenes should return meta", meta);
+		String bookObjectId = meta.get("bookObjectId");
+		assertNotNull("meta should carry bookObjectId", bookObjectId);
+
+		List<Object> failedCharacters = meta.get("failedCharacters");
+		assertTrue("Character should create successfully — failedCharacters=" + failedCharacters,
+			failedCharacters == null || failedCharacters.isEmpty());
+
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, elenaName);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.planMost(true);
+		BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
+		assertNotNull("Character should be resolvable by name", cp);
+		String charObjectId = cp.get(FieldNames.FIELD_OBJECT_ID);
+
+		String profileObjectId = requirePersistedForeignObjectId(cp, "profile");
+		String narrativeObjectId = requirePersistedForeignObjectId(cp, "narrative");
+		String statisticsObjectId = requirePersistedForeignObjectId(cp, OlioFieldNames.FIELD_STATISTICS);
+		String storeObjectId = requirePersistedForeignObjectId(cp, FieldNames.FIELD_STORE);
+		String instinctObjectId = requirePersistedForeignObjectId(cp, OlioFieldNames.FIELD_INSTINCT);
+		String personalityObjectId = requirePersistedForeignObjectId(cp, FieldNames.FIELD_PERSONALITY);
+		String stateObjectId = requirePersistedForeignObjectId(cp, FieldNames.FIELD_STATE);
+
+		// Sanity: all seven sub-records genuinely resolve before reset()
+		assertNotNull("profile must resolve before reset()", findByModelAndObjectId(ModelNames.MODEL_PROFILE, profileObjectId));
+		assertNotNull("narrative must resolve before reset()", findByModelAndObjectId(OlioModelNames.MODEL_NARRATIVE, narrativeObjectId));
+		assertNotNull("statistics must resolve before reset()", findByModelAndObjectId(OlioModelNames.MODEL_CHAR_STATISTICS, statisticsObjectId));
+		assertNotNull("store must resolve before reset()", findByModelAndObjectId(OlioModelNames.MODEL_STORE, storeObjectId));
+		assertNotNull("instinct must resolve before reset()", findByModelAndObjectId(OlioModelNames.MODEL_INSTINCT, instinctObjectId));
+		assertNotNull("personality must resolve before reset()", findByModelAndObjectId(ModelNames.MODEL_PERSONALITY, personalityObjectId));
+		assertNotNull("state must resolve before reset()", findByModelAndObjectId(OlioModelNames.MODEL_CHAR_STATE, stateObjectId));
+
+		// Act
+		boolean ok = PictureBookUtil.reset(testUser, bookObjectId);
+		assertTrue("reset() should report success", ok);
+
+		// Assert — the character itself is gone (already covered elsewhere, sanity check here too)
+		assertNull("Character must be deleted after reset()", findCharByObjectId(charObjectId));
+
+		// Assert — every one of the character's own foreign sub-records is ALSO gone, not just
+		// orphaned (this is the follow-up regression: pre-fix, these would still resolve directly
+		// by objectId since they live outside the book's group subtree entirely)
+		assertNull("profile must be deleted, not just orphaned, after reset()", findByModelAndObjectId(ModelNames.MODEL_PROFILE, profileObjectId));
+		assertNull("narrative must be deleted, not just orphaned, after reset()", findByModelAndObjectId(OlioModelNames.MODEL_NARRATIVE, narrativeObjectId));
+		assertNull("statistics must be deleted, not just orphaned, after reset()", findByModelAndObjectId(OlioModelNames.MODEL_CHAR_STATISTICS, statisticsObjectId));
+		assertNull("store must be deleted, not just orphaned, after reset()", findByModelAndObjectId(OlioModelNames.MODEL_STORE, storeObjectId));
+		assertNull("instinct must be deleted, not just orphaned, after reset()", findByModelAndObjectId(OlioModelNames.MODEL_INSTINCT, instinctObjectId));
+		assertNull("personality must be deleted, not just orphaned, after reset()", findByModelAndObjectId(ModelNames.MODEL_PERSONALITY, personalityObjectId));
+		assertNull("state must be deleted, not just orphaned, after reset()", findByModelAndObjectId(OlioModelNames.MODEL_CHAR_STATE, stateObjectId));
+
+		logger.info("KI-32 follow-up verified: all 7 foreign sub-records (profile/narrative/statistics/"
+			+ "store/instinct/personality/state) were actually deleted by reset(), not just the character itself");
+	}
+
+	private String requirePersistedForeignObjectId(BaseRecord cp, String fieldName) {
+		BaseRecord fk = cp.get(fieldName);
+		assertNotNull("charPerson." + fieldName + " must be a persisted record", fk);
+		Long id = fk.get(FieldNames.FIELD_ID);
+		assertTrue("charPerson." + fieldName + " must be persisted (id>0)", id != null && id > 0L);
+		String objectId = fk.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("charPerson." + fieldName + " must have an objectId", objectId);
+		return objectId;
+	}
+
+	private BaseRecord findByModelAndObjectId(String model, String objectId) {
+		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
+	}
+
+	private BaseRecord findNoteByObjectId(String objectId) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
+	}
+
+	// Default query projection excludes "text" (not one of data.note's query fields) — use this
+	// instead of findNoteByObjectId() when the note's text JSON blob itself needs inspecting.
+	private BaseRecord findNoteByObjectIdWithText(String objectId) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "text" });
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
+	}
+
+	private BaseRecord findCharByObjectId(String objectId) {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
+	}
+
+	private BaseRecord findGroupByPath(String path) {
+		return IOSystem.getActiveContext().getPathUtil().findPath(testUser,
+			ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(),
+			((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
+	}
+
+	// ── Cancellation (KI-10) ─────────────────────────────────────────────
+
+	/**
+	 * KI-10 regression test: a mid-run cancel (SummarizeProgress.cancel(), the same class
+	 * ChatUtil's map/reduce summarization already uses) must stop extractChunkedInternal's chunk
+	 * loop before all chunks are processed — not run to completion regardless, as it did before
+	 * this fix (the cancel flag was never threaded into the loop at all). Uses a real live LLM
+	 * (Ollama) so at least one real chunk-extraction call actually happens before cancellation is
+	 * fired, proving the loop genuinely ran rather than the check short-circuiting before any real
+	 * work started. A background thread fires the cancel once SummarizeProgress reports the first
+	 * chunk has completed (current&gt;=1) — this is the same kind of LLM-touching test as the rest
+	 * of this file (real Ollama server via testProperties), single-threaded within this class same
+	 * as its siblings (no special gating needed — this whole test class already requires the live
+	 * Ollama server configured in test.properties, same as every other @Test here).
+	 */
+	@Test
+	public void TestExtractScenesOnlyCancellationStopsChunkedExtractionEarly() throws Exception {
+		logger.info("Test: KI-10 — cancelling mid-run stops extractChunkedInternal's chunk loop "
+			+ "before all chunks are processed (fewer chunks processed than total), while at least "
+			+ "one chunk is proven to have actually run first");
+		setupTestContext();
+
+		// Build text long enough to force several chunks through the real auto-chunk path
+		// (extractScenesOnly auto-chunks above 8000 chars; chunkSize=2000/overlap=200 inside
+		// extractChunkedInternal works out to roughly text.length()/1800 chunks) so a background
+		// cancel fired after the first chunk completes still has more chunks left to skip.
+		StringBuilder sb = new StringBuilder();
+		int chapter = 1;
+		while (sb.length() < 10000) {
+			sb.append("Chapter ").append(chapter++).append(": ").append(TEST_STORY).append("\n\n");
+		}
+		String longText = sb.toString();
+
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, "KI10 Cancel Test Story " + System.currentTimeMillis());
+		BaseRecord work = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, testUser, null, plist);
+		work.set("text", longText);
+		BaseRecord createdWork = IOSystem.getActiveContext().getAccessPoint().create(testUser, work);
+		assertNotNull(createdWork);
+		String workObjectId = createdWork.get(FieldNames.FIELD_OBJECT_ID);
+
+		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		SummarizeProgress cancelToken = new SummarizeProgress();
+
+		// Fire the cancel from a background thread only once the loop has actually processed at
+		// least one chunk (current>=1) -- proves the loop genuinely made real LLM calls before
+		// being stopped, not a same-request no-op that never let anything run.
+		Thread canceller = new Thread(() -> {
+			long deadline = System.currentTimeMillis() + 180_000;
+			while (System.currentTimeMillis() < deadline) {
+				if (cancelToken.getCurrent() >= 1) {
+					cancelToken.cancel();
+					return;
+				}
+				try { Thread.sleep(200); } catch (InterruptedException ignored) { return; }
+			}
+		}, "KI10-canceller");
+		canceller.start();
+
+		PictureBookUtil.ScenesOnlyResult result = PictureBookUtil.extractScenesOnly(
+			testUser, workObjectId, PictureBookUtil.MAX_SCENES_DEFAULT, chatConfigName, null, cancelToken);
+		canceller.join(5000);
+
+		assertTrue("Text this long should take the chunked path", result.chunked);
+		assertTrue("cancelToken should have been cancelled by the background thread "
+			+ "(if false, the loop finished before the canceller ever saw current>=1 -- rerun with "
+			+ "more/longer chunks)", cancelToken.isCancelled());
+
+		int totalChunks = cancelToken.getTotal();
+		int processedChunks = cancelToken.getCurrent();
+		logger.info("KI-10: processed " + processedChunks + "/" + totalChunks + " chunks before cancellation, "
+			+ "returned " + result.scenes.size() + " scenes");
+
+		assertTrue("At least one chunk must have actually been processed before cancellation took effect "
+			+ "(proves the loop genuinely ran) — processed=" + processedChunks, processedChunks >= 1);
+		assertTrue("Fewer chunks should have been processed than the total chunk count -- proves the loop "
+			+ "stopped EARLY rather than running to completion regardless of cancellation (the KI-10 "
+			+ "regression) — processed=" + processedChunks + " total=" + totalChunks,
+			processedChunks < totalChunks);
+	}
+
+	// ── LLM error/empty payload guard (KI-31) ────────────────────────────
+
+	/**
+	 * Regression test for KI-31: callLlmInternal returned raw LLM message content verbatim with no
+	 * shape/error validation; resolveScenePrompt/resolveLandscapePrompt only guarded against
+	 * null/blank content before caching and forwarding it to SDUtil.txt2img as literal prompt
+	 * text. Live logs showed a 200-OK response whose content was itself error-shaped JSON
+	 * ({"error":"..."}) or an empty array ([]) — neither null nor blank — reaching the SD prompt
+	 * verbatim. This is a direct unit test of the extracted guard (PictureBookUtil.
+	 * isErrorOrEmptyPayload) against exactly those crafted input strings — no live LLM round-trip
+	 * needed since this validates a parsing/guard function's behavior for a given input string,
+	 * not the LLM call itself.
+	 */
+	@Test
+	public void TestIsErrorOrEmptyPayloadDetectsErrorShapedAndEmptyLlmContent() {
+		logger.info("Test: PictureBookUtil.isErrorOrEmptyPayload() rejects error-shaped/empty LLM "
+			+ "content that used to reach the SD prompt verbatim (KI-31 regression)");
+
+		// The exact failure shapes observed live in KI-31's log evidence
+		assertTrue("{\"error\":\"No story text provided\"} must be detected as an error payload",
+			PictureBookUtil.isErrorOrEmptyPayload("{\"error\":\"No story text provided\"}"));
+		assertTrue("{\"error\":\"Missing story text and count parameters\"} must be detected",
+			PictureBookUtil.isErrorOrEmptyPayload("{\"error\":\"Missing story text and count parameters\"}"));
+		assertTrue("{\"error\":\"Please provide the story text and the desired number of scenes to identify.\"} must be detected",
+			PictureBookUtil.isErrorOrEmptyPayload(
+				"{\"error\":\"Please provide the story text and the desired number of scenes to identify.\"}"));
+		assertTrue("Bare empty array [] must be detected as an empty payload",
+			PictureBookUtil.isErrorOrEmptyPayload("[]"));
+		assertTrue("Whitespace-padded empty array must still be detected",
+			PictureBookUtil.isErrorOrEmptyPayload("  []  \n"));
+
+		// Existing null/blank guard behavior must still work (not a regression on the old check)
+		assertTrue("null content must be detected", PictureBookUtil.isErrorOrEmptyPayload(null));
+		assertTrue("blank content must be detected", PictureBookUtil.isErrorOrEmptyPayload("   "));
+		assertTrue("empty string must be detected", PictureBookUtil.isErrorOrEmptyPayload(""));
+
+		// Real prompt text (including JSON-ish-looking but legitimate content) must NOT be flagged
+		assertFalse("Real prose prompt text must not be flagged as an error payload",
+			PictureBookUtil.isErrorOrEmptyPayload("A moody forest at dusk, cinematic lighting, illustration style"));
+		assertFalse("A JSON array with real content must not be flagged",
+			PictureBookUtil.isErrorOrEmptyPayload("[\"forest\", \"dusk\", \"cinematic\"]"));
+		assertFalse("A JSON object without an 'error' key must not be flagged",
+			PictureBookUtil.isErrorOrEmptyPayload("{\"setting\":\"forest\", \"mood\":\"tense\"}"));
+
+		// KI-31 follow-up (2026-07-23): a plain-prose conversational clarifying question — neither
+		// JSON-shaped nor blank — reaching the SD prompt verbatim. Root cause: promptTemplateOverride
+		// is a single field the wizard's "single prompt template" mode applies to EVERY LLM call;
+		// picking a template meant for scene EXTRACTION (which expects {text}/{count}) silently
+		// overrode a scene-image-prompt/landscape-prompt call whose vars are setting/action/mood/
+		// charNarrations instead, leaving {text}/{count} unsubstituted. The LLM reasonably asked for
+		// them back in prose — exact live example below.
+		assertTrue("A conversational request for missing story text/scene count must be detected",
+			PictureBookUtil.isErrorOrEmptyPayload(
+				"I’m happy to help identify the most visually compelling scenes, but I need the actual "
+				+ "story text and the number of scenes you’d like selected. Could you please provide those details?"));
+		assertTrue("A shorter variant of the same conversational refusal must be detected",
+			PictureBookUtil.isErrorOrEmptyPayload(
+				"I’m happy to help identify the most visually compelling scenes, but I need the actual "
+				+ "story text and the number of scenes you’d like selected. Please provide the story and "
+				+ "specify how many scenes you’d like me to extract."));
+		assertTrue("Prompt text with a leftover unsubstituted {placeholder} must be detected",
+			PictureBookUtil.isErrorOrEmptyPayload("Given this story, identify the {count} most visually notable scenes. STORY: {text}"));
+		assertFalse("Real prompt text mentioning a scene/story in passing must NOT be falsely flagged",
+			PictureBookUtil.isErrorOrEmptyPayload("A dramatic scene from an old story, illustrated in watercolor style, moody lighting"));
+	}
+
+	/**
+	 * KI-31 follow-up regression test (2026-07-23, live): reproduces the exact reported bug —
+	 * "PictureBook prompts are still completely broken" — by deliberately passing
+	 * promptTemplateOverride="pictureBook.extract-scenes" (a real template requiring {@code {text}}/
+	 * {@code {count}}) into {@code prepareSceneImagePrompts}, which uses it for BOTH the
+	 * scene-image-prompt AND landscape-prompt calls (whose vars are setting/action/mood/
+	 * charNarrations — no text/count at all). Pre-fix, this made the LLM receive a template with
+	 * unfilled {@code {text}}/{@code {count}} placeholders and respond with a conversational
+	 * clarifying question, which then got cached and would have reached SDUtil.txt2img verbatim as
+	 * the literal prompt (confirmed live in the running Tomcat instance's own log, 2026-07-23,
+	 * before this fix). Runs against the real Ollama LLM — no mocking.
+	 */
+	@Test
+	public void TestMismatchedPromptTemplateOverrideDoesNotPoisonScenePrompt() throws Exception {
+		logger.info("Test: prepareSceneImagePrompts() must not let a cross-purpose promptTemplateOverride "
+			+ "(extract-scenes template applied to scene-image/landscape-prompt calls) poison the cached "
+			+ "prompt with a conversational LLM refusal (KI-31 follow-up regression)");
+		setupTestContext();
+
+		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String sceneName = "KI31Followup-Scene-" + System.currentTimeMillis();
+		Map<String, Object> sceneData = new LinkedHashMap<>();
+		sceneData.put("title", sceneName);
+		sceneData.put("setting", "a quiet moonlit forest clearing");
+		sceneData.put("action", "a lone traveler kneels beside a small campfire");
+		sceneData.put("mood", "peaceful, reflective");
+		sceneData.put("characters", new ArrayList<>());
+
+		ParameterList scenePlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		scenePlist.parameter(FieldNames.FIELD_NAME, sceneName);
+		BaseRecord sceneNote = IOSystem.getActiveContext().getFactory().newInstance(
+			ModelNames.MODEL_NOTE, testUser, null, scenePlist);
+		sceneNote.set("text", JSONUtil.exportObject(sceneData));
+		BaseRecord createdScene = IOSystem.getActiveContext().getAccessPoint().create(testUser, sceneNote);
+		assertNotNull("Scene note should be created", createdScene);
+		String sceneObjectId = createdScene.get(FieldNames.FIELD_OBJECT_ID);
+
+		// The actual misconfiguration: a template belonging to a DIFFERENT operation
+		// (extract-scenes needs {text}/{count}) applied here, where the real templates
+		// (scene-image-prompt/landscape-prompt) need setting/action/mood/charNarrations instead.
+		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
+			"illustration", "pictureBook.extract-scenes");
+
+		BaseRecord refetched = findNoteByObjectIdWithText(sceneObjectId);
+		assertNotNull(refetched);
+		Map<String, Object> refetchedData = JSONUtil.getMap(((String) refetched.get("text")).getBytes(), String.class, Object.class);
+		String cachedScenePrompt = (String) refetchedData.get("scenePrompt");
+		String cachedLandscapePrompt = (String) refetchedData.get("landscapePrompt");
+
+		logger.info("KI-31 follow-up: cachedScenePrompt=[" + cachedScenePrompt + "] cachedLandscapePrompt=["
+			+ cachedLandscapePrompt + "]");
+
+		assertNotNull("scenePrompt must still be cached (via the fallback path, not left null)", cachedScenePrompt);
+		assertFalse("scenePrompt must NOT be the LLM's conversational refusal / an unsubstituted-placeholder "
+			+ "template — the guard must have refused to call the LLM with the mismatched template",
+			PictureBookUtil.isErrorOrEmptyPayload(cachedScenePrompt));
+		assertTrue("scenePrompt must be built from the REAL scene fallback data, not generic/empty boilerplate",
+			cachedScenePrompt.toLowerCase().contains("moonlit forest") || cachedScenePrompt.toLowerCase().contains("campfire"));
+
+		assertNotNull("landscapePrompt must still be cached (via the fallback path, not left null)", cachedLandscapePrompt);
+		assertFalse("landscapePrompt must NOT be the LLM's conversational refusal / an unsubstituted-placeholder template",
+			PictureBookUtil.isErrorOrEmptyPayload(cachedLandscapePrompt));
+		assertEquals("landscapePrompt must fall back to the real setting text per resolveLandscapePrompt's own fallback",
+			"a quiet moonlit forest clearing", cachedLandscapePrompt);
+	}
+
+	/**
+	 * KI-31 follow-up regression test (2026-07-23, live): a scene whose cached scenePrompt was
+	 * ALREADY poisoned (simulating a book generated before this fix landed) must self-heal the next
+	 * time it's touched, rather than serving the same garbage forever — this was the actual reported
+	 * symptom ("regenerating doesn't help", since the corrupted value was cached, not regenerated on
+	 * every attempt). This call uses NO override (the normal/correct path) — proving the poisoned
+	 * cache alone, not a bad override, is what's being healed here.
+	 */
+	@Test
+	public void TestPoisonedCachedScenePromptSelfHeals() throws Exception {
+		logger.info("Test: a scene whose scenePrompt cache was already poisoned by the KI-31 follow-up bug "
+			+ "must self-heal on next touch, not serve the same broken text forever");
+		setupTestContext();
+
+		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String sceneName = "KI31SelfHeal-Scene-" + System.currentTimeMillis();
+		Map<String, Object> sceneData = new LinkedHashMap<>();
+		sceneData.put("title", sceneName);
+		sceneData.put("setting", "a bustling marketplace at dawn");
+		sceneData.put("action", "vendors call out as a merchant counts coins");
+		sceneData.put("mood", "energetic, warm");
+		sceneData.put("characters", new ArrayList<>());
+		// Simulate the exact live-observed poisoned cache value from before this fix.
+		sceneData.put("scenePrompt", "I’m happy to help identify the most visually compelling scenes, "
+			+ "but I need the actual story text and the number of scenes you’d like selected. "
+			+ "Could you please provide those details?");
+
+		ParameterList scenePlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		scenePlist.parameter(FieldNames.FIELD_NAME, sceneName);
+		BaseRecord sceneNote = IOSystem.getActiveContext().getFactory().newInstance(
+			ModelNames.MODEL_NOTE, testUser, null, scenePlist);
+		sceneNote.set("text", JSONUtil.exportObject(sceneData));
+		BaseRecord createdScene = IOSystem.getActiveContext().getAccessPoint().create(testUser, sceneNote);
+		assertNotNull("Scene note should be created", createdScene);
+		String sceneObjectId = createdScene.get(FieldNames.FIELD_OBJECT_ID);
+
+		// Normal call, no override — the poisoned cache alone must be what triggers regeneration.
+		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
+			"illustration", null);
+
+		BaseRecord refetched = findNoteByObjectIdWithText(sceneObjectId);
+		assertNotNull(refetched);
+		Map<String, Object> refetchedData = JSONUtil.getMap(((String) refetched.get("text")).getBytes(), String.class, Object.class);
+		String healedScenePrompt = (String) refetchedData.get("scenePrompt");
+
+		logger.info("KI-31 self-heal: healedScenePrompt=[" + healedScenePrompt + "]");
+		assertNotNull(healedScenePrompt);
+		assertFalse("The poisoned cached value must NOT still be served after prepareSceneImagePrompts runs again",
+			PictureBookUtil.isErrorOrEmptyPayload(healedScenePrompt));
+		assertFalse("The literal poisoned text must be gone, not just deemed acceptable",
+			healedScenePrompt.contains("I need the actual story text"));
+	}
+
+	/**
+	 * Stephen's direct diagnostic request (2026-07-23): run the real opening of catatone.docx
+	 * (Duña and Jideon; scene 1 outside the house carrying Duña to a cab, scene 2 inside the house
+	 * searching for clues — dystopian near-future North America) through the ACTUAL production
+	 * pipeline end to end — extract → resolve/cache the real landscape+scene prompts → generate
+	 * real images against the live Swarm server — and report what each stage actually produced, not
+	 * an assumption. `extract()` truncates to the first 8000 chars of the document for its own
+	 * non-chunked LLM call, which comfortably covers both opening scenes (confirmed by inspecting
+	 * the raw extracted document text before writing this test).
+	 */
+	@Test
+	public void TestCatatoneOpeningScenesRealPromptsAndImages() throws Exception {
+		logger.info("Test: real catatone.docx opening (Duña/Jideon, outside-house then inside-house scenes) "
+			+ "through the full extract -> resolve-prompt -> generate-image pipeline, live");
+		setupTestContext();
+
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		assertNotNull("test.swarm.server must be set", swarmServer);
+		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+
+		byte[] fileBytes = FileUtil.getFile("./media/catatone.docx");
+		assertNotNull("catatone.docx should be readable from the module's media/ directory", fileBytes);
+
+		// Load the REAL extracted document text (same DocumentUtil.getStringContent() path
+		// extractWorkText() uses in production) and isolate JUST the two scenes Stephen specified:
+		// (1) outside the house — Jideon carries Duña to the waiting cab in the rain; (2) inside the
+		// house — searching for clues, the call to Maria. The full document (~34KB) covers many more
+		// scenes further in (an alley confrontation with a third character, "Touvier", immediately
+		// follows) — pictureBook.extract-scenes' own system prompt explicitly distributes selections
+		// "across the full arc of the story, not clustered at the start", so simply asking for 2
+		// scenes from the full/8000-char-truncated text let the LLM pick a later scene instead of
+		// the inside-the-house one (confirmed by an earlier run of this exact test). Truncating the
+		// INPUT text itself to end right where the cab-ride-to-the-alley scene begins guarantees the
+		// only two scenes available to select from are the ones actually requested.
+		ParameterList docPlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		docPlist.parameter(FieldNames.FIELD_NAME, "catatone-source-" + System.currentTimeMillis() + ".docx");
+		BaseRecord docWork = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, testUser, null, docPlist);
+		docWork.set(FieldNames.FIELD_CONTENT_TYPE, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+		ByteModelUtil.setValue(docWork, fileBytes);
+		BaseRecord createdDocWork = IOSystem.getActiveContext().getAccessPoint().create(testUser, docWork);
+		assertNotNull(createdDocWork);
+		String fullText = DocumentUtil.getStringContent(createdDocWork);
+		assertNotNull("catatone.docx should extract real text content", fullText);
+
+		String cutAnchor = "He picked up a bag of";
+		int cutIdx = fullText.indexOf(cutAnchor);
+		assertTrue("Expected to find the outside/inside-house scene boundary anchor in the real "
+			+ "extracted text — catatone.docx's content may have changed", cutIdx > 0);
+		String openingText = fullText.substring(0, cutIdx);
+		logger.info("Isolated opening text (" + openingText.length() + " chars): " + openingText);
+
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, "catatone-opening-" + System.currentTimeMillis());
+		BaseRecord work = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, testUser, null, plist);
+		work.set("text", openingText);
+		BaseRecord createdWork = IOSystem.getActiveContext().getAccessPoint().create(testUser, work);
+		assertNotNull(createdWork);
+		String workObjectId = createdWork.get(FieldNames.FIELD_OBJECT_ID);
+
+		BaseRecord meta = PictureBookUtil.extract(testUser, workObjectId, 2, chatConfigName, "dystopian sci-fi",
+			"Catatone Opening " + System.currentTimeMillis(), testProperties.getProperty("test.datagen.path"));
+		assertNotNull("extract() should return meta", meta);
+		String bookObjectId = meta.get("bookObjectId");
+		assertNotNull(bookObjectId);
+		List<Object> failedCharacters = meta.get("failedCharacters");
+		logger.info("catatone opening extract() failedCharacters: " + (failedCharacters != null ? failedCharacters : "(none)"));
+
+		List<Map<String, Object>> scenes = PictureBookUtil.listScenes(testUser, bookObjectId);
+		assertTrue("Expected at least 2 scenes from the catatone opening — got " + scenes.size(), scenes.size() >= 2);
+
+		// Confirm Duña and Jideon were actually extracted as real characters, not assumed.
+		BaseRecord bookGroup = PictureBookUtil.findBookGroup(testUser, bookObjectId);
+		String charsGroupPath = ((String) bookGroup.get(FieldNames.FIELD_PATH)) + "/Characters";
+		BaseRecord charsGroup = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
+			ModelNames.MODEL_GROUP, charsGroupPath, GroupEnumType.DATA.toString(),
+			(long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		assertNotNull(charsGroup);
+		Query allCharsQ = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, charsGroup.get(FieldNames.FIELD_ID));
+		allCharsQ.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord[] createdChars = IOSystem.getActiveContext().getSearch().findRecords(allCharsQ);
+		boolean sawJideon = false, sawDuna = false;
+		for (BaseRecord c : createdChars) {
+			String cname = c.get(FieldNames.FIELD_NAME);
+			logger.info("Extracted character: " + cname);
+			if (cname != null && cname.toLowerCase().contains("jideon")) sawJideon = true;
+			// "ñ" may or may not survive LLM extraction verbatim — match either spelling.
+			if (cname != null && (cname.toLowerCase().contains("duña") || cname.toLowerCase().contains("duna"))) sawDuna = true;
+		}
+		logger.info("Character extraction check: sawJideon=" + sawJideon + " sawDuna=" + sawDuna
+			+ " (all extracted: " + java.util.Arrays.stream(createdChars).map(c -> (String) c.get(FieldNames.FIELD_NAME)).collect(java.util.stream.Collectors.joining(", ")) + ")");
+
+		// CHECK THE PROMPT — step 1: what did extraction actually put in each scene's raw
+		// setting/action/mood, before any LLM prompt-resolution runs?
+		for (int i = 0; i < Math.min(2, scenes.size()); i++) {
+			String sceneOid = (String) scenes.get(i).get("objectId");
+			BaseRecord sceneNote = findNoteByObjectIdWithText(sceneOid);
+			assertNotNull(sceneNote);
+			Map<String, Object> sceneData = JSONUtil.getMap(((String) sceneNote.get("text")).getBytes(), String.class, Object.class);
+			logger.info("RAW SCENE " + i + " DATA: title=[" + sceneData.get("title") + "] setting=[" + sceneData.get("setting")
+				+ "] action=[" + sceneData.get("action") + "] mood=[" + sceneData.get("mood") + "] blurb=[" + sceneData.get("blurb") + "]");
+		}
+
+		// CHECK THE PROMPT — step 2: resolve (and cache) the real landscape+scene-image prompts via
+		// the actual production call, no override, then read back exactly what got cached.
+		List<String> sceneOids = new ArrayList<>();
+		for (int i = 0; i < Math.min(2, scenes.size()); i++) sceneOids.add((String) scenes.get(i).get("objectId"));
+		PictureBookUtil.prepareSceneImagePrompts(testUser, sceneOids, chatConfigName, "illustration", null);
+
+		List<String> landscapePrompts = new ArrayList<>();
+		List<String> scenePrompts = new ArrayList<>();
+		for (int i = 0; i < sceneOids.size(); i++) {
+			BaseRecord refetched = findNoteByObjectIdWithText(sceneOids.get(i));
+			Map<String, Object> refetchedData = JSONUtil.getMap(((String) refetched.get("text")).getBytes(), String.class, Object.class);
+			String landscapePrompt = (String) refetchedData.get("landscapePrompt");
+			String scenePrompt = (String) refetchedData.get("scenePrompt");
+			landscapePrompts.add(landscapePrompt);
+			scenePrompts.add(scenePrompt);
+			logger.info("RESOLVED SCENE " + i + " landscapePrompt=[" + landscapePrompt + "]");
+			logger.info("RESOLVED SCENE " + i + " scenePrompt=[" + scenePrompt + "]");
+		}
+
+		for (int i = 0; i < landscapePrompts.size(); i++) {
+			assertNotNull("Scene " + i + " landscapePrompt must be cached", landscapePrompts.get(i));
+			assertNotEquals("Scene " + i + " landscapePrompt must not be the generic empty-setting "
+				+ "fallback — got exactly \"A detailed environment\", meaning setting text itself was "
+				+ "empty for this scene", "A detailed environment", landscapePrompts.get(i));
+			assertFalse("Scene " + i + " landscapePrompt must not be an error/refusal payload",
+				PictureBookUtil.isErrorOrEmptyPayload(landscapePrompts.get(i)));
+		}
+
+		// MAKE THE IMAGE — real generateSceneImage calls against the live local Swarm server.
+		PictureBookUtil.SceneGenerationParams params = new PictureBookUtil.SceneGenerationParams();
+		params.chatConfigName = chatConfigName;
+		params.steps = 20;
+		params.cfg = 5;
+		params.hires = false;
+		params.isBookOverride = true;
+		params.style = "illustration";
+		params.sdModelName = testProperties.getProperty("test.swarm.model");
+
+		for (int i = 0; i < sceneOids.size(); i++) {
+			String sceneOid = sceneOids.get(i);
+			long start = System.currentTimeMillis();
+			BaseRecord result = PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", swarmServer);
+			logger.info("Scene " + i + " generateSceneImage took " + (System.currentTimeMillis() - start)
+				+ "ms — imageObjectId=" + (result != null ? result.get("imageObjectId") : "null")
+				+ " prompt=[" + (result != null ? result.get("prompt") : "null") + "]");
+			assertNotNull("Scene " + i + " image generation should succeed against " + swarmServer, result);
+			String imageObjectId = result.get("imageObjectId");
+			assertNotNull("Scene " + i + " should produce a real generated image objectId", imageObjectId);
+		}
+	}
+
+	/**
+	 * KI-31 follow-up, second root cause (2026-07-23, found live on Stephen's real /Public catatone
+	 * book, not a synthetic test): when a scene's setting/mood/action/characters are all blank,
+	 * resolveLandscapePrompt/resolveScenePrompt used to call the LLM anyway — with a wire request
+	 * literally reading "SETTING: \nMOOD: \nTIME: \nSTYLE: photograph" (confirmed via the live
+	 * server's own request log) — and the LLM does not refuse; it invents a plausible-but-unrelated
+	 * result ("alpine meadow ... crystal-clear river ... snow-capped mountains" for a dystopian
+	 * rain-soaked city scene). That response isn't error-shaped, so it was cached and reused forever.
+	 * Fix: skip the LLM entirely when there is nothing real to describe. This test exercises the real
+	 * production method (prepareSceneImagePrompts) with a genuinely blank scene and asserts (a) the
+	 * result is the exact deterministic fallback, not a fabricated result, and (b) it completes near-
+	 * instantly — real LLM calls in this session took 3-90+ seconds, so a sub-2-second completion is
+	 * a reliable signal no network round-trip happened, not just a coincidence of fast hardware.
+	 */
+	@Test
+	public void TestBlankSettingSkipsLlmCallEntirely() throws Exception {
+		logger.info("Test: resolveLandscapePrompt/resolveScenePrompt must not call the LLM at all when "
+			+ "setting/action/mood/characters are all blank (KI-31 follow-up, second root cause)");
+		setupTestContext();
+
+		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String sceneName = "KI31Blank-Scene-" + System.currentTimeMillis();
+		Map<String, Object> sceneData = new LinkedHashMap<>();
+		sceneData.put("title", sceneName);
+		sceneData.put("setting", "");
+		sceneData.put("action", "");
+		sceneData.put("mood", "");
+		sceneData.put("characters", new ArrayList<>());
+
+		ParameterList scenePlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		scenePlist.parameter(FieldNames.FIELD_NAME, sceneName);
+		BaseRecord sceneNote = IOSystem.getActiveContext().getFactory().newInstance(
+			ModelNames.MODEL_NOTE, testUser, null, scenePlist);
+		sceneNote.set("text", JSONUtil.exportObject(sceneData));
+		BaseRecord createdScene = IOSystem.getActiveContext().getAccessPoint().create(testUser, sceneNote);
+		assertNotNull("Scene note should be created", createdScene);
+		String sceneObjectId = createdScene.get(FieldNames.FIELD_OBJECT_ID);
+
+		long start = System.currentTimeMillis();
+		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
+			"illustration", null);
+		long elapsed = System.currentTimeMillis() - start;
+		logger.info("prepareSceneImagePrompts on a fully-blank scene took " + elapsed + "ms");
+		assertTrue("A blank scene must resolve near-instantly (no LLM round-trip) — took " + elapsed
+			+ "ms, which looks like a real network call happened", elapsed < 2000);
+
+		BaseRecord refetched = findNoteByObjectIdWithText(sceneObjectId);
+		Map<String, Object> refetchedData = JSONUtil.getMap(((String) refetched.get("text")).getBytes(), String.class, Object.class);
+		String landscapePrompt = (String) refetchedData.get("landscapePrompt");
+		String scenePrompt = (String) refetchedData.get("scenePrompt");
+		logger.info("Blank-scene landscapePrompt=[" + landscapePrompt + "] scenePrompt=[" + scenePrompt + "]");
+
+		assertEquals("A fully blank scene's landscapePrompt must be exactly the deterministic fallback, "
+			+ "never an LLM-fabricated result", "A detailed environment", landscapePrompt);
+		assertEquals("A fully blank scene's scenePrompt must be exactly SWUtil.styleClause(style)'s output",
+			"Rendered as a detailed illustration.", scenePrompt);
+	}
+
+	/**
+	 * KI-31 follow-up, second root cause — self-heal half: a scene whose landscapePrompt was ALREADY
+	 * poisoned by the pre-fix blank-input hallucination (simulating Stephen's real /Public book,
+	 * using the exact live-observed hallucinated text) must self-heal the next time it's touched,
+	 * even though that text is coherent, well-formed prompt prose — not error-shaped, not a
+	 * conversational refusal — which is exactly why the original isErrorOrEmptyPayload-only self-heal
+	 * could never have caught it. This is the NEW, more precise self-heal: since a blank-input scene
+	 * can now only ever legitimately produce "A detailed environment", anything else cached while
+	 * setting/mood are still blank is conclusively a pre-fix hallucination.
+	 */
+	@Test
+	public void TestPoisonedHallucinatedLandscapePromptSelfHeals() throws Exception {
+		logger.info("Test: a landscapePrompt poisoned by the pre-fix blank-input LLM hallucination "
+			+ "must self-heal to the deterministic fallback, not keep serving the hallucinated text");
+		setupTestContext();
+
+		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String sceneName = "KI31HallucinationHeal-Scene-" + System.currentTimeMillis();
+		Map<String, Object> sceneData = new LinkedHashMap<>();
+		sceneData.put("title", sceneName);
+		sceneData.put("setting", "");
+		sceneData.put("mood", "");
+		sceneData.put("action", "");
+		sceneData.put("characters", new ArrayList<>());
+		// The exact live-observed hallucination, byte-for-byte, from a blank "SETTING: \nMOOD: \n"
+		// request — confirmed via the running server's own request/response log (2026-07-23).
+		sceneData.put("landscapePrompt", "masterpiece, best quality, expansive alpine meadow dotted "
+			+ "with wildflowers and a crystal-clear river winding through rugged, snow-capped "
+			+ "mountains in the distance, early morning mist rising over the valley, soft pastel "
+			+ "sunrise lighting with warm golden hues spilling across the landscape, tranquil and "
+			+ "serene atmosphere, photograph");
+
+		ParameterList scenePlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		scenePlist.parameter(FieldNames.FIELD_NAME, sceneName);
+		BaseRecord sceneNote = IOSystem.getActiveContext().getFactory().newInstance(
+			ModelNames.MODEL_NOTE, testUser, null, scenePlist);
+		sceneNote.set("text", JSONUtil.exportObject(sceneData));
+		BaseRecord createdScene = IOSystem.getActiveContext().getAccessPoint().create(testUser, sceneNote);
+		assertNotNull("Scene note should be created", createdScene);
+		String sceneObjectId = createdScene.get(FieldNames.FIELD_OBJECT_ID);
+
+		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
+			"illustration", null);
+
+		BaseRecord refetched = findNoteByObjectIdWithText(sceneObjectId);
+		Map<String, Object> refetchedData = JSONUtil.getMap(((String) refetched.get("text")).getBytes(), String.class, Object.class);
+		String healedLandscapePrompt = (String) refetchedData.get("landscapePrompt");
+		logger.info("Healed landscapePrompt=[" + healedLandscapePrompt + "]");
+
+		assertEquals("The poisoned hallucinated landscape prompt must be replaced with the "
+			+ "deterministic fallback, not served again", "A detailed environment", healedLandscapePrompt);
+	}
+
 }

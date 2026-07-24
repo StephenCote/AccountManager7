@@ -142,7 +142,7 @@ public class PathProvider implements IProvider {
 							}
 						}
 					} catch (ReaderException e) {
-						logger.error(e);
+						logger.warn(e.getMessage());
 					}
 					Collections.reverse(pathList);
 					path = "/" + pathList.stream().collect(Collectors.joining("/"));

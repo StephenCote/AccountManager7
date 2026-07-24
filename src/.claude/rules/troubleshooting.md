@@ -9,6 +9,30 @@ API on :8443 with `ensureSharedTestUser()` (curl or a small script), bypassing t
 - Raw API returns correct data → it's a **client/query bug**. Fix in the UX / query layer.
 - Raw API is genuinely wrong → it's a **backend/query-plan issue**. Escalate to backend-specialist.
 
+## Backend PBAC/policy tracing — use it, don't skip it
+
+Several backend utilities have a built-in verbose trace mode, purpose-built for exactly this kind of
+investigation (authorization/PBAC decisions especially) — `IOSystem.getActiveContext().getPolicyUtil()
+.setTrace(true)` turns it on across `PolicyEvaluator`, `AuthorizationUtil`, and `PolicyUtil` itself
+(all three are toggled together by one call, `PolicyUtil.java:165-168`); `AccessPoint` checks
+`getPolicyUtil().isTrace()` at its own key decision points (`AccessPoint.java:206,213,497,657`) to emit
+detailed policy/authorization reasoning. It is genuinely verbose — **bracket it tightly**: enable
+immediately before the one specific call under investigation, disable immediately after
+(`setTrace(false)`), and don't leave it on across a whole test run or session. Prefer this over
+guessing from a bare `PBAC denied`/`Group could not be found` log line when the actual authorization
+reasoning (which role/policy/participation check failed, and why) matters — it's the direct, intended
+tool for that, not a workaround.
+
+## Server-side gotchas to check first
+- `/rest/model/search` request bodies must use `"schema":"io.query"` (the real registered model,
+  `ModelNames.MODEL_QUERY`) — **not** the bare `"schema":"query"` shown in some doc examples in this
+  repo (`model-api.md`/`service7-reference.md`). The bare form fails `RecordFactory`/`ResourceUtil`
+  resource lookup (`ModelNotFoundException: Model query was not found`) and `ModelService.search`
+  silently 404s (`imp == null` branch, `ModelService.java:290-293`) — no stack trace beyond an ERROR-level
+  `RecordDeserializer`/`RecordFactory` log line, easy to mistake for a routing/auth failure. Confirmed
+  live 2026-07-22 while trying to reproduce KI-28/KI-29 — cost real time chasing a phantom "auth/session"
+  theory before checking the app log and finding the actual deserialization error there.
+
 ## Client-side gotchas to check first
 - `groupId` = directory numeric `.id`, not `.objectId` UUID.
 - Id-typed query fields are numbers, not strings (`{value:2}` not `{value:"2"}`).

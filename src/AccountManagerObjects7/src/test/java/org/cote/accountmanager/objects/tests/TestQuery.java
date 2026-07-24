@@ -129,9 +129,34 @@ public class TestQuery extends BaseTest {
 			logger.error(e);
 		}
 		assertNotNull("Result was null", result);
-		
+
 	}
-	
+
+	/// KI-33: Filtering a data.directory-derived model (data.data, via data.directory) by the
+	/// virtual "groupPath" field used to throw an opaque org.postgresql.util.PSQLException:
+	/// column oocn1.grouppath does not exist - the field has no backing database column (it's
+	/// computed by PathProvider at READ time), so the query itself was invalid, not something to
+	/// route around. StatementUtil now validates this up front and rejects the condition with a
+	/// clear FieldException (wrapped as ReaderException by DBSearch, same as every other
+	/// query-construction failure) instead of either silently "fixing" the query or letting a
+	/// cryptic SQL error reach the caller.
+	@Test
+	public void TestQueryByGroupPathLikeIsRejected() {
+		Query query = QueryUtil.createQuery(ModelNames.MODEL_DATA);
+		query.field(FieldNames.FIELD_ORGANIZATION_ID, orgContext.getOrganizationId());
+		query.field(FieldNames.FIELD_GROUP_PATH, ComparatorEnumType.LIKE, "%anything%");
+		assertNotNull("Query is null", query);
+
+		ReaderException thrown = null;
+		try {
+			ioContext.getSearch().find(query);
+		} catch (ReaderException e) {
+			thrown = e;
+		}
+		assertNotNull("Expected a ReaderException rejecting the virtual-field query condition", thrown);
+		assertTrue("Expected the rejection message to name the offending field", thrown.getMessage() != null && thrown.getMessage().contains(FieldNames.FIELD_GROUP_PATH));
+	}
+
 	@Test
 	public void TestQueryById() {
 		Factory f = ioContext.getFactory();

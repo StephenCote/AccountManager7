@@ -1,14 +1,9 @@
 package org.cote.rest.services;
 
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 import java.util.stream.Collectors;
-
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -233,18 +228,23 @@ public class OlioService {
 	public Response reimageApparel(String json, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
-		// Parse config as a plain JSON map — no schema required
-		Map<String, Object> config = new HashMap<>();
-		try {
-			ObjectMapper om = new ObjectMapper();
-			config = om.readValue(json, new TypeReference<Map<String, Object>>(){});
-		} catch (Exception e) {
-			logger.error("Failed to parse reimage config: " + e.getMessage());
+		// Parse the client's config into a real olio.sdConfig-shaped record — mirrors
+		// reimageWithConfig (KI-29) instead of discarding everything but hires/seed.
+		BaseRecord imp = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		if(imp == null) {
+			logger.error("Failed to parse reimage config");
 			return Response.status(400).entity("{\"error\":\"Invalid JSON\"}").build();
+		}
+		if(imp.get("model") == null) {
+			imp.setValue("model", context.getInitParameter("sd.model"));
+		}
+		if(imp.get("refinerModel") == null) {
+			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
 		}
 
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
 		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+		sdu.setImageAccessUser(user);
 
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_APPAREL, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
@@ -262,12 +262,17 @@ public class OlioService {
 		String apparelName = apparel.get(FieldNames.FIELD_NAME);
 		String groupPath = "~/Gallery/Apparel/" + apparelName;
 
-		boolean hires = config.containsKey("hires") && Boolean.TRUE.equals(config.get("hires"));
-		long seed = config.containsKey("seed") ? ((Number)config.get("seed")).longValue() : -1;
+		boolean hires = Boolean.TRUE.equals(imp.get("hires"));
+		Object seedObj = imp.get("seed");
+		long seed = (seedObj instanceof Number ? ((Number)seedObj).longValue() : -1L);
 
-		// Pass null for sdConfig — SDUtil.randomSDConfig() provides defaults.
-		// Style/hires/seed are handled via separate parameters.
-		List<BaseRecord> images = sdu.generateMannequinImages(user, groupPath, apparel, null, hires, seed);
+		List<BaseRecord> images;
+		try {
+			images = sdu.generateMannequinImages(user, groupPath, apparel, imp, hires, seed);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error("Failed to apply reimage config to apparel " + objectId + ": " + e.getMessage(), e);
+			return Response.status(500).entity("{\"error\":\"Invalid reimage configuration: " + e.getMessage() + "\"}").build();
+		}
 
 		if(images.isEmpty()) {
 			return Response.status(200).entity("[]").build();

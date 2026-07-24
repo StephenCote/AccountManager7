@@ -57,11 +57,15 @@ async function reimageApparel(entity, inst) {
                     })
                 ]),
                 m('div', [
-                    m('label', { class: 'field-label' }, 'Denoising: ' + (cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 0.75)),
+                    m('label', { class: 'field-label' }, 'Denoising: ' + (cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75)),
                     formFieldRenderers.renderRange({
-                        value: cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 0.75,
-                        min: 0, max: 1, step: 0.05, label: 'Denoising',
-                        onInput: function (e) { if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(parseFloat(e.target.value) || 0.75); }
+                        value: String(cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75),
+                        min: 0, max: 100, step: 5, label: 'Denoising',
+                        onInput: function (e) {
+                            let v = parseInt(e.target.value);
+                            if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(v);
+                            else cinst.entity.denoisingStrength = v / 100;
+                        }
                     })
                 ]),
                 m('div', [

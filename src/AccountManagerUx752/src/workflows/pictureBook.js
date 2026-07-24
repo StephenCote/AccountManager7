@@ -193,8 +193,29 @@ async function loadDefaults() {
     m.redraw();
 }
 
+// Prompt "slots" whose template needs completely different vars than the extraction slots
+// (setting/action/mood/charNarrations, not {text}/{count}-style story vars). "single" mode's one
+// user-picked template is resolved against DEFAULT_SINGLE_TEMPLATE (an extraction template) and
+// was never validated against this shape — applying it here leaves the image-prompt template's
+// real vars ({text}/{count}) unsubstituted server-side, which the backend now refuses to send to
+// the LLM at all (PictureBookUtil.callLlmInternal's placeholder guard) rather than sending garbage,
+// but that means "single" mode's override silently no-ops for these slots instead of doing what the
+// user picked it for. Found + fixed 2026-07-23 (KI-31 follow-up) after "prompts are still completely
+// broken" turned out to be exactly this: a scene-extraction template applied to a landscape/
+// scene-image-prompt call. Per-prompt mode is unaffected — it always looks up the slot-specific
+// promptTemplates[key], which was never wired to this bug.
+const IMAGE_PROMPT_SLOTS = ['landscapePrompt', 'sceneImagePrompt'];
+
 function getPromptTemplate(key) {
-    let ref = (promptMode === 'single') ? promptTemplate : promptTemplates[key];
+    if (promptMode === 'single') {
+        // Never let "single" mode's one extraction-shaped template leak into an image-prompt call —
+        // it doesn't define the vars those templates need, so applying it can't do anything but
+        // leave the real template's placeholders unfilled. Fall through to that operation's own
+        // default template (server-side) by returning null, same as if no override were requested.
+        if (IMAGE_PROMPT_SLOTS.includes(key)) return null;
+        return promptTemplate ? promptTemplate.name : null;
+    }
+    let ref = promptTemplates[key];
     return ref ? ref.name : null;
 }
 
@@ -604,6 +625,12 @@ function renderStep1() {
                             promptTemplate ? promptTemplate.name : (defaultsLoading ? 'Loading default...' : '(default)')),
                         m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
                     ])
+                    : null,
+                promptMode === 'single'
+                    ? m('div', { class: 'text-[10px] text-gray-400' },
+                        'Applies to scene/chunk/character extraction and blurb prompts only — '
+                        + 'landscape and scene-image prompts need different template vars and always '
+                        + 'use their own defaults; switch to "Select per prompt" to customize those.')
                     : m('div', { class: 'space-y-1' },
                         [
                             { key: 'extractScenes', label: 'Scene Extraction' },
@@ -1478,3 +1505,15 @@ async function pictureBookFromId(objectId, name) {
 
 export { pictureBook, pictureBookFromId };
 export default pictureBook;
+
+// Test-only seam: getPromptTemplate() is pure w.r.t. this module's own mutable state
+// (promptMode/promptTemplate/promptTemplates), which real usage only ever changes via UI
+// interaction. Exporting it plus a minimal setter lets KI-31-follow-up's regression test drive the
+// actual function directly, rather than re-implementing its logic in the test or mounting the
+// entire multi-step wizard component just to reach one internal branch.
+export function __setPromptStateForTest(mode, single, perPrompt) {
+    promptMode = mode;
+    promptTemplate = single;
+    if (perPrompt) Object.assign(promptTemplates, perPrompt);
+}
+export { getPromptTemplate };

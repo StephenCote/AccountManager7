@@ -10,6 +10,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -356,6 +357,7 @@ public class StatementUtil {
 		if(schema == null) {
 			throw new ModelException("Model '" + model + "' not found");
 		}
+		rejectVirtualFieldConditions(query, model, schema);
 		ModelSchema mschema = null;
 		if(schema.getName().equals(ModelNames.MODEL_PARTICIPATION)) {
 			String pmodel = QueryUtil.findFieldValue(query, FieldNames.FIELD_PARTICIPATION_MODEL, null);
@@ -716,11 +718,12 @@ public class StatementUtil {
 		if(schema == null) {
 			throw new ModelException("Model '" + model + "' not found");
 		}
+		rejectVirtualFieldConditions(query, model, schema);
 		List<String> oRequestFields = query.get(FieldNames.FIELD_REQUEST);
 		List<String> requestFields = new ArrayList<>(oRequestFields);
 		List<String> useFields = new ArrayList<>();
 		List<String> cols = new ArrayList<>();
-		
+
 		if(requestFields.size() == 0) {
 			requestFields = schema.getFields().stream()
 				.filter(f -> f.isSequence() || f.isIdentity())
@@ -757,6 +760,7 @@ public class StatementUtil {
 		if(schema == null) {
 			throw new ModelException("Model '" + model + "' not found");
 		}
+		rejectVirtualFieldConditions(query, model, schema);
 		ModelSchema mschema = null;
 		if(schema.getName().equals(ModelNames.MODEL_PARTICIPATION)) {
 			String pmodel = QueryUtil.findFieldValue(query, FieldNames.FIELD_PARTICIPATION_MODEL, null);
@@ -768,7 +772,7 @@ public class StatementUtil {
 		List<String> oRequestFields = query.get(FieldNames.FIELD_REQUEST);
 		List<String> requestFields = new ArrayList<>(oRequestFields);
 		List<String> useFields = new ArrayList<>();
-		
+
 		List<String> cols = new ArrayList<>();
 		
 		if(requestFields.size() == 0) {
@@ -917,6 +921,46 @@ public class StatementUtil {
 		;
 
 	}
+
+	/**
+	 * KI-33: Fields such as "groupPath" (common.groupExt) are 'virtual' - computed at read time
+	 * (e.g. by PathProvider) rather than stored. There is no backing database column for them on
+	 * any table, so a query condition referencing one (e.g. "groupPath LIKE '%X%'") is an invalid
+	 * query - it isn't something to route around with resolution logic. StatementUtil/DBUtil
+	 * already exclude virtual fields from every real SQL operation (select projections,
+	 * insert/update column lists - see the isVirtual() checks throughout this class and
+	 * DBUtil); a filter condition is the same case and gets the same treatment: reject it with a
+	 * clear error at the query layer, rather than letting it reach the database as a reference to
+	 * a nonexistent column ("column oocn1.grouppath does not exist").
+	 */
+	private static void rejectVirtualFieldConditions(BaseRecord query, String model, ModelSchema schema) throws FieldException {
+		List<BaseRecord> fields = query.get(FieldNames.FIELD_FIELDS);
+		if(fields != null) {
+			rejectVirtualFieldConditions(fields, schema, model);
+		}
+	}
+
+	private static void rejectVirtualFieldConditions(List<BaseRecord> fields, ModelSchema schema, String model) throws FieldException {
+		for(BaseRecord qf : fields) {
+			ComparatorEnumType fieldComp = ComparatorEnumType.valueOf(qf.get(FieldNames.FIELD_COMPARATOR));
+			if(fieldComp == ComparatorEnumType.GROUP_AND || fieldComp == ComparatorEnumType.GROUP_OR) {
+				List<BaseRecord> subFields = qf.get(FieldNames.FIELD_FIELDS);
+				if(subFields != null) {
+					rejectVirtualFieldConditions(subFields, schema, model);
+				}
+				continue;
+			}
+			String fieldName = qf.get(FieldNames.FIELD_NAME);
+			if(fieldName == null) {
+				continue;
+			}
+			FieldSchema fs = schema.getFieldSchema(fieldName);
+			if(fs != null && fs.isVirtual()) {
+				throw new FieldException("Field '" + fieldName + "' on model '" + model + "' is virtual (computed, no backing column) and cannot be used in a query condition");
+			}
+		}
+	}
+
 	public static String getQueryClause(BaseRecord query, DBStatementMeta meta)
 	{
 		return getQueryClause(query, meta, "AND");

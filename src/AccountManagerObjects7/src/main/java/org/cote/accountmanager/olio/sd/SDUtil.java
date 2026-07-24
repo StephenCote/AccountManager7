@@ -1403,7 +1403,7 @@ public class SDUtil {
 	}
 
 	/// Generate mannequin images for an apparel record, one image per cumulative wear level
-	public List<BaseRecord> generateMannequinImages(BaseRecord user, String groupPath, BaseRecord apparel, BaseRecord sdConfig, boolean hires, long seed) {
+	public List<BaseRecord> generateMannequinImages(BaseRecord user, String groupPath, BaseRecord apparel, BaseRecord sdConfig, boolean hires, long seed) throws FieldException, ValueException, ModelNotFoundException {
 		List<BaseRecord> images = new ArrayList<>();
 		List<BaseRecord> wears = apparel.get(OlioFieldNames.FIELD_WEARABLES);
 		if(wears == null || wears.isEmpty()) {
@@ -1437,22 +1437,42 @@ public class SDUtil {
 		// Always start with a properly initialized config (with defaults), then merge any overrides
 		BaseRecord config = randomSDConfig();
 		if(sdConfig != null) {
-			// Copy any style-related values from the incoming config
-			String style = sdConfig.get("style");
-			if(style != null) config.setValue("style", style);
-			// Also copy hires, seed if provided
-			Object hiresObj = sdConfig.get("hires");
-			if(hiresObj != null) config.setValue("hires", hiresObj);
+			// KI-29: the caller's explicit generation parameters were previously discarded here —
+			// copy anything the client actually set; fields left unset on sdConfig keep whatever
+			// randomSDConfig()/the hardcoded fallbacks below already provided. Use set() (not
+			// setValue(), which logs and silently swallows FieldException/ValueException/
+			// ModelNotFoundException) so a bad value is a real, visible failure instead of a
+			// silently-discarded client override - exactly the failure mode this fix exists to close.
+			String style = sdConfig.get(OlioFieldNames.FIELD_STYLE);
+			if(style != null) config.set(OlioFieldNames.FIELD_STYLE, style);
+			Object hiresObj = sdConfig.get(OlioFieldNames.FIELD_HIRES);
+			if(hiresObj != null) config.set(OlioFieldNames.FIELD_HIRES, hiresObj);
+			Integer inSteps = sdConfig.get(OlioFieldNames.FIELD_SD_STEPS);
+			if(inSteps != null) config.set(OlioFieldNames.FIELD_SD_STEPS, inSteps);
+			Integer inCfg = sdConfig.get(OlioFieldNames.FIELD_SD_CFG);
+			if(inCfg != null) config.set(OlioFieldNames.FIELD_SD_CFG, inCfg);
+			String inSampler = sdConfig.get(OlioFieldNames.FIELD_SD_SAMPLER);
+			if(inSampler != null) config.set(OlioFieldNames.FIELD_SD_SAMPLER, inSampler);
+			String inScheduler = sdConfig.get(OlioFieldNames.FIELD_SD_SCHEDULER);
+			if(inScheduler != null) config.set(OlioFieldNames.FIELD_SD_SCHEDULER, inScheduler);
+			String inModel = sdConfig.get(OlioFieldNames.FIELD_SD_MODEL);
+			if(inModel != null) config.set(OlioFieldNames.FIELD_SD_MODEL, inModel);
+			String inRefinerModel = sdConfig.get(OlioFieldNames.FIELD_SD_REFINER_MODEL);
+			if(inRefinerModel != null) config.set(OlioFieldNames.FIELD_SD_REFINER_MODEL, inRefinerModel);
+			Object inDenoise = sdConfig.get(OlioFieldNames.FIELD_SD_DENOISING_STRENGTH);
+			if(inDenoise != null) config.set(OlioFieldNames.FIELD_SD_DENOISING_STRENGTH, inDenoise);
+			List<String> inLoras = sdConfig.get(OlioFieldNames.FIELD_SD_LORAS);
+			if(inLoras != null && !inLoras.isEmpty()) config.set(OlioFieldNames.FIELD_SD_LORAS, inLoras);
 		}
 
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 
 		// Get config values with fallbacks for required fields
-		Integer cfgSteps = config.get("steps");
-		String cfgModel = config.get("model");
-		String cfgScheduler = config.get("scheduler");
-		String cfgSampler = config.get("sampler");
-		Integer cfgCfg = config.get("cfg");
+		Integer cfgSteps = config.get(OlioFieldNames.FIELD_SD_STEPS);
+		String cfgModel = config.get(OlioFieldNames.FIELD_SD_MODEL);
+		String cfgScheduler = config.get(OlioFieldNames.FIELD_SD_SCHEDULER);
+		String cfgSampler = config.get(OlioFieldNames.FIELD_SD_SAMPLER);
+		Integer cfgCfg = config.get(OlioFieldNames.FIELD_SD_CFG);
 
 		// Apply defaults if model schema defaults weren't applied
 		if(cfgSteps == null) cfgSteps = 20;
@@ -1467,7 +1487,9 @@ public class SDUtil {
 			String negPrompt = NarrativeUtil.getMannequinNegativePrompt();
 
 			SWTxt2Img s2i = new SWTxt2Img();
-			s2i.setPrompt(appendLoras(prompt, sdConfig));
+			// Use the merged config (randomSDConfig() defaults + client overrides), not the raw
+			// sdConfig param, so LoRAs actually apply (KI-29) even when the client only set some fields.
+			s2i.setPrompt(appendLoras(prompt, config));
 			s2i.setNegativePrompt(negPrompt);
 			s2i.setWidth(512);
 			s2i.setHeight(768);
@@ -1479,11 +1501,11 @@ public class SDUtil {
 			s2i.setSeed((int)(useSeed & 0x7FFFFFFF));  // Ensure positive int
 			s2i.setImages(1);
 
-			if(hires && config.get("refinerModel") != null) {
+			if(hires && config.get(OlioFieldNames.FIELD_SD_REFINER_MODEL) != null) {
 				s2i.setRefinerScheduler(config.get("refinerScheduler"));
 				s2i.setRefinerSampler(config.get("refinerSampler"));
 				s2i.setRefinerMethod(config.get("refinerMethod"));
-				s2i.setRefinerModel(config.get("refinerModel"));
+				s2i.setRefinerModel(config.get(OlioFieldNames.FIELD_SD_REFINER_MODEL));
 				s2i.setRefinerSteps(config.get("refinerSteps"));
 				s2i.setRefinerUpscale(config.get("refinerUpscale"));
 				s2i.setRefinerUpscaleMethod(config.get("refinerUpscaleMethod"));

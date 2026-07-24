@@ -673,14 +673,17 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
             // Not format:"object-link" — that renderer resolves ctx.useEntity/ctx.entity to the
             // *containing* record, not this field's own foreign value, so it produced a link/label
             // pointing back at the groupExport container itself under both fields (found live via
-            // e2e/objectLinkFix.spec.js). Leave these on the default foreign-model field renderer.
+            // e2e/objectLinkFix.spec.js). format:"foreign-summary" reads the field's own value
+            // (ctx.defVal) instead, and renders name+link rather than stringifying the object.
             sourceGroup: {
                 layout: "half",
-                readOnly: true
+                readOnly: true,
+                format: "foreign-summary"
             },
             archive: {
                 layout: "half",
-                readOnly: true
+                readOnly: true,
+                format: "foreign-summary"
             },
             itemCount: {
                 layout: "third",
@@ -1359,6 +1362,11 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
             refinerSteps: {
                 label: 'Refiner Steps',
                 layout: 'one'
+            },
+            denoisingStrength: {
+                label: 'Denoising',
+                layout: 'one',
+                format: 'range'
             },
             shared: {
                 label: "Save Shared",

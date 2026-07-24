@@ -231,10 +231,109 @@ Root cause: `pagination.js`'s `stopPaginating()` (called from `views/list.js`'s 
 
 ## Picture Book (2026-07-06, Stephen)
 
-### KI-10. Cancel does not actually stop scene extraction or image generation — OPEN (2026-07-06, Stephen)
+### PictureBook fix plan — priority order (2026-07-22)
+
+Backend (Tomcat/Postgres/Swarm/LLM) is live and was actually exercised against, not just read — see
+each entry below for what's code-confirmed vs. live-confirmed vs. corrected after testing. Recommended
+implementation order — awaiting Stephen's go-signal before any of this is implemented:
+
+1. **KI-32b** (PathProvider log spam) — one-line severity downgrade. **Live-confirmed 2026-07-22**:
+   the exact cascade (ids 1094-1164) fired on a plain live query during this session, unprompted.
+2. **KI-32a** (`PictureBookUtil.reset()` non-recursive delete) — new recursive-delete helper, PBAC-safe.
+   Root cause and no-cascade-in-`PathProvider` finding both code-confirmed; the log cascade above
+   corroborates the orphan is real and current in the live DB.
+3. **KI-31** (error/empty LLM content reaching the SD prompt) — one shared guard in
+   `resolveScenePrompt`/`resolveLandscapePrompt`/`callLlmInternal`. Code-confirmed, not yet live-tested.
+4. **KI-33** (new, found live) — `groupPath`-filtered searches throw `PSQLException: column
+   oocn1.grouppath does not exist`. **FIXED ✅ (2026-07-23)** — the "self-join" hypothesis was wrong;
+   `oocn1` is the primary table's own alias. Root cause: `groupPath` is a `virtual` field (computed by
+   `PathProvider`, no backing DB column), and `StatementUtil` built a WHERE fragment against it like any
+   other column. Fixed by resolving such conditions in memory before SQL generation.
+5. **KI-29** (apparel reimage SD-config discarded) — parse a real config in `OlioService.reimageApparel`
+   instead of passing `null`; reconcile the denoisingStrength scale mismatch. Code-confirmed, not yet
+   live-tested (needs a same-owner apparel reimage call).
+6. **KI-28** (outfit generation) — **live-tested 2026-07-22, the ownerId-NPE hypothesis did NOT
+   reproduce** (200 OK against a fully-populated character). Downgraded from "diagnosed" back to
+   "needs a same-owner sparse character to test the real KI-30-adjacent theory" — see the KI-28 entry
+   for what was actually tried and why it was inconclusive rather than negative.
+7. **KI-10** (cancellation) — port the existing `SummarizeProgress`/`summarizingRefs` pattern from
+   `ChatUtil`/`ChatService` onto PictureBook's extraction/image loops.
+8. **KI-30** (random-baseline-then-override character creation) — use
+   `OlioContextUtil.getOlioContext(user, dataPath)` (confirmed direction, no open design question) +
+   `CharacterUtil.randomPerson(ctx, lastName)`, then apply LLM overrides on top.
+
+**KI-27** stays deferred (re-checked, nothing new). Note for whoever implements: `/model/search`
+request bodies need `"schema":"io.query"`, not the bare `"query"` some doc examples showed (now fixed
+in `model-api.md`/`service7-reference.md`) — cost real time mid-session before the actual app log
+(now at `C:\projects\logs\accountManagerService.log`/`-error.log`) revealed the real cause. See
+`troubleshooting.md`'s new "Backend PBAC/policy tracing" section for `PolicyUtil.setTrace(true/false)`
+when authorization reasoning itself needs inspecting.
+
+### KI-10. Cancel does not actually stop scene extraction or image generation — FIXED ✅ (2026-07-23)
 Hitting cancel during scene extraction or image generation does not abort the in-flight backend operation — it keeps running to completion. The picture-book generate/extract endpoints in `AccountManagerService7/.../PictureBookService.java` run synchronously with no cancellation/interrupt token, so a client "cancel" only affects the UI, not the server work (mirrors the ISO 42001 run model, which is also synchronous with no cancel endpoint). Fix direction: introduce a cancellation signal the long-running loops (chunked extraction, per-scene image pipeline) check between stages — e.g. a per-request/per-book cancel flag set via a small endpoint or WebSocket chirp, polled at chunk/stage boundaries — and have the UI cancel button hit it. Client side, ensure the cancel also stops awaiting/rendering the in-flight request. Related: KI (portrait persistence/reuse) work in the same service.
 
-### KI-30. PictureBook character creation should run the general random-character generator first, then override with LLM-extracted fields — DESIGN DIRECTION (2026-07-22, Stephen)
+**A ready-made template already exists in the codebase — reuse it, don't invent (2026-07-22):**
+`ChatUtil`'s map-reduce summarization already solved exactly this problem via
+`olio/llm/SummarizeProgress.java` — a small mutable class with `volatile boolean cancelled` +
+`isCancelled()`/`cancel()`, checked at every phase/chunk boundary inside `ChatUtil.java` (lines ~847,
+1058, 1076, 1168, 1196, 1236, 1298, 1319), tracked in `ChatService.java:79` via
+`Map<String, Map<String, SummarizeProgress>> summarizingRefs` (session → objectId → progress,
+`ConcurrentHashMap`), with a real `POST /summarize/cancel` endpoint (`ChatService.java:778-818`) and
+cleanup in a `finally` block (`ChatService.java:1164-1170`). `WebSocketService` is wired to PictureBook
+**one-way only** today (server→client progress toasts via `PictureBookProgressNotifier`,
+`PictureBookService.java:83-91`) — there's no inbound cancel-message handling for PictureBook, and the
+only precedent for one (`GameStreamHandler.java:81-85`) is an unimplemented `// TODO` stub, not worth
+building on.
+
+**Recommended minimal design:** skip WebSocket; copy the `SummarizeProgress`/`summarizingRefs` pattern
+directly. Add a `ConcurrentHashMap<String, AtomicBoolean>` (or a small registry class) in
+`PictureBookService` keyed by `workObjectId`/`bookObjectId`, a `POST /{workObjectId}/cancel` endpoint
+that sets the flag, and thread it as a parameter into `PictureBookUtil.extractChunkedInternal`
+(checkpoint at the chunk loop, `PictureBookUtil.java:940`) and `prepareSceneImagePrompts` (checkpoint
+at its loop, `PictureBookUtil.java:2324`) — mirroring how `SummarizeProgress` is threaded through
+`ChatUtil`'s map/reduce calls, with the same `finally`-block cleanup on completion. `generateSceneImage`
+(`PictureBookUtil.java:1845-2270+`) is a single-scene, single-HTTP-call pipeline, not itself a
+multi-scene loop — the "generate all" looping happens client-side, one REST call per scene — so it's a
+lower-value checkpoint target than the two loops above.
+
+**Fixed (2026-07-23):** implemented exactly the recommended design above — reused `SummarizeProgress`
+itself rather than a near-duplicate flag class. `PictureBookUtil.extractChunkedInternal` and
+`prepareSceneImagePrompts` each gained a `SummarizeProgress cancelToken` parameter (nullable,
+backward-compatible overloads kept for existing callers), checked once per iteration at the top of
+their loops (`extractChunkedInternal`'s chunk loop, `prepareSceneImagePrompts`'s per-scene loop) —
+`break` on `cancelToken.isCancelled()`, returning whatever was already extracted/resolved rather than
+running to completion. `extractChunkedInternal` also now calls `cancelToken.setTotal(chunks.size())`
+and `incrementCurrent()` after each chunk's LLM call (mirroring `ChatUtil.mapSummarize`'s own
+progress-tracking use of the same class), so a caller can observe how many chunks actually ran, not
+just whether cancellation was requested. `PictureBookService` added a
+`private static final Map<String, SummarizeProgress> cancelRegistry` (flat `ConcurrentHashMap`, no
+session-scoping needed since each key is the workObjectId/bookObjectId the client already holds),
+registers/removes an entry around each of `extractScenesOnly`, `extractChunked`, and
+`prepareSceneImagePrompts`'s calls into `PictureBookUtil` (register before, `finally`-remove after —
+same lifecycle as `ChatService.summarizingRefs`), and added a new
+`POST /{key:[0-9A-Za-z\-]+}/cancel` endpoint that looks up the registry and calls `.cancel()`,
+returning `{"cancelled":true|false}` (false, not an error, when nothing is in-flight for that key).
+`generateSceneImage`/`regenerateBlurb` were left untouched per the design note above (single-call
+pipelines, not multi-item loops).
+
+**Verified:** `TestExtractScenesOnlyCancellationStopsChunkedExtractionEarly`
+(`AccountManagerObjects7`, `TestPictureBookFull.java`) — builds a >10,000-char story (forces the
+real auto-chunk path, 6 chunks), starts `PictureBookUtil.extractScenesOnly(...)` against the live
+Ollama server with a `SummarizeProgress` token, and a background thread that calls `.cancel()` the
+moment `cancelToken.getCurrent() >= 1` (i.e., only after a real chunk-extraction LLM call has
+actually completed — proves the loop genuinely ran, not a same-request no-op). Asserts
+`processedChunks >= 1` (loop ran) and `processedChunks < totalChunks` (loop stopped early). Live run:
+processed 2/6 chunks before cancellation took effect, returning the 2 scenes already extracted.
+**Confirmed as a genuine regression test, not just a happy-path check:** temporarily disabled just the
+loop's `isCancelled()` check (`if (false && cancelToken != null && ...)`, production code only, test
+file untouched) and reran — failed exactly as predicted (`processed=6 total=6`, ran to completion
+despite the background thread having called `.cancel()`), then restored the check and reran — passes.
+Ran via
+`mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestExtractScenesOnlyCancellationStopsChunkedExtractionEarly test`
+— `Tests run: 1, Failures: 0, Errors: 0` / `BUILD SUCCESS` (both before-fix failure and after-fix
+pass observed directly, not assumed).
+
+### KI-30. PictureBook character creation should run the general random-character generator first, then override with LLM-extracted fields — FIXED ✅ (2026-07-23)
 Stephen's direction: "Use random character generator for every person first, then override the
 settings." Confirmed current behavior doesn't do this: `PictureBookUtil.createCharPerson`
 (`AccountManagerObjects7/.../olio/picturebook/PictureBookUtil.java:1195+`) builds the `olio.charPerson`
@@ -258,11 +357,708 @@ purpose, or whether a lighter-weight path into the same randomization logic is n
 this up should check how other non-full-simulation callers of `CharacterUtil`/`OlioContext` handle
 this (if any exist) before deciding.
 
-### KI-28. Outfit generation wizard for `olio.charPerson` fails with a server error — OPEN (2026-07-22, Stephen)
+**Integration question resolved (2026-07-22):** `randomPerson` (`CharacterUtil.java:63-159`) only
+touches `ctx.getOlioUser()` and `ctx.getWorld()` — it never reads realms/locations/events/population,
+just the world's basis-name libraries and its `population/statistics/instincts/behaviors/
+personalities/states/stores/profiles` sub-group paths. But there is **no lightweight way to build just
+that**: `OlioContext.initialize()` (`OlioContext.java:279-378`) is all-or-nothing — it always loads
+full world data and requires at least one `IOlioContextRule.generate()` to return a real
+`rootEvent`/region or it throws `OlioException("Failed to find or create a new region")`; no no-op
+context rule exists. Every `new OlioContext(cfg)` call in the repo (main and test) does full
+`initialize()`. `randomPerson` has exactly one other caller in the whole codebase
+(`EvolutionUtil.java:124`, inside live population evolution against an already-initialized realm) —
+no precedent for a cheap single-character context.
+
+**Direction confirmed (Stephen, 2026-07-22): use `OlioContextUtil.getOlioContext(user, dataPath)`
+directly — it's the existing, already-used API for exactly this, not a workaround.** Same pattern
+`GameService`/`OlioService`/`GameStreamHandler` already call; it memoizes per-user in a static map so
+`initialize()` is paid once per JVM process/user, not per call. `PictureBookUtil.createCharPerson`
+calls this once, gets back the cached `ctx`, calls `randomPerson(ctx, lastName)` for the baseline, then
+re-targets/copies the generated `statistics`/`instinct`/`personality`/`state`/`store`/`profile`/`race`/
+`alignment` fields onto the book's own `charsGroup`-scoped `charPerson` record before applying the
+LLM-extracted overrides on top. No further design question — implement against this API as-is.
+
+**Fixed (2026-07-23):** implemented against the confirmed API exactly as directed above.
+`PictureBookUtil.createCharPerson` gained a `dataPath` parameter (the `datagen.path` init-param
+value — threaded down from `PictureBookService.extract`/`createFromScenes`, which now read
+`context.getInitParameter("datagen.path")` the same way `GameService` already does, and threaded as
+a new trailing parameter through `PictureBookUtil.extract`/`createFromScenes` down to
+`createCharPerson`). A new `buildRandomBaseline(user, dataPath, lastName, age)` helper calls
+`OlioContextUtil.getOlioContext(user, dataPath)` then `CharacterUtil.randomPerson(ctx, lastName)` —
+and, since `randomPerson` itself does not roll statistics/personality (confirmed by reading its only
+two real call sites, `CharacterUtil.java`'s own population loop and `EvolutionUtil.java`'s birth
+path), also calls `StatisticsUtil.rollStatistics`/`rollHeight` and `ProfileUtil.rollPersonality` on
+the baseline's sub-records, matching that exact population-generation recipe. `createCharPerson` then:
+(1) applies baseline `race`/`alignment` directly onto the in-memory charPerson before `create()`
+(plain fields, no separate persist step needed); (2) seeds the existing persisted-instance calls for
+`profile`/`statistics`/`store` with the baseline's corresponding sub-record via a new
+`copyBaselineFieldValues(source, target)` helper (field-by-field `source.get(n) -> target.set(n, v)`,
+excluding identity/path/groupId/name/foreign fields — deliberately NOT `BaseRecord.copyIntoRecord`,
+which replaces the target's entire field list rather than merging into it); (3) adds three new
+best-effort (not hard-required, unlike profile/statistics/store) persisted-instance blocks for
+`instinct`/`personality`/`state`, previously never created at all. LLM-extracted overrides
+(name/firstName/lastName/gender/age/ethnicity/trades, and the physical-estimate step's
+height/strength/etc.) are applied exactly where they already were, after the baseline seeding —
+"baseline first, then override" as directed, not a redesign of the override logic itself.
+
+**Verified:** `TestCreateFromScenesSeedsRandomBaselineOnCharacter` (`AccountManagerObjects7`,
+`TestPictureBookFull.java`) — runs `PictureBookUtil.createFromScenes` with a minimal `{name, gender,
+role}` client stub (same shape as the pre-existing `TestCreateFromScenesWithClientCharacterStubsCreatesRealCharacters`)
+against the live Ollama server and `test.datagen.path`'s real `OlioContext`, then asserts on the
+resulting `olio.charPerson`: `race`/`alignment` are populated (never set at all before this fix) and
+`instinct`/`personality`/`state` are real persisted records with `id>0` (never created at all before
+this fix) — the genuine regression signals for this change. Also asserts `statistics.physicalStrength`/
+`agility` are real rolled values (>0, per the fix spec's own suggested check), though note: this
+specific assertion turns out to already have passed before this fix too, since
+`StatisticsUtil.estimateFromExtractedPhysical` (called later in `createCharPerson`, unrelated to and
+unchanged by this fix) unconditionally calls `rollStatistics` regardless of any baseline — recorded
+here for honesty rather than overclaiming that one signal as proof of this specific change.
+**Confirmed as a genuine regression test for the race/alignment/instinct/personality/state signals** via
+the swap-test pattern: temporarily forced `buildRandomBaseline`'s result to `null` (production code
+only, test file untouched) and reran — failed exactly as predicted
+(`AssertionError: race must be populated from the random baseline (KI-30) ... was never set before
+this fix`), then restored the real call and reran — passes. Ran via
+`mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestCreateFromScenesSeedsRandomBaselineOnCharacter test`
+— `Tests run: 1, Failures: 0, Errors: 0` / `BUILD SUCCESS`. Also reran the three closest pre-existing
+PictureBook tests (`TestIsErrorOrEmptyPayloadDetectsErrorShapedAndEmptyLlmContent`,
+`TestResetRecursivelyDeletesNestedSceneAndCharacter`,
+`TestCreateFromScenesWithClientCharacterStubsCreatesRealCharacters`) together to confirm no regression
+from the new `dataPath`/baseline plumbing — `Tests run: 3, Failures: 0, Errors: 0` / `BUILD SUCCESS`.
+
+### KI-31. Scene image generation sends a failed upstream call's error JSON as the SD prompt text — FIXED ✅ (2026-07-23)
+Live log evidence:
+```
+SDUtil - txt2img request: ... prompt=[{"error":"Missing story text and count parameters"}]
+SDUtil - txt2img: Swarm returned error: ComfyUI execution error: could not convert string to float: '"Missing story text and count parameters"}'
+SDUtil - txt2img error (...) — retrying once with a fresh session
+```
+Somewhere upstream of the `txt2img` call, whatever step builds the scene/landscape prompt received
+(or itself produced) an error response body — `{"error":"Missing story text and count parameters"}`
+— and that literal JSON text ended up as the **prompt string** sent to the SD/Swarm backend instead
+of being caught and surfaced as a failure. Swarm/ComfyUI then fails trying to parse part of that
+string as a number (`could not convert string to float`), and `SDUtil` retries once with a fresh
+session (per the WARN log) — masking the real error behind a generic retry rather than surfacing
+"prompt generation failed" to the caller.
+
+**Not yet isolated:** the exact string `"Missing story text and count parameters"` does not appear
+anywhere in this repo's Java or JS source (grepped both) — it's either a dynamically-assembled
+message, or the response body of a call to an endpoint whose validation message wasn't found by a
+literal-string search. **Next step for whoever picks this up:** trace which call in the
+scene-image/landscape-prompt pipeline (`PictureBookUtil`'s landscape-prompt generation,
+`prepareSceneImagePrompts`, or wherever `SDUtil.txt2img`'s `prompt` parameter is assembled) can
+receive an error-shaped JSON object as input, and why that isn't caught before being forwarded as
+prompt text — likely a missing failure check on an internal call whose response is treated as
+"always success" and passed straight through.
+
+**Additional live log evidence (2026-07-22, Stephen) — the bad-prompt shape is not a single fixed
+string, it's a whole class of pass-through failures:**
+```
+Prompt: {"error":"No story text provided"}
+Prompt: []
+Prompt: {"error":"Please provide the story text and the desired number of scenes to identify."}
+```
+At least **three distinct error-message wordings** have now been observed landing in the SD prompt
+field, not just the one originally logged — meaning whatever validation is upstream produces its
+message dynamically (varying by which parameter(s) are missing / which code path validates), and
+**every** variant reaches the prompt unchecked, not just one specific phrasing. This rules out
+"search for this one literal string" as a viable fix and confirms the bug is structural: **something
+in the pipeline never checks for an `error` key (or a non-string/array response) before treating the
+whole response body as prompt text.** The bare `[]` case is a second, related failure shape — an
+empty **array** (not an error object) also reaches the prompt, consistent with a scene/landscape list
+that came back empty being stringified and used as-is instead of being treated as "nothing to
+generate, skip or fail" — likely the same missing-guard class as KI-25's `count`-defaults-to-`0` bug
+(a call that returns `[]` cleanly with HTTP 200, not an exception, so nothing downstream that only
+checks for exceptions/non-200 status would ever catch it). **Refined next step:** don't grep for a
+literal message string — instead find every call in the scene/landscape-prompt assembly path whose
+result is used as (or concatenated into) prompt text, and add one shared guard there that rejects any
+result that is empty, an array, or contains an `error` field, before it ever reaches `SDUtil.txt2img`.
+
+**Root cause confirmed by code read (2026-07-22):** `PictureBookUtil.callLlmInternal`
+(`PictureBookUtil.java:829-914`) returns the LLM's raw message content verbatim (line 908:
+`return stripThink(resp.getMessage().getContent());`) with **no shape/error validation**. Its two
+prompt-building callers only guard against `null`/blank: `resolveScenePrompt`
+(`PictureBookUtil.java:503-527`, check at line 515) and `resolveLandscapePrompt`
+(`PictureBookUtil.java:677-694`, check at line 688). This is not a missed HTTP-status check —
+`Chat.chatInternal` (`Chat.java:3869-4143`) already correctly detects real HTTP-level failures and
+returns `null` (`Chat.java:4003-4014`) — the gap is that a **200-OK response whose message content
+happens to be error-shaped JSON or an empty array** (a misbehaving/hallucinating model, or a gateway
+that echoes JSON errors with status 200) passes the null/blank guard, gets cached via
+`updateSceneTextField(...)`, and is later forwarded unmodified into `SWUtil.newSceneTxt2Img(...)`
+(`PictureBookUtil.java:2165`, `:2249`) → `SDUtil.txt2img`.
+
+**Fix:** add one shared "looks like an error/empty payload" check — reject content that, after
+trimming, starts with `{`/`[` and either parses as JSON containing an `error` key or parses as an
+empty array — in `resolveScenePrompt`/`resolveLandscapePrompt` (or centralize it in
+`callLlmInternal` itself, right after line 908) so such content is treated the same as `null`/blank:
+falling through to the existing fallback path instead of being cached and forwarded to `txt2img`.
+
+**Fixed (2026-07-23):** added `PictureBookUtil.isErrorOrEmptyPayload(String)` — a small, directly
+unit-testable static helper (kept LOCAL to the two prompt-resolvers, not centralized in
+`callLlmInternal`, since that method has other callers — extract-chunk/extract-scenes/
+extract-character/scene-blurb — whose responses are legitimately JSON objects/arrays already
+parsed defensively by `parseLlmJsonArray`/`parseLlmJsonObject`; rejecting any `{`/`[`-shaped
+content at that shared choke point would risk misclassifying a valid extraction result). Detects
+null/blank, an empty JSON array (`[]`), or a JSON object containing an `error` key; `content.trim()`
+is checked for a leading `{`/`[` before attempting to parse, so ordinary prose prompt text is never
+touched. `resolveScenePrompt` (`PictureBookUtil.java` ~515) and `resolveLandscapePrompt` (~688) now
+call it in place of the old `== null || isBlank()` check, so error-shaped/empty content falls
+through to the existing fallback (raw concatenation / setting text) instead of being cached via
+`updateSceneTextField(...)` and forwarded to `SWUtil.newSceneTxt2Img(...)` → `SDUtil.txt2img`.
+
+**Verified:** `TestIsErrorOrEmptyPayloadDetectsErrorShapedAndEmptyLlmContent`
+(`AccountManagerObjects7`, `TestPictureBookFull.java`) — a direct unit test (no live LLM call
+needed; this validates a parsing/guard function against crafted input strings, not the LLM
+round-trip itself) asserting all three of KI-31's actual observed log-evidence error strings plus a
+bare `[]` are detected, that the pre-existing null/blank behavior is preserved, and that real prose
+prompt text and legitimately-shaped JSON (no `error` key, non-empty array) are NOT flagged. Ran via
+`mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestIsErrorOrEmptyPayloadDetectsErrorShapedAndEmptyLlmContent test`
+— `Tests run: 1, Failures: 0, Errors: 0` / `BUILD SUCCESS`.
+
+**Follow-up — root cause of "prompts are still completely broken" found and fixed (2026-07-23,
+Stephen reported the fix above wasn't actually working):** live evidence in the running Tomcat
+instance's own log (`C:\projects\logs\accountManagerService.log`) showed the SD prompt was, for
+different scenes: `"A detailed environment"`, `"Natural lighting consistent with the background.
+High quality photograph."` (both `SWUtil.styleClause()`'s bare fallback tail — meaning setting/
+action/mood/charNarrations were ALSO empty), and — the actual smoking gun —
+`"I'm happy to help identify the most visually compelling scenes, but I need the actual story text
+and the number of scenes you'd like selected. Could you please provide those details?"`. That
+sentence is prose, not JSON/empty-shaped, so KI-31's `isErrorOrEmptyPayload` guard above (which only
+inspects `{`/`[`-leading content) never caught it — it was reaching `SDUtil.txt2img` verbatim, and
+because `resolveScenePrompt`'s cache check (`getSceneTextField(scene, "scenePrompt")`) never
+validated cached content quality, once poisoned a scene served the identical garbage on every
+subsequent regenerate attempt — exactly matching "regenerating doesn't help."
+
+**Actual root cause (confirmed by tracing the prompt CONSTRUCTION, not guessing from the response):**
+`SceneGenerationParams.promptTemplateOverride` (`PictureBookUtil.java:146`) is a **single field
+applied to three semantically different LLM operations** — `pictureBook.scene-image-prompt`
+(`resolveScenePrompt`), `pictureBook.landscape-prompt` (`resolveLandscapePrompt`), and
+`pictureBook.extract-scenes` (`extractScenesOnly`) all read the *same* `promptTemplateOverride`
+value (`PictureBookService.java` reads it from the client's `"promptTemplate"` JSON field on
+`/extract-scenes-only`, `/prepare-scene-image-prompts`, and `/generate-image` alike). Client-side,
+`AccountManagerUx752/src/workflows/pictureBook.js`'s **"single" prompt-template mode** (line ~44,
+"applies to all (object ref)") sends one user-selected template as the override for every one of
+those calls. `pictureBook.extract-scenes`'s real template (`promptTemplate.pictureBook.extract-
+scenes.json`) needs `{text}`/`{count}` vars; `resolveScenePrompt`/`resolveLandscapePrompt` only ever
+supply `setting`/`action`/`mood`/`charNarrations` — so if a user (or a prior test/experiment) has a
+custom template selected in "single" mode, applying the extraction template to an image-prompt call
+leaves `{text}`/`{count}` **literally unsubstituted** in the outgoing message. The LLM, sensibly,
+responds by asking for the missing story text and scene count — the exact live-observed sentence.
+
+**Fixed (2026-07-23) — three changes, all in `PictureBookUtil.java`:**
+1. **Construction-time guard (the real fix):** `callLlmInternal` now checks the fully-substituted
+   `userTpl` for any leftover `\{[a-zA-Z][a-zA-Z0-9_]*\}`-shaped token (`UNSUBSTITUTED_PLACEHOLDER`,
+   a new class-level `Pattern`) immediately after applying `vars`, and refuses to call the LLM at all
+   — logging the exact mismatched promptName and the vars that were supplied — returning `null`
+   (triggering each caller's existing fallback) instead of sending a malformed prompt over the
+   network. This is a general defense: it catches ANY future template/vars mismatch for this call
+   path, not just the specific extract-scenes-vs-image-prompt collision found here.
+2. **Response-shape defense in depth:** `isErrorOrEmptyPayload` extended with a `CONVERSATIONAL_
+   REFUSAL` pattern (phrases like "I'm happy to help", "I need the actual", "could you please
+   provide") and a same-shaped unsubstituted-placeholder check on the LLM's raw response text, so an
+   already-malformed response that somehow reaches this guard (e.g. a differently-phrased refusal)
+   is still caught before caching.
+3. **Cache self-heal:** `resolveScenePrompt`/`resolveLandscapePrompt`'s cache-read (`getSceneTextField`)
+   now also runs the cached value through `isErrorOrEmptyPayload` before trusting it — a scene
+   poisoned by this bug *before* the fix landed regenerates the next time it's touched instead of
+   serving the same broken text forever.
+
+**Client-side fix (2026-07-23, Stephen requested it too):** `AccountManagerUx752/src/workflows/
+pictureBook.js`'s `getPromptTemplate(key)` — the single chokepoint deciding which override (if any)
+is sent for a given prompt "slot" — previously returned the user's one "single mode" template for
+*every* slot unconditionally. It now checks a new `IMAGE_PROMPT_SLOTS = ['landscapePrompt',
+'sceneImagePrompt']` list first: for those slots, "single" mode returns `null` (server default)
+instead of the extraction-shaped template, since that template's vars were never validated against
+what an image-prompt call actually needs — applying it can only leave placeholders unfilled, never
+do anything useful. Per-prompt mode is untouched (it already scoped correctly per slot). Added a
+short UI caption under the "single" mode picker (`pictureBook.js`'s Step 1 prompt-template config)
+explaining the scope, so the new no-op isn't silent to the user — "Applies to scene/chunk/character
+extraction and blurb prompts only — landscape and scene-image prompts need different template vars
+and always use their own defaults; switch to 'Select per prompt' to customize those." Exported
+`getPromptTemplate` + a new `__setPromptStateForTest` seam (test-only) since the wizard's mode/
+template state is module-private, mutated only via UI interaction otherwise.
+
+**Second root cause found and fixed (2026-07-23, Stephen tested live on his real `/Public`-org
+catatone book after the fixes above and found it still broken):** the first fix closed the
+"cross-purpose template" failure mode, but a second, structurally different failure mode produced
+the same "generic, story-disconnected prompt" symptom — Stephen's exact report: `"masterpiece, best
+quality, expansive alpine meadow dotted with wildflowers and a crystal-clear river winding through
+rugged, snow-capped mountains in the distance, ..."` for a scene that should have been a rain-soaked
+dystopian city street. Traced via the live server's own request/response log (`C:\projects\logs\
+accountManagerService.log`), not guesswork: the actual wire request sent to the LLM read literally
+`"Create a Stable Diffusion landscape/environment prompt for this scene:\nSETTING: \nMOOD: \nTIME:
+\nSTYLE: photograph\n\n..."` — **`setting` and `mood` were both blank.** `resolveLandscapePrompt`/
+`resolveScenePrompt` called the LLM anyway; given nothing real to describe, the model didn't
+error or refuse — it fabricated a plausible, well-formed, but entirely unrelated landscape. That
+response is coherent prose, not JSON-shaped, not a conversational refusal, not an unsubstituted
+placeholder, so neither guard from the first fix ever catches it — it got cached and served forever.
+**Proof this was a stale cache, not a fresh hallucination each time:** the exact same alpine-meadow
+text, byte-for-byte, appeared again in the log at 19:43:08 — *after* the `NEG_PROMPT` fix had already
+landed and was visibly active (the negative-prompt text in that later log line is the new
+`NarrativeUtil.getDefaultNegativePrompt()` text, not the old one) — proving the landscape prompt
+itself wasn't being regenerated at all, just re-served from cache.
+
+**Fixed:** `resolveLandscapePrompt` and `resolveScenePrompt` now check whether there is any real
+input at all (`setting`/`mood` for landscape; `setting`/`action`/`mood`/character narrations for
+scene-image) *before* calling the LLM. If everything is blank, the LLM is never called — the method
+goes straight to the same deterministic fallback an LLM failure would already produce (`"A detailed
+environment"` for landscape; `SWUtil.styleClause(style)` for scene-image). Garbage/absent input can
+no longer become a confident-looking wrong answer. **Existing poisoned caches self-heal too** (not
+just future ones): the cache-read check now also verifies that if `setting`/`mood` are *still* blank
+right now, the cached value must be exactly the one thing this code could ever legitimately produce
+for blank input (`"A detailed environment"`, or `styleClause(style)`'s output) — anything else is
+conclusively a pre-fix hallucination (not a fuzzy content-similarity guess: with the guard in place,
+blank input can never again produce anything else), and gets discarded and regenerated. Stephen's
+`/Public` book's already-poisoned scenes will self-heal automatically the next time `prepareSceneImagePrompts`
+runs for them — no manual DB cleanup needed.
+
+**Verified, live:** two new tests in `TestPictureBookFull.java`. `TestBlankSettingSkipsLlmCallEntirely`
+— a fully-blank scene resolves in 111ms (vs. this session's real LLM calls, which took 3-90+ seconds)
+and returns exactly the deterministic fallback for both prompts. `TestPoisonedHallucinatedLandscapePromptSelfHeals`
+— pre-seeds a scene with the exact live-observed hallucinated text as its cached `landscapePrompt`,
+confirms it's discarded and replaced with `"A detailed environment"`. Confirmed as genuine regression
+protection: temporarily disabled the blank-input guard, reran — `TestBlankSettingSkipsLlmCallEntirely`
+failed exactly as predicted (7889ms elapsed, i.e. a real LLM round-trip happened), restored, reran —
+both pass, `BUILD SUCCESS`. Full KI-31 test set (5 tests together) — `Tests run: 5, Failures: 0,
+Errors: 0` / `BUILD SUCCESS`. `mvn -o -pl AccountManagerObjects7 install -DskipTests` + `mvn -o -pl
+AccountManagerService7 clean compile` — both `BUILD SUCCESS`.
+
+**Not fixed here, flagged for whoever picks it up (a smaller, pre-existing, separate issue — not
+what was reported):** `sceneImagePrompt` has no template slot of its own even in "per-prompt" mode
+today — the client only ever sends one override (via the `landscapePrompt` slot) into
+`prepareSceneImagePrompts`, and `PictureBookUtil.java` applies that same value to *both*
+`resolveLandscapePrompt` and `resolveScenePrompt` server-side. A per-prompt-mode user who
+deliberately customizes `landscapePrompt` with a template that doesn't reference `{action}`/
+`{charNarrations}` (since it was written for landscape purposes) won't crash — the construction-time
+guard only fires on *literal* leftover placeholders, and a template that never mentions those vars
+has none to leave unfilled — but the resulting scene-image prompt silently loses character/action
+detail it would otherwise have had. Giving `sceneImagePrompt` its own client slot and a matching
+second server-side override param on `prepareSceneImagePrompts`/`generateSceneImage` would close
+this properly; out of scope for the reported "prompts completely broken" bug, which is fully fixed.
+
+**Verified, live, against the real Ollama LLM (no mocking) — three tests in `TestPictureBookFull.java`:**
+- `TestIsErrorOrEmptyPayloadDetectsErrorShapedAndEmptyLlmContent` (extended) — direct unit test of
+  the new placeholder/conversational-refusal detection against the exact live-observed sentence
+  (both the long and short variants actually logged) plus a raw `{text}`-unsubstituted string;
+  confirms real prose mentioning "story"/"scene" isn't false-positived.
+- `TestMismatchedPromptTemplateOverrideDoesNotPoisonScenePrompt` (new, live) — reproduces the exact
+  bug: calls `prepareSceneImagePrompts` with `promptTemplateOverride="pictureBook.extract-scenes"`
+  on a normal scene. Live log confirms the guard fired for BOTH the landscape and scene-image calls
+  (`"Refusing to call LLM for prompt 'pictureBook.extract-scenes' — template has unsubstituted
+  placeholder(s) (first: '{count}')..."`) with zero network calls made, and both cached values are
+  the real, sane fallback text built from the scene's actual setting/action/mood — not garbage.
+- `TestPoisonedCachedScenePromptSelfHeals` (new, live) — pre-seeds a scene's cached `scenePrompt`
+  with the literal historical poisoned text, calls `prepareSceneImagePrompts` normally (no override),
+  and confirms the LLM is actually re-invoked (real Ollama round-trip logged) and the poisoned text
+  is replaced with a real generated SD prompt, not served again.
+- All three confirmed as genuine regression guards, not happy-path checks: temporarily disabled all
+  three guard sites simultaneously (`if (false && ...)`), reran — the deterministic unit test failed
+  exactly as predicted (`AssertionError: A conversational request for missing story text/scene count
+  must be detected`); the live end-to-end test happened to pass on that run because the model's
+  stochastic output that particular time was short/blank (caught by the pre-existing, pre-KI-31
+  null/blank check instead) — noted honestly rather than treated as proof, since LLM output isn't
+  deterministic run-to-run; the unit test result is the reliable regression signal. Restored all
+  three guards, reran everything together — `Tests run: 3, Failures: 0, Errors: 0` / `BUILD SUCCESS`.
+  Full `mvn -o -pl AccountManagerObjects7 install -DskipTests` + `mvn -o -pl AccountManagerService7
+  clean compile` — both `BUILD SUCCESS`.
+- **Client-side**: new `AccountManagerUx752/src/test/pictureBookPromptTemplateScope.test.js` (4
+  tests) drives the real, exported `getPromptTemplate` function directly — confirms "single" mode
+  still applies to extraction-shaped slots, confirms it returns `null` (not the mismatched template)
+  for `landscapePrompt`/`sceneImagePrompt`, confirms "per-prompt" mode is unaffected, and confirms no
+  crash when no template is selected yet. Confirmed as a genuine regression guard: temporarily
+  disabled the `IMAGE_PROMPT_SLOTS` check, reran — failed exactly as predicted (`expected
+  'pictureBook.extract-scenes' to be null`, i.e. reproducing the live bug verbatim), restored,
+  reran — 4/4 pass. Full suite: `npx vitest run` — 327/327 individual tests pass (same pre-existing
+  `pictureBook.test.js`/mithril unhandled-rejection flake noted elsewhere in this doc, confirmed
+  unrelated). `npx vite build` — clean.
+
+### KI-32. `PictureBookUtil.reset()`'s non-recursive delete leaves orphaned/dangling group hierarchy, surfacing as cascades of `PathProvider` "Parent auth.group index not found" errors — FIXED ✅ (2026-07-23)
+Stephen flagged this log burst as "likely related to upper ascii path" (grouping it with KI-26's
+François/Duña `MediaUtil` fix, since it appeared while reading/modifying a note involving the
+character "Duña"). Read the actual code path (`PathProvider.java:103-127`) and it looks structurally
+different from KI-26: this is `PathProvider` walking a record's `parentId` chain upward to compute its
+virtual `path` field, and at some level the read (`IOSystem...getReader().read(base, parentId)`)
+returns `null` — the parent `auth.group` row genuinely doesn't exist — throwing `ReaderException:
+Parent auth.group index not found for id {id}`. This isn't obviously an ASCII/encoding issue; it's
+consistent with **orphaned group hierarchy**, and this exact mechanism was already identified earlier
+in this project's history (documented in this session's own working notes, not yet promoted to a
+`KnownIssues.md` entry until now): `PictureBookUtil.reset()` only deletes 3 top-level rows (the
+book's Scenes group, Characters group, and `.pictureBookMeta` note) **non-recursively** — every
+group/note/record nested underneath is orphaned, not deleted. A subsequent read of any surviving
+record whose `parentId` chain climbs through one of those orphaned/deleted intermediate groups hits
+exactly this error.
+
+**Evidence for the "wide range of ids" pattern:** the same ~24 group ids (813, 827, 841 ... 1164)
+fail identically across two separate operations moments apart on the same note — consistent with a
+long, now-broken parent chain being re-walked (and re-failing at the same missing links) on every
+path computation for anything still rooted under it, not a one-off.
+
+**Fix direction:** make `PictureBookUtil.reset()` actually recursive (walk and delete all
+groups/notes/charPerson records nested under the book's Scenes/Characters groups, not just the 3
+top-level rows), or — if a full recursive delete is out of scope for a quick fix — at minimum make
+`PathProvider`'s parent-chain walk tolerant of a missing intermediate group (treat it as "path ends
+here" rather than throwing) so a pre-existing orphan doesn't turn every subsequent read of a
+surviving record into a wall of `ReaderException` log spam. **Next step:** confirm via direct query
+whether `auth.group` ids 813-1164 for organizationId=3 are genuinely absent from the DB (not just
+slow/uncached), then trace which one(s) are the actual missing links closest to the surviving note's
+`parentId`, to confirm the orphaned-reset theory before implementing either fix.
+
+**Confirmed by code read (2026-07-22):** `PictureBookUtil.reset()` (`PictureBookUtil.java:2635-2677`)
+deletes exactly 4 rows — Scenes group, Characters group, `.pictureBookMeta` note, book group itself —
+each via a single-record `AccessPoint.delete(user, grp)`. The method's own comment already admits it:
+"Explicit child deletion — AccessPoint.delete on a group does NOT cascade." `AccessPoint.delete`
+(`client/AccessPoint.java:320-350`) is single-row only; its `delete(BaseRecord, Query)` overload
+(352-382) — the natural home for a bulk/query-based delete — is an **unimplemented stub** ("Not
+implemented", always returns `false`). No generic recursive/cascade-delete utility exists anywhere in
+Objects7 to reuse; the closest analog, `WorldUtil.cleanupWorld`/`cleanupLocation`
+(`olio/WorldUtil.java:227-298`), bypasses `AccessPoint`/PBAC entirely (raw `writer.delete(query)`) and
+is hand-enumerated per Olio-world model type — not reusable as-is for a user-invoked action that
+should still respect PBAC.
+
+**`PathProvider` re-read — the "cascade" is pure log noise, not a second bug:** the throw at
+`PathProvider.java:126` is caught in the *same method* at lines 144-146
+(`catch (ReaderException e) { logger.error(e); }`); the enclosing `provide(...)` doesn't even declare
+`ReaderException`. So a missing parent already can't propagate — the walk keeps whatever partial path
+it built and returns a truncated `path`. The only real problem is `logger.error(e)` dumping a full
+stack trace per affected record per read, which is what produces the "same ~24 ids fail repeatedly"
+pattern. **No structural PathProvider change needed.**
+
+**Recommended fix (both parts, no live DB access needed to implement, only to verify):**
+1. Add a small recursive delete helper used by `reset()`: for the Scenes/Characters groups, query
+   direct children by `groupId` for each relevant model in that subtree (`data.note` scenes,
+   `olio.charPerson` + its `store`/`profile`/apparel foreign rows, generated `data.data` images, and
+   any nested `auth.group` subgroups — recurse into those first), deleting bottom-up, still through
+   `AccessPoint.delete(user, rec)` per record (not the PBAC-bypassing `writer.delete` pattern) since
+   this is a user-invoked action. Since every PictureBook record lives under the acting user's own
+   `~/Data/PictureBooks/...` path with no cross-book sharing found, PBAC/ownership shouldn't surprise
+   here — but spot-check live once DB access is available.
+2. `PathProvider.java:145` — downgrade `logger.error(e)` (full stack trace) to a single-line
+   `logger.warn(e.getMessage())` (or dedupe per missing id) purely to kill the log-spam symptom; this
+   is independent of fix 1 and safe on its own since behavior (truncated path, no failure) is
+   unchanged.
+
+**Live-confirmed (2026-07-22), incidentally, while live-testing KI-28/29 against the real Tomcat
+instance:** a plain `olio.charPerson` list query (no relation to PictureBook at all) for
+`organizationId=2` threw the exact predicted cascade —
+```
+PathProvider - org.cote.accountmanager.exceptions.ReaderException: Parent auth.group index not found for id 1164
+PathProvider - org.cote.accountmanager.exceptions.ReaderException: Parent auth.group index not found for id 1151
+PathProvider - org.cote.accountmanager.exceptions.ReaderException: Parent auth.group index not found for id 1138
+PathProvider - org.cote.accountmanager.exceptions.ReaderException: Parent auth.group index not found for id 1116
+PathProvider - org.cote.accountmanager.exceptions.ReaderException: Parent auth.group index not found for id 1094
+```
+— the same ~13-id spacing pattern as the original report, on the live `/Development` org's real data,
+right now. This isn't a historical/one-off artifact; the orphaned hierarchy is present today and firing
+on ordinary reads. Confirms the fix is worth landing, not just theoretical.
+
+**Fixed (2026-07-23), part 1 (the recursive delete):** added `PictureBookUtil.deleteGroupRecursive
+(BaseRecord user, BaseRecord group)` (`PictureBookUtil.java` ~2742), called by `reset()`
+(~2704) for the Scenes/Characters sub-groups before the existing `.pictureBookMeta`-note and
+book-group deletes. Walks bottom-up, entirely through `AccessPoint.delete(user, rec)` (never the
+PBAC-bypassing `writer.delete` pattern, per the recommended fix above): (1) recurses into nested
+`auth.group` subgroups first (deepest-first), (2) deletes `data.note` children (scene notes), (3)
+deletes `olio.charPerson` children, (4) deletes `data.data` children (generated images grouped
+directly under the group), (5) deletes the group itself. **Scope note, not addressed by this fix:**
+a charPerson's own foreign single-model fields (`profile`/`narrative`/`statistics`/`store` — see
+`createPersistedForeignInstance`) are persisted under the acting user's own shared `~/Profiles`/
+`~/Narratives`/etc. buckets, not grouped under the book's Characters subtree, so they are NOT
+reachable by this group-subtree walk and are NOT deleted by it. That's a separate, smaller storage
+leak (no dangling `auth.group` parent chain, so no `PathProvider` symptom) and was left out of
+scope — flagged here for whoever picks it up next.
+
+**Part 2 (the `PathProvider` log-spam downgrade) was already present in the working tree when this
+fix landed** — `PathProvider.java:145` now reads `logger.warn(e.getMessage())` instead of
+`logger.error(e)` (confirmed via `git diff` while working this issue). Not implemented by this fix;
+noting it here only so the "Recommended fix (both parts)" note above isn't misread as still open.
+
+**Verified:** `TestResetRecursivelyDeletesNestedSceneAndCharacter` (`AccountManagerObjects7`,
+`TestPictureBookFull.java`) — builds a minimal book with one `data.note` scene and one bare
+`olio.charPerson` (no LLM call — direct `Factory.newInstance` + `AccessPoint.create`, exercising the
+delete path only) nested under Scenes/Characters, confirms all four records resolve before
+`reset()`, calls `reset()`, then confirms via direct by-objectId/by-path queries that the scene
+note, the character, AND both the Scenes and Characters groups themselves are gone — not just the
+top-level book group. **Confirmed as a genuine regression test, not just a happy-path check:**
+temporarily reverted only the production fix (`git stash` on `PictureBookUtil.java` alone, test file
+untouched) and reran the same test — it failed exactly as predicted (`AssertionError: Scene note
+must be deleted, not just orphaned, after reset() ... was:<{...groupId:1237...}>`, i.e. the scene
+note genuinely survived pre-fix), then restored the fix and reran — passes. Ran via
+`mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestResetRecursivelyDeletesNestedSceneAndCharacter test`
+— `Tests run: 1, Failures: 0, Errors: 0` / `BUILD SUCCESS`.
+
+**Follow-up gap closed (2026-07-23, Stephen requested):** the fix above left a documented gap — a
+character's own foreign single-model sub-records (`profile`/`narrative`/`statistics`/`store`/
+`instinct`/`personality`/`state`, created by `createPersistedForeignInstance`) live in the acting
+user's shared `~/Profiles`/`~/Narratives`/etc. buckets, not nested under the book's Characters
+subtree, so `deleteGroupRecursive`'s group-subtree walk never reached them. `deleteGroupRecursive`
+now projects those seven fields on each `olio.charPerson` it finds and deletes each persisted FK
+(via `AccessPoint.delete`, same PBAC-respecting pattern as everything else in this method) before
+deleting the character itself. Safe because each is created fresh, once, per character —
+`createPersistedForeignInstance` is never called with a shared/reused instance, so no other
+character's data can be orphaned by this. **Verified:** new
+`TestResetDeletesCharacterForeignSubRecords` (`TestPictureBookFull.java`) — builds a real character
+via `createFromScenes` (so all seven sub-records are genuinely persisted, not a bare fixture),
+captures each one's objectId, calls `reset()`, asserts every one of them is gone afterward — not just
+the character. Confirmed as a genuine regression test: temporarily disabled just the new deletion
+loop (`for (String foreignField : (false ? charForeignFields : new String[0]))`), reran — failed
+exactly as predicted (`AssertionError: profile must be deleted, not just orphaned, after reset() ...
+was:<{...groupId:1090...}>`), restored, reran — passes, alongside the original
+`TestResetRecursivelyDeletesNestedSceneAndCharacter` test (both together: `Tests run: 2, Failures: 0,
+Errors: 0` / `BUILD SUCCESS`). Live audit log confirms real `DELETE` calls for all seven models
+(`identity.profile`, `olio.narrative`, `olio.statistics`, `olio.store`, `olio.instinct`,
+`identity.personality`, `olio.state`) plus the character itself.
+
+### KI-28. Outfit generation wizard for `olio.charPerson` fails with a server error — NOT REPRODUCED, needs exact repro steps (2026-07-22, Stephen; re-tested 2026-07-23)
 Reported by Stephen; not yet reproduced or diagnosed in this session — no error text or repro steps captured yet. Filed as a placeholder so it isn't lost: the outfit-builder flow (`workflows/outfitBuilder.js`, invoked from PictureBook's `pictureBookCharacters.js` "Generate New Outfit" button and presumably from the charPerson editor directly) fails server-side. **Next step for whoever picks this up:** reproduce via `ensureSharedTestUser()` (never admin), capture the actual REST response/status and Tomcat log entry for the failing call, then route per `troubleshooting.md`'s gate (raw API call first, to confirm client vs. backend before assuming either).
 
-### KI-29. Outfit reimage fails — suspected SD-config inconsistency, same class of bug as KI-16 Finding C — OPEN (2026-07-22, Stephen)
+**Call chain traced end to end (2026-07-22), strong candidate root cause found:**
+`pictureBookCharacters.js` `doOutfitBuilder()` → `workflows/outfitBuilder.js` (opens dialog) →
+`components/olio.js:297-333` `generateOutfit()` → `POST /game/outfit/generate` →
+`GameService.java:782-820` → `GameUtil.findCharacter(characterId)` (`GameUtil.java:46-51`, loads via
+`OlioUtil.planMost(q)`) → `GameUtil.generateOutfit()` (`GameUtil.java:912-934`) →
+`ApparelUtil.contextApparel()` (`ApparelUtil.java:669-702`).
+
+**Likely NPE at `ApparelUtil.java:694`:** `long ownerId = person.get(FieldNames.FIELD_OWNER_ID);` —
+`person` was loaded through `OlioUtil.planMost` → `OlioUtil.FULL_PLAN_FILTER`
+(`OlioUtil.java:645`), which **explicitly excludes `ownerId` from the query projection**. `ownerId` is
+schema'd as primitive `"type": "long"`, so the excluded field's `get()` returns boxed `null`, and the
+implicit unboxing into `long ownerId` throws immediately — a bare 500 with no message, matching
+"server error, no error text captured." This should reproduce for **any** charPerson through this
+endpoint, not only PictureBook-created ones, so it isn't necessarily entangled with KI-30's
+sparse-character problem — **live-repro step:** confirm the Tomcat stack trace names
+`ApparelUtil.contextApparel` at this line for any character before assuming it's PictureBook-specific.
+**Fix:** stop excluding `ownerId` from the query plan `GameUtil.findCharacter` uses, or (cleaner, less
+blast radius) refactor `contextApparel`/`constructApparel` so `ownerId` is read lazily only inside the
+`ctx == null` branch that actually needs it — it's dead on this call path where `ctx != null` always.
+**Secondary, non-crashing:** `GameService.java:812` reads `climate` from the request but never
+forwards `params.get("style")` into `GameUtil.generateOutfit(...)` — the outfit-builder's style choice
+is silently dropped; cosmetic, fix alongside the NPE if convenient.
+
+**Live-tested (2026-07-22) — the ownerId-NPE hypothesis did NOT reproduce; correcting the record
+rather than leaving a stale claim:** `POST /game/outfit/generate` against a real, fully-populated
+`olio.charPerson` (`7d7b730a-f9c3-4c73-9bd1-dd0c11416e90`, from the live `/Development` Olio world)
+returned a genuine **200** with a complete `olio.apparel` + wearables payload — no NPE. Likely
+explanation: `ownerId` is one of `common.base`'s default **query** fields (always included in the
+baseline projection per `model-api.md`), so excluding it from `OlioUtil.FULL_PLAN_FILTER`'s *custom*
+filter list may not actually remove it from what's returned — the original static-analysis hypothesis
+was probably wrong on this point, not just unconfirmed. A second attempt against a genuinely **sparse**
+character (`f350fe5a-...`, statistics almost entirely unpopulated) hit a **403 Forbidden** before
+reaching any apparel logic — that character is owned by a different test fixture user
+(`e2etest_pbuxmrwc7xit_char`, ownerId 170), not `e2etest_shared`, so PBAC correctly denied it; this
+was a test-setup mistake, not evidence either way.
+
+**Re-tested 2026-07-23 with the actual missing control — a sparse character genuinely owned by the
+calling user (`e2etest_shared_ki16char`, objectId `352d3c7c-7475-446e-99a3-42a1f650c2ed`, `ownerId 18`,
+statistics almost entirely unpopulated — only `height`/`weight`/`unit` present): `POST
+/game/outfit/generate` returned a clean **200** with a full `olio.apparel` + 5 wearables payload. This
+was the specific test the KI-30-sparseness theory needed and it also came back clean. Between this and
+the fully-populated-character test above, **two independent live attempts covering both the "any
+character" and "sparse, same-owner" hypotheses both succeeded** — the endpoint is not reproducibly
+broken via a direct REST call with plausible parameters.
+
+**Status change: downgrading from "diagnosed, ready to fix" to "cannot reproduce as understood."**
+Per this project's honesty rules, no fix is being written for a bug that won't trigger — writing one
+now would be guessing, not fixing. Remaining possibilities, in rough likelihood order: (a) the bug was
+already fixed by an intervening patch since Stephen's report (recent "Patch"-titled commits exist) and
+this KI is stale; (b) the real client (`outfitBuilder.js`/`olio.js generateOutfit()`) sends a
+materially different request than what was tried here (different `techTier`/`climate`/`style` values,
+or a `characterId` in a transient state — e.g. mid-async-enrichment right after PictureBook character
+creation, before statistics/apparel finish populating — that these two tests didn't happen to hit); (c)
+it's environment-specific (a different SD/Swarm backend state, e.g. a missing model, that only
+manifests downstream of `generateOutfit` in a way these tests' successful apparel *object* creation
+wouldn't surface, since apparel generation itself doesn't call SD). **Next step, and this one actually
+needs Stephen:** the exact character (ideally its objectId, or "the one I just created via the wizard")
+and exact click sequence at the time of the original failure, since two honest reproduction attempts
+using the best available substitutes did not find it. The ownerId/`FULL_PLAN_FILTER` observation from
+the static read remains true as a general code-cleanliness note (dead-code-on-this-path read of an
+excluded field) but is **not confirmed to be a bug** — not worth fixing blind.
+
+### KI-29. Outfit reimage fails — suspected SD-config inconsistency, same class of bug as KI-16 Finding C — FIXED ✅ (2026-07-23)
 Reported by Stephen, with explicit frustration that this class of bug was raised before and not fixed: reimaging an apparel/outfit item fails, and the symptom looks like an SD-config inconsistency. KI-16's Finding C already catalogued **≥5 divergent SD/range-slider implementations** across `workflows/reimage.js`, `workflows/reimageApparel.js`, `workflows/pictureBook.js`, and `components/SdConfigPanel.js` — schema-blind, hardcoded min/max/step, no shared source of truth for SD parameters — and marked it "FIXED ✅ (2026-07-13)" by converging the **slider markup** onto `formFieldRenderers.renderRange`. That fix addressed the UI widget duplication; it did **not** necessarily guarantee the underlying **SD parameter values** (model/sampler/scheduler/steps/cfg/seed/LoRAs, etc.) are assembled consistently across `reimageApparel.js` vs. `pictureBook.js`'s own SD config panel vs. whatever the outfit-reimage call path actually sends to the SD backend — that's a different, deeper claim the markup convergence doesn't prove. Not yet reproduced or diagnosed this session. **Next step:** reproduce via `ensureSharedTestUser()`, capture the actual failing request payload sent to the SD service and compare field-by-field against a working reimage call (e.g. the charPerson portrait reimage path) to find exactly which parameter(s) differ or are missing; check whether `reimageApparel.js` and `pictureBook.js`'s apparel-reimage path independently assemble the SD request object rather than sharing one code path. This is very likely a case for KI-13's broader cross-view-consistency umbrella, not a one-line fix.
+
+**Confirmed by code read (2026-07-22) — this is exactly Finding-C-class, and the divergence is server-side, not just UI:**
+`reimageApparel.js` → `OlioService.reimageApparel` reads **only `hires` and `seed`** off the client
+JSON (`OlioService.java:265-266`) — `sdConfig` is hardcoded `null` into
+`SDUtil.generateMannequinImages(...)` (`OlioService.java:270`). By contrast `reimage.js` →
+`OlioService.reimageWithConfig` forwards the **entire** parsed record (steps/cfg/sampler/scheduler/
+model/refinerModel/loras/denoisingStrength/style) into `sdu.generateSDImages(...)`
+(`OlioService.java:214`). With `sdConfig=null`, `generateMannequinImages`
+(`SDUtil.java:1438-1462`) falls back to `randomSDConfig()` (`SDUtil.java:639-705`), which never sets
+model/sampler/scheduler/cfg — those come from **hardcoded literals**:
+`model="sdXL_v10VAEFix.safetensors"`, `scheduler="normal"`, `sampler="dpmpp_2m"`, `cfg=7`, `steps=20`
+(`SDUtil.java:1458-1462`), regardless of what the client's `fetchModels()`-validated selection sent.
+LoRAs can never apply either — `appendLoras(prompt, sdConfig)` is called with `sdConfig=null`
+(`SDUtil.java:1470`), a no-op (`SDUtil.java:285`); `reimageApparel.js` doesn't even offer LoRA UI.
+`denoisingStrength` is also scaled inconsistently between the two workflows (0-1/step 0.05 in
+`reimageApparel.js` vs. 0-100/step 5 in `reimage.js` for the same underlying field) — moot for apparel
+today since the server discards it anyway, but will bite once the fix below wires it through.
+
+**Fix:** `OlioService.reimageApparel` needs to parse the request body into a real `olio.sdConfig`-like
+record the same way `reimageWithConfig` does (defaulting model/refinerModel from init params when
+absent), and pass that through to `generateMannequinImages` instead of `null`; `generateMannequinImages`
+itself needs to copy steps/cfg/sampler/scheduler/model/refinerModel/loras from the passed config (today
+it only copies `style`/`hires`, `SDUtil.java:1439-1446`). Reconcile the denoisingStrength scale
+(0-1 vs 0-100) between `reimageApparel.js` and `reimage.js` while touching this. **Live-repro check
+first:** capture the `"Generating mannequin image: ... model=..."` log line (`SDUtil.java:1499`) when
+reproducing — if the hardcoded fallback model (`sdXL_v10VAEFix.safetensors`) isn't actually installed
+on the configured SD backend, that alone (not a code exception) is the direct cause of "outfit reimage
+fails," and would already resolve once real config values flow through.
+
+**Fixed:**
+- `AccountManagerService7/src/main/java/org/cote/rest/services/OlioService.java` — `reimageApparel`
+  (~line 233) now parses the request body via `JSONUtil.importObject(json, LooseRecord.class,
+  RecordDeserializerConfig.getFilteredModule())` — the same pattern `reimageWithConfig` already used —
+  instead of a plain `Map<String,Object>` that only read `hires`/`seed`. Defaults `model`/`refinerModel`
+  from the `sd.model`/`sd.refinerModel` init params when the client didn't send them (mirroring
+  `reimageWithConfig` lines 150-155), and passes the real parsed record into
+  `sdu.generateMannequinImages(...)` instead of `null`.
+- `AccountManagerObjects7/src/main/java/org/cote/accountmanager/olio/sd/SDUtil.java` —
+  `generateMannequinImages` (~line 1406) now copies `steps`/`cfg`/`sampler`/`scheduler`/`model`/
+  `refinerModel`/`denoisingStrength`/`loras` from the passed `sdConfig` onto the working `config`
+  object (in addition to the pre-existing `style`/`hires` copy), only where the client actually set a
+  value — `randomSDConfig()` defaults and the hardcoded literal fallbacks (`sdXL_v10VAEFix.safetensors`/
+  `normal`/`dpmpp_2m`/`7`/`20`) are unchanged and still apply for any field the client left unset. Also
+  switched the `appendLoras(prompt, sdConfig)` call to use the merged `config` object instead of the
+  raw `sdConfig` param, so LoRAs actually apply now that they're merged in (previously a no-op since
+  the caller passed `null`).
+- `AccountManagerUx752/src/core/formDef.js` — added a `denoisingStrength: { format: 'range' }` field
+  entry to `forms.sdMannequinConfig` (it had none at all). Root cause of the scale "mismatch": the
+  `rangeDecorator` that converts the UI's 0-100 slider to the schema's 0.0-1.0 wire value
+  (`AccountManagerUx752/src/core/model.js`'s `rangeDecorator`, gated on the field's form entry having
+  `format: 'range'`) was only ever wired up for `forms.sdConfig` (used by `reimage.js`) — `reimageApparel.js`
+  used `forms.sdMannequinConfig`, which had no `denoisingStrength` entry, so its 0-1/step-0.05 slider
+  was actually already wire-correct (undecorated raw value), just presented on a different UI scale.
+  Widening the slider without this form-def addition would have broken the value (would have sent 75
+  instead of 0.75); with it, both forms now decorate identically.
+- `AccountManagerUx752/src/workflows/reimageApparel.js` — converged the denoising slider's rendering
+  (min/max/step and `onInput` handler) onto `reimage.js`'s exact 0-100/step-5 pattern.
+
+**Flagged, NOT fixed (out of scope):** `reimageApparel.js:24` and `reimage.js:123` both call
+`am7model.newPrimitive('olio.sdConfig')` as their fallback when `am7sd.fetchTemplate(true)` returns
+nothing — but the registered model name is `olio.sd.config` (`AccountManagerUx752/src/core/modelDef.js:9918`;
+used correctly everywhere else in the codebase, e.g. `formDef.js:6114`,
+`cardGame/services/artPipeline.js:257`). That typo'd fallback returns `null` from `newPrimitive`
+(logs `"No model for: olio.sdConfig"`) and then throws in `am7model.prepareInstance(null, form)`. It's
+invisible in practice only because a saved template config normally already exists server-side by the
+time a user opens either dialog. Discovered while writing this fix's Vitest coverage (had to mock
+`fetchTemplate` to avoid tripping it). Whoever picks this up next: fix both call sites to
+`'olio.sd.config'`.
+
+**Verified:**
+- Backend (live, against the real SD/Swarm backend): new JUnit test
+  `TestSD#TestGenerateMannequinImagesForwardsClientConfig` (`AccountManagerObjects7`) builds a real,
+  fully-specified `olio.sd.config` record with `model`/`sampler`/`scheduler`/`cfg`/`steps` deliberately
+  different from `generateMannequinImages`' hardcoded fallback literals
+  (`juggernautXL_ragnarokBy.safetensors`/`euler_ancestral`/`karras`/`11`/`33` vs. the fallback's
+  `sdXL_v10VAEFix.safetensors`/`dpmpp_2m`/`normal`/`7`/`20`), calls `generateMannequinImages` directly
+  against the live SwarmUI backend at `test.swarm.server` (`http://localhost:7801`, confirmed reachable
+  and confirmed the test model is actually installed there before writing the test), then reads back
+  the **actual `SWTxt2Img` request object that was sent**, recorded verbatim by production code itself
+  as the `"s2i"` attribute on each resulting `data.data` record (`SDUtil.java` ~1538,
+  `AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i))` — not test instrumentation),
+  and asserts the client's values (not the fallback literals) reached the real request. Ran via
+  `mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestSD#TestGenerateMannequinImagesForwardsClientConfig test`
+  — `Tests run: 1, Failures: 0, Errors: 0` / `BUILD SUCCESS`; test log shows the live request actually
+  sent: `model=juggernautXL_ragnarokBy.safetensors steps=33 cfgScale=11 sampler=euler_ancestral
+  scheduler=karras`, and 6 real images (one per wear level: BASE/ACCENT/SUIT/GARNITURE/OVER/OUTER) came
+  back from the live server and were written to disk for inspection. Full `TestSD` suite (3 tests,
+  including the pre-existing `TestCreatePersonImage` which also hits the live SD backend) re-ran clean
+  after rebuilding the Objects7 jar and recompiling Service7 — `Tests run: 3, Failures: 0, Errors: 0` /
+  `BUILD SUCCESS`. `mvn -o -pl AccountManagerObjects7 install -DskipTests` then
+  `mvn -o -pl AccountManagerService7 clean compile` both `BUILD SUCCESS` (full recompile of
+  `OlioService.java` confirmed, not a stale no-op).
+- Frontend: new Vitest file `AccountManagerUx752/src/test/reimageApparelConfig.test.js` (4 tests, all
+  passing) exercises the real `reimageApparel()` workflow function end-to-end — real Dialog config
+  captured, real rendered Mithril vnode tree walked to find the actual `<input type="range">` for
+  denoising among the 4 sliders it renders, a real "drag" fired via the real `oninput` handler, and the
+  real "Generate" action's `onclick` invoked to inspect the actual POST body (only `m.request` is
+  intercepted, at the network boundary) — confirms `forms.sdMannequinConfig` now declares
+  `denoisingStrength: {format:'range'}`, confirms the same 80 → 0.8 decoration now happens identically
+  on both `sdMannequinConfig` and `sdConfig`, confirms the rendered slider bounds are 0/100/5 (matching
+  `reimage.js`), and confirms the POST body carries the full config (`model`/`sampler`/`scheduler`/
+  `cfg`/`steps`/`hires`/`seed`) plus the correctly-scaled `denoisingStrength: 0.8`. Ran via
+  `npx vitest run src/test/reimageApparelConfig.test.js` — 4/4 passed; full suite
+  (`npx vitest run`) — 320/321 tests passed, the one pre-existing failure (`dialog.test.js`, a
+  `mithril`/`Dialog` wiring issue) confirmed unrelated and pre-existing via `git stash` (fails
+  identically on the pre-fix tree). `npx vite build` — clean.
+
+**Correction (2026-07-23, Stephen):** the first pass's new copy-block in `SDUtil.java` used
+`config.setValue("steps", inSteps)`-style calls throughout — `setValue()` catches and merely logs
+`FieldException`/`ValueException`/`ModelNotFoundException` rather than propagating them, so a bad
+value on any of these fields (the exact class of "client override silently lost" bug this fix exists
+to close) would fail silently again; it also repeated raw string field-name literals instead of named
+constants. Fixed: added `OlioFieldNames.FIELD_STYLE`/`FIELD_HIRES`/`FIELD_SD_STEPS`/`FIELD_SD_CFG`/
+`FIELD_SD_SAMPLER`/`FIELD_SD_SCHEDULER`/`FIELD_SD_MODEL`/`FIELD_SD_REFINER_MODEL`/
+`FIELD_SD_DENOISING_STRENGTH`/`FIELD_SD_LORAS` constants; switched the copy-block to `config.set(...)`
+and gave `generateMannequinImages` a `throws FieldException, ValueException, ModelNotFoundException`
+signature so a bad value is a real, visible failure; `OlioService.reimageApparel` now catches those and
+returns a `500` with the actual error message instead of the call silently succeeding with wrong
+values. Re-verified: `TestSD#TestGenerateMannequinImagesForwardsClientConfig` re-run live against the
+real SwarmUI backend post-change — same client values (`model=juggernautXL_ragnarokBy.safetensors
+steps=33 cfgScale=11 sampler=euler_ancestral scheduler=karras`) reached the actual request,
+`Tests run: 1, Failures: 0` / `BUILD SUCCESS`; both modules recompile clean
+(`mvn -o -pl AccountManagerObjects7 install -DskipTests` then `mvn -o -pl AccountManagerService7 clean
+compile`, both `BUILD SUCCESS`).
+
+### KI-33. Filtering a search by `groupPath` throws `PSQLException: column oocn1.grouppath does not exist` — FIXED ✅ (2026-07-23)
+Found live (2026-07-22) while trying to locate a PictureBook-created `olio.charPerson` to test KI-28/29
+against — not PictureBook-specific itself, affects any `data.directory`-derived model. A `POST
+/model/search` on `olio.charPerson` (also reproduced on `data.data`) with a `groupPath LIKE "%..."`
+field condition threw server-side:
+```
+DBSearch - org.postgresql.util.PSQLException: ERROR: column oocn1.grouppath does not exist
+  Position: 85 (live) / 2173 (JUnit repro)
+  at org.cote.accountmanager.io.db.DBSearch.find(DBSearch.java:108)
+  at org.cote.accountmanager.io.db.cache.CacheDBSearch.find(CacheDBSearch.java:135)
+```
+The identical query without the `groupPath` field condition (same type/org, just no filter on that
+field) succeeded normally.
+
+**Root cause found — corrects the original "self-join" hypothesis, which was wrong.** `StatementUtil`'s
+`getAlias(query, model)` is called once per `Query` object and cached on it (`query.set(FIELD_ALIAS,
+...)`) — for this simple query (no `joins` records added) it is the **primary table's own FROM alias**,
+not a self-join copy. `oocn1` = `olio.charPerson`'s own alias (first+last char of each dot-segment,
+`StatementUtil.java` `getAlias()`), confirmed by checking `query.get(FieldNames.FIELD_JOINS)` is empty
+and no join clause is emitted for this query at all — there is no self-join anywhere in this path.
+
+The real cause: `groupPath` (declared in `common.groupExtModel.json`, inherited via `data.directory`) is
+a **`virtual`** field — `PathProvider` computes it at READ time by following the record's own `groupId`
+FK to `auth.group` and copying that group's own (also virtual, parent-chain-derived) `path`. It has **no
+backing database column on any table** — confirmed empty in Postgres (`a7_olio_charperson_0_1`,
+`a7_auth_group_0_1` both lack any `path`/`grouppath` column). `StatementUtil.getQueryClause()`
+(`StatementUtil.java` ~line 954, pre-fix) built the WHERE fragment for **any** field name blindly as
+`alias + "." + columnName(fieldName)` with no check for `isVirtual()`/`isEphemeral()`/`isReferenced()` —
+so a `groupPath` condition produced `oocn1.grouppath`, a column that has never existed and never could,
+regardless of self-joins.
+
+**Fix corrected 2026-07-23 (Stephen):** the first pass at this fix (above) rewrote the invalid
+condition in place into a resolved `IN` query — silently making a bad query "work" by inventing
+hierarchy-walking resolution logic. That was the wrong instinct: **the original query was invalid**
+(filtering on a computed, non-persisted field), and the codebase already has an established,
+consistent convention for this — `StatementUtil`/`DBUtil` exclude virtual/ephemeral/referenced fields
+from every real SQL operation everywhere else (select projections, insert/update column lists — see
+the `isVirtual()`/`isEphemeral()`/`isReferenced()` checks throughout both classes). A filter condition
+on a virtual field is the same case and should get the same treatment: **reject it up front with a
+clear error**, not accommodate it. The hierarchy-walking resolution code (`resolveVirtualPathConditions`
++ helpers, ~115 lines, plus now-unused `PathProvider`/`QueryResult`/`HashSet`/`Pattern` imports) was
+removed entirely.
+
+**Fixed (corrected):** `StatementUtil.java` — `rejectVirtualFieldConditions()` (same 3 call sites:
+top of `getSelectTemplate`/`getCountTemplate`/`getDeleteTemplate`, right after the model schema is
+resolved) walks the query's field-condition tree (recursing into `GROUP_AND`/`GROUP_OR`) and throws a
+`FieldException` — `"Field '<name>' on model '<model>' is virtual (computed, no backing column) and
+cannot be used in a query condition"` — the instant it finds a leaf condition on any field where
+`FieldSchema.isVirtual()` is true. `DBSearch.find` already wraps `FieldException` into `ReaderException`
+(same as every other query-construction failure), so callers get a clear, actionable error instead of
+either a cryptic `PSQLException` or a query that was silently changed underneath them.
+
+**Verified:** `TestQuery#TestQueryByGroupPathLikeIsRejected` (`AccountManagerObjects7`) — filters
+`data.data` by `groupPath LIKE "%anything%"` and asserts a `ReaderException` is thrown whose message
+names the `groupPath` field, rather than asserting the query succeeds. Actually run: `mvn -o -pl
+AccountManagerObjects7 -Dtest=TestQuery#TestQueryByGroupPathLikeIsRejected test` →
+`FieldException: Field 'groupPath' on model 'data.data' is virtual (computed, no backing column) and
+cannot be used in a query condition`, `Tests run: 1, Failures: 0`, `BUILD SUCCESS`. Full `TestQuery`
+class re-run: 10/11 pass, the one failure (`TestAuthorizedQuery`, `NoSuchMethodError:
+sun.misc.Unsafe.ensureClassInitialized`) is the same pre-existing, unrelated JVM/scripting-engine flake
+already flagged by the prior pass — not caused by this change.
 
 ### KI-24. `characters` field on `olio.pictureBookRequest` pointed at the wrong `baseModel`, silently dropping every character sent by the client — FIXED ✅ (2026-07-18)
 The wizard's character-creation call (`PictureBookUtil.createFromScenes`) received a `characters` array from the client, but `pictureBookRequestModel.json`'s `characters` field declared `"baseModel": "olio.pictureBookScene"` — the *scene* shape, not a character shape. `RecordDeserializer` deserializes each array entry against the declared `baseModel`'s field set; since a character object (`name`/`gender`/`role`) shares no fields with `olio.pictureBookScene`, every field was silently dropped (logged only as a debug-level "Invalid field" per entry). The per-character loop in `createFromScenes` then saw `name == null` for every entry and `continue`d before `createCharPerson` was ever called — so `failedCharacters` (the intended "some characters failed" signal) never populated either, since that only fires when `createCharPerson` itself returns null. Net effect: the wizard reported success with a valid `bookObjectId`, zero real `olio.charPerson` records existed, and the "Manage Characters" screen rendered permanently blank with no error anywhere.
@@ -527,7 +1323,7 @@ established pattern) — the plain, unforced click now passes. Regression-checke
 unrelated flakes (a `.../Favorites` console-error flake and a carousel/pagination bug) reproduce
 identically there and aren't caused by this fix.
 
-### KI-19. `uri`/object-link field: broken URI + wrong tab placement — FIXED (2026-07-11, Stephen)
+### KI-19. `uri`/object-link field: broken URI + wrong tab placement — FIXED ✅ (2026-07-11; follow-up closed 2026-07-23, Stephen)
 Stephen flagged, while checking KI-17's `data.groupExport` records: the generic `uri` field (added to
 `system.primaryKey` — every model inherits it — rendered via `formFieldRenderers.js`'s `object-link`
 format: a link + a `file_json` print icon) showed up **directly on the object's main/default tab**
@@ -581,6 +1377,23 @@ entry at all, every field — including `uri` — fell onto a single unstructure
   before the `:visible` scoping was added.
 - `npx vite build` clean; `npx vitest run` — 299 passed (same 1 pre-existing unrelated `dialog.test.js`
   failure as KI-17, confirmed unrelated via `git stash` there).
+
+**Follow-up fixed (2026-07-23, Stephen requested):** the known-follow-up `[object Object]` display
+noted above is resolved. `components/formFieldRenderers.js` gained `renderers["foreign-summary"]` —
+reads the field's own value via `ctx.defVal` (the same accessor every other field renderer uses),
+not `ctx.entity`/`ctx.useEntity` (the containing record — `object-link`'s bug), and renders a
+name+link (falling back to `objectId` as the label when the foreign record has no `name`, and a
+`(none)` placeholder when the field is empty) instead of stringifying the object. `core/formDef.js`'s
+`forms.groupExport` now sets `format: "foreign-summary"` on both `sourceGroup` and `archive`.
+**Verified:** new `src/test/foreignSummaryRenderer.test.js` (3 tests, real Mithril vnode inspection,
+not source-text greps) — asserts the link/label are built from the field's own foreign value, not the
+container's; the objectId-fallback label; and the empty-value placeholder. Confirmed as a genuine
+regression guard for the exact KI-19 bug class: temporarily swapped the renderer's `ctx.defVal` back
+to `ctx.useEntity || ctx.entity`, reran — 2/3 failed exactly as predicted (link pointed at the
+container's `objectId`/model instead of the field's own), restored, reran — 3/3 pass. Full suite:
+`npx vitest run` — 323/323 individual tests pass (only the same pre-existing, unrelated
+`dialog.test.js` cross-file unhandled-rejection flake noted above, confirmed via prior `git stash`
+checks elsewhere in this doc). `npx vite build` — clean.
 
 ### KI-20. Deleting a stream-backed `data.data` never deletes the underlying file(s) — FEATURE REQUEST (2026-07-11, Stephen)
 

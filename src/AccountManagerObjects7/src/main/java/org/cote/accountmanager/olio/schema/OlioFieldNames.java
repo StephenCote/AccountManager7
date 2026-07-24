@@ -275,6 +275,16 @@ public class OlioFieldNames {
 	public static final String FIELD_BODY_SHAPE = "bodyShape";
 	public static final String FIELD_BMI = "bmi";
 
-
+	// SD/Swarm image-generation config (olio.sd.config and friends)
+	public static final String FIELD_STYLE = "style";
+	public static final String FIELD_HIRES = "hires";
+	public static final String FIELD_SD_STEPS = "steps";
+	public static final String FIELD_SD_CFG = "cfg";
+	public static final String FIELD_SD_SAMPLER = "sampler";
+	public static final String FIELD_SD_SCHEDULER = "scheduler";
+	public static final String FIELD_SD_MODEL = "model";
+	public static final String FIELD_SD_REFINER_MODEL = "refinerModel";
+	public static final String FIELD_SD_DENOISING_STRENGTH = "denoisingStrength";
+	public static final String FIELD_SD_LORAS = "loras";
 
 }

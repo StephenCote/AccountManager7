@@ -3,10 +3,12 @@ package org.cote.rest.services;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.IPictureBookProgressHandler;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
@@ -57,6 +59,7 @@ import jakarta.ws.rs.core.Response;
  *   POST /{bookObjectId}/prepare-images        — Batch-resolve landscape prompts for a set of scenes, then flush idle Ollama models once
  *   PUT  /{bookObjectId}/scenes/order         — Reorder scenes
  *   PUT  /scene/{sceneObjectId}/status        — Persist a client-driven scene status (accepted/skipped/pending/...)
+ *   POST /{key}/cancel                        — KI-10: cancel an in-flight extraction/prepare-images call (key = the same workObjectId/bookObjectId passed to the call being cancelled)
  *   DELETE /{bookObjectId}/reset              — Delete entire book group
  */
 @DeclareRoles({"admin", "user"})
@@ -66,6 +69,18 @@ public class PictureBookService {
     private static final Logger logger = LogManager.getLogger(PictureBookService.class);
 
     private static final String PB_REQUEST_SCHEMA = "olio.pictureBookRequest";
+
+    /**
+     * KI-10: cancellation registry for long-running scene-extraction/prepare-images calls —
+     * mirrors {@code ChatService}'s {@code summarizingRefs} map (session/objectId ->
+     * {@code SummarizeProgress}), simplified to a single flat map since PictureBook has no
+     * multi-session concept here: each long-running call is keyed directly by the
+     * workObjectId/bookObjectId the client already used to start it, which the client also
+     * already has on hand to fire a concurrent cancel request. Entries are added right before the
+     * blocking {@code PictureBookUtil} call and removed in a {@code finally} block once it
+     * returns — same lifecycle as {@code ChatService}'s registration/cleanup.
+     */
+    private static final Map<String, SummarizeProgress> cancelRegistry = new ConcurrentHashMap<>();
 
     // ----- WebSocket progress-forwarding registration --------------------
 
@@ -169,9 +184,13 @@ public class PictureBookService {
             promptTemplateOverride = params.get("promptTemplate");
         }
 
+        // KI-10: registered under workObjectId — the same id the client already holds to fire a
+        // concurrent POST /{workObjectId}/cancel while this call is still in-flight.
+        SummarizeProgress cancelToken = new SummarizeProgress();
+        cancelRegistry.put(workObjectId, cancelToken);
         try {
             PictureBookUtil.ScenesOnlyResult result = PictureBookUtil.extractScenesOnly(
-                    user, workObjectId, count, chatConfigName, promptTemplateOverride);
+                    user, workObjectId, count, chatConfigName, promptTemplateOverride, cancelToken);
             if (result.chunked) {
                 BaseRecord out = PictureBookUtil.buildResult();
                 try {
@@ -186,6 +205,8 @@ public class PictureBookService {
                     RecordSerializerConfig.getForeignUnfilteredModuleRecurse())).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
+        } finally {
+            cancelRegistry.remove(workObjectId, cancelToken);
         }
     }
 
@@ -209,11 +230,16 @@ public class PictureBookService {
             chatConfigName = params.get("chatConfig");
         }
 
+        // KI-10: see extractScenesOnly()'s identical registration pattern.
+        SummarizeProgress cancelToken = new SummarizeProgress();
+        cancelRegistry.put(workObjectId, cancelToken);
         try {
-            BaseRecord result = PictureBookUtil.extractChunked(user, workObjectId, chatConfigName);
+            BaseRecord result = PictureBookUtil.extractChunked(user, workObjectId, chatConfigName, cancelToken);
             return Response.status(200).entity(toJson(result)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
+        } finally {
+            cancelRegistry.remove(workObjectId, cancelToken);
         }
     }
 
@@ -228,7 +254,7 @@ public class PictureBookService {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public Response extract(@PathParam("workObjectId") String workObjectId,
-            String json, @Context HttpServletRequest request) {
+            String json, @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
         int count = PictureBookUtil.MAX_SCENES_DEFAULT;
@@ -250,8 +276,13 @@ public class PictureBookService {
             bookName = params.get("bookName");
         }
 
+        // KI-30: threaded down to createCharPerson so it can obtain an OlioContext for
+        // CharacterUtil.randomPerson() — same init param GameService already reads for the same
+        // purpose (OlioContextUtil.getOlioContext(user, ...)).
+        String dataPath = context.getInitParameter("datagen.path");
+
         try {
-            BaseRecord meta = PictureBookUtil.extract(user, workObjectId, count, chatConfigName, genre, bookName);
+            BaseRecord meta = PictureBookUtil.extract(user, workObjectId, count, chatConfigName, genre, bookName, dataPath);
             return Response.status(200).entity(toJson(meta)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
@@ -271,7 +302,7 @@ public class PictureBookService {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public Response createFromScenes(@PathParam("workObjectId") String workObjectId,
-            String json, @Context HttpServletRequest request) {
+            String json, @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
         String chatConfigName = null;
@@ -298,9 +329,12 @@ public class PictureBookService {
             }
         }
 
+        // KI-30: see extract()'s identical use of this init param.
+        String dataPath = context.getInitParameter("datagen.path");
+
         try {
             BaseRecord meta = PictureBookUtil.createFromScenes(user, workObjectId, chatConfigName, genre, bookName,
-                    sceneList, charDataList);
+                    sceneList, charDataList, dataPath);
             return Response.status(200).entity(toJson(meta)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
@@ -413,13 +447,45 @@ public class PictureBookService {
             }
         }
 
+        // KI-10: registered under bookObjectId — the same id the client already holds to fire a
+        // concurrent POST /{bookObjectId}/cancel while this batch is still in-flight.
+        SummarizeProgress cancelToken = new SummarizeProgress();
+        cancelRegistry.put(bookObjectId, cancelToken);
         try {
-            PictureBookUtil.prepareSceneImagePrompts(user, sceneObjectIds, chatConfigName, style, promptTemplateOverride);
+            PictureBookUtil.prepareSceneImagePrompts(user, sceneObjectIds, chatConfigName, style, promptTemplateOverride, cancelToken);
             BaseRecord result = PictureBookUtil.buildResult();
             return Response.status(200).entity(toJson(result)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
+        } finally {
+            cancelRegistry.remove(bookObjectId, cancelToken);
         }
+    }
+
+    /**
+     * POST /{key}/cancel
+     * KI-10: cancel an in-flight extraction ({@code /extract-scenes-only}, {@code /extract-chunked})
+     * or {@code /prepare-images} call. {@code key} must be the exact workObjectId/bookObjectId the
+     * client passed to the call it wants to cancel — the client always already has this value
+     * (it's the path param of the call being cancelled), so no separate session/token bookkeeping
+     * is needed, unlike {@code ChatService}'s session-scoped {@code summarizingRefs}. A 200 with
+     * {@code cancelled:false} (not an error) is returned when there's nothing in-flight for that
+     * key — e.g. the call already finished, or the client raced the cancel ahead of the call
+     * actually registering.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{key:[0-9A-Za-z\\-]+}/cancel")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response cancel(@PathParam("key") String key, @Context HttpServletRequest request) {
+        ServiceUtil.getPrincipalUser(request);
+        SummarizeProgress progress = cancelRegistry.get(key);
+        boolean cancelled = false;
+        if (progress != null && !progress.isCancelled()) {
+            progress.cancel();
+            cancelled = true;
+        }
+        return Response.status(200).entity("{\"cancelled\":" + cancelled + "}").build();
     }
 
     /**

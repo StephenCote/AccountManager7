@@ -55,7 +55,7 @@ instinctPlan.planForCommonFields(true);
 - **Pattern 2 — request fields in query:**
   ```json
   POST /rest/model/search
-  { "schema":"query", "type":"olio.charPerson",
+  { "schema":"io.query", "type":"olio.charPerson",
     "request":["id","name","statistics","store","profile.portrait"],
     "fields":[{ "name":"objectId","comparator":"EQUALS","value":"abc-123" }] }
   ```

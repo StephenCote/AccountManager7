@@ -679,6 +679,39 @@ renderers["object-link"] = function(ctx) {
     ];
 };
 
+// ── Foreign Record Summary (read-only single-model field) ───────────
+// KI-19 follow-up: for a foreign single-model field (e.g. data.groupExport's sourceGroup/
+// archive), the default renderer just stringifies the nested BaseRecord ("[object Object]").
+// Deliberately NOT "object-link" — that renderer resolves ctx.useEntity/ctx.entity to the
+// *containing* record, which is correct only for a field bound to the record's own identity
+// (the top-level uri field); for an arbitrary nested foreign field it produces a link/label
+// pointing back at the container instead of the field's own value (found live via
+// e2e/objectLinkFix.spec.js while fixing KI-19). This renderer reads the field's own value via
+// ctx.defVal (the same field-value accessor every other field renderer uses) instead.
+
+renderers["foreign-summary"] = function(ctx) {
+    let fk = ctx.defVal;
+    let client = getClient();
+
+    if (!fk || typeof fk !== "object" || !fk.objectId) {
+        return [m("span", { class: "text-gray-400 italic" }, "(none)")];
+    }
+
+    let modelKey = fk[am7model.jsonModelKey];
+    let label = fk.name || fk.objectId;
+    let uri = "about:blank";
+    if (client && modelKey) {
+        uri = client.base() + "/model/" + modelKey + "/" + fk.objectId + "/full";
+    }
+
+    return [
+        m("a", { target: "new", href: uri, class: "text-blue-600" }, [
+            m("span", { class: "material-symbols-outlined mr-2" }, "link"),
+            label
+        ])
+    ];
+};
+
 // ── Voice Picker (profile sub-object) ────────────────────────────────
 // Custom renderer for voice on charPerson main tab.
 // Reads/writes entity.profile.voice directly and patches identity.profile.

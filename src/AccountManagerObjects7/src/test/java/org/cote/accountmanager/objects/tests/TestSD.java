@@ -16,6 +16,7 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.CivilUtil;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
@@ -33,7 +34,9 @@ import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.BinaryUtil;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -196,6 +199,90 @@ public class TestSD extends BaseTest {
 	
 	}
 	
+	/**
+	 * KI-29 — reimageApparel's server-side path (OlioService.reimageApparel -> SDUtil.generateMannequinImages)
+	 * used to discard everything the client sent except hires/seed, silently falling back to
+	 * hardcoded literals (model="sdXL_v10VAEFix.safetensors", scheduler="normal", sampler="dpmpp_2m",
+	 * cfg=7, steps=20) instead of the client's actual sdConfig. This test calls
+	 * generateMannequinImages directly with a real, fully-specified sdConfig whose model/sampler/
+	 * scheduler/cfg/steps deliberately differ from those hardcoded fallbacks, submits it to the LIVE
+	 * SwarmUI backend (test.swarm.server), and reads back the ACTUAL SWTxt2Img request object that
+	 * was sent — recorded verbatim as the "s2i" attribute on the resulting data.data record
+	 * (SDUtil.generateMannequinImages persists it for exactly this kind of verification) — to prove
+	 * the client's config values, not the fallback literals, reached the real request.
+	 */
+	@Test
+	public void TestGenerateMannequinImagesForwardsClientConfig() throws Exception {
+		logger.info("Test: generateMannequinImages forwards the caller's sdConfig (steps/cfg/sampler/scheduler/model/refinerModel) into the actual live SD/Swarm request instead of discarding it (KI-29)");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Realm");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		OlioContext ctx = OlioTestUtil.getContext(orgContext, dataPath);
+		List<BaseRecord> realms = ctx.getRealms();
+		assertTrue("Expected at least one realm", realms.size() > 0);
+		BaseRecord popGrp = realms.get(0).get(OlioFieldNames.FIELD_POPULATION);
+		assertNotNull("Expected a population group", popGrp);
+		List<BaseRecord> pop = OlioUtil.listGroupPopulation(ctx, popGrp);
+		assertTrue("Expected a population", pop.size() > 0);
+
+		Random rand = new Random();
+		BaseRecord person = pop.get(rand.nextInt(pop.size()));
+
+		/// Cold/tier-3 reliably yields multiple wearables (see TestOlioGameFeatures#TestContextApparelIndustrial)
+		BaseRecord apparel = ApparelUtil.contextApparel(ctx, person, 3, CivilUtil.ClimateType.COLD);
+		assertNotNull("Apparel should not be null", apparel);
+		if(apparel.get(FieldNames.FIELD_NAME) == null) {
+			apparel.setValue(FieldNames.FIELD_NAME, "KI29-Test-Apparel-" + UUID.randomUUID());
+		}
+		List<BaseRecord> wearables = apparel.get(OlioFieldNames.FIELD_WEARABLES);
+		assertNotNull("Wearables list should not be null", wearables);
+		assertTrue("Expected at least one wearable", wearables.size() > 0);
+
+		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, testProperties.getProperty("test.swarm.server"));
+
+		String expectModel = testProperties.getProperty("test.swarm.model");
+		String expectSampler = "euler_ancestral";
+		String expectScheduler = "karras";
+		int expectCfg = 11;
+		int expectSteps = 33;
+
+		BaseRecord sdConfig = SDUtil.randomSDConfig();
+		sdConfig.setValue("model", expectModel);
+		sdConfig.setValue("refinerModel", testProperties.getProperty("test.swarm.refinerModel"));
+		sdConfig.setValue("sampler", expectSampler);
+		sdConfig.setValue("scheduler", expectScheduler);
+		sdConfig.setValue("cfg", expectCfg);
+		sdConfig.setValue("steps", expectSteps);
+		sdConfig.setValue("hires", false);
+
+		String apparelName = apparel.get(FieldNames.FIELD_NAME);
+		List<BaseRecord> images = sdu.generateMannequinImages(testUser1, "~/Gallery/Apparel/" + apparelName, apparel, sdConfig, false, -1);
+		assertTrue("Expected at least one generated image", images.size() > 0);
+
+		for(BaseRecord img : images) {
+			// The actual request object sent to the live SD/Swarm server — recorded verbatim by
+			// generateMannequinImages itself (not test instrumentation) as the "s2i" attribute.
+			String s2iJson = AttributeUtil.getAttributeValue(img, "s2i", (String)null);
+			assertNotNull("Expected an 's2i' attribute recording the actual live request sent", s2iJson);
+			SWTxt2Img sentRequest = JSONUtil.importObject(s2iJson, SWTxt2Img.class);
+			assertNotNull("Should be able to parse the recorded request", sentRequest);
+
+			assertEquals("model reaching the live request should match the client's config, not the hardcoded fallback (sdXL_v10VAEFix.safetensors)", expectModel, sentRequest.getModel());
+			assertEquals("sampler reaching the live request should match the client's config, not the hardcoded fallback (dpmpp_2m)", expectSampler, sentRequest.getSampler());
+			assertEquals("scheduler reaching the live request should match the client's config, not the hardcoded fallback (normal)", expectScheduler, sentRequest.getScheduler());
+			assertEquals("cfg reaching the live request should match the client's config, not the hardcoded fallback (7)", expectCfg, sentRequest.getCfgScale());
+			assertEquals("steps reaching the live request should match the client's config, not the hardcoded fallback (20)", expectSteps, sentRequest.getSteps());
+
+			byte[] bytes = ByteModelUtil.getValue(img);
+			assertNotNull("Expected image bytes", bytes);
+			assertTrue("Expected non-empty image bytes", bytes.length > 0);
+			String safeName = ((String)img.get(FieldNames.FIELD_NAME)).replaceAll("[^a-zA-Z0-9-]", "_");
+			FileUtil.emitFile("./img-ki29-" + safeName + ".png", bytes);
+			logger.info("KI-29 live-verified mannequin image: " + img.get(FieldNames.FIELD_NAME) + " model=" + sentRequest.getModel() + " sampler=" + sentRequest.getSampler() + " scheduler=" + sentRequest.getScheduler() + " cfg=" + sentRequest.getCfgScale() + " steps=" + sentRequest.getSteps());
+		}
+	}
+
 	public void TestSwarmAPI() {
 		logger.info("Test Swarm API");
 		String server = testProperties.getProperty("test.swarm.server");

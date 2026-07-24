@@ -446,7 +446,8 @@ public class TestPictureBookUtilE2E extends BaseTest {
 		// ==================================================================
 		BaseRecord meta;
 		try {
-			meta = PictureBookUtil.extract(testUser, workObjectId, 3, chatConfigName, "sci-fi", bookName);
+			meta = PictureBookUtil.extract(testUser, workObjectId, 3, chatConfigName, "sci-fi", bookName,
+				testProperties.getProperty("test.datagen.path"));
 		} catch (PictureBookException pbe) {
 			fail("PictureBookUtil.extract() threw PictureBookException(status=" + pbe.getStatus()
 				+ ", message=" + pbe.getMessage() + ")");

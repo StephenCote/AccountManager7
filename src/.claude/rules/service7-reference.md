@@ -330,7 +330,7 @@ String encoded = Base64.encode(RecordSerializer.toJson(query));
 **Query JSON structure** (for POST to `/rest/model/search`):
 ```json
 {
-    "schema": "query",
+    "schema": "io.query",
     "type": "olio.char.person",
     "organizationId": 123,
     "request": ["id", "name", "objectId", "statistics"],

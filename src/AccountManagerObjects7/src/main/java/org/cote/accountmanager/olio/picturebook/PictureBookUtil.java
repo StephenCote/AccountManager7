@@ -11,6 +11,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -19,8 +21,12 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.CharacterUtil;
 import org.cote.accountmanager.olio.CivilUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
@@ -28,6 +34,7 @@ import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.llm.PromptResourceUtil;
+import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
@@ -39,7 +46,9 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
@@ -97,8 +106,20 @@ public class PictureBookUtil {
     // Default scene count when not specified — LLM decides actual count
     public static final int MAX_SCENES_DEFAULT = 10;
 
-    public static final String NEG_PROMPT =
-        "blurry, lowres, bad anatomy, extra limbs, watermark, text, logo, cartoon, anime, nsfw, deformed, disfigured, ugly, duplicate, mutated, out of frame";
+    // A leftover "{name}"-shaped token in a prompt template after var substitution means the
+    // caller's vars map didn't match what the template actually needs — see callLlmInternal's
+    // guard for the full explanation (promptTemplateOverride cross-purpose contamination).
+    private static final Pattern UNSUBSTITUTED_PLACEHOLDER = Pattern.compile("\\{[a-zA-Z][a-zA-Z0-9_]*\\}");
+
+    // Quality/anatomy negative prompt only — deliberately NOT style-exclusionary. PictureBook
+    // supports multiple styles (illustration/anime/photograph/movie/art — see ALLOWED_STYLES/
+    // SWUtil.styleClause()); hardcoding "cartoon, anime" here would silently fight a user's own
+    // style selection. Also deliberately excludes any censorship term ("nsfw" etc.) — this
+    // project's content policy is explicit that character/apparel art is not filtered/censored
+    // (see AccountManagerUx752/CLAUDE.md's Content Policy). Reuses NarrativeUtil's own
+    // general-purpose negative prompt (used for character portraits) rather than maintaining a
+    // second, divergent copy.
+    public static final String NEG_PROMPT = NarrativeUtil.getDefaultNegativePrompt();
 
     // Allowed style values — mirrors configModel.json's style `limit`. Client-supplied style is
     // clamped to this set so no arbitrary text flows into LLM/FLUX prompt vars.
@@ -503,24 +524,57 @@ public class PictureBookUtil {
     private static String resolveScenePrompt(BaseRecord user, BaseRecord scene, BaseRecord chatConfig,
             String action, String setting, String mood, String style, List<String> charNarrations, String promptTemplateOverride) {
         String cached = getSceneTextField(scene, "scenePrompt");
-        if (cached != null && !cached.isBlank()) return cached;
-
+        // Self-heal: a scene generated before the guards in isErrorOrEmptyPayload/callLlmInternal
+        // existed may have a conversational-refusal or unsubstituted-placeholder string cached as
+        // its "scenePrompt" (see KI-31 follow-up) — don't trust the cache in that case, regenerate.
         String charNarrationsText = String.join("\n", charNarrations);
-        Map<String, String> vars = new LinkedHashMap<>();
-        vars.put("setting", setting);
-        vars.put("action", action);
-        vars.put("mood", mood);
-        vars.put("charNarrations", charNarrationsText.isEmpty() ? "(no characters in this scene)" : charNarrationsText);
-        String scenePrompt = callLlm(user, chatConfig, "pictureBook.scene-image-prompt", vars, promptTemplateOverride);
-        if (scenePrompt == null || scenePrompt.isBlank()) {
-            logger.warn("Scene-image prompt LLM call failed — falling back to raw concatenation");
-            StringBuilder fallback = new StringBuilder();
-            if (!charNarrationsText.isEmpty()) fallback.append(charNarrationsText).append(". ");
-            if (action != null && !action.isEmpty()) fallback.append("They are ").append(action).append(". ");
-            if (setting != null && !setting.isEmpty()) fallback.append("Setting: ").append(setting).append(". ");
-            if (mood != null && !mood.isEmpty()) fallback.append("Mood: ").append(mood).append(". ");
-            fallback.append(SWUtil.styleClause(style));
-            scenePrompt = fallback.toString();
+        boolean hasRealInputNow = (setting != null && !setting.isBlank())
+            || (action != null && !action.isBlank())
+            || (mood != null && !mood.isBlank())
+            || !charNarrationsText.isEmpty();
+        if (cached != null && !cached.isBlank() && !isErrorOrEmptyPayload(cached)) {
+            // Second self-heal (2026-07-23, found live on Stephen's /Public catatone book): if
+            // setting/action/mood/characters are STILL blank right now, the only thing this method
+            // can legitimately produce (per the guard below) is SWUtil.styleClause(style)'s fixed
+            // text — anything else cached must be a pre-fix hallucination from a blank-input LLM
+            // call that produced plausible-but-unrelated content (not error-shaped, so the check
+            // above never caught it). This is a precise check, not a fuzzy content-similarity guess:
+            // with the guard in place, blank input can never again produce anything but that one
+            // known string, so a mismatch is conclusive, not a heuristic.
+            if (hasRealInputNow || SWUtil.styleClause(style).equals(cached)) return cached;
+            logger.warn("Scene-image prompt: cached value doesn't match blank-input's only legitimate "
+                + "output even though setting/action/mood/characters are still blank — this must be a "
+                + "pre-fix hallucinated result; discarding and regenerating");
+        }
+
+        // Same principle as resolveLandscapePrompt's guard: don't ask the LLM to invent a scene
+        // from nothing. If setting/action/mood are all blank AND there are no character
+        // descriptions either, there is no real information for the LLM to work with — it will
+        // fabricate something plausible-but-disconnected rather than error, which then gets cached
+        // as if it were a real result (see the landscape-prompt guard's fuller explanation).
+        String scenePrompt;
+        if (!hasRealInputNow) {
+            logger.warn("Scene-image prompt: setting/action/mood/characters are all blank — skipping "
+                + "the LLM call and using the deterministic fallback instead of risking an unrelated "
+                + "hallucinated result");
+            scenePrompt = SWUtil.styleClause(style);
+        } else {
+            Map<String, String> vars = new LinkedHashMap<>();
+            vars.put("setting", setting);
+            vars.put("action", action);
+            vars.put("mood", mood);
+            vars.put("charNarrations", charNarrationsText.isEmpty() ? "(no characters in this scene)" : charNarrationsText);
+            scenePrompt = callLlm(user, chatConfig, "pictureBook.scene-image-prompt", vars, promptTemplateOverride);
+            if (isErrorOrEmptyPayload(scenePrompt)) {
+                logger.warn("Scene-image prompt LLM call failed — falling back to raw concatenation");
+                StringBuilder fallback = new StringBuilder();
+                if (!charNarrationsText.isEmpty()) fallback.append(charNarrationsText).append(". ");
+                if (action != null && !action.isEmpty()) fallback.append("They are ").append(action).append(". ");
+                if (setting != null && !setting.isEmpty()) fallback.append("Setting: ").append(setting).append(". ");
+                if (mood != null && !mood.isEmpty()) fallback.append("Mood: ").append(mood).append(". ");
+                fallback.append(SWUtil.styleClause(style));
+                scenePrompt = fallback.toString();
+            }
         }
         updateSceneTextField(user, scene, "scenePrompt", scenePrompt);
         return scenePrompt;
@@ -677,17 +731,49 @@ public class PictureBookUtil {
     private static String resolveLandscapePrompt(BaseRecord user, BaseRecord scene, BaseRecord chatConfig,
             String setting, String mood, String style, String promptTemplateOverride) {
         String cached = getSceneTextField(scene, "landscapePrompt");
-        if (cached != null && !cached.isBlank()) return cached;
+        // Confirmed live 2026-07-23 (Stephen's /Public catatone book): when setting/mood are both
+        // blank, the LLM was still called anyway — with a wire request literally reading "SETTING: \n
+        // MOOD: \nTIME: \nSTYLE: photograph" — and it does NOT refuse or error; it invents a
+        // plausible-but-entirely-unrelated landscape (repeatedly: "alpine meadow ... crystal-clear
+        // river ... snow-capped mountains" for a dystopian rain-soaked city scene). That response is
+        // well-formed, coherent prompt text — not JSON-shaped, not a conversational refusal, not an
+        // unsubstituted placeholder — so isErrorOrEmptyPayload's guards (KI-31/its follow-up) never
+        // catch it, and it gets cached and reused forever, surviving unrelated fixes entirely (the
+        // exact same hallucinated text was served again, byte-for-byte, in a later run after the
+        // negative-prompt fix landed, proving it was a stale cache, not a fresh LLM call). Fix:
+        // don't ask the LLM to invent a landscape from nothing — if there is no real setting/mood
+        // text at all, skip the LLM call and go straight to the deterministic fallback, same as an
+        // LLM failure would. Garbage/absent input never becomes a confident-looking wrong answer.
+        boolean hasRealInput = (setting != null && !setting.isBlank()) || (mood != null && !mood.isBlank());
+        if (cached != null && !cached.isBlank() && !isErrorOrEmptyPayload(cached)) {
+            // Second self-heal: if setting/mood are STILL blank right now, the only thing this
+            // method can legitimately produce (per the guard below) is the fixed string "A detailed
+            // environment" — anything else cached must be a pre-fix hallucination from a blank-input
+            // LLM call. Precise, not a fuzzy content-similarity guess: with the guard in place, blank
+            // input can never again produce anything but that one string, so a mismatch is conclusive.
+            if (hasRealInput || "A detailed environment".equals(cached)) return cached;
+            logger.warn("Landscape prompt: cached value doesn't match blank-input's only legitimate "
+                + "output (\"A detailed environment\") even though setting/mood are still blank — "
+                + "this must be a pre-fix hallucinated result; discarding and regenerating");
+        }
 
-        Map<String, String> landVars = new LinkedHashMap<>();
-        landVars.put("setting", setting);
-        landVars.put("mood", mood);
-        landVars.put("time", "");
-        landVars.put("style", (style != null && !style.isEmpty()) ? style : "illustration");
-        String landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars, promptTemplateOverride);
-        if (landscapePrompt == null || landscapePrompt.isBlank()) {
-            logger.warn("Landscape prompt failed — falling back to setting text");
-            landscapePrompt = setting.isEmpty() ? "A detailed environment" : setting;
+        String landscapePrompt;
+        if (!hasRealInput) {
+            logger.warn("Landscape prompt: setting and mood are both blank — skipping the LLM call "
+                + "(it cannot describe a scene it was given no information about) and using the "
+                + "deterministic fallback instead of risking an unrelated hallucinated result");
+            landscapePrompt = "A detailed environment";
+        } else {
+            Map<String, String> landVars = new LinkedHashMap<>();
+            landVars.put("setting", setting);
+            landVars.put("mood", mood);
+            landVars.put("time", "");
+            landVars.put("style", (style != null && !style.isEmpty()) ? style : "illustration");
+            landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars, promptTemplateOverride);
+            if (isErrorOrEmptyPayload(landscapePrompt)) {
+                logger.warn("Landscape prompt failed — falling back to setting text");
+                landscapePrompt = setting.isEmpty() ? "A detailed environment" : setting;
+            }
         }
         updateSceneTextField(user, scene, "landscapePrompt", landscapePrompt);
         return landscapePrompt;
@@ -737,6 +823,75 @@ public class PictureBookUtil {
         if (scene == null) throw new PictureBookException(404, "Scene not found");
         updateSceneStatus(user, scene, status, null);
     }
+
+    /**
+     * Detect content that LOOKS like an upstream error/empty payload rather than real prompt
+     * text — see KI-31. Live logs showed a 200-OK LLM response whose message content was itself
+     * an error-shaped JSON object (e.g. {@code {"error":"No story text provided"}}) or an empty
+     * JSON array ({@code []}); neither is null/blank, so the old null/blank-only guard in
+     * {@link #resolveScenePrompt} / {@link #resolveLandscapePrompt} let it through to be cached
+     * and forwarded straight into {@code SDUtil.txt2img} as literal prompt text.
+     *
+     * <p>Deliberately kept local to those two prompt-resolvers rather than centralized inside
+     * {@link #callLlmInternal} itself: that method has other callers (extract-chunk,
+     * extract-scenes, extract-character, scene-blurb) whose responses are JSON objects/arrays by
+     * design and are already parsed defensively by {@link #parseLlmJsonArray}/
+     * {@link #parseLlmJsonObject} (which tolerate malformed/empty JSON on their own) — rejecting
+     * any `{`/`[`-shaped content at that shared choke point would risk misclassifying a
+     * legitimately-shaped extraction result as an error.
+     *
+     * <p>Also catches a second failure shape (found live 2026-07-23, same root incident as the
+     * unsubstituted-placeholder guard in {@link #callLlmInternal}): a plain-prose conversational
+     * clarifying question — e.g. {@code "I'm happy to help identify the most visually compelling
+     * scenes, but I need the actual story text and the number of scenes you'd like selected."} —
+     * which is neither JSON-shaped nor blank, so the checks above miss it entirely. This happened
+     * when a promptTemplateOverride meant for scene EXTRACTION was applied to a scene-image/
+     * landscape-prompt call instead; the LLM, given a template asking for {@code {text}}/
+     * {@code {count}} that were never filled in (wrong vars for that template), reasonably asked
+     * for them back in prose instead of returning an SD prompt. {@link #callLlmInternal}'s
+     * placeholder guard now stops this at construction time for NEW calls, but this method is
+     * also used to validate an already-CACHED prompt on read (see {@link #resolveScenePrompt}/
+     * {@link #resolveLandscapePrompt}) so a scene poisoned by this bug before the fix landed
+     * self-heals the next time it's touched, instead of serving the same garbage forever.
+     *
+     * @param content raw (already {@link #stripThink}-ed) LLM message content, may be null
+     * @return true if content is null/blank, an empty JSON array, a JSON object containing an
+     *         "error" key, or looks like a conversational request for missing input
+     */
+    public static boolean isErrorOrEmptyPayload(String content) {
+        if (content == null) return true;
+        String trimmed = content.trim();
+        if (trimmed.isEmpty()) return true;
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            try {
+                if (trimmed.startsWith("[")) {
+                    List<Object> arr = JSONUtil.getList(trimmed, Object.class, null);
+                    return (arr == null || arr.isEmpty());
+                } else {
+                    Map<String, Object> obj = JSONUtil.getMap(trimmed.getBytes(), String.class, Object.class);
+                    return (obj != null && obj.containsKey("error"));
+                }
+            } catch (Exception e) {
+                // Not parseable as JSON despite the leading brace/bracket — treat as real (if odd)
+                // prompt text rather than silently discarding it; not the failure shape this guards.
+                return false;
+            }
+        }
+        // A leftover unsubstituted "{name}" placeholder in what should be finished prompt text —
+        // the same tell-tale sign callLlmInternal's construction-time guard looks for, kept here
+        // too so an already-cached value carrying one (from before that guard existed) self-heals.
+        if (UNSUBSTITUTED_PLACEHOLDER.matcher(trimmed).find()) return true;
+        return CONVERSATIONAL_REFUSAL.matcher(trimmed).find();
+    }
+
+    // Heuristic for "this reads like the assistant asking for missing input", not an SD prompt.
+    // Real SD prompts are comma/tag-heavy declarative fragments; they don't address the reader in
+    // first person or ask questions. Deliberately conservative (specific phrases + a question mark
+    // requirement on most branches) to avoid false-positiving on legitimate prompt text.
+    private static final Pattern CONVERSATIONAL_REFUSAL = Pattern.compile(
+        "(?i)(i'm happy to help|i am happy to help|could you (please )?provide|can you (please )?provide|"
+        + "i need the actual|i don't have (the|any) (story|text)|please provide the (story|actual) text|"
+        + "the number of scenes you.d like)");
 
     /**
      * Parse LLM JSON response into a list of maps, stripping markdown fences if present.
@@ -871,6 +1026,29 @@ public class PictureBookUtil {
                 }
             }
         }
+        // Guard: refuse to call the LLM if the resolved template still has unsubstituted
+        // "{name}"-style placeholders after applying the caller's vars. Root cause this closes:
+        // promptTemplateOverride is a single field applied by the wizard's "single prompt
+        // template" mode to EVERY LLM call (extract-scenes, scene-image-prompt, landscape-prompt
+        // alike — see resolveScenePrompt/resolveLandscapePrompt/extractScenesOnly callers) — if a
+        // user picks a custom template meant for one purpose (e.g. pictureBook.extract-scenes,
+        // which expects {text}/{count}) it silently overrides an unrelated call (e.g.
+        // scene-image-prompt, whose vars are setting/action/mood/charNarrations). The unfilled
+        // template still gets sent to the LLM, which reasonably responds with a conversational
+        // clarifying question ("I need the actual story text and the number of scenes...") — prose,
+        // not JSON/empty, so isErrorOrEmptyPayload's shape check doesn't catch it, and it was
+        // getting cached and forwarded to SDUtil.txt2img as literal prompt text (confirmed live,
+        // 2026-07-23). Catching the malformed CONSTRUCTION here, before the network call, is more
+        // robust than trying to pattern-match every way a confused LLM might phrase "I don't have
+        // enough information" after the fact.
+        Matcher unresolved = UNSUBSTITUTED_PLACEHOLDER.matcher(userTpl);
+        if (unresolved.find()) {
+            logger.error("Refusing to call LLM for prompt '" + promptName + "' — template has unsubstituted "
+                + "placeholder(s) (first: '" + unresolved.group() + "'), most likely because a "
+                + "promptTemplateOverride belonging to a different operation was applied here. Vars supplied: "
+                + (vars != null ? vars.keySet() : "none"));
+            return null;
+        }
         // These prompt templates put /no_think at the end of the SYSTEM prompt, but Qwen's own
         // documented convention for this inline toggle checks the LATEST USER message, not the
         // system prompt — confirmed live that think:false (already sent both at the top-level
@@ -915,9 +1093,16 @@ public class PictureBookUtil {
 
     /**
      * Internal chunked extraction — shared by extract-scenes-only (auto-chunk) and extract-chunked.
+     *
+     * @param cancelToken KI-10: optional cancellation flag, mirroring {@code SummarizeProgress}'s
+     *   use in {@code ChatUtil}'s map/reduce summarization loops. Checked once per chunk, at the
+     *   top of the loop — a cancelled request stops making further LLM calls and returns whatever
+     *   scenes were already extracted from prior chunks, rather than running to completion. May be
+     *   null (no cancellation support requested by the caller).
      */
     @SuppressWarnings("unchecked")
-    private static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text) {
+    private static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
+            SummarizeProgress cancelToken) {
         int chunkSize = 2000;
         int overlap = 200;
         List<String> chunks = new ArrayList<>();
@@ -936,8 +1121,24 @@ public class PictureBookUtil {
             if (end >= text.length()) break;
         }
 
+        // KI-10: populate progress (total/current), same as ChatUtil's mapSummarize/reduceSummaries
+        // do with their own SummarizeProgress — lets a caller/test observe how many chunks have
+        // actually completed, not just whether cancellation was requested.
+        if (cancelToken != null) {
+            cancelToken.setTotal(chunks.size());
+            cancelToken.setCurrent(0);
+        }
+
         List<Map<String, Object>> sceneList = new ArrayList<>();
         for (int ci = 0; ci < chunks.size(); ci++) {
+            // KI-10: checkpoint at the top of the chunk loop — a mid-run cancel (POST
+            // /{workObjectId}/cancel) stops further LLM calls immediately; scenes already
+            // extracted from earlier chunks are still returned, not discarded.
+            if (cancelToken != null && cancelToken.isCancelled()) {
+                logger.info("extractChunkedInternal: cancelled after " + ci + "/" + chunks.size()
+                        + " chunks — returning " + sceneList.size() + " scenes extracted so far");
+                break;
+            }
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_awesome",
                     "Extracting chunk " + (ci + 1) + "/" + chunks.size() + "...");
             String previousJson = sceneList.isEmpty() ? "[]" : JSONUtil.exportObject(sceneList);
@@ -945,6 +1146,11 @@ public class PictureBookUtil {
             vars.put("previousScenes", previousJson);
             vars.put("chunk", chunks.get(ci));
             String llmResp = callLlm(user, chatConfig, "pictureBook.extract-chunk", vars);
+            // KI-10: count this chunk as processed (the LLM call was actually made) regardless of
+            // whether the response parsed cleanly — progress reflects "chunks attempted", matching
+            // ChatUtil's mapSummarize incrementCurrent() placement (right after the LLM call, not
+            // gated on the result being usable).
+            if (cancelToken != null) cancelToken.incrementCurrent();
             if (llmResp == null || llmResp.isEmpty()) continue;
             Map<String, Object> chunkResult = parseLlmJsonObject(llmResp);
             if (chunkResult == null || chunkResult.isEmpty()) {
@@ -1134,10 +1340,24 @@ public class PictureBookUtil {
      * id/objectId immediately and can be safely linked to a parent via a PATCH-shaped update.
      */
     private static BaseRecord createPersistedForeignInstance(BaseRecord user, String modelName) {
+        return createPersistedForeignInstance(user, modelName, null);
+    }
+
+    /**
+     * KI-30 overload: same as {@link #createPersistedForeignInstance(BaseRecord, String)}, but
+     * when {@code baselineSource} is non-null, seeds the new instance's own content field values
+     * from it (via {@link #copyBaselineFieldValues}) BEFORE persisting — so the one persisted
+     * instance carries {@code CharacterUtil.randomPerson()}'s randomized baseline values
+     * (statistics/instinct/personality/state/store/profile) instead of an empty placeholder.
+     */
+    private static BaseRecord createPersistedForeignInstance(BaseRecord user, String modelName, BaseRecord baselineSource) {
         try {
             ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH,
                     "~/" + RecordFactory.getSchema(modelName).getGroup());
             BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(modelName, user, null, plist);
+            if (baselineSource != null) {
+                copyBaselineFieldValues(baselineSource, inst);
+            }
             BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, inst);
             if (created == null) {
                 logger.error("Failed to persist new " + modelName + " instance — AccessPoint.create returned null (denied or persist failure)");
@@ -1146,6 +1366,99 @@ public class PictureBookUtil {
         } catch (Exception e) {
             logger.error("Failed to create persisted " + modelName + " instance: " + e.getMessage(), e);
             return null;
+        }
+    }
+
+    /**
+     * KI-30: build a fully-populated random baseline character via the same population-
+     * generation recipe ordinary Olio world population uses — {@code CharacterUtil.randomPerson()}
+     * followed by {@code StatisticsUtil.rollStatistics}/{@code rollHeight} and
+     * {@code ProfileUtil.rollPersonality} (mirrors {@code CharacterUtil.java}'s own population
+     * loop, ~line 415-423, and {@code EvolutionUtil.java:124-126}'s birth path — the only two real
+     * precedents for calling {@code randomPerson()}; it does not roll statistics/personality on
+     * its own). LLM-extracted overrides are applied ON TOP of this baseline afterward by
+     * {@code createCharPerson()} itself — this method only builds the baseline.
+     *
+     * <p>Returns an in-memory, UNPERSISTED {@code olio.charPerson} whose own statistics/instinct/
+     * personality/state/store/profile sub-records are themselves in-memory placeholders scoped to
+     * the Olio world's own directories (population.path, statistics.path, etc. — see
+     * {@code CharacterUtil.randomPerson}). Callers copy field VALUES from these placeholders onto
+     * their own persisted, book-scoped records (see {@link #copyBaselineFieldValues}) rather than
+     * reusing the placeholders directly, so PictureBook character data never leaks into the Olio
+     * world's population hierarchy.
+     *
+     * <p>Best-effort: returns null (falling back to the pre-KI-30 sparse baseline) on a missing
+     * {@code dataPath}, {@code OlioContext} init failure, etc., rather than throwing — this is an
+     * enhancement to character richness, not a hard requirement for character creation.
+     */
+    private static BaseRecord buildRandomBaseline(BaseRecord user, String dataPath, String preferredLastName, int ageApprox) {
+        if (dataPath == null || dataPath.isEmpty()) {
+            logger.warn("No datagen.path configured — skipping CharacterUtil.randomPerson baseline; "
+                    + "character will use the pre-KI-30 sparse baseline instead");
+            return null;
+        }
+        try {
+            OlioContext octx = OlioContextUtil.getOlioContext(user, dataPath);
+            if (octx == null) {
+                logger.warn("OlioContextUtil.getOlioContext returned null — skipping random baseline generation");
+                return null;
+            }
+            BaseRecord baseline = CharacterUtil.randomPerson(octx,
+                    (preferredLastName != null && !preferredLastName.isEmpty()) ? preferredLastName : null);
+            if (baseline == null) return null;
+
+            BaseRecord baseStats = baseline.get(OlioFieldNames.FIELD_STATISTICS);
+            List<String> baseRace = baseline.get(OlioFieldNames.FIELD_RACE);
+            String baseGender = baseline.get(FieldNames.FIELD_GENDER);
+            if (baseStats != null) {
+                StatisticsUtil.rollStatistics(baseStats, ageApprox);
+                StatisticsUtil.rollHeight(baseStats, baseRace, baseGender, ageApprox);
+            }
+            BaseRecord basePersonality = baseline.get(FieldNames.FIELD_PERSONALITY);
+            if (basePersonality != null) {
+                ProfileUtil.rollPersonality(basePersonality);
+            }
+            return baseline;
+        } catch (Exception e) {
+            logger.warn("Failed to build random baseline person (lastName=" + preferredLastName + "): " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Copies non-identity "content" field values from a randomly-generated baseline sub-record
+     * (statistics/instinct/personality/state/store/profile from {@link #buildRandomBaseline}) onto
+     * a freshly-instantiated, about-to-be-persisted target of the same model — the mechanism
+     * KI-30 calls "re-target/copy the generated fields onto the book's own charsGroup-scoped
+     * charPerson record". Sets field values directly (source.get -> target.set) rather than
+     * {@code BaseRecord.copyIntoRecord}, which replaces the target's ENTIRE field list with only
+     * the named fields — that would wipe out the target's own path/groupId/name already set by
+     * {@code createPersistedForeignInstance}'s {@code Factory.newInstance} call.
+     *
+     * <p>Deliberately excludes identity/path/groupId/parentId/name fields (the target already has
+     * its own correctly-scoped values for those) and foreign fields (avoids cross-linking to the
+     * baseline's own in-memory, unpersisted sub-sub-records, e.g. {@code store.apparel}) — only
+     * plain/list-of-primitive content fields are copied.
+     */
+    private static void copyBaselineFieldValues(BaseRecord source, BaseRecord target) {
+        if (source == null || target == null) return;
+        try {
+            ModelSchema ms = RecordFactory.getSchema(target.getSchema());
+            for (FieldSchema fs : ms.getFields()) {
+                String n = fs.getName();
+                if (fs.isIdentity() || fs.isVirtual() || fs.isEphemeral() || fs.isForeign()) continue;
+                if (FieldNames.FIELD_NAME.equals(n) || FieldNames.FIELD_PATH.equals(n)
+                        || FieldNames.FIELD_GROUP_ID.equals(n) || FieldNames.FIELD_PARENT_ID.equals(n)) continue;
+                try {
+                    Object val = source.get(n);
+                    if (val != null) target.set(n, val);
+                } catch (Exception ignoredFieldCopyFailure) {
+                    // Field not present/settable on source or target for this model — skip it,
+                    // not fatal to baseline seeding as a whole.
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("copyBaselineFieldValues failed for " + target.getSchema() + ": " + e.getMessage());
         }
     }
 
@@ -1190,10 +1503,16 @@ public class PictureBookUtil {
 
     /**
      * Create an olio.charPerson for an extracted character, apply outfit, call narrate.
+     *
+     * @param dataPath the {@code datagen.path} init-param value (see {@code GameService}'s
+     *   identical use), needed by {@link #buildRandomBaseline} to acquire an {@code OlioContext}
+     *   via {@code OlioContextUtil.getOlioContext(user, dataPath)} — KI-30. May be null/empty, in
+     *   which case baseline generation is skipped and the character falls back to the pre-KI-30
+     *   sparse-field creation path (non-fatal).
      */
     @SuppressWarnings("unchecked")
     private static BaseRecord createCharPerson(BaseRecord user, Map<String, Object> charData, BaseRecord charsGroup, String genre,
-            List<String> failedApparelOut, List<String> failedStatisticsOut) {
+            List<String> failedApparelOut, List<String> failedStatisticsOut, String dataPath) {
         String name = (String) charData.get("name");
         if (name == null || name.isEmpty()) return null;
 
@@ -1213,6 +1532,15 @@ public class PictureBookUtil {
         BaseRecord existing = IOSystem.getActiveContext().getAccessPoint().find(user, eq);
         if (existing != null) return existing;
 
+        // KI-30: run the general random-character generator FIRST to get a fully-populated
+        // baseline (statistics/instinct/personality/state/store/profile/race/alignment), then
+        // apply the LLM-extracted overrides on top of it below — instead of building the
+        // charPerson from an almost-empty record. Age is needed by rollStatistics/rollHeight, so
+        // it's parsed here (ahead of its other, pre-existing use further down) rather than
+        // duplicating the parseAgeApprox() call.
+        int age = parseAgeApprox(charData);
+        BaseRecord baseline = buildRandomBaseline(user, dataPath, lastName, age);
+
         try {
             ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH,
                     charsGroup.get(FieldNames.FIELD_PATH));
@@ -1230,13 +1558,24 @@ public class PictureBookUtil {
             String gender = (String) charData.get("gender");
             charPerson.set("gender", normalizeGender(gender));
 
+            // KI-30: race/alignment are plain (non-foreign) fields directly on charPerson, so the
+            // baseline value can be applied straight onto the in-memory record before create() —
+            // no separate persisted-instance/PATCH step needed, unlike the foreign sub-models
+            // below. Only applied when the LLM didn't already determine something more specific
+            // (it never extracts race/alignment today, so this is unconditional for now).
+            if (baseline != null) {
+                List<String> baseRace = baseline.get(OlioFieldNames.FIELD_RACE);
+                if (baseRace != null && !baseRace.isEmpty()) charPerson.set(OlioFieldNames.FIELD_RACE, baseRace);
+                Object baseAlignment = baseline.get(FieldNames.FIELD_ALIGNMENT);
+                if (baseAlignment != null) charPerson.set(FieldNames.FIELD_ALIGNMENT, baseAlignment);
+            }
+
             // Age/ethnicity/skills — plain columns on identity.person/charPerson (not foreign/
             // referenced records), so these can be set directly before create(), same as gender.
             // NarrativeUtil.isMeaningful() filters literal placeholder strings the LLM emits for
             // fields it couldn't determine ("null", "n/a", "unknown", etc. — confirmed live: this
             // extraction prompt returns the literal text "null" for ethnicity far more often than
             // a real JSON null, which a plain != null/isBlank() check would not catch).
-            int age = parseAgeApprox(charData);
             if (age > 0) charPerson.set("age", age);
             Object ethnicityObj = charData.get("ethnicity");
             if (ethnicityObj instanceof String && NarrativeUtil.isMeaningful((String) ethnicityObj)) {
@@ -1282,7 +1621,8 @@ public class PictureBookUtil {
             BaseRecord profile = charPerson.get("profile");
             Long existingProfileId = (profile != null) ? profile.get(FieldNames.FIELD_ID) : null;
             if (profile == null || existingProfileId == null || existingProfileId <= 0L) {
-                BaseRecord newProfile = createPersistedForeignInstance(user, ModelNames.MODEL_PROFILE);
+                BaseRecord newProfile = createPersistedForeignInstance(user, ModelNames.MODEL_PROFILE,
+                        baseline != null ? baseline.get(FieldNames.FIELD_PROFILE) : null);
                 if (newProfile == null) {
                     logger.error("Failed to create persisted profile for charPerson " + name);
                     return null;
@@ -1357,7 +1697,8 @@ public class PictureBookUtil {
             BaseRecord statistics = charPerson.get(OlioFieldNames.FIELD_STATISTICS);
             Long existingStatsId = (statistics != null) ? statistics.get(FieldNames.FIELD_ID) : null;
             if (statistics == null || existingStatsId == null || existingStatsId <= 0L) {
-                BaseRecord newStats = createPersistedForeignInstance(user, OlioModelNames.MODEL_CHAR_STATISTICS);
+                BaseRecord newStats = createPersistedForeignInstance(user, OlioModelNames.MODEL_CHAR_STATISTICS,
+                        baseline != null ? baseline.get(OlioFieldNames.FIELD_STATISTICS) : null);
                 if (newStats == null) {
                     logger.error("Failed to create persisted statistics for charPerson " + name);
                     return null;
@@ -1374,7 +1715,8 @@ public class PictureBookUtil {
             BaseRecord store = charPerson.get(FieldNames.FIELD_STORE);
             Long existingStoreId = (store != null) ? store.get(FieldNames.FIELD_ID) : null;
             if (store == null || existingStoreId == null || existingStoreId <= 0L) {
-                BaseRecord newStore = createPersistedForeignInstance(user, OlioModelNames.MODEL_STORE);
+                BaseRecord newStore = createPersistedForeignInstance(user, OlioModelNames.MODEL_STORE,
+                        baseline != null ? baseline.get(FieldNames.FIELD_STORE) : null);
                 if (newStore == null) {
                     logger.error("Failed to create persisted store for charPerson " + name);
                     return null;
@@ -1386,6 +1728,68 @@ public class PictureBookUtil {
                 }
                 charPerson.set(FieldNames.FIELD_STORE, newStore);
                 store = newStore;
+            }
+
+            // KI-30: instinct/personality/state — new, best-effort persisted foreign sub-records
+            // seeded from the random baseline (previously never created at all here; charPerson.
+            // instinct/personality/state stayed permanently null/unpersisted). Not hard-required
+            // like statistics/store above — nothing in the current PictureBook pipeline reads
+            // them yet, so a failure is logged and character creation continues rather than
+            // aborting.
+            if (baseline != null) {
+                try {
+                    BaseRecord instinct = charPerson.get(OlioFieldNames.FIELD_INSTINCT);
+                    Long existingInstinctId = (instinct != null) ? instinct.get(FieldNames.FIELD_ID) : null;
+                    if (instinct == null || existingInstinctId == null || existingInstinctId <= 0L) {
+                        BaseRecord newInstinct = createPersistedForeignInstance(user, OlioModelNames.MODEL_INSTINCT,
+                                baseline.get(OlioFieldNames.FIELD_INSTINCT));
+                        if (newInstinct != null) {
+                            BaseRecord linked = patchCharPersonField(user, charPerson, OlioFieldNames.FIELD_INSTINCT, newInstinct);
+                            if (linked != null) charPerson.set(OlioFieldNames.FIELD_INSTINCT, newInstinct);
+                            else logger.warn("Failed to link persisted instinct to charPerson " + name);
+                        } else {
+                            logger.warn("Failed to create persisted instinct for charPerson " + name);
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to seed instinct baseline for " + name + ": " + e.getMessage());
+                }
+
+                try {
+                    BaseRecord personality = charPerson.get(FieldNames.FIELD_PERSONALITY);
+                    Long existingPersonalityId = (personality != null) ? personality.get(FieldNames.FIELD_ID) : null;
+                    if (personality == null || existingPersonalityId == null || existingPersonalityId <= 0L) {
+                        BaseRecord newPersonality = createPersistedForeignInstance(user, ModelNames.MODEL_PERSONALITY,
+                                baseline.get(FieldNames.FIELD_PERSONALITY));
+                        if (newPersonality != null) {
+                            BaseRecord linked = patchCharPersonField(user, charPerson, FieldNames.FIELD_PERSONALITY, newPersonality);
+                            if (linked != null) charPerson.set(FieldNames.FIELD_PERSONALITY, newPersonality);
+                            else logger.warn("Failed to link persisted personality to charPerson " + name);
+                        } else {
+                            logger.warn("Failed to create persisted personality for charPerson " + name);
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to seed personality baseline for " + name + ": " + e.getMessage());
+                }
+
+                try {
+                    BaseRecord state = charPerson.get(FieldNames.FIELD_STATE);
+                    Long existingStateId = (state != null) ? state.get(FieldNames.FIELD_ID) : null;
+                    if (state == null || existingStateId == null || existingStateId <= 0L) {
+                        BaseRecord newState = createPersistedForeignInstance(user, OlioModelNames.MODEL_CHAR_STATE,
+                                baseline.get(FieldNames.FIELD_STATE));
+                        if (newState != null) {
+                            BaseRecord linked = patchCharPersonField(user, charPerson, FieldNames.FIELD_STATE, newState);
+                            if (linked != null) charPerson.set(FieldNames.FIELD_STATE, newState);
+                            else logger.warn("Failed to link persisted state to charPerson " + name);
+                        } else {
+                            logger.warn("Failed to create persisted state for charPerson " + name);
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to seed state baseline for " + name + ": " + e.getMessage());
+                }
             }
 
             // Best-effort statistics estimation + apparel wizard — enhancements on top of an
@@ -1500,6 +1904,16 @@ public class PictureBookUtil {
      */
     public static ScenesOnlyResult extractScenesOnly(BaseRecord user, String workObjectId, int count,
             String chatConfigName, String promptTemplateOverride) {
+        return extractScenesOnly(user, workObjectId, count, chatConfigName, promptTemplateOverride, null);
+    }
+
+    /**
+     * KI-10 overload: same as {@link #extractScenesOnly(BaseRecord, String, int, String, String)},
+     * plus an optional {@code cancelToken} threaded down to {@link #extractChunkedInternal} for the
+     * auto-chunk path (only path that makes multiple sequential LLM calls here).
+     */
+    public static ScenesOnlyResult extractScenesOnly(BaseRecord user, String workObjectId, int count,
+            String chatConfigName, String promptTemplateOverride, SummarizeProgress cancelToken) {
         BaseRecord work = findWork(user, workObjectId);
         if (work == null) throw new PictureBookException(404, "Work not found");
 
@@ -1515,7 +1929,7 @@ public class PictureBookUtil {
 
         // Auto-chunk if text exceeds 8000 chars
         if (text.length() > 8000) {
-            List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text);
+            List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken);
             return new ScenesOnlyResult(sceneList, true);
         }
 
@@ -1542,6 +1956,15 @@ public class PictureBookUtil {
      * Chunked scene extraction — kept for backward compatibility; extractScenesOnly now auto-chunks.
      */
     public static BaseRecord extractChunked(BaseRecord user, String workObjectId, String chatConfigName) {
+        return extractChunked(user, workObjectId, chatConfigName, null);
+    }
+
+    /**
+     * KI-10 overload: same as {@link #extractChunked(BaseRecord, String, String)}, plus an optional
+     * {@code cancelToken} threaded down to {@link #extractChunkedInternal}.
+     */
+    public static BaseRecord extractChunked(BaseRecord user, String workObjectId, String chatConfigName,
+            SummarizeProgress cancelToken) {
         BaseRecord work = findWork(user, workObjectId);
         if (work == null) throw new PictureBookException(404, "Work not found");
 
@@ -1555,7 +1978,7 @@ public class PictureBookUtil {
             chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
 
-        List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text);
+        List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken);
         BaseRecord result = buildResult();
         try {
             result.set("sceneList", sceneList);
@@ -1567,9 +1990,14 @@ public class PictureBookUtil {
 
     /**
      * Full extraction: scenes + characters + outfit + narrate. Returns .pictureBookMeta.
+     *
+     * @param dataPath the {@code datagen.path} init-param value, threaded down to
+     *   {@code createCharPerson} for KI-30's random-baseline-then-override character creation
+     *   (see {@code PictureBookService}, which reads it from the servlet context — mirrors
+     *   {@code GameService}'s identical use of the same init param).
      */
     public static BaseRecord extract(BaseRecord user, String workObjectId, int count, String chatConfigName,
-            String genre, String bookName) {
+            String genre, String bookName, String dataPath) {
         BaseRecord work = findWork(user, workObjectId);
         if (work == null) throw new PictureBookException(404, "Work not found");
 
@@ -1646,7 +2074,7 @@ public class PictureBookUtil {
             if (charData.isEmpty()) charData = new LinkedHashMap<>(entry.getValue());
             if (!charData.containsKey("name")) charData.put("name", cname);
 
-            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre, failedApparel, failedStatistics);
+            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath);
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
             } else {
@@ -1691,10 +2119,15 @@ public class PictureBookUtil {
     /**
      * Takes user-curated scene list from Step 2, creates book group, scene notes, extracts +
      * creates charPerson records, saves meta. Returns the .pictureBookMeta record.
+     *
+     * @param dataPath the {@code datagen.path} init-param value, threaded down to
+     *   {@code createCharPerson} for KI-30's random-baseline-then-override character creation —
+     *   see {@link #extract} for the same parameter.
      */
     @SuppressWarnings("unchecked")
     public static BaseRecord createFromScenes(BaseRecord user, String workObjectId, String chatConfigName,
-            String genre, String bookName, List<Map<String, Object>> sceneList, List<Map<String, Object>> charDataListIn) {
+            String genre, String bookName, List<Map<String, Object>> sceneList, List<Map<String, Object>> charDataListIn,
+            String dataPath) {
         BaseRecord work = findWork(user, workObjectId);
         if (work == null) throw new PictureBookException(404, "Work not found");
 
@@ -1789,7 +2222,7 @@ public class PictureBookUtil {
                 }
             }
 
-            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre, failedApparel, failedStatistics);
+            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath);
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
             } else {
@@ -2314,6 +2747,20 @@ public class PictureBookUtil {
      */
     public static void prepareSceneImagePrompts(BaseRecord user, List<String> sceneObjectIds,
             String chatConfigName, String style, String promptTemplateOverride) {
+        prepareSceneImagePrompts(user, sceneObjectIds, chatConfigName, style, promptTemplateOverride, null);
+    }
+
+    /**
+     * KI-10 overload: same as
+     * {@link #prepareSceneImagePrompts(BaseRecord, List, String, String, String)}, plus an
+     * optional {@code cancelToken} (mirrors {@code SummarizeProgress}'s use in {@code ChatUtil}'s
+     * map/reduce loops) checked at the top of the per-scene loop — a mid-batch cancel (POST
+     * /{bookObjectId}/cancel) stops making further per-scene LLM calls immediately. Scenes already
+     * processed keep their resolved/cached prompts; unprocessed scenes are left to fall back to
+     * their setting text at generation time (same as any other per-scene LLM failure).
+     */
+    public static void prepareSceneImagePrompts(BaseRecord user, List<String> sceneObjectIds,
+            String chatConfigName, String style, String promptTemplateOverride, SummarizeProgress cancelToken) {
         BaseRecord chatConfig = null;
         if (chatConfigName != null) {
             chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
@@ -2322,6 +2769,11 @@ public class PictureBookUtil {
         String effectiveStyle = (requestedStyle == null || ALLOWED_STYLES.stream().noneMatch(s -> s.equalsIgnoreCase(requestedStyle)))
                 ? "illustration" : requestedStyle;
         for (String sceneObjectId : sceneObjectIds) {
+            if (cancelToken != null && cancelToken.isCancelled()) {
+                logger.info("prepareSceneImagePrompts: cancelled — stopping before scene " + sceneObjectId
+                        + " (" + sceneObjectIds.indexOf(sceneObjectId) + "/" + sceneObjectIds.size() + " already processed)");
+                break;
+            }
             try {
                 Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneObjectId);
                 sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -2630,7 +3082,20 @@ public class PictureBookUtil {
 
     /**
      * Delete the book group contents (Scenes/, Characters/, meta) then the group itself.
-     * Explicit child deletion — AccessPoint.delete on a group does NOT cascade.
+     * Explicit child deletion — AccessPoint.delete on a group does NOT cascade — so
+     * {@link #deleteGroupRecursive(BaseRecord, BaseRecord)} walks and deletes every record nested
+     * under Scenes/Characters bottom-up before either sub-group (and, subsequently, the book group
+     * itself) is deleted. See KI-32: previously this method deleted exactly 4 top-level rows and
+     * left everything nested underneath (scenes, characters, generated images, nested subgroups)
+     * orphaned, which surfaced later as {@code PathProvider} "Parent auth.group index not found"
+     * log spam for any surviving record whose parentId chain climbed through one of the deleted-out
+     * -from-under-it intermediate groups.
+     *
+     * <p>Also deletes each character's own foreign single-model sub-records (profile, narrative,
+     * statistics, store, instinct, personality, state — see {@code createPersistedForeignInstance}),
+     * which are persisted under the acting user's own shared {@code ~/Profiles}/{@code ~/Narratives}
+     * /etc. buckets rather than grouped under the book's Characters subtree — this group-subtree
+     * walk would otherwise never reach them (closed 2026-07-23, previously a documented gap here).
      */
     public static boolean reset(BaseRecord user, String bookObjectId) {
         BaseRecord bookGroup = findBookGroup(user, bookObjectId);
@@ -2639,7 +3104,7 @@ public class PictureBookUtil {
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
         boolean ok = true;
 
-        // Delete sub-groups (Scenes/, Characters/) and their contents
+        // Recursively delete sub-groups (Scenes/, Characters/) and everything nested under them
         for (String sub : new String[]{"Scenes", "Characters"}) {
             String subPath = bookGroupPath + "/" + sub;
             BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
@@ -2647,9 +3112,9 @@ public class PictureBookUtil {
                     (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
             if (grp != null) {
                 try {
-                    IOSystem.getActiveContext().getAccessPoint().delete(user, grp);
+                    if (!deleteGroupRecursive(user, grp)) ok = false;
                 } catch (Exception e) {
-                    logger.warn("Failed to delete " + sub + " group: " + e.getMessage());
+                    logger.warn("Failed to recursively delete " + sub + " group: " + e.getMessage());
                     ok = false;
                 }
             }
@@ -2673,6 +3138,104 @@ public class PictureBookUtil {
             ok = false;
         }
 
+        return ok;
+    }
+
+    /**
+     * Recursively delete a group's contents bottom-up, then the group itself — entirely through
+     * {@code AccessPoint} (PBAC-respecting) per-record deletes, never the PBAC-bypassing raw
+     * {@code writer.delete(query)} pattern used elsewhere (e.g. {@code WorldUtil.cleanupWorld}),
+     * since this is a user-invoked action that must still respect ownership/authorization. See
+     * KI-32. Order: nested {@code auth.group} subgroups first (deepest-first, recursively), then
+     * {@code data.note} children (scene notes), then {@code olio.charPerson} children, then any
+     * {@code data.data} children (generated images grouped directly here), then the group itself.
+     */
+    private static boolean deleteGroupRecursive(BaseRecord user, BaseRecord group) {
+        boolean ok = true;
+        long groupId = group.get(FieldNames.FIELD_ID);
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+
+        // 1. Recurse into nested auth.group subgroups first (deepest-first)
+        Query subQ = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, groupId);
+        subQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        BaseRecord[] subGroups = IOSystem.getActiveContext().getSearch().findRecords(subQ);
+        for (BaseRecord sg : subGroups) {
+            if (!deleteGroupRecursive(user, sg)) ok = false;
+        }
+
+        // 2. Delete data.note children (e.g. scene notes)
+        Query noteQ = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_GROUP_ID, groupId);
+        noteQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        BaseRecord[] notes = IOSystem.getActiveContext().getSearch().findRecords(noteQ);
+        for (BaseRecord n : notes) {
+            try {
+                IOSystem.getActiveContext().getAccessPoint().delete(user, n);
+            } catch (Exception e) {
+                logger.warn("Failed to delete note " + n.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+                ok = false;
+            }
+        }
+
+        // 3. Delete olio.charPerson children, and each character's own dedicated foreign
+        // sub-records (profile/narrative/statistics/store/instinct/personality/state — see
+        // createPersistedForeignInstance) first. Those live in the acting user's shared
+        // ~/Profiles, ~/Narratives, etc. buckets, not grouped under this book's Characters
+        // subtree, so this group-subtree walk would otherwise never reach them (the KI-32
+        // follow-up gap this closes). Each is created fresh, once, per character —
+        // createPersistedForeignInstance is never called with a shared/reused instance — so
+        // deleting them alongside their owning character cannot orphan another character's data.
+        String[] charForeignFields = new String[] {
+                "profile", "narrative", OlioFieldNames.FIELD_STATISTICS, FieldNames.FIELD_STORE,
+                OlioFieldNames.FIELD_INSTINCT, FieldNames.FIELD_PERSONALITY, FieldNames.FIELD_STATE
+        };
+        Query charQ = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, groupId);
+        charQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        List<String> charRequest = new ArrayList<>(Arrays.asList(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID));
+        charRequest.addAll(Arrays.asList(charForeignFields));
+        charQ.setRequest(charRequest.toArray(new String[0]));
+        BaseRecord[] chars = IOSystem.getActiveContext().getSearch().findRecords(charQ);
+        for (BaseRecord cp : chars) {
+            for (String foreignField : charForeignFields) {
+                try {
+                    BaseRecord fk = cp.get(foreignField);
+                    Long fkId = (fk != null) ? fk.get(FieldNames.FIELD_ID) : null;
+                    if (fkId != null && fkId > 0L) {
+                        IOSystem.getActiveContext().getAccessPoint().delete(user, fk);
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to delete character " + cp.get(FieldNames.FIELD_OBJECT_ID) + "'s " + foreignField + ": " + e.getMessage());
+                    ok = false;
+                }
+            }
+            try {
+                IOSystem.getActiveContext().getAccessPoint().delete(user, cp);
+            } catch (Exception e) {
+                logger.warn("Failed to delete character " + cp.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+                ok = false;
+            }
+        }
+
+        // 4. Delete data.data children (generated portraits/landscapes/composites grouped directly
+        // here, as opposed to a charPerson's own foreign store/profile records — see reset()'s note)
+        Query dataQ = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, groupId);
+        dataQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        BaseRecord[] datas = IOSystem.getActiveContext().getSearch().findRecords(dataQ);
+        for (BaseRecord d : datas) {
+            try {
+                IOSystem.getActiveContext().getAccessPoint().delete(user, d);
+            } catch (Exception e) {
+                logger.warn("Failed to delete data " + d.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+                ok = false;
+            }
+        }
+
+        // 5. Finally delete the group itself
+        try {
+            IOSystem.getActiveContext().getAccessPoint().delete(user, group);
+        } catch (Exception e) {
+            logger.warn("Failed to delete group " + ((String) group.get(FieldNames.FIELD_PATH)) + ": " + e.getMessage());
+            ok = false;
+        }
         return ok;
     }
 }
