@@ -4,15 +4,14 @@ import { am7model } from '../core/model.js';
 import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import {
-    DEFAULT_SD_CONFIG,
-    extractScenes, fullExtract, createFromScenes, generateSceneImage, prepareSceneImagePrompts,
-    regenerateBlurb, loadPictureBook, getBookSdConfig, resetPictureBook, setSceneStatus,
+    extractScenes, createFromScenes, generateSceneImage, prepareSceneImagePrompts,
+    cancelPictureBook, regenerateBlurb, loadPictureBook, getBookSdConfig, setSceneStatus,
     resolveImageUrl, resolveAllImageUrls
 } from './sceneExtractor.js';
 import { openCharacterManager, initCharacterManager, renderCharacterManagerContent } from './pictureBookCharacters.js';
 import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
-import { formFieldRenderers } from '../components/formFieldRenderers.js';
+import { SdConfigPanel } from '../components/SdConfigPanel.js';
 
 /**
  * Picture Book workflow — multi-step wizard launched from a data.data or data.note object.
@@ -24,7 +23,9 @@ import { formFieldRenderers } from '../components/formFieldRenderers.js';
  *   3 — Manage Characters (real charPerson records: portrait, statistics, apparel, "Open Full
  *       Editor" link — renders pictureBookCharacters.js inline, same UI as the steps 4/5 popup)
  *   4 — Image Generation (generate per-scene images)
- *   5 — Picture Book View (gallery with reorder + blurb edit)
+ *   5 — Picture Book View (read-only gallery preview of the generated scenes; reorder and
+ *       blurb editing are NOT here — they live in the standalone viewer, features/pictureBook.js,
+ *       reachable via this step's "Open in Viewer" action)
  */
 
 // ── Wizard state ──────────────────────────────────────────────────────
@@ -67,6 +68,7 @@ const DEFAULT_SINGLE_TEMPLATE = 'pictureBook.extract-scenes';
 let extractedScenes = [];
 let extracting = false;
 let extractError = null;
+let blurbRegenerating = {}; // scene index → bool (U3: per-scene "Regenerate blurb" in-flight flag)
 
 // Step 3 (Manage Characters — real charPerson records created at the Step 2→3 transition;
 // pictureBookCharacters.js owns its own list/detail state once initCharacterManager() runs)
@@ -78,29 +80,44 @@ let generating = false;
 let genProgress = {};  // objectId → 'pending'|'generating'|'done'|'error'|'accepted'|'skipped'
 let genCancelled = false;
 let currentAbortController = null; // aborts the in-flight generateSceneImage fetch — genCancelled alone only stops the *next* scene from starting
+let prepareAbortController = null; // aborts the in-flight prepare-images fetch (KI-10 — the pre-loop landscape-prompt batch)
 let sceneErrors = {};   // objectId → error message
 let sceneOverrides = {}; // objectId → { promptOverride, steps, cfg, seed } or null
 let sceneImageUrls = {}; // objectId → resolved thumbnail URL
-let sdSteps = 20;
-let sdRefinerSteps = 20;
-let sdCfg = 5;
-let sdHires = false;
-let sdStyle = 'illustration';
-let sdSeed = -1;
-let sdModelList = [];
-let sdModel = '';
-let sdRefinerModel = '';
-let sdDenoisingStrength = 0.65;
-let sdSampler = 'dpmpp_2m';
-let sdScheduler = 'karras';
-let sdRefinerSampler = 'dpmpp_2m';
-let sdRefinerScheduler = 'karras';
-let sdLoras = [];  // ['loraName:weight', ...]
-let sdLoraList = [];  // available LORAs from server
-let sdLorasFetched = false;
-let lastUsedSeed = -1;   // persist seed from first generation
-let lastPrompt = '';      // last LLM-generated image prompt
+
+// SD configuration — a single plain-config object shared with (and mutated in place by) the
+// canonical components/SdConfigPanel.js (KI-13/KI-16 convergence: no bespoke 3rd copy). Keys match
+// exactly what the backend SceneGenerationParams consumes (steps/refinerSteps/cfg/hires/seed/model/
+// refinerModel/denoisingStrength/sampler/scheduler/refinerSampler/refinerScheduler/loras/style);
+// the panel also surfaces width/height/imageCount/refinerCfg for parity with the other call sites.
+function defaultSdConfig() {
+    return {
+        steps: 20,
+        refinerSteps: 20,
+        cfg: 5,
+        refinerCfg: 5,
+        hires: false,
+        style: 'illustration',
+        seed: -1,
+        model: '',
+        refinerModel: '',
+        denoisingStrength: 0.65,
+        sampler: 'dpmpp_2m',
+        scheduler: 'karras',
+        refinerSampler: 'dpmpp_2m',
+        refinerScheduler: 'karras',
+        width: '1024',
+        height: '768',
+        imageCount: 1,
+        loras: []  // ['loraName:weight', ...]
+    };
+}
+let sdConfig = defaultSdConfig();
+let sdModelList = [];   // available SD models from server
+let sdLoraList = [];    // available LORAs from server
 let sdModelsLoaded = false;
+let sdLorasFetched = false;
+let lastPrompt = '';    // last LLM-generated image prompt
 
 // Step 5
 let metaScenes = [];
@@ -120,32 +137,22 @@ function resetState() {
     extractedScenes = [];
     extracting = false;
     extractError = null;
+    blurbRegenerating = {};
     creatingChars = false;
     scenes = [];
     generating = false;
     genProgress = {};
     genCancelled = false;
+    currentAbortController = null;
+    prepareAbortController = null;
     sceneErrors = {};
     sceneOverrides = {};
     sceneImageUrls = {};
-    sdSteps = 20;
-    sdRefinerSteps = 20;
-    sdCfg = 5;
-    sdHires = false;
-    sdStyle = 'illustration';
-    sdSeed = -1;
-    sdModel = '';
-    sdRefinerModel = '';
-    sdDenoisingStrength = 0.65;
-    sdSampler = 'dpmpp_2m';
-    sdScheduler = 'karras';
-    sdRefinerSampler = 'dpmpp_2m';
-    sdRefinerScheduler = 'karras';
-    sdLoras = [];
+    sdConfig = defaultSdConfig();
+    sdLoraList = [];
     sdLorasFetched = false;
     sdModelList = [];
     sdModelsLoaded = false;
-    lastUsedSeed = -1;
     lastPrompt = '';
     metaScenes = [];
     step5ImageUrls = {};
@@ -278,32 +285,6 @@ async function doExtract() {
     m.redraw();
 }
 
-async function doFullExtract() {
-    extracting = true;
-    extractError = null;
-    m.redraw();
-    try {
-        let meta = await fullExtract(workObjectId, chatConfigName(), null, genre || null, bookName || workName);
-        bookObjectId = meta.bookObjectId || null;
-        metaScenes = meta.scenes || [];
-        scenes = metaScenes;
-        extractedScenes = metaScenes.map(s => ({
-            title: s.title || '',
-            summary: '',
-            setting: '',
-            action: '',
-            mood: '',
-            characters: (s.characters || []).map(id => ({ name: id })),
-            objectId: s.objectId
-        }));
-        step = 2;
-    } catch (e) {
-        extractError = e.message || 'Extraction failed';
-    }
-    extracting = false;
-    m.redraw();
-}
-
 function addManualScene() {
     extractedScenes.push({
         index: extractedScenes.length,
@@ -335,15 +316,44 @@ function moveScene(idx, dir) {
     m.redraw();
 }
 
+/**
+ * U3 — regenerate a scene's blurb via the LLM (POST /scene/{id}/blurb) and write the result back
+ * into the Step 2 editor. Only callable for scenes that already exist server-side (a persisted
+ * data.note objectId): raw auto-extracted scenes aren't persisted until Step 2→3's
+ * createFromScenes, so `oid` is resolved by the caller from the scene itself or its persisted
+ * mirror in `scenes`.
+ */
+async function doRegenerateBlurb(idx, oid) {
+    if (!oid) return;
+    blurbRegenerating[idx] = true;
+    m.redraw();
+    try {
+        let result = await regenerateBlurb(oid, chatConfigName());
+        let blurb = result && result.blurb ? result.blurb : '';
+        if (blurb) {
+            extractedScenes[idx].blurb = blurb;
+            extractedScenes[idx].summary = blurb;
+            extractedScenes[idx].userEdited = true;
+            // Keep the persisted-scene mirror (used by Step 4) in sync when present.
+            if (scenes[idx]) { scenes[idx].blurb = blurb; scenes[idx].summary = blurb; }
+        } else {
+            page.toast('error', 'Blurb regeneration returned no text');
+        }
+    } catch (e) {
+        page.toast('error', 'Blurb regeneration failed: ' + (e.message || ''));
+    }
+    blurbRegenerating[idx] = false;
+    m.redraw();
+}
+
 function buildSdConfig() {
-    let cfg = { steps: sdSteps, refinerSteps: sdRefinerSteps, cfg: sdCfg, hires: sdHires, style: sdStyle, sampler: sdSampler, scheduler: sdScheduler, refinerSampler: sdRefinerSampler, refinerScheduler: sdRefinerScheduler };
-    if (sdModel) cfg.model = sdModel;
-    if (sdRefinerModel) cfg.refinerModel = sdRefinerModel;
-    if (sdDenoisingStrength >= 0) cfg.denoisingStrength = sdDenoisingStrength;
-    if (sdLoras.length) cfg.loras = sdLoras;
-    // After first image, reuse the same seed for consistency
-    if (lastUsedSeed > 0) cfg.seed = lastUsedSeed;
-    else if (sdSeed > 0) cfg.seed = sdSeed;
+    // Copy so per-scene override tweaks (below, in doGenerateOne) never mutate the shared panel
+    // config. Drop "unset" values so the backend falls back to its own defaults rather than
+    // receiving an empty string / empty list.
+    let cfg = Object.assign({}, sdConfig);
+    if (!cfg.model) delete cfg.model;
+    if (!cfg.refinerModel) delete cfg.refinerModel;
+    if (!cfg.loras || !cfg.loras.length) delete cfg.loras;
     return cfg;
 }
 
@@ -401,10 +411,18 @@ async function doGenerateAll() {
             .filter(function (s) { return s.objectId && genProgress[s.objectId] !== 'accepted' && genProgress[s.objectId] !== 'skipped'; })
             .map(function (s) { return s.objectId; });
         if (pendingOids.length) {
+            prepareAbortController = new AbortController();
             try {
-                await prepareSceneImagePrompts(bookObjectId, pendingOids, chatConfigName(), sdStyle, getPromptTemplate('landscapePrompt'));
+                await prepareSceneImagePrompts(bookObjectId, pendingOids, chatConfigName(), sdConfig.style, getPromptTemplate('landscapePrompt'), prepareAbortController.signal);
             } catch (e) {
-                console.warn('[PictureBook] prepareSceneImagePrompts failed (non-fatal, each scene will resolve its own prompt):', e);
+                // AbortError == the user hit Cancel during this phase (see the Cancel action in
+                // buildActions step 4). genCancelled is already set, so the per-scene loop below
+                // breaks immediately — don't log it as a failure.
+                if (e.name !== 'AbortError') {
+                    console.warn('[PictureBook] prepareSceneImagePrompts failed (non-fatal, each scene will resolve its own prompt):', e);
+                }
+            } finally {
+                prepareAbortController = null;
             }
         }
     }
@@ -456,7 +474,9 @@ async function doGenerateOne(s) {
         }
         let result = await generateSceneImage(oid, sdCfg, chatConfigName(), promptOvr, getPromptTemplate('landscapePrompt'), controller.signal);
         s.imageObjectId = result.imageObjectId;
-        if (result.seed && lastUsedSeed < 0) lastUsedSeed = result.seed;
+        // After the first successful generation with a random seed, lock the resolved seed onto the
+        // shared config so the remaining scenes in this book render with a consistent seed.
+        if (result.seed && (sdConfig.seed == null || sdConfig.seed < 0)) sdConfig.seed = result.seed;
         if (result.prompt) lastPrompt = result.prompt;
         genProgress[oid] = 'done';
         // Resolve thumbnail
@@ -720,17 +740,35 @@ function renderStep2() {
                             onclick: function () { removeScene(i); }
                         }, m('span', { class: 'material-symbols-outlined text-sm' }, 'close'))
                     ]),
-                    // Blurb
-                    m('textarea', {
-                        class: 'w-full text-field-full text-xs', rows: 2,
-                        value: s.blurb || s.summary || s.description || '',
-                        placeholder: 'Scene description/blurb',
-                        oninput: function (e) {
-                            extractedScenes[i].blurb = e.target.value;
-                            extractedScenes[i].summary = e.target.value;
-                            s.userEdited = true;
-                        }
-                    }),
+                    // Blurb + regenerate control (U3). The LLM regen needs a persisted scene
+                    // (data.note objectId); raw auto-extracted scenes only gain one at Step 2→3, so
+                    // the control appears once the book exists (objectId resolvable via the scene or
+                    // its persisted mirror in `scenes`).
+                    (function () {
+                        let blurbOid = s.objectId || (scenes[i] && scenes[i].objectId) || null;
+                        let regenerating = !!blurbRegenerating[i];
+                        return m('div', { class: 'space-y-1' }, [
+                            m('textarea', {
+                                class: 'w-full text-field-full text-xs', rows: 2,
+                                value: s.blurb || s.summary || s.description || '',
+                                placeholder: 'Scene description/blurb',
+                                oninput: function (e) {
+                                    extractedScenes[i].blurb = e.target.value;
+                                    extractedScenes[i].summary = e.target.value;
+                                    s.userEdited = true;
+                                }
+                            }),
+                            blurbOid ? m('button', {
+                                class: 'btn text-xs text-gray-500',
+                                disabled: regenerating,
+                                onclick: function () { doRegenerateBlurb(i, blurbOid); }
+                            }, [
+                                m('span', { class: 'material-symbols-outlined text-xs mr-0.5' + (regenerating ? ' animate-spin' : '') },
+                                    regenerating ? 'progress_activity' : 'auto_awesome'),
+                                regenerating ? 'Regenerating...' : 'Regenerate blurb'
+                            ]) : null
+                        ]);
+                    })(),
                     // Diffusion prompt (collapsible)
                     m('details', { class: 'text-xs' }, [
                         m('summary', { class: 'cursor-pointer text-gray-500 hover:text-gray-700' }, 'Diffusion Prompt'),
@@ -770,180 +808,38 @@ function loadSdModels() {
     }
 }
 
-function renderSdConfig() {
-    loadSdModels();
-    return m('div', { class: 'border dark:border-gray-700 rounded p-3 mb-3 space-y-2' }, [
-        m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-1' }, 'SD Configuration'),
-        m('div', { class: 'grid grid-cols-3 gap-2' }, [
-            m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Steps: ' + sdSteps),
-                formFieldRenderers.renderRange({ value: sdSteps, min: 1, max: 150, step: 1, label: 'Steps',
-                    onInput: function (e) { sdSteps = parseInt(e.target.value) || 20; } })
-            ]),
-            m('div', [
-                m('label', { class: 'field-label text-xs' }, 'CFG: ' + sdCfg),
-                formFieldRenderers.renderRange({ value: sdCfg, min: 1, max: 30, step: 0.5, label: 'CFG',
-                    onInput: function (e) { sdCfg = parseFloat(e.target.value) || 5; } })
-            ]),
-            m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Seed'),
-                m('div', { class: 'flex gap-1' }, [
-                    m('input', { class: 'text-field-compact text-xs', style: 'flex:1', type: 'number',
-                        value: lastUsedSeed > 0 ? lastUsedSeed : sdSeed,
-                        oninput: function (e) { sdSeed = parseInt(e.target.value) || -1; lastUsedSeed = -1; } }),
-                    m('button', { class: 'text-gray-400 hover:text-gray-600', title: 'Random',
-                        onclick: function () { sdSeed = -1; lastUsedSeed = -1; } },
-                        m('span', { class: 'material-symbols-outlined text-sm' }, 'casino'))
-                ])
-            ]),
-            m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Style'),
-                m('input', { class: 'text-field-compact text-xs', value: sdStyle,
-                    oninput: function (e) { sdStyle = e.target.value; } })
-            ]),
-            m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Refiner Steps: ' + sdRefinerSteps),
-                formFieldRenderers.renderRange({ value: sdRefinerSteps, min: 0, max: 150, step: 1, label: 'Refiner Steps',
-                    onInput: function (e) { sdRefinerSteps = parseInt(e.target.value) || 0; } })
-            ]),
-            m('div', { class: 'flex items-end pb-1' }, [
-                m('label', { class: 'flex items-center gap-1 text-xs cursor-pointer' }, [
-                    m('input', { type: 'checkbox', checked: sdHires,
-                        onchange: function (e) { sdHires = e.target.checked; } }),
-                    'HiRes'
-                ])
-            ]),
-            m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Denoising: ' + sdDenoisingStrength.toFixed(2)),
-                formFieldRenderers.renderRange({ value: sdDenoisingStrength, min: 0, max: 1, step: 0.05, label: 'Denoising',
-                    onInput: function (e) { sdDenoisingStrength = parseFloat(e.target.value) || 0.65; } })
-            ])
-        ]),
-        // Model dropdowns
-        m('div', { class: 'grid grid-cols-2 gap-2 mt-2' }, [
-            m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Model'),
-                sdModelList.length > 0
-                    ? m('select', { class: 'text-field-compact text-xs', value: sdModel,
-                        onchange: function (e) { sdModel = e.target.value; } },
-                        [m('option', { value: '' }, '-- Default --')].concat(
-                            sdModelList.map(function (ml) { return m('option', { value: ml }, ml); })))
-                    : m('input', { class: 'text-field-compact text-xs', value: sdModel, placeholder: '(loading...)',
-                        oninput: function (e) { sdModel = e.target.value; } })
-            ]),
-            m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Refiner Model'),
-                sdModelList.length > 0
-                    ? m('select', { class: 'text-field-compact text-xs', value: sdRefinerModel,
-                        onchange: function (e) { sdRefinerModel = e.target.value; } },
-                        [m('option', { value: '' }, '-- Default --')].concat(
-                            sdModelList.map(function (ml) { return m('option', { value: ml }, ml); })))
-                    : m('input', { class: 'text-field-compact text-xs', value: sdRefinerModel, placeholder: '(loading...)',
-                        oninput: function (e) { sdRefinerModel = e.target.value; } })
-            ])
-        ]),
-        // Sampler / Scheduler
-        m('div', { class: 'grid grid-cols-2 gap-2 mt-2' }, [
-            m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Sampler'),
-                m('select', { class: 'text-field-compact text-xs', value: sdSampler,
-                    onchange: function (e) { sdSampler = e.target.value; } },
-                    ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm'].map(function (s) {
-                        return m('option', { value: s }, s);
-                    }))
-            ]),
-            m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Scheduler'),
-                m('select', { class: 'text-field-compact text-xs', value: sdScheduler,
-                    onchange: function (e) { sdScheduler = e.target.value; } },
-                    ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal'].map(function (s) {
-                        return m('option', { value: s }, s);
-                    }))
-            ]),
-            m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Refiner Sampler'),
-                m('select', { class: 'text-field-compact text-xs', value: sdRefinerSampler,
-                    onchange: function (e) { sdRefinerSampler = e.target.value; } },
-                    ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm'].map(function (s) {
-                        return m('option', { value: s }, s);
-                    }))
-            ]),
-            m('div', [
-                m('label', { class: 'field-label text-xs' }, 'Refiner Scheduler'),
-                m('select', { class: 'text-field-compact text-xs', value: sdRefinerScheduler,
-                    onchange: function (e) { sdRefinerScheduler = e.target.value; } },
-                    ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal'].map(function (s) {
-                        return m('option', { value: s }, s);
-                    }))
-            ])
-        ]),
-        lastUsedSeed > 0 ? m('div', { class: 'text-xs text-gray-500 mt-1' },
-            'Seed locked: ' + lastUsedSeed + ' (from first generation)') : null,
-        lastPrompt ? m('div', { class: 'mt-2' }, [
-            m('div', { class: 'text-xs font-medium text-gray-500' }, 'Last prompt used:'),
-            m('div', { class: 'text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded p-2 mt-1 max-h-20 overflow-y-auto' },
-                lastPrompt)
-        ]) : null,
-        // LORAs — checkbox list from server + manual entry
-        renderLoraSelect()
-    ]);
-}
-
-function renderLoraSelect() {
-    // Fetch LORAs from server on first render
-    if (!sdLorasFetched && am7model._sd && am7model._sd.fetchLoras) {
-        sdLorasFetched = true;
+function loadSdLoras() {
+    if (sdLorasFetched) return;
+    sdLorasFetched = true;
+    if (am7model._sd && am7model._sd.fetchLoras) {
         am7model._sd.fetchLoras().then(function (list) {
             sdLoraList = Array.isArray(list) ? list : [];
             m.redraw();
         }).catch(function () { sdLoraList = []; });
     }
+}
 
-    // Parse current selections into map: name → weight
-    let loraMap = {};
-    sdLoras.forEach(function (entry) {
-        let parts = String(entry).split(':');
-        loraMap[parts[0]] = parts.length > 1 ? parseFloat(parts[1]) || 0.8 : 0.8;
-    });
-
-    function sync() {
-        sdLoras = Object.keys(loraMap).map(function (k) { return k + ':' + loraMap[k]; });
-    }
-
-    return m('div', { class: 'mt-2' }, [
-        m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-1' }, 'LORAs'),
-        sdLoraList.length > 0
-            ? m('div', { class: 'space-y-1 max-h-24 overflow-y-auto' }, sdLoraList.map(function (name) {
-                let selected = loraMap.hasOwnProperty(name);
-                return m('div', { key: name, class: 'flex items-center gap-2 text-xs' }, [
-                    m('input', {
-                        type: 'checkbox', checked: selected,
-                        onchange: function () {
-                            if (selected) delete loraMap[name]; else loraMap[name] = 0.8;
-                            sync(); m.redraw();
-                        }
-                    }),
-                    m('span', { class: 'truncate', style: 'max-width:160px', title: name }, name),
-                    selected ? m('input', {
-                        type: 'number', class: 'text-field-compact text-xs w-14',
-                        min: 0, max: 2, step: 0.05, value: loraMap[name],
-                        oninput: function (e) { loraMap[name] = parseFloat(e.target.value) || 0.8; sync(); }
-                    }) : null
-                ]);
-            }))
-            : m('div', { class: 'text-xs text-gray-400' }, sdLorasFetched ? 'No LORAs on server' : 'Loading...'),
-        m('input', {
-            type: 'text', class: 'text-field-compact text-xs mt-1 w-full',
-            placeholder: 'Manual: loraName:weight + Enter',
-            onkeydown: function (e) {
-                if (e.key === 'Enter' && e.target.value.trim()) {
-                    let parts = e.target.value.trim().split(':');
-                    loraMap[parts[0]] = parts.length > 1 ? parseFloat(parts[1]) || 0.8 : 0.8;
-                    e.target.value = '';
-                    sync(); m.redraw();
-                }
-            }
-        })
+// KI-13/KI-16 convergence: the bespoke per-field SD panel that used to live here (a 3rd near-copy
+// of the reimage/scene-generator config form, with Style as a free-text input and no Width/Height/
+// Image Count/Refiner CFG) is gone. This now delegates to the canonical components/SdConfigPanel.js,
+// which mutates the shared `sdConfig` object in place. Style is a <select> over the same style set
+// as everywhere else (SdConfigPanel STYLE_OPTIONS, which mirrors PictureBookUtil.ALLOWED_STYLES).
+function renderSdConfig() {
+    loadSdModels();
+    loadSdLoras();
+    return m('div', { class: 'border dark:border-gray-700 rounded p-3 mb-3' }, [
+        m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'SD Configuration'),
+        m(SdConfigPanel, {
+            config: sdConfig,
+            models: sdModelList,
+            loras: sdLoraList,
+            onChange: function () { m.redraw(); }
+        }),
+        lastPrompt ? m('div', { class: 'mt-2' }, [
+            m('div', { class: 'text-xs font-medium text-gray-500' }, 'Last prompt used:'),
+            m('div', { class: 'text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded p-2 mt-1 max-h-20 overflow-y-auto' },
+                lastPrompt)
+        ]) : null
     ]);
 }
 
@@ -1078,7 +974,7 @@ function renderStep4() {
                                 m('input', {
                                     class: 'text-field-compact text-xs', type: 'number', min: 1, max: 150,
                                     value: ovr.steps || '',
-                                    placeholder: String(sdSteps),
+                                    placeholder: String(sdConfig.steps),
                                     oninput: function (e) {
                                         if (!sceneOverrides[oid]) sceneOverrides[oid] = {};
                                         sceneOverrides[oid].steps = parseInt(e.target.value) || null;
@@ -1090,7 +986,7 @@ function renderStep4() {
                                 m('input', {
                                     class: 'text-field-compact text-xs', type: 'number', min: 1, max: 30, step: 0.5,
                                     value: ovr.cfg || '',
-                                    placeholder: String(sdCfg),
+                                    placeholder: String(sdConfig.cfg),
                                     oninput: function (e) {
                                         if (!sceneOverrides[oid]) sceneOverrides[oid] = {};
                                         sceneOverrides[oid].cfg = parseFloat(e.target.value) || null;
@@ -1333,7 +1229,20 @@ function buildActions() {
                     label: 'Cancel', icon: 'stop',
                     onclick: function () {
                         genCancelled = true;
+                        // Per-scene generateSceneImage fetch, if a scene is mid-flight.
                         if (currentAbortController) currentAbortController.abort();
+                        // prepare-images phase (KI-10): stop awaiting the client fetch AND tell the
+                        // backend to abort the in-flight landscape-prompt LLM batch. The server keys
+                        // its cancel registry on the bookObjectId we passed to prepare-images, which
+                        // the client already has — so no separate session/token bookkeeping needed.
+                        if (prepareAbortController) {
+                            prepareAbortController.abort();
+                            if (bookObjectId) {
+                                cancelPictureBook(bookObjectId).catch(function (e) {
+                                    console.warn('[PictureBook] cancel request failed:', e);
+                                });
+                            }
+                        }
                     }
                 });
             }
@@ -1390,20 +1299,25 @@ function buildActions() {
  * with instead of the wizard's hardcoded defaults.
  */
 function applySdConfig(cfg) {
-    if (cfg.steps != null) sdSteps = cfg.steps;
-    if (cfg.refinerSteps != null) sdRefinerSteps = cfg.refinerSteps;
-    if (cfg.cfg != null) sdCfg = cfg.cfg;
-    if (cfg.hires != null) sdHires = cfg.hires;
-    if (cfg.style) sdStyle = cfg.style;
-    if (cfg.sampler) sdSampler = cfg.sampler;
-    if (cfg.scheduler) sdScheduler = cfg.scheduler;
-    if (cfg.refinerSampler) sdRefinerSampler = cfg.refinerSampler;
-    if (cfg.refinerScheduler) sdRefinerScheduler = cfg.refinerScheduler;
-    if (cfg.model) sdModel = cfg.model;
-    if (cfg.refinerModel) sdRefinerModel = cfg.refinerModel;
-    if (cfg.denoisingStrength != null) sdDenoisingStrength = cfg.denoisingStrength;
-    if (cfg.loras) sdLoras = cfg.loras;
-    if (cfg.seed != null && cfg.seed >= 0) sdSeed = cfg.seed;
+    if (!cfg) return;
+    if (cfg.steps != null) sdConfig.steps = cfg.steps;
+    if (cfg.refinerSteps != null) sdConfig.refinerSteps = cfg.refinerSteps;
+    if (cfg.cfg != null) sdConfig.cfg = cfg.cfg;
+    if (cfg.refinerCfg != null) sdConfig.refinerCfg = cfg.refinerCfg;
+    if (cfg.hires != null) sdConfig.hires = cfg.hires;
+    if (cfg.style) sdConfig.style = cfg.style;
+    if (cfg.sampler) sdConfig.sampler = cfg.sampler;
+    if (cfg.scheduler) sdConfig.scheduler = cfg.scheduler;
+    if (cfg.refinerSampler) sdConfig.refinerSampler = cfg.refinerSampler;
+    if (cfg.refinerScheduler) sdConfig.refinerScheduler = cfg.refinerScheduler;
+    if (cfg.model) sdConfig.model = cfg.model;
+    if (cfg.refinerModel) sdConfig.refinerModel = cfg.refinerModel;
+    if (cfg.denoisingStrength != null) sdConfig.denoisingStrength = cfg.denoisingStrength;
+    if (cfg.width != null) sdConfig.width = cfg.width;
+    if (cfg.height != null) sdConfig.height = cfg.height;
+    if (cfg.imageCount != null) sdConfig.imageCount = cfg.imageCount;
+    if (cfg.loras) sdConfig.loras = cfg.loras;
+    if (cfg.seed != null && cfg.seed >= 0) sdConfig.seed = cfg.seed;
 }
 
 async function tryResumeExistingBook(id) {
@@ -1418,6 +1332,13 @@ async function tryResumeExistingBook(id) {
     bookObjectId = id;
     metaScenes = existingScenes;
     scenes = existingScenes;
+
+    // U2: the resume path lands on step 4/5 but a "Back" to step 3 renders the Manage Characters
+    // screen — which is empty/stale unless the character manager is initialized against this book
+    // (the fresh Step 2→3 path already calls this; the resume path previously did not).
+    try {
+        await initCharacterManager(bookObjectId);
+    } catch (e) { /* non-fatal — Step 3 can still be opened, it'll just re-fetch */ }
 
     try {
         let savedSdConfig = await getBookSdConfig(id);

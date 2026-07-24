@@ -70,7 +70,7 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final String CHAT_PATH = "~/Chat";
 
 	private static final String PB_LLM_MODEL = "qwen3:8b";
-	private static int iter = 6;
+	private static int iter = 7;
 	private static final String PB_CHAT_CONFIG_NAME = "PictureBook " + PB_LLM_MODEL + " " + iter + ".chat";
 
 	// Source document + the exact substring that marks where Step 1 truncates it (see
@@ -93,6 +93,9 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final String BOOK_GROUP_PATH_PREFIX = "~/Data/PictureBooks/"; // mirrors PictureBookUtil's private PICTURE_BOOKS_DIR
 	private static final String IMAGE_STYLE = "photograph"; // one of PictureBookUtil.ALLOWED_STYLES
 	private static final long MANNEQUIN_SEED = 424242L; // fixed, not -1/random — see Step 3B
+	// Where Step 5 (scene composites) and Step 3B (apparel mannequins) write the real generated
+	// images for visual inspection — relative to the module dir (AccountManagerObjects7/export).
+	private static final String EXPORT_DIR = "./export";
 
 	private OrganizationContext testOrgCtx;
 	private BaseRecord testUser;
@@ -343,6 +346,37 @@ public class TestPictureBookCustom extends BaseTest {
 		return params;
 	}
 
+	/**
+	 * Fetch a generated image by objectId and write it to EXPORT_DIR for visual inspection, logging
+	 * its real decoded pixel dimensions (so a mismatch vs. the requested canvas is visible — the B2
+	 * "~3000x1000 merge" investigation). Uses the canonical SDUtil.getDataBytes read path; best-effort
+	 * — an export hiccup logs a warning and never fails the test.
+	 */
+	private void exportImage(String imageObjectId, String label) {
+		if (imageObjectId == null) return;
+		try {
+			new java.io.File(EXPORT_DIR).mkdirs();
+			Query iq = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, imageObjectId);
+			iq.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			iq.planMost(true);
+			BaseRecord img = IOSystem.getActiveContext().getAccessPoint().find(testUser, iq);
+			if (img == null) { logger.warn("exportImage: image not found for " + label + " (" + imageObjectId + ")"); return; }
+			byte[] bytes = SDUtil.getDataBytes(img);
+			if (bytes == null || bytes.length == 0) { logger.warn("exportImage: no bytes for " + label + " (" + imageObjectId + ")"); return; }
+			int w = -1, h = -1;
+			try {
+				java.awt.image.BufferedImage decoded = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(bytes));
+				if (decoded != null) { w = decoded.getWidth(); h = decoded.getHeight(); }
+			} catch (Exception de) { logger.warn("exportImage: could not decode " + label + ": " + de.getMessage()); }
+			String safe = label.replaceAll("[^a-zA-Z0-9._-]", "_");
+			String path = EXPORT_DIR + "/" + safe + ".png";
+			boolean ok = FileUtil.emitFile(path, bytes);
+			logger.info("Exported " + label + " -> " + path + " (" + bytes.length + " bytes, decoded " + w + "x" + h + ") ok=" + ok);
+		} catch (Exception e) {
+			logger.warn("exportImage failed for " + label + ": " + e.getMessage());
+		}
+	}
+
 	@Test
 	public void TestPictureBookCustomPipeline() throws Exception {
 		setupTestContext();
@@ -463,6 +497,10 @@ public class TestPictureBookCustom extends BaseTest {
 		assertNotNull("generateMannequinImages should return a result list", mannequinImages);
 		logger.info("Step 3B: generated " + mannequinImages.size() + " mannequin image(s) for " + apparel.get(FieldNames.FIELD_NAME)
 			+ " (seed=" + MANNEQUIN_SEED + "): " + mannequinImages.stream().map(i -> (String) i.get(FieldNames.FIELD_OBJECT_ID)).collect(java.util.stream.Collectors.toList()));
+		int mannequinNum = 0;
+		for (BaseRecord mimg : mannequinImages) {
+			exportImage(mimg.get(FieldNames.FIELD_OBJECT_ID), "mannequin_" + apparel.get(FieldNames.FIELD_NAME) + "_" + (++mannequinNum));
+		}
 
 		// ═══════════════════════════════════════════════════════════════════
 		// STEP 4 — PROMPT RESOLUTION (check the prompt BEFORE spending SD time on it)
@@ -496,15 +534,29 @@ public class TestPictureBookCustom extends BaseTest {
 		// landscape and Stage 3/4's composite — see "Stage 1 complete: N portraits generated" in
 		// PictureBookUtil. You do NOT need Step 5B below just to get portraits into the scene.
 
-		// String swarmServer = testProperties.getProperty("test.swarm.server");
-		// PictureBookUtil.SceneGenerationParams params = buildSdConfigTemplate();
-		// List<String> sceneOids = new ArrayList<>();
-		// for (Map<String, Object> s : PictureBookUtil.listScenes(testUser, bookObjectId)) sceneOids.add((String) s.get("objectId"));
-		// for (String sceneOid : sceneOids) {
-		//     BaseRecord result = PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", swarmServer);
-		//     logger.info("Scene " + sceneOid + " -> imageObjectId=" + (result != null ? result.get("imageObjectId") : "null")
-		//         + " prompt=[" + (result != null ? result.get("prompt") : "null") + "]");
-		// }
+		// Enabled: real scene image generation against Swarm. generateSceneImage runs the full pipeline
+		// per scene (Stage 0 prompt resolve -> Stage 1 portraits -> Stage 2 landscape -> Stage 3/4
+		// composite). Each final composite is exported to EXPORT_DIR for visual inspection, and its
+		// decoded dimensions are logged — compare against PictureBookUtil's "requesting composite canvas
+		// at WxH" log line to localize the B2 oversized-merge issue. swarmServer is reused from Step 3B.
+		PictureBookUtil.SceneGenerationParams params = buildSdConfigTemplate();
+		List<Map<String, Object>> scenesForImages = PictureBookUtil.listScenes(testUser, bookObjectId);
+		assertFalse("Book should have at least one scene to render", scenesForImages.isEmpty());
+		int sceneNum = 0;
+		for (Map<String, Object> s : scenesForImages) {
+			String sceneOid = (String) s.get("objectId");
+			if (sceneOid == null) continue;
+			sceneNum++;
+			long t0 = System.currentTimeMillis();
+			BaseRecord result = PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", swarmServer);
+			long elapsed = System.currentTimeMillis() - t0;
+			assertNotNull("Scene " + sceneNum + " generateSceneImage should return a result", result);
+			String imageObjectId = result.get("imageObjectId");
+			logger.info("Step 5: scene " + sceneNum + " (" + sceneOid + ") -> imageObjectId=" + imageObjectId
+				+ " seed=" + result.get("seed") + " (" + elapsed + "ms) prompt=[" + result.get("prompt") + "]");
+			assertNotNull("Scene " + sceneNum + " should produce a real generated image objectId", imageObjectId);
+			exportImage(imageObjectId, "scene_" + sceneNum + "_" + sceneOid);
+		}
 
 		// ═══════════════════════════════════════════════════════════════════
 		// STEP 5B — STANDALONE PORTRAIT REGENERATION (outside the picturebook pipeline)
@@ -538,8 +590,8 @@ public class TestPictureBookCustom extends BaseTest {
 		//   — reimage.js's Dialog mutates entity.profile.portrait directly on success; the panel
 		//   then just re-renders <PortraitImage objectId={profile.portrait.objectId}/>.
 
-		// Placeholder so this compiles/runs as-is before you fill in the steps above.
-		assertTrue("Skeleton test — fill in Steps 1-5 above and replace this with real assertions", true);
+		logger.info("TestPictureBookCustomPipeline complete — Steps 1-3 (content) + 3B (apparel/mannequin) "
+			+ "+ 5 (scene images) ran; generated images exported to " + EXPORT_DIR + " for visual inspection.");
 	}
 
 }

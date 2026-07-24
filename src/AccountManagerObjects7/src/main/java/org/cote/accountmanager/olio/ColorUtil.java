@@ -15,6 +15,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -22,6 +24,7 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
@@ -40,6 +43,28 @@ public class ColorUtil {
 	
 	public static List<BaseRecord> getDefaultColors(){
 		return defaultColors;
+	}
+
+	/**
+	 * C3: resolve a free-text color NAME (e.g. an LLM-guessed apparel color like "Navy Blue") to the
+	 * matching persisted {@code data.color} record in the world's SHARED color library
+	 * ({@code ctx.getUniverse().colors} — the same group {@link #getDefaultColor} get-or-creates into),
+	 * suitable for use as a FOREIGN reference on an {@code olio.item}/{@code olio.wearable} color field.
+	 * Case-insensitive, whitespace-trimmed match on the library entry's {@code name}. Returns null when
+	 * the name matches no library entry (callers keep whatever random color was already assigned) —
+	 * never a raw string, and never a per-owner fallback group.
+	 */
+	public static BaseRecord getColorByName(OlioContext ctx, String name) {
+		if (ctx == null || name == null) return null;
+		String t = name.trim();
+		if (t.isEmpty()) return null;
+		BaseRecord universe = ctx.getUniverse();
+		if (universe == null) return null;
+		BaseRecord colorsGroup = universe.get(OlioFieldNames.FIELD_COLORS);
+		if (colorsGroup == null) return null;
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_COLOR, FieldNames.FIELD_GROUP_ID, colorsGroup.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_NAME, ComparatorEnumType.ILIKE, t);
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	
 	protected static String getRandomDefaultColor() {

@@ -10,7 +10,9 @@
 import m from 'mithril';
 import { formFieldRenderers } from './formFieldRenderers.js';
 
-const STYLE_OPTIONS = ['art', 'movie', 'photograph', 'selfie', 'anime', 'portrait', 'comic', 'digitalArt', 'fashion', 'vintage', 'custom'];
+// Mirrors PictureBookUtil.ALLOWED_STYLES (the server-side clamp set). 'illustration' is the picture
+// book default and a valid server style, so it belongs in the shared select for every call site.
+const STYLE_OPTIONS = ['illustration', 'art', 'movie', 'photograph', 'selfie', 'anime', 'portrait', 'comic', 'digitalArt', 'fashion', 'vintage', 'custom'];
 
 /// Full sampler list matched to the reimage dialog (workflows/reimage.js).
 const SAMPLER_OPTIONS = [

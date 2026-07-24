@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio.picturebook;
 
+import java.text.Normalizer;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -22,7 +23,9 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.CharacterUtil;
+import org.cote.accountmanager.olio.EthnicityEnumType;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.RaceEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.ProfileUtil;
@@ -486,6 +489,28 @@ public class PictureBookUtil {
                     cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
                     cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile", FieldNames.FIELD_STORE});
                     cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+                    if (cp == null) {
+                        // B6: the DB ILIKE+trim above does not fold Unicode diacritics, so a scene name
+                        // like "Duña" silently misses a persisted "Duna" (and vice versa). On a miss,
+                        // load this Characters group's records and match diacritic- + case-insensitively
+                        // in Java (namesMatchAccentInsensitive). The ILIKE+trim primary path is kept
+                        // exactly as-is; this only runs when it already returned nothing.
+                        Query allq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
+                        allq.field(FieldNames.FIELD_GROUP_ID, charGrp.get(FieldNames.FIELD_ID));
+                        allq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+                        allq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile", FieldNames.FIELD_STORE});
+                        BaseRecord[] candidates = IOSystem.getActiveContext().getAccessPoint().list(user, allq).getResults();
+                        if (candidates != null) {
+                            for (BaseRecord cand : candidates) {
+                                if (namesMatchAccentInsensitive(cname, cand.get(FieldNames.FIELD_NAME))) {
+                                    logger.info("Resolved scene character '" + cname + "' to persisted '"
+                                            + cand.get(FieldNames.FIELD_NAME) + "' via accent-insensitive fallback match");
+                                    cp = cand;
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 } else {
                     logger.warn("No Characters group found at " + charGroupPath + " while resolving scene character '" + cname + "'");
                 }
@@ -1320,6 +1345,118 @@ public class PictureBookUtil {
         return "UNKNOWN";
     }
 
+    // C2: comma-separated human-readable RaceEnumType / EthnicityEnumType values, used to CONSTRAIN the
+    // extraction prompt to labels the enum's own valueOfVal() can map back. The enum is the single
+    // source of truth — these lists are derived from it at call time, never a hand-maintained copy.
+    public static String raceOptionsCsv() {
+        List<String> vals = new ArrayList<>();
+        for (RaceEnumType r : RaceEnumType.values()) vals.add(RaceEnumType.valueOf(r));
+        return String.join(", ", vals);
+    }
+
+    public static String ethnicityOptionsCsv() {
+        List<String> vals = new ArrayList<>();
+        for (EthnicityEnumType e : EthnicityEnumType.values()) vals.add(EthnicityEnumType.valueOf(e));
+        return String.join(", ", vals);
+    }
+
+    /**
+     * C2: map a free-text race string (LLM output) to the {@link RaceEnumType} constant NAME that the
+     * random-generation path stores in {@code charPerson.race} — {@code CharacterUtil.randomPerson}
+     * persists {@code RaceEnumType.name()} (e.g. "E"), and {@code NarrativeUtil}/
+     * {@code setStyleByRace} read it back via the built-in {@code RaceEnumType.valueOf(name)}. So the
+     * override path must store the SAME shape (a constant name), never the LLM's raw text.
+     *
+     * <p>Matching order: exact human-readable value ({@link RaceEnumType#valueOfVal}), then a
+     * case-insensitive scan of {@link RaceEnumType#values()} by human-readable value and constant
+     * name. Returns null when nothing maps — callers KEEP the random baseline's enum value. The
+     * extraction prompt is constrained to {@link #raceOptionsCsv()}, so a well-behaved LLM response
+     * is always a value this maps; there is deliberately no hand-maintained synonym table.
+     */
+    public static String mapRaceOverride(String raw) {
+        if (raw == null) return null;
+        String t = raw.trim();
+        if (t.isEmpty()) return null;
+        RaceEnumType exact = RaceEnumType.valueOfVal(t);
+        if (exact != null) return exact.name();
+        for (RaceEnumType r : RaceEnumType.values()) {
+            if (RaceEnumType.valueOf(r).equalsIgnoreCase(t)) return r.name();
+            if (r.name().equalsIgnoreCase(t)) return r.name();
+        }
+        return null;
+    }
+
+    /**
+     * C2: map a free-text ethnicity string (LLM output) to the {@link EthnicityEnumType} constant
+     * NAME. Same contract as {@link #mapRaceOverride} but for ethnicity: {@code ethnicity} is a
+     * {@code list<string>} whose values are enum constant names, read back via
+     * {@code NarrativeUtil.getEthnicityDescription -> EthnicityEnumType.valueOf(name)} — storing the
+     * LLM's raw text (the pre-fix behavior) throws {@code IllegalArgumentException} there. Returns
+     * null when nothing maps; callers then leave ethnicity unset (KEEP baseline; never a raw string).
+     */
+    public static String mapEthnicityOverride(String raw) {
+        if (raw == null) return null;
+        String t = raw.trim();
+        if (t.isEmpty()) return null;
+        EthnicityEnumType exact = EthnicityEnumType.valueOfVal(t);
+        if (exact != null) return exact.name();
+        for (EthnicityEnumType e : EthnicityEnumType.values()) {
+            if (EthnicityEnumType.valueOf(e).equalsIgnoreCase(t)) return e.name();
+            if (e.name().equalsIgnoreCase(t)) return e.name();
+        }
+        return null;
+    }
+
+    /**
+     * B6: strip Unicode diacritics via NFD decomposition + combining-mark removal, so an
+     * accent-only difference ("Duña" vs "Duna") doesn't defeat a name match. Returns null for null.
+     */
+    public static String stripDiacritics(String s) {
+        if (s == null) return null;
+        return Normalizer.normalize(s, Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
+    }
+
+    /**
+     * B6: accent- and case-insensitive, whitespace-trimmed name equality — the Java-side fallback
+     * used by {@link #resolveSceneCharacter} after its primary ILIKE+trim DB query misses (the DB
+     * ILIKE does not fold diacritics). Both sides are diacritic-stripped before comparison.
+     */
+    public static boolean namesMatchAccentInsensitive(String a, String b) {
+        if (a == null || b == null) return false;
+        String na = stripDiacritics(a.trim());
+        String nb = stripDiacritics(b.trim());
+        return na.equalsIgnoreCase(nb);
+    }
+
+    /**
+     * B7: extract a scene character's name from either persisted shape — a {@code {name:...}} map or
+     * a bare name/objectId string (see buildSceneEntry) — tolerating any other element type by
+     * returning null instead of ClassCastException-ing. Harmonizes extract()'s character collection
+     * with createFromScenes()'s per-element {@code instanceof} guard.
+     */
+    @SuppressWarnings("unchecked")
+    public static String extractCharName(Object sceneCharItem) {
+        if (sceneCharItem instanceof Map) {
+            Object n = ((Map<String, Object>) sceneCharItem).get("name");
+            return (n instanceof String) ? (String) n : null;
+        }
+        if (sceneCharItem instanceof String) return (String) sceneCharItem;
+        return null;
+    }
+
+    /**
+     * B7: return the character-data map for a scene character item — the map itself when it is a
+     * {@code {name:...}} object, or a fresh single-key {@code {name}} map when it is a bare string.
+     * Mirrors createFromScenes()'s synthetic-map handling so extract() tolerates both shapes.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> sceneCharDataMap(Object sceneCharItem, String name) {
+        if (sceneCharItem instanceof Map) return (Map<String, Object>) sceneCharItem;
+        Map<String, Object> m = new LinkedHashMap<>();
+        if (name != null) m.put("name", name);
+        return m;
+    }
+
     /**
      * Parse the LLM-extracted "age_approx" field (free text — "mid-30s", "25", "elderly", etc.)
      * into a plain int. Returns 0 (StatisticsUtil's own "adult, no special-case" convention —
@@ -1475,18 +1612,9 @@ public class PictureBookUtil {
      * {@code dataPath}, {@code OlioContext} init failure, etc., rather than throwing — this is an
      * enhancement to character richness, not a hard requirement for character creation.
      */
-    private static BaseRecord buildRandomBaseline(BaseRecord user, String dataPath, String preferredLastName, int ageApprox) {
-        if (dataPath == null || dataPath.isEmpty()) {
-            logger.warn("No datagen.path configured — skipping CharacterUtil.randomPerson baseline; "
-                    + "character will use the pre-KI-30 sparse baseline instead");
-            return null;
-        }
+    private static BaseRecord buildRandomBaseline(OlioContext octx, String preferredLastName, int ageApprox) {
+        if (octx == null) return null;
         try {
-            OlioContext octx = OlioContextUtil.getOlioContext(user, dataPath);
-            if (octx == null) {
-                logger.warn("OlioContextUtil.getOlioContext returned null — skipping random baseline generation");
-                return null;
-            }
             BaseRecord baseline = CharacterUtil.randomPerson(octx,
                     (preferredLastName != null && !preferredLastName.isEmpty()) ? preferredLastName : null);
             if (baseline == null) return null;
@@ -1623,7 +1751,21 @@ public class PictureBookUtil {
         // it's parsed here (ahead of its other, pre-existing use further down) rather than
         // duplicating the parseAgeApprox() call.
         int age = parseAgeApprox(charData);
-        BaseRecord baseline = buildRandomBaseline(user, dataPath, lastName, age);
+        // KI-30 + C3 (shared-library colors): acquire the memoized OlioContext once and thread it into
+        // BOTH the random baseline and the apparel/color path, so apparel colors resolve against the
+        // world's shared color library (ctx.getUniverse().colors) rather than a per-owner fallback group.
+        OlioContext octx = null;
+        if (dataPath != null && !dataPath.isEmpty()) {
+            octx = OlioContextUtil.getOlioContext(user, dataPath);
+            if (octx == null) {
+                logger.warn("OlioContextUtil.getOlioContext returned null (dataPath=" + dataPath + ") for "
+                        + name + " — random baseline + shared-library colors unavailable");
+            }
+        } else {
+            logger.warn("No datagen.path configured — skipping random baseline for " + name
+                    + " (pre-KI-30 sparse fallback); apparel colors fall back to the per-owner group");
+        }
+        BaseRecord baseline = buildRandomBaseline(octx, lastName, age);
 
         try {
             ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH,
@@ -1654,6 +1796,22 @@ public class PictureBookUtil {
                 if (baseAlignment != null) charPerson.set(FieldNames.FIELD_ALIGNMENT, baseAlignment);
             }
 
+            // C2: race is a list<string> whose values must be RaceEnumType constant NAMES (same as the
+            // random baseline sets). The extraction prompt does not surface race today, but if it ever
+            // does, map the free text to the enum constant and override the baseline; an unmappable
+            // value leaves the baseline race in place (never a raw string). No-op when charData has no
+            // "race" key or it doesn't map.
+            Object raceObj = charData.get("race");
+            if (raceObj instanceof String && NarrativeUtil.isMeaningful((String) raceObj)) {
+                String raceEnum = mapRaceOverride((String) raceObj);
+                if (raceEnum != null) {
+                    charPerson.set(OlioFieldNames.FIELD_RACE, Arrays.asList(raceEnum));
+                } else {
+                    logger.info("LLM race '" + ((String) raceObj).trim() + "' for " + name
+                            + " maps to no RaceEnumType constant — keeping baseline race");
+                }
+            }
+
             // Age/ethnicity/skills — plain columns on identity.person/charPerson (not foreign/
             // referenced records), so these can be set directly before create(), same as gender.
             // NarrativeUtil.isMeaningful() filters literal placeholder strings the LLM emits for
@@ -1661,9 +1819,20 @@ public class PictureBookUtil {
             // extraction prompt returns the literal text "null" for ethnicity far more often than
             // a real JSON null, which a plain != null/isBlank() check would not catch).
             if (age > 0) charPerson.set("age", age);
+            // C2: ethnicity is a list<string> whose values must be EthnicityEnumType constant NAMES
+            // (NarrativeUtil.getEthnicityDescription reads them back via EthnicityEnumType.valueOf(name),
+            // which throws on raw free text). Map the LLM's free-text value to the enum constant the
+            // random-generation path would produce; if it maps to no valid constant, KEEP the baseline
+            // (leave ethnicity unset) rather than storing a raw string.
             Object ethnicityObj = charData.get("ethnicity");
             if (ethnicityObj instanceof String && NarrativeUtil.isMeaningful((String) ethnicityObj)) {
-                charPerson.set("ethnicity", Arrays.asList(((String) ethnicityObj).trim()));
+                String ethEnum = mapEthnicityOverride((String) ethnicityObj);
+                if (ethEnum != null) {
+                    charPerson.set("ethnicity", Arrays.asList(ethEnum));
+                } else {
+                    logger.info("LLM ethnicity '" + ((String) ethnicityObj).trim() + "' for " + name
+                            + " maps to no EthnicityEnumType constant — keeping baseline (unset), not storing raw text");
+                }
             }
             Object skillsObj = charData.get("skills");
             if (skillsObj instanceof List) {
@@ -1897,7 +2066,7 @@ public class PictureBookUtil {
             }
 
             try {
-                BaseRecord apparel = generateApparelFromCharData(user, chatConfig, charPerson, charData);
+                BaseRecord apparel = generateApparelFromCharData(user, chatConfig, charPerson, charData, octx);
                 if (apparel != null) {
                     // Neither the LLM-guess path nor the randomApparel fallback marks the apparel
                     // or its wearables `inuse` on its own —
@@ -1968,7 +2137,7 @@ public class PictureBookUtil {
      * a run can be audited without re-deriving what happened from the wearables list alone.
      */
     private static BaseRecord generateApparelFromCharData(BaseRecord user, BaseRecord chatConfig,
-            BaseRecord charPerson, Map<String, Object> charData) {
+            BaseRecord charPerson, Map<String, Object> charData, OlioContext octx) {
         String name = (String) charData.get("name");
         String gender = charPerson.get(FieldNames.FIELD_GENDER);
         long ownerId = charPerson.get(FieldNames.FIELD_OWNER_ID);
@@ -1980,7 +2149,7 @@ public class PictureBookUtil {
 
         if (appearance.isEmpty() && clothingStyle.isEmpty() && outfitNotes.isEmpty() && role.isEmpty()) {
             logger.info("No meaningful appearance/clothing_style/outfit_notes/role for " + name + " — skipping apparel-guess LLM call, using random outfit");
-            return ApparelUtil.randomApparel(null, charPerson);
+            return ApparelUtil.randomApparel(octx, charPerson);
         }
 
         List<String> catalog = ApparelUtil.getApparelCatalogNames(gender);
@@ -2002,22 +2171,36 @@ public class PictureBookUtil {
         @SuppressWarnings("unchecked")
         List<String> items = (guess.get("items") instanceof List) ? (List<String>) guess.get("items") : null;
         String description = (String) guess.get("description");
+        // C3: the LLM may return a small "colors" palette of plain color NAMES — resolved below
+        // against the shared color library and applied as data.color FOREIGN references.
+        List<String> guessedColors = new ArrayList<>();
+        if (guess.get("colors") instanceof List) {
+            for (Object c : (List<?>) guess.get("colors")) {
+                if (c instanceof String && NarrativeUtil.isMeaningful((String) c)) guessedColors.add(((String) c).trim());
+            }
+        }
 
         if (items == null || items.isEmpty()) {
             logger.warn("Apparel-guess LLM returned no usable items for " + name + " (raw=" + llmResponse + ") — falling back to random outfit");
-            return ApparelUtil.randomApparel(null, charPerson);
+            return ApparelUtil.randomApparel(octx, charPerson);
         }
 
-        BaseRecord apparel = ApparelUtil.constructApparel(null, ownerId, charPerson, items.toArray(new String[0]));
+        BaseRecord apparel = ApparelUtil.constructApparel(octx, ownerId, charPerson, items.toArray(new String[0]));
         List<BaseRecord> wearables = (apparel != null) ? apparel.get(OlioFieldNames.FIELD_WEARABLES) : null;
         if (apparel == null || wearables == null || wearables.isEmpty()) {
             logger.warn("Apparel-guess LLM items " + items + " for " + name + " matched nothing in the catalog — falling back to random outfit");
-            return ApparelUtil.randomApparel(null, charPerson);
+            return ApparelUtil.randomApparel(octx, charPerson);
         }
 
         ApparelUtil.designApparel(apparel);
+        // C3: route any LLM-guessed color names through the shared color-library lookup and store
+        // them as data.color FOREIGN references (never a raw string). Applied AFTER designApparel so
+        // the guessed colors win over the random/harmonized picks; unresolved names silently keep
+        // the random fallback color designWearable already assigned.
+        int colorsApplied = ApparelUtil.applyGuessedColors(octx, apparel, guessedColors);
         logger.info("Apparel-guess outfit for " + name + ": items=" + items
-                + " description=[" + (description != null ? description : "(none given)") + "]");
+                + " description=[" + (description != null ? description : "(none given)") + "]"
+                + " colorsGuessed=" + guessedColors + " colorsResolved=" + colorsApplied);
         return apparel;
     }
 
@@ -2227,13 +2410,13 @@ public class PictureBookUtil {
         for (Map<String, Object> scene : extractedScenes) {
             Object charsObj = scene.get("characters");
             if (charsObj instanceof List) {
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> sceneChars = (List<Map<String, Object>>) charsObj;
-                for (Map<String, Object> sc : sceneChars) {
-                    String cname = (String) sc.get("name");
-                    if (cname != null && !cname.isEmpty() && !uniqueChars.containsKey(cname)) {
-                        uniqueChars.put(cname, sc);
-                    }
+                // B7: a scene's "characters" list can hold either {name:...} maps or bare name
+                // strings (see buildSceneEntry's persisted shape). Guard per element — the old
+                // blanket cast to List<Map> ClassCastException-ed on bare-string entries.
+                for (Object sc : (List<?>) charsObj) {
+                    String cname = extractCharName(sc);
+                    if (cname == null || cname.isEmpty() || uniqueChars.containsKey(cname)) continue;
+                    uniqueChars.put(cname, sceneCharDataMap(sc, cname));
                 }
             }
         }
@@ -2254,6 +2437,8 @@ public class PictureBookUtil {
             Map<String, String> charVars = new LinkedHashMap<>();
             charVars.put("name", cname);
             charVars.put("text", text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text);
+            charVars.put("raceOptions", raceOptionsCsv());
+            charVars.put("ethnicityOptions", ethnicityOptionsCsv());
             String llmChar = callLlm(user, chatConfig, "pictureBook.extract-character", charVars);
             Map<String, Object> charData = parseLlmJsonObject(llmChar, "extract-character:" + cname, failedExtractions);
             if (charData.isEmpty()) charData = new LinkedHashMap<>(entry.getValue());
@@ -2398,6 +2583,8 @@ public class PictureBookUtil {
                 Map<String, String> charVars = new LinkedHashMap<>();
                 charVars.put("name", cname);
                 charVars.put("text", text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text);
+                charVars.put("raceOptions", raceOptionsCsv());
+                charVars.put("ethnicityOptions", ethnicityOptionsCsv());
                 String llmChar = callLlm(user, chatConfig, "pictureBook.extract-character", charVars);
                 Map<String, Object> llmData = parseLlmJsonObject(llmChar, "extract-character:" + cname, failedExtractions);
                 if (!llmData.isEmpty()) {
@@ -2878,18 +3065,6 @@ public class PictureBookUtil {
                         + " centerBytes=" + (centerBytes != null ? centerBytes.length : 0) + ")");
                 byte[] compositeBytes = SDUtil.compositeSceneCanvas(landscapeBytes, leftBytes, centerBytes,
                         classicReq.getWidth(), classicReq.getHeight());
-                // TEMPORARY diagnostic (thermal investigation): decode the ACTUAL composited image
-                // and log its real pixel dimensions — the user observed a ~3000x1000/6MB merge
-                // image being sent, which doesn't match the requested canvas size above.
-                if (compositeBytes != null) {
-                    try {
-                        java.awt.image.BufferedImage decoded = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(compositeBytes));
-                        logger.info("generateSceneImage: actual composite image decoded as " + decoded.getWidth() + "x" + decoded.getHeight()
-                                + " (" + compositeBytes.length + " bytes)");
-                    } catch (Exception e) {
-                        logger.warn("generateSceneImage: failed to decode composite image for diagnostic logging: " + e.getMessage());
-                    }
-                }
                 if (compositeBytes != null) {
                     classicReq.setInitImage("data:image/png;base64," + Base64.getEncoder().encodeToString(compositeBytes));
                     classicReq.setInitImageCreativity(sceneCreativity);
@@ -2906,10 +3081,11 @@ public class PictureBookUtil {
             IOSystem.getActiveContext().getAccessPoint().member(user, scene, finalImage, null, true);
             updateSceneImageId(user, scene, finalImageOid);
             updateSceneStatus(user, scene, "done", null);
-            String compositePrompt = action + " " + setting;
             BaseRecord genResult = buildResult();
             genResult.set("imageObjectId", finalImageOid);
-            genResult.set("prompt", compositePrompt);
+            // B9: report the actual prompt sent to SD (the Stage-0 resolved scene prompt), not a
+            // throwaway action+setting reconstruction that never reflected what SD received.
+            genResult.set("prompt", scenePrompt);
             genResult.set("seed", extractSeedFromImage(finalImage));
             if (!failedPortraits.isEmpty()) {
                 genResult.set("failedPortraits", failedPortraits);

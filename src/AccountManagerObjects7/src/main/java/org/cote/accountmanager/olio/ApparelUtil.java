@@ -467,6 +467,56 @@ public class ApparelUtil {
 		return constructApparel(ctx, ownerId, (String)person.get(FieldNames.FIELD_GENDER), getEmbeddedOutfit(names, (String)person.get(FieldNames.FIELD_GENDER)));
 	}
 
+	/**
+	 * C3: apply LLM-guessed color NAMES to an apparel's clothing wearables, resolving each name to a
+	 * shared-library {@code data.color} FOREIGN reference via {@link ColorUtil#getColorByName} — the
+	 * same library {@link #designWearable} draws random colors from. Unresolved names are skipped,
+	 * leaving whatever random color {@code designWearable}/{@link #designApparel} already assigned
+	 * (i.e. the randomApparel fallback the caller asked for). The first resolved color becomes the
+	 * primary color across the clothing wearables; a second resolved color (if present) becomes the
+	 * complement — mirroring designWearable's own color/complementColor pairing, sourced from the
+	 * guess rather than a random pick. Jewelry keeps its own metallic palette. Returns the number of
+	 * guessed names that resolved (0 = nothing applied; pure random fallback).
+	 */
+	public static int applyGuessedColors(OlioContext ctx, BaseRecord apparel, List<String> colorNames) {
+		if(apparel == null || colorNames == null || colorNames.isEmpty()) {
+			return 0;
+		}
+		List<BaseRecord> resolved = new ArrayList<>();
+		for(String cn : colorNames) {
+			BaseRecord c = ColorUtil.getColorByName(ctx, cn);
+			if(c != null) {
+				resolved.add(c);
+			}
+			else {
+				logger.info("Guessed apparel color '" + cn + "' did not resolve to the shared color library — keeping random fallback color");
+			}
+		}
+		if(resolved.isEmpty()) {
+			return 0;
+		}
+		BaseRecord primary = resolved.get(0);
+		BaseRecord complement = resolved.size() > 1 ? resolved.get(1) : primary;
+		List<BaseRecord> wears = apparel.get(OlioFieldNames.FIELD_WEARABLES);
+		if(wears == null) {
+			return resolved.size();
+		}
+		for(BaseRecord w : wears) {
+			String cat = w.get(OlioFieldNames.FIELD_CATEGORY);
+			if(cat != null && cat.equals("jewelry")) {
+				continue;
+			}
+			try {
+				w.set(OlioFieldNames.FIELD_COLOR, primary);
+				w.set(OlioFieldNames.FIELD_COMPLEMENT_COLOR, complement);
+			}
+			catch(FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+		}
+		return resolved.size();
+	}
+
 	
 	public static BaseRecord randomApparel(OlioContext ctx, BaseRecord person) {
 		return randomApparel(ctx, person.get(FieldNames.FIELD_OWNER_ID), (String)person.get(FieldNames.FIELD_GENDER));

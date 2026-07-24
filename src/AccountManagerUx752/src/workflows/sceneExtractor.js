@@ -43,46 +43,6 @@ async function extractScenes(workObjectId, chatConfigName, count, promptTemplate
 }
 
 /**
- * Full extraction — scenes + characters + charPerson creation.
- * Creates ~/PictureBooks/{bookName}/ group. Returns .pictureBookMeta JSON with bookObjectId.
- * @param {string} workObjectId - source document objectId
- */
-async function fullExtract(workObjectId, chatConfigName, count, genre, bookName, promptTemplateOverride) {
-    let body = { schema: 'olio.pictureBookRequest' };
-    if (count != null && count > 0) body.count = count;
-    if (chatConfigName) body.chatConfig = chatConfigName;
-    if (promptTemplateOverride) body.promptTemplate = promptTemplateOverride;
-    if (genre) body.genre = genre;
-    if (bookName) body.bookName = bookName;
-    let resp = await fetch(pbBase() + '/' + workObjectId + '/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify(body)
-    });
-    if (!resp.ok) throw new Error('Full extract failed: ' + resp.status);
-    return resp.json();
-}
-
-/**
- * Chunked scene extraction — processes full text in chunks with running context.
- * Returns { sceneList: [...], extractionComplete: true, chunksProcessed: N }
- * @param {string} workObjectId - source document objectId
- * @param {string|null} chatConfigName
- * @returns {Promise<{sceneList: Array, extractionComplete: boolean, chunksProcessed: number}>}
- */
-async function extractChunked(workObjectId, chatConfigName) {
-    let body = { schema: 'olio.pictureBookRequest' };
-    if (chatConfigName) body.chatConfig = chatConfigName;
-    let resp = await fetch(pbBase() + '/' + workObjectId + '/extract-chunked', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify(body)
-    });
-    if (!resp.ok) throw new Error('Chunked extract failed: ' + resp.status);
-    return resp.json();
-}
-
-/**
  * Create book from user-curated scenes — creates book group, scene notes, characters, meta.
  * @param {string} workObjectId - source document objectId
  * @param {string|null} chatConfigName
@@ -141,8 +101,9 @@ async function generateSceneImage(sceneObjectId, sdConfig, chatConfigName, promp
  * @param {string|null} chatConfigName
  * @param {string|null} style
  * @param {string|null} promptTemplateOverride
+ * @param {AbortSignal|null} signal  lets the caller stop awaiting this fetch when the batch is cancelled
  */
-async function prepareSceneImagePrompts(bookObjectId, sceneObjectIds, chatConfigName, style, promptTemplateOverride) {
+async function prepareSceneImagePrompts(bookObjectId, sceneObjectIds, chatConfigName, style, promptTemplateOverride, signal) {
     let body = { schema: 'olio.pictureBookRequest', sceneObjectIds: sceneObjectIds };
     if (chatConfigName) body.chatConfig = chatConfigName;
     if (promptTemplateOverride) body.promptTemplate = promptTemplateOverride;
@@ -150,9 +111,28 @@ async function prepareSceneImagePrompts(bookObjectId, sceneObjectIds, chatConfig
     let resp = await fetch(pbBase() + '/' + bookObjectId + '/prepare-images', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify(body)
+        body: JSON.stringify(body), signal
     });
     if (!resp.ok) throw new Error('Prepare image prompts failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
+ * Cancel an in-flight extraction / prepare-images call (KI-10). The server keys its cancel
+ * registry on the exact workObjectId (extract-scenes-only / extract-chunked) or bookObjectId
+ * (prepare-images) the client passed to the call being cancelled — so `key` is always a value the
+ * caller already has. Returns { cancelled: true } if a matching in-flight call was signalled to
+ * stop, { cancelled: false } (not an error) if nothing was in-flight for that key (already
+ * finished, or the cancel raced ahead of the call being registered).
+ * @param {string} key - the same workObjectId/bookObjectId passed to the call being cancelled
+ * @returns {Promise<{cancelled: boolean}>}
+ */
+async function cancelPictureBook(key) {
+    let resp = await fetch(pbBase() + '/' + key + '/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include'
+    });
+    if (!resp.ok) throw new Error('Cancel failed: ' + resp.status);
     return resp.json();
 }
 
@@ -365,11 +345,10 @@ export {
     DEFAULT_SD_CONFIG,
     MAX_SCENES_DEFAULT,
     extractScenes,
-    extractChunked,
-    fullExtract,
     createFromScenes,
     generateSceneImage,
     prepareSceneImagePrompts,
+    cancelPictureBook,
     regenerateBlurb,
     loadPictureBook,
     getBookSdConfig,

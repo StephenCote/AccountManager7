@@ -28,9 +28,9 @@ describe('sceneExtractor module exports', () => {
         expect(typeof mod.extractScenes).toBe('function');
     });
 
-    it('should export fullExtract as a function', async () => {
+    it('should export cancelPictureBook as a function', async () => {
         let mod = await import('../workflows/sceneExtractor.js');
-        expect(typeof mod.fullExtract).toBe('function');
+        expect(typeof mod.cancelPictureBook).toBe('function');
     });
 
     it('should export createFromScenes as a function', async () => {
