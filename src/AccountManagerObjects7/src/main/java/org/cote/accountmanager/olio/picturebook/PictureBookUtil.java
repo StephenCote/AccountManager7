@@ -2043,6 +2043,37 @@ public class PictureBookUtil {
                 } catch (Exception e) {
                     logger.warn("Failed to seed state baseline for " + name + ": " + e.getMessage());
                 }
+
+                // Hair/eye color — top-level data.color FOREIGN refs on charPerson, set on the random
+                // baseline by CharacterUtil.setStyleByRace (race-appropriate palette). copyBaselineFieldValues
+                // can't carry them (it skips foreign fields), so link them explicitly by FK reference, the
+                // same PATCH mechanism the sub-models above use.
+                try {
+                    BaseRecord baseHair = (baseline.get(OlioFieldNames.FIELD_HAIR_COLOR) instanceof BaseRecord)
+                            ? (BaseRecord) baseline.get(OlioFieldNames.FIELD_HAIR_COLOR) : null;
+                    if (baseHair != null) {
+                        Long hairId = baseHair.get(FieldNames.FIELD_ID);
+                        if (hairId != null && hairId > 0L
+                                && patchCharPersonField(user, charPerson, OlioFieldNames.FIELD_HAIR_COLOR, baseHair) != null) {
+                            charPerson.set(OlioFieldNames.FIELD_HAIR_COLOR, baseHair);
+                        } else {
+                            logger.warn("Failed to link hairColor (id=" + hairId + ") to charPerson " + name);
+                        }
+                    }
+                    BaseRecord baseEye = (baseline.get(OlioFieldNames.FIELD_EYE_COLOR) instanceof BaseRecord)
+                            ? (BaseRecord) baseline.get(OlioFieldNames.FIELD_EYE_COLOR) : null;
+                    if (baseEye != null) {
+                        Long eyeId = baseEye.get(FieldNames.FIELD_ID);
+                        if (eyeId != null && eyeId > 0L
+                                && patchCharPersonField(user, charPerson, OlioFieldNames.FIELD_EYE_COLOR, baseEye) != null) {
+                            charPerson.set(OlioFieldNames.FIELD_EYE_COLOR, baseEye);
+                        } else {
+                            logger.warn("Failed to link eyeColor (id=" + eyeId + ") to charPerson " + name);
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to seed hair/eye color baseline for " + name + ": " + e.getMessage());
+                }
             }
 
             // Best-effort statistics estimation + apparel wizard — enhancements on top of an
