@@ -16,7 +16,7 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<graalvm.version>23.0.1</graalvm.version>
 		<endorsed.dir>${project.build.directory}/endorsed</endorsed.dir>
-		<skipTests>true</skipTests>
+		<skipTests>false</skipTests>
 	</properties>
 
 	<build>
@@ -86,6 +86,20 @@
 						
 						<exclude>**/TestKontext</exclude>
 						-->
+						<exclude>**/TestContextRefs</exclude>
+						<exclude>**/TestConnection</exclude>
+						<exclude>**/TestChatStreamPreamble</exclude>
+						<exclude>**/TestChatStreamLongGeneration</exclude>
+						<exclude>**/TestChatEvent</exclude>
+						<exclude>**/TestChatDuelLong</exclude>
+						<exclude>**/TestAzureEmbeddingConnection</exclude>
+						<exclude>**/TestAzureChatConnection</exclude>
+						<exclude>**/TestAutoTitleEndToEnd</exclude>
+						<exclude>**/TestPageIndexMcp</exclude>
+						<exclude>**/TestAutoTitle</exclude>
+						<exclude>**/TestBodyStats</exclude>
+						<exclude>**/TestPictureBookUtilE2E</exclude>
+						<exclude>**/TestAsyncLLMSlotRegistry</exclude>
 						<exclude>**/TestMapReduceSummary</exclude>
 						<exclude>**/TestMemorySharing</exclude>
 						<exclude>**/TestChatOptions</exclude>
