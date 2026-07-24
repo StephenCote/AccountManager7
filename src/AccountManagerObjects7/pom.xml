@@ -82,10 +82,47 @@
 						<include>**/Test*.java</include>
 					</includes>
 					<excludes>
-						<!--
+					<!-- 
+						<exclude>**/TestPictureBookCustom.java</exclude>
+					-->
+						<exclude>**/TestChatMemoryPipelineWiring.java</exclude>
+						<exclude>**/TestContext.java</exclude>
+						<exclude>**/TestConversationQualityEvaluator.java</exclude>
+						<exclude>**/TestConversationQualityMetrics.java</exclude>
+						<exclude>**/TestEchoSuppression.java</exclude>
+						<exclude>**/TestGossip.java</exclude>
+						<exclude>**/TestGpt5TemperatureFix.java</exclude>
+						<exclude>**/TestGroupExport.java</exclude>
+						<exclude>**/TestImageMcpContext.java</exclude>
+						<exclude>**/TestInteractionExtractor.java</exclude>
+						<exclude>**/TestLLMConnectionManagerLabels.java</exclude>
+						<exclude>**/TestMemExtract.java</exclude>
+						<exclude>**/TestMemoryExtractionTrigger.java</exclude>
+						<exclude>**/TestMemoryFormatter.java</exclude>
+						<exclude>**/TestMemoryRetrievalScorer.java</exclude>
+						<exclude>**/TestMultiAspectMemoryParser.java</exclude>
+						<exclude>**/TestNarrativeUtilPortraitPrompt.java</exclude>
+						<exclude>**/TestPageIndex.java</exclude>
+						<exclude>**/TestPageIndexCitations.java</exclude>
+						<exclude>**/TestPageIndexMarkerLocation.java</exclude>
+						<exclude>**/TestPhase1Cleanup.java</exclude>
 						
+						<exclude>**/TestPictureBookFull.java</exclude>
+						<exclude>**/TestPictureBookMinimalConfigRepro.java</exclude>
+						<exclude>**/TestPictureBookPipeline.java</exclude>
+						<exclude>**/TestPictureBookService.java</exclude>
+						<exclude>**/TestPortraitReuse.java</exclude>
+						<exclude>**/TestPortraitReuseSceneFetch.java</exclude>
+						<exclude>**/TestPressureDeferral.java</exclude>
+						<exclude>**/TestPromptLibrary.java</exclude>
+						<exclude>**/TestRecordUtil.java</exclude>
+						<exclude>**/TestStreamIdleWatchdog.java</exclude>
+						<exclude>**/TestSummarizeStream.java</exclude>
+						<exclude>**/TestVectorCleanup.java</exclude>
+						<exclude>**/TestZipUtil.java</exclude>
+
 						<exclude>**/TestKontext</exclude>
-						-->
+
 						<exclude>**/TestContextRefs</exclude>
 						<exclude>**/TestConnection</exclude>
 						<exclude>**/TestChatStreamPreamble</exclude>

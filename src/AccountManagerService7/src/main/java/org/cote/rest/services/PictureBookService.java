@@ -151,7 +151,7 @@ public class PictureBookService {
 
     /**
      * POST /{workObjectId}/extract-scenes-only
-     * Smart scene extraction — auto-chunks if text > 8000 chars.
+     * Smart scene extraction — auto-chunks if text > PictureBookUtil.MAX_EXTRACTION_TEXT_CHARS.
      * Returns raw scene JSON array for client review (short text)
      * or { sceneList, extractionComplete, chunksProcessed } (chunked).
      */

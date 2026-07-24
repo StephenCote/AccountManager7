@@ -106,6 +106,14 @@ public class PictureBookUtil {
     // Default scene count when not specified — LLM decides actual count
     public static final int MAX_SCENES_DEFAULT = 10;
 
+    // Max chars of source text sent per LLM call (scene extraction, per-character detail
+    // extraction) and the auto-chunk trigger threshold in extractScenesOnly. Text longer than
+    // this is hard-truncated at the character boundary (not chunked) wherever it's used as a
+    // single-call prompt var — only extractScenesOnly's auto-chunk path processes the full text.
+    // Tune this if a caller's document/model needs a different cutoff than the qwen3-class 8K
+    // context window this default was picked for.
+    public static final int MAX_EXTRACTION_TEXT_CHARS = 8000;
+
     // A leftover "{name}"-shaped token in a prompt template after var substitution means the
     // caller's vars map didn't match what the template actually needs — see callLlmInternal's
     // guard for the full explanation (promptTemplateOverride cross-purpose contamination).
@@ -1900,7 +1908,7 @@ public class PictureBookUtil {
     // ----- Public pipeline entry points (one per REST endpoint) -----------
 
     /**
-     * Smart scene extraction — auto-chunks if text > 8000 chars.
+     * Smart scene extraction — auto-chunks if text > {@link #MAX_EXTRACTION_TEXT_CHARS} chars.
      */
     public static ScenesOnlyResult extractScenesOnly(BaseRecord user, String workObjectId, int count,
             String chatConfigName, String promptTemplateOverride) {
@@ -1927,8 +1935,8 @@ public class PictureBookUtil {
             chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
 
-        // Auto-chunk if text exceeds 8000 chars
-        if (text.length() > 8000) {
+        // Auto-chunk if text exceeds MAX_EXTRACTION_TEXT_CHARS
+        if (text.length() > MAX_EXTRACTION_TEXT_CHARS) {
             List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken);
             return new ScenesOnlyResult(sceneList, true);
         }
@@ -2033,7 +2041,7 @@ public class PictureBookUtil {
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_awesome", "Extracting scenes...");
         Map<String, String> sceneVars = new LinkedHashMap<>();
         sceneVars.put("count", String.valueOf(count));
-        sceneVars.put("text", text.length() > 8000 ? text.substring(0, 8000) : text);
+        sceneVars.put("text", text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text);
         String llmScenes = callLlm(user, chatConfig, "pictureBook.extract-scenes", sceneVars);
         List<Map<String, Object>> extractedScenes = parseLlmJsonArray(llmScenes);
 
@@ -2068,7 +2076,7 @@ public class PictureBookUtil {
                     "Extracting character " + charIdx + "/" + uniqueChars.size() + ": " + cname);
             Map<String, String> charVars = new LinkedHashMap<>();
             charVars.put("name", cname);
-            charVars.put("text", text.length() > 8000 ? text.substring(0, 8000) : text);
+            charVars.put("text", text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text);
             String llmChar = callLlm(user, chatConfig, "pictureBook.extract-character", charVars);
             Map<String, Object> charData = parseLlmJsonObject(llmChar);
             if (charData.isEmpty()) charData = new LinkedHashMap<>(entry.getValue());
@@ -2208,7 +2216,7 @@ public class PictureBookUtil {
                     && text != null && !text.isEmpty() && chatConfig != null) {
                 Map<String, String> charVars = new LinkedHashMap<>();
                 charVars.put("name", cname);
-                charVars.put("text", text.length() > 8000 ? text.substring(0, 8000) : text);
+                charVars.put("text", text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text);
                 String llmChar = callLlm(user, chatConfig, "pictureBook.extract-character", charVars);
                 Map<String, Object> llmData = parseLlmJsonObject(llmChar);
                 if (!llmData.isEmpty()) {
