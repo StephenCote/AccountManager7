@@ -19,6 +19,8 @@ import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.SDAPIEnumType;
+import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -68,7 +70,7 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final String CHAT_PATH = "~/Chat";
 
 	private static final String PB_LLM_MODEL = "qwen3:8b";
-	private static int iter = 3;
+	private static int iter = 6;
 	private static final String PB_CHAT_CONFIG_NAME = "PictureBook " + PB_LLM_MODEL + " " + iter + ".chat";
 
 	// Source document + the exact substring that marks where Step 1 truncates it (see
@@ -76,17 +78,21 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final String SOURCE_DOCUMENT_PATH = "./media/catatone.docx";
 	private static final String CATATONE_CUTOFF_ANCHOR = "About the Author";
 
-	// Fixed cache-note names Steps 1-2 key their get-or-create lookups on — bump these (or delete
-	// the note) to force a fresh run of the LLM call they front, e.g. after changing PB_LLM_MODEL,
+	// Fixed cache-note name Step 1 keys its get-or-create lookup on — bump it (or delete the note)
+	// to force a fresh run of the LLM call it fronts, e.g. after changing PB_LLM_MODEL,
 	// SOURCE_DOCUMENT_PATH, or CATATONE_CUTOFF_ANCHOR above.
 	private static final String CATATONE_OPENING_WORK_NAME = "catatone-opening-custom " + iter;
-	private static final String CATATONE_SCENES_CACHE_NAME = "catatone-custom-scenes-cache " + iter;
+	// Step 2's scene cache lives inside the book's own group (see getOrCreateCatatoneScenes) —
+	// dot-prefixed to match the real .pictureBookMeta convention — so the name itself doesn't need
+	// an iter suffix; the containing group (CATATONE_BOOK_NAME, which does carry iter) disambiguates.
+	private static final String CATATONE_SCENES_CACHE_NAME = ".scenesCache";
 
-	private static final int SCENE_COUNT = 2; // matches the two isolated house scenes
+	private static final int SCENE_COUNT = 10; // matches the two isolated house scenes
 	private static final String BOOK_GENRE = "dystopian sci-fi";
 	private static final String CATATONE_BOOK_NAME = "Catatone Custom Book " + iter;
 	private static final String BOOK_GROUP_PATH_PREFIX = "~/Data/PictureBooks/"; // mirrors PictureBookUtil's private PICTURE_BOOKS_DIR
 	private static final String IMAGE_STYLE = "photograph"; // one of PictureBookUtil.ALLOWED_STYLES
+	private static final long MANNEQUIN_SEED = 424242L; // fixed, not -1/random — see Step 3B
 
 	private OrganizationContext testOrgCtx;
 	private BaseRecord testUser;
@@ -187,8 +193,20 @@ public class TestPictureBookCustom extends BaseTest {
 	/**
 	 * STEP 2 helper — get-or-create the extracted scene list, cached as JSON on a fixed-name note
 	 * so repeated runs skip the {@code pictureBook.extract-scenes} LLM call entirely. Same idiom as
-	 * getOrCreateCatatoneOpeningWork() (Step 1) — delete this note (or bump the constant) to force
+	 * getOrCreateCatatoneOpeningWork() (Step 1) — delete this note (or bump {@code iter}) to force
 	 * a fresh extraction, e.g. after changing PB_LLM_MODEL or the cutoff anchor.
+	 *
+	 * Scoped under the BOOK's own group (~/Data/PictureBooks/{CATATONE_BOOK_NAME}/), not ~/Chat.
+	 * In the real pipeline, extractScenesOnly() is ephemeral — it persists nothing; the client
+	 * holds the scene list in memory until create-from-scenes runs (see javadoc below). This test
+	 * needs its OWN durable cache to skip re-paying for the LLM call across runs, but that cache is
+	 * test scaffolding, not real pipeline behavior — and it must still respect the real system's
+	 * scoping rule that anything book-related lives under that book's group, not a shared bucket
+	 * like ~/Chat. A shared bucket also risks exactly the kind of (name, groupId, organizationId)
+	 * collisions PictureBookUtil.createSceneNote already has real per-title problems with — putting
+	 * test scaffolding in the same shared space would only add to that, not emulate it correctly.
+	 * makePath here is idempotent with createFromScenes' internal ensureBookGroup (same path), so
+	 * pre-creating the group in Step 2 does not create a second/different book group in Step 3.
 	 *
 	 * Ux equivalent: sceneExtractor.js's Step 2 panel POSTs to
 	 * {@code /rest/picturebook/{workObjectId}/extract-scenes-only} (wraps this exact
@@ -198,7 +216,8 @@ public class TestPictureBookCustom extends BaseTest {
 	 */
 	@SuppressWarnings("unchecked")
 	private List<Map<String, Object>> getOrCreateCatatoneScenes(String workObjectId) throws Exception {
-		BaseRecord cached = DocumentUtil.getRecord(testUser, ModelNames.MODEL_NOTE, CATATONE_SCENES_CACHE_NAME, CHAT_PATH);
+		String bookPath = BOOK_GROUP_PATH_PREFIX + CATATONE_BOOK_NAME;
+		BaseRecord cached = DocumentUtil.getRecord(testUser, ModelNames.MODEL_NOTE, CATATONE_SCENES_CACHE_NAME, bookPath);
 		if (cached != null) {
 			String json = cached.get(FieldNames.FIELD_TEXT);
 			List<Map<String, Object>> scenes = JSONUtil.getList(json, Map.class, null);
@@ -210,8 +229,24 @@ public class TestPictureBookCustom extends BaseTest {
 			testUser, workObjectId, SCENE_COUNT, chatConfig.get(FieldNames.FIELD_NAME), null);
 		assertNotNull("Scene extraction should return a result", scenesOnly);
 		assertFalse("Scene extraction should produce at least one scene", scenesOnly.scenes.isEmpty());
+		// Investigate/redo: each entry is a JSON {context,error,rawResponse,failedAt} blob for a
+		// chunk/scene response that failed to parse — read it back, fix the JSON by hand, and
+		// splice the corrected scene into sceneList before it gets cached below.
+		if (!scenesOnly.failedExtractions.isEmpty()) {
+			logger.warn("Scene extraction had " + scenesOnly.failedExtractions.size() + " failed/unparseable LLM response(s) — see scenesOnly.failedExtractions for the raw text:");
+			for (String failure : scenesOnly.failedExtractions) {
+				logger.warn("  " + failure);
+			}
+		}
 
-		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, CHAT_PATH);
+		// Idempotent with ensureBookGroup's own makePath call inside createFromScenes (Step 3) —
+		// same path, so this doesn't preempt or duplicate the real book group.
+		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		BaseRecord bookGroup = IOSystem.getActiveContext().getPathUtil().makePath(testUser,
+			ModelNames.MODEL_GROUP, bookPath, GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("Book group should be creatable ahead of Step 3", bookGroup);
+
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, bookPath);
 		plist.parameter(FieldNames.FIELD_NAME, CATATONE_SCENES_CACHE_NAME);
 		BaseRecord cacheNote = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, testUser, null, plist);
 		cacheNote.set(FieldNames.FIELD_TEXT, JSONUtil.exportObject(scenesOnly.scenes));
@@ -233,13 +268,23 @@ public class TestPictureBookCustom extends BaseTest {
 	 * own guard against this is that the book group already existing routes the wizard straight to
 	 * the character list instead of re-POSTing. Mirror that guard here via findPath instead of
 	 * makePath so a re-run never creates a second (Catatone Custom Book 2) group.
+	 *
+	 * IMPORTANT: check for the /Characters SUBGROUP, not just the top-level book group — Step 2's
+	 * getOrCreateCatatoneScenes() already pre-creates the top-level book group (to store its own
+	 * .scenesCache note) before this method ever runs, so the top-level group's mere existence is
+	 * NOT proof createFromScenes has actually run. Only createFromScenes'/extract's ensureSubGroup
+	 * call ever creates /Characters — confirmed live 2026-07-24: checking the top-level group alone
+	 * caused a fresh iter to skip createFromScenes entirely (false "already exists"), leaving
+	 * /Characters never created and NPEing on the very next line that reads it.
 	 */
 	private String getOrCreateCatatoneBook(String workObjectId, List<Map<String, Object>> sceneList) throws Exception {
 		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
 		String bookPath = BOOK_GROUP_PATH_PREFIX + CATATONE_BOOK_NAME;
-		BaseRecord existingBookGroup = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
-			ModelNames.MODEL_GROUP, bookPath, GroupEnumType.DATA.toString(), orgId);
-		if (existingBookGroup != null) {
+		BaseRecord existingCharsGroup = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
+			ModelNames.MODEL_GROUP, bookPath + "/Characters", GroupEnumType.DATA.toString(), orgId);
+		if (existingCharsGroup != null) {
+			BaseRecord existingBookGroup = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
+				ModelNames.MODEL_GROUP, bookPath, GroupEnumType.DATA.toString(), orgId);
 			String existingBookObjectId = existingBookGroup.get(FieldNames.FIELD_OBJECT_ID);
 			logger.info("Reusing existing catatone book: " + existingBookObjectId);
 			return existingBookObjectId;
@@ -254,6 +299,17 @@ public class TestPictureBookCustom extends BaseTest {
 		List<Object> failedCharacters = meta.get("failedCharacters");
 		if (failedCharacters != null && !failedCharacters.isEmpty()) {
 			logger.warn("createFromScenes failedCharacters: " + failedCharacters);
+		}
+		// Investigate/redo: durably persisted on .pictureBookMeta (unlike Step 2's in-memory-only
+		// scenesOnly.failedExtractions) — survives past this test run. Read it back later via
+		// PictureBookUtil.getBookSdConfig-style loadTypedMeta, or just re-run this test and check
+		// the log below.
+		List<Object> failedExtractions = meta.get("failedExtractions");
+		if (failedExtractions != null && !failedExtractions.isEmpty()) {
+			logger.warn("createFromScenes had " + failedExtractions.size() + " failed/unparseable LLM extraction(s), persisted on .pictureBookMeta.failedExtractions:");
+			for (Object failure : failedExtractions) {
+				logger.warn("  " + failure);
+			}
 		}
 		logger.info("Created catatone book " + bookObjectId);
 		return bookObjectId;
@@ -356,6 +412,9 @@ public class TestPictureBookCustom extends BaseTest {
 		charQ.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 		charQ.planMost(true);
 		BaseRecord[] chars = IOSystem.getActiveContext().getSearch().findRecords(charQ);
+		assertTrue("At least one character should have been created (check createFromScenes' "
+			+ "failedCharacters log above if this fails — individual character creation can fail "
+			+ "without failing the whole book)", chars.length > 0);
 		for (BaseRecord cp : chars) {
 			logger.info("Character: " + cp.get(FieldNames.FIELD_NAME)
 				+ " gender=" + cp.get(FieldNames.FIELD_GENDER)
@@ -364,43 +423,46 @@ public class TestPictureBookCustom extends BaseTest {
 		}
 
 		// ═══════════════════════════════════════════════════════════════════
-		// STEP 3B — APPAREL GENERATION (optional per-character/per-scene outfits)
+		// STEP 3B — APPAREL GENERATION (verify the LLM-guessed base outfit + render it)
 		// ═══════════════════════════════════════════════════════════════════
-		// TODO: createCharPerson() (called by Step 3 above) already runs ApparelUtil.contextApparel
-		// once per character as a best-effort base outfit (see createFromScenes's failedApparel
-		// collection) — store.apparel should already have 1 entry per character. Uncomment below
-		// to add a SECOND, scene-tagged outfit the way the apparel wizard does.
-		//
-		// Java path (what the wizard itself calls — see ApparelUtil.contextApparel's use in
-		// TestPictureBookFull#TestSceneTaggedApparelSelectsCorrectOutfitPerScene):
-		//   BaseRecord octx = null; // OlioContextUtil.getOlioContext(testUser, testProperties.getProperty("test.datagen.path"));
-		//   BaseRecord secondApparel = ApparelUtil.contextApparel(octx, cp /* a charPerson from Step 3 */,
-		//       /*sceneIndex*/ 1, CivilUtil.ClimateType.TEMPERATE);
-		//   secondApparel.setValue(OlioFieldNames.FIELD_IN_USE, true);
-		//   IOSystem.getActiveContext().getRecordUtil().createRecord(secondApparel);
-		//   IOSystem.getActiveContext().getMemberUtil().member(testUser, cp.get("store"),
-		//       OlioFieldNames.FIELD_APPAREL, secondApparel, null, true);
-		//   PictureBookUtil.tagApparelSceneIndex(testUser, secondApparel.get(FieldNames.FIELD_OBJECT_ID), 1);
-		//
-		// Mannequin image (the actual apparel PHOTO, not just outfit data) — see
-		// OlioService.reimageApparel for the real REST equivalent. Same sdConfig caveat as Step
-		// 5B: olio.sd.config's schema "model" default (sdXL_v10VAEFix.safetensors) is almost
-		// certainly not installed on your Swarm — always set model/refinerModel from test.swarm.*.
-		//   SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, testProperties.getProperty("test.swarm.server"));
-		//   BaseRecord sdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-		//   sdConfig.set(OlioFieldNames.FIELD_SD_MODEL, testProperties.getProperty("test.swarm.model"));
-		//   sdConfig.set(OlioFieldNames.FIELD_SD_REFINER_MODEL, testProperties.getProperty("test.swarm.refinerModel"));
-		//   sdConfig.set("negativePrompt", testProperties.getProperty("test.swarm.negativePrompt"));
-		//   String apparelGroupPath = "~/Gallery/Apparel/" + (String) secondApparel.get(FieldNames.FIELD_NAME);
-		//   List<BaseRecord> mannequinImages = sdu.generateMannequinImages(testUser, apparelGroupPath, secondApparel, sdConfig, /*hires*/ false, /*seed*/ -1L);
-		//
-		// Ux path (what actually runs when a human clicks "Tag" in pictureBookCharacters.js's apparel
-		// panel, or opens the outfit builder): outfitBuilder.js opens the wizard panel that drives
-		// apparel creation (am7olio.outfitBuilderState) and, separately, pictureBookCharacters.js's
-		// tagApparel() calls sceneExtractor.js's tagApparelSceneIndex(bookOid, apparelObjectId,
-		// sceneIndex) — a thin REST wrapper over PictureBookUtil.tagApparelSceneIndex. There is no
-		// picturebook-specific apparel-generation endpoint; it's the same generic charPerson wizard
-		// used everywhere else in Olio, just tagged with a sceneIndex afterward.
+		// createCharPerson() (called by Step 3 above) already ran PictureBookUtil.
+		// generateApparelFromCharData() once per character — LLM-guessed from the extracted
+		// appearance/clothing_style/outfit_notes/role, falling back to ApparelUtil.randomApparel
+		// when the LLM has nothing to go on or its guess doesn't match the wardrobe catalog. The
+		// LLM request + resulting outfit are already logged by that call during Step 3 above; this
+		// step just confirms the outfit landed on the character and renders it as a real mannequin
+		// image via SDUtil.generateMannequinImages (same call OlioService.reimageApparel makes).
+
+		BaseRecord apparelChar = chars[0];
+		IOSystem.getActiveContext().getReader().populate(apparelChar, new String[] { FieldNames.FIELD_STORE });
+		BaseRecord apparelStore = apparelChar.get(FieldNames.FIELD_STORE);
+		List<BaseRecord> apparelList = apparelStore.get(OlioFieldNames.FIELD_APPAREL);
+		assertNotNull("Character should have a store.apparel list", apparelList);
+		assertFalse("Character should have at least one apparel entry from Step 3's createCharPerson", apparelList.isEmpty());
+		BaseRecord apparel = apparelList.get(0);
+		IOSystem.getActiveContext().getReader().populate(apparel, new String[] { OlioFieldNames.FIELD_WEARABLES });
+		List<BaseRecord> apparelWearables = apparel.get(OlioFieldNames.FIELD_WEARABLES);
+		logger.info("Step 3B: " + apparelChar.get(FieldNames.FIELD_NAME) + "'s apparel '" + apparel.get(FieldNames.FIELD_NAME)
+			+ "' has " + (apparelWearables != null ? apparelWearables.size() : 0) + " wearable(s)");
+
+		// olio.sd.config's schema "model" default (sdXL_v10VAEFix.safetensors) is almost certainly
+		// not installed on your Swarm — always set model/refinerModel from test.swarm.* (same as
+		// buildSdConfigTemplate() for Step 5).
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		assertNotNull("test.swarm.server must be set", swarmServer);
+		BaseRecord apparelSdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		apparelSdConfig.set(OlioFieldNames.FIELD_SD_MODEL, testProperties.getProperty("test.swarm.model"));
+		apparelSdConfig.set(OlioFieldNames.FIELD_SD_REFINER_MODEL, testProperties.getProperty("test.swarm.refinerModel"));
+		apparelSdConfig.set("negativePrompt", testProperties.getProperty("test.swarm.negativePrompt"));
+
+		// Fixed (not -1/random) seed: repeated runs against the same apparel should render the same
+		// mannequin image, matching this test's overall get-or-create/idempotent design.
+		SDUtil apparelSdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
+		String apparelGroupPath = "~/Gallery/Apparel/" + (String) apparel.get(FieldNames.FIELD_NAME);
+		List<BaseRecord> mannequinImages = apparelSdu.generateMannequinImages(testUser, apparelGroupPath, apparel, apparelSdConfig, /*hires*/ false, MANNEQUIN_SEED);
+		assertNotNull("generateMannequinImages should return a result list", mannequinImages);
+		logger.info("Step 3B: generated " + mannequinImages.size() + " mannequin image(s) for " + apparel.get(FieldNames.FIELD_NAME)
+			+ " (seed=" + MANNEQUIN_SEED + "): " + mannequinImages.stream().map(i -> (String) i.get(FieldNames.FIELD_OBJECT_ID)).collect(java.util.stream.Collectors.toList()));
 
 		// ═══════════════════════════════════════════════════════════════════
 		// STEP 4 — PROMPT RESOLUTION (check the prompt BEFORE spending SD time on it)

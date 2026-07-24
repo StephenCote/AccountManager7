@@ -22,7 +22,6 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.CharacterUtil;
-import org.cote.accountmanager.olio.CivilUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
@@ -154,10 +153,26 @@ public class PictureBookUtil {
     public static final class ScenesOnlyResult {
         public final List<Map<String, Object>> scenes;
         public final boolean chunked;
+        /**
+         * Raw LLM responses that failed to parse as JSON during this extraction, one JSON-encoded
+         * {context,error,rawResponse,failedAt} blob per failure — never null, empty when nothing
+         * failed. No book/meta exists yet at this point in the pipeline (extractScenesOnly runs
+         * before createFromScenes), so this is the only place a pre-book parse failure can surface;
+         * once a book exists, the same failures are captured on .pictureBookMeta's failedExtractions
+         * field instead. To investigate: inspect rawResponse, fix the JSON by hand, and re-drive the
+         * normal entry point (e.g. patch the corrected scene into your own sceneList and call
+         * createFromScenes/extract again) — there is no separate "redo" API.
+         */
+        public final List<String> failedExtractions;
 
         public ScenesOnlyResult(List<Map<String, Object>> scenes, boolean chunked) {
+            this(scenes, chunked, new ArrayList<>());
+        }
+
+        public ScenesOnlyResult(List<Map<String, Object>> scenes, boolean chunked, List<String> failedExtractions) {
             this.scenes = scenes;
             this.chunked = chunked;
+            this.failedExtractions = failedExtractions != null ? failedExtractions : new ArrayList<>();
         }
     }
 
@@ -927,8 +942,22 @@ public class PictureBookUtil {
         return result.trim();
     }
 
-    @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> parseLlmJsonArray(String response) {
+        return parseLlmJsonArray(response, null, null);
+    }
+
+    /**
+     * Parse an LLM JSON array response (e.g. pictureBook.extract-scenes' scene list).
+     *
+     * @param context short label identifying which call produced {@code response} (e.g.
+     *   "extract-scenes:{workObjectId}") — stored alongside the raw response so a persisted
+     *   failure can be traced back to what was being extracted.
+     * @param failedExtractions sink for {context,error,rawResponse,failedAt} JSON blobs when
+     *   parsing fails; null means "don't bother capturing" (used by call sites that don't have a
+     *   meta/result record to attach failures to). See {@link #recordFailedExtraction}.
+     */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> parseLlmJsonArray(String response, String context, List<String> failedExtractions) {
         if (response == null || response.isEmpty()) return new ArrayList<>();
         String trimmed = stripThink(response.trim());
         // Strip markdown code fences
@@ -940,13 +969,18 @@ public class PictureBookUtil {
         // Find first [ ... ] array
         int start = trimmed.indexOf('[');
         int end = trimmed.lastIndexOf(']');
-        if (start < 0 || end < 0 || end <= start) return new ArrayList<>();
+        if (start < 0 || end < 0 || end <= start) {
+            recordFailedExtraction(failedExtractions, context, "No JSON array ([...]) found in LLM response", response);
+            return new ArrayList<>();
+        }
         trimmed = trimmed.substring(start, end + 1);
         try {
             List<Map<String, Object>> parsed = JSONUtil.getList(trimmed, Map.class, null);
             if (parsed != null) return parsed;
+            recordFailedExtraction(failedExtractions, context, "JSON array parse returned null", response);
         } catch (Exception e) {
             logger.warn("Failed to parse LLM JSON array: " + e.getMessage());
+            recordFailedExtraction(failedExtractions, context, e.getMessage(), response);
         }
         return new ArrayList<>();
     }
@@ -954,8 +988,13 @@ public class PictureBookUtil {
     /**
      * Parse a single LLM JSON object response.
      */
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> parseLlmJsonObject(String response) {
+        return parseLlmJsonObject(response, null, null);
+    }
+
+    /** @see #parseLlmJsonArray(String, String, List) — same context/failedExtractions contract. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseLlmJsonObject(String response, String context, List<String> failedExtractions) {
         if (response == null || response.isEmpty()) return new LinkedHashMap<>();
         String trimmed = stripThink(response.trim());
         if (trimmed.startsWith("```")) {
@@ -965,14 +1004,46 @@ public class PictureBookUtil {
         }
         int start = trimmed.indexOf('{');
         int end = trimmed.lastIndexOf('}');
-        if (start < 0 || end < 0 || end <= start) return new LinkedHashMap<>();
+        if (start < 0 || end < 0 || end <= start) {
+            recordFailedExtraction(failedExtractions, context, "No JSON object ({...}) found in LLM response", response);
+            return new LinkedHashMap<>();
+        }
         trimmed = trimmed.substring(start, end + 1);
         try {
-            return JSONUtil.getMap(trimmed.getBytes(), String.class, Object.class);
+            // JSONUtil.getMap swallows its own IOException and returns null rather than throwing —
+            // must explicitly null-check here, or a malformed response silently returns null instead
+            // of an empty map, and every caller's `.isEmpty()` NPEs instead of degrading gracefully.
+            Map<String, Object> parsed = JSONUtil.getMap(trimmed.getBytes(), String.class, Object.class);
+            if (parsed != null) return parsed;
+            recordFailedExtraction(failedExtractions, context, "JSON object parse returned null", response);
         } catch (Exception e) {
             logger.warn("Failed to parse LLM JSON object: " + e.getMessage());
+            recordFailedExtraction(failedExtractions, context, e.getMessage(), response);
         }
         return new LinkedHashMap<>();
+    }
+
+    /**
+     * Capture a malformed LLM extraction response for later investigation/redo instead of letting
+     * it vanish behind a log line. Callers attach the accumulated list to whatever durable record
+     * they have on hand — .pictureBookMeta's failedExtractions field (extract/createFromScenes,
+     * once a book exists) or ScenesOnlyResult.failedExtractions (extractScenesOnly, pre-book). To
+     * redo: read the note back, find the rawResponse for the failed context, fix it by hand into
+     * valid JSON, and re-drive the same entry point with the corrected data — this is deliberately
+     * not a separate API, just enough breadcrumb to not lose the LLM's original (bad) output.
+     */
+    private static void recordFailedExtraction(List<String> sink, String context, String error, String rawResponse) {
+        if (sink == null) return;
+        try {
+            Map<String, Object> failure = new LinkedHashMap<>();
+            failure.put("context", context);
+            failure.put("error", error);
+            failure.put("rawResponse", rawResponse);
+            failure.put("failedAt", ZonedDateTime.now().toString());
+            sink.add(JSONUtil.exportObject(failure));
+        } catch (Exception e) {
+            logger.warn("Failed to record failed extraction for investigation: " + e.getMessage());
+        }
     }
 
     /**
@@ -1108,9 +1179,14 @@ public class PictureBookUtil {
      *   scenes were already extracted from prior chunks, rather than running to completion. May be
      *   null (no cancellation support requested by the caller).
      */
-    @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
             SummarizeProgress cancelToken) {
+        return extractChunkedInternal(user, chatConfig, text, cancelToken, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
+            SummarizeProgress cancelToken, List<String> failedExtractions) {
         int chunkSize = 2000;
         int overlap = 200;
         List<String> chunks = new ArrayList<>();
@@ -1160,7 +1236,7 @@ public class PictureBookUtil {
             // gated on the result being usable).
             if (cancelToken != null) cancelToken.incrementCurrent();
             if (llmResp == null || llmResp.isEmpty()) continue;
-            Map<String, Object> chunkResult = parseLlmJsonObject(llmResp);
+            Map<String, Object> chunkResult = parseLlmJsonObject(llmResp, "extract-scenes-chunk:" + (ci + 1) + "/" + chunks.size(), failedExtractions);
             if (chunkResult == null || chunkResult.isEmpty()) {
                 logger.warn("Chunk " + (ci + 1) + "/" + chunks.size() + " returned unparseable LLM response — skipping");
                 continue;
@@ -1519,7 +1595,7 @@ public class PictureBookUtil {
      *   sparse-field creation path (non-fatal).
      */
     @SuppressWarnings("unchecked")
-    private static BaseRecord createCharPerson(BaseRecord user, Map<String, Object> charData, BaseRecord charsGroup, String genre,
+    private static BaseRecord createCharPerson(BaseRecord user, BaseRecord chatConfig, Map<String, Object> charData, BaseRecord charsGroup, String genre,
             List<String> failedApparelOut, List<String> failedStatisticsOut, String dataPath) {
         String name = (String) charData.get("name");
         if (name == null || name.isEmpty()) return null;
@@ -1821,9 +1897,10 @@ public class PictureBookUtil {
             }
 
             try {
-                BaseRecord apparel = ApparelUtil.contextApparel(null, charPerson, 2, CivilUtil.ClimateType.TEMPERATE);
+                BaseRecord apparel = generateApparelFromCharData(user, chatConfig, charPerson, charData);
                 if (apparel != null) {
-                    // contextApparel() alone does NOT mark the apparel or its wearables `inuse` —
+                    // Neither the LLM-guess path nor the randomApparel fallback marks the apparel
+                    // or its wearables `inuse` on its own —
                     // ApparelUtil.getWearing()/NarrativeUtil.describeOutfit() both filter on
                     // inuse==true (apparel AND per-wearable), falling back to literal
                     // "naked/nude, wearing no clothes" text otherwise. Both real precedents
@@ -1874,6 +1951,97 @@ public class PictureBookUtil {
             logger.error("Failed to create charPerson " + name + ": " + e.getMessage(), e);
             return null;
         }
+    }
+
+    /**
+     * LLM-guessed apparel: asks the LLM to pick 2-5 items from ApparelUtil's real wardrobe catalog
+     * that fit the character's extracted appearance/clothing_style/outfit_notes/role, then builds
+     * a real apparel record from those exact names via ApparelUtil.constructApparel/getEmbeddedOutfit
+     * (same construction path contextApparel's random wizard uses — the only difference is WHICH
+     * item names get chosen). Falls back to ApparelUtil.randomApparel whenever the LLM path can't
+     * produce something usable: no meaningful charData to guess from, the call/parse fails, or none
+     * of the guessed names matched the catalog (getEmbeddedOutfit silently drops unmatched names,
+     * so an apparel with zero wearables is treated as "nothing usable", not a success).
+     *
+     * Logs both the LLM request (vars sent) and the resulting outfit — either the LLM's own
+     * one-sentence description, or "(fallback: random outfit)" when the guess didn't pan out — so
+     * a run can be audited without re-deriving what happened from the wearables list alone.
+     */
+    private static BaseRecord generateApparelFromCharData(BaseRecord user, BaseRecord chatConfig,
+            BaseRecord charPerson, Map<String, Object> charData) {
+        String name = (String) charData.get("name");
+        String gender = charPerson.get(FieldNames.FIELD_GENDER);
+        long ownerId = charPerson.get(FieldNames.FIELD_OWNER_ID);
+
+        String appearance = extractMeaningfulPhysicalSummary(charData);
+        String clothingStyle = meaningfulOrEmpty(charData.get("clothing_style"));
+        String outfitNotes = meaningfulOrEmpty(charData.get("outfit_notes"));
+        String role = meaningfulOrEmpty(charData.get("role"));
+
+        if (appearance.isEmpty() && clothingStyle.isEmpty() && outfitNotes.isEmpty() && role.isEmpty()) {
+            logger.info("No meaningful appearance/clothing_style/outfit_notes/role for " + name + " — skipping apparel-guess LLM call, using random outfit");
+            return ApparelUtil.randomApparel(null, charPerson);
+        }
+
+        List<String> catalog = ApparelUtil.getApparelCatalogNames(gender);
+        Map<String, String> vars = new LinkedHashMap<>();
+        vars.put("name", name);
+        vars.put("gender", gender != null ? gender : "unknown");
+        vars.put("appearance", appearance.isEmpty() ? "(none given)" : appearance);
+        vars.put("clothingStyle", clothingStyle.isEmpty() ? "(none given)" : clothingStyle);
+        vars.put("outfitNotes", outfitNotes.isEmpty() ? "(none given)" : outfitNotes);
+        vars.put("role", role.isEmpty() ? "(none given)" : role);
+        vars.put("catalog", String.join(", ", catalog));
+        logger.info("Apparel-guess LLM request for " + name + ": appearance=[" + vars.get("appearance")
+                + "] clothingStyle=[" + vars.get("clothingStyle") + "] outfitNotes=[" + vars.get("outfitNotes")
+                + "] role=[" + vars.get("role") + "]");
+
+        String llmResponse = callLlm(user, chatConfig, "pictureBook.guess-apparel", vars);
+        Map<String, Object> guess = parseLlmJsonObject(llmResponse, "guess-apparel:" + name, null);
+
+        @SuppressWarnings("unchecked")
+        List<String> items = (guess.get("items") instanceof List) ? (List<String>) guess.get("items") : null;
+        String description = (String) guess.get("description");
+
+        if (items == null || items.isEmpty()) {
+            logger.warn("Apparel-guess LLM returned no usable items for " + name + " (raw=" + llmResponse + ") — falling back to random outfit");
+            return ApparelUtil.randomApparel(null, charPerson);
+        }
+
+        BaseRecord apparel = ApparelUtil.constructApparel(null, ownerId, charPerson, items.toArray(new String[0]));
+        List<BaseRecord> wearables = (apparel != null) ? apparel.get(OlioFieldNames.FIELD_WEARABLES) : null;
+        if (apparel == null || wearables == null || wearables.isEmpty()) {
+            logger.warn("Apparel-guess LLM items " + items + " for " + name + " matched nothing in the catalog — falling back to random outfit");
+            return ApparelUtil.randomApparel(null, charPerson);
+        }
+
+        ApparelUtil.designApparel(apparel);
+        logger.info("Apparel-guess outfit for " + name + ": items=" + items
+                + " description=[" + (description != null ? description : "(none given)") + "]");
+        return apparel;
+    }
+
+    /** charData.get(key) as a trimmed string, or "" when missing/blank/an LLM literal-null placeholder. */
+    private static String meaningfulOrEmpty(Object val) {
+        if (!(val instanceof String) || !NarrativeUtil.isMeaningful((String) val)) return "";
+        return ((String) val).trim();
+    }
+
+    /** Short "build, hair, eyes" summary from charData.physical, skipping non-meaningful fields. */
+    @SuppressWarnings("unchecked")
+    private static String extractMeaningfulPhysicalSummary(Map<String, Object> charData) {
+        Object physicalObj = charData.get("physical");
+        List<String> parts = new ArrayList<>();
+        String appearanceField = meaningfulOrEmpty(charData.get("appearance"));
+        if (!appearanceField.isEmpty()) parts.add(appearanceField);
+        if (physicalObj instanceof Map) {
+            Map<String, Object> physical = (Map<String, Object>) physicalObj;
+            for (String key : new String[] { "build", "hair", "eyes", "skin" }) {
+                String v = meaningfulOrEmpty(physical.get(key));
+                if (!v.isEmpty()) parts.add(v);
+            }
+        }
+        return String.join(", ", parts);
     }
 
     /**
@@ -1935,10 +2103,12 @@ public class PictureBookUtil {
             chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
 
+        List<String> failedExtractions = new ArrayList<>();
+
         // Auto-chunk if text exceeds MAX_EXTRACTION_TEXT_CHARS
         if (text.length() > MAX_EXTRACTION_TEXT_CHARS) {
-            List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken);
-            return new ScenesOnlyResult(sceneList, true);
+            List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken, failedExtractions);
+            return new ScenesOnlyResult(sceneList, true, failedExtractions);
         }
 
         // Short text — single-shot extraction
@@ -1948,7 +2118,7 @@ public class PictureBookUtil {
         vars.put("text", text);
 
         String llmResponse = callLlm(user, chatConfig, "pictureBook.extract-scenes", vars, promptTemplateOverride);
-        List<Map<String, Object>> scenes = parseLlmJsonArray(llmResponse);
+        List<Map<String, Object>> scenes = parseLlmJsonArray(llmResponse, "extract-scenes:" + workObjectId, failedExtractions);
         // Normalize: LLM may return "summary" instead of "blurb"
         for (Map<String, Object> scene : scenes) {
             if (scene.get("blurb") == null && scene.get("summary") != null) {
@@ -1957,7 +2127,7 @@ public class PictureBookUtil {
         }
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         OllamaModelUtil.unloadAll();
-        return new ScenesOnlyResult(scenes, false);
+        return new ScenesOnlyResult(scenes, false, failedExtractions);
     }
 
     /**
@@ -1986,12 +2156,14 @@ public class PictureBookUtil {
             chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
 
-        List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken);
+        List<String> failedExtractions = new ArrayList<>();
+        List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken, failedExtractions);
         BaseRecord result = buildResult();
         try {
             result.set("sceneList", sceneList);
             result.set("extractionComplete", true);
             result.set("chunksProcessed", -1);
+            if (!failedExtractions.isEmpty()) result.set("failedExtractions", failedExtractions);
         } catch (Exception e) { logger.warn("Failed to build chunked result: " + e.getMessage()); }
         return result;
     }
@@ -2043,7 +2215,12 @@ public class PictureBookUtil {
         sceneVars.put("count", String.valueOf(count));
         sceneVars.put("text", text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text);
         String llmScenes = callLlm(user, chatConfig, "pictureBook.extract-scenes", sceneVars);
-        List<Map<String, Object>> extractedScenes = parseLlmJsonArray(llmScenes);
+        // createCharPerson()'s failure lists (below) already establish the precedent: never let a
+        // bad LLM response vanish behind a log line. failedExtractions mirrors that for raw
+        // scene/character JSON that fails to parse — attached to meta.failedExtractions below so
+        // the original (bad) LLM output can be inspected and manually redone.
+        List<String> failedExtractions = new ArrayList<>();
+        List<Map<String, Object>> extractedScenes = parseLlmJsonArray(llmScenes, "extract-scenes:" + workObjectId, failedExtractions);
 
         // Collect unique character names across all scenes
         Map<String, Map<String, Object>> uniqueChars = new LinkedHashMap<>();
@@ -2078,11 +2255,11 @@ public class PictureBookUtil {
             charVars.put("name", cname);
             charVars.put("text", text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text);
             String llmChar = callLlm(user, chatConfig, "pictureBook.extract-character", charVars);
-            Map<String, Object> charData = parseLlmJsonObject(llmChar);
+            Map<String, Object> charData = parseLlmJsonObject(llmChar, "extract-character:" + cname, failedExtractions);
             if (charData.isEmpty()) charData = new LinkedHashMap<>(entry.getValue());
             if (!charData.containsKey("name")) charData.put("name", cname);
 
-            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath);
+            BaseRecord cp = createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath);
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
             } else {
@@ -2114,6 +2291,9 @@ public class PictureBookUtil {
         }
         if (!failedStatistics.isEmpty()) {
             try { meta.set("failedStatistics", failedStatistics); } catch (Exception e) { logger.warn("Failed to record failedStatistics on meta: " + e.getMessage()); }
+        }
+        if (!failedExtractions.isEmpty()) {
+            try { meta.set("failedExtractions", failedExtractions); } catch (Exception e) { logger.warn("Failed to record failedExtractions on meta: " + e.getMessage()); }
         }
         saveMeta(user, bookGroupPath, meta);
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
@@ -2203,6 +2383,7 @@ public class PictureBookUtil {
         List<String> failedCharacters = new ArrayList<>();
         List<String> failedApparel = new ArrayList<>();
         List<String> failedStatistics = new ArrayList<>();
+        List<String> failedExtractions = new ArrayList<>();
         int cfsCharIdx = 0;
         for (Map<String, Object> charData : charDataList) {
             String cname = (String) charData.get("name");
@@ -2218,7 +2399,7 @@ public class PictureBookUtil {
                 charVars.put("name", cname);
                 charVars.put("text", text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text);
                 String llmChar = callLlm(user, chatConfig, "pictureBook.extract-character", charVars);
-                Map<String, Object> llmData = parseLlmJsonObject(llmChar);
+                Map<String, Object> llmData = parseLlmJsonObject(llmChar, "extract-character:" + cname, failedExtractions);
                 if (!llmData.isEmpty()) {
                     // Merge LLM data without overwriting user edits
                     for (Map.Entry<String, Object> e : llmData.entrySet()) {
@@ -2230,7 +2411,7 @@ public class PictureBookUtil {
                 }
             }
 
-            BaseRecord cp = createCharPerson(user, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath);
+            BaseRecord cp = createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath);
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
             } else {
@@ -2261,6 +2442,9 @@ public class PictureBookUtil {
         }
         if (!failedStatistics.isEmpty()) {
             try { meta.set("failedStatistics", failedStatistics); } catch (Exception e) { logger.warn("Failed to record failedStatistics on meta: " + e.getMessage()); }
+        }
+        if (!failedExtractions.isEmpty()) {
+            try { meta.set("failedExtractions", failedExtractions); } catch (Exception e) { logger.warn("Failed to record failedExtractions on meta: " + e.getMessage()); }
         }
         saveMeta(user, bookGroupPath, meta);
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");

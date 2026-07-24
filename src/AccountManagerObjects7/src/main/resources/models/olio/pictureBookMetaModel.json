@@ -33,6 +33,12 @@
 			"description": "Names of characters whose best-effort statistics-estimation step failed during createCharPerson() — the character itself was still created with default statistics."
 		},
 		{
+			"name": "failedExtractions",
+			"type": "list",
+			"baseType": "string",
+			"description": "Raw LLM scene/character extraction JSON that failed to parse, one JSON-encoded {context,error,rawResponse,failedAt} blob per failure — captured so the raw response can be inspected and manually corrected/redone instead of being silently discarded."
+		},
+		{
 			"name": "sdConfig",
 			"type": "model",
 			"baseModel": "olio.sd.config",

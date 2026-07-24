@@ -261,6 +261,30 @@ public class ApparelUtil {
 		}).collect(Collectors.toList());
 	}
 	
+	/**
+	 * Plain, deduped catalog item names (clothing + jewelry) available for {@link #getEmbeddedOutfit}
+	 * lookups, filtered to unisex or gender-matching entries — e.g. for injecting into an LLM prompt
+	 * as a fixed vocabulary of choosable items (getEmbeddedOutfit matches names verbatim, so a
+	 * guess outside this list silently fails to match).
+	 */
+	public static List<String> getApparelCatalogNames(String gender) {
+		String gcode = (gender != null && !gender.isEmpty()) ? gender.substring(0, 1).toLowerCase() : "u";
+		List<String> names = new ArrayList<>();
+		for (String[] catalog : new String[][] { clothingTypes, jewelryTypes }) {
+			for (String entry : catalog) {
+				String[] parts = entry.split(":");
+				// Catalog files carry a leading bare category marker (e.g. "jewelry") with no
+				// colon-delimited level/gender/location — skip anything that isn't a real item.
+				if (parts.length < 4) continue;
+				String gc = parts[2].toLowerCase();
+				if (gc.equals("u") || gc.equals(gcode)) {
+					names.add(parts[0]);
+				}
+			}
+		}
+		return names.stream().distinct().collect(Collectors.toList());
+	}
+
 	public static String[] getEmbeddedOutfit(String[] names, String gender) {
 		List<String> oft = new ArrayList<>();
 		for(String n: names) {

@@ -24,6 +24,12 @@
 			"description": "Character names whose portrait could not be resolved/linked during scene generation — never silently swallowed."
 		},
 		{
+			"name": "failedExtractions",
+			"type": "list",
+			"baseType": "string",
+			"description": "Raw LLM chunk-extraction JSON that failed to parse during extractChunked, one JSON-encoded {context,error,rawResponse,failedAt} blob per failure."
+		},
+		{
 			"name": "sceneList",
 			"type": "list",
 			"baseType": "model",

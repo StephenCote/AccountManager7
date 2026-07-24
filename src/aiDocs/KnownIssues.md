@@ -1669,3 +1669,42 @@ a second time to prove both directions of the new streaming path, not just one. 
 through `MediaUtil.writeBinaryData`'s first read after upload. Pre-existing `TestGroupExport` and
 `TestStreamEncryption` (original methods) suites re-ran clean against the change (7/7 passing) —
 confirming the KI-17 export path and existing box/unbox behavior are unaffected.
+
+### KI-34. Standalone character-portrait image generation keys storage off `{world.gallery.path}/Characters/{name}` — collides whenever two charPerson records share a name — OPEN (2026-07-24, Stephen)
+
+Found while wiring up PictureBook apparel generation. `SDUtil.generateSDImages` and
+`SDUtil.generateSDFigurines` (`AccountManagerObjects7/.../olio/sd/SDUtil.java`, ~lines 314-321 and
+360-365) both derive the image storage path as:
+```java
+String basePath = octx.getWorld().get("gallery.path");
+String path = basePath + "/Characters/" + per.get(FieldNames.FIELD_NAME);
+```
+This is the **world's own gallery path** (shared across every book/context/run in the organization),
+keyed purely by the character's display **name** — not the charPerson's own `objectId` or `groupPath`.
+Two different `charPerson` records with the same name (a recurring name across separate PictureBook
+runs, e.g. re-running the same source story, or just two different stories that both have a "Jideon")
+resolve to the identical storage group and will overwrite/share each other's portrait images. This is
+the path used by `OlioService.reimageWithConfig` (standalone `POST /olio/{type}/{objectId}/reimage`,
+the Ux's "Regenerate Portrait" button) and any other caller of `generateSDImages`/`generateSDFigurines`
+for general Olio population image generation — **not** PictureBook's own scene-driven pipeline, which
+already avoids this: `PictureBookUtil.generateSceneImage`'s Stage 1
+(`PictureBookUtil.java` ~line 2602, `portraitGroupPath = isBook ? sceneGroupPath.replace("/Scenes",
+"/Characters") : sceneGroupPath`) is book-scoped via the scene's own group path, not name+world.
+
+**Explicitly out of scope for this entry (confirmed with Stephen 2026-07-24):** apparel/mannequin
+image storage (`SDUtil.generateMannequinImages`, `OlioService.reimageApparel`'s `"~/Gallery/Apparel/"
++ apparelName` groupPath) is a separate concern and should not be touched as part of this fix.
+
+**Fix direction (not yet implemented — deliberately spun off as its own item rather than bundled into
+the apparel work that surfaced it):** derive the portrait storage path from the character's own
+already-unique location instead of `{world.gallery.path}/Characters/{name}` — e.g.
+`per.get(FieldNames.FIELD_GROUP_PATH) + "/Gallery"` when the character has one (every charPerson
+already lives somewhere specific — a book's own `.../Characters/{Name}/` when created via PictureBook,
+or wherever else it was placed otherwise), falling back to the current `{world.gallery.path}/Characters/
+{name}` scheme only for characters with no meaningful group scope of their own. No schema change
+needed — `groupPath` is already a populated field on every `data.directory`-derived model (see
+`model-api.md`'s default query-field notes). This is a bigger refactor than a one-line fix: both
+`generateSDFigurines` and `generateSDImages` need the change, and callers that pass a bare `pop` list
+without a reliably-populated `groupPath` (some general population-generation paths may only plan
+common fields) need auditing first so the fallback path is actually exercised correctly rather than
+silently landing back on the collision-prone default.
