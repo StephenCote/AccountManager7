@@ -1708,3 +1708,49 @@ needed — `groupPath` is already a populated field on every `data.directory`-de
 without a reliably-populated `groupPath` (some general population-generation paths may only plan
 common fields) need auditing first so the fallback path is actually exercised correctly rather than
 silently landing back on the collision-prone default.
+
+### KI-35. Olio-owned PictureBook apparel/wearables/qualities aren't writable by the acting user, so dress-up/down can't toggle `inuse` — OPEN (2026-07-25, Stephen)
+
+PictureBook character apparel is built via `ApparelUtil.constructApparel(ctx, …)`/`randomApparel(ctx, …)`,
+which (correctly, so colors resolve from the shared color library needed for complementary-color
+computation) creates the `olio.apparel`/`olio.wearable`/`olio.quality` records owned by
+`ctx.getOlioUser()` in the world groups (`/Olio/Universes/…/Worlds/…/{Apparel,Wearables,Qualities}`).
+But the character/store are owned by the acting real user. So when the acting user runs dress-up/down
+(`reimage.js` `dressApparel` → `page.patchObject` on `olio.wearable.inuse`), PBAC won't let them patch
+another owner's wearable — the patch silently fails, `inuse` stays `true` permanently ("always worn"),
+and `getWearing(person)`/`describeOutfit(person)` still reports the full outfit even after dressing down
+(observed live: two same-level wearables, the picturebook one owned by the Olio user never responds to
+dress-up/down, the user-owned one does).
+
+**Fix direction (Stephen's chosen approach — "give the OlioUsers role read/write access to the group
+they're in", scoped to apparel/wearables/qualities):** grant the **Olio User** role RW on those three
+world groups. The machinery already exists in `OlioContext`: the role is `~/Roles/Olio User` (`userRole`,
+`OlioContext.java:255`), the acting user is already a member of it
+(`member(olioUser, userRole, config.getUser(), …)`, `OlioContext.java:258`), and grants use
+`getAuthorizationUtil().setEntitlement(grantor, role, groups[], crudperms, [DATA, GROUP])` (same call at
+`OlioContext.java:200-201/217/275`). Currently `userRole` only gets **Read** on the top-level
+root/universe/world dirs (`:275`); it never gets **write** on the apparel/wearables/qualities groups.
+Recommended: in `OlioContext` world-config, pre-create those three world groups (via their world
+`FIELD_APPAREL_PATH`/`FIELD_WEARABLES_PATH`/`FIELD_QUALITIES_PATH`) and `setEntitlement(userRole/adminRole,
+[those 3], crudperms, …)` once per world (nuance: the groups are created lazily on first apparel/wearable/
+quality, so pre-create them at config time or entitle at creation in `ApparelUtil.constructApparel`).
+Alternative considered and rejected: making the picturebook apparel user-owned/local — that pulls colors
+local too and loses the shared-library complementary-color lookup, which Stephen wants kept. **No
+`OlioUsers` literal role exists — it means `~/Roles/Olio User`.** Existing already-broken data will be
+cleaned up by Stephen; the fix only needs to correct new-character creation.
+
+### KI-36. `AuthorizationService.enableMember`/`AccessPoint.findByObjectId` throws a raw `NullPointerException` (500) on an unknown/undefined participant type instead of a clean 400 — OPEN (2026-07-25, Stephen)
+
+When the member (participation) endpoint is called with a participant model type that doesn't resolve to
+a schema (e.g. the literal string `"undefined"`), `AccessPoint.findByObjectId → AccessPoint.find →
+RecordUtil.getCommonFields → RecordFactory.getSchema("undefined")` fails
+(`ModelNotFoundException: Model undefined was not found` → `Failed to load models/undefinedModel.json`)
+and the request surfaces as an uncaught `java.lang.NullPointerException` mapped to a generic 500, with a
+long stack trace (`AuthorizationService.enableMember:67`). Found 2026-07-25 while a Ux client bug sent an
+undefined participant type on wearable removal (the client bug — list-serialization schema loss — is
+fixed separately in `views/object.js`; see the `am7model.updateListModel`/field-`baseModel` fallback).
+**Fix direction (defensive, backend):** validate the participant/container type in
+`AuthorizationService.enableMember` (and/or `AccessPoint.findByObjectId`) — if the model can't be resolved
+(`RecordFactory.getSchema` would fail), return a clear **400 Bad Request** ("unknown model type '<x>'")
+rather than letting the NPE propagate to the default exception mapper as a 500. Turns future "bad type"
+client bugs into an actionable error instead of a stack trace.

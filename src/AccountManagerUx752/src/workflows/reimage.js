@@ -718,6 +718,11 @@ async function createApparelSequence(inst, cinst, am7olio) {
     }
     // Update server narrative
     await am7model.forms.commands.narrate(undefined, inst);
+    // Refresh the SD prompt description to match the fully-dressed-down (base/nude) state. The
+    // reimage POST body below carries cinst's description; without this it stays at whatever the
+    // dialog last set (clothed), so the generated image never reflects dressing down. Mirrors the
+    // single-step dress buttons, which pair dressCharacter() with setNarDescription().
+    if (am7olio) await am7olio.setNarDescription(inst, cinst);
 
     let baseSeed = cinst.api.seed();
     let images = [];
@@ -763,6 +768,9 @@ async function createApparelSequence(inst, cinst, am7olio) {
     for (let i = 0; i < lvls.length; i++) {
         await am7olio.dressApparel(activeAp, true);
         await am7model.forms.commands.narrate(undefined, inst);
+        // Refresh the description to this wear level before the POST (see the nude branch above) —
+        // otherwise cinst's description stays stale and the SD prompt won't reflect this level.
+        if (am7olio) await am7olio.setNarDescription(inst, cinst);
 
         let useSeed = (images.length === 0) ? baseSeed : (parseInt(baseSeed) + images.length);
         cinst.api.seed(useSeed);

@@ -15,6 +15,8 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -70,7 +72,7 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final String CHAT_PATH = "~/Chat";
 
 	private static final String PB_LLM_MODEL = "qwen3:8b";
-	private static int iter = 7;
+	private static int iter = 1;
 	private static final String PB_CHAT_CONFIG_NAME = "PictureBook " + PB_LLM_MODEL + " " + iter + ".chat";
 
 	// Source document + the exact substring that marks where Step 1 truncates it (see
@@ -107,6 +109,8 @@ public class TestPictureBookCustom extends BaseTest {
 		testUser = mf.getCreateUser(testOrgCtx.getAdminUser(), "pbCustomTestUser", testOrgCtx.getOrganizationId());
 		assertNotNull("Test user should be created", testUser);
 
+		OlioContext octx = OlioContextUtil.getOlioContext(testUser, testProperties.getProperty("test.datagen.path"));
+		
 		String ollamaServer = testProperties.getProperty("test.llm.ollama.server");
 		assertNotNull("test.llm.ollama.server must be set", ollamaServer);
 		chatConfig = getOrCreatePbChatConfig(testUser, ollamaServer);

@@ -39,6 +39,11 @@
 			"description": "Raw LLM scene/character extraction JSON that failed to parse, one JSON-encoded {context,error,rawResponse,failedAt} blob per failure — captured so the raw response can be inspected and manually corrected/redone instead of being silently discarded."
 		},
 		{
+			"name": "compositionContext",
+			"type": "string",
+			"description": "Book-level composition/art-direction anchor (genre + cohesion cues) prepended to every scene and landscape prompt so the whole book stays visually consistent — a discrete, persisted fact, not left to the LLM. Editable per book."
+		},
+		{
 			"name": "sdConfig",
 			"type": "model",
 			"baseModel": "olio.sd.config",

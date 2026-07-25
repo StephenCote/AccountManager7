@@ -561,6 +561,54 @@ public class PictureBookUtil {
     }
 
     /**
+     * Append the discrete, code-owned style fact ({@link SWUtil#styleClause}) to a resolved prompt
+     * exactly once, so EVERY image in the book carries identical style guidance regardless of what the
+     * LLM returned — the style is a known fact constructed in code (as SDUtil does), never left to the
+     * LLM to phrase. Idempotent: a no-op if the clause is already present.
+     */
+    private static String appendStyleClauseOnce(String prompt, String style) {
+        String clause = SWUtil.styleClause(style);
+        if (prompt == null || prompt.isBlank()) return clause;
+        String p = prompt.trim();
+        if (p.contains(clause)) return p;
+        return p + (p.endsWith(".") || p.endsWith(",") ? " " : ". ") + clause;
+    }
+
+    /**
+     * Load the book-level composition/art-direction context (a discrete, persisted fact on
+     * .pictureBookMeta) for the scene's book, so every scene/landscape prompt can be anchored to the
+     * SAME context and stay consistent across the whole book. Returns "" when there's no book meta or
+     * no context set — additive, never a hard failure.
+     */
+    private static String loadCompositionContext(BaseRecord user, BaseRecord scene) {
+        try {
+            String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
+            if (sceneGroupPath == null) return "";
+            String bookGroupPath = sceneGroupPath.replace("/Scenes", "");
+            BaseRecord meta = loadTypedMeta(user, bookGroupPath);
+            if (meta == null) return "";
+            String ctx = meta.get("compositionContext");
+            return (ctx != null) ? ctx.trim() : "";
+        } catch (Exception e) {
+            logger.warn("Failed to load composition context: " + e.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * Prepend the book's composition/art-direction context to a resolved prompt exactly once — a
+     * discrete, code-owned fact shared by every scene so the book stays consistent; the LLM composes
+     * the scene-specific part on top of it. Idempotent; a no-op when the context is blank/present.
+     */
+    private static String prependContextOnce(String context, String prompt) {
+        if (context == null || context.isBlank()) return prompt;
+        String c = context.trim();
+        if (prompt == null || prompt.isBlank()) return c;
+        if (prompt.contains(c)) return prompt;
+        return c + (c.endsWith(".") || c.endsWith(",") ? " " : ". ") + prompt.trim();
+    }
+
+    /**
      * Resolve (and cache) the scene-image (composite) prompt for a scene, combining resolved scene
      * characters' portrait descriptions with setting/action/mood into a proper SD tag-style prompt
      * via the pictureBook.scene-image-prompt template — rather than the old raw narrative-sentence
@@ -624,6 +672,11 @@ public class PictureBookUtil {
                 scenePrompt = fallback.toString();
             }
         }
+        // Discrete, code-owned facts applied deterministically (not left to the LLM): the book-level
+        // composition/art-direction anchor (prepended, shared by every scene) and the style clause
+        // (appended) — so the whole book stays visually consistent, matching how SDUtil builds prompts.
+        scenePrompt = prependContextOnce(loadCompositionContext(user, scene), scenePrompt);
+        scenePrompt = appendStyleClauseOnce(scenePrompt, style);
         updateSceneTextField(user, scene, "scenePrompt", scenePrompt);
         return scenePrompt;
     }
@@ -823,6 +876,11 @@ public class PictureBookUtil {
                 landscapePrompt = setting.isEmpty() ? "A detailed environment" : setting;
             }
         }
+        // Same discrete, code-owned facts as the scene prompt: the book-level composition anchor
+        // (prepended) + the style clause (appended), applied deterministically so the landscape stays
+        // consistent with the rest of the book rather than relying on the LLM.
+        landscapePrompt = prependContextOnce(loadCompositionContext(user, scene), landscapePrompt);
+        landscapePrompt = appendStyleClauseOnce(landscapePrompt, style);
         updateSceneTextField(user, scene, "landscapePrompt", landscapePrompt);
         return landscapePrompt;
     }
@@ -939,7 +997,14 @@ public class PictureBookUtil {
     private static final Pattern CONVERSATIONAL_REFUSAL = Pattern.compile(
         "(?i)(i'm happy to help|i am happy to help|could you (please )?provide|can you (please )?provide|"
         + "i need the actual|i don't have (the|any) (story|text)|please provide the (story|actual) text|"
-        + "the number of scenes you.d like)");
+        + "the number of scenes you.d like|"
+        // Outright refusals — the model DECLINING rather than producing a prompt (e.g. "I'm sorry, but
+        // I can't help with that."). Real SD prompts are comma/tag declarative fragments and never
+        // address the reader in the first person like this, so these are safe to treat as failures.
+        + "i'?m sorry|i am sorry|i can'?t (help|assist|comply|create|generate|produce|fulfill|provide|do that|do this)|"
+        + "i cannot (help|assist|comply|create|generate|produce|fulfill|provide)|"
+        + "i'?m (not able|unable) to|i am (not able|unable) to|i won'?t be able to|"
+        + "against my (guidelines|programming|policy)|as an ai (language )?model)");
 
     /**
      * Parse LLM JSON response into a list of maps, stripping markdown fences if present.
@@ -1187,7 +1252,24 @@ public class PictureBookUtil {
             chat.newMessage(req, userTpl);
             OpenAIResponse resp = chat.chat(req);
             if (resp != null && resp.getMessage() != null) {
-                return stripThink(resp.getMessage().getContent());
+                String out = stripThink(resp.getMessage().getContent());
+                // Central safeguard: if the model DECLINED (a conversational refusal like "I'm sorry,
+                // but I can't help with that.") instead of producing usable content, never return the
+                // refusal text — it must not become an SD prompt or persisted content. Return null so
+                // callers fall back (raw-text paths) or mark it a failed extraction (JSON paths).
+                if (out != null && CONVERSATIONAL_REFUSAL.matcher(out.trim()).find()) {
+                    String snip = out.trim();
+                    logger.warn("LLM refused/declined for prompt '" + promptName + "' — discarding refusal text: "
+                        + snip.substring(0, Math.min(160, snip.length())));
+                    // Log the exact content sent to the LLM so the offending input is identifiable —
+                    // which prompt template + which substituted values it balked on.
+                    logger.warn("  refused-request system=[" + system + "]");
+                    String sentUser = (userTpl != null) ? userTpl : "";
+                    if (sentUser.length() > 4000) sentUser = sentUser.substring(0, 4000) + " …(truncated, " + userTpl.length() + " chars total)";
+                    logger.warn("  refused-request user=[" + sentUser + "]");
+                    return null;
+                }
+                return out;
             }
         } catch (Exception e) {
             logger.error("LLM call failed for " + promptName + ": " + e.getMessage());
@@ -2216,6 +2298,10 @@ public class PictureBookUtil {
             return ApparelUtil.randomApparel(octx, charPerson);
         }
 
+        // Olio-owned by design (ctx.getOlioUser(), world groups) so colors resolve from the shared color
+        // library, which the complementary-color computation requires. Dress-up/down access for the
+        // acting user is granted via the OlioUsers role on the apparel/wearables/qualities world groups,
+        // rather than by making these records user-owned.
         BaseRecord apparel = ApparelUtil.constructApparel(octx, ownerId, charPerson, items.toArray(new String[0]));
         List<BaseRecord> wearables = (apparel != null) ? apparel.get(OlioFieldNames.FIELD_WEARABLES) : null;
         if (apparel == null || wearables == null || wearables.isEmpty()) {
@@ -2664,6 +2750,14 @@ public class PictureBookUtil {
         if (!failedExtractions.isEmpty()) {
             try { meta.set("failedExtractions", failedExtractions); } catch (Exception e) { logger.warn("Failed to record failedExtractions on meta: " + e.getMessage()); }
         }
+        // Seed the book-level composition/art-direction anchor (A) — a discrete, persisted fact
+        // prepended to every scene/landscape prompt so the whole book stays visually consistent
+        // (genre-driven; editable per book). resolveScenePrompt/resolveLandscapePrompt read it back.
+        try {
+            String artDir = "Consistent art direction for a " + ((genre != null && !genre.isEmpty()) ? genre + " " : "")
+                + "picture book: keep the setting, color palette, lighting, and character appearance cohesive across every scene.";
+            meta.set("compositionContext", artDir);
+        } catch (Exception e) { logger.warn("Failed to seed compositionContext on meta: " + e.getMessage()); }
         saveMeta(user, bookGroupPath, meta);
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         // One LLM call per character needing detail extraction above — flush once at the end.

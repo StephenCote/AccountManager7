@@ -656,6 +656,10 @@ function newObjectPage() {
                 page.search(q).then(function(qr) {
                     if (qr && qr.results && qr.results.length && Array.isArray(qr.results[0][name])) {
                         foreignData[cacheKey] = qr.results[0][name];
+                        // Restore the model/schema key dropped from all-but-first list items (condensed
+                        // list serialization) so member() add/remove can read each item's participant
+                        // type — falls back to the field's baseModel. Canonical list-schema fixer.
+                        am7model.updateListModel(foreignData[cacheKey], field);
                     } else {
                         foreignData[cacheKey] = [];
                     }
@@ -671,6 +675,16 @@ function newObjectPage() {
         if (!foreignData[selKey]) foreignData[selKey] = {};
         let sel = foreignData[selKey];
         let hasSelected = Object.keys(sel).some(function(k) { return sel[k]; });
+
+        // Participant model type for member() calls. Foreign-list items carry `schema` only on the
+        // FIRST element (list serialization drops it on the rest — see model-api.md), so
+        // item[jsonModelKey] is undefined for every item after the first; fall back to the field's
+        // resolved base model so add/remove never send type "undefined" (which 500s server-side in
+        // getSchema — "Model undefined was not found").
+        let resolvedParticipantType = baseModel;
+        if (resolvedParticipantType === '$flex' && field.foreignType && mlInst) {
+            resolvedParticipantType = mlInst.api[field.foreignType]() || baseModel;
+        }
 
         // Toolbar
         let toolbarItems = [];
@@ -692,7 +706,7 @@ function newObjectPage() {
                                 am7client.member(
                                     mlEntity[am7model.jsonModelKey], mlEntity.objectId,
                                     fn,
-                                    mem[am7model.jsonModelKey], mem.objectId,
+                                    mem[am7model.jsonModelKey] || resolvedParticipantType, mem.objectId,
                                     true,
                                     function(v) { res(v); }
                                 );
@@ -757,14 +771,14 @@ function newObjectPage() {
                                 am7client.member(
                                     mlEntity[am7model.jsonModelKey], mlEntity.objectId,
                                     fn,
-                                    item[am7model.jsonModelKey], item.objectId,
+                                    item[am7model.jsonModelKey] || resolvedParticipantType, item.objectId,
                                     false,
                                     function(v) { res(v); }
                                 );
                             }));
                         }
                     });
-                    let removedTypes = toRemove.map(function(idx) { return items[idx] && items[idx][am7model.jsonModelKey]; });
+                    let removedTypes = toRemove.map(function(idx) { return (items[idx] && items[idx][am7model.jsonModelKey]) || resolvedParticipantType; });
                     toRemove.forEach(function(idx) {
                         if (mlEntity[name]) mlEntity[name].splice(idx, 1);
                     });

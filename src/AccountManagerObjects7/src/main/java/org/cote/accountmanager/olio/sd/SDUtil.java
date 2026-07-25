@@ -1563,6 +1563,15 @@ public class SDUtil {
 						data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
 						IOSystem.getActiveContext().getAccessPoint().update(user, data);
 					}
+					// Link the mannequin image into the apparel's own gallery (foreign list) so it
+					// surfaces on the apparel object page — the gallery field exists for exactly this
+					// ("images for this apparel at different wear levels") but was never populated,
+					// so generated mannequins had no reference from the apparel record and never showed.
+					try {
+						IOSystem.getActiveContext().getMemberUtil().member(user, apparel, "gallery", data, null, true);
+					} catch(Exception me) {
+						logger.warn("Failed to link mannequin image " + dname + " into apparel.gallery: " + me.getMessage());
+					}
 					images.add(data);
 				}
 			} catch(Exception e) {
