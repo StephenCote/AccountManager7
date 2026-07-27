@@ -1420,11 +1420,11 @@ public class PictureBookUtil {
      * value can never abort character creation.
      */
     private static String normalizeGender(String raw) {
-        if (raw == null) return "UNKNOWN";
+        if (raw == null) return "";
         String g = raw.trim().toLowerCase();
-        if (g.equals("male") || g.equals("m")) return "MALE";
-        if (g.equals("female") || g.equals("f")) return "FEMALE";
-        return "UNKNOWN";
+        if (g.equals("male") || g.equals("m")) return "male";
+        if (g.equals("female") || g.equals("f")) return "female";
+        return "";  // undetermined — lowercase to match randomPerson/rollHeight; caller falls back to baseline
     }
 
     // C2: comma-separated human-readable RaceEnumType / EthnicityEnumType values, used to CONSTRAIN the
@@ -1863,8 +1863,15 @@ public class PictureBookUtil {
             // Apply gender — clamped to MALE/FEMALE/UNKNOWN only, never a raw/unrecognized
             // LLM value (see normalizeGender()). Must happen before create() so a bad LLM
             // value never aborts character creation.
-            String gender = (String) charData.get("gender");
-            charPerson.set("gender", normalizeGender(gender));
+            String gender = normalizeGender((String) charData.get("gender"));
+            // Undetermined LLM gender must NOT persist as an invalid value — the old "UNKNOWN" (7 chars)
+            // exceeded the apparel gender field's maxLength and crashed apparel creation. Fall back to
+            // the random baseline's valid lowercase gender (KI-30: override only when the LLM determined one).
+            if ((gender == null || gender.isEmpty()) && baseline != null) {
+                Object baseGender = baseline.get(FieldNames.FIELD_GENDER);
+                if (baseGender != null && !baseGender.toString().isBlank()) gender = baseGender.toString();
+            }
+            charPerson.set("gender", gender);
 
             // KI-30: race/alignment are plain (non-foreign) fields directly on charPerson, so the
             // baseline value can be applied straight onto the in-memory record before create() —
@@ -2098,7 +2105,18 @@ public class PictureBookUtil {
                                 baseline.get(FieldNames.FIELD_PERSONALITY));
                         if (newPersonality != null) {
                             BaseRecord linked = patchCharPersonField(user, charPerson, FieldNames.FIELD_PERSONALITY, newPersonality);
-                            if (linked != null) charPerson.set(FieldNames.FIELD_PERSONALITY, newPersonality);
+                            if (linked != null) {
+                                charPerson.set(FieldNames.FIELD_PERSONALITY, newPersonality);
+                                // Populate OCEAN/personality with the SAME roll the population loop uses
+                                // (CharacterUtil.java:423) — copy-from-baseline alone leaves the traits at
+                                // 0 — then persist the full record.
+                                try {
+                                    ProfileUtil.rollPersonality(newPersonality);
+                                    IOSystem.getActiveContext().getAccessPoint().update(user, newPersonality);
+                                } catch (Exception re) {
+                                    logger.warn("Failed to roll/persist personality for " + name + ": " + re.getMessage());
+                                }
+                            }
                             else logger.warn("Failed to link persisted personality to charPerson " + name);
                         } else {
                             logger.warn("Failed to create persisted personality for charPerson " + name);
@@ -2166,9 +2184,10 @@ public class PictureBookUtil {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> physical = (Map<String, Object>) charData.get("physical");
                 StatisticsUtil.estimateFromExtractedPhysical(statistics, physical, normalizeGender(gender), parseAgeApprox(charData));
-                BaseRecord statsPatch = statistics.copyRecord(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID,
-                        "unit", "height", "physicalStrength", "physicalEndurance", "manualDexterity", "agility", "speed" });
-                BaseRecord statsPersisted = IOSystem.getActiveContext().getAccessPoint().update(user, statsPatch);
+                // Persist the FULL rolled statistics — the earlier partial 6-field patch dropped every
+                // other rolled stat (mental/social/etc.), leaving them 0. olio.statistics has no foreign
+                // refs, so a full AccessPoint update is PBAC-safe and saves everything rollStatistics set.
+                BaseRecord statsPersisted = IOSystem.getActiveContext().getAccessPoint().update(user, statistics);
                 if (statsPersisted == null) {
                     logger.warn("Failed to persist estimated statistics for " + name + " — AccessPoint.update denied or failed");
                     if (failedStatisticsOut != null) failedStatisticsOut.add(name);
