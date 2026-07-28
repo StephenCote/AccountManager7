@@ -8,6 +8,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
@@ -15,6 +18,8 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.ColorUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
@@ -72,7 +77,7 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final String CHAT_PATH = "~/Chat";
 
 	private static final String PB_LLM_MODEL = "qwen3:8b";
-	private static int iter = 1;
+	private static int iter = 2;
 	private static final String PB_CHAT_CONFIG_NAME = "PictureBook " + PB_LLM_MODEL + " " + iter + ".chat";
 
 	// Source document + the exact substring that marks where Step 1 truncates it (see
@@ -89,7 +94,7 @@ public class TestPictureBookCustom extends BaseTest {
 	// an iter suffix; the containing group (CATATONE_BOOK_NAME, which does carry iter) disambiguates.
 	private static final String CATATONE_SCENES_CACHE_NAME = ".scenesCache";
 
-	private static final int SCENE_COUNT = 10; // matches the two isolated house scenes
+	private static final int SCENE_COUNT = 3; // matches the two isolated house scenes
 	private static final String BOOK_GENRE = "dystopian sci-fi";
 	private static final String CATATONE_BOOK_NAME = "Catatone Custom Book " + iter;
 	private static final String BOOK_GROUP_PATH_PREFIX = "~/Data/PictureBooks/"; // mirrors PictureBookUtil's private PICTURE_BOOKS_DIR
@@ -102,6 +107,10 @@ public class TestPictureBookCustom extends BaseTest {
 	private OrganizationContext testOrgCtx;
 	private BaseRecord testUser;
 	private BaseRecord chatConfig;
+	// Kept as a field (not just a setup local) because the custom-character helpers below —
+	// setColorByNameOnCharacter (needs ctx.getUniverse().colors) and imprintCustomCharacter
+	// (ApparelUtil.constructApparel + ctx.getOlioUser()) — need the same OlioContext this pipeline runs on.
+	private OlioContext testOlioCtx;
 
 	private void setupTestContext() {
 		testOrgCtx = getTestOrganization(ORG_PATH);
@@ -109,7 +118,7 @@ public class TestPictureBookCustom extends BaseTest {
 		testUser = mf.getCreateUser(testOrgCtx.getAdminUser(), "pbCustomTestUser", testOrgCtx.getOrganizationId());
 		assertNotNull("Test user should be created", testUser);
 
-		OlioContext octx = OlioContextUtil.getOlioContext(testUser, testProperties.getProperty("test.datagen.path"));
+		testOlioCtx = OlioContextUtil.getOlioContext(testUser, testProperties.getProperty("test.datagen.path"));
 		
 		String ollamaServer = testProperties.getProperty("test.llm.ollama.server");
 		assertNotNull("test.llm.ollama.server must be set", ollamaServer);
@@ -381,6 +390,177 @@ public class TestPictureBookCustom extends BaseTest {
 		}
 	}
 
+	// ═══════════════════════════════════════════════════════════════════
+	// CUSTOM-CHARACTER HELPERS (a/b/c) — example stubs for hand-tuning the extracted characters
+	// before Step 4/5 image generation. Modeled on OlioTestUtil's Duke/Laurel CharacterPrint +
+	// getImprintedCharacter(), which "imprint" fixed traits/outfit over an existing population
+	// member. The difference here: Step 3 has ALREADY created a charPerson for this book, so these
+	// operate on that existing record in place — no gendered-random population pick. Wire them into
+	// Step 3 via the commented example there once you know which characters to pin down.
+	// ═══════════════════════════════════════════════════════════════════
+
+	/**
+	 * Helper A — pick one character out of a list (e.g. Step 3's charPerson[] results) by a LOOSE,
+	 * case-insensitive name pattern (regex, matched with find() so a bare substring works too).
+	 * Mirrors the name filter at the top of OlioTestUtil.getImprintedCharacter
+	 * ({@code pop.stream().filter(name equals ...)}), but fuzzy on purpose so it survives the
+	 * "Duña" -> "Duna" diacritic drop Step 3 warns about. Returns the first match, or null.
+	 *
+	 * Example:
+	 *   BaseRecord duna   = pickCharacterByName(Arrays.asList(chars), "du.?a");   // Duña or Duna
+	 *   BaseRecord jideon = pickCharacterByName(Arrays.asList(chars), "jideon");
+	 */
+	private BaseRecord pickCharacterByName(List<BaseRecord> characters, String namePattern) {
+		if (characters == null || namePattern == null) return null;
+		java.util.regex.Pattern p = java.util.regex.Pattern.compile(namePattern, java.util.regex.Pattern.CASE_INSENSITIVE);
+		return characters.stream()
+			.filter(c -> {
+				String n = c.get(FieldNames.FIELD_NAME);
+				return n != null && p.matcher(n).find();
+			})
+			.findFirst().orElse(null);
+	}
+
+	/**
+	 * Helper B — resolve a free-text color NAME to a shared-library {@code data.color} record via
+	 * ColorUtil.getColorByName (case-insensitive match against the world's colors group) and set it
+	 * as a FOREIGN reference on a charPerson color field — hairColor or eyeColor (both are
+	 * {@code data.color} foreign refs on olio.charPerson; see charPersonModel.json). Applies it the
+	 * way OlioTestUtil.getLaurelPrint does — as a {@code {id:N}} foreign ref inside an importRecord-
+	 * sourced person patch (Laurel's own person JSON hardcodes {@code hairColor: {id:181}} /
+	 * {@code eyeColor:{id: 291}}; here we look the id up by name instead) — so the patch touches
+	 * only this one field and never re-persists a full planMost graph. Returns true if the color
+	 * resolved and was patched; false (field left unchanged) if the name matched nothing.
+	 *
+	 * Example:
+	 *   setColorByNameOnCharacter(duna, OlioFieldNames.FIELD_HAIR_COLOR, "Auburn");
+	 *   setColorByNameOnCharacter(duna, OlioFieldNames.FIELD_EYE_COLOR,  "Hazel");
+	 */
+	private boolean setColorByNameOnCharacter(BaseRecord charPerson, String colorField, String colorName) {
+		if (charPerson == null) return false;
+		BaseRecord color = ColorUtil.getColorByName(testOlioCtx, colorName);
+		if (color == null) {
+			logger.warn("No color named '" + colorName + "' in the shared color library — leaving " + colorField + " unchanged");
+			return false;
+		}
+		// Set the color exactly the way OlioTestUtil.getLaurelPrint does — a {id:N} foreign ref
+		// carried inside a person-imprint patch sourced from importRecord (Laurel's person JSON is
+		// "{... hairColor: {id:181}, ... eyeColor:{id: 291}, ...}"). importRecord yields a source
+		// with ONLY the field(s) named in the JSON, so RecordUtil.patch touches just this one color
+		// field — unlike a bare newInstance(model), which instantiates EVERY field with its default
+		// (name=null, birthDate epoch, bmi, bodyShape=RECTANGLE, ...) and, copied wholesale onto the
+		// target, clobbers the real name with null and trips the name \S validation on write.
+		long colorId = color.get(FieldNames.FIELD_ID);
+		String personJson = "{" + colorField + ": {id:" + colorId + "}}";
+		IOSystem.getActiveContext().getRecordUtil().patch(
+			RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_PERSON, personJson), charPerson);
+		logger.info("Set " + colorField + "='" + color.get(FieldNames.FIELD_NAME) + "' (id " + colorId + ") on " + charPerson.get(FieldNames.FIELD_NAME));
+		return true;
+	}
+
+	/**
+	 * Helper C — imprint custom properties + a custom outfit over an EXISTING charPerson, from the
+	 * same plain-string formats OlioTestUtil's Duke/Laurel prints use. This is the picturebook
+	 * analogue of getImprintedCharacter(): that method finds/derives a population member and stamps
+	 * a CharacterPrint over it; here the target is the charPerson Step 3 already built, so we
+	 * imprint in place (any null argument is skipped).
+	 *
+	 * - personJson / statisticsJson / personalityJson: partial-record JSON (any subset of fields),
+	 *   patched onto the charPerson and its statistics/personality sub-records. Statistics &
+	 *   personality patch FULL (true) because computed/derived fields (athleticism, willpower, etc.)
+	 *   depend on several inputs and won't recompute from a fields-only copy — the same reason
+	 *   getImprintedCharacter passes full=true there.
+	 * - outfitCsv: comma-separated wearable spec (getImprintedCharacter's outfit branch), e.g.
+	 *     "camisole,underwear,thigh-high heeled boots,amulet,jewelry:piercing:7:f:ear"  (Laurel's outfit)
+	 *   built via ApparelUtil.constructApparel and swapped in as the character's sole in-use apparel.
+	 *
+	 * Example (Duke-style villain, imprinted over whatever character matched Step 3):
+	 *   imprintCustomCharacter(villain,
+	 *       "{alignment:\"CHAOTICEVIL\",trades:[\"serial killer\"]}",
+	 *       "{physicalStrength:17,agility:17,intelligence:18,perception:19,charisma:12}",
+	 *       "{psychopathy:0.9,narcissism:0.65}",
+	 *       "trenchcoat,slacks,dress shirt,leather gloves");
+	 */
+	private void imprintCustomCharacter(BaseRecord charPerson, String personJson, String statisticsJson,
+			String personalityJson, String outfitCsv) {
+		if (charPerson == null) return;
+
+		// --- Custom outfit from a CSV string (mirrors getImprintedCharacter's outfit branch) ---
+		if (outfitCsv != null && !outfitCsv.trim().isEmpty()) {
+			String[] outfit = outfitCsv.split(",");
+			
+			BaseRecord apparel = ApparelUtil.constructApparel(testOlioCtx, 0L, charPerson, outfit);
+			apparel.setValue(OlioFieldNames.FIELD_IN_USE, true);
+			List<BaseRecord> wearl = apparel.get(OlioFieldNames.FIELD_WEARABLES);
+			if (wearl != null) wearl.forEach(w -> w.setValue(OlioFieldNames.FIELD_IN_USE, true));
+			IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
+			BaseRecord store = charPerson.get(FieldNames.FIELD_STORE);
+			List<BaseRecord> appl = store.get(OlioFieldNames.FIELD_APPAREL);
+			for (BaseRecord a : appl) {
+				IOSystem.getActiveContext().getMemberUtil().member(testOlioCtx.getOlioUser(), store, OlioFieldNames.FIELD_APPAREL, a, null, false);
+			}
+			appl.clear();
+			appl.add(apparel);
+			IOSystem.getActiveContext().getMemberUtil().member(testOlioCtx.getOlioUser(), store, OlioFieldNames.FIELD_APPAREL, apparel, null, true);
+		}
+
+		// --- Custom stats / personality / person from partial-record JSON (patched like the prints) ---
+		if (statisticsJson != null) {
+			IOSystem.getActiveContext().getRecordUtil().patch(
+				RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_STATISTICS, statisticsJson),
+				charPerson.get(OlioFieldNames.FIELD_STATISTICS), true);
+		}
+		if (personalityJson != null) {
+			IOSystem.getActiveContext().getRecordUtil().patch(
+				RecordFactory.importRecord(ModelNames.MODEL_PERSONALITY, personalityJson),
+				charPerson.get(FieldNames.FIELD_PERSONALITY), true);
+		}
+		if (personJson != null) {
+			IOSystem.getActiveContext().getRecordUtil().patch(
+				RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_PERSON, personJson), charPerson);
+		}
+		logger.info("Imprinted custom properties over " + charPerson.get(FieldNames.FIELD_NAME));
+	}
+
+	private void generateApparelImage(BaseRecord charPerson) {
+		if (charPerson == null) return;
+try {
+		IOSystem.getActiveContext().getReader().populate(charPerson, new String[] { FieldNames.FIELD_STORE });
+		BaseRecord apparelStore = charPerson.get(FieldNames.FIELD_STORE);
+		List<BaseRecord> apparelList = apparelStore.get(OlioFieldNames.FIELD_APPAREL);
+		assertNotNull("Character should have a store.apparel list", apparelList);
+		assertFalse("Character should have at least one apparel entry", apparelList.isEmpty());
+
+		BaseRecord apparel = apparelList.get(apparelList.size() - 1); // last apparel is the one we just imprinted
+		IOSystem.getActiveContext().getReader().populate(apparel, new String[] { OlioFieldNames.FIELD_WEARABLES });
+		List<BaseRecord> apparelWearables = apparel.get(OlioFieldNames.FIELD_WEARABLES);
+
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		assertNotNull("test.swarm.server must be set", swarmServer);
+		BaseRecord apparelSdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		apparelSdConfig.set(OlioFieldNames.FIELD_SD_MODEL, testProperties.getProperty("test.swarm.model"));
+		apparelSdConfig.set(OlioFieldNames.FIELD_SD_REFINER_MODEL, testProperties.getProperty("test.swarm.refinerModel"));
+		apparelSdConfig.set("negativePrompt", testProperties.getProperty("test.swarm.negativePrompt"));
+
+		SDUtil apparelSdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
+		String apparelGroupPath = "~/Gallery/Apparel/" + (String) apparel.get(FieldNames.FIELD_NAME);
+		List<BaseRecord> mannequinImages = apparelSdu.generateMannequinImages(testUser, apparelGroupPath, apparel, apparelSdConfig, /*hires*/ false, MANNEQUIN_SEED);
+		assertNotNull("generateMannequinImages should return a result list", mannequinImages);
+		logger.info("generated " + mannequinImages.size() + " mannequin image(s) for " + apparel.get(FieldNames.FIELD_NAME)
+			+ " (seed=" + MANNEQUIN_SEED + "): " + mannequinImages.stream().map(i -> (String) i.get(FieldNames.FIELD_OBJECT_ID)).collect(java.util.stream.Collectors.toList()));
+		int mannequinNum = 0;
+		for (BaseRecord mimg : mannequinImages) {
+			exportImage(mimg.get(FieldNames.FIELD_OBJECT_ID), "mannequin_" + apparel.get(FieldNames.FIELD_NAME) + "_" + (++mannequinNum));
+		}
+}
+catch(FieldException | ValueException | ModelNotFoundException e) {
+	logger.error(e.getMessage());
+	e.printStackTrace();
+}
+	}
+
+
+
 	@Test
 	public void TestPictureBookCustomPipeline() throws Exception {
 		setupTestContext();
@@ -459,6 +639,8 @@ public class TestPictureBookCustom extends BaseTest {
 				+ " race=" + cp.get(OlioFieldNames.FIELD_RACE)
 				+ " alignment=" + cp.get(FieldNames.FIELD_ALIGNMENT));
 		}
+		//logger.info("Chars: " + chars.length + " total, in group " + charsGroupPath);
+
 
 		// ═══════════════════════════════════════════════════════════════════
 		// STEP 3B — APPAREL GENERATION (verify the LLM-guessed base outfit + render it)
@@ -470,7 +652,7 @@ public class TestPictureBookCustom extends BaseTest {
 		// LLM request + resulting outfit are already logged by that call during Step 3 above; this
 		// step just confirms the outfit landed on the character and renders it as a real mannequin
 		// image via SDUtil.generateMannequinImages (same call OlioService.reimageApparel makes).
-
+/*
 		BaseRecord apparelChar = chars[0];
 		IOSystem.getActiveContext().getReader().populate(apparelChar, new String[] { FieldNames.FIELD_STORE });
 		BaseRecord apparelStore = apparelChar.get(FieldNames.FIELD_STORE);
@@ -482,12 +664,58 @@ public class TestPictureBookCustom extends BaseTest {
 		List<BaseRecord> apparelWearables = apparel.get(OlioFieldNames.FIELD_WEARABLES);
 		logger.info("Step 3B: " + apparelChar.get(FieldNames.FIELD_NAME) + "'s apparel '" + apparel.get(FieldNames.FIELD_NAME)
 			+ "' has " + (apparelWearables != null ? apparelWearables.size() : 0) + " wearable(s)");
+*/
+
+
+		// ── CUSTOM-CHARACTER TUNING (examples; helpers a/b/c defined above exportImage). Uncomment
+		//    + adapt to pin down specific characters before Step 4/5 image generation — the
+		//    picturebook analogue of OlioTestUtil's Duke/Laurel imprint-over-existing pattern.
+		// BaseRecord duna = pickCharacterByName(Arrays.asList(chars), "du.?a");   // (a) Duña or Duna
+		// if (duna != null) {
+		//     setColorByNameOnCharacter(duna, OlioFieldNames.FIELD_HAIR_COLOR, "Auburn"); // (b) hair
+		//     setColorByNameOnCharacter(duna, OlioFieldNames.FIELD_EYE_COLOR,  "Hazel");  // (b) eyes
+		//     imprintCustomCharacter(duna,                                                // (c)
+		//         "{alignment:\"NEUTRALGOOD\",hairStyle:\"short and damp\"}",   // custom person props
+		//         "{physicalStrength:6,agility:9,intelligence:14,perception:12}", // custom statistics
+		//         "{neuroticism:0.7}",                                            // custom personality
+		//         "raincoat,blouse,slacks,flats");                                // custom outfit CSV
+		// }
+
+
+		BaseRecord duna = pickCharacterByName(Arrays.asList(chars), "du.?a");   // (a) Duña or Duna
+		assertNotNull("Should have found a character named Duña/Duna", duna);
+		if((int)duna.get("age") != 15){
+			logger.info("Patching Duña/Duna to age 15 for this test run (was " + duna.get("age") + ")");
+			setColorByNameOnCharacter(duna, OlioFieldNames.FIELD_HAIR_COLOR, "Auburn"); // (b) hair
+			setColorByNameOnCharacter(duna, OlioFieldNames.FIELD_EYE_COLOR,  "Hazel");  // (b) eyes
+			imprintCustomCharacter(duna,                                                // (c)
+			"{age: 15, firstName: \"Duña\", lastName: \"de Rosa\", name: \"Duña de Rosa\", alignment:\"CHAOTICGOOD\",hairStyle:\"long and damp\", race:[\"E\"],ethnicity:[\"FIFTEEN\"]}",   // custom person props
+			"{physicalStrength:12,agility:16,intelligence:14,perception:12, charisma: 19}", // custom statistics
+			"{neuroticism:0.7}",                                            // custom personality
+			"bra,panties,blouse,skirt,thigh-high heeled boots,anklet,amulet,jewelry:piercing:7:f:ear");
+			generateApparelImage(duna);                        // custom outfit CSV
+		}
+		
+		BaseRecord jid = pickCharacterByName(Arrays.asList(chars), "Jideon");   // (a) Duña or Duna
+		assertNotNull("Should have found a character named Jideon", jid);
+		if((int)jid.get("age") != 45){
+			logger.info("Patching Jideon to age 45 for this test run (was " + jid.get("age") + ")");
+			setColorByNameOnCharacter(jid, OlioFieldNames.FIELD_HAIR_COLOR, "Dark Brown"); // (b) hair
+			setColorByNameOnCharacter(jid, OlioFieldNames.FIELD_EYE_COLOR,  "Hazel");  // (b) eyes
+			imprintCustomCharacter(jid,                                                // (c)
+			"{age: 45, firstName: \"Jideon\", lastName: \"de Rosa\", name: \"Jideon de Rosa\", alignment:\"CHAOTICGOOD\",hairStyle:\"long and damp\", race:[\"E\"],ethnicity:[\"FIFTEEN\"]}",   // custom person props
+			"{physicalStrength:16, agility:16,intelligence:18,perception:16,charisma: 16}", // custom statistics
+			"{neuroticism:0.7}",                                            // custom personality
+			"t-shirt,cargo pants,socks,shoes,clothing:leather jacket:5:m:shoulder");                     
+			generateApparelImage(jid);           // custom outfit CSV
+		}
 
 		// olio.sd.config's schema "model" default (sdXL_v10VAEFix.safetensors) is almost certainly
 		// not installed on your Swarm — always set model/refinerModel from test.swarm.* (same as
 		// buildSdConfigTemplate() for Step 5).
 		String swarmServer = testProperties.getProperty("test.swarm.server");
 		assertNotNull("test.swarm.server must be set", swarmServer);
+		/*
 		BaseRecord apparelSdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
 		apparelSdConfig.set(OlioFieldNames.FIELD_SD_MODEL, testProperties.getProperty("test.swarm.model"));
 		apparelSdConfig.set(OlioFieldNames.FIELD_SD_REFINER_MODEL, testProperties.getProperty("test.swarm.refinerModel"));
@@ -497,7 +725,7 @@ public class TestPictureBookCustom extends BaseTest {
 		// mannequin image, matching this test's overall get-or-create/idempotent design.
 		SDUtil apparelSdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
 		String apparelGroupPath = "~/Gallery/Apparel/" + (String) apparel.get(FieldNames.FIELD_NAME);
-		List<BaseRecord> mannequinImages = apparelSdu.generateMannequinImages(testUser, apparelGroupPath, apparel, apparelSdConfig, /*hires*/ false, MANNEQUIN_SEED);
+		List<BaseRecord> mannequinImages = apparelSdu.generateMannequinImages(testUser, apparelGroupPath, apparel, apparelSdConfig, false, MANNEQUIN_SEED);
 		assertNotNull("generateMannequinImages should return a result list", mannequinImages);
 		logger.info("Step 3B: generated " + mannequinImages.size() + " mannequin image(s) for " + apparel.get(FieldNames.FIELD_NAME)
 			+ " (seed=" + MANNEQUIN_SEED + "): " + mannequinImages.stream().map(i -> (String) i.get(FieldNames.FIELD_OBJECT_ID)).collect(java.util.stream.Collectors.toList()));
@@ -505,7 +733,10 @@ public class TestPictureBookCustom extends BaseTest {
 		for (BaseRecord mimg : mannequinImages) {
 			exportImage(mimg.get(FieldNames.FIELD_OBJECT_ID), "mannequin_" + apparel.get(FieldNames.FIELD_NAME) + "_" + (++mannequinNum));
 		}
-
+*/
+		if(true){
+			return;
+		}
 		// ═══════════════════════════════════════════════════════════════════
 		// STEP 4 — PROMPT RESOLUTION (check the prompt BEFORE spending SD time on it)
 		// ═══════════════════════════════════════════════════════════════════

@@ -869,7 +869,9 @@ public class PictureBookUtil {
             landVars.put("setting", setting);
             landVars.put("mood", mood);
             landVars.put("time", "");
-            landVars.put("style", (style != null && !style.isEmpty()) ? style : "illustration");
+            // Style is NOT sent to the LLM — it's a discrete, code-owned fact appended via
+            // appendStyleClauseOnce(style) below. Feeding {style} here made the LLM emit its own
+            // "cinematic photograph style" on top of the styleClause (double/conflicting style).
             landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars, promptTemplateOverride);
             if (isErrorOrEmptyPayload(landscapePrompt)) {
                 logger.warn("Landscape prompt failed — falling back to setting text");
@@ -1182,8 +1184,14 @@ public class PictureBookUtil {
         }
 
         // Fallback to classpath resource
-        if (system == null) system = PromptResourceUtil.getString(promptName, "system");
-        if (userTpl == null) userTpl = PromptResourceUtil.getString(promptName, "user");
+        if (system == null) {
+        	logger.warn("Falling back to system prompt.");
+        	system = PromptResourceUtil.getString(promptName, "system");
+        }
+        if (userTpl == null) {
+        	logger.warn("Falling back to user prompt.");
+        	userTpl = PromptResourceUtil.getString(promptName, "user");
+        }
         if (system == null || userTpl == null) {
             logger.warn("Prompt template not found: " + promptName);
             return null;
@@ -1236,6 +1244,10 @@ public class PictureBookUtil {
                 logger.error("No chat config available — cannot call LLM for " + promptName);
                 return null;
             }
+            
+            logger.info("**** SCENE CALL");
+            logger.info(system);
+            
             Chat chat = new Chat(user, chatConfig, null);
             chat.setLlmSystemPrompt(system);
             OpenAIRequest req = chat.newRequest(chat.getModel());
@@ -1269,7 +1281,12 @@ public class PictureBookUtil {
                     logger.warn("  refused-request user=[" + sentUser + "]");
                     return null;
                 }
+                logger.info(out);
+                logger.info("END LLM *****");
                 return out;
+            }
+            else {
+            	logger.error("Null LLM response");
             }
         } catch (Exception e) {
             logger.error("LLM call failed for " + promptName + ": " + e.getMessage());
@@ -2774,7 +2791,7 @@ public class PictureBookUtil {
         // (genre-driven; editable per book). resolveScenePrompt/resolveLandscapePrompt read it back.
         try {
             String artDir = "Consistent art direction for a " + ((genre != null && !genre.isEmpty()) ? genre + " " : "")
-                + "picture book: keep the setting, color palette, lighting, and character appearance cohesive across every scene.";
+                + "picture book: keep the setting, color palette, and lighting cohesive across every scene.";
             meta.set("compositionContext", artDir);
         } catch (Exception e) { logger.warn("Failed to seed compositionContext on meta: " + e.getMessage()); }
         saveMeta(user, bookGroupPath, meta);

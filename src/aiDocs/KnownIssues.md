@@ -1754,3 +1754,65 @@ fixed separately in `views/object.js`; see the `am7model.updateListModel`/field-
 (`RecordFactory.getSchema` would fail), return a clear **400 Bad Request** ("unknown model type '<x>'")
 rather than letting the NPE propagate to the default exception mapper as a 500. Turns future "bad type"
 client bugs into an actionable error instead of a stack trace.
+
+### KI-37. `PictureBookUtil.callLlmInternal` hand-rolls prompt-template section composition instead of using the canonical `PromptTemplateComposer` — drops role-less sections and can Frankenstein a half-DB/half-classpath prompt — OPEN (2026-07-28, Stephen)
+
+`PictureBookUtil.callLlmInternal` (`AccountManagerObjects7/.../olio/picturebook/PictureBookUtil.java`
+~line 1155) builds the system + user halves of every PictureBook LLM call. When a DB-stored
+`olio.llm.promptTemplate` record resolves for the prompt name (i.e. a `promptTemplateOverride` /
+user-customized template), it composes it with a small hand-rolled loop (~lines 1166-1180):
+```java
+for (BaseRecord sec : sections) {
+    String role = sec.get("role");
+    List<String> lines = sec.get("lines");
+    if (lines == null) continue;
+    String text = String.join("\n", lines);
+    if ("system".equals(role)) sysBuf.append(text).append("\n");
+    else if ("user".equals(role)) usrBuf.append(text).append("\n");
+}
+```
+falling back to the flat classpath resource (`PromptResourceUtil.getString(name, "system"/"user")`,
+~lines 1187-1188) for whichever half is still null.
+
+**This is a divergent partial re-implementation of the canonical `PromptTemplateComposer`**
+(`AccountManagerObjects7/.../olio/llm/PromptTemplateComposer.java`), which every *other* caller uses —
+`Chat.java` (1209/1214/2600/4918), `ChatUtil` (958-959), `InteractionExtractor` (100) — via
+`composeSystem()`/`composeUser()`. The composer resolves `extends` inheritance, evaluates per-section
+`condition`s, orders by `sectionOrder`/`priority`, joins lines, and runs `${…}` token replacement
+through `PromptUtil`. The inline loop does **none** of that.
+
+**Actual defects (note: the reported "duplicate the content" symptom is, on inspection, the opposite —
+this loop *drops* content):**
+- Each section lands in exactly one buffer (`sysBuf` **xor** `usrBuf`), so a template with both a
+  system and a user section produces two distinct messages — no literal duplication in this loop.
+- Per `promptSectionModel.json`, a section's `role` is **optional**: "If empty, inherits from parent
+  template" (whose `role` defaults to `"system"` — `promptTemplateModel.json`). The loop only matches
+  the literal strings `"system"`/`"user"`, so any **role-less section is silently dropped** — its
+  content never reaches the LLM.
+- The classpath fallback only fires when a half is `null`, so a DB template that supplies *only* system
+  sections (or only user) gets the **other half silently backfilled from the classpath resource** — a
+  mismatched, incoherent prompt.
+- Ignores `extends`, `condition`, `sectionOrder`, `priority`, and `${…}` tokens entirely.
+
+**Where the duplication concern is genuinely real:** the *correct* composer treats a role-less section
+as belonging to **every** role — `compose(role)` includes a section when its role is empty OR equals
+the target (`PromptTemplateComposer.java:70-74`). So once this call site is (correctly) switched to
+call both `composeSystem` and `composeUser`, a shared/role-less section's text will appear in **both**
+the system and user messages. That is the duplication to watch, and a reason to make section roles
+explicit in any PictureBook DB templates.
+
+**Fix direction (not implemented):** replace the inline `sections` loop in `callLlmInternal` with the
+canonical composer, e.g.
+```java
+BaseRecord pt = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_PROMPT_TEMPLATE, promptName, null);
+if (pt != null) {
+    system  = PromptTemplateComposer.composeSystem(pt, null, chatConfig);
+    userTpl = PromptTemplateComposer.composeUser(pt, null, chatConfig);
+}
+```
+This fixes the dropped-role-less-sections bug, respects inheritance/conditions/ordering/token
+replacement, and makes PictureBook use the same tested path as the rest of the chat pipeline. Cover
+with a test alongside the existing `TestPromptTemplate` (which already exercises
+`composeSystem`/`composeUser`), and verify a real PictureBook prompt (e.g. `pictureBook.landscape-prompt`)
+still resolves correctly against the live backend before closing. Core Objects7 LLM path — route through
+backend-specialist per `troubleshooting.md`.
