@@ -20,6 +20,8 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.ColorUtil;
+import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
@@ -33,6 +35,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.FileUtil;
@@ -366,13 +369,21 @@ public class TestPictureBookCustom extends BaseTest {
 	 * — an export hiccup logs a warning and never fails the test.
 	 */
 	private void exportImage(String imageObjectId, String label) {
-		if (imageObjectId == null) return;
+		if (imageObjectId == null) {
+			logger.warn("exportImage: null objectId for '" + label + "' — nothing to export (the image "
+				+ "record carries no objectId; likely a partial foreign-ref portrait, or generation produced no image)");
+			return;
+		}
 		try {
 			new java.io.File(EXPORT_DIR).mkdirs();
 			Query iq = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, imageObjectId);
-			iq.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 			iq.planMost(true);
-			BaseRecord img = IOSystem.getActiveContext().getAccessPoint().find(testUser, iq);
+			// Read via the search path, NOT accessPoint.find(testUser, ...). Portrait images are created
+			// by generateSDImages with octx.getOlioUser() as owner in the world gallery group, so a
+			// PBAC-enforced find as testUser returns null ("image not found") — testUser isn't the owner
+			// (KI-35-class). objectId is globally unique, so an owner/PBAC-free lookup by it is correct for
+			// a test export helper. (Mannequin/scene images are testUser-owned and also resolve here.)
+			BaseRecord img = IOSystem.getActiveContext().getSearch().findRecord(iq);
 			if (img == null) { logger.warn("exportImage: image not found for " + label + " (" + imageObjectId + ")"); return; }
 			byte[] bytes = SDUtil.getDataBytes(img);
 			if (bytes == null || bytes.length == 0) { logger.warn("exportImage: no bytes for " + label + " (" + imageObjectId + ")"); return; }
@@ -522,6 +533,94 @@ public class TestPictureBookCustom extends BaseTest {
 		logger.info("Imprinted custom properties over " + charPerson.get(FieldNames.FIELD_NAME));
 	}
 
+	/**
+	 * Look up any seed previously saved for this character's portrait, so a regenerate can reproduce
+	 * the same face. SDUtil records the actual seed it used as a "seed" attribute on the generated
+	 * image data record (AttributeUtil.addAttribute(data, "seed", seedl) — SDUtil.java), and a
+	 * charPerson's portrait IS such a record (profile.portrait). Returns that seed if one is stored
+	 * and > 0, else -1 (random) — same convention as PictureBookUtil.extractSeedFromImage. Re-loads
+	 * the portrait with planMost(true) so its REFERENCED attributes are actually populated (a
+	 * minimally-projected portrait carries an empty attributes list and would just yield -1).
+	 */
+	private int savedPortraitSeed(BaseRecord charPerson) {
+		try {
+			BaseRecord portrait = charPerson.get("profile.portrait");
+			if (portrait == null) return -1;
+			String portraitOid = portrait.get(FieldNames.FIELD_OBJECT_ID);
+			if (portraitOid == null) return -1;
+			Query pq = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, portraitOid);
+			pq.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			pq.planMost(true);
+			BaseRecord full = IOSystem.getActiveContext().getAccessPoint().find(testUser, pq);
+			if (full == null) return -1;
+			int seed = AttributeUtil.getAttributeValue(full, "seed", -1);
+			return seed > 0 ? seed : -1;
+		} catch (Exception e) {
+			logger.warn("savedPortraitSeed: could not read prior seed for " + charPerson.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+			return -1;
+		}
+	}
+
+	private void generatePortrait(BaseRecord charPerson) {
+		generatePortrait(charPerson, false);
+	}
+	
+	private void generatePortrait(BaseRecord charPerson, boolean random) {
+		try {
+			OlioContext octx = OlioContextUtil.getOlioContext(testUser, testProperties.getProperty("test.datagen.path"));
+			SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, testProperties.getProperty("test.swarm.server"));
+			BaseRecord sdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+			sdConfig.set(OlioFieldNames.FIELD_SD_MODEL, testProperties.getProperty("test.swarm.model"));
+			sdConfig.set(OlioFieldNames.FIELD_SD_REFINER_MODEL, testProperties.getProperty("test.swarm.refinerModel"));
+			//sdConfig.set("negativePrompt", NarrativeUtil.getSDNegativePrompt(charPerson));
+			sdConfig.set(OlioFieldNames.FIELD_HIRES, false);
+			// Reuse any seed previously saved on this character's portrait (SDUtil persists the seed
+			// it used as a "seed" attribute on the generated image), so a regenerate reproduces the
+			// same face; -1 = random when the character has no prior portrait/seed yet. On the SWARM
+			// path the seed is taken from the sdConfig "seed" field (SWUtil.newTxt2Img honors
+			// cfg.get("seed") when > 0; its own seed parameter is unused) — the generateSDImages seed
+			// arg below is passed to match only so the AUTO1111 path stays consistent.
+			int seed = savedPortraitSeed(charPerson);
+			sdConfig.set("seed", (random ? -1 : seed));
+			logger.info("****** generatePortrait: " + charPerson.get(FieldNames.FIELD_NAME) + " using seed " + seed);
+			logger.info(sdConfig.toFullString());
+			sdu.generateSDImages(octx, Arrays.asList(charPerson), sdConfig, null, "((DEPRECATED))", /*body*/ null, /*verb*/ null, 1, false, /*hires*/ true, /*seed*/ seed);
+		}
+		catch(FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		// Resolve the portrait to export. generateSDImages only replaces profile.portrait when it
+		// actually produced an image (bl.size() > 0) — with SD down it produces none, leaving whatever
+		// was loaded at Step 3, which is a PARTIAL foreign ref (id only, no objectId). exportImage keys
+		// off objectId, so resolve the full record by id when objectId is absent, and export the
+		// character's existing portrait rather than silently doing nothing.
+		BaseRecord newPortrait = charPerson.get("profile.portrait");
+		if (newPortrait == null) {
+			logger.warn("generatePortrait: no portrait on " + charPerson.get(FieldNames.FIELD_NAME)
+				+ " (generateSDImages set no profile.portrait — SD backend returned no image?) — nothing to export");
+			return;
+		}
+		String portraitOid = newPortrait.get(FieldNames.FIELD_OBJECT_ID);
+		if (portraitOid == null) {
+			Long portraitId = newPortrait.get(FieldNames.FIELD_ID);
+			if (portraitId != null && portraitId > 0L) {
+				Query pq = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_ID, portraitId);
+				pq.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+				pq.planMost(true);
+				BaseRecord full = IOSystem.getActiveContext().getAccessPoint().find(testUser, pq);
+				if (full != null) portraitOid = full.get(FieldNames.FIELD_OBJECT_ID);
+			}
+		}
+		if (portraitOid == null) {
+			logger.warn("generatePortrait: could not resolve a portrait objectId for "
+				+ charPerson.get(FieldNames.FIELD_NAME) + " — nothing to export");
+			return;
+		}
+		logger.info("generatePortrait: exporting portrait " + portraitOid + " for " + charPerson.get(FieldNames.FIELD_NAME));
+		exportImage(portraitOid, charPerson.get(FieldNames.FIELD_NAME) + " " + portraitOid);
+	}
+	
 	private void generateApparelImage(BaseRecord charPerson) {
 		if (charPerson == null) return;
 try {
@@ -560,6 +659,114 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 	}
 
 
+
+	/**
+	 * Utility — DRESS a character UP to (and including) a target wear level. Sets inuse=true on every
+	 * wearable of the character's active apparel whose level is <= the target (and marks the apparel
+	 * itself worn). Mirrors Olio's Dress action (Dress.java executeAction: wl <= cwl -> inuse=true),
+	 * minus the action-result/roll/interaction machinery — a direct self-dress for test setup. Wear
+	 * levels run low->high: NONE(0)..ON(3), BASE(4), ACCENT(5), SUIT(6), GARNITURE(7), ACCESSORY(8),
+	 * OVER(9), OUTER(10).. (WearLevelEnumType). Persists each changed wearable with a minimal inuse
+	 * patch via persistInUse (utility writer path, bypasses AccessPoint/PBAC — same effect as the
+	 * Dress action's Queue.queueUpdate, and not blocked by the Olio-owned-wearable write issue KI-35).
+	 * Returns true if anything actually changed — a wearable that was newly put on (a wearable already
+	 * at/below the level and already worn is not a change), or the apparel itself being activated.
+	 *
+	 * Example: dressToLevel(duna, WearLevelEnumType.OUTER);   // fully clothed, coat and all
+	 */
+	private boolean dressToLevel(BaseRecord charPerson, WearLevelEnumType level) {
+		if (charPerson == null || level == null || level == WearLevelEnumType.UNKNOWN) return false;
+		IOSystem.getActiveContext().getReader().populate(charPerson, new String[] { FieldNames.FIELD_STORE });
+		boolean changed = false;
+		BaseRecord app = ApparelUtil.getWearingApparel(charPerson);
+		if (app == null) {
+			// Nothing marked in-use yet — turn the most-recently-added outfit "on" so dress-up has
+			// something to work with (imprintCustomCharacter appends its apparel to store.apparel).
+			BaseRecord store = charPerson.get(FieldNames.FIELD_STORE);
+			List<BaseRecord> appl = (store != null) ? store.get(OlioFieldNames.FIELD_APPAREL) : null;
+			if (appl == null || appl.isEmpty()) {
+				logger.warn("dressToLevel: " + charPerson.get(FieldNames.FIELD_NAME) + " has no apparel to dress");
+				return false;
+			}
+			app = appl.get(appl.size() - 1);
+			persistInUse(app, true);
+			changed = true;
+		}
+		IOSystem.getActiveContext().getReader().populate(app, new String[] { OlioFieldNames.FIELD_WEARABLES });
+		int cwl = WearLevelEnumType.valueOf(level);
+		int worn = 0;
+		List<BaseRecord> wearl = app.get(OlioFieldNames.FIELD_WEARABLES);
+		if (wearl != null) {
+			for (BaseRecord w : wearl) {
+				WearLevelEnumType wlvl = w.getEnum(OlioFieldNames.FIELD_LEVEL);
+				if (wlvl == null) continue;
+				if (WearLevelEnumType.valueOf(wlvl) <= cwl) {
+					Boolean cur = w.get(OlioFieldNames.FIELD_IN_USE);
+					if (cur != null && cur) continue; // already worn — no change
+					logger.info("  wear: " + NarrativeUtil.describeWearable(w));
+					persistInUse(w, true);
+					worn++;
+					changed = true;
+				}
+			}
+		}
+		logger.info("dressToLevel: " + charPerson.get(FieldNames.FIELD_NAME) + " dressed up to " + level + " (" + worn + " wearable(s) newly worn)");
+		return changed;
+	}
+
+	/**
+	 * Utility — UNDRESS a character DOWN to a target wear level. Sets inuse=false on every currently-
+	 * worn wearable whose level is > the target, leaving everything at or below it on. Mirrors Olio's
+	 * Undress action (Undress.java executeAction: wl > cwl -> inuse=false), minus the action-result/
+	 * roll/interaction machinery. E.g. undressToLevel(c, WearLevelEnumType.BASE) strips everything
+	 * above the base layer (suit, accents, coat, jewelry), leaving just the base garments. Persists via
+	 * the same minimal-inuse-patch path as dressToLevel (see its KI-35 note). Returns true if at least
+	 * one wearable was actually removed (getWearing only yields currently-worn items, so every strip is
+	 * a real change) — false if nothing was above the level / nothing was worn.
+	 *
+	 * Example: undressToLevel(duna, WearLevelEnumType.BASE);  // down to base garments
+	 */
+	private boolean undressToLevel(BaseRecord charPerson, WearLevelEnumType level) {
+		if (charPerson == null || level == null || level == WearLevelEnumType.UNKNOWN) return false;
+		IOSystem.getActiveContext().getReader().populate(charPerson, new String[] { FieldNames.FIELD_STORE });
+		BaseRecord app = ApparelUtil.getWearingApparel(charPerson);
+		if (app == null) {
+			logger.warn("undressToLevel: " + charPerson.get(FieldNames.FIELD_NAME) + " is not wearing any apparel");
+			return false;
+		}
+		IOSystem.getActiveContext().getReader().populate(app, new String[] { OlioFieldNames.FIELD_WEARABLES });
+		int cwl = WearLevelEnumType.valueOf(level);
+		int stripped = 0;
+		for (BaseRecord w : ApparelUtil.getWearing(charPerson)) {
+			WearLevelEnumType wlvl = w.getEnum(OlioFieldNames.FIELD_LEVEL);
+			if (wlvl == null) continue;
+			if (WearLevelEnumType.valueOf(wlvl) > cwl) {
+				logger.info("  strip: " + NarrativeUtil.describeWearable(w));
+				persistInUse(w, false);
+				stripped++;
+			}
+		}
+		logger.info("undressToLevel: " + charPerson.get(FieldNames.FIELD_NAME) + " undressed down to " + level + " (" + stripped + " wearable(s) removed)");
+		return stripped > 0;
+	}
+
+	/**
+	 * Persist a single wearable/apparel record's inuse flag with a minimal identity + field patch.
+	 * Scopes the patch source to just objectId + inuse (see setColorByNameOnCharacter's note on why the
+	 * bare newInstance(model) overload is wrong here) and writes via RecordUtil.patch — the utility
+	 * path that bypasses AccessPoint/PBAC, same effect as the Dress/Undress actions' Queue.queueUpdate.
+	 */
+	private void persistInUse(BaseRecord wearableOrApparel, boolean value) {
+		try {
+			BaseRecord patch = RecordFactory.newInstance(wearableOrApparel.getSchema(),
+				new String[] { FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_IN_USE });
+			patch.set(FieldNames.FIELD_OBJECT_ID, wearableOrApparel.get(FieldNames.FIELD_OBJECT_ID));
+			patch.set(OlioFieldNames.FIELD_IN_USE, value);
+			IOSystem.getActiveContext().getRecordUtil().patch(patch, wearableOrApparel);
+		} catch (Exception e) {
+			logger.error("persistInUse failed for " + wearableOrApparel.getSchema() + ": " + e.getMessage());
+		}
+	}
 
 	@Test
 	public void TestPictureBookCustomPipeline() throws Exception {
@@ -694,6 +901,12 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 			"{neuroticism:0.7}",                                            // custom personality
 			"bra,panties,blouse,skirt,thigh-high heeled boots,anklet,amulet,jewelry:piercing:7:f:ear");
 			generateApparelImage(duna);                        // custom outfit CSV
+			undressToLevel(duna, WearLevelEnumType.ON);
+			//generatePortrait(duna, true);
+			dressToLevel(duna, WearLevelEnumType.BASE);
+			generatePortrait(duna);
+			dressToLevel(duna, WearLevelEnumType.SUIT);
+			generatePortrait(duna);
 		}
 		
 		BaseRecord jid = pickCharacterByName(Arrays.asList(chars), "Jideon");   // (a) Duña or Duna
@@ -703,61 +916,67 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 			setColorByNameOnCharacter(jid, OlioFieldNames.FIELD_HAIR_COLOR, "Dark Brown"); // (b) hair
 			setColorByNameOnCharacter(jid, OlioFieldNames.FIELD_EYE_COLOR,  "Hazel");  // (b) eyes
 			imprintCustomCharacter(jid,                                                // (c)
-			"{age: 45, firstName: \"Jideon\", lastName: \"de Rosa\", name: \"Jideon de Rosa\", alignment:\"CHAOTICGOOD\",hairStyle:\"long and damp\", race:[\"E\"],ethnicity:[\"FIFTEEN\"]}",   // custom person props
+			"{age: 45, firstName: \"Jideon\", lastName: \"de Rosa\", name: \"Jideon de Rosa\", alignment:\"CHAOTICGOOD\",hairStyle:\"unkempt\", race:[\"E\"],ethnicity:[\"FIFTEEN\"]}",   // custom person props
 			"{physicalStrength:16, agility:16,intelligence:18,perception:16,charisma: 16}", // custom statistics
 			"{neuroticism:0.7}",                                            // custom personality
 			"t-shirt,cargo pants,socks,shoes,clothing:leather jacket:5:m:shoulder");                     
 			generateApparelImage(jid);           // custom outfit CSV
+			undressToLevel(jid, WearLevelEnumType.ON);
+			// generatePortrait(jid, true);
+			dressToLevel(jid, WearLevelEnumType.BASE);
+			generatePortrait(jid);
+			dressToLevel(jid, WearLevelEnumType.SUIT);
+			generatePortrait(jid);
 		}
-
+		
+		//generateApparelImage(duna);                        // custom outfit CSV
+		/*
+		undressToLevel(duna, WearLevelEnumType.ON);
+		generatePortrait(duna, true);
+		dressToLevel(duna, WearLevelEnumType.BASE);
+		generatePortrait(duna);
+		dressToLevel(duna, WearLevelEnumType.SUIT);
+		generatePortrait(duna);
+		//generateApparelImage(jid);           // custom outfit CSV
+		undressToLevel(jid, WearLevelEnumType.ON);
+		generatePortrait(jid, true);
+		dressToLevel(jid, WearLevelEnumType.BASE);
+		generatePortrait(jid);
+		dressToLevel(jid, WearLevelEnumType.SUIT);
+		generatePortrait(jid);
+		*/
 		// olio.sd.config's schema "model" default (sdXL_v10VAEFix.safetensors) is almost certainly
 		// not installed on your Swarm — always set model/refinerModel from test.swarm.* (same as
 		// buildSdConfigTemplate() for Step 5).
 		String swarmServer = testProperties.getProperty("test.swarm.server");
 		assertNotNull("test.swarm.server must be set", swarmServer);
-		/*
-		BaseRecord apparelSdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-		apparelSdConfig.set(OlioFieldNames.FIELD_SD_MODEL, testProperties.getProperty("test.swarm.model"));
-		apparelSdConfig.set(OlioFieldNames.FIELD_SD_REFINER_MODEL, testProperties.getProperty("test.swarm.refinerModel"));
-		apparelSdConfig.set("negativePrompt", testProperties.getProperty("test.swarm.negativePrompt"));
+		
 
-		// Fixed (not -1/random) seed: repeated runs against the same apparel should render the same
-		// mannequin image, matching this test's overall get-or-create/idempotent design.
-		SDUtil apparelSdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
-		String apparelGroupPath = "~/Gallery/Apparel/" + (String) apparel.get(FieldNames.FIELD_NAME);
-		List<BaseRecord> mannequinImages = apparelSdu.generateMannequinImages(testUser, apparelGroupPath, apparel, apparelSdConfig, false, MANNEQUIN_SEED);
-		assertNotNull("generateMannequinImages should return a result list", mannequinImages);
-		logger.info("Step 3B: generated " + mannequinImages.size() + " mannequin image(s) for " + apparel.get(FieldNames.FIELD_NAME)
-			+ " (seed=" + MANNEQUIN_SEED + "): " + mannequinImages.stream().map(i -> (String) i.get(FieldNames.FIELD_OBJECT_ID)).collect(java.util.stream.Collectors.toList()));
-		int mannequinNum = 0;
-		for (BaseRecord mimg : mannequinImages) {
-			exportImage(mimg.get(FieldNames.FIELD_OBJECT_ID), "mannequin_" + apparel.get(FieldNames.FIELD_NAME) + "_" + (++mannequinNum));
-		}
-*/
-		if(true){
-			return;
-		}
 		// ═══════════════════════════════════════════════════════════════════
 		// STEP 4 — PROMPT RESOLUTION (check the prompt BEFORE spending SD time on it)
 		// ═══════════════════════════════════════════════════════════════════
 		// TODO: resolve+cache landscape/scene prompts, then re-read the scene note's own "text"
 		// JSON to see exactly what got cached (and what would actually be sent to SDUtil.txt2img).
 
-		// List<Map<String, Object>> scenes = PictureBookUtil.listScenes(testUser, bookObjectId);
-		// List<String> sceneOids = new ArrayList<>();
-		// for (Map<String, Object> s : scenes) sceneOids.add((String) s.get("objectId"));
-		// PictureBookUtil.prepareSceneImagePrompts(testUser, sceneOids,
-		//     chatConfig.get(FieldNames.FIELD_NAME), IMAGE_STYLE, null);
-		//
-		// for (String sceneOid : sceneOids) {
-		//     Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneOid);
-		//     sq.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
-		//     sq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "text" });
-		//     BaseRecord sceneNote = IOSystem.getActiveContext().getSearch().findRecord(sq);
-		//     Map<String, Object> sceneData = JSONUtil.getMap(((String) sceneNote.get("text")).getBytes(), String.class, Object.class);
-		//     logger.info("Scene " + sceneOid + " landscapePrompt=[" + sceneData.get("landscapePrompt") + "]");
-		//     logger.info("Scene " + sceneOid + " scenePrompt=[" + sceneData.get("scenePrompt") + "]");
-		// }
+		 List<Map<String, Object>> scenes = PictureBookUtil.listScenes(testUser, bookObjectId);
+		 List<String> sceneOids = new ArrayList<>();
+		 for (Map<String, Object> s : scenes) sceneOids.add((String) s.get("objectId"));
+		 PictureBookUtil.prepareSceneImagePrompts(testUser, sceneOids,
+		     chatConfig.get(FieldNames.FIELD_NAME), IMAGE_STYLE, null);
+		
+		 for (String sceneOid : sceneOids) {
+		     Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneOid);
+		     sq.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		     sq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "text" });
+		     BaseRecord sceneNote = IOSystem.getActiveContext().getSearch().findRecord(sq);
+		     Map<String, Object> sceneData = JSONUtil.getMap(((String) sceneNote.get("text")).getBytes(), String.class, Object.class);
+		     logger.info("Scene " + sceneOid + " landscapePrompt=[" + sceneData.get("landscapePrompt") + "]");
+		     logger.info("Scene " + sceneOid + " scenePrompt=[" + sceneData.get("scenePrompt") + "]");
+		}
+
+		if(true){
+			return;
+		}
 
 		// ═══════════════════════════════════════════════════════════════════
 		// STEP 5 — IMAGE GENERATION (real Swarm call)
