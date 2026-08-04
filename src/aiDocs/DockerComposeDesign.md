@@ -7,6 +7,75 @@ Tomcat deploys the webapp, the schema is created on a fresh Postgres, and nginx 
 reverse-proxies both the REST API and the Ux752 UI. Verified against a disposable
 `pgvector/pgvector:pg17` container (see "Verification 2026-07-15" below).
 
+## Build & run
+
+Two compose files exist at the repo root:
+
+| File | Postgres/pgvector | App host port | Use |
+|------|-------------------|---------------|-----|
+| `docker-compose.yml` | **external** — you run it yourself | `8443` | the canonical single-container stack |
+| `docker-compose.test.yml` | **bundled** dedicated `am7-pg` service | `9443` | isolated local test stack — no collision with a local Tomcat (`8443`) or a dev Postgres (`15432`) |
+
+Prereqs: Docker Desktop running. The SD/face/voice/embedding features reach LAN servers
+(`192.168.1.42:*`) via the `*_SERVER` env defaults — override or ignore those if you only need the
+REST API + UI. Both stacks create the DB schema on first boot but leave the admin/org **setup** as a
+deliberate step (below).
+
+### Option A — isolated test stack (dedicated `am7-pg` pgvector) — `docker-compose.test.yml`
+
+Brings up the app **and** a dedicated `am7-pg` pgvector container on their own network, on
+non-colliding host ports (`9443` app, `15433` pg). Runs with an explicit project name so its network
+stays separate from the main compose project.
+
+**Persistence:** all durable state is **bind-mounted to a concrete host directory** —
+`AM7_DATA_DIR`, default `./docker-data` (next to the compose file) — so nothing is ephemeral:
+`docker-data/pg` (Postgres data), `docker-data/am7` (app keystores/vault/datagen/streams), and
+`docker-data/certs` (the shared TLS pair). Without such a mapping this state would live only in the
+container's writable layer and be lost on every recreate. The dir is git-ignored (`src/.gitignore`).
+
+```bash
+# build images + start the app and the dedicated am7-pg pgvector container
+docker compose -p am7test -f docker-compose.test.yml up --build
+#   (persist elsewhere: AM7_DATA_DIR=/abs/path docker compose -p am7test -f docker-compose.test.yml up --build)
+
+# one-time DB setup (creates the admin credential for /System, /Development, /Public).
+# Run from WSL/Linux or a browser — Windows curl returns HTTP 000 against nginx's self-signed cert.
+curl -k -X POST https://localhost:9443/rest/setup/ \
+  -H 'Content-Type: application/json' \
+  -d '{"schema":"auth.credential","credential":"'"$(printf 'password' | base64)"'","type":"hashed_password"}'
+
+# app (UI + REST behind nginx): https://localhost:9443
+# inspect the dedicated DB if desired: psql -h localhost -p 15433 -U am7user -d am72db  (password: password)
+
+docker compose -p am7test -f docker-compose.test.yml down     # stop; data KEPT on the host (./docker-data)
+docker compose -p am7test -f docker-compose.test.yml down; rm -rf ./docker-data   # full reset (wipe host data)
+```
+
+The bundled `am7-pg` seeds `am72db`/`am7user`/`password` on first boot (from `POSTGRES_*`), which is
+exactly what the app connects to over the private network — no manual DB/user creation. The app waits
+on `am7-pg`'s healthcheck before starting. Because everything is a host bind mount there are **no
+named volumes** — `down` keeps the data, and a full reset is just deleting `./docker-data` (the DB and
+the keystores share one lifecycle, so they can't desync into the orphaned-org state). **Windows note:**
+if Postgres fails to initialize on the host bind mount (rare on Docker Desktop/WSL2), swap the `am7-pg`
+data mount for a named volume — see the inline comment in `docker-compose.test.yml`.
+
+### Option B — canonical stack (external Postgres) — `docker-compose.yml`
+
+Run pgvector yourself (per `setup/dockerNotes.txt`), then bring the app up on `8443`:
+
+```bash
+docker run -d --name am7-pg -p 15433:5432 \
+  -e POSTGRES_DB=am72db -e POSTGRES_USER=am7user -e POSTGRES_PASSWORD=password \
+  pgvector/pgvector:pg17
+DB_HOST=host.docker.internal DB_PORT=15433 docker compose up --build
+# then the same POST /rest/setup/ as above, against https://localhost:8443
+```
+
+> **Verification status:** the canonical `docker-compose.yml` path was verified end-to-end 2026-07-15
+> (log below). `docker-compose.test.yml` is **compose-validated** (`docker compose config` clean) but
+> has **not** yet been run through a full `up --build` boot — treat these instructions as unverified
+> until someone brings the test stack up and confirms `POST /rest/setup/` → `true` on `:9443`.
+
 ## Goal
 
 Package `AccountManagerService7` (Tomcat 11) and `AccountManagerUx752` together in one Docker

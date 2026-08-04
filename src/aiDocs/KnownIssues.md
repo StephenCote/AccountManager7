@@ -1888,3 +1888,26 @@ explicit skip that is visibly reported), so a refused/empty generation can never
 per `.claude/rules/llm-conduct.md` "no fake tests". Consider a shared test helper that stamps the
 installed model onto any `randomSDConfig()` used for a live call. Also see KI-38's note re: removing the
 uninstalled `sdXL_v10VAEFix.safetensors` default (or making the schema default a model that ships).
+
+### KI-40. Chat scene generation should adopt the newer PictureBook approach — turn a chat into its own dynamically-growing picturebook — OPEN (2026-08-04, Stephen)
+
+The picture-book pipeline (`PictureBookUtil`) is now the mature, config-driven approach for scene
+illustration: one common `olio.sd.config` drives portraits + landscape + composite; the art style is
+applied exactly once via `SDUtil.getSDConfigPrompt` and stays **globally consistent** (with a
+per-character local override for a single character's portrait — e.g. one character rendered as a
+cartoon while everything else is a photograph); and scene-image prompts are assembled from
+**style- and setting-free** per-character narrations (appearance + outfit only) plus the scene's own
+setting/action/mood. Chat scene generation still runs on the older/divergent image path and does not
+share this machinery.
+
+**Goal:** update chat scene generation to use the newer/updated PictureBook approach — effectively
+**turn a chat into its own dynamically-growing picturebook**. As the conversation advances, scenes are
+extracted/created and illustrated incrementally into a per-chat book (append new scenes over time
+rather than regenerating a single one-off image), reusing the picture-book scene/character/portrait/
+landscape/composite pipeline and the book's common `olio.sd.config` for global style consistency.
+
+**Fix direction:** locate the current chat image-generation path, converge it onto `PictureBookUtil`'s
+scene/portrait/landscape/composite stages, and model the chat as a book whose `scenes` list grows as
+the chat progresses. Reuse the common-config style seam and the per-character override mechanism rather
+than forking a parallel image path (the same anti-pattern KI-38 fixed). Scope/sequencing TBD — backlog
+placeholder, not a plan.

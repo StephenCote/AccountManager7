@@ -141,7 +141,101 @@ public class PictureBookUtil {
 
     private static final String PICTURE_BOOKS_DIR = "PictureBooks";
 
+    // Per-character attributes written by createFromScenes' reduce step. ATTR_SCENE_REFS = CSV of the
+    // scene indices the character appears in; ATTR_DESCRIPTION = the LLM-reduced, style/setting-free
+    // visual description condensed from those scenes' content blocks — the source used for imaging
+    // (read in resolveSceneCharacter). Distinct from the per-character style-override attribute.
+    public static final String ATTR_SCENE_REFS = "pbSceneRefs";
+    public static final String ATTR_DESCRIPTION = "pbDescription";
+    // Prepended to ATTR_DESCRIPTION when it drives a portrait render, matching
+    // NarrativeUtil.getSDPrompt's own opening tokens so an Attr2-based portrait keeps render quality.
+    private static final String PORTRAIT_QUALITY_PREAMBLE =
+            "8k highly detailed ((highest quality)) ((ultra realistic)) ((full body)) of ";
+
     private PictureBookUtil() {
+    }
+
+    // Stopwords skipped when counting a character's name mentions, so "The Guard" scores on "guard"
+    // (not "the") and "Jideon de Rosa" on "jideon"/"rosa" (not "de").
+    private static final Set<String> NAME_STOPWORDS = new HashSet<>(Arrays.asList(
+            "the", "a", "an", "of", "and", "de", "la", "le", "el", "von", "van", "di", "da"));
+    // Physical/costume descriptor cues used to weight how DESCRIPTIVE a passage is for a character.
+    private static final Pattern DESCRIPTOR_WORDS = Pattern.compile(
+            "\\b(hair|eyes?|wearing|wore|dressed|beard|mo(?:u)?stache|skin|complexion|freckl\\w*|tattoo\\w*|"
+            + "tall|short|stocky|slender|slim|burly|lean|muscular|thin|heavy|build|scar\\w*|bald|"
+            + "young|old|elderly|middle-aged|aged|man|woman|girl|boy|lady|gentleman|"
+            + "armou?r|dress|gown|robe|cloak|coat|jacket|shirt|tunic|trousers|pants|skirt|blouse|"
+            + "boots|shoes|sandals|hat|helmet|gloves|belt|hood|cape|scarf)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    private static String stripAccentsLower(String s) {
+        if (s == null) return "";
+        return Normalizer.normalize(s, Normalizer.Form.NFD).replaceAll("\\p{M}+", "").toLowerCase();
+    }
+
+    /**
+     * Relevance of a content block to a character: weighted name mentions + physical/costume
+     * descriptor density. A high score means the passage both features and physically DESCRIBES the
+     * character — exactly what the reduce wants. Name matching is accent/case-insensitive and skips
+     * stopword name tokens.
+     */
+    private static int passageRelevance(String characterName, String block) {
+        String nb = stripAccentsLower(block);
+        int mentions = 0;
+        for (String tok : stripAccentsLower(characterName).split("\\s+")) {
+            if (tok.length() < 3 || NAME_STOPWORDS.contains(tok)) continue;
+            int idx = 0;
+            while ((idx = nb.indexOf(tok, idx)) >= 0) { mentions++; idx += tok.length(); }
+        }
+        int desc = 0;
+        Matcher m = DESCRIPTOR_WORDS.matcher(block);
+        while (m.find()) desc++;
+        return mentions * 3 + desc;
+    }
+
+    /**
+     * Concatenate a character's content blocks into a single passage for the reduce LLM call, bounded
+     * to {@code maxChars} so a prolific character (present in many blocks) can't exceed the context
+     * window. Blocks are RANKED by {@link #passageRelevance} first, so when the cap forces truncation
+     * the MOST descriptive passages are kept — not whichever blocks happened to come first by
+     * discovery order (this is the relevance weighting that keeps a Jideon-in-everything bounded).
+     */
+    private static String boundedPassages(String characterName, java.util.Collection<String> blocks, int maxChars) {
+        List<String> ordered = new ArrayList<>();
+        for (String b : blocks) if (b != null && !b.isBlank()) ordered.add(b);
+        ordered.sort((a, b) -> Integer.compare(passageRelevance(characterName, b), passageRelevance(characterName, a)));
+        StringBuilder sb = new StringBuilder();
+        for (String b : ordered) {
+            if (sb.length() > 0) sb.append("\n\n---\n\n");
+            sb.append(b.trim());
+            if (sb.length() >= maxChars) break;
+        }
+        return sb.length() > maxChars ? sb.substring(0, maxChars) : sb.toString();
+    }
+
+    /**
+     * Persist a character's scene references (Attribute 1, {@link #ATTR_SCENE_REFS}) and condensed
+     * description (Attribute 2, {@link #ATTR_DESCRIPTION}) as attributes on the charPerson via the
+     * referenced-attribute mechanism (the only pattern that actually persists an attribute — see
+     * {@link #tagApparelSceneIndex}). Best-effort: a failure here must not fail the whole book build.
+     */
+    private static void persistCharacterSceneAttributes(BaseRecord user, BaseRecord charPerson,
+            List<Integer> sceneIndices, String description) {
+        try {
+            if (sceneIndices != null && !sceneIndices.isEmpty()) {
+                String csv = sceneIndices.stream().map(String::valueOf)
+                        .collect(java.util.stream.Collectors.joining(","));
+                IOSystem.getActiveContext().getRecordUtil().createRecord(
+                        AttributeUtil.addAttribute(charPerson, ATTR_SCENE_REFS, csv));
+            }
+            if (description != null && !description.isBlank()) {
+                IOSystem.getActiveContext().getRecordUtil().createRecord(
+                        AttributeUtil.addAttribute(charPerson, ATTR_DESCRIPTION, description.trim()));
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to persist scene refs/description attributes for "
+                    + charPerson.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+        }
     }
 
     // ----- Public parameter/result holders --------------------------------
@@ -429,6 +523,69 @@ public class PictureBookUtil {
     }
 
     /**
+     * Set (or clear) a per-character LOCAL style override on the book, persisted on
+     * {@code pictureBookMeta.characterStyles} keyed by charPerson objectId. Styles ONLY that
+     * character's pipeline-rendered portrait; the composite, landscape, and every other character keep
+     * the book's global common config. A null {@code sdConfig} removes any existing override for the
+     * character. This is the book-pipeline override — it does NOT touch the UI reimage per-character
+     * portrait config ({@code <name>-SD.json}). Returns the resulting override list size.
+     */
+    @SuppressWarnings("unchecked")
+    public static int setCharacterStyleOverride(BaseRecord user, String bookObjectId, String characterObjectId,
+            String characterName, BaseRecord sdConfig) {
+        if (characterObjectId == null || characterObjectId.isBlank()) {
+            throw new PictureBookException(400, "characterObjectId is required");
+        }
+        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        if (bookGroup == null) throw new PictureBookException(404, "Book not found");
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+        BaseRecord meta = loadTypedMeta(user, bookGroupPath);
+        if (meta == null) throw new PictureBookException(404, "Book meta not found");
+        try {
+            List<BaseRecord> styles = meta.get("characterStyles");
+            if (styles == null) { styles = new ArrayList<>(); }
+            styles.removeIf(s -> s != null && characterObjectId.equals(s.get("characterObjectId")));
+            if (sdConfig != null) {
+                SDUtil.fillStyleDefaults(sdConfig);
+                BaseRecord entry = RecordFactory.newInstance(OlioModelNames.MODEL_PICTURE_BOOK_CHARACTER_STYLE);
+                entry.set("characterObjectId", characterObjectId);
+                if (characterName != null) entry.set("characterName", characterName);
+                entry.set("sdConfig", sdConfig);
+                styles.add(entry);
+            }
+            meta.set("characterStyles", styles);
+            saveMeta(user, bookGroupPath, meta);
+            return styles.size();
+        } catch (PictureBookException pbe) {
+            throw pbe;
+        } catch (Exception e) {
+            logger.error("Failed to set character style override for " + characterObjectId + ": " + e.getMessage(), e);
+            throw new PictureBookException(500, e.getMessage());
+        }
+    }
+
+    /**
+     * Read back the per-character LOCAL style override's {@code olio.sd.config} for a character, or
+     * null if none is set. Symmetric with {@link #setCharacterStyleOverride}; used by the UI (and
+     * tests) to show/verify the override. Does NOT read the UI reimage {@code <name>-SD.json} config.
+     */
+    @SuppressWarnings("unchecked")
+    public static BaseRecord getCharacterStyleOverride(BaseRecord user, String bookObjectId, String characterObjectId) {
+        if (characterObjectId == null) return null;
+        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        if (bookGroup == null) throw new PictureBookException(404, "Book not found");
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+        BaseRecord meta = loadTypedMeta(user, bookGroupPath);
+        if (meta == null) return null;
+        List<BaseRecord> styles = meta.get("characterStyles");
+        if (styles == null) return null;
+        for (BaseRecord s : styles) {
+            if (s != null && characterObjectId.equals(s.get("characterObjectId"))) return s.get("sdConfig");
+        }
+        return null;
+    }
+
+    /**
      * Update a scene note's text JSON with a single key/value pair, preserving existing keys.
      * Used to persist generated image object ids so the viewer fallback can find them.
      */
@@ -475,11 +632,20 @@ public class PictureBookUtil {
     private static final class ResolvedCharacter {
         final BaseRecord charPerson;
         final String name;
+        // Full narrative sdPrompt — used to actually RENDER this character's portrait (Stage 1).
+        // Carries per-character quality tokens AND (by construction, see resolveSceneCharacter) a
+        // random art style + random setting/era baked in at narrative-creation time.
         final String portraitPrompt;
-        ResolvedCharacter(BaseRecord charPerson, String name, String portraitPrompt) {
+        // Style- AND setting-free appearance+outfit description — used ONLY for the scene-image
+        // PROMPT's charNarrations, so a multi-character scene doesn't inherit each character's own
+        // random style/era (which stitched conflicting styles into one composite — see the field's
+        // derivation in resolveSceneCharacter). The book's single style is applied once elsewhere.
+        final String sceneNarration;
+        ResolvedCharacter(BaseRecord charPerson, String name, String portraitPrompt, String sceneNarration) {
             this.charPerson = charPerson;
             this.name = name;
             this.portraitPrompt = portraitPrompt;
+            this.sceneNarration = sceneNarration;
         }
     }
 
@@ -504,7 +670,7 @@ public class PictureBookUtil {
             if (charOid != null) {
                 Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charOid);
                 cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile", FieldNames.FIELD_STORE});
+                cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile", FieldNames.FIELD_STORE, FieldNames.FIELD_ATTRIBUTES});
                 cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
             } else if (cname != null) {
                 // Case-insensitive, whitespace-tolerant (ILIKE, trimmed) — the LLM's own scene-character
@@ -519,7 +685,7 @@ public class PictureBookUtil {
                     cq.field(FieldNames.FIELD_NAME, ComparatorEnumType.ILIKE, cname.trim());
                     cq.field(FieldNames.FIELD_GROUP_ID, charGrp.get(FieldNames.FIELD_ID));
                     cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                    cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile", FieldNames.FIELD_STORE});
+                    cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile", FieldNames.FIELD_STORE, FieldNames.FIELD_ATTRIBUTES});
                     cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
                     if (cp == null) {
                         // B6: the DB ILIKE+trim above does not fold Unicode diacritics, so a scene name
@@ -530,7 +696,7 @@ public class PictureBookUtil {
                         Query allq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
                         allq.field(FieldNames.FIELD_GROUP_ID, charGrp.get(FieldNames.FIELD_ID));
                         allq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                        allq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile", FieldNames.FIELD_STORE});
+                        allq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile", FieldNames.FIELD_STORE, FieldNames.FIELD_ATTRIBUTES});
                         BaseRecord[] candidates = IOSystem.getActiveContext().getAccessPoint().list(user, allq).getResults();
                         if (candidates != null) {
                             for (BaseRecord cand : candidates) {
@@ -559,37 +725,77 @@ public class PictureBookUtil {
         }
         if (cname == null) cname = cp.get(FieldNames.FIELD_NAME);
 
-        // narrative is a foreign model (olio.narrative) — read sdPrompt from it
+        // narrative is a foreign model (olio.narrative) — read its prompt fields from it. sdPrompt
+        // is the full render prompt; physicalDescription/outfitDescription are the style- and
+        // setting-free building blocks used for the scene narration (see sceneNarration below).
         String portraitPrompt = null;
+        String physicalDesc = null;
+        String outfitDesc = null;
         BaseRecord cpNarrative = cp.get("narrative");
         if (cpNarrative != null) {
             portraitPrompt = cpNarrative.get("sdPrompt");
-            if (portraitPrompt == null || portraitPrompt.isBlank()) {
-                portraitPrompt = cpNarrative.get("physicalDescription");
-            }
+            physicalDesc = cpNarrative.get("physicalDescription");
+            outfitDesc = cpNarrative.get("outfitDescription");
             // The charPerson query above requests the bare "narrative" field name (no nested
             // dot-path/plan), which — per .claude/rules/model-api.md — only returns the foreign
             // model's default query fields. olio.narrative's "query" array is just ["id","groupId"],
-            // so sdPrompt/physicalDescription come back null here even though they are persisted in
-            // the DB. Mirror the profile->portrait two-step populate() pattern: explicitly re-populate
-            // the narrative record itself for the fields actually needed.
-            if (portraitPrompt == null || portraitPrompt.isBlank()) {
+            // so these come back null here even though they are persisted in the DB. Mirror the
+            // profile->portrait two-step populate() pattern: explicitly re-populate the narrative
+            // record itself for the fields actually needed.
+            if ((portraitPrompt == null || portraitPrompt.isBlank())
+                    || (physicalDesc == null || physicalDesc.isBlank())
+                    || (outfitDesc == null || outfitDesc.isBlank())) {
                 try {
-                    IOSystem.getActiveContext().getReader().populate(cpNarrative, new String[] { "sdPrompt", "physicalDescription" });
+                    IOSystem.getActiveContext().getReader().populate(cpNarrative,
+                            new String[] { "sdPrompt", "physicalDescription", "outfitDescription" });
                     portraitPrompt = cpNarrative.get("sdPrompt");
-                    if (portraitPrompt == null || portraitPrompt.isBlank()) {
-                        portraitPrompt = cpNarrative.get("physicalDescription");
-                    }
+                    physicalDesc = cpNarrative.get("physicalDescription");
+                    outfitDesc = cpNarrative.get("outfitDescription");
                 } catch (Exception e) {
-                    logger.warn("Failed to populate narrative sdPrompt/physicalDescription for " + cname + ": " + e.getMessage());
+                    logger.warn("Failed to populate narrative prompt fields for " + cname + ": " + e.getMessage());
                 }
             }
+            if (portraitPrompt == null || portraitPrompt.isBlank()) {
+                portraitPrompt = physicalDesc;
+            }
         }
-        if (portraitPrompt == null || portraitPrompt.isBlank()) {
-            logger.warn("No portrait prompt (narrative) for: " + cname + " — skipping portrait");
+        // Attribute 2 (ATTR_DESCRIPTION): the reduced, style/setting-free visual description condensed
+        // from the character's OWN scenes (createFromScenes' reduce step) — PREFERRED for imaging.
+        // Read from the charPerson's attributes (FIELD_ATTRIBUTES requested in the query above).
+        String pbDescription = null;
+        try {
+            String d = AttributeUtil.getAttributeValue(cp, ATTR_DESCRIPTION, (String) null);
+            if (d != null && !d.isBlank()) pbDescription = d.trim();
+        } catch (Exception e) {
+            logger.warn("Failed to read " + ATTR_DESCRIPTION + " attribute for " + cname + ": " + e.getMessage());
+        }
+
+        if ((portraitPrompt == null || portraitPrompt.isBlank()) && pbDescription == null) {
+            logger.warn("No portrait prompt or reduced description for: " + cname + " — skipping portrait");
             return null;
         }
-        return new ResolvedCharacter(cp, cname, portraitPrompt);
+
+        String sceneNarration;
+        if (pbDescription != null) {
+            // Attr2 preferred: one style/setting-free visual description drives BOTH the composite
+            // charNarration and (with a quality preamble) the portrait render base.
+            sceneNarration = pbDescription;
+            portraitPrompt = PORTRAIT_QUALITY_PREAMBLE + pbDescription;
+        } else {
+            // Fallback (books created before the reduce step): APPEARANCE + OUTFIT only, deliberately
+            // NOT the full sdPrompt — which bakes in a per-character RANDOM art style and RANDOM
+            // setting/era at creation (NarrativeUtil.getSDPrompt), the double-style/era bug. The book's
+            // ONE style is applied once by appendConfigStyleOnce; the scene supplies its own
+            // setting/action/mood. physicalDescription/outfitDescription are style/setting-free.
+            sceneNarration = (physicalDesc != null && !physicalDesc.isBlank()) ? physicalDesc.trim() : "";
+            if (outfitDesc != null && !outfitDesc.isBlank()) {
+                String o = outfitDesc.trim();
+                sceneNarration = sceneNarration.isEmpty() ? o
+                        : (sceneNarration.endsWith(".") ? sceneNarration + " " : sceneNarration + ". ") + o;
+            }
+            if (sceneNarration.isBlank()) sceneNarration = portraitPrompt; // never blank
+        }
+        return new ResolvedCharacter(cp, cname, portraitPrompt, sceneNarration);
     }
 
     /**
@@ -606,6 +812,80 @@ public class PictureBookUtil {
         if (clause == null || clause.isBlank()) return p;
         if (p.contains(clause)) return p;
         return p + (p.endsWith(".") || p.endsWith(",") ? " " : ". ") + clause;
+    }
+
+    /**
+     * Remove a trailing {@link SDUtil#getSDConfigPrompt}-shaped style clause from a prompt so a fresh
+     * style (the book global, or a per-character override) can be applied cleanly instead of stacking
+     * on top of whatever style the source prompt already carried. A character's narrative
+     * {@code sdPrompt} bakes in a RANDOM style at creation time ({@code getSDConfigPrompt(randomSDConfig)}
+     * via NarrativeUtil.getSDPrompt); appending the book style on top of that produced double-styled
+     * portraits. getSDConfigPrompt always emits its style as a single balanced-parenthesised group at
+     * the very end — {@code (art).} or {@code ((Photograph) taken with a (X) camera ...).} — so this
+     * strips exactly that final balanced group (and its trailing '.'), leaving the appearance/outfit/
+     * setting text untouched. A no-op when the prompt doesn't end in such a group (e.g. a
+     * physicalDescription fallback ending in plain text) or when the parens are unbalanced (never risk
+     * mangling — fall back to the original).
+     */
+    public static String stripTrailingConfigStyle(String prompt) {
+        if (prompt == null) return null;
+        String t = prompt.stripTrailing();
+        String noDot = t.endsWith(".") ? t.substring(0, t.length() - 1).stripTrailing() : t;
+        if (!noDot.endsWith(")")) return t;            // no trailing style clause
+        int depth = 0, cut = -1;
+        for (int i = noDot.length() - 1; i >= 0; i--) {
+            char c = noDot.charAt(i);
+            if (c == ')') depth++;
+            else if (c == '(') { depth--; if (depth == 0) { cut = i; break; } }
+        }
+        if (cut < 0) return t;                          // unbalanced — don't risk mangling
+        return noDot.substring(0, cut).stripTrailing();
+    }
+
+    /**
+     * Build the SD {@code description} for a character portrait: strip whatever (often random) style
+     * the source narrative prompt already carried, then apply exactly ONE style — the given effective
+     * config (a per-character LOCAL override, or the book global {@code common}). The appearance/outfit
+     * text is left intact; only the style clause is (re)set. This is the single seam the Stage 1
+     * portrait render uses, so it can be unit-tested without an SD call.
+     */
+    public static String buildPortraitDescription(String portraitPrompt, BaseRecord effectiveStyleConfig) {
+        return appendConfigStyleOnce(stripTrailingConfigStyle(portraitPrompt), effectiveStyleConfig);
+    }
+
+    /**
+     * Resolve the effective STYLE config for ONE character's portrait: the book's per-character LOCAL
+     * override ({@code pictureBookMeta.characterStyles}, matched by charPerson objectId) when present,
+     * otherwise the book's global {@code common} config. Only the style clause differs — other
+     * generation params come from {@code common} at the call site. This is the picture-book-owned
+     * override; it is deliberately independent of the UI reimage per-character portrait config
+     * ({@code <name>-SD.json} in {@code ~/Data/.preferences}, see reimage.js) and never reads/writes it.
+     * Never throws — any lookup failure degrades to {@code common}.
+     */
+    @SuppressWarnings("unchecked")
+    private static BaseRecord resolveCharacterStyleConfig(BaseRecord user, String sceneGroupPath, String characterObjectId, BaseRecord common) {
+        if (characterObjectId == null || sceneGroupPath == null) return common;
+        try {
+            String bookGroupPath = sceneGroupPath.replace("/Scenes", "");
+            BaseRecord meta = loadTypedMeta(user, bookGroupPath);
+            if (meta == null) return common;
+            List<BaseRecord> styles = meta.get("characterStyles");
+            if (styles == null || styles.isEmpty()) return common;
+            for (BaseRecord s : styles) {
+                if (s != null && characterObjectId.equals(s.get("characterObjectId"))) {
+                    BaseRecord ov = s.get("sdConfig");
+                    if (ov != null) {
+                        SDUtil.fillStyleDefaults(ov);   // complete a partial override so getSDConfigPrompt yields a full style
+                        logger.info("Portrait style override for character " + characterObjectId
+                                + " -> style '" + ov.get("style") + "' (composite/landscape/others stay global)");
+                        return ov;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to resolve character style override for " + characterObjectId + ": " + e.getMessage());
+        }
+        return common;
     }
 
     /**
@@ -1407,6 +1687,12 @@ public class PictureBookUtil {
                 for (Map<String, Object> scene : additions) {
                     scene.put("index", sceneList.size());
                     scene.put("userEdited", false);
+                    // Track the raw content block this scene (and thus its characters) was obtained
+                    // from — the passage where those characters actually appear. Transient carrier on
+                    // the in-memory scene map; used by createFromScenes to REDUCE per-character detail
+                    // from the right text, and stripped before the scene note is persisted
+                    // (createSceneNote) so it never bloats storage.
+                    scene.put("sourceText", chunks.get(ci));
                     sceneList.add(scene);
                 }
             }
@@ -2433,6 +2719,9 @@ public class PictureBookUtil {
             // Store scene metadata + summary as JSON in the text field
             // (data.note has no 'description' field — summary goes in the metadata)
             Map<String, Object> sceneStore = new LinkedHashMap<>(sceneData);
+            // Drop the transient raw content block (used only to reduce per-character detail during
+            // createFromScenes) so it never persists into every scene note's text JSON.
+            sceneStore.remove("sourceText");
             sceneStore.put("sceneIndex", idx);
             sceneStore.put("blurb", summary);
             note.set("text", JSONUtil.exportObject(sceneStore));
@@ -2495,6 +2784,9 @@ public class PictureBookUtil {
             if (scene.get("blurb") == null && scene.get("summary") != null) {
                 scene.put("blurb", scene.get("summary"));
             }
+            // Single-shot path: the whole (short) text is the one content block (see the chunked
+            // path's per-scene sourceText). Transient; stripped before persistence in createSceneNote.
+            scene.put("sourceText", text);
         }
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         OllamaModelUtil.unloadAll();
@@ -2549,132 +2841,19 @@ public class PictureBookUtil {
      */
     public static BaseRecord extract(BaseRecord user, String workObjectId, int count, String chatConfigName,
             String genre, String bookName, String dataPath) {
-        BaseRecord work = findWork(user, workObjectId);
-        if (work == null) throw new PictureBookException(404, "Work not found");
-
         if (count > MAX_SCENES_DEFAULT) count = MAX_SCENES_DEFAULT;
-
-        String text = extractWorkText(user, work);
-        if (text == null || text.isEmpty()) {
-            throw new PictureBookException(400, "No text content found");
-        }
-
-        BaseRecord chatConfig = null;
-        if (chatConfigName != null) {
-            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
-        }
-
-        // Create book group under ~/PictureBooks/{bookName}/
-        String effectiveBookName = (bookName != null && !bookName.isEmpty()) ? bookName : work.get(FieldNames.FIELD_NAME);
-        BaseRecord bookGroup = ensureBookGroup(user, effectiveBookName);
-        if (bookGroup == null) {
-            throw new PictureBookException(500, "Failed to create book group");
-        }
-        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
-        if (bookGroupPath == null) bookGroupPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + effectiveBookName;
-
-        // Ensure sub-groups under book group
-        BaseRecord scenesGroup = ensureSubGroup(user, bookGroupPath, "Scenes");
-        BaseRecord charsGroup = ensureSubGroup(user, bookGroupPath, "Characters");
-        if (scenesGroup == null || charsGroup == null) {
-            throw new PictureBookException(500, "Failed to create sub-groups");
-        }
-
-        // Extract scenes
-        PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_awesome", "Extracting scenes...");
-        Map<String, String> sceneVars = new LinkedHashMap<>();
-        sceneVars.put("count", String.valueOf(count));
-        sceneVars.put("text", text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text);
-        String llmScenes = callLlm(user, chatConfig, "pictureBook.extract-scenes", sceneVars);
-        // createCharPerson()'s failure lists (below) already establish the precedent: never let a
-        // bad LLM response vanish behind a log line. failedExtractions mirrors that for raw
-        // scene/character JSON that fails to parse — attached to meta.failedExtractions below so
-        // the original (bad) LLM output can be inspected and manually redone.
-        List<String> failedExtractions = new ArrayList<>();
-        List<Map<String, Object>> extractedScenes = parseLlmJsonArray(llmScenes, "extract-scenes:" + workObjectId, failedExtractions);
-
-        // Collect unique character names across all scenes
-        Map<String, Map<String, Object>> uniqueChars = new LinkedHashMap<>();
-        for (Map<String, Object> scene : extractedScenes) {
-            Object charsObj = scene.get("characters");
-            if (charsObj instanceof List) {
-                // B7: a scene's "characters" list can hold either {name:...} maps or bare name
-                // strings (see buildSceneEntry's persisted shape). Guard per element — the old
-                // blanket cast to List<Map> ClassCastException-ed on bare-string entries.
-                for (Object sc : (List<?>) charsObj) {
-                    String cname = extractCharName(sc);
-                    if (cname == null || cname.isEmpty() || uniqueChars.containsKey(cname)) continue;
-                    uniqueChars.put(cname, sceneCharDataMap(sc, cname));
-                }
-            }
-        }
-
-        // Extract character details and create charPerson records
-        Map<String, String> charObjectIds = new LinkedHashMap<>();
-        // createCharPerson() failures are never silently dropped — collected here so a 200
-        // response can never mean "silently 0 characters created".
-        List<String> failedCharacters = new ArrayList<>();
-        List<String> failedApparel = new ArrayList<>();
-        List<String> failedStatistics = new ArrayList<>();
-        int charIdx = 0;
-        for (Map.Entry<String, Map<String, Object>> entry : uniqueChars.entrySet()) {
-            String cname = entry.getKey();
-            charIdx++;
-            PictureBookProgressNotifier.getInstance().notifyProgress(user, "person",
-                    "Extracting character " + charIdx + "/" + uniqueChars.size() + ": " + cname);
-            Map<String, String> charVars = new LinkedHashMap<>();
-            charVars.put("name", cname);
-            charVars.put("text", text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text);
-            charVars.put("raceOptions", raceOptionsCsv());
-            charVars.put("ethnicityOptions", ethnicityOptionsCsv());
-            String llmChar = callLlm(user, chatConfig, "pictureBook.extract-character", charVars);
-            Map<String, Object> charData = parseLlmJsonObject(llmChar, "extract-character:" + cname, failedExtractions);
-            if (charData.isEmpty()) charData = new LinkedHashMap<>(entry.getValue());
-            if (!charData.containsKey("name")) charData.put("name", cname);
-
-            BaseRecord cp = createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath);
-            if (cp != null) {
-                charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
-            } else {
-                logger.error("createCharPerson failed for '" + cname + "' during /extract — character will be absent from the book");
-                failedCharacters.add(cname);
-            }
-        }
-
-        // Create scene data.note records
-        List<BaseRecord> metaScenes = new ArrayList<>();
-        int idx = 0;
-        for (Map<String, Object> sceneData : extractedScenes) {
-            BaseRecord note = createSceneNote(user, scenesGroup, sceneData, idx);
-            if (note != null) {
-                BaseRecord sceneEntry = buildSceneEntry(note, sceneData, idx, charObjectIds);
-                if (sceneEntry != null) metaScenes.add(sceneEntry);
-            }
-            idx++;
-        }
-
-        // Build and save .pictureBookMeta
-        PictureBookProgressNotifier.getInstance().notifyProgress(user, "save", "Saving book...");
-        BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
-        if (!failedCharacters.isEmpty()) {
-            try { meta.set("failedCharacters", failedCharacters); } catch (Exception e) { logger.warn("Failed to record failedCharacters on meta: " + e.getMessage()); }
-        }
-        if (!failedApparel.isEmpty()) {
-            try { meta.set("failedApparel", failedApparel); } catch (Exception e) { logger.warn("Failed to record failedApparel on meta: " + e.getMessage()); }
-        }
-        if (!failedStatistics.isEmpty()) {
-            try { meta.set("failedStatistics", failedStatistics); } catch (Exception e) { logger.warn("Failed to record failedStatistics on meta: " + e.getMessage()); }
-        }
-        if (!failedExtractions.isEmpty()) {
-            try { meta.set("failedExtractions", failedExtractions); } catch (Exception e) { logger.warn("Failed to record failedExtractions on meta: " + e.getMessage()); }
-        }
-        saveMeta(user, bookGroupPath, meta);
-        PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
-        // Many LLM calls happen above (scene extraction + one per unique character) — flush once
-        // at the very end, not per-call.
-        OllamaModelUtil.unloadAll();
-
-        return meta;
+        // Legacy all-in-one endpoint, now implemented as the SAME two steps as the Ux flow so it shares
+        // ONE character-creation path — the block-scoped reduce (pictureBook.reduce-character over each
+        // character's OWN content blocks), the scene-ref (ATTR_SCENE_REFS) + condensed-description
+        // (ATTR_DESCRIPTION) attributes, and Attr2-driven imaging — instead of a divergent inline
+        // extract-character loop over the truncated work opening (which mis-described characters
+        // introduced later, e.g. 'Thug'). Step 1 extracts scenes (chunked for long works, so each scene
+        // carries its source content block); step 2 (createFromScenes) creates characters + scene notes
+        // + meta. extractScenesOnly's own scene-parse failures surface in its ScenesOnlyResult (as they
+        // do for the Ux flow); createFromScenes records its per-character reduce failures on the meta.
+        ScenesOnlyResult scenes = extractScenesOnly(user, workObjectId, count, chatConfigName, null);
+        return createFromScenes(user, workObjectId, chatConfigName, genre, bookName,
+                scenes.scenes, new ArrayList<>(), dataPath);
     }
 
     /**
@@ -2749,6 +2928,30 @@ public class PictureBookUtil {
             }
         }
 
+        // Map each character (by name) to the scene indices it appears in and the raw content blocks
+        // those scenes were extracted from — the passages where the character actually appears. Used
+        // below to REDUCE per-character detail from the RIGHT text (not the truncated work opening,
+        // which described the wrong passage for a character introduced later, e.g. 'Thug'), to persist
+        // scene references (ATTR_SCENE_REFS), and to produce the condensed imaging description (ATTR_DESCRIPTION).
+        Map<String, List<Integer>> charSceneIndices = new LinkedHashMap<>();
+        Map<String, java.util.LinkedHashSet<String>> charBlocks = new LinkedHashMap<>();
+        for (int si = 0; si < sceneList.size(); si++) {
+            Map<String, Object> scene = sceneList.get(si);
+            Object stObj = scene.get("sourceText");
+            String block = (stObj instanceof String) ? (String) stObj : null;
+            Object charsObj = scene.get("characters");
+            if (!(charsObj instanceof List)) continue;
+            for (Object sc : (List<Object>) charsObj) {
+                String cn = (sc instanceof Map) ? (String) ((Map<String, Object>) sc).get("name")
+                        : (sc instanceof String ? (String) sc : null);
+                if (cn == null || cn.isEmpty()) continue;
+                charSceneIndices.computeIfAbsent(cn, k -> new ArrayList<>()).add(si);
+                if (block != null && !block.isBlank()) {
+                    charBlocks.computeIfAbsent(cn, k -> new java.util.LinkedHashSet<>()).add(block);
+                }
+            }
+        }
+
         // Create charPerson records — use LLM for detail extraction if needed
         Map<String, String> charObjectIds = new LinkedHashMap<>();
         // createCharPerson() failures are never silently dropped — collected here so a 200
@@ -2765,18 +2968,31 @@ public class PictureBookUtil {
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "person",
                     "Creating character " + cfsCharIdx + "/" + charDataList.size() + ": " + cname);
 
-            // If appearance is missing and we have text, use LLM to extract details
+            // REDUCE per-character detail from the character's OWN content blocks (the passages where
+            // they appear) — not the truncated work opening, which described the wrong passage for a
+            // character introduced later (e.g. 'Thug'). Also yields the condensed, style/setting-free
+            // "description" used for imaging (ATTR_DESCRIPTION). Falls back to the (bounded) work text
+            // only when a character has no mapped blocks. Runs only when appearance isn't already given.
+            String reducedDescription = null;
+            java.util.LinkedHashSet<String> blocks = charBlocks.get(cname);
+            String passages = (blocks != null && !blocks.isEmpty())
+                    ? boundedPassages(cname, blocks, MAX_EXTRACTION_TEXT_CHARS)
+                    : (text != null && !text.isEmpty()
+                        ? (text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text)
+                        : null);
             if ((charData.get("appearance") == null || ((String) charData.getOrDefault("appearance", "")).isEmpty())
-                    && text != null && !text.isEmpty() && chatConfig != null) {
+                    && passages != null && !passages.isBlank() && chatConfig != null) {
                 Map<String, String> charVars = new LinkedHashMap<>();
                 charVars.put("name", cname);
-                charVars.put("text", text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text);
+                charVars.put("passages", passages);
                 charVars.put("raceOptions", raceOptionsCsv());
                 charVars.put("ethnicityOptions", ethnicityOptionsCsv());
-                String llmChar = callLlm(user, chatConfig, "pictureBook.extract-character", charVars);
-                Map<String, Object> llmData = parseLlmJsonObject(llmChar, "extract-character:" + cname, failedExtractions);
+                String llmChar = callLlm(user, chatConfig, "pictureBook.reduce-character", charVars);
+                Map<String, Object> llmData = parseLlmJsonObject(llmChar, "reduce-character:" + cname, failedExtractions);
                 if (!llmData.isEmpty()) {
-                    // Merge LLM data without overwriting user edits
+                    Object d = llmData.remove("description");
+                    if (d instanceof String && !((String) d).isBlank()) reducedDescription = ((String) d).trim();
+                    // Merge structured fields without overwriting user/client-provided edits
                     for (Map.Entry<String, Object> e : llmData.entrySet()) {
                         if (!charData.containsKey(e.getKey()) || charData.get(e.getKey()) == null
                                 || ((charData.get(e.getKey()) instanceof String) && ((String) charData.get(e.getKey())).isEmpty())) {
@@ -2789,6 +3005,9 @@ public class PictureBookUtil {
             BaseRecord cp = createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath);
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
+                // Attribute 1 (scene refs) + Attribute 2 (condensed description). Attr2 is read at
+                // imaging time (resolveSceneCharacter) as this character's visual description.
+                persistCharacterSceneAttributes(user, cp, charSceneIndices.get(cname), reducedDescription);
             } else {
                 logger.error("createCharPerson failed for '" + cname + "' during /create-from-scenes — character will be absent from the book");
                 failedCharacters.add(cname);
@@ -2980,7 +3199,7 @@ public class PictureBookUtil {
                     if (charNarrationsForPrompt.size() >= 2) break;
                     ResolvedCharacter rc = resolveSceneCharacter(user, charItem, sceneGroupPath);
                     if (rc != null) {
-                        charNarrationsForPrompt.add(rc.name + ": " + SWUtil.stripSDXLWeighting(rc.portraitPrompt));
+                        charNarrationsForPrompt.add(rc.name + ": " + SWUtil.stripSDXLWeighting(rc.sceneNarration));
                     }
                 }
             }
@@ -3070,10 +3289,18 @@ public class PictureBookUtil {
                         portCfg.set("cfg", cfg);
                         portCfg.set("hires", false);
                         portCfg.set("seed", seed);
-                        // Append the common config's canonical style suffix so newly-rendered portraits
-                        // share the book's style — createImage uses description verbatim and otherwise
-                        // BYPASSES getSDConfigPrompt (the original bug: portraits carried no book style).
-                        portCfg.set("description", appendConfigStyleOnce(portraitPrompt2, common));
+                        // Style THIS portrait with exactly one style: the character's LOCAL override
+                        // (pictureBookMeta.characterStyles, by objectId) if set, else the book GLOBAL
+                        // (common) — "global unless overridden locally". buildPortraitDescription strips
+                        // the RANDOM style the narrative sdPrompt baked in at creation (which otherwise
+                        // stacked on top of the appended book style — double-styled portraits) before
+                        // applying the effective one. createImage uses description verbatim and otherwise
+                        // BYPASSES getSDConfigPrompt. The composite/landscape/other characters are
+                        // unaffected — they stay on `common`. The UI reimage <name>-SD.json config is
+                        // untouched (a persisted portrait is reused as-is by the branch above).
+                        BaseRecord effStyleCfg = resolveCharacterStyleConfig(user, sceneGroupPath,
+                                cp.get(FieldNames.FIELD_OBJECT_ID), common);
+                        portCfg.set("description", buildPortraitDescription(portraitPrompt2, effStyleCfg));
                         portCfg.set("negativePrompt", NEG_PROMPT);
                         if (sdModelName != null && !sdModelName.isEmpty()) portCfg.set("model", sdModelName);
                         if (sdSampler != null && !sdSampler.isEmpty()) portCfg.set("sampler", sdSampler);
@@ -3378,7 +3605,7 @@ public class PictureBookUtil {
                     for (Object charItem : (List<Object>) charsObj) {
                         if (charNarrations.size() >= 2) break;
                         ResolvedCharacter rc = resolveSceneCharacter(user, charItem, sceneGroupPath);
-                        if (rc != null) charNarrations.add(rc.name + ": " + SWUtil.stripSDXLWeighting(rc.portraitPrompt));
+                        if (rc != null) charNarrations.add(rc.name + ": " + SWUtil.stripSDXLWeighting(rc.sceneNarration));
                     }
                 }
                 resolveScenePrompt(user, scene, chatConfig, action, setting, mood, sdConfig, charNarrations, promptTemplateOverride);

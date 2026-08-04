@@ -1,0 +1,6 @@
+# Persistent host data dir for the docker-compose.test.yml stack (Postgres data,
+# app keystores/vault/datagen/streams, TLS certs). Runtime state — never commit it.
+# Override the location with AM7_DATA_DIR; keep any custom path ignored too.
+docker-data/
+e2e/results/
+e2e/screenshots/

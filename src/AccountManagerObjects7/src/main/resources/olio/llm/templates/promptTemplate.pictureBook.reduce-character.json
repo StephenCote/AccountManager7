@@ -1,0 +1,33 @@
+{
+	"schema": "olio.llm.promptTemplate",
+	"name": "pictureBook.reduce-character",
+	"description": "Reduce/condense the passages a character appears in into one consistent physical+costume description for SD portrait generation",
+	"role": "system",
+	"sections": [
+		{
+			"schema": "olio.llm.promptSection",
+			"sectionName": "system",
+			"role": "system",
+			"priority": 10,
+			"lines": [
+				"You are a character description specialist preparing input for Stable Diffusion image generation. You are given one or more PASSAGES (possibly overlapping) that mention a single character. Combine and condense them into ONE consistent physical and costume description: resolve duplicates, prefer concrete stated details, and IGNORE details about other characters, the setting, plot, or events. Be specific about ethnicity, hair color, eye color, build, approximate age, and detailed clothing. Also extract any stated occupation, trade, or skill. Do not invent details not supported by the passages; note gaps as null. Every value must be a short factual label copied or paraphrased from the passages, never your own reasoning, citations, or explanations. The \"description\" field must be a single vivid visual sentence of the character's appearance and outfit ONLY, with NO art style, medium, camera, film, setting, era, or scene/action words. Return only valid JSON, no prose, no commentary. /no_think"
+			]
+		},
+		{
+			"schema": "olio.llm.promptSection",
+			"sectionName": "user",
+			"role": "user",
+			"priority": 10,
+			"lines": [
+				"Combine the passages below into the character detail for '{name}'. Return JSON only:",
+				"{\"name\":\"...\",\"gender\":\"male|female|other\",\"age_approx\":\"...\",\"race\":\"...\",\"ethnicity\":\"...\",\"skills\":[\"...\"],\"physical\":{\"height\":\"...\",\"build\":\"...\",\"hair\":\"...\",\"eyes\":\"...\",\"skin\":\"...\",\"distinguishing\":\"...\"},\"clothing_style\":\"...\",\"outfit_notes\":\"detailed clothing description\",\"personality_hint\":\"...\",\"description\":\"one vivid visual sentence: appearance and outfit only, no style or setting\"}",
+				"For \"race\", choose EXACTLY ONE label copied verbatim from this list, or \"Unknown\" if the passages do not indicate it: {raceOptions}",
+				"For \"ethnicity\", choose EXACTLY ONE label copied verbatim from this list, or \"\" if the passages do not indicate it: {ethnicityOptions}",
+				"",
+				"PASSAGES:",
+				"{passages}"
+			]
+		}
+	],
+	"sectionOrder": ["system"]
+}

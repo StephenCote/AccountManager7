@@ -1,0 +1,91 @@
+# Self-contained TEST stack: Service7 + Ux752 (am7) + a DEDICATED pgvector
+# container (am7-pg), on a private network with their own volumes and
+# non-colliding host ports. Nothing here touches the dev `postgres` container
+# or a locally-run Tomcat.
+#
+#   Local Tomcat owns host 8443  -> this app publishes on host 9443
+#   Dev postgres owns host 15432 -> am7-pg publishes on host 15433 (inspect-only;
+#                                   the app reaches am7-pg internally on 5432)
+#
+# ALL persistent state (Postgres data, app keystores/vault/datagen/streams, and the shared TLS
+# pair) is bind-mounted to a concrete HOST directory — AM7_DATA_DIR, default ./docker-data
+# (relative to this file). This is deliberate: without a host mapping the data lives only in the
+# container's writable layer and is ENTIRELY EPHEMERAL (lost on recreate). Bind mounts make it
+# durable and inspectable, and keep the DB + keystores a matched pair with the same lifecycle.
+#
+# Usage (explicit project name keeps its network separate from the main compose project):
+#   docker compose -p am7test -f docker-compose.test.yml up --build
+#   docker compose -p am7test -f docker-compose.test.yml down          # stop; data kept on host
+#   # full reset: stop, then delete the host data dir (there are no named volumes to prune):
+#   docker compose -p am7test -f docker-compose.test.yml down; rm -rf ./docker-data
+#   # to persist elsewhere: AM7_DATA_DIR=/abs/path docker compose -p am7test -f docker-compose.test.yml up --build
+
+services:
+  am7-pg:
+    image: pgvector/pgvector:pg17
+    container_name: am7-pg
+    environment:
+      POSTGRES_DB: am72db
+      POSTGRES_USER: am7user
+      POSTGRES_PASSWORD: password
+    ports:
+      # Inspect-only from the host (pgAdmin/psql). NOT used by the app, which
+      # reaches am7-pg on the internal network. Avoids the dev 15432.
+      - "15433:5432"
+    volumes:
+      # Persistent host location for the DB (see AM7_DATA_DIR above). If Postgres fails to
+      # initialize on a Windows bind mount (rare on Docker Desktop/WSL2, possible on older setups),
+      # swap this one line for a named volume — `- am7-test-pg:/var/lib/postgresql/data` — and
+      # re-add a top-level `volumes:\n  am7-test-pg:` block at the end of this file.
+      - ${AM7_DATA_DIR:-./docker-data}/pg:/var/lib/postgresql/data
+    networks:
+      - am7-test-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U am7user -d am72db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  am7:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: am7:latest
+    depends_on:
+      am7-pg:
+        condition: service_healthy
+    ports:
+      # Host 9443 -> nginx 8443 in the container. Avoids the local Tomcat's 8443.
+      - "9443:8443"
+    environment:
+      # Reach the dedicated pg over the private compose network by service name,
+      # on its INTERNAL port (not the published 15433).
+      DB_HOST: am7-pg
+      DB_PORT: 5432
+      DB_NAME: am72db
+      DB_USER: am7user
+      DB_PASSWORD: password
+
+      TASK_SERVER: ${TASK_SERVER:-https://localhost:9443/AccountManagerService7}
+      SD_SERVER: ${SD_SERVER:-http://192.168.1.42:7801}
+      FACE_SERVER: ${FACE_SERVER:-http://192.168.1.42:8003}
+      TAG_SERVER: ${TAG_SERVER:-http://192.168.1.42:8000}
+      VOICE_TTS_SERVER: ${VOICE_TTS_SERVER:-http://192.168.1.42:8001}
+      VOICE_STT_SERVER: ${VOICE_STT_SERVER:-http://192.168.1.42:8002}
+      EMBEDDING_SERVER: ${EMBEDDING_SERVER:-http://192.168.1.42:8123}
+      # Same-origin (UI + REST both behind nginx on :9443), so add the 9443 origin.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://localhost:9443,http://localhost:9443,http://localhost:8899,https://localhost:8899}
+    volumes:
+      # Persistent host location (see AM7_DATA_DIR above): app keystores/vault/datagen/streams
+      # (/data/am7) + the self-signed TLS pair nginx and Tomcat share (/etc/am7/certs). Losing
+      # /data/am7 while keeping the DB orphans every org ("Failed to initialize key stores"), which
+      # is exactly why both live under the same host dir with the same lifecycle.
+      - ${AM7_DATA_DIR:-./docker-data}/am7:/data/am7
+      - ${AM7_DATA_DIR:-./docker-data}/certs:/etc/am7/certs
+    networks:
+      - am7-test-net
+    restart: unless-stopped
+
+networks:
+  am7-test-net:

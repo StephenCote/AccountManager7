@@ -780,6 +780,33 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		}
 	}
 
+	/**
+	 * Force Step 4 to RE-DERIVE a scene's landscape/scene prompts instead of returning the value
+	 * cached on the scene note. resolveLandscapePrompt/resolveScenePrompt short-circuit on a non-blank,
+	 * non-error cached prompt (PictureBookUtil), so a scene whose prompt was cached BEFORE a
+	 * prompt-assembly change (e.g. the style/setting-free charNarration fix) would otherwise keep
+	 * serving the stale value. Strips just the "scenePrompt"/"landscapePrompt" keys from the note's
+	 * text JSON, leaving every other key (status, imageObjectId, characters, setting, ...) intact.
+	 */
+	private void clearCachedScenePrompts(String sceneOid) {
+		try {
+			Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneOid);
+			sq.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			sq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "text" });
+			BaseRecord scene = IOSystem.getActiveContext().getSearch().findRecord(sq);
+			if (scene == null) return;
+			String text = scene.get("text");
+			if (text == null || text.isEmpty()) return;
+			Map<String, Object> data = JSONUtil.getMap(text.getBytes(), String.class, Object.class);
+			if (data.remove("scenePrompt") == null & data.remove("landscapePrompt") == null) return;
+			scene.set("text", JSONUtil.exportObject(data));
+			IOSystem.getActiveContext().getAccessPoint().update(testUser, scene);
+			logger.info("Cleared cached scene/landscape prompt on scene " + sceneOid + " to force re-derivation");
+		} catch (Exception e) {
+			logger.warn("clearCachedScenePrompts failed for " + sceneOid + ": " + e.getMessage());
+		}
+	}
+
 	@Test
 	public void TestPictureBookCustomPipeline() throws Exception {
 		setupTestContext();
@@ -974,6 +1001,9 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		 List<Map<String, Object>> scenes = PictureBookUtil.listScenes(testUser, bookObjectId);
 		 List<String> sceneOids = new ArrayList<>();
 		 for (Map<String, Object> s : scenes) sceneOids.add((String) s.get("objectId"));
+		 // Re-derive from scratch so the logged prompts reflect the CURRENT assembly code (the
+		 // style/setting-free charNarration fix), not a value cached by an earlier run.
+		 for (String sceneOid : sceneOids) clearCachedScenePrompts(sceneOid);
 		 PictureBookUtil.prepareSceneImagePrompts(testUser, sceneOids,
 		     chatConfig.get(FieldNames.FIELD_NAME), buildCommonSdConfig(), null);
 		
@@ -1059,6 +1089,261 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 
 		logger.info("TestPictureBookCustomPipeline complete — Steps 1-3 (content) + 3B (apparel/mannequin) "
 			+ "+ 5 (scene images) ran; generated images exported to " + EXPORT_DIR + " for visual inspection.");
+	}
+
+	/**
+	 * Focused verification of the per-character portrait STYLE override + the double-style fix
+	 * ("global unless overridden locally"). Two parts, both REAL:
+	 *  1. Pure logic: {@link PictureBookUtil#stripTrailingConfigStyle} removes the RANDOM style a
+	 *     narrative sdPrompt bakes in, and {@link PictureBookUtil#buildPortraitDescription} applies
+	 *     exactly ONE effective style (global photograph, or a local comic override) while keeping the
+	 *     appearance/outfit text.
+	 *  2. Live DB round-trip: {@link PictureBookUtil#setCharacterStyleOverride}/{@code
+	 *     getCharacterStyleOverride} persist and read back a per-character override on the (cached)
+	 *     catatone book's {@code pictureBookMeta}, and a second character stays override-free.
+	 * Deliberately does NOT render an image — this verifies the SD REQUEST PROMPT and the persistence
+	 * (per .claude/rules "verify the actual SD payload"); a full portrait render needs a GPU-heavy
+	 * Swarm scene pass and is out of this test's scope.
+	 */
+	@Test
+	public void TestPortraitStyleOverride() throws Exception {
+		setupTestContext();
+
+		// (1) strip removes a baked-in random art style; keeps appearance/outfit.
+		String randomStyled = "8k highly detailed ((full body)) of a 45 year old man wearing a leather jacket. "
+			+ "He is a medic in a desert, circa 100 AD. (Romantic art with soft focus and nostalgic themes).";
+		String stripped = PictureBookUtil.stripTrailingConfigStyle(randomStyled);
+		assertFalse("strip must remove the baked-in art style", stripped.contains("Romantic art"));
+		assertTrue("strip must keep appearance/outfit text", stripped.contains("wearing a leather jacket"));
+
+		// (2) global (photograph) applied ONCE, random style gone.
+		BaseRecord photo = SDUtil.randomSDConfig();
+		photo.setValue("style", "photograph");
+		SDUtil.fillStyleDefaults(photo);
+		String globalDesc = PictureBookUtil.buildPortraitDescription(randomStyled, photo);
+		assertFalse("portrait desc must drop the random art style", globalDesc.contains("Romantic art"));
+		assertTrue("portrait desc must carry the photograph style", globalDesc.contains("Photograph"));
+		assertEquals("exactly one style clause", 1, countOccurrences(globalDesc, "taken with a"));
+
+		// (2b) a LOCAL comic override replaces only the style, not the appearance.
+		BaseRecord comic = SDUtil.randomSDConfig();
+		comic.setValue("style", "comic");
+		SDUtil.fillStyleDefaults(comic);
+		String overrideDesc = PictureBookUtil.buildPortraitDescription(randomStyled, comic);
+		assertTrue("override desc carries the comic style", overrideDesc.contains("Comic book panel"));
+		assertFalse("override desc must NOT carry the photograph style", overrideDesc.contains("taken with a"));
+		assertTrue("override desc keeps appearance/outfit", overrideDesc.contains("wearing a leather jacket"));
+
+		// (3) live DB round-trip on the (cached) catatone book.
+		String workObjectId = getOrCreateCatatoneWork();
+		List<Map<String, Object>> sceneList = getOrCreateCatatoneScenes(workObjectId);
+		String bookObjectId = getOrCreateCatatoneBook(workObjectId, sceneList);
+		BaseRecord bookGroup = PictureBookUtil.findBookGroup(testUser, bookObjectId);
+		String charsGroupPath = ((String) bookGroup.get(FieldNames.FIELD_PATH)) + "/Characters";
+		BaseRecord charsGroup = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
+			ModelNames.MODEL_GROUP, charsGroupPath, GroupEnumType.DATA.toString(),
+			(long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		Query charQ = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, charsGroup.get(FieldNames.FIELD_ID));
+		charQ.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		charQ.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME });
+		BaseRecord[] chars = IOSystem.getActiveContext().getSearch().findRecords(charQ);
+		assertTrue("need at least one character to override", chars.length > 0);
+		String charOid = chars[0].get(FieldNames.FIELD_OBJECT_ID);
+		String charName = chars[0].get(FieldNames.FIELD_NAME);
+
+		BaseRecord cartoon = SDUtil.randomSDConfig();
+		cartoon.setValue("style", "comic");
+		SDUtil.fillStyleDefaults(cartoon);
+		PictureBookUtil.setCharacterStyleOverride(testUser, bookObjectId, charOid, charName, cartoon);
+		BaseRecord readBack = PictureBookUtil.getCharacterStyleOverride(testUser, bookObjectId, charOid);
+		assertNotNull("override should persist on pictureBookMeta", readBack);
+		assertEquals("persisted override style", "comic", readBack.get("style"));
+		if (chars.length > 1) {
+			assertNull("other characters must have no override",
+				PictureBookUtil.getCharacterStyleOverride(testUser, bookObjectId, (String) chars[1].get(FieldNames.FIELD_OBJECT_ID)));
+		}
+		// clearing removes it
+		PictureBookUtil.setCharacterStyleOverride(testUser, bookObjectId, charOid, charName, null);
+		assertNull("override should clear", PictureBookUtil.getCharacterStyleOverride(testUser, bookObjectId, charOid));
+
+		logger.info("TestPortraitStyleOverride: strip + single-style + comic-override + DB round-trip verified "
+			+ "(SD request-prompt + persistence; no image render)");
+	}
+
+	private static int countOccurrences(String hay, String needle) {
+		int n = 0, i = 0;
+		while ((i = hay.indexOf(needle, i)) >= 0) { n++; i += needle.length(); }
+		return n;
+	}
+
+	private static boolean containsIgnoreCase(String hay, String needle) {
+		return hay != null && hay.toLowerCase().contains(needle.toLowerCase());
+	}
+
+	/** Read a string attribute off a charPerson the same way resolveSceneCharacter does (query with
+	 *  FIELD_ATTRIBUTES, then AttributeUtil), so this verifies the exact read path imaging relies on. */
+	private String readCharAttr(String charsGroupPath, String charName, String attr) throws Exception {
+		BaseRecord g = IOSystem.getActiveContext().getPathUtil().findPath(testUser, ModelNames.MODEL_GROUP,
+			charsGroupPath, GroupEnumType.DATA.toString(), (long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, charName);
+		q.field(FieldNames.FIELD_GROUP_ID, g.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_ATTRIBUTES });
+		BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
+		assertNotNull("character '" + charName + "' should exist", cp);
+		return AttributeUtil.getAttributeValue(cp, attr, (String) null);
+	}
+
+	/**
+	 * Verifies the scene-referenced, block-reduced character extraction: a character that appears ONLY
+	 * in a later scene's content block gets its details reduced from THAT block (not the opening), with
+	 * scene refs (Attribute 1) + a condensed description (Attribute 2) persisted, and the description
+	 * used for imaging. Drives createFromScenes with a synthetic 2-scene book (unique per run so the
+	 * reduce always fires). Live LLM (Ollama) + DB required.
+	 */
+	@Test
+	public void TestSceneReducedCharacterDescription() throws Exception {
+		setupTestContext();
+
+		String passageA = "Anna strode into the crowded market at dawn. She was a tall young woman with bright "
+			+ "red hair tied back and green eyes, wearing a simple blue linen dress and leather sandals.";
+		String passageB = "At the far gate stood the guard, a burly bald older man with a deep scar across his "
+			+ "cheek. He wore heavy grey chainmail armor over a padded tunic and gripped a long iron halberd.";
+
+		// Source work note (createFromScenes.extractWorkText fallback only; the reduce uses the per-scene blocks).
+		ParameterList wplist = ParameterList.newParameterList(FieldNames.FIELD_PATH, CHAT_PATH);
+		wplist.parameter(FieldNames.FIELD_NAME, "reduce-src-" + System.currentTimeMillis());
+		BaseRecord work = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, testUser, null, wplist);
+		work.set("text", passageA + "\n\n" + passageB);
+		work = IOSystem.getActiveContext().getAccessPoint().create(testUser, work);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+
+		// Synthetic sceneList: Anna only in scene 0's block, The Guard only in scene 1's block.
+		List<Map<String, Object>> sceneList = new ArrayList<>();
+		sceneList.add(scene(0, "Market", "A crowded market at dawn", "Anna enters the market", "busy, hopeful", "Anna", passageA));
+		sceneList.add(scene(1, "Gate", "A fortified stone gate", "The guard blocks the gate", "tense, cold", "The Guard", passageB));
+
+		String bookName = "Reduce Test Book " + System.currentTimeMillis();
+		BaseRecord meta = PictureBookUtil.createFromScenes(testUser, workObjectId,
+			chatConfig.get(FieldNames.FIELD_NAME), "fantasy", bookName, sceneList, new ArrayList<>(),
+			testProperties.getProperty("test.datagen.path"));
+		assertNotNull("createFromScenes should return meta", meta);
+		String bookObjectId = meta.get("bookObjectId");
+		BaseRecord bookGroup = PictureBookUtil.findBookGroup(testUser, bookObjectId);
+		String charsGroupPath = ((String) bookGroup.get(FieldNames.FIELD_PATH)) + "/Characters";
+
+		// --- Attribute 2 (condensed description) reduced from the RIGHT block ---
+		String guardDesc = readCharAttr(charsGroupPath, "The Guard", PictureBookUtil.ATTR_DESCRIPTION);
+		logger.info("The Guard ATTR_DESCRIPTION = [" + guardDesc + "]");
+		assertNotNull("The Guard should have a reduced description attribute", guardDesc);
+		assertFalse("description should not be blank", guardDesc.isBlank());
+		assertTrue("The Guard's description must come from HIS block (bald/scar/chainmail/halberd), not the opening",
+			containsIgnoreCase(guardDesc, "bald") || containsIgnoreCase(guardDesc, "scar")
+			|| containsIgnoreCase(guardDesc, "chainmail") || containsIgnoreCase(guardDesc, "halberd"));
+		assertFalse("The Guard's description must NOT leak Anna's block (no 'red' hair from passage A)",
+			containsIgnoreCase(guardDesc, "red"));
+
+		String annaDesc = readCharAttr(charsGroupPath, "Anna", PictureBookUtil.ATTR_DESCRIPTION);
+		logger.info("Anna ATTR_DESCRIPTION = [" + annaDesc + "]");
+		assertNotNull("Anna should have a reduced description attribute", annaDesc);
+		assertTrue("Anna's description should reflect her own block (red hair)", containsIgnoreCase(annaDesc, "red"));
+
+		// --- Attribute 1 (scene refs) ---
+		assertEquals("The Guard appears only in scene 1", "1", readCharAttr(charsGroupPath, "The Guard", PictureBookUtil.ATTR_SCENE_REFS));
+		assertEquals("Anna appears only in scene 0", "0", readCharAttr(charsGroupPath, "Anna", PictureBookUtil.ATTR_SCENE_REFS));
+
+		// --- Imaging uses Attribute 2: the Guard's scene prompt reflects his reduced description ---
+		List<Map<String, Object>> scenes = PictureBookUtil.listScenes(testUser, bookObjectId);
+		List<String> sceneOids = new ArrayList<>();
+		for (Map<String, Object> s : scenes) sceneOids.add((String) s.get("objectId"));
+		PictureBookUtil.prepareSceneImagePrompts(testUser, sceneOids, chatConfig.get(FieldNames.FIELD_NAME), buildCommonSdConfig(), null);
+		// Find the Guard's scene (index 1) and read its cached scenePrompt.
+		String guardScenePrompt = null;
+		for (Map<String, Object> s : scenes) {
+			Object idx = s.get("index");
+			if (idx instanceof Number && ((Number) idx).intValue() == 1) {
+				Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, (String) s.get("objectId"));
+				sq.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+				sq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "text" });
+				BaseRecord note = IOSystem.getActiveContext().getSearch().findRecord(sq);
+				Map<String, Object> sd = JSONUtil.getMap(((String) note.get("text")).getBytes(), String.class, Object.class);
+				guardScenePrompt = (String) sd.get("scenePrompt");
+			}
+		}
+		logger.info("Guard scene prompt = [" + guardScenePrompt + "]");
+		assertNotNull("scene 1 should have a generated scenePrompt", guardScenePrompt);
+		assertTrue("the Guard's scene prompt must reflect his reduced description (bald/scar/chainmail/halberd)",
+			containsIgnoreCase(guardScenePrompt, "bald") || containsIgnoreCase(guardScenePrompt, "scar")
+			|| containsIgnoreCase(guardScenePrompt, "chainmail") || containsIgnoreCase(guardScenePrompt, "halberd"));
+
+		logger.info("TestSceneReducedCharacterDescription: block-scoped reduce + Attr1/Attr2 + imaging-uses-Attr2 verified");
+	}
+
+	/**
+	 * Verifies the LEGACY all-in-one extract() now goes through the SAME reduce/attribute path as
+	 * createFromScenes (not the old inline extract-character loop): after extract() runs, at least one
+	 * created character carries a non-blank ATTR_DESCRIPTION (Attribute 2), which only the reduce path
+	 * produces. Live LLM + DB. Uses a unique book per run so extract() actually creates fresh.
+	 */
+	@Test
+	public void TestExtractLegacyUsesReduce() throws Exception {
+		setupTestContext();
+		String text = "Captain Mara Voss stood at the helm of her airship at dawn, a lean woman with cropped "
+			+ "silver hair and sharp grey eyes, wearing a long crimson greatcoat and black leather gloves. "
+			+ "She raised a brass telescope toward the gathering storm over the mountains.\n\n"
+			+ "Later, in the engine room, the mechanic Bran Kell, a stocky young man with soot-streaked "
+			+ "freckled skin and a patched leather apron over a grease-stained shirt, hammered at a cracked "
+			+ "boiler valve while sparks rained around him.";
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, CHAT_PATH);
+		plist.parameter(FieldNames.FIELD_NAME, "extract-legacy-src-" + System.currentTimeMillis());
+		BaseRecord work = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, testUser, null, plist);
+		work.set("text", text);
+		work = IOSystem.getActiveContext().getAccessPoint().create(testUser, work);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+
+		String bookName = "Extract Legacy Book " + System.currentTimeMillis();
+		BaseRecord meta = PictureBookUtil.extract(testUser, workObjectId, 3, chatConfig.get(FieldNames.FIELD_NAME),
+			"steampunk", bookName, testProperties.getProperty("test.datagen.path"));
+		assertNotNull("extract() should return meta", meta);
+		String bookObjectId = meta.get("bookObjectId");
+		assertNotNull("extract() meta should carry a bookObjectId", bookObjectId);
+
+		BaseRecord bookGroup = PictureBookUtil.findBookGroup(testUser, bookObjectId);
+		String charsGroupPath = ((String) bookGroup.get(FieldNames.FIELD_PATH)) + "/Characters";
+		BaseRecord charsGroup = IOSystem.getActiveContext().getPathUtil().findPath(testUser, ModelNames.MODEL_GROUP,
+			charsGroupPath, GroupEnumType.DATA.toString(), (long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		assertNotNull("extract() should have created a Characters group", charsGroup);
+		Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, charsGroup.get(FieldNames.FIELD_ID));
+		cq.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		cq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_ATTRIBUTES });
+		BaseRecord[] chars = IOSystem.getActiveContext().getSearch().findRecords(cq);
+		assertTrue("extract() should have created at least one character", chars != null && chars.length > 0);
+
+		boolean anyDesc = false;
+		for (BaseRecord cp : chars) {
+			String d = AttributeUtil.getAttributeValue(cp, PictureBookUtil.ATTR_DESCRIPTION, (String) null);
+			logger.info("extract() char '" + cp.get(FieldNames.FIELD_NAME) + "' ATTR_DESCRIPTION=[" + d + "]");
+			if (d != null && !d.isBlank()) anyDesc = true;
+		}
+		assertTrue("legacy extract() must go through the reduce path (a character has an ATTR_DESCRIPTION)", anyDesc);
+		logger.info("TestExtractLegacyUsesReduce: legacy extract() delegates to the reduce/attribute path");
+	}
+
+	private static Map<String, Object> scene(int index, String title, String setting, String action, String mood,
+			String characterName, String sourceText) {
+		Map<String, Object> s = new LinkedHashMap<>();
+		s.put("index", index);
+		s.put("title", title);
+		s.put("blurb", action);
+		s.put("setting", setting);
+		s.put("action", action);
+		s.put("mood", mood);
+		Map<String, Object> ch = new LinkedHashMap<>();
+		ch.put("name", characterName);
+		ch.put("role", "scene character");
+		s.put("characters", new ArrayList<>(Arrays.asList(ch)));
+		s.put("sourceText", sourceText);
+		return s;
 	}
 
 }

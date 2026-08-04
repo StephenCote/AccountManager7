@@ -58,6 +58,15 @@
 			"foreign": false,
 			"ephemeral": true,
 			"description": "Optional alternate config for the composite/Kontext step only; falls back to the common sdConfig when absent."
+		},
+		{
+			"name": "characterStyles",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.pictureBookCharacterStyle",
+			"foreign": false,
+			"ephemeral": true,
+			"description": "Optional per-character LOCAL style overrides. Each entry styles ONLY that character's pipeline-rendered portrait (by charPerson objectId); the composite, landscape, and all other characters stay on the common sdConfig. Distinct from the UI reimage per-character portrait config (reimage.js '<name>-SD.json')."
 		}
 	]
 }

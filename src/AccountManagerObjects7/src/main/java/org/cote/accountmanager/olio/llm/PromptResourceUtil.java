@@ -1,7 +1,9 @@
 package org.cote.accountmanager.olio.llm;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -16,19 +18,46 @@ public class PromptResourceUtil {
 	public static final Logger logger = LogManager.getLogger(PromptResourceUtil.class);
 	private static final String PREFIX = "olio/llm/prompts/";
 
-	/// Load a prompt resource and return as a parsed JSON map.
+	// Parsed-resource cache. Prompt resources are immutable at runtime (ResourceUtil already caches
+	// the raw text), so each one is parsed at most once. Critically, FAILURES are cached too: a
+	// malformed or missing resource logs a single error and every subsequent load() short-circuits,
+	// instead of re-parsing the same bad JSON and re-throwing/re-logging the identical
+	// JsonParseException once per caller in a loop (e.g. resolveScenePrompt runs per scene, so one
+	// broken resource previously produced the same stack trace ~2x per scene across the whole book).
+	private static final Map<String, Map<String, Object>> CACHE = new ConcurrentHashMap<>();
+	// Distinct, identity-compared sentinel meaning "already attempted, unavailable/malformed" so a
+	// negative result can live in the cache; callers still observe the same null they did before.
+	private static final Map<String, Object> FAILED = new HashMap<>();
+
+	/// Load a prompt resource and return as a parsed JSON map. Cached (including failures, as null).
 	public static Map<String, Object> load(String name) {
+		Map<String, Object> cached = CACHE.get(name);
+		if (cached != null) return cached == FAILED ? null : cached;
+
 		String json = ResourceUtil.getInstance().getResource(PREFIX + name + ".json");
 		if (json == null) {
-			logger.warn("Prompt resource not found: " + name);
+			logger.warn("Prompt resource not found (caching miss to avoid repeat lookups): " + name);
+			CACHE.put(name, FAILED);
 			return null;
 		}
+		Map<String, Object> parsed;
 		try {
-			return JSONUtil.getMap(json.getBytes(), String.class, Object.class);
+			parsed = JSONUtil.getMap(json.getBytes(), String.class, Object.class);
 		} catch (Exception e) {
 			logger.error("Failed to parse prompt resource " + name + ": " + e.getMessage());
+			parsed = null;
+		}
+		if (parsed == null) {
+			// JSONUtil.getMap logs + returns null on malformed JSON (it does not throw), so guard on
+			// null here rather than only in the catch. Cache the failure so one bad resource can't
+			// re-parse/re-log on every call.
+			logger.error("Prompt resource '" + name + "' is missing or malformed JSON; caching the failure "
+					+ "so it is not re-parsed and re-logged on every call — fix the resource file to restore it.");
+			CACHE.put(name, FAILED);
 			return null;
 		}
+		CACHE.put(name, parsed);
+		return parsed;
 	}
 
 	/// Get a string field from a prompt resource.
