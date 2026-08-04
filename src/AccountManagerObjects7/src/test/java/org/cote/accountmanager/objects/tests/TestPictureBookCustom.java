@@ -80,7 +80,7 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final String CHAT_PATH = "~/Chat";
 
 	private static final String PB_LLM_MODEL = "qwen3:8b";
-	private static int iter = 3;
+	private static int iter = 1;
 	private static final String PB_CHAT_CONFIG_NAME = "PictureBook " + PB_LLM_MODEL + " " + iter + ".chat";
 
 	// Source document + the exact substring that marks where Step 1 truncates it (see
@@ -585,7 +585,7 @@ public class TestPictureBookCustom extends BaseTest {
 			sdConfig.set(OlioFieldNames.FIELD_SD_MODEL, testProperties.getProperty("test.swarm.model"));
 			sdConfig.set(OlioFieldNames.FIELD_SD_REFINER_MODEL, testProperties.getProperty("test.swarm.refinerModel"));
 			//sdConfig.set("negativePrompt", NarrativeUtil.getSDNegativePrompt(charPerson));
-			sdConfig.set(OlioFieldNames.FIELD_HIRES, false);
+			sdConfig.set(OlioFieldNames.FIELD_HIRES, true);
 			// Reuse any seed previously saved on this character's portrait (SDUtil persists the seed
 			// it used as a "seed" attribute on the generated image), so a regenerate reproduces the
 			// same face; -1 = random when the character has no prior portrait/seed yet. On the SWARM
@@ -900,6 +900,11 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		//         "raincoat,blouse,slacks,flats");                                // custom outfit CSV
 		// }
 
+		// olio.sd.config's schema "model" default (sdXL_v10VAEFix.safetensors) is almost certainly
+		// not installed on your Swarm — always set model/refinerModel from test.swarm.* (same as
+		// buildSdConfigTemplate() for Step 5).
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		assertNotNull("test.swarm.server must be set", swarmServer);
 
 		BaseRecord duna = pickCharacterByName(Arrays.asList(chars), "du.?a");   // (a) Duña or Duna
 		assertNotNull("Should have found a character named Duña/Duna", duna);
@@ -957,11 +962,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		dressToLevel(jid, WearLevelEnumType.SUIT);
 		generatePortrait(jid);
 		*/
-		// olio.sd.config's schema "model" default (sdXL_v10VAEFix.safetensors) is almost certainly
-		// not installed on your Swarm — always set model/refinerModel from test.swarm.* (same as
-		// buildSdConfigTemplate() for Step 5).
-		String swarmServer = testProperties.getProperty("test.swarm.server");
-		assertNotNull("test.swarm.server must be set", swarmServer);
+
 		
 
 		// ═══════════════════════════════════════════════════════════════════
