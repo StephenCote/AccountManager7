@@ -115,7 +115,7 @@ test.describe('Picture Book feature', () => {
         expect(url).toBeDefined();
     });
 
-    test('picture book sceneExtractor DEFAULT_SD_CONFIG is accessible', async ({ page }) => {
+    test('picture book sceneExtractor module loads without errors', async ({ page }) => {
         await login(page);
 
         // Verify the app loads without errors related to sceneExtractor

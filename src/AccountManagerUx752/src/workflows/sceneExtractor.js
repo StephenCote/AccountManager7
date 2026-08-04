@@ -6,14 +6,6 @@ import { applicationPath } from '../core/config.js';
  * Shared by the pictureBook workflow wizard and the picture-book feature route.
  */
 
-const DEFAULT_SD_CONFIG = {
-    steps: 20,
-    refinerSteps: 20,
-    cfg: 5,
-    hires: false,
-    style: 'illustration'
-};
-
 // Scene count: -1 = no max (backend decides), positive int = explicit cap
 const MAX_SCENES_DEFAULT = -1;
 
@@ -68,20 +60,32 @@ async function createFromScenes(workObjectId, chatConfigName, genre, bookName, s
 }
 
 /**
- * Generate SD image for one scene.
+ * Generate SD image for one scene. All SD generation params now live ON a real olio.sd.config
+ * record: the book's COMMON config (opts.sdConfig) plus an optional SPARSE per-scene DELTA
+ * (opts.sdConfigOverride) the backend overlays via SDUtil.applyOverrides. An optional ALTERNATE
+ * config for the composite/Kontext step is sent as opts.compositeSdConfig. Each of these must be a
+ * full olio.sd.config entity (carrying `schema:'olio.sd.config'`) so the server types it as a
+ * BaseRecord; anything without a schema is silently ignored by the transport layer.
  * @param {string} sceneObjectId
- * @param {object|null} sdConfig  overrides — merged with DEFAULT_SD_CONFIG
- * @param {string|null} chatConfigName
- * @param {string|null} promptOverride  skip LLM prompt build if set
- * @param {string|null} promptTemplateOverride
+ * @param {object} opts
+ * @param {object|null} opts.sdConfig          common olio.sd.config entity
+ * @param {object|null} opts.sdConfigOverride   per-scene delta olio.sd.config entity (schema-tagged)
+ * @param {object|null} opts.compositeSdConfig  optional alternate config for the composite/Kontext step
+ * @param {string|null} opts.chatConfig
+ * @param {string|null} opts.promptOverride     skip LLM prompt build if set
+ * @param {string|null} opts.promptTemplate
  * @param {AbortSignal|null} signal  lets the caller actually cancel an in-flight request
  * @returns {Promise<{imageObjectId: string}>}
  */
-async function generateSceneImage(sceneObjectId, sdConfig, chatConfigName, promptOverride, promptTemplateOverride, signal) {
-    let body = { schema: 'olio.pictureBookRequest', sdConfig: Object.assign({}, DEFAULT_SD_CONFIG, sdConfig || {}) };
-    if (chatConfigName) body.chatConfig = chatConfigName;
-    if (promptOverride) body.promptOverride = promptOverride;
-    if (promptTemplateOverride) body.promptTemplate = promptTemplateOverride;
+async function generateSceneImage(sceneObjectId, opts, signal) {
+    opts = opts || {};
+    let body = { schema: 'olio.pictureBookRequest' };
+    if (opts.sdConfig) body.sdConfig = opts.sdConfig;
+    if (opts.sdConfigOverride) body.sdConfigOverride = opts.sdConfigOverride;
+    if (opts.compositeSdConfig) body.compositeSdConfig = opts.compositeSdConfig;
+    if (opts.chatConfig) body.chatConfig = opts.chatConfig;
+    if (opts.promptOverride) body.promptOverride = opts.promptOverride;
+    if (opts.promptTemplate) body.promptTemplate = opts.promptTemplate;
     let resp = await fetch(pbBase() + '/scene/' + sceneObjectId + '/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }, credentials: 'include',
@@ -99,15 +103,18 @@ async function generateSceneImage(sceneObjectId, sdConfig, chatConfigName, promp
  * @param {string} bookObjectId - book group objectId
  * @param {string[]} sceneObjectIds
  * @param {string|null} chatConfigName
- * @param {string|null} style
+ * @param {object|null} sdConfig  the book's COMMON olio.sd.config entity (schema-tagged) — its style
+ *                                is the single seam baked into each pre-resolved landscape prompt.
+ *                                Must be the full config, not a bare {style} object, or the server
+ *                                won't type it as a BaseRecord and will fall back to scene defaults.
  * @param {string|null} promptTemplateOverride
  * @param {AbortSignal|null} signal  lets the caller stop awaiting this fetch when the batch is cancelled
  */
-async function prepareSceneImagePrompts(bookObjectId, sceneObjectIds, chatConfigName, style, promptTemplateOverride, signal) {
+async function prepareSceneImagePrompts(bookObjectId, sceneObjectIds, chatConfigName, sdConfig, promptTemplateOverride, signal) {
     let body = { schema: 'olio.pictureBookRequest', sceneObjectIds: sceneObjectIds };
     if (chatConfigName) body.chatConfig = chatConfigName;
     if (promptTemplateOverride) body.promptTemplate = promptTemplateOverride;
-    if (style) body.sdConfig = { style: style };
+    if (sdConfig) body.sdConfig = sdConfig;
     let resp = await fetch(pbBase() + '/' + bookObjectId + '/prepare-images', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }, credentials: 'include',
@@ -179,6 +186,28 @@ async function getBookSdConfig(bookObjectId) {
     if (!resp.ok) return null;
     let sdConfig = await resp.json();
     return (sdConfig && Object.keys(sdConfig).length) ? sdConfig : null;
+}
+
+/**
+ * Persist the book's COMMON olio.sd.config (and optional ALTERNATE composite config) once, up
+ * front — the new PUT /{bookObjectId}/settings endpoint. Both records must be full olio.sd.config
+ * entities carrying `schema:'olio.sd.config'` so the server types them as BaseRecords.
+ * @param {string} bookObjectId - book group objectId
+ * @param {object} sdConfig - common olio.sd.config entity
+ * @param {object|null} compositeSdConfig - optional alternate config for the composite/Kontext step
+ * @returns {Promise<object>} the stored config
+ */
+async function setBookSdConfig(bookObjectId, sdConfig, compositeSdConfig) {
+    let body = { schema: 'olio.pictureBookRequest' };
+    if (sdConfig) body.sdConfig = sdConfig;
+    if (compositeSdConfig) body.compositeSdConfig = compositeSdConfig;
+    let resp = await fetch(pbBase() + '/' + bookObjectId + '/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) throw new Error('Save book settings failed: ' + resp.status);
+    return resp.json();
 }
 
 /**
@@ -342,7 +371,6 @@ function buildMeta(sourceObjectId, bookObjectId, workName, scenes) {
 }
 
 export {
-    DEFAULT_SD_CONFIG,
     MAX_SCENES_DEFAULT,
     extractScenes,
     createFromScenes,
@@ -352,6 +380,7 @@ export {
     regenerateBlurb,
     loadPictureBook,
     getBookSdConfig,
+    setBookSdConfig,
     reorderScenes,
     setSceneStatus,
     resetPictureBook,

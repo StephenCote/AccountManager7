@@ -122,19 +122,13 @@ public class PictureBookUtil {
     private static final Pattern UNSUBSTITUTED_PLACEHOLDER = Pattern.compile("\\{[a-zA-Z][a-zA-Z0-9_]*\\}");
 
     // Quality/anatomy negative prompt only — deliberately NOT style-exclusionary. PictureBook
-    // supports multiple styles (illustration/anime/photograph/movie/art — see ALLOWED_STYLES/
-    // SWUtil.styleClause()); hardcoding "cartoon, anime" here would silently fight a user's own
-    // style selection. Also deliberately excludes any censorship term ("nsfw" etc.) — this
-    // project's content policy is explicit that character/apparel art is not filtered/censored
-    // (see AccountManagerUx752/CLAUDE.md's Content Policy). Reuses NarrativeUtil's own
-    // general-purpose negative prompt (used for character portraits) rather than maintaining a
-    // second, divergent copy.
+    // derives style from the common olio.sd.config via SDUtil.getSDConfigPrompt(), so a caller can
+    // select any canonical style; hardcoding "cartoon, anime" here would silently fight that
+    // selection. Also deliberately excludes any censorship term ("nsfw" etc.) — this project's
+    // content policy is explicit that character/apparel art is not filtered/censored (see
+    // AccountManagerUx752/CLAUDE.md's Content Policy). Reuses NarrativeUtil's own general-purpose
+    // negative prompt (used for character portraits) rather than maintaining a second, divergent copy.
     public static final String NEG_PROMPT = NarrativeUtil.getDefaultNegativePrompt();
-
-    // Allowed style values — mirrors configModel.json's style `limit`. Client-supplied style is
-    // clamped to this set so no arbitrary text flows into LLM/FLUX prompt vars.
-    public static final Set<String> ALLOWED_STYLES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
-        "art", "movie", "photograph", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage", "custom", "illustration")));
 
     // Genre → SD theme mapping
     private static final Map<String, String> GENRE_THEME_MAP = new HashMap<>();
@@ -179,40 +173,30 @@ public class PictureBookUtil {
         }
     }
 
-    /** Parsed request parameters for {@link #generateSceneImage} — mirrors the JSON body's {@code sdConfig}. */
+    /**
+     * Parsed request parameters for {@link #generateSceneImage}. All SD generation params (steps,
+     * cfg, hires, seed, model, samplers, schedulers, loras, style, useKontext, sceneCreativity, …)
+     * now live ON the supplied {@code olio.sd.config} record(s) — the single canonical style/param
+     * seam, read via {@link SDUtil#getSDConfigPrompt(BaseRecord)} — not as flattened scalars here.
+     */
     public static final class SceneGenerationParams {
         public String chatConfigName;
         public String promptOverride;
         public String promptTemplateOverride;
-        public int steps = DEFAULT_STEPS;
-        public int refinerSteps = DEFAULT_REFINER_STEPS;
-        public int cfg = DEFAULT_CFG;
-        public boolean hires = DEFAULT_HIRES;
-        public int seed = -1;
-        public String sdModelName;
-        public String sdRefinerModelName;
-        public double denoisingStrength = -1;
-        public String sdSampler;
-        public String sdScheduler;
-        public String sdRefinerSampler;
-        public String sdRefinerScheduler;
-        public List<String> sdLoras;
-        // Default to "illustration" to preserve prior behavior when sdConfig omits style
-        public String style = "illustration";
+        // The book's COMMON olio.sd.config (style + composition + generation params). One config
+        // drives portraits, landscape, and scene; style comes from getSDConfigPrompt(sdConfig).
+        // When null, generateSceneImage falls back to the book's stored config, then randomSDConfig.
+        public BaseRecord sdConfig;
+        // Optional ALTERNATE olio.sd.config for the composite/Kontext step only (a different
+        // pipeline/model); falls back to the common sdConfig when null.
+        public BaseRecord compositeSdConfig;
+        // Optional SPARSE per-scene override (a delta) overlaid onto the common sdConfig via
+        // SDUtil.applyOverrides for this one scene.
+        public BaseRecord sdConfigOverride;
         // Explicit book/fallback flag — defaults to true (all current picture-book scenes are
         // created under .../Scenes/); the client may pass isBook:false for the legacy ~/Chat
         // fallback that should not persist/reuse portraits.
         public Boolean isBookOverride;
-        // Mirrors ChatService.generateScene's sdConfig.useKontext/sceneCreativity flags in shape
-        // (Kontext stitch-and-prompt vs. classic Graphics2D+SDXL-img2img), but PictureBook's
-        // null/unset default is FALSE (classic) — the opposite of ChatService's true default. See
-        // generateSceneImage()'s Stage 3/4 comment for why: a live E2E visual comparison showed
-        // Kontext does not reliably preserve character likeness even when it "succeeds" (returns a
-        // valid image), so the classic pipeline's real-pixel compositing is the safer default here.
-        // sceneCreativity is resolved from useKontext (0.65 Kontext / 0.85 classic) unless
-        // explicitly overridden.
-        public Boolean useKontext;
-        public Double sceneCreativity;
     }
 
     // ----- Helpers -------------------------------------------------------
@@ -391,9 +375,57 @@ public class PictureBookUtil {
         BaseRecord bookGroup = findBookGroup(user, bookObjectId);
         if (bookGroup == null) throw new PictureBookException(404, "Book not found");
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+        return getBookSdConfigByPath(user, bookGroupPath);
+    }
+
+    /**
+     * Read the book's stored common olio.sd.config directly from a known book group path (the
+     * path-based counterpart to {@link #getBookSdConfig}, used by {@link #generateSceneImage} which
+     * already has the scene's group path in hand and derives the book path from it). Returns null
+     * when there's no meta / no stored config.
+     */
+    private static BaseRecord getBookSdConfigByPath(BaseRecord user, String bookGroupPath) {
+        if (bookGroupPath == null) return null;
         BaseRecord meta = loadTypedMeta(user, bookGroupPath);
         if (meta == null) return null;
         return meta.get("sdConfig");
+    }
+
+    /**
+     * Companion to {@link #persistBookSdConfig} for the optional ALTERNATE composite/Kontext config
+     * — writes meta key "compositeSdConfig". Best-effort, same as persistBookSdConfig.
+     */
+    private static void persistBookCompositeSdConfig(BaseRecord user, String bookGroupPath, BaseRecord compositeSdConfig) {
+        try {
+            BaseRecord meta = loadTypedMeta(user, bookGroupPath);
+            if (meta == null) return;
+            meta.set("compositeSdConfig", compositeSdConfig);
+            saveMeta(user, bookGroupPath, meta);
+        } catch (Exception e) {
+            logger.warn("Failed to persist book compositeSdConfig: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Store the book's COMMON (and optional ALTERNATE composite) olio.sd.config once — the settings
+     * the generation pipeline reads back as the base for every scene (portraits/landscape/scene).
+     * Lets the test/Ux "set one config" then have generation pick it up (PUT /{bookObjectId}/settings).
+     * fillStyleDefaults is applied so the stored config yields a complete getSDConfigPrompt style.
+     * Returns the stored common config (or null if none supplied / no book meta).
+     */
+    public static BaseRecord setBookSdConfig(BaseRecord user, String bookObjectId, BaseRecord sdConfig, BaseRecord compositeSdConfig) {
+        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        if (bookGroup == null) throw new PictureBookException(404, "Book not found");
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+        if (sdConfig != null) {
+            SDUtil.fillStyleDefaults(sdConfig);
+            persistBookSdConfig(user, bookGroupPath, sdConfig);
+        }
+        if (compositeSdConfig != null) {
+            SDUtil.fillStyleDefaults(compositeSdConfig);
+            persistBookCompositeSdConfig(user, bookGroupPath, compositeSdConfig);
+        }
+        return getBookSdConfigByPath(user, bookGroupPath);
     }
 
     /**
@@ -561,15 +593,17 @@ public class PictureBookUtil {
     }
 
     /**
-     * Append the discrete, code-owned style fact ({@link SWUtil#styleClause}) to a resolved prompt
-     * exactly once, so EVERY image in the book carries identical style guidance regardless of what the
-     * LLM returned — the style is a known fact constructed in code (as SDUtil does), never left to the
-     * LLM to phrase. Idempotent: a no-op if the clause is already present.
+     * Append the canonical config style suffix ({@link SDUtil#getSDConfigPrompt(BaseRecord)}) to a
+     * resolved prompt exactly once, so EVERY image in the book carries the SAME style guidance derived
+     * from the one common {@code olio.sd.config} — the single style seam used across
+     * portraits/landscape/scene, never a hand-rolled clause left to the LLM. Idempotent: a no-op if
+     * the suffix is already present.
      */
-    private static String appendStyleClauseOnce(String prompt, String style) {
-        String clause = SWUtil.styleClause(style);
+    private static String appendConfigStyleOnce(String prompt, BaseRecord sdConfig) {
+        String clause = SDUtil.getSDConfigPrompt(sdConfig);
         if (prompt == null || prompt.isBlank()) return clause;
         String p = prompt.trim();
+        if (clause == null || clause.isBlank()) return p;
         if (p.contains(clause)) return p;
         return p + (p.endsWith(".") || p.endsWith(",") ? " " : ". ") + clause;
     }
@@ -618,7 +652,7 @@ public class PictureBookUtil {
      * and OllamaModelUtil.unloadAll() — before any SD call in the same pipeline run (Stage 0).
      */
     private static String resolveScenePrompt(BaseRecord user, BaseRecord scene, BaseRecord chatConfig,
-            String action, String setting, String mood, String style, List<String> charNarrations, String promptTemplateOverride) {
+            String action, String setting, String mood, BaseRecord sdConfig, List<String> charNarrations, String promptTemplateOverride) {
         String cached = getSceneTextField(scene, "scenePrompt");
         // Self-heal: a scene generated before the guards in isErrorOrEmptyPayload/callLlmInternal
         // existed may have a conversational-refusal or unsubstituted-placeholder string cached as
@@ -631,13 +665,13 @@ public class PictureBookUtil {
         if (cached != null && !cached.isBlank() && !isErrorOrEmptyPayload(cached)) {
             // Second self-heal (2026-07-23, found live on Stephen's /Public catatone book): if
             // setting/action/mood/characters are STILL blank right now, the only thing this method
-            // can legitimately produce (per the guard below) is SWUtil.styleClause(style)'s fixed
-            // text — anything else cached must be a pre-fix hallucination from a blank-input LLM
-            // call that produced plausible-but-unrelated content (not error-shaped, so the check
-            // above never caught it). This is a precise check, not a fuzzy content-similarity guess:
-            // with the guard in place, blank input can never again produce anything but that one
-            // known string, so a mismatch is conclusive, not a heuristic.
-            if (hasRealInputNow || SWUtil.styleClause(style).equals(cached)) return cached;
+            // can legitimately produce (per the guard below) is SDUtil.getSDConfigPrompt(sdConfig)'s
+            // fixed style text — anything else cached must be a pre-fix hallucination from a
+            // blank-input LLM call that produced plausible-but-unrelated content (not error-shaped,
+            // so the check above never caught it). This is a precise check, not a fuzzy
+            // content-similarity guess: with the guard in place, blank input can never again produce
+            // anything but that one known string, so a mismatch is conclusive, not a heuristic.
+            if (hasRealInputNow || SDUtil.getSDConfigPrompt(sdConfig).equals(cached)) return cached;
             logger.warn("Scene-image prompt: cached value doesn't match blank-input's only legitimate "
                 + "output even though setting/action/mood/characters are still blank — this must be a "
                 + "pre-fix hallucinated result; discarding and regenerating");
@@ -653,7 +687,7 @@ public class PictureBookUtil {
             logger.warn("Scene-image prompt: setting/action/mood/characters are all blank — skipping "
                 + "the LLM call and using the deterministic fallback instead of risking an unrelated "
                 + "hallucinated result");
-            scenePrompt = SWUtil.styleClause(style);
+            scenePrompt = SDUtil.getSDConfigPrompt(sdConfig);
         } else {
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("setting", setting);
@@ -668,15 +702,16 @@ public class PictureBookUtil {
                 if (action != null && !action.isEmpty()) fallback.append("They are ").append(action).append(". ");
                 if (setting != null && !setting.isEmpty()) fallback.append("Setting: ").append(setting).append(". ");
                 if (mood != null && !mood.isEmpty()) fallback.append("Mood: ").append(mood).append(". ");
-                fallback.append(SWUtil.styleClause(style));
+                fallback.append(SDUtil.getSDConfigPrompt(sdConfig));
                 scenePrompt = fallback.toString();
             }
         }
         // Discrete, code-owned facts applied deterministically (not left to the LLM): the book-level
-        // composition/art-direction anchor (prepended, shared by every scene) and the style clause
-        // (appended) — so the whole book stays visually consistent, matching how SDUtil builds prompts.
+        // composition/art-direction anchor (prepended, shared by every scene) and the config style
+        // suffix (appended) — so the whole book stays visually consistent, matching how SDUtil builds
+        // prompts from the one common olio.sd.config.
         scenePrompt = prependContextOnce(loadCompositionContext(user, scene), scenePrompt);
-        scenePrompt = appendStyleClauseOnce(scenePrompt, style);
+        scenePrompt = appendConfigStyleOnce(scenePrompt, sdConfig);
         updateSceneTextField(user, scene, "scenePrompt", scenePrompt);
         return scenePrompt;
     }
@@ -830,7 +865,7 @@ public class PictureBookUtil {
      * happens (see generateSceneImage's Stage 0).
      */
     private static String resolveLandscapePrompt(BaseRecord user, BaseRecord scene, BaseRecord chatConfig,
-            String setting, String mood, String style, String promptTemplateOverride) {
+            String setting, String mood, BaseRecord sdConfig, String promptTemplateOverride) {
         String cached = getSceneTextField(scene, "landscapePrompt");
         // Confirmed live 2026-07-23 (Stephen's /Public catatone book): when setting/mood are both
         // blank, the LLM was still called anyway — with a wire request literally reading "SETTING: \n
@@ -870,8 +905,8 @@ public class PictureBookUtil {
             landVars.put("mood", mood);
             landVars.put("time", "");
             // Style is NOT sent to the LLM — it's a discrete, code-owned fact appended via
-            // appendStyleClauseOnce(style) below. Feeding {style} here made the LLM emit its own
-            // "cinematic photograph style" on top of the styleClause (double/conflicting style).
+            // appendConfigStyleOnce(sdConfig) below. Feeding {style} here made the LLM emit its own
+            // "cinematic photograph style" on top of the config style (double/conflicting style).
             landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars, promptTemplateOverride);
             if (isErrorOrEmptyPayload(landscapePrompt)) {
                 logger.warn("Landscape prompt failed — falling back to setting text");
@@ -879,10 +914,10 @@ public class PictureBookUtil {
             }
         }
         // Same discrete, code-owned facts as the scene prompt: the book-level composition anchor
-        // (prepended) + the style clause (appended), applied deterministically so the landscape stays
-        // consistent with the rest of the book rather than relying on the LLM.
+        // (prepended) + the config style suffix (appended), applied deterministically so the landscape
+        // stays consistent with the rest of the book rather than relying on the LLM.
         landscapePrompt = prependContextOnce(loadCompositionContext(user, scene), landscapePrompt);
-        landscapePrompt = appendStyleClauseOnce(landscapePrompt, style);
+        landscapePrompt = appendConfigStyleOnce(landscapePrompt, sdConfig);
         updateSceneTextField(user, scene, "landscapePrompt", landscapePrompt);
         return landscapePrompt;
     }
@@ -2786,14 +2821,16 @@ public class PictureBookUtil {
         if (!failedExtractions.isEmpty()) {
             try { meta.set("failedExtractions", failedExtractions); } catch (Exception e) { logger.warn("Failed to record failedExtractions on meta: " + e.getMessage()); }
         }
-        // Seed the book-level composition/art-direction anchor (A) — a discrete, persisted fact
-        // prepended to every scene/landscape prompt so the whole book stays visually consistent
-        // (genre-driven; editable per book). resolveScenePrompt/resolveLandscapePrompt read it back.
+        // Book-level composition/art-direction anchor: intentionally left BLANK by default (no
+        // auto-seeded hardcoded art-direction line). Real book-wide style/composition consistency now
+        // comes from the common olio.sd.config's style + bodyStyle/imageSetting/imageAction fields
+        // (SDUtil.getSDConfigPrompt) — the single style seam shared across portraits/landscape/scene.
+        // The compositionContext mechanism (loadCompositionContext/prependContextOnce) is kept intact
+        // so it can be set explicitly later as optional extra prompt-level reinforcement; the
+        // pictureBook.art-direction.json resource remains in place but is no longer auto-applied.
         try {
-            String artDir = "Consistent art direction for a " + ((genre != null && !genre.isEmpty()) ? genre + " " : "")
-                + "picture book: keep the setting, color palette, and lighting cohesive across every scene.";
-            meta.set("compositionContext", artDir);
-        } catch (Exception e) { logger.warn("Failed to seed compositionContext on meta: " + e.getMessage()); }
+            meta.set("compositionContext", "");
+        } catch (Exception e) { logger.warn("Failed to default compositionContext on meta: " + e.getMessage()); }
         saveMeta(user, bookGroupPath, meta);
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         // One LLM call per character needing detail extraction above — flush once at the end.
@@ -2823,14 +2860,6 @@ public class PictureBookUtil {
         BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
         if (scene == null) throw new PictureBookException(404, "Scene not found");
 
-        // Clamp client-supplied style to the allowed set once, so both the FLUX and landscape-LLM
-        // paths only ever see a valid value (the model's `limit` is not enforced on this in-memory record).
-        String style = params.style;
-        final String requestedStyle = style;
-        if (requestedStyle == null || ALLOWED_STYLES.stream().noneMatch(s -> s.equalsIgnoreCase(requestedStyle))) {
-            style = "illustration";
-        }
-
         if (sdApiType == null || sdServer == null) {
             throw new PictureBookException(500, "SD server not configured");
         }
@@ -2845,44 +2874,54 @@ public class PictureBookUtil {
         if (params.chatConfigName != null)
             chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, params.chatConfigName, null);
 
-        BaseRecord sdConfigRec;
-        try {
-            sdConfigRec = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-            sdConfigRec.set("steps", params.steps);
-            sdConfigRec.set("refinerSteps", params.refinerSteps);
-            sdConfigRec.set("cfg", params.cfg);
-            sdConfigRec.set("hires", params.hires);
-            sdConfigRec.set("seed", params.seed);
-            if (params.sdModelName != null && !params.sdModelName.isEmpty()) sdConfigRec.set("model", params.sdModelName);
-            if (params.sdRefinerModelName != null && !params.sdRefinerModelName.isEmpty()) sdConfigRec.set("refinerModel", params.sdRefinerModelName);
-            if (params.denoisingStrength >= 0) sdConfigRec.set("denoisingStrength", params.denoisingStrength);
-            if (params.sdSampler != null && !params.sdSampler.isEmpty()) sdConfigRec.set("sampler", params.sdSampler);
-            if (params.sdScheduler != null && !params.sdScheduler.isEmpty()) sdConfigRec.set("scheduler", params.sdScheduler);
-            if (params.sdRefinerSampler != null && !params.sdRefinerSampler.isEmpty()) sdConfigRec.set("refinerSampler", params.sdRefinerSampler);
-            if (params.sdRefinerScheduler != null && !params.sdRefinerScheduler.isEmpty()) sdConfigRec.set("refinerScheduler", params.sdRefinerScheduler);
-            if (params.sdLoras != null && !params.sdLoras.isEmpty()) sdConfigRec.set("loras", params.sdLoras);
-            if (style != null && !style.isEmpty()) sdConfigRec.set("style", style);
-            if (params.useKontext != null) sdConfigRec.set("useKontext", params.useKontext);
-            if (params.sceneCreativity != null) sdConfigRec.set("sceneCreativity", params.sceneCreativity);
-        } catch (Exception e) {
-            logger.error("Failed to create sdConfig: " + e.getMessage());
-            throw new PictureBookException(500, "SD config error");
-        }
-
         String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
         if (sceneGroupPath == null) sceneGroupPath = "~/Chat";
+        // Real book scenes live under .../Scenes; the ~/Chat single-image fallback has no book meta.
+        String bookGroupPath = sceneGroupPath.endsWith("/Scenes")
+                ? sceneGroupPath.substring(0, sceneGroupPath.length() - "/Scenes".length()) : null;
+
+        // Resolve the ONE common olio.sd.config that drives this scene's portraits, landscape, and
+        // composite — the single canonical style/param seam (SDUtil.getSDConfigPrompt). Precedence:
+        // the request's sdConfig, else the book's stored config, else a random canonical config.
+        // fillStyleDefaults guarantees the per-style detail fields are populated so getSDConfigPrompt
+        // yields a full style string; an optional sparse per-scene override is overlaid on top (then
+        // re-filled so a style change in the override pulls in that style's detail fields).
+        BaseRecord common = params.sdConfig;
+        if (common == null && bookGroupPath != null) common = getBookSdConfigByPath(user, bookGroupPath);
+        if (common == null) common = SDUtil.randomSDConfig();
+        SDUtil.fillStyleDefaults(common);
+        if (params.sdConfigOverride != null) {
+            SDUtil.applyOverrides(common, params.sdConfigOverride);
+            SDUtil.fillStyleDefaults(common);
+        }
+
+        // Generation params now live ON the common config, not flattened scalars. Read the few the
+        // portrait/Kontext stages consume directly as locals, falling back to the old code's defaults
+        // only when a field is genuinely unset (null) or non-positive — landscape/classic scene read
+        // the rest of the params straight off `common` via SWUtil.newSceneTxt2Img.
+        Integer stepsV = common.get("steps");
+        int steps = (stepsV != null && stepsV > 0) ? stepsV.intValue() : DEFAULT_STEPS;
+        Integer cfgV = common.get("cfg");
+        int cfg = (cfgV != null && cfgV > 0) ? cfgV.intValue() : DEFAULT_CFG;
+        Boolean hiresV = common.get("hires");
+        boolean hires = (hiresV != null) ? hiresV.booleanValue() : DEFAULT_HIRES;
+        Integer seedV = common.get("seed");
+        int seed = (seedV != null) ? seedV.intValue() : -1;
+        String sdModelName = common.get("model");
+        String sdSampler = common.get("sampler");
+        String sdScheduler = common.get("scheduler");
+
         SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType), sdServer);
 
         // Mark generation started — persisted so the wizard's progress survives a reload
         // (see listScenes()'s status/error merge and .claude/rules/model-api.md's PATCH pattern).
         updateSceneStatus(user, scene, "generating", null);
 
-        // Auto-capture these settings on the book so images can be recreated with the same
-        // settings later (see persistBookSdConfig) — only for real book scenes (under .../Scenes),
-        // not the ~/Chat single-image fallback which has no book meta to attach settings to.
-        if (sceneGroupPath.endsWith("/Scenes")) {
-            String bookGroupPath = sceneGroupPath.substring(0, sceneGroupPath.length() - "/Scenes".length());
-            persistBookSdConfig(user, bookGroupPath, sdConfigRec);
+        // Auto-capture the resolved common config on the book so images can be recreated with the
+        // same settings later (see persistBookSdConfig) — only for real book scenes (under
+        // .../Scenes), not the ~/Chat single-image fallback which has no book meta.
+        if (bookGroupPath != null) {
+            persistBookSdConfig(user, bookGroupPath, common);
         }
 
         // promptOverride: skip pipeline, direct SDXL generation
@@ -2892,11 +2931,12 @@ public class PictureBookUtil {
             OllamaModelUtil.unloadAll();
             try {
                 PictureBookProgressNotifier.getInstance().notifyProgress(user, "image", "Generating image...");
-                sdConfigRec.set("description", params.promptOverride);
-                // Flow the user-selected style through (defaults to "illustration" when absent)
-                sdConfigRec.set("style", style);
+                // Unchanged behavior: the caller supplied the exact prompt — use it verbatim as the
+                // description (createImage uses description as-is, bypassing getSDConfigPrompt). The
+                // common config still carries its resolved style; only the prompt text is overridden.
+                common.set("description", params.promptOverride);
                 String imageName = "scene_" + sceneObjectId + "_" + System.currentTimeMillis();
-                List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, sdConfigRec, imageName, 1, params.hires, -1);
+                List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, common, imageName, 1, hires, -1);
                 if (images == null || images.isEmpty())
                     throw new PictureBookException(500, "SD generation failed");
                 BaseRecord image = images.get(0);
@@ -2932,7 +2972,7 @@ public class PictureBookUtil {
             // portrait/landscape/composite sequence. Scene characters are resolved here (DB-only,
             // no LLM/SD calls) purely to build charNarrations for the scene-image prompt; Stage 1
             // resolves them again (same resolveSceneCharacter helper) when it actually renders.
-            String landscapePrompt = resolveLandscapePrompt(user, scene, chatConfig, setting, mood, style, params.promptTemplateOverride);
+            String landscapePrompt = resolveLandscapePrompt(user, scene, chatConfig, setting, mood, common, params.promptTemplateOverride);
             Object charsObjForPrompt = sceneData.get("characters");
             List<String> charNarrationsForPrompt = new ArrayList<>();
             if (charsObjForPrompt instanceof List) {
@@ -2944,7 +2984,7 @@ public class PictureBookUtil {
                     }
                 }
             }
-            String scenePrompt = resolveScenePrompt(user, scene, chatConfig, action, setting, mood, style,
+            String scenePrompt = resolveScenePrompt(user, scene, chatConfig, action, setting, mood, common,
                     charNarrationsForPrompt, params.promptTemplateOverride);
             OllamaModelUtil.unloadAll();
 
@@ -3024,17 +3064,20 @@ public class PictureBookUtil {
                     }
 
                     try {
-                        // Portrait inherits user's SD config (model, sampler, scheduler) but forces hires=false
+                        // Portrait inherits the common SD config (model, sampler, scheduler) but forces hires=false
                         BaseRecord portCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-                        portCfg.set("steps", params.steps);
-                        portCfg.set("cfg", params.cfg);
+                        portCfg.set("steps", steps);
+                        portCfg.set("cfg", cfg);
                         portCfg.set("hires", false);
-                        portCfg.set("seed", params.seed);
-                        portCfg.set("description", portraitPrompt2);
+                        portCfg.set("seed", seed);
+                        // Append the common config's canonical style suffix so newly-rendered portraits
+                        // share the book's style — createImage uses description verbatim and otherwise
+                        // BYPASSES getSDConfigPrompt (the original bug: portraits carried no book style).
+                        portCfg.set("description", appendConfigStyleOnce(portraitPrompt2, common));
                         portCfg.set("negativePrompt", NEG_PROMPT);
-                        if (params.sdModelName != null && !params.sdModelName.isEmpty()) portCfg.set("model", params.sdModelName);
-                        if (params.sdSampler != null && !params.sdSampler.isEmpty()) portCfg.set("sampler", params.sdSampler);
-                        if (params.sdScheduler != null && !params.sdScheduler.isEmpty()) portCfg.set("scheduler", params.sdScheduler);
+                        if (sdModelName != null && !sdModelName.isEmpty()) portCfg.set("model", sdModelName);
+                        if (sdSampler != null && !sdSampler.isEmpty()) portCfg.set("sampler", sdSampler);
+                        if (sdScheduler != null && !sdScheduler.isEmpty()) portCfg.set("scheduler", sdScheduler);
                         String portName = "portrait_" + cname.replace(" ", "_") + "_" + System.currentTimeMillis();
                         // Render book portraits into the book's Characters/ group (not the Scenes group);
                         // the fallback (~/Chat) renders in place and is deleted below.
@@ -3135,7 +3178,7 @@ public class PictureBookUtil {
             // Stage 2: Landscape generation — prompt was already resolved (LLM or cache) in Stage 0
             // above, before the model was unloaded, so this is pure SD work.
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "landscape", "Generating landscape...");
-            SWTxt2Img landReq = SWUtil.newSceneTxt2Img(landscapePrompt, NEG_PROMPT, sdConfigRec);
+            SWTxt2Img landReq = SWUtil.newSceneTxt2Img(landscapePrompt, NEG_PROMPT, common);
             landReq.setWidth(1024);
             landReq.setHeight(768);
             List<BaseRecord> landImages = sdu.createSceneImage(user, sceneGroupPath,
@@ -3160,26 +3203,28 @@ public class PictureBookUtil {
             stageCooldown();
 
             // Stage 3/4: Composite scene — branch between Kontext (stitch-and-prompt) and classic
-            // (Graphics2D composite + SDXL img2img) pipelines. Unlike ChatService.generateScene
-            // (which defaults useKontext=true), PictureBook defaults to the CLASSIC pipeline —
+            // (Graphics2D composite + SDXL img2img) pipelines, driven by the common config's
+            // useKontext field. When the config leaves it unset the fallback is the CLASSIC pipeline —
             // live E2E visual comparison (TestPictureBookUtilE2E diagnostic run, see git history)
             // showed Kontext reliably returns a technically-valid image that does NOT preserve
             // character likeness (wrong hair color/face — Kontext "succeeds" so the
             // empty-result-only fallback below never triggers), while the classic pipeline's
             // Graphics2D-drawn real portrait pixels visibly preserve likeness (confirmed by
             // Stephen + coordinator independently inspecting the emitted composites/portraits).
-            // Kontext remains available as an explicit opt-in (params.useKontext = true) since it
-            // is still faster/lighter-weight when likeness fidelity matters less.
+            // Kontext stays available as an explicit opt-in (config useKontext=true) when likeness
+            // fidelity matters less.
             String leftDesc  = !portraitPromptList.isEmpty() ? portraitPromptList.get(0) : "";
             String rightDesc = portraitPromptList.size() > 1  ? portraitPromptList.get(1) : "";
             byte[] leftBytes   = !portraitBytesList.isEmpty() ? portraitBytesList.get(0) : null;
             byte[] centerBytes = portraitBytesList.size() > 1  ? portraitBytesList.get(1) : null;
 
-            boolean useKontext = (params.useKontext != null) ? params.useKontext : false;
+            Boolean useKontextV = common.get("useKontext");
+            boolean useKontext = (useKontextV != null) ? useKontextV.booleanValue() : false;
             // Kontext 2-pass needs moderate creativity — enough to restructure panels while
             // preserving faces; classic img2img needs more room to blend the drawn-on portraits.
             double sceneCreativity = useKontext ? 0.65 : 0.85;
-            if (params.sceneCreativity != null) sceneCreativity = params.sceneCreativity;
+            Double sceneCreativityV = common.get("sceneCreativity");
+            if (sceneCreativityV != null) sceneCreativity = sceneCreativityV.doubleValue();
 
             String sceneName = "scene_" + sceneObjectId + "_" + System.currentTimeMillis();
             List<BaseRecord> finalImages = new ArrayList<>();
@@ -3193,11 +3238,16 @@ public class PictureBookUtil {
                 byte[] refComposite = SDUtil.stitchSceneImages(stitchLeft, stitchCenter, landscapeBytes, 1024);
 
                 PictureBookProgressNotifier.getInstance().notifyProgress(user, "image", "Compositing scene...");
-                // Thread the caller's actual requested steps/cfg/negative-prompt through to Kontext
-                // instead of letting it silently ignore them (every other stage — portraits,
-                // landscape, classic pipeline — already respects params.steps/params.cfg/NEG_PROMPT).
-                SWTxt2Img kontextReq = SWUtil.newKontextSceneTxt2Img(leftDesc, rightDesc, action, setting, style, mood,
-                        sdConfigRec, params.steps, params.cfg, NEG_PROMPT);
+                // Composite uses the optional ALTERNATE config (compositeSdConfig) if supplied, else
+                // the common config. useConfigStyle=true means the style suffix is derived from
+                // getSDConfigPrompt (FLUX-stripped) — the SAME canonical style as portraits/landscape —
+                // not the legacy styleClause. fillStyleDefaults keeps a sparse alternate config
+                // producing a full style string. steps/cfg/negative-prompt are threaded through so
+                // Kontext respects them like every other stage.
+                BaseRecord kontextCfg = (params.compositeSdConfig != null) ? params.compositeSdConfig : common;
+                if (params.compositeSdConfig != null) SDUtil.fillStyleDefaults(kontextCfg);
+                SWTxt2Img kontextReq = SWUtil.newKontextSceneTxt2Img(leftDesc, rightDesc, action, setting, null, mood,
+                        kontextCfg, steps, cfg, NEG_PROMPT, true);
                 if (refComposite != null) {
                     List<String> promptImages = new ArrayList<>();
                     promptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(refComposite));
@@ -3219,7 +3269,7 @@ public class PictureBookUtil {
                 // Resolved once in Stage 0 (LLM-generated SD tag-style prompt via
                 // pictureBook.scene-image-prompt, with its own raw-concatenation fallback) — no
                 // longer a hand-built narrative-sentence StringBuilder here.
-                SWTxt2Img classicReq = SWUtil.newSceneTxt2Img(scenePrompt, NEG_PROMPT, sdConfigRec);
+                SWTxt2Img classicReq = SWUtil.newSceneTxt2Img(scenePrompt, NEG_PROMPT, common);
                 logger.info("generateSceneImage: requesting composite canvas at " + classicReq.getWidth() + "x" + classicReq.getHeight()
                         + " (landscapeBytes=" + (landscapeBytes != null ? landscapeBytes.length : 0)
                         + " leftBytes=" + (leftBytes != null ? leftBytes.length : 0)
@@ -3275,13 +3325,13 @@ public class PictureBookUtil {
      * text (same behavior as a live call), so this never blocks the batch.
      */
     public static void prepareSceneImagePrompts(BaseRecord user, List<String> sceneObjectIds,
-            String chatConfigName, String style, String promptTemplateOverride) {
-        prepareSceneImagePrompts(user, sceneObjectIds, chatConfigName, style, promptTemplateOverride, null);
+            String chatConfigName, BaseRecord sdConfig, String promptTemplateOverride) {
+        prepareSceneImagePrompts(user, sceneObjectIds, chatConfigName, sdConfig, promptTemplateOverride, null);
     }
 
     /**
      * KI-10 overload: same as
-     * {@link #prepareSceneImagePrompts(BaseRecord, List, String, String, String)}, plus an
+     * {@link #prepareSceneImagePrompts(BaseRecord, List, String, BaseRecord, String)}, plus an
      * optional {@code cancelToken} (mirrors {@code SummarizeProgress}'s use in {@code ChatUtil}'s
      * map/reduce loops) checked at the top of the per-scene loop — a mid-batch cancel (POST
      * /{bookObjectId}/cancel) stops making further per-scene LLM calls immediately. Scenes already
@@ -3289,14 +3339,15 @@ public class PictureBookUtil {
      * their setting text at generation time (same as any other per-scene LLM failure).
      */
     public static void prepareSceneImagePrompts(BaseRecord user, List<String> sceneObjectIds,
-            String chatConfigName, String style, String promptTemplateOverride, SummarizeProgress cancelToken) {
+            String chatConfigName, BaseRecord sdConfig, String promptTemplateOverride, SummarizeProgress cancelToken) {
         BaseRecord chatConfig = null;
         if (chatConfigName != null) {
             chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
-        final String requestedStyle = style;
-        String effectiveStyle = (requestedStyle == null || ALLOWED_STYLES.stream().noneMatch(s -> s.equalsIgnoreCase(requestedStyle)))
-                ? "illustration" : requestedStyle;
+        // The common olio.sd.config is the single style seam (getSDConfigPrompt). Fill its per-style
+        // detail fields so the style suffix baked into each cached prompt here matches what
+        // generateSceneImage will produce. Null is tolerated (getSDConfigPrompt falls back).
+        if (sdConfig != null) SDUtil.fillStyleDefaults(sdConfig);
         for (String sceneObjectId : sceneObjectIds) {
             if (cancelToken != null && cancelToken.isCancelled()) {
                 logger.info("prepareSceneImagePrompts: cancelled — stopping before scene " + sceneObjectId
@@ -3317,7 +3368,7 @@ public class PictureBookUtil {
                 String setting = (String) sceneData.getOrDefault("setting", "");
                 String action = (String) sceneData.getOrDefault("action", "");
                 String mood = (String) sceneData.getOrDefault("mood", "");
-                resolveLandscapePrompt(user, scene, chatConfig, setting, mood, effectiveStyle, promptTemplateOverride);
+                resolveLandscapePrompt(user, scene, chatConfig, setting, mood, sdConfig, promptTemplateOverride);
 
                 String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
                 if (sceneGroupPath == null) sceneGroupPath = "~/Chat";
@@ -3330,7 +3381,7 @@ public class PictureBookUtil {
                         if (rc != null) charNarrations.add(rc.name + ": " + SWUtil.stripSDXLWeighting(rc.portraitPrompt));
                     }
                 }
-                resolveScenePrompt(user, scene, chatConfig, action, setting, mood, effectiveStyle, charNarrations, promptTemplateOverride);
+                resolveScenePrompt(user, scene, chatConfig, action, setting, mood, sdConfig, charNarrations, promptTemplateOverride);
             } catch (Exception e) {
                 logger.warn("prepareSceneImagePrompts: failed for scene " + sceneObjectId + ": " + e.getMessage());
             }

@@ -192,6 +192,18 @@ public class TestPictureBookUtilE2E extends BaseTest {
 	}
 
 	/**
+	 * Build a common olio.sd.config for scene-generation tests under the config-driven API (mirrors
+	 * TestPictureBookFull#newSdConfig). A null style lets SDUtil.fillStyleDefaults pick+complete a
+	 * random canonical style; a given style pins it.
+	 */
+	private BaseRecord newSdConfig(String style) throws Exception {
+		BaseRecord cfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		if (style != null) cfg.setValue("style", style);
+		SDUtil.fillStyleDefaults(cfg);
+		return cfg;
+	}
+
+	/**
 	 * Reconstructs and emits the LITERAL Stage-3 stitched reference image that
 	 * {@code PictureBookUtil.generateSceneImage()} builds internally and sends as the single Kontext
 	 * {@code promptImage} — {@code [leftPortrait | centerPortrait | landscape]} — by calling the same
@@ -591,13 +603,14 @@ public class TestPictureBookUtilE2E extends BaseTest {
 
 		SceneGenerationParams paramsA = new SceneGenerationParams();
 		paramsA.chatConfigName = chatConfigName;
-		paramsA.steps = 14;
-		paramsA.refinerSteps = 10;
-		paramsA.cfg = 5;
-		paramsA.hires = false;
-		paramsA.style = "illustration";
-		paramsA.sdModelName = swarmModel;
 		paramsA.isBookOverride = true;
+		BaseRecord genCfgA = newSdConfig("art");
+		genCfgA.setValue("steps", 14);
+		genCfgA.setValue("refinerSteps", 10);
+		genCfgA.setValue("cfg", 5);
+		genCfgA.setValue("hires", false);
+		genCfgA.setValue("model", swarmModel);
+		paramsA.sdConfig = genCfgA;
 
 		long t0 = System.currentTimeMillis();
 		BaseRecord resultA;
@@ -627,7 +640,7 @@ public class TestPictureBookUtilE2E extends BaseTest {
 
 		// ---- NEW: capture + inspect the actual Stage-4 Kontext composite prompt text for sceneA ----
 		// (see logAndVerifyCompositePrompt() javadoc for exactly how this is reconstructed/verified)
-		String compositePromptTextA = logAndVerifyCompositePrompt("sceneA", sceneA, sceneANote, paramsA.style,
+		String compositePromptTextA = logAndVerifyCompositePrompt("sceneA", sceneA, sceneANote, genCfgA.get("style"),
 			narrativeSdPromptByCharOid);
 		// Write the actual reconstructed prompt text to a file next to the images (log lines require
 		// digging through Maven output; a .txt file sits right next to the emitted PNGs).
@@ -669,13 +682,14 @@ public class TestPictureBookUtilE2E extends BaseTest {
 
 		SceneGenerationParams paramsB = new SceneGenerationParams();
 		paramsB.chatConfigName = chatConfigName;
-		paramsB.steps = 14;
-		paramsB.refinerSteps = 10;
-		paramsB.cfg = 5;
-		paramsB.hires = false;
-		paramsB.style = "illustration";
-		paramsB.sdModelName = swarmModel;
 		paramsB.isBookOverride = true;
+		BaseRecord genCfgB = newSdConfig("art");
+		genCfgB.setValue("steps", 14);
+		genCfgB.setValue("refinerSteps", 10);
+		genCfgB.setValue("cfg", 5);
+		genCfgB.setValue("hires", false);
+		genCfgB.setValue("model", swarmModel);
+		paramsB.sdConfig = genCfgB;
 
 		t0 = System.currentTimeMillis();
 		BaseRecord resultB;
@@ -703,7 +717,7 @@ public class TestPictureBookUtilE2E extends BaseTest {
 		BaseRecord sceneBNote = fetchSceneNote(sceneBOid);
 
 		// ---- NEW: capture + inspect the actual Stage-4 Kontext composite prompt text for sceneB ----
-		String compositePromptTextB = logAndVerifyCompositePrompt("sceneB", sceneB, sceneBNote, paramsB.style,
+		String compositePromptTextB = logAndVerifyCompositePrompt("sceneB", sceneB, sceneBNote, genCfgB.get("style"),
 			narrativeSdPromptByCharOid);
 		FileUtil.emitFile(EMIT_DIR + "/verified_kontextCompositePrompt_sceneB.txt", compositePromptTextB);
 

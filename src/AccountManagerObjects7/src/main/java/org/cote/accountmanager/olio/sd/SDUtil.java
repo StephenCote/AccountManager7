@@ -40,6 +40,7 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.BinaryUtil;
@@ -646,60 +647,8 @@ public class SDUtil {
 
 		BaseRecord cfg = getConfigData();
 
-		String style = randomSDConfigValue(cfg, "styles");
-		sd.setValue("style", style);
-		switch(style) {
-			case "art":
-				sd.setValue("artStyle", randomSDConfigValue(cfg, "artStyles"));
-				break;
-			case "photograph":
-				sd.setValue("colorProcess", randomSDConfigValue(cfg, "colorProcesses"));
-				sd.setValue("stillCamera", randomSDConfigValue(cfg, "stillCameras"));
-				sd.setValue("photographer", randomSDConfigValue(cfg, "photographers"));
-				sd.setValue("lens", randomSDConfigValue(cfg, "lenses"));
-				sd.setValue("film", randomSDConfigValue(cfg, "films"));
-				break;
-			case "movie":
-				sd.setValue("colorProcess", randomSDConfigValue(cfg, "colorProcesses"));
-				sd.setValue("movieFilm", randomSDConfigValue(cfg, "movieFilms"));
-				sd.setValue("movieCamera", randomSDConfigValue(cfg, "movieCameras"));
-				sd.setValue("director", randomSDConfigValue(cfg, "directors"));
-				break;
-			case "selfie":
-				sd.setValue("selfiePhone", randomSDConfigValue(cfg, "selfiePhones"));
-				sd.setValue("selfieAngle", randomSDConfigValue(cfg, "selfieAngles"));
-				sd.setValue("selfieLighting", randomSDConfigValue(cfg, "selfieLightings"));
-				break;
-			case "anime":
-				sd.setValue("animeStudio", randomSDConfigValue(cfg, "animeStudios"));
-				sd.setValue("animeEra", randomSDConfigValue(cfg, "animeEras"));
-				break;
-			case "portrait":
-				sd.setValue("portraitLighting", randomSDConfigValue(cfg, "portraitLightings"));
-				sd.setValue("portraitBackdrop", randomSDConfigValue(cfg, "portraitBackdrops"));
-				sd.setValue("photographer", randomSDConfigValue(cfg, "photographers"));
-				break;
-			case "comic":
-				sd.setValue("comicPublisher", randomSDConfigValue(cfg, "comicPublishers"));
-				sd.setValue("comicEra", randomSDConfigValue(cfg, "comicEras"));
-				sd.setValue("comicColoring", randomSDConfigValue(cfg, "comicColorings"));
-				break;
-			case "digitalArt":
-				sd.setValue("digitalMedium", randomSDConfigValue(cfg, "digitalMediums"));
-				sd.setValue("digitalSoftware", randomSDConfigValue(cfg, "digitalSoftwares"));
-				sd.setValue("digitalArtist", randomSDConfigValue(cfg, "digitalArtists"));
-				break;
-			case "fashion":
-				sd.setValue("fashionMagazine", randomSDConfigValue(cfg, "fashionMagazines"));
-				sd.setValue("fashionDecade", randomSDConfigValue(cfg, "fashionDecades"));
-				sd.setValue("photographer", randomSDConfigValue(cfg, "photographers"));
-				break;
-			case "vintage":
-				sd.setValue("vintageDecade", randomSDConfigValue(cfg, "vintageDecades"));
-				sd.setValue("vintageProcessing", randomSDConfigValue(cfg, "vintageProcessings"));
-				sd.setValue("vintageCamera", randomSDConfigValue(cfg, "vintageCameras"));
-				break;
-		}
+		sd.setValue("style", randomSDConfigValue(cfg, "styles"));
+		fillStyleDefaults(sd);
 
 		return sd;
 	}
@@ -707,6 +656,120 @@ public class SDUtil {
 	public static String randomSDConfigValue(BaseRecord cfg, String fieldName) {
 		List<String> vals = cfg.get(fieldName);
 		return vals.get(rand.nextInt(vals.size()));
+	}
+
+	/**
+	 * Fill only the MISSING per-style detail fields for a config's current style, drawing from the same
+	 * sdConfigData pools randomSDConfig uses. Idempotent — already-set fields are left alone — so it
+	 * safely COMPLETES a config that a caller (or an override) only partially specified, which is what
+	 * makes {@link #getSDConfigPrompt(BaseRecord)} produce a full style string instead of null-filled
+	 * garbage. If no style is set yet, a random canonical style is chosen first. Mirrors the Ux
+	 * am7sd.fillStyleDefaults primitive (components/sdConfig.js).
+	 */
+	public static void fillStyleDefaults(BaseRecord sd) {
+		if(sd == null) {
+			return;
+		}
+		BaseRecord cfg = getConfigData();
+		String style = sd.get("style");
+		if(style == null || style.isEmpty()) {
+			style = randomSDConfigValue(cfg, "styles");
+			sd.setValue("style", style);
+		}
+		switch(style) {
+			case "art":
+				fillIfBlank(sd, cfg, "artStyle", "artStyles");
+				break;
+			case "photograph":
+				fillIfBlank(sd, cfg, "colorProcess", "colorProcesses");
+				fillIfBlank(sd, cfg, "stillCamera", "stillCameras");
+				fillIfBlank(sd, cfg, "photographer", "photographers");
+				fillIfBlank(sd, cfg, "lens", "lenses");
+				fillIfBlank(sd, cfg, "film", "films");
+				break;
+			case "movie":
+				fillIfBlank(sd, cfg, "colorProcess", "colorProcesses");
+				fillIfBlank(sd, cfg, "movieFilm", "movieFilms");
+				fillIfBlank(sd, cfg, "movieCamera", "movieCameras");
+				fillIfBlank(sd, cfg, "director", "directors");
+				break;
+			case "selfie":
+				fillIfBlank(sd, cfg, "selfiePhone", "selfiePhones");
+				fillIfBlank(sd, cfg, "selfieAngle", "selfieAngles");
+				fillIfBlank(sd, cfg, "selfieLighting", "selfieLightings");
+				break;
+			case "anime":
+				fillIfBlank(sd, cfg, "animeStudio", "animeStudios");
+				fillIfBlank(sd, cfg, "animeEra", "animeEras");
+				break;
+			case "portrait":
+				fillIfBlank(sd, cfg, "portraitLighting", "portraitLightings");
+				fillIfBlank(sd, cfg, "portraitBackdrop", "portraitBackdrops");
+				fillIfBlank(sd, cfg, "photographer", "photographers");
+				break;
+			case "comic":
+				fillIfBlank(sd, cfg, "comicPublisher", "comicPublishers");
+				fillIfBlank(sd, cfg, "comicEra", "comicEras");
+				fillIfBlank(sd, cfg, "comicColoring", "comicColorings");
+				break;
+			case "digitalArt":
+				fillIfBlank(sd, cfg, "digitalMedium", "digitalMediums");
+				fillIfBlank(sd, cfg, "digitalSoftware", "digitalSoftwares");
+				fillIfBlank(sd, cfg, "digitalArtist", "digitalArtists");
+				break;
+			case "fashion":
+				fillIfBlank(sd, cfg, "fashionMagazine", "fashionMagazines");
+				fillIfBlank(sd, cfg, "fashionDecade", "fashionDecades");
+				fillIfBlank(sd, cfg, "photographer", "photographers");
+				break;
+			case "vintage":
+				fillIfBlank(sd, cfg, "vintageDecade", "vintageDecades");
+				fillIfBlank(sd, cfg, "vintageProcessing", "vintageProcessings");
+				fillIfBlank(sd, cfg, "vintageCamera", "vintageCameras");
+				break;
+			default:
+				break;
+		}
+	}
+
+	private static void fillIfBlank(BaseRecord sd, BaseRecord cfg, String field, String pool) {
+		String cur = sd.get(field);
+		if(cur == null || cur.isEmpty()) {
+			sd.setValue(field, randomSDConfigValue(cfg, pool));
+		}
+	}
+
+	private static final java.util.Set<String> SD_OVERRIDE_SKIP = new java.util.HashSet<>(java.util.Arrays.asList(
+		FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN, FieldNames.FIELD_OWNER_ID,
+		FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_NAME
+	));
+
+	/**
+	 * Overlay a SPARSE override config onto a base config, in place. Only the fields actually PRESENT on
+	 * the override record (i.e. a JSON-parsed partial / computed delta) are copied — never a full
+	 * newInstance graph, which would clobber the base with model defaults. Identity fields are skipped;
+	 * null/blank values are skipped. Mirrors the Ux am7sd.applyOverrides primitive (components/sdConfig.js)
+	 * and pairs with a getCardTypeDelta-style per-item delta. Follow with {@link #fillStyleDefaults} on
+	 * the base so a style change in the override pulls in that style's detail fields.
+	 */
+	public static void applyOverrides(BaseRecord base, BaseRecord override) {
+		if(base == null || override == null) {
+			return;
+		}
+		for(FieldType f : override.getFields()) {
+			String n = f.getName();
+			if(SD_OVERRIDE_SKIP.contains(n)) {
+				continue;
+			}
+			Object v = f.getValue();
+			if(v == null) {
+				continue;
+			}
+			if(v instanceof String && ((String)v).isEmpty()) {
+				continue;
+			}
+			base.setValue(n, v);
+		}
 	}
 
 	public static byte[] getDataBytes(BaseRecord data) {

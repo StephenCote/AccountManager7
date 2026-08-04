@@ -153,6 +153,17 @@ public class SWUtil {
 	/// @param negativePrompt explicit negative prompt; null preserves the legacy hardcoded ""
 	public static SWTxt2Img newKontextSceneTxt2Img(String sysCharDesc, String usrCharDesc, String sceneDesc, String settingDesc,
 			String style, String mood, BaseRecord sdConfig, Integer steps, Integer cfgScale, String negativePrompt) {
+		return newKontextSceneTxt2Img(sysCharDesc, usrCharDesc, sceneDesc, settingDesc, style, mood, sdConfig, steps, cfgScale, negativePrompt, false);
+	}
+
+	/// Config-style-aware overload. When {@code useConfigStyle} is true the style suffix is derived from
+	/// the sdConfig via {@code SDUtil.getSDConfigPrompt} — the canonical, detail-field-driven style used
+	/// everywhere else — with SDXL {@code (...)} weighting stripped because FLUX Kontext ignores it. When
+	/// false it uses the legacy {@link #styleClause(String)} clause, preserving byte-for-byte behavior for
+	/// existing callers (ChatService.generateScene, TestKontext, TestPictureBookPipeline). PictureBook's
+	/// composite step passes true so the composite shares the SAME config style as its portraits/landscape.
+	public static SWTxt2Img newKontextSceneTxt2Img(String sysCharDesc, String usrCharDesc, String sceneDesc, String settingDesc,
+			String style, String mood, BaseRecord sdConfig, Integer steps, Integer cfgScale, String negativePrompt, boolean useConfigStyle) {
 		SWTxt2Img s2i = newKontextBase(sdConfig, steps, cfgScale);
 
 		/// Strip SDXL-style prompt weighting — FLUX doesn't support ((...:1.5)) syntax
@@ -178,7 +189,13 @@ public class SWUtil {
 			prompt.append("The mood is ").append(mood).append(". ");
 		}
 		prompt.append("Maintain their exact appearances, clothing, and features. ");
-		prompt.append(styleClause(style));
+		if (useConfigStyle) {
+			String cfgStyle = stripSDXLWeighting(org.cote.accountmanager.olio.sd.SDUtil.getSDConfigPrompt(sdConfig));
+			prompt.append(cfgStyle != null ? cfgStyle : "");
+		}
+		else {
+			prompt.append(styleClause(style));
+		}
 
 		s2i.setPrompt(prompt.toString());
 		s2i.setNegativePrompt(negativePrompt != null ? negativePrompt : "");

@@ -56,6 +56,7 @@ import jakarta.ws.rs.core.Response;
  *   POST /scene/{sceneObjectId}/blurb         — Regenerate scene blurb via LLM
  *   GET  /{bookObjectId}/scenes               — Ordered scene list from .pictureBookMeta (bookObjectId = book group objectId)
  *   GET  /{bookObjectId}/settings              — Last-used image generation settings for this book
+ *   PUT  /{bookObjectId}/settings              — Store the book's common (+ optional composite) olio.sd.config once
  *   POST /{bookObjectId}/prepare-images        — Batch-resolve landscape prompts for a set of scenes, then flush idle Ollama models once
  *   PUT  /{bookObjectId}/scenes/order         — Reorder scenes
  *   PUT  /scene/{sceneObjectId}/status        — Persist a client-driven scene status (accepted/skipped/pending/...)
@@ -376,24 +377,17 @@ public class PictureBookService {
             sgp.promptTemplateOverride = params.get("promptTemplate");
             Object ibv = params.get("isBook");
             if (ibv instanceof Boolean) sgp.isBookOverride = (Boolean) ibv;
-            BaseRecord sdConf = params.get("sdConfig");
-            if (sdConf != null) {
-                Object sv = sdConf.get("steps"); if (sv instanceof Number) sgp.steps = ((Number) sv).intValue();
-                Object rv = sdConf.get("refinerSteps"); if (rv instanceof Number) sgp.refinerSteps = ((Number) rv).intValue();
-                Object cv = sdConf.get("cfg"); if (cv instanceof Number) sgp.cfg = ((Number) cv).intValue();
-                Object hv = sdConf.get("hires"); if (hv instanceof Boolean) sgp.hires = (Boolean) hv;
-                Object seedV = sdConf.get("seed"); if (seedV instanceof Number) sgp.seed = ((Number) seedV).intValue();
-                Object mv = sdConf.get("model"); if (mv instanceof String) sgp.sdModelName = (String) mv;
-                Object rmv = sdConf.get("refinerModel"); if (rmv instanceof String) sgp.sdRefinerModelName = (String) rmv;
-                Object dv = sdConf.get("denoisingStrength"); if (dv instanceof Number) sgp.denoisingStrength = ((Number) dv).doubleValue();
-                Object smpv = sdConf.get("sampler"); if (smpv instanceof String) sgp.sdSampler = (String) smpv;
-                Object schv = sdConf.get("scheduler"); if (schv instanceof String) sgp.sdScheduler = (String) schv;
-                Object rsmpv = sdConf.get("refinerSampler"); if (rsmpv instanceof String) sgp.sdRefinerSampler = (String) rsmpv;
-                Object rschv = sdConf.get("refinerScheduler"); if (rschv instanceof String) sgp.sdRefinerScheduler = (String) rschv;
-                @SuppressWarnings("unchecked")
-                Object lorasV = sdConf.get("loras"); if (lorasV instanceof List) sgp.sdLoras = (List<String>) lorasV;
-                Object styv = sdConf.get("style"); if (styv instanceof String && !((String) styv).isEmpty()) sgp.style = (String) styv;
-            }
+            // The nested sdConfig / compositeSdConfig / sdConfigOverride are full olio.sd.config
+            // records (ephemeral model fields declared on olio.pictureBookRequest). ALL SD
+            // generation params now live on those records — PictureBookUtil merges
+            // (common -> override -> fillStyleDefaults) and derives style via getSDConfigPrompt.
+            // This layer stays pure transport: parse the records, no flattened-scalar extraction.
+            Object sdc = params.get("sdConfig");
+            if (sdc instanceof BaseRecord) sgp.sdConfig = (BaseRecord) sdc;
+            Object csdc = params.get("compositeSdConfig");
+            if (csdc instanceof BaseRecord) sgp.compositeSdConfig = (BaseRecord) csdc;
+            Object osdc = params.get("sdConfigOverride");
+            if (osdc instanceof BaseRecord) sgp.sdConfigOverride = (BaseRecord) osdc;
         }
 
         String sdApiType = context.getInitParameter("sd.server.apiType");
@@ -429,7 +423,7 @@ public class PictureBookService {
         List<String> sceneObjectIds = new ArrayList<>();
         String chatConfigName = null;
         String promptTemplateOverride = null;
-        String style = null;
+        BaseRecord sdConfig = null;
         BaseRecord params = parseParams(json);
         if (params != null) {
             chatConfigName = params.get("chatConfig");
@@ -440,11 +434,10 @@ public class PictureBookService {
                     if (o instanceof String) sceneObjectIds.add((String) o);
                 }
             }
-            BaseRecord sdConf = params.get("sdConfig");
-            if (sdConf != null) {
-                Object styv = sdConf.get("style");
-                if (styv instanceof String && !((String) styv).isEmpty()) style = (String) styv;
-            }
+            // The common olio.sd.config (ephemeral model field). Its style is the single seam
+            // (getSDConfigPrompt) baked into each pre-resolved prompt; PictureBookUtil fills defaults.
+            Object sdc = params.get("sdConfig");
+            if (sdc instanceof BaseRecord) sdConfig = (BaseRecord) sdc;
         }
 
         // KI-10: registered under bookObjectId — the same id the client already holds to fire a
@@ -452,7 +445,7 @@ public class PictureBookService {
         SummarizeProgress cancelToken = new SummarizeProgress();
         cancelRegistry.put(bookObjectId, cancelToken);
         try {
-            PictureBookUtil.prepareSceneImagePrompts(user, sceneObjectIds, chatConfigName, style, promptTemplateOverride, cancelToken);
+            PictureBookUtil.prepareSceneImagePrompts(user, sceneObjectIds, chatConfigName, sdConfig, promptTemplateOverride, cancelToken);
             BaseRecord result = PictureBookUtil.buildResult();
             return Response.status(200).entity(toJson(result)).build();
         } catch (PictureBookException e) {
@@ -604,6 +597,41 @@ public class PictureBookService {
         try {
             BaseRecord sdConfig = PictureBookUtil.getBookSdConfig(user, bookObjectId);
             return Response.status(200).entity(sdConfig != null ? toJson(sdConfig) : "{}").build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * PUT /{bookObjectId}/settings
+     * Store the book's COMMON (and optional composite) image config once, so subsequent scene
+     * generation reads it back as the base for every scene (portraits/landscape/scene). This lets
+     * the test/Ux "set one config" per book, matching the CardGame _default pattern. Body:
+     * { sdConfig: {...olio.sd.config...}, compositeSdConfig?: {...olio.sd.config...} }. Transport
+     * only — the fill/merge logic lives in PictureBookUtil.setBookSdConfig. Returns the stored
+     * common config (toFullString), or {"updated":true} if nothing was supplied.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/settings")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response setBookSdConfig(@PathParam("bookObjectId") String bookObjectId,
+            String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord params = parseParams(json);
+        BaseRecord sdConfig = null;
+        BaseRecord compositeSdConfig = null;
+        if (params != null) {
+            // Both are ephemeral olio.sd.config model fields on olio.pictureBookRequest.
+            Object sdc = params.get("sdConfig");
+            if (sdc instanceof BaseRecord) sdConfig = (BaseRecord) sdc;
+            Object csdc = params.get("compositeSdConfig");
+            if (csdc instanceof BaseRecord) compositeSdConfig = (BaseRecord) csdc;
+        }
+        try {
+            BaseRecord stored = PictureBookUtil.setBookSdConfig(user, bookObjectId, sdConfig, compositeSdConfig);
+            return Response.status(200).entity(stored != null ? toJson(stored) : "{\"updated\":true}").build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }

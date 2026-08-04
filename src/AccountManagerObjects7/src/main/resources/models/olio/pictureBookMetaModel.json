@@ -41,7 +41,7 @@
 		{
 			"name": "compositionContext",
 			"type": "string",
-			"description": "Book-level composition/art-direction anchor (genre + cohesion cues) prepended to every scene and landscape prompt so the whole book stays visually consistent — a discrete, persisted fact, not left to the LLM. Editable per book."
+			"description": "Optional book-level composition/art-direction anchor prepended to every scene and landscape prompt. Defaults to blank — real style/composition consistency comes from the common sdConfig's style + bodyStyle/imageSetting/imageAction fields; this is only an optional extra prompt-level reinforcement, never auto-seeded from a hardcoded line."
 		},
 		{
 			"name": "sdConfig",
@@ -49,7 +49,15 @@
 			"baseModel": "olio.sd.config",
 			"foreign": false,
 			"ephemeral": true,
-			"description": "Last-used image generation settings for this book, auto-captured on every generateSceneImage call so images can be recreated with the same settings later."
+			"description": "The book's COMMON image config (style + composition + generation params). Set once per book; read back as the base for every scene's generation (portraits/landscape/scene), with optional per-scene overrides merged on top."
+		},
+		{
+			"name": "compositeSdConfig",
+			"type": "model",
+			"baseModel": "olio.sd.config",
+			"foreign": false,
+			"ephemeral": true,
+			"description": "Optional alternate config for the composite/Kontext step only; falls back to the common sdConfig when absent."
 		}
 	]
 }

@@ -80,7 +80,7 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final String CHAT_PATH = "~/Chat";
 
 	private static final String PB_LLM_MODEL = "qwen3:8b";
-	private static int iter = 2;
+	private static int iter = 3;
 	private static final String PB_CHAT_CONFIG_NAME = "PictureBook " + PB_LLM_MODEL + " " + iter + ".chat";
 
 	// Source document + the exact substring that marks where Step 1 truncates it (see
@@ -335,31 +335,43 @@ public class TestPictureBookCustom extends BaseTest {
 	}
 
 	/**
-	 * SD CONFIG TEMPLATE — edit these to taste before Step 5. Mirrors the fields
-	 * PictureBookUtil.generateSceneImage()'s real callers set (see TestPictureBookFull.java's
-	 * SceneGenerationParams usage) — every field here maps directly to something SDUtil/SWUtil
-	 * eventually sends to the SD backend.
+	 * Build the Step 5 SceneGenerationParams. Under the config-driven design there is ONE common
+	 * olio.sd.config (style + composition + generation params) — {@link #buildCommonSdConfig()} —
+	 * that drives portraits, landscape, and scene consistently via SDUtil.getSDConfigPrompt. The
+	 * flattened single-word style / per-field scalars are gone; everything image-related lives on the
+	 * config record. Per-scene overrides (a sparse olio.sd.config delta) would go on params.sdConfigOverride.
 	 */
 	private PictureBookUtil.SceneGenerationParams buildSdConfigTemplate() {
 		PictureBookUtil.SceneGenerationParams params = new PictureBookUtil.SceneGenerationParams();
 		params.chatConfigName = PB_CHAT_CONFIG_NAME;
-		params.steps = 40;                  // sampling steps
-		params.cfg = 5;                     // CFG scale
-		params.hires = false;               // classic (Graphics2D composite + img2img) pipeline only — see KI-10/KI notes on Kontext caveats
-		params.isBookOverride = true;       // persist/reuse portraits under the book's Characters/ group (vs. ~/Chat fallback)
-		params.style = IMAGE_STYLE;         // one of ALLOWED_STYLES: illustration | photograph | anime | art | digitalart | movie
-		params.seed = -1;                   // -1 = random
-		params.sdModelName = testProperties.getProperty("test.swarm.model"); // schema default (sdXL_v10VAEFix.safetensors) may not be installed on your Swarm — see resource.properties
-		params.sdRefinerModelName = testProperties.getProperty("test.swarm.refinerModel"); // ditto — don't rely on olio.sd.config's schema default here
-		params.sdSampler = null;            // e.g. "dpmpp_2m" — null = default
-		params.sdScheduler = null;          // e.g. "karras" — null = default
-		params.denoisingStrength = -1;      // -1 = pipeline default (classic ~0.85, Kontext ~0.65)
-		params.sdLoras = null;              // e.g. Arrays.asList("myLoraName:0.8")
-		params.promptTemplateOverride = null; // name of a custom olio.llm.promptTemplate — leave null
-		                                       // unless you've confirmed its vars match the operation
-		                                       // you're overriding (see KI-31's "cross-purpose template"
-		                                       // root cause before setting this to anything non-null)
+		params.isBookOverride = true;       // persist/reuse portraits under the book's Characters/ group
+		params.promptTemplateOverride = null;
+		params.sdConfig = buildCommonSdConfig();
 		return params;
+	}
+
+	/**
+	 * The book's ONE common olio.sd.config. SDUtil.randomSDConfig() populates a full style (style +
+	 * its detail fields from the shared pools) so getSDConfigPrompt yields a rich, cohesive style
+	 * across every image; we then pin it to this book's intent: a fixed canonical style (IMAGE_STYLE —
+	 * illustration/custom no longer exist), the classic Graphics2D+img2img pipeline (useKontext=false /
+	 * hires=false, the deliberate picture-book default since Kontext doesn't reliably preserve
+	 * character likeness), and the test's Swarm model/refiner. The single source of truth for style —
+	 * no separate styleClause.
+	 */
+	private BaseRecord buildCommonSdConfig() {
+		BaseRecord cfg = SDUtil.randomSDConfig();
+		cfg.setValue("style", IMAGE_STYLE);
+		SDUtil.fillStyleDefaults(cfg);              // repopulate detail fields for the pinned style
+		cfg.setValue("useKontext", false);          // classic pipeline (likeness-safe)
+		cfg.setValue("hires", false);
+		cfg.setValue("cfg", 5);
+		cfg.setValue("steps", 40);
+		cfg.setValue("seed", -1);
+		cfg.setValue(OlioFieldNames.FIELD_SD_MODEL, testProperties.getProperty("test.swarm.model"));
+		cfg.setValue(OlioFieldNames.FIELD_SD_REFINER_MODEL, testProperties.getProperty("test.swarm.refinerModel"));
+		cfg.setValue("negativePrompt", testProperties.getProperty("test.swarm.negativePrompt"));
+		return cfg;
 	}
 
 	/**
@@ -902,7 +914,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 			"bra,panties,blouse,skirt,thigh-high heeled boots,anklet,amulet,jewelry:piercing:7:f:ear");
 			generateApparelImage(duna);                        // custom outfit CSV
 			undressToLevel(duna, WearLevelEnumType.ON);
-			//generatePortrait(duna, true);
+			generatePortrait(duna, true);
 			dressToLevel(duna, WearLevelEnumType.BASE);
 			generatePortrait(duna);
 			dressToLevel(duna, WearLevelEnumType.SUIT);
@@ -922,7 +934,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 			"t-shirt,cargo pants,socks,shoes,clothing:leather jacket:5:m:shoulder");                     
 			generateApparelImage(jid);           // custom outfit CSV
 			undressToLevel(jid, WearLevelEnumType.ON);
-			// generatePortrait(jid, true);
+			generatePortrait(jid, true);
 			dressToLevel(jid, WearLevelEnumType.BASE);
 			generatePortrait(jid);
 			dressToLevel(jid, WearLevelEnumType.SUIT);
@@ -962,7 +974,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		 List<String> sceneOids = new ArrayList<>();
 		 for (Map<String, Object> s : scenes) sceneOids.add((String) s.get("objectId"));
 		 PictureBookUtil.prepareSceneImagePrompts(testUser, sceneOids,
-		     chatConfig.get(FieldNames.FIELD_NAME), IMAGE_STYLE, null);
+		     chatConfig.get(FieldNames.FIELD_NAME), buildCommonSdConfig(), null);
 		
 		 for (String sceneOid : sceneOids) {
 		     Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneOid);

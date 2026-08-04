@@ -41,7 +41,24 @@
 			"type": "model",
 			"baseModel": "olio.sd.config",
 			"foreign": false,
-			"ephemeral": true
+			"ephemeral": true,
+			"description": "The book's COMMON image config (style + composition + generation params). One config drives portraits, landscape, and scene; style comes from getSDConfigPrompt(sdConfig)."
+		},
+		{
+			"name": "compositeSdConfig",
+			"type": "model",
+			"baseModel": "olio.sd.config",
+			"foreign": false,
+			"ephemeral": true,
+			"description": "Optional ALTERNATE config for the composite/Kontext step only (a different pipeline/model). Falls back to sdConfig when absent."
+		},
+		{
+			"name": "sdConfigOverride",
+			"type": "model",
+			"baseModel": "olio.sd.config",
+			"foreign": false,
+			"ephemeral": true,
+			"description": "Optional SPARSE per-scene override (a delta) merged onto the common sdConfig via SDUtil.applyOverrides for this one scene."
 		},
 		{
 			"name": "sceneList",

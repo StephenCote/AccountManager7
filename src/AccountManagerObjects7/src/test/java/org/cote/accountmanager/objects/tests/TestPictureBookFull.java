@@ -681,9 +681,11 @@ public class TestPictureBookFull extends BaseTest {
 		String sceneOid = sceneNote.get(FieldNames.FIELD_OBJECT_ID);
 
 		PictureBookUtil.SceneGenerationParams params = new PictureBookUtil.SceneGenerationParams();
-		params.steps = 40;
-		params.cfg = 5;
-		params.hires = false; // the mitigation being tried — see caution above before changing this
+		BaseRecord genCfg = newSdConfig(null);
+		genCfg.setValue("steps", 40);
+		genCfg.setValue("cfg", 5);
+		genCfg.setValue("hires", false); // the mitigation being tried — see caution above before changing this
+		params.sdConfig = genCfg;
 
 		long start = System.currentTimeMillis();
 		BaseRecord result = PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", "http://192.168.1.42:7801");
@@ -742,10 +744,11 @@ public class TestPictureBookFull extends BaseTest {
 		assertNull("No sdConfig saved before any generation", PictureBookUtil.getBookSdConfig(testUser, bookObjectId));
 
 		PictureBookUtil.SceneGenerationParams params = new PictureBookUtil.SceneGenerationParams();
-		params.steps = 33;
-		params.cfg = 9;
-		params.sdModelName = "unit-test-model.safetensors";
-		params.style = "photograph"; // must be one of PictureBookUtil.ALLOWED_STYLES
+		BaseRecord genCfg = newSdConfig("photograph");
+		genCfg.setValue("steps", 33);
+		genCfg.setValue("cfg", 9);
+		genCfg.setValue("model", "unit-test-model.safetensors");
+		params.sdConfig = genCfg;
 
 		try {
 			PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", "http://127.0.0.1:1");
@@ -1159,14 +1162,16 @@ public class TestPictureBookFull extends BaseTest {
 
 		PictureBookUtil.SceneGenerationParams params = new PictureBookUtil.SceneGenerationParams();
 		params.chatConfigName = chatConfigName;
-		params.steps = 12;
-		params.cfg = 5;
-		params.hires = false; // classic-pipeline img2img + hires has no verified-working precedent — see the caution note on TestGenerateSceneImageCompletesWithHiresDisabled
 		params.isBookOverride = true;
+		BaseRecord genCfg = newSdConfig(null);
+		genCfg.setValue("steps", 12);
+		genCfg.setValue("cfg", 5);
+		genCfg.setValue("hires", false); // classic-pipeline img2img + hires has no verified-working precedent — see the caution note on TestGenerateSceneImageCompletesWithHiresDisabled
 		// The schema default model ("sdXL_v10VAEFix.safetensors") isn't installed on Stephen's
 		// local Swarm instance (a different machine than the old DGX Spark setup) — use the model
 		// this test's own properties file already names as actually available there.
-		params.sdModelName = testProperties.getProperty("test.swarm.model");
+		genCfg.setValue("model", testProperties.getProperty("test.swarm.model"));
+		params.sdConfig = genCfg;
 
 		String scene0Oid = (String) byIndex.get(0).get("objectId");
 		long start0 = System.currentTimeMillis();
@@ -1774,6 +1779,87 @@ public class TestPictureBookFull extends BaseTest {
 		logger.info("All 6 pictureBook prompt templates loaded successfully");
 	}
 
+	/**
+	 * The book-level art-direction (compositionContext) text was hard-coded in
+	 * PictureBookUtil.createFromScenes; it now lives in olio/llm/prompts/pictureBook.art-direction.json
+	 * with a ${genre} token. This verifies the resource loads and reproduces the former hard-coded
+	 * output byte-for-byte for both the genre-present and genre-absent cases (createFromScenes passes
+	 * "${genre}" as "<genre> " with a trailing space, or "" when no genre).
+	 */
+	@Test
+	public void TestArtDirectionPromptTemplateLoadsAndSubstitutes() {
+		String template = PromptResourceUtil.getString("pictureBook.art-direction", "template");
+		assertNotNull("pictureBook.art-direction 'template' should load from classpath", template);
+		assertTrue("art-direction template should not be empty", template.length() > 10);
+
+		String withGenre = PromptResourceUtil.replaceToken(template, "genre", "dystopian sci-fi ");
+		assertEquals("Genre-present output must match the former hard-coded string",
+			"Consistent art direction for a dystopian sci-fi picture book: keep the setting, color palette, and lighting cohesive across every scene.",
+			withGenre);
+
+		String noGenre = PromptResourceUtil.replaceToken(template, "genre", "");
+		assertEquals("Genre-absent output must match the former hard-coded string",
+			"Consistent art direction for a picture book: keep the setting, color palette, and lighting cohesive across every scene.",
+			noGenre);
+
+		logger.info("art-direction template externalized correctly: [" + withGenre + "]");
+	}
+
+	/**
+	 * Style-seam + override-merge safety net for the "one common olio.sd.config, per-scene overrides"
+	 * refactor. Pure — no DB/LLM/SD. Verifies the crux that the old picturebook code got wrong:
+	 * (1) a common config completed by SDUtil.fillStyleDefaults yields a rich, detail-field-driven
+	 * style via SDUtil.getSDConfigPrompt (not null-filled garbage); (2) a SPARSE override merges only
+	 * its present fields (isolation) and fillStyleDefaults repopulates the new style's detail fields;
+	 * (3) the style seam is getSDConfigPrompt, NOT the removed SWUtil.styleClause custom clause.
+	 */
+	@Test
+	public void TestSdConfigStyleSeamAndOverrideMerge() throws Exception {
+		// (1) common config: style + detail fields → rich style string
+		BaseRecord common = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		common.setValue("style", "art");
+		SDUtil.fillStyleDefaults(common);
+		String artStyleVal = common.get("artStyle");
+		assertNotNull("fillStyleDefaults should populate the art style's detail field", artStyleVal);
+		assertFalse("art detail field should not be blank", artStyleVal.isEmpty());
+		String commonStyle = SDUtil.getSDConfigPrompt(common);
+		assertNotNull(commonStyle);
+		assertFalse("style prompt must not be the null-cfg fallback", commonStyle.contains("null"));
+		assertTrue("art style prompt must reference its populated detail field",
+			commonStyle.toLowerCase().contains(artStyleVal.toLowerCase()));
+
+		// (2) sparse override changes ONLY the fields it carries; fillStyleDefaults then completes the new style
+		BaseRecord override = RecordFactory.importRecord(OlioModelNames.MODEL_SD_CONFIG, "{\"style\":\"fashion\"}");
+		SDUtil.applyOverrides(common, override);
+		assertEquals("override should change style", "fashion", (String) common.get("style"));
+		assertEquals("override must NOT clobber a field it didn't carry (isolation)",
+			artStyleVal, (String) common.get("artStyle"));
+		SDUtil.fillStyleDefaults(common);
+		String fashionMag = common.get("fashionMagazine");
+		assertNotNull("fillStyleDefaults should populate the fashion style's detail fields", fashionMag);
+		assertFalse("fashion detail field should not be blank", fashionMag.isEmpty());
+		String fashionStyle = SDUtil.getSDConfigPrompt(common);
+		assertTrue("fashion style prompt must be fashion-shaped", fashionStyle.toLowerCase().contains("fashion"));
+		assertNotEquals("the style seam must actually change when the config style changes", commonStyle, fashionStyle);
+
+		// (3) the seam is getSDConfigPrompt, not the legacy custom styleClause text
+		assertNotEquals("picturebook must use getSDConfigPrompt, not the removed styleClause layer",
+			org.cote.accountmanager.olio.sd.swarm.SWUtil.styleClause("fashion"), fashionStyle);
+		logger.info("style seam: art=[" + commonStyle + "] fashion=[" + fashionStyle + "]");
+	}
+
+	/**
+	 * Build a common olio.sd.config for scene-generation tests under the config-driven API. A null
+	 * style lets SDUtil.fillStyleDefaults pick+complete a random canonical style; a given style pins
+	 * it. Callers set any specific steps/cfg/hires/model they assert on via setValue afterward.
+	 */
+	private BaseRecord newSdConfig(String style) throws Exception {
+		BaseRecord cfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		if (style != null) cfg.setValue("style", style);
+		SDUtil.fillStyleDefaults(cfg);
+		return cfg;
+	}
+
 	// ── Library Template Loading ─────────────────────────────────────────
 
 	@Test
@@ -2282,7 +2368,7 @@ public class TestPictureBookFull extends BaseTest {
 		// (extract-scenes needs {text}/{count}) applied here, where the real templates
 		// (scene-image-prompt/landscape-prompt) need setting/action/mood/charNarrations instead.
 		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
-			"illustration", "pictureBook.extract-scenes");
+			newSdConfig("art"), "pictureBook.extract-scenes");
 
 		BaseRecord refetched = findNoteByObjectIdWithText(sceneObjectId);
 		assertNotNull(refetched);
@@ -2345,7 +2431,7 @@ public class TestPictureBookFull extends BaseTest {
 
 		// Normal call, no override — the poisoned cache alone must be what triggers regeneration.
 		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
-			"illustration", null);
+			newSdConfig("art"), null);
 
 		BaseRecord refetched = findNoteByObjectIdWithText(sceneObjectId);
 		assertNotNull(refetched);
@@ -2466,7 +2552,7 @@ public class TestPictureBookFull extends BaseTest {
 		// the actual production call, no override, then read back exactly what got cached.
 		List<String> sceneOids = new ArrayList<>();
 		for (int i = 0; i < Math.min(2, scenes.size()); i++) sceneOids.add((String) scenes.get(i).get("objectId"));
-		PictureBookUtil.prepareSceneImagePrompts(testUser, sceneOids, chatConfigName, "illustration", null);
+		PictureBookUtil.prepareSceneImagePrompts(testUser, sceneOids, chatConfigName, newSdConfig("art"), null);
 
 		List<String> landscapePrompts = new ArrayList<>();
 		List<String> scenePrompts = new ArrayList<>();
@@ -2493,12 +2579,13 @@ public class TestPictureBookFull extends BaseTest {
 		// MAKE THE IMAGE — real generateSceneImage calls against the live local Swarm server.
 		PictureBookUtil.SceneGenerationParams params = new PictureBookUtil.SceneGenerationParams();
 		params.chatConfigName = chatConfigName;
-		params.steps = 20;
-		params.cfg = 5;
-		params.hires = false;
 		params.isBookOverride = true;
-		params.style = "illustration";
-		params.sdModelName = testProperties.getProperty("test.swarm.model");
+		BaseRecord genCfg = newSdConfig("art");
+		genCfg.setValue("steps", 20);
+		genCfg.setValue("cfg", 5);
+		genCfg.setValue("hires", false);
+		genCfg.setValue("model", testProperties.getProperty("test.swarm.model"));
+		params.sdConfig = genCfg;
 
 		for (int i = 0; i < sceneOids.size(); i++) {
 			String sceneOid = sceneOids.get(i);
@@ -2553,7 +2640,7 @@ public class TestPictureBookFull extends BaseTest {
 
 		long start = System.currentTimeMillis();
 		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
-			"illustration", null);
+			newSdConfig("art"), null);
 		long elapsed = System.currentTimeMillis() - start;
 		logger.info("prepareSceneImagePrompts on a fully-blank scene took " + elapsed + "ms");
 		assertTrue("A blank scene must resolve near-instantly (no LLM round-trip) — took " + elapsed
@@ -2613,7 +2700,7 @@ public class TestPictureBookFull extends BaseTest {
 		String sceneObjectId = createdScene.get(FieldNames.FIELD_OBJECT_ID);
 
 		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
-			"illustration", null);
+			newSdConfig("art"), null);
 
 		BaseRecord refetched = findNoteByObjectIdWithText(sceneObjectId);
 		Map<String, Object> refetchedData = JSONUtil.getMap(((String) refetched.get("text")).getBytes(), String.class, Object.class);

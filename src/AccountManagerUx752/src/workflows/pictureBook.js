@@ -5,13 +5,14 @@ import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import {
     extractScenes, createFromScenes, generateSceneImage, prepareSceneImagePrompts,
-    cancelPictureBook, regenerateBlurb, loadPictureBook, getBookSdConfig, setSceneStatus,
+    cancelPictureBook, regenerateBlurb, loadPictureBook, getBookSdConfig, setBookSdConfig, setSceneStatus,
     resolveImageUrl, resolveAllImageUrls
 } from './sceneExtractor.js';
 import { openCharacterManager, initCharacterManager, renderCharacterManagerContent } from './pictureBookCharacters.js';
 import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
+import { am7sd } from '../components/sdConfig.js';
 
 /**
  * Picture Book workflow — multi-step wizard launched from a data.data or data.note object.
@@ -82,42 +83,36 @@ let genCancelled = false;
 let currentAbortController = null; // aborts the in-flight generateSceneImage fetch — genCancelled alone only stops the *next* scene from starting
 let prepareAbortController = null; // aborts the in-flight prepare-images fetch (KI-10 — the pre-loop landscape-prompt batch)
 let sceneErrors = {};   // objectId → error message
-let sceneOverrides = {}; // objectId → { promptOverride, steps, cfg, seed } or null
 let sceneImageUrls = {}; // objectId → resolved thumbnail URL
 
-// SD configuration — a single plain-config object shared with (and mutated in place by) the
-// canonical components/SdConfigPanel.js (KI-13/KI-16 convergence: no bespoke 3rd copy). Keys match
-// exactly what the backend SceneGenerationParams consumes (steps/refinerSteps/cfg/hires/seed/model/
-// refinerModel/denoisingStrength/sampler/scheduler/refinerSampler/refinerScheduler/loras/style);
-// the panel also surfaces width/height/imageCount/refinerCfg for parity with the other call sites.
-function defaultSdConfig() {
-    return {
-        steps: 20,
-        refinerSteps: 20,
-        cfg: 5,
-        refinerCfg: 5,
-        hires: false,
-        style: 'illustration',
-        seed: -1,
-        model: '',
-        refinerModel: '',
-        denoisingStrength: 0.65,
-        sampler: 'dpmpp_2m',
-        scheduler: 'karras',
-        refinerSampler: 'dpmpp_2m',
-        refinerScheduler: 'karras',
-        width: '1024',
-        height: '768',
-        imageCount: 1,
-        loras: []  // ['loraName:weight', ...]
-    };
-}
-let sdConfig = defaultSdConfig();
+// SD configuration — a real, fully-populated olio.sd.config record, built the same way the reimage
+// dialog and the CardGame art pipeline build theirs (am7sd.buildEntity → am7model.prepareInstance
+// with forms.sdConfig). This is the book's ONE COMMON config (the "_default" in CardGame terms);
+// per-scene tweaks are SPARSE deltas (see sceneOverrides below). No bespoke plain-config object —
+// the earlier hand-rolled sdConfig + single-word `illustration` style is exactly the divergence
+// this refactor removes.
+let sdConfigEntity = null;   // olio.sd.config entity (the common config)
+let sdConfigInst = null;     // am7model instance wrapping sdConfigEntity (forms.sdConfig)
+let sdConfigLoading = false;
+let settingsPersisted = false; // PUT /settings only re-fires after the common config changes
+
+// Per-scene overrides — each is a real per-scene olio.sd.config that starts as a copy of the common
+// config and is edited via the standard form system (forms.sdConfigOverrides through the generic
+// object view, exactly like CardGame's per-card-type tabs). Only the DELTA (fields that differ from
+// the common config) is sent as sdConfigOverride; an unedited scene sends no override at all.
+let sceneOverrides = {};        // objectId → olio.sd.config entity (delta base)
+let sceneOverrideInsts = {};    // objectId → am7model instance (forms.sdConfigOverrides)
+let sceneOverrideViews = {};    // objectId → generic object-view component
+let sceneOverrideExpanded = {}; // objectId → bool (lazily mount the heavy override form only when open)
+
 let sdModelList = [];   // available SD models from server
 let sdLoraList = [];    // available LORAs from server
 let sdModelsLoaded = false;
 let sdLorasFetched = false;
 let lastPrompt = '';    // last LLM-generated image prompt
+
+// Identity/transient fields never diffed into a per-scene delta nor sent as part of the config.
+const SD_CONFIG_IDENTITY = ['id', 'objectId', 'urn', 'ownerId', 'groupId', 'organizationId', 'groupPath', 'organizationPath', 'narration'];
 
 // Step 5
 let metaScenes = [];
@@ -147,8 +142,15 @@ function resetState() {
     prepareAbortController = null;
     sceneErrors = {};
     sceneOverrides = {};
+    sceneOverrideInsts = {};
+    sceneOverrideViews = {};
+    sceneOverrideExpanded = {};
     sceneImageUrls = {};
-    sdConfig = defaultSdConfig();
+    sdConfigEntity = null;
+    sdConfigInst = null;
+    sdConfigLoading = false;
+    _sdConfigPromise = null;
+    settingsPersisted = false;
     sdLoraList = [];
     sdLorasFetched = false;
     sdModelList = [];
@@ -156,6 +158,50 @@ function resetState() {
     lastPrompt = '';
     metaScenes = [];
     step5ImageUrls = {};
+}
+
+// ── SD common config (real olio.sd.config) ────────────────────────────
+// Canonical picture-book style. The bespoke single-word `illustration` style was removed from the
+// model everywhere; 'digitalArt' (concept-art illustration medium) is its canonical replacement.
+const PICTURE_BOOK_STYLE = 'digitalArt';
+
+// Pin the picture-book defaults onto a freshly built olio.sd.config entity: the CLASSIC pipeline
+// (useKontext=false — Flux Kontext returns a valid image but does NOT preserve character likeness),
+// no refiner hi-res pass by default, and a canonical style (not the removed `illustration`).
+function pinPictureBookDefaults(entity) {
+    entity.useKontext = false;
+    entity.hires = false;
+    entity.style = PICTURE_BOOK_STYLE;
+    am7sd.fillStyleDefaults(entity);
+    return entity;
+}
+
+// Build the common config instance lazily (async — needs the /olio/randomImageConfig template).
+// Mirrors reimage.js: fetch a fully-populated random template, then wrap it in an am7model instance
+// so every field read/write round-trips the model decorators. A single shared in-flight promise
+// means the eager kickoff on open and the awaited call on the resume path never race.
+let _sdConfigPromise = null;
+function ensureSdConfig() {
+    if (sdConfigInst) return Promise.resolve(sdConfigInst);
+    if (_sdConfigPromise) return _sdConfigPromise;
+    sdConfigLoading = true;
+    _sdConfigPromise = (async function () {
+        try {
+            let entity = await am7sd.buildEntity();
+            if (!entity) entity = am7model.newPrimitive('olio.sd.config');
+            if (!entity[am7model.jsonModelKey]) entity[am7model.jsonModelKey] = 'olio.sd.config';
+            SD_CONFIG_IDENTITY.forEach(function (k) { delete entity[k]; });
+            pinPictureBookDefaults(entity);
+            sdConfigEntity = entity;
+            sdConfigInst = am7model.prepareInstance(entity, am7model.forms.sdConfig);
+        } catch (e) {
+            console.warn('[PictureBook] Failed to build SD config:', e);
+        }
+        sdConfigLoading = false;
+        m.redraw();
+        return sdConfigInst;
+    })();
+    return _sdConfigPromise;
 }
 
 // ── Step helpers ──────────────────────────────────────────────────────
@@ -346,15 +392,69 @@ async function doRegenerateBlurb(idx, oid) {
     m.redraw();
 }
 
-function buildSdConfig() {
-    // Copy so per-scene override tweaks (below, in doGenerateOne) never mutate the shared panel
-    // config. Drop "unset" values so the backend falls back to its own defaults rather than
-    // receiving an empty string / empty list.
-    let cfg = Object.assign({}, sdConfig);
-    if (!cfg.model) delete cfg.model;
-    if (!cfg.refinerModel) delete cfg.refinerModel;
-    if (!cfg.loras || !cfg.loras.length) delete cfg.loras;
-    return cfg;
+// ── Per-scene overrides (real olio.sd.config deltas) ──────────────────
+
+// The per-scene override entity starts as a copy of the common config, so its form is pre-filled
+// with the current common values and the diff is empty until the user actually changes something.
+function getSceneOverrideInst(oid) {
+    if (!sceneOverrideInsts[oid]) {
+        let base = sceneOverrides[oid];
+        if (!base) {
+            base = sdConfigInst
+                ? JSON.parse(JSON.stringify(sdConfigInst.entity))
+                : am7model.newPrimitive('olio.sd.config');
+            base[am7model.jsonModelKey] = 'olio.sd.config';
+            SD_CONFIG_IDENTITY.forEach(function (k) { delete base[k]; });
+        }
+        let entity = am7model.prepareEntity(base, 'olio.sd.config');
+        sceneOverrides[oid] = entity;
+        sceneOverrideInsts[oid] = am7model.prepareInstance(entity, am7model.forms.sdConfigOverrides);
+        sceneOverrideViews[oid] = page.views.object();
+    }
+    return sceneOverrideInsts[oid];
+}
+
+function resetSceneOverride(oid) {
+    delete sceneOverrides[oid];
+    delete sceneOverrideInsts[oid];
+    delete sceneOverrideViews[oid];
+}
+
+// Return only the fields the user actually edited in this scene's override form — the SPARSE delta
+// the backend overlays via SDUtil.applyOverrides. Driven by the instance's tracked `changes` (same
+// signal CardGame's deckView uses for its "modified" badge), so it stays correct even if the common
+// config is edited afterward. Returns null when nothing was changed (no sdConfigOverride is sent).
+function computeSceneOverrideDelta(oid) {
+    let inst = sceneOverrideInsts[oid];
+    if (!inst || !inst.changes || !inst.changes.length) return null;
+    let delta = {};
+    inst.changes.forEach(function (k) {
+        if (k === am7model.jsonModelKey || SD_CONFIG_IDENTITY.includes(k)) return;
+        let v = inst.entity[k];   // raw stored value (correct wire format: denoising 0-1, width int, …)
+        if (v !== undefined) delta[k] = v;
+    });
+    if (!Object.keys(delta).length) return null;
+    delta[am7model.jsonModelKey] = 'olio.sd.config';
+    return delta;
+}
+
+function sceneHasOverride(oid) {
+    let inst = sceneOverrideInsts[oid];
+    return !!(inst && inst.changes && inst.changes.length > 0);
+}
+
+// Persist the book's common config once (PUT /settings). Re-fires only after the common config
+// changes (settingsPersisted is cleared by the SD panel's onChange). Best-effort — a failure here
+// never blocks generation, which sends the same config inline on every /generate call anyway.
+async function persistBookSettings() {
+    if (settingsPersisted || !bookObjectId || !sdConfigInst) return;
+    settingsPersisted = true;
+    try {
+        await setBookSdConfig(bookObjectId, sdConfigInst.entity);
+    } catch (e) {
+        settingsPersisted = false;
+        console.warn('[PictureBook] Failed to persist book SD settings (non-fatal):', e);
+    }
 }
 
 /**
@@ -401,6 +501,9 @@ async function doGenerateAll() {
     generating = true;
     genCancelled = false;
     m.redraw();
+    await ensureSdConfig();
+    // Store the book's common config ONCE up front (best-effort), before the batch.
+    await persistBookSettings();
     let targets = scenes.length ? scenes : extractedScenes;
 
     // Batch-resolve every pending scene's landscape prompt (all LLM calls) up front, then flush
@@ -413,7 +516,7 @@ async function doGenerateAll() {
         if (pendingOids.length) {
             prepareAbortController = new AbortController();
             try {
-                await prepareSceneImagePrompts(bookObjectId, pendingOids, chatConfigName(), sdConfig.style, getPromptTemplate('landscapePrompt'), prepareAbortController.signal);
+                await prepareSceneImagePrompts(bookObjectId, pendingOids, chatConfigName(), sdConfigInst ? sdConfigInst.entity : null, getPromptTemplate('landscapePrompt'), prepareAbortController.signal);
             } catch (e) {
                 // AbortError == the user hit Cancel during this phase (see the Cancel action in
                 // buildActions step 4). genCancelled is already set, so the per-scene loop below
@@ -457,26 +560,29 @@ async function doGenerateAll() {
 async function doGenerateOne(s) {
     let oid = s.objectId;
     if (!oid) return;
+    await ensureSdConfig();
+    await persistBookSettings();
     genProgress[oid] = 'generating';
     sceneErrors[oid] = null;
     m.redraw();
     let controller = new AbortController();
     currentAbortController = controller;
     try {
-        let overrides = sceneOverrides[oid];
-        let sdCfg = buildSdConfig();
-        let promptOvr = null;
-        if (overrides) {
-            if (overrides.steps) sdCfg.steps = overrides.steps;
-            if (overrides.cfg) sdCfg.cfg = overrides.cfg;
-            if (overrides.seed) sdCfg.seed = overrides.seed;
-            if (overrides.promptOverride) promptOvr = overrides.promptOverride;
-        }
-        let result = await generateSceneImage(oid, sdCfg, chatConfigName(), promptOvr, getPromptTemplate('landscapePrompt'), controller.signal);
+        // The common config drives every stage; the per-scene delta is overlaid server-side for this
+        // one scene only. Per-scene prompt customization now lives on the override's own Prompt
+        // (description) field rather than a separate free-text promptOverride.
+        let result = await generateSceneImage(oid, {
+            sdConfig: sdConfigInst ? sdConfigInst.entity : null,
+            sdConfigOverride: computeSceneOverrideDelta(oid),
+            chatConfig: chatConfigName(),
+            promptTemplate: getPromptTemplate('landscapePrompt')
+        }, controller.signal);
         s.imageObjectId = result.imageObjectId;
         // After the first successful generation with a random seed, lock the resolved seed onto the
-        // shared config so the remaining scenes in this book render with a consistent seed.
-        if (result.seed && (sdConfig.seed == null || sdConfig.seed < 0)) sdConfig.seed = result.seed;
+        // common config so the remaining scenes in this book render with a consistent seed.
+        if (result.seed && sdConfigInst && (sdConfigInst.entity.seed == null || sdConfigInst.entity.seed < 0)) {
+            sdConfigInst.entity.seed = result.seed;
+        }
         if (result.prompt) lastPrompt = result.prompt;
         genProgress[oid] = 'done';
         // Resolve thumbnail
@@ -800,40 +906,42 @@ function renderStep3() {
 function loadSdModels() {
     if (sdModelsLoaded) return;
     sdModelsLoaded = true;
-    if (am7model._sd && am7model._sd.fetchModels) {
-        am7model._sd.fetchModels().then(function (list) {
-            sdModelList = Array.isArray(list) ? list : [];
-            m.redraw();
-        }).catch(function () { sdModelList = []; });
-    }
+    am7sd.fetchModels().then(function (list) {
+        sdModelList = Array.isArray(list) ? list : [];
+        m.redraw();
+    }).catch(function () { sdModelList = []; });
 }
 
 function loadSdLoras() {
     if (sdLorasFetched) return;
     sdLorasFetched = true;
-    if (am7model._sd && am7model._sd.fetchLoras) {
-        am7model._sd.fetchLoras().then(function (list) {
-            sdLoraList = Array.isArray(list) ? list : [];
-            m.redraw();
-        }).catch(function () { sdLoraList = []; });
-    }
+    am7sd.fetchLoras().then(function (list) {
+        sdLoraList = Array.isArray(list) ? list : [];
+        m.redraw();
+    }).catch(function () { sdLoraList = []; });
 }
 
-// KI-13/KI-16 convergence: the bespoke per-field SD panel that used to live here (a 3rd near-copy
-// of the reimage/scene-generator config form, with Style as a free-text input and no Width/Height/
-// Image Count/Refiner CFG) is gone. This now delegates to the canonical components/SdConfigPanel.js,
-// which mutates the shared `sdConfig` object in place. Style is a <select> over the same style set
-// as everywhere else (SdConfigPanel STYLE_OPTIONS, which mirrors PictureBookUtil.ALLOWED_STYLES).
+// The common SD config panel delegates to the canonical components/SdConfigPanel.js, now driven by
+// the real olio.sd.config am7model instance (inst:) so every field round-trips the model decorators
+// — no bespoke plain-config object, no single-word `illustration` style. Style is a <select> over
+// the same model-derived style set as everywhere else.
 function renderSdConfig() {
     loadSdModels();
     loadSdLoras();
+    if (!sdConfigInst) {
+        ensureSdConfig();
+        return m('div', { class: 'border dark:border-gray-700 rounded p-3 mb-3 flex items-center gap-2 text-sm text-gray-500' }, [
+            m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
+            m('span', 'Loading SD configuration…')
+        ]);
+    }
     return m('div', { class: 'border dark:border-gray-700 rounded p-3 mb-3' }, [
         m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'SD Configuration'),
         m(SdConfigPanel, {
-            config: sdConfig,
+            inst: sdConfigInst,
             models: sdModelList,
             loras: sdLoraList,
-            onChange: function () { m.redraw(); }
+            onChange: function () { settingsPersisted = false; m.redraw(); }
         }),
         lastPrompt ? m('div', { class: 'mt-2' }, [
             m('div', { class: 'text-xs font-medium text-gray-500' }, 'Last prompt used:'),
@@ -860,7 +968,8 @@ function renderStep4() {
                 let status = genProgress[oid] || (s.imageObjectId ? 'done' : 'pending');
                 let thumbUrl = sceneImageUrls[oid] || null;
                 let errMsg = sceneErrors[oid] || null;
-                let ovr = sceneOverrides[oid] || {};
+                let overridden = sceneHasOverride(oid);
+                let overrideOpen = !!sceneOverrideExpanded[oid];
 
                 let borderClass = status === 'accepted' ? 'border-green-500' :
                     status === 'error' ? 'border-red-500' :
@@ -886,6 +995,12 @@ function renderStep4() {
                             m('div', { class: 'font-medium text-sm truncate' }, s.title || 'Untitled'),
                             errMsg ? m('div', { class: 'text-red-500 text-xs' }, errMsg) : null
                         ]),
+
+                        // Per-scene override indicator
+                        overridden ? m('span', {
+                            class: 'text-[10px] px-1.5 py-0.5 rounded shrink-0 bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
+                            title: 'This scene has SD config overrides'
+                        }, 'override') : null,
 
                         // Status badge
                         m('span', {
@@ -953,59 +1068,39 @@ function renderStep4() {
                         }, 'Undo skip') : null
                     ]),
 
-                    // Per-scene overrides (collapsible)
-                    status !== 'accepted' && status !== 'skipped' ? m('details', { class: 'text-xs' }, [
-                        m('summary', { class: 'cursor-pointer text-gray-500 hover:text-gray-700' }, 'Scene Overrides'),
-                        m('div', { class: 'grid grid-cols-3 gap-2 mt-1' }, [
-                            m('div', [
-                                m('label', { class: 'field-label text-xs' }, 'Prompt Override'),
-                                m('textarea', {
-                                    class: 'w-full text-field-full text-xs', rows: 2,
-                                    value: ovr.promptOverride || '',
-                                    placeholder: 'Custom SD prompt (overrides pipeline)',
-                                    oninput: function (e) {
-                                        if (!sceneOverrides[oid]) sceneOverrides[oid] = {};
-                                        sceneOverrides[oid].promptOverride = e.target.value;
-                                    }
-                                })
+                    // Per-scene overrides — a real per-scene olio.sd.config delta, edited through the
+                    // standard form system (forms.sdConfigOverrides via the generic object view),
+                    // exactly like CardGame's per-card-type override tabs. Only the fields that differ
+                    // from the common config are sent as sdConfigOverride. The heavy override form is
+                    // mounted lazily (only while expanded) to keep long scene lists responsive.
+                    status !== 'accepted' && status !== 'skipped' ? m('div', { class: 'text-xs' }, [
+                        m('div', { class: 'flex items-center justify-between' }, [
+                            m('button', {
+                                class: 'flex items-center gap-1 cursor-pointer text-gray-500 hover:text-gray-700',
+                                onclick: function () { sceneOverrideExpanded[oid] = !overrideOpen; m.redraw(); }
+                            }, [
+                                m('span', {
+                                    class: 'material-symbols-outlined text-sm',
+                                    style: 'transition:transform 0.15s;' + (overrideOpen ? 'transform:rotate(90deg);' : '')
+                                }, 'chevron_right'),
+                                m('span', 'Scene Overrides')
                             ]),
-                            m('div', [
-                                m('label', { class: 'field-label text-xs' }, 'Steps'),
-                                m('input', {
-                                    class: 'text-field-compact text-xs', type: 'number', min: 1, max: 150,
-                                    value: ovr.steps || '',
-                                    placeholder: String(sdConfig.steps),
-                                    oninput: function (e) {
-                                        if (!sceneOverrides[oid]) sceneOverrides[oid] = {};
-                                        sceneOverrides[oid].steps = parseInt(e.target.value) || null;
-                                    }
-                                })
-                            ]),
-                            m('div', [
-                                m('label', { class: 'field-label text-xs' }, 'CFG'),
-                                m('input', {
-                                    class: 'text-field-compact text-xs', type: 'number', min: 1, max: 30, step: 0.5,
-                                    value: ovr.cfg || '',
-                                    placeholder: String(sdConfig.cfg),
-                                    oninput: function (e) {
-                                        if (!sceneOverrides[oid]) sceneOverrides[oid] = {};
-                                        sceneOverrides[oid].cfg = parseFloat(e.target.value) || null;
-                                    }
-                                })
-                            ]),
-                            m('div', [
-                                m('label', { class: 'field-label text-xs' }, 'Seed'),
-                                m('input', {
-                                    class: 'text-field-compact text-xs', type: 'number',
-                                    value: ovr.seed || '',
-                                    placeholder: '-1',
-                                    oninput: function (e) {
-                                        if (!sceneOverrides[oid]) sceneOverrides[oid] = {};
-                                        sceneOverrides[oid].seed = parseInt(e.target.value) || null;
-                                    }
-                                })
-                            ])
-                        ])
+                            overridden ? m('button', {
+                                class: 'text-gray-400 hover:text-red-600',
+                                title: 'Clear this scene\'s overrides (revert to the common config)',
+                                onclick: function () { resetSceneOverride(oid); m.redraw(); }
+                            }, 'Clear') : null
+                        ]),
+                        overrideOpen ? (function () {
+                            let ovInst = getSceneOverrideInst(oid);
+                            let ovView = sceneOverrideViews[oid];
+                            return m('div', { class: 'mt-1' }, m(ovView.view, {
+                                freeForm: true,
+                                freeFormType: 'olio.sd.config',
+                                freeFormEntity: ovInst.entity,
+                                freeFormInstance: ovInst
+                            }));
+                        })() : null
                     ]) : null
                 ]);
             })
@@ -1294,30 +1389,24 @@ function buildActions() {
  * loadPictureBook() rejects (404) in that case.
  */
 /**
- * Apply a book's persisted image generation settings (see getBookSdConfig) onto the wizard's
- * SD state vars, so a resumed/reopened book defaults to the same settings it last generated
- * with instead of the wizard's hardcoded defaults.
+ * Map a book's persisted image generation settings (the stored olio.sd.config JSON from
+ * GET /settings, see getBookSdConfig) back onto the common-config entity, so a resumed/reopened
+ * book defaults to the same settings it last generated with instead of a fresh random template.
+ * Writes onto the real entity — identity fields are skipped, the picture-book pins are re-applied.
  */
 function applySdConfig(cfg) {
-    if (!cfg) return;
-    if (cfg.steps != null) sdConfig.steps = cfg.steps;
-    if (cfg.refinerSteps != null) sdConfig.refinerSteps = cfg.refinerSteps;
-    if (cfg.cfg != null) sdConfig.cfg = cfg.cfg;
-    if (cfg.refinerCfg != null) sdConfig.refinerCfg = cfg.refinerCfg;
-    if (cfg.hires != null) sdConfig.hires = cfg.hires;
-    if (cfg.style) sdConfig.style = cfg.style;
-    if (cfg.sampler) sdConfig.sampler = cfg.sampler;
-    if (cfg.scheduler) sdConfig.scheduler = cfg.scheduler;
-    if (cfg.refinerSampler) sdConfig.refinerSampler = cfg.refinerSampler;
-    if (cfg.refinerScheduler) sdConfig.refinerScheduler = cfg.refinerScheduler;
-    if (cfg.model) sdConfig.model = cfg.model;
-    if (cfg.refinerModel) sdConfig.refinerModel = cfg.refinerModel;
-    if (cfg.denoisingStrength != null) sdConfig.denoisingStrength = cfg.denoisingStrength;
-    if (cfg.width != null) sdConfig.width = cfg.width;
-    if (cfg.height != null) sdConfig.height = cfg.height;
-    if (cfg.imageCount != null) sdConfig.imageCount = cfg.imageCount;
-    if (cfg.loras) sdConfig.loras = cfg.loras;
-    if (cfg.seed != null && cfg.seed >= 0) sdConfig.seed = cfg.seed;
+    if (!cfg || !sdConfigInst) return;
+    let entity = sdConfigInst.entity;
+    for (let k in cfg) {
+        if (k === am7model.jsonModelKey || SD_CONFIG_IDENTITY.includes(k)) continue;
+        if (cfg[k] === undefined || cfg[k] === null) continue;
+        // Don't restore a random-seed sentinel onto a config that may already carry a resolved seed.
+        if (k === 'seed' && !(cfg[k] >= 0)) continue;
+        entity[k] = cfg[k];
+    }
+    // The style/hires the book last used are restored above; only re-assert the classic-pipeline
+    // safety pin (Kontext doesn't preserve character likeness), never forcing the canonical style.
+    entity.useKontext = false;
 }
 
 async function tryResumeExistingBook(id) {
@@ -1342,7 +1431,10 @@ async function tryResumeExistingBook(id) {
 
     try {
         let savedSdConfig = await getBookSdConfig(id);
-        if (savedSdConfig) applySdConfig(savedSdConfig);
+        if (savedSdConfig) {
+            await ensureSdConfig();      // build the common-config entity first, then map onto it
+            applySdConfig(savedSdConfig);
+        }
     } catch (e) { /* non-fatal — wizard defaults still apply */ }
 
     existingScenes.forEach(function (s) {
@@ -1383,6 +1475,8 @@ async function pictureBook(entity, inst) {
 
     // Look up system defaults from the shared library (async — UI renders "Loading default..." meanwhile)
     loadDefaults();
+    // Kick off the common SD config build early so it's ready by the image-generation step.
+    ensureSdConfig();
 
     // Resume detection: the passed id may actually be an existing book's group objectId rather
     // than a fresh source document — see tryResumeExistingBook().

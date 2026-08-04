@@ -69,13 +69,16 @@ describe('cancelPictureBook (U1 — KI-10 cancel wrapper)', () => {
     });
 });
 
-describe('prepareSceneImagePrompts (U1 — AbortSignal forwarding)', () => {
-    it('POSTs to /{bookObjectId}/prepare-images with the scene ids + style and forwards the AbortSignal', async () => {
+describe('prepareSceneImagePrompts (U1 — AbortSignal forwarding + full common config)', () => {
+    it('POSTs to /{bookObjectId}/prepare-images with the scene ids + full common sdConfig and forwards the AbortSignal', async () => {
         mockFetch({ prepared: 2 });
         const { prepareSceneImagePrompts } = await import('../workflows/sceneExtractor.js');
 
+        // New contract: the whole common olio.sd.config entity is sent (style is the seam), NOT a
+        // bare {style} object — the server only types a schema-tagged record as a BaseRecord.
+        let common = { schema: 'olio.sd.config', style: 'digitalArt', steps: 30, width: 1024, height: 768 };
         let controller = new AbortController();
-        await prepareSceneImagePrompts('book-1', ['s1', 's2'], 'contentAnalysis', 'illustration', null, controller.signal);
+        await prepareSceneImagePrompts('book-1', ['s1', 's2'], 'contentAnalysis', common, null, controller.signal);
 
         expect(calls).toHaveLength(1);
         expect(calls[0].url).toContain('/rest/olio/picture-book/book-1/prepare-images');
@@ -84,9 +87,10 @@ describe('prepareSceneImagePrompts (U1 — AbortSignal forwarding)', () => {
         expect(calls[0].opts.signal).toBe(controller.signal);
 
         let body = JSON.parse(calls[0].opts.body);
+        expect(body.schema).toBe('olio.pictureBookRequest');
         expect(body.sceneObjectIds).toEqual(['s1', 's2']);
         expect(body.chatConfig).toBe('contentAnalysis');
-        expect(body.sdConfig).toEqual({ style: 'illustration' });
+        expect(body.sdConfig).toEqual(common);
     });
 
     it('omits the signal cleanly when none is passed (back-compat with non-cancel callers)', async () => {
@@ -95,6 +99,75 @@ describe('prepareSceneImagePrompts (U1 — AbortSignal forwarding)', () => {
 
         await prepareSceneImagePrompts('book-2', ['s1'], null, null, null);
         expect(calls[0].opts.signal).toBeUndefined();
+    });
+});
+
+describe('generateSceneImage (real olio.sd.config common + per-scene delta)', () => {
+    it('POSTs to /scene/{id}/generate with the common sdConfig, the per-scene delta, and forwards the AbortSignal', async () => {
+        mockFetch({ imageObjectId: 'img-9', seed: 12345 });
+        const { generateSceneImage } = await import('../workflows/sceneExtractor.js');
+
+        let common = { schema: 'olio.sd.config', style: 'digitalArt', steps: 30, useKontext: false };
+        let delta = { schema: 'olio.sd.config', steps: 45 };
+        let controller = new AbortController();
+        let result = await generateSceneImage('scene-7', {
+            sdConfig: common,
+            sdConfigOverride: delta,
+            chatConfig: 'contentAnalysis',
+            promptTemplate: 'pictureBook.landscape-prompt'
+        }, controller.signal);
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toContain('/rest/olio/picture-book/scene/scene-7/generate');
+        expect(calls[0].opts.method).toBe('POST');
+        expect(calls[0].opts.signal).toBe(controller.signal);
+
+        let body = JSON.parse(calls[0].opts.body);
+        expect(body.schema).toBe('olio.pictureBookRequest');
+        expect(body.sdConfig).toEqual(common);
+        expect(body.sdConfigOverride).toEqual(delta);
+        expect(body.chatConfig).toBe('contentAnalysis');
+        expect(body.promptTemplate).toBe('pictureBook.landscape-prompt');
+        // No bespoke merged DEFAULT_SD_CONFIG blob and no bare `style` word anymore.
+        expect(result.imageObjectId).toBe('img-9');
+    });
+
+    it('omits sdConfigOverride/compositeSdConfig when not supplied (unedited scene sends no delta)', async () => {
+        mockFetch({ imageObjectId: 'img-1' });
+        const { generateSceneImage } = await import('../workflows/sceneExtractor.js');
+
+        await generateSceneImage('scene-1', { sdConfig: { schema: 'olio.sd.config', style: 'digitalArt' } });
+        let body = JSON.parse(calls[0].opts.body);
+        expect('sdConfigOverride' in body).toBe(false);
+        expect('compositeSdConfig' in body).toBe(false);
+    });
+});
+
+describe('setBookSdConfig (PUT /settings — store the common config once)', () => {
+    it('PUTs the common (+ optional composite) olio.sd.config to /{bookObjectId}/settings', async () => {
+        mockFetch({ stored: true });
+        const { setBookSdConfig } = await import('../workflows/sceneExtractor.js');
+
+        let common = { schema: 'olio.sd.config', style: 'digitalArt', hires: false };
+        let composite = { schema: 'olio.sd.config', style: 'photograph' };
+        await setBookSdConfig('book-5', common, composite);
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toContain('/rest/olio/picture-book/book-5/settings');
+        expect(calls[0].opts.method).toBe('PUT');
+        let body = JSON.parse(calls[0].opts.body);
+        expect(body.schema).toBe('olio.pictureBookRequest');
+        expect(body.sdConfig).toEqual(common);
+        expect(body.compositeSdConfig).toEqual(composite);
+    });
+
+    it('omits compositeSdConfig when not supplied', async () => {
+        mockFetch({ stored: true });
+        const { setBookSdConfig } = await import('../workflows/sceneExtractor.js');
+
+        await setBookSdConfig('book-6', { schema: 'olio.sd.config', style: 'digitalArt' });
+        let body = JSON.parse(calls[0].opts.body);
+        expect('compositeSdConfig' in body).toBe(false);
     });
 });
 

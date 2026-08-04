@@ -3,19 +3,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ── sceneExtractor module exports ─────────────────────────────────────
 
 describe('sceneExtractor module exports', () => {
-    it('should export DEFAULT_SD_CONFIG', async () => {
+    it('no longer exports the bespoke DEFAULT_SD_CONFIG (replaced by a real olio.sd.config)', async () => {
         let mod = await import('../workflows/sceneExtractor.js');
-        expect(mod.DEFAULT_SD_CONFIG).toBeDefined();
-        expect(typeof mod.DEFAULT_SD_CONFIG).toBe('object');
+        // The single-word `illustration` style + plain-config default object was removed in favor of
+        // a real olio.sd.config built the reimage/CardGame way — the export must be gone.
+        expect(mod.DEFAULT_SD_CONFIG).toBeUndefined();
     });
 
-    it('DEFAULT_SD_CONFIG has required fields', async () => {
-        let { DEFAULT_SD_CONFIG } = await import('../workflows/sceneExtractor.js');
-        expect(DEFAULT_SD_CONFIG.steps).toBe(20);
-        expect(DEFAULT_SD_CONFIG.refinerSteps).toBe(20);
-        expect(DEFAULT_SD_CONFIG.cfg).toBe(5);
-        expect(DEFAULT_SD_CONFIG.hires).toBe(false);
-        expect(DEFAULT_SD_CONFIG.style).toBe('illustration');
+    it('should export setBookSdConfig as a function (PUT /settings — common config)', async () => {
+        let mod = await import('../workflows/sceneExtractor.js');
+        expect(typeof mod.setBookSdConfig).toBe('function');
     });
 
     it('should export MAX_SCENES_DEFAULT as -1 (no max, backend decides)', async () => {

@@ -8,11 +8,18 @@
  *   m(SdConfigPanel, { config: sdConfig, models: sdModels, loras: loraList, onChange: saveConfig })
  */
 import m from 'mithril';
+import { am7model } from '../core/model.js';
 import { formFieldRenderers } from './formFieldRenderers.js';
 
-// Mirrors PictureBookUtil.ALLOWED_STYLES (the server-side clamp set). 'illustration' is the picture
-// book default and a valid server style, so it belongs in the shared select for every call site.
-const STYLE_OPTIONS = ['illustration', 'art', 'movie', 'photograph', 'selfie', 'anime', 'portrait', 'comic', 'digitalArt', 'fashion', 'vintage', 'custom'];
+// Style list is driven by the canonical olio.sd.config model (style.limit) — the single source of
+// truth shared with forms.sdConfig / forms.sdConfigOverrides. The picture-book-only 'illustration'
+// pseudo-style was removed from the model, so it is intentionally NOT hard-coded here anymore.
+const STYLE_OPTIONS_FALLBACK = ['art', 'movie', 'photograph', 'selfie', 'anime', 'portrait', 'comic', 'digitalArt', 'fashion', 'vintage', 'custom'];
+function deriveStyleOptions() {
+    let f = am7model.getModelField ? am7model.getModelField('olio.sd.config', 'style') : null;
+    return (f && Array.isArray(f.limit) && f.limit.length) ? f.limit.slice() : STYLE_OPTIONS_FALLBACK;
+}
+const STYLE_OPTIONS = deriveStyleOptions();
 
 /// Full sampler list matched to the reimage dialog (workflows/reimage.js).
 const SAMPLER_OPTIONS = [
@@ -139,10 +146,39 @@ function styleField(config, label, key, styles, onChange) {
     return field(label, textInput(config, key, onChange));
 }
 
+// When the panel is driven by an am7model instance (attrs.inst), route reads/writes through the
+// model so field types are normalized the same way reimage.js edits its olio.sd.config instance:
+// int width/height are stored as ints (not the "1024" strings a plain <select> writes), enums pass
+// through, etc. denoisingStrength deliberately stays on the entity's native 0-1 scale to match this
+// panel's own 0-1 slider — the forms' 'range' decorator 0-100 scaling is only for the object-view
+// slider widget, not this one. The returned object is a drop-in stand-in for the plain `config`
+// object every field helper below already reads/writes as `config[key]`.
+function instConfig(inst) {
+    let proxy = {};
+    (inst.fields || []).forEach(function (f) {
+        let key = f.name;
+        Object.defineProperty(proxy, key, {
+            enumerable: true,
+            configurable: true,
+            get: function () {
+                if (key === 'denoisingStrength') return inst.entity[key];
+                return inst.api[key] ? inst.api[key]() : inst.entity[key];
+            },
+            set: function (v) {
+                if (key === 'denoisingStrength') { inst.entity[key] = v; inst.change(key); return; }
+                if (inst.api[key]) inst.api[key](v); else inst.entity[key] = v;
+            }
+        });
+    });
+    return proxy;
+}
+
 /**
  * Shared SdConfigPanel component.
  * attrs:
- *   config  — sdConfig object (mutated in-place)
+ *   config  — sdConfig object (mutated in-place). Ignored when `inst` is supplied.
+ *   inst    — optional am7model olio.sd.config instance; when present, all field reads/writes
+ *             round-trip through the model decorators (correct int/enum types on the entity).
  *   models  — array of SD model names/objects (from /rest/olio/sdModels)
  *   loras   — optional array of LoRA names
  *   onChange — callback after any field changes
@@ -150,7 +186,7 @@ function styleField(config, label, key, styles, onChange) {
  */
 const SdConfigPanel = {
     view: function(vnode) {
-        let config = vnode.attrs.config;
+        let config = vnode.attrs.inst ? instConfig(vnode.attrs.inst) : vnode.attrs.config;
         let models = vnode.attrs.models || [];
         let loraList = vnode.attrs.loras || [];
         let onChange = vnode.attrs.onChange;
