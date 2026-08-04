@@ -1816,3 +1816,75 @@ with a test alongside the existing `TestPromptTemplate` (which already exercises
 `composeSystem`/`composeUser`), and verify a real PictureBook prompt (e.g. `pictureBook.landscape-prompt`)
 still resolves correctly against the live backend before closing. Core Objects7 LLM path — route through
 backend-specialist per `troubleshooting.md`.
+
+### KI-38. PictureBook image generation forked a custom style system instead of the canonical `olio.sd.config` — conflicting/garbage prompts — FIXED ✅ (2026-08-03)
+
+PictureBook had built a **parallel** image-style system: `PictureBookUtil.ALLOWED_STYLES` (a 12-word
+superset incl. the non-canonical `illustration`), a single-word `SceneGenerationParams.style`, style
+injected via `SWUtil.styleClause(...)` ("High quality photograph"), a book-level `compositionContext`
+art-direction anchor, and a throwaway `olio.sd.config` built per call that set only the bare `style`
+word and **never populated the per-style detail fields** (photographer/stillCamera/fashionMagazine/…),
+so `SDUtil.getSDConfigPrompt` couldn't be used and was bypassed. Result (observed live): portraits went
+through the canonical config path and got a rich style ("Fashion photography for V Magazine … by Paul
+Strand") while the scene/landscape got the `styleClause` short phrase — **two style systems in one
+composite**, style drift (photograph↔anime), and no consistent composition. Images looked wrong.
+
+**Fix (Stephen's direction: "use a common sd config with per-scene overrides, like CardGame"):** one
+common `olio.sd.config` (style **+ detail fields** via the random-style generator) is now the SINGLE
+style seam — `SDUtil.getSDConfigPrompt` — across portraits, landscape, classic scene, and Kontext
+composite, with per-scene overrides merged on top (CardGame pattern). Specifics:
+- `SDUtil` — added `applyOverrides(base, sparseOverride)` (overlays only fields present on a delta) and
+  `fillStyleDefaults(cfg)` (completes missing per-style detail fields from the sdConfigData pools);
+  `randomSDConfig()` refactored to reuse `fillStyleDefaults` (behavior preserved — see KI-39 test note).
+- `SWUtil.newKontextSceneTxt2Img` — added an **additive** trailing `boolean useConfigStyle` overload
+  (config style via `getSDConfigPrompt`, SDXL-weighting-stripped for FLUX); the legacy 10-arg overload
+  delegates with `false`, so `ChatService.generateScene` stays byte-identical.
+- `PictureBookUtil` — deleted `ALLOWED_STYLES`/`appendStyleClauseOnce`/`SceneGenerationParams.style`;
+  `SceneGenerationParams` now carries `BaseRecord sdConfig`/`compositeSdConfig`/`sdConfigOverride`;
+  `generateSceneImage` resolves common (request→book meta→`randomSDConfig`)+`fillStyleDefaults`+optional
+  override; portraits/landscape/scene/Kontext all derive style from that one config; `compositionContext`
+  now defaults blank (kept as an optional prompt anchor, no longer auto-seeded).
+- Models — `pictureBookRequest`/`pictureBookMeta` gained `compositeSdConfig` (+ `sdConfigOverride` on the
+  request); `compositionContext` documented as optional/blank-default.
+- Service7 — `/scene/{id}/generate` and `/{bookObjectId}/prepare-images` now parse full `olio.sd.config`
+  records (no flattened `style` string); new `PUT /{bookObjectId}/settings` stores the book's common
+  (+composite) config once.
+- Ux752 — `workflows/pictureBook.js`/`sceneExtractor.js`/`components/SdConfigPanel.js` now use a real
+  `olio.sd.config` (`am7sd.buildEntity`/`prepareInstance`) + per-scene `olio.sd.config` override deltas
+  via `forms.sdConfigOverrides`; dropped the bespoke `defaultSdConfig()`/`DEFAULT_SD_CONFIG` object and
+  the picture-book-only `illustration` style word; canonical default style `digitalArt`.
+
+**Verified:** seam unit test `TestPictureBookFull#TestSdConfigStyleSeamAndOverrideMerge` (one config →
+rich detail-driven style, sparse-override isolation, no `styleClause`); `TestSDStyles` randomSDConfig
+all-10-styles + `getSDConfigPrompt` all-11-styles; `TestKontext` 7 prompt-level tests (legacy path
+byte-identical); `TestSD` live (real population portrait + 6 apparel mannequins, installed model);
+one live picturebook scene image (real, single config-driven style suffix `((Street art …))`, no
+`styleClause`); Ux `vite build` + `vitest` (337); Docker image builds and the full stack deploys on
+`:8443`. Design/implementation record: `~/.claude/plans/velvet-launching-chipmunk.md`.
+
+**Follow-ups (non-blocking):** backend `configModel.json` still lists `illustration`/`custom` in
+`style.limit` though `getSDConfigPrompt` has no `illustration` branch (client dropped it — harmless
+dead entry, remove for tidiness); the picture-book default style `digitalArt` was a judgment call
+(easily changed); live FLUX-Kontext scene generation for PictureBook not yet visually verified end to
+end; the full catatone first-two-scenes real-content regression is still pending.
+
+### KI-39. Live SD tests using bare `SDUtil.randomSDConfig()` (no `model`) silently no-op GREEN on a Swarm that lacks the schema-default model — fake pass — OPEN (2026-08-03, Stephen)
+
+Any live SD test that builds its config with `SDUtil.randomSDConfig()` **without overriding `model`**
+sends the schema-default `sdXL_v10VAEFix.safetensors`, which is **not installed** on Stephen's SwarmUI
+(`[Warning] Refused to generate image … Invalid model value for param Model 'sdXL_v10VAEFix.safetensors'`).
+The generation returns empty, and such tests then **silently skip and report success** rather than
+failing. Confirmed in `TestKontext#testKontextSceneWithOlioCharacters` (`TestKontext.java:322-325` uses
+`randomSDConfig()` for the portrait step; `:395-398` `if (ready.size() < 2) { logger.warn(...); return; }`
+returns green without generating). So its JUnit "pass" verifies **nothing** about live FLUX-Kontext —
+a fake pass. (Contrast `TestSD` / the migrated picturebook tests, which DO set `model` from
+`test.swarm.model` and genuinely generate.) This bit during the KI-38 regression: a JUnit-green result
+was reported as a live pass when the SD call had actually been refused.
+
+**Fix direction:** (1) in the affected live tests, build the SD config with `model`/`refinerModel` from
+`test.swarm.*` (as `TestSD`/`TestPictureBookFull` already do) so the call actually runs; (2) replace the
+silent `return` on insufficient prep / empty SD result with a hard `fail(...)` (or `assumeTrue`-style
+explicit skip that is visibly reported), so a refused/empty generation can never masquerade as a pass —
+per `.claude/rules/llm-conduct.md` "no fake tests". Consider a shared test helper that stamps the
+installed model onto any `randomSDConfig()` used for a live call. Also see KI-38's note re: removing the
+uninstalled `sdXL_v10VAEFix.safetensors` default (or making the schema default a model that ships).
