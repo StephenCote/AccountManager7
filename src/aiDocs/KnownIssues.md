@@ -1860,7 +1860,7 @@ all-10-styles + `getSDConfigPrompt` all-11-styles; `TestKontext` 7 prompt-level 
 byte-identical); `TestSD` live (real population portrait + 6 apparel mannequins, installed model);
 one live picturebook scene image (real, single config-driven style suffix `((Street art …))`, no
 `styleClause`); Ux `vite build` + `vitest` (337); Docker image builds and the full stack deploys on
-`:8443`. Design/implementation record: `~/.claude/plans/velvet-launching-chipmunk.md`.
+`:8443`. Design/implementation record: `aiDocs/PictureBookSdConfigRefactor.md`.
 
 **Follow-ups (non-blocking):** backend `configModel.json` still lists `illustration`/`custom` in
 `style.limit` though `getSDConfigPrompt` has no `illustration` branch (client dropped it — harmless

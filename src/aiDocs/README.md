@@ -31,6 +31,7 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 |---|---|---|
 | `RPG.md` | Turn-based RPG design & build plan (living design document) | reference |
 | `PictureBookDesign.md` | Picture Book feature — surviving design/architecture reference | reference |
+| `PictureBookSdConfigRefactor.md` | Picture Book image style: one common `olio.sd.config` + per-scene overrides (CardGame pattern) — refactor design + implementation status (KI-38 FIXED 2026-08-03; KI-39 open) | active |
 
 ## Chat / prompt / conversation quality
 
