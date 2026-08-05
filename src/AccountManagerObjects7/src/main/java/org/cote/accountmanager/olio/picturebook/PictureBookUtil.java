@@ -1618,6 +1618,33 @@ public class PictureBookUtil {
      *   scenes were already extracted from prior chunks, rather than running to completion. May be
      *   null (no cancellation support requested by the caller).
      */
+    // The ONLY fields the chunk extractor's running "previousScenes" context needs for the LLM to
+    // recognize/dedupe/revise existing scenes (it matches revisions by title). Everything else is
+    // dropped from the prompt: the verbose per-scene "diffusionPrompt" paragraph (the single biggest
+    // field, and pure output redundancy here), the transient raw "sourceText" block, and bookkeeping
+    // (index/userEdited). Whitelist, not blacklist, so future scene fields don't silently bloat the prompt.
+    private static final String[] PROMPT_SCENE_FIELDS = { "title", "blurb", "setting", "action", "mood", "characters" };
+
+    /**
+     * Project the scene maps down to just {@link #PROMPT_SCENE_FIELDS} for anything that serializes
+     * scenes into an LLM prompt (the chunk extractor's {@code previousScenes}). The full scene maps —
+     * with diffusionPrompt, sourceText, index, etc. — are untouched on the returned sceneList; this
+     * only trims what is SENT to the model, which otherwise re-sent every field of every accumulated
+     * scene on every chunk (O(n^2) prompt growth). sourceText in particular must never reach an LLM.
+     */
+    public static List<Map<String, Object>> scenesForPrompt(List<Map<String, Object>> scenes) {
+        List<Map<String, Object>> out = new ArrayList<>(scenes.size());
+        for (Map<String, Object> s : scenes) {
+            Map<String, Object> c = new LinkedHashMap<>();
+            for (String f : PROMPT_SCENE_FIELDS) {
+                Object v = s.get(f);
+                if (v != null) c.put(f, v);
+            }
+            out.add(c);
+        }
+        return out;
+    }
+
     private static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
             SummarizeProgress cancelToken) {
         return extractChunkedInternal(user, chatConfig, text, cancelToken, null);
@@ -1664,20 +1691,37 @@ public class PictureBookUtil {
             }
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_awesome",
                     "Extracting chunk " + (ci + 1) + "/" + chunks.size() + "...");
-            String previousJson = sceneList.isEmpty() ? "[]" : JSONUtil.exportObject(sceneList);
+            // MUST strip the transient raw "sourceText" content block before sending the running
+            // scene list back into the chunk LLM — otherwise every chunk re-sends the full raw text of
+            // every prior scene, ballooning the prompt (100KB+) and growing O(n^2) as scenes
+            // accumulate. sourceText stays on the returned sceneList (for the later per-character
+            // reduce) and is only ever excluded from LLM prompts / persisted notes.
+            String previousJson = sceneList.isEmpty() ? "[]" : JSONUtil.exportObject(scenesForPrompt(sceneList));
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("previousScenes", previousJson);
             vars.put("chunk", chunks.get(ci));
-            String llmResp = callLlm(user, chatConfig, "pictureBook.extract-chunk", vars);
-            // KI-10: count this chunk as processed (the LLM call was actually made) regardless of
-            // whether the response parsed cleanly — progress reflects "chunks attempted", matching
-            // ChatUtil's mapSummarize incrementCurrent() placement (right after the LLM call, not
-            // gated on the result being usable).
-            if (cancelToken != null) cancelToken.incrementCurrent();
-            if (llmResp == null || llmResp.isEmpty()) continue;
-            Map<String, Object> chunkResult = parseLlmJsonObject(llmResp, "extract-scenes-chunk:" + (ci + 1) + "/" + chunks.size(), failedExtractions);
+            // Extract this chunk's scenes, with a bounded retry: qwen3-class models occasionally emit
+            // malformed JSON (a stray quote, a corrupted token mid-generation) — a fresh generation
+            // almost always parses. Intermediate attempts pass a NULL failure-sink so a recovered
+            // chunk leaves no spurious failedExtractions record; only the FINAL failure is recorded.
+            String chunkCtx = "extract-scenes-chunk:" + (ci + 1) + "/" + chunks.size();
+            Map<String, Object> chunkResult = null;
+            String llmResp = null;
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                llmResp = callLlm(user, chatConfig, "pictureBook.extract-chunk", vars);
+                // KI-10: count the chunk as processed once (first attempt) — progress reflects
+                // "chunks attempted", matching ChatUtil.mapSummarize's incrementCurrent() placement.
+                if (attempt == 1 && cancelToken != null) cancelToken.incrementCurrent();
+                if (llmResp == null || llmResp.isEmpty()) continue;
+                Map<String, Object> parsed = parseLlmJsonObject(llmResp, chunkCtx, null);
+                if (parsed != null && !parsed.isEmpty()) { chunkResult = parsed; break; }
+                if (attempt < 2) logger.warn("Chunk " + chunkCtx + " returned unparseable JSON — retrying once");
+            }
             if (chunkResult == null || chunkResult.isEmpty()) {
-                logger.warn("Chunk " + (ci + 1) + "/" + chunks.size() + " returned unparseable LLM response — skipping");
+                // Record the final, unrecoverable failure (re-parse with the real sink so the raw text
+                // is captured for inspection), then skip this chunk.
+                if (llmResp != null && !llmResp.isEmpty()) parseLlmJsonObject(llmResp, chunkCtx, failedExtractions);
+                logger.warn("Chunk " + chunkCtx + " still unparseable after retry — skipping");
                 continue;
             }
 

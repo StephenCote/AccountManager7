@@ -79,7 +79,7 @@ public class TestPictureBookCustom extends BaseTest {
 	// Where the chat config + source/cache notes live (must be a path getCreateUser's home resolves).
 	private static final String CHAT_PATH = "~/Chat";
 
-	private static final String PB_LLM_MODEL = "qwen3:8b";
+	private static final String PB_LLM_MODEL = "gpt-oss:120b";//"qwen3:8b";
 	private static int iter = 1;
 	private static final String PB_CHAT_CONFIG_NAME = "PictureBook " + PB_LLM_MODEL + " " + iter + ".chat";
 
@@ -1327,6 +1327,32 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		}
 		assertTrue("legacy extract() must go through the reduce path (a character has an ATTR_DESCRIPTION)", anyDesc);
 		logger.info("TestExtractLegacyUsesReduce: legacy extract() delegates to the reduce/attribute path");
+	}
+
+	/**
+	 * Guards the prompt-bloat regression: the transient raw {@code sourceText} content block (carried
+	 * on scenes to feed the per-character reduce) must NEVER be serialized into the chunk extractor's
+	 * {@code previousScenes} LLM prompt — otherwise each chunk re-sends the full raw text of every
+	 * prior scene (100KB+, growing O(n^2)). Pure serialization check — no LLM/DB.
+	 */
+	@Test
+	public void TestPreviousScenesPromptExcludesSourceText() {
+		List<Map<String, Object>> scenes = new ArrayList<>();
+		scenes.add(scene(0, "S0", "setting-zero", "action0", "mood0", "Anna", "RAW_BLOCK_ZERO must not reach the LLM"));
+		scenes.add(scene(1, "S1", "setting-one", "action1", "mood1", "Bran", "RAW_BLOCK_ONE must not reach the LLM"));
+		// Verbose output-only fields that also should NOT be re-sent as running context each chunk.
+		scenes.get(0).put("diffusionPrompt", "VERBOSE_DIFFUSION_ZERO must not reach the LLM");
+		scenes.get(1).put("diffusionPrompt", "VERBOSE_DIFFUSION_ONE must not reach the LLM");
+		// The raw list DOES carry sourceText + diffusionPrompt — that's the full scene data.
+		assertTrue("scenes should carry sourceText for the reduce", JSONUtil.exportObject(scenes).contains("sourceText"));
+
+		// The prompt-facing projection keeps only PROMPT_SCENE_FIELDS.
+		String promptJson = JSONUtil.exportObject(PictureBookUtil.scenesForPrompt(scenes));
+		assertFalse("previousScenes must not include the raw sourceText block", promptJson.contains("sourceText") || promptJson.contains("RAW_BLOCK"));
+		assertFalse("previousScenes must not include the verbose diffusionPrompt", promptJson.contains("diffusionPrompt") || promptJson.contains("VERBOSE_DIFFUSION"));
+		assertFalse("previousScenes must not include bookkeeping fields", promptJson.contains("userEdited") || promptJson.contains("\"index\""));
+		assertTrue("scene fields the LLM needs must still be present", promptJson.contains("S0") && promptJson.contains("setting-zero")
+			&& promptJson.contains("Anna") && promptJson.contains("mood0"));
 	}
 
 	private static Map<String, Object> scene(int index, String title, String setting, String action, String mood,
