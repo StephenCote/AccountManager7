@@ -4,3 +4,11 @@
 docker-data/
 e2e/results/
 e2e/screenshots/
+
+# First-run setup token (docker/entrypoint.sh). Admin-equivalent bootstrap
+# credential. Normally lives under the ignored data dir above, but AM7_DATA_DIR
+# can point anywhere -- so match it by name wherever it lands.
+.setup.token
+**/.setup.token
+.setup.done
+**/.setup.done

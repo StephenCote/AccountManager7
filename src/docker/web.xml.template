@@ -257,7 +257,7 @@
 		</init-param>
 		<init-param>
 			<param-name>cors.allowed.headers</param-name>
-			<param-value>Content-Type,X-Requested-With,Accept,Accept-Encoding,Accept-Language,Origin,Access-Control-Request-Method,Access-Control-Request-Headers,Connection,Host,authorization</param-value>
+			<param-value>Content-Type,X-Requested-With,Accept,Accept-Encoding,Accept-Language,Origin,Access-Control-Request-Method,Access-Control-Request-Headers,Connection,Host,authorization,X-AM7-Setup-Token</param-value>
 		</init-param>
 		<init-param>
 			<param-name>cors.exposed.headers</param-name>

@@ -21,6 +21,7 @@ import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 import org.cote.sockets.WebSocketService;
+import org.cote.accountmanager.util.ServerConfigUtil;
 
 import jakarta.annotation.security.DeclareRoles;
 import jakarta.annotation.security.RolesAllowed;
@@ -391,7 +392,7 @@ public class PictureBookService {
         }
 
         String sdApiType = context.getInitParameter("sd.server.apiType");
-        String sdServer  = context.getInitParameter("sd.server");
+        String sdServer  = ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server"));
 
         try {
             BaseRecord genResult = PictureBookUtil.generateSceneImage(user, sceneObjectId, sgp, sdApiType, sdServer);

@@ -156,6 +156,21 @@ accessPoint.update(user, patch);
 present fields are updated; omitted fields unchanged; foreign fields patch by ID reference; returns
 `true` on success.
 
+**…plus every field the model's validation requires — "identity + changed fields" alone is not enough.**
+The writer validates **the patch record itself**, not the merged result. So a model carrying a validated
+non-identity field rejects a patch that omits it, even though the stored record satisfies the rule. Most
+commonly this is `name`: anything inheriting `common.nameId` has a `\S` rule on it, so a patch without
+`name` fails with `Validation of <model>.name (null) failed pattern \S` → `WriterException: Record failed
+validation in IO DATABASE` → `AUDIT INVALID … Failed to modify record`.
+
+This failure is quiet and easy to ship. It surfaces only in the log — the update call returns a value most
+callers discard, so the code path reports success while nothing was written. Two habits avoid it:
+- Include the model's validated fields (start with `name`) in every patch, taking the value from what you
+  already know rather than from a freshly-created record — `AccessPoint.create` returns **identity fields
+  only**, so `created.get("name")` is null.
+- **Never discard the update result.** `getAccessPoint().update(...)` returning false/null is the only
+  signal you get; swallowing it converts a persistent failure into a silent no-op.
+
 ## Working with Olio objects (full records)
 
 Olio code expects fully, deeply populated objects (`state.currentLocation`, `profile.portrait`,

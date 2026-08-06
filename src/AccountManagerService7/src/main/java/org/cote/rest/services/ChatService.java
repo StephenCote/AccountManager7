@@ -53,6 +53,7 @@ import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.service.util.ServiceUtil;
 import org.cote.sockets.WebSocketService;
+import org.cote.accountmanager.util.ServerConfigUtil;
 
 import jakarta.annotation.security.DeclareRoles;
 import jakarta.annotation.security.RolesAllowed;
@@ -1330,7 +1331,7 @@ public class ChatService {
 
 		/// Create SDUtil early — needed for both landscape and scene stages
 		String apiType = context.getInitParameter("sd.server.apiType");
-		String server = context.getInitParameter("sd.server");
+		String server = ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server"));
 		if (apiType == null || server == null) {
 			logger.error("generateScene: sd.server.apiType or sd.server not configured");
 			return Response.status(500).entity("{\"error\":\"SD server not configured\"}").build();

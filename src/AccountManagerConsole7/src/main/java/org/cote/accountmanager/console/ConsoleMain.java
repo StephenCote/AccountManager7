@@ -17,6 +17,7 @@ import org.cote.accountmanager.console.actions.ExportAction;
 import org.cote.accountmanager.console.actions.IAction;
 import org.cote.accountmanager.console.actions.OlioAction;
 import org.cote.accountmanager.console.actions.PatchAction;
+import org.cote.accountmanager.console.actions.ServerConfigAction;
 import org.cote.accountmanager.console.actions.TestAction;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOFactory;
@@ -43,7 +44,8 @@ public class ConsoleMain {
 		new OlioAction(),
 		new PatchAction(),
 		new ExportAction(),
-		new TestAction()
+		new TestAction(),
+		new ServerConfigAction()
 	};
 	
 	public static void main(String[] args){

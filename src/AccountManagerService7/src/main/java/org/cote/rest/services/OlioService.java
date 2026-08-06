@@ -39,6 +39,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
+import org.cote.accountmanager.util.ServerConfigUtil;
 
 import jakarta.annotation.security.DeclareRoles;
 import jakarta.annotation.security.RolesAllowed;
@@ -112,7 +113,7 @@ public class OlioService {
 	public Response listSDModels(@Context HttpServletRequest request, @Context HttpServletResponse response){
 		SDUtil sdu = new SDUtil(
 			SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")),
-			context.getInitParameter("sd.server")
+			ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server"))
 		);
 		java.util.List<String> models = sdu.listModels();
 		return Response.status(200).entity(JSONUtil.exportObject(models)).build();
@@ -125,7 +126,7 @@ public class OlioService {
 	public Response listSDLoras(@Context HttpServletRequest request, @Context HttpServletResponse response){
 		SDUtil sdu = new SDUtil(
 			SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")),
-			context.getInitParameter("sd.server")
+			ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server"))
 		);
 		java.util.List<String> loras = sdu.listLoras();
 		return Response.status(200).entity(JSONUtil.exportObject(loras)).build();
@@ -149,7 +150,7 @@ public class OlioService {
 			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
 		}
 
-		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server")));
 		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 		sdu.setImageAccessUser(user);
 
@@ -242,7 +243,7 @@ public class OlioService {
 			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
 		}
 
-		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server")));
 		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 		sdu.setImageAccessUser(user);
 
@@ -429,7 +430,7 @@ public class OlioService {
 			return Response.status(500).entity("{\"error\":\"Configuration error\"}").build();
 		}
 
-		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server")));
 
 		// Try to find location as geoLocation or location model
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_OBJECT_ID, locationId);
@@ -503,7 +504,7 @@ public class OlioService {
 			return Response.status(500).entity("{\"error\":\"Configuration error\"}").build();
 		}
 
-		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server")));
 
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_ANIMAL, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
@@ -580,7 +581,7 @@ public class OlioService {
 		}
 
 		try {
-			SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), context.getInitParameter("sd.server"));
+			SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server")));
 			sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 
 			List<BaseRecord> images = sdu.createImage(user, groupPath, imp, imageName, 1, imp.get("hires"), imp.get("seed"));

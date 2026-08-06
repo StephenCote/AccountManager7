@@ -21,12 +21,16 @@ loop_target_modules() {
   if [ -n "${MODULES:-}" ];    then printf '%s\n' $MODULES; return; fi
 
   # Git prints paths relative to the repo root, which may be an ancestor of ROOT
-  # (e.g. repo=.../AccountManager7, ROOT=.../AccountManager7/src). Compute that
-  # prefix and strip it so the first path component is the module dir.
-  local top prefix
-  top="$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)"
-  prefix=""
-  if [ -n "$top" ] && [ "$top" != "$ROOT" ]; then prefix="${ROOT#"$top"/}/"; fi
+  # (e.g. repo=.../AccountManager7, ROOT=.../AccountManager7/src). Strip that
+  # prefix so the first path component is the module dir.
+  #
+  # Ask git for the prefix directly rather than deriving it by string-subtracting
+  # `rev-parse --show-toplevel` from `pwd`: on Windows/git-bash those two use
+  # different path formats (`C:/Projects/...` vs `/c/Projects/...`), so the
+  # subtraction silently leaves ROOT intact, nothing matches, zero modules are
+  # selected, and verify.sh reports a VACUOUS "VERIFY_OK" having tested nothing.
+  local prefix
+  prefix="$(git -C "$ROOT" rev-parse --show-prefix 2>/dev/null)"
 
   {
     git -C "$ROOT" diff --name-only HEAD 2>/dev/null

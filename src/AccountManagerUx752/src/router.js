@@ -6,6 +6,8 @@ import { initFeatures, loadFeatureRoutes } from './features.js';
 
 // Import views
 import sigView from './views/sig.js';
+import setupView from './views/setup.js';
+import { resolveUnauthenticatedRoute } from './core/setupSupport.js';
 import { panel } from './components/panel.js';
 import { navigation, navigable } from './components/navigation.js';
 import { newListControl } from './views/list.js';
@@ -91,6 +93,15 @@ const routes = {
     "/sig": {
         view: function () {
             return layout(m(sigView));
+        }
+    },
+    /// First-run setup MUST be a core route: refreshApplication() only mounts the core `routes`
+    /// object when unauthenticated (lazy feature routes load after login), so a feature route
+    /// would be unreachable here. The view itself re-probes /rest/setup/state and redirects to
+    /// /sig when setup is already initialized or unavailable.
+    "/setup": {
+        view: function () {
+            return layout(m(setupView));
         }
     },
     "/main": {
@@ -230,8 +241,19 @@ async function refreshApplication() {
     if (usr == null) {
         page.wss.close();
         stopPolling();
-        rt = "/sig";
-        m.route(document.body, "/sig", routes);
+        /// Unauthenticated: decide between the first-run setup page and sign-in. The
+        /// /rest/setup/state probe is gated to this path and its "setup not needed" answer is
+        /// cached in sessionStorage, so it is not a round trip on every login-page hit.
+        rt = await resolveUnauthenticatedRoute(
+            () => am7client.setupState(),
+            (typeof sessionStorage !== "undefined" ? sessionStorage : null)
+        );
+        m.route(document.body, rt, routes);
+        if (rt === "/setup" && m.route.get() !== "/setup") {
+            /// A stale hash (e.g. #!/sig from a prior visit) wins over the default route in
+            /// Mithril, so force the setup route when the server says it is uninitialized.
+            m.route.set(rt);
+        }
     } else {
         am7client.currentOrganization = usr.organizationPath;
         let app = await am7client.application();

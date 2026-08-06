@@ -1042,7 +1042,7 @@ Fields can specify range validation:
 
 | Rule | Description |
 |------|-------------|
-| `$minLen5` | Minimum length of 5 characters |
+| `$minLen5` | **Not a length check.** Expression `[A-Za-z0-9]{5}`, evaluated with `Matcher.find()` (`ValidationUtil.java:189`) — it means "contains **five consecutive alphanumerics** anywhere". So `jane.doe` (8 chars) FAILS, because its longest alphanumeric run is 4, while `a.bcdef` passes on the run `bcdef`. The name is misleading; verified against `validationRules/minLen5Rule.json`. `Factory.getCreateUser` enforces it independently and returns **null** for a name that fails, so any caller-side validator must be at least this strict or it will produce a null user. |
 | `$notEmpty` | Field must not be empty |
 | `$trim` | Trims whitespace (applied automatically) |
 

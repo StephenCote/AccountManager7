@@ -26,6 +26,26 @@ services:
       EMBEDDING_SERVER: ${EMBEDDING_SERVER:-http://192.168.1.42:8123}
       # Must include whatever origin the browser actually uses to reach nginx.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8899,http://localhost,http://localhost:8080,http://localhost:8888,https://localhost:8899,https://localhost,https://localhost:8443,https://localhost:8888,https://192.168.1.12:8899,https://192.168.1.12:8443}
+
+      # ---- First-run setup (see docker/entrypoint.sh) ----
+      # On a store with no .setup.done sentinel, the entrypoint mints a one-shot
+      # token into $STORE_PATH/.setup.token and prints it, so a new deployment
+      # can reach the setup page at /#!/setup?token=<token>. Both of these are
+      # OPTIONAL.
+      #
+      # The token is NOT printed to the log -- read it with
+      #   docker exec <container> cat /data/am7/store/.setup.token
+      #
+      # AM7_SETUP_TOKEN_FILE: supply your own token via a Docker/K8s secret PATH
+      #   (e.g. /run/secrets/am7_setup_token). Preferred over passing the value
+      #   in an env var, which is readable via `docker inspect`, via
+      #   /proc/<pid>/environ inside the container, and in `docker compose
+      #   config` output -- and is easy to commit by accident in an override
+      #   file. Tokens shorter than 32 chars are refused at boot.
+      # AM7_PUBLIC_URL: cosmetic only; base URL used to render the setup link in
+      #   the log (e.g. https://localhost:8443). Not read by Java.
+      # AM7_SETUP_TOKEN_FILE: ${AM7_SETUP_TOKEN_FILE:-}
+      # AM7_PUBLIC_URL: ${AM7_PUBLIC_URL:-}
     volumes:
       - am7-data:/data/am7
       - am7-certs:/etc/am7/certs

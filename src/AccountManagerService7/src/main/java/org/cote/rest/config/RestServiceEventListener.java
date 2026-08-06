@@ -34,6 +34,7 @@ import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.olio.llm.ChatListener;
 import org.cote.accountmanager.util.LLMConnectionManager;
+import org.cote.accountmanager.util.ServerConfigUtil;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
@@ -144,7 +145,11 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		return props;
 	}
 
-	private static final String threads = "org.cote.service.threads.NotificationThread";
+	/// Maintenance threads, comma separated. Each is constructed (which starts it) and given
+	/// maintenance.interval as its delay, AFTER setVectorUtil/setVoiceUtil have run.
+	/// ServerConfigRefreshThread is what makes a DB edit to embedding/voice.tts/voice.stt reach the
+	/// bound singletons without a restart — see that class for why no request seam can do it.
+	private static final String threads = "org.cote.service.threads.NotificationThread,org.cote.service.threads.ServerConfigRefreshThread";
 
 	private void testVectorStore(IOContext ioContext, OrganizationContext octx) {
 
@@ -175,12 +180,53 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			return;
 		}
 		if (store == null || store.size() == 0) {
+			/// Report the EFFECTIVE embedding server (DB-backed value, else the web.xml init-param),
+			/// not the raw init-param — printing the init-param while a different DB value is
+			/// actually in use sends you debugging the wrong endpoint.
 			logger.warn("Embedding-server startup probe returned no vector store (server may be down at "
-					+ context.getInitParameter("embedding.server") + "). Vector support remains ENABLED and will "
+					+ ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_EMBEDDING, context.getInitParameter("embedding.server"))
+					+ "). Vector support remains ENABLED and will "
 					+ "recover when the embedding server is reachable.");
 		} else {
 			logger.info("Embedding-server startup probe OK; vector DB support enabled");
 		}
+	}
+
+	/// Per-organization post-initialization provisioning for the default organizations:
+	/// vault initialization plus idempotent ISO 42001 role/entitlement provisioning.
+	///
+	/// This is the SINGLE implementation, called from boot (initializeAccountManager) AND from
+	/// setup completion (org.cote.rest.services.Setup) so freshly created organizations are usable
+	/// without a Tomcat restart. There must be no second copy.
+	///
+	/// The ISO42001Provisioning call intentionally stays in Service7: ISO 42001 must never be
+	/// reachable from Objects7, so SetupUtil cannot make it.
+	///
+	/// Returns true when every default organization is initialized, false as soon as one is not
+	/// (preserving the original break-on-first-unconfigured behavior on a first boot).
+	public static boolean provisionDefaultOrganizations() {
+		IOContext ioContext = IOSystem.getActiveContext();
+		if (ioContext == null) {
+			return false;
+		}
+		for (String org : OrganizationContext.DEFAULT_ORGANIZATIONS) {
+			OrganizationContext octx = ioContext.getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
+			if (octx == null || !octx.isInitialized()) {
+				logger.error("**** Organizations are not configured.  Run /rest/setup");
+				return false;
+			}
+			/// Initialize vault
+			octx.getVault();
+			logger.info("Working with existing organization " + org);
+			/// Phase 7: idempotently provision the 6 ISO 42001 roles + their PBAC entitlement wiring
+			/// for this org (the production seam for what ISO42001BaseTest does in test setup).
+			try {
+				ISO42001Provisioning.ensureRoles(octx.getAdminUser(), octx.getOrganizationId());
+			} catch (Exception e) {
+				logger.error("Failed to provision ISO 42001 roles for " + org, e);
+			}
+		}
+		return true;
 	}
 
 	private void initializeAccountManager() {
@@ -219,9 +265,12 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
 			String authToken = context.getInitParameter("embedding.authorizationToken");
 			if (authToken != null && authToken.length() == 0) authToken = null;
+			/// Deployment server URLs are DB-backed (ServerConfigUtil) with the web.xml init-param
+			/// as the FALLBACK: docker/entrypoint.sh regenerates WEB-INF/web.xml from a template on
+			/// EVERY boot, so runtime configuration cannot live there.
 			VectorUtil vectorUtil = new VectorUtil(
 					LLMServiceEnumType.valueOf(context.getInitParameter("embedding.type").toUpperCase()),
-					context.getInitParameter("embedding.server"), authToken);
+					ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_EMBEDDING, context.getInitParameter("embedding.server")), authToken);
 			/// Configurable embedding dimensions, synced to the common.vectorExt.embedding column
 			/// (setEmbeddingDimensions enforces the match and throws on mismatch).
 			String embeddingDimensions = context.getInitParameter("embedding.dimensions");
@@ -234,33 +283,21 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			if (authToken != null && authToken.length() == 0) authToken = null;
 			ioContext.setVoiceUtil(new VoiceUtil(
 					LLMServiceEnumType.valueOf(context.getInitParameter("voice.type").toUpperCase()),
-					context.getInitParameter("voice.tts.server"), context.getInitParameter("voice.stt.server"), authToken));
+					ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_VOICE_TTS, context.getInitParameter("voice.tts.server")),
+					ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_VOICE_STT, context.getInitParameter("voice.stt.server")), authToken));
 			
 			/// Vector support is config-governed (decoupled from embedding-server health). Default ON.
 			vectorEnabled = parseBoolean(context.getInitParameter("vector.enabled"), true);
 			probeEmbedding = parseBoolean(context.getInitParameter("vector.probe.embedding"), true);
 
-			boolean testVector = false;
-			for (String org : OrganizationContext.DEFAULT_ORGANIZATIONS) {
-				OrganizationContext octx = ioContext.getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
-				if (octx ==null || !octx.isInitialized()) {
-					logger.error("**** Organizations are not configured.  Run /rest/setup");
-					break;
-				} else {
-					/// Initialize vault
-					octx.getVault();
-					logger.info("Working with existing organization " + org);
-					if (!testVector) {
-						testVectorStore(ioContext, octx);
-						testVector = true;
-					}
-					/// Phase 7: idempotently provision the 6 ISO 42001 roles + their PBAC entitlement wiring
-					/// for this org (the production seam for what ISO42001BaseTest does in test setup).
-					try {
-						ISO42001Provisioning.ensureRoles(octx.getAdminUser(), octx.getOrganizationId());
-					} catch (Exception e) {
-						logger.error("Failed to provision ISO 42001 roles for " + org, e);
-					}
+			/// ONE implementation of per-organization post-initialization provisioning, shared by
+			/// boot and by setup completion (org.cote.rest.services.Setup). Do not copy it.
+			if (provisionDefaultOrganizations()) {
+				OrganizationContext probeOctx = ioContext.getOrganizationContext(
+						OrganizationContext.DEFAULT_ORGANIZATIONS[0],
+						OrganizationEnumType.valueOf(OrganizationContext.DEFAULT_ORGANIZATIONS[0].substring(1).toUpperCase()));
+				if (probeOctx != null && probeOctx.isInitialized()) {
+					testVectorStore(ioContext, probeOctx);
 				}
 			}
 

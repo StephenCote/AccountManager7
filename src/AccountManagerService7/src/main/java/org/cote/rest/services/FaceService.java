@@ -9,6 +9,7 @@ import org.cote.accountmanager.analysis.FaceResponse;
 import org.cote.accountmanager.io.SystemTaskAgent;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ServerConfigUtil;
 
 import jakarta.annotation.security.DeclareRoles;
 import jakarta.annotation.security.RolesAllowed;
@@ -67,7 +68,7 @@ public class FaceService {
 			}
 		}
 		else {
-			fr = FaceAnalysis.postFaceRequest(req, context.getInitParameter("face.server"), "analyze");
+			fr = FaceAnalysis.postFaceRequest(req, ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_FACE, context.getInitParameter("face.server")), "analyze");
 		}
 		return Response.status((fr != null ? 200 : 404)).entity(fr != null ? JSONUtil.exportObject(fr) : null).build();
 	}

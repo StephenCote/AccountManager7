@@ -653,6 +653,52 @@ import { cacheDb } from './cacheDb.js';
 		return login(cred, fH);
 	}
 
+	var sSetup = sBase + "/setup";
+
+	/// First-run setup state. Returns {initialized:boolean} always, plus {servers:{...}} ONLY
+	/// when initialized === false AND a valid X-AM7-Setup-Token header was supplied — the boot
+	/// server URLs are not handed to an anonymous caller. The token argument is optional: with
+	/// no token (or a wrong one) the call still succeeds and simply omits `servers`, so a
+	/// missing `servers` must NOT be reported as "wrong token" (the two are indistinguishable).
+	/// Returns null/undefined when the endpoint is absent or unreachable (older server, proxy
+	/// hiccup), which callers must treat as "unknown", not as "setup needed".
+	async function setupState(token){
+		if(token){
+			return m.request({
+				method: 'GET',
+				url: sSetup + "/state",
+				withCredentials: true,
+				headers: { "X-AM7-Setup-Token": token }
+			}).catch((e) => {
+				console.error("Failed to get " + sSetup + "/state", e);
+				return null;
+			});
+		}
+		return get(sSetup + "/state");
+	}
+
+	/// Run first-run setup. The token travels in the X-AM7-Setup-Token header.
+	/// A 404 is deliberately ambiguous on the server (already latched / bad token / locked out)
+	/// so it is surfaced as "setup unavailable" and never as "wrong password".
+	async function runSetup(payload, token){
+		return m.request({
+			method: 'POST',
+			url: sSetup + "/",
+			withCredentials: true,
+			headers: { "X-AM7-Setup-Token": (token || "") },
+			body: payload
+		}).then((x) => {
+			return { ok: true, result: x };
+		}).catch((e) => {
+			let code = (e && e.code ? e.code : 0);
+			if(code === 404){
+				return { ok: false, unavailable: true, code: 404 };
+			}
+			console.error("Failed to post " + sSetup + "/", e);
+			return { ok: false, unavailable: false, code, message: (e && e.message ? e.message : null) };
+		});
+	}
+
 	var sConfig = sBase + "/config";
 
 	async function getFeatureConfig() {
@@ -1392,6 +1438,8 @@ import { cacheDb } from './cacheDb.js';
 		getFeatureConfig,
 		updateFeatureConfig,
 		getAvailableFeatures,
+		setupState,
+		runSetup,
 		base:function(){
 			return sBase;
 		},

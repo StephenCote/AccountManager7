@@ -40,9 +40,31 @@ docker compose -p am7test -f docker-compose.test.yml up --build
 
 # one-time DB setup (creates the admin credential for /System, /Development, /Public).
 # Run from WSL/Linux or a browser — Windows curl returns HTTP 000 against nginx's self-signed cert.
+#
+# EASIEST PATH: just open https://localhost:9443 in a browser. On an unconfigured deployment the
+# UI routes itself to the setup page, where you set the admin password, the six media/AI server
+# URLs, and an initial user in one step.
+#
+# BREAKING CHANGE (setup hardening): POST /rest/setup/ now REQUIRES the one-shot setup token.
+# Without a valid X-AM7-Setup-Token header it returns 404 — the same 404 it returns when setup is
+# already complete or the token is wrong, deliberately, so the endpoint is not an oracle. The token
+# is NOT printed to the log; read it out of the container:
+SETUP_TOKEN=$(docker exec am7test-am7-1 cat /data/am7/store/.setup.token)
+
 curl -k -X POST https://localhost:9443/rest/setup/ \
   -H 'Content-Type: application/json' \
-  -d '{"schema":"auth.credential","credential":"'"$(printf 'password' | base64)"'","type":"hashed_password"}'
+  -H "X-AM7-Setup-Token: $SETUP_TOKEN" \
+  -d '{"credential":"'"$(printf 'password' | base64)"'"}'
+
+# The legacy record-shaped body ({"schema":"auth.credential",...,"type":"hashed_password"}) still
+# works — only `credential` is read from it. The richer body additionally accepts:
+#   "initialUser": {"name":"...","credential":"<base64>","organization":"/Public"|"/Development"}
+#   "servers":     {"sd":"...","face":"...","tag":"...","voice.tts":"...","voice.stt":"...","embedding":"..."}
+# Passwords must be >= 8 characters. "/System" is rejected for the initial user.
+#
+# Once setup completes, the token file is deleted and .setup.done is written, so the endpoint stays
+# 404 and no token is advertised on later boots. Server URLs are then edited at
+# #!/list/system.connection, or via AccountManagerConsole7 `-serverConfig`.
 
 # app (UI + REST behind nginx): https://localhost:9443
 # inspect the dedicated DB if desired: psql -h localhost -p 15433 -U am7user -d am72db  (password: password)
@@ -72,9 +94,23 @@ DB_HOST=host.docker.internal DB_PORT=15433 docker compose up --build
 ```
 
 > **Verification status:** the canonical `docker-compose.yml` path was verified end-to-end 2026-07-15
-> (log below). `docker-compose.test.yml` is **compose-validated** (`docker compose config` clean) but
-> has **not** yet been run through a full `up --build` boot — treat these instructions as unverified
-> until someone brings the test stack up and confirms `POST /rest/setup/` → `true` on `:9443`.
+> (log below).
+>
+> `docker-compose.test.yml` is now **verified booted end-to-end (2026-08-05)** — the earlier
+> "compose-validated but never run" caveat is resolved. On `:9443`, from a genuine first-run state
+> (3 orgs, 0 user credentials, no marker, no connections), a token-authenticated
+> `POST /rest/setup/` returned `{"ok":true}` and was confirmed to: create a real `HASHED_PASSWORD`
+> admin credential in all three default orgs **and log in successfully with it** (wrong-password
+> negative control failed as expected); create an initial user in `/Public` that logs in, holds only
+> `AccountUsers`+`Requesters`, and **cannot** authenticate to `/System`; write all six
+> `system.connection` records; write `.setupState`, delete `.setup.token`, and create `.setup.done`.
+> Afterwards the latch held closed (`/state` → `initialized:true` with no `servers` key even WITH a
+> token; `POST` → byte-identical 404s), and **all of it survived a container restart with zero
+> "FIRST-RUN" log lines**.
+>
+> The sharpest result: after that restart the regenerated `WEB-INF/web.xml` still contained
+> `http://192.168.1.42:8123` while the running WAR resolved the DB-configured value — confirming the
+> core design premise that DB-backed configuration beats the `envsubst` template on every boot.
 
 ## Goal
 

@@ -33,6 +33,7 @@ import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ThumbnailUtil;
 import org.cote.service.util.ServiceUtil;
+import org.cote.accountmanager.util.ServerConfigUtil;
 
 import jakarta.annotation.security.DeclareRoles;
 import jakarta.annotation.security.RolesAllowed;
@@ -95,7 +96,7 @@ public class TagService {
 
 				String base64 = BinaryUtil.toBase64Str(ByteModelUtil.getValue(thumb));
 				
-				ImageTagUtil itu = new ImageTagUtil(context.getInitParameter("tag.server"));
+				ImageTagUtil itu = new ImageTagUtil(ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_TAG, context.getInitParameter("tag.server")));
 				imageTagResponse = itu.tagImageBase64(base64);
 				if (imageTagResponse != null) {
 					// logger.info(JSONUtil.exportObject(imageTagResponse), referenceId, request, user, imageTagResponse, data, thumb, tid, base64, itu);

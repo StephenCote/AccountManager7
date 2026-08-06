@@ -49,7 +49,12 @@ public class EncryptFieldProvider implements IProvider {
 
 		OrganizationContext org = IOSystem.getActiveContext().findOrganizationContext(model);
 		if(org == null) {
-			logger.error(model.toFullString());
+			/// Log schema + identity ONLY. This used to log model.toFullString(), which on a CREATE
+			/// writes the not-yet-encrypted field value to the log in PLAINTEXT — i.e. a first-run
+			/// vault failure would dump an apiKey/secret into the application log.
+			logger.error("Failed to retrieve organization context for " + model.getSchema()
+				+ " (objectId=" + (model.hasField(FieldNames.FIELD_OBJECT_ID) ? model.get(FieldNames.FIELD_OBJECT_ID) : null)
+				+ ", field=" + lfield.getName() + ", operation=" + operation + ")");
 			throw new ValueException("Failed to retrieve organization context for model");
 		}
 		VaultBean vault = org.getVault();

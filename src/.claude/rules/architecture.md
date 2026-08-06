@@ -66,7 +66,46 @@ CLAUDE.md; this file is the source of truth for design review.
   manual `valueOf`, use `getEnum()`.
 - Query field values are typed: `organizationId`/`groupId` are numbers, not strings. By-id ops use
   `/rest/model/{type}/{objectId}`; updates are `PATCH /rest/model` with `schema` + identity + changed fields.
-- New `@RolesAllowed` on all new endpoints (except pre-auth WebAuthn); each new service needs unit tests.
+- New `@RolesAllowed` on all new endpoints, except the two pre-auth surfaces: WebAuthn, and the first-run
+  setup endpoints (`org.cote.rest.services.Setup`), which exist to create the very first credential and so
+  have nothing to authorize against. Those are gated instead by a DB-resident latch plus a one-shot
+  filesystem token — see "Config: DB-backed vs boot-pinned" below. Each new service needs unit tests.
+
+## Per-org config must never be written to process-global state
+
+`IOContext` holds exactly one `vectorUtil` and one `voiceUtil` for the whole process. Resolving a value
+per-organization and then pushing it into one of those singletons is a cross-tenant defect, not a caching
+strategy: org A's request mutates state org B is concurrently reading, so a resolve→use sequence can hit
+another tenant's server. For embeddings it is worse than a wrong response — `AccessPoint`, `VectorListFactory`,
+`MemoryUtil` and `ChatUtil` reach `getVectorUtil()` on threads with **no user and no org context**, so they
+silently use whatever some unrelated request last pushed, and wrong-provenance vectors land in the shared
+fixed-width `common.vectorExt.embedding` column where nothing can tell them apart. A TTL does not bound any
+of this; it only bounds staleness.
+
+If a value is per-org, it must travel with the call (a parameter, or a per-org instance) — see
+`FaceService.postFaceRequest(req, server, ...)` and `Chat.java:377-384`. If a value is genuinely global,
+say so explicitly and keep exactly one copy. Mutated fields shared across threads need `volatile`, and a
+url+token pair must be swapped as one immutable holder or a reader can observe a torn pair (new URL with
+the old token, i.e. a credential sent to the previously-configured host).
+
+## Config: DB-backed vs boot-pinned
+
+`docker/entrypoint.sh` regenerates `WEB-INF/web.xml` from a template via `envsubst` on **every** boot, so
+anything written into `web.xml` at runtime is silently discarded on restart. There are two fallback sources —
+Service7's `ServletContext` init-params and Console7's `resource.properties` — so Objects7 utilities take the
+default as a plain `String` parameter and know about neither.
+
+- **DB-backed (runtime-configurable):** the six media/AI server URLs, held as `/System`-global
+  `system.connection` records and resolved through `ServerConfigUtil`. Deployment-global, not per-org.
+- **Boot-pinned (never DB-backed):** anything consumed before `IOSystem.open()` — `store.path`,
+  `IOFactory.DEFAULT_FILE_BASE`, `database.*`, CORS origins — plus values that must stay consistent with
+  persisted data, notably `embedding.type`/`embedding.dimensions` (the vector column is one fixed width and
+  stored vectors carry no model provenance, so repointing the embedding server invalidates existing vectors).
+
+A runtime-configurable value is only configurable if something actually re-reads it: per-request reads pick
+up changes for free, but a value cached in a boot-time singleton needs an explicit refresh, and a second
+writer in another JVM (Console7) cannot invalidate an in-process cache. State the real propagation bound;
+never let a message claim an effect the code does not produce.
 
 ## Verification standard (what "done" means)
 
