@@ -43,7 +43,7 @@ public class SWUtil {
 		Boolean hires = cfg.get("hires");
 
 		s2i.setSteps(cfgSteps != null ? cfgSteps : 20);
-		s2i.setModel(cfgModel != null ? cfgModel : "sdXL_v10VAEFix.safetensors");
+		s2i.setModel(org.cote.accountmanager.olio.sd.SDUtil.resolveModel(cfgModel));
 		s2i.setScheduler(cfgScheduler != null ? cfgScheduler : "Karras");
 		s2i.setSampler(cfgSampler != null ? cfgSampler : "dpmpp_2m");
 		s2i.setCfgScale(cfgCfg != null ? cfgCfg : 7);
@@ -92,7 +92,7 @@ public class SWUtil {
 		Boolean hires = cfg.get("hires");
 
 		s2i.setSteps(cfgSteps != null ? cfgSteps : 20);
-		s2i.setModel(cfgModel != null ? cfgModel : "sdXL_v10VAEFix.safetensors");
+		s2i.setModel(org.cote.accountmanager.olio.sd.SDUtil.resolveModel(cfgModel));
 		s2i.setScheduler(cfgScheduler != null ? cfgScheduler : "Karras");
 		s2i.setSampler(cfgSampler != null ? cfgSampler : "dpmpp_2m");
 		s2i.setCfgScale(cfgCfg != null ? cfgCfg : 7);
@@ -118,6 +118,166 @@ public class SWUtil {
 		}
 
 		return s2i;
+	}
+
+	/// Fallback FLUX.2 checkpoint, read from the olio.sd.config schema's `flux2Model` default rather
+	/// than duplicated as a literal here — checkpoint availability is per-deployment (verified
+	/// 2026-08-07: the local Swarm has flux2Klein_9b and flux2_dev but NOT flux1Kontext_flux1KontextDev
+	/// or sdXL_v10VAEFix, while another server has the opposite pair). Change the model default in
+	/// configModel.json, not in Java.
+	public static String defaultFlux2Model() {
+		String m = org.cote.accountmanager.olio.sd.SDUtil.schemaDefault("flux2Model");
+		return (m != null) ? m : org.cote.accountmanager.olio.sd.SDUtil.getDefaultModel();
+	}
+
+	/// Fallback FLUX Kontext checkpoint, likewise from the schema's `kontextModel` default.
+	public static String defaultKontextModel() {
+		String m = org.cote.accountmanager.olio.sd.SDUtil.schemaDefault("kontextModel");
+		return (m != null) ? m : org.cote.accountmanager.olio.sd.SDUtil.getDefaultModel();
+	}
+
+	/// FLUX.2 generation defaults, from aiDocs/imageComposite.md's "Quality controls".
+	/// CFG stays low for an edit/reference model (doc: 1.0-3.5, recommends 2.5); steps 20-28.
+	public static final double FLUX2_CFG_SCALE = 2.5;
+	public static final int FLUX2_STEPS = 24;
+	/// Landscape output. The doc prefers landscape/3:2 for two-person scenes; this also matches the
+	/// classic pipeline's 1024x768 so switching composite modes doesn't change the book's aspect.
+	public static final int FLUX2_WIDTH = 1024;
+	public static final int FLUX2_HEIGHT = 768;
+	/// Short, targeted negative prompt from the doc — not the SDXL NEG_PROMPT, which is tuned for a
+	/// different model family and, at the low CFG an edit model needs, barely applies anyway.
+	public static final String FLUX2_NEGATIVE_PROMPT =
+		"blurry faces, deformed, extra people, mismatched lighting, low quality";
+
+	/// Build a FLUX.2 multi-reference scene request.
+	///
+	/// Differs from the Kontext builder in the three ways that matter:
+	///  1. MULTIPLE independent reference images (people, then setting) instead of one pre-stitched
+	///     panel strip. FLUX.2 is multi-reference capable; this is the doc's escalation path when
+	///     identity drifts, and it avoids the stitched sheet being read as a picture to draw.
+	///  2. Generation params suited to an edit model: CFG 2.5 (not the SDXL cfg the Kontext call was
+	///     being handed), 24 steps, landscape output, no refiner block.
+	///  3. The doc's explicit multi-reference prompt wording, which names the sources positionally,
+	///     demands identity preservation, and forbids extra people.
+	///
+	/// The prompt also carries an explicit instruction NOT to depict the references as physical
+	/// objects. That is not defensive boilerplate: it is the exact observed failure — with the
+	/// stitched Kontext reference the model produced a scene containing a printed board of the
+	/// character sheet leaning against a wall (media/flux/bad.composite.png).
+	///
+	/// @param leftDesc    appearance description of the first person; may be null/empty
+	/// @param rightDesc   appearance description of the second person; may be null/empty
+	/// @param action      what the characters are doing
+	/// @param setting     environment description
+	/// @param mood        atmosphere/lighting; may be null/empty
+	/// @param sdConfig    config for model/steps/cfg/size overrides and the style suffix; may be null
+	/// @param refCount    how many reference images will be attached; controls the positional wording
+	public static SWTxt2Img newFlux2SceneTxt2Img(String leftDesc, String rightDesc, String action,
+			String setting, String mood, BaseRecord sdConfig, int refCount) {
+		SWTxt2Img s2i = new SWTxt2Img();
+
+		String model = null;
+		if (sdConfig != null) {
+			try { model = sdConfig.get("flux2Model"); } catch (Exception e) { /* field may not exist */ }
+		}
+		s2i.setModel((model != null && !model.isEmpty()) ? model : defaultFlux2Model());
+
+		/// Read ONLY flux2-prefixed fields. Deliberately NOT the shared steps/width/height/cfg: those
+		/// carry SDXL-tuned values for the portrait and landscape stages, and the model schema gives
+		/// them non-null defaults (steps 20, width 1024, height 1024), so "fall back when unset" would
+		/// never fire — a real config would silently force the composite to 1024x1024 square at the
+		/// SDXL step count. That is precisely the defect this path exists to fix (the Kontext builder
+		/// was handed the SDXL cfg of 5 the same way). One family of parameters per model family.
+		Integer cfgSteps = null;
+		Integer cfgWidth = null;
+		Integer cfgHeight = null;
+		Double cfgCfgScale = null;
+		if (sdConfig != null) {
+			try { cfgSteps = sdConfig.get("flux2Steps"); } catch (Exception e) { /* field may not exist */ }
+			try { cfgWidth = sdConfig.get("flux2Width"); } catch (Exception e) { /* field may not exist */ }
+			try { cfgHeight = sdConfig.get("flux2Height"); } catch (Exception e) { /* field may not exist */ }
+			try { cfgCfgScale = sdConfig.get("flux2Cfg"); } catch (Exception e) { /* field may not exist */ }
+		}
+		s2i.setSteps(cfgSteps != null && cfgSteps > 0 ? cfgSteps : FLUX2_STEPS);
+		s2i.setCfgScale(cfgCfgScale != null && cfgCfgScale > 0 ? cfgCfgScale : FLUX2_CFG_SCALE);
+		s2i.setWidth(cfgWidth != null && cfgWidth > 0 ? cfgWidth : FLUX2_WIDTH);
+		s2i.setHeight(cfgHeight != null && cfgHeight > 0 ? cfgHeight : FLUX2_HEIGHT);
+		s2i.setSampler("euler");
+		s2i.setScheduler("simple");
+		s2i.setSeed(Math.abs(rand.nextInt()));
+		s2i.setImages(1);
+		/// No refiner: the SDXL refiner block the Kontext requests carried (refinercfgscale 7,
+		/// PostApply, pixel-lanczos) is meaningless to a FLUX checkpoint. 0.0 keeps it inert.
+		s2i.setRefinerControlPercentage(0.0);
+		s2i.setNegativePrompt(FLUX2_NEGATIVE_PROMPT);
+
+		s2i.setPrompt(buildFlux2ScenePrompt(leftDesc, rightDesc, action, setting, mood, sdConfig, refCount));
+		return s2i;
+	}
+
+	/// Compose the FLUX.2 multi-reference prompt. Split out so it can be asserted on directly without
+	/// building a whole request or touching a live server.
+	public static String buildFlux2ScenePrompt(String leftDesc, String rightDesc, String action,
+			String setting, String mood, BaseRecord sdConfig, int refCount) {
+		String cleanLeft = stripSDXLWeighting(leftDesc);
+		String cleanRight = stripSDXLWeighting(rightDesc);
+		boolean twoPeople = (cleanRight != null && !cleanRight.isEmpty());
+		boolean hasSettingRef = refCount > (twoPeople ? 2 : 1);
+
+		StringBuilder p = new StringBuilder();
+		/// Name the sources positionally, as the doc's example prompt does.
+		if (twoPeople) {
+			p.append("Combine the exact person and face from the first reference image with the exact "
+				+ "person and face from the second reference image. Place both people together in ");
+		}
+		else {
+			p.append("Take the exact person and face from the first reference image and place them in ");
+		}
+		if (hasSettingRef) {
+			p.append("the environment shown in the ").append(twoPeople ? "third" : "second")
+				.append(" reference image");
+			if (setting != null && !setting.isEmpty()) {
+				p.append(" (").append(setting).append(")");
+			}
+			p.append(". ");
+		}
+		else if (setting != null && !setting.isEmpty()) {
+			p.append(setting).append(". ");
+		}
+		else {
+			p.append("a coherent shared setting. ");
+		}
+
+		if (cleanLeft != null && !cleanLeft.isEmpty()) {
+			p.append("The first person is ").append(cleanLeft).append(". ");
+		}
+		if (twoPeople) {
+			p.append("The second person is ").append(cleanRight).append(". ");
+		}
+		if (action != null && !action.isEmpty()) {
+			p.append("They are ").append(action).append(". ");
+		}
+		if (mood != null && !mood.isEmpty()) {
+			p.append("The mood is ").append(mood).append(". ");
+		}
+
+		/// Identity + coherence demands, per the doc.
+		p.append("Preserve facial identity, hair, and clothing precisely. ");
+		p.append("Matching lighting, scale, and perspective across the whole image. ");
+		p.append("No extra people. ");
+		/// The observed failure mode, addressed explicitly: the reference must inform the output, not
+		/// appear in it. See media/flux/bad.composite.png.
+		// Plain ASCII hyphen deliberately: this string is literal SD input, and CLIP tokenizes a
+		// U+2014 em dash as its own junk token (same class of problem SDUtil.appendLoras normalizes).
+		p.append("Do not draw the reference images themselves - no photograph, poster, screen, mirror, "
+			+ "billboard, framed picture or character sheet anywhere in the scene. ");
+		p.append("A single continuous photographic scene, no panels, no split screen, no collage. ");
+
+		if (sdConfig != null) {
+			String cfgStyle = stripSDXLWeighting(org.cote.accountmanager.olio.sd.SDUtil.getSDConfigPrompt(sdConfig));
+			if (cfgStyle != null && !cfgStyle.isEmpty()) p.append(cfgStyle);
+		}
+		return p.toString().trim();
 	}
 
 	/// Build a FLUX Kontext scene request using a single stitched composite as the prompt image.
@@ -253,7 +413,7 @@ public class SWUtil {
 			try { kontextModel = sdConfig.get("kontextModel"); } catch (Exception e) { /* ignore */ }
 		}
 		if (kontextModel == null || kontextModel.isEmpty()) {
-			kontextModel = "flux1Kontext_flux1KontextDev";
+			kontextModel = defaultKontextModel();
 		}
 		s2i.setModel(kontextModel);
 

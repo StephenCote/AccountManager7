@@ -40,12 +40,15 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.ClientUtil;
+import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
@@ -279,11 +282,29 @@ public class SDUtil {
 	}
 
 	/**
-	 * Append LORA entries from sdConfig to a prompt string.
+	 * Append LORA entries from sdConfig to a prompt string, and normalize the prompt's typography
+	 * to plain ASCII on the way through.
 	 * Entries are formatted as &lt;lora:name:weight&gt; and comma-separated at the end.
+	 * <p>
+	 * The normalization rides here because this is the seam that every LLM-composed prompt in this
+	 * class already passes through on its way to {@code setPrompt(...)}, so it is the last place a
+	 * prompt can be corrected before it becomes literal SD input. (One {@code setPrompt} call does
+	 * NOT route through here: {@code generateSDFigurines}' {@code NarrativeUtil.getSDFigurinePrompt}
+	 * path, which is template-built rather than LLM-composed and so does not exhibit this. It is
+	 * therefore still unnormalized — worth revisiting if figurine prompts ever become LLM-composed.)
+	 * LLM-composed prompts routinely arrive carrying Unicode typography the
+	 * model produced itself — most often U+2011 non-breaking hyphens in compounds
+	 * ({@code gull-wing}, {@code neon-lit}, {@code high-altitude}, confirmed live in the picture-book
+	 * scene prompts) and U+2014 em dashes. These are not mojibake; the text is well-formed UTF-8 end
+	 * to end. But CLIP's byte-level BPE tokenizes {@code gull<U+2011>wing} differently from
+	 * {@code gull-wing}, spending extra tokens on a compound the model then matches less cleanly.
+	 * Normalizing the LLM's *inputs* cannot fix this — the characters come out of the LLM's own
+	 * output — so it has to happen on the finished prompt.
 	 */
 	public static String appendLoras(String prompt, BaseRecord sdConfig) {
-		if (sdConfig == null || prompt == null) return prompt;
+		if (prompt == null) return prompt;
+		prompt = DocumentUtil.replaceSmartQuotes(prompt);
+		if (sdConfig == null) return prompt;
 		try {
 			List<String> loras = sdConfig.get("loras");
 			if (loras != null && !loras.isEmpty()) {
@@ -1018,7 +1039,7 @@ public class SDUtil {
 		Integer cfgCfg = config.get("cfg");
 
 		if(cfgSteps == null) cfgSteps = 25;
-		if(cfgModel == null) cfgModel = "sdXL_v10VAEFix.safetensors";
+		cfgModel = resolveModel(cfgModel);
 		if(cfgScheduler == null) cfgScheduler = "normal";
 		if(cfgSampler == null) cfgSampler = "dpmpp_2m";
 		if(cfgCfg == null) cfgCfg = 7;
@@ -1144,7 +1165,7 @@ public class SDUtil {
 		Boolean hires = config.get("hires");
 
 		s2i.setSteps(cfgSteps != null ? cfgSteps : 25);
-		s2i.setModel(cfgModel != null ? cfgModel : "sdXL_v10VAEFix.safetensors");
+		s2i.setModel(resolveModel(cfgModel));
 		s2i.setScheduler(cfgScheduler != null ? cfgScheduler : "Karras");
 		s2i.setSampler(cfgSampler != null ? cfgSampler : "dpmpp_2m");
 		s2i.setCfgScale(cfgCfg != null ? cfgCfg : 7);
@@ -1356,7 +1377,7 @@ public class SDUtil {
 		Integer cfgCfg = config.get("cfg");
 
 		if(cfgSteps == null) cfgSteps = 25;
-		if(cfgModel == null) cfgModel = "sdXL_v10VAEFix.safetensors";
+		cfgModel = resolveModel(cfgModel);
 		if(cfgScheduler == null) cfgScheduler = "normal";
 		if(cfgSampler == null) cfgSampler = "dpmpp_2m";
 		if(cfgCfg == null) cfgCfg = 7;
@@ -1465,7 +1486,202 @@ public class SDUtil {
 		return datas;
 	}
 
-	/// Generate mannequin images for an apparel record, one image per cumulative wear level
+	/// Deployment-configurable fallback checkpoint, used wherever a request would otherwise have to
+	/// invent a model name.
+	///
+	/// Java used to carry the literal "sdXL_v10VAEFix.safetensors" in seven places. That name does not
+	/// exist on every SwarmUI install — verified 2026-08-07, the local server has neither it nor
+	/// flux1Kontext_flux1KontextDev, while a second server has both. A wrong checkpoint name does not
+	/// fail loudly; Swarm returns an empty image list, which callers log and skip (see KI-39: live SD
+	/// tests "passing" green against a server missing the schema-default model).
+	///
+	/// Resolution order: the value set here at boot (Service7 init-param / Console7 / test
+	/// properties), then the olio.sd.config schema's own default for the `model` field, then null.
+	/// Null is deliberate — better an explicit "no model configured" error than a guess that silently
+	/// produces nothing.
+	///
+	/// Deployment-global (it describes the SD server this process talks to), boot-pinned, volatile
+	/// because the setter runs on the startup thread while readers are request threads.
+	public static final String DEFAULT_MODEL_CONFIG_KEY = "sd.default.model";
+	private static volatile String defaultModel = null;
+
+	public static void setDefaultModel(String model) {
+		defaultModel = (model != null && !model.isBlank()) ? model.trim() : null;
+		logger.info("Default SD checkpoint (" + DEFAULT_MODEL_CONFIG_KEY + ") = "
+			+ (defaultModel != null ? defaultModel : "(unset - will use the olio.sd.config schema default)"));
+	}
+
+	/// Resolve the fallback checkpoint. Never invents a literal.
+	public static String getDefaultModel() {
+		String m = defaultModel;
+		if (m != null) return m;
+		return schemaDefault(OlioFieldNames.FIELD_SD_MODEL);
+	}
+
+	/// Read a field's declared default straight off the olio.sd.config schema, so "use the model
+	/// default" means the actual model definition rather than a copy of it in Java.
+	public static String schemaDefault(String fieldName) {
+		try {
+			ModelSchema ms = RecordFactory.getSchema(OlioModelNames.MODEL_SD_CONFIG);
+			if (ms != null) {
+				FieldSchema fs = ms.getFieldSchema(fieldName);
+				if (fs != null && fs.getDefaultValue() != null) {
+					String v = fs.getDefaultValue().toString();
+					if (!v.isBlank()) return v;
+				}
+			}
+		} catch (Exception e) {
+			logger.warn("Could not read the olio.sd.config schema default for '" + fieldName + "': " + e.getMessage());
+		}
+		return null;
+	}
+
+	/// Apply the resolved fallback when a config supplied no model, logging when nothing is available
+	/// rather than shipping a guessed name the server will reject with an empty result.
+	public static String resolveModel(String cfgModel) {
+		if (cfgModel != null && !cfgModel.isBlank()) return cfgModel;
+		String m = getDefaultModel();
+		if (m == null) {
+			logger.error("No SD checkpoint configured: the request carries no model, "
+				+ DEFAULT_MODEL_CONFIG_KEY + " is unset, and olio.sd.config declares no default. "
+				+ "Swarm will return no images. Set the model on the config or configure a default.");
+		}
+		return m;
+	}
+
+	/// Classpath home of the mannequin base images. These are byte-identical copies of the two files
+	/// Ux752 serves from its own public/media (see getMannequinBaseUrl in Ux752's components/olio.js,
+	/// which picks the same x512 pair for the 512x768 size these images are generated at). Ux752
+	/// needs its copies to serve them over HTTP and cannot read Objects7's jar, so the duplication is
+	/// deliberate; TestMannequinBaseImage asserts the two copies stay byte-identical.
+	public static final String MANNEQUIN_BASE_RESOURCE_PATH = "olio/media/";
+	public static final String MANNEQUIN_BASE_MALE = "maleModelx512.png";
+	public static final String MANNEQUIN_BASE_FEMALE = "femaleModelx512.png";
+
+	/// Output size for mannequin images. Named constants rather than the literals that were inline in
+	/// generateMannequinImages, because fitMannequinBase has to letterbox the square base to exactly
+	/// this shape — the two must not drift apart.
+	public static final int MANNEQUIN_IMAGE_WIDTH = 512;
+	public static final int MANNEQUIN_IMAGE_HEIGHT = 768;
+
+	/// How far img2img may drift from the mannequin base. Deliberately below applyReferenceImage's
+	/// 0.75: the point of seeding from the base is that the SAME body and pose carry across every
+	/// wear level of an apparel set, so only the clothing changes between images. Overridable per
+	/// call via sdConfig.denoisingStrength.
+	public static final double MANNEQUIN_INIT_IMAGE_CREATIVITY = 0.6;
+
+	/// Resolve the mannequin base image for a gender ("male"/"female"; anything else, including
+	/// null/"unisex", falls to female — the same default Ux752's getMannequinBaseUrl applies with
+	/// its `(gender === "male") ? maleModel : femaleModel`). Returns null when the resource is
+	/// missing, which callers must treat as "generate without a base image" rather than as fatal.
+	///
+	/// Returns the image at its stored size (512x512). Callers generating at a different aspect ratio
+	/// must run it through fitMannequinBase first — see that method for why.
+	public static byte[] getMannequinBaseImage(String gender) {
+		String file = ("male".equalsIgnoreCase(gender) ? MANNEQUIN_BASE_MALE : MANNEQUIN_BASE_FEMALE);
+		return ResourceUtil.getInstance().getBinaryResource(MANNEQUIN_BASE_RESOURCE_PATH + file);
+	}
+
+	/// Fit a mannequin base onto a target canvas without distorting it.
+	///
+	/// The base images are SQUARE (512x512 — despite Ux752's getMannequinBaseUrl mapping its
+	/// "512x768" size to the same "x512" file), while generateMannequinImages renders at 512x768.
+	/// Handing a 1:1 init image to a 2:3 request lets the backend stretch it to fit, which elongates
+	/// the mannequin — a subtly wrong body that is easy to blame on the prompt. So scale to fit
+	/// (preserving aspect) and letterbox the remainder in white, which is also what the mannequin
+	/// prompt already asks for ("((white seamless background))"), so the padding reads as background
+	/// rather than as an artifact the model has to paint over.
+	///
+	/// Returns the original bytes unchanged if they already match the target, and null on a decode
+	/// failure so the caller can fall back to text-only generation.
+	public static byte[] fitMannequinBase(byte[] baseBytes, int targetWidth, int targetHeight) {
+		return fitToCanvas(baseBytes, targetWidth, targetHeight, java.awt.Color.WHITE, "fitMannequinBase");
+	}
+
+	/// Scale an image to fit a target canvas WITHOUT distorting it, letterboxing the remainder.
+	///
+	/// This is the alternative to {@link #stitchSceneImages}' center-crop, which discards whatever
+	/// doesn't fit the square: a 1024x576 landscape center-cropped to 576x576 loses 44% of its width,
+	/// so the setting the scene prompt describes is largely thrown away before the model ever sees it.
+	/// For a reference image that is exactly backwards — the whole point is to show the model what the
+	/// scene and the people look like.
+	///
+	/// Returns the original bytes unchanged when they already match, and null on a decode failure.
+	/// @param padColor background for the letterbox bars
+	/// @param label    caller name for the log line
+	public static byte[] fitToCanvas(byte[] srcBytes, int targetWidth, int targetHeight, java.awt.Color padColor, String label) {
+		if(srcBytes == null || srcBytes.length == 0) return null;
+		try {
+			java.awt.image.BufferedImage src = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(srcBytes));
+			if(src == null) {
+				logger.warn(label + ": input did not decode as an image");
+				return null;
+			}
+			if(src.getWidth() == targetWidth && src.getHeight() == targetHeight) {
+				return srcBytes;
+			}
+			double scale = Math.min((double)targetWidth / src.getWidth(), (double)targetHeight / src.getHeight());
+			int drawW = (int)Math.round(src.getWidth() * scale);
+			int drawH = (int)Math.round(src.getHeight() * scale);
+			int xOff = (targetWidth - drawW) / 2;
+			int yOff = (targetHeight - drawH) / 2;
+
+			java.awt.image.BufferedImage canvas = new java.awt.image.BufferedImage(targetWidth, targetHeight, java.awt.image.BufferedImage.TYPE_INT_RGB);
+			java.awt.Graphics2D g2d = canvas.createGraphics();
+			g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+			g2d.setColor(padColor);
+			g2d.fillRect(0, 0, targetWidth, targetHeight);
+			g2d.drawImage(src, xOff, yOff, drawW, drawH, null);
+			g2d.dispose();
+
+			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+			javax.imageio.ImageIO.write(canvas, "png", baos);
+			byte[] out = baos.toByteArray();
+			logger.info(label + ": " + src.getWidth() + "x" + src.getHeight() + " -> " + targetWidth + "x"
+				+ targetHeight + " (drawn " + drawW + "x" + drawH + " at " + xOff + "," + yOff + ", letterboxed)");
+			return out;
+		} catch (Exception e) {
+			logger.error(label + " failed", e);
+			return null;
+		}
+	}
+
+	/// Build the reference-image list for a FLUX.2 multi-reference composite.
+	///
+	/// Unlike the Kontext path, these are NOT pre-stitched into one panel image: FLUX.2 accepts
+	/// several independent reference images, which is the guidance's own escalation when identity
+	/// drifts (aiDocs/imageComposite.md: "switch to a Flux.2 multi-reference capable checkpoint").
+	/// Keeping them separate also removes the two things that made the stitched panel actively
+	/// harmful — the center-crop, and the fact that a single wide multi-panel image reads to the
+	/// model as one picture OF a reference sheet (observed live: the sheet was rendered into the
+	/// output as a poster propped against a wall).
+	///
+	/// Each reference is normalized to refSize x refSize with aspect preserved and letterboxed, so a
+	/// 2048x2048 portrait and a 1024x768 landscape arrive at a consistent scale.
+	///
+	/// @return base64 data URLs in reference order (people first, setting last); never null, possibly empty
+	public static List<String> buildFlux2References(int refSize, byte[]... sources) {
+		List<String> refs = new ArrayList<>();
+		if(sources == null) return refs;
+		int idx = 0;
+		for(byte[] src : sources) {
+			idx++;
+			if(src == null || src.length == 0) continue;
+			byte[] fitted = fitToCanvas(src, refSize, refSize, java.awt.Color.WHITE, "flux2Reference[" + idx + "]");
+			if(fitted == null) {
+				logger.warn("buildFlux2References: reference " + idx + " could not be prepared — skipping");
+				continue;
+			}
+			refs.add("data:image/png;base64," + BinaryUtil.toBase64Str(fitted));
+		}
+		logger.info("buildFlux2References: prepared " + refs.size() + " reference image(s) at " + refSize + "x" + refSize);
+		return refs;
+	}
+
+	/// Generate mannequin images for an apparel record, one image per cumulative wear level.
+	/// Seeded from the gender-appropriate mannequin base image (img2img) rather than generated from
+	/// text alone, so every wear level of a given apparel set renders the same body and pose and the
+	/// images differ only by clothing.
 	public List<BaseRecord> generateMannequinImages(BaseRecord user, String groupPath, BaseRecord apparel, BaseRecord sdConfig, boolean hires, long seed) throws FieldException, ValueException, ModelNotFoundException {
 		List<BaseRecord> images = new ArrayList<>();
 		List<BaseRecord> wears = apparel.get(OlioFieldNames.FIELD_WEARABLES);
@@ -1539,10 +1755,35 @@ public class SDUtil {
 
 		// Apply defaults if model schema defaults weren't applied
 		if(cfgSteps == null) cfgSteps = 20;
-		if(cfgModel == null) cfgModel = "sdXL_v10VAEFix.safetensors";
+		cfgModel = resolveModel(cfgModel);
 		if(cfgScheduler == null) cfgScheduler = "normal";
 		if(cfgSampler == null) cfgSampler = "dpmpp_2m";
 		if(cfgCfg == null) cfgCfg = 7;
+
+		// Mannequin base image, resolved once and reused for every wear level so the whole set shares
+		// one body/pose. apparel.gender is populated from the wearing character by
+		// ApparelUtil.constructApparel (ApparelUtil.java:544) but is not in the default query
+		// projection, so read it defensively — a null gender is not an error, it just takes
+		// getMannequinBaseImage's female default.
+		String apparelGender = apparel.get(FieldNames.FIELD_GENDER);
+		byte[] mannequinBase = fitMannequinBase(getMannequinBaseImage(apparelGender),
+			MANNEQUIN_IMAGE_WIDTH, MANNEQUIN_IMAGE_HEIGHT);
+		String mannequinBase64 = (mannequinBase != null && mannequinBase.length > 0)
+			? BinaryUtil.toBase64Str(mannequinBase) : null;
+		Double cfgDenoise = config.get(OlioFieldNames.FIELD_SD_DENOISING_STRENGTH);
+		double mannequinCreativity = (cfgDenoise != null ? cfgDenoise : MANNEQUIN_INIT_IMAGE_CREATIVITY);
+		if(mannequinBase64 == null) {
+			// Not fatal: fall back to the pre-2026-08-07 text-only behavior rather than failing the
+			// whole apparel set. Warn loudly, because the resulting images will NOT share a body/pose
+			// across wear levels and that is easy to mistake for a prompt problem.
+			logger.warn("Mannequin base image unavailable for gender '" + apparelGender + "' ("
+				+ MANNEQUIN_BASE_RESOURCE_PATH + ") — falling back to text-only generation; wear levels "
+				+ "will not share a consistent body/pose");
+		}
+		else {
+			logger.info("Mannequin base image: gender=" + (apparelGender != null ? apparelGender : "(unset, using female default)")
+				+ " bytes=" + mannequinBase.length + " creativity=" + mannequinCreativity);
+		}
 
 		// Generate one image per cumulative level
 		for(WearLevelEnumType level : levels) {
@@ -1550,12 +1791,16 @@ public class SDUtil {
 			String negPrompt = NarrativeUtil.getMannequinNegativePrompt();
 
 			SWTxt2Img s2i = new SWTxt2Img();
+			if(mannequinBase64 != null) {
+				s2i.setInitImage(mannequinBase64);
+				s2i.setInitImageCreativity(mannequinCreativity);
+			}
 			// Use the merged config (randomSDConfig() defaults + client overrides), not the raw
 			// sdConfig param, so LoRAs actually apply (KI-29) even when the client only set some fields.
 			s2i.setPrompt(appendLoras(prompt, config));
 			s2i.setNegativePrompt(negPrompt);
-			s2i.setWidth(512);
-			s2i.setHeight(768);
+			s2i.setWidth(MANNEQUIN_IMAGE_WIDTH);
+			s2i.setHeight(MANNEQUIN_IMAGE_HEIGHT);
 			s2i.setSteps(cfgSteps);
 			s2i.setModel(cfgModel);
 			s2i.setScheduler(cfgScheduler);

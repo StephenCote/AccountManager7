@@ -28,6 +28,27 @@
 		<param-name>logToConsole</param-name>
 		<param-value>true</param-value>
 	</context-param>
+	<!--
+		Opportunistic Ollama model unload before GPU-heavy (SD) work. OFF by default: with a large
+		model (e.g. gpt-oss:120b) the reload it forces on the next LLM call costs more than the freed
+		VRAM saves, and a picture-book run alternates LLM and SD work repeatedly. Set true only on a
+		GPU-constrained host running a small model. Explicitly instructed and shutdown unloads
+		(OllamaModelUtil.unloadAll(true)) are NOT affected by this switch.
+	-->
+	<context-param>
+		<param-name>llm.ollama.unload</param-name>
+		<param-value>false</param-value>
+	</context-param>
+	<!--
+		Fallback SD checkpoint for requests whose olio.sd.config carries no model. Checkpoint names are
+		per-Swarm-install and a wrong one does NOT error - Swarm returns an empty image list that
+		callers log and skip - so set this to a checkpoint your SD_SERVER actually has. Leave empty to
+		fall back to the olio.sd.config schema default.
+	-->
+	<context-param>
+		<param-name>sd.default.model</param-name>
+		<param-value>${SD_DEFAULT_MODEL}</param-value>
+	</context-param>
 	<context-param>
 		<param-name>isLog4jAutoInitializationDisabled</param-name>
 		<param-value>false</param-value>

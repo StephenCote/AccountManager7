@@ -24,6 +24,10 @@ services:
       VOICE_TTS_SERVER: ${VOICE_TTS_SERVER:-http://192.168.1.42:8001}
       VOICE_STT_SERVER: ${VOICE_STT_SERVER:-http://192.168.1.42:8002}
       EMBEDDING_SERVER: ${EMBEDDING_SERVER:-http://192.168.1.42:8123}
+      # Fallback SD checkpoint when an olio.sd.config carries no model. Checkpoint names differ per
+      # Swarm install and a wrong one returns an empty image list rather than an error, so set this
+      # to something SD_SERVER actually has. Empty falls back to the olio.sd.config schema default.
+      SD_DEFAULT_MODEL: ${SD_DEFAULT_MODEL:-}
       # Must include whatever origin the browser actually uses to reach nginx.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8899,http://localhost,http://localhost:8080,http://localhost:8888,https://localhost:8899,https://localhost,https://localhost:8443,https://localhost:8888,https://192.168.1.12:8899,https://192.168.1.12:8443}
 

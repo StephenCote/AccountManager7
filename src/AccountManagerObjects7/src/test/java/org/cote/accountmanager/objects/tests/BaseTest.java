@@ -32,6 +32,7 @@ import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.objects.generated.FactType;
 import org.cote.accountmanager.objects.generated.PolicyType;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
+import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -88,6 +89,15 @@ public class BaseTest {
 			resetDataSchema = Boolean.parseBoolean(testProperties.getProperty("test.db.reset"));
 		}
 		testDataPath = testProperties.getProperty("test.data.path");
+		/// Opportunistic Ollama unload before GPU-heavy work. OFF unless the test properties turn it
+		/// on — a large model (gpt-oss:120b) costs more to reload than the freed VRAM saves, and the
+		/// picture-book tests alternate LLM and SD work repeatedly. TestPictureBookFull's
+		/// unload-verification test calls unloadAll(true) directly, so it is unaffected.
+		OllamaModelUtil.setUnloadEnabled(Boolean.parseBoolean(testProperties.getProperty(OllamaModelUtil.CONFIG_KEY)));
+		/// Fallback SD checkpoint for anything that doesn't set one on its config. Reuses
+		/// test.swarm.model so the tests can't drift from the checkpoint the test Swarm actually has —
+		/// the failure mode is silent (empty image list, test logs and skips: KI-39).
+		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(testProperties.getProperty("test.swarm.model"));
 		
 		/// NOTE: The current setup will throw an error if trying to deserialize a model whose schema has not yet been loaded.  This was done intentionally to only support intentionally loaded schemas
 		

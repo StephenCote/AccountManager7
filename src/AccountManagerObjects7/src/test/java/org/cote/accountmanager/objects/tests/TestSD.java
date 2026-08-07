@@ -271,7 +271,8 @@ public class TestSD extends BaseTest {
 			assertEquals("model reaching the live request should match the client's config, not the hardcoded fallback (sdXL_v10VAEFix.safetensors)", expectModel, sentRequest.getModel());
 			assertEquals("sampler reaching the live request should match the client's config, not the hardcoded fallback (dpmpp_2m)", expectSampler, sentRequest.getSampler());
 			assertEquals("scheduler reaching the live request should match the client's config, not the hardcoded fallback (normal)", expectScheduler, sentRequest.getScheduler());
-			assertEquals("cfg reaching the live request should match the client's config, not the hardcoded fallback (7)", expectCfg, sentRequest.getCfgScale());
+			// delta form: cfgScale widened to double so FLUX.2 can use a fractional CFG (2.5).
+			assertEquals("cfg reaching the live request should match the client's config, not the hardcoded fallback (7)", (double) expectCfg, sentRequest.getCfgScale(), 0.001);
 			assertEquals("steps reaching the live request should match the client's config, not the hardcoded fallback (20)", expectSteps, sentRequest.getSteps());
 
 			byte[] bytes = ByteModelUtil.getValue(img);

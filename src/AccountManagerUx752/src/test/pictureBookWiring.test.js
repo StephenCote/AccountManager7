@@ -107,7 +107,9 @@ describe('generateSceneImage (real olio.sd.config common + per-scene delta)', ()
         mockFetch({ imageObjectId: 'img-9', seed: 12345 });
         const { generateSceneImage } = await import('../workflows/sceneExtractor.js');
 
-        let common = { schema: 'olio.sd.config', style: 'digitalArt', steps: 30, useKontext: false };
+        // Mirrors what pinPictureBookDefaults actually produces: compositeMode drives the composite
+        // pipeline (the legacy useKontext boolean is only a server-side fallback when it is unset).
+        let common = { schema: 'olio.sd.config', style: 'digitalArt', steps: 30, compositeMode: 'flux2' };
         let delta = { schema: 'olio.sd.config', steps: 45 };
         let controller = new AbortController();
         let result = await generateSceneImage('scene-7', {

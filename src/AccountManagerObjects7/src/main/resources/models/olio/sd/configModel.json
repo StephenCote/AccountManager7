@@ -67,7 +67,8 @@
 		{
 			"name": "model",
 			"type": "string",
-			"default": "sdXL_v10VAEFix.safetensors"
+			"default": "OfficialStableDiffusion/sd_xl_base_1.0",
+			"description": "SDXL checkpoint. This default is only a last resort - checkpoint names are per-deployment, so set the 'sd.default.model' config (Service7 init-param / Console7 resource.properties) rather than relying on it. Was 'sdXL_v10VAEFix.safetensors', which does not exist on the local Swarm server; this value is verified present there and matches test.swarm.model."
 		},
 		{
 			"name": "scheduler",
@@ -306,13 +307,62 @@
 			"name": "useKontext",
 			"type": "boolean",
 			"default": true,
-			"description": "When true, use FLUX Kontext stitch-and-prompt pipeline for scene compositing instead of classic Graphics2D + SDXL img2img."
+			"description": "When true, use FLUX Kontext stitch-and-prompt pipeline for scene compositing instead of classic Graphics2D + SDXL img2img. Ignored when compositeMode is set."
+		},
+		{
+			"name": "compositeMode",
+			"type": "string",
+			"maxLength": 16,
+			"description": "Scene composite pipeline: 'flux2' (FLUX.2 multi-reference, recommended), 'kontext' (FLUX Kontext stitched panel strip), or 'classic' (Graphics2D paste + SDXL img2img). When unset, falls back to the legacy useKontext boolean."
+		},
+		{
+			"name": "flux2Model",
+			"type": "string",
+			"default": "flux2Klein_9b",
+			"description": "FLUX.2 checkpoint for multi-reference scene compositing."
+		},
+		{
+			"name": "flux2Cfg",
+			"type": "double",
+			"minValue": 0.5,
+			"maxValue": 8.0,
+			"default": 2.5,
+			"description": "CFG scale for the FLUX.2 composite. Edit/reference models want a low value: 1.0-3.5, 2.5 recommended. Do NOT reuse the SDXL cfg (5-7) here."
+		},
+		{
+			"name": "flux2ReferenceSize",
+			"type": "int",
+			"minValue": 256,
+			"maxValue": 2048,
+			"default": 1024,
+			"description": "Square size each FLUX.2 reference image is normalized to (aspect preserved, letterboxed - never center-cropped)."
+		},
+		{
+			"name": "flux2Steps",
+			"type": "int",
+			"minValue": 1,
+			"maxValue": 100,
+			"description": "Sampling steps for the FLUX.2 composite (20-28 recommended). Separate from the shared 'steps' field, which is SDXL-tuned for portraits/landscape; leave unset to use 24."
+		},
+		{
+			"name": "flux2Width",
+			"type": "int",
+			"minValue": 256,
+			"maxValue": 2048,
+			"description": "Width of the FLUX.2 composite. Separate from the shared 'width' field so an SDXL-tuned square size cannot force the scene out of landscape; leave unset to use 1024."
+		},
+		{
+			"name": "flux2Height",
+			"type": "int",
+			"minValue": 256,
+			"maxValue": 2048,
+			"description": "Height of the FLUX.2 composite. Leave unset to use 768 (landscape, matching the classic pipeline)."
 		},
 		{
 			"name": "kontextModel",
 			"type": "string",
 			"default": "flux1Kontext_flux1KontextDev",
-			"description": "FLUX Kontext model name for scene compositing."
+			"description": "FLUX Kontext model name for scene compositing. NOTE: not installed on every Swarm server (absent from the local one as of 2026-08-07) - a missing checkpoint returns an empty image list rather than an error, so set this explicitly if you use compositeMode=kontext."
 		},
 		{
 			"name": "kontextSteps",

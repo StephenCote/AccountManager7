@@ -1305,7 +1305,10 @@ public class TestPictureBookFull extends BaseTest {
 
 		assertTrue("Model should be loaded in Ollama after a live call", isModelLoaded(ollamaServer, PB_LLM_MODEL));
 
-		OllamaModelUtil.unloadAll();
+		// force=true: this test verifies the unload MECHANISM, so it must not be silenced by the
+		// llm.ollama.unload switch (which defaults to false — see OllamaModelUtil). The opportunistic
+		// no-arg unloadAll() would no-op here and turn this into a test of the config flag.
+		OllamaModelUtil.unloadAll(true);
 
 		// Ollama's /api/ps may take a moment to reflect an unload after the keep_alive:0 request
 		// returns — poll briefly rather than asserting on a single immediate check.

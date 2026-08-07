@@ -33,6 +33,7 @@ import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.olio.llm.ChatListener;
+import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.util.LLMConnectionManager;
 import org.cote.accountmanager.util.ServerConfigUtil;
 import org.cote.accountmanager.util.StreamUtil;
@@ -239,6 +240,16 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		}
 
 		AuditUtil.setLogToConsole(Boolean.parseBoolean(context.getInitParameter("logToConsole")));
+
+		/// Opportunistic Ollama model unload before GPU-heavy (SD) work. Defaults OFF — with a large
+		/// model the reload it forces on the next LLM call costs more than the freed VRAM saves. The
+		/// explicit unloadAll(true) path is unaffected by this switch.
+		OllamaModelUtil.setUnloadEnabled(parseBoolean(context.getInitParameter(OllamaModelUtil.CONFIG_KEY), false));
+
+		/// Deployment's fallback SD checkpoint. Checkpoint names differ per Swarm install and a wrong
+		/// one returns an empty image list rather than an error, so this is worth setting explicitly.
+		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(
+			context.getInitParameter(org.cote.accountmanager.olio.sd.SDUtil.DEFAULT_MODEL_CONFIG_KEY));
 
 		logger.info("Initializing Account Manager");
 		String streamCut = context.getInitParameter("stream.cutoff");

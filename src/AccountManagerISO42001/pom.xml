@@ -42,17 +42,24 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
-				<version>2.22.2</version>
+				<!-- 3.2.5: 2.22.2's wmic-based PpidChecker self-kills forks on Windows 11 (build 26200
+				     removed wmic). Full write-up in AccountManagerObjects7/pom.xml. -->
+				<version>3.2.5</version>
 				<dependencies>
 					<dependency>
 						<groupId>org.apache.maven.surefire</groupId>
 						<artifactId>surefire-junit47</artifactId>
-						<version>3.1.2</version>
+						<!-- In lockstep with the plugin version above (was 3.1.2 under a 2.22.2 plugin). -->
+						<version>3.2.5</version>
 					</dependency>
 				</dependencies>
 				<configuration>
-					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
-						-XX:+EnableJVMCI</argLine>
+					<!--
+						JVMCI flags removed 2026-08-07: they enabled the JVMCI interface with no Graal
+						compiler behind it. Graal is not installed on this node; ScriptUtil runs GraalJS on
+						the Truffle interpreter by design. See AccountManagerObjects7/pom.xml.
+					-->
+					<argLine>-Xmx4096m</argLine>
 					<includes>
 						<include>**/Test*.java</include>
 					</includes>

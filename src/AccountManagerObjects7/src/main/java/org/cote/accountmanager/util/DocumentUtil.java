@@ -287,7 +287,13 @@ public class DocumentUtil {
 		return txt
 			.replaceAll("[“”]", "\"")
 			.replaceAll("[‘’]", "'")
-			.replaceAll("[–—]", "-")
+			// Whole Unicode dash/hyphen family, not just en/em. In source order the class holds
+			// U+2010 hyphen, U+2011 non-breaking hyphen, U+2012 figure dash, U+2013 en dash,
+			// U+2014 em dash, U+2015 horizontal bar, U+2212 minus sign — the first three are
+			// visually indistinguishable from an ASCII hyphen, so trust this list, not the glyphs.
+			// U+2011 in particular is what LLMs emit in compounds ("gull-wing", "neon-lit"); it
+			// reaches Stable Diffusion as a distinct CLIP token from the ASCII hyphen.
+			.replaceAll("[‐‑‒–—―−]", "-")
 			.replaceAll("…", "...")
 			.replaceAll(" ", " ");
 	}

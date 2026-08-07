@@ -105,23 +105,31 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
-				<version>2.22.2</version>
+				<!-- 3.2.5: 2.22.2's wmic-based PpidChecker self-kills forks on Windows 11 (build 26200
+				     removed wmic). Full write-up in AccountManagerObjects7/pom.xml. -->
+				<version>3.2.5</version>
 				<dependencies>
 
 					<dependency>
 						<groupId>org.apache.maven.surefire</groupId>
 						<artifactId>surefire-junit47</artifactId>
-						<version>3.1.2</version>
+						<!-- In lockstep with the plugin version above (was 3.1.2 under a 2.22.2 plugin). -->
+						<version>3.2.5</version>
 					</dependency>
 
 				</dependencies>
 
 				<configuration>
 					<skipTests>true</skipTests>
-					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
-						-XX:+EnableJVMCI --module-path=${compiler.dir}
-						--upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar
-						${argLine}</argLine>
+					<!--
+						Dead JVMCI/Graal flags removed 2026-08-07 (see AccountManagerObjects7/pom.xml for the
+						full write-up). They referenced ${compiler.dir}, which no pom defines, so the fork got
+						the literal string as its module path. Graal is never installed on this node and
+						ScriptUtil already handles its absence deliberately: GraalJS runs on the Truffle
+						interpreter and ScriptUtil.getJavaScriptEngine sets engine.WarnInterpreterOnly=false,
+						so removing these changes nothing at runtime.
+					-->
+					<argLine>-Xmx4096m ${argLine}</argLine>
 
 					<includes>
 						<include>**/Test*.java</include>

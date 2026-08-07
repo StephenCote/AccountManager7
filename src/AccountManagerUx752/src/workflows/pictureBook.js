@@ -165,11 +165,21 @@ function resetState() {
 // model everywhere; 'digitalArt' (concept-art illustration medium) is its canonical replacement.
 const PICTURE_BOOK_STYLE = 'digitalArt';
 
-// Pin the picture-book defaults onto a freshly built olio.sd.config entity: the CLASSIC pipeline
-// (useKontext=false — Flux Kontext returns a valid image but does NOT preserve character likeness),
-// no refiner hi-res pass by default, and a canonical style (not the removed `illustration`).
+// Pin the picture-book defaults onto a freshly built olio.sd.config entity: the FLUX.2
+// multi-reference composite pipeline, no refiner hi-res pass by default, and a canonical style
+// (not the removed `illustration`).
+//
+// compositeMode supersedes the legacy useKontext boolean server-side (PictureBookUtil reads it
+// first and only falls back to useKontext when it is unset). Both prior options produced visibly
+// broken scenes on the staged fixtures in AccountManagerObjects7/media/flux:
+//   classic  (bad.merge.png)     — portrait rectangles pasted onto the landscape with hard edges,
+//                                  studio backgrounds intact, wrong scale/perspective.
+//   kontext  (bad.composite.png) — the stitched panel strip was read as a picture and rendered INTO
+//                                  the scene as a board propped against a wall.
+// FLUX.2 sends the references separately and letterboxed with edit-model parameters (cfg 2.5, not
+// the SDXL cfg), verified live against those same fixtures.
 function pinPictureBookDefaults(entity) {
-    entity.useKontext = false;
+    entity.compositeMode = 'flux2';
     entity.hires = false;
     entity.style = PICTURE_BOOK_STYLE;
     am7sd.fillStyleDefaults(entity);
@@ -1404,9 +1414,10 @@ function applySdConfig(cfg) {
         if (k === 'seed' && !(cfg[k] >= 0)) continue;
         entity[k] = cfg[k];
     }
-    // The style/hires the book last used are restored above; only re-assert the classic-pipeline
-    // safety pin (Kontext doesn't preserve character likeness), never forcing the canonical style.
-    entity.useKontext = false;
+    // The style/hires the book last used are restored above; only re-assert the composite pipeline,
+    // never forcing the canonical style. A book saved before compositeMode existed carries
+    // useKontext=false and would otherwise resume on the classic pipeline forever.
+    entity.compositeMode = 'flux2';
 }
 
 async function tryResumeExistingBook(id) {

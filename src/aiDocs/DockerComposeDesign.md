@@ -261,6 +261,23 @@ Rebuilt with the `server.xml` fix and ran against a disposable `pgvector/pgvecto
   gives "Organization already exists" + "Failed to initialize key stores" + "Organizations are not
   configured" — i.e. the on-disk keystores and the DB org records are a **matched pair**; you cannot
   keep one without the other. See the storage map below.
+- **GraalJS runs on the Truffle interpreter in the container, deliberately — do not "fix" this with
+  JVMCI flags.** `ScriptUtil` uses `org.graalvm.polyglot` (GraalJS 23.0.1 as a plain classpath
+  dependency), and the runtime stage is `eclipse-temurin:26-jre-alpine`, a stock JDK with no Graal
+  compiler. That combination runs JS interpreted, and `ScriptUtil.getJavaScriptEngine` already sets
+  `engine.WarnInterpreterOnly=false` (`ScriptUtil.java:35`) precisely so the absence is graceful and
+  silent rather than an error. Graal has never been installed on the dev node either. Getting a
+  Graal-compiled JS runtime here would mean switching the runtime base image to a GraalVM JDK — a
+  deliberate base-image decision, **not** something to bolt on via `setenv.sh` `JAVA_OPTS`. Context:
+  on 2026-08-07 the module poms were found passing `-XX:+EnableJVMCI` plus an
+  `upgrade-module-path` built from `${compiler.dir}`, a property no pom defines, so every forked test
+  JVM received the literal string `${compiler.dir}` as a module path. Those flags were removed (see
+  `AccountManagerObjects7/pom.xml`); the container never carried them and needs no change.
+- **The surefire 2.22.2 → 3.2.5 bump does not affect this image.** The Java build stage runs
+  `mvn … package -DskipTests`, so surefire never executes during `docker build`; and the wmic-based
+  `PpidChecker` failure that motivated the bump is Windows-only (`wmic` was removed in Windows 11
+  build 26200), so a Linux build container was never exposed to it. Noted only so the two don't get
+  conflated later.
 
 ## Storage map (what MUST persist)
 

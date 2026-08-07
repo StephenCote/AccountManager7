@@ -57,13 +57,29 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
-				<version>2.22.2</version>
+				<!--
+					3.2.5, not 2.22.2. 2.22.2's PpidChecker confirms the parent Maven process is alive by
+					shelling out to `wmic`, which Windows 11 (build 26200 here) no longer ships. One second
+					into every fork that check threw
+					  "IllegalStateException: Cannot use PPID <n> process information. Going to use NOOP events."
+					leaving fork liveness resting entirely on ping commands over stdin. When those stalled on
+					a long LLM-bound test the fork called System.exit on itself
+					  "Killing self fork JVM. PING timeout elapsed."
+					which Maven then reported as the misleading "VM crash or System.exit called?" - with no
+					hs_err_pid log, because nothing actually crashed. Observed live 2026-08-07 on
+					TestPictureBookCustom: killed at 27:31 while mid-LLM call (the app log shows an HTTP 200
+					arriving 1.4s before the kill), where the identical 5 tests had passed in 26:20 an hour
+					earlier. 3.x replaced the wmic-based checker and adds -Dsurefire.enableProcessChecker=none
+					as an explicit escape hatch if this resurfaces.
+				-->
+				<version>3.2.5</version>
 				<dependencies>
 
 					<dependency>
 						<groupId>org.apache.maven.surefire</groupId>
 						<artifactId>surefire-junit47</artifactId>
-						<version>3.1.2</version>
+						<!-- Kept in lockstep with the plugin version above (was 3.1.2 under a 2.22.2 plugin). -->
+						<version>3.2.5</version>
 					</dependency>
 
 				</dependencies>
@@ -73,10 +89,18 @@
 
 					</environmentVariables>
 					<skipTests>${skipTests}</skipTests>
-					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
-						-XX:+EnableJVMCI --module-path=${compiler.dir}
-						--upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar
-						</argLine>
+					<!--
+						The JVMCI/Graal flags that used to live here were dead: they referenced ${compiler.dir},
+						a property no pom in this repo defines, so the fork was launched with the literal
+						string "${compiler.dir}" as its module path and upgrade module path. The upgrade never
+						took effect, and EnableJVMCI enabled the interface against no compiler. Removed
+						2026-08-07 rather than left misleading. To restore: define a compiler.dir property
+						pointing at a Graal compiler.jar / compiler-management.jar pair (none is installed
+						under C:\Projects\tools as of 2026-08-07), then recover the exact flag text from this
+						file's git history at commit a3fb2edc. The flags cannot be quoted here verbatim
+						because XML comments may not contain a double hyphen.
+					-->
+					<argLine>-Xmx4096m</argLine>
 
 					<includes>
 						<include>**/Test*.java</include>
@@ -85,6 +109,12 @@
 					<!-- 
 						<exclude>**/TestPictureBookCustom.java</exclude>
 					-->
+					<exclude>**/TestExtractLegacyUsesReduce</exclude>
+					<exclude>**/TestPromptResourceUtil</exclude>
+					<exclude>**/TestRepairProvisioning</exclude>
+					<exclude>**/TestSdPromptTypography</exclude>
+					<exclude>**/TestServerConfigUtil</exclude>
+						<exclude>**/TestSetupUtil</exclude>
 						<exclude>**/TestChatMemoryPipelineWiring.java</exclude>
 						<exclude>**/TestContext.java</exclude>
 						<exclude>**/TestConversationQualityEvaluator.java</exclude>

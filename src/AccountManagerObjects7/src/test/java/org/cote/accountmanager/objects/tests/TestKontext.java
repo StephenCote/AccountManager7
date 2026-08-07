@@ -92,7 +92,9 @@ public class TestKontext extends BaseTest {
 		assertNotNull("SWTxt2Img should not be null", s2i);
 		assertEquals("Model should be default Kontext", "flux1Kontext_flux1KontextDev", s2i.getModel());
 		assertEquals("Steps should be 28", 28, s2i.getSteps());
-		assertEquals("CFG should be 1", 1, s2i.getCfgScale());
+		// delta form: cfgScale widened to double so FLUX.2 can use a fractional CFG (2.5). Kontext's
+		// own default is unchanged at 1.
+		assertEquals("CFG should be 1", 1.0, s2i.getCfgScale(), 0.001);
 		assertEquals("Sampler should be euler", "euler", s2i.getSampler());
 		assertEquals("Scheduler should be simple", "simple", s2i.getScheduler());
 		assertEquals("Width should be 1024", 1024, s2i.getWidth());

@@ -25,6 +25,7 @@ import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
+import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -124,6 +125,13 @@ public class ConsoleMain {
 		IOFactory.DEFAULT_FILE_BASE = properties.getProperty("app.basePath");
 		IOFactory.addPermittedPath(IOFactory.DEFAULT_FILE_BASE + "/.streams");
 		boolean enableVector = Boolean.parseBoolean(properties.getProperty("test.vector.enable"));
+		/// Opportunistic Ollama unload before GPU-heavy work; OFF unless explicitly enabled (a large
+		/// model costs more to reload than the freed VRAM saves). Does not affect unloadAll(true).
+		OllamaModelUtil.setUnloadEnabled(Boolean.parseBoolean(properties.getProperty(OllamaModelUtil.CONFIG_KEY)));
+		/// Fallback SD checkpoint; names are per-Swarm-install and a wrong one fails silently (empty
+		/// image list), so prefer setting this over relying on the olio.sd.config schema default.
+		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(
+			properties.getProperty(org.cote.accountmanager.olio.sd.SDUtil.DEFAULT_MODEL_CONFIG_KEY));
 		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"), setup && Boolean.parseBoolean(properties.getProperty("test.db.reset")), Boolean.parseBoolean(properties.getProperty("db.schema.dropColumns")));
 		if(ioContext != null) {
 			ioContext.setVectorUtil(new VectorUtil(LLMServiceEnumType.valueOf(properties.getProperty("test.embedding.type").toUpperCase()), properties.getProperty("test.embedding.server"), properties.getProperty("test.embedding.authorizationToken")));

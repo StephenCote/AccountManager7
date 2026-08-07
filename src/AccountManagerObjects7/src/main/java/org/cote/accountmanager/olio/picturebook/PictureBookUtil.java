@@ -56,6 +56,7 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
+import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 
 /**
@@ -3236,6 +3237,9 @@ public class PictureBookUtil {
             // no LLM/SD calls) purely to build charNarrations for the scene-image prompt; Stage 1
             // resolves them again (same resolveSceneCharacter helper) when it actually renders.
             String landscapePrompt = resolveLandscapePrompt(user, scene, chatConfig, setting, mood, common, params.promptTemplateOverride);
+            
+            //logger.info("Landscape prompt: " + landscapePrompt);
+            
             Object charsObjForPrompt = sceneData.get("characters");
             List<String> charNarrationsForPrompt = new ArrayList<>();
             if (charsObjForPrompt instanceof List) {
@@ -3489,8 +3493,21 @@ public class PictureBookUtil {
             byte[] leftBytes   = !portraitBytesList.isEmpty() ? portraitBytesList.get(0) : null;
             byte[] centerBytes = portraitBytesList.size() > 1  ? portraitBytesList.get(1) : null;
 
+            // compositeMode supersedes the legacy useKontext boolean. When unset we fall back to it,
+            // so existing book configs behave exactly as before.
+            String compositeMode = common.get("compositeMode");
             Boolean useKontextV = common.get("useKontext");
             boolean useKontext = (useKontextV != null) ? useKontextV.booleanValue() : false;
+            boolean useFlux2 = false;
+            if (compositeMode != null && !compositeMode.isBlank()) {
+                String mode = compositeMode.trim().toLowerCase();
+                useFlux2 = "flux2".equals(mode);
+                useKontext = "kontext".equals(mode);
+                if (!useFlux2 && !useKontext && !"classic".equals(mode)) {
+                    logger.warn("generateSceneImage: unrecognized compositeMode '" + compositeMode
+                        + "' — expected flux2|kontext|classic; falling back to classic");
+                }
+            }
             // Kontext 2-pass needs moderate creativity — enough to restructure panels while
             // preserving faces; classic img2img needs more room to blend the drawn-on portraits.
             double sceneCreativity = useKontext ? 0.65 : 0.85;
@@ -3499,6 +3516,39 @@ public class PictureBookUtil {
 
             String sceneName = "scene_" + sceneObjectId + "_" + System.currentTimeMillis();
             List<BaseRecord> finalImages = new ArrayList<>();
+
+            if (useFlux2) {
+                // FLUX.2 MULTI-REFERENCE PIPELINE. Three deliberate departures from the Kontext path,
+                // each fixing something observed in media/flux/bad.composite.png:
+                //  - references stay SEPARATE (people, then setting) instead of being stitched into
+                //    one wide panel strip, which the model read as a picture and drew into the scene
+                //    as a propped-up board;
+                //  - references are letterboxed, not center-cropped, so a 1024x768 landscape keeps
+                //    all of its width (stitchSceneImages would have discarded 44% of it);
+                //  - CFG comes from flux2Cfg (2.5), NOT the SDXL `cfg` (5) that the Kontext call was
+                //    being handed — far outside the 1.0-3.5 an edit model tolerates.
+                PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_awesome_mosaic", "Preparing references...");
+                BaseRecord flux2Cfg = (params.compositeSdConfig != null) ? params.compositeSdConfig : common;
+                if (params.compositeSdConfig != null) SDUtil.fillStyleDefaults(flux2Cfg);
+                Integer refSizeV = flux2Cfg.get("flux2ReferenceSize");
+                int refSize = (refSizeV != null && refSizeV > 0) ? refSizeV.intValue() : 1024;
+                List<String> refs = SDUtil.buildFlux2References(refSize, leftBytes, centerBytes, landscapeBytes);
+
+                PictureBookProgressNotifier.getInstance().notifyProgress(user, "image", "Compositing scene...");
+                SWTxt2Img flux2Req = SWUtil.newFlux2SceneTxt2Img(leftDesc, rightDesc, action, setting, mood,
+                        flux2Cfg, refs.size());
+                if (!refs.isEmpty()) {
+                    flux2Req.setPromptImages(refs);
+                }
+                logger.info("generateSceneImage: FLUX.2 composite model=" + flux2Req.getModel()
+                        + " refs=" + refs.size() + " cfg=" + flux2Req.getCfgScale() + " steps=" + flux2Req.getSteps()
+                        + " " + flux2Req.getWidth() + "x" + flux2Req.getHeight());
+                finalImages = sdu.createSceneImage(user, sceneGroupPath, sceneName, flux2Req, null, null);
+                if (finalImages == null || finalImages.isEmpty()) {
+                    logger.warn("generateSceneImage: FLUX.2 pipeline produced no images — falling back to classic");
+                    useFlux2 = false;
+                }
+            }
 
             if (useKontext) {
                 // KONTEXT PIPELINE: stitch [portrait1 | portrait2 | landscape] into one composite
@@ -3531,7 +3581,7 @@ public class PictureBookUtil {
                 }
             }
 
-            if (!useKontext) {
+            if (!useKontext && !useFlux2) {
                 // CLASSIC PIPELINE: literally draw the real portrait pixels onto the landscape
                 // canvas via Graphics2D (SDUtil.compositeSceneCanvas), then run SDXL img2img at a
                 // controlled creativity/denoise strength — the real portrait pixels are physically
@@ -3548,6 +3598,8 @@ public class PictureBookUtil {
                 byte[] compositeBytes = SDUtil.compositeSceneCanvas(landscapeBytes, leftBytes, centerBytes,
                         classicReq.getWidth(), classicReq.getHeight());
                 if (compositeBytes != null) {
+                	FileUtil.emitFile("./comp-" + sceneObjectId + ".png", compositeBytes);
+                	FileUtil.emitFile("./land-" + sceneObjectId + ".png", landscapeBytes);
                     classicReq.setInitImage("data:image/png;base64," + Base64.getEncoder().encodeToString(compositeBytes));
                     classicReq.setInitImageCreativity(sceneCreativity);
                 }

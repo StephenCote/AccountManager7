@@ -27,8 +27,12 @@ public class SWTxt2Img extends SWCommon {
 	private String negativePrompt = null;
 	private int images = 1;
 	private int steps = 20;
+	/// double, not int: FLUX edit/multi-reference models want a fractional CFG (the guidance in
+	/// aiDocs/imageComposite.md calls for 1.0-3.5, recommending 2.5), which an int cannot express —
+	/// it forced a choice between 2 and 3. SDXL callers passing whole numbers are unaffected (int
+	/// widens), and SwarmUI accepts a float cfgscale.
 	@JsonProperty("cfgscale")
-	private int cfgScale = 7;
+	private double cfgScale = 7;
 	
 	private int seed = -1;
 	private int height = 1024;
@@ -145,11 +149,11 @@ public class SWTxt2Img extends SWCommon {
 		this.steps = steps;
 	}
 
-	public int getCfgScale() {
+	public double getCfgScale() {
 		return cfgScale;
 	}
 
-	public void setCfgScale(int cfgScale) {
+	public void setCfgScale(double cfgScale) {
 		this.cfgScale = cfgScale;
 	}
 

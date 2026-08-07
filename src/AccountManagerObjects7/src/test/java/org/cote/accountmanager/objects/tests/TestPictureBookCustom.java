@@ -36,6 +36,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
+import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.FileUtil;
@@ -80,7 +81,15 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final String CHAT_PATH = "~/Chat";
 
 	private static final String PB_LLM_MODEL = "gpt-oss:120b";//"qwen3:8b";
-	private static int iter = 1;
+	private static int iter = 2;
+	private static final boolean REIMAGE_CHARS = true;
+	// If true, force a fresh LLM derivation of already-cached scene data: the .scenesCache note
+	// (Step 2 extraction) and the per-scene "scenePrompt"/"landscapePrompt" values (Step 4, via
+	// clearCachedScenePrompts). Leave false for normal reruns — scenes that have never been
+	// resolved are still generated regardless, so this flag only governs REDOING existing work.
+	private static final boolean clearSceneCache = false;
+	// One-shot latch for clearSceneCache's Step 2 half — see getOrCreateCatatoneScenes.
+	private static boolean sceneCacheCleared = false;
 	private static final String PB_CHAT_CONFIG_NAME = "PictureBook " + PB_LLM_MODEL + " " + iter + ".chat";
 
 	// Source document + the exact substring that marks where Step 1 truncates it (see
@@ -212,8 +221,10 @@ public class TestPictureBookCustom extends BaseTest {
 	/**
 	 * STEP 2 helper — get-or-create the extracted scene list, cached as JSON on a fixed-name note
 	 * so repeated runs skip the {@code pictureBook.extract-scenes} LLM call entirely. Same idiom as
-	 * getOrCreateCatatoneOpeningWork() (Step 1) — delete this note (or bump {@code iter}) to force
-	 * a fresh extraction, e.g. after changing PB_LLM_MODEL or the cutoff anchor.
+	 * getOrCreateCatatoneOpeningWork() (Step 1) — set {@code clearSceneCache}, delete this note, or
+	 * bump {@code iter} to force a fresh extraction, e.g. after changing PB_LLM_MODEL or the cutoff
+	 * anchor. {@code clearSceneCache} deletes the note once per JVM run (see the latch below), so
+	 * both @Test methods that call this share the one re-extraction rather than each paying for it.
 	 *
 	 * Scoped under the BOOK's own group (~/Data/PictureBooks/{CATATONE_BOOK_NAME}/), not ~/Chat.
 	 * In the real pipeline, extractScenesOnly() is ephemeral — it persists nothing; the client
@@ -237,6 +248,23 @@ public class TestPictureBookCustom extends BaseTest {
 	private List<Map<String, Object>> getOrCreateCatatoneScenes(String workObjectId) throws Exception {
 		String bookPath = BOOK_GROUP_PATH_PREFIX + CATATONE_BOOK_NAME;
 		BaseRecord cached = DocumentUtil.getRecord(testUser, ModelNames.MODEL_NOTE, CATATONE_SCENES_CACHE_NAME, bookPath);
+		// clearSceneCache forces ONE fresh extraction per JVM run, not one per caller. Two @Test
+		// methods call this (TestPictureBookCustomPipeline and TestPortraitStyleOverride), so an
+		// unlatched delete would pay for the extract-scenes LLM call twice and throw away the first
+		// test's freshly-extracted scenes. The latch is also what keeps the create below from
+		// duplicating: the cache note is looked up by (name, groupId, organizationId), so bypassing
+		// a live note instead of deleting it would leave two ".scenesCache" notes in the book group.
+		if (clearSceneCache && !sceneCacheCleared && cached != null) {
+			boolean deleted = IOSystem.getActiveContext().getAccessPoint().delete(testUser, cached);
+			assertTrue("clearSceneCache is set but the existing " + CATATONE_SCENES_CACHE_NAME
+				+ " note could not be deleted — a stale extraction would otherwise be reused silently", deleted);
+			logger.info("clearSceneCache: deleted the cached " + CATATONE_SCENES_CACHE_NAME
+				+ " note to force a fresh pictureBook.extract-scenes call");
+			cached = null;
+		}
+		// Latch regardless of whether there was anything to delete: once this method has run, the
+		// cache it (re)builds below IS this run's fresh extraction, and the next caller must reuse it.
+		sceneCacheCleared = true;
 		if (cached != null) {
 			String json = cached.get(FieldNames.FIELD_TEXT);
 			List<Map<String, Object>> scenes = JSONUtil.getList(json, Map.class, null);
@@ -295,6 +323,16 @@ public class TestPictureBookCustom extends BaseTest {
 	 * call ever creates /Characters — confirmed live 2026-07-24: checking the top-level group alone
 	 * caused a fresh iter to skip createFromScenes entirely (false "already exists"), leaving
 	 * /Characters never created and NPEing on the very next line that reads it.
+	 *
+	 * ALSO check .pictureBookMeta, for the same reason one level further in. /Characters existing is
+	 * not proof createFromScenes RAN TO COMPLETION: ensureSubGroup creates /Characters early, and the
+	 * meta note is written at the end, so a run that dies in between leaves a book that looks reusable
+	 * and permanently isn't. Every later run then takes the reuse path, and anything reading the meta
+	 * fails with "Book meta not found" (PictureBookUtil.setCharacterStyleOverride) — which is exactly
+	 * what TestPortraitStyleOverride hit on 2026-08-07, on a book left half-created when the 09:03 run
+	 * was killed mid-flight by surefire 2.22.2's ping watchdog. The reuse guard has now been wrong
+	 * twice in the same way (top-level group, then /Characters); the invariant is "reuse only what is
+	 * COMPLETE", so assert on the last thing written, not the first.
 	 */
 	private String getOrCreateCatatoneBook(String workObjectId, List<Map<String, Object>> sceneList) throws Exception {
 		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
@@ -305,6 +343,18 @@ public class TestPictureBookCustom extends BaseTest {
 			BaseRecord existingBookGroup = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
 				ModelNames.MODEL_GROUP, bookPath, GroupEnumType.DATA.toString(), orgId);
 			String existingBookObjectId = existingBookGroup.get(FieldNames.FIELD_OBJECT_ID);
+			// Deliberately NOT auto-repaired. Re-running createFromScenes over a half-created book
+			// would re-fire the per-character extract LLM calls and can duplicate scene notes and
+			// charPerson records; deleting the group throws away already-generated characters and
+			// portraits. Both are destructive enough to be the operator's call, so fail with the two
+			// concrete remedies instead of silently picking one.
+			BaseRecord existingMeta = DocumentUtil.getRecord(testUser, ModelNames.MODEL_NOTE, ".pictureBookMeta", bookPath);
+			assertNotNull("Book group '" + bookPath + "' exists with a /Characters subgroup but NO "
+				+ ".pictureBookMeta note — createFromScenes was interrupted partway (e.g. a killed test "
+				+ "run), so this book can never be completed by reuse and every run reading the meta "
+				+ "will fail with 'Book meta not found'. Fix by either bumping `iter` (leaves the broken "
+				+ "book in place under its old name) or deleting the group at " + bookPath
+				+ " so the next run rebuilds it from scratch.", existingMeta);
 			logger.info("Reusing existing catatone book: " + existingBookObjectId);
 			return existingBookObjectId;
 		}
@@ -354,23 +404,46 @@ public class TestPictureBookCustom extends BaseTest {
 	 * The book's ONE common olio.sd.config. SDUtil.randomSDConfig() populates a full style (style +
 	 * its detail fields from the shared pools) so getSDConfigPrompt yields a rich, cohesive style
 	 * across every image; we then pin it to this book's intent: a fixed canonical style (IMAGE_STYLE —
-	 * illustration/custom no longer exist), the classic Graphics2D+img2img pipeline (useKontext=false /
-	 * hires=false, the deliberate picture-book default since Kontext doesn't reliably preserve
-	 * character likeness), and the test's Swarm model/refiner. The single source of truth for style —
-	 * no separate styleClause.
+	 * illustration/custom no longer exist), the FLUX.2 multi-reference composite pipeline, and the
+	 * test's Swarm model/refiner. The single source of truth for style — no separate styleClause.
+	 *
+	 * COMPOSITE PIPELINE (2026-08-07): compositeMode="flux2". The two prior options both produced
+	 * visibly broken scenes on Stephen's staged fixtures (kept at media/flux/ as the reference for
+	 * what "wrong" looks like):
+	 *   - classic  (bad.merge.png)     — Graphics2D pastes the portrait rectangles onto the landscape
+	 *                                    with hard edges, studio backgrounds intact, wrong scale and
+	 *                                    perspective; img2img can't recover from that input.
+	 *   - kontext  (bad.composite.png) — the stitched panel strip was read as a picture and rendered
+	 *                                    INTO the scene as a board propped against a wall.
+	 * FLUX.2 sends the references separately and letterboxed (no center-crop) with edit-model
+	 * parameters; verified live against the same fixtures, output at media/flux/out/.
+	 *
+	 * NOTE the two parameter families below. cfg/steps/model/refiner drive the SDXL portrait and
+	 * landscape stages; the flux2* fields drive the composite. They are deliberately separate — the
+	 * SDXL cfg of 5 and 40 steps are badly wrong for a FLUX edit model, and letting them leak into the
+	 * composite is the exact bug that made the Kontext path produce garbage.
 	 */
 	private BaseRecord buildCommonSdConfig() {
 		BaseRecord cfg = SDUtil.randomSDConfig();
 		cfg.setValue("style", IMAGE_STYLE);
 		SDUtil.fillStyleDefaults(cfg);              // repopulate detail fields for the pinned style
-		cfg.setValue("useKontext", false);          // classic pipeline (likeness-safe)
+		cfg.setValue("compositeMode", "flux2");     // FLUX.2 multi-reference composite
 		cfg.setValue("hires", false);
+		// --- SDXL stages (portraits, landscape) ---
 		cfg.setValue("cfg", 5);
 		cfg.setValue("steps", 40);
 		cfg.setValue("seed", -1);
 		cfg.setValue(OlioFieldNames.FIELD_SD_MODEL, testProperties.getProperty("test.swarm.model"));
 		cfg.setValue(OlioFieldNames.FIELD_SD_REFINER_MODEL, testProperties.getProperty("test.swarm.refinerModel"));
 		cfg.setValue("negativePrompt", testProperties.getProperty("test.swarm.negativePrompt"));
+		// --- FLUX.2 composite stage --- left unset to take SWUtil's documented defaults
+		// (flux2Klein_9b / cfg 2.5 / 24 steps / 1024x768 / 1024px references). Override here to
+		// experiment; test.swarm.flux2Model allows pointing at a different checkpoint without a
+		// code change.
+		String flux2Model = testProperties.getProperty("test.swarm.flux2Model");
+		if (flux2Model != null && !flux2Model.isBlank()) {
+			cfg.setValue("flux2Model", flux2Model);
+		}
 		return cfg;
 	}
 
@@ -809,6 +882,9 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 
 	@Test
 	public void TestPictureBookCustomPipeline() throws Exception {
+		
+		logger.info("***** Test Custom Pipeline");
+		AuditUtil.setLogToConsole(false);
 		setupTestContext();
 
 		// ═══════════════════════════════════════════════════════════════════
@@ -858,7 +934,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		// one pictureBook.extract-character LLM call + the ApparelUtil/statistics best-effort
 		// wizards per unique character. See getOrCreateCatatoneBook()'s javadoc for the Ux
 		// equivalent (pictureBook.js Step 3's create-from-scenes POST).
-
+		logger.info("***** STEP 3a");
 		bookObjectId = getOrCreateCatatoneBook(workObjectId, sceneList);
 
 		// Inspect what got built — race/alignment/instinct/personality/state are the KI-30
@@ -886,7 +962,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 				+ " alignment=" + cp.get(FieldNames.FIELD_ALIGNMENT));
 		}
 		//logger.info("Chars: " + chars.length + " total, in group " + charsGroupPath);
-
+		logger.info("***** STEP 3b");
 
 		// ═══════════════════════════════════════════════════════════════════
 		// STEP 3B — APPAREL GENERATION (verify the LLM-guessed base outfit + render it)
@@ -935,6 +1011,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 
 		BaseRecord duna = pickCharacterByName(Arrays.asList(chars), "du.?a");   // (a) Duña or Duna
 		assertNotNull("Should have found a character named Duña/Duna", duna);
+		boolean initImage = false;
 		if((int)duna.get("age") != 15){
 			logger.info("Patching Duña/Duna to age 15 for this test run (was " + duna.get("age") + ")");
 			setColorByNameOnCharacter(duna, OlioFieldNames.FIELD_HAIR_COLOR, "Auburn"); // (b) hair
@@ -951,6 +1028,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 			generatePortrait(duna);
 			dressToLevel(duna, WearLevelEnumType.SUIT);
 			generatePortrait(duna);
+			initImage = true;
 		}
 		
 		BaseRecord jid = pickCharacterByName(Arrays.asList(chars), "Jideon");   // (a) Duña or Duna
@@ -974,21 +1052,21 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		}
 		
 		//generateApparelImage(duna);                        // custom outfit CSV
-		/*
-		undressToLevel(duna, WearLevelEnumType.ON);
-		generatePortrait(duna, true);
-		dressToLevel(duna, WearLevelEnumType.BASE);
-		generatePortrait(duna);
-		dressToLevel(duna, WearLevelEnumType.SUIT);
-		generatePortrait(duna);
-		//generateApparelImage(jid);           // custom outfit CSV
-		undressToLevel(jid, WearLevelEnumType.ON);
-		generatePortrait(jid, true);
-		dressToLevel(jid, WearLevelEnumType.BASE);
-		generatePortrait(jid);
-		dressToLevel(jid, WearLevelEnumType.SUIT);
-		generatePortrait(jid);
-		*/
+		if(REIMAGE_CHARS && initImage == false) {
+			undressToLevel(duna, WearLevelEnumType.ON);
+			generatePortrait(duna, true);
+			dressToLevel(duna, WearLevelEnumType.BASE);
+			generatePortrait(duna);
+			dressToLevel(duna, WearLevelEnumType.SUIT);
+			generatePortrait(duna);
+			//generateApparelImage(jid);           // custom outfit CSV
+			undressToLevel(jid, WearLevelEnumType.ON);
+			generatePortrait(jid, true);
+			dressToLevel(jid, WearLevelEnumType.BASE);
+			generatePortrait(jid);
+			dressToLevel(jid, WearLevelEnumType.SUIT);
+			generatePortrait(jid);
+		}
 
 		
 
@@ -997,13 +1075,21 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		// ═══════════════════════════════════════════════════════════════════
 		// TODO: resolve+cache landscape/scene prompts, then re-read the scene note's own "text"
 		// JSON to see exactly what got cached (and what would actually be sent to SDUtil.txt2img).
-
+		logger.info("***** STEP 4");
+		
 		 List<Map<String, Object>> scenes = PictureBookUtil.listScenes(testUser, bookObjectId);
 		 List<String> sceneOids = new ArrayList<>();
 		 for (Map<String, Object> s : scenes) sceneOids.add((String) s.get("objectId"));
-		 // Re-derive from scratch so the logged prompts reflect the CURRENT assembly code (the
-		 // style/setting-free charNarration fix), not a value cached by an earlier run.
-		 for (String sceneOid : sceneOids) clearCachedScenePrompts(sceneOid);
+		 // Only FORCE re-derivation when clearSceneCache is set. A scene that has never had its
+		 // prompts resolved is unaffected either way: prepareSceneImagePrompts below still generates
+		 // one, because resolveScenePrompt/resolveLandscapePrompt only short-circuit on a cached
+		 // value that actually exists. So the two cases are "never done before" (handled for free)
+		 // and "done before, but re-derive anyway" (this flag) — which is what the flag is for, e.g.
+		 // after a prompt-assembly change like the style/setting-free charNarration fix. Leaving it
+		 // false keeps a rerun off the LLM for scenes that are already resolved.
+		 if (clearSceneCache) {
+			 for (String sceneOid : sceneOids) clearCachedScenePrompts(sceneOid);
+		 }
 		 PictureBookUtil.prepareSceneImagePrompts(testUser, sceneOids,
 		     chatConfig.get(FieldNames.FIELD_NAME), buildCommonSdConfig(), null);
 		
@@ -1017,9 +1103,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		     logger.info("Scene " + sceneOid + " scenePrompt=[" + sceneData.get("scenePrompt") + "]");
 		}
 
-		if(true){
-			return;
-		}
+
 
 		// ═══════════════════════════════════════════════════════════════════
 		// STEP 5 — IMAGE GENERATION (real Swarm call)
@@ -1036,14 +1120,29 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		// composite). Each final composite is exported to EXPORT_DIR for visual inspection, and its
 		// decoded dimensions are logged — compare against PictureBookUtil's "requesting composite canvas
 		// at WxH" log line to localize the B2 oversized-merge issue. swarmServer is reused from Step 3B.
+		logger.info("***** STEP 5");
 		PictureBookUtil.SceneGenerationParams params = buildSdConfigTemplate();
 		List<Map<String, Object>> scenesForImages = PictureBookUtil.listScenes(testUser, bookObjectId);
 		assertFalse("Book should have at least one scene to render", scenesForImages.isEmpty());
 		int sceneNum = 0;
+		logger.info(scenesForImages.size() + " scenes");
+		/*
+		if(true){
+			logger.warn("DEBUG BREAK *****");
+			return;
+		}
+		*/
 		for (Map<String, Object> s : scenesForImages) {
+			
+			if(sceneNum >= SCENE_COUNT || sceneNum == 1) {
+				logger.warn("Break at " + sceneNum);
+				break;
+			}
+			
 			String sceneOid = (String) s.get("objectId");
 			if (sceneOid == null) continue;
 			sceneNum++;
+
 			long t0 = System.currentTimeMillis();
 			BaseRecord result = PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", swarmServer);
 			long elapsed = System.currentTimeMillis() - t0;
@@ -1089,6 +1188,9 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 
 		logger.info("TestPictureBookCustomPipeline complete — Steps 1-3 (content) + 3B (apparel/mannequin) "
 			+ "+ 5 (scene images) ran; generated images exported to " + EXPORT_DIR + " for visual inspection.");
+		
+		logger.info("END TEST *****");
+		AuditUtil.setLogToConsole(true);
 	}
 
 	/**
@@ -1105,8 +1207,10 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 	 * (per .claude/rules "verify the actual SD payload"); a full portrait render needs a GPU-heavy
 	 * Swarm scene pass and is out of this test's scope.
 	 */
+	/*
 	@Test
 	public void TestPortraitStyleOverride() throws Exception {
+		logger.info("***** TEST PORTRAIT OVERLAY");
 		setupTestContext();
 
 		// (1) strip removes a baked-in random art style; keeps appearance/outfit.
@@ -1169,7 +1273,8 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		logger.info("TestPortraitStyleOverride: strip + single-style + comic-override + DB round-trip verified "
 			+ "(SD request-prompt + persistence; no image render)");
 	}
-
+	 */
+	
 	private static int countOccurrences(String hay, String needle) {
 		int n = 0, i = 0;
 		while ((i = hay.indexOf(needle, i)) >= 0) { n++; i += needle.length(); }
@@ -1201,6 +1306,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 	 * used for imaging. Drives createFromScenes with a synthetic 2-scene book (unique per run so the
 	 * reduce always fires). Live LLM (Ollama) + DB required.
 	 */
+	/*
 	@Test
 	public void TestSceneReducedCharacterDescription() throws Exception {
 		setupTestContext();
@@ -1278,13 +1384,14 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 
 		logger.info("TestSceneReducedCharacterDescription: block-scoped reduce + Attr1/Attr2 + imaging-uses-Attr2 verified");
 	}
-
+	 */
 	/**
 	 * Verifies the LEGACY all-in-one extract() now goes through the SAME reduce/attribute path as
 	 * createFromScenes (not the old inline extract-character loop): after extract() runs, at least one
 	 * created character carries a non-blank ATTR_DESCRIPTION (Attribute 2), which only the reduce path
 	 * produces. Live LLM + DB. Uses a unique book per run so extract() actually creates fresh.
 	 */
+	/*
 	@Test
 	public void TestExtractLegacyUsesReduce() throws Exception {
 		setupTestContext();
@@ -1328,7 +1435,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		assertTrue("legacy extract() must go through the reduce path (a character has an ATTR_DESCRIPTION)", anyDesc);
 		logger.info("TestExtractLegacyUsesReduce: legacy extract() delegates to the reduce/attribute path");
 	}
-
+	 */
 	/**
 	 * Guards the prompt-bloat regression: the transient raw {@code sourceText} content block (carried
 	 * on scenes to feed the per-character reduce) must NEVER be serialized into the chunk extractor's

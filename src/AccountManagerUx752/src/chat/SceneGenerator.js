@@ -21,6 +21,16 @@ let _onGenerated = null;
 
 function defaultConfig() {
     return {
+        // FLUX.2 multi-reference composite, same pipeline the picture book uses. Server-side
+        // compositeMode supersedes the legacy useKontext boolean; chat's historical default when
+        // neither is set was Kontext, which is the stitched-panel-strip path that rendered the
+        // reference sheet into the scene as a propped-up board (see
+        // AccountManagerObjects7/media/flux/bad.composite.png).
+        //
+        // Note this default DOES reach users with an existing saved config: loadConfig() does
+        // Object.assign(defaultConfig(), stored), and no stored config carries compositeMode yet,
+        // so the default survives the merge rather than being overwritten by a stale value.
+        compositeMode: "flux2",
         model: "",
         refinerModel: "",
         style: "photograph",

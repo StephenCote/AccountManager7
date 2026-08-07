@@ -38,6 +38,7 @@ import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.llm.TemplatePatternEnumType;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
+import org.cote.accountmanager.olio.sd.SceneCompositeUtil;
 import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -1342,13 +1343,14 @@ public class ChatService {
 
 		/// Parse scene config flags from sdConfig
 		boolean skipLandscape = false;
-		boolean useKontext = true;
 		if (sdConfig != null) {
 			try { skipLandscape = (boolean) sdConfig.get("skipLandscape"); } catch (Exception e) { /* default false */ }
-			try { Boolean uk = sdConfig.get("useKontext"); if (uk != null) useKontext = uk; } catch (Exception e) { /* default true */ }
 		}
-		/// Kontext 2-pass needs moderate creativity — enough to restructure panels while preserving faces
-		double sceneCreativity = useKontext ? 0.65 : 0.85;
+		/// Pipeline selection lives in Objects7 (SceneCompositeUtil), not here — this endpoint is
+		/// transport. `true` preserves chat's historical default of Kontext for a config that carries
+		/// neither compositeMode nor useKontext; the picture book passes false for its own default.
+		String compositeMode = SceneCompositeUtil.resolveMode(sdConfig, true);
+		double sceneCreativity = SceneCompositeUtil.defaultCreativity(compositeMode);
 		if (sdConfig != null) {
 			try {
 				Double sc = sdConfig.get("sceneCreativity");
@@ -1403,57 +1405,34 @@ public class ChatService {
 		String usrOid = userChar.get(FieldNames.FIELD_OBJECT_ID);
 		List<BaseRecord> images = new java.util.ArrayList<>();
 
-		if (useKontext) {
-			/// KONTEXT SINGLE-PASS PIPELINE: stitch [sysPortrait | usrPortrait | landscape]
-			/// into one composite reference image, send as a single promptImage.
-			String settingDesc = "";
-			try { String s = chatConfig.get("setting"); if (s != null && !s.isEmpty()) settingDesc = s; } catch (Exception e) { /* ignore */ }
+		String settingDesc = "";
+		try { String s = chatConfig.get("setting"); if (s != null && !s.isEmpty()) settingDesc = s; } catch (Exception e) { /* ignore */ }
 
-			WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Kontext compositing..."});
+		WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Compositing scene..."});
 
-			byte[] stitchedBytes = SDUtil.stitchSceneImages(
-				sceneResult.sysPortraitBytes,
-				sceneResult.usrPortraitBytes,
-				landscapeBytes,
-				1024
-			);
-
-			SWTxt2Img s2i = SWUtil.newKontextSceneTxt2Img(
-				sceneResult.sysCharDesc, sceneResult.usrCharDesc,
-				sceneResult.sceneDesc, settingDesc, sdConfig
-			);
-
-			if (stitchedBytes != null) {
-				List<String> promptImages = new java.util.ArrayList<>();
-				promptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(stitchedBytes));
-				s2i.setPromptImages(promptImages);
-				logger.info("generateScene Kontext: stitched composite " + stitchedBytes.length + " bytes");
-			}
-
-			images = sdu.createSceneImage(user, groupPath, name, s2i, sysOid, usrOid);
-
-			if (images.isEmpty()) {
-				logger.warn("generateScene: Kontext pipeline produced no images — falling back to classic");
-				useKontext = false;
-			}
+		/// Request construction (mode branch, reference/init imagery) is Objects7's job — see
+		/// SceneCompositeUtil, which the picture book shares so the two features cannot drift again.
+		SWTxt2Img s2i = SceneCompositeUtil.buildSceneRequest(compositeMode,
+			sceneResult.sysCharDesc, sceneResult.usrCharDesc, sceneResult.sceneDesc, settingDesc, null,
+			sceneResult.prompt, sceneResult.negativePrompt,
+			sceneResult.sysPortraitBytes, sceneResult.usrPortraitBytes, landscapeBytes,
+			sceneCreativity, sdConfig);
+		if (s2i == null) {
+			logger.error("generateScene: could not build a request for compositeMode=" + compositeMode);
+			return Response.status(500).entity("{\"error\":\"Unsupported composite mode\"}").build();
 		}
+		images = sdu.createSceneImage(user, groupPath, name, s2i, sysOid, usrOid);
 
-		if (!useKontext) {
-			/// CLASSIC PIPELINE: Graphics2D composite + SDXL img2img refinement
-			SWTxt2Img s2i = SWUtil.newSceneTxt2Img(sceneResult.prompt, sceneResult.negativePrompt, sdConfig);
-			byte[] compositeBytes = SDUtil.compositeSceneCanvas(
-				landscapeBytes,
-				sceneResult.sysPortraitBytes,
-				sceneResult.usrPortraitBytes,
-				s2i.getWidth(),
-				s2i.getHeight()
-			);
-			if (compositeBytes != null) {
-				s2i.setInitImage("data:image/png;base64," + Base64.getEncoder().encodeToString(compositeBytes));
-				s2i.setInitImageCreativity(sceneCreativity);
-				logger.info("generateScene Classic: composite " + compositeBytes.length + " bytes, creativity=" + sceneCreativity);
-			}
-			images = sdu.createSceneImage(user, groupPath, name, s2i, sysOid, usrOid);
+		/// Reference-based modes can return a technically-valid empty result; fall back to classic
+		/// rather than failing the scene outright. Unchanged behavior, just no longer mode-specific.
+		if (images.isEmpty() && !SceneCompositeUtil.MODE_CLASSIC.equals(compositeMode)) {
+			logger.warn("generateScene: " + compositeMode + " pipeline produced no images — falling back to classic");
+			SWTxt2Img fallback = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_CLASSIC,
+				sceneResult.sysCharDesc, sceneResult.usrCharDesc, sceneResult.sceneDesc, settingDesc, null,
+				sceneResult.prompt, sceneResult.negativePrompt,
+				sceneResult.sysPortraitBytes, sceneResult.usrPortraitBytes, landscapeBytes,
+				SceneCompositeUtil.defaultCreativity(SceneCompositeUtil.MODE_CLASSIC), sdConfig);
+			images = sdu.createSceneImage(user, groupPath, name, fallback, sysOid, usrOid);
 		}
 
 		if (images.isEmpty()) {

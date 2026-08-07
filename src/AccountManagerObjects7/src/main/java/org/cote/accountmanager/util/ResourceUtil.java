@@ -14,6 +14,7 @@ public class ResourceUtil {
 	public static final Logger logger = LogManager.getLogger(ResourceUtil.class);
 	
 	private static Map<String, String> cache = new ConcurrentHashMap<>();
+	private static Map<String, byte[]> binaryCache = new ConcurrentHashMap<>();
 	public String resourcePrefix = "";
 	
 	private static ResourceUtil _instance = null;
@@ -32,6 +33,7 @@ public class ResourceUtil {
 	
 	public static void clearCache() {
 		cache.clear();
+		binaryCache.clear();
 	}
 	
 	public String getCategoryResource(String name) {
@@ -78,6 +80,34 @@ public class ResourceUtil {
 	public String getPolicyResource(String name) {
 		return getResource(resourcePrefix + "policies/" + name + "Policy.json");
 	}
+	/// Load a BINARY classpath resource (images, etc.). getResource() decodes as UTF-8 and would
+	/// corrupt anything that isn't text, so binary callers must come through here. Cached separately
+	/// from the text cache; the resources this is used for are small and immutable at runtime (the
+	/// mannequin base images are ~30KB each and are read once per wear level during SD generation).
+	/// Returns null when the resource is absent, matching getResource()'s contract.
+	public byte[] getBinaryResource(String path) {
+		byte[] cached = binaryCache.get(path);
+		if(cached != null) {
+			return cached;
+		}
+		InputStream srs = ResourceUtil.class.getClassLoader().getResourceAsStream(path);
+		if(srs == null) {
+			logger.warn("Failed to load binary resource " + path);
+			return null;
+		}
+		byte[] data = null;
+		try(BufferedInputStream is = new BufferedInputStream(srs)) {
+			data = StreamUtil.getStreamBytes(is);
+		} catch (IOException e) {
+			logger.error("IOException reading binary resource " + path + ": " + e.getMessage());
+			return null;
+		}
+		if(data != null && data.length > 0) {
+			binaryCache.put(path, data);
+		}
+		return data;
+	}
+
 	public String getResource(String path) {
 		if(cache.containsKey(path)) {
 			return cache.get(path);
