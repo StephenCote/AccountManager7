@@ -233,6 +233,29 @@ public class TestFeatureConfigService extends BaseTest {
 			expected, featuresOf(service.getFeatureConfig(requestAs(reader))));
 	}
 
+	/// The 400 body must be SERIALIZED, not concatenated. Hand-building
+	/// `"{\"error\":\"Unknown feature IDs: " + join(ids) + "\"}"` emits malformed JSON the moment an id
+	/// carries a quote, a backslash or a newline: the client's JSON.parse then throws and a precise 400
+	/// degrades into a generic "Failed to save" with the reason lost. body() parses the entity, so it fails
+	/// outright on an unparsable body - which is exactly what the old concatenation produced here.
+	@Test
+	public void TestUnknownIdErrorBodyIsValidJson() {
+		String nasty = "bo\"gus\\Feature\nid";
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("features", Arrays.asList("core", nasty));
+
+		Response r = service.updateFeatureConfig(JSONUtil.exportObject(m), requestAs(writer));
+		assertEquals("An unknown feature id must be rejected with 400, body: " + r.getEntity(), 400, r.getStatus());
+
+		/// The load-bearing assertion: the body PARSES, and keeps the documented {"error":"..."} shape.
+		Map<String, Object> parsed = body(r);
+		assertNotNull("The 400 body must carry an 'error' key: " + r.getEntity(), parsed.get("error"));
+		assertTrue("The message text must be unchanged, got: " + parsed.get("error"),
+			String.valueOf(parsed.get("error")).startsWith("Unknown feature IDs: "));
+		assertTrue("The offending id must survive escaping intact, got: " + parsed.get("error"),
+			String.valueOf(parsed.get("error")).contains(nasty));
+	}
+
 	/// Replaces the old TestCoreAlwaysIncluded, which asserted its own in-test arithmetic.
 	/// Here the id list genuinely omits core and the service/resolver must put it back - on the PUT
 	/// echo, in what is persisted, and on a different user's GET.

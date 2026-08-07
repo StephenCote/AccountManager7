@@ -163,6 +163,13 @@ message. So the implemented behaviour distinguishes **failure** from **a legitim
 `'standard'` remains the genuine no-signal default, so the precedence chain itself is intact. Recorded
 here because it deviates from the literal chain above — do not "fix" it back.
 
+**One counter-intuitive consequence, so it is not misread as a bug.** `applyFeatures` calls
+`refresh()` → `refreshApplication()`, which re-fetches `getFeatureConfig()`. If *that* re-read fails,
+the fail-open branch above engages and the UI momentarily shows **all** features — even though the
+save itself succeeded and a reduced set is persisted. It looks like the save was ignored; it wasn't.
+The state is self-correcting on the next successful load. Do not "fix" this by treating a save as
+authoritative over a subsequent read, and do not report it as a save failure.
+
 ### 3.8 Build always emits every chunk
 
 `__FEATURE_PROFILE__` is only a runtime default; it never gates `import()`. `vite build` therefore

@@ -47,6 +47,17 @@ public class FeatureConfigService {
 	private static final String PROFILE_FULL = "full";
 	private static final String PROFILE_CUSTOM = "custom";
 
+	/// Build an error body through the SERIALIZER, never by concatenation, whenever the message embeds a
+	/// value that came off the request. Hand-rolling `"{\"error\":\"...\" + value + "\"}"` emits malformed
+	/// JSON the moment the value carries a quote, a backslash or a newline - the client's JSON.parse then
+	/// throws and a precise 400 degrades into a generic "Failed to save" with the reason lost. The SHAPE is
+	/// unchanged ({"error":"..."}), which TestFeatureConfigService asserts on.
+	private static Response errorResponse(int status, String message) {
+		Map<String, Object> body = new LinkedHashMap<>();
+		body.put("error", message);
+		return Response.status(status).entity(JSONUtil.exportObject(body)).build();
+	}
+
 	private static Response featuresResponse(List<String> features) {
 		Map<String, Object> result = new LinkedHashMap<>();
 		result.put("features", features);
@@ -81,18 +92,18 @@ public class FeatureConfigService {
 		}
 
 		if (json == null || json.isEmpty()) {
-			return Response.status(400).entity("{\"error\":\"Empty request body\"}").build();
+			return errorResponse(400, "Empty request body");
 		}
 
 		@SuppressWarnings("unchecked")
 		Map<String, Object> incoming = JSONUtil.importObject(json, LinkedHashMap.class);
 		if (incoming == null) {
-			return Response.status(400).entity("{\"error\":\"Invalid JSON\"}").build();
+			return errorResponse(400, "Invalid JSON");
 		}
 
 		Object featuresObj = incoming.get("features");
 		if (!(featuresObj instanceof List)) {
-			return Response.status(400).entity("{\"error\":\"Missing or invalid 'features' array\"}").build();
+			return errorResponse(400, "Missing or invalid 'features' array");
 		}
 
 		List<String> featureList = new ArrayList<>();
@@ -107,13 +118,17 @@ public class FeatureConfigService {
 			}
 		}
 		if (!invalid.isEmpty()) {
-			return Response.status(400).entity("{\"error\":\"Unknown feature IDs: " + String.join(", ", invalid) + "\"}").build();
+			/// The ids are request-supplied, so the serializer - not string concatenation - has to escape
+			/// them. Same message text and same shape as before.
+			return errorResponse(400, "Unknown feature IDs: " + String.join(", ", invalid));
 		}
 
 		/// 'core' inclusion and the deps closure are applied by FeatureConfigUtil.setEnabledFeatures.
 		if (!FeatureConfigUtil.setEnabledFeatures(user, featureList)) {
+			/// Deliberately does NOT echo the submitted ids: the failure reason is in the audit log, and the
+			/// ids have already been validated against the manifest by this point.
 			logger.error("Failed to store the feature configuration");
-			return Response.status(500).entity("{\"error\":\"Failed to save config\"}").build();
+			return errorResponse(500, "Failed to save config");
 		}
 
 		/// Echo what was actually stored (core forced, deps closed), read back through the resolver.
@@ -134,7 +149,7 @@ public class FeatureConfigService {
 		String manifest = FeatureConfigUtil.getManifestJson();
 		if (manifest == null) {
 			logger.error("The Ux feature manifest resource could not be read");
-			return Response.status(500).entity("{\"error\":\"Feature manifest unavailable\"}").build();
+			return errorResponse(500, "Feature manifest unavailable");
 		}
 		return Response.status(200).entity(manifest).build();
 	}

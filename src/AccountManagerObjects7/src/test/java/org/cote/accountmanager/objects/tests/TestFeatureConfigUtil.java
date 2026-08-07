@@ -109,6 +109,14 @@ public class TestFeatureConfigUtil extends BaseTest {
 	/// Overwrite the stored payload verbatim. contentType is set BEFORE the byte store because
 	/// ByteModelUtil.tryCompress reads contentType at set() time to decide whether to gzip.
 	private boolean writeRawPayload(BaseRecord user, String json) throws Exception {
+		return writeRawPayload(user, json, true);
+	}
+
+	/// invalidate=false writes the record WITHOUT touching FeatureConfigUtil's cache - i.e. exactly what a
+	/// write from another process (Console7, a second Tomcat) looks like to this JVM. Required by
+	/// TestAbsentResolutionIsNotCachedForTheOrg, which cannot use setEnabledFeatures because that
+	/// invalidates in its own finally block and would hide the defect under test.
+	private boolean writeRawPayload(BaseRecord user, String json, boolean invalidate) throws Exception {
 		BaseRecord dir = findConfigDir(user);
 		assertNotNull("/Library/Configuration does not exist - call setEnabledFeatures first", dir);
 		BaseRecord existing = findConfigRecord(user);
@@ -119,7 +127,9 @@ public class TestFeatureConfigUtil extends BaseTest {
 			rec.set(FieldNames.FIELD_CONTENT_TYPE, FeatureConfigUtil.CONTENT_TYPE);
 			rec.set(FieldNames.FIELD_BYTE_STORE, json.getBytes(StandardCharsets.UTF_8));
 			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, rec);
-			FeatureConfigUtil.invalidate((long)user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			if(invalidate) {
+				FeatureConfigUtil.invalidate((long)user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			}
 			return created != null;
 		}
 		BaseRecord patch = RecordFactory.newInstance(ModelNames.MODEL_DATA);
@@ -131,7 +141,9 @@ public class TestFeatureConfigUtil extends BaseTest {
 		patch.set(FieldNames.FIELD_CONTENT_TYPE, FeatureConfigUtil.CONTENT_TYPE);
 		patch.set(FieldNames.FIELD_BYTE_STORE, json.getBytes(StandardCharsets.UTF_8));
 		BaseRecord updated = IOSystem.getActiveContext().getAccessPoint().update(user, patch);
-		FeatureConfigUtil.invalidate((long)user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		if(invalidate) {
+			FeatureConfigUtil.invalidate((long)user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		}
 		return updated != null;
 	}
 
@@ -510,5 +522,97 @@ public class TestFeatureConfigUtil extends BaseTest {
 		String payload = payloadOf(rec);
 		assertTrue("The stored payload should already contain the closed dep set: " + payload,
 			payload.contains("chat") && payload.contains("core") && payload.contains("cardGame"));
+	}
+
+	/// ------------------------------------------------------------------------------------------
+	/// (h) M1: an ABSENT (or DENIED) resolution must never be cached for the whole organization
+	/// ------------------------------------------------------------------------------------------
+
+	/// The cache is keyed by organizationId, but load() computes the value under a PER-USER authorization
+	/// decision: AccessPoint.find returns null for a PBAC DENIAL exactly as it does for a genuinely ABSENT
+	/// record, and both land on the same `absent` return. Caching that published one user's negative
+	/// outcome as the WHOLE organization's answer for a TTL window - so an unprivileged user looping on
+	/// the read endpoint could keep the org pinned to the default profile (every feature) and silently
+	/// override the admin's saved reduction.
+	///
+	/// This exercises the deterministic trigger (no record). The write deliberately goes through the raw
+	/// helper with invalidate=false, because setEnabledFeatures() invalidates in its own finally block,
+	/// which would mask the defect and make this test vacuous. That is also the honest cross-process case:
+	/// a Console7 or second-Tomcat write cannot invalidate THIS JVM's cache, so the only thing that can
+	/// make the new record visible is not having cached the absence in the first place.
+	///
+	/// BEFORE the fix this fails on the second read - it returns the cached default profile. AFTER the fix
+	/// the absence is never cached, so the stored set is observed on the next read, inside the TTL.
+	@Test
+	public void TestAbsentResolutionIsNotCachedForTheOrg() throws Exception {
+		BaseRecord writer = getWriter();
+		BaseRecord reader = getReader();
+		long orgId = reader.get(FieldNames.FIELD_ORGANIZATION_ID);
+
+		/// Establish /Library/Configuration + the AccountUsers read grant, then remove the record itself so
+		/// the organization resolves to "absent".
+		assertTrue("Setup write failed", FeatureConfigUtil.setEnabledFeatures(writer, Arrays.asList("core", "chat")));
+		deleteConfigRecord(writer);
+
+		/// A reduced set, so a stale default profile cannot accidentally satisfy the assertion below.
+		List<String> expected = FeatureConfigUtil.resolveFeatures(Arrays.asList("core", "media"));
+		assertFalse("The stored set must differ from the default profile or this test is vacuous",
+			expected.equals(FeatureConfigUtil.getDefaultFeatures()));
+
+		try {
+			/// Read #1 - the low-privileged user warms the org's cache entry from an ABSENT resolution.
+			long t0 = System.currentTimeMillis();
+			assertEquals("With no stored record the organization must resolve to the default profile",
+				FeatureConfigUtil.getDefaultFeatures(), FeatureConfigUtil.getEnabledFeatures(reader));
+
+			/// The record now exists, with NO in-process cache invalidation.
+			assertTrue("Failed to write the payload",
+				writeRawPayload(writer, "{\"features\":[\"core\",\"media\"]}", false));
+
+			/// Read #2, inside the TTL.
+			List<String> seen = FeatureConfigUtil.getEnabledFeatures(reader);
+			long elapsed = System.currentTimeMillis() - t0;
+
+			/// If the two reads straddled the TTL the entry would have expired on its own and this would
+			/// prove nothing, so assert the window explicitly rather than assuming it.
+			assertTrue("This assertion only means something INSIDE the TTL window, but " + elapsed
+				+ "ms elapsed since the first read and CACHE_TTL_MS is " + FeatureConfigUtil.CACHE_TTL_MS + "ms",
+				elapsed < FeatureConfigUtil.CACHE_TTL_MS);
+			assertEquals("An absent resolution was cached for the whole organization: a record stored after the "
+				+ "first read stays invisible for the rest of the TTL. Only a POSITIVE resolution may be cached, "
+				+ "because an absent result is indistinguishable from a per-user PBAC denial.",
+				expected, seen);
+		}
+		finally {
+			/// Plain cleanup, no assertions - an assertion here would mask a real failure above.
+			BaseRecord rec = findConfigRecord(writer);
+			if(rec != null) {
+				IOSystem.getActiveContext().getAccessPoint().delete(writer, rec);
+			}
+			FeatureConfigUtil.invalidate(orgId);
+		}
+	}
+
+	/// L2 companion: a stored id carrying CR/LF reaches the "Ignoring an unknown feature id" log line on
+	/// the READ path, so it must be sanitized before it is logged. This asserts the BEHAVIOUR around that
+	/// path (the crafted id is dropped, core survives, nothing throws) and executes the sanitizing branch;
+	/// it does not - and cannot, from here - assert on the emitted log text itself.
+	@Test
+	public void TestCrlfBearingFeatureIdIsDroppedAndDoesNotThrow() throws Exception {
+		BaseRecord writer = getWriter();
+		BaseRecord reader = getReader();
+
+		assertTrue("Setup write failed", FeatureConfigUtil.setEnabledFeatures(writer, Arrays.asList("core", "chat")));
+
+		/// resolveFeatures is the code path that logs the id; a forged trailing line is included verbatim.
+		List<String> forged = Arrays.asList("core", "media\r\n2026-08-07 ERROR [forged] injected log line");
+		assertEquals("A CR/LF-bearing id is not a known feature and must be dropped, leaving the valid ids",
+			Arrays.asList("core"), FeatureConfigUtil.resolveFeatures(forged));
+
+		/// ...and the same thing through the STORED payload, which is where the value really originates.
+		assertTrue("Failed to write the forged payload", writeRawPayload(writer,
+			"{\"features\":[\"core\",\"media\\r\\nforged ERROR line\"]}"));
+		assertEquals("A CR/LF-bearing stored id must be dropped on read, not resolved",
+			Arrays.asList("core"), FeatureConfigUtil.getEnabledFeatures(reader));
 	}
 }

@@ -1,0 +1,7 @@
+# Repo-root ignores. Module-scoped patterns live in src/.gitignore.
+
+# Local scratch that holds real credentials (LLM connection configs with API
+# keys/tokens, exported chat configs). Formerly ./temp — renamed so the name
+# says "never commit this" rather than "probably safe to delete".
+# Glob covers suffixed variants (volatile-old/, volatile.bak, ...).
+volatile*

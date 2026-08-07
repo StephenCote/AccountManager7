@@ -45,9 +45,28 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 /// the bug this class replaces. Delete them by hand if they are in the way.
 ///
 /// PROPAGATION BOUND (honest statement, same standard ServerConfigUtil holds itself to): the cache is
-/// PER-JVM. A write from Console7, or from a second Tomcat, CANNOT invalidate this JVM's cache. Inside
-/// this process a write invalidates the org's entry immediately; across processes the TTL
-/// (CACHE_TTL_MS) is the only bound. Nothing here propagates live across processes.
+/// PER-JVM, and ONLY A POSITIVE RESOLUTION IS EVER CACHED. A write from Console7, or from a second
+/// Tomcat, CANNOT invalidate this JVM's cache. Inside this process a write invalidates the org's entry
+/// immediately. Across processes: a change to an ALREADY-STORED record is bound by the TTL
+/// (CACHE_TTL_MS), while the FIRST record an organization ever stores - and equally a record that has
+/// been deleted - is observed on the very next read, because an absent result is never cached. Nothing
+/// here propagates live across processes.
+///
+/// WHY ABSENT IS NEVER CACHED: load() reads through AccessPoint, and AccessPoint.find returns null for a
+/// PBAC DENIAL exactly as it does for a genuinely ABSENT record - the two are indistinguishable from
+/// here. Because the cache key is the ORGANIZATION, caching that null would let whichever user happened
+/// to warm the entry decide what the entire organization saw for a whole TTL window: an unprivileged
+/// authenticated user with no READ on the record could loop on the read endpoint and keep the org pinned
+/// to the default profile (every feature), silently overriding the admin's saved reduction. Caching only
+/// present=true removes that class of defect: an absent record, or a denial, now costs one indexed query
+/// per read - negligible, since this resolves roughly once per login - and cannot poison anyone else's
+/// answer.
+///
+/// The converse IS intended and is not an oversight: a POSITIVE entry warmed by one user is served to
+/// every user in that organization, whether or not that particular user could have read the record
+/// himself. That is exactly the per-organization semantics D1 asks for, and it is not an authorization
+/// decision - the flag only hides Ux affordances and makes no endpoint reachable or unreachable
+/// (UxFeatureFlagDesign.md section 5).
 ///
 /// LAYERING: feature ids are OPAQUE STRINGS. No code in this class - or anywhere in Objects7 - may
 /// branch on a specific id, and nothing here may reference an ISO42001 or Service7 type. The manifest
@@ -99,6 +118,28 @@ public class FeatureConfigUtil {
 		/// static utility
 	}
 
+	/// Cap for a logged untrusted value. A legitimate feature id is a short token; a multi-kilobyte "id"
+	/// is itself the abuse case, not something worth logging in full.
+	private static final int LOG_VALUE_MAX = 96;
+
+	/// Neutralize a value that originates from the STORED PAYLOAD or from a REQUEST before it reaches the
+	/// log. The read path resolves ids straight out of the stored record, so a CR/LF-bearing id would
+	/// otherwise let whoever wrote (or hand-edited) that record forge entire log lines - a fabricated
+	/// AUDIT or ERROR line in the middle of a real one. Every C0/C1 control character is replaced, not
+	/// just CR and LF, and the result is length-capped.
+	///
+	/// Log-only: this must never be used to transform a value that gets compared or stored.
+	private static String forLog(String value) {
+		if(value == null) {
+			return "null";
+		}
+		String v = value.replaceAll("\\p{Cntrl}", "?");
+		if(v.length() > LOG_VALUE_MAX) {
+			v = v.substring(0, LOG_VALUE_MAX) + "...(truncated)";
+		}
+		return v;
+	}
+
 	/// ---------------------------------------------------------------------------------------------
 	/// Manifest (S1)
 	/// ---------------------------------------------------------------------------------------------
@@ -115,6 +156,17 @@ public class FeatureConfigUtil {
 	/// Parsed view of the manifest: ids in FILE ORDER (which is the admin-card render order), and the
 	/// declared deps per id. Parsed once, lazily; the underlying resource read is itself cached by
 	/// ResourceUtil.
+	///
+	/// BOTH FIELDS STAY NULL ON A HARD FAILURE, so the next call RETRIES. Publishing an empty list
+	/// instead would be an unrecoverable latch: parseManifest returns early whenever the fields are
+	/// non-null, so ONE unreadable resource read would pin every organization in this JVM to an empty
+	/// feature set until the process was restarted, with no way back. A retry can genuinely succeed -
+	/// ResourceUtil.getResource does NOT cache a failed read (ResourceUtil.java:88-92 returns null
+	/// without caching, and :108-110 only caches a non-empty read), and ResourceUtil.clearCache() exists.
+	///
+	/// A SUCCESSFUL parse IS published even if it yielded no ids: that is broken DATA, not a failed read,
+	/// and retrying it cannot help (the resource string itself is cached by ResourceUtil, so a re-parse
+	/// would produce the identical result while re-parsing JSON under this lock on every call).
 	private static volatile List<String> manifestIds = null;
 	private static volatile Map<String, List<String>> manifestDeps = null;
 
@@ -128,48 +180,56 @@ public class FeatureConfigUtil {
 			String json = getManifestJson();
 			if(json == null || json.trim().length() == 0) {
 				logger.error("The Ux feature manifest resource is missing or empty: features/" + MANIFEST_NAME + "Manifest.json");
+				/// Leave both fields null - the next call retries.
+				return;
 			}
-			else {
-				List<Map<String, Object>> entries = JSONUtil.getList(json, LinkedHashMap.class, null);
-				if(entries == null) {
-					logger.error("Failed to parse the Ux feature manifest resource");
+			List<Map<String, Object>> entries = JSONUtil.getList(json, LinkedHashMap.class, null);
+			if(entries == null) {
+				logger.error("Failed to parse the Ux feature manifest resource");
+				return;
+			}
+			for(Map<String, Object> entry : entries) {
+				Object oid = entry.get("id");
+				if(oid == null || oid.toString().trim().length() == 0) {
+					logger.warn("Skipping a Ux feature manifest entry with no id");
+					continue;
 				}
-				else {
-					for(Map<String, Object> entry : entries) {
-						Object oid = entry.get("id");
-						if(oid == null || oid.toString().trim().length() == 0) {
-							logger.warn("Skipping a Ux feature manifest entry with no id");
-							continue;
+				String id = oid.toString().trim();
+				List<String> edeps = new ArrayList<>();
+				Object odeps = entry.get("deps");
+				if(odeps instanceof List) {
+					for(Object od : (List<?>)odeps) {
+						if(od != null && od.toString().trim().length() > 0) {
+							edeps.add(od.toString().trim());
 						}
-						String id = oid.toString().trim();
-						List<String> edeps = new ArrayList<>();
-						Object odeps = entry.get("deps");
-						if(odeps instanceof List) {
-							for(Object od : (List<?>)odeps) {
-								if(od != null && od.toString().trim().length() > 0) {
-									edeps.add(od.toString().trim());
-								}
-							}
-						}
-						if(!ids.contains(id)) {
-							ids.add(id);
-						}
-						deps.put(id, Collections.unmodifiableList(edeps));
 					}
 				}
+				if(!ids.contains(id)) {
+					ids.add(id);
+				}
+				deps.put(id, Collections.unmodifiableList(edeps));
 			}
 		}
 		catch(Exception e) {
+			/// NEVER THROWS, and never latches: the fields are still null, so this is retried.
 			logger.error("Failed to read the Ux feature manifest: " + e.getMessage());
+			return;
 		}
+		/// Reached only by a successful parse. deps first, so a reader that sees a non-null manifestIds
+		/// always sees a non-null manifestDeps too.
 		manifestDeps = Collections.unmodifiableMap(deps);
 		manifestIds = Collections.unmodifiableList(ids);
 	}
 
-	/// All manifest ids, in file order.
+	/// All manifest ids, in file order. EMPTY - never null - when the manifest could not be read, which
+	/// is the fail-CLOSED direction: an empty id set makes isKnownFeature false for every id, so
+	/// resolveFeatures enables nothing rather than everything. That empty list is NOT retained (see
+	/// parseManifest), so the next call retries the read.
 	public static List<String> getManifestIds() {
 		parseManifest();
-		return manifestIds;
+		/// Read the volatile once: a second read could observe a different value than the null check did.
+		List<String> ids = manifestIds;
+		return (ids != null ? ids : Collections.<String>emptyList());
 	}
 
 	public static boolean isKnownFeature(String id) {
@@ -179,10 +239,12 @@ public class FeatureConfigUtil {
 		return getManifestIds().contains(id);
 	}
 
-	/// The DECLARED (non-transitive) deps of one id. Empty for an unknown id.
+	/// The DECLARED (non-transitive) deps of one id. Empty for an unknown id, and empty - never a NPE -
+	/// when the manifest could not be read, since manifestDeps is deliberately left null in that case.
 	public static List<String> getDeps(String id) {
 		parseManifest();
-		List<String> d = (id != null ? manifestDeps.get(id) : null);
+		Map<String, List<String>> mdeps = manifestDeps;
+		List<String> d = ((mdeps != null && id != null) ? mdeps.get(id) : null);
 		return (d != null ? d : Collections.<String>emptyList());
 	}
 
@@ -210,7 +272,9 @@ public class FeatureConfigUtil {
 				}
 				String tid = id.trim();
 				if(!isKnownFeature(tid)) {
-					logger.warn("Ignoring an unknown feature id: " + tid);
+					/// tid can come straight off the stored payload on the READ path (and off the request on
+					/// the write path), so it is sanitized before it is logged - never logged raw.
+					logger.warn("Ignoring an unknown feature id: " + forLog(tid));
 					continue;
 				}
 				addWithDeps(tid, resolved, 0);
@@ -281,6 +345,10 @@ public class FeatureConfigUtil {
 	/// payload, a PBAC denial - degrades to the default profile. This runs once per login and must not
 	/// be able to fail a login.
 	///
+	/// NONE OF THOSE FAILURES IS CACHED. Only a positive resolution (present=true) is written to the
+	/// shared per-org entry, so one user's denial or a not-yet-created record cannot become the whole
+	/// organization's answer for a TTL window - see WHY ABSENT IS NEVER CACHED on the class.
+	///
 	/// THE READ PATH CREATES NOTHING. The group is resolved with findPath only. LibraryUtil
 	/// .getCreateSharedLibrary is deliberately NOT called here: its create branch runs as the ORG ADMIN
 	/// (LibraryUtil.java:43), does a raw createRecord that bypasses PBAC (:45), and grants role
@@ -305,7 +373,16 @@ public class FeatureConfigUtil {
 		Entry cached = cache.get(orgId);
 		if(cached == null || cached.expires <= now) {
 			cached = load(user, orgId, now + CACHE_TTL_MS);
-			cache.put(orgId, cached);
+			if(cached.present) {
+				cache.put(orgId, cached);
+			}
+			else {
+				/// Cache NOTHING on an absent/denied resolution, and leave nothing behind either: drop any
+				/// expired entry so a set whose record has since been deleted cannot linger in memory.
+				/// Removing an entry another thread has just warmed costs one extra query and nothing else,
+				/// whereas storing this one would publish a per-user authorization outcome org-wide.
+				cache.remove(orgId);
+			}
 		}
 		if(!cached.present) {
 			return getDefaultFeatures();
@@ -374,7 +451,9 @@ public class FeatureConfigUtil {
 			return new Entry(true, resolveFeatures(ids), expires);
 		}
 		catch(Exception e) {
-			logger.warn("Failed to resolve the feature configuration for organization " + orgId + ": " + e.getMessage());
+			/// The message can quote the stored payload (a byte-store or JSON failure names what it choked
+			/// on), so it is sanitized like any other payload-derived value.
+			logger.warn("Failed to resolve the feature configuration for organization " + orgId + ": " + forLog(e.getMessage()));
 			return absent;
 		}
 	}
@@ -403,6 +482,12 @@ public class FeatureConfigUtil {
 	/// (MemberUtil.member(..., true)), so running them after creation is safe.
 	/// NOTE: ChatLibraryUtil.java:47-48 has this same latent ordering bug (root reader before create).
 	/// It is not copied here and is not fixed here.
+	///
+	/// WHAT configureLibraryRootReader ACTUALLY GRANTS: READ - for both the GROUP and DATA permission
+	/// types - on /Library ITSELF, to the organization's AccountUsers role (LibraryUtil.java:79-98), so in
+	/// a deployment where neither ChatLibraryUtil nor PolicyUtil has run, the first feature-config save is
+	/// what first lets every org user enumerate /Library's subgroups (subgroup contents remain separately
+	/// gated by their own ACLs).
 	///
 	/// WHAT THE GRANTS ACTUALLY DO: getCreateSharedGroup returns EARLY when the group already exists
 	/// (LibraryUtil.java:40-42), BEFORE configureLibraryPermissions (:49) - so that call can only
@@ -500,7 +585,8 @@ public class FeatureConfigUtil {
 			}
 		}
 		catch(Exception e) {
-			logger.error("Failed to write the feature configuration for organization " + orgId + ": " + e.getMessage());
+			/// Request-derived content can appear in the message (the ids being written), so it is sanitized.
+			logger.error("Failed to write the feature configuration for organization " + orgId + ": " + forLog(e.getMessage()));
 			return false;
 		}
 		finally {

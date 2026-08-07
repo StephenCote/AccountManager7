@@ -69,6 +69,42 @@ curl -k -X POST https://localhost:9443/rest/setup/ \
 # app (UI + REST behind nginx): https://localhost:9443
 # inspect the dedicated DB if desired: psql -h localhost -p 15433 -U am7user -d am72db  (password: password)
 
+# ── CREDENTIAL OF RECORD — do not deviate ───────────────────────────────────────────────────────
+# The am7test admin password is `password`, on all three orgs. That is what the curl above sets and
+# what EVERY e2e helper already assumes as its default: e2e/helpers/auth.js:15, e2e/helpers/api.js:46,
+# SHARED_PASSWORD (:318) and ADMIN_ROLE_PASSWORD (:367). Setting anything else silently breaks the
+# whole Playwright suite, because those helpers need one admin session to PROVISION the test users —
+# so a wrong admin password blocks not just admin tests but every test.
+#
+# Credentials are salted hashes and CANNOT be recovered. If the admin password is ever lost, the only
+# remedy is a full reset (below) — there is no recovery path.
+#
+# This happened: the stack set up 2026-08-06 used an unrecorded password, which cost a full reset on
+# 2026-08-07. If you must deviate, write the value into ./volatile/ (git-ignored) BEFORE running setup.
+#
+# RESET PROCEDURE (disposable stack only — NEVER confuse this with a schema -Dreset, which is
+# forbidden; this destroys a dedicated throwaway container + its bind-mounted dir, not a real DB):
+#   docker compose -p am7test -f docker-compose.test.yml down
+#   mv docker-data docker-data.reset-<YYYYMMDD>      # keeps the old state; docker-data* is git-ignored
+#   docker compose -p am7test -f docker-compose.test.yml up -d      # omit --build to keep the current
+#                                                                   # image if source is mid-change
+#   TOKEN=$(cat docker-data/am7/store/.setup.token)
+#   curl -k -X POST https://127.0.0.1:9443/AccountManagerService7/rest/setup/ \
+#     -H 'Content-Type: application/json' -H "X-AM7-Setup-Token: $TOKEN" \
+#     -d '{"credential":"cGFzc3dvcmQ="}'            # base64 of `password`
+#   # verify (must return `true`, not `false`):
+#   curl -k -X POST https://127.0.0.1:9443/AccountManagerService7/rest/login \
+#     -H 'Content-Type: application/json' \
+#     -d '{"schema":"auth.credential","organizationPath":"/Development","name":"admin","credential":"cGFzc3dvcmQ=","type":"hashed_password"}'
+#
+# NOTE the REST path prefix: /AccountManagerService7/rest/... through nginx. The curl earlier in this
+# file omits it (`https://localhost:9443/rest/setup/`) and will 404.
+#
+# NOTE 127.0.0.1, not localhost: Docker publishes IPv4-only and Chromium resolves localhost to ::1
+# first, failing with net::ERR_CONNECTION_ABORTED. Playwright must use the IPv4 literal, and
+# CORS_ALLOWED_ORIGINS must then include https://127.0.0.1:9443 or the login POST is blocked.
+# ────────────────────────────────────────────────────────────────────────────────────────────────
+
 docker compose -p am7test -f docker-compose.test.yml down     # stop; data KEPT on the host (./docker-data)
 docker compose -p am7test -f docker-compose.test.yml down; rm -rf ./docker-data   # full reset (wipe host data)
 ```
