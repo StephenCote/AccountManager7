@@ -3,6 +3,7 @@ import { am7client } from './core/am7client.js';
 import { am7model } from './core/model.js';
 import { page } from './core/pageClient.js';
 import { initFeatures, loadFeatureRoutes } from './features.js';
+import { disabledFeatureRouteKey, createDisabledFeatureRoute } from './core/featureRoute.js';
 
 // Import views
 import sigView from './views/sig.js';
@@ -179,6 +180,13 @@ const routes = {
     }
 };
 
+/// §3.6 — disabled deep-link feedback. A path owned by a known-but-disabled feature used to fall
+/// through to the "/main" default with no explanation. The resolver lives in core/featureRoute.js
+/// (see the mechanism note there); only the layout wrapper is supplied from here.
+const disabledFeatureRoute = createDisabledFeatureRoute({
+    wrap: function (content) { return layout(pageLayout(content)); }
+});
+
 function init() {
     window.addEventListener("beforeunload", takeDown);
     // Mithril v2 listens for popstate, not hashchange. Bridge external hash
@@ -218,23 +226,52 @@ async function refreshApplication() {
     page.application = undefined;
     page.user = usr;
 
-    // Initialize feature profile: try server config first, then URL param / build define / default
-    let profile = 'full';
-    if (usr != null) {
+    // Feature profile precedence (§3.7): ?features= -> server org config -> __FEATURE_PROFILE__ -> 'standard'.
+    // Previously the server was tried first and its default was "everything", so ?features= and the
+    // build define were dead for any logged-in user.
+    let profile = null;
+    let configFailed = false;
+
+    // 1. URL override — dev only. Not a security control either way (§5), but it should not be a
+    //    supported production surface.
+    if (page.devMode) {
+        let urlFeatures = null;
         try {
-            let serverConfig = await am7client.getFeatureConfig();
-            if (serverConfig && serverConfig.features && Array.isArray(serverConfig.features)) {
-                profile = serverConfig.features;
-            }
-        } catch (e) {
-            console.warn('[router] Failed to fetch server feature config, using fallback', e);
-        }
+            urlFeatures = new URLSearchParams(window.location.search).get('features');
+        } catch (e) { /* no window.location.search */ }
+        if (urlFeatures) profile = urlFeatures;
     }
-    if (typeof profile === 'string') {
-        // Fallback to URL param or Vite define
-        profile = new URLSearchParams(window.location.search).get('features')
-            || (typeof __FEATURE_PROFILE__ !== 'undefined' ? __FEATURE_PROFILE__ : null)
-            || 'full';
+
+    // 2. Server org config. Per the §3.7 "Implementation note", FAILURE must be distinguished from a
+    //    legitimately small set: after D1 the read path force-includes `core`, so ["core"] is the
+    //    smallest LEGAL answer and is exactly the `minimal` profile. Treating a short array as failure
+    //    would make `minimal` unreachable. Failure = thrown/rejected, non-2xx (am7client.get swallows
+    //    the error and resolves undefined), or a body whose `features` is missing/not an array. Note
+    //    the old code accepted [] as valid because an empty array is truthy in JS, and only caught the
+    //    throw. On failure keep failing OPEN to 'full' and show a visible notice.
+    if (profile == null && usr != null) {
+        let serverConfig;
+        try {
+            serverConfig = await am7client.getFeatureConfig();
+        } catch (e) {
+            configFailed = true;
+            console.warn('[router] Feature config request failed', e);
+        }
+        if (!configFailed) {
+            if (serverConfig && Array.isArray(serverConfig.features)) {
+                profile = serverConfig.features;
+            } else {
+                configFailed = true;
+                console.warn('[router] Feature config response was missing a features array', serverConfig);
+            }
+        }
+        if (configFailed) profile = 'full';
+    }
+
+    // 3./4. Build define, then the genuine no-signal default.
+    if (profile == null) {
+        profile = (typeof __FEATURE_PROFILE__ !== 'undefined' && __FEATURE_PROFILE__ ? __FEATURE_PROFILE__ : null)
+            || 'standard';
     }
     initFeatures(profile);
 
@@ -274,9 +311,11 @@ async function refreshApplication() {
             rt = "/sig";
         }
 
-        // Load lazy feature routes and merge with core routes
+        // Load lazy feature routes and merge with core routes, then the disabled-feature catch-all
+        // (registered last so core/feature routes still resolve synchronously — see §3.6 note above).
         let featureRoutes = await loadFeatureRoutes();
         let allRoutes = Object.assign({}, routes, featureRoutes);
+        allRoutes[disabledFeatureRouteKey] = disabledFeatureRoute;
 
         // Initialize Mithril router with all routes (core + feature).
         // Always explicitly navigate to the desired route after mounting, because
@@ -284,6 +323,12 @@ async function refreshApplication() {
         // visit), Mithril will route there instead of using the default route.
         m.route(document.body, "/main", allRoutes);
         m.route.set(rt);
+
+        if (configFailed) {
+            // Visible notice, per the §3.7 implementation note — a silent fail-open to "everything"
+            // is how nobody notices the feature config is broken.
+            page.toast('warn', 'Feature configuration could not be read — all features enabled for this session.');
+        }
     }
 
     page.router = {

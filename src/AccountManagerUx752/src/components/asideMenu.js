@@ -2,7 +2,7 @@ import m from 'mithril';
 import { am7model } from '../core/model.js';
 import { am7client } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
-import { getMenuItems } from '../features.js';
+import { getMenuItems, isMenuItemVisible, visibleCategories } from '../features.js';
 
 function navigateToCategory(cat) {
     if (page.navigable) page.navigable.drawer(true);
@@ -81,11 +81,11 @@ function favoritesSection() {
 
 const asideMenu = {
     view: function () {
-        let cats = am7model.categories || [];
+        // Feature-tagged categories: untagged categories are core and always shown (design §4a D5).
+        let cats = visibleCategories(am7model.categories);
+        let menuCtx = { roles: page.context().roles, devMode: page.devMode };
         let asideItems = getMenuItems('aside').filter(function (mi) {
-            if (mi.adminOnly && (!page.context().roles || !page.context().roles.admin)) return false;
-            if (mi.devOnly && !page.devMode) return false;
-            return true;
+            return isMenuItemVisible(mi, menuCtx);
         });
         return m("aside", { class: "transition transition-0", style: "display:flex;flex-direction:column;max-height:100vh" }, [
             m("div", { class: "p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0" }, [

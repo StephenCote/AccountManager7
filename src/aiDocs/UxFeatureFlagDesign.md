@@ -146,6 +146,23 @@ don't work for logged-in users.
 **Fix:** precedence `?features=` → server org config → `__FEATURE_PROFILE__` → `'standard'`. Gate the
 URL override behind dev mode if that is a concern; it is not a security control either way (§5).
 
+**Implementation note — an error branch this precedence chain did not contemplate (added 2026-08-07,
+architecture review).** Today a failed `getFeatureConfig()` falls back to `'full'`, with the error
+swallowed by `console.warn` (`router.js:220`, `:226-228`, `:235-237`). Under the chain above, one
+transient 500 would instead drop an authenticated user to `'standard'` — three features — with no
+message. So the implemented behaviour distinguishes **failure** from **a legitimately small set**:
+
+- **Failure** = thrown/rejected fetch, non-2xx, or a body whose `features` is missing or not an array.
+  On failure, keep the fail-open `'full'` *and* show a visible notice. It must be written as an explicit
+  branch: `router.js:223` currently accepts `[]` as a valid set (an empty array is truthy in JS), and
+  `:226-228` catches only the throw.
+- **A short set is not a failure.** After D1 the read path force-includes `core`, so `["core"]` is the
+  smallest legitimate answer — that *is* the `minimal` profile, deliberately saved by an admin. Treating
+  a short array as failure would make `minimal` unreachable and permanently fail open to `full`.
+
+`'standard'` remains the genuine no-signal default, so the precedence chain itself is intact. Recorded
+here because it deviates from the literal chain above — do not "fix" it back.
+
 ### 3.8 Build always emits every chunk
 
 `__FEATURE_PROFILE__` is only a runtime default; it never gates `import()`. `vite build` therefore

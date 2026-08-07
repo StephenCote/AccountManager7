@@ -6,7 +6,11 @@
  */
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = 'https://localhost:8899';
+// Default unchanged (the local Vite dev server). Set PLAYWRIGHT_BASE_URL to point the API setup calls
+// at an already-running deployment — e.g. the docker-compose.test.yml stack on https://localhost:9443,
+// which serves the Ux and /AccountManagerService7 from the same origin. Kept in sync with
+// playwright.config.js, which reads the same variable.
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
 
 function b64(str) {
@@ -345,6 +349,143 @@ export async function ensureSharedTestUser(request, opts = {}) {
     }
 
     return { user, testUserName: SHARED_USER, testPassword: SHARED_PASSWORD };
+}
+
+/**
+ * Ensure a persistent test user that holds the AccountAdministrators role, so tests can exercise
+ * @RolesAllowed({"admin"}) endpoints WITHOUT ever logging in as `admin`.
+ *
+ * AccountManagerService7/src/main/webapp/WEB-INF/resource/roleMap.json maps the JAAS role `admin` onto
+ * the AccountAdministrators role, so membership in that role is what the annotation actually checks.
+ * As with ensureSharedTestUser / ensureIso42001TestUser, the admin session here is confined to
+ * provisioning (creating the user, setting its credential, granting the role) — every assertion in the
+ * calling test runs as this non-admin user.
+ *
+ * Idempotent. Returns { user, testUserName, testPassword, roleAssigned }.
+ */
+const ADMIN_ROLE_USER = 'e2etest_featadmin';
+const ADMIN_ROLE_PASSWORD = 'password';
+
+export async function ensureAdminRoleTestUser(request, opts = {}) {
+    const org = opts.org || '/Development';
+
+    let ctx = await newApiContext();
+    let user;
+    let roleAssigned = false;
+    try {
+        await loginCtx(ctx, { org });
+
+        user = await searchCtx(ctx, 'system.user', 'name', ADMIN_ROLE_USER);
+        if (!user || !user.objectId) {
+            user = await createUserCtx(ctx, ADMIN_ROLE_USER);
+        }
+        if (user && user.objectId) {
+            await setCredentialCtx(ctx, user.objectId, ADMIN_ROLE_PASSWORD);
+            let role = await searchCtx(ctx, 'auth.role', 'name', 'AccountAdministrators', ['objectId', 'name']);
+            if (role && role.objectId) {
+                await memberCtx(ctx, 'auth.role', role.objectId, 'system.user', user.objectId, true);
+                roleAssigned = true;
+            }
+        }
+        await logoutCtx(ctx);
+    } finally {
+        await ctx.dispose();
+    }
+
+    // Log in once as the user so its home directory is initialized.
+    let userCtx = await newApiContext();
+    try {
+        await loginCtx(userCtx, { org, user: ADMIN_ROLE_USER, password: ADMIN_ROLE_PASSWORD });
+        await logoutCtx(userCtx);
+    } finally {
+        await userCtx.dispose();
+    }
+
+    return { user, testUserName: ADMIN_ROLE_USER, testPassword: ADMIN_ROLE_PASSWORD, roleAssigned };
+}
+
+/**
+ * Set the organization's enabled feature set through the REST API as the admin-role TEST user
+ * (never as `admin`). Returns the stored feature array, or null on failure.
+ */
+export async function setOrgFeatures(request, features, opts = {}) {
+    const org = opts.org || '/Development';
+    const userName = opts.userName || ADMIN_ROLE_USER;
+    const password = opts.password || ADMIN_ROLE_PASSWORD;
+
+    let ctx = await newApiContext();
+    try {
+        await loginCtx(ctx, { org, user: userName, password: password });
+        let resp = await ctx.put(REST + '/config/features', { data: { features: features } });
+        let out = null;
+        if (resp.ok()) {
+            let json = await safeJson(resp);
+            out = (json && Array.isArray(json.features)) ? json.features : null;
+        }
+        await logoutCtx(ctx);
+        return out;
+    } finally {
+        await ctx.dispose();
+    }
+}
+
+/**
+ * Read the organization's enabled feature set as a given (non-admin) test user.
+ * Returns { status, features, profile }.
+ */
+export async function getOrgFeatures(request, opts = {}) {
+    const org = opts.org || '/Development';
+    const userName = opts.userName || SHARED_USER;
+    const password = opts.password || SHARED_PASSWORD;
+
+    let ctx = await newApiContext();
+    try {
+        await loginCtx(ctx, { org, user: userName, password: password });
+        let resp = await ctx.get(REST + '/config/features');
+        let json = await safeJson(resp);
+        await logoutCtx(ctx);
+        return { status: resp.status(), features: (json ? json.features : null), profile: (json ? json.profile : null) };
+    } finally {
+        await ctx.dispose();
+    }
+}
+
+/** Fetch GET /rest/config/features/available as a given (non-admin) test user. */
+export async function getAvailableFeatures(request, opts = {}) {
+    const org = opts.org || '/Development';
+    const userName = opts.userName || SHARED_USER;
+    const password = opts.password || SHARED_PASSWORD;
+
+    let ctx = await newApiContext();
+    try {
+        await loginCtx(ctx, { org, user: userName, password: password });
+        let resp = await ctx.get(REST + '/config/features/available');
+        let text = await resp.text();
+        await logoutCtx(ctx);
+        let parsed = null;
+        try { parsed = JSON.parse(text); } catch { /* left null for the caller to assert on */ }
+        return { status: resp.status(), body: text, manifest: parsed };
+    } finally {
+        await ctx.dispose();
+    }
+}
+
+/** Attempt PUT /rest/config/features as a plain (non-admin) test user. Returns the HTTP status. */
+export async function putOrgFeaturesStatus(request, features, opts = {}) {
+    const org = opts.org || '/Development';
+    const userName = opts.userName || SHARED_USER;
+    const password = opts.password || SHARED_PASSWORD;
+
+    let ctx = await newApiContext();
+    try {
+        await loginCtx(ctx, { org, user: userName, password: password });
+        let resp = await ctx.put(REST + '/config/features', { data: { features: features } });
+        let status = resp.status();
+        await logoutCtx(ctx);
+        return status;
+    } finally {
+        await ctx.dispose();
+    }
 }
 
 /** Add an actor to a container (role/group) via the authorization member endpoint (null field = default participation). */

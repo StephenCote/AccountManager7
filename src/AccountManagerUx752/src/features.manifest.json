@@ -1,0 +1,93 @@
+[
+	{
+		"id": "core",
+		"label": "Core",
+		"description": "Object management, navigation, forms, lists",
+		"required": true,
+		"deps": []
+	},
+	{
+		"id": "media",
+		"label": "Media Processing",
+		"description": "Audio player, PDF viewer, Stable Diffusion, rich text editor",
+		"required": false,
+		"deps": ["core"]
+	},
+	{
+		"id": "chat",
+		"label": "LLM Chat",
+		"description": "Chat interface and LLM integration",
+		"required": false,
+		"deps": ["core"]
+	},
+	{
+		"id": "cardGame",
+		"label": "Card Game",
+		"description": "RPG card game with AI director",
+		"required": false,
+		"deps": ["core", "chat"]
+	},
+	{
+		"id": "games",
+		"label": "Mini Games",
+		"description": "Tetris, Word Game",
+		"required": false,
+		"deps": ["core"]
+	},
+	{
+		"id": "testHarness",
+		"label": "Tests",
+		"description": "Automated testing UI",
+		"required": false,
+		"deps": ["core"]
+	},
+	{
+		"id": "iso42001",
+		"label": "Compliance",
+		"description": "ISO 42001 AI compliance evaluation and bias detection",
+		"required": false,
+		"deps": ["core", "chat"]
+	},
+	{
+		"id": "biometrics",
+		"label": "Biometrics",
+		"description": "Camera, mood ring, biometric theming",
+		"required": false,
+		"deps": ["core"]
+	},
+	{
+		"id": "schema",
+		"label": "Schema",
+		"description": "Model schema browser and form editor (admin only)",
+		"required": false,
+		"deps": ["core"]
+	},
+	{
+		"id": "webauthn",
+		"label": "Passkeys",
+		"description": "WebAuthn/FIDO2 passwordless authentication",
+		"required": false,
+		"deps": ["core"]
+	},
+	{
+		"id": "accessRequests",
+		"label": "Access Requests",
+		"description": "Self-service access request and approval workflow",
+		"required": false,
+		"deps": ["core"]
+	},
+	{
+		"id": "featureConfig",
+		"label": "Feature Config",
+		"description": "Server-side feature configuration (admin only)",
+		"required": false,
+		"deps": ["core"]
+	},
+	{
+		"id": "pictureBook",
+		"label": "Picture Book",
+		"description": "Generate illustrated picture books from story/document objects",
+		"required": false,
+		"deps": ["core", "chat"]
+	}
+]

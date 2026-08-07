@@ -1911,3 +1911,35 @@ scene/portrait/landscape/composite stages, and model the chat as a book whose `s
 the chat progresses. Reuse the common-config style seam and the per-character override mechanism rather
 than forking a parallel image path (the same anti-pattern KI-38 fixed). Scope/sequencing TBD — backlog
 placeholder, not a plan.
+
+### KI-41. Create-or-get library utils produce admin-privileged side effects on read paths — propose an `architecture.md` rule — OPEN (2026-08-07, architecture review)
+
+Surfaced during the Ux feature-flag work (`aiDocs/UxFeatureFlagDesign.md` D1) and **deferred
+deliberately, not dropped** — the local case is handled there, but the general trap is uncovered by
+any rules file, and this is the **second** time it has been hit.
+
+**The shape.** `LibraryUtil.getCreateSharedLibrary` is create-or-get, and its create branch runs as the
+**org admin**: `makePath(octx.getAdminUser(), ...)` (`LibraryUtil.java:43`), then a raw
+`ctx.getRecordUtil().createRecord(...)` PBAC bypass (`:45`), then role permission grants
+(`:49` → `:100-108`). Calling it from a read path therefore means **any non-authorized caller can
+trigger admin-privileged group creation and permission grants as a side effect of a read.** The
+feature-config design avoided it by splitting read (`findPath` only, absent ⇒ defaults) from write
+(`getCreateSharedLibrary`), but nothing prevents the next caller from repeating the mistake.
+
+**Two adjacent findings from the same review, recorded so they aren't re-derived:**
+- Permissions are configured **only on the create path** — `getCreateSharedGroup` returns early when the
+  group already exists (`LibraryUtil.java:40-42`), *before* `configureLibraryPermissions` (`:49`). So an
+  `enableCRU=false` call is an assumption about history, not an enforced invariant, and nothing here can
+  repair or downgrade an already over-granted group.
+- **Ordering bug, latent in existing callers:** `configureLibraryRootPermissions` bails at
+  `LibraryUtil.java:90-94` when `/Library` does not exist yet. Callers that invoke
+  `configureLibraryRootReader` *before* `getCreateSharedLibrary` (e.g. `ChatLibraryUtil.java:47-48`)
+  silently no-op the root grant on the first write in a fresh org. Grant calls must follow group
+  creation; they are idempotent via `MemberUtil.member(..., true)`, so ordering them after is safe.
+
+**Fix direction:** propose a one-line `architecture.md` bullet — "read paths must not create, and never
+as the org admin; split create-or-get utils into a find-only read path and an authorized write path" —
+and consider making the `LibraryUtil` grant behaviour honest (either configure permissions on the
+get branch too, or rename the method so its create-only ACL semantics are visible at the call site).
+Not scheduled; raise with Stephen before touching `LibraryUtil`, since every existing caller passes
+`enableCRU=true` and would be affected.

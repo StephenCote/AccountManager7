@@ -6,7 +6,15 @@ import m from 'mithril';
 import { page } from '../core/pageClient.js';
 import { am7client } from '../core/am7client.js';
 import { layout, pageLayout } from '../router.js';
-import { features as clientFeatures, initFeatures, getEnabledFeatures } from '../features.js';
+import {
+    features as clientFeatures,
+    profiles,
+    profileNameFor,
+    applyFeatures,
+    setManifest,
+    getManifestErrors,
+    getEnabledFeatures
+} from '../features.js';
 
 // ── State ───────────────────────────────────────────────────────────
 
@@ -17,6 +25,8 @@ let loading = true;
 let saving = false;
 let error = null;
 let successMsg = null;
+// D2: a client wiring id with no manifest entry is a hard error surfaced here, never a silent skip.
+let manifestErrors = [];
 
 // ── API ─────────────────────────────────────────────────────────────
 
@@ -29,6 +39,14 @@ async function loadConfig() {
             am7client.getAvailableFeatures()
         ]);
         availableFeatures = available || [];
+        // Server manifest data wins over the local src/features.manifest.json mirror (D2). This is
+        // also where drift shows up: any client wiring id the server does not list becomes a
+        // manifest error rather than quietly disappearing from the UI, which is how `media` rotted.
+        if (Array.isArray(available) && available.length) {
+            manifestErrors = setManifest(available);
+        } else {
+            manifestErrors = getManifestErrors();
+        }
         currentConfig = config || { features: Object.keys(clientFeatures), profile: 'full' };
         enabledSet = new Set(currentConfig.features || []);
     } catch (e) {
@@ -51,9 +69,17 @@ async function saveConfig() {
         if (result && result.features) {
             currentConfig = result;
             enabledSet = new Set(result.features);
-            successMsg = 'Feature configuration saved. Reload the page to apply changes.';
-            // Update the client-side feature state to match
-            initFeatures(result.features);
+            successMsg = 'Feature configuration saved.';
+            // D3: apply the new set live — reset the enabled set, reload the lazy route chunks and
+            // re-mount the router. No page reload, so the old "menu says disabled / route still
+            // resolves" mixed state is gone. Callbacks are passed in because features.js must stay
+            // dependency-free (importing pageClient.js there would create an ESM cycle).
+            await applyFeatures(result.features, {
+                currentRoute: function () { return m.route.get(); },
+                redirect: function (path) { m.route.set(path); },
+                refresh: function () { if (page.router) page.router.refresh(); },
+                redraw: function () { m.redraw(); }
+            });
         } else {
             error = 'Failed to save — server returned an error';
         }
@@ -136,7 +162,7 @@ let featureConfigView = {
             m("div", { class: "flex items-center justify-between mb-6" }, [
                 m("div", [
                     m("h2", { class: "text-2xl font-bold text-gray-900 dark:text-white" }, "Feature Configuration"),
-                    m("p", { class: "text-sm text-gray-500 dark:text-gray-400 mt-1" }, "Enable or disable features for this organization. Changes take effect on page reload.")
+                    m("p", { class: "text-sm text-gray-500 dark:text-gray-400 mt-1" }, "Enable or disable features for this organization. Changes take effect immediately.")
                 ]),
                 m("div", { class: "flex gap-2 items-center" }, [
                     hasUnsavedChanges() ? m("span", { class: "text-sm text-amber-600 dark:text-amber-400 mr-2" }, "Unsaved changes") : null,
@@ -152,11 +178,18 @@ let featureConfigView = {
             // Messages
             error ? m("div", { class: "mb-4 p-3 rounded bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-sm" }, error) : null,
             successMsg ? m("div", { class: "mb-4 p-3 rounded bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm" }, successMsg) : null,
+            // Manifest drift is a hard error, not a silent skip (D2)
+            manifestErrors.length ? m("div", { class: "mb-4 p-3 rounded bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-200 text-sm" }, [
+                m("div", { class: "font-medium mb-1" }, "Feature manifest error"),
+                m("ul", { class: "list-disc ml-5" }, manifestErrors.map(function (msg) { return m("li", {}, msg); }))
+            ]) : null,
 
-            // Current profile
+            // Current profile — derived client-side. The server persists only "full"/"custom", so
+            // matching the enabled set against the client profile catalogue is the only way an admin
+            // who clicked "Compliance" sees "compliance" back instead of "custom".
             currentConfig ? m("div", { class: "mb-4 text-sm text-gray-600 dark:text-gray-400" },
                 "Current profile: ",
-                m("span", { class: "font-medium text-gray-800 dark:text-gray-200" }, currentConfig.profile || "custom"),
+                m("span", { class: "font-medium text-gray-800 dark:text-gray-200" }, profileLabel(profileNameFor(currentConfig.features || []))),
                 " — ",
                 m("span", {}, enabledSet.size + " of " + availableFeatures.length + " features enabled")
             ) : null,
@@ -225,18 +258,22 @@ let featureConfigView = {
             // Quick profile buttons
             m("div", { class: "mt-6 border-t border-gray-200 dark:border-gray-700 pt-4" }, [
                 m("h3", { class: "text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" }, "Quick Profiles"),
-                m("div", { class: "flex gap-2 flex-wrap" }, [
-                    profileButton("Minimal", ["core"]),
-                    profileButton("Standard", ["core", "chat"]),
-                    profileButton("Compliance", ["core", "chat", "iso42001", "accessRequests", "featureConfig"]),
-                    profileButton("Enterprise", ["core", "chat", "iso42001", "schema", "webauthn", "accessRequests", "featureConfig"]),
-                    profileButton("Gaming", ["core", "chat", "cardGame", "games", "biometrics"]),
-                    profileButton("Full", availableFeatures.map(function (f) { return f.id; }))
-                ])
+                // Rendered from features.js `profiles` — the hardcoded copies that used to live here
+                // had already drifted ("Standard" was ["core","chat"], the manifest's is
+                // ["core","media","chat"]). Importing removes that class of drift by construction.
+                m("div", { class: "flex gap-2 flex-wrap" },
+                    Object.entries(profiles).map(function (entry) {
+                        return profileButton(profileLabel(entry[0]), entry[1]);
+                    })
+                )
             ])
         ]);
     }
 };
+
+function profileLabel(name) {
+    return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 function profileButton(label, featureList) {
     return m("button", {

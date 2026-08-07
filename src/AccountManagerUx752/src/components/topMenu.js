@@ -2,7 +2,7 @@ import m from 'mithril';
 import { am7client } from '../core/am7client.js';
 import { applicationPath } from '../core/config.js';
 import { page } from '../core/pageClient.js';
-import { getMenuItems } from '../features.js';
+import { getMenuItems, isMenuItemVisible } from '../features.js';
 import { notificationButton } from './notifications.js';
 
 function toggleDarkMode() {
@@ -73,8 +73,9 @@ const topMenu = {
     },
     view: function () {
         let userName = page.user ? page.user.name : '';
+        let menuCtx = { roles: page.context().roles, devMode: page.devMode };
         let featureButtons = getMenuItems('top')
-            .filter(function (mi) { return !(mi.devOnly && page.productionMode); })
+            .filter(function (mi) { return isMenuItemVisible(mi, menuCtx); })
             .map(function (mi) {
                 return m("button", {
                     class: "menu-button",

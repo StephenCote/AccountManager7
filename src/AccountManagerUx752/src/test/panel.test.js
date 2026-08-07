@@ -56,6 +56,14 @@ vi.mock('../core/am7client.js', () => ({
 
 import { panel } from '../components/panel.js';
 import { am7decorator, defaultHeaderMap, getHeaders, getIcon, getFileTypeIcon, getTabularView, getGridListView, getCarouselView, renderMediaPreview } from '../components/decorator.js';
+import { initFeatures, visibleCategories } from '../features.js';
+
+function panelCards() {
+    let vnode = panel.view();
+    let children = Array.isArray(vnode.children) ? vnode.children : [vnode.children];
+    let grid = children.find(function (c) { return c && c.attrs && c.attrs.class && c.attrs.class.includes('panel-grid'); });
+    return grid.children;
+}
 
 describe('panel component', () => {
     it('should have a view function', () => {
@@ -76,15 +84,35 @@ describe('panel component', () => {
         expect(grid.attrs.class).toContain('panel-grid');
     });
 
-    it('should render categories from am7model', () => {
-        let vnode = panel.view();
-        let children = Array.isArray(vnode.children) ? vnode.children : [vnode.children];
-        let grid = children.find(function (c) { return c && c.attrs && c.attrs.class && c.attrs.class.includes('panel-grid'); });
-        // grid.children is the array of panel cards from modelPanel()
-        let cards = grid.children;
+    // The dashboard renders FEATURE-VISIBLE categories, not every declared category (design §4a D5):
+    // `olio` is tagged feature:"cardGame" and `ai` feature:"chat", so a card per am7model.categories
+    // entry is wrong by design now. Asserted against visibleCategories() instead.
+    it('should render the feature-visible categories from am7model', () => {
+        initFeatures('full');
+        let cards = panelCards();
         expect(Array.isArray(cards)).toBe(true);
-        // Should have at least the number of categories defined
+        expect(cards.length).toBe(visibleCategories(am7model.categories).length);
+    });
+
+    it('full profile renders a card for every category, including olio and ai', () => {
+        initFeatures('full');
+        let cards = panelCards();
         expect(cards.length).toBe(am7model.categories.length);
+        expect(cards.length).toBe(6);
+    });
+
+    it('minimal profile drops the olio and ai cards and keeps the four core ones', () => {
+        initFeatures('minimal');
+        let cards = panelCards();
+        expect(cards.length).toBe(4);
+        expect(cards.length).toBe(visibleCategories(am7model.categories).length);
+        let titles = cards.map(function (card) {
+            // mockM only captures a single `children` argument, so the card's first child (the
+            // card-title <p>) is `card.children` itself.
+            let title = Array.isArray(card.children) ? card.children[0] : card.children;
+            return title.children.filter(function (c) { return typeof c === 'string'; }).join('');
+        });
+        expect(titles).toEqual(['Identity', 'Assets', 'Process', 'Policy']);
     });
 });
 

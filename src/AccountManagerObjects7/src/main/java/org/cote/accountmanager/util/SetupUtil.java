@@ -874,8 +874,14 @@ public class SetupUtil {
 	///
 	/// Goes through AccessPoint (precedent: ChatLibraryUtil.java:255). By this point the
 	/// organization's roles and permissions exist, so PBAC has something to authorize against.
-	/// Technique (a data.data record whose description carries the JSON) copied from
-	/// FeatureConfigService's .featureConfig marker.
+	/// Technique: a data.data record whose description carries the JSON.
+	///
+	/// This comment previously cited FeatureConfigService's .featureConfig marker as the precedent.
+	/// That reference is stale: .featureConfig moved to FeatureConfigUtil, became org-scoped under
+	/// /Library/Configuration, and now carries its payload in dataBytesStore rather than description
+	/// (description is capped at 512 chars, and the default projection omits both fields — see
+	/// FeatureConfigUtil). The marker here is deliberately unchanged; it is a short, fixed-size
+	/// string, so description remains adequate for it.
 	public static BaseRecord writeMarker() {
 		try {
 			IOContext ctx = IOSystem.getActiveContext();

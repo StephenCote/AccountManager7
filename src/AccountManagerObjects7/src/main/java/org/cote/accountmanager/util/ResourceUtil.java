@@ -37,6 +37,12 @@ public class ResourceUtil {
 	public String getCategoryResource(String name) {
 		return getResource(resourcePrefix + "categories/" + name + "Category.json");
 	}
+
+	/// Feature manifest resources: resources/features/<name>Manifest.json
+	/// Same shape as getCategoryResource - honors resourcePrefix and reuses the caching getResource.
+	public String getFeatureManifestResource(String name) {
+		return getResource(resourcePrefix + "features/" + name + "Manifest.json");
+	}
 	
 	public void releaseModelResource(String name) {
 		cache.remove(name.replaceAll("\\.", "/"));

@@ -3,6 +3,7 @@ import { am7model } from '../core/model.js';
 import { am7view } from '../core/view.js';
 import { am7client, uwm } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
+import { visibleCategories } from '../features.js';
 
 // --- Dashboard preferences (localStorage + server) ---
 
@@ -86,7 +87,10 @@ async function saveServerPrefs() {
 
 function getOrderedCategories() {
     loadPrefs();
-    let cats = am7model.categories.slice();
+    // Feature-tagged categories: untagged categories are core and always shown (design §4a D5).
+    // The /main dashboard is the landing page, so filtering asideMenu alone would leave Olio/AI
+    // cards on the first thing anyone sees.
+    let cats = visibleCategories(am7model.categories).slice();
     if (prefs.order && prefs.order.length) {
         cats.sort(function (a, b) {
             let ai = prefs.order.indexOf(a.name);
@@ -283,10 +287,16 @@ function getProtoCat(cat, name) {
 }
 
 function modelPanelContents(key) {
-    let cat = am7model.categories.find(function (o) { return o.name === key; });
+    let cat = visibleCategories(am7model.categories).find(function (o) { return o.name === key; });
     if (!cat) {
-        console.error("Failed to find: " + key);
-        return;
+        // A category filtered out by its feature flag is not an error — render the same "not enabled"
+        // wording the disabled-route catch-all uses. Only a genuinely unknown key is a console error.
+        let known = (am7model.categories || []).some(function (o) { return o.name === key; });
+        if (!known) {
+            console.error("Failed to find: " + key);
+            return;
+        }
+        return [m("div", { class: "card-item text-gray-500 dark:text-gray-400" }, "This feature is not enabled.")];
     }
     let order = cat.order;
     if (!order) {

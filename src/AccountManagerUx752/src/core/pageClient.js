@@ -802,6 +802,13 @@ const page = {
     router: null,
     testMode: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get("testMode") === "true"),
     productionMode: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get("productionMode") === "true"),
+    /// The single definition of "dev build" (design §4a D4). asideMenu.js used to test page.devMode
+    /// when nothing defined it, so every devOnly aside item was permanently hidden; topMenu.js used
+    /// productionMode (only true via ?productionMode=true) as a proxy for "not dev", so testHarness
+    /// shipped visible. import.meta.env.DEV is the build-time truth under both Vite and Vitest.
+    /// productionMode is retained — it is a separate URL-driven override with other callers — but it
+    /// is no longer used as a stand-in for "not dev".
+    devMode: (typeof import.meta !== 'undefined' && import.meta.env ? !!import.meta.env.DEV : false),
     formDef: am7model,
     imageGallery: async function(images, charInst, options) {
         let prefetchImages = images || [];
