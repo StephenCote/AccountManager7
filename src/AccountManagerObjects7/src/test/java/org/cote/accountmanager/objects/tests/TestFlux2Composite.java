@@ -71,6 +71,12 @@ public class TestFlux2Composite {
 		return "1".equals(System.getenv("FLUX2_LIVE")) || "1".equals(System.getProperty("flux2.live"));
 	}
 
+	private static int envInt(String name, int def) {
+		String v = System.getenv(name);
+		if (v == null || v.isBlank()) return def;
+		try { return Integer.parseInt(v.trim()); } catch (NumberFormatException e) { return def; }
+	}
+
 	// ── Pure request-shape tests (always run) ────────────────────────────────
 
 	/// Every generation parameter that was wrong for an edit model in the Kontext path.
@@ -285,6 +291,38 @@ public class TestFlux2Composite {
 		assertEquals(SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg, true));
 	}
 
+	/// The landscape reference is optional and ON by default. Every reference is encoded into FLUX.2's
+	/// context and attention cost grows faster than linearly in it, so the third reference is real GPU
+	/// time: 10.64 min on the local Beelink GTR9 (Strix Halo iGPU) versus ~3.3 min for the same
+	/// three-reference request on the DGX Spark. Memory is not the constraint on either box. Dropping
+	/// the reference must be a config flip, not a code change, and must be trivially reversible.
+	@Test
+	public void landscapeReferenceIsOptionalAndOnByDefault() throws Exception {
+		byte[] c1 = fixture("character1.png");
+		byte[] c2 = fixture("character2.png");
+		byte[] land = fixture("landscape1.png");
+
+		SWTxt2Img on = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_FLUX2,
+			LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, "p", "n", c1, c2, land, 0.85, null);
+		assertEquals("a null config must keep the landscape reference (default on)",
+			3, on.getPromptImages().size());
+
+		BaseRecord cfg = sdConfig();
+		cfg.set("flux2IncludeLandscapeRef", false);
+		SWTxt2Img off = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_FLUX2,
+			LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, "p", "n", c1, c2, land, 0.85, cfg);
+		assertEquals("flux2IncludeLandscapeRef=false must drop the setting reference only",
+			2, off.getPromptImages().size());
+		assertTrue("the setting must still reach the model as prompt text",
+			off.getPrompt().contains("rain-soaked street"));
+
+		cfg.set("flux2IncludeLandscapeRef", true);
+		SWTxt2Img back = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_FLUX2,
+			LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, "p", "n", c1, c2, land, 0.85, cfg);
+		assertEquals("re-enabling must restore the third reference with no code change",
+			3, back.getPromptImages().size());
+	}
+
 	/// The shared builder must produce a real FLUX.2 request with its references attached — this is
 	/// what the chat endpoint now depends on.
 	@Test
@@ -315,18 +353,33 @@ public class TestFlux2Composite {
 		String server = System.getenv("FLUX2_SERVER");
 		if (server == null || server.isEmpty()) server = "http://192.168.1.42:7801";
 
-		List<String> refs = SDUtil.buildFlux2References(1024,
-			fixture("character1.png"), fixture("character2.png"), fixture("landscape1.png"));
-		assertEquals("three references expected", 3, refs.size());
+		/// Test-only knobs for measuring generation cost. FLUX.2 encodes every reference image into
+		/// its context, so reference SIZE and COUNT are the two levers that move wall-clock time;
+		/// FLUX2_REF_SIZE / FLUX2_REF_COUNT exist so that can be measured instead of guessed.
+		int refSize = envInt("FLUX2_REF_SIZE", 1024);
+		int refCount = envInt("FLUX2_REF_COUNT", 3);
+		byte[][] all = new byte[][] { fixture("character1.png"), fixture("character2.png"), fixture("landscape1.png") };
+		byte[][] use = new byte[Math.min(refCount, all.length)][];
+		System.arraycopy(all, 0, use, 0, use.length);
+
+		List<String> refs = SDUtil.buildFlux2References(refSize, use);
+		assertEquals(use.length + " references expected", use.length, refs.size());
 
 		SWTxt2Img req = SWUtil.newFlux2SceneTxt2Img(LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, null, refs.size());
 		req.setPromptImages(refs);
+		int steps = envInt("FLUX2_STEPS", req.getSteps());
+		req.setSteps(steps);
+		long t0 = System.currentTimeMillis();
 		logger.info("FLUX.2 live request: model=" + req.getModel() + " cfg=" + req.getCfgScale()
 			+ " steps=" + req.getSteps() + " " + req.getWidth() + "x" + req.getHeight() + " refs=" + refs.size());
 		logger.info("FLUX.2 live prompt: " + req.getPrompt());
 
+		logger.info("FLUX.2 TIMING run: server=" + server + " refs=" + refs.size() + "@" + refSize
+			+ "px steps=" + steps + " " + req.getWidth() + "x" + req.getHeight());
 		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, server);
 		SWImageResponse rep = sdu.txt2img(req);
+		logger.info("FLUX.2 TIMING result: server=" + server + " refs=" + refs.size() + "@" + refSize
+			+ "px steps=" + steps + " elapsed=" + ((System.currentTimeMillis() - t0) / 1000) + "s");
 		assertNotNull("Swarm returned no response — is " + server + " reachable and flux2Klein_9b installed?", rep);
 		assertNotNull("Swarm returned an error instead of images: " + rep.getError(), rep.getImages());
 		assertFalse("Swarm returned an empty images list", rep.getImages().isEmpty());

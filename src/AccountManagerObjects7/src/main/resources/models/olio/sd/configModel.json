@@ -338,6 +338,12 @@
 			"description": "Square size each FLUX.2 reference image is normalized to (aspect preserved, letterboxed - never center-cropped)."
 		},
 		{
+			"name": "flux2IncludeLandscapeRef",
+			"type": "boolean",
+			"default": true,
+			"description": "Include the landscape/setting image as a FLUX.2 reference. TRUE keeps the strongest setting fidelity (the generated scene reuses the actual reference location). Set FALSE to cut generation cost: every reference is encoded into the model's context and attention cost grows faster than linearly in it, so dropping the third reference is real GPU time - and the setting still reaches the model as prompt text. This is the primary speed lever for picture-book runs, because moving the work to faster hardware is not an option: the DGX Spark generates ~3x faster for a single image but its thermal handling cannot sustain a book's worth of back-to-back generations without crashing, so sustained SD work belongs on the local Strix Halo box. Turn back on by setting this true - no code change."
+		},
+		{
 			"name": "flux2Steps",
 			"type": "int",
 			"minValue": 1,

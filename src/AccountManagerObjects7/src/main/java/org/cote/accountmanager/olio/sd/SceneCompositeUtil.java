@@ -98,11 +98,26 @@ public class SceneCompositeUtil {
 
 		if (MODE_FLUX2.equals(mode)) {
 			Integer refSizeV = null;
+			Boolean includeLandscapeV = null;
 			if (sdConfig != null) {
 				try { refSizeV = sdConfig.get("flux2ReferenceSize"); } catch (Exception e) { /* ignore */ }
+				try { includeLandscapeV = sdConfig.get("flux2IncludeLandscapeRef"); } catch (Exception e) { /* ignore */ }
 			}
 			int refSize = (refSizeV != null && refSizeV > 0) ? refSizeV.intValue() : 1024;
-			List<String> refs = SDUtil.buildFlux2References(refSize, leftBytes, rightBytes, landscapeBytes);
+			/// Optional, ON by default. Every reference is encoded into FLUX.2's context, and attention
+			/// cost grows faster than linearly in that context, so the third reference is real compute:
+			/// measured 2026-08-07 on the local Swarm (Beelink GTR9, Strix Halo iGPU, 96GB assigned to
+			/// VRAM), a 3x1024px-reference generation took 10.64 min of GPU time. Memory is NOT the
+			/// constraint on that box — with 96GB of VRAM the 9B model fits easily; it is iGPU compute.
+			/// Dropping this reference is the cheapest lever and the setting still reaches the model as
+			/// prompt text; flip flux2IncludeLandscapeRef back to true to restore full setting fidelity.
+			boolean includeLandscape = (includeLandscapeV == null) || includeLandscapeV.booleanValue();
+			byte[] settingRef = includeLandscape ? landscapeBytes : null;
+			if (!includeLandscape && landscapeBytes != null) {
+				logger.info("Scene composite [flux2]: landscape reference SUPPRESSED by "
+					+ "flux2IncludeLandscapeRef=false - setting is carried by prompt text only");
+			}
+			List<String> refs = SDUtil.buildFlux2References(refSize, leftBytes, rightBytes, settingRef);
 			SWTxt2Img s2i = SWUtil.newFlux2SceneTxt2Img(leftDesc, rightDesc, action, setting, mood,
 					sdConfig, refs.size());
 			if (!refs.isEmpty()) {
