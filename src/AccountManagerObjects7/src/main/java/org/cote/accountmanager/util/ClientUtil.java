@@ -78,22 +78,35 @@ public class ClientUtil {
 	/// after the first HTTP request has no effect, so it must run during startup - this logs loudly
 	/// rather than silently pretending to apply, since a stale timeout is exactly the kind of thing
 	/// that looks configured and isn't.
+	/// Opt-in tracing for this util's configuration decisions, mirroring
+	/// PolicyUtil.setTrace/isTrace. OFF by default and deliberately so: these lines are diagnostic,
+	/// not events. Bracket a specific call with setTrace(true)/setTrace(false) when investigating,
+	/// the same way the PBAC trace is used - do not leave it on for a whole run.
+	private static volatile boolean trace = false;
+
+	public static void setTrace(boolean t) {
+		trace = t;
+	}
+
+	public static boolean isTrace() {
+		return trace;
+	}
+
 	public static void setReadTimeoutSeconds(int seconds) {
 		if(seconds <= 0) {
 			logger.warn("Ignoring non-positive " + READ_TIMEOUT_CONFIG_KEY + "=" + seconds
 				+ "; keeping " + readTimeoutSeconds + "s");
 			return;
 		}
-		/// Silent no-op when nothing changes. Every BaseTest setUp re-applies this from test
-		/// properties, so warning unconditionally produced one WARN per test class against a value
-		/// that was already correct - noise that trains you to ignore the line that matters.
 		if(seconds == readTimeoutSeconds) {
 			return;
 		}
-		/// Only actionable if the client is already built AND the value actually differs: that is the
-		/// case where the configured timeout genuinely will not apply.
-		if(client != null) {
-			logger.warn(READ_TIMEOUT_CONFIG_KEY + " changed from " + readTimeoutSeconds + "s to " + seconds
+		/// Trace-gated. This fired as a WARN on every value change, which meant every test that
+		/// exercises the setter emitted a warning about a condition that is only interesting while
+		/// investigating a timeout that did not apply. A warning nobody can act on is noise, and noise
+		/// at WARN level is worse than none because it devalues real warnings.
+		if(client != null && trace) {
+			logger.info(READ_TIMEOUT_CONFIG_KEY + " changed from " + readTimeoutSeconds + "s to " + seconds
 				+ "s AFTER the shared HTTP client was built - the new value will NOT take effect for this "
 				+ "process. Set it during startup.");
 		}

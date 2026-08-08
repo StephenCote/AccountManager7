@@ -1846,7 +1846,7 @@ public class SDUtil {
 					+ " - generating text-only instead");
 			}
 			else {
-				logger.info("Mannequin base image: gender=" + (apparelGender != null ? apparelGender : "(unset, using female default)")
+				logger.debug("Mannequin base image: gender=" + (apparelGender != null ? apparelGender : "(unset, using female default)")
 					+ " bytes=" + mannequinBase.length + " creativity=" + mannequinCreativity);
 			}
 		}

@@ -2,6 +2,7 @@ package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -17,6 +18,7 @@ import java.awt.image.BufferedImage;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.Flux2Defaults;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.sd.SceneCompositeUtil;
@@ -79,19 +81,26 @@ public class TestFlux2Composite {
 
 	// ── Pure request-shape tests (always run) ────────────────────────────────
 
-	/// Every generation parameter that was wrong for an edit model in the Kontext path.
+	/// The request must be built from the EDITABLE RESOURCE, and must carry the structural properties
+	/// that were wrong in the Kontext path.
+	///
+	/// Values are asserted against Flux2Defaults rather than literals. Hardcoding 2.5/24/1024x768 here
+	/// made this test fail the moment flux2Defaults.json was tuned, reporting a regression against
+	/// working code - and it defeated the purpose of externalizing the settings by re-embedding them in
+	/// a test. Range checks ("CFG within 1.0-3.5") are gone for the same reason: that band is guidance
+	/// for a human tuning the file, not an invariant the code must enforce, and asserting it would
+	/// block a deliberate experiment outside the band.
 	@Test
 	public void requestUsesEditModelParameters() {
 		SWTxt2Img req = SWUtil.newFlux2SceneTxt2Img(LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, null, 3);
 		assertEquals("Must target the installed FLUX.2 checkpoint", SWUtil.defaultFlux2Model(), req.getModel());
-		assertEquals("CFG must be the low edit-model value, NOT the SDXL cfg (5) the Kontext call was handed",
-			2.5, req.getCfgScale(), 0.001);
-		assertTrue("CFG must stay inside the documented 1.0-3.5 band for edit models",
-			req.getCfgScale() >= 1.0 && req.getCfgScale() <= 3.5);
-		assertEquals("Steps must be in the documented 20-28 range", 24, req.getSteps());
-		assertEquals("Output must be landscape, matching the classic pipeline's width", 1024, req.getWidth());
-		assertEquals("Output must be landscape, matching the classic pipeline's height", 768, req.getHeight());
-		assertTrue("Output must be landscape, not the square Kontext always emitted", req.getWidth() > req.getHeight());
+		assertEquals("CFG must come from flux2Defaults.json", Flux2Defaults.cfgScale(), req.getCfgScale(), 0.001);
+		assertEquals("Steps must come from flux2Defaults.json", Flux2Defaults.steps(), req.getSteps());
+		assertEquals("Width must come from flux2Defaults.json", Flux2Defaults.width(), req.getWidth());
+		assertEquals("Height must come from flux2Defaults.json", Flux2Defaults.height(), req.getHeight());
+		assertEquals("Sampler must come from flux2Defaults.json", Flux2Defaults.sampler(), req.getSampler());
+		assertEquals("Scheduler must come from flux2Defaults.json", Flux2Defaults.scheduler(), req.getScheduler());
+		/// Structural invariants - true regardless of tuning.
 		assertEquals("The SDXL refiner block must stay inert for a FLUX checkpoint",
 			0.0, req.getRefinerControlPercentage(), 0.001);
 		assertEquals("Negative prompt must be the short targeted one, not the SDXL NEG_PROMPT",
@@ -134,6 +143,14 @@ public class TestFlux2Composite {
 	/// book config silently forced the composite to 1024x1024 square at the SDXL step count — exactly
 	/// the Kontext defect this path was written to fix. The first live run only escaped it by passing
 	/// a null config.
+	/// Asserts against Flux2Defaults, NOT against literal numbers.
+	///
+	/// This test hardcoded 2.5/24/1024x768 and broke the first time Stephen tuned
+	/// olio/sd/flux2Defaults.json to steps=4 - reporting a "regression" when the code was fine and the
+	/// resource had simply been used as designed. Hardcoding the values duplicated the resource the
+	/// whole change exists to decouple from. The contract here is "the SDXL config's values do not
+	/// reach the FLUX request, the resource's do" - which is exactly what this now says, and it holds
+	/// at any tuning.
 	@Test
 	public void sdxlTunedConfigValuesDoNotLeakIntoTheFlux2Request() throws Exception {
 		OlioModelNames.use();
@@ -146,11 +163,18 @@ public class TestFlux2Composite {
 		cfg.set("height", 1024);
 
 		SWTxt2Img req = SWUtil.newFlux2SceneTxt2Img(LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, cfg, 3);
-		assertEquals("the SDXL cfg (5) must not reach a FLUX edit model", 2.5, req.getCfgScale(), 0.001);
-		assertEquals("the SDXL step count (40) must not reach the composite", 24, req.getSteps());
-		assertEquals("an SDXL square width must not force the composite square", 1024, req.getWidth());
-		assertEquals("an SDXL square height must not force the composite square", 768, req.getHeight());
-		assertTrue("the composite must stay landscape", req.getWidth() > req.getHeight());
+
+		/// The leak assertions: the SDXL values must not appear.
+		assertNotEquals("the SDXL cfg (5) must not reach a FLUX edit model", 5.0, req.getCfgScale(), 0.001);
+		assertNotEquals("the SDXL step count (40) must not reach the composite", 40, req.getSteps());
+		assertFalse("an SDXL square size must not force the composite square",
+			req.getWidth() == 1024 && req.getHeight() == 1024);
+
+		/// ...and the resource's values must, whatever they currently are.
+		assertEquals("cfg must come from flux2Defaults.json", Flux2Defaults.cfgScale(), req.getCfgScale(), 0.001);
+		assertEquals("steps must come from flux2Defaults.json", Flux2Defaults.steps(), req.getSteps());
+		assertEquals("width must come from flux2Defaults.json", Flux2Defaults.width(), req.getWidth());
+		assertEquals("height must come from flux2Defaults.json", Flux2Defaults.height(), req.getHeight());
 	}
 
 	/// compositeMode must actually exist on olio.sd.config and round-trip.
@@ -371,7 +395,10 @@ public class TestFlux2Composite {
 			0.85, null);
 		assertNotNull(req);
 		assertEquals(SWUtil.defaultFlux2Model(), req.getModel());
-		assertEquals("edit-model CFG, not the classic creativity or SDXL cfg", 2.5, req.getCfgScale(), 0.001);
+		/// From the resource, not a literal - and specifically NOT the 0.85 classic creativity passed in
+		/// as an argument, which is what this guards against.
+		assertEquals("CFG must come from flux2Defaults.json, not the classic creativity argument",
+			Flux2Defaults.cfgScale(), req.getCfgScale(), 0.001);
 		assertNotNull("references must be attached", req.getPromptImages());
 		assertEquals("all three references must be attached", 3, req.getPromptImages().size());
 		assertTrue("FLUX.2 must not use an init image", req.getInitImage() == null);
