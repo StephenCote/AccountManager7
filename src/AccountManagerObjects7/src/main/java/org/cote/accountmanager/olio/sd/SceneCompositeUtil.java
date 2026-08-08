@@ -104,13 +104,13 @@ public class SceneCompositeUtil {
 				try { includeLandscapeV = sdConfig.get("flux2IncludeLandscapeRef"); } catch (Exception e) { /* ignore */ }
 			}
 			int refSize = (refSizeV != null && refSizeV > 0) ? refSizeV.intValue() : Flux2Defaults.referenceSize();
-			/// Optional, ON by default. Every reference is encoded into FLUX.2's context, and attention
-			/// cost grows faster than linearly in that context, so the third reference is real compute:
-			/// measured 2026-08-07 on the local Swarm (Beelink GTR9, Strix Halo iGPU, 96GB assigned to
-			/// VRAM), a 3x1024px-reference generation took 10.64 min of GPU time. Memory is NOT the
-			/// constraint on that box — with 96GB of VRAM the 9B model fits easily; it is iGPU compute.
-			/// Dropping this reference is the cheapest lever and the setting still reaches the model as
-			/// prompt text; flip flux2IncludeLandscapeRef back to true to restore full setting fidelity.
+			/// Optional, ON by default. Every reference is encoded into FLUX.2's context, so the third
+			/// one is real compute — MEASURED ~40s per reference at 1024px/4 steps on the local Strix
+			/// Halo iGPU (2 refs ~80s, 3 refs ~120s), i.e. LINEAR in reference count at this scale. An
+			/// earlier version of this comment asserted superlinear growth from theory; the measurement
+			/// disproved it. Step count dominates: the same 3-reference request took 706s at 24 steps.
+			/// Memory is NOT the constraint (96GB assigned to VRAM holds the 9B model easily) — it is
+			/// iGPU compute. The setting still reaches the model as prompt text when this is off.
 			/// Config override, else the editable resource. This ignored the resource entirely and
 			/// hardcoded true as the fallback, so flux2Defaults.json's includeLandscapeRef was dead.
 			boolean includeLandscape = (includeLandscapeV != null)

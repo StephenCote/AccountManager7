@@ -90,13 +90,13 @@ public class TestPictureBookCustom extends BaseTest {
 	// Pass the landscape/setting image to the FLUX.2 composite as a third reference alongside the two
 	// character portraits.
 	//   true  - three 1024px references. Strongest setting fidelity: the generated scene reuses the
-	//           actual reference location. Measured ~26.5s per sampling step on the local Strix Halo
-	//           iGPU, so ~706s (11.8 min) for a 24-step scene.
+	//           actual reference location. ~120s per scene at 4 steps on the local Strix Halo iGPU.
 	//   false - two references (the portraits only); the setting reaches the model as prompt text.
-	//           Fewer reference tokens means less attention context, so it should be faster - by HOW
-	//           MUCH is unmeasured, and setting fidelity will drop since the real location image no
-	//           longer reaches the model. Flip this to compare the two directly.
-	private static final boolean FLUX2_INCLUDE_LANDSCAPE_REF = false;
+	//           ~80s per scene. The cost is LINEAR at ~40s per reference at 1024px/4 steps (measured
+	//           2026-08-08; an earlier note here guessed superlinear, which was wrong). Setting
+	//           fidelity drops, since the real location image no longer reaches the model.
+	// Step count dominates either way: the same 3-reference scene took 706s at 24 steps.
+	private static final boolean FLUX2_INCLUDE_LANDSCAPE_REF = true;
 
 	private static final boolean clearSceneCache = false;
 	// One-shot latch for clearSceneCache's Step 2 half — see getOrCreateCatatoneScenes.

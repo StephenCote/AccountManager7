@@ -268,6 +268,40 @@ public class SWUtil {
 			p.append("The mood is ").append(mood).append(". ");
 		}
 
+		/// MEDIUM ANCHOR, positioned where aiDocs/imageComposite.md puts it - immediately after the
+		/// placement clause and before the identity demands, not trailing at the very end.
+		///
+		/// Two things were wrong here. The doc's example reads "Photorealistic, matching lighting,
+		/// scale, and perspective" and I dropped "Photorealistic" - the only word in that sentence that
+		/// states the medium. And the config's own style string (which declares the medium far more
+		/// specifically: "Photograph taken with a Minolta HI-Matic E SLR camera...") was appended LAST,
+		/// after a wall of prohibitions. Reported symptom: a cartoonish composite while the SDXL
+		/// portraits and landscape it was built from are photorealistic.
+		/// The style comes ONLY from getSDConfigPrompt - the same seam the portraits and landscape use,
+		/// so one book renders in one style throughout. Nothing is substituted when it is absent.
+		///
+		/// A "Photorealistic." fallback was briefly added here (the doc's wording, which assumes
+		/// photorealism) and removed immediately: injecting a medium this stage invented would break the
+		/// invariant that the book's art style carries through portraits -> landscape -> composite from
+		/// the one common olio.sd.config. For a comic/anime/digitalArt book it would have actively
+		/// fought the configured style. If no style is configured, this prompt says nothing about medium
+		/// and lets the checkpoint decide - the same as every other stage.
+		///
+		/// The legitimate exception is a per-CHARACTER style override, and it does NOT arrive through
+		/// this prompt at all. The override is applied when that character's PORTRAIT is (re)generated
+		/// during character review, so the style is carried in the portrait's PIXELS - which then reach
+		/// FLUX.2 as a reference image. That is why one character can render in a different style inside
+		/// an otherwise photographic book without this style clause needing to know anything about it,
+		/// and why the clause must stay the book's single style rather than trying to describe per-character
+		/// variation in words.
+		String cfgStyle = (sdConfig != null)
+			? stripSDXLWeighting(org.cote.accountmanager.olio.sd.SDUtil.getSDConfigPrompt(sdConfig)) : null;
+		if (cfgStyle != null && !cfgStyle.isEmpty()) {
+			p.append(cfgStyle.trim());
+			if (!cfgStyle.trim().endsWith(".")) p.append(".");
+			p.append(" ");
+		}
+
 		/// Identity + coherence demands, per the doc.
 		p.append("Preserve facial identity, hair, and clothing precisely. ");
 		p.append("Matching lighting, scale, and perspective across the whole image. ");
@@ -278,12 +312,10 @@ public class SWUtil {
 		// U+2014 em dash as its own junk token (same class of problem SDUtil.appendLoras normalizes).
 		p.append("Do not draw the reference images themselves - no photograph, poster, screen, mirror, "
 			+ "billboard, framed picture or character sheet anywhere in the scene. ");
-		p.append("A single continuous photographic scene, no panels, no split screen, no collage. ");
-
-		if (sdConfig != null) {
-			String cfgStyle = stripSDXLWeighting(org.cote.accountmanager.olio.sd.SDUtil.getSDConfigPrompt(sdConfig));
-			if (cfgStyle != null && !cfgStyle.isEmpty()) p.append(cfgStyle);
-		}
+		/// "photographic" removed from this clause - the medium is now stated once, up front, by the
+		/// config style (or "Photorealistic" when there is none). Saying it twice in different words is
+		/// how a comic-styled book ended up being told "photographic" mid-prompt.
+		p.append("A single continuous scene, no panels, no split screen, no collage. ");
 		return p.toString().trim();
 	}
 

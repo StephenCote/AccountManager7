@@ -38,24 +38,44 @@ public class SWTxt2Img extends SWCommon {
 	private int height = 1024;
 	private int width = 1024;
 	
+	/// The refiner block is OMITTED unless a caller actually configures it.
+	///
+	/// These were primitives with non-null initializers (cfgScale 7, upscale 1, steps 20,
+	/// "PostApply", "pixel-lanczos"), so Jackson serialized a full refiner block on EVERY request -
+	/// including FLUX.2 composites, which have no refiner and never read `hires`. It rendered in
+	/// SwarmUI as "Refiner CFG Scale: 7, Refiner Steps: 20, Refiner Method: Post-Apply..." and read as
+	/// an enabled refiner. It was inert (no refiner model, control percentage 0) but indistinguishable
+	/// from a real misconfiguration, and it cost real time to chase.
+	///
+	/// Nullable + NON_NULL, matching the initImage/initImageCreativity pattern already used below. The
+	/// hires branches in SWUtil/SDUtil set every one of these explicitly, so configured behavior is
+	/// unchanged; the non-hires branches set only refinerControlPercentage and now send nothing else.
 	@JsonProperty("refinercfgscale")
-	private int refinerCfgScale = 7;
-	
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	private Integer refinerCfgScale = null;
+
 	@JsonProperty("refinerupscale")
-	private int refinerUpscale = 1;
-	
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	private Integer refinerUpscale = null;
+
 	@JsonProperty("refinermodel")
+	@JsonInclude(JsonInclude.Include.NON_NULL)
 	private String refinerModel = null;
-	
+
 	@JsonProperty("refinersteps")
-	private int refinerSteps = 20;
-	
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	private Integer refinerSteps = null;
+
 	@JsonProperty("refinermethod")
-	private String refinerMethod = "PostApply";
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	private String refinerMethod = null;
 
 	@JsonProperty("refinerupscalemethod")
-	private String refinerUpscaleMethod = "pixel-lanczos";
-	
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	private String refinerUpscaleMethod = null;
+
+	/// Stays a primitive: every path sets it explicitly (the hires branch from config, the else branch
+	/// to 0.0), and two tests assert on it, so it is never ambiguously unset.
 	@JsonProperty("refinercontrolpercentage")
 	private double refinerControlPercentage = 0.2;
 
@@ -181,11 +201,11 @@ public class SWTxt2Img extends SWCommon {
 		this.width = width;
 	}
 
-	public int getRefinerCfgScale() {
+	public Integer getRefinerCfgScale() {
 		return refinerCfgScale;
 	}
 
-	public void setRefinerCfgScale(int refinerCfgScale) {
+	public void setRefinerCfgScale(Integer refinerCfgScale) {
 		this.refinerCfgScale = refinerCfgScale;
 	}
 
@@ -197,11 +217,11 @@ public class SWTxt2Img extends SWCommon {
 		this.refinerModel = refinerModel;
 	}
 
-	public int getRefinerSteps() {
+	public Integer getRefinerSteps() {
 		return refinerSteps;
 	}
 
-	public void setRefinerSteps(int refinerSteps) {
+	public void setRefinerSteps(Integer refinerSteps) {
 		this.refinerSteps = refinerSteps;
 	}
 
@@ -229,11 +249,11 @@ public class SWTxt2Img extends SWCommon {
 		this.refinerControlPercentage = refinerControlPercentage;
 	}
 
-	public int getRefinerUpscale() {
+	public Integer getRefinerUpscale() {
 		return refinerUpscale;
 	}
 
-	public void setRefinerUpscale(int refinerUpscale) {
+	public void setRefinerUpscale(Integer refinerUpscale) {
 		this.refinerUpscale = refinerUpscale;
 	}
 
