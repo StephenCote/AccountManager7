@@ -326,16 +326,14 @@
 			"type": "double",
 			"minValue": 0.5,
 			"maxValue": 8.0,
-			"__no_default": "INTENTIONALLY has no default. A schema default here is never null, so it always beat olio/sd/flux2Defaults.json and made that file's cfgScale dead - editing the resource silently did nothing. Unset must mean unset so the resource can govern.",
-			"description": "CFG scale for the FLUX.2 composite. Edit/reference models want a low value: 1.0-3.5, 2.5 recommended. Do NOT reuse the SDXL cfg (5-7) here."
+			"description": "CFG scale for the FLUX.2 composite. Edit/reference models want a low value (1.0-3.5); do NOT reuse the SDXL cfg (5-7). NO SCHEMA DEFAULT ON PURPOSE: a default here is never null, so it always beat olio/sd/flux2Defaults.json and made that file's cfgScale dead - editing the resource silently did nothing (confirmed live 2026-08-08: resource said 3, the request carried the 2.5 default). Unset must mean unset so the resource can govern."
 		},
 		{
 			"name": "flux2ReferenceSize",
 			"type": "int",
 			"minValue": 256,
 			"maxValue": 2048,
-			"__no_default": "INTENTIONALLY has no default - see flux2Cfg. A schema default is never null and would make flux2Defaults.json's referenceSize dead.",
-			"description": "Square size each FLUX.2 reference image is normalized to (aspect preserved, letterboxed - never center-cropped)."
+			"description": "Square size each FLUX.2 reference image is normalized to (aspect preserved, letterboxed - never center-cropped). NO SCHEMA DEFAULT ON PURPOSE - see flux2Cfg: a default is never null and would make flux2Defaults.json's referenceSize dead."
 		},
 		{
 			"name": "mannequinUseBaseImage",
@@ -359,8 +357,7 @@
 		{
 			"name": "flux2IncludeLandscapeRef",
 			"type": "boolean",
-			"__no_default": "INTENTIONALLY has no default - see flux2Cfg. A schema default is never null and would make flux2Defaults.json's includeLandscapeRef dead.",
-			"description": "Include the landscape/setting image as a FLUX.2 reference. TRUE keeps the strongest setting fidelity (the generated scene reuses the actual reference location). Set FALSE to cut generation cost: every reference is encoded into the model's context and attention cost grows faster than linearly in it, so dropping the third reference is real GPU time - and the setting still reaches the model as prompt text. This is the primary speed lever for picture-book runs, because moving the work to faster hardware is not an option: the DGX Spark generates ~3x faster for a single image but its thermal handling cannot sustain a book's worth of back-to-back generations without crashing, so sustained SD work belongs on the local Strix Halo box. Turn back on by setting this true - no code change."
+			"description": "NO SCHEMA DEFAULT ON PURPOSE - see flux2Cfg: a default is never null and would make flux2Defaults.json's includeLandscapeRef dead. Include the landscape/setting image as a FLUX.2 reference. TRUE keeps the strongest setting fidelity (the generated scene reuses the actual reference location). Set FALSE to cut generation cost: every reference is encoded into the model's context and attention cost grows faster than linearly in it, so dropping the third reference is real GPU time - and the setting still reaches the model as prompt text. This is the primary speed lever for picture-book runs, because moving the work to faster hardware is not an option: the DGX Spark generates ~3x faster for a single image but its thermal handling cannot sustain a book's worth of back-to-back generations without crashing, so sustained SD work belongs on the local Strix Halo box. Turn back on by setting this true - no code change."
 		},
 		{
 			"name": "flux2Steps",
