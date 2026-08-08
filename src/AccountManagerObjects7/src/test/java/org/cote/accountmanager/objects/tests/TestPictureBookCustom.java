@@ -81,12 +81,23 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final String CHAT_PATH = "~/Chat";
 
 	private static final String PB_LLM_MODEL = "gpt-oss:120b";//"qwen3:8b";
-	private static int iter = 2;
+	private static int iter = 3;
 	private static final boolean REIMAGE_CHARS = true;
 	// If true, force a fresh LLM derivation of already-cached scene data: the .scenesCache note
 	// (Step 2 extraction) and the per-scene "scenePrompt"/"landscapePrompt" values (Step 4, via
 	// clearCachedScenePrompts). Leave false for normal reruns — scenes that have never been
 	// resolved are still generated regardless, so this flag only governs REDOING existing work.
+	// Pass the landscape/setting image to the FLUX.2 composite as a third reference alongside the two
+	// character portraits.
+	//   true  - three 1024px references. Strongest setting fidelity: the generated scene reuses the
+	//           actual reference location. Measured ~26.5s per sampling step on the local Strix Halo
+	//           iGPU, so ~706s (11.8 min) for a 24-step scene.
+	//   false - two references (the portraits only); the setting reaches the model as prompt text.
+	//           Fewer reference tokens means less attention context, so it should be faster - by HOW
+	//           MUCH is unmeasured, and setting fidelity will drop since the real location image no
+	//           longer reaches the model. Flip this to compare the two directly.
+	private static final boolean FLUX2_INCLUDE_LANDSCAPE_REF = false;
+
 	private static final boolean clearSceneCache = false;
 	// One-shot latch for clearSceneCache's Step 2 half — see getOrCreateCatatoneScenes.
 	private static boolean sceneCacheCleared = false;
@@ -436,10 +447,11 @@ public class TestPictureBookCustom extends BaseTest {
 		cfg.setValue(OlioFieldNames.FIELD_SD_MODEL, testProperties.getProperty("test.swarm.model"));
 		cfg.setValue(OlioFieldNames.FIELD_SD_REFINER_MODEL, testProperties.getProperty("test.swarm.refinerModel"));
 		cfg.setValue("negativePrompt", testProperties.getProperty("test.swarm.negativePrompt"));
-		// --- FLUX.2 composite stage --- left unset to take SWUtil's documented defaults
-		// (flux2Klein_9b / cfg 2.5 / 24 steps / 1024x768 / 1024px references). Override here to
-		// experiment; test.swarm.flux2Model allows pointing at a different checkpoint without a
-		// code change.
+		// --- FLUX.2 composite stage --- otherwise left unset to take SWUtil's documented defaults
+		// (flux2Klein_9b / cfg 2.5 / 24 steps / 1024x768 / 1024px references), which live in the
+		// editable resource olio/sd/flux2Defaults.json. test.swarm.flux2Model points at a different
+		// checkpoint without a code change.
+		cfg.setValue("flux2IncludeLandscapeRef", FLUX2_INCLUDE_LANDSCAPE_REF);
 		String flux2Model = testProperties.getProperty("test.swarm.flux2Model");
 		if (flux2Model != null && !flux2Model.isBlank()) {
 			cfg.setValue("flux2Model", flux2Model);

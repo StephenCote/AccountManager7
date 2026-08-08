@@ -95,7 +95,7 @@ public class TestFlux2Composite {
 		assertEquals("The SDXL refiner block must stay inert for a FLUX checkpoint",
 			0.0, req.getRefinerControlPercentage(), 0.001);
 		assertEquals("Negative prompt must be the short targeted one, not the SDXL NEG_PROMPT",
-			SWUtil.FLUX2_NEGATIVE_PROMPT, req.getNegativePrompt());
+			SWUtil.flux2NegativePrompt(), req.getNegativePrompt());
 	}
 
 	/// The prompt must carry the doc's multi-reference wording AND the instruction that fixes the
@@ -321,6 +321,44 @@ public class TestFlux2Composite {
 			LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, "p", "n", c1, c2, land, 0.85, cfg);
 		assertEquals("re-enabling must restore the third reference with no code change",
 			3, back.getPromptImages().size());
+	}
+
+	/// Every flux2 config field must be honored by the SHARED builder, because both the picture-book
+	/// and chat paths now go through it.
+	///
+	/// This exists because they did NOT both go through it: flux2IncludeLandscapeRef was implemented in
+	/// SceneCompositeUtil while PictureBookUtil still assembled its own request inline, so the field was
+	/// silently ignored for every picture-book scene. A toggle was added to TestPictureBookCustom that
+	/// did nothing. Asserting the fields against the shared builder is what makes that class of drift
+	/// impossible rather than merely unlikely.
+	@Test
+	public void sharedBuilderHonorsEveryFlux2ConfigField() throws Exception {
+		BaseRecord cfg = sdConfig();
+		cfg.set("flux2Cfg", 3.0);
+		cfg.set("flux2Steps", 28);
+		cfg.set("flux2Width", 1280);
+		cfg.set("flux2Height", 800);
+		cfg.set("flux2ReferenceSize", 768);
+		cfg.set("flux2IncludeLandscapeRef", false);
+
+		SWTxt2Img req = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_FLUX2,
+			LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, "classic prompt", "classic negative",
+			fixture("character1.png"), fixture("character2.png"), fixture("landscape1.png"),
+			0.85, cfg);
+		assertNotNull(req);
+		assertEquals("flux2Cfg", 3.0, req.getCfgScale(), 0.001);
+		assertEquals("flux2Steps", 28, req.getSteps());
+		assertEquals("flux2Width", 1280, req.getWidth());
+		assertEquals("flux2Height", 800, req.getHeight());
+		assertEquals("flux2IncludeLandscapeRef=false must drop the landscape reference",
+			2, req.getPromptImages().size());
+
+		// flux2ReferenceSize must reach the reference preparation, not just be accepted and ignored.
+		byte[] raw = BinaryUtil.fromBase64(
+			req.getPromptImages().get(0).substring("data:image/png;base64,".length()).getBytes());
+		BufferedImage refImg = ImageIO.read(new ByteArrayInputStream(raw));
+		assertEquals("flux2ReferenceSize must size the prepared references", 768, refImg.getWidth());
+		assertEquals("flux2ReferenceSize must size the prepared references", 768, refImg.getHeight());
 	}
 
 	/// The shared builder must produce a real FLUX.2 request with its references attached — this is

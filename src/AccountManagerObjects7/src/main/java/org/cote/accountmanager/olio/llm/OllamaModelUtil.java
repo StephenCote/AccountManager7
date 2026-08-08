@@ -45,9 +45,13 @@ public class OllamaModelUtil {
 	public static final String CONFIG_KEY = "llm.ollama.unload";
 
 	public static void setUnloadEnabled(boolean enabled) {
+		/// Log only on CHANGE. Every BaseTest setUp re-applies this from test properties, so an
+		/// unconditional log emitted one line per test class restating a value that never moved.
+		if(enabled != unloadEnabled) {
+			logger.info("Ollama model unload (" + CONFIG_KEY + ") is now " + (enabled ? "ENABLED" : "DISABLED")
+				+ (enabled ? "" : " - models stay resident between LLM and SD work"));
+		}
 		unloadEnabled = enabled;
-		logger.info("Ollama model unload (" + CONFIG_KEY + ") is " + (enabled ? "ENABLED" : "DISABLED")
-			+ (enabled ? "" : " - models stay resident between LLM and SD work"));
 	}
 
 	public static boolean isUnloadEnabled() {

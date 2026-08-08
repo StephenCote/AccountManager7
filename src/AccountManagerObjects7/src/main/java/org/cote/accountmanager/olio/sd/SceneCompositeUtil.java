@@ -103,7 +103,7 @@ public class SceneCompositeUtil {
 				try { refSizeV = sdConfig.get("flux2ReferenceSize"); } catch (Exception e) { /* ignore */ }
 				try { includeLandscapeV = sdConfig.get("flux2IncludeLandscapeRef"); } catch (Exception e) { /* ignore */ }
 			}
-			int refSize = (refSizeV != null && refSizeV > 0) ? refSizeV.intValue() : 1024;
+			int refSize = (refSizeV != null && refSizeV > 0) ? refSizeV.intValue() : Flux2Defaults.referenceSize();
 			/// Optional, ON by default. Every reference is encoded into FLUX.2's context, and attention
 			/// cost grows faster than linearly in that context, so the third reference is real compute:
 			/// measured 2026-08-07 on the local Swarm (Beelink GTR9, Strix Halo iGPU, 96GB assigned to

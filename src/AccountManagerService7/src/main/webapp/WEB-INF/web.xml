@@ -51,6 +51,17 @@
 		<param-name>sd.default.model</param-name>
 		<param-value></param-value>
 	</context-param>
+	<!--
+		Shared HTTP read timeout in SECONDS. Must exceed the slowest legitimate SD generation: a FLUX.2
+		multi-reference composite measured ~638s on a Strix Halo iGPU, and the previous hardcoded 360s
+		killed every one with SocketTimeoutException while the GPU was still working (the image still
+		landed on the SD server; the client had just stopped listening). Empty uses the 1200s default.
+		Applied at STARTUP ONLY - the shared HTTP client caches the value at first use.
+	-->
+	<context-param>
+		<param-name>http.read.timeout</param-name>
+		<param-value></param-value>
+	</context-param>
 	<context-param>
 		<param-name>isLog4jAutoInitializationDisabled</param-name>
 		<param-value>false</param-value>

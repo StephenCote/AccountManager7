@@ -136,18 +136,17 @@ public class SWUtil {
 		return (m != null) ? m : org.cote.accountmanager.olio.sd.SDUtil.getDefaultModel();
 	}
 
-	/// FLUX.2 generation defaults, from aiDocs/imageComposite.md's "Quality controls".
-	/// CFG stays low for an edit/reference model (doc: 1.0-3.5, recommends 2.5); steps 20-28.
-	public static final double FLUX2_CFG_SCALE = 2.5;
-	public static final int FLUX2_STEPS = 24;
-	/// Landscape output. The doc prefers landscape/3:2 for two-person scenes; this also matches the
-	/// classic pipeline's 1024x768 so switching composite modes doesn't change the book's aspect.
-	public static final int FLUX2_WIDTH = 1024;
-	public static final int FLUX2_HEIGHT = 768;
-	/// Short, targeted negative prompt from the doc — not the SDXL NEG_PROMPT, which is tuned for a
-	/// different model family and, at the low CFG an edit model needs, barely applies anyway.
-	public static final String FLUX2_NEGATIVE_PROMPT =
-		"blurry faces, deformed, extra people, mismatched lighting, low quality";
+	/// FLUX.2 generation defaults now live in the editable resource olio/sd/flux2Defaults.json, read
+	/// through Flux2Defaults - NOT as constants here. They were `static final` (cfg 2.5, steps 24,
+	/// 1024x768, euler/simple, the short negative prompt), which meant tuning required a code change
+	/// and gave a future UI no source for its defaults but hardcoded Java. The model is the one thing
+	/// deliberately still configuration rather than resource, because checkpoint names differ per
+	/// deployment. These accessors exist so callers and tests read the same resolved values.
+	public static double flux2CfgScale()       { return org.cote.accountmanager.olio.sd.Flux2Defaults.cfgScale(); }
+	public static int flux2Steps()             { return org.cote.accountmanager.olio.sd.Flux2Defaults.steps(); }
+	public static int flux2Width()             { return org.cote.accountmanager.olio.sd.Flux2Defaults.width(); }
+	public static int flux2Height()            { return org.cote.accountmanager.olio.sd.Flux2Defaults.height(); }
+	public static String flux2NegativePrompt() { return org.cote.accountmanager.olio.sd.Flux2Defaults.negativePrompt(); }
 
 	/// Build a FLUX.2 multi-reference scene request.
 	///
@@ -198,18 +197,19 @@ public class SWUtil {
 			try { cfgHeight = sdConfig.get("flux2Height"); } catch (Exception e) { /* field may not exist */ }
 			try { cfgCfgScale = sdConfig.get("flux2Cfg"); } catch (Exception e) { /* field may not exist */ }
 		}
-		s2i.setSteps(cfgSteps != null && cfgSteps > 0 ? cfgSteps : FLUX2_STEPS);
-		s2i.setCfgScale(cfgCfgScale != null && cfgCfgScale > 0 ? cfgCfgScale : FLUX2_CFG_SCALE);
-		s2i.setWidth(cfgWidth != null && cfgWidth > 0 ? cfgWidth : FLUX2_WIDTH);
-		s2i.setHeight(cfgHeight != null && cfgHeight > 0 ? cfgHeight : FLUX2_HEIGHT);
-		s2i.setSampler("euler");
-		s2i.setScheduler("simple");
+		/// Per-book config override, else the editable resource. Two levels only - no Java constants.
+		s2i.setSteps(cfgSteps != null && cfgSteps > 0 ? cfgSteps : org.cote.accountmanager.olio.sd.Flux2Defaults.steps());
+		s2i.setCfgScale(cfgCfgScale != null && cfgCfgScale > 0 ? cfgCfgScale : org.cote.accountmanager.olio.sd.Flux2Defaults.cfgScale());
+		s2i.setWidth(cfgWidth != null && cfgWidth > 0 ? cfgWidth : org.cote.accountmanager.olio.sd.Flux2Defaults.width());
+		s2i.setHeight(cfgHeight != null && cfgHeight > 0 ? cfgHeight : org.cote.accountmanager.olio.sd.Flux2Defaults.height());
+		s2i.setSampler(org.cote.accountmanager.olio.sd.Flux2Defaults.sampler());
+		s2i.setScheduler(org.cote.accountmanager.olio.sd.Flux2Defaults.scheduler());
 		s2i.setSeed(Math.abs(rand.nextInt()));
 		s2i.setImages(1);
 		/// No refiner: the SDXL refiner block the Kontext requests carried (refinercfgscale 7,
 		/// PostApply, pixel-lanczos) is meaningless to a FLUX checkpoint. 0.0 keeps it inert.
 		s2i.setRefinerControlPercentage(0.0);
-		s2i.setNegativePrompt(FLUX2_NEGATIVE_PROMPT);
+		s2i.setNegativePrompt(org.cote.accountmanager.olio.sd.Flux2Defaults.negativePrompt());
 
 		s2i.setPrompt(buildFlux2ScenePrompt(leftDesc, rightDesc, action, setting, mood, sdConfig, refCount));
 		return s2i;

@@ -41,6 +41,7 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
+import org.cote.accountmanager.olio.sd.SceneCompositeUtil;
 import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -3527,23 +3528,26 @@ public class PictureBookUtil {
                 //    all of its width (stitchSceneImages would have discarded 44% of it);
                 //  - CFG comes from flux2Cfg (2.5), NOT the SDXL `cfg` (5) that the Kontext call was
                 //    being handed — far outside the 1.0-3.5 an edit model tolerates.
+                // Request construction goes through SceneCompositeUtil - the SAME builder the chat
+                // endpoint uses - rather than being assembled inline here. It was inline, and that
+                // duplication immediately bit: flux2IncludeLandscapeRef was added to the shared builder
+                // only, so this branch passed the landscape unconditionally and the config field was
+                // silently ignored for every picture-book scene while appearing to work.
                 PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_awesome_mosaic", "Preparing references...");
                 BaseRecord flux2Cfg = (params.compositeSdConfig != null) ? params.compositeSdConfig : common;
                 if (params.compositeSdConfig != null) SDUtil.fillStyleDefaults(flux2Cfg);
-                Integer refSizeV = flux2Cfg.get("flux2ReferenceSize");
-                int refSize = (refSizeV != null && refSizeV > 0) ? refSizeV.intValue() : 1024;
-                List<String> refs = SDUtil.buildFlux2References(refSize, leftBytes, centerBytes, landscapeBytes);
 
                 PictureBookProgressNotifier.getInstance().notifyProgress(user, "image", "Compositing scene...");
-                SWTxt2Img flux2Req = SWUtil.newFlux2SceneTxt2Img(leftDesc, rightDesc, action, setting, mood,
-                        flux2Cfg, refs.size());
-                if (!refs.isEmpty()) {
-                    flux2Req.setPromptImages(refs);
+                SWTxt2Img flux2Req = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_FLUX2,
+                        leftDesc, rightDesc, action, setting, mood, scenePrompt, NEG_PROMPT,
+                        leftBytes, centerBytes, landscapeBytes, sceneCreativity, flux2Cfg);
+                if (flux2Req == null) {
+                    logger.warn("generateSceneImage: could not build a FLUX.2 request — falling back to classic");
+                    useFlux2 = false;
                 }
-                logger.info("generateSceneImage: FLUX.2 composite model=" + flux2Req.getModel()
-                        + " refs=" + refs.size() + " cfg=" + flux2Req.getCfgScale() + " steps=" + flux2Req.getSteps()
-                        + " " + flux2Req.getWidth() + "x" + flux2Req.getHeight());
-                finalImages = sdu.createSceneImage(user, sceneGroupPath, sceneName, flux2Req, null, null);
+                finalImages = (flux2Req != null)
+                    ? sdu.createSceneImage(user, sceneGroupPath, sceneName, flux2Req, null, null)
+                    : new ArrayList<>();
                 if (finalImages == null || finalImages.isEmpty()) {
                     logger.warn("generateSceneImage: FLUX.2 pipeline produced no images — falling back to classic");
                     useFlux2 = false;

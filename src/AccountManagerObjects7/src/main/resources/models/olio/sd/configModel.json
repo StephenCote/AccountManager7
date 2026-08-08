@@ -338,6 +338,25 @@
 			"description": "Square size each FLUX.2 reference image is normalized to (aspect preserved, letterboxed - never center-cropped)."
 		},
 		{
+			"name": "mannequinUseBaseImage",
+			"type": "boolean",
+			"description": "Seed mannequin apparel images from the male/female mannequin base image (img2img) so every wear level of a set shares one body and pose. ON when unset. Verified live 2026-08-07 at 1024x1024 / 60 steps / 0.85 creativity: a faceless retail mannequin, recognizably the provided asset, wearing the described garments. Set false to fall back to text-only generation. Pairs with mannequinCreativity and mannequinSteps - all three matter together."
+		},
+		{
+			"name": "mannequinCreativity",
+			"type": "double",
+			"minValue": 0.0,
+			"maxValue": 1.0,
+			"description": "img2img denoise for the mannequin base image. Unset means 0.85, which measured best. SEPARATE from the shared denoisingStrength on purpose: that field carries a 0.75 schema default and so silently overrode the intended value. Must be tuned WITH mannequinSteps - img2img only samples for (steps x creativity) iterations, so a low value plus a low step count renders the bare mannequin and never clothes it."
+		},
+		{
+			"name": "mannequinSteps",
+			"type": "int",
+			"minValue": 1,
+			"maxValue": 150,
+			"description": "Sampling steps for the mannequin img2img pass. Unset means 60. SEPARATE from the shared 'steps' (schema default 20) because img2img samples only (steps x creativity) times: 20 x 0.85 = 17 effective steps, which faithfully reproduces the base mannequin but never paints the garments on - the failure that made the base-image path look broken. 60 x 0.85 = 51 works."
+		},
+		{
 			"name": "flux2IncludeLandscapeRef",
 			"type": "boolean",
 			"default": true,

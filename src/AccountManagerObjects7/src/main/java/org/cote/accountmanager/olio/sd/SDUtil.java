@@ -1506,9 +1506,14 @@ public class SDUtil {
 	private static volatile String defaultModel = null;
 
 	public static void setDefaultModel(String model) {
-		defaultModel = (model != null && !model.isBlank()) ? model.trim() : null;
-		logger.info("Default SD checkpoint (" + DEFAULT_MODEL_CONFIG_KEY + ") = "
-			+ (defaultModel != null ? defaultModel : "(unset - will use the olio.sd.config schema default)"));
+		String resolved = (model != null && !model.isBlank()) ? model.trim() : null;
+		/// Log only on CHANGE - BaseTest re-applies this per test class, and restating an unchanged
+		/// value once per class is noise, not information.
+		if(!java.util.Objects.equals(resolved, defaultModel)) {
+			logger.info("Default SD checkpoint (" + DEFAULT_MODEL_CONFIG_KEY + ") = "
+				+ (resolved != null ? resolved : "(unset - will use the olio.sd.config schema default)"));
+		}
+		defaultModel = resolved;
 	}
 
 	/// Resolve the fallback checkpoint. Never invents a literal.
@@ -1558,17 +1563,36 @@ public class SDUtil {
 	public static final String MANNEQUIN_BASE_MALE = "maleModelx512.png";
 	public static final String MANNEQUIN_BASE_FEMALE = "femaleModelx512.png";
 
-	/// Output size for mannequin images. Named constants rather than the literals that were inline in
-	/// generateMannequinImages, because fitMannequinBase has to letterbox the square base to exactly
-	/// this shape — the two must not drift apart.
-	public static final int MANNEQUIN_IMAGE_WIDTH = 512;
-	public static final int MANNEQUIN_IMAGE_HEIGHT = 768;
+	/// Output size for mannequin images: SDXL's NATIVE 1024x1024. Do not lower this.
+	///
+	/// This was 512x768, and the reported "blank white / garbage" mannequins were mostly that. SDXL is
+	/// trained at 1024x1024 and degrades badly below it - measured live 2026-08-07 with an identical
+	/// prompt, seed, model, sampler and step count, the ONLY variable being resolution:
+	///   512x512   flat cartoon illustration, a grid of disconnected garment fragments, no figure
+	///   1024x1024 a correct photographic full-body shot wearing the whole described outfit
+	/// (I briefly made it 512x512 to match the square base asset, which pushed it even further from
+	/// native and made the output worse.)
+	///
+	/// Square because the base assets are square, so an init image needs neither padding nor stretching.
+	/// The 1000x1000 maleModel/femaleModel assets are the near-native pair to use if the init-image path
+	/// is ever enabled; the x512 pair is a 2x upscale at this size.
+	public static final int MANNEQUIN_IMAGE_WIDTH = 1024;
+	public static final int MANNEQUIN_IMAGE_HEIGHT = 1024;
 
-	/// How far img2img may drift from the mannequin base. Deliberately below applyReferenceImage's
-	/// 0.75: the point of seeding from the base is that the SAME body and pose carry across every
-	/// wear level of an apparel set, so only the clothing changes between images. Overridable per
-	/// call via sdConfig.denoisingStrength.
-	public static final double MANNEQUIN_INIT_IMAGE_CREATIVITY = 0.6;
+	/// img2img settings for the mannequin base, both MEASURED live 2026-08-07 rather than guessed.
+	///
+	/// The two are coupled and must be tuned together, which is what I got wrong first time: in img2img
+	/// the model only samples for (steps x creativity) iterations. At the shared config's 20 steps a
+	/// 0.40-0.70 creativity gives 8-14 effective steps, which renders the base mannequin faithfully but
+	/// NEVER paints the garments on - it looks like the init image is being ignored when in fact it is
+	/// being obeyed and there simply aren't enough steps to add clothing. I concluded from that sweep
+	/// that img2img was the wrong mechanism; Stephen said it should work, and he was right. At 60 steps
+	/// the same 0.70/0.85 creativity produces a properly clothed faceless retail mannequin.
+	///
+	/// MANNEQUIN_STEPS is deliberately separate from the shared `steps` field, which carries a schema
+	/// default of 20 - reading that would silently starve the img2img pass.
+	public static final double MANNEQUIN_INIT_IMAGE_CREATIVITY = 0.85;
+	public static final int MANNEQUIN_STEPS = 60;
 
 	/// Resolve the mannequin base image for a gender ("male"/"female"; anything else, including
 	/// null/"unisex", falls to female — the same default Ux752's getMannequinBaseUrl applies with
@@ -1578,6 +1602,18 @@ public class SDUtil {
 	/// Returns the image at its stored size (512x512). Callers generating at a different aspect ratio
 	/// must run it through fitMannequinBase first — see that method for why.
 	public static byte[] getMannequinBaseImage(String gender) {
+		String prefix = ("male".equalsIgnoreCase(gender) ? "male" : "female");
+		/// Prefer an asset authored at the exact generation size, so a new native-resolution png can be
+		/// dropped into olio/media/ and picked up with no code change. Falls back to the x512 pair.
+		/// Naming follows the existing convention Stephen used for these assets - {gender}Modelx{SIZE}
+		/// (maleModelx512.png, maleModelx1024.png) - NOT {gender}Model{W}x{H}, which is what this
+		/// originally looked for and would have silently missed the 1024 pair he added.
+		String sized = prefix + "Modelx" + MANNEQUIN_IMAGE_WIDTH + ".png";
+		byte[] data = ResourceUtil.getInstance().getBinaryResource(MANNEQUIN_BASE_RESOURCE_PATH + sized);
+		if(data != null && data.length > 0) {
+			logger.debug("Mannequin base: using size-matched asset " + sized);
+			return data;
+		}
 		String file = ("male".equalsIgnoreCase(gender) ? MANNEQUIN_BASE_MALE : MANNEQUIN_BASE_FEMALE);
 		return ResourceUtil.getInstance().getBinaryResource(MANNEQUIN_BASE_RESOURCE_PATH + file);
 	}
@@ -1637,7 +1673,7 @@ public class SDUtil {
 			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
 			javax.imageio.ImageIO.write(canvas, "png", baos);
 			byte[] out = baos.toByteArray();
-			logger.info(label + ": " + src.getWidth() + "x" + src.getHeight() + " -> " + targetWidth + "x"
+			logger.debug(label + ": " + src.getWidth() + "x" + src.getHeight() + " -> " + targetWidth + "x"
 				+ targetHeight + " (drawn " + drawW + "x" + drawH + " at " + xOff + "," + yOff + ", letterboxed)");
 			return out;
 		} catch (Exception e) {
@@ -1674,7 +1710,7 @@ public class SDUtil {
 			}
 			refs.add("data:image/png;base64," + BinaryUtil.toBase64Str(fitted));
 		}
-		logger.info("buildFlux2References: prepared " + refs.size() + " reference image(s) at " + refSize + "x" + refSize);
+		logger.debug("buildFlux2References: prepared " + refs.size() + " reference image(s) at " + refSize + "x" + refSize);
 		return refs;
 	}
 
@@ -1766,23 +1802,53 @@ public class SDUtil {
 		// projection, so read it defensively — a null gender is not an error, it just takes
 		// getMannequinBaseImage's female default.
 		String apparelGender = apparel.get(FieldNames.FIELD_GENDER);
-		byte[] mannequinBase = fitMannequinBase(getMannequinBaseImage(apparelGender),
-			MANNEQUIN_IMAGE_WIDTH, MANNEQUIN_IMAGE_HEIGHT);
-		String mannequinBase64 = (mannequinBase != null && mannequinBase.length > 0)
-			? BinaryUtil.toBase64Str(mannequinBase) : null;
-		Double cfgDenoise = config.get(OlioFieldNames.FIELD_SD_DENOISING_STRENGTH);
-		double mannequinCreativity = (cfgDenoise != null ? cfgDenoise : MANNEQUIN_INIT_IMAGE_CREATIVITY);
-		if(mannequinBase64 == null) {
-			// Not fatal: fall back to the pre-2026-08-07 text-only behavior rather than failing the
-			// whole apparel set. Warn loudly, because the resulting images will NOT share a body/pose
-			// across wear levels and that is easy to mistake for a prompt problem.
-			logger.warn("Mannequin base image unavailable for gender '" + apparelGender + "' ("
-				+ MANNEQUIN_BASE_RESOURCE_PATH + ") — falling back to text-only generation; wear levels "
-				+ "will not share a consistent body/pose");
-		}
-		else {
-			logger.info("Mannequin base image: gender=" + (apparelGender != null ? apparelGender : "(unset, using female default)")
-				+ " bytes=" + mannequinBase.length + " creativity=" + mannequinCreativity);
+		byte[] mannequinBase = null;
+		String mannequinBase64 = null;
+		/// Read the MANNEQUIN-SPECIFIC field, not the shared denoisingStrength.
+		///
+		/// denoisingStrength is declared "default": 0.75 in configModel.json, so get() never returns
+		/// null on a schema-built record - the "else MANNEQUIN_INIT_IMAGE_CREATIVITY" branch could
+		/// never fire and the 0.6 was dead code. Confirmed live 2026-08-07: a generation logged
+		/// "Init Image Creativity: 0.75". Same trap as steps/width/height and useKontext; the fix is
+		/// the same, a dedicated field with no schema default.
+		Double cfgDenoise = config.get("mannequinCreativity");
+		double mannequinCreativity = (cfgDenoise != null && cfgDenoise > 0)
+			? cfgDenoise.doubleValue() : MANNEQUIN_INIT_IMAGE_CREATIVITY;
+
+		/// ON by default: measured working 2026-08-07 at 1024x1024, 60 steps, 0.85 creativity - a
+		/// faceless retail mannequin, recognizably the provided asset, wearing the described garments.
+		/// The earlier "blank white" reports were two separate mistakes of mine, neither of them the
+		/// base image itself: generating at 512x512 (SDXL degrades badly below its native 1024) and
+		/// under-sampling the img2img pass. Set false to fall back to text-only generation.
+		Boolean useBaseV = config.get("mannequinUseBaseImage");
+		boolean useBaseImage = (useBaseV == null) || useBaseV.booleanValue();
+
+		/// Dedicated step count, again NOT the shared `steps` (schema default 20). img2img samples for
+		/// only (steps x creativity) iterations, so a 20-step config at 0.85 gives 17 - enough to render
+		/// the base mannequin but not to clothe it, which is exactly the failure that made this look
+		/// broken. Only applied when the base image is in use; text-only generation keeps the config's
+		/// own step count, since it has no creativity multiplier eating into it.
+		Integer mqStepsV = config.get("mannequinSteps");
+		int mannequinSteps = (mqStepsV != null && mqStepsV > 0) ? mqStepsV.intValue() : MANNEQUIN_STEPS;
+
+		if(useBaseImage) {
+			/// The PROVIDED png, unmodified. It was previously run through fitMannequinBase, which
+			/// letterboxed the 512x512 asset onto a 512x768 canvas - adding 256px of white padding that
+			/// was a third of the init image and none of it Stephen's artwork. Since the asset is square,
+			/// the generation is square too (see MANNEQUIN_IMAGE_*), so there is nothing to letterbox
+			/// and nothing to stretch.
+			mannequinBase = getMannequinBaseImage(apparelGender);
+			mannequinBase64 = (mannequinBase != null && mannequinBase.length > 0)
+				? BinaryUtil.toBase64Str(mannequinBase) : null;
+			if(mannequinBase64 == null) {
+				logger.warn("mannequinUseBaseImage=true but the base image for gender '" + apparelGender
+					+ "' could not be prepared from " + MANNEQUIN_BASE_RESOURCE_PATH
+					+ " - generating text-only instead");
+			}
+			else {
+				logger.info("Mannequin base image: gender=" + (apparelGender != null ? apparelGender : "(unset, using female default)")
+					+ " bytes=" + mannequinBase.length + " creativity=" + mannequinCreativity);
+			}
 		}
 
 		// Generate one image per cumulative level
@@ -1801,7 +1867,10 @@ public class SDUtil {
 			s2i.setNegativePrompt(negPrompt);
 			s2i.setWidth(MANNEQUIN_IMAGE_WIDTH);
 			s2i.setHeight(MANNEQUIN_IMAGE_HEIGHT);
-			s2i.setSteps(cfgSteps);
+			/// The img2img pass needs the raised count (steps x creativity is what actually samples);
+			/// text-only keeps the config's own. Set ONCE here - an earlier attempt set it inside the
+			/// init-image block above and this line silently overwrote it.
+			s2i.setSteps(mannequinBase64 != null ? mannequinSteps : cfgSteps);
 			s2i.setModel(cfgModel);
 			s2i.setScheduler(cfgScheduler);
 			s2i.setSampler(cfgSampler);

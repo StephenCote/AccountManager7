@@ -60,6 +60,49 @@ public class ClientUtil {
 	public static void setDisableSSLVerification(boolean ds) {
 		disableSSLVerification = ds;
 	}
+
+	/// Shared HTTP read timeout, in seconds. Deployment-configurable because the value that matters
+	/// is set by the slowest legitimate backend call, which on this project is Stable Diffusion image
+	/// generation - and that varies enormously by GPU (the same FLUX.2 request is ~3.3 min on a DGX
+	/// Spark and ~10.6 min on a Strix Halo iGPU).
+	///
+	/// Default 1200s (20 min): roughly 2x the slowest generation actually measured, so a slower model
+	/// or a hires pass has headroom, while still bounding a wedged backend rather than hanging forever.
+	/// Raise it if generations legitimately run longer; do NOT lower it below your slowest real SD
+	/// call, because the failure mode is a SocketTimeoutException on work the GPU is still doing.
+	public static final String READ_TIMEOUT_CONFIG_KEY = "http.read.timeout";
+	private static final int DEFAULT_READ_TIMEOUT_SECONDS = 1200;
+	private static volatile int readTimeoutSeconds = DEFAULT_READ_TIMEOUT_SECONDS;
+
+	/// Boot-pinned: the shared Client is built once, lazily, and caches the timeout. Calling this
+	/// after the first HTTP request has no effect, so it must run during startup - this logs loudly
+	/// rather than silently pretending to apply, since a stale timeout is exactly the kind of thing
+	/// that looks configured and isn't.
+	public static void setReadTimeoutSeconds(int seconds) {
+		if(seconds <= 0) {
+			logger.warn("Ignoring non-positive " + READ_TIMEOUT_CONFIG_KEY + "=" + seconds
+				+ "; keeping " + readTimeoutSeconds + "s");
+			return;
+		}
+		/// Silent no-op when nothing changes. Every BaseTest setUp re-applies this from test
+		/// properties, so warning unconditionally produced one WARN per test class against a value
+		/// that was already correct - noise that trains you to ignore the line that matters.
+		if(seconds == readTimeoutSeconds) {
+			return;
+		}
+		/// Only actionable if the client is already built AND the value actually differs: that is the
+		/// case where the configured timeout genuinely will not apply.
+		if(client != null) {
+			logger.warn(READ_TIMEOUT_CONFIG_KEY + " changed from " + readTimeoutSeconds + "s to " + seconds
+				+ "s AFTER the shared HTTP client was built - the new value will NOT take effect for this "
+				+ "process. Set it during startup.");
+		}
+		readTimeoutSeconds = seconds;
+	}
+
+	public static int getReadTimeoutSeconds() {
+		return readTimeoutSeconds;
+	}
 	public static void setCachePath(String s) {
 		cachePath = s;
 	}
@@ -92,10 +135,22 @@ public class ClientUtil {
 		/// infinite hangs when Ollama or another backend wedges. Without
 		/// these, a stuck embedding call holds an HTTP connection from the
 		/// shared pool and any subsequent chat request waits behind it.
-		/// 30s connect is generous for local services; 360s read matches
-		/// the worst-case batch image generation upper bound.
+		/// 30s connect is generous for local services.
+		///
+		/// The read timeout was 360s, on the stated premise that it "matches the worst-case batch
+		/// image generation upper bound". That premise is false on current hardware: a FLUX.2 Klein 9B
+		/// multi-reference composite measured 10.64 min (638s) of GPU time on the Beelink GTR9's
+		/// Strix Halo iGPU, so every such generation died with
+		///   PictureBookException: java.net.SocketTimeoutException: Read timed out
+		/// after ~361s, with the GPU still working and the image eventually landing on the server -
+		/// the client had simply stopped listening. Confirmed twice: a standalone FLUX.2 run failed at
+		/// 361.9s, and TestPictureBookCustomPipeline at 667s (2026-08-07).
+		///
+		/// Now configurable, because the right value is a property of the GPU, not of the code.
 		cb.connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS);
-		cb.readTimeout(360, java.util.concurrent.TimeUnit.SECONDS);
+		cb.readTimeout(readTimeoutSeconds, java.util.concurrent.TimeUnit.SECONDS);
+		logger.info("HTTP client read timeout = " + readTimeoutSeconds + "s ("
+			+ READ_TIMEOUT_CONFIG_KEY + "), connect timeout = 30s");
 
 		client = cb
 			.build()

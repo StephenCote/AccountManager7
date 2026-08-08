@@ -28,6 +28,11 @@ set -euo pipefail
 # Fallback SD checkpoint when an olio.sd.config carries no model. Empty by default: names are
 # per-Swarm-install and a wrong one returns an empty image list rather than an error, so an empty
 # value (falling through to the olio.sd.config schema default) is safer than a guess.
+: "${HTTP_READ_TIMEOUT:=}"
+# Shared HTTP read timeout in seconds; empty uses the 1200s code default. Must exceed the slowest
+# legitimate SD generation -- a FLUX.2 multi-reference composite is ~638s on a Strix Halo iGPU, and
+# the previous hardcoded 360s aborted the client while the GPU was still working (the image was
+# produced on the SD server regardless; only the caller gave up).
 : "${CORS_ALLOWED_ORIGINS:=http://localhost:8899,http://localhost,http://localhost:8080,http://localhost:8888,https://localhost:8899,https://localhost,https://localhost:8443,https://localhost:8888,https://192.168.1.12:8899,https://192.168.1.12:8443}"
 
 # cors.support.credentials is hardcoded true in web.xml.template; combined
@@ -40,7 +45,7 @@ export DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD SESSION_STORE_PATH \
   STORE_PATH DATAGEN_PATH VAULT_PATH VAULT_CREDENTIAL_PATH \
   TASK_SERVER TASK_API_KEY SD_SERVER FACE_SERVER TAG_SERVER \
   VOICE_TTS_SERVER VOICE_STT_SERVER EMBEDDING_SERVER CORS_ALLOWED_ORIGINS \
-  SD_DEFAULT_MODEL
+  SD_DEFAULT_MODEL HTTP_READ_TIMEOUT
 
 APP_DIR="$CATALINA_HOME/webapps/${APP_CONTEXT}"
 
@@ -49,7 +54,7 @@ mkdir -p "$STORE_PATH" "$DATAGEN_PATH" "$VAULT_PATH" "$VAULT_CREDENTIAL_PATH" "$
 envsubst '$DB_HOST $DB_PORT $DB_NAME $DB_USER $DB_PASSWORD $SESSION_STORE_PATH' \
   < "$APP_DIR/META-INF/context.xml.template" > "$APP_DIR/META-INF/context.xml"
 
-envsubst '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SERVER $TASK_API_KEY $SD_SERVER $FACE_SERVER $TAG_SERVER $VOICE_TTS_SERVER $VOICE_STT_SERVER $EMBEDDING_SERVER $CORS_ALLOWED_ORIGINS $SD_DEFAULT_MODEL' \
+envsubst '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SERVER $TASK_API_KEY $SD_SERVER $FACE_SERVER $TAG_SERVER $VOICE_TTS_SERVER $VOICE_STT_SERVER $EMBEDDING_SERVER $CORS_ALLOWED_ORIGINS $SD_DEFAULT_MODEL $HTTP_READ_TIMEOUT' \
   < "$APP_DIR/WEB-INF/web.xml.template" > "$APP_DIR/WEB-INF/web.xml"
 
 # Self-signed TLS pair shared by Tomcat (server.xml) and nginx (nginx.conf).

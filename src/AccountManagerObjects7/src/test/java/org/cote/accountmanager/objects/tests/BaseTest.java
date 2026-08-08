@@ -98,6 +98,13 @@ public class BaseTest {
 		/// test.swarm.model so the tests can't drift from the checkpoint the test Swarm actually has —
 		/// the failure mode is silent (empty image list, test logs and skips: KI-39).
 		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(testProperties.getProperty("test.swarm.model"));
+		/// Must precede any HTTP call (the shared Client caches it). The old 360s default killed every
+		/// FLUX.2 composite mid-generation on the local iGPU - see ClientUtil.
+		String readTo = testProperties.getProperty(org.cote.accountmanager.util.ClientUtil.READ_TIMEOUT_CONFIG_KEY);
+		if(readTo != null && !readTo.isBlank()) {
+			try { org.cote.accountmanager.util.ClientUtil.setReadTimeoutSeconds(Integer.parseInt(readTo.trim())); }
+			catch(NumberFormatException nfe) { logger.warn("Invalid http.read.timeout='" + readTo + "'"); }
+		}
 		
 		/// NOTE: The current setup will throw an error if trying to deserialize a model whose schema has not yet been loaded.  This was done intentionally to only support intentionally loaded schemas
 		

@@ -251,6 +251,16 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(
 			context.getInitParameter(org.cote.accountmanager.olio.sd.SDUtil.DEFAULT_MODEL_CONFIG_KEY));
 
+		/// Must run before any HTTP call - the shared Client caches the timeout at first use. Sized by
+		/// the slowest legitimate SD generation, which is GPU-dependent (see ClientUtil).
+		String readTo = context.getInitParameter(ClientUtil.READ_TIMEOUT_CONFIG_KEY);
+		if(readTo != null && !readTo.isBlank()) {
+			try { ClientUtil.setReadTimeoutSeconds(Integer.parseInt(readTo.trim())); }
+			catch(NumberFormatException nfe) {
+				logger.warn("Invalid " + ClientUtil.READ_TIMEOUT_CONFIG_KEY + "='" + readTo + "'; keeping default");
+			}
+		}
+
 		logger.info("Initializing Account Manager");
 		String streamCut = context.getInitParameter("stream.cutoff");
 		if (streamCut != null) {

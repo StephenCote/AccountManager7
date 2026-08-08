@@ -1631,15 +1631,24 @@ public class NarrativeUtil {
 		}
 
 		buff.append(". ((white seamless background)), ");
-		buff.append("((studio lighting)), ((fashion catalog)), ");
+		/// "((fashion catalog))" was here and had to go: it asks for a catalog PAGE, and that is what it
+		/// produced - a flat grid of separate garments with colour swatches and no wearer, verified live
+		/// 2026-08-07 (media/mannequin-live/00-no-init-image.png). The intent was "catalog-quality
+		/// product shot", which "professional product photography" below already says without inviting
+		/// the layout.
+		buff.append("((studio lighting)), ");
+		buff.append("((one single mannequin, centered, full length, wearing all of the garments)), ");
 		buff.append("professional product photography, front view");
 
-		if(sdConfig != null) {
-			String style = sdConfig.get("style");
-			if(style != null && !style.isEmpty()) {
-				buff.append(", ").append(style);
-			}
-		}
+		/// The sdConfig style is deliberately NOT appended.
+		///
+		/// It appended the raw single-word style token, so a book pinned to "art" ended this prompt with
+		/// ", art" - directly contradicting the "professional fashion photography" and "professional
+		/// product photography" instructions in the same string, and rendering flat illustration instead
+		/// of a photograph. A mannequin image is a wardrobe REFERENCE shot, not part of the book's
+		/// visual style: the character portraits and scenes carry the art direction, while this exists to
+		/// show what the clothes look like. Keeping it photographic regardless of the book style is the
+		/// point, not an oversight. (sdConfig is still accepted for signature stability and future use.)
 
 		return buff.toString();
 	}
