@@ -111,7 +111,10 @@ public class SceneCompositeUtil {
 			/// constraint on that box — with 96GB of VRAM the 9B model fits easily; it is iGPU compute.
 			/// Dropping this reference is the cheapest lever and the setting still reaches the model as
 			/// prompt text; flip flux2IncludeLandscapeRef back to true to restore full setting fidelity.
-			boolean includeLandscape = (includeLandscapeV == null) || includeLandscapeV.booleanValue();
+			/// Config override, else the editable resource. This ignored the resource entirely and
+			/// hardcoded true as the fallback, so flux2Defaults.json's includeLandscapeRef was dead.
+			boolean includeLandscape = (includeLandscapeV != null)
+				? includeLandscapeV.booleanValue() : Flux2Defaults.includeLandscapeRef();
 			byte[] settingRef = includeLandscape ? landscapeBytes : null;
 			if (!includeLandscape && landscapeBytes != null) {
 				logger.info("Scene composite [flux2]: landscape reference SUPPRESSED by "

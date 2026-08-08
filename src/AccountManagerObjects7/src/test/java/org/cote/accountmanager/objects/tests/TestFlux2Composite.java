@@ -126,6 +126,33 @@ public class TestFlux2Composite {
 		assertTrue("must carry the character appearance", p.contains("grey beard"));
 	}
 
+	/// The prompt that actually reaches SD must be plain ASCII.
+	///
+	/// Proven necessary by a received Swarm payload on 2026-08-08 containing "graffiti<U+2011>scarred"
+	/// and "gull<U+2011>wing" - non-breaking hyphens the LLM emitted in the scene setting. The ASCII
+	/// normalization had been installed at the SDUtil.appendLoras seam on the stated grounds that every
+	/// setPrompt call in the SD layer passed through it; the FLUX.2 and Kontext builders set the prompt
+	/// directly and did not, so the fix never applied to the composite - the one prompt most likely to
+	/// carry LLM-generated text. Asserts on the built REQUEST, not on buildFlux2ScenePrompt, because the
+	/// normalization happens at the seam between them.
+	@Test
+	public void builtRequestPromptIsNormalizedToAscii() {
+		/// U+2011 non-breaking hyphens and a U+2014 em dash, exactly as an LLM emits them.
+		String setting = "a graffiti‑scarred house on a narrow street — a gull‑wing cab at the curb";
+		String action = "sliding her onto the glossy pleather seat — rain‑slicked";
+		SWTxt2Img req = SWUtil.newFlux2SceneTxt2Img(LEFT_DESC, RIGHT_DESC, action, setting, MOOD, null, 3);
+		String p = req.getPrompt();
+
+		for(int i = 0; i < p.length(); i++) {
+			char c = p.charAt(i);
+			assertTrue("non-ASCII U+" + String.format("%04X", (int) c) + " reached the SD prompt at index "
+				+ i + " - CLIP tokenizes it differently from its ASCII equivalent: " + p, c < 128);
+		}
+		assertTrue("the compound must survive as an ASCII hyphen", p.contains("graffiti-scarred"));
+		assertTrue("the compound must survive as an ASCII hyphen", p.contains("gull-wing"));
+		assertTrue("the compound must survive as an ASCII hyphen", p.contains("rain-slicked"));
+	}
+
 	/// A one-character scene must not claim a "second reference image" that was never attached.
 	@Test
 	public void promptAdaptsToReferenceCount() {

@@ -211,7 +211,14 @@ public class SWUtil {
 		s2i.setRefinerControlPercentage(0.0);
 		s2i.setNegativePrompt(org.cote.accountmanager.olio.sd.Flux2Defaults.negativePrompt());
 
-		s2i.setPrompt(buildFlux2ScenePrompt(leftDesc, rightDesc, action, setting, mood, sdConfig, refCount));
+		/// Through appendLoras, which is also where SD prompt typography is normalized to plain ASCII.
+		/// This called setPrompt directly and so bypassed it entirely - confirmed live 2026-08-08 in a
+		/// received Swarm payload containing "graffiti<U+2011>scarred" and "gull<U+2011>wing", the exact
+		/// non-breaking hyphens that normalization exists to remove. The whole typography fix was
+		/// installed at the appendLoras seam on the grounds that every setPrompt call passed through it;
+		/// this builder and the Kontext one did not.
+		s2i.setPrompt(org.cote.accountmanager.olio.sd.SDUtil.appendLoras(
+			buildFlux2ScenePrompt(leftDesc, rightDesc, action, setting, mood, sdConfig, refCount), sdConfig));
 		return s2i;
 	}
 
@@ -357,7 +364,9 @@ public class SWUtil {
 			prompt.append(styleClause(style));
 		}
 
-		s2i.setPrompt(prompt.toString());
+		/// Through appendLoras for the ASCII typography normalization - see the FLUX.2 builder above;
+		/// this call site had the same bypass.
+		s2i.setPrompt(org.cote.accountmanager.olio.sd.SDUtil.appendLoras(prompt.toString(), sdConfig));
 		s2i.setNegativePrompt(negativePrompt != null ? negativePrompt : "");
 		return s2i;
 	}
