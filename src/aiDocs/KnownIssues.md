@@ -1943,3 +1943,151 @@ and consider making the `LibraryUtil` grant behaviour honest (either configure p
 get branch too, or rename the method so its create-only ACL semantics are visible at the call site).
 Not scheduled; raise with Stephen before touching `LibraryUtil`, since every existing caller passes
 `enableCRU=true` and would be affected.
+
+## PictureBook / SD — carried forward from the 2026-08-07..09 SD session (NEXT CONVERSATION)
+
+> **All items below are OPEN and belong to PictureBook.** They were diagnosed (some only partially)
+> during a long SD/FLUX.2 session and deliberately NOT fixed, either because the fix was unproven or
+> because the session ran out of room to verify it. Fix these in a fresh conversation. Everything
+> stated as "measured" was measured; everything stated as a hypothesis is unproven — do not promote a
+> hypothesis to a cause without evidence, which is how time was lost in the original session.
+
+### KI-42. `Narratives` group duplicate-key aborts character extraction — OPEN (2026-08-09, Stephen)  ← START HERE
+
+`/create-from-scenes` fails to create characters. Reproduced twice on org 3 (user `steve`), at 16:03
+and 18:46 on 2026-08-09:
+
+```
+DBWriter - java.sql.BatchUpdateException: Batch entry 0
+  INSERT INTO A7_auth_group_0_1 (... name='Narratives', parentId=31, organizationId=3 ...)
+  was aborted: ERROR: duplicate key value violates unique constraint "a7_auth_group_0_1_ne_pd_od_1_idx"
+  Detail: Key (name, parentid, organizationid)=(Narratives, 31, 3) already exists.
+PolicyUtil - Group could not be found / Resolve resource by groupId: 3490
+BaseRecord - copyRecord: newInstance: Field urn was not found on model olio.narrative
+PictureBookUtil - createCharPerson failed for 'Jideon de Rosa' — character will be absent from the book
+```
+
+**Facts established.** The new group id differs per run (3470, then 3490) but the collision key
+`(Narratives, 31, 3)` is identical — so it reproduces every run and the pre-existing row is stable.
+This is NOT leftover state from one bad run. `Factory.java:80` already uses `PathUtil.makePath`
+(get-or-create), and `makePath` is `synchronized`, so an in-JVM race is ruled out. The failure is a
+**batched** write (`BatchUpdateException: Batch entry 0`). `PictureBookUtil.createPersistedForeignInstance`
+has **13 call sites**, each independently resolving `"~/" + schema.getGroup()`, so a single request
+get-or-creates the same group path many times across characters.
+
+**Hypothesis, UNPROVEN:** a `makePath` insert sits in an unflushed batch, so the next `makePath`'s
+lookup cannot see it, decides to create, and both inserts land in the same batch. `synchronized` does
+not help, because the problem is write visibility rather than concurrency.
+
+**The one datum that settles it:** does the same run also duplicate the OTHER foreign-model groups
+(Profiles, Statistics, Instincts), or only `Narratives`? All of them ⇒ the repeated get-or-create
+pattern above. Only `Narratives` ⇒ the hypothesis is wrong and something is specific to that model.
+Get this fact before writing any code.
+
+**Fix direction (in PictureBookUtil, NOT in PBAC):** resolve each foreign-model group once per request,
+before the character loop, instead of 13 × N times.
+
+**Do NOT "fix" this in `PolicyUtil`.** That was attempted in the original session and reverted at
+Stephen's instruction. The `copyRecord`/`urn` NPE in `PolicyUtil.getResourcePolicy` — its error branch
+requests `FIELD_URN`, and `olio.narrative` inherits `common.baseLight` which has none, so `copyRecord`
+returns null and the logger itself NPEs — is a real latent core defect that merely *masks* this one. It
+became reachable only because `createPersistedForeignInstance` now persists these nested models through
+`AccessPoint` at all; previously they were in-memory placeholders that were never persisted. Raise it
+separately with Stephen rather than bundling it into this fix.
+
+### KI-43. Mannequin denoise slider in `reimageApparel.js` is disconnected — OPEN (2026-08-09)
+
+`SDUtil.generateMannequinImages` reads `mannequinCreativity`; `reimageApparel.js`'s Denoising slider
+writes `denoisingStrength`. Nothing sets `mannequinCreativity`, so the slider looks live, does nothing,
+and every mannequin renders at the hardcoded `MANNEQUIN_INIT_IMAGE_CREATIVITY` (0.85).
+
+The dedicated field exists for a real reason: `denoisingStrength` carries a `0.75` schema default that
+is never null, so the intended value could never apply — confirmed live, a generation logged
+"Init Image Creativity: 0.75" when 0.6 was intended.
+
+**The fix is entirely in the Ux. Do NOT add a server-side fallback to `denoisingStrength`** — that was
+attempted and reverted. Stephen: *"it shouldn't need a server fix! It's in the Ux - the slider either
+uses the instance ability to adapt or it doesn't"*. Required:
+
+1. add `mannequinCreativity` to `Ux752/src/core/modelDef.js` (double, 0.0–1.0, **no default**);
+2. add it to `forms.sdMannequinConfig` in `core/formDef.js` with `format: 'range'`, so `inst.api.…`
+   performs the 0-100 ↔ 0-1 conversion. Per `SdConfigPanel.js:149-155`, the `range` decorator does that
+   scaling; reading `e.target.value` straight onto `cinst.entity` bypasses it;
+3. bind the slider through `cinst.api.mannequinCreativity(...)`;
+4. **update `src/test/reimageApparelConfig.test.js`** — it currently asserts the `denoisingStrength`
+   0-100 → 0-1 conversion (KI-29 lineage). Move the contract and its test together; a failure there
+   means the assertion needs updating, not that the change is wrong. Attempting step 3 without step 4
+   is what stalled this in the original session.
+
+### KI-44. Chat scene generation convergence — Stage A done, B and C outstanding — OPEN (2026-08-09)
+
+Continuation of KI-40. Stage A is complete and builds (`vite build` + 432 vitest passing) but has
+**never been exercised against a live chat scene**. `Ux752/src/chat/SceneGenerator.js` now builds a real
+`olio.sd.config` via `am7sd.buildEntity()` — the same helper `pictureBook.js` uses — instead of a
+hand-rolled flat object, overlays saved tweaks on top of it while skipping blanks, and never persists or
+restores `model`/`refinerModel`. That hand-rolled object was the cause of `Invalid model value for param
+Model - 'OfficialStableDiffusion/sd_xl_base_1.0'` on a node lacking that checkpoint: `model: ""` was
+sent verbatim and the server fell through to a necessarily node-specific schema default.
+
+Still outstanding, and these are the actual convergence:
+
+- **Stage B:** extract the landscape stage — currently duplicated between `ChatService.generateScene`
+  (inline) and `PictureBookUtil.generateSceneImage` Stage 2.
+- **Stage C:** extract Stage 1 portraits (~190 lines) behind a result holder.
+- Verify Stage A live — needs Tomcat or the Docker stack plus a chat session with two characters.
+
+Already shared: the composite request (`SceneCompositeUtil.buildSceneRequest`) and mode resolution.
+Deliberately NOT shared: portrait acquisition and prompt composition — a chat and a book legitimately
+differ in where characters and setting come from, and forcing those together is how
+`generateSceneImage` reached 534 lines.
+
+### KI-45. `PictureBookUtil` cyclomatic complexity — OPEN (2026-08-09, Stephen)
+
+Measured line counts: `generateSceneImage` **534**, `createCharPerson` **463**, `createFromScenes` 206,
+`callLlmInternal` 165, `resolveSceneCharacter` 149.
+
+`generateSceneImage` already has stage seams marked in comments, so the extraction is mechanical:
+Stage 1 portraits (~190 lines) → `generateScenePortraits`, Stage 3/4 composite (~158) →
+`renderSceneComposite`, Stage 2 landscape (~27) → `generateSceneLandscape`. That leaves roughly 120
+lines of orchestration, and it is the SAME work as KI-44's Stages B and C — do them together.
+`createCharPerson` needs its own read; its seams were never examined.
+
+Pure restructuring, so existing unit tests prove little — the real check is a live picture-book run.
+
+### KI-46. `am7model.newPrimitive('olio.sdConfig')` uses a non-existent model name — OPEN (2026-08-09)
+
+`Ux752/src/workflows/reimage.js:123` and `reimageApparel.js:24` both call
+`am7model.newPrimitive('olio.sdConfig')`. The real model is **`olio.sd.config`**; `olio.sdConfig`
+appears nowhere in `modelDef.js`. It is the fallback branch taken only when `am7sd.fetchTemplate()`
+returns null (server unreachable), so it rarely fires — but when it does it yields an empty entity
+instead of a valid config. Pre-existing; not introduced by the SD session.
+
+### KI-47. Unverified changes from the SD session — need a live look before being trusted — OPEN (2026-08-09)
+
+All of these build and have unit coverage, but were never exercised through the real UI or pipeline:
+
+- **Mannequin output moved 512×768 → 1024×1024**, with `mannequinUseBaseImage` defaulting ON and
+  `mannequinSteps` 60. Measured good in a standalone harness (`TestMannequinBaseLive`, images
+  inspected) — never run through `reimageApparel`. The 512 size was the cause of flat catalog-grid
+  output: SDXL degrades badly below its native 1024.
+- **`SWTxt2Img` refiner fields are now nullable + `@JsonInclude(NON_NULL)`** so the refiner block is
+  omitted unless configured. This touches EVERY SD path, not just FLUX.2. `TestSD`'s KI-29 test (which
+  asserts refiner values reach the live request) plus `TestKontext` are the right coverage; `TestSD`
+  was never run.
+- **`PictureBookUtil`'s flux2 branch now routes through `SceneCompositeUtil`.** No test covers
+  `PictureBookUtil` actually calling the shared builder.
+- **The FLUX.2 composite prompt was restructured** — the config style clause moved to the position the
+  guidance doc specifies (before the identity demands), to address a cartoonish composite while the
+  portraits and landscape were photorealistic. Prompt-shape tests pass; the visual result was never
+  checked.
+
+### KI-48. `TestKontext` fake-pass fixed; audit the rest of the suite for the same pattern — OPEN (2026-08-09)
+
+`TestKontext.testKontextSceneWithOlioCharacters` reported green while Swarm refused every request
+(`Invalid model value for param Model - 'flux1Kontext_flux1KontextDev'` — that checkpoint is not
+installed on the local node). It now queries the Swarm model list and reports **Skipped** with the
+reason, or **fails** when the checkpoint IS installed and generation still returned nothing.
+
+Two other `logger.warn(...); return;` bail-outs remain in that class (portrait failure, landscape
+failure), and the same KI-39 pattern very likely exists elsewhere in the SD/LLM tests. Worth a sweep:
+a live test that cannot reach its backend must skip visibly, never pass.
