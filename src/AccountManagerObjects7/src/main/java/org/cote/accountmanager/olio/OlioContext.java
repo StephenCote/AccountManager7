@@ -210,7 +210,7 @@ public class OlioContext {
 	public void scanNestedGroups(BaseRecord dir, boolean userWrite) {
 
 		
-		logger.info("Configure group " + dir.get(FieldNames.FIELD_NAME));
+		//logger.info("Configure group " + dir.get(FieldNames.FIELD_NAME));
 		String[] rperms = new String[] {"Read"};
 		String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
 		IOContext ioContext = IOSystem.getActiveContext();

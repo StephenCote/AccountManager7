@@ -1,6 +1,7 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -467,8 +468,41 @@ public class TestKontext extends BaseTest {
 			person2.get(FieldNames.FIELD_OBJECT_ID));
 
 		if (sceneImages.isEmpty()) {
-			logger.warn("Kontext returned no images — FLUX Kontext model may not be available");
-			return;
+			/// This used to warn and `return`, so the test PASSED while generating nothing - the exact
+			/// fake-pass pattern KI-39 describes. Confirmed 2026-08-09: run against the local Swarm,
+			/// which does not carry flux1Kontext_flux1KontextDev (checkpoints differ per node - see
+			/// reference notes), Swarm refused every request with "Invalid model value for param Model"
+			/// while this class reported 8/8 green.
+			///
+			/// A missing checkpoint is a legitimate reason not to run, but it must be VISIBLE. Assume
+			/// reports Skipped rather than Passed, so the report distinguishes "not exercised here" from
+			/// "exercised and correct". Anything else empty-handed is a real failure and now fails.
+			String kontextModel = s2i.getModel();
+			boolean modelInstalled = false;
+			try {
+				List<String> installed = sdu.listModels();
+				if (installed != null) {
+					for (String m : installed) {
+						/// Swarm reports names with the ".safetensors" suffix; configs generally omit it.
+						if (m == null) continue;
+						String bare = m.endsWith(".safetensors") ? m.substring(0, m.length() - 12) : m;
+						if (m.equalsIgnoreCase(kontextModel) || bare.equalsIgnoreCase(kontextModel)) {
+							modelInstalled = true;
+							break;
+						}
+					}
+				}
+				logger.info("Kontext checkpoint '" + kontextModel + "' installed on " + swarmServer + ": "
+					+ modelInstalled + " (" + (installed != null ? installed.size() : 0) + " checkpoints reported)");
+			} catch (Exception le) {
+				logger.warn("Could not list Swarm checkpoints to classify the empty result: " + le.getMessage());
+			}
+			org.junit.Assume.assumeTrue("SKIPPED: the configured Kontext checkpoint '" + kontextModel
+				+ "' is not installed on " + swarmServer + " (checkpoint availability is per-node). This is "
+				+ "not a pass - set olio.sd.config.kontextModel to an installed checkpoint, or use "
+				+ "compositeMode=flux2, to exercise this path here.", modelInstalled);
+			fail("Kontext returned no images even though '" + kontextModel + "' IS installed on "
+				+ swarmServer + " - a real generation failure, not a missing model");
 		}
 
 		for (int i = 0; i < sceneImages.size(); i++) {
