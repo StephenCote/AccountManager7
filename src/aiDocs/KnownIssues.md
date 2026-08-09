@@ -2091,3 +2091,39 @@ reason, or **fails** when the checkpoint IS installed and generation still retur
 Two other `logger.warn(...); return;` bail-outs remain in that class (portrait failure, landscape
 failure), and the same KI-39 pattern very likely exists elsewhere in the SD/LLM tests. Worth a sweep:
 a live test that cannot reach its backend must skip visibly, never pass.
+
+### KI-49. `Content-Length header of network response exceeds response Body` at the end of scene extraction — OPEN (2026-08-09, Stephen)
+
+Reported from the Ux on conclusion of scene extraction (the picture-book Step 2 /extract-scenes-only
+path). This is a **browser-side** network error: the client received fewer body bytes than the
+`Content-Length` header promised, so the response is rejected after the headers were already sent.
+
+**Not yet diagnosed — the notes below are candidate causes, not findings.** Do not treat any of them as
+the answer without evidence.
+
+1. **Truncated response.** An exception thrown *after* the response headers/length were committed
+   leaves the body short. Scene extraction is long-running and chunked
+   (`extractChunkedInternal`), and a failure late in the loop is exactly this shape. Check the server
+   log for a stack trace at the same timestamp as the client error — this is the first thing to look at,
+   and the cheapest.
+2. **Byte-vs-character length mismatch.** If any layer sets `Content-Length` from a Java `String`
+   length while the body is written as UTF-8, multibyte characters break the count. Scene payloads
+   reliably carry non-ASCII from the LLM — `Duña`, U+2011 non-breaking hyphens, em dashes (see the
+   SD-typography work in this same session). NOTE the direction of the reported error though: header
+   **exceeds** body means the promised length is LARGER than what arrived, whereas a char-count/UTF-8
+   mix-up would normally make it SMALLER. So this does not fit cleanly and may be a red herring.
+3. **A filter or the container re-encoding the body after the length was set.** `TokenFilter`,
+   `CorsFilter` and `ExpiresFilter` all wrap the response chain (see `web.xml`), as does gzip if
+   enabled anywhere. Any of them altering the body after `setContentLength` produces this exactly.
+4. **Timeout/abort mid-transfer.** Worth ruling out given `http.read.timeout` work elsewhere in this
+   session, though that governs the server's OUTBOUND calls, not the response to the browser.
+
+**How to narrow it quickly.** Capture the failing response in browser DevTools (Network → the
+`extract-scenes-only` request) and compare the reported `Content-Length` against the actual received
+size, then look for a server-side exception at the same timestamp. If the body is valid JSON that simply
+stops early, it is (1). If the byte delta equals the number of non-ASCII characters in the payload, it
+is (2). If the body is complete but the header is wrong, it is (3).
+
+Related: KI-44 (chat/picture-book convergence) and the scene-extraction cache in
+`TestPictureBookCustom.getOrCreateCatatoneScenes`, which is the fastest way to reproduce an extraction
+without paying for the LLM twice.
