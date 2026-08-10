@@ -4,6 +4,7 @@ import { am7model } from './core/model.js';
 import { page } from './core/pageClient.js';
 import { initFeatures, loadFeatureRoutes } from './features.js';
 import { disabledFeatureRouteKey, createDisabledFeatureRoute } from './core/featureRoute.js';
+import { resolveFeatureProfile } from './core/featureProfile.js';
 
 // Import views
 import sigView from './views/sig.js';
@@ -229,51 +230,21 @@ async function refreshApplication() {
     // Feature profile precedence (§3.7): ?features= -> server org config -> __FEATURE_PROFILE__ -> 'standard'.
     // Previously the server was tried first and its default was "everything", so ?features= and the
     // build define were dead for any logged-in user.
-    let profile = null;
-    let configFailed = false;
-
-    // 1. URL override — dev only. Not a security control either way (§5), but it should not be a
-    //    supported production surface.
-    if (page.devMode) {
-        let urlFeatures = null;
-        try {
-            urlFeatures = new URLSearchParams(window.location.search).get('features');
-        } catch (e) { /* no window.location.search */ }
-        if (urlFeatures) profile = urlFeatures;
-    }
-
-    // 2. Server org config. Per the §3.7 "Implementation note", FAILURE must be distinguished from a
-    //    legitimately small set: after D1 the read path force-includes `core`, so ["core"] is the
-    //    smallest LEGAL answer and is exactly the `minimal` profile. Treating a short array as failure
-    //    would make `minimal` unreachable. Failure = thrown/rejected, non-2xx (am7client.get swallows
-    //    the error and resolves undefined), or a body whose `features` is missing/not an array. Note
-    //    the old code accepted [] as valid because an empty array is truthy in JS, and only caught the
-    //    throw. On failure keep failing OPEN to 'full' and show a visible notice.
-    if (profile == null && usr != null) {
-        let serverConfig;
-        try {
-            serverConfig = await am7client.getFeatureConfig();
-        } catch (e) {
-            configFailed = true;
-            console.warn('[router] Feature config request failed', e);
-        }
-        if (!configFailed) {
-            if (serverConfig && Array.isArray(serverConfig.features)) {
-                profile = serverConfig.features;
-            } else {
-                configFailed = true;
-                console.warn('[router] Feature config response was missing a features array', serverConfig);
-            }
-        }
-        if (configFailed) profile = 'full';
-    }
-
-    // 3./4. Build define, then the genuine no-signal default.
-    if (profile == null) {
-        profile = (typeof __FEATURE_PROFILE__ !== 'undefined' && __FEATURE_PROFILE__ ? __FEATURE_PROFILE__ : null)
-            || 'standard';
-    }
-    initFeatures(profile);
+    //
+    // The resolution itself lives in core/featureProfile.js so it is unit-testable — router.js cannot
+    // be imported by a test (it eagerly builds the view graph), and the failure branch below is
+    // exactly the kind of thing that must not be "covered" by grepping this file's source text.
+    let resolved = await resolveFeatureProfile({
+        devMode: page.devMode,
+        search: (typeof window !== 'undefined' && window.location ? window.location.search : ''),
+        user: usr,
+        getFeatureConfig: () => am7client.getFeatureConfig(),
+        buildProfile: (typeof __FEATURE_PROFILE__ !== 'undefined' ? __FEATURE_PROFILE__ : null)
+    });
+    initFeatures(resolved.profile);
+    // NOTE: the visible notice for resolved.configFailed is raised further down, AFTER the router is
+    // mounted — a toast raised here would have nothing to render into.
+    let configFailed = resolved.configFailed;
 
     if (usr == null) {
         page.wss.close();

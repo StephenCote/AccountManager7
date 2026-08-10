@@ -4,6 +4,7 @@
  * See ../../../aiDocs/UxFeatureFlagDesign.md §3 and §4a.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { resolveFeatureProfile } from '../core/featureProfile.js';
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -467,39 +468,113 @@ describe('§3.6 — featureForPath / disabledFeatureForPath', () => {
 
 describe('§3.7 — profile precedence', () => {
 
-    it('router resolves ?features= -> server config -> __FEATURE_PROFILE__ -> standard', () => {
-        let src = readFileSync(resolve(srcDir, 'router.js'), 'utf-8');
-        let urlIdx = src.indexOf("get('features')");
-        let serverIdx = src.indexOf('am7client.getFeatureConfig()');
-        // the `typeof` guard, not the bare identifier — the latter also appears in the header comment
-        let defineIdx = src.indexOf('typeof __FEATURE_PROFILE__');
-        let defaultIdx = src.indexOf("|| 'standard'");
-        expect(urlIdx).toBeGreaterThan(-1);
-        expect(urlIdx).toBeLessThan(serverIdx);
-        expect(serverIdx).toBeLessThan(defineIdx);
-        expect(defineIdx).toBeLessThan(defaultIdx);
+    // These exercise resolveFeatureProfile() for real. They replace three earlier assertions that
+    // read router.js as TEXT and checked substring ORDER — those would have stayed green if the
+    // devMode guard wrapped the wrong block or configFailed were never set, i.e. they were fake
+    // tests by .claude/rules/llm-conduct.md. The logic was extracted to core/featureProfile.js
+    // precisely so it could be executed: router.js cannot be imported by a unit test.
+
+    const USER = { name: 'someone' };
+    const ok = (features) => async () => ({ features });
+
+    it('precedence: ?features= wins over server config, in dev', async () => {
+        let called = false;
+        let r = await resolveFeatureProfile({
+            devMode: true, search: '?features=gaming', user: USER,
+            getFeatureConfig: async () => { called = true; return { features: ['core'] }; },
+            buildProfile: 'full'
+        });
+        expect(r.profile).toBe('gaming');
+        expect(r.configFailed).toBe(false);
+        expect(called).toBe(false); // short-circuits — the server is not even consulted
     });
 
-    it('the ?features= override is gated behind devMode', () => {
-        let src = readFileSync(resolve(srcDir, 'router.js'), 'utf-8');
-        let devIdx = src.indexOf('if (page.devMode)');
-        let urlIdx = src.indexOf("get('features')");
-        expect(devIdx).toBeGreaterThan(-1);
-        expect(devIdx).toBeLessThan(urlIdx);
+    it('the ?features= override is INERT when devMode is false', async () => {
+        let r = await resolveFeatureProfile({
+            devMode: false, search: '?features=gaming', user: USER,
+            getFeatureConfig: ok(['core', 'chat']), buildProfile: 'full'
+        });
+        expect(r.profile).toEqual(['core', 'chat']); // server wins, not the URL
     });
 
-    it('a failed/malformed config fails open to full with a visible notice, not to standard', () => {
-        let src = readFileSync(resolve(srcDir, 'router.js'), 'utf-8');
-        // explicit branch: [] is truthy in JS, so Array.isArray is the test, and a null/undefined
-        // body (am7client.get swallows non-2xx) counts as failure
-        expect(src).toContain('Array.isArray(serverConfig.features)');
-        expect(src).toContain("if (configFailed) profile = 'full'");
-        expect(src).toContain("page.toast('warn'");
+    it('precedence: server config beats the build define', async () => {
+        let r = await resolveFeatureProfile({
+            devMode: false, search: '', user: USER,
+            getFeatureConfig: ok(['core', 'iso42001']), buildProfile: 'full'
+        });
+        expect(r.profile).toEqual(['core', 'iso42001']);
     });
 
-    it('["core"] is a legal small set, not a failure — minimal stays reachable', () => {
-        initFeatures(['core']);
+    it('precedence: build define beats the default, and the default is standard', async () => {
+        let unauth = { devMode: false, search: '', user: null, getFeatureConfig: ok(['core']) };
+        expect((await resolveFeatureProfile({ ...unauth, buildProfile: 'gaming' })).profile).toBe('gaming');
+        expect((await resolveFeatureProfile({ ...unauth, buildProfile: null })).profile).toBe('standard');
+    });
+
+    it('the server is not consulted at all when unauthenticated', async () => {
+        let called = false;
+        let r = await resolveFeatureProfile({
+            devMode: false, search: '', user: null,
+            getFeatureConfig: async () => { called = true; return { features: ['core'] }; },
+            buildProfile: null
+        });
+        expect(called).toBe(false);
+        expect(r.profile).toBe('standard');
+        expect(r.configFailed).toBe(false);
+    });
+
+    // ── the failure branch the §3.7 implementation note exists to protect ──
+
+    it('a THROWN config request fails open to full and flags a notice', async () => {
+        let r = await resolveFeatureProfile({
+            devMode: false, search: '', user: USER,
+            getFeatureConfig: async () => { throw new Error('boom'); }, buildProfile: null
+        });
+        expect(r.profile).toBe('full');       // fail OPEN, not to 'standard'
+        expect(r.configFailed).toBe(true);    // caller must surface a visible notice
+    });
+
+    it('a non-2xx (undefined body) fails open to full — am7client swallows the error', async () => {
+        let r = await resolveFeatureProfile({
+            devMode: false, search: '', user: USER,
+            getFeatureConfig: async () => undefined, buildProfile: null
+        });
+        expect(r.profile).toBe('full');
+        expect(r.configFailed).toBe(true);
+    });
+
+    it('a body whose features is missing or not an array counts as failure', async () => {
+        for (let bad of [{}, { features: null }, { features: 'core,chat' }, { features: { 0: 'core' } }]) {
+            let r = await resolveFeatureProfile({
+                devMode: false, search: '', user: USER,
+                getFeatureConfig: async () => bad, buildProfile: null
+            });
+            expect(r.profile).toBe('full');
+            expect(r.configFailed).toBe(true);
+        }
+    });
+
+    it('an EMPTY array is a real answer, not a failure — [] is truthy in JS', async () => {
+        // the pre-change bug: `if (serverConfig.features)` accepted [] as valid AND a failure as
+        // falsy. Array.isArray is the discriminator.
+        let r = await resolveFeatureProfile({
+            devMode: false, search: '', user: USER,
+            getFeatureConfig: ok([]), buildProfile: null
+        });
+        expect(r.profile).toEqual([]);
+        expect(r.configFailed).toBe(false);
+    });
+
+    it('["core"] is a legal small set, NOT a failure — minimal stays reachable', async () => {
+        let r = await resolveFeatureProfile({
+            devMode: false, search: '', user: USER,
+            getFeatureConfig: ok(['core']), buildProfile: null
+        });
+        expect(r.profile).toEqual(['core']);
+        expect(r.configFailed).toBe(false);   // must not fail open, or minimal is unreachable
+        initFeatures(r.profile);
         expect(getEnabledFeatures()).toEqual(['core']);
         expect(profileNameFor(['core'])).toBe('minimal');
     });
+
 });
