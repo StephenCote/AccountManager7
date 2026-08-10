@@ -91,7 +91,20 @@ public class TestKontext extends BaseTest {
 		);
 
 		assertNotNull("SWTxt2Img should not be null", s2i);
-		assertEquals("Model should be default Kontext", "flux1Kontext_flux1KontextDev", s2i.getModel());
+		/// kontextModel deliberately has NO schema default any more. It used to default to
+		/// flux1Kontext_flux1KontextDev, a checkpoint absent from the local Swarm — and because a
+		/// schema default is never null it was sent on EVERY kontext-mode request and refused with
+		/// "Invalid model value for param Model", so the composite silently produced nothing. The
+		/// composite now defaults to compositeMode=flux2 (flux2Model=flux2Klein_9b, which ships).
+		///
+		/// With no config, defaultKontextModel() therefore resolves to the deployment's configured SD
+		/// checkpoint rather than inventing a Kontext name nobody has. Assert that, and assert the
+		/// specific dead name can never come back.
+		assertEquals("With no config, the Kontext builder must fall back to the deployment's configured "
+			+ "checkpoint, not a hardcoded Kontext name",
+			SWUtil.defaultKontextModel(), s2i.getModel());
+		assertTrue("The uninstalled flux1Kontext_flux1KontextDev must never be reintroduced as a default",
+			!"flux1Kontext_flux1KontextDev".equals(s2i.getModel()));
 		assertEquals("Steps should be 28", 28, s2i.getSteps());
 		// delta form: cfgScale widened to double so FLUX.2 can use a fractional CFG (2.5). Kontext's
 		// own default is unchanged at 1.
@@ -143,7 +156,10 @@ public class TestKontext extends BaseTest {
 
 		String json = JSONUtil.exportObject(s2i);
 		assertNotNull("JSON should not be null", json);
-		assertTrue("JSON should contain model", json.contains("flux1Kontext_flux1KontextDev"));
+		/// See testNewKontextSceneTxt2ImgDefaults: kontextModel has no schema default any more, so the
+		/// serialized model is whatever defaultKontextModel() resolves to for this deployment.
+		assertTrue("JSON should contain the resolved model (" + SWUtil.defaultKontextModel() + ")",
+			json.contains(SWUtil.defaultKontextModel()));
 		assertTrue("JSON should contain setting in prompt", json.contains("Paris street"));
 		assertTrue("JSON should contain sampler=euler", json.contains("euler"));
 
@@ -350,6 +366,14 @@ public class TestKontext extends BaseTest {
 
 	/// Integration test: Pick 2 characters, ensure they have apparel + portraits,
 	/// generate a landscape, and send to SwarmUI with the FLUX Kontext model via promptImages.
+	/// DISABLED, not skipped. FLUX Kontext is a SUPERSEDED composite path: compositeMode now defaults
+	/// to flux2 (flux2Klein_9b, which ships), and the picture-book pipeline routes composites through
+	/// SceneCompositeUtil's FLUX.2 builder. This test needs a flux1Kontext checkpoint that is not
+	/// installed, so every run it either fired requests Swarm refused ("Invalid model value for param
+	/// Model - 'flux1Kontext_flux1KontextDev'") or reported a permanent Skip — noise and GPU time for
+	/// a path nothing uses. The prompt-shape tests in this class still cover the shared builder and
+	/// stay enabled. Re-enable by installing a Kontext checkpoint and setting test.swarm.kontextModel.
+	@org.junit.Ignore("FLUX Kontext is superseded by compositeMode=flux2; no Kontext checkpoint is installed")
 	@Test
 	public void testKontextSceneWithOlioCharacters() throws Exception {
 		logger.info("testKontextSceneWithOlioCharacters");
@@ -366,12 +390,14 @@ public class TestKontext extends BaseTest {
 		/// burns GPU time on portraits/landscape first. Resolve the checkpoint from
 		/// test.swarm.kontextModel (falling back to the olio.sd.config schema default) and skip
 		/// VISIBLY, up front, when this node does not carry it.
+		/// kontextModel has NO schema default (it used to name an uninstalled checkpoint). So Kontext
+		/// mode now requires an explicit choice: without test.swarm.kontextModel there is nothing to
+		/// exercise here, and that is a visible Skip — never a pass.
 		String kontextModel = testProperties.getProperty("test.swarm.kontextModel");
-		if (kontextModel == null || kontextModel.isBlank()) {
-			kontextModel = org.cote.accountmanager.record.RecordFactory
-				.getSchema(org.cote.accountmanager.olio.schema.OlioModelNames.MODEL_SD_CONFIG)
-				.getFieldSchema("kontextModel").getDefaultValue().toString();
-		}
+		org.junit.Assume.assumeTrue("SKIPPED: test.swarm.kontextModel is not set and kontextModel has no "
+			+ "schema default (deliberately — the old flux1Kontext_flux1KontextDev is not installed and "
+			+ "Swarm refused every request carrying it). Set it to an installed Kontext checkpoint to "
+			+ "exercise this path. This is NOT a pass.", kontextModel != null && !kontextModel.isBlank());
 		SdTestGate.requireModelInstalled(new SDUtil(SDAPIEnumType.SWARM, swarmServer), swarmServer,
 			kontextModel, "FLUX Kontext scene compositing");
 

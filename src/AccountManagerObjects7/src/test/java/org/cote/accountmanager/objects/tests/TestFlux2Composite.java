@@ -296,22 +296,29 @@ public class TestFlux2Composite {
 			SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg, true));
 	}
 
-	/// Documents the schema-default trap rather than the behavior I assumed.
+	/// A bare, schema-built config must resolve to FLUX.2 — the mode whose checkpoint actually ships.
 	///
-	/// useKontext is declared "default": true in configModel.json, so a schema-built record ALWAYS
-	/// reports true — get() never returns null, and "never assigned" is indistinguishable from
-	/// "explicitly true". So a bare record resolves to Kontext regardless of the caller's stated
-	/// legacy default. The practical consequence, found by this very test: PictureBookUtil's comments
-	/// claimed classic was its fallback, but that only ever held because Ux752 and the tests wrote
-	/// useKontext=false explicitly. A book config that omitted it ran Kontext silently.
+	/// History, because the trap is worth keeping: useKontext was declared `"default": true`, and a
+	/// schema default is never null, so "never assigned" was indistinguishable from "explicitly true"
+	/// and every book config that omitted the field silently ran Kontext. Kontext then requested
+	/// kontextModel's own default flux1Kontext_flux1KontextDev, which is not installed on the local
+	/// Swarm, so it was refused with "Invalid model value for param Model" and the composite produced
+	/// nothing at all.
+	///
+	/// Fixed 2026-08-10 by making the DEFAULTS honest: compositeMode defaults to "flux2",
+	/// useKontext defaults to false, and kontextModel has no default (Kontext is now an explicit
+	/// opt-in that must name a checkpoint the target node carries).
 	@Test
-	public void bareConfigResolvesToKontextBecauseOfTheSchemaDefault() throws Exception {
+	public void bareConfigResolvesToFlux2ByDefault() throws Exception {
 		BaseRecord bare = sdConfig();
-		assertEquals("the schema default of true is what get() actually returns",
-			Boolean.TRUE, (Boolean) bare.get("useKontext"));
-		assertEquals(SceneCompositeUtil.MODE_KONTEXT, SceneCompositeUtil.resolveMode(bare, true));
-		assertEquals("the caller's legacy default cannot override a non-null schema default",
-			SceneCompositeUtil.MODE_KONTEXT, SceneCompositeUtil.resolveMode(bare, false));
+		assertEquals("useKontext must no longer default to true",
+			Boolean.FALSE, (Boolean) bare.get("useKontext"));
+		assertEquals("compositeMode must default to flux2", "flux2", (String) bare.get("compositeMode"));
+		assertEquals(SceneCompositeUtil.MODE_FLUX2, SceneCompositeUtil.resolveMode(bare, true));
+		assertEquals("the compositeMode default wins over any caller-supplied legacy default",
+			SceneCompositeUtil.MODE_FLUX2, SceneCompositeUtil.resolveMode(bare, false));
+		assertTrue("kontextModel must have no default — the old one named an uninstalled checkpoint",
+			bare.get("kontextModel") == null || ((String) bare.get("kontextModel")).isEmpty());
 	}
 
 	/// legacyKontextDefault only actually applies where the field is genuinely absent.
@@ -328,6 +335,10 @@ public class TestFlux2Composite {
 	@Test
 	public void legacyBooleanStillHonoredWhenModeAbsent() throws Exception {
 		BaseRecord cfg = sdConfig();
+		/// compositeMode now carries a "flux2" default and compositeMode WINS, so the legacy boolean
+		/// is only reachable once the mode is genuinely cleared — which is exactly the situation a
+		/// saved pre-compositeMode config presents.
+		cfg.set("compositeMode", "");
 		cfg.set("useKontext", false);
 		assertEquals(SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg, true));
 		cfg.set("useKontext", true);

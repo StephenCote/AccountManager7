@@ -42,14 +42,24 @@ public class SceneCompositeUtil {
 	///
 	/// compositeMode wins when set. When it is absent we fall back to the legacy useKontext boolean.
 	///
-	/// BEWARE the schema default. `useKontext` is declared `"default": true` in configModel.json, so
-	/// get("useKontext") returns TRUE on any real record that never had it assigned — it is never
-	/// null, and "unset" is indistinguishable from "explicitly true". Consequence, confirmed
-	/// 2026-08-07: the picture book's comments claimed classic was its default, but that only held
-	/// because Ux752 and the tests explicitly wrote useKontext=false. Any book config that omitted it
-	/// silently ran Kontext. legacyKontextDefault therefore only takes effect for a null config or a
-	/// record genuinely missing the field — it is not the practical default for a schema-built record.
-	/// (Same trap as `steps`/`width`/`height`, which is why the flux2 params use dedicated fields.)
+	/// DEFAULTS (corrected 2026-08-10). compositeMode is declared `"default": "flux2"`, so a bare
+	/// schema-built record resolves to FLUX.2 — the mode whose checkpoint (flux2Model, default
+	/// flux2Klein_9b) actually ships. useKontext now defaults to FALSE and kontextModel has no
+	/// default at all; Kontext is an explicit opt-in that must name an installed checkpoint.
+	///
+	/// It used to be the reverse, and that was the bug: `useKontext` was `"default": true`, and a
+	/// schema default is never null, so "unset" was indistinguishable from "explicitly true". Any
+	/// book config omitting the field silently ran Kontext, which then sent kontextModel's default
+	/// flux1Kontext_flux1KontextDev — absent from the local Swarm — and every composite was refused
+	/// with "Invalid model value for param Model", producing nothing. The picture book's comments
+	/// claimed classic was its default, but that only held because Ux752 and the tests wrote
+	/// useKontext=false explicitly.
+	///
+	/// Because compositeMode's default is non-null and compositeMode WINS, legacyKontextDefault (and
+	/// the legacy boolean) now only take effect for a null config or a record whose compositeMode was
+	/// genuinely cleared — i.e. a saved pre-compositeMode config.
+	/// (Same schema-default trap as `steps`/`width`/`height`, which is why the flux2 params use
+	/// dedicated fields.)
 	///
 	/// @param legacyKontextDefault what useKontext means when the field is genuinely absent
 	public static String resolveMode(BaseRecord sdConfig, boolean legacyKontextDefault) {
