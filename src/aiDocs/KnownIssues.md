@@ -1681,6 +1681,61 @@ through `MediaUtil.writeBinaryData`'s first read after upload. Pre-existing `Tes
 `TestStreamEncryption` (original methods) suites re-ran clean against the change (7/7 passing) —
 confirming the KI-17 export path and existing box/unbox behavior are unaffected.
 
+### KI-62. Opening the picture gallery for a character with NO pictures lands on `~/Data` — OPEN (2026-08-10, Stephen)
+
+Open the picture gallery for a charPerson that has no images yet and the browser defaults to `~/Data`
+instead of the character's own gallery location (or an empty view of it). The user then has to
+navigate to where the images would go, and there is nothing telling them where that is.
+
+**Not diagnosed — pointers only, no cause claimed.** The inline gallery renderer
+(`formFieldRenderers.js:567`, `renderers.gallery`) simply returns `"No images"` when the list is
+empty, so it is not the source of a path default; the `~/Data` fallback is coming from whatever opens
+the gallery BROWSER. The only literal `~/Data` defaults found in `Ux752/src` are
+`sdConfig.js:96` and `:121` (`groupPath || "~/Data/.preferences"`), which are for SD preference
+storage and look unrelated — mentioned so the next person does not re-find them and assume.
+
+Related: KI-63 and KI-34/KI-61 — where a character's images *should* live is exactly the unresolved
+question those entries are about, so fixing the empty-gallery default probably wants to wait on the
+storage-location decision rather than hardcode another path.
+
+### KI-63. PictureBook character images are created under Olio and are not compartmentalized to the book — OPEN (2026-08-10, Stephen)
+
+Character images generated for a picture book land in the **Olio world's** storage
+(`{world.gallery.path}/Characters/{name}` — see `SDUtil.resolveCharacterImagePath`), not under the
+book. They should be compartmentalized to the picture book that produced them.
+
+This is the same knot as KI-34 (two same-named characters share one world-wide group) and KI-61 (my
+attempt to scope the path to the character's own group broke reimage, because the writer is the Olio
+user and the character's group is in the acting user's home). Those two entries state the constraint
+that any fix must satisfy: a collision-free location **and** one the writing principal is authorized
+to create in.
+
+**Stephen's proposed direction (2026-08-10) — a world per picture book:**
+
+> *"I'm almost wondering if it's easier to make a new 'world' for the picture book and then use that
+> reference as it will allow everything to be in contextually appropriate locations without having to
+> custom handle it, and thereby make a world specific to a picturebook."*
+
+Worth taking seriously, because it dissolves the KI-61 dilemma rather than working around it. A
+book-scoped world would give:
+- **contextual location for free** — characters, apparel, wearables, qualities, narratives, gallery
+  all land in that world's own directories, which is what the Olio machinery already does; no
+  PictureBook-specific path handling to maintain;
+- **collision-free by construction** — two books are two worlds, so two "Jideon"s never share storage,
+  which is KI-34 without a special case;
+- **a principal that matches the tree** — the Olio user owns the world it creates in, so the
+  create-authorization failure in KI-61 does not arise;
+- **deletion that actually cleans up** — dropping a book becomes dropping its world, which is relevant
+  to KI-32 (`reset()`'s non-recursive delete) and to KI-60's delete-then-recreate repro.
+
+Open questions for whoever picks this up (not answered here): what the per-book world costs to create
+(the universe seed is the expensive part, and a world sharing an existing universe should be cheap —
+verify, do not assume); whether the shared colour/word libraries stay on the universe so
+`ApparelUtil`'s complementary-colour lookup keeps working (KI-35's note says that sharing is the
+reason apparel is Olio-owned in the first place); and what happens to books that already exist.
+
+Related: KI-34, KI-61, KI-32, KI-60, KI-62.
+
 ### KI-61. I broke character reimage by "fixing" KI-34 — REVERTED ✅ (2026-08-10, Stephen)
 
 ```
@@ -2179,7 +2234,9 @@ Not scheduled; raise with Stephen before touching `LibraryUtil`, since every exi
 > Stephen mid-session).
 >
 > **Still OPEN:** KI-27, **KI-34 (reopened — the fix was reverted, see KI-61)**, KI-40, KI-44,
-> KI-45, KI-47, KI-49, **KI-59**, and **KI-60 (HIGH — narrative
+> KI-45, KI-47, KI-49, **KI-59**, KI-62, **KI-63 (storage location — Stephen's per-book-world idea
+> would dissolve KI-34/KI-61/KI-32 together; read it before attempting any of them individually)**,
+> and **KI-60 (HIGH — narrative
 > creation uses a hand-rolled path instead of `NarrativeUtil.getCreateNarrative`; the KI-42 recovery
 > adopts the WRONG group. Stephen is investigating this one — do not start a competing fix.)** (no exported image shows the
 > landscape integrated into a composite — recorded, not investigated). Each entry states exactly what
