@@ -357,33 +357,26 @@ public class SDUtil {
 	 * and is deliberately untouched.
 	 */
 	public static String resolveCharacterImagePath(OlioContext octx, BaseRecord per) {
-		String name = per.get(FieldNames.FIELD_NAME);
-		String groupPath = null;
-		try {
-			groupPath = per.get(FieldNames.FIELD_GROUP_PATH);
-			if(groupPath == null || groupPath.isEmpty()) {
-				/// groupPath is virtual; a partially-planned record carries groupId but not the
-				/// computed path. Resolve it rather than silently landing back on the shared default.
-				Long groupId = per.get(FieldNames.FIELD_GROUP_ID);
-				if(groupId != null && groupId > 0L) {
-					BaseRecord grp = IOSystem.getActiveContext().getSearch().findRecord(
-						QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_ID, groupId));
-					if(grp != null) {
-						groupPath = grp.get(FieldNames.FIELD_PATH);
-					}
-				}
-			}
-		}
-		catch(Exception e) {
-			logger.warn("Could not resolve groupPath for character '" + name + "': " + e.getMessage());
-		}
-		if(groupPath != null && !groupPath.isEmpty()) {
-			return groupPath + "/" + name + "/Gallery";
-		}
+		/// REVERTED 2026-08-10 to the original world-gallery path. See KI-34/KI-61.
+		///
+		/// The KI-34 change returned the character's OWN scope — groupPath + "/" + name + "/Gallery" —
+		/// to stop two same-named characters sharing storage. It broke character reimage outright:
+		///
+		///   PathUtil - Not authorized to create auth.group of type (DATA) node François Touvier
+		///     with parent #3535 in path /home/steve/Data/PictureBooks/catatone 3/Characters/François Touvier/Gallery
+		///
+		/// Both call sites below run as the OLIO USER (createPersonImage/createPersonFigurine are
+		/// passed octx.getOlioUser()), and a PictureBook character's groupPath is inside the ACTING
+		/// user's home. So the change moved the write target out of the Olio world — where the Olio
+		/// user has create rights — and into a tree where it has none. I changed the location without
+		/// changing the principal.
+		///
+		/// A real fix for the name collision has to solve BOTH: pick a collision-free location AND
+		/// ensure the principal doing the makePath is authorized to create there (either create as the
+		/// character's owner, or scope the path somewhere the Olio user owns). Until then the
+		/// collision described in KI-34 stands.
 		String basePath = (octx != null && octx.getWorld() != null) ? octx.getWorld().get("gallery.path") : null;
-		logger.warn("Character '" + name + "' has no resolvable group of its own — falling back to the "
-			+ "world-wide gallery path, which collides across characters that share a name (KI-34)");
-		return basePath + "/Characters/" + name;
+		return basePath + "/Characters/" + per.get(FieldNames.FIELD_NAME);
 	}
 
 	public void generateSDFigurines(OlioContext octx, List<BaseRecord> pop, int batchSize, boolean export, boolean hires, int seed) {

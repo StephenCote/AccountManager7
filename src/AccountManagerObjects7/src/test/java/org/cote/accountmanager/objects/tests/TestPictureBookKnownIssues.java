@@ -476,62 +476,66 @@ public class TestPictureBookKnownIssues extends BaseTest {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	/**
-	 * KI-34 — two charPerson records that share a NAME but live in different groups must not resolve
-	 * to the same portrait storage group. The old scheme was
-	 * {@code {world.gallery.path}/Characters/{name}}: world-wide and keyed purely by display name, so
-	 * re-running a story, or two stories that both have a "Jideon", overwrote each other's portraits.
+	 * KI-34/KI-61 — the character-scoped portrait path is REVERTED, and this pins why so it is not
+	 * reintroduced the same way.
+	 *
+	 * <p>Returning {@code groupPath + "/" + name + "/Gallery"} fixed the name collision and broke
+	 * character reimage outright: both callers ({@code generateSDImages}/{@code generateSDFigurines})
+	 * run as the OLIO USER, while a PictureBook character's groupPath is inside the ACTING user's
+	 * home — so the write target moved somewhere the Olio user cannot create, and PathUtil refused it
+	 * with "Not authorized to create auth.group ... /home/steve/Data/PictureBooks/.../Gallery".
+	 *
+	 * <p>So the assertion worth having is not "the path is character-scoped" — that is exactly what
+	 * broke — but "the resolved path is one the CALLING PRINCIPAL can actually create in". Any future
+	 * fix must satisfy both that and the collision requirement.
 	 */
 	@Test
-	public void TestKi34SameNamedCharactersInDifferentBooksGetDistinctImagePaths() throws Exception {
-		logger.info("KI-34: portrait storage must be scoped to the character's own group, not the world gallery");
-		BaseRecord user = newVirginUser("ki34a");
-		String bookA = "~/Data/PictureBooks/KI34 Book A/Characters";
-		String bookB = "~/Data/PictureBooks/KI34 Book B/Characters";
-		assertNotNull(makeGroup(user, bookA));
-		assertNotNull(makeGroup(user, bookB));
+	public void TestKi34PortraitPathIsResolvableByTheOlioUserThatWritesIt() throws Exception {
+		logger.info("KI-34/KI-61: the portrait path must be creatable by the principal that writes it");
+		OrganizationContext worldOrg = getTestOrganization("/Development/World Building");
+		org.cote.accountmanager.olio.OlioContext ctx =
+			org.cote.accountmanager.objects.tests.olio.OlioTestUtil.getContext(worldOrg,
+				testProperties.getProperty("test.datagen.path"));
+		assertNotNull("Olio context must initialize", ctx);
 
-		BaseRecord charA = newNamedCharacter(user, "Jideon de Rosa", bookA);
-		BaseRecord charB = newNamedCharacter(user, "Jideon de Rosa", bookB);
+		BaseRecord olioUser = ctx.getOlioUser();
+		BaseRecord charPerson = RecordFactory.newInstance(OlioModelNames.MODEL_CHAR_PERSON);
+		charPerson.set(FieldNames.FIELD_NAME, "KI34 Path Probe");
 
-		String pathA = org.cote.accountmanager.olio.sd.SDUtil.resolveCharacterImagePath(null, charA);
-		String pathB = org.cote.accountmanager.olio.sd.SDUtil.resolveCharacterImagePath(null, charB);
-		logger.info("KI-34 pathA=" + pathA);
-		logger.info("KI-34 pathB=" + pathB);
+		String path = org.cote.accountmanager.olio.sd.SDUtil.resolveCharacterImagePath(ctx, charPerson);
+		logger.info("KI-34 resolved portrait path: " + path);
+		assertNotNull("A portrait path must resolve", path);
 
-		assertTrue("Path A must be scoped under book A's own group, not the world gallery: " + pathA,
-			pathA.contains("KI34 Book A"));
-		assertTrue("Path B must be scoped under book B's own group, not the world gallery: " + pathB,
-			pathB.contains("KI34 Book B"));
-		assertTrue("Two same-named characters in different books must NOT share a storage group",
-			!pathA.equals(pathB));
+		// The whole point: the OLIO USER — the principal both callers pass — must be able to create it.
+		BaseRecord grp = IOSystem.getActiveContext().getPathUtil().makePath(olioUser,
+			ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(),
+			((Number) olioUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
+		assertNotNull("makePath returned null for '" + path + "' — the Olio user cannot create the "
+			+ "portrait storage group, which is exactly the reimage break: 'Not authorized to create "
+			+ "auth.group ... in path /home/<user>/Data/PictureBooks/.../Gallery'", grp);
 	}
 
 	/**
-	 * KI-34's fallback audit: {@code groupPath} is a VIRTUAL field, so a caller that planned only
-	 * {@code groupId} arrives without it. That must resolve from groupId rather than silently landing
-	 * back on the collision-prone world-gallery default.
+	 * KI-34's ORIGINAL defect is still present and is deliberately not fixed — recorded here so the
+	 * collision is not forgotten now that the attempted fix has been reverted. Two charPerson records
+	 * sharing a name resolve to the SAME world-gallery storage group.
 	 */
 	@Test
-	public void TestKi34GroupPathIsResolvedFromGroupIdWhenNotProjected() throws Exception {
-		BaseRecord user = newVirginUser("ki34b");
-		String bookPath = "~/Data/PictureBooks/KI34 Book C/Characters";
-		BaseRecord grp = makeGroup(user, bookPath);
-		assertNotNull(grp);
-		BaseRecord full = newNamedCharacter(user, "Sparse Jideon", bookPath);
+	public void TestKi34SameNamedCharactersStillCollide_KnownOpen() throws Exception {
+		OrganizationContext worldOrg = getTestOrganization("/Development/World Building");
+		org.cote.accountmanager.olio.OlioContext ctx =
+			org.cote.accountmanager.objects.tests.olio.OlioTestUtil.getContext(worldOrg,
+				testProperties.getProperty("test.datagen.path"));
+		BaseRecord a = RecordFactory.newInstance(OlioModelNames.MODEL_CHAR_PERSON);
+		a.set(FieldNames.FIELD_NAME, "Jideon de Rosa");
+		BaseRecord b = RecordFactory.newInstance(OlioModelNames.MODEL_CHAR_PERSON);
+		b.set(FieldNames.FIELD_NAME, "Jideon de Rosa");
 
-		// A minimal projection: groupId only, exactly what a list query yields.
-		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID,
-			full.get(FieldNames.FIELD_OBJECT_ID));
-		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
-			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID });
-		q.setCache(false);
-		BaseRecord sparse = IOSystem.getActiveContext().getSearch().findRecord(q);
-		assertNotNull("Sparse projection must return the character", sparse);
-
-		String path = org.cote.accountmanager.olio.sd.SDUtil.resolveCharacterImagePath(null, sparse);
-		logger.info("KI-34 sparse path=" + path);
-		assertTrue("A groupId-only projection must still resolve the character's own group, not fall "
-			+ "back to the world gallery: " + path, path.contains("KI34 Book C"));
+		String pa = org.cote.accountmanager.olio.sd.SDUtil.resolveCharacterImagePath(ctx, a);
+		String pb = org.cote.accountmanager.olio.sd.SDUtil.resolveCharacterImagePath(ctx, b);
+		assertEquals("KI-34 remains OPEN: same-named characters still share one storage group. If this "
+			+ "ever stops being true, the collision was fixed — update KI-34 and delete this test.",
+			pa, pb);
 	}
 
 	private BaseRecord newNamedCharacter(BaseRecord user, String name, String path) throws Exception {

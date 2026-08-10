@@ -1681,7 +1681,47 @@ through `MediaUtil.writeBinaryData`'s first read after upload. Pre-existing `Tes
 `TestStreamEncryption` (original methods) suites re-ran clean against the change (7/7 passing) —
 confirming the KI-17 export path and existing box/unbox behavior are unaffected.
 
-### KI-34. Standalone character-portrait image generation keys storage off `{world.gallery.path}/Characters/{name}` — collides whenever two charPerson records share a name — FIXED ✅ (2026-08-10)
+### KI-61. I broke character reimage by "fixing" KI-34 — REVERTED ✅ (2026-08-10, Stephen)
+
+```
+PathUtil - Not authorized to create auth.group of type (DATA) node François Touvier
+  with parent #3535 in path /home/steve/Data/PictureBooks/catatone 3/Characters/François Touvier/Gallery
+```
+
+**Character reimage was working. I changed it for a backlog item nobody had reported, and broke it.**
+
+`SDUtil.generateSDImages`/`generateSDFigurines` call
+`createPersonImage(octx.getOlioUser(), per, path, …)` — the principal is the **Olio user**. My KI-34
+change moved `path` from `{world.gallery.path}/Characters/{name}` (inside the Olio world, where the
+Olio user has create rights) to the character's own `groupPath + "/" + name + "/Gallery"`, which for a
+PictureBook character sits inside the **acting user's home**. I changed the storage location without
+changing the principal that writes there, so `makePath`'s create-authorization check refused it and
+reimage stopped producing images.
+
+**Reverted** to the original world-gallery path. `resolveCharacterImagePath` remains as a single seam
+with the constraint documented at the top, so the next attempt does not rediscover it the hard way.
+
+**What any real KI-34 fix must satisfy — BOTH, not either:**
+1. a collision-free location for two charPersons that share a name, and
+2. a location the **calling principal** (the Olio user, for these two callers) is authorized to create
+   in — or a change of principal to the character's owner.
+
+`TestKi34PortraitPathIsResolvableByTheOlioUserThatWritesIt` now asserts (2) directly by running the
+real `makePath` as the Olio user, so this specific break cannot be reintroduced silently.
+`TestKi34SameNamedCharactersStillCollide_KnownOpen` pins that (1) is still broken, so the collision is
+not forgotten.
+
+**Process failure, recorded:** KI-34 was a theoretical entry in the backlog, not a reported fault. I
+modified working production code to address it, shipped the regression, and then framed the breakage
+as a constraint discovery instead of leading with "I broke a working feature." Backlog items that
+require touching working code need a live exercise of that feature before and after — see
+`.claude/rules/llm-conduct.md`, "Deflection: the specific forms it takes here".
+
+### KI-34. Standalone character-portrait image generation keys storage off `{world.gallery.path}/Characters/{name}` — collides whenever two charPerson records share a name — REOPENED ⚠ (2026-08-10)
+
+> **The 2026-08-10 "fix" below was REVERTED — it broke character reimage. See KI-61.** The collision
+> described in this entry is still present and unfixed. Any new attempt must also satisfy the
+> create-authorization constraint KI-61 documents.
 
 New `SDUtil.resolveCharacterImagePath(octx, per)` is the single seam, used by both
 `generateSDFigurines` and `generateSDImages`. It derives storage from the character's OWN group —
@@ -2134,9 +2174,20 @@ Not scheduled; raise with Stephen before touching `LibraryUtil`, since every exi
 
 ## PictureBook / SD — carried forward from the 2026-08-07..09 SD session
 
-> **2026-08-10 pass:** KI-42, KI-43, KI-46, KI-48 (with KI-39) are fixed and verified below. KI-44,
-> KI-45, KI-47 and KI-49 remain OPEN — see each entry for exactly what was and was not done. Two
-> defects found during the pass and fixed alongside are recorded as KI-50 and KI-51.
+> **2026-08-10 pass.** Fixed and verified below: KI-34, KI-35, KI-36, KI-37, KI-39+KI-48, KI-42,
+> KI-43, KI-43a, KI-46, and KI-50–KI-58 (defects found during the pass, several reported live by
+> Stephen mid-session).
+>
+> **Still OPEN:** KI-27, **KI-34 (reopened — the fix was reverted, see KI-61)**, KI-40, KI-44,
+> KI-45, KI-47, KI-49, **KI-59**, and **KI-60 (HIGH — narrative
+> creation uses a hand-rolled path instead of `NarrativeUtil.getCreateNarrative`; the KI-42 recovery
+> adopts the WRONG group. Stephen is investigating this one — do not start a competing fix.)** (no exported image shows the
+> landscape integrated into a composite — recorded, not investigated). Each entry states exactly what
+> was and was not done.
+>
+> Two corrections worth reading before trusting an older entry: **KI-35's PBAC diagnosis was right and
+> my first "disproof" of it was wrong** (the isolation test could not exhibit the condition), and
+> **KI-42's stated cause was wrong** (the repeated get-or-create is not sufficient on its own).
 
 > **The items below were originally all OPEN and belong to PictureBook.** They were diagnosed (some only partially)
 > during a long SD/FLUX.2 session and deliberately NOT fixed, either because the fix was unproven or
@@ -2144,7 +2195,12 @@ Not scheduled; raise with Stephen before touching `LibraryUtil`, since every exi
 > stated as "measured" was measured; everything stated as a hypothesis is unproven — do not promote a
 > hypothesis to a cause without evidence, which is how time was lost in the original session.
 
-### KI-42. `Narratives` group duplicate-key aborts character extraction — FIXED ✅ (2026-08-10)
+### KI-42. `Narratives` group duplicate-key aborts character extraction — PARTIALLY FIXED ⚠ (2026-08-10)
+
+> **See KI-60 first.** The character is no longer lost, but the duplicate-key INSERT still fires on
+> every run (the lookup still misses a row that exists — cause still unknown), and the recovery path
+> added here was observed adopting the WRONG group (#151 `Apparel` instead of #1049 `Narratives`).
+> Do not treat this as closed.
 
 **The mechanism, reproduced.** The KnownIssues entry's own decisive question ("does the run duplicate
 only `Narratives`, or every foreign-model group?") turned out to have a third answer: **neither — the
@@ -2628,6 +2684,147 @@ registry that survives undeploy.
 - `contextInitialized` sets `ImageIO.setUseCache(false)` and scans once, up front. The disk cache is
   what lazily drags in the `FileCacheImageInputStream`/`Channels` machinery *during a request* — the
   precise class load that gets refused once the instance is stopped. Thumbnails do not need it.
+
+### KI-59. No exported test image shows the landscape actually integrated into the composite — OPEN (2026-08-10, Stephen)
+
+**Stephen's observation, not mine:** none of the images the tests exported show a composite that
+successfully integrated the landscape. He also noted the caveat himself — *"those are also old
+tests"* — so the artifacts may be evidence about superseded code paths rather than about the current
+pipeline. **Deliberately NOT fixed this pass; recorded for a fresh look.**
+
+**What I can state factually (code-level, verified):**
+
+- **No test anywhere asserts landscape integration.** Every composite/landscape assertion in
+  `TestPictureBookFull` is existence-only — `assertFalse(landImages.isEmpty())`,
+  `assertNotNull(landscapeBytes)`, `assertFalse(compImages.isEmpty())`,
+  `assertNotNull("Should produce a final composite image", imageObjectId)`. The single
+  content-sensitive one (`:1233`) asserts two composites *differ*, not that either contains the
+  setting. So a composite that silently dropped the landscape would pass every test we have. This is
+  a genuine coverage hole regardless of what the images show.
+- **The exported artifacts came from paths that are no longer the default.**
+  `TestLiveSwarmCompositeImg2ImgDiagnosticProbe` deliberately exercises the **classic** pipeline
+  (landscape as an img2img *init image* at `initImageCreativity=0.85`), and `kontext-*.png` in
+  `AccountManagerObjects7/kontext-test-output/` is dated 2026-08-09 and comes from the **Kontext**
+  path, now `@Ignore`d as superseded. KI-55 changed the default composite to **flux2**, where the
+  landscape is a *reference image*, not an init image — a structurally different mechanism. Whether
+  current flux2 composites integrate the landscape is **unknown and untested**.
+- **A concrete candidate to check first:** `flux2IncludeLandscapeRef` has no schema default
+  (deliberately), so `SceneCompositeUtil` falls back to `Flux2Defaults.includeLandscapeRef()`, which
+  reads `olio/sd/flux2Defaults.json` → currently `true`. If that resource is ever edited to `false`
+  (it is documented as the primary speed lever, ~40s per reference), the landscape reference is
+  suppressed and the setting reaches the model **as prompt text only** — which would look exactly
+  like "the landscape was not integrated". `SceneCompositeUtil` logs
+  `"landscape reference SUPPRESSED by flux2IncludeLandscapeRef=false"` when that happens, so the log
+  settles it in one line.
+
+**What I did NOT do:** I did not visually inspect the exported images, and I did not generate a
+current flux2 composite to compare. Per the project's own standard, decode-succeeded assertions are
+not proof for an image pipeline — someone has to look.
+
+**Next steps, in order:**
+1. Generate ONE flux2 composite with the current defaults and look at it, checking the log for the
+   `landscape reference SUPPRESSED` line first (free, and it may end the investigation).
+2. If the landscape genuinely isn't landing, compare `buildFlux2References`' reference ordering and
+   `flux2ReferenceSize` letterboxing against the FLUX.2 guidance — the setting reference is the third
+   one, and reference order matters to edit models.
+3. Add the missing assertion in whatever form is honest for an image pipeline (a human-inspected
+   fixture comparison, or at minimum asserting the request actually carried three references when
+   `flux2IncludeLandscapeRef` is on) — the existence-only checks above cannot catch this class of bug.
+
+Related: KI-47 (the four SD-session changes still needing a live look, one of which is
+"`PictureBookUtil`'s flux2 branch now routes through `SceneCompositeUtil`" — same pipeline, also
+unverified) and KI-54 (the stale-test cleanup that explains why these exports are old).
+
+### KI-60. Narrative creation is wrong — duplicate-key INSERT on re-create, and my recovery adopts the WRONG GROUP — OPEN, HIGH — **Stephen investigating** (2026-08-10)
+
+Reported live from the running service:
+
+```
+DBWriter - java.sql.BatchUpdateException: Batch entry 0
+  INSERT INTO A7_auth_group_0_1 (... 'Narratives' ... organizationId 3 ... parentId 31 ...
+   urn 'am6:auth.group.data:public:home.steve.narratives')
+  was aborted: ERROR: duplicate key value violates unique constraint "a7_auth_group_0_1_ne_pd_od_1_idx"
+  Detail: Key (name, parentid, organizationid)=(Narratives, 31, 3) already exists.
+PathUtil - Write of auth.group node Narratives in parent #31 lost to an existing record (#151);
+  adopting it rather than returning an unpersisted node
+```
+
+**Two separate problems, and the second one is mine and is worse than the bug it replaced.**
+
+**1. The KI-42 fix works as designed, but only as a safety net.** The `adopting it` line is the new
+`PathUtil.makePath` recovery firing: no phantom group id is returned any more, so the character is not
+lost. But the duplicate-key INSERT is still ATTEMPTED on every run — the lookup still misses a row that
+exists. KI-42 fixed the *consequence*, not the *cause*. The cause remains unknown: a
+`findByNameInParent(auth.group, 31, "Narratives", "DATA", 3)` that fails to see a row which is present
+and is typed `DATA`.
+
+**2. THE RECOVERY ADOPTS THE WRONG GROUP.** Verified directly against the live database:
+
+```
+ id   |    name    | parentid | organizationid | type
+------+------------+----------+----------------+------
+  151 | Apparel    |       31 |              3 | DATA
+ 1049 | Narratives |       31 |              3 | DATA
+```
+
+The Narratives group under (31, 3) is **#1049**. `findExistingNode` returned **#151, which is
+`Apparel`** — a different group entirely. So instead of a phantom id, narratives are now filed into
+the Apparel group. That is silent data misplacement, and it is a regression introduced by my KI-42
+recovery path, not a pre-existing condition. **This should be fixed before the KI-42 change is relied
+on.**
+
+**REPRODUCTION STEPS (Stephen, 2026-08-10):**
+
+1. Create a picture book.
+2. Extract scenes and characters.
+3. **Delete the picture book.**
+4. Try to add it again — *the name does not matter, changing it makes no difference.*
+
+The delete-then-recreate cycle is the trigger. Note that step 4 failing regardless of the book NAME
+rules out anything scoped to the book group: the group that collides (`Narratives` under the USER's
+home, parent 31) is user-scoped, not book-scoped, so a fresh book name reuses the same target.
+
+**STEPHEN'S DIAGNOSIS — treat this as the primary lead, ahead of anything below:** *"however you are
+trying to add the narrative is wrong."* The narrative is being created by
+`PictureBookUtil.createPersistedForeignInstance` — a hand-rolled
+`Factory.newInstance(path) + AccessPoint.create` pair written for PictureBook — when the codebase
+already has the pattern that works: **`NarrativeUtil.getCreateNarrative(OlioContext, List<BaseRecord>,
+String setting)`** (`NarrativeUtil.java:1063`), used by `SDUtil.generateSDImages`/`generateSDFigurines`
+and the rest of Olio. The fix direction is to use the existing pattern rather than keep repairing the
+bespoke one.
+
+This was already recorded as standing guidance before this session ("search existing Olio utils first
+— `NarrativeUtil.getCreateNarrative`/`RecordUtil.patch`/`Queue` already solve nested-record
+persistence; don't hand-roll") and I did not follow it: the 2026-08-10 pass added
+`prepareForeignSubModelGroups` to pre-resolve groups for the hand-rolled path instead of replacing
+that path with the working one. Both KI-42's residual INSERT and the wrong-group adoption live in that
+bespoke code.
+
+**Stephen is investigating this one himself.** Do not start a competing fix.
+
+**Secondary observation — UNPROVEN, do not promote it without evidence** (this session already lost time to
+exactly that mistake): the search cache. `CacheDBSearch` caches `QueryResult`s by query hash, and a
+picture-book run resolves a whole series of sibling groups through the same shape of call —
+`findByNameInParent(auth.group, 31, <name>, …)` for Apparel, Wearables, Qualities, Narratives,
+Profiles… If the cache key does not distinguish the `name` VALUE, every later lookup returns the first
+cached sibling. That would explain both symptoms at once: the type-filtered lookup missing Narratives,
+and the type-less re-read returning Apparel. `CacheDBSearch` already carries a
+`MISMATCHED CACHED RESULT TYPE` guard for a related transposition problem, which is suggestive but not
+proof. **Check the query-key construction in `Query.key()`/`CacheDBSearch` before writing anything.**
+
+**Minimum safe change, whatever the root cause turns out to be:** `PathUtil.findExistingNode` must
+VERIFY the record it re-read before adopting it — confirm `name`, `parentId` and `organizationId`
+match what was requested, and return null (a clean failure) rather than adopt a mismatch. A
+get-or-create recovery that can hand back a different object is worse than one that fails loudly. A
+targeted repro should also re-read with `setCache(false)` to confirm or eliminate the cache in one
+step.
+
+Also relevant to the delete-then-recreate trigger: `PictureBookUtil.reset()` (KI-32) deletes the book
+group, and the search cache is not obviously invalidated for the sibling-group lookups that follow.
+
+Related: KI-42 (the fix this exposes), and the `Query`/cache notes in `.claude/rules/model-api.md`
+("`/rest/model/search` is cached by query key — set `cache:false` for views that must see
+just-created/edited/deleted records").
 
 ### KI-50. `PolicyUtil`'s "Group could not be found" diagnostic NPEs on any model without a `urn` — FIXED ✅ (2026-08-10)
 
