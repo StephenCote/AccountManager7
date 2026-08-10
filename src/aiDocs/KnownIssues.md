@@ -2569,6 +2569,66 @@ flux2Klein, and I responded by gating the test rather than reading why the reque
 all. The refusals kept appearing because the *default* was still Kontext. Hours of compute went into a
 path nothing uses.
 
+### KI-56. Changing the SD style from the Ux produced a clause containing the literal text "null" — FIXED ✅ (2026-08-10, Stephen)
+
+"The composite image style gets perverted somewhere from the Ux." Two halves, both fixed:
+
+**Server.** Every branch of `SDUtil.getSDConfigPrompt` concatenates its per-style detail fields
+straight into the clause, with no null guard. A config whose style was CHANGED carries the previous
+style's details and none for the new one, so it rendered as
+`(Comic book panel) in (null) style from the (null) with (null).` — literal "null" text sent to the
+image model. `getSDConfigPrompt` now calls `fillStyleDefaults(cfg)` before composing; it only fills
+MISSING fields, so an explicitly configured detail is never overwritten.
+
+**Ux.** `SdConfigPanel`'s style picker set `config.style` and fired `onChange` without repopulating
+the new style's detail fields — the thing that created the incomplete config in the first place. The
+picker now calls `am7sd.fillStyleDefaults(config)` on change.
+
+**Verified:** `TestKi56StyleClauseNeverContainsLiteralNull` walks all ten styles with a bare
+style-only config and asserts no `(null)` survives; `TestKi56StyleChangeProducesTheNewStyleClause`
+switches photograph → comic on a record still carrying the photograph details and asserts the clause
+describes the NEW style and contains no null.
+
+### KI-57. Changing style mid-run kept regenerating with the OLD style (cached prompts) — FIXED ✅ (2026-08-10, Stephen)
+
+Reported alongside KI-56: "if picture gen is started for style #1, then stopped, the style changed and
+restarted, it seemed like it started producing strange/incomplete results for regenerating corrected
+images that had used style #1."
+
+A resolved scene/landscape prompt is PERSISTED into the scene note **with the style clause of the
+config that produced it**, and the cache-hit path in `resolveScenePrompt`/`resolveLandscapePrompt`
+returned it verbatim. Changing the book's style therefore never invalidated it: every regenerated
+image re-sent style #1's clause while the rest of the run used style #2, and the two mixed.
+
+**Fix:** new `restyleCached(cached, sdConfig)` — strip whatever trailing style clause the cached value
+carries and append the current one, then persist if it changed. The LLM-authored description and any
+prepended composition context are untouched; only the code-owned style suffix moves. No cache to clear
+by hand.
+
+### KI-58. ImageIO shutdown hook REGISTERED providers under a "deregistering" log line — FIXED ✅ (2026-08-10, Stephen)
+
+Reported error:
+```
+NoClassDefFoundError: ... Illegal access: this web application instance has been stopped already.
+  Could not load [java.nio.channels.Channels]
+  com.twelvemonkeys.imageio.stream.BufferedInputStreamImageInputStreamSpi.createInputStreamInstance
+  javax.imageio.ImageIO.read -> GraphicsUtil.createThumbnail -> ThumbnailUtil -> MediaUtil -> ThumbnailServlet
+```
+
+`AccountManagerContextListener.contextDestroyed` logged *"Deregistering ImageIO service providers to
+prevent ClassLoader leaks"* and then called **`ImageIO.scanForPlugins()`** — which REGISTERS
+providers. `IIORegistry.getDefaultInstance()` is per-ThreadGroup and long outlives a webapp, so
+scanning on the way out pinned this webapp's classloader and the TwelveMonkeys SPI classes into a
+registry that survives undeploy.
+
+**Fix, two parts:**
+- `contextDestroyed` now actually deregisters — it walks `IIORegistry`'s categories and removes only
+  providers whose implementation class was loaded by THIS webapp's classloader, leaving the JDK's own
+  codecs and anything container-supplied alone. Never throws; cleanup cannot block undeploy.
+- `contextInitialized` sets `ImageIO.setUseCache(false)` and scans once, up front. The disk cache is
+  what lazily drags in the `FileCacheImageInputStream`/`Channels` machinery *during a request* — the
+  precise class load that gets refused once the instance is stopped. Thumbnails do not need it.
+
 ### KI-50. `PolicyUtil`'s "Group could not be found" diagnostic NPEs on any model without a `urn` — FIXED ✅ (2026-08-10)
 
 Split out of KI-42, where it was recorded as latent. It is not latent: it fired during KI-35 testing,

@@ -825,6 +825,31 @@ public class PictureBookUtil {
      * the suffix is already present.
      */
     /**
+     * Re-apply the CURRENT config's style to a cached prompt.
+     *
+     * <p>Reported by Stephen 2026-08-10: start generating with style #1, stop, change the style,
+     * restart — the regenerated images still came out wrong. Cause: a resolved scene/landscape prompt
+     * is PERSISTED into the scene note with the style clause of whatever config produced it, and the
+     * cache-hit path returned it verbatim. Changing the book's style therefore never invalidated it,
+     * so every "corrected" regeneration re-sent style #1's clause while the rest of the run used
+     * style #2 — the two mixed, which is exactly the strange/incomplete output.
+     *
+     * <p>Re-styling is cheap and deterministic, so there is no reason to make the user clear a cache:
+     * strip whatever trailing style clause is on the cached value and append the current one. The
+     * LLM-authored description (and any prepended composition context) is untouched — only the style
+     * suffix, which is code-owned, changes. Returns the input unchanged when it already carries the
+     * current style, so a persist only happens on a real change.
+     */
+    private static String restyleCached(String cached, BaseRecord sdConfig) {
+        if (cached == null || cached.isBlank()) return cached;
+        String restyled = appendConfigStyleOnce(stripTrailingConfigStyle(cached), sdConfig);
+        if (!cached.equals(restyled)) {
+            logger.info("Cached prompt carried a stale style clause — re-styled to the current config");
+        }
+        return restyled;
+    }
+
+    /**
      * The ONE string resolveLandscapePrompt may produce when it has no setting and no mood to work
      * from. Named because two places must agree on it exactly: the write path and the cache-validation
      * guard that decides whether a cached value is legitimate or a pre-fix hallucination.
@@ -984,7 +1009,13 @@ public class PictureBookUtil {
                 prependContextOnce(loadCompositionContext(user, scene), SDUtil.getSDConfigPrompt(sdConfig)), sdConfig);
             if (hasRealInputNow || deterministicBlankScene.equals(cached)
                     || SDUtil.getSDConfigPrompt(sdConfig).equals(cached)) {
-                return cached;
+                // Serve the cached DESCRIPTION but with the CURRENT style — a style change must not
+                // be defeated by a prompt cached under the previous one.
+                String restyled = restyleCached(cached, sdConfig);
+                if (!restyled.equals(cached)) {
+                    updateSceneTextField(user, scene, "scenePrompt", restyled);
+                }
+                return restyled;
             }
             logger.warn("Scene-image prompt: cached value doesn't match blank-input's only legitimate "
                 + "output even though setting/action/mood/characters are still blank — this must be a "
@@ -1213,7 +1244,12 @@ public class PictureBookUtil {
             String deterministicBlankOutput = appendConfigStyleOnce(
                 prependContextOnce(loadCompositionContext(user, scene), BLANK_LANDSCAPE_FALLBACK), sdConfig);
             if (hasRealInput || deterministicBlankOutput.equals(cached) || BLANK_LANDSCAPE_FALLBACK.equals(cached)) {
-                return cached;
+                // Same as the scene prompt: re-style rather than serve the previous style's clause.
+                String restyled = restyleCached(cached, sdConfig);
+                if (!restyled.equals(cached)) {
+                    updateSceneTextField(user, scene, "landscapePrompt", restyled);
+                }
+                return restyled;
             }
             logger.warn("Landscape prompt: cached value doesn't match blank-input's only legitimate "
                 + "output (\"" + deterministicBlankOutput + "\") even though setting/mood are still blank — "

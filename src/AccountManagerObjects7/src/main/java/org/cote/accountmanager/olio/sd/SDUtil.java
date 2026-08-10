@@ -665,6 +665,16 @@ public class SDUtil {
 		if(style == null) {
 			return "(professional photograph).";
 		}
+		/// Complete any per-style detail fields the caller left unset BEFORE composing.
+		///
+		/// Every branch below concatenates cfg.get("<detail>") straight into the clause, so a missing
+		/// field becomes the literal text "null" in the prompt:
+		///   "(Comic book panel) in (null) style from the (null) with (null)."
+		/// That is exactly what a style CHANGE produces — the fields belong to the previous style, and
+		/// the new style's are unset. Reported by Stephen 2026-08-10 as styles being "mangled" coming
+		/// from the Ux. fillStyleDefaults is idempotent and only fills MISSING fields, so an explicitly
+		/// configured detail is never overwritten; this just guarantees the clause is complete.
+		fillStyleDefaults(cfg);
 		buff.append("(");
 		if(style.equals("art")) {
 			buff.append("(" + (String)cfg.get("artStyle") + ")");

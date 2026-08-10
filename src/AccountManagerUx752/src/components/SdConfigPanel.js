@@ -208,7 +208,19 @@ const SdConfigPanel = {
 
         /// Style + Denoising (range with live value in label).
         sections.push(m("div", { class: "grid grid-cols-2 gap-3" }, [
-            field("Style", selectInput(config, "style", [""].concat(STYLE_OPTIONS), onChange)),
+            field("Style", selectInput(config, "style", [""].concat(STYLE_OPTIONS), function () {
+                /// Changing the style must repopulate that style's OWN detail fields. Without this the
+                /// entity keeps the previous style's details and has none for the new one, and
+                /// SDUtil.getSDConfigPrompt concatenates the missing values straight in as the literal
+                /// text "null" — "(Comic book panel) in (null) style from the (null)...". Reported by
+                /// Stephen 2026-08-10 as styles getting mangled on the way from the Ux.
+                /// fillStyleDefaults only fills MISSING fields, so explicit choices survive.
+                try {
+                    let sd = am7model._sd;
+                    if (sd && sd.fillStyleDefaults) sd.fillStyleDefaults(config);
+                } catch (e) { /* never let a defaults refill break the picker */ }
+                if (onChange) onChange();
+            })),
             field("Denoising: " + (config.denoisingStrength != null ? config.denoisingStrength : 0.65),
                 rangeInput(config, "denoisingStrength", 0, 1, 0.05, onChange))
         ]));

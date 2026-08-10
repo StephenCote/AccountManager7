@@ -842,6 +842,58 @@ public class TestPictureBookKnownIssues extends BaseTest {
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────
+	// KI-56 — style changes mangled between the Ux and the prompt
+	// ─────────────────────────────────────────────────────────────────────────
+
+	/**
+	 * Reported by Stephen 2026-08-10: "the composite image style gets perverted somewhere from the Ux".
+	 *
+	 * Every branch of {@code getSDConfigPrompt} concatenates its per-style detail fields straight into
+	 * the clause, so a config whose style was CHANGED (details belong to the old style, none exist for
+	 * the new one) renders the missing values as the literal text "null":
+	 * {@code "(Comic book panel) in (null) style from the (null) with (null)."}
+	 * The Ux style picker set {@code style} without repopulating the details, so this is exactly what
+	 * a style change produced.
+	 */
+	@Test
+	public void TestKi56StyleClauseNeverContainsLiteralNull() throws Exception {
+		for (String style : new String[] { "art", "movie", "photograph", "selfie", "anime", "portrait",
+				"comic", "digitalArt", "fashion", "vintage" }) {
+			// A config with the style set and NO detail fields — the post-style-change shape.
+			BaseRecord cfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+			cfg.set("style", style);
+			String clause = org.cote.accountmanager.olio.sd.SDUtil.getSDConfigPrompt(cfg);
+			assertNotNull(clause);
+			assertTrue("Style '" + style + "' produced a clause containing the literal text \"null\" — "
+				+ "the per-style detail fields were never filled. Got: " + clause,
+				!clause.toLowerCase().contains("(null)") && !clause.toLowerCase().contains(" null "));
+		}
+	}
+
+	/**
+	 * The counterpart to KI-56: switching style must not leave the PREVIOUS style's clause in place.
+	 * Detail fields from the old style linger on the record, so completing the new style must still
+	 * produce the new style's clause.
+	 */
+	@Test
+	public void TestKi56StyleChangeProducesTheNewStyleClause() throws Exception {
+		BaseRecord cfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		cfg.set("style", "photograph");
+		org.cote.accountmanager.olio.sd.SDUtil.fillStyleDefaults(cfg);
+		String photographClause = org.cote.accountmanager.olio.sd.SDUtil.getSDConfigPrompt(cfg);
+		assertTrue("baseline: " + photographClause, photographClause.contains("Photograph"));
+
+		// The user picks a different style; the photograph details are still on the record.
+		cfg.set("style", "comic");
+		String comicClause = org.cote.accountmanager.olio.sd.SDUtil.getSDConfigPrompt(cfg);
+		assertTrue("After a style change the clause must describe the NEW style. Got: " + comicClause,
+			comicClause.contains("Comic book panel"));
+		assertTrue("...and must not still contain the previous style's clause", !comicClause.equals(photographClause));
+		assertTrue("...and must not contain a literal null: " + comicClause,
+			!comicClause.toLowerCase().contains("(null)"));
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
 	// helpers shared with later KI tests
 	// ─────────────────────────────────────────────────────────────────────────
 
