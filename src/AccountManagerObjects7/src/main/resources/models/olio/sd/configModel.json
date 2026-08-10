@@ -181,7 +181,7 @@
 		{
 			"name": "style",
 			"type": "string",
-			"limit": ["art", "movie", "photograph", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage", "custom", "illustration"]
+			"limit": ["art", "movie", "photograph", "selfie", "anime", "portrait", "comic", "digitalArt", "fashion", "vintage", "custom"]
 		},
 		{
 			"name": "artStyle",
@@ -306,14 +306,15 @@
 		{
 			"name": "useKontext",
 			"type": "boolean",
-			"default": true,
+			"default": false,
 			"description": "When true, use FLUX Kontext stitch-and-prompt pipeline for scene compositing instead of classic Graphics2D + SDXL img2img. Ignored when compositeMode is set."
 		},
 		{
 			"name": "compositeMode",
 			"type": "string",
 			"maxLength": 16,
-			"description": "Scene composite pipeline: 'flux2' (FLUX.2 multi-reference, recommended), 'kontext' (FLUX Kontext stitched panel strip), or 'classic' (Graphics2D paste + SDXL img2img). When unset, falls back to the legacy useKontext boolean."
+			"default": "flux2",
+			"description": "Scene composite pipeline: 'flux2' (FLUX.2 multi-reference, the default and recommended mode), 'kontext' (FLUX Kontext stitched panel strip), or 'classic' (Graphics2D paste + SDXL img2img). DEFAULTS TO flux2 because its checkpoint (flux2Model, default flux2Klein_9b) is the one that actually ships on the local Swarm. It previously defaulted to unset, which fell back to useKontext=true and requested kontextModel's default flux1Kontext_flux1KontextDev - a checkpoint absent from the local node, so Swarm refused EVERY composite with 'Invalid model value for param Model' and the pipeline produced nothing. Set 'kontext' explicitly, with an installed kontextModel, to opt back in."
 		},
 		{
 			"name": "flux2Model",
@@ -383,8 +384,7 @@
 		{
 			"name": "kontextModel",
 			"type": "string",
-			"default": "flux1Kontext_flux1KontextDev",
-			"description": "FLUX Kontext model name for scene compositing. NOTE: not installed on every Swarm server (absent from the local one as of 2026-08-07) - a missing checkpoint returns an empty image list rather than an error, so set this explicitly if you use compositeMode=kontext."
+			"description": "FLUX Kontext model name for scene compositing. NO DEFAULT ON PURPOSE: the old default flux1Kontext_flux1KontextDev is not installed on the local Swarm, and because a default is never null it was sent on every kontext-mode request and refused with 'Invalid model value for param Model'. compositeMode now defaults to flux2 instead; set this explicitly (to a checkpoint the target node actually carries) if you opt into compositeMode=kontext."
 		},
 		{
 			"name": "kontextSteps",

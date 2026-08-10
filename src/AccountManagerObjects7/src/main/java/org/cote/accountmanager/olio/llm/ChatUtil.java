@@ -466,7 +466,11 @@ public class ChatUtil {
 	private static final String[] PROMPT_TEMPLATE_TEMPLATE_NAMES = {
 		"contentAnalysis", "coding", "summary",
 		"pictureBook.extract-scenes", "pictureBook.extract-chunk", "pictureBook.extract-character",
-		"pictureBook.scene-blurb", "pictureBook.landscape-prompt", "pictureBook.scene-image-prompt"
+		"pictureBook.scene-blurb", "pictureBook.landscape-prompt", "pictureBook.scene-image-prompt",
+		/// promptTemplate.pictureBook.reduce-character.json ships in the library but was missing from
+		/// this list, so the per-character enrichment call createFromScenes makes
+		/// (callLlm(..., "pictureBook.reduce-character", ...)) had no seedable DB template.
+		"pictureBook.reduce-character"
 	};
 
 	public static String[] getPromptTemplateTemplateNames() {

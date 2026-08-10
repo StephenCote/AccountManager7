@@ -1604,8 +1604,17 @@ public class NarrativeUtil {
 	public static String getMannequinPrompt(BaseRecord apparel, WearLevelEnumType maxLevel, BaseRecord sdConfig) {
 		StringBuilder buff = new StringBuilder();
 
+		/// The mannequin's gender must reach the PROMPT, not just the init image. apparel.gender is
+		/// populated from the wearing character by ApparelUtil.constructApparel (ApparelUtil.java:544)
+		/// and SDUtil.generateMannequinImages already uses it to pick the male/female base asset — but
+		/// the prompt said only "full body retail mannequin", so the text and the init image disagreed
+		/// about the body being rendered, and a male character's outfit could come back on a female
+		/// form (reported by Stephen 2026-08-09). Mirrors getMannequinBaseImage's own resolution
+		/// exactly ("male" -> male, everything else -> female) so the two can never diverge.
+		String mannequinGender = "male".equalsIgnoreCase((String) apparel.get(FieldNames.FIELD_GENDER))
+			? "male" : "female";
 		buff.append("8k highly detailed ((highest quality)) ((professional fashion photography)) ");
-		buff.append("of a ((full body retail mannequin)) displaying: ");
+		buff.append("of a ((full body ").append(mannequinGender).append(" retail mannequin)) displaying: ");
 
 		List<BaseRecord> wears = apparel.get(OlioFieldNames.FIELD_WEARABLES);
 		int maxVal = WearLevelEnumType.valueOf(maxLevel);
@@ -1637,7 +1646,7 @@ public class NarrativeUtil {
 		/// product shot", which "professional product photography" below already says without inviting
 		/// the layout.
 		buff.append("((studio lighting)), ");
-		buff.append("((one single mannequin, centered, full length, wearing all of the garments)), ");
+		buff.append("((one single ").append(mannequinGender).append(" mannequin, centered, full length, wearing all of the garments)), ");
 		buff.append("professional product photography, front view");
 
 		/// The sdConfig style is deliberately NOT appended.

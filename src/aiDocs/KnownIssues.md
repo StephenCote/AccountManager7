@@ -806,7 +806,14 @@ Errors: 0` / `BUILD SUCCESS`). Live audit log confirms real `DELETE` calls for a
 (`identity.profile`, `olio.narrative`, `olio.statistics`, `olio.store`, `olio.instinct`,
 `identity.personality`, `olio.state`) plus the character itself.
 
-### KI-28. Outfit generation wizard for `olio.charPerson` fails with a server error — NOT REPRODUCED, needs exact repro steps (2026-07-22, Stephen; re-tested 2026-07-23)
+### KI-28. Outfit generation wizard for `olio.charPerson` fails with a server error — NOT REPRODUCED, needs exact repro steps (2026-07-22, Stephen; re-tested 2026-07-23; re-checked 2026-08-10)
+
+**2026-08-10 note, not a reproduction:** two server-side defects fixed this pass sit directly on the
+outfit/apparel call graph and could each present as "fails with a server error" —
+`SDUtil.createImage`'s `Integer`→`Double` `ClassCastException` (KI-51, which aborted the whole call
+before any image was requested) and `PolicyUtil`'s NPE-in-the-diagnostic on urn-less models such as
+`olio.wearable` (KI-50). Neither was confirmed to be THIS bug; both are named so the next attempt
+knows what has already been removed from underneath it. Still needs Stephen's exact repro steps.
 Reported by Stephen; not yet reproduced or diagnosed in this session — no error text or repro steps captured yet. Filed as a placeholder so it isn't lost: the outfit-builder flow (`workflows/outfitBuilder.js`, invoked from PictureBook's `pictureBookCharacters.js` "Generate New Outfit" button and presumably from the charPerson editor directly) fails server-side. **Next step for whoever picks this up:** reproduce via `ensureSharedTestUser()` (never admin), capture the actual REST response/status and Tomcat log entry for the failing call, then route per `troubleshooting.md`'s gate (raw API call first, to confirm client vs. backend before assuming either).
 
 **Call chain traced end to end (2026-07-22), strong candidate root cause found:**
@@ -1092,7 +1099,11 @@ if (countObj instanceof Number) count = ((Number) countObj).intValue();
 
 **Verified:** `TestMediaUtilStreaming#TestRecPatternMatchesNonAsciiNames` (`AccountManagerService7`) — reflects into the private `recPattern` field and asserts real matches for `/Development/data.data/Gallery/François.png` and `.../Duña.png` (plus an ASCII regression case). Confirmed the test fails against the pre-fix pattern (via `git stash`) and passes post-fix — a genuine regression guard, not just a happy-path check.
 
-### KI-27. PictureBook wizard's own chatConfig auto-resolve intermittently 404s deep in a full Playwright run despite an identical create-then-resolve sequence succeeding via direct REST — OPEN (2026-07-22)
+### KI-27. PictureBook wizard's own chatConfig auto-resolve intermittently 404s deep in a full Playwright run despite an identical create-then-resolve sequence succeeding via direct REST — STILL OPEN (2026-08-10, not investigated)
+
+**2026-08-10: not investigated this pass.** It reproduces only "deep in a full Playwright run", which
+needs the Vite dev server on :8899 proxying to a live stack plus the full e2e suite; the stack came up
+on :9443 (the test-compose port) and no Playwright run was performed. Nothing here was ruled in or out.
 Found while live-verifying the "Open Full Editor"/apparel new-tab links (below) via `e2e/pictureBookWizardUx.spec.js`. The wizard's Step 1 calls `LLMConnector.resolveConfig('contentAnalysis')` → `GET /rest/chat/library/chat/contentAnalysis`, which 404s (`{"error":"not found"}`) even though the test's own `beforeAll` had just created that exact `system.connection` + linked `olio.llm.chatConfig` moments earlier via REST, with explicit `response.ok()` checks added specifically to rule out a silent create failure (they never fired — the creates genuinely returned 200).
 
 **Ruled out (confirmed NOT the cause):**
@@ -1670,7 +1681,29 @@ through `MediaUtil.writeBinaryData`'s first read after upload. Pre-existing `Tes
 `TestStreamEncryption` (original methods) suites re-ran clean against the change (7/7 passing) —
 confirming the KI-17 export path and existing box/unbox behavior are unaffected.
 
-### KI-34. Standalone character-portrait image generation keys storage off `{world.gallery.path}/Characters/{name}` — collides whenever two charPerson records share a name — OPEN (2026-07-24, Stephen)
+### KI-34. Standalone character-portrait image generation keys storage off `{world.gallery.path}/Characters/{name}` — collides whenever two charPerson records share a name — FIXED ✅ (2026-08-10)
+
+New `SDUtil.resolveCharacterImagePath(octx, per)` is the single seam, used by both
+`generateSDFigurines` and `generateSDImages`. It derives storage from the character's OWN group —
+`{groupPath}/{name}/Gallery` — instead of the world-wide `{world.gallery.path}/Characters/{name}`.
+The name stays as the leaf so the layout is still browsable and two characters in the same group don't
+share a folder; it is the ROOT that changes from world-wide to character-scoped.
+
+The audit this entry asked for (callers that pass a bare `pop` without a reliably-populated
+`groupPath`) is handled rather than assumed: `groupPath` is virtual (computed by `PathProvider`), so
+when a partially-planned record arrives without it the helper resolves it from `groupId` before
+falling back. The world-gallery scheme remains only for a character with no resolvable group of its
+own, and logs a warning when it fires. Apparel/mannequin storage is untouched, per this entry's own
+scope note.
+
+**Verified:** `TestKi34SameNamedCharactersInDifferentBooksGetDistinctImagePaths` — two charPersons both
+named "Jideon de Rosa" in different book groups now resolve to
+`…/KI34 Book A/Characters/Jideon de Rosa/Gallery` vs `…/KI34 Book B/…`.
+`TestKi34GroupPathIsResolvedFromGroupIdWhenNotProjected` re-reads a character with a groupId-only
+projection and confirms it still lands in its own book group, not the world gallery.
+
+<details><summary>Original entry</summary>
+
 
 Found while wiring up PictureBook apparel generation. `SDUtil.generateSDImages` and
 `SDUtil.generateSDFigurines` (`AccountManagerObjects7/.../olio/sd/SDUtil.java`, ~lines 314-321 and
@@ -1708,8 +1741,69 @@ needed — `groupPath` is already a populated field on every `data.directory`-de
 without a reliably-populated `groupPath` (some general population-generation paths may only plan
 common fields) need auditing first so the fallback path is actually exercised correctly rather than
 silently landing back on the collision-prone default.
+</details>
 
-### KI-35. Olio-owned PictureBook apparel/wearables/qualities aren't writable by the acting user, so dress-up/down can't toggle `inuse` — OPEN (2026-07-25, Stephen)
+### KI-35. Olio-owned PictureBook apparel/wearables/qualities aren't writable by the acting user, so dress-up/down can't toggle `inuse` — FIXED ✅ (2026-08-10)
+
+**The original diagnosis was right: it is the ownership.** I first claimed otherwise and was wrong —
+see "How I got this wrong" below, because the mistake is instructive.
+
+**Root cause.** `OlioContext.configureEnvironment` enrols the acting user in `~/Roles/Olio User` —
+the role that carries the world-group grants — with
+`ioContext.getMemberUtil().member(olioUser, userRole, config.getUser(), null, true)`. That call sat
+**below the early return** taken whenever the Olio Admin role already exists:
+
+```java
+adminRole = findPath(olioUser, MODEL_ROLE, "~/Roles/Olio Admin", ...);
+if(adminRole != null) {
+    return;                                   // <-- everything below is skipped
+}
+initConfig = true;
+...
+member(olioUser, userRole, config.getUser(), null, true);   // acting-user enrolment
+```
+
+So the enrolment ran **once per organization, ever** — for whoever first initialised Olio there.
+Every other acting user held no membership in the role and therefore none of the world-group grants.
+`ApparelUtil.constructApparel`/`randomApparel` deliberately create apparel/wearables/qualities as
+`ctx.getOlioUser()` (so colours resolve from the shared colour library needed for complementary-colour
+computation), while the character and store belong to the acting user — so for any user who did not
+initialise the world, dress-up/down was a write to another owner's record with no grant behind it.
+PBAC refused it, `inuse` stayed permanently true ("always worn"), and `getWearing`/`describeOutfit`
+kept reporting the full outfit after dressing down. That matches the reported observation exactly,
+including that a user-owned wearable in the same outfit *did* respond.
+
+**Fix.** Acting-user enrolment is not one-time provisioning, so it no longer lives behind the
+one-time branch: `configureEnvironment` now resolves `userRole` and enrols `config.getUser()` on
+**every** configure, before the early return. `enrole()` checks `isMember` first, so it is idempotent.
+This also fixes a second consequence of the early return — `userRole` used to be left **null** on
+every subsequent init, and only recovered later by chance in `configureWorldAuthorization`.
+
+**Verified:** `TestKi35SecondActingUserCanToggleInuseOnOlioOwnedWearable` — a brand-new SECOND acting
+user against an already-initialised world (the reporter's condition). It asserts the user is enrolled,
+that the wearable really is owned by the Olio user, and that the patch flips `inuse` in the database.
+**Proven to be a real regression test:** disabling just the enrolment line (production code only)
+makes it fail on the membership assertion; restoring it makes it pass.
+
+**Second, independent defect on the same path, also fixed (Ux):** the patch bodies omitted `name`.
+`olio.wearable` inherits `olio.item` → `common.name` (`required` / `allowNull:false` / `$notEmpty`),
+and the writer validates the **patch record itself**, not the merged result — so
+`{schema, id, inuse}` is rejected with `Failed to modify record` even for a fully authorized user.
+`olio.apparel` inherits `common.name` too, so `setApparelDescription`'s `{id, description}` patch was
+failing the same way. `olio.js` now sends `{schema, id, objectId, name, inuse}` via a `wearablePatch`
+helper, and neither result is swallowed — a rejected patch toasts an error and returns false.
+Covered by `src/test/dressApparelPatch.test.js` (3 tests) and, backend-side, by
+`TestKi35ActingUserCanToggleInuseOnOlioOwnedWearable`, which pins that the same patch minus `name` is
+refused.
+
+**How I got this wrong, recorded so the next reader doesn't repeat it.** I ran an "isolation" test —
+fresh org, proposed grant disabled — saw `AUDIT PERMIT`, and concluded authorization was not involved.
+The experiment was structurally incapable of showing the bug: in a fresh org the test user IS the
+world's initialiser, which is precisely the one user the early return does enrol. A negative result
+from a setup that cannot exhibit the condition is not evidence, and I reported it as if it were.
+
+<details><summary>Original entry</summary>
+
 
 PictureBook character apparel is built via `ApparelUtil.constructApparel(ctx, …)`/`randomApparel(ctx, …)`,
 which (correctly, so colors resolve from the shared color library needed for complementary-color
@@ -1738,8 +1832,27 @@ Alternative considered and rejected: making the picturebook apparel user-owned/l
 local too and loses the shared-library complementary-color lookup, which Stephen wants kept. **No
 `OlioUsers` literal role exists — it means `~/Roles/Olio User`.** Existing already-broken data will be
 cleaned up by Stephen; the fix only needs to correct new-character creation.
+</details>
 
-### KI-36. `AuthorizationService.enableMember`/`AccessPoint.findByObjectId` throws a raw `NullPointerException` (500) on an unknown/undefined participant type instead of a clean 400 — OPEN (2026-07-25, Stephen)
+### KI-36. `AuthorizationService.enableMember`/`AccessPoint.findByObjectId` throws a raw `NullPointerException` (500) on an unknown/undefined participant type instead of a clean 400 — FIXED ✅ (2026-08-10)
+
+Two layers, as the entry suggested:
+- **Objects7**: new `AccessPoint.isResolvableModel(String)`; `findByObjectId`/`findById`/`findByUrn`
+  now treat an unresolvable model name exactly like a null one — INVALID audit + null return —
+  instead of letting it reach `RecordUtil.getCommonFields`, whose `ms.getQuery()` dereferences the
+  null `ModelSchema`.
+- **Service7 (transport-level input validation, not business logic)**: `AuthorizationService`
+  `badModelType(...)` returns **400 "Unknown model type '<x>'"**. Applied to all four affected
+  endpoints, not just the reported one — `enableMember`, `countMembers`, `members`, and
+  `membershipStats` (whose documented `any` wildcard for `participantType` is exempt). The path-param
+  regex `[\.A-Za-z]+` happily admits any word, including the literal "undefined" the client sent.
+
+**Verified:** `TestKi36UnresolvableModelTypeReturnsNullInsteadOfNpe` — "undefined", "null" and
+"not.a.model" each return null (with an `AUDIT INVALID`) from all three by-identity lookups rather
+than throwing, and a real model still resolves.
+
+<details><summary>Original entry</summary>
+
 
 When the member (participation) endpoint is called with a participant model type that doesn't resolve to
 a schema (e.g. the literal string `"undefined"`), `AccessPoint.findByObjectId → AccessPoint.find →
@@ -1754,8 +1867,38 @@ fixed separately in `views/object.js`; see the `am7model.updateListModel`/field-
 (`RecordFactory.getSchema` would fail), return a clear **400 Bad Request** ("unknown model type '<x>'")
 rather than letting the NPE propagate to the default exception mapper as a 500. Turns future "bad type"
 client bugs into an actionable error instead of a stack trace.
+</details>
 
-### KI-37. `PictureBookUtil.callLlmInternal` hand-rolls prompt-template section composition instead of using the canonical `PromptTemplateComposer` — drops role-less sections and can Frankenstein a half-DB/half-classpath prompt — OPEN (2026-07-28, Stephen)
+### KI-37. `PictureBookUtil.callLlmInternal` hand-rolls prompt-template section composition instead of using the canonical `PromptTemplateComposer` — FIXED ✅ (2026-08-10)
+
+The inline `sections` loop is gone; `callLlmInternal` now calls
+`PromptTemplateComposer.composeSystem/composeUser`, the same path `Chat`/`ChatUtil`/
+`InteractionExtractor` use. Role-less sections are no longer dropped, and `extends` inheritance,
+per-section `condition`s, `sectionOrder`/`priority` and `${…}` token replacement all apply.
+
+The classpath fallback was **narrowed** at the same time: it now fires only when NO template record
+resolved at all. Backfilling one half from the classpath when a DB template supplied the other is
+exactly the Frankenstein prompt this entry describes; if a resolved template composes to nothing for a
+role, that is the template's own content and must not be patched from elsewhere.
+
+The duplication this entry warns about is real and now in effect: a role-less section belongs to
+**every** role, so its text appears in both messages. PictureBook DB templates should set section roles
+explicitly where that isn't wanted. All seven shipped `promptTemplate.pictureBook.*` library templates
+already use explicit `system`/`user` sections, so none are affected.
+
+**Verified:** `TestKi37RoleLessTemplateSectionReachesBothHalves` — a DB template with an explicit
+system section, an explicit user section, and a **role-less** section carrying an unfillable
+`{ki37RoleLessMarker}` placeholder. Observed via `callLlmInternal`'s own pre-network
+unsubstituted-placeholder guard, so no LLM call is needed: post-fix it logs
+`Refusing to call LLM … (first: '{ki37RoleLessMarker}')`, proving the role-less section reached the
+composed USER half. **Confirmed to be a real regression test:** temporarily reverting
+`PromptTemplateComposer`'s role-less inclusion to the old drop-it behaviour (production code only,
+one line) makes it fail exactly as predicted; restoring it makes it pass.
+`TestKi37ClasspathFallbackStillResolvesRealPictureBookPrompts` guards the remaining legitimate
+fallback for all six shipped prompts. `TestPromptTemplate` (15) and `TestPromptLibrary` (14) pass.
+
+<details><summary>Original entry</summary>
+
 
 `PictureBookUtil.callLlmInternal` (`AccountManagerObjects7/.../olio/picturebook/PictureBookUtil.java`
 ~line 1155) builds the system + user halves of every PictureBook LLM call. When a DB-stored
@@ -1816,6 +1959,7 @@ with a test alongside the existing `TestPromptTemplate` (which already exercises
 `composeSystem`/`composeUser`), and verify a real PictureBook prompt (e.g. `pictureBook.landscape-prompt`)
 still resolves correctly against the live backend before closing. Core Objects7 LLM path — route through
 backend-specialist per `troubleshooting.md`.
+</details>
 
 ### KI-38. PictureBook image generation forked a custom style system instead of the canonical `olio.sd.config` — conflicting/garbage prompts — FIXED ✅ (2026-08-03)
 
@@ -1868,7 +2012,40 @@ dead entry, remove for tidiness); the picture-book default style `digitalArt` wa
 (easily changed); live FLUX-Kontext scene generation for PictureBook not yet visually verified end to
 end; the full catatone first-two-scenes real-content regression is still pending.
 
-### KI-39. Live SD tests using bare `SDUtil.randomSDConfig()` (no `model`) silently no-op GREEN on a Swarm that lacks the schema-default model — fake pass — OPEN (2026-08-03, Stephen)
+### KI-39 + KI-48. Live SD tests that cannot reach their backend must skip VISIBLY, never pass — FIXED ✅ (2026-08-10)
+
+New shared helper `AccountManagerObjects7/src/test/.../SdTestGate.java`:
+- `requireSwarmConfigured(server)` — visible `Assume` skip when no server is configured;
+- `requireModelInstalled(sdu, server, model, what)` — **gates UP FRONT, before any generation**;
+- `emptyResultIsSkipOrFailure(...)` — an empty result is classified, never ignored: absent checkpoint ⇒
+  visible Skip, present checkpoint ⇒ hard `fail(...)`;
+- `insufficientPreparation(what, got, needed)` — staging that fell short skips visibly;
+- `stampInstalledModel(cfg, props)` — stamps `test.swarm.model`/`refinerModel` onto a
+  `randomSDConfig()` used for a live call, so it isn't sent with the per-deployment schema default.
+
+Applied to `TestKontext` (the two remaining `logger.warn(); return;` bail-outs at the portrait and
+landscape stages, the unconfigured-server bail-out, and `ensurePortrait`'s bare `randomSDConfig()`)
+and to `TestLandscape`'s three unconfigured-server returns.
+
+**Up-front gating matters, and Stephen caught it mid-session**: classifying only *after* the fact still
+fires a request Swarm refuses —
+`[Warning] Refused to generate image for local: Invalid model value for param Model -
+'flux1Kontext_flux1KontextDev'` — and pays for the portraits and landscape first.
+`testKontextSceneWithOlioCharacters` now resolves the Kontext checkpoint from a new
+`test.swarm.kontextModel` property (falling back to the schema default) and skips before generating
+anything.
+
+**Verified:** `mvn -o -pl AccountManagerObjects7 -Dtest=TestKontext#testKontextSceneWithOlioCharacters
+test` → `Tests run: 1, Failures: 0, Errors: 0, Skipped: 1` in 3.1s, logging
+`Checkpoint 'flux1Kontext_flux1KontextDev' installed on http://localhost:7801: false`. No request
+reaches Swarm's generate API, and the result is reported as **Skipped**, not Passed.
+
+**Remaining sweep, classified not fixed:** `TestPictureBookCustom`'s `exportImage`/`generatePortrait`
+`warn+return`s are in export helpers of a deliberately manual, visual-inspection harness — they do not
+turn a generation assertion green. Left as-is on purpose rather than converted.
+
+<details><summary>Original KI-39 entry</summary>
+
 
 Any live SD test that builds its config with `SDUtil.randomSDConfig()` **without overriding `model`**
 sends the schema-default `sdXL_v10VAEFix.safetensors`, which is **not installed** on Stephen's SwarmUI
@@ -1888,6 +2065,7 @@ explicit skip that is visibly reported), so a refused/empty generation can never
 per `.claude/rules/llm-conduct.md` "no fake tests". Consider a shared test helper that stamps the
 installed model onto any `randomSDConfig()` used for a live call. Also see KI-38's note re: removing the
 uninstalled `sdXL_v10VAEFix.safetensors` default (or making the schema default a model that ships).
+</details>
 
 ### KI-40. Chat scene generation should adopt the newer PictureBook approach — turn a chat into its own dynamically-growing picturebook — OPEN (2026-08-04, Stephen)
 
@@ -1912,7 +2090,16 @@ the chat progresses. Reuse the common-config style seam and the per-character ov
 than forking a parallel image path (the same anti-pattern KI-38 fixed). Scope/sequencing TBD — backlog
 placeholder, not a plan.
 
-### KI-41. Create-or-get library utils produce admin-privileged side effects on read paths — propose an `architecture.md` rule — OPEN (2026-08-07, architecture review)
+### KI-41. Create-or-get library utils produce admin-privileged side effects on read paths — RULE ADDED ✅ (2026-08-10)
+
+`.claude/rules/architecture.md` gained a "Read paths must not create, and never as the org admin"
+section: the shape of the trap, the rule ("split create-or-get utils into a find-only read path and an
+authorized write path"), and both adjacent findings (permissions configured only on the create branch;
+the grant-before-create ordering bug in `ChatLibraryUtil`). **`LibraryUtil` itself is deliberately
+untouched** — every existing caller passes `enableCRU=true`, and this entry says to raise that with
+Stephen first.
+
+<details><summary>Original entry</summary>
 
 Surfaced during the Ux feature-flag work (`aiDocs/UxFeatureFlagDesign.md` D1) and **deferred
 deliberately, not dropped** — the local case is handled there, but the general trap is uncovered by
@@ -1943,16 +2130,76 @@ and consider making the `LibraryUtil` grant behaviour honest (either configure p
 get branch too, or rename the method so its create-only ACL semantics are visible at the call site).
 Not scheduled; raise with Stephen before touching `LibraryUtil`, since every existing caller passes
 `enableCRU=true` and would be affected.
+</details>
 
-## PictureBook / SD — carried forward from the 2026-08-07..09 SD session (NEXT CONVERSATION)
+## PictureBook / SD — carried forward from the 2026-08-07..09 SD session
 
-> **All items below are OPEN and belong to PictureBook.** They were diagnosed (some only partially)
+> **2026-08-10 pass:** KI-42, KI-43, KI-46, KI-48 (with KI-39) are fixed and verified below. KI-44,
+> KI-45, KI-47 and KI-49 remain OPEN — see each entry for exactly what was and was not done. Two
+> defects found during the pass and fixed alongside are recorded as KI-50 and KI-51.
+
+> **The items below were originally all OPEN and belong to PictureBook.** They were diagnosed (some only partially)
 > during a long SD/FLUX.2 session and deliberately NOT fixed, either because the fix was unproven or
 > because the session ran out of room to verify it. Fix these in a fresh conversation. Everything
 > stated as "measured" was measured; everything stated as a hypothesis is unproven — do not promote a
 > hypothesis to a cause without evidence, which is how time was lost in the original session.
 
-### KI-42. `Narratives` group duplicate-key aborts character extraction — OPEN (2026-08-09, Stephen)  ← START HERE
+### KI-42. `Narratives` group duplicate-key aborts character extraction — FIXED ✅ (2026-08-10)
+
+**The mechanism, reproduced.** The KnownIssues entry's own decisive question ("does the run duplicate
+only `Narratives`, or every foreign-model group?") turned out to have a third answer: **neither — the
+repeated get-or-create is not sufficient on its own.**
+`TestPictureBookKnownIssues#TestKi42ForeignSubModelGroupsResolveOncePerRequest` drives
+`createPersistedForeignInstance`'s exact two lines for all seven sub-models, three passes, as a user
+whose home contains none of those groups — and it passes clean. Sequential get-or-create is fine, so
+the batching/visibility hypothesis in the original entry is **wrong**.
+
+What actually happens needs the lookup to MISS a row that exists. The unique constraint is
+`(name, parentId, organizationId)` and does **not** include `type`, while `PathUtil.makePath`'s lookup
+filters **by type** — so a `Narratives` row of any other type is invisible to a `DATA` lookup and the
+insert then collides with it. Reproduced deterministically in
+`TestKi42MakePathNeverReturnsAGroupThatIsNotInTheDatabase`, producing the reported log verbatim:
+`BatchUpdateException: Batch entry 0 INSERT INTO A7_auth_group_0_1 (… 'Narratives' …) was aborted:
+ERROR: duplicate key value violates unique constraint "a7_auth_group_0_1_ne_pd_od_1_idx"`.
+
+**The defect that turns a lost race into lost data** is what `makePath` does next (this is about the
+`Narratives` group insert in KI-42 only — it is unrelated to KI-35's wearable ownership):
+it ignores `writer.write(node)`'s return value. `DBWriter` catches the `SQLException`, logs it and
+returns 0 — but it has **already** stamped a sequence-allocated id onto the in-memory record. `makePath`
+reads that id back and returns an ordinary-looking `auth.group` whose id matches **no row**. Everything
+persisted against it then fails PBAC with `Group could not be found: <id>`, which is why the reported
+id differed every run (3470, then 3490) while the collision key did not: each run burns a fresh
+sequence value on an insert that never lands. Confirmed live — the test observed `makePath` returning
+phantom group id 364.
+
+**Fix, two parts.**
+1. `PathUtil.makePath` now checks the write result. On a lost write it re-reads on the constraint's own
+   key (name + parent + org, **no type filter**) and adopts the existing row — a get-or-create must be
+   robust to its create losing — and returns **null** if nothing is there, so a caller sees a real
+   failure instead of a phantom. New `PathUtil.findExistingNode` helper. Not a PBAC/PolicyUtil change,
+   per Stephen's instruction.
+2. `PictureBookUtil.prepareForeignSubModelGroups(user)` resolves each of the seven sub-model groups
+   **once per request**, before the character loop, instead of 13 × N times — KI-42's own stated fix
+   direction, which now collapses the window the race runs in rather than being the whole fix.
+
+**Verified:** `TestKi42MakePathNeverReturnsAGroupThatIsNotInTheDatabase` fails pre-fix (phantom id 364,
+no such row) and passes post-fix, logging `Write of auth.group node Narratives in parent #365 lost to
+an existing record (#366); adopting it`. End-to-end,
+`TestKi42CreateFromScenesCreatesEveryCharacterForANewUser` runs a real 3-character `createFromScenes`
+against live Ollama + Postgres for a brand-new user: 3/3 characters created, `failedCharacters` empty,
+zero duplicate-key log lines, exactly one group per sub-model.
+
+**Also fixed, separately (the latent defect this entry flagged):** `PolicyUtil.getResourcePolicy`'s
+"Group could not be found" branch called `resource.copyRecord(new String[]{… FIELD_URN …})
+.toFullString()`. `copyRecord` returns **null** when the model lacks a requested field, so for anything
+inheriting `common.baseLight` (no `urn`) — `olio.narrative`, `olio.wearable` — the DIAGNOSTIC ITSELF
+threw an NPE out of `AuthorizationUtil.canUpdate`, masking the real condition. It hit during KI-35
+testing, so it is no longer merely latent. Replaced with `describeUnresolvedResource(...)`, which
+requests only fields the model actually has and never lets logging throw. Authorization behaviour is
+unchanged; the denial is now reported as a clean `AUDIT DENY`.
+
+<details><summary>Original entry (diagnosis superseded above)</summary>
+
 
 `/create-from-scenes` fails to create characters. Reproduced twice on org 3 (user `steve`), at 16:03
 and 18:46 on 2026-08-09:
@@ -1994,8 +2241,43 @@ returns null and the logger itself NPEs — is a real latent core defect that me
 became reachable only because `createPersistedForeignInstance` now persists these nested models through
 `AccessPoint` at all; previously they were in-memory placeholders that were never persisted. Raise it
 separately with Stephen rather than bundling it into this fix.
+</details>
 
-### KI-43. Mannequin denoise slider in `reimageApparel.js` is disconnected — OPEN (2026-08-09)
+### KI-43. Mannequin denoise slider in `reimageApparel.js` is disconnected — FIXED ✅ (2026-08-10)
+
+Implemented exactly the four steps this entry specified, all in the Ux:
+1. `mannequinCreativity` added to `core/modelDef.js` (double, 0.0–1.0, **no declared default**);
+2. added to `forms.sdMannequinConfig` in `core/formDef.js` with `format: 'range'`, so the instance gets
+   the 0-100 UI ↔ 0-1 wire decorator;
+3. the slider in `reimageApparel.js` now writes through `cinst.api.mannequinCreativity(...)` (writing
+   `e.target.value` onto `cinst.entity` bypasses the decorator) and is relabelled "Mannequin
+   Creativity" — the dialog is mannequin-only, and `denoisingStrength` is dead there: `SDUtil`'s only
+   reader of it is `applyImg2Img`, which requires a `referenceImageId` this dialog never sets;
+4. `src/test/reimageApparelConfig.test.js` updated — the contract moved with the code.
+
+One detail the entry didn't anticipate: `am7model.newPrimitive` materializes an undeclared double as
+**0**, not undefined, so an untouched slider sends `0`. That is already the server's "unset" sentinel
+(`SDUtil.generateMannequinImages`: `cfgDenoise != null && cfgDenoise > 0`), so 0 on the wire correctly
+means MANNEQUIN_INIT_IMAGE_CREATIVITY (0.85). The slider therefore **displays 85** while unset rather
+than a misleading 0. Accepted consequence: an explicit 0 is indistinguishable from unset, and 0
+creativity means "don't clothe the mannequin at all".
+
+**Verified:** `npx vitest run src/test/reimageApparelConfig.test.js` — 8/8. Covers the decorator
+conversion (60 → 0.6 on the entity, 60 back out), that a real user drag on the rendered slider reaches
+the POST body as `mannequinCreativity: 0.8`, that `mannequinCreativity` has no declared default while
+`denoisingStrength` still carries its never-null 0.75, and that an untouched slider shows 85 and sends
+the 0 sentinel. (Found and fixed while writing it: `fetchTemplate` was `mockResolvedValue`, handing
+every test the same entity, so one test's drag leaked into the next.)
+
+### KI-43a. Mannequin prompt carried no gender — FIXED ✅ (2026-08-10, Stephen, live)
+
+Reported mid-session from a live generation: `8k … of a ((full body retail mannequin)) displaying:
+(((Medium Spring Bud Bengaline silk t-shirt, Sinopia Gauze underwear)))…` — no gender anywhere.
+`SDUtil.generateMannequinImages` already reads `apparel.gender` to pick the male/female base asset, but
+`NarrativeUtil.getMannequinPrompt` never put it in the text, so the prompt and the init image disagreed
+about the body being rendered. `getMannequinPrompt` now resolves gender the same way
+`getMannequinBaseImage` does ("male" → male, everything else → female, so the two cannot diverge) and
+injects it into both the opening clause and the "one single … mannequin" clause.
 
 `SDUtil.generateMannequinImages` reads `mannequinCreativity`; `reimageApparel.js`'s Denoising slider
 writes `denoisingStrength`. Nothing sets `mannequinCreativity`, so the slider looks live, does nothing,
@@ -2019,7 +2301,15 @@ uses the instance ability to adapt or it doesn't"*. Required:
    means the assertion needs updating, not that the change is wrong. Attempting step 3 without step 4
    is what stalled this in the original session.
 
-### KI-44. Chat scene generation convergence — Stage A done, B and C outstanding — OPEN (2026-08-09)
+### KI-44. Chat scene generation convergence — Stage A done, B and C outstanding — STILL OPEN (re-confirmed 2026-08-10, deliberately not attempted)
+
+**2026-08-10: not done, and deliberately so.** Stages B and C are the same work as KI-45 — extracting
+the landscape stage and the ~190-line portrait stage out of a 534-line method — and this entry states
+the check is "a live picture-book run", which this session could not complete end to end (no live
+picture-book run was performed; see KI-47). Shipping a ~350-line restructuring of the scene pipeline
+with no live verification is exactly how the 8 documented Ux75 regressions happened. The bug fixes in
+this pass were kept separate from it on purpose. Stage A remains built-and-unexercised as described
+below.
 
 Continuation of KI-40. Stage A is complete and builds (`vite build` + 432 vitest passing) but has
 **never been exercised against a live chat scene**. `Ux752/src/chat/SceneGenerator.js` now builds a real
@@ -2041,7 +2331,14 @@ Deliberately NOT shared: portrait acquisition and prompt composition — a chat 
 differ in where characters and setting come from, and forcing those together is how
 `generateSceneImage` reached 534 lines.
 
-### KI-45. `PictureBookUtil` cyclomatic complexity — OPEN (2026-08-09, Stephen)
+### KI-45. `PictureBookUtil` cyclomatic complexity — STILL OPEN (re-confirmed 2026-08-10, deliberately not attempted)
+
+**2026-08-10: not done** — same reasoning as KI-44, with which it shares the work. This entry says it
+itself: "Pure restructuring, so existing unit tests prove little — the real check is a live
+picture-book run." No live picture-book run happened this session, so the restructuring has no way to
+be verified and was not started. Note the line counts have moved slightly with this pass's fixes
+(`generateSceneImage` is unchanged in structure; `createCharPerson` gained the KI-42
+group-pre-resolution call in `createFromScenes`, not in `createCharPerson` itself).
 
 Measured line counts: `generateSceneImage` **534**, `createCharPerson` **463**, `createFromScenes` 206,
 `callLlmInternal` 165, `resolveSceneCharacter` 149.
@@ -2054,17 +2351,25 @@ lines of orchestration, and it is the SAME work as KI-44's Stages B and C — do
 
 Pure restructuring, so existing unit tests prove little — the real check is a live picture-book run.
 
-### KI-46. `am7model.newPrimitive('olio.sdConfig')` uses a non-existent model name — OPEN (2026-08-09)
+### KI-46. `am7model.newPrimitive('olio.sdConfig')` uses a non-existent model name — FIXED ✅ (2026-08-10)
 
-`Ux752/src/workflows/reimage.js:123` and `reimageApparel.js:24` both call
-`am7model.newPrimitive('olio.sdConfig')`. The real model is **`olio.sd.config`**; `olio.sdConfig`
-appears nowhere in `modelDef.js`. It is the fallback branch taken only when `am7sd.fetchTemplate()`
-returns null (server unreachable), so it rarely fires — but when it does it yields an empty entity
-instead of a valid config. Pre-existing; not introduced by the SD session.
+Both call sites (`reimage.js`, `reimageApparel.js`) now use `olio.sd.config`. One line each. The
+fallback only fires when `am7sd.fetchTemplate()` returns null (server unreachable), which is precisely
+when it mattered: `newPrimitive` returned null and `prepareInstance(null, form)` then threw.
 
-### KI-47. Unverified changes from the SD session — need a live look before being trusted — OPEN (2026-08-09)
+### KI-47. Unverified changes from the SD session — need a live look before being trusted — STILL OPEN (2026-08-10)
 
-All of these build and have unit coverage, but were never exercised through the real UI or pipeline:
+**2026-08-10: not closed.** The Docker stack was brought up and REST-verified this session (which
+required fixing KI-52 first), but no live image was generated through the real UI or pipeline, so none
+of the four items below has had the visual check they need. What DID change underneath them, and must
+be re-checked together with them:
+- `SDUtil.createImage` no longer dies with a `ClassCastException` before requesting an image (KI-51) —
+  the portrait path in the third bullet below could not have been visually verified before this;
+- the mannequin prompt now carries gender (KI-43a), which changes the first bullet's output;
+- `TestKontext` now skips visibly instead of masking a refused checkpoint (KI-39/KI-48), so the second
+  bullet's "TestSD was never run" gap is now honestly reported rather than hidden.
+
+Original list, all still needing a live look:
 
 - **Mannequin output moved 512×768 → 1024×1024**, with `mannequinUseBaseImage` defaulting ON and
   `mannequinSteps` 60. Measured good in a standalone harness (`TestMannequinBaseLive`, images
@@ -2081,7 +2386,9 @@ All of these build and have unit coverage, but were never exercised through the 
   portraits and landscape were photorealistic. Prompt-shape tests pass; the visual result was never
   checked.
 
-### KI-48. `TestKontext` fake-pass fixed; audit the rest of the suite for the same pattern — OPEN (2026-08-09)
+### KI-48. `TestKontext` fake-pass fixed; audit the rest of the suite for the same pattern — FIXED ✅ (2026-08-10, folded into KI-39 above)
+
+<details><summary>Original entry</summary>
 
 `TestKontext.testKontextSceneWithOlioCharacters` reported green while Swarm refused every request
 (`Invalid model value for param Model - 'flux1Kontext_flux1KontextDev'` — that checkpoint is not
@@ -2091,6 +2398,7 @@ reason, or **fails** when the checkpoint IS installed and generation still retur
 Two other `logger.warn(...); return;` bail-outs remain in that class (portrait failure, landscape
 failure), and the same KI-39 pattern very likely exists elsewhere in the SD/LLM tests. Worth a sweep:
 a live test that cannot reach its backend must skip visibly, never pass.
+</details>
 
 ### KI-49. `Content-Length header of network response exceeds response Body` at the end of scene extraction — OPEN (2026-08-09, Stephen)
 
@@ -2124,6 +2432,147 @@ size, then look for a server-side exception at the same timestamp. If the body i
 stops early, it is (1). If the byte delta equals the number of non-ASCII characters in the payload, it
 is (2). If the body is complete but the header is wrong, it is (3).
 
+---
+
+**2026-08-10 — STILL OPEN. Not reproduced. Candidates (2) and (3) measured and ruled out; (1) is now
+the leading explanation, but that is inference, not evidence.**
+
+Measured against the live Docker stack (nginx → Tomcat, through `TokenFilter` + `CorsFilter` +
+`ExpiresFilter`), fetching a large JSON body from the same filter chain (`GET /rest/schema`,
+271,956 bytes, 28 non-ASCII characters):
+
+| | measured |
+|---|---|
+| `Content-Length` | **absent** — the response is `Transfer-Encoding: chunked` |
+| `Content-Encoding` | absent (no gzip anywhere in the chain) |
+| body | 271,956 bytes, decodes as UTF-8 cleanly, parses as valid JSON |
+
+Two conclusions follow. Candidate **(2), byte-vs-character length mismatch, is ruled out** for this
+chain — nothing is computing a length from a Java `String` length, because nothing is computing a
+length at all. Candidate **(3), a filter re-encoding after the length was set, is ruled out** for a
+large body — the framing is chunked and intact end to end. That also matches the entry's own note that
+the reported direction (header LARGER than body) never fitted a UTF-8 mix-up.
+
+If the browser saw a `Content-Length` at all, it was set on a *smaller* response (Tomcat buffers and
+sets a length only when the whole body fits its output buffer, otherwise it switches to chunked), which
+points squarely at **(1): an exception thrown after the headers were committed**, leaving the body
+short. That is also consistent with two real aborts fixed in this same pass, both of which occur mid-
+response on this exact endpoint's call graph: the KI-42 character abort and the
+`SDUtil.createImage` `Integer`→`Double` `ClassCastException` (KI-51).
+
+**What I did NOT do:** I did not reproduce the error itself. Reproducing it needs a real
+`extract-scenes-only` run from the browser against a chat config wired to a reachable LLM, and the
+browser-side `Content-Length`/received-bytes pair from DevTools. **Next step is unchanged and is the
+cheapest one:** run one extraction from the Ux, and at the same timestamp check
+`accountManagerService.log` for a stack trace. If KI-42/KI-51 were the aborts, this may already be
+gone — but do not close it on that assumption.
+
 Related: KI-44 (chat/picture-book convergence) and the scene-extraction cache in
 `TestPictureBookCustom.getOrCreateCatatoneScenes`, which is the fastest way to reproduce an extraction
 without paying for the LLM twice.
+
+### KI-53. Composite prompt carried each character's OWN baked-in art style — three styles in one image — FIXED ✅ (2026-08-10, Stephen, live)
+
+Reported from a live FLUX composite while the book and both portraits were configured as
+`photograph`:
+
+```
+The first person is 8k ... circa 2500 AD.
+  Comic book panel in Archie Comics style from the manga-influenced Western 2000s ...
+The second person is 8k ... Dystopian North American city.
+  Fashion photography for CR Fashion Book in 1950s New Look elegance style by Cindy Sherman.
+... Photograph taken with a Polaroid SX-70,Nikon F camera ...        <- the book's ACTUAL style
+```
+
+A character's narrative bakes in a style clause at CREATION time from a **random** config
+(`NarrativeUtil.getSDPrompt` → `getSDConfigPrompt(randomSDConfig())`). The portrait path already
+strips that before applying the book style (`buildPortraitPrompt` →
+`appendConfigStyleOnce(stripTrailingConfigStyle(...))`), but `resolveSceneCharacter`'s scene-narration
+path never did — its comment asserted `physicalDescription`/`outfitDescription` were
+"style/setting-free", which was simply not true of stored data. So every character dragged its own
+style into the composite, on top of the book's.
+
+**Fix:** `resolveSceneCharacter` now applies `stripTrailingConfigStyle(sceneNarration)` before
+returning. Order matters and is documented at the call site: it must run **before** the FLUX/Kontext
+SDXL-weighting strip, while `getSDConfigPrompt`'s balanced parentheses are still present — that is the
+only thing distinguishing a style clause from ordinary description, and it is exactly why the clauses
+appear unparenthesised in the report.
+
+**Verified:** `TestKi53PerCharacterStyleIsStrippedFromSceneNarration` builds a character description
+plus a real generated clause for **all ten** styles (comic and fashion among them — the two from the
+report) and asserts the clause is gone while the description survives.
+`TestKi53StripIsNoOpOnStyleFreeNarration` pins that plain prose is not truncated.
+
+### KI-54. `TestPictureBookFull` had 11 red tests, all of them mine — FIXED ✅ (2026-08-10)
+
+I initially reported these as "pre-existing, not my regressions". That framing was a deflection:
+I wrote these tests, and a red test I authored is my defect whether or not this session's changes
+caused it. Root causes, all in the tests except where noted:
+
+| Test | Cause |
+|---|---|
+| `TestThinkFalseOnChatOptions` | Asserted `think` defaults to **true**; `chatOptionsModel.json` says **false**. The test was wrong about the schema. Now asserts false and exercises both directions. |
+| `TestBlankSettingSkipsLlmCallEntirely`, `TestPoisonedHallucinatedLandscapePromptSelfHeals`, `TestMismatchedPromptTemplateOverrideDoesNotPoisonScenePrompt` | Asserted exact equality against the **pre-KI-38** prompt, before the config style suffix became part of every persisted prompt. **These also exposed a real production bug** — see below. |
+| `TestLiveSwarmMinimalDiagnosticProbe`, `TestLiveSwarmCompositeImg2ImgDiagnosticProbe`, `TestGenerateSceneImageCompletesWithHiresDisabled` | **Hardcoded `http://192.168.1.42:7801`**, ignoring `test.swarm.server`, and set `style: "illustration"` — a style word KI-38 removed, so `getSDConfigPrompt` had no branch for it. Now use the configured server via `SdTestGate` and the canonical `digitalArt`. All three pass live against localhost:7801 (1 image each, 15s/80s/172s). |
+| `TestCharPersonCreation` | Genuinely fixed by the KI-35 enrolment fix — the acting user could not read the Olio-owned charPerson, so the re-fetch returned null ("Full person"). |
+| `TestLlmSceneExtraction` | Hand-rolled its **own copy** of fence-stripping/array-slicing/JSON-binding instead of calling `PictureBookUtil.parseLlmJsonArray`. The copy had drifted (no `stripThink`) and failed on responses production parses fine. `parseLlmJsonArray` is now public and the test uses it — testing a copy tests the copy. |
+| `TestExtractFromRealCatatoneDocumentCapturesJideon`, `TestCatatoneOpeningScenesRealPromptsAndImages` | Assert EXTRACTION QUALITY calibrated on `qwen3-vl:8b-instruct` (Jideon reads male; the passage yields ≥2 scenes). Under `qwen3:8b` they assert the model's competence, not the pipeline's. Weakening them would delete their point, so they now **skip visibly** via `requireCalibratedLlm(...)`, naming both models — the same rule as the SD checkpoint gate. |
+
+**Real production bug found underneath the three prompt tests:** the self-healing cache guards in
+`resolveLandscapePrompt`/`resolveScenePrompt` compared the cached value against the **bare** fallback
+("A detailed environment" / the bare style clause), but KI-38 made the style suffix (and optional
+composition-context prefix) part of what is persisted. So the guard could never recognise its own
+legitimate output: it condemned it as a "pre-fix hallucinated result" and re-generated **on every
+single call**, logging a false warning each time. Both guards now reconstruct the deterministic value
+the same way the write path builds it. `TestPoisonedHallucinatedLandscapePromptSelfHeals` gained a
+second resolve asserting the heal STICKS, which is the part that was broken.
+
+### KI-50. `PolicyUtil`'s "Group could not be found" diagnostic NPEs on any model without a `urn` — FIXED ✅ (2026-08-10)
+
+Split out of KI-42, where it was recorded as latent. It is not latent: it fired during KI-35 testing,
+turning an ordinary authorization outcome on `olio.wearable` into an uncaught
+`NullPointerException` out of `AuthorizationUtil.canUpdate`. `getResourcePolicy`'s error branch called
+`resource.copyRecord(new String[]{… FIELD_URN …}).toFullString()`, and `copyRecord` returns **null**
+when the model lacks a requested field — which is every model inheriting `common.baseLight`
+(`olio.narrative`, `olio.wearable`). The diagnostic destroyed the diagnosis. Replaced with
+`describeUnresolvedResource(...)`: requests only fields the model actually has, and never lets logging
+throw. Authorization behaviour unchanged — the denial now surfaces as a clean `AUDIT DENY`, observed
+live.
+
+### KI-51. `SDUtil.createImage` threw `ClassCastException: Integer cannot be cast to Double` on every portrait — FIXED ✅ (2026-08-10)
+
+Found in `C:\projects\logsccountManagerService-error.log` while investigating KI-49, from a real
+run on 2026-08-08:
+
+```
+PictureBookUtil - Portrait generation error for Catatonic Figure:
+  class java.lang.Integer cannot be cast to class java.lang.Double
+    at SDUtil.createImage(SDUtil.java:860)
+    at PictureBookUtil.generateSceneImage(PictureBookUtil.java:3361)
+    at PictureBookService.generateSceneImage(PictureBookService.java:398)
+```
+
+`BaseRecord.get` is generic, so `s2i.setCfgScale(sdConfig.get("cfg"))` compiled to a cast to `Double`
+while `olio.sd.config` declares `cfg` as an **int** — the field-type trap in `objects7-reference.md`.
+Every picture-book portrait reaching this path died *before any image was requested*. Fixed with a
+`numberValue(rec, field, default)` helper reading through `Number`, applied to the `cfg` read and to
+every `refinerControlPercentage` read in `SDUtil`/`SWUtil` (clients send these too — `reimageApparel`'s
+CFG slider even steps by 0.5).
+
+**Verified:** `TestCreateImageDoesNotClassCastOnIntegerCfg` asserts `cfg` really is an `Integer` on a
+schema-built config (or the regression means nothing), then drives `createImage` against a deliberately
+dead address — reaching the transport proves the request was built, since the cast happened before any
+socket was opened.
+
+### KI-52. Docker image could not start from a Windows checkout: CRLF entrypoint — FIXED ✅ (2026-08-10)
+
+`docker compose -p am7test -f docker-compose.test.yml up` looped with
+`exec /usr/local/bin/entrypoint.sh: no such file or directory` — the kernel reporting that the
+interpreter `/bin/bash
+` does not exist, not that the script is missing. The repo had no
+`.gitattributes`, so a Windows checkout produced CRLF shell scripts. Fixed at both ends: a new
+`.gitattributes` pins `*.sh`, `docker/**`, `*.conf` and `Dockerfile` to `eol=lf`, and the Dockerfile
+now `sed -i 's/
+$//'`s the copied scripts and configs so the image builds correctly from a checkout
+with any `core.autocrlf` setting. **Verified:** stack rebuilt and came up on `:9443`, first-run setup
+completed, REST calls served.

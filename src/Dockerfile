@@ -97,7 +97,16 @@ COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-RUN chmod +x /usr/local/bin/entrypoint.sh "$CATALINA_HOME/bin/setenv.sh" \
+# Strip CR from the scripts and configs copied out of the build context. .gitattributes pins these
+# to LF in the repo, but the build context is whatever is on disk -- and a CRLF entrypoint fails at
+# exec with "no such file or directory", which is the kernel reporting that the interpreter
+# "/bin/bash\r" does not exist, NOT that the script is missing. Cheap, idempotent, and it makes the
+# image build correctly from a checkout with any core.autocrlf setting.
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh "$CATALINA_HOME/bin/setenv.sh" \
+        /etc/nginx/nginx.conf /etc/supervisord.conf "$CATALINA_HOME/conf/server.xml" \
+        "$CATALINA_HOME/webapps/${APP_CONTEXT}/META-INF/context.xml.template" \
+        "$CATALINA_HOME/webapps/${APP_CONTEXT}/WEB-INF/web.xml.template" \
+    && chmod +x /usr/local/bin/entrypoint.sh "$CATALINA_HOME/bin/setenv.sh" \
     && mkdir -p /data/am7/store /data/am7/vault/credentials /data/am7/datagen /data/am7/sessions /etc/am7/certs /run/nginx
 
 EXPOSE 8443

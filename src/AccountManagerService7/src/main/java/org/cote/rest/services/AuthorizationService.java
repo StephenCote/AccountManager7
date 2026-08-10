@@ -47,6 +47,27 @@ public class AuthorizationService {
 	
 	private static final Logger logger = LogManager.getLogger(AuthorizationService.class);
 
+	/**
+	 * KI-36. Returns a 400 response describing the first caller-supplied model type that resolves to
+	 * no schema, or null when every one of them is resolvable.
+	 *
+	 * <p>Transport-level input validation, not business logic: the model name arrives as a path
+	 * parameter whose regex ({@code [\.A-Za-z]+}) happily admits any word, including the literal
+	 * "undefined" a buggy client actually sent. Without this, the unresolvable name reaches
+	 * {@code RecordUtil.getCommonFields}, whose {@code ms.getQuery()} dereferences a null
+	 * {@code ModelSchema} and throws an uncaught NPE that the default mapper renders as a 500 plus a
+	 * stack trace — an unactionable error for exactly the class of bug that produces it.
+	 */
+	private static Response badModelType(String... modelTypes) {
+		for(String modelType : modelTypes) {
+			if(!org.cote.accountmanager.client.AccessPoint.isResolvableModel(modelType)) {
+				logger.warn("Rejecting request for unknown model type '" + modelType + "'");
+				return Response.status(400).entity("Unknown model type '" + modelType + "'").build();
+			}
+		}
+		return null;
+	}
+
 	@RolesAllowed({"admin","user"})
 	@GET
 	@Path("/trace/{enable:(true|false)}")
@@ -63,6 +84,13 @@ public class AuthorizationService {
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response enableMember(@PathParam("type") String objectType, @PathParam("objectId") String objectId, @PathParam("fieldName") String fieldName, @PathParam("actorType") String actorType, @PathParam("actorId") String actorId, @PathParam("enable") boolean enable, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		/// KI-36: an unresolvable participant/container type (a client bug sending the literal
+		/// "undefined" is the observed case) used to surface as a raw NullPointerException mapped to
+		/// a generic 500 with a stack trace. It is bad input, so say so.
+		Response badType = badModelType(objectType, actorType);
+		if(badType != null) {
+			return badType;
+		}
 		BaseRecord object = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, objectType, objectId);
 		BaseRecord actor = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, actorType, actorId);
 		boolean outBool = false;
@@ -86,6 +114,10 @@ public class AuthorizationService {
 	@Consumes(MediaType.APPLICATION_JSON)
 	public Response countMembers(@PathParam("type") String objectType, @PathParam("objectId") String objectId, @PathParam("actorType") String actorType, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		Response badType = badModelType(objectType, actorType);
+		if(badType != null) {
+			return badType;
+		}
 		BaseRecord object = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, objectType, objectId);
 		logger.info("Counting " + actorType + " members in " + objectType + " " + objectId);
 		int count = 0;
@@ -106,6 +138,14 @@ public class AuthorizationService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		if(user == null) {
 			return Response.status(401).entity("Not authenticated").build();
+		}
+		/// "any" is this endpoint's documented wildcard for participantType, so it is exempt.
+		Response badType = badModelType(modelType);
+		if(badType == null && participantType != null && !participantType.equalsIgnoreCase("any")) {
+			badType = badModelType(participantType);
+		}
+		if(badType != null) {
+			return badType;
 		}
 
 		// Authorize user read access to the model type
@@ -140,6 +180,10 @@ public class AuthorizationService {
 	@Consumes(MediaType.APPLICATION_JSON)
 	public Response members(@PathParam("type") String objectType, @PathParam("objectId") String objectId, @PathParam("actorType") String actorType, @PathParam("startIndex") long startIndex, @PathParam("count") int recordCount, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		Response badType = badModelType(objectType, actorType);
+		if(badType != null) {
+			return badType;
+		}
 		BaseRecord object = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, objectType, objectId);
 		List<BaseRecord> mems = new ArrayList<>();
 

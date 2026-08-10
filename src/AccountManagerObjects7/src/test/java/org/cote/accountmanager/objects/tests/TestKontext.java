@@ -323,7 +323,9 @@ public class TestKontext extends BaseTest {
 		logger.info(person.get(FieldNames.FIELD_NAME) + " has no portrait — generating");
 
 		List<BaseRecord> images = sdu.createPersonImage(testUser, person, "~/Gallery",
-			SDUtil.randomSDConfig(),
+			/// KI-39: randomSDConfig() carries the model SCHEMA default, a per-deployment checkpoint
+			/// name that this node may not have. Stamp the one test.swarm.model says is installed.
+			SdTestGate.stampInstalledModel(SDUtil.randomSDConfig(), testProperties),
 			"Kontext Portrait - " + person.get(FieldNames.FIELD_NAME) + " - " + UUID.randomUUID().toString(),
 			"random", "professional portrait", "full body", "standing", 20, 1, false, -1);
 
@@ -353,10 +355,25 @@ public class TestKontext extends BaseTest {
 		logger.info("testKontextSceneWithOlioCharacters");
 
 		String swarmServer = testProperties.getProperty("test.swarm.server");
-		if (swarmServer == null || swarmServer.isEmpty()) {
-			logger.warn("test.swarm.server not configured — skipping");
-			return;
+		/// KI-39/KI-48: an unconfigured server is a visible Skip, never a silent pass.
+		SdTestGate.requireSwarmConfigured(swarmServer);
+
+		/// Gate on the Kontext CHECKPOINT before doing any work. Checking only at the end (after the
+		/// portraits and landscape have already been generated) still fires a request Swarm refuses:
+		///   [Warning] Refused to generate image for local: Invalid model value for param Model -
+		///   'flux1Kontext_flux1KontextDev' - are you sure that model name is correct?
+		/// That refusal is noise in the Swarm log for a test that cannot possibly pass here, and it
+		/// burns GPU time on portraits/landscape first. Resolve the checkpoint from
+		/// test.swarm.kontextModel (falling back to the olio.sd.config schema default) and skip
+		/// VISIBLY, up front, when this node does not carry it.
+		String kontextModel = testProperties.getProperty("test.swarm.kontextModel");
+		if (kontextModel == null || kontextModel.isBlank()) {
+			kontextModel = org.cote.accountmanager.record.RecordFactory
+				.getSchema(org.cote.accountmanager.olio.schema.OlioModelNames.MODEL_SD_CONFIG)
+				.getFieldSchema("kontextModel").getDefaultValue().toString();
 		}
+		SdTestGate.requireModelInstalled(new SDUtil(SDAPIEnumType.SWARM, swarmServer), swarmServer,
+			kontextModel, "FLUX Kontext scene compositing");
 
 		/// Step 1: Get Olio context with population
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Realm");
@@ -395,10 +412,9 @@ public class TestKontext extends BaseTest {
 			}
 		}
 
-		if (ready.size() < 2) {
-			logger.warn("Could not prepare 2 characters with apparel + portrait — skipping");
-			return;
-		}
+		/// KI-48: this bail-out used to `return`, reporting a PASS for a test that never generated
+		/// anything. Preparation failing is a legitimate reason not to run, but it is not evidence.
+		SdTestGate.insufficientPreparation("characters with apparel + portrait", ready.size(), 2);
 
 		BaseRecord person1 = ready.get(0);
 		BaseRecord person2 = ready.get(1);
@@ -422,8 +438,10 @@ public class TestKontext extends BaseTest {
 		List<BaseRecord> landImages = sdu.createSceneImage(testUser, "~/Gallery",
 			"Kontext Landscape - " + UUID.randomUUID().toString(), landReq, null, null);
 		if (landImages.isEmpty()) {
-			logger.warn("Landscape generation failed — SwarmUI may be unavailable");
-			return;
+			/// KI-48: was a warn+return (silent pass). Classify it: absent checkpoint = visible Skip,
+			/// present checkpoint = a real generation failure.
+			SdTestGate.emptyResultIsSkipOrFailure(sdu, swarmServer,
+				testProperties.getProperty("test.swarm.model"), "Landscape generation");
 		}
 
 		byte[] landscapeBytes = landImages.get(0).get(FieldNames.FIELD_BYTE_STORE);
@@ -477,7 +495,7 @@ public class TestKontext extends BaseTest {
 			/// A missing checkpoint is a legitimate reason not to run, but it must be VISIBLE. Assume
 			/// reports Skipped rather than Passed, so the report distinguishes "not exercised here" from
 			/// "exercised and correct". Anything else empty-handed is a real failure and now fails.
-			String kontextModel = s2i.getModel();
+			String refusedModel = s2i.getModel();
 			boolean modelInstalled = false;
 			try {
 				List<String> installed = sdu.listModels();
@@ -486,22 +504,22 @@ public class TestKontext extends BaseTest {
 						/// Swarm reports names with the ".safetensors" suffix; configs generally omit it.
 						if (m == null) continue;
 						String bare = m.endsWith(".safetensors") ? m.substring(0, m.length() - 12) : m;
-						if (m.equalsIgnoreCase(kontextModel) || bare.equalsIgnoreCase(kontextModel)) {
+						if (m.equalsIgnoreCase(refusedModel) || bare.equalsIgnoreCase(refusedModel)) {
 							modelInstalled = true;
 							break;
 						}
 					}
 				}
-				logger.info("Kontext checkpoint '" + kontextModel + "' installed on " + swarmServer + ": "
+				logger.info("Kontext checkpoint '" + refusedModel + "' installed on " + swarmServer + ": "
 					+ modelInstalled + " (" + (installed != null ? installed.size() : 0) + " checkpoints reported)");
 			} catch (Exception le) {
 				logger.warn("Could not list Swarm checkpoints to classify the empty result: " + le.getMessage());
 			}
-			org.junit.Assume.assumeTrue("SKIPPED: the configured Kontext checkpoint '" + kontextModel
+			org.junit.Assume.assumeTrue("SKIPPED: the configured Kontext checkpoint '" + refusedModel
 				+ "' is not installed on " + swarmServer + " (checkpoint availability is per-node). This is "
 				+ "not a pass - set olio.sd.config.kontextModel to an installed checkpoint, or use "
 				+ "compositeMode=flux2, to exercise this path here.", modelInstalled);
-			fail("Kontext returned no images even though '" + kontextModel + "' IS installed on "
+			fail("Kontext returned no images even though '" + refusedModel + "' IS installed on "
 				+ swarmServer + " - a real generation failure, not a missing model");
 		}
 

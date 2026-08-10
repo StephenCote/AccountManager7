@@ -167,8 +167,37 @@ public abstract class PathUtil implements IPath {
 							return null;
 						}
 
-						writer.write(node);
+						boolean wrote = writer.write(node);
 						writer.flush();
+						if(!wrote) {
+							/// KI-42. The write LOST — overwhelmingly because the row it was trying to
+							/// create already exists: the unique constraint is (name, parentId,
+							/// organizationId) and does NOT include type, so a type-filtered lookup can
+							/// miss a row the insert then collides with.
+							///
+							/// This must not be ignored. DBWriter catches the SQLException, logs it and
+							/// returns 0 — but it has ALREADY stamped a sequence-allocated id onto the
+							/// in-memory record. Reading that id back yields an ordinary-looking group
+							/// whose id matches no row in the database, and every record subsequently
+							/// persisted against it fails PBAC with "Group could not be found: <id>".
+							/// That is how a PictureBook character silently vanishes from a book, and
+							/// why the reported id differed on every run while the collision key did
+							/// not — each run burns a fresh sequence value on an insert that never lands.
+							///
+							/// A get-or-create has to be robust to its create losing, so re-read on the
+							/// constraint's OWN key (name + parent + org, no type filter) and adopt the
+							/// winner. Only if nothing is there is this a genuine failure, and then the
+							/// caller must see null rather than a phantom.
+							node = findExistingNode(model, parentId, e, organizationId);
+							if(node == null) {
+								logger.error("Failed to write " + model + " node " + e + " with parent #" + parentId
+									+ " in path " + path + ", and no existing record could be resolved for it");
+								return null;
+							}
+							logger.warn("Write of " + model + " node " + e + " in parent #" + parentId
+								+ " lost to an existing record (#" + node.get(FieldNames.FIELD_ID)
+								+ "); adopting it rather than returning an unpersisted node");
+						}
 						parentId = node.get(FieldNames.FIELD_ID);
 					}
 				}
@@ -195,5 +224,29 @@ public abstract class PathUtil implements IPath {
 
 		return node;
 
+	}
+
+	/**
+	 * KI-42 helper: re-read a hierarchy node on the unique constraint's own key —
+	 * (name, parentId, organizationId) — deliberately WITHOUT the type filter, because the
+	 * constraint does not include type and a type-filtered read is exactly what can miss the row a
+	 * create then collides with. Returns null (rather than throwing) if nothing is there, letting
+	 * the caller report a real failure.
+	 */
+	private BaseRecord findExistingNode(String model, long parentId, String name, long organizationId) {
+		try {
+			BaseRecord[] existing = search.findByNameInParent(model, parentId, name, null, organizationId);
+			if(existing.length == 1) {
+				return existing[0];
+			}
+			if(existing.length > 1) {
+				logger.error("Ambiguous re-read for " + model + " '" + name + "' in parent #" + parentId
+					+ ": " + existing.length + " results");
+			}
+		}
+		catch(ReaderException re) {
+			logger.error("Failed to re-read " + model + " '" + name + "' in parent #" + parentId + ": " + re.getMessage());
+		}
+		return null;
 	}
 }

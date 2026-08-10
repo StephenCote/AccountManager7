@@ -330,17 +330,72 @@ public class SDUtil {
 		this.steps = steps;
 	}
 	
+	/**
+	 * KI-34. Storage group for a character's generated portrait/figurine images.
+	 *
+	 * <p>This used to be {@code {world.gallery.path}/Characters/{name}} — the WORLD's gallery, shared
+	 * across every book, context and run in the organization, keyed purely by the character's display
+	 * name. Two {@code charPerson} records that happen to share a name (a recurring name across
+	 * separate PictureBook runs, the same story re-run, or simply two stories that both have a
+	 * "Jideon") therefore resolved to the identical storage group and overwrote or shared each
+	 * other's portraits.
+	 *
+	 * <p>Every charPerson already lives somewhere specific, so its OWN group is the natural scope:
+	 * a book's {@code .../{Book}/Characters} when created via PictureBook, the world's population
+	 * group otherwise. {@code groupPath} is a default query field on everything deriving from
+	 * {@code data.directory} (virtual, computed by {@code PathProvider} from {@code groupId}), but it
+	 * is virtual, so a caller that planned only {@code groupId} can still arrive here without it —
+	 * hence the explicit resolve-from-groupId step before falling back.
+	 *
+	 * <p>The character name is kept as the leaf so the layout stays browsable and two characters in
+	 * the SAME group don't share a folder; it is the ROOT that changes from world-wide to
+	 * character-scoped. Falls back to the original world-gallery scheme only when the character has
+	 * no resolvable group of its own.
+	 *
+	 * <p>Out of scope per KI-34: apparel/mannequin image storage
+	 * ({@code generateMannequinImages}, {@code OlioService.reimageApparel}) is a separate concern
+	 * and is deliberately untouched.
+	 */
+	public static String resolveCharacterImagePath(OlioContext octx, BaseRecord per) {
+		String name = per.get(FieldNames.FIELD_NAME);
+		String groupPath = null;
+		try {
+			groupPath = per.get(FieldNames.FIELD_GROUP_PATH);
+			if(groupPath == null || groupPath.isEmpty()) {
+				/// groupPath is virtual; a partially-planned record carries groupId but not the
+				/// computed path. Resolve it rather than silently landing back on the shared default.
+				Long groupId = per.get(FieldNames.FIELD_GROUP_ID);
+				if(groupId != null && groupId > 0L) {
+					BaseRecord grp = IOSystem.getActiveContext().getSearch().findRecord(
+						QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_ID, groupId));
+					if(grp != null) {
+						groupPath = grp.get(FieldNames.FIELD_PATH);
+					}
+				}
+			}
+		}
+		catch(Exception e) {
+			logger.warn("Could not resolve groupPath for character '" + name + "': " + e.getMessage());
+		}
+		if(groupPath != null && !groupPath.isEmpty()) {
+			return groupPath + "/" + name + "/Gallery";
+		}
+		String basePath = (octx != null && octx.getWorld() != null) ? octx.getWorld().get("gallery.path") : null;
+		logger.warn("Character '" + name + "' has no resolvable group of its own — falling back to the "
+			+ "world-wide gallery path, which collides across characters that share a name (KI-34)");
+		return basePath + "/Characters/" + name;
+	}
+
 	public void generateSDFigurines(OlioContext octx, List<BaseRecord> pop, int batchSize, boolean export, boolean hires, int seed) {
 
 		SecureRandom rand = new SecureRandom();
-		String basePath = octx.getWorld().get("gallery.path");
 		for(BaseRecord per : pop) {
 			List<BaseRecord> nars = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(new BaseRecord[] {per}), "random");
 			BaseRecord nar = nars.get(0);
 			BaseRecord prof = per.get(FieldNames.FIELD_PROFILE);
 			
 			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
-			String path = basePath + "/Characters/" + per.get(FieldNames.FIELD_NAME);
+			String path = resolveCharacterImagePath(octx, per);
 			List<BaseRecord> bl = createPersonFigurine(octx.getOlioUser(), per, path, "Photo Op", steps, batchSize, hires, seed);
 		
 			if(bl.size() > 0) {
@@ -379,7 +434,6 @@ public class SDUtil {
 		if(setting != null && setting.equals("random")) {
 			setting = NarrativeUtil.getRandomSetting();
 		}
-		String basePath = octx.getWorld().get("gallery.path");
 		for(BaseRecord per : pop) {
 			List<BaseRecord> nars = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(new BaseRecord[] {per}), setting);
 			BaseRecord nar = nars.get(0);
@@ -387,7 +441,7 @@ public class SDUtil {
 			
 			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
 			
-			String path = basePath + "/Characters/" + per.get(FieldNames.FIELD_NAME);
+			String path = resolveCharacterImagePath(octx, per);
 			List<BaseRecord> bl = createPersonImage(octx.getOlioUser(), per, path, sdConfig,"Photo Op",  setting, useStyle, useBodyStyle, verb, steps, batchSize, hires, seed);
 		
 			if(bl.size() > 0) {
@@ -833,6 +887,31 @@ public class SDUtil {
 		s2i.setInitImageCreativity(ds != null ? ds : 0.75);
 	}
 
+	/**
+	 * Read a numeric config field as a double, whatever numeric box the record is actually holding.
+	 *
+	 * <p>{@code BaseRecord.get} is generic, so {@code s2i.setCfgScale(sdConfig.get("cfg"))} compiles
+	 * to a cast to Double — but olio.sd.config declares {@code cfg} as an INT, so the record holds an
+	 * Integer and the call blew up at runtime with "class java.lang.Integer cannot be cast to class
+	 * java.lang.Double". Observed live 2026-08-08 aborting portrait generation:
+	 * "Portrait generation error for Catatonic Figure: class java.lang.Integer cannot be cast to
+	 * class java.lang.Double" (SDUtil.createImage -> PictureBookUtil.generateSceneImage).
+	 *
+	 * <p>This is the field-type trap in objects7-reference.md: always match the schema's declared
+	 * type. Reading through Number makes the seam immune to it in both directions, which matters
+	 * because clients send these values too (reimageApparel's CFG slider even steps by 0.5).
+	 */
+	private static double numberValue(BaseRecord rec, String fieldName, double defaultValue) {
+		if(rec == null) return defaultValue;
+		try {
+			Object v = rec.get(fieldName);
+			return (v instanceof Number) ? ((Number) v).doubleValue() : defaultValue;
+		}
+		catch(Exception e) {
+			return defaultValue;
+		}
+	}
+
 	public List<BaseRecord> createImage(BaseRecord user, String groupPath, BaseRecord sdConfig, String name, int batch, boolean hires, int seed) {
 		if(apiType != SDAPIEnumType.SWARM) {
 			logger.error("createImage without charPerson is only supported for SWARM API type");
@@ -857,7 +936,7 @@ public class SDUtil {
 		s2i.setModel(sdConfig.get("model"));
 		s2i.setScheduler(sdConfig.get("scheduler"));
 		s2i.setSampler(sdConfig.get("sampler"));
-		s2i.setCfgScale(sdConfig.get("cfg"));
+		s2i.setCfgScale(numberValue(sdConfig, "cfg", 7));
 		s2i.setSeed(sdConfig.get("seed"));
 		s2i.setImages(batch);
 		if((Boolean)sdConfig.get("hires") == true) {
@@ -869,7 +948,7 @@ public class SDUtil {
 			s2i.setRefinerUpscale(sdConfig.get("refinerUpscale"));
 			s2i.setRefinerUpscaleMethod(sdConfig.get("refinerUpscaleMethod"));
 			s2i.setRefinerCfgScale(sdConfig.get("refinerCfg"));
-			s2i.setRefinerControlPercentage(sdConfig.get("refinerControlPercentage"));
+			s2i.setRefinerControlPercentage(numberValue(sdConfig, "refinerControlPercentage", 0.2));
 		}
 		else {
 			s2i.setRefinerControlPercentage(0.0);
@@ -1066,7 +1145,7 @@ public class SDUtil {
 			s2i.setRefinerUpscale(config.get("refinerUpscale"));
 			s2i.setRefinerUpscaleMethod(config.get("refinerUpscaleMethod"));
 			s2i.setRefinerCfgScale(config.get("refinerCfg"));
-			s2i.setRefinerControlPercentage(config.get("refinerControlPercentage"));
+			s2i.setRefinerControlPercentage(numberValue(config, "refinerControlPercentage", 0.2));
 		} else {
 			s2i.setRefinerControlPercentage(0.0);
 		}
@@ -1183,7 +1262,7 @@ public class SDUtil {
 			s2i.setRefinerUpscale(config.get("refinerUpscale"));
 			s2i.setRefinerUpscaleMethod(config.get("refinerUpscaleMethod"));
 			s2i.setRefinerCfgScale(config.get("refinerCfg"));
-			s2i.setRefinerControlPercentage(config.get("refinerControlPercentage"));
+			s2i.setRefinerControlPercentage(numberValue(config, "refinerControlPercentage", 0.2));
 		} else {
 			s2i.setRefinerControlPercentage(0.0);
 		}
@@ -1420,7 +1499,7 @@ public class SDUtil {
 			s2i.setRefinerUpscale(config.get("refinerUpscale"));
 			s2i.setRefinerUpscaleMethod(config.get("refinerUpscaleMethod"));
 			s2i.setRefinerCfgScale(config.get("refinerCfg"));
-			s2i.setRefinerControlPercentage(config.get("refinerControlPercentage"));
+			s2i.setRefinerControlPercentage(numberValue(config, "refinerControlPercentage", 0.2));
 		} else {
 			s2i.setRefinerControlPercentage(0.0);
 		}
@@ -1887,7 +1966,7 @@ public class SDUtil {
 				s2i.setRefinerUpscale(config.get("refinerUpscale"));
 				s2i.setRefinerUpscaleMethod(config.get("refinerUpscaleMethod"));
 				s2i.setRefinerCfgScale(config.get("refinerCfg"));
-				s2i.setRefinerControlPercentage(config.get("refinerControlPercentage"));
+				s2i.setRefinerControlPercentage(numberValue(config, "refinerControlPercentage", 0.2));
 			} else {
 				s2i.setRefinerControlPercentage(0.0);
 			}

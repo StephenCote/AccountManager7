@@ -330,7 +330,13 @@
       "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestSD#TestGenerateMannequinImagesForwardsClientConfig test)",
       "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestSD -DfailIfNoTests=false test)",
       "Bash(mvn -o -pl AccountManagerObjects7 -Dtest=TestPictureBookFull#TestCreateFromScenesSeedsRandomBaselineOnCharacter test)",
-      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestCreateFromScenesSeedsRandomBaselineOnCharacter test)"
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookFull#TestCreateFromScenesSeedsRandomBaselineOnCharacter test)",
+      "Bash(python -)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookKnownIssues#TestKi36UnresolvableModelTypeReturnsNullInsteadOfNpe test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookKnownIssues#TestKi42ForeignSubModelGroupsResolveOncePerRequest test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookKnownIssues#TestKi42MakePathNeverReturnsAGroupThatIsNotInTheDatabase test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest='TestPictureBookKnownIssues#TestKi42MakePathNeverReturnsAGroupThatIsNotInTheDatabase+TestKi42ForeignSubModelGroupsResolveOncePerRequest+TestKi36UnresolvableModelTypeReturnsNullInsteadOfNpe' test)",
+      "Bash(mvn -o -pl AccountManagerObjects7 -DskipTests=false -Dtest=TestPictureBookKnownIssues#TestKi42CreateFromScenesCreatesEveryCharacterForANewUser test)"
     ],
     "additionalDirectories": [
       "\\tmp",

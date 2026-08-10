@@ -73,7 +73,9 @@ am7model._client = { newQuery: () => ({ entity: { request: [] }, field: () => {}
 // pre-existing bug.
 am7model._sd = {
     fetchModels: vi.fn().mockResolvedValue([]),
-    fetchTemplate: vi.fn().mockResolvedValue(am7model.newPrimitive('olio.sd.config')),
+    // A FRESH primitive per call. mockResolvedValue would hand every test the same object, so one
+    // test's slider drag would leak into the next one's "untouched slider" assertions.
+    fetchTemplate: vi.fn(async () => am7model.newPrimitive('olio.sd.config')),
     loadConfig: vi.fn().mockResolvedValue(null),
     applyConfig: vi.fn(),
     saveConfig: vi.fn(),
@@ -113,7 +115,7 @@ describe('reimageApparel.js — denoisingStrength scale converges onto reimage.j
         expect(cinstReimage.api.denoisingStrength()).toBe(80);
     });
 
-    it('renders a single 0-100/step-5 denoising slider (same bounds as reimage.js), not the old 0-1/step-0.05 slider', async () => {
+    it('renders a single 0-100/step-5 mannequin-creativity slider (same bounds as reimage.js denoising), not the old 0-1/step-0.05 slider', async () => {
         capturedDialogCfg = null;
         mockM.request.mockResolvedValue([]);
         const { reimageApparel } = await import('../workflows/reimageApparel.js');
@@ -121,25 +123,28 @@ describe('reimageApparel.js — denoisingStrength scale converges onto reimage.j
         await reimageApparel({}, inst);
 
         expect(capturedDialogCfg).toBeTruthy();
-        // reimageApparel.js renders 4 range sliders (Steps, Refiner Steps, CFG, Denoising) — find
-        // the denoising one specifically by its bounds, which must now match reimage.js exactly
-        // (0-100, step 5), not the old bespoke 0-1/step-0.05 slider.
+        // reimageApparel.js renders 4 range sliders (Steps, Refiner Steps, CFG, Mannequin Creativity)
+        // — find the creativity one specifically by its bounds, which must match reimage.js's
+        // denoising slider exactly (0-100, step 5), not the old bespoke 0-1/step-0.05 slider.
         let vnode = capturedDialogCfg.content.view();
         let rangeInputs = findByTag(vnode, 'input').filter((i) => i.attrs.type === 'range');
         expect(rangeInputs.length).toBe(4);
-        let denoisingSlider = rangeInputs.find((i) => i.attrs.min === 0 && i.attrs.max === 100 && i.attrs.step === 5);
-        expect(denoisingSlider).toBeDefined();
+        let creativitySlider = rangeInputs.find((i) => i.attrs.min === 0 && i.attrs.max === 100 && i.attrs.step === 5);
+        expect(creativitySlider).toBeDefined();
+        // KI-43: unset must display the server's own MANNEQUIN_INIT_IMAGE_CREATIVITY (0.85 -> 85),
+        // not the range decorator's no-default 0 — otherwise the slider lies about what will render.
+        expect(creativitySlider.attrs.value).toBe('85');
     });
 
-    it('the Generate action sends the full sdConfig (model/sampler/scheduler/cfg/steps/loras) AND denoisingStrength converted from the 0-100 slider to the 0-1 wire value the server schema expects', async () => {
+    it('the Generate action sends the full sdConfig (model/sampler/scheduler/cfg/steps/loras) AND mannequinCreativity converted from the 0-100 slider to the 0-1 wire value the server schema expects', async () => {
         capturedDialogCfg = null;
         mockM.request.mockResolvedValue([{ objectId: 'img-1' }]);
         const { reimageApparel } = await import('../workflows/reimageApparel.js');
         let inst = { model: { name: 'olio.apparel' }, api: { name: () => 'TestApparel', objectId: () => 'apparel-obj-456' } };
         await reimageApparel({}, inst);
 
-        // Simulate a real user drag on the rendered denoising slider (not the Steps/RefinerSteps/
-        // CFG sliders that share the same tag/type) to 80% before hitting Generate.
+        // Simulate a real user drag on the rendered mannequin-creativity slider (not the Steps/
+        // RefinerSteps/CFG sliders that share the same tag/type) to 80% before hitting Generate.
         let vnode = capturedDialogCfg.content.view();
         let rangeInput = findByTag(vnode, 'input')
             .filter((i) => i.attrs.type === 'range')
@@ -168,9 +173,75 @@ describe('reimageApparel.js — denoisingStrength scale converges onto reimage.j
         expect(body).toHaveProperty('seed');
 
         // The actual point of this test file: 80% on the (now-converged) slider must reach the
-        // wire as 0.8 — matching olio.sd.config's schema (denoisingStrength: 0.0-1.0 double),
-        // not 80 (which is what the old, undecorated 0-1/step-0.05 apparel slider would have
-        // stored as 0.8 already, but which a naive "just widen the slider" fix would have broken).
-        expect(body.denoisingStrength).toBe(0.8);
+        // wire as 0.8 — matching olio.sd.config's schema (0.0-1.0 double), not 80 (which is what
+        // the old, undecorated 0-1/step-0.05 apparel slider would have stored as 0.8 already, but
+        // which a naive "just widen the slider" fix would have broken).
+        //
+        // KI-43 moved the contract from denoisingStrength to mannequinCreativity: SDUtil
+        // .generateMannequinImages reads mannequinCreativity and NEVER denoisingStrength, so the
+        // 0-100/0-1 conversion has to land on the field the server actually consumes.
+        expect(body.mannequinCreativity).toBe(0.8);
+    });
+
+    /**
+     * KI-43 regression: the mannequin dialog's slider must reach the field SDUtil actually reads.
+     * denoisingStrength carries a 0.75 schema default (never null), which is precisely why
+     * generateMannequinImages was given its own mannequinCreativity field — writing the slider to
+     * denoisingStrength left every mannequin at the hardcoded MANNEQUIN_INIT_IMAGE_CREATIVITY (0.85)
+     * while the UI showed whatever the user picked.
+     */
+    describe('mannequin creativity is wired to the field the server reads (KI-43)', () => {
+        it('forms.sdMannequinConfig declares mannequinCreativity as format:"range"', () => {
+            let field = am7model.forms.sdMannequinConfig.fields.mannequinCreativity;
+            expect(field).toBeDefined();
+            expect(field.format).toBe('range');
+        });
+
+        it('mannequinCreativity is a 0-1 double on olio.sd.config with NO declared default, so an untouched slider leaves the server default in force', () => {
+            let entity = am7model.newPrimitive('olio.sd.config');
+            let model = am7model.getModel('olio.sd.config');
+            let f = model.fields.find((x) => x.name === 'mannequinCreativity');
+            expect(f).toBeDefined();
+            expect(f.type).toBe('double');
+            expect(f.minValue).toBe(0.0);
+            expect(f.maxValue).toBe(1.0);
+            // A declared default here would be never-null and would silently override the server's
+            // 0.85 — the exact defect denoisingStrength (default 0.75) has. newPrimitive still
+            // materializes an undeclared double as 0, and SDUtil.generateMannequinImages reads 0 as
+            // "unset" (`cfgDenoise != null && cfgDenoise > 0`), so 0 on the wire IS the server default.
+            expect(f.default).toBeUndefined();
+            expect(entity.mannequinCreativity).toBe(0);
+            // Contrast: denoisingStrength really does carry a never-null default, which is why it
+            // could never express the intended mannequin value.
+            expect(entity.denoisingStrength).toBe(0.75);
+        });
+
+        it('cinst.api.mannequinCreativity decorates 0-100 UI <-> 0-1 wire', () => {
+            let cinst = am7model.prepareInstance(am7model.newPrimitive('olio.sd.config'), am7model.forms.sdMannequinConfig);
+            cinst.api.mannequinCreativity(60);
+            expect(cinst.entity.mannequinCreativity).toBe(0.6);
+            expect(cinst.api.mannequinCreativity()).toBe(60);
+        });
+
+        it('an untouched slider sends the server-default sentinel (0), so the server keeps its measured-best 0.85 — and displays 85, never a misleading 0', async () => {
+            capturedDialogCfg = null;
+            mockM.request.mockResolvedValue([{ objectId: 'img-2' }]);
+            const { reimageApparel } = await import('../workflows/reimageApparel.js');
+            let inst = { model: { name: 'olio.apparel' }, api: { name: () => 'TestApparel', objectId: () => 'apparel-obj-789' } };
+            await reimageApparel({}, inst);
+
+            let vnode = capturedDialogCfg.content.view();
+            let creativitySlider = findByTag(vnode, 'input')
+                .filter((i) => i.attrs.type === 'range')
+                .find((i) => i.attrs.min === 0 && i.attrs.max === 100 && i.attrs.step === 5);
+            expect(creativitySlider.attrs.value).toBe('85');
+
+            let generateAction = capturedDialogCfg.actions.find((a) => a.label === 'Generate');
+            await generateAction.onclick();
+
+            let call = mockM.request.mock.calls[mockM.request.mock.calls.length - 1][0];
+            // 0 is the "unset" sentinel SDUtil already honours; anything non-zero would pin the value.
+            expect(call.body.mannequinCreativity).toBe(0);
+        });
     });
 });

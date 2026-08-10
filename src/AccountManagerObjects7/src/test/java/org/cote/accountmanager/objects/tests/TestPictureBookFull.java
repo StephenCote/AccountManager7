@@ -76,11 +76,22 @@ public class TestPictureBookFull extends BaseTest {
 		"its wing joint. The beast roared and collapsed. As dawn broke, they stood over the fallen creature, " +
 		"victorious and exhausted, the mountain pass now safe for travelers.";
 
+	/// KI-38 removed the picture-book-only "illustration" style word; the canonical default is
+	/// digitalArt. Leaving "illustration" in these configs asked getSDConfigPrompt for a style branch
+	/// that does not exist, so the probes carried no style guidance at all.
+	private static final String PB_DEFAULT_STYLE = "digitalArt";
+
 	private OrganizationContext testOrgCtx;
 	private BaseRecord testUser;
 	private BaseRecord chatConfig;
 
-	private static final String PB_LLM_MODEL = "qwen3-vl:8b-instruct";
+	/// Read from test.llm.ollama.model rather than hardcoded. A hardcoded name pins these tests to
+	/// one machine's model library: qwen3-vl:8b-instruct is not installed on every Ollama host, and a
+	/// missing model fails at the API boundary with an error that looks nothing like the real cause.
+	private static String pbLlmModel(java.util.Properties props) {
+		String m = props.getProperty("test.llm.ollama.model");
+		return (m != null && !m.isBlank()) ? m : "qwen3-vl:8b-instruct";
+	}
 
 	private void setupTestContext() {
 		testOrgCtx = getTestOrganization(ORG_PATH);
@@ -96,7 +107,7 @@ public class TestPictureBookFull extends BaseTest {
 	}
 
 	private BaseRecord getOrCreatePbChatConfig(BaseRecord user, String serverUrl) {
-		String cfgName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String cfgName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 		BaseRecord existing = org.cote.accountmanager.util.DocumentUtil.getRecord(
 			user, OlioModelNames.MODEL_CHAT_CONFIG, cfgName, "~/Chat");
 		if (existing != null) return existing;
@@ -108,7 +119,7 @@ public class TestPictureBookFull extends BaseTest {
 				OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
 			cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
 			cfg.set("connection", OlioTestUtil.getCreateConnection(user, cfgName + " Connection", serverUrl, null, 300));
-			cfg.set("model", PB_LLM_MODEL);
+			cfg.set("model", pbLlmModel(testProperties));
 			cfg.set("stream", false);
 
 			// Set think:false on chatOptions
@@ -125,6 +136,25 @@ public class TestPictureBookFull extends BaseTest {
 			logger.error("Failed to create PB chat config: " + e.getMessage());
 			return null;
 		}
+	}
+
+	/**
+	 * Assertions about EXTRACTION QUALITY (this character's gender is male; this passage yields at
+	 * least two scenes) are assertions about a specific model's competence, not about our code. Run
+	 * against a different model they produce a red that says nothing true: qwen3:8b reads Jideon as
+	 * female and finds one scene where qwen3-vl:8b-instruct finds several.
+	 *
+	 * Weakening the assertion to whatever the current model happens to emit would delete the test's
+	 * whole point, so instead: skip VISIBLY, naming both models. Same rule as the SD checkpoint gate
+	 * (KI-39/KI-48) — "cannot be exercised here" must be reported as Skipped, never as Passed.
+	 */
+	private void requireCalibratedLlm(String calibratedModel) {
+		String configured = pbLlmModel(testProperties);
+		org.junit.Assume.assumeTrue("SKIPPED: this assertion is calibrated for the LLM '" + calibratedModel
+			+ "' and test.llm.ollama.model is '" + configured + "'. Extraction quality differs per model, "
+			+ "so running it here would assert the model's competence, not the pipeline's correctness. "
+			+ "This is NOT a pass — point test.llm.ollama.model at '" + calibratedModel + "' to exercise it.",
+			calibratedModel.equals(configured));
 	}
 
 	private BaseRecord ensureGroup(String path) {
@@ -252,7 +282,7 @@ public class TestPictureBookFull extends BaseTest {
 			+ "deserialization bug — this is the exact call shape the wizard's Step 2->3 transition uses)");
 		setupTestContext();
 
-		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, "CFS Stub Test Story " + System.currentTimeMillis());
@@ -364,7 +394,7 @@ public class TestPictureBookFull extends BaseTest {
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set for KI-30's OlioContext baseline generation", dataPath);
 
-		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, "KI30 Baseline Test Story " + System.currentTimeMillis());
@@ -688,7 +718,7 @@ public class TestPictureBookFull extends BaseTest {
 		params.sdConfig = genCfg;
 
 		long start = System.currentTimeMillis();
-		BaseRecord result = PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", "http://192.168.1.42:7801");
+		BaseRecord result = PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", testProperties.getProperty("test.swarm.server"));
 		long elapsed = System.currentTimeMillis() - start;
 		logger.info("Full generateSceneImage (hires=false) took " + elapsed + "ms");
 
@@ -789,7 +819,7 @@ public class TestPictureBookFull extends BaseTest {
 			+ "populated with apparel/statistics/portrait, not just a name stub?");
 		setupTestContext();
 
-		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, "E2E Character Test Story " + System.currentTimeMillis());
@@ -981,11 +1011,12 @@ public class TestPictureBookFull extends BaseTest {
 	 */
 	@Test
 	public void TestExtractFromRealCatatoneDocumentCapturesJideon() throws Exception {
+		requireCalibratedLlm("qwen3-vl:8b-instruct");
 		logger.info("Test: PictureBookUtil.extract() against the real catatone.docx — does Jideon's "
 			+ "charPerson reflect real document content, not a synthetic story?");
 		setupTestContext();
 
-		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 
 		byte[] fileBytes = FileUtil.getFile("./media/catatone.docx");
 		assertNotNull("catatone.docx should be readable from the module's media/ directory", fileBytes);
@@ -1086,7 +1117,7 @@ public class TestPictureBookFull extends BaseTest {
 		assertNotNull("test.swarm.server must be set", swarmServer);
 		logger.info("Using local Swarm server: " + swarmServer);
 
-		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, "E2E Apparel Scene Test Story " + System.currentTimeMillis());
@@ -1303,7 +1334,7 @@ public class TestPictureBookFull extends BaseTest {
 		OpenAIResponse resp = chat.chat(req);
 		assertNotNull("Live chat call should succeed", resp);
 
-		assertTrue("Model should be loaded in Ollama after a live call", isModelLoaded(ollamaServer, PB_LLM_MODEL));
+		assertTrue("Model should be loaded in Ollama after a live call", isModelLoaded(ollamaServer, pbLlmModel(testProperties)));
 
 		// force=true: this test verifies the unload MECHANISM, so it must not be silenced by the
 		// llm.ollama.unload switch (which defaults to false — see OllamaModelUtil). The opportunistic
@@ -1314,7 +1345,7 @@ public class TestPictureBookFull extends BaseTest {
 		// returns — poll briefly rather than asserting on a single immediate check.
 		boolean unloaded = false;
 		for (int i = 0; i < 10 && !unloaded; i++) {
-			if (!isModelLoaded(ollamaServer, PB_LLM_MODEL)) { unloaded = true; break; }
+			if (!isModelLoaded(ollamaServer, pbLlmModel(testProperties))) { unloaded = true; break; }
 			try { Thread.sleep(500); } catch (InterruptedException ignored) {}
 		}
 		assertTrue("Model should be unloaded from Ollama after unloadAll()", unloaded);
@@ -1352,16 +1383,21 @@ public class TestPictureBookFull extends BaseTest {
 		logger.info("Test: minimal real SD call against the live DGX Spark Swarm server (thermal diagnostic)");
 		setupTestContext();
 
-		String swarmServer = "http://192.168.1.42:7801"; // matches AccountManagerService7/web.xml's sd.server
+		/// Was hardcoded to http://192.168.1.42:7801. A test that ignores test.swarm.server tests
+		/// whatever host happens to be in the string, not the configured one — and reports a red that
+		/// says "SD is broken" when the truth is "that box isn't the SD server any more".
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		SdTestGate.requireSwarmConfigured(swarmServer);
 		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
 
 		BaseRecord sdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		SdTestGate.stampInstalledModel(sdConfig, testProperties);
 		sdConfig.set("steps", 8);
 		sdConfig.set("cfg", 5);
 		sdConfig.set("hires", false);
 		sdConfig.set("width", 512);
 		sdConfig.set("height", 512);
-		sdConfig.set("style", "illustration");
+		sdConfig.set("style", PB_DEFAULT_STYLE);
 
 		org.cote.accountmanager.olio.sd.swarm.SWTxt2Img s2i = org.cote.accountmanager.olio.sd.swarm.SWUtil.newSceneTxt2Img(
 			"A single small pebble on a plain white background, minimal test image",
@@ -1397,7 +1433,8 @@ public class TestPictureBookFull extends BaseTest {
 		logger.info("Test: real img2img call at PictureBook's exact composite-stage settings against the live DGX Spark Swarm server");
 		setupTestContext();
 
-		String swarmServer = "http://192.168.1.42:7801";
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		SdTestGate.requireSwarmConfigured(swarmServer);
 		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
 
 		// Step 1: generate a real landscape image to feed the composite as its init image —
@@ -1408,7 +1445,7 @@ public class TestPictureBookFull extends BaseTest {
 		landConfig.set("hires", false);
 		landConfig.set("width", 1024);
 		landConfig.set("height", 768);
-		landConfig.set("style", "illustration");
+		landConfig.set("style", PB_DEFAULT_STYLE);
 		org.cote.accountmanager.olio.sd.swarm.SWTxt2Img landReq = org.cote.accountmanager.olio.sd.swarm.SWUtil.newSceneTxt2Img(
 			"A quiet forest clearing at dawn, minimal test image", "blurry, lowres, watermark, text", landConfig);
 
@@ -1430,7 +1467,7 @@ public class TestPictureBookFull extends BaseTest {
 		compConfig.set("hires", false);
 		compConfig.set("width", 1024);
 		compConfig.set("height", 768);
-		compConfig.set("style", "illustration");
+		compConfig.set("style", PB_DEFAULT_STYLE);
 		org.cote.accountmanager.olio.sd.swarm.SWTxt2Img compReq = org.cote.accountmanager.olio.sd.swarm.SWUtil.newSceneTxt2Img(
 			"A quiet forest clearing at dawn with a small figure standing in it, minimal test image",
 			"blurry, lowres, watermark, text", compConfig);
@@ -1455,13 +1492,22 @@ public class TestPictureBookFull extends BaseTest {
 
 	@Test
 	public void TestThinkFalseOnChatOptions() {
-		logger.info("Test: think field on chatOptions defaults to true, settable to false");
+		logger.info("Test: think field on chatOptions defaults to FALSE, and is settable both ways");
 		try {
 			BaseRecord opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
 			assertNotNull("chatOptions should instantiate", opts);
 
+			/// chatOptionsModel.json declares "think": {"default": false}. This test used to assert
+			/// `true` — it was simply wrong about the schema, and had been red on that line rather
+			/// than telling anyone anything. `false` is also the default PictureBook depends on:
+			/// every structured-extraction call sets think:false explicitly, and a reasoning trace
+			/// leaking into a JSON payload is the failure mode stripThink() exists to mop up.
 			boolean thinkDefault = opts.get("think");
-			assertTrue("think default should be true", thinkDefault);
+			assertFalse("think must default to false (chatOptionsModel.json)", thinkDefault);
+
+			/// Settable in BOTH directions — the half that actually protects the extraction path.
+			opts.set("think", true);
+			assertTrue("think should be true after set", (boolean) opts.get("think"));
 
 			opts.set("think", false);
 			boolean thinkFalse = opts.get("think");
@@ -1592,21 +1638,17 @@ public class TestPictureBookFull extends BaseTest {
 		assertFalse("Output should not contain <think> tags with think:false",
 			content.contains("<think>"));
 
-		// Parse JSON array
-		String trimmed = content.trim();
-		if (trimmed.startsWith("```")) {
-			int nl = trimmed.indexOf('\n');
-			if (nl >= 0) trimmed = trimmed.substring(nl + 1);
-			if (trimmed.endsWith("```")) trimmed = trimmed.substring(0, trimmed.lastIndexOf("```")).trim();
-		}
-		int start = trimmed.indexOf('[');
-		int end = trimmed.lastIndexOf(']');
-		assertTrue("Response should contain a JSON array", start >= 0 && end > start);
-		trimmed = trimmed.substring(start, end + 1);
-
-		List<Map<String, Object>> scenes = JSONUtil.getList(trimmed, Map.class, null);
+		// Parse through THE PRODUCTION PARSER, not a copy of it.
+		//
+		// This block used to hand-roll fence-stripping + array-slicing + JSONUtil.getList. That copy
+		// had drifted from PictureBookUtil.parseLlmJsonArray - most importantly it never called
+		// stripThink() - so it failed on responses the real pipeline parses without trouble, and the
+		// red then said "the LLM is broken" when the truth was "the test's private parser is not the
+		// parser". Testing a copy tests the copy.
+		List<Map<String, Object>> scenes = PictureBookUtil.parseLlmJsonArray(content);
 		assertNotNull("Parsed scene list should not be null", scenes);
-		assertTrue("Should extract at least 1 scene", scenes.size() >= 1);
+		assertFalse("The production parser must extract at least one scene from the real LLM response. "
+			+ "Raw content was: " + content, scenes.isEmpty());
 
 		// Verify scene structure
 		Map<String, Object> firstScene = scenes.get(0);
@@ -1685,7 +1727,7 @@ public class TestPictureBookFull extends BaseTest {
 			sdConfig.setValue("steps", 15);
 			sdConfig.setValue("cfg", 5);
 			sdConfig.setValue("hires", false);
-			sdConfig.setValue("style", "illustration");
+			sdConfig.setValue("style", PB_DEFAULT_STYLE);
 			sdConfig.setValue("description", "A woman with a silver rapier stands in a dark forest, dramatic lighting, detailed, masterpiece");
 			sdConfig.setValue("negativePrompt", "blurry, lowres, bad anatomy, watermark, text");
 
@@ -1856,6 +1898,26 @@ public class TestPictureBookFull extends BaseTest {
 	 * style lets SDUtil.fillStyleDefaults pick+complete a random canonical style; a given style pins
 	 * it. Callers set any specific steps/cfg/hires/model they assert on via setValue afterward.
 	 */
+
+	/**
+	 * The deterministic blank-input landscape prompt, as it is actually PERSISTED.
+	 *
+	 * KI-38 made the config style suffix part of every resolved prompt, so the stored value is
+	 * "A detailed environment. ((<style clause>))." — not the bare fallback these assertions used to
+	 * compare against. Asserting the bare string was wrong twice over: it failed, and while it failed
+	 * it hid the real defect underneath (the production cache guard compared against the same bare
+	 * string and so condemned its own output as a hallucination on every call).
+	 *
+	 * The contract worth pinning is: the deterministic fallback text is what is there, the style is
+	 * the CONFIG's own style clause, and nothing the LLM invented appears. Built from the same
+	 * SDUtil seam the production code uses, so a style change can never make this a false red.
+	 */
+	private String expectedBlankLandscapePrompt(BaseRecord sdConfig) {
+		String clause = org.cote.accountmanager.olio.sd.SDUtil.getSDConfigPrompt(sdConfig);
+		if (clause == null || clause.isBlank()) return "A detailed environment";
+		return "A detailed environment. " + clause;
+	}
+
 	private BaseRecord newSdConfig(String style) throws Exception {
 		BaseRecord cfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
 		if (style != null) cfg.setValue("style", style);
@@ -2057,7 +2119,7 @@ public class TestPictureBookFull extends BaseTest {
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);
 
-		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, "KI32-SubRecord-Test-" + System.currentTimeMillis());
@@ -2224,7 +2286,7 @@ public class TestPictureBookFull extends BaseTest {
 		assertNotNull(createdWork);
 		String workObjectId = createdWork.get(FieldNames.FIELD_OBJECT_ID);
 
-		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 		SummarizeProgress cancelToken = new SummarizeProgress();
 
 		// Fire the cancel from a background thread only once the loop has actually processed at
@@ -2349,7 +2411,7 @@ public class TestPictureBookFull extends BaseTest {
 			+ "prompt with a conversational LLM refusal (KI-31 follow-up regression)");
 		setupTestContext();
 
-		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 		String sceneName = "KI31Followup-Scene-" + System.currentTimeMillis();
 		Map<String, Object> sceneData = new LinkedHashMap<>();
 		sceneData.put("title", sceneName);
@@ -2370,8 +2432,9 @@ public class TestPictureBookFull extends BaseTest {
 		// The actual misconfiguration: a template belonging to a DIFFERENT operation
 		// (extract-scenes needs {text}/{count}) applied here, where the real templates
 		// (scene-image-prompt/landscape-prompt) need setting/action/mood/charNarrations instead.
+		BaseRecord mismatchCfg = newSdConfig("art");
 		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
-			newSdConfig("art"), "pictureBook.extract-scenes");
+			mismatchCfg, "pictureBook.extract-scenes");
 
 		BaseRecord refetched = findNoteByObjectIdWithText(sceneObjectId);
 		assertNotNull(refetched);
@@ -2392,8 +2455,14 @@ public class TestPictureBookFull extends BaseTest {
 		assertNotNull("landscapePrompt must still be cached (via the fallback path, not left null)", cachedLandscapePrompt);
 		assertFalse("landscapePrompt must NOT be the LLM's conversational refusal / an unsubstituted-placeholder template",
 			PictureBookUtil.isErrorOrEmptyPayload(cachedLandscapePrompt));
-		assertEquals("landscapePrompt must fall back to the real setting text per resolveLandscapePrompt's own fallback",
-			"a quiet moonlit forest clearing", cachedLandscapePrompt);
+		/// The fallback is the SETTING text, plus the config's own style clause (KI-38 made the style
+		/// suffix part of every persisted prompt). Assert the setting survived and the style is the
+		/// config's — not exact equality against the pre-KI-38 bare string, which was simply stale.
+		assertTrue("landscapePrompt must fall back to the real setting text per resolveLandscapePrompt's "
+			+ "own fallback (\"a quiet moonlit forest clearing\") — got [" + cachedLandscapePrompt + "]",
+			cachedLandscapePrompt.startsWith("a quiet moonlit forest clearing"));
+		assertTrue("landscapePrompt must carry the config's own style clause, not one the LLM invented",
+			cachedLandscapePrompt.contains(org.cote.accountmanager.olio.sd.SDUtil.getSDConfigPrompt(mismatchCfg)));
 	}
 
 	/**
@@ -2410,7 +2479,7 @@ public class TestPictureBookFull extends BaseTest {
 			+ "must self-heal on next touch, not serve the same broken text forever");
 		setupTestContext();
 
-		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 		String sceneName = "KI31SelfHeal-Scene-" + System.currentTimeMillis();
 		Map<String, Object> sceneData = new LinkedHashMap<>();
 		sceneData.put("title", sceneName);
@@ -2461,13 +2530,14 @@ public class TestPictureBookFull extends BaseTest {
 	 */
 	@Test
 	public void TestCatatoneOpeningScenesRealPromptsAndImages() throws Exception {
+		requireCalibratedLlm("qwen3-vl:8b-instruct");
 		logger.info("Test: real catatone.docx opening (Duña/Jideon, outside-house then inside-house scenes) "
 			+ "through the full extract -> resolve-prompt -> generate-image pipeline, live");
 		setupTestContext();
 
 		String swarmServer = testProperties.getProperty("test.swarm.server");
 		assertNotNull("test.swarm.server must be set", swarmServer);
-		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 
 		byte[] fileBytes = FileUtil.getFile("./media/catatone.docx");
 		assertNotNull("catatone.docx should be readable from the module's media/ directory", fileBytes);
@@ -2623,7 +2693,7 @@ public class TestPictureBookFull extends BaseTest {
 			+ "setting/action/mood/characters are all blank (KI-31 follow-up, second root cause)");
 		setupTestContext();
 
-		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 		String sceneName = "KI31Blank-Scene-" + System.currentTimeMillis();
 		Map<String, Object> sceneData = new LinkedHashMap<>();
 		sceneData.put("title", sceneName);
@@ -2641,9 +2711,10 @@ public class TestPictureBookFull extends BaseTest {
 		assertNotNull("Scene note should be created", createdScene);
 		String sceneObjectId = createdScene.get(FieldNames.FIELD_OBJECT_ID);
 
+		BaseRecord blankCfg = newSdConfig("art");
 		long start = System.currentTimeMillis();
 		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
-			newSdConfig("art"), null);
+			blankCfg, null);
 		long elapsed = System.currentTimeMillis() - start;
 		logger.info("prepareSceneImagePrompts on a fully-blank scene took " + elapsed + "ms");
 		assertTrue("A blank scene must resolve near-instantly (no LLM round-trip) — took " + elapsed
@@ -2655,10 +2726,13 @@ public class TestPictureBookFull extends BaseTest {
 		String scenePrompt = (String) refetchedData.get("scenePrompt");
 		logger.info("Blank-scene landscapePrompt=[" + landscapePrompt + "] scenePrompt=[" + scenePrompt + "]");
 
-		assertEquals("A fully blank scene's landscapePrompt must be exactly the deterministic fallback, "
-			+ "never an LLM-fabricated result", "A detailed environment", landscapePrompt);
-		assertEquals("A fully blank scene's scenePrompt must be exactly SWUtil.styleClause(style)'s output",
-			"Rendered as a detailed illustration.", scenePrompt);
+		assertEquals("A fully blank scene's landscapePrompt must be exactly the deterministic fallback "
+			+ "plus the config's own style clause, never an LLM-fabricated result",
+			expectedBlankLandscapePrompt(blankCfg), landscapePrompt);
+		/// KI-38 deleted SWUtil.styleClause entirely; the one style seam is now
+		/// SDUtil.getSDConfigPrompt, so a blank scene's scenePrompt IS that clause.
+		assertEquals("A fully blank scene's scenePrompt must be exactly the config style clause",
+			org.cote.accountmanager.olio.sd.SDUtil.getSDConfigPrompt(blankCfg), scenePrompt);
 	}
 
 	/**
@@ -2677,7 +2751,7 @@ public class TestPictureBookFull extends BaseTest {
 			+ "must self-heal to the deterministic fallback, not keep serving the hallucinated text");
 		setupTestContext();
 
-		String chatConfigName = "PictureBook " + PB_LLM_MODEL + ".chat";
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
 		String sceneName = "KI31HallucinationHeal-Scene-" + System.currentTimeMillis();
 		Map<String, Object> sceneData = new LinkedHashMap<>();
 		sceneData.put("title", sceneName);
@@ -2702,8 +2776,9 @@ public class TestPictureBookFull extends BaseTest {
 		assertNotNull("Scene note should be created", createdScene);
 		String sceneObjectId = createdScene.get(FieldNames.FIELD_OBJECT_ID);
 
+		BaseRecord healCfg = newSdConfig("art");
 		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
-			newSdConfig("art"), null);
+			healCfg, null);
 
 		BaseRecord refetched = findNoteByObjectIdWithText(sceneObjectId);
 		Map<String, Object> refetchedData = JSONUtil.getMap(((String) refetched.get("text")).getBytes(), String.class, Object.class);
@@ -2711,7 +2786,19 @@ public class TestPictureBookFull extends BaseTest {
 		logger.info("Healed landscapePrompt=[" + healedLandscapePrompt + "]");
 
 		assertEquals("The poisoned hallucinated landscape prompt must be replaced with the "
-			+ "deterministic fallback, not served again", "A detailed environment", healedLandscapePrompt);
+			+ "deterministic fallback, not served again",
+			expectedBlankLandscapePrompt(healCfg), healedLandscapePrompt);
+
+		/// And the heal must STICK. Re-resolving with the same blank scene must return the cached
+		/// value untouched — before the guard was corrected it failed to recognise its own persisted
+		/// output (style suffix included) and re-generated on every single call, logging a false
+		/// "pre-fix hallucinated result" each time.
+		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
+			healCfg, null);
+		BaseRecord refetched2 = findNoteByObjectIdWithText(sceneObjectId);
+		Map<String, Object> data2 = JSONUtil.getMap(((String) refetched2.get("text")).getBytes(), String.class, Object.class);
+		assertEquals("The healed landscape prompt must be recognised as legitimate on the next call, "
+			+ "not condemned and regenerated", healedLandscapePrompt, (String) data2.get("landscapePrompt"));
 	}
 
 }

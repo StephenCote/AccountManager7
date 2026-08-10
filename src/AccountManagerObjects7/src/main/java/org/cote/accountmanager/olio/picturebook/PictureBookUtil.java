@@ -36,6 +36,7 @@ import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.llm.PromptResourceUtil;
+import org.cote.accountmanager.olio.llm.PromptTemplateComposer;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -788,7 +789,7 @@ public class PictureBookUtil {
             // NOT the full sdPrompt — which bakes in a per-character RANDOM art style and RANDOM
             // setting/era at creation (NarrativeUtil.getSDPrompt), the double-style/era bug. The book's
             // ONE style is applied once by appendConfigStyleOnce; the scene supplies its own
-            // setting/action/mood. physicalDescription/outfitDescription are style/setting-free.
+            // setting/action/mood.
             sceneNarration = (physicalDesc != null && !physicalDesc.isBlank()) ? physicalDesc.trim() : "";
             if (outfitDesc != null && !outfitDesc.isBlank()) {
                 String o = outfitDesc.trim();
@@ -797,6 +798,22 @@ public class PictureBookUtil {
             }
             if (sceneNarration.isBlank()) sceneNarration = portraitPrompt; // never blank
         }
+        // The comment above used to assert that physicalDescription/outfitDescription are
+        // "style/setting-free". They are not, and neither is a stored pbDescription: whatever wrote
+        // them may have carried the character's OWN creation-time style clause
+        // (getSDConfigPrompt(randomSDConfig) via NarrativeUtil.getSDPrompt). Reported live by Stephen
+        // 2026-08-10 — one composite prompt carried THREE styles: "Comic book panel in Archie Comics
+        // style ..." for the first character, "Fashion photography for CR Fashion Book ..." for the
+        // second, and the book's actual "Photograph taken with a Polaroid SX-70 ..." at the end,
+        // while the book and both portraits were configured as `photograph`.
+        //
+        // The portrait path already guards against this (buildPortraitPrompt strips before appending);
+        // the SCENE narration path never did, so every per-character style survived into the
+        // composite. Strip here so the book's single config style, applied once downstream, is the
+        // ONLY style in the prompt. Must happen BEFORE the FLUX/Kontext SDXL-weighting strip, while
+        // getSDConfigPrompt's balanced parentheses are still present for stripTrailingConfigStyle to
+        // recognise — after that strip the clause is bare prose and cannot be told from description.
+        sceneNarration = stripTrailingConfigStyle(sceneNarration);
         return new ResolvedCharacter(cp, cname, portraitPrompt, sceneNarration);
     }
 
@@ -807,6 +824,13 @@ public class PictureBookUtil {
      * portraits/landscape/scene, never a hand-rolled clause left to the LLM. Idempotent: a no-op if
      * the suffix is already present.
      */
+    /**
+     * The ONE string resolveLandscapePrompt may produce when it has no setting and no mood to work
+     * from. Named because two places must agree on it exactly: the write path and the cache-validation
+     * guard that decides whether a cached value is legitimate or a pre-fix hallucination.
+     */
+    private static final String BLANK_LANDSCAPE_FALLBACK = "A detailed environment";
+
     private static String appendConfigStyleOnce(String prompt, BaseRecord sdConfig) {
         String clause = SDUtil.getSDConfigPrompt(sdConfig);
         if (prompt == null || prompt.isBlank()) return clause;
@@ -953,7 +977,15 @@ public class PictureBookUtil {
             // so the check above never caught it). This is a precise check, not a fuzzy
             // content-similarity guess: with the guard in place, blank input can never again produce
             // anything but that one known string, so a mismatch is conclusive, not a heuristic.
-            if (hasRealInputNow || SDUtil.getSDConfigPrompt(sdConfig).equals(cached)) return cached;
+            // Same correction as the landscape guard below: compare against what the write path
+            // actually persists (style suffix + optional composition-context prefix applied), not
+            // against the bare style clause.
+            String deterministicBlankScene = appendConfigStyleOnce(
+                prependContextOnce(loadCompositionContext(user, scene), SDUtil.getSDConfigPrompt(sdConfig)), sdConfig);
+            if (hasRealInputNow || deterministicBlankScene.equals(cached)
+                    || SDUtil.getSDConfigPrompt(sdConfig).equals(cached)) {
+                return cached;
+            }
             logger.warn("Scene-image prompt: cached value doesn't match blank-input's only legitimate "
                 + "output even though setting/action/mood/characters are still blank — this must be a "
                 + "pre-fix hallucinated result; discarding and regenerating");
@@ -1169,9 +1201,22 @@ public class PictureBookUtil {
             // environment" — anything else cached must be a pre-fix hallucination from a blank-input
             // LLM call. Precise, not a fuzzy content-similarity guess: with the guard in place, blank
             // input can never again produce anything but that one string, so a mismatch is conclusive.
-            if (hasRealInput || "A detailed environment".equals(cached)) return cached;
+            //
+            // The comparison must be made against what this method ACTUALLY writes, not against the
+            // bare fallback text. KI-38 made the config style suffix (and the optional composition
+            // context prefix) part of the persisted value, so the stored string is
+            // "A detailed environment. ((Baroque painting ...))." — which never equalled the bare
+            // fallback. The guard therefore condemned its OWN legitimate output as a hallucination on
+            // every subsequent call: it re-generated forever and logged a false "pre-fix hallucinated
+            // result" warning each time. Reconstruct the deterministic value the same way the write
+            // path builds it, and keep accepting the bare form for values cached before the suffix.
+            String deterministicBlankOutput = appendConfigStyleOnce(
+                prependContextOnce(loadCompositionContext(user, scene), BLANK_LANDSCAPE_FALLBACK), sdConfig);
+            if (hasRealInput || deterministicBlankOutput.equals(cached) || BLANK_LANDSCAPE_FALLBACK.equals(cached)) {
+                return cached;
+            }
             logger.warn("Landscape prompt: cached value doesn't match blank-input's only legitimate "
-                + "output (\"A detailed environment\") even though setting/mood are still blank — "
+                + "output (\"" + deterministicBlankOutput + "\") even though setting/mood are still blank — "
                 + "this must be a pre-fix hallucinated result; discarding and regenerating");
         }
 
@@ -1180,7 +1225,7 @@ public class PictureBookUtil {
             logger.warn("Landscape prompt: setting and mood are both blank — skipping the LLM call "
                 + "(it cannot describe a scene it was given no information about) and using the "
                 + "deterministic fallback instead of risking an unrelated hallucinated result");
-            landscapePrompt = "A detailed environment";
+            landscapePrompt = BLANK_LANDSCAPE_FALLBACK;
         } else {
             Map<String, String> landVars = new LinkedHashMap<>();
             landVars.put("setting", setting);
@@ -1192,7 +1237,7 @@ public class PictureBookUtil {
             landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars, promptTemplateOverride);
             if (isErrorOrEmptyPayload(landscapePrompt)) {
                 logger.warn("Landscape prompt failed — falling back to setting text");
-                landscapePrompt = setting.isEmpty() ? "A detailed environment" : setting;
+                landscapePrompt = setting.isEmpty() ? BLANK_LANDSCAPE_FALLBACK : setting;
             }
         }
         // Same discrete, code-owned facts as the scene prompt: the book-level composition anchor
@@ -1351,7 +1396,14 @@ public class PictureBookUtil {
         return result.trim();
     }
 
-    private static List<Map<String, Object>> parseLlmJsonArray(String response) {
+    /**
+     * Public so tests can parse a real LLM response through THE PRODUCTION PARSER instead of
+     * reimplementing fence-stripping/array-slicing/JSON-binding in the test. A test copy of this
+     * logic tests the copy: TestLlmSceneExtraction had its own hand-rolled version that lacked the
+     * {@code stripThink} call and diverged, so it failed on responses production handles fine.
+     * Same rationale as {@link #isErrorOrEmptyPayload(String)} already being public.
+     */
+    public static List<Map<String, Object>> parseLlmJsonArray(String response) {
         return parseLlmJsonArray(response, null, null);
     }
 
@@ -1473,41 +1525,51 @@ public class PictureBookUtil {
         String system = null;
         String userTpl = null;
 
-        // Try user-customizable prompt template first (user's group → system library)
+        // KI-37: user-customizable prompt template first (user's group → system library), composed
+        // through the CANONICAL PromptTemplateComposer — the same path Chat/ChatUtil/
+        // InteractionExtractor use — rather than the hand-rolled section loop that used to live here.
+        //
+        // That loop matched only the literal roles "system"/"user", but a section's role is OPTIONAL
+        // per promptSectionModel.json ("If empty, inherits from parent template"), so every role-less
+        // section was silently DROPPED and never reached the LLM. It also ignored `extends`
+        // inheritance, per-section `condition`s, `sectionOrder`/`priority`, and ${...} token
+        // replacement, all of which the composer handles.
+        //
+        // Note the deliberate behavior change that follows from doing this correctly: compose()
+        // includes a section whose role is empty OR equals the target, so a shared/role-less section
+        // now appears in BOTH the system and user messages. That is the composer's defined semantics
+        // (PromptTemplateComposer.java:70-74) — PictureBook DB templates should set section roles
+        // explicitly where that duplication isn't wanted.
+        boolean templateResolved = false;
         try {
             BaseRecord pt = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_PROMPT_TEMPLATE, promptName, null);
             if (pt != null) {
-                // Compose system and user strings from sections
-                @SuppressWarnings("unchecked")
-                List<BaseRecord> sections = pt.get("sections");
-                if (sections != null) {
-                    StringBuilder sysBuf = new StringBuilder();
-                    StringBuilder usrBuf = new StringBuilder();
-                    for (BaseRecord sec : sections) {
-                        String role = sec.get("role");
-                        @SuppressWarnings("unchecked")
-                        List<String> lines = sec.get("lines");
-                        if (lines == null) continue;
-                        String text = String.join("\n", lines);
-                        if ("system".equals(role)) sysBuf.append(text).append("\n");
-                        else if ("user".equals(role)) usrBuf.append(text).append("\n");
-                    }
-                    if (sysBuf.length() > 0) system = sysBuf.toString().trim();
-                    if (usrBuf.length() > 0) userTpl = usrBuf.toString().trim();
-                }
+                templateResolved = true;
+                String composedSystem = PromptTemplateComposer.composeSystem(pt, null, chatConfig);
+                String composedUser = PromptTemplateComposer.composeUser(pt, null, chatConfig);
+                if (composedSystem != null && !composedSystem.isBlank()) system = composedSystem;
+                if (composedUser != null && !composedUser.isBlank()) userTpl = composedUser;
             }
         } catch (Exception e) {
             logger.debug("Prompt template lookup failed for " + promptName + ": " + e.getMessage());
         }
 
-        // Fallback to classpath resource
-        if (system == null) {
-        	logger.warn("Falling back to system prompt.");
-        	system = PromptResourceUtil.getString(promptName, "system");
-        }
-        if (userTpl == null) {
-        	logger.warn("Falling back to user prompt.");
-        	userTpl = PromptResourceUtil.getString(promptName, "user");
+        // Fallback to classpath resource.
+        //
+        // Only when NO DB template resolved at all. Backfilling a single missing half from the
+        // classpath (what this used to do) Frankensteins a prompt: a DB template supplying only
+        // system sections got its user half from an unrelated classpath resource, producing a
+        // mismatched, incoherent pair. If a template resolved but composed to nothing for one role,
+        // that is the template's own content and must not be silently patched from elsewhere.
+        if (!templateResolved) {
+            if (system == null) {
+                logger.warn("No prompt template record for '" + promptName + "' — falling back to the classpath system prompt.");
+                system = PromptResourceUtil.getString(promptName, "system");
+            }
+            if (userTpl == null) {
+                logger.warn("No prompt template record for '" + promptName + "' — falling back to the classpath user prompt.");
+                userTpl = PromptResourceUtil.getString(promptName, "user");
+            }
         }
         if (system == null || userTpl == null) {
             logger.warn("Prompt template not found: " + promptName);
@@ -2028,6 +2090,55 @@ public class PictureBookUtil {
      */
     private static BaseRecord createPersistedForeignInstance(BaseRecord user, String modelName) {
         return createPersistedForeignInstance(user, modelName, null);
+    }
+
+    /**
+     * Every sub-model {@link #createPersistedForeignInstance} persists per character. Each one
+     * independently resolves {@code "~/" + schema.getGroup()}, so an N-character book performs the
+     * same get-or-create 13 x N times.
+     */
+    private static final String[] FOREIGN_SUB_MODELS = new String[] {
+        OlioModelNames.MODEL_NARRATIVE,
+        ModelNames.MODEL_PROFILE,
+        OlioModelNames.MODEL_CHAR_STATISTICS,
+        OlioModelNames.MODEL_STORE,
+        OlioModelNames.MODEL_INSTINCT,
+        ModelNames.MODEL_PERSONALITY,
+        OlioModelNames.MODEL_CHAR_STATE
+    };
+
+    /**
+     * KI-42: resolve each foreign sub-model's group ONCE per request, up front, instead of 13 x N
+     * times across the character loop.
+     *
+     * <p>The character-loss bug itself is fixed in {@code PathUtil.makePath}, which used to hand back
+     * a sequence-allocated but never-inserted group when its own get-or-create INSERT lost a
+     * duplicate-key race — everything persisted against that phantom id then failed PBAC with "Group
+     * could not be found". This method is the other half of KI-42's stated direction: collapsing the
+     * repeated get-or-create to one call per group means the create branch is entered at most once
+     * per group per request, so the race has almost nothing left to run against.
+     *
+     * <p>Best-effort by design. A group that cannot be made is logged and skipped rather than
+     * aborting the book — {@code createPersistedForeignInstance} will try again for itself and
+     * report its own failure with the character's name attached, which is the more useful error.
+     */
+    private static void prepareForeignSubModelGroups(BaseRecord user) {
+        long organizationId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (String modelName : FOREIGN_SUB_MODELS) {
+            try {
+                ModelSchema ms = RecordFactory.getSchema(modelName);
+                if (ms == null || ms.getGroup() == null || !seen.add(ms.getGroup())) continue;
+                BaseRecord grp = IOSystem.getActiveContext().getPathUtil().makePath(user,
+                        ModelNames.MODEL_GROUP, "~/" + ms.getGroup(), GroupEnumType.DATA.toString(), organizationId);
+                if (grp == null) {
+                    logger.warn("Could not pre-resolve the '" + ms.getGroup() + "' group for "
+                            + modelName + " — per-character creation will retry and report its own failure");
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to pre-resolve the group for " + modelName + ": " + e.getMessage());
+            }
+        }
     }
 
     /**
@@ -2997,6 +3108,11 @@ public class PictureBookUtil {
                 }
             }
         }
+
+        // KI-42: resolve every foreign sub-model group once, before the character loop, rather than
+        // letting all 13 createPersistedForeignInstance call sites re-run the same get-or-create for
+        // each character.
+        prepareForeignSubModelGroups(user);
 
         // Create charPerson records — use LLM for detail extraction if needed
         Map<String, String> charObjectIds = new LinkedHashMap<>();

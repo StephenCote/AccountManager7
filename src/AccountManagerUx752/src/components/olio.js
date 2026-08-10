@@ -37,7 +37,13 @@ async function setApparelDescription(app, wears) {
     if (wdesc.length == 0) {
         app.description = "No apparel worn.";
     }
-    await page.patchObject({ schema: 'olio.apparel', id: app.id, description: app.description });
+    // KI-35: olio.apparel also inherits common.name (required/$notEmpty), and the writer validates
+    // the patch record itself — an {id, description} patch is rejected outright, so the apparel
+    // description silently never updated after dressing up/down either.
+    let ok = await page.patchObject({ schema: 'olio.apparel', id: app.id, objectId: app.objectId, name: app.name, description: app.description });
+    if (ok === false || ok === null) {
+        getPage().toast('error', 'Failed to update apparel description');
+    }
     m.redraw();
 }
 
@@ -92,6 +98,26 @@ async function dressCharacter(inst, dressUp) {
             await am7model.forms.commands.narrate(undefined, inst);
         }
     }
+}
+
+/**
+ * KI-35. Build a wearable patch that the server will actually accept.
+ *
+ * `name` is included even though it is unchanged. olio.wearable inherits olio.item -> common.name,
+ * whose name field is required/allowNull:false/$notEmpty, and the writer validates the PATCH RECORD
+ * ITSELF rather than the merged result. An {id, inuse} patch therefore fails with
+ * "Validation of olio.wearable.name (null) failed" -> "Failed to modify record", which surfaces only
+ * in the server log: the reported symptom was inuse staying true forever ("always worn") with
+ * getWearing/describeOutfit still reporting the full outfit after dressing down.
+ *
+ * This was originally diagnosed as PBAC refusing a cross-owner write, because ApparelUtil creates
+ * wearables as the Olio user while the character belongs to the acting user. That is NOT the cause:
+ * verified live on a freshly seeded Olio world that the acting user's patch is authorized
+ * (AUDIT PERMIT ... to MODIFY olio.wearable) purely via the existing Olio User role grants, with no
+ * additional entitlement. See .claude/rules/model-api.md, "PATCH - partial updates".
+ */
+function wearablePatch(w, inuse) {
+    return { schema: 'olio.wearable', id: w.id, objectId: w.objectId, name: w.name, inuse: inuse };
 }
 
 async function dressApparel(vapp, dressUpDir) {
@@ -182,10 +208,10 @@ async function dressApparel(vapp, dressUpDir) {
             let lvl = am7model.enums.wearLevelEnumType.findIndex(we => we == w.level.toUpperCase());
             if (lvl > newLevel && w.inuse) {
                 w.inuse = false;
-                patch.push({ schema: 'olio.wearable', id: w.id, inuse: false });
+                patch.push(wearablePatch(w, false));
             } else if (lvl <= newLevel && !w.inuse) {
                 w.inuse = true;
-                patch.push({ schema: 'olio.wearable', id: w.id, inuse: true });
+                patch.push(wearablePatch(w, true));
             }
         }
     });
@@ -200,7 +226,14 @@ async function dressApparel(vapp, dressUpDir) {
     }
 
     let aP = patch.map(p => page.patchObject(p));
-    await Promise.all(aP);
+    let results = await Promise.all(aP);
+    // KI-35: never swallow the result. A rejected patch used to leave inuse permanently true
+    // ("always worn") while the UI reported success and describeOutfit kept listing the full outfit.
+    let failed = results.filter(r => r === false || r === null || r === undefined);
+    if (failed.length) {
+        page.toast('error', 'Failed to update ' + failed.length + ' of ' + patch.length + ' wearables');
+        return false;
+    }
 
     await am7client.clearCache("olio.wearable");
     await am7client.clearCache("olio.apparel");

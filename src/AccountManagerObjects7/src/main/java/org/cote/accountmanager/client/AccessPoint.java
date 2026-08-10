@@ -23,6 +23,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionEnumType;
@@ -404,16 +405,26 @@ public class AccessPoint {
 		
 	}
 	
+	/// KI-36: a caller-supplied model name that resolves to no schema (e.g. the literal string
+	/// "undefined" sent by a buggy client) used to reach RecordUtil.getCommonFields, whose
+	/// `ms.getQuery()` dereferences the null ModelSchema and throws a raw NullPointerException all
+	/// the way out to the default exception mapper as a 500. Treat it as the bad input it is:
+	/// same INVALID audit + null return as a null model name, so every caller (REST or otherwise)
+	/// gets one predictable "not resolvable" signal instead of a stack trace.
+	public static boolean isResolvableModel(String model) {
+		return model != null && RecordFactory.getSchema(model) != null;
+	}
+
 	public BaseRecord findByObjectId(BaseRecord contextUser, String model, String objectId) {
-		if(model == null || objectId == null) {
+		if(!isResolvableModel(model) || objectId == null) {
 			failAudit(ActionEnumType.READ, ResponseEnumType.INVALID, contextUser, null, null, "Invalid model or objectId");
 			return null;
 		}
 		return find(contextUser, QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId));
 	}
-	
+
 	public BaseRecord findById(BaseRecord contextUser, String model, long id) {
-		if(model == null || id <= 0L) {
+		if(!isResolvableModel(model) || id <= 0L) {
 			failAudit(ActionEnumType.READ, ResponseEnumType.INVALID, contextUser, null, null, "Invalid model or id");
 			return null;
 		}
@@ -421,7 +432,7 @@ public class AccessPoint {
 	}
 
 	public BaseRecord findByUrn(BaseRecord contextUser, String model, String urn) {
-		if(model == null || urn == null) {
+		if(!isResolvableModel(model) || urn == null) {
 			failAudit(ActionEnumType.READ, ResponseEnumType.INVALID, contextUser, contextUser, null, "Invalid model or urn");
 			return null;
 		}

@@ -1368,6 +1368,14 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
                 layout: 'one',
                 format: 'range'
             },
+            /// KI-43: SDUtil.generateMannequinImages reads mannequinCreativity, NOT denoisingStrength.
+            /// 'range' gives the instance the 0-100 UI <-> 0-1 wire decorator so the slider actually
+            /// reaches the field the server consumes.
+            mannequinCreativity: {
+                label: 'Mannequin Creativity',
+                layout: 'one',
+                format: 'range'
+            },
             shared: {
                 label: "Save Shared",
                 layout: 'one'

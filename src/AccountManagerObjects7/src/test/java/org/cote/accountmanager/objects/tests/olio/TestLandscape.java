@@ -190,7 +190,8 @@ public class TestLandscape extends BaseTest {
 
 		String swarmServer = testProperties.getProperty("test.swarm.server");
 		if (swarmServer == null || swarmServer.isEmpty()) {
-			logger.warn("Skipping integration test - test.swarm.server not configured");
+			/// KI-39/KI-48: a visible Skip, not a silent pass.
+			org.cote.accountmanager.objects.tests.SdTestGate.requireSwarmConfigured(null);
 			return;
 		}
 
@@ -245,7 +246,8 @@ public class TestLandscape extends BaseTest {
 
 		String swarmServer = testProperties.getProperty("test.swarm.server");
 		if (swarmServer == null || swarmServer.isEmpty()) {
-			logger.warn("Skipping integration test - test.swarm.server not configured");
+			/// KI-39/KI-48: a visible Skip, not a silent pass.
+			org.cote.accountmanager.objects.tests.SdTestGate.requireSwarmConfigured(null);
 			return;
 		}
 
@@ -310,7 +312,8 @@ public class TestLandscape extends BaseTest {
 
 		String swarmServer = testProperties.getProperty("test.swarm.server");
 		if (swarmServer == null || swarmServer.isEmpty()) {
-			logger.warn("Skipping integration test - test.swarm.server not configured");
+			/// KI-39/KI-48: a visible Skip, not a silent pass.
+			org.cote.accountmanager.objects.tests.SdTestGate.requireSwarmConfigured(null);
 			return;
 		}
 

@@ -247,9 +247,33 @@ public class OlioContext {
 		}
 		adminRole = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), octx.getOrganizationId());
 		if(adminRole != null) {
+			/// KI-35. The Olio roles already exist, so the one-time provisioning below is done — but
+			/// the ACTING USER's enrolment is NOT one-time, and used to sit below this return.
+			///
+			/// Consequence: `member(olioUser, userRole, config.getUser(), ...)` ran only in the run
+			/// that first created the Olio Admin role, i.e. for exactly one user, ever, per
+			/// organization. Every later acting user got no membership in ~/Roles/Olio User and
+			/// therefore none of the world-group grants that role carries. ApparelUtil deliberately
+			/// creates apparel/wearables/qualities as the OLIO user (so colours resolve from the
+			/// shared colour library), while the character and store belong to the acting user — so
+			/// for any user who did not happen to initialise the world, dress-up/down was a write to
+			/// another owner's record with no grant behind it. PBAC refused it, `inuse` stayed true
+			/// forever ("always worn"), and describeOutfit kept reporting the full outfit.
+			///
+			/// userRole must also be resolved here: the early return used to leave it null on every
+			/// subsequent init, and only configureWorldAuthorization happened to reassign it later.
+			///
+			/// enrole() is idempotent (it checks isMember first), so this is safe to run every time.
+			if(userRole == null) {
+				userRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio User", RoleEnumType.USER.toString(), octx.getOrganizationId());
+			}
+			if(userRole != null && !enrole(config.getUser(), userRole)) {
+				logger.warn("Failed to enrol " + config.getUser().get(FieldNames.FIELD_NAME)
+					+ " in the Olio User role — writes to Olio-owned apparel/wearables will be denied");
+			}
 			return;
 		}
-		
+
 		initConfig = true;
 		adminRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), octx.getOrganizationId());
 		userRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio User", RoleEnumType.USER.toString(), octx.getOrganizationId());

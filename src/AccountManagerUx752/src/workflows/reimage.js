@@ -120,7 +120,7 @@ async function reimage(entity, inst) {
 
     let sdEntity = await am7sd.fetchTemplate(true);
     if (!sdEntity) {
-        sdEntity = am7model.newPrimitive('olio.sdConfig');
+        sdEntity = am7model.newPrimitive('olio.sd.config');
     }
     let cinst = lastReimage || am7model.prepareInstance(sdEntity, am7model.forms.sdConfig);
 

@@ -88,6 +88,28 @@ say so explicitly and keep exactly one copy. Mutated fields shared across thread
 url+token pair must be swapped as one immutable holder or a reader can observe a torn pair (new URL with
 the old token, i.e. a credential sent to the previously-configured host).
 
+## Read paths must not create, and never as the org admin
+
+A create-or-get utility called from a read path lets **any caller trigger admin-privileged writes as a
+side effect of reading**. `LibraryUtil.getCreateSharedLibrary` is the standing example: its create
+branch runs `makePath(octx.getAdminUser(), ...)` (`LibraryUtil.java:43`), then a raw
+`ctx.getRecordUtil().createRecord(...)` PBAC bypass (`:45`), then role permission grants (`:49`). So a
+read that happens to miss becomes group creation plus entitlement grants, performed as the org admin,
+on behalf of someone who may be authorized for none of it.
+
+**Split create-or-get utils into a find-only read path and an authorized write path.** Reads use
+`findPath` and treat absent as "defaults"; only an explicitly authorized write calls the create-or-get.
+This is what `aiDocs/UxFeatureFlagDesign.md` D1 does; the trap has now been hit twice.
+
+Two related properties of `LibraryUtil` worth knowing before touching it: permissions are configured
+**only on the create branch** (`getCreateSharedGroup` returns early at `:40-42`, before
+`configureLibraryPermissions` at `:49`), so `enableCRU=false` is an assumption about history rather
+than an enforced invariant and nothing repairs an already over-granted group; and grant calls must
+follow group creation — `configureLibraryRootPermissions` bails at `:90-94` when `/Library` does not
+exist yet, so callers that grant *before* `getCreateSharedLibrary` (e.g. `ChatLibraryUtil.java:47-48`)
+silently no-op the root grant on the first write in a fresh org. Grants are idempotent via
+`MemberUtil.member(..., true)`, so ordering them after creation is always safe.
+
 ## Config: DB-backed vs boot-pinned
 
 `docker/entrypoint.sh` regenerates `WEB-INF/web.xml` from a template via `envsubst` on **every** boot, so

@@ -10206,6 +10206,13 @@
 			"default": 0.75
 		},
 		{
+			"name": "mannequinCreativity",
+			"type": "double",
+			"minValue": 0.0,
+			"maxValue": 1.0,
+			"description": "img2img denoise for the mannequin base image (SDUtil.generateMannequinImages). NO DEFAULT ON PURPOSE - denoisingStrength's 0.75 schema default is never null and silently overrode the intended value (KI-43); unset here means the server's MANNEQUIN_INIT_IMAGE_CREATIVITY (0.85) applies."
+		},
+		{
 			"name": "loras",
 			"type": "list",
 			"baseType": "string",

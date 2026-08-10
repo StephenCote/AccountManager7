@@ -1,0 +1,8 @@
+# Shell scripts and the docker config they source MUST be LF, whatever the checkout platform does.
+# A CRLF entrypoint.sh makes the container fail at exec with the famously unhelpful
+# "exec /usr/local/bin/entrypoint.sh: no such file or directory" — the kernel is reporting that
+# "/bin/bash\r" does not exist, not the script. Observed 2026-08-10 on a Windows checkout.
+*.sh            text eol=lf
+docker/**       text eol=lf
+*.conf          text eol=lf
+Dockerfile      text eol=lf

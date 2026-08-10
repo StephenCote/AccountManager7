@@ -179,17 +179,19 @@ public class TestPromptLibrary extends BaseTest {
 		logger.info("testPromptTemplateTemplateNames: verify template names array");
 		String[] names = ChatUtil.getPromptTemplateTemplateNames();
 		assertNotNull("Template names should not be null", names);
-		assertEquals("Should have 3 prompt template templates", 3, names.length);
 
-		boolean hasAnalysis = false, hasCoding = false, hasSummary = false;
-		for (String n : names) {
-			if ("contentAnalysis".equals(n)) hasAnalysis = true;
-			if ("coding".equals(n)) hasCoding = true;
-			if ("summary".equals(n)) hasSummary = true;
+		/// Assert on MEMBERSHIP, not on a magic count. The hardcoded "3" predated the six
+		/// pictureBook templates being added to the library and simply went stale: the list is
+		/// expected to grow, and a count assertion turns every legitimate addition into a red test
+		/// that says nothing about whether the templates are usable.
+		java.util.List<String> nameList = java.util.Arrays.asList(names);
+		for (String required : new String[] {
+				"contentAnalysis", "coding", "summary",
+				"pictureBook.extract-scenes", "pictureBook.extract-chunk", "pictureBook.extract-character",
+				"pictureBook.scene-blurb", "pictureBook.landscape-prompt", "pictureBook.scene-image-prompt" }) {
+			assertTrue("Should include '" + required + "' — got " + nameList, nameList.contains(required));
 		}
-		assertTrue("Should include 'contentAnalysis'", hasAnalysis);
-		assertTrue("Should include 'coding'", hasCoding);
-		assertTrue("Should include 'summary'", hasSummary);
+		assertEquals("Template names must be unique", nameList.size(), new java.util.HashSet<>(nameList).size());
 
 		logger.info("testPromptTemplateTemplateNames PASSED");
 	}
@@ -206,7 +208,22 @@ public class TestPromptLibrary extends BaseTest {
 			assertTrue("Template '" + name + "' should have sections field", template.hasField("sections"));
 			List<BaseRecord> sections = template.get("sections");
 			assertNotNull("Template '" + name + "' sections should not be null", sections);
-			assertTrue("Template '" + name + "' should have at least 3 sections", sections.size() >= 3);
+			/// The real contract is that a template can actually be COMPOSED for both halves of a
+			/// chat turn, not that it reaches an arbitrary section count. The general-purpose
+			/// templates carry 5-6 sections; the pictureBook ones are a system/user pair, which is
+			/// complete for their purpose — the old ">= 3" only ever encoded the shape of the
+			/// original three.
+			assertTrue("Template '" + name + "' should have at least one section", sections.size() >= 1);
+			boolean hasSystem = false, hasUser = false;
+			for (BaseRecord sec : sections) {
+				String role = sec.get("role");
+				/// A role-less section belongs to EVERY role (PromptTemplateComposer.compose).
+				if (role == null || role.isEmpty()) { hasSystem = true; hasUser = true; }
+				else if ("system".equals(role)) hasSystem = true;
+				else if ("user".equals(role)) hasUser = true;
+			}
+			assertTrue("Template '" + name + "' must contribute a system half", hasSystem);
+			assertTrue("Template '" + name + "' must contribute a user half", hasUser);
 
 			// Verify each section has required fields
 			for (BaseRecord section : sections) {

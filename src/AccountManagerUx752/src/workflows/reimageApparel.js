@@ -21,7 +21,7 @@ async function reimageApparel(entity, inst) {
     let sdModelList = await am7sd.fetchModels();
     let sdEntity = await am7sd.fetchTemplate(true);
     if (!sdEntity) {
-        sdEntity = am7model.newPrimitive('olio.sdConfig');
+        sdEntity = am7model.newPrimitive('olio.sd.config');
     }
     let cinst = am7model.prepareInstance(sdEntity, am7model.forms.sdMannequinConfig || am7model.forms.sdConfig);
 
@@ -36,6 +36,20 @@ async function reimageApparel(entity, inst) {
     if (sharedConfig) am7sd.applyConfig(cinst, sharedConfig);
 
     let seed = cinst.api.seed ? String(cinst.api.seed()) : '-1';
+
+    /// KI-43: mannequinCreativity deliberately carries no schema default — a default is never null
+    /// and would make the server's own measured-best 0.85 unreachable, exactly the trap
+    /// denoisingStrength (default 0.75) fell into. am7model.newPrimitive still materializes the
+    /// double as 0, and SDUtil.generateMannequinImages treats 0 as "unset" (`cfgDenoise > 0`), so 0
+    /// on the wire IS the server default. Display it as such rather than as a literal 0, which would
+    /// otherwise promise a generation that returns the bare mannequin. Consequence, accepted: an
+    /// explicit 0 can't be distinguished from unset — and 0 creativity means "don't clothe the
+    /// mannequin at all", which is not a setting anyone wants.
+    const MANNEQUIN_CREATIVITY_SERVER_DEFAULT_UI = 85;
+    function mannequinCreativityUi() {
+        let v = cinst.entity.mannequinCreativity;
+        return (typeof v === 'number' && v > 0) ? Math.round(v * 100) : MANNEQUIN_CREATIVITY_SERVER_DEFAULT_UI;
+    }
 
     function renderContent() {
         return m('div', { class: 'p-4 space-y-3' }, [
@@ -56,15 +70,20 @@ async function reimageApparel(entity, inst) {
                         onInput: function (e) { if (cinst.api.cfg) cinst.api.cfg(parseFloat(e.target.value) || 5); }
                     })
                 ]),
+                /// KI-43: this slider used to write denoisingStrength, which SDUtil.generateMannequinImages
+                /// never reads — every mannequin rendered at the hardcoded 0.85 no matter where it sat.
+                /// It now drives mannequinCreativity, the field the mannequin img2img pass actually
+                /// consumes, through cinst.api.* so the forms' 'range' decorator performs the
+                /// 0-100 UI <-> 0-1 wire conversion (writing e.target.value onto cinst.entity bypasses it).
+                /// Unset shows the server's own MANNEQUIN_INIT_IMAGE_CREATIVITY (0.85) and stays unset on
+                /// the wire, so an untouched slider keeps the measured-best default rather than pinning it.
                 m('div', [
-                    m('label', { class: 'field-label' }, 'Denoising: ' + (cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75)),
+                    m('label', { class: 'field-label' }, 'Mannequin Creativity: ' + mannequinCreativityUi()),
                     formFieldRenderers.renderRange({
-                        value: String(cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75),
-                        min: 0, max: 100, step: 5, label: 'Denoising',
+                        value: String(mannequinCreativityUi()),
+                        min: 0, max: 100, step: 5, label: 'Mannequin Creativity',
                         onInput: function (e) {
-                            let v = parseInt(e.target.value);
-                            if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(v);
-                            else cinst.entity.denoisingStrength = v / 100;
+                            cinst.api.mannequinCreativity(parseInt(e.target.value));
                         }
                     })
                 ]),

@@ -692,6 +692,42 @@ public class PolicyUtil {
 		return policyBase;
 	}
 	
+	/**
+	 * Describe an unresolved resource for the "Group could not be found" diagnostic.
+	 *
+	 * <p>This used to be an inline {@code resource.copyRecord(new String[]{... FIELD_URN ...})
+	 * .toFullString()}. {@code copyRecord} returns NULL when the record's model does not define one
+	 * of the requested fields, so for anything inheriting {@code common.baseLight} — which has no
+	 * {@code urn} — the DIAGNOSTIC ITSELF threw a NullPointerException. That turned an ordinary
+	 * authorization outcome on models like {@code olio.narrative} and {@code olio.wearable} into an
+	 * uncaught NPE propagating out of {@code AuthorizationUtil.canUpdate}, masking the real
+	 * condition (this is the latent defect noted alongside KI-42).
+	 *
+	 * <p>Asks only for fields the model actually has, and never lets logging throw.
+	 */
+	private static String describeUnresolvedResource(BaseRecord resource) {
+		if(resource == null) {
+			return "(null resource)";
+		}
+		try {
+			List<String> present = new ArrayList<>();
+			for(String f : new String[] {
+					FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
+					FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH,
+					FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ORGANIZATION_PATH
+				}) {
+				if(resource.hasField(f)) {
+					present.add(f);
+				}
+			}
+			BaseRecord copy = resource.copyRecord(present.toArray(new String[0]));
+			return resource.getSchema() + " " + (copy != null ? copy.toFullString() : "(copyRecord returned null)");
+		}
+		catch(Exception e) {
+			return resource.getSchema() + " (could not be described: " + e.getMessage() + ")";
+		}
+	}
+
 	/// Note: actor is for object types other than the contextUser, including other users, persons, and accounts.
 	///
 	public BaseRecord getResourcePolicy(String name, BaseRecord actor, String token, BaseRecord resource) throws ReaderException {
@@ -743,11 +779,7 @@ public class PolicyUtil {
 				else {
 					logger.error("Group could not be found");
 					logger.error(dbgRoute);
-					logger.error(resource.copyRecord(new String[] {
-							FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
-							FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH,
-							FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ORGANIZATION_PATH
-						}).toFullString());
+					logger.error(describeUnresolvedResource(resource));
 					ErrorUtil.printStackTrace();
 				}
 				//IOSystem.getActiveContext().getPathUtil().setTrace(false);

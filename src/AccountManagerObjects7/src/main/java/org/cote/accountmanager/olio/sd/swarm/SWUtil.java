@@ -60,7 +60,8 @@ public class SWUtil {
 			s2i.setRefinerUpscale(cfg.get("refinerUpscale"));
 			s2i.setRefinerUpscaleMethod(cfg.get("refinerUpscaleMethod"));
 			s2i.setRefinerCfgScale(cfg.get("refinerCfg"));
-			s2i.setRefinerControlPercentage(cfg.get("refinerControlPercentage"));
+			s2i.setRefinerControlPercentage(cfg.get("refinerControlPercentage") instanceof Number
+				? ((Number) cfg.get("refinerControlPercentage")).doubleValue() : 0.2);
 		}
 		else {
 			s2i.setRefinerControlPercentage(0.0);
@@ -112,7 +113,8 @@ public class SWUtil {
 			s2i.setRefinerUpscale(cfg.get("refinerUpscale"));
 			s2i.setRefinerUpscaleMethod(cfg.get("refinerUpscaleMethod"));
 			s2i.setRefinerCfgScale(cfg.get("refinerCfg"));
-			s2i.setRefinerControlPercentage(cfg.get("refinerControlPercentage"));
+			s2i.setRefinerControlPercentage(cfg.get("refinerControlPercentage") instanceof Number
+				? ((Number) cfg.get("refinerControlPercentage")).doubleValue() : 0.2);
 		} else {
 			s2i.setRefinerControlPercentage(0.0);
 		}
