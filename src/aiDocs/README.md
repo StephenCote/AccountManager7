@@ -31,6 +31,7 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 |---|---|---|
 | `RPG.md` | Turn-based RPG design & build plan (living design document) | reference |
 | `PictureBookDesign.md` | Picture Book feature — surviving design/architecture reference | reference |
+| `PictureBook2Plan.md` | **PictureBook 2.0** — plan for (a) an Olio `Books` universe + one world per book, (b) a persisted workflow DAG (ComfyUI-style provenance + dependent-branch regeneration), (c) an optional ComfyUI backend. Includes the per-book PBAC role model and the security findings that block it. Awaiting ratification of §10 Q1-Q12 (2026-08-11) | active |
 | `PictureBookSdConfigRefactor.md` | Picture Book image style: one common `olio.sd.config` + per-scene overrides (CardGame pattern) — refactor design + implementation status (KI-38 FIXED 2026-08-03; KI-39 open) | active |
 
 ## Chat / prompt / conversation quality
