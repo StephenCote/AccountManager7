@@ -1,8 +1,74 @@
 # PictureBook 2.0 — Design & Implementation Plan
 
-**Date:** 2026-08-11
-**Status:** PLAN ONLY — awaiting Stephen's ratification of §9 open questions. No code written.
+**Date:** 2026-08-11, revised 2026-08-12
+**Status:** **DESIGN COMPLETE — READY FOR IMPLEMENTATION.** Reviewed by `security-reviewer` and
+`architect` (returned CHANGES-NEEDED; all five blocking findings folded in). Implementation to be done in
+a separate conversation.
 **Supersedes (on completion):** `PictureBookDesign.md` §1-8 storage model; `PictureBookSdConfigRefactor.md` config model.
+
+---
+
+## 0. Implementation handoff — read this first
+
+**Start here:** §7 Phase 1. Nothing depends on KI-60 being closed.
+
+### Ratified decisions (do not re-litigate)
+
+| # | Decision | Where |
+|---|---|---|
+| 1 | Olio security fixes land **inside PB2 phase 1** → phase 1 is a breaking change to the game and gates on the **existing game/arena/Olio suites**, not on `TestPictureBookCustom` | §7 |
+| 2 | **Uniform `olioUser` ownership** for every `olio.pb.*` record, including `.book` and `.run`; authorship via `createdByObjectId` | §5.2 |
+| 3 | Four roles per tier: `AdminRole`, `UserRole`, `AuthorRole`, `EditorRole` | §5.3 |
+| 4 | The two live auth defects (`/cancel` principal; scene endpoints not authorizing their book) ship **with phase 4** | §5.6 |
+| 5 | **Universe/world lifecycle hidden inside PictureBook** — no world management API/UI; the book carries the FKs; "list" = list books | §3.1b |
+| 6 | **Universe/world ids travel with the call**, defaulting to the current pair | §4 Blocker 2 |
+| 7 | Reuse Rocket's **concepts, not its code** | §5.3 guardrail |
+| 8 | **Explicit grants at both tiers** is the primary authorization design. The role-membership join is **not** a PB2 dependency | §5.3 point 2 |
+| 9 | **No read-up.** Resolve book storage **by FK**, never by path traversal as the acting user | §5.6b |
+
+### Hard guardrails
+
+- **Never `-Dreset`**, and **never reset `am7db`**. New tables arrive via `IOSystem.java:113-141`.
+- **Objects7 JUnit → `am7db` (`15432`)** — key location dependency, cannot be repointed.
+  **REST/App/Ux → `am7test` containers** (`9443`, pg `15433/am72db`), which *are* resettable. §9.
+- **Do not port** AM6's materialised effective-authorization layer, `pendUpdate` bookkeeping, direct
+  participation-table manipulation, or the bulk-factory machinery. §5.3 guardrail.
+- **Do not touch `PathUtil`** — KI-60 is Stephen's. §7.
+- Preserve the deliberate no-schema-default fields (`flux2Cfg`, `flux2ReferenceSize`,
+  `flux2IncludeLandscapeRef`, `kontextModel`, `mannequin*`); a default there makes `flux2Defaults.json` dead.
+- `TestPictureBookCustom#TestPictureBookCustomPipeline` must pass **unchanged**. If it needs editing, stop.
+
+### Open questions that still block work
+
+| Q | Blocks | Note |
+|---|---|---|
+| Q15 | canvas cast entities (phase 5a) | "Meadow Herd" is a collective — bind to `auth.group` or a new `olio.pb.castGroup`? |
+| Q17 | book deletion (phase 3) | orphan-world reconcile shape |
+| Q19 | phase 1 scope | relocating `~/Roles/Olio *` to group paths needs a migration — in or out? |
+| Q12 | phase 3b | Comfy: one-node-one-call first, Swarm stays default? |
+
+Q1-Q11, Q13-Q14, Q16, Q18, Q20 are answered inline. §10.
+
+### Verified-but-unconfirmed items — do not restate as fact
+
+- **ISO42001's role-to-role wiring may be inert** (§5.3, "SUSPECTED DEFECT"). Code-reading inference;
+  a verification procedure is given. Confirm before acting on it.
+- **Rocket's private `Rocket.enrollInCommunityLifecycle`/`enrollInCommunityProject`** were not read —
+  only the public wrappers. Their participation writes and the `getViewPermissionForMapType` permission
+  argument have no direct AM7 analogue and need mapping. §5.3.
+
+### Suggested cleanup KIs to log (not part of PB2)
+
+1. Dead effective-role infrastructure: `effectiveRoleTemplate.sql`/`effectiveActorRoleTemplate.sql` call
+   `roles_to_leaf`, **undefined in AM7**; no Java reads the materialised views;
+   `refreshMaterializedViews()` has one caller (`Console7/AdminAction.java:193`).
+2. `configureWorldAuthorization`'s `parentId`-only `findRecord` (`OlioContext.java:188-189`) is
+   first-row-wins and can grant on an unrelated universe/world. Live today on multi-universe DBs.
+3. `initialized = true` (`:379`) precedes authorization (`:394-395`) inside a swallow-all catch (`:403-406`).
+4. `OlioContextUtil`'s cache key omits `organizationId` — cross-tenant.
+5. `AccessPoint.setPermitBulkContainerApproval` is a global, non-`volatile` authorization relaxation.
+6. Olio grants `Delete` on `/Library/*`, exceeding `LibraryUtil`'s own CRU.
+7. `PictureBookService.java:56` javadoc path is stale (`~/PictureBooks` vs `~/Data/PictureBooks`).
 
 Three changes, planned together because they share one root cause:
 
@@ -752,7 +818,18 @@ per-group grants to a per-book principal; granting a parent does not work.
 **Books Reader or Writer**. The universe role alone gives corpora access and nothing else; the book role
 alone is useless because apparel templates and colours live in the universe.
 
-#### RATIFIED (Stephen, 2026-08-11) — role hierarchy is the inheritance mechanism; listing universes is fine
+#### RATIFIED 2026-08-11 — listing universes is fine. PARTLY SUPERSEDED 2026-08-12 on the mechanism.
+
+> **Reconciliation, so this section is not read as current in full.** The *authorization scope* ruling below
+> stands and is final: `Olio User` gets Read at the top so universes can be listed, and book **existence**
+> being org-wide discoverable is intended (Q14 closed) — see also the root-reference principle in §5.6b,
+> which explains *why* an explicit entry-point grant is the mechanism for reachability.
+> **What does NOT stand** is this section's claim that **role hierarchy is the inheritance mechanism** and
+> that grants therefore "only need to be written at the book tier" (which it also credited with resolving
+> Q10 scale). That was superseded by the 2026-08-12 analysis further down: the `parentId` axis and the
+> role-member-of-role axis are different things, AM7's live path resolves only the former, and PB2's
+> two-tier need produces a **cycle** if expressed by membership edges. **Primary design is explicit grants
+> at both tiers** (§5.3 point 2, decision 8 in §0) — so Q10's scale cost is real and bounded, not removed.
 
 > *"`~/Roles/Olio User` — It should get read access to the top to list universes — then role inheritance
 > kicks in, or the book-universe role is assigned. We'll need to test this. Right now it's a lower
@@ -797,6 +874,294 @@ group-recursion fallback was supposed to provide.
 both levels** (correct but redundant), and the hierarchy optimisation lands only after test 1 above
 establishes the direction. That ordering means an inheritance surprise degrades performance, never
 isolation — the opposite trade to guessing now.
+
+#### PROPOSED DESIGN (Stephen, 2026-08-12) — overload the hierarchy check for role membership
+
+> *"For role-axis I had started to implement it — TestAuthorization and AuthorizationSchema — but I think
+> a simpler way might just be duplicate/overload the parent hierarchy check for role membership check, so
+> it would be similar, look for the roles which the child role is a member of."*
+
+**This is the right instinct and it should be the design.** It avoids everything wrong with the SQL path
+that was started: `roles_to_leaf` is **undefined in AM7** (an AM6 artefact), the materialised views it
+feeds are **read by no Java code**, and `refreshMaterializedViews()` has exactly one caller
+(`Console7/AdminAction.java:193`, a manual admin action) — so that path needs a function that doesn't
+exist plus a refresh nobody triggers. An in-Java walk needs neither.
+
+**The pattern is a participation-table join, not a recursive walk** (Stephen, 2026-08-12: *"I don't know
+if that role-role member check is there but the pattern should be using the participation table join"*).
+An earlier draft of this section proposed recursing in Java, one query per level — wrong shape, and it
+reintroduces exactly the per-level cost that got the old design dropped.
+
+**What exists today.** Verified: `auth.role` inherits `common.nameId`, `common.path`, `common.parent`
+(hence the `parentId` tree) and declares `dedicatedParticipation: true`, but has **no declared
+member/roles list field**. So role→role membership is *representable* generically —
+`ParticipationFactory.getParticipantModel` takes `participantModel` straight from the actor's schema
+(`:21-30`), so `MemberUtil.member(owner, containerRole, memberRole, null, true)` writes
+`participationModel = auth.role` / `participantModel = auth.role` with no special-casing. **The storage
+side already works; nothing consults it.** What blocks the read is `findMembers` filtering
+`participantModel` from the *actor's* schema (`MemberUtil.java:75, 91-93`), so a `participantModel =
+auth.role` row can never come back for a `system.user` actor.
+
+**The join.** Both facts live in the same (role-dedicated) participation table and share a column — the
+container role id — so it is a single **self-join on `participationId`**:
+
+```
+-- "actor reaches role R because R is a member of some role S that actor belongs to"
+FROM <roleParticipation> P1                       -- R is a member of S
+JOIN <roleParticipation> P2                       -- actor is a member of S
+  ON P2.participationid = P1.participationid      -- ...the same S
+WHERE P1.participantid = :roleId  AND P1.participantmodel = 'auth.role'
+  AND P2.participantid = :actorId AND P2.participantmodel = :actorSchema
+  AND P1.participationmodel = 'auth.role'
+  AND P1.organizationid = :orgId
+```
+
+One indexed join, no recursion, no CTE, no `roles_to_leaf`, nothing to refresh.
+
+**Idiomatic AM7 formulation (preferred over raw SQL, since `ColorUtil.java:167-200`'s raw-SQL read is
+already flagged as a PBAC-bypass smell):** express it as two indexed `Query`s using the existing
+`ComparatorEnumType.IN`, which is the same join executed in two steps:
+
+1. `S` = the actor's direct role ids — `participation WHERE participantId = actor.id AND participantModel
+   = actor.schema AND participationModel = auth.role`, projecting `participationId`.
+2. Permit if `R.id ∈ S`, **or** `exists participation WHERE participantId = R.id AND participantModel =
+   auth.role AND participationId IN S`.
+
+Step 1's result is also worth reusing — it is the actor's role set, which `checkEntitlement` currently
+re-derives per permission per object.
+
+**Where it hooks in.** `AuthorizationUtil.checkEntitlement:234-244` already calls
+`isMember(actor, role, null, true)` for every role-attached entitlement, so adding the join beneath that
+call makes it live everywhere without touching call sites — which is also why it is a **core-PBAC
+semantics change** (see point 5 below).
+
+##### Five things the design must get right
+
+1. **Direction — CORRECTED 2026-08-12; an earlier draft of this section stated it wrongly.**
+   The rule, taken from the one live writer of role-in-role data in the codebase, is:
+
+   > **A user in role X receives the entitlements of every role that X is a member of.**
+
+   `ISO42001Provisioning.grantRoleToRole(adminUser, parentRole, memberRole)`
+   (`AccountManagerISO42001/.../schema/ISO42001Provisioning.java:102-114`) is called as
+   `grantRoleToRole(adminUser, accountUsersReaders, certifiers)` (`:83-84`) — i.e. `certifiers` is made a
+   **member of** the broad system role `accountUsersReaders`, with the entitlement sitting on
+   `accountUsersReaders`, so that a user in `certifiers` inherits read on `system.user`. Its own comment
+   (`:78-83`) states the purpose: *"Without this, a legitimate certifier's MODIFY is AUDIT-DENIED."*
+
+   So the join must resolve, from the **granted** role, the set of roles that are **members of** it, and
+   ask whether the actor belongs to any of them. Equivalently and more usefully for implementation:
+   resolve the actor's role set, then close it upward over "is a member of". The earlier draft asserted the
+   opposite edge and labelled this one privilege escalation — that was wrong, and it is the shape the
+   codebase already relies on.
+
+2. **The cycle problem is real for PB2, and this is the finding that changes the recommendation.**
+   An earlier draft claimed a fixed single level makes cycles moot. It does not, because PB2 needs **both**
+   edges between the same pair of roles:
+   - `bookRole` ⊂ `universeRole` — so book members can read the universe corpora (the two-role
+     requirement in §5.3; entitlement on the universe tier). Same shape as ISO's usage.
+   - `universeRole` ⊂ `bookRole` — so universe members can read **every** book (entitlement on the book
+     tier).
+
+   Together those are a **cycle at depth 1** between `universeRole` and `bookRole` — precisely the
+   condition the "fixed depth is safe" argument assumed away. Any traversal must therefore carry a visited
+   set regardless of depth, and the two-tier model cannot be expressed by membership edges alone without
+   creating that cycle.
+
+   **Consequence — recommendation changed.** PB2's primary design stays **explicit grants at both tiers**
+   (the fallback below): no cycle, no core-PBAC change, and PB2 does not become coupled to a change that
+   alters ISO42001's authorization the moment it lands. The membership join remains worth building **on its
+   own merits and on ISO's timeline** — see the finding below — but it is no longer a PB2 dependency, and
+   PB2 must not be sequenced behind it.
+3. **Cost — and the index the join needs already exists, by design.** `system/participationModel.json`
+   declares three composite `hints`, and the middle one is exactly the inverse-direction lookup:
+   ```json
+   "hints": [
+       "participationId, participationModel",                                   // members OF x
+       "participantId, participantModel",                                       // what x is a member OF
+       "participationId, participationModel, participantId, participantModel"
+   ]
+   ```
+   Both sides of the self-join seek on `(participantId, participantModel)`, and the join column
+   (`participationId`) is covered by hints 1 and 3. **This carries to `auth.role`'s dedicated table:**
+   `auth.role` declares `dedicatedParticipation: true`, and `DBUtil.java:481-483` generates that table from
+   the `system.participation` schema, with `generateIndices(baseSchema, schema)` (`:479`) building indexes
+   from that schema's hints — so the dedicated role participation table gets all three. The participation
+   table was evidently designed to be queried in both directions; this design uses a capability that is
+   already paid for, which is the strongest argument for it over the SQL/materialised-view route.
+   One real caveat remains: `checkEntitlement` runs this **per permission per object** in its existing loop
+   (`:212-248`), so the actor's role set from step 1 must be resolved once and reused rather than
+   re-derived inside the loop.
+4. **Both axes on at once = union semantics.** A role tree that *also* nests by `parentId` would get both
+   walks. For PB2, pick one: **flat role paths at the group path (Rocket style) with explicit membership
+   links**, so exactly one mechanism is in play and the grant set is predictable.
+5. **This is a core-PBAC semantics change, not a PictureBook change.** Because `checkEntitlement` passes
+   `browseHierarchy=true` unconditionally, turning this on changes authorization for **every** role-attached
+   entitlement in the system — grid, arena, game, ISO, everything. So it needs the existing authorization
+   test suites as its gate, and it is worth landing behind a flag so it can be switched off without a
+   redeploy if it misbehaves.
+
+##### SUSPECTED DEFECT (inference from code, NOT yet verified) — ISO42001's role-to-role wiring may be inert
+
+Recorded here because it is the strongest justification for building the join, and because it must not be
+repeated as fact until a test confirms it.
+
+**The claim.** `ISO42001Provisioning` wires six role-to-role memberships (`:73-76`, `:83-84`) —
+`certifiers`/`admins` into `requestUpdaters`, `approvers`, and `accountUsersReaders` — intending users in
+the ISO roles to inherit those roles' entitlements. But with a **user** actor,
+`AuthorizationUtil.checkEntitlement:234-244` calls `isMember(actor, grantedRole, null, true)`, and
+`MemberUtil.isMember:226-247` only (a) looks for a participation whose `participantModel` matches the
+**actor's** schema, and (b) walks the granted role's **`parentId`** chain. Neither reaches a
+`participantModel = auth.role` row. **So the wiring appears to grant nothing.**
+
+**Why it looks correct in code but may not work.** `grantRoleToRole`'s own idempotency guard at `:107`
+calls `isMember(memberRole, parentRole, null)` where the actor **is a role** — so `participantModel`
+matches `auth.role` and that check succeeds. The write and its guard both behave; only the
+user-authorization read fails to consult the edge.
+
+**What that would mean.** The AUDIT-DENIED condition the `:78-83` comment says this wiring fixes may still
+be live for certifiers, and the join would be a **fix for an existing defect**, not merely a PB2
+enhancement. It also means enabling the join **changes ISO42001 authorization outcomes** — in the
+direction ISO intended, but it is still a behaviour change requiring the ISO suites as its gate.
+
+**How to verify before believing any of this** (do not skip; this is a code-reading inference):
+enrol a shared test user in the ISO `certifiers` role only, then attempt the operation the comment names —
+a certification-request MODIFY carrying a `requestedCertifier` `system.user` reference — and observe
+whether it is AUDIT-DENIED. If denied, the defect is real and reproducible; if permitted, some other path
+is already satisfying it and this analysis is wrong. Per §9's environment split this is a **REST/App-layer
+check against the `am7test` containers**, not an Objects7 JUnit test.
+
+##### What this buys PB2 (if it is built)
+
+If it lands, the universe tier needs **no grants of its own**: grant each book's groups to the book-tier
+roles only, make each book role a member of the corresponding universe role, and universe membership
+reaches every book through the walk. That is strictly less grant-writing per book than the explicit
+multi-tier alternative below (which remains the fallback and needs no core change), and it removes the
+Q10 scale concern entirely. **Recommendation: design for the fallback, implement this if it tests clean** —
+that way PB2 is never blocked on a core-PBAC change, and adopting it later is a simplification rather
+than a migration.
+
+---
+
+#### FALLBACK / REFERENCE: THE ROCKET PATTERN — needs no core change
+
+Stephen directed me to the original design: Propellant (schema) + Accelerant (logic/DAL) in
+`C:\Projects\GitHub\AccountManager`, with `RocketCommunity` as the worked example, noting **Olio Universe
+== Rocket Community (Lifecycle)** and **Olio World == Rocket Project**. Read and verified; it supersedes
+both the `~/Roles/Olio/Books/...` paths proposed in the table above and the role-hierarchy optimisation
+just described.
+
+**Three findings, all verified in code.**
+
+**1. Role paths mirror GROUP paths, not user paths.**
+`RocketSecurity.getRoleByGroup(name, parentId, organizationId)`
+(`Accelerant/.../rocket/RocketSecurity.java:452-464`):
+```java
+DirectoryGroupType parent = getDirectoryById(parentId, organizationId);
+denormalize(parent); populate(parent);
+role = findRole(RoleEnumType.USER, parent.getPath() + (name != null ? "/" + name : ""), organizationId);
+```
+So `getLifecycleRoleByName(lc, "AdminRole")` resolves a role at **the lifecycle's own group path** +
+`/AdminRole` (`:412-417`). This is exactly Stephen's "the roles are built along the same path, not the
+user path" — and it is the real fix for "not easy to manually set", because AM7's
+`~/Roles/Olio User` resolves under **olioUser's** home (`PathUtil.java:72-79`), which is why no
+administrator can find it. Roles belong beside the data they govern.
+
+**2. There is a role *bucket* per container, with named child roles under it.**
+`getRoleByGroup(null, groupId, …)` returns the bucket (a role at the group path itself, `:400-411`);
+`getRole(name, parentRole, …)` returns a named child role *under* that bucket (`:465-470`). The named set
+is `AdminRole, UserRole, AuditRole, ManagerRole, ArchitectRole, TesterRole, DeveloperRole, AuthorRole,
+EditorRole` (`:65-73`), partitioned into `readerRoles` and `writerRoles` (`:78-79`).
+
+**3. Cross-tier access comes from EXPLICIT MULTI-TIER GRANTS, not from role-hierarchy inheritance.**
+This is the finding that matters most. `setupBulkProjectStructure` (`:191-237`) resolves three buckets —
+`rRole` (app/Rocket), `lRole` (lifecycle/community), `bRole` (project) — and then grants **each project
+directory to all three**:
+```java
+setupRolesToReadContainer(adminUser, rRole, readerRoles, dir);
+setupRolesToEditContainer(adminUser, rRole, writerRoles, dir);
+setupRolesToReadContainer(adminUser, bRole, readerRoles, dir);
+setupRolesToEditContainer(adminUser, bRole, writerRoles, dir);
+setupRolesToReadContainer(adminUser, lRole, new String[]{ROLE_USER,ROLE_AUDIT,ROLE_MANAGER,ROLE_TESTER,ROLE_ARCHITECT,ROLE_DEVELOPER,ROLE_AUTHOR,ROLE_EDITOR}, dir);
+setupRolesToEditContainer(adminUser, lRole, new String[]{ROLE_ADMIN}, dir);
+```
+`setupRolesToReadContainer`/`setupRolesToEditContainer` (`:120-151`) iterate the named roles under the
+given bucket and add a role→group participation granting view (read) or view/edit/delete/create (write).
+
+So **"membership in a first-tier role gives access to all books in that universe" is produced at
+creation time by granting every project container to the lifecycle tier's roles** — not by an
+evaluation-time hierarchy walk. Note the asymmetry the original chose deliberately: the lifecycle tier
+gets **read** for the eight reader-ish roles but **edit only for `ADMIN`**.
+
+##### This resolves Stephen's open concern
+
+> *"the code to calculate role inheritance was far more complicated/flexible in the original while the new
+> version kept it simpler but might prevent this from working at the PBAC level unless the role hierarchy
+> check is extended (maybe)"*
+
+**No extension is required for the tier semantics.** Rocket never obtained them from role hierarchy — it
+obtained them from explicit grants to the parent tier at container-creation time. That works against
+AM7's entitlement resolution exactly as it stands, including the exact-`groupId` match at
+`effectiveGroupObjectEntitlementTemplate.sql:10` and with no reliance on group recursion (which the
+architect confirmed does not exist). **This is strictly better news than the hierarchy plan it
+replaces**: it needs no new PBAC capability, and it cannot fail in the isolation-losing direction,
+because a missing grant denies rather than over-permits.
+
+Role hierarchy *is* still used in Rocket, but for a different question: `getIsUserInEffectiveRole`
+(`RoleService.java:371-393` → `EffectiveAuthorizationService.getIsActorInEffectiveRole`) gates **who may
+enrol someone** — e.g. `enrollInCommunityProject` checks
+`getIsUserInEffectiveRole(getProjectAdminRole(proj), adminUser)` (`RocketCommunity.java:1186`), and
+`enrollInCommunityLifecycle` checks the lifecycle admin role (`:1143`), each falling back to
+`isFactoryAdministrator`. That is authorization *of the enrolment operation*, not of data reads. Keep the
+two questions separate; conflating them is what produced the earlier confusion.
+
+##### The resulting PB2 role design (replaces §5.3's table)
+
+```
+/Olio/Universes/Books                        <- group;  role bucket at the same path
+    AdminRole, UserRole                          <- named child roles (universe tier)
+/Olio/Universes/Books/Worlds/{bookSlug}      <- group;  role bucket at the same path
+    AdminRole, UserRole                          <- named child roles (book tier)
+```
+Every group of a book world is granted to **both** tiers at creation time: the book tier's `UserRole`
+(read) / `AdminRole` (write), **and** the universe tier's `UserRole` (read) / `AdminRole` (write). Then:
+- universe `UserRole` membership ⇒ read **every** book in the universe;
+- book `UserRole` membership ⇒ read **only that** book;
+- universe `AdminRole` ⇒ administer all books; book `AdminRole` ⇒ administer one.
+
+This is Stephen's stated semantic, implemented by the mechanism the original used.
+
+##### Enrolment, and the KI-35 fix
+
+`RocketCommunity`'s enrol methods are the template for the explicit registration that replaces the
+auto-enrolment removed in §5.4 — and they show what a correct one looks like:
+`enrollReaderInCommunity` / `enrollAdminInCommunity` / `enrollReaderInCommunityProject` /
+`enrollAdminInCommunityProject` (`RocketCommunity.java:1043-1130`), each of which (a) opens an **audit**
+(`AuditService.beginAudit`), (b) resolves the target user by objectId, (c) **checks the caller is an
+admin of that tier** via `getIsUserInEffectiveRole`, (d) delegates to a private
+`enrollInCommunityLifecycle`/`enrollInCommunityProject`, and (e) records permit/deny. That is the shape
+PB2's `registerUser` and `POST /{book}/members` should take — audited, tier-scoped, admin-checked —
+rather than an unconditional `member()` call inside context construction.
+
+##### Still to extract before implementing
+
+- **The "navigate the parent" special consideration.** Stephen flagged that special care is taken to let
+  a user traverse the parent when they otherwise lack access. The lifecycle-tier read grant on project
+  dirs (`:217`) is part of it, and `Rocket.getBasePath()`-level grants are likely the rest, but **I have
+  not fully traced this path and am not going to claim I have.** It matters directly: without it, a book
+  a user *can* read may be unreachable because an ancestor group denies traversal. Extract it from
+  `Rocket`/`RocketSecurity` before building the grant sequence.
+- **`Rocket.enrollInCommunityLifecycle` / `enrollInCommunityProject`** (the private implementations the
+  public methods delegate to) — what participations they actually write, and whether a permission object
+  is required alongside the role (both public methods resolve
+  `AuthorizationService.getViewPermissionForMapType(NameEnumType.GROUP, …)` and pass it in, which has no
+  direct AM7 analogue and needs mapping).
+- **Whether the 9-role set should be reduced.** PB2 plausibly needs only `AdminRole`/`UserRole` (and
+  perhaps `AuthorRole`/`EditorRole`), not all nine. Reducing it is a judgment call — flagged as
+  **§10 Q20** rather than assumed.
+- **`getIsActorInEffectiveRole`'s actual AM7 equivalent** and whether it walks the role tree, which
+  determines whether a universe `AdminRole` member automatically passes the book-tier admin check when
+  enrolling someone into a single book. Test it; don't infer it.
 
 The org-wide `~/Roles/Olio User`/`Olio Admin` are **left untouched for grid/arena** and **are not used
 by PB2**. That is the whole point: with N book worlds under one universe, granting the shared role is
@@ -968,6 +1333,48 @@ per-world-role design: `"user"` is a coarse container role and cannot express "m
   authenticated user can cancel any other user's in-flight extraction.** Today those ids are hard to
   obtain; under PB2 world browsing makes them discoverable. Key by `(principal, key)` and check
   ownership. *(This is a pre-existing defect worth fixing regardless of PB2.)*
+
+### 5.6b The root-reference principle (Stephen, 2026-08-12) — there is no "read up"
+
+> *"A basic tenet of parent/child and groupId based authZ is all access is denied unless owned or admin.
+> This is why a user is given root references like their home group/role/permission as they don't have
+> access to read up. For Olio, a similar concept applies where the Olio root reference is needed or found
+> by path because a user shouldn't have access to read the root '/'."*
+
+This corrects a wrong assumption carried by earlier drafts of this plan. I had recorded "navigate the
+parent" as an unтraced *traversal grant* — something Rocket must be doing to let a user walk an ancestor
+chain — and listed it as a risk that a readable book might be unreachable because an ancestor denies
+traversal. **That inverts the model.** Traversal upward is never granted; it is denied by default and
+stays denied. What makes anything reachable is that the user is handed a **root reference** — their home
+group/role/permission — from which they navigate *downward*.
+
+**Consequences for PB2, and they are simplifying:**
+
+1. **No traversal grants are needed on `/`, `/Olio`, or `/Olio/Universes` for a user to reach a book.**
+   The earlier draft's worry about ancestor denial is void. Remove it from the risk list.
+2. **The book record's foreign keys *are* the root reference.** §3.1b already has `olio.pb.book.world` →
+   `olio.world`, and `olio.world` carries all 36 group references as foreign fields. So resolving a book's
+   storage is: book → `world` FK → group ids, **by direct reference, never by path traversal**. This is
+   the mechanism that makes "universe/world hidden inside PictureBook" work, not merely a convenience.
+3. **Therefore book reads must resolve by id, not by resolving a path as the acting user.**
+   `PathUtil.findPath(owner, …)` resolves each segment as the passed principal, so a path-based lookup by
+   the acting user would demand exactly the read-up that does not exist. Two acceptable shapes: resolve by
+   FK from the book record (preferred), or resolve the path as `olioUser` and then authorize the *target*
+   through `AccessPoint`. **Never** resolve a book path as the acting user and treat success as
+   authorization — that conflates traversal with permission.
+4. **Listing books needs its own root reference, and that is what the universe-tier grant is for.**
+   Stephen's earlier ratification — *"it should get read access to the top to list universes — then role
+   inheritance kicks in"* — is this same principle: the entry point is granted explicitly so a listing can
+   render, and nothing above it is readable. §5.3's universe-tier Read on `/Olio`, `/Olio/Universes` and
+   the `Books` container is therefore **the root reference for books**, deliberately, not an over-grant.
+   `configureEnvironment:299` already establishes exactly this pattern for the org-wide Olio role.
+5. **Book existence being discoverable is a property of the design, not a leak** (§10 Q14, now closed):
+   the entry point is readable so books can be listed; book *content* is gated by the per-book roles.
+
+**What this means for the grant sequence** (§5.3 step 4): grants are needed on the book world's own groups
+and on the universe entry point — and **not** on the intermediate path. That is fewer grants than the
+earlier draft assumed, and it removes the phase-1 item "extract Rocket's navigate-the-parent handling
+first", which was chasing a mechanism that does not exist.
 
 ### 5.7 Cross-book & multi-tenant isolation argument
 
@@ -1308,6 +1715,22 @@ Rules: real tests only; live backend; `ensureSharedTestUser()` / `ensureIso42001
 admin**; LLM/SD paths single-threaded against the DGX Spark at `192.168.1.42`; **never `-Dreset`** (new
 tables arrive via `IOSystem.java:120-153`). A live test that cannot reach its backend must **skip
 visibly, never pass** (KI-48).
+
+### Which backend each test layer runs against (Stephen, 2026-08-12)
+
+This is a hard constraint, not a preference, and an earlier draft of this plan said only "live backend",
+which is not specific enough to act on:
+
+| Layer | Target | Why |
+|---|---|---|
+| **Objects7 JUnit** (`TestBookWorld`, `TestPbGraph`, `TestPbSecurity`'s Objects7-level assertions, `TestPictureBookCustom`) | the **dev** Postgres — `test.db.url=jdbc:postgresql://localhost:15432/am7db` | **Key location dependency.** The vault/keystore location is tied to that store, so Objects7 tests cannot simply be repointed at another database. Do **not** "fix" a connection failure by editing `test.db.url` — start `am7db` instead. |
+| **REST / App / Ux** (Playwright, raw REST checks, `TestPictureBookRestContract`) | the **containers** — `am7test` stack per `DockerComposeDesign.md` (`docker compose -p am7test -f docker-compose.test.yml`), app `9443`, pg `15433`/`am72db`/`am7user` | Isolated, and **resettable/rebuildable on demand**, which the dev DB is not. |
+
+Corollary for the PB2 work: **the standing "never reset the schema" rule still holds for `am7db`**, but the
+`am7test` stack is explicitly disposable (`down` + `rm -rf ./docker-data` for a full reset, per
+`DockerComposeDesign.md:108-109`). So any test that genuinely needs a virgin org — e.g. proving that a
+first-ever book creation grants correctly, or that a failed creation leaves no orphan world (§3.1b) —
+belongs on the **container** side, not in Objects7 JUnit.
 
 ### Backend (`mvn -o -pl AccountManagerObjects7 -Dtest=… test`)
 

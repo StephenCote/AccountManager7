@@ -2932,3 +2932,97 @@ now `sed -i 's/
 $//'`s the copied scripts and configs so the image builds correctly from a checkout
 with any `core.autocrlf` setting. **Verified:** stack rebuilt and came up on `:9443`, first-run setup
 completed, REST calls served.
+
+### KI-64. Chat scene generator's SD form mishandles sliders — defaults don't display correctly, and generation then fails with an imaging error — OPEN (2026-08-12, Stephen)
+
+Stephen's report: on the **chat** scene generator's SD config form, the sliders are not being used
+correctly — default values don't show correctly — **and the consequence is an imaging error**, i.e.
+this is not cosmetic; the wrong/absent value reaches the image request.
+
+**Not diagnosed — pointers only, nothing verified below.** Chat renders the shared panel
+(`chat/SceneGenerator.js:259` → `components/SdConfigPanel.js`), the same component the picture book
+uses (`workflows/pictureBook.js:950`), so a chat-only symptom suggests the difference is in what chat
+*feeds* the panel, not the panel's markup. Two things a next pass should check before assuming a
+renderer bug:
+
+- `SdConfigPanel.rangeInput` (`components/SdConfigPanel.js:109-121`) displays `min` whenever
+  `config[key] == null`, and only writes `config[key]` on `onInput`. So an unset field renders at its
+  minimum while the entity still holds `null`/absent — the displayed value and the value actually sent
+  are different, with no UI cue distinguishing them. That is the same "default substituted silently,
+  looks plausible, indistinguishable from real data" shape as KI-16 Finding B, and it is a plausible
+  route from "default doesn't show correctly" to a rejected image request.
+- `ensureSdConfig` (`chat/SceneGenerator.js:61-101`) overlays saved tweaks onto a server template but
+  **skips any stored value that is `undefined`/`null`/`''`** (`:84`) and skips `model`/`refinerModel`
+  (`:54`, `:81`) — deliberate, per the HISTORY comment at `:40-54`. Combined with
+  `pinChatSceneDefaults` forcing `compositeMode="flux2"` and `hires=false` (`:30-38`), the FLUX.2
+  fields (`flux2Cfg`, `flux2Steps`, `flux2ReferenceSize`, …) are exactly the ones most likely to be
+  absent from the template/overlay and therefore rendered-at-min-but-sent-as-null.
+
+Related: KI-16 Finding C (the slider-implementation convergence, which `SdConfigPanel`'s
+`rangeInput` was folded into), KI-43 (a disconnected denoise slider in `reimageApparel.js` — same
+class), KI-51 (an int/double type trap on `cfg` that killed image requests before any socket opened),
+KI-55 (a default that pointed at an uninstalled checkpoint, so every default composite was refused).
+KI-65 below is the other half of Stephen's report.
+
+### KI-65. Chat's SD config does not persist — it should, the same way reimage/reimageApparel do — OPEN (2026-08-12, Stephen)
+
+Stephen's report: the SD config doesn't persist for chat, and it should.
+
+**Pointers, not a diagnosis.** Chat is the only SD surface that persists to **`localStorage`**
+(`chat/SceneGenerator.js:18` `SD_CONFIG_KEY = "am7.sdConfig"`, written by `saveConfig` at `:103-117`,
+read back by `ensureSdConfig` at `:74-88`). Every other SD surface persists **server-side** as a named
+`olio.sd.config` under `~/Data/.preferences` via `am7sd.saveConfig`/`loadConfig`
+(`components/sdConfig.js:94-163`) — `workflows/reimage.js:144,238,495-497,829-831` (per-character plus a
+shared `sharedSD.json`) and `workflows/reimageApparel.js:35,168,216` (`sharedApparelSD.json`).
+
+So chat's config is per-browser, lost on a storage clear or a different machine/profile, and invisible
+to the server. Note also that `ensureSdConfig` drops stored `null`/`''` values and never restores
+`model`/`refinerModel` (`:54`, `:81`, `:84`) — intentional for the reasons in the `:40-54` HISTORY
+comment, but it means "I changed a field and it came back" is expected behaviour for *some* fields even
+before this issue, which will confuse the repro if not accounted for.
+
+**Fix direction (not implemented):** move chat onto `am7sd.saveConfig`/`loadConfig` with its own named
+config (e.g. `sharedChatSD.json`, mirroring the existing shared configs) so it uses the same
+persistence the rest of the SD surfaces already do, keeping the deliberate model/refinerModel exclusion
+intact. Overlapping with KI-64 — a persisted config that round-trips through the model is also the path
+that would stop unset slider fields from being invented at render time.
+
+### KI-66. Include/exclude landscape in composite creation must be a config option in the Ux — FEATURE REQUEST (2026-08-12, Stephen)
+
+Stephen: the include/exclude-landscape choice (boolean/checkbox) for composite creation needs to be a
+**config option exposed from the Ux**, not something only settable in code/config files.
+
+**The backend already supports it; only the Ux exposure is missing.** Verified by reading the code:
+- `olio.sd.config` declares the field — `flux2IncludeLandscapeRef`,
+  `AccountManagerObjects7/src/main/resources/models/olio/sd/configModel.json:359`. Its description
+  states the intent (setting fidelity vs. GPU cost — it's the primary speed lever for picture-book
+  runs) and states that it deliberately carries **no schema default**, because a default is never null
+  and would make the `flux2Defaults.json` fallback dead.
+- The composite path honours it — `SceneCompositeUtil.java:111-131` reads
+  `sdConfig.get("flux2IncludeLandscapeRef")` and falls back to `Flux2Defaults.includeLandscapeRef()`
+  (`Flux2Defaults.java:120`, backed by `olio/sd/flux2Defaults.json:36`, currently `true`) only when the
+  config value is null; `false` drops the landscape reference and logs that the setting is then carried
+  by prompt text only.
+- Coverage exists — `TestFlux2Composite.java:373-415` asserts both directions.
+
+**What's missing (checked, not assumed):** there is no control for it anywhere in `AccountManagerUx752/src`.
+`grep flux2` over `src/` returns only `compositeMode = 'flux2'` assignments plus a comment
+(`chat/SceneGenerator.js:35,45`, `workflows/pictureBook.js:182,1420`). The shared panel
+`components/SdConfigPanel.js` renders exactly one checkbox, `hires` (`:320`) — see `checkboxInput` at
+`:123`. And the client's copy of the schema is stale on this point: the `olio.sd.config` block in
+`core/modelDef.js:9933-10224` contains **zero** `flux2*` fields, and `forms.sdConfig`
+(`core/formDef.js:769`) declares none either. That last part matters for implementation, because
+`SdConfigPanel`'s `instConfig` proxy only defines properties for `inst.fields`
+(`components/SdConfigPanel.js:156-174`) — a field absent from the form/model def is not reachable
+through the `inst` path even when the server template carries a value for it. This is the hand-curated
+`modelDef.js` divergence already recorded in `AccountManagerUx752/CLAUDE.md`.
+
+**Fix direction (not implemented):** add `flux2IncludeLandscapeRef` to the client model/form defs and a
+checkbox next to `hires` in `SdConfigPanel`, leaving the value **null/unset by default** so the
+`flux2Defaults.json` fallback keeps working (setting a client-side default would reintroduce exactly the
+dead-fallback problem the schema comment warns about). Whatever lands must also actually persist —
+which for chat means KI-65 first, or the toggle resets per browser.
+
+Related: KI-64/KI-65 (the other two items from this report), KI-59 (no exported test image yet shows the
+landscape genuinely integrated into a composite — this toggle is the switch that test would need to
+flip), KI-55 (a composite default that silently refused every generation).
