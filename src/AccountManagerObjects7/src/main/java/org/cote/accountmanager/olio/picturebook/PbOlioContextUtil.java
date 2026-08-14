@@ -37,14 +37,26 @@ import org.cote.accountmanager.schema.type.RoleEnumType;
  * ({@code AccessPoint.find(user, olio.pb.book)} then {@code book.world} FK then
  * {@code assembleBookContext}) arrives in phase 2, with the {@code olio.pb.book} model.
  * <p>
- * <b>Known phase-2 gap: grants do not recurse.</b> The book path grants on the world's OWN enumerated
- * groups only; it never calls {@code OlioContext.scanNestedGroups}. Group entitlements are joined on an
- * exact {@code groupId} ({@code effectiveGroupObjectEntitlementTemplate.sql}), so a grant on
- * {@code Gallery} does NOT reach {@code Gallery/Characters} - the shape {@code SDUtil} creates.
+ * <b>Grants do not recurse - CLOSED in phase 2a by a recursive world-tier pass.</b> Group entitlements
+ * are joined on an exact {@code groupId} ({@code effectiveGroupObjectEntitlementTemplate.sql}), so a grant
+ * on {@code Gallery} does NOT reach {@code Gallery/Characters} - the shape {@code SDUtil} creates.
  * Measured, not assumed: {@code TestBookWorld} case 9 shows {@code Gallery=true},
- * {@code Gallery/Characters=false} against a passing control. Anything phase 2 writes into a
- * sub-subgroup of a world group will be unreadable by the book roles until that phase decides how
- * nested grants should work. Deliberately not fixed here.
+ * {@code Gallery/Characters=false} against a passing control. Because grants are
+ * Read/Update/Create/Delete together this was a WRITE gap too, not merely a visibility one. The book
+ * configuration now sets {@code scanNestedWorldGroups}, so {@code initialize()} grants the book's own role
+ * pair recursively beneath every group of the world container - the world tier ONLY; recursing the
+ * universe container would reach {@code Worlds} and hand the shared universe role every book in the
+ * organization. <b>Remaining bound:</b> the recursive pass covers the tree that exists when it runs, so a
+ * write path that creates a new sub-subgroup mid-session must still grant on the group it created; a
+ * re-open repairs it.
+ * <p>
+ * <b>Two role tiers, since phase 2a.</b> The per-book {@code Writer}/{@code Admin} pair is granted on the
+ * book's own world groups; a single organization-wide {@link #universeReaderRolePath()} /
+ * {@link #universeWriterRolePath()} pair is granted on the {@code Books} universe corpora. Membership of
+ * both is what makes a book usable, so {@link #getCreateBookContext(BaseRecord, String, String)} enrols a
+ * genuine creator in the book {@code Writer} role AND the universe {@code Reader} role. The split is
+ * <b>not retroactive</b> - {@code setEntitlement} only adds - so books created before it keep their
+ * per-book roles' universe grants.
  * <p>
  * <b>RULE (learned twice, now written down): a create-or-get that grants entitlement as a side
  * effect must first prove the resource did not already exist, or must authorize the caller against
@@ -114,6 +126,36 @@ public class PbOlioContextUtil {
 	}
 
 	/**
+	 * {@code ~/Roles/Olio/Books/Reader} - the UNIVERSE tier. One per organization, shared by every book:
+	 * <b>Read</b> on the {@code Books} universe's own corpora groups (words, names, colours, apparel
+	 * templates) and nothing else.
+	 * <p>
+	 * <b>Corpora-only is a deliberate deviation</b> from §5.3's "universe membership implies read every
+	 * book": book worlds are not granted to this tier at all. It satisfies the actual requirement - the
+	 * per-book role alone is useless because apparel templates and colours live in the universe - without
+	 * creating a read-every-book role before there is a use case for one. Reversible (add the grants);
+	 * the reverse is not, because {@code setEntitlement} only ever adds.
+	 * <p>
+	 * It cannot collide with a per-book role container: {@code BOOK_SLUG_PATTERN} admits lowercase only,
+	 * so no slug can be named {@code Reader} or {@code Writer}.
+	 */
+	public static String universeReaderRolePath() {
+		return BOOK_ROLE_BASE + "/Reader";
+	}
+
+	/**
+	 * {@code ~/Roles/Olio/Books/Writer} - the universe tier's admin role, holding Create/Update on the
+	 * universe's corpora (and Delete on the universe's own, non-shared groups).
+	 * <p>
+	 * <b>Nothing enrols anybody here automatically.</b> That is the point of the split: before it, a
+	 * per-book {@code Admin} role received Create/Update/Delete on the shared corpora simply by being a
+	 * book's admin role. See {@link #universeReaderRolePath()}.
+	 */
+	public static String universeWriterRolePath() {
+		return BOOK_ROLE_BASE + "/Writer";
+	}
+
+	/**
 	 * Build the configuration for a book world.
 	 * <p>
 	 * A book world has no map, no locations, no realms and no population generation:
@@ -126,7 +168,9 @@ public class PbOlioContextUtil {
 	 * creator is enrolled explicitly and audited by
 	 * {@link #getCreateBookContext(BaseRecord, String, String)}.
 	 * <p>
-	 * <b>This creates the two per-book roles</b> ({@code Writer}, {@code Admin}) via {@code makePath},
+	 * <b>This creates four roles</b> via {@code makePath} - the two per-book roles ({@code Writer},
+	 * {@code Admin}) and the two organization-wide universe-tier roles
+	 * ({@link #universeReaderRolePath()}, {@link #universeWriterRolePath()}) -
 	 * because a role must exist before {@code setEntitlement} can grant on it -
 	 * {@code AuthorizationUtil.setEntitlement} silently skips a null permission and only logs
 	 * membership failures under trace, so a missing role produces no grants and no error. It therefore
@@ -173,6 +217,18 @@ public class PbOlioContextUtil {
 			throw new OlioException("Failed to create book role " + adminRolePath(bookSlug));
 		}
 
+		/// The universe tier - one pair per organization, shared by every book. Same reason as the two
+		/// roles above: setEntitlement silently skips a role it cannot resolve, so the role has to exist
+		/// before initialize() runs its universe grant pass.
+		BaseRecord universeReaderRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, universeReaderRolePath(), RoleEnumType.USER.toString(), orgId);
+		if(universeReaderRole == null) {
+			throw new OlioException("Failed to create universe role " + universeReaderRolePath());
+		}
+		BaseRecord universeWriterRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, universeWriterRolePath(), RoleEnumType.USER.toString(), orgId);
+		if(universeWriterRole == null) {
+			throw new OlioException("Failed to create universe role " + universeWriterRolePath());
+		}
+
 		OlioContextConfiguration cfg = new OlioContextConfiguration(
 			user,
 			dataPath,
@@ -189,6 +245,11 @@ public class PbOlioContextUtil {
 		cfg.setEnrolActingUser(false);
 		cfg.setAuthorizationUserRole(writerRole);
 		cfg.setAuthorizationAdminRole(adminRole);
+		cfg.setUniverseAuthorizationUserRole(universeReaderRole);
+		cfg.setUniverseAuthorizationAdminRole(universeWriterRole);
+		/// Grants stop at the world's own groups otherwise - entitlements are joined on an exact groupId.
+		/// See OlioContext.scanNestedWorldGroups().
+		cfg.setScanNestedWorldGroups(true);
 		cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {
 			new BookWorldInitializationRule(),
 			new GenericItemDataLoadRule()
@@ -276,6 +337,7 @@ public class PbOlioContextUtil {
 			}
 
 			BaseRecord writerRole = cfg.getAuthorizationUserRole();
+			BaseRecord universeReaderRole = cfg.getUniverseAuthorizationUserRole();
 			if(!preExisting) {
 				/// GENUINE CREATION ONLY. The creator is enrolled explicitly and audited. registerUser
 				/// authorizes the actor, and the organization admin is authorized by definition - which
@@ -287,9 +349,19 @@ public class PbOlioContextUtil {
 				if(!ioContext.getMemberUtil().isMember(user, writerRole, null)) {
 					throw new OlioException("Creator is not a member of " + writerRolePath(bookSlug));
 				}
+				/// BOTH tiers, and this one is not optional. Since the two-tier split the per-book roles
+				/// hold nothing on the universe, so a creator enrolled in the book Writer role alone
+				/// cannot read the corpora - apparel templates, colours, word lists - that generating
+				/// anything at all requires. The universe Reader role is Read on shared corpora only.
+				if(!ctx.registerUniverseUser(octx.getAdminUser(), user, false)) {
+					throw new OlioException("Failed to enrol " + user.get(FieldNames.FIELD_NAME) + " in " + universeReaderRolePath());
+				}
+				if(!ioContext.getMemberUtil().isMember(user, universeReaderRole, null)) {
+					throw new OlioException("Creator is not a member of " + universeReaderRolePath());
+				}
 			}
 
-			verifyGrants(ctx, writerRole, octx);
+			verifyGrants(ctx, writerRole, universeReaderRole, octx);
 			verified = true;
 			return ctx;
 		}
@@ -363,32 +435,38 @@ public class PbOlioContextUtil {
 	}
 
 	/**
-	 * Assert a Read entitlement for {@code role} on every group the world authorization enumerated -
-	 * <b>on BOTH tiers</b>. Throws on the first gap, naming the tier and the group.
+	 * Assert a Read entitlement on every group the world authorization enumerated - <b>on BOTH tiers, and
+	 * against the role that owns each tier</b>. Throws on the first gap, naming the tier and the group.
 	 * <p>
-	 * <b>Two passes, because {@code initialize()} makes two grant calls.</b>
-	 * {@code OlioContext.initialize} runs {@code configureWorldAuthorization} once for the universe
-	 * ({@code config.getUniversePath()}, {@code userWrite=false}) and once for the world
-	 * ({@code config.getWorldPath()}, {@code userWrite=true}). Verifying only the world tier would
-	 * leave the universe tier - the corpora every book reads from - checked by nothing at runtime, and
-	 * this method exists precisely because {@code isInitialized()} is true even when authorization
-	 * threw. A one-tier check would return a context this method reports as verified while a universe
-	 * grant is missing.
+	 * <b>Two passes, because {@code initialize()} makes two grant calls, and two ROLES, because of the
+	 * two-tier split.</b> {@code OlioContext.initialize} runs {@code configureWorldAuthorization} once for
+	 * the universe ({@code config.getUniversePath()}, {@code userWrite=false}) and once for the world
+	 * ({@code config.getWorldPath()}, {@code userWrite=true}). Verifying only the world tier would leave
+	 * the universe tier - the corpora every book reads from - checked by nothing at runtime, and this
+	 * method exists precisely because {@code isInitialized()} is true even when authorization threw.
 	 * <p>
-	 * <b>Read on both tiers, never CRUD.</b> The universe pass runs with {@code userWrite=false}, so
-	 * the book {@code Writer} role legitimately holds only Read there (it holds CRUD on the world's own
-	 * groups). Read is the one permission BOTH passes grant, so it is the only one that can be asserted
-	 * across the whole set; asserting Update/Create/Delete on the universe tier would fail a correct
-	 * system.
+	 * <b>The universe tier must be checked against the universe role, not the book role.</b> Since the
+	 * split the book {@code Writer} role holds nothing on the universe, so checking it there would fail
+	 * every newly created book. Books created BEFORE the split keep their universe grants
+	 * ({@code setEntitlement} only adds), so this is not a check that could have been kept either way -
+	 * it distinguishes a correct system from a broken one only when addressed to the right role.
+	 * <p>
+	 * <b>Read, never CRUD.</b> The universe pass runs with {@code userWrite=false}, so the universe
+	 * {@code Reader} role legitimately holds only Read there. Read is the one permission BOTH passes
+	 * grant, so it is the only one assertable across the whole set; asserting Update/Create/Delete on the
+	 * universe tier would fail a correct system.
+	 *
+	 * @param worldRole the book's own role, checked against the world's groups
+	 * @param universeRole the shared universe-tier role, checked against the universe's groups
 	 */
-	private static void verifyGrants(OlioContext ctx, BaseRecord role, OrganizationContext octx) throws OlioException {
+	private static void verifyGrants(OlioContext ctx, BaseRecord worldRole, BaseRecord universeRole, OrganizationContext octx) throws OlioException {
 		IOContext ioContext = IOSystem.getActiveContext();
 		BaseRecord readPerm = ioContext.getPathUtil().findPath(octx.getAdminUser(), ModelNames.MODEL_PERMISSION, "/Read", PermissionEnumType.DATA.toString(), octx.getOrganizationId());
 		if(readPerm == null) {
 			throw new OlioException("Failed to resolve the Read permission");
 		}
-		verifyReadGrants(ioContext, role, readPerm, ctx.getAuthorizationGroups(ctx.getWorld(), ctx.getConfig().getWorldPath()), "world");
-		verifyReadGrants(ioContext, role, readPerm, ctx.getAuthorizationGroups(ctx.getUniverse(), ctx.getConfig().getUniversePath()), "universe");
+		verifyReadGrants(ioContext, worldRole, readPerm, ctx.getAuthorizationGroups(ctx.getWorld(), ctx.getConfig().getWorldPath()), "world");
+		verifyReadGrants(ioContext, universeRole, readPerm, ctx.getAuthorizationGroups(ctx.getUniverse(), ctx.getConfig().getUniversePath()), "universe");
 	}
 
 	/**

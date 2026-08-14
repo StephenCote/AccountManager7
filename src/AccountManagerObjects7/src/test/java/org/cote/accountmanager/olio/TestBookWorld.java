@@ -9,6 +9,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -30,6 +31,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
+import org.cote.accountmanager.util.LibraryUtil;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -438,11 +440,20 @@ public class TestBookWorld extends BaseTest {
 		}
 		logger.info("CASE 3 verified Read grants on " + groups.size() + " world groups");
 
+		/// The universe tier is addressed to the UNIVERSE role since the phase-2a split: the per-book
+		/// Writer role is granted on the book's own world groups and holds nothing on the universe for a
+		/// book created after the split. Checking the book role here would assert the very coupling the
+		/// split removes, and would pass only on books old enough to still carry the legacy grants
+		/// (setEntitlement only adds, so those grants were never revoked). Case 19 asserts the negative
+		/// half of this on a book created inside that case.
+		BaseRecord universeReader = bookRole(ctx, PbOlioContextUtil.universeReaderRolePath());
+		assertNotNull("Universe Reader role must exist: " + PbOlioContextUtil.universeReaderRolePath(), universeReader);
 		List<BaseRecord> ugroups = ctx.getAuthorizationGroups(ctx.getUniverse(), ctx.getConfig().getUniversePath());
+		assertTrue("Expected the universe authorization to enumerate groups", ugroups.size() > 0);
 		for (BaseRecord g : ugroups) {
-			assertTrue("Missing Read grant for the book Writer role on universe group "
+			assertTrue("Missing Read grant for the universe Reader role on universe group "
 				+ g.get(FieldNames.FIELD_NAME) + " (#" + g.get(FieldNames.FIELD_ID) + ")",
-				IOSystem.getActiveContext().getAuthorizationUtil().checkEntitlement(writer, readPerm, g));
+				IOSystem.getActiveContext().getAuthorizationUtil().checkEntitlement(universeReader, readPerm, g));
 		}
 		logger.info("CASE 3 verified Read grants on " + ugroups.size() + " universe groups");
 	}
@@ -653,6 +664,15 @@ public class TestBookWorld extends BaseTest {
 	 * The test is built so a negative result is evidence: the CONTROL reads a record in the granted
 	 * {@code Gallery} group itself as the same user. If the control cannot be read either, the setup
 	 * is broken and the test fails rather than reporting a false "no recursion".
+	 * <p>
+	 * <b>The sub-subgroup name carries a fresh random suffix, and that is load-bearing since phase 2a.</b>
+	 * This case measures a PLATFORM property - that the entitlement join is an exact {@code groupId} match -
+	 * so the group it probes has to be one that no grant pass could have covered. Phase 2a makes the book
+	 * path grant recursively at {@code initialize()} ({@code scanNestedWorldGroups}), and {@code SLUG_ALPHA}
+	 * is a fixed slug on a live database, so a literal {@code Gallery/Characters} would survive between runs
+	 * and be granted by the recursive pass on the NEXT run - turning this case red for a reason that has
+	 * nothing to do with the property it exists to pin. A group created after the scan cannot be.
+	 * Case 20 asserts the recursion fix itself.
 	 */
 	@Test
 	public void case09_grantOnWorldGroupsDoesNotRecurseIntoSubSubgroups() throws Exception {
@@ -667,13 +687,16 @@ public class TestBookWorld extends BaseTest {
 		String galleryPath = gallery.get(FieldNames.FIELD_PATH);
 		assertNotNull("Gallery path is null", galleryPath);
 
-		/// Sub-subgroup: a child of a world group, i.e. a GRANDCHILD of the world container. This is
-		/// the shape SDUtil creates ({world.gallery.path}/Characters/{name}).
-		BaseRecord characters = IOSystem.getActiveContext().getPathUtil().makePath(olioUser, ModelNames.MODEL_GROUP,
-			galleryPath + "/Characters", GroupEnumType.DATA.toString(), orgId);
-		assertNotNull("Failed to create the Gallery/Characters subgroup", characters);
-
 		String tag = UUID.randomUUID().toString().substring(0, 8);
+
+		/// Sub-subgroup: a child of a world group, i.e. a GRANDCHILD of the world container. Same shape
+		/// SDUtil creates ({world.gallery.path}/Characters/{name}), created AFTER this context's
+		/// recursive grant pass ran - see the javadoc.
+		String nestedGroupName = "Characters-case09-" + tag;
+		BaseRecord characters = IOSystem.getActiveContext().getPathUtil().makePath(olioUser, ModelNames.MODEL_GROUP,
+			galleryPath + "/" + nestedGroupName, GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("Failed to create the " + nestedGroupName + " subgroup", characters);
+
 		String controlName = "case09-control-" + tag;
 		String nestedName = "case09-nested-" + tag;
 
@@ -681,7 +704,7 @@ public class TestBookWorld extends BaseTest {
 		/// can read them is through the book Writer role's group entitlement.
 		BaseRecord control = newData(olioUser, controlName, "text/plain", "control".getBytes(), galleryPath, orgId);
 		assertTrue("Failed to create the control record", IOSystem.getActiveContext().getRecordUtil().createRecord(control));
-		BaseRecord nested = newData(olioUser, nestedName, "text/plain", "nested".getBytes(), galleryPath + "/Characters", orgId);
+		BaseRecord nested = newData(olioUser, nestedName, "text/plain", "nested".getBytes(), galleryPath + "/" + nestedGroupName, orgId);
 		assertTrue("Failed to create the nested record", IOSystem.getActiveContext().getRecordUtil().createRecord(nested));
 
 		/// The grants were written earlier in this same process and the membership query for those
@@ -700,7 +723,7 @@ public class TestBookWorld extends BaseTest {
 			ModelNames.MODEL_DATA, (long) characters.get(FieldNames.FIELD_ID), nestedName);
 
 		logger.info("CASE 9 RESULT — entitlement on Gallery=" + directGrantOnGallery
-			+ ", entitlement on Gallery/Characters=" + directGrantOnCharacters
+			+ ", entitlement on Gallery/" + nestedGroupName + "=" + directGrantOnCharacters
 			+ ", PBAC read of Gallery record=" + (readControl != null)
 			+ ", PBAC read of Gallery/Characters record=" + (readNested != null));
 
@@ -713,7 +736,7 @@ public class TestBookWorld extends BaseTest {
 		/// PROBE — the design's expectation.
 		assertFalse("Entitlements are joined on an exact groupId and must NOT recurse into a sub-subgroup",
 			directGrantOnCharacters);
-		assertNull("A grant on the world's own groups must NOT reach a record in Gallery/Characters",
+		assertNull("A grant on the world's own groups must NOT reach a record in Gallery/" + nestedGroupName,
 			readNested);
 	}
 
@@ -1495,5 +1518,208 @@ public class TestBookWorld extends BaseTest {
 		assertTrue("Grid world generation with bulk container approval off took " + genMs
 			+ "ms (ceiling 300000ms)", genMs < 300000L);
 		assertTrue("Cache-cold rebuild took " + rebuildMs + "ms (ceiling 300000ms)", rebuildMs < 300000L);
+	}
+
+	// ───────── Case 19: the two-tier role split — the book roles hold NOTHING on the universe ─────────
+
+	/**
+	 * Phase 2a. The universe grant pass now runs against an organization-wide
+	 * {@code ~/Roles/Olio/Books/Reader} / {@code Writer} pair instead of the book's own roles, so a
+	 * per-book {@code Admin} role no longer receives Create/Update/<b>Delete</b> on the shared corpora
+	 * simply by being some book's admin role.
+	 * <p>
+	 * <b>The book is created inside this case, under a random slug.</b> The split is deliberately NOT
+	 * retroactive - {@code AuthorizationUtil.setEntitlement} only ever adds - so every book that existed
+	 * before it keeps its per-book roles' universe grants, and the negative assertions below would fail on
+	 * one of those for a correct system. A fresh slug is the only fixture in which the negative half is
+	 * meaningful. That scoping is a property of the ratified "no migration" decision, not a weakening.
+	 * <p>
+	 * <b>Only the universe's OWN groups can carry the negative.</b> The seven shared {@code /Library}
+	 * corpora (Colors, Names, Words, Surnames, Patterns, Dictionary, Occupations) are foreign fields of the
+	 * BOOK WORLD as well, so the world pass legitimately grants the book Writer Read/Update/Create on them.
+	 * They are partitioned out by {@code parentId}, exactly as {@code OlioContext.resolveGrantTargets}
+	 * does it, and the case fails if the remaining own-set is empty rather than passing vacuously.
+	 */
+	@Test
+	public void case19_theUniverseTierIsGrantedToTheUniverseRolesAndNotToTheBookRoles() throws Exception {
+		OrganizationContext org = getTestOrganization(ORG_A);
+		BaseRecord u = user(org, TEST_USER);
+		long orgId = org.getOrganizationId();
+		String slug = "pb2a-split-" + UUID.randomUUID().toString().substring(0, 8);
+
+		OlioContext ctx = openBook(u, slug);
+		assertTrue("A book created after the split must still complete world authorization",
+			ctx.isAuthorizationConfigured());
+
+		BaseRecord bookWriter = bookRole(ctx, PbOlioContextUtil.writerRolePath(slug));
+		BaseRecord bookAdmin = bookRole(ctx, PbOlioContextUtil.adminRolePath(slug));
+		BaseRecord uniReader = bookRole(ctx, PbOlioContextUtil.universeReaderRolePath());
+		BaseRecord uniWriter = bookRole(ctx, PbOlioContextUtil.universeWriterRolePath());
+		assertNotNull("Per-book Writer role must exist", bookWriter);
+		assertNotNull("Per-book Admin role must exist", bookAdmin);
+		assertNotNull("Universe Reader role must exist: " + PbOlioContextUtil.universeReaderRolePath(), uniReader);
+		assertNotNull("Universe Writer role must exist: " + PbOlioContextUtil.universeWriterRolePath(), uniWriter);
+
+		/// MEMBERSHIP — the creator must end up in BOTH tiers, and in neither admin role. A book whose
+		/// creator is in the book Writer role alone cannot read the corpora the pipeline needs, which is
+		/// why the universe enrolment is part of the create path rather than left to a later share.
+		assertTrue("The creator must be a member of the book Writer role",
+			IOSystem.getActiveContext().getMemberUtil().isMember(u, bookWriter, null));
+		assertTrue("The creator must be a member of the universe Reader role - the book role alone holds"
+			+ " nothing on the corpora since the split",
+			IOSystem.getActiveContext().getMemberUtil().isMember(u, uniReader, null));
+		assertFalse("Nothing may auto-enrol the creator in the book Admin role",
+			IOSystem.getActiveContext().getMemberUtil().isMember(u, bookAdmin, null));
+		assertFalse("Nothing may auto-enrol the creator in the universe Writer role - that role holds"
+			+ " Create/Update/Delete on the shared corpora",
+			IOSystem.getActiveContext().getMemberUtil().isMember(u, uniWriter, null));
+
+		/// GRANTS — partition the universe's enumerated groups the way production does.
+		BaseRecord readPerm = readPermission(org);
+		BaseRecord library = groupAt(org, LibraryUtil.basePath);
+		List<Long> sharedIds = new ArrayList<>();
+		if(library != null) {
+			for(BaseRecord g : IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(
+					ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, library.get(FieldNames.FIELD_ID), orgId))) {
+				sharedIds.add((long) g.get(FieldNames.FIELD_ID));
+			}
+		}
+
+		CacheUtil.clearCache();
+		int own = 0;
+		int shared = 0;
+		for(BaseRecord g : ctx.getAuthorizationGroups(ctx.getUniverse(), ctx.getConfig().getUniversePath())) {
+			String gname = g.get(FieldNames.FIELD_NAME) + " (#" + g.get(FieldNames.FIELD_ID) + ")";
+			if(sharedIds.contains((long) g.get(FieldNames.FIELD_ID))) {
+				shared++;
+				continue;
+			}
+			own++;
+			assertTrue("Missing Read grant for the universe Reader role on universe group " + gname,
+				readGrant(uniReader, readPerm, g));
+			assertFalse("The per-book WRITER role must hold NO Read grant on universe group " + gname
+				+ " for a book created after the two-tier split", readGrant(bookWriter, readPerm, g));
+			assertFalse("The per-book ADMIN role must hold NO grant on universe group " + gname
+				+ " - that is the Create/Update/Delete-on-shared-corpora exposure the split closes",
+				readGrant(bookAdmin, readPerm, g));
+		}
+		logger.info("CASE 19 universe tier: " + own + " own group(s) asserted, " + shared
+			+ " shared /Library group(s) skipped (the world pass grants those to the book role legitimately)");
+		assertTrue("The universe own-group set is empty, so the negative assertions above proved nothing",
+			own > 0);
+
+		/// The membership has to buy real access, not just a row in a participation table: read an actual
+		/// universe-own corpus record through PBAC as the creator. Traits is universe-local (case 1).
+		BaseRecord traits = group(ctx.getUniverse(), OlioFieldNames.FIELD_TRAITS);
+		BaseRecord[] anyTrait = IOSystem.getActiveContext().getSearch().findRecords(
+			QueryUtil.getGroupQuery(ModelNames.MODEL_TRAIT, null, (long) traits.get(FieldNames.FIELD_ID), orgId));
+		assertTrue("The universe Traits corpus is empty, so the PBAC read below would prove nothing",
+			anyTrait.length > 0);
+		String traitName = anyTrait[0].get(FieldNames.FIELD_NAME);
+		assertNotNull("Creator must be able to READ a universe Traits record through the universe Reader"
+			+ " role - if this is null the split has taken corpora access away instead of relocating it",
+			IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(u, ModelNames.MODEL_TRAIT,
+				(long) traits.get(FieldNames.FIELD_ID), traitName));
+
+		/// And the world tier is untouched: the book role still holds Read on the book's own groups.
+		for(BaseRecord g : ctx.getAuthorizationGroups(ctx.getWorld(), ctx.getConfig().getWorldPath())) {
+			assertTrue("Missing Read grant for the book Writer role on world group "
+				+ g.get(FieldNames.FIELD_NAME) + " (#" + g.get(FieldNames.FIELD_ID) + ")",
+				readGrant(bookWriter, readPerm, g));
+		}
+	}
+
+	// ───────── Case 20: the recursive world-tier grant reaches sub-subgroups ─────────
+
+	/**
+	 * Phase 2a, the other half. Case 9 pins the platform property - entitlements join on an exact
+	 * {@code groupId} and do not inherit down the group tree - which means the book path's two
+	 * {@code configureWorldAuthorization} passes stop at the world's own ~36 groups. Because grants are
+	 * Read/Update/Create/Delete together, that was a WRITE gap: a portrait written into
+	 * {@code Gallery/Characters} would be DENIED, not merely invisible.
+	 * <p>
+	 * The fix is {@code OlioContext.scanNestedWorldGroups()}, run from {@code initialize()} when the
+	 * configuration opts in. This case proves it end to end, in the only order that is evidence:
+	 * <ol>
+	 * <li>create a sub-subgroup and a sub-sub-subgroup AFTER the context was built, and confirm the book
+	 * role reaches neither (the "before", and the same measurement case 9 makes);</li>
+	 * <li>evict and re-open, so {@code initialize()} genuinely re-runs rather than the cache answering;</li>
+	 * <li>confirm the book role now holds Read on BOTH levels and that the creator can read a record in
+	 * the deeper one through PBAC.</li>
+	 * </ol>
+	 * Step 1 is what makes step 3 meaningful: without it a green result could just mean the group had been
+	 * granted by some earlier run.
+	 */
+	@Test
+	public void case20_reopeningABookGrantsTheWorldRolesRecursivelyIntoSubSubgroups() throws Exception {
+		OrganizationContext org = getTestOrganization(ORG_A);
+		BaseRecord u = user(org, TEST_USER);
+		long orgId = org.getOrganizationId();
+
+		OlioContext ctx = openBook(u, SLUG_ALPHA);
+		BaseRecord olioUser = ctx.getOlioUser();
+		BaseRecord gallery = group(ctx.getWorld(), OlioFieldNames.FIELD_GALLERY);
+		String galleryPath = gallery.get(FieldNames.FIELD_PATH);
+		assertNotNull("Gallery path is null", galleryPath);
+
+		String tag = UUID.randomUUID().toString().substring(0, 8);
+		String lvl2Name = "Characters-case20-" + tag;
+		String lvl3Name = "deep-" + tag;
+		String lvl2Path = galleryPath + "/" + lvl2Name;
+		String lvl3Path = lvl2Path + "/" + lvl3Name;
+
+		BaseRecord lvl2 = IOSystem.getActiveContext().getPathUtil().makePath(olioUser, ModelNames.MODEL_GROUP,
+			lvl2Path, GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("Failed to create " + lvl2Path, lvl2);
+		BaseRecord lvl3 = IOSystem.getActiveContext().getPathUtil().makePath(olioUser, ModelNames.MODEL_GROUP,
+			lvl3Path, GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("Failed to create " + lvl3Path, lvl3);
+
+		/// Owned by the olio user and written without PBAC, so the only route to it is the book role's
+		/// group entitlement - the same construction case 9 uses.
+		String recName = "case20-deep-" + tag;
+		BaseRecord deep = newData(olioUser, recName, "text/plain", "deep".getBytes(), lvl3Path, orgId);
+		assertTrue("Failed to create the deep record", IOSystem.getActiveContext().getRecordUtil().createRecord(deep));
+
+		BaseRecord writer = bookRole(ctx, PbOlioContextUtil.writerRolePath(SLUG_ALPHA));
+		assertNotNull("Book Writer role must exist", writer);
+		BaseRecord readPerm = readPermission(org);
+
+		/// BEFORE — both groups were created after this context's grant pass, so neither is reachable.
+		CacheUtil.clearCache();
+		boolean before2 = readGrant(writer, readPerm, lvl2);
+		boolean before3 = readGrant(writer, readPerm, lvl3);
+		BaseRecord readBefore = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(u,
+			ModelNames.MODEL_DATA, (long) lvl3.get(FieldNames.FIELD_ID), recName);
+		logger.info("CASE 20 BEFORE — entitlement lvl2=" + before2 + " lvl3=" + before3
+			+ ", PBAC read of the deep record=" + (readBefore != null));
+		assertFalse("Precondition: a group created after the grant pass must not already be granted"
+			+ " (if this is true the case cannot prove the recursive pass did anything)", before2);
+		assertFalse("Precondition: the deeper group must not already be granted", before3);
+		assertNull("Precondition: the deep record must not be readable before the recursive pass", readBefore);
+
+		/// RE-OPEN — eviction forces initialize() to run again, which is what invokes the recursive pass.
+		PbOlioContextUtil.evictBookContext(u, SLUG_ALPHA);
+		assertFalse("Eviction must remove the cached key",
+			OlioContextUtil.getCachedKeys().contains(orgId + "/" + TEST_USER + "/"
+				+ PbOlioContextUtil.BOOKS_UNIVERSE + "/" + SLUG_ALPHA));
+		OlioContext reopened = openBook(u, SLUG_ALPHA);
+		assertNotSame("Eviction must have forced a genuine rebuild", ctx, reopened);
+		assertTrue("The re-opened context must have completed world authorization",
+			reopened.isAuthorizationConfigured());
+
+		/// AFTER — the same three measurements.
+		CacheUtil.clearCache();
+		boolean after2 = readGrant(writer, readPerm, lvl2);
+		boolean after3 = readGrant(writer, readPerm, lvl3);
+		BaseRecord readAfter = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(u,
+			ModelNames.MODEL_DATA, (long) lvl3.get(FieldNames.FIELD_ID), recName);
+		logger.info("CASE 20 AFTER — entitlement lvl2=" + after2 + " lvl3=" + after3
+			+ ", PBAC read of the deep record=" + (readAfter != null));
+
+		assertTrue("The recursive world-tier pass must grant the book Writer role on " + lvl2Path, after2);
+		assertTrue("The recursive pass must recurse further than one level: " + lvl3Path, after3);
+		assertNotNull("The creator must be able to read a record in " + lvl3Path + " after the recursive"
+			+ " pass - a grant that does not produce a readable record is not a fix", readAfter);
 	}
 }

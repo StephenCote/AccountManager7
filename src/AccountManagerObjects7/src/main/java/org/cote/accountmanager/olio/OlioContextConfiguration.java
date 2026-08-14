@@ -41,6 +41,14 @@ public class OlioContextConfiguration {
 	private BaseRecord authorizationUserRole = null;
 	private BaseRecord authorizationAdminRole = null;
 
+	/// PictureBook 2.0 phase 2a additions. Both are additive and default to today's behaviour: a null
+	/// universe role pair means the universe grant pass keeps using the world pair (or the org-wide
+	/// pair), and scanNestedWorldGroups=false means no recursive grant happens at all.
+	///
+	private BaseRecord universeAuthorizationUserRole = null;
+	private BaseRecord universeAuthorizationAdminRole = null;
+	private boolean scanNestedWorldGroups = false;
+
 
 
 	public OlioContextConfiguration() {
@@ -125,6 +133,72 @@ public class OlioContextConfiguration {
 
 	public void setAuthorizationAdminRole(BaseRecord authorizationAdminRole) {
 		this.authorizationAdminRole = authorizationAdminRole;
+	}
+
+	/**
+	 * Optional UNIVERSE-tier user role - the second half of the two-tier role split.
+	 * <p>
+	 * When BOTH this and {@link #getUniverseAuthorizationAdminRole()} are non-null,
+	 * {@code OlioContext.initialize()} runs its <b>universe</b> grant pass against this pair instead of
+	 * the world pair from {@link #getAuthorizationUserRole()}. The world pass is unaffected. So a
+	 * compartmentalised context (a PictureBook book) can hold read access to the shared corpora through
+	 * a role every book shares, while its own per-book roles are granted only on its own world groups -
+	 * which is what stops a per-book {@code Admin} role from receiving Create/Update/<b>Delete</b> on the
+	 * universe's corpora.
+	 * <p>
+	 * Null (the default) reproduces today's behaviour exactly: the universe pass uses the world pair when
+	 * that is set, and the org-wide {@code ~/Roles/Olio User} / {@code ~/Roles/Olio Admin} pair otherwise.
+	 * Grid/arena/agent contexts leave both null and are byte-for-byte unchanged.
+	 * <p>
+	 * <b>Half-configuring the pair is refused, not silently ignored.</b> Setting one and leaving the other
+	 * null would fall back to the world pair for the universe tier - re-granting the per-book roles on the
+	 * universe, i.e. exactly the isolation-losing direction this pair exists to remove - so
+	 * {@code initialize()} throws instead.
+	 * <p>
+	 * <b>This pair is never a fallback for the world tier.</b> {@code OlioContext}'s role-less entry
+	 * points ({@code enroleReader}, {@code enroleAdmin}, {@code scanNestedGroups}) resolve the WORLD pair
+	 * only. A universe role must never end up holding CRUD on a book's own groups.
+	 */
+	public BaseRecord getUniverseAuthorizationUserRole() {
+		return universeAuthorizationUserRole;
+	}
+
+	public void setUniverseAuthorizationUserRole(BaseRecord universeAuthorizationUserRole) {
+		this.universeAuthorizationUserRole = universeAuthorizationUserRole;
+	}
+
+	/**
+	 * Optional universe-tier admin role. See {@link #getUniverseAuthorizationUserRole()}.
+	 */
+	public BaseRecord getUniverseAuthorizationAdminRole() {
+		return universeAuthorizationAdminRole;
+	}
+
+	public void setUniverseAuthorizationAdminRole(BaseRecord universeAuthorizationAdminRole) {
+		this.universeAuthorizationAdminRole = universeAuthorizationAdminRole;
+	}
+
+	/**
+	 * When true, {@code initialize()} additionally grants this context's world-tier role pair
+	 * <b>recursively</b> over the descendants of every group directly under the world's container group,
+	 * via {@code OlioContext.scanNestedWorldGroups()}.
+	 * <p>
+	 * Group entitlements are joined on an exact {@code groupId}
+	 * ({@code effectiveGroupObjectEntitlementTemplate.sql}), so they do NOT inherit down the group tree:
+	 * a grant on {@code Gallery} does not reach {@code Gallery/Characters}, the shape {@code SDUtil}
+	 * creates. Measured, not assumed - see {@code TestBookWorld} case 9. Without this the world roles
+	 * cannot read OR write anything a sub-subgroup holds.
+	 * <p>
+	 * Default false, so grid/arena/agent contexts are unchanged: they reach the equivalent behaviour
+	 * through their own explicit {@code scanNestedGroups} calls
+	 * ({@code OlioService}'s Gallery grant, {@code OlioAction}).
+	 */
+	public boolean isScanNestedWorldGroups() {
+		return scanNestedWorldGroups;
+	}
+
+	public void setScanNestedWorldGroups(boolean scanNestedWorldGroups) {
+		this.scanNestedWorldGroups = scanNestedWorldGroups;
 	}
 
 	public String getBasePath() {

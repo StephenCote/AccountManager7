@@ -196,6 +196,29 @@ behind the off-by-default `isDropColumns()`.
 
 ### 2.2 The models
 
+> **READ THIS BEFORE WRITING THE JSON — three ratified corrections apply to every field list below**
+> (full reasoning in Appendix D, "Model-definition corrections"):
+> 1. **"(indexed)" below never means `index: true`.** `DBUtil.java:88` sets
+>    `useFieldIndexGuidance = false`, so a field-level `index` flag creates **no database index** — and
+>    `PolicyUtil.java:255` *does* read `isIndex()`, adding a per-query foreign-record read-policy scan. Real
+>    indexes come from **`constraints`** (unique) and **`hints`** (non-unique). Read every "(indexed)" as
+>    *"needs a `hints` entry"*, and reverse edges (`binding.node`, `binding.sourceNode`,
+>    `binding.sourceArtifact`, `artifact.producedByNode`, `artifact.selected`, `node.workflow`,
+>    `node.handle`) are **`hints`**.
+> 2. **Two fields are renamed.** `olio.pb.scene.index` → **`sceneIndex`** (`index` is not in
+>    `DBUtil.reservedWords` and would be emitted unquoted); `olio.pb.artifact.current` → **`selected`**
+>    (and "one `selected` per `(node, role)`" is **not** expressible as a unique constraint — booleans are
+>    never NULL, so it would forbid a second *superseded* row; constrain
+>    `(producedByNode, role, revision, organizationId)` and enforce single-`selected` in
+>    `PbArtifactUtil.setSelected` with a post-write re-read).
+> 3. **All eight models carry `urn`** (decision 8) — `common.baseLight` omits it, so it must be added
+>    explicitly. Because `UrnProvider` composes from `name` (not `handle`) and `common.urn` has **no**
+>    uniqueness constraint to catch a collision, `node`/`binding`/`artifact`/`run` names must be derived to
+>    be unique within their group (from `node.handle`, and `role + bindingOrdinal` for bindings).
+>    `common.groupExt` *does* supply a virtual `groupPath`; `likeInherits` imports no fields, so
+>    `data.directory`'s `name, groupId, organizationId` constraint is **not** inherited and every invariant
+>    needs its own explicit `constraints` entry.
+
 **`olio.pb.book`** — lives in `{world}/Book`.
 `name`, `description`, `slug` (indexed, constraint `"slug, organizationId"`), `world` (foreign
 `olio.world`), `series` (foreign `olio.pb.series`), `chapter` (int), `sourceData` (foreign `data.data`),
@@ -211,11 +234,11 @@ patterns out of the basis, and a book world's own corpora groups are empty (`Wor
 loads into the universe only, `WorldUtil.java:194-221`).
 
 **`olio.pb.scene`** — lives in `{world}/Book`.
-`name`, `book` (foreign), `index` (int, indexed), `title`, `description`, `summary`, `setting`,
+`name`, `book` (foreign), `sceneIndex` (int, indexed — renamed from `index`), `title`, `description`, `summary`, `setting`,
 `action`, `mood`, `blurb`, `userEdited`, `characters` (foreign list `olio.charPerson`,
 `dedicatedParticipation`), `sceneNode` (foreign `olio.pb.node`).
 Replaces the per-scene `data.note` JSON (`PictureBookUtil.java:2900-2922`). Scene order becomes an
-indexed column instead of array position in a blob; `PUT /scenes/order` becomes N patches on `index`.
+indexed column instead of array position in a blob; `PUT /scenes/order` becomes N patches on `sceneIndex`.
 
 **`olio.pb.workflow`** — lives in `{world}/Workflow`. One per book.
 `name`, `book` (foreign), `graphVersion`, `graphStatus` (CLEAN/DIRTY/RUNNING/FAILED), `nodeCount`,
@@ -267,8 +290,8 @@ in `{world}/Gallery` (the existing uniform shape — no new blob model).
 - `name`, `artifactType` (enum: `TEXT`, `PROMPT`, `IMAGE`, `IMAGE_STRIP`, `COMPOSITE_CANVAS`, `JSON`, `RECORD_REF`)
 - `data` (foreign `data.data`), `text`, `refModel`/`refObjectId`
 - `producedByNode` (foreign), `role`
-- `revision` (int), `supersedes` (foreign self), `current` (boolean) — version chain, so old images
-  stay viewable instead of being overwritten
+- `revision` (int), `supersedes` (foreign self), `selected` (boolean — renamed from `current`) — version
+  chain, so old images stay viewable instead of being overwritten
 - `seed` (long), `sdConfigSnapshot` (foreign `olio.sd.config`) — **per-artifact** snapshot of the
   *effective* config actually used. Replaces `persistBookSdConfig`
   (`PictureBookUtil.java:456-465`, called `:3340-3342`), which overwrites `meta.sdConfig` on every
@@ -1800,11 +1823,33 @@ in `games/wordGame.js:16` becomes the default rather than a literal.
 *Exit:* existing game/Olio e2e specs green with no ids supplied (proving the default path), plus a new
 test that two different world ids from one user in one session yield two different worlds' data.
 
-**Phase 2 — Persisted models + graph utilities (Objects7).** 8 model JSONs; `OlioModelNames`/
-`OlioFieldNames` constants; enums; `PbGraphUtil` (build / `validateAcyclic` / `computeInputHash` /
-`markStaleDownstream` / `recomputeStatus` / `nextRunnable`), `PbArtifactUtil` (persist + sanitize +
-supersede chain), `PbSharingUtil` (promote/copy).
-*Exit:* `TestPbGraph` green; tables verified via `DBUtil.getTableName`; **no reset used**.
+**Phase 2 — Persisted models + graph utilities (Objects7).** Split into 2a-2d during implementation,
+because the authorization diff has a different regression baseline from the model diff and because
+constraints/hints are irreversible once a table exists (see Appendix D). Sub-phases in order:
+
+- **Phase 2a — two-tier role split + recursive world grant. DONE 2026-08-14.**
+  `universeAuthorizationUserRole`/`AdminRole` (null-default, so grid/arena keep the org-wide pair);
+  `OlioContext.scanNestedWorldGroups()`; `registerUniverseUser`; both-tier creator enrolment; two-role
+  `verifyGrants`. Done first and alone because it is authorization-only, its regression baseline is the
+  existing green gate, and the universe tier had to exist before the two-role property could be asserted.
+  *Verified:* `TestBookWorld` 21/21 + the 83-test gate. As-built under ratification 5; measurements in
+  `PictureBook2ImplementationState.md` §3.
+- **Phase 2b — the eight `olio.pb.*` model JSONs, registered, with their tables and indexes verified.**
+  The JSONs; the `OlioModelNames`/`OlioFieldNames` constants; the new enums; the one-line
+  `SDAPIEnumType.COMFY` addition (ratification 12); registration in `OlioModelNames.MODELS`.
+  *Exit:* the eight tables exist (`DBUtil.getTableName`) and every declared constraint and hint appears in
+  `pg_indexes`. **The earlier 2b/2c split — write-but-don't-register plus a DDL pre-flight test — was
+  withdrawn**: it existed only because Appendix D said constraints and hints could never be added after
+  the table exists, which phase 1's own `generatePatchIndices` fix had already made false, and `am7db` is a
+  resettable container besides. Verify the indexes landed; don't build ceremony to avoid needing to.
+- **Phase 2c — the utilities** (was 2d; 2c's register-and-verify step folded into 2b above).
+  `PbConfigUtil`, `PbWatchedFields`, `PbGraphUtil` (build /
+  `validateAcyclic` / `computeInputHash` / `markStaleDownstream` / `recomputeStatus` (compute-only, see
+  ratification 2) / `nextRunnable`), `PbArtifactUtil` (persist + sanitize + supersede chain +
+  `setSelected` with a post-write re-read), `PbBookUtil`, `PbSharingUtil` (promote/copy).
+  *Exit:* `TestPbGraph` green (including the `planMost(true)`-terminates case for the
+  `workflow.lastRun` ↔ `run.workflow` cycle), `TestPbSecurity` green, and the role-hierarchy direction
+  test run with its result recorded in Appendix D.
 
 **Phase 3 — Wire the pipeline to the graph, behind a flag (Objects7).** Each seam in
 `generateSceneImage` (`:3272-3793`) becomes a node execution, using the **existing** per-stage
@@ -1883,13 +1928,19 @@ which is not specific enough to act on:
 
 | Layer | Target | Why |
 |---|---|---|
-| **Objects7 JUnit** (`TestBookWorld`, `TestPbGraph`, `TestPbSecurity`'s Objects7-level assertions, `TestPictureBookCustom`) | the **dev** Postgres — `am7db`, **host port `15430`** (see the correction below) | **Key location dependency.** The vault/keystore location is tied to that store, so Objects7 tests cannot be repointed at a *different* database — in particular **never at the `am7test` container DB**, whose keys will not match. Changing the *port* to reach the same `am7db` is fine and expected. |
+| **Objects7 JUnit** (`TestBookWorld`, `TestPbGraph`, `TestPbSecurity`'s Objects7-level assertions, `TestPictureBookCustom`) | the **dev** Postgres — `am7db`, **host port `15432`** (see the correction below) | **Key location dependency.** The vault/keystore location is tied to that store, so Objects7 tests cannot be repointed at a *different* database — in particular **never at the `am7test` container DB**, whose keys will not match. Changing the *port* to reach the same `am7db` is fine and expected. |
 
-**Port correction, 2026-08-12.** `test.db.url` read `localhost:15432/am7db`; nothing listens on 15432. The
-dev `am7db` is published on **`15430`**. `AccountManagerObjects7/src/test/resources/resource.properties:9`
-is now `jdbc:postgresql://localhost:15430/am7db`. *Do not* work around a connection failure with a port
-forwarder or by pointing at the `am7test` stack — change the port. `AccountManagerConsole7`'s
-`resource.properties:11` still reads `15432/am72db` (a different database) and was left alone.
+**Port — RE-CORRECTED 2026-08-14, read this and not the 2026-08-12 note it replaces.** The committed
+`AccountManagerObjects7/src/test/resources/resource.properties:9` reads
+`jdbc:postgresql://localhost:15432/am7db`, it is not modified in the working tree, and the `postgres`
+container (`pgvector/pgvector:0.8.2-pg18-trixie`) publishes `0.0.0.0:15432->5432` — so **15432 is correct
+and every phase-1/2a test run used it.** The 2026-08-12 note claimed the file had been repointed to
+**15430** because nothing listened on 15432; whatever was true that day, it is not true now, and the
+15430 value was propagated into `PictureBook2ImplementationState.md` §6 and repeated in a verification
+report before anyone re-read the file. A second container `am7-pg` publishes `15433`.
+*Do not* work around a connection failure with a port forwarder or by pointing at the `am7test` stack —
+check the file, then `docker ps`. `AccountManagerConsole7`'s `resource.properties:11` reads
+`15432/am72db`: **same host and port, different database, and `am72db` must never be reset or dropped.**
 
 ### Running the gate — the suites are excluded in the pom (discovered 2026-08-12)
 
@@ -2295,6 +2346,12 @@ the excludes would leave the default build unchanged. As it stands, six live-DB 
 Recorded from the architect's final sign-off. Each is safe *today* only because of a condition phase 2
 can silently remove.
 
+> **STATUS 2026-08-14 — preconditions 1 and 2 are CLOSED by phase 2a.** The role pair is split
+> (`universeAuthorizationUserRole`/`AdminRole`, null-default) and nothing auto-enrols into either admin
+> role; the nested-grant write gap is closed by `OlioContext.scanNestedWorldGroups()`, world tier only.
+> Precondition 3 (B1 TOCTOU) is unchanged and is resolved by ratification 7 below, in phase 2b.
+> Measured evidence and the bounds that survive are in `PictureBook2ImplementationState.md` §3.
+
 1. **The single role pair across tiers is safe only because nothing auto-enrols into the book `Admin`
    role.** `getCreateBookContext` enrols the creator into **`Writer` only**; `registerUser(..., asAdmin=true)`
    requires the org admin or an existing Admin member. The universe call runs `userWrite=false`, so
@@ -2311,11 +2368,19 @@ can silently remove.
 
 ### §5.3 residue NOT yet satisfied — do not read §5.3 as partially done
 
-- **The Books (universe) tier roles do not exist at all.** §5.3 requires `~/Roles/Olio/Books/Reader` and
-  `~/Roles/Olio/Books/Writer` plus a two-part membership rule (*"`{slug}` role **and** Books role"*).
-  As-built creates only `{slug}/Writer` and `{slug}/Admin`, and universe grants go to the **per-book**
-  roles. So the universe tier has **no roles and no membership rule** — phase 2 must not treat §5.3's
-  membership rule as half-implemented.
+- ~~**The Books (universe) tier roles do not exist at all.**~~ **DONE in phase 2a (2026-08-14).** §5.3
+  required `~/Roles/Olio/Books/Reader` and `~/Roles/Olio/Books/Writer` plus a two-part membership rule
+  (*"`{slug}` role **and** Books role"*). Both roles now exist per organization, the universe grant pass is
+  addressed to them, and `getCreateBookContext` enrols a genuine creator in `{slug}/Writer` **and**
+  `Books/Reader` — so the membership rule is implemented for the create path. **Scope to keep stated:** it
+  is implemented for *creation only*. Opening an existing book enrols nothing by design, so phase 4's
+  member/sharing flow has to enrol into both tiers itself. And per ratification 3 the split is not
+  retroactive, so the negative half ("the book role alone cannot read the corpora") holds only for books
+  created after the split — asserted on a slug created inside `TestBookWorld` case19. Measured there:
+  **37 universe-own groups** carry Read for `Books/Reader` and carry **nothing** for either per-book role,
+  with the **7 shared `/Library` corpora** partitioned out by `parentId` because the *world* pass grants
+  those to the book role legitimately. The same case reads a universe `Traits` record through PBAC as the
+  creator, which is the check that distinguishes "corpora access relocated" from "corpora access removed".
 - **§5.3's verification test 1 (role-hierarchy inheritance direction, `roles_to_leaf`) was never run.**
   No `TestBookWorld` case exercises parent-role → child-member entitlement. The plan designated this a
   phase-1 one-run settlement and **it is still open**; §10 Q10 (per-book grant scale) depends on the
@@ -2342,12 +2407,26 @@ Appendix A's model guidance is wrong in two places and incomplete in a third. Th
   `artifact.producedByNode`, `artifact.current`, `node.workflow`, `node.handle`"* would add **zero indexes
   and a per-query PBAC scan on the exact path that carries downstream propagation.**
   ⇒ **Reverse edges are `hints`, not `index: true`.**
-- **Constraints and hints are IRREVERSIBLE after the table exists.** `IOSystem` gives a *missing* table
-  `generateNewSchemaOnly` (which calls `generateIndices`); an *existing* table gets `generatePatchSchema`,
-  which emits **`ALTER TABLE … ADD COLUMN` only**. There is no add-index-later path, and `-Dreset` is
-  unavailable. ⇒ **Every constraint and hint must be final in the commit that first registers the eight
-  models in `OlioModelNames.MODELS`.** Phase 2 front-loads a DDL pre-flight test asserting the generated
-  `CREATE [UNIQUE] INDEX` lines *before* the tables are created.
+- ~~**Constraints and hints are IRREVERSIBLE after the table exists.**~~ **WITHDRAWN 2026-08-14 — this was
+  true when written and is not true now, and the plan should not be read as if it were.** It said an
+  existing table gets `generatePatchSchema`, which emits `ALTER TABLE … ADD COLUMN` only, so there was no
+  add-index-later path — and concluded that every constraint and hint had to be final in the commit that
+  first registers the models, front-loaded by a DDL pre-flight test.
+  **Phase 1's own DAL work removed the premise:** `DBUtil.generatePatchIndices(schema)` now exists and is
+  wired into `IOSystem.open` (`IOSystem.java:162`), applied **after** the ADD COLUMN patches, one statement
+  per constraint/hint, each `CREATE [UNIQUE] INDEX IF NOT EXISTS`, with per-statement
+  error-log-and-continue. A hint or constraint added to a model whose table already exists **is** created
+  on the next boot or JUnit run. (This is Gap B in `PictureBook2ImplementationState.md` §3.)
+  **And `-Dreset` is available on this database.** Stephen, 2026-08-14: `am7db` and `am7test` may be
+  reset; **`am72db` must never be reset or dropped** — it shares host:port `localhost:15432` with `am7db`,
+  so read the database name, not the port. `am7db` lives in a disposable container
+  (`pgvector/pgvector:0.8.2-pg18-trixie`, `0.0.0.0:15432->5432`).
+  ⇒ **No pre-flight ceremony, no write-but-don't-register step.** Get the constraints right because
+  they are the model's invariants, not because the DDL is a one-way door. **What does remain one-way**
+  (and is cheap here, since the DB is resettable): *dropping or narrowing* an index is not automatic — a
+  changed constraint leaves the old index in place, still enforcing, until dropped by hand (the
+  `auth.group` case in §4 of the state doc) — and `generatePatchSchema` emits `ADD COLUMN` only, so
+  changing a field's declared **type** does not alter the existing column.
 - **"One `current` artifact per `(node, role)`" is not expressible as a unique constraint.** Booleans are
   never NULL, so a UNIQUE index over `current` would forbid a second *superseded* row — the normal case.
   ⇒ Constrain `(producedByNode, role, revision, organizationId)`; enforce single-`current` in
@@ -2427,6 +2506,17 @@ non-null; otherwise it falls through to today's single pair. So:
 This supersedes the earlier "config is pinned to exactly two role fields" constraint. Note
 `effectiveUserRole()`/`effectiveAdminRole()` must stay bound to the **world** pair — the universe pair
 must never become the fallback for `enrole`/`scanNestedGroups`, or the isolation-losing direction reopens.
+
+> **AS-BUILT 2026-08-14 (phase 2a).** Implemented as ratified, with three additions the code forced:
+> (a) the two tiers resolve **independently** — universe pair → world pair → org-wide for the universe pass;
+> world pair → org-wide for the world pass, never the universe pair — because a context could otherwise
+> carry a universe pair and silently fall to the org-wide pair for both;
+> (b) a **half-configured** universe pair throws instead of falling back, since the fallback is a silent
+> re-grant of the per-book roles on the universe and no grant failure is loud;
+> (c) the creator must be enrolled in the universe user role or the split *removes* corpora access rather
+> than relocating it — so `registerUser` was factored into a shared `register(...)` with a
+> `registerUniverseUser` beside it, keeping one authorization check, one org-scope check and one audit shape
+> across both tiers. Nothing auto-enrols into either admin role, which is what closes precondition 1.
 
 **6. The two live auth defects are HOISTED — approved 2026-08-14.** `/cancel` discarding its principal
 (`PictureBookService.java:474-476`; static process-wide `cancelRegistry` at `:86` keyed by a

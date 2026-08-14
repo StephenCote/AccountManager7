@@ -163,6 +163,12 @@ public class OlioContext {
 	 * ({@code enroleReader}, {@code enroleAdmin}, {@code scanNestedGroups}) would silently act on the
 	 * org-wide tier even on a context configured with its own roles - granting in the
 	 * isolation-losing direction, and doing it quietly.
+	 * <p>
+	 * <b>This is the WORLD tier, and the universe pair
+	 * ({@code config.getUniverseAuthorizationUserRole()}) must never become a fallback for it.</b> The
+	 * universe pair is shared by every book; letting it reach {@code scanNestedGroups} or
+	 * {@code enrole} would hand every holder of the shared universe role CRUD on one book's own groups -
+	 * the same isolation-losing direction, one tier up.
 	 */
 	private BaseRecord effectiveUserRole() {
 		BaseRecord cfgRole = (config != null ? config.getAuthorizationUserRole() : null);
@@ -244,6 +250,52 @@ public class OlioContext {
 	 *         in a different organization, or the actor is not authorized
 	 */
 	public boolean registerUser(BaseRecord actor, BaseRecord user, boolean asAdmin) throws OlioException {
+		BaseRecord admRole = effectiveAdminRole();
+		return register(actor, user, (asAdmin ? admRole : effectiveUserRole()),
+			new BaseRecord[] {admRole}, (asAdmin ? "admin" : "user"));
+	}
+
+	/**
+	 * Enrol {@code user} in this context's UNIVERSE-tier user or admin role - the second half of the
+	 * two-tier role split - with the same authorization, org-scoping and audit shape as
+	 * {@link #registerUser(BaseRecord, BaseRecord, boolean)}.
+	 * <p>
+	 * <b>Why this exists as its own entry point.</b> {@code registerUser} enrols into the
+	 * {@link #effectiveUserRole()}/{@link #effectiveAdminRole()} pair, which is deliberately the WORLD
+	 * tier and must stay that way. Once the universe pass grants a separate pair, a book's members hold
+	 * Read on the shared corpora through that pair and through nothing else - so creating a book without
+	 * also enrolling the creator here produces a book whose owner cannot read the apparel templates,
+	 * colours and word lists the pipeline needs.
+	 * <p>
+	 * <b>Authorizing roles.</b> The universe admin role OR this context's world admin role OR the
+	 * organization admin. The world admin role is included on purpose: the universe user role carries
+	 * Read on shared corpora and nothing else, and a book administrator adding a member to their own book
+	 * has to be able to make that membership useful. Nothing auto-enrols anybody into either admin role.
+	 *
+	 * @throws OlioException if this context has no universe role pair configured, or on any of the
+	 *         conditions {@link #registerUser(BaseRecord, BaseRecord, boolean)} throws for
+	 */
+	public boolean registerUniverseUser(BaseRecord actor, BaseRecord user, boolean asAdmin) throws OlioException {
+		BaseRecord uniUserRole = (config != null ? config.getUniverseAuthorizationUserRole() : null);
+		BaseRecord uniAdminRole = (config != null ? config.getUniverseAuthorizationAdminRole() : null);
+		if(uniUserRole == null || uniAdminRole == null) {
+			throw new OlioException("This context has no universe authorization role pair configured, so there is no universe tier to register into");
+		}
+		return register(actor, user, (asAdmin ? uniAdminRole : uniUserRole),
+			new BaseRecord[] {uniAdminRole, effectiveAdminRole()}, "universe " + (asAdmin ? "admin" : "user"));
+	}
+
+	/**
+	 * Shared implementation of {@link #registerUser(BaseRecord, BaseRecord, boolean)} and
+	 * {@link #registerUniverseUser(BaseRecord, BaseRecord, boolean)} - one authorization check, one
+	 * org-scope check, one audit shape, one idempotency probe, for both tiers.
+	 *
+	 * @param role the role the target is enrolled in
+	 * @param authorizingRoles membership of ANY of these authorizes {@code actor} (nulls are skipped);
+	 *        the organization admin is authorized regardless
+	 * @param label what the role is, for the exception text
+	 */
+	private boolean register(BaseRecord actor, BaseRecord user, BaseRecord role, BaseRecord[] authorizingRoles, String label) throws OlioException {
 		if(actor == null) {
 			throw new OlioException("Actor is null");
 		}
@@ -265,20 +317,21 @@ public class OlioContext {
 			throw new OlioException("Cannot register " + user.get(FieldNames.FIELD_NAME)
 				+ " (organization " + userOrg + ") in organization " + octx.getOrganizationId());
 		}
-		BaseRecord admRole = effectiveAdminRole();
-		BaseRecord role = (asAdmin ? admRole : effectiveUserRole());
 		if(role == null) {
-			throw new OlioException("Failed to resolve the " + (asAdmin ? "admin" : "user") + " role");
+			throw new OlioException("Failed to resolve the " + label + " role");
 		}
 
 		/// contextUser = the actor (who asked), subject = the enrolled user (who it happened to),
 		/// resource = the role. See the javadoc: both have to be structured fields.
 		BaseRecord audit = AuditUtil.startAudit(actor, ActionEnumType.ADD, user, role);
 		BaseRecord orgAdmin = octx.getAdminUser();
-		boolean authorized = (
-			(orgAdmin != null && orgAdmin.get(FieldNames.FIELD_ID) != null && orgAdmin.get(FieldNames.FIELD_ID).equals(actor.get(FieldNames.FIELD_ID)))
-			|| (admRole != null && ioContext.getMemberUtil().isMember(actor, admRole, null))
-		);
+		boolean authorized = (orgAdmin != null && orgAdmin.get(FieldNames.FIELD_ID) != null && orgAdmin.get(FieldNames.FIELD_ID).equals(actor.get(FieldNames.FIELD_ID)));
+		for(BaseRecord authRole : authorizingRoles) {
+			if(authorized) {
+				break;
+			}
+			authorized = (authRole != null && ioContext.getMemberUtil().isMember(actor, authRole, null));
+		}
 		if(!authorized) {
 			AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "Actor is not a member of the Olio administrator role");
 			throw new OlioException("Not authorized to register " + user.get(FieldNames.FIELD_NAME));
@@ -551,6 +604,64 @@ public class OlioContext {
 		return (isUniverse ? config.getUniversePath() : config.getWorldPath());
 	}
 
+	/**
+	 * Grant this context's effective WORLD-tier role pair recursively over every descendant of every
+	 * group directly under the world's container group. Called by {@code initialize()} when
+	 * {@code OlioContextConfiguration.isScanNestedWorldGroups()} is set.
+	 * <p>
+	 * <b>Why it is needed at all.</b> Group entitlements are joined on an exact {@code groupId}
+	 * ({@code effectiveGroupObjectEntitlementTemplate.sql}), so the two
+	 * {@code configureWorldAuthorization} passes reach the world's own ~36 groups and stop. A grant on
+	 * {@code Gallery} does not reach {@code Gallery/Characters} - the shape
+	 * {@code SDUtil.resolveCharacterImagePath} creates. Grants are Read/Update/Create/Delete together,
+	 * so this is a WRITE gap as much as a read gap: without it a portrait write into
+	 * {@code Gallery/Characters} is denied, not merely invisible.
+	 * <p>
+	 * <b>The world container only, never the universe container.</b> The universe container
+	 * ({@code /Olio/Universes/{universe}}) has the {@code Worlds} container among its children, and
+	 * {@code Worlds} holds EVERY compartment's world container. Recursing there would grant the shared
+	 * universe role CRUD over every book in the organization - the isolation-losing direction, applied to
+	 * the whole tenant at once.
+	 * <p>
+	 * <b>The container group itself is not a target</b>, matching
+	 * {@link #resolveGrantTargets(BaseRecord, String, OrganizationContext)}: the container holds the
+	 * {@code olio.world} record, and {@code userWrite=true} would hand the world role Delete on it.
+	 * Children are enumerated by {@code parentId}, so the shared {@code /Library/*} corpora - which are
+	 * foreign fields of the world but live under {@code /Library}, not under the container - are not
+	 * reached and cannot pick up the {@code Delete} that {@code configureWorldAuthorization} withholds
+	 * from them.
+	 * <p>
+	 * <b>Bound worth stating: this repairs the tree that exists WHEN IT RUNS.</b> A sub-subgroup created
+	 * later in the session by a write path is not covered, and that write path has to grant on the group
+	 * it just created (the pattern {@code OlioService}'s Gallery grant already uses). Re-opening a
+	 * context re-runs this, so a re-open repairs anything created since the last one -
+	 * {@code MemberUtil.member(..., true)} is idempotent, so re-running it is always safe.
+	 */
+	public void scanNestedWorldGroups() throws OlioException {
+		if(world == null) {
+			throw new OlioException("World is null");
+		}
+		if(olioUser == null) {
+			throw new OlioException("Olio User is null");
+		}
+		OrganizationContext octx = IOSystem.getActiveContext().findOrganizationContext(config.getUser());
+		if(octx == null) {
+			throw new OlioException("Failed to find organization context");
+		}
+		IOContext ioContext = IOSystem.getActiveContext();
+		String worldContainerPath = config.getWorldPath() + "/" + (String)world.get(FieldNames.FIELD_NAME);
+		BaseRecord container = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_GROUP, worldContainerPath, GroupEnumType.DATA.toString(), octx.getOrganizationId());
+		if(container == null) {
+			throw new OlioException("Failed to find the world container group " + worldContainerPath);
+		}
+		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, container.get(FieldNames.FIELD_ID), octx.getOrganizationId());
+		BaseRecord[] children = ioContext.getSearch().findRecords(cq);
+		for(BaseRecord group : children) {
+			scanNestedGroups(group, true);
+		}
+		logger.info("Recursively granted the world role pair beneath " + children.length + " group(s) of " + worldContainerPath);
+	}
+
 	public void scanNestedGroups(BaseRecord cfgWorld, String fieldName, boolean userWrite) {
 		BaseRecord dir = cfgWorld.get(fieldName);
 		scanNestedGroups(dir, userWrite);
@@ -784,13 +895,44 @@ public class OlioContext {
 
 			BaseRecord cfgUserRole = config.getAuthorizationUserRole();
 			BaseRecord cfgAdminRole = config.getAuthorizationAdminRole();
-			if(cfgUserRole != null && cfgAdminRole != null) {
+			BaseRecord uniUserRole = config.getUniverseAuthorizationUserRole();
+			BaseRecord uniAdminRole = config.getUniverseAuthorizationAdminRole();
+
+			/// A HALF-configured universe pair must not fall through to the world pair. That fallback
+			/// would re-grant the per-book roles on the universe - the exact isolation-losing direction
+			/// the two-tier split removes - and it would do it silently, because a grant never fails
+			/// loudly (AuthorizationUtil.setEntitlement logs a failed membership only under trace).
+			if((uniUserRole == null) != (uniAdminRole == null)) {
+				throw new OlioException("The universe authorization role pair is half-configured (user role "
+					+ (uniUserRole == null ? "is" : "is not") + " null, admin role "
+					+ (uniAdminRole == null ? "is" : "is not") + " null). Set both or neither.");
+			}
+
+			/// UNIVERSE tier. The universe pair when configured, else the world pair, else the org-wide
+			/// pair. userWrite=false on every branch, exactly as before.
+			if(uniUserRole != null) {
+				configureWorldAuthorization(universe, uniUserRole, uniAdminRole, config.getUniversePath(), false);
+			}
+			else if(cfgUserRole != null && cfgAdminRole != null) {
 				configureWorldAuthorization(universe, cfgUserRole, cfgAdminRole, config.getUniversePath(), false);
-				configureWorldAuthorization(world, cfgUserRole, cfgAdminRole, config.getWorldPath(), true);
 			}
 			else {
 				configureWorldAuthorization(universe, false);
+			}
+
+			/// WORLD tier. The world pair when configured, else the org-wide pair. NEVER the universe
+			/// pair: that role is shared by every compartment in the universe.
+			if(cfgUserRole != null && cfgAdminRole != null) {
+				configureWorldAuthorization(world, cfgUserRole, cfgAdminRole, config.getWorldPath(), true);
+			}
+			else {
 				configureWorldAuthorization(world, true);
+			}
+
+			/// Group entitlements do not inherit down the group tree, so the two passes above reach the
+			/// world's own groups and stop there. Opt-in, and world tier only - see the method javadoc.
+			if(config.isScanNestedWorldGroups()) {
+				scanNestedWorldGroups();
 			}
 			/// Set ONLY after both grant calls returned. `initialized` above is not evidence that
 			/// authorization ran - see isAuthorizationConfigured().

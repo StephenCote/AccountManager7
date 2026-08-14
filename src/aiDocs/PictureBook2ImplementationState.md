@@ -1,7 +1,7 @@
 # PictureBook 2.0 — Implementation State
 
 **As of:** 2026-08-14 · **Pause point:** all in-flight work complete; nothing half-applied.
-**Next up:** Phase 2a (two-tier role split + `scanNestedGroups`).
+**Next up:** Phase 2b (the eight `olio.pb.*` model JSONs, registered, with tables + indexes verified).
 **Design of record:** `PictureBook2Plan.md` — read **Appendix D** first (as-built + every ratified
 decision), then Appendix C, then the body. Where the body and Appendix D disagree, **Appendix D wins**.
 
@@ -18,7 +18,8 @@ decision), then Appendix C, then the body. Where the body and Appendix D disagre
 | DAL — participation-table index/column patch | **DONE** | (in the 9) |
 | `PathUtil` — characterize + fix | **DONE except F3** | 14/15 + 1 |
 | Phase 2 — plan + 2 design-review rounds | **DONE** | — |
-| Phase 2a-2d — implementation | **NOT STARTED** | — |
+| **Phase 2a — two-tier role split + recursive world grant** | **DONE** | 21 + 83 green |
+| Phase 2b-2d — implementation | **NOT STARTED** | — |
 | Phase 3 / 4 | **NOT STARTED** | — |
 | Phase 5 (Ux) / 6 (migration) | out of scope this run | — |
 
@@ -29,7 +30,8 @@ decision), then Appendix C, then the body. Where the body and Appendix D disagre
 ## 2. Full test inventory (all against `am7db`)
 
 ```
-TestBookWorld                 19    olio book compartment, fresh-org H2 cases, evict scoping
+TestBookWorld                 21    olio book compartment, fresh-org H2 cases, evict scoping,
+                                    + phase 2a: case19 two-tier split, case20 recursive world grant
 TestGameUtil                  25 ┐
 TestGameUtilSync              15 │
 TestOlioGameFeatures          15 ├ the phase-1 non-regression gate = 60
@@ -84,6 +86,92 @@ resolving scene → group → parent → book **by id at every hop, never path r
 **Measured correction to §5.6's framing:** an *unentitled* user was already blocked at the note level
 (404). The real gap was a user with Read+Update on the `Scenes` group but nothing on the book group —
 exactly the shape PB2's shared world creates. Now 403.
+
+### Phase 2a — the two-tier role split + the recursive world grant
+
+**Authorization-only diff, entirely inside Objects7; no Service7, Console7 or Ux change.** Every consumer
+of `OlioContextConfiguration` is Objects7-internal and none of them sets the new fields, so grid/arena/
+agent keep the org-wide `~/Roles/Olio *` pair on the default path.
+
+**Verified 2026-08-14 against `am7db`, no reset, no DDL:** `TestBookWorld` **21/21**, and the
+non-regression gate re-run **83/83** — `TestGameUtil` 25, `TestGameUtilSync` 15, `TestOlioGameFeatures` 15,
+`TestOlioRules` 1, `TestOlio2` 1, `TestNestedStructures` 3, `TestPictureBookKnownIssues` 15,
+`TestPictureBookSceneAuthz` 7, `TestOlioCacheScope` 1. The gate matters here specifically because
+`initialize()`'s grant block and `registerUser` are on the grid/arena path, not only the book path.
+
+**The split.** `OlioContextConfiguration` gains `universeAuthorizationUserRole` /
+`universeAuthorizationAdminRole`, both null-default. `initialize()` now resolves the two tiers
+independently: the **universe** pass uses the universe pair when set, else the world pair, else the
+org-wide pair; the **world** pass uses the world pair, else the org-wide pair, and **never** the universe
+pair. `effectiveUserRole()`/`effectiveAdminRole()` stay bound to the world pair, so `enrole` /
+`scanNestedGroups` cannot reach a role every book shares. A **half-configured** universe pair throws
+rather than falling back to the world pair — that fallback would silently re-grant the per-book roles on
+the universe, and a grant never fails loudly (`setEntitlement` logs a failed membership only under trace).
+
+`PbOlioContextUtil` creates two more roles per organization — `~/Roles/Olio/Books/Reader` (Read on the
+`Books` universe corpora) and `~/Roles/Olio/Books/Writer` (Create/Update, plus Delete on the universe's own
+groups). Neither can collide with a per-book role container: `BOOK_SLUG_PATTERN` is lowercase-only, so no
+slug can be named `Reader` or `Writer`.
+
+**The creator is enrolled in BOTH tiers, and that is not optional.** Since the split the per-book roles
+hold nothing on the universe, so a creator in the book `Writer` role alone could not read the apparel
+templates, colours and word lists the pipeline needs. `registerUser` was refactored into a shared
+`register(actor, user, role, authorizingRoles, label)` with a new `registerUniverseUser` beside it —
+one authorization check, one org-scope check, one audit shape, both tiers. Nothing auto-enrols anybody
+into **either** admin role, which is what closes Appendix D precondition 1.
+
+**Measured on `am7db`, on a book created after the split:** 37 universe-own groups each carry Read for the
+universe `Reader` role, and **neither** per-book role holds Read on any of them; the 7 shared `/Library`
+corpora are partitioned out by `parentId` because the *world* pass legitimately grants those to the book
+role. The creator can still read a universe `Traits` record through PBAC — so corpora access was
+*relocated*, not removed. That last check is the one that would have caught the split as a regression.
+
+**The recursive world grant (Appendix D precondition 2).** New `OlioContext.scanNestedWorldGroups()`,
+invoked from `initialize()` behind `scanNestedWorldGroups` (default false; the book config sets it). It
+grants the **world-tier** pair recursively beneath every child of the world container. Three deliberate
+bounds:
+- **World container only, never the universe container.** The universe container has `Worlds` among its
+  children, and `Worlds` holds every book's container — recursing there would hand the shared universe role
+  CRUD over every book in the organization.
+- **The container group itself is not a target**, matching `resolveGrantTargets`: it holds the `olio.world`
+  record, and `userWrite=true` would give the world role Delete on it. Children are enumerated by
+  `parentId`, so the shared `/Library` corpora (foreign fields of the world, but parented under `/Library`)
+  are never reached and cannot pick up the `Delete` that `configureWorldAuthorization` withholds.
+- **It repairs the tree that exists when it runs.** A sub-subgroup created later in the session is not
+  covered and its write path must grant on the group it just created (the pattern `OlioService`'s Gallery
+  grant already uses); a re-open repairs it, since `MemberUtil.member(..., true)` is idempotent.
+
+**Measured across an evict-and-reopen (`TestBookWorld` case20), two levels deep:**
+```
+CASE 20 BEFORE — entitlement lvl2=false lvl3=false, PBAC read of the deep record=false
+CASE 20 AFTER  — entitlement lvl2=true  lvl3=true,  PBAC read of the deep record=true
+```
+The "before" leg is what makes the "after" leg evidence: both groups are created *after* the context was
+built, so a green result cannot be an earlier run's grant. **The plan's open question about the granting
+principal is answered by this:** `scanNestedGroups` grants as the **olio user** while
+`configureWorldAuthorization` grants as the **org admin**, and the olio-user path demonstrably lands the
+grant (a failed `setEntitlement` is silent, so this had to be measured rather than reasoned about). The two
+paths still use two principals — left as-is deliberately, since changing `scanNestedGroups` to the org admin
+would widen the granting authority for its six existing `OlioAction` callers and `OlioService:211`, which is
+a grid/arena behaviour change with no demonstrated need.
+
+**Test changes worth knowing about, because one is a fixture correction and not a weakening:**
+- `case09` (entitlements do not recurse) now probes a **randomly-suffixed** sub-subgroup. It measures a
+  *platform* property, so its target must be a group no grant pass could have covered — and `SLUG_ALPHA` is
+  a fixed slug on a live database, so a literal `Gallery/Characters` would survive between runs and be
+  granted by the new recursive pass on the *next* run. Same shape, same assertions, same property.
+- `case03`'s universe leg now addresses the **universe Reader** role. Addressed to the book role it would
+  assert the coupling the split removes, and would pass only on books old enough to still carry the legacy
+  grants.
+- `case19` / `case20` are new: the split (on a slug created inside the case) and the recursive grant
+  (before/after across an evict-and-reopen, asserting a PBAC read at depth 2, not just an entitlement row).
+
+**Not retroactive, by ratification.** `setEntitlement` only adds, so books created before the split keep
+their per-book roles' universe grants; `verifyGrants` therefore checks the world tier against the book role
+and the universe tier against the universe role, which is correct for both old and new books.
+**Known bound carried forward:** opening an *existing* book enrols nothing (case14's whole point), so a
+user shared into a book by a future phase-4 member flow needs enrolling in **both** tiers or they will hold
+the book role and no corpora access.
 
 ### DAL — index generation
 `generateIndices` is now recalled on the **schema-patch** path, not only at CREATE TABLE, with
@@ -194,6 +282,13 @@ It was left RED rather than quietly weakened.
 > widening any production modifier**. Precedent: `olio/llm/TestChatMemoryPipelineWiring.java`. Do not
 > "tidy" them into `objects.tests.*`; the package-private boundary is a deliberate authorization control.
 
+**Modified in phase 2a (Objects7 main):** `olio/OlioContextConfiguration.java` (universe role pair +
+`scanNestedWorldGroups`), `olio/OlioContext.java` (two-tier grant passes, `registerUniverseUser` +
+`register` extraction, `scanNestedWorldGroups()`), `olio/picturebook/PbOlioContextUtil.java` (the two
+universe roles, both-tier creator enrolment, two-role `verifyGrants`).
+**Modified in phase 2a (Objects7 test):** `olio/TestBookWorld.java` (case03 universe leg re-addressed,
+case09 fixture suffixed, case19 + case20 added).
+
 **Modified (Objects7 main):** `factory/Factory.java`, `io/IOSystem.java`, `io/db/DBUtil.java`,
 `olio/AddressUtil.java`, `olio/CharacterUtil.java`, `olio/ColorUtil.java`, `olio/Decks.java`,
 `olio/GeoLocationUtil.java`, `olio/OlioContext.java`, `olio/OlioContextConfiguration.java`,
@@ -214,9 +309,19 @@ characterization), `aiDocs/CanvasLibraryResearchPrompt.md` (new), this file.
 
 ## 6. Environment & commit notes
 
-- **DB:** `am7db` at **`localhost:15430`** (not 15432 — `test.db.url` updated, 1-line diff). Console7's
-  `resource.properties:11` still points at `15432/am72db`, a different database, deliberately untouched.
+- **DB — CORRECTED 2026-08-14.** `am7db` is at **`localhost:15432`**, in the disposable `postgres`
+  container (`pgvector/pgvector:0.8.2-pg18-trixie`, `0.0.0.0:15432->5432`). A second container `am7-pg`
+  sits on `15433`. The earlier claim in this file that `test.db.url` had been repointed to **15430** was
+  **wrong** — the committed `AccountManagerObjects7/src/test/resources/resource.properties:9` reads
+  `jdbc:postgresql://localhost:15432/am7db` and is not modified in the working tree, so every phase-1 and
+  phase-2a test run went to **15432**. Read the file, not this line, if it matters again.
   **Never use the docker `am7test` DB for Objects7 JUnit — the keys won't match.**
+- **Reset permission (Stephen, 2026-08-14) — supersedes the blanket prohibition** in
+  `.claude/rules/architecture.md` "Hard prohibitions" and `CLAUDE.md`, both of which still say never reset
+  and that Stephen does it himself. **`am7db` and `am7test` MAY be reset. `am72db` must NEVER be reset or
+  dropped** — it is Console7's target (`resource.properties:11`, `15432/am72db`) and shares host:port with
+  `am7db`, so the *database name* is the thing to check, not the port. The two rules files have not been
+  edited to match; that is Stephen's call.
 - **`pom.xml`:** six `<exclude>` lines are commented out as `PB2-GATE` so the gate can run. Stephen will
   set these to his liking. A surefire profile (`-Ppb2-gate`) would be the cleaner mechanism than
   commented-out build config.
@@ -224,7 +329,8 @@ characterization), `aiDocs/CanvasLibraryResearchPrompt.md` (new), this file.
   ComfyUI `.39:8188` were **not** reachable from the build host at last check (possibly a local firewall
   or interface binding). `test.swarm.server` and `test.llm.ollama.server` still point at `localhost` and
   will need repointing before Phase 3.
-- **Never `-Dreset`.** Nothing in this work reset, dropped or altered a table or index; all DDL executed
+- **No reset was used.** (Not because one is forbidden — see the reset-permission bullet above — but as a
+  statement of fact about what these phases did.) Nothing in this work reset, dropped or altered a table or index; all DDL executed
   was additive `CREATE INDEX IF NOT EXISTS`.
 - **Untracked and NOT part of this work** (do not commit): `META-INF/MANIFEST.MF`, `kontext-test-output/`,
   `media/*.doc[x]`. Pre-existing and unowned: `log4j2.xml:4` `log-path=c:/projects/logs` (a
@@ -234,19 +340,24 @@ characterization), `aiDocs/CanvasLibraryResearchPrompt.md` (new), this file.
 
 ## 7. Next steps, in order
 
-1. **Phase 2a** — two-tier role split (`universeAuthorizationUserRole/AdminRole`, null-default so grid
-   keeps the universal role) + `scanNestedGroups` on the book path. **Do this before the models**: it is
-   an authorization-only diff whose regression baseline is the current green gate, and `TestPbSecurity`'s
-   two-role case cannot be written until the universe tier exists.
-2. **Phase 2b** — the eight `olio.pb.*` model JSONs, unregistered, + the DDL pre-flight test.
-3. **Phase 2c** — register in `OlioModelNames.MODELS`; verify indexes actually created.
-4. **Phase 2d** — `PbConfigUtil`, `PbWatchedFields`, `PbGraphUtil`, `PbArtifactUtil`, `PbBookUtil`,
+1. ~~**Phase 2a** — two-tier role split + `scanNestedGroups` on the book path.~~ **DONE** — see §3.
+   The two-role property it unblocked is asserted in `TestBookWorld` case19 for now; `TestPbSecurity`
+   itself is still phase-2 test work (item 4), and the case19 fixture is the shape to lift into it.
+2. **Phase 2b** — the eight `olio.pb.*` model JSONs + `OlioModelNames`/`OlioFieldNames` constants + the new
+   enums + `SDAPIEnumType.COMFY`, **registered in `OlioModelNames.MODELS`**, with the tables verified via
+   `DBUtil.getTableName` and every declared constraint/hint verified present in `pg_indexes`.
+   *(The former 2b/2c split — write-but-don't-register, plus a DDL pre-flight test — was **withdrawn
+   2026-08-14**. It rested on Appendix D's claim that constraints and hints can never be added after the
+   table exists; phase 1's own `generatePatchIndices` fix, wired at `IOSystem.java:162`, had already made
+   that false, and `am7db` is a resettable container. Verify the indexes landed; don't build ceremony to
+   avoid needing to.)*
+3. **Phase 2c** — `PbConfigUtil`, `PbWatchedFields`, `PbGraphUtil`, `PbArtifactUtil`, `PbBookUtil`,
    `PbSharingUtil`.
-5. **Phase 2 tests** — `TestPbGraph`, `TestPbSecurity`, and the **role-hierarchy direction test**
+4. **Phase 2 tests** — `TestPbGraph`, `TestPbSecurity`, and the **role-hierarchy direction test**
    (approved: grant to a parent role, enrol in the child only, assert whether `AccessPoint` permits;
    record the result in Appendix D — §10 Q10 depends on it).
-6. **Phase 3** — pipeline to graph behind `picturebook.v2`. Needs ollama **and** embedding reachable.
-7. **Phase 4** — remaining REST endpoints (the two auth fixes are already hoisted out).
+5. **Phase 3** — pipeline to graph behind `picturebook.v2`. Needs ollama **and** embedding reachable.
+6. **Phase 4** — remaining REST endpoints (the two auth fixes are already hoisted out).
 
 **Smaller items still open:** `tagApparelSceneIndex` (`PictureBookUtil:1171`) has the same missing book
 check the hoisted patch fixed elsewhere; Q5 (make `OlioContext` **throw** on authorization failure instead
