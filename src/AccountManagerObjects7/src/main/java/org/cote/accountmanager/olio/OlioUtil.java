@@ -4,7 +4,6 @@ import java.security.SecureRandom;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -49,7 +48,27 @@ public class OlioUtil {
     protected static final long DAY = 24 * HOUR;
     protected static final long YEAR = 365 * DAY;
     
-	protected static Map<String, List<String>> dirNameCache = new HashMap<>();
+	/**
+	 * Memoized "names already present in this directory" sets, keyed {@code model + "-" + groupId}.
+	 * The key already carries the group, so it is not cross-world - that key is kept as-is.
+	 * <p>
+	 * Now a {@link ConcurrentHashMap} of {@link CopyOnWriteArrayList} and bounded at
+	 * {@link #MAX_DIR_NAME_CACHE_KEYS} keys; on overflow the whole cache is dropped (and logged)
+	 * rather than growing without limit.
+	 * <p>
+	 * CAVEAT on the drop: entries are not purely read-through. {@code nameInDirExists} appends the
+	 * name it just handed out, so the list also holds names that are queued-but-not-yet-persisted.
+	 * Dropping the cache loses those, which can allow a duplicate name within a single generation
+	 * run. The cap is therefore set well above the number of distinct model/group pairs a normal run
+	 * touches, so the drop is a safety valve rather than a routine event.
+	 * <p>
+	 * For the same reason this map is NOT dropped by {@link #clearCache()} - see
+	 * {@link #clearDirNameCache()}.
+	 */
+	protected static Map<String, List<String>> dirNameCache = new ConcurrentHashMap<>();
+
+	/** Key-count cap for {@link #dirNameCache}; see the caveat on that field. */
+	private static final int MAX_DIR_NAME_CACHE_KEYS = 256;
 	private static SecureRandom rand = new SecureRandom();
 	private static String[] demographicLabels = new String[]{"Alive","Child","Young Adult","Adult","Available","Senior","Mother","Coupled","Deceased"};
 	protected static Map<String,List<BaseRecord>> getDemographicMap(OlioContext ctx, BaseRecord location){
@@ -64,8 +83,49 @@ public class OlioUtil {
 		return ctx.getDemographicMap().get(id);
 	}
 	
+	/**
+	 * Drop the Olio-side memoizations that are cheap and genuinely SELF-REFILLING: the profile cache
+	 * ({@code ProfileUtil}) and the complementary-color cache ({@code ColorUtil}, refilled by the next
+	 * {@code findComplementaryColor}).
+	 * <p>
+	 * This method is reachable from {@code GET /cache/clearAll}, which is
+	 * {@code @RolesAllowed({"admin","user"})}, so everything hung off it must be safe for ANY
+	 * authenticated caller to drop at any moment. Two Olio caches are not, and are deliberately
+	 * excluded:
+	 * <ul>
+	 * <li>{@code Decks.clearAll()} - only three of the seven decks self-refill when empty; the four
+	 * NAME decks are repopulated solely by an explicit {@code Decks.shuffleDecks}, so letting a plain
+	 * {@code user} empty them mid-run produces {@code rand.nextInt(0)}, not a slow rebuild;</li>
+	 * <li>{@link #dirNameCache} - it is NOT purely read-through. {@code nameInDirExists} appends the
+	 * name it just handed out, so the map also holds queued-but-not-yet-persisted names; dropping it
+	 * mid-run can hand the same name out twice. See {@link #clearDirNameCache()}.</li>
+	 * </ul>
+	 * Both belong on an admin-only evict path, for the same reason.
+	 * <p>
+	 * Also deliberately does NOT clear Olio contexts - those are live state, not a memoization.
+	 */
 	public static void clearCache() {
 		ProfileUtil.clearCache();
+		ColorUtil.clearCache();
+	}
+
+	/**
+	 * Drop every {@link #dirNameCache} entry. <b>Admin/test only.</b>
+	 * <p>
+	 * Handled exactly as {@code Decks.clearAll()} is: deliberately NOT wired into
+	 * {@code CacheService.clearCaches()} / {@code GET /cache/clearAll}, which is reachable by any
+	 * authenticated {@code user}-role caller. This is not a free memoization drop - the map holds
+	 * names that {@code nameInDirExists} has handed out but that are still queued rather than
+	 * persisted, so dropping it during a generation run can allow a duplicate name. No request-driven
+	 * path calls it; {@code Decks.shuffleDecks} already clears the map at the point where a run's
+	 * queued names have been consumed.
+	 */
+	public static void clearDirNameCache() {
+		int n = dirNameCache.size();
+		dirNameCache.clear();
+		if(n > 0) {
+			logger.info("Cleared " + n + " directory name cache entr(ies)");
+		}
 	}
 	
 	public static void setDemographicMap(OlioContext ctx, Map<String,List<BaseRecord>> map, BaseRecord realm, BaseRecord person) {
@@ -117,25 +177,34 @@ public class OlioUtil {
 		}
 	}
 	
-	protected static void populateDirNameCache(BaseRecord user, String model, long groupId) throws IndexException, ReaderException {
+	protected static List<String> populateDirNameCache(BaseRecord user, String model, long groupId) throws IndexException, ReaderException {
 		String key = model + "-" + groupId;
 		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_GROUP_ID, groupId);
 		q.setRequest(new String[] {FieldNames.FIELD_NAME});
 		QueryResult qr = IOSystem.getActiveContext().getSearch().find(q);
-		List<String> names = Arrays.asList(qr.getResults()).stream().map(r -> (String)r.get(FieldNames.FIELD_NAME)).collect(Collectors.toList());
+		List<String> names = new CopyOnWriteArrayList<>(Arrays.asList(qr.getResults()).stream().map(r -> (String)r.get(FieldNames.FIELD_NAME)).collect(Collectors.toList()));
+		if(dirNameCache.size() >= MAX_DIR_NAME_CACHE_KEYS && !dirNameCache.containsKey(key)) {
+			logger.warn("Directory name cache exceeded " + MAX_DIR_NAME_CACHE_KEYS + " keys - dropping it");
+			dirNameCache.clear();
+		}
 		dirNameCache.put(key, names);
+		return names;
 	}
-	
+
 	protected static boolean nameInDirExists(BaseRecord user, String model, long groupId, String name) throws IndexException, ReaderException {
 		String key = model + "-" + groupId;
-		if(!dirNameCache.containsKey(key) || dirNameCache.get(key).size() == 0) {
-			populateDirNameCache(user, model, groupId);
-		}
 		List<String> names = dirNameCache.get(key);
-		if(names.contains(name)) {
-			return true;
+		if(names == null || names.isEmpty()) {
+			names = populateDirNameCache(user, model, groupId);
 		}
-		names.add(name);
+		/// contains-then-add must be one step, otherwise two threads generating into the same
+		/// directory can both be told a name is free
+		synchronized(names) {
+			if(names.contains(name)) {
+				return true;
+			}
+			names.add(name);
+		}
 		return false;
 		//OlioUtil.recordExists(user, model, name, groupId);
 	}

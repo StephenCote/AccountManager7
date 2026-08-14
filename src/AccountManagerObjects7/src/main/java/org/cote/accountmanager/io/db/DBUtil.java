@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import javax.naming.InitialContext;
@@ -69,6 +71,10 @@ $$;""";
 
 	private List<String> reservedWords = new ArrayList<>(Arrays.asList("ALL", "AND", "ANY", "ARRAY", "AS", "ASYMMETRIC", "AUTHORIZATION", "BETWEEN", "BOTH", "CASE", "CAST", "CHECK", "CONSTRAINT", "CROSS", "CURRENT_CATALOG", "CURRENT_DATE", "CURRENT_PATH", "CURRENT_ROLE", "CURRENT_SCHEMA", "CURRENT_TIME", "CURRENT_TIMESTAMP", "CURRENT_USER", "DAY", "DEFAULT", "DISTINCT", "ELSE", "END", "EXCEPT", "EXISTS", "FALSE", "FETCH", "FOR", "FOREIGN", "FROM", "FULL", "GROUP", "GROUPS", "HAVING", "HOUR", "IF", "ILIKE", "IN", "INNER", "INTERSECT", "INTERVAL", "IS", "JOIN", "KEY", "LEADING", "LEFT", "LIKE", "LIMIT", "LOCALTIME", "LOCALTIMESTAMP", "MINUS", "MINUTE", "MONTH", "NATURAL", "NOT", "NULL", "OFFSET", "ON", "OR", "ORDER", "OVER", "PARTITION", "PRIMARY", "QUALIFY", "RANGE", "REGEXP", "RIGHT", "ROW", "ROWNUM", "ROWS", "SECOND", "SELECT", "SESSION_USER", "SET", "SOME", "SYMMETRIC", "SYSTEM_USER", "TABLE", "TO", "TOP", "", "TRAILING", "TRUE", "UESCAPE", "UNION", "UNIQUE", "UNKNOWN", "USER", "USING", "VALUE", "VALUES", "WHEN", "WHERE", "WINDOW", "WITH", "YEAR", "_ROWID_"));
 	private String dataPrefix = "A7";
+	/// PostgreSQL NAMEDATALEN-1: identifiers longer than this are truncated, not rejected
+	private static final int MAX_PG_IDENTIFIER_LENGTH = 63;
+	/// Matches the leading clause of an index statement emitted by generateIndex, capturing the index name
+	private static final Pattern indexNamePattern = Pattern.compile("^CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+IF\\s+NOT\\s+EXISTS\\s+(\\S+)\\s", Pattern.CASE_INSENSITIVE);
 	
 	private DataSource dataSource = null;
 	private String dataSourceUrl = "jdbc:h2:./am7/h2";
@@ -506,20 +512,14 @@ $$;""";
 				notIndexable = true;
 			}
 			else {
-				FieldEnumType fet = fs.getFieldType();
-				if(
-					( 
-						(fet != FieldEnumType.ENUM && fet != FieldEnumType.STRING)
-						|| fs.getMaxLength() == 0
-					)
-					&& fet != FieldEnumType.INT
-					&& fet != FieldEnumType.LONG
-					&& fet != FieldEnumType.TIMESTAMP
-					&& fet != FieldEnumType.ZONETIME
-					&& fet != FieldEnumType.DOUBLE
-					&& fet != FieldEnumType.BOOLEAN
-				) {
-					logger.warn("Model '" + schema.getName() + "' field '" + s + "' cannot be indexed in the database");
+				/// Indexability is a property of the column the generator actually emits, not of the
+				/// model-level FieldEnumType.  A foreign 'model' field is emitted as a plain scalar
+				/// (bigint, or whatever the referenced foreign field resolves to) and indexes fine,
+				/// while a field that emits no column at all - or emits an unbounded text/binary/vector
+				/// column - does not.
+				String reason = getIndexRejectionReason(fs);
+				if(reason != null) {
+					logger.warn("Model '" + schema.getName() + "' field '" + s + "' cannot be indexed in the database: " + reason);
 					notIndexable = true;
 				}
 			}
@@ -543,7 +543,44 @@ $$;""";
 			schemaPref = baseSchema.getName().replace('.', '_') + "_";
 		}
 		String idxName = dataPrefix + "_" + schemaPref + schema.getName().replace('.', '_') + "_" + ver + "_" + cname.replaceAll("\"", "") + "_idx on " + tableName + "(" + cols2 + ")";
-		return "CREATE" + (unique ? " UNIQUE" : "") + " INDEX " + idxName + ";";
+		/// IF NOT EXISTS keeps the statement replayable: the same DDL is now emitted both at CREATE TABLE
+		/// time and on the schema-patch path, and both PostgreSQL (>= 9.5) and H2 support the clause.
+		return "CREATE" + (unique ? " UNIQUE" : "") + " INDEX IF NOT EXISTS " + idxName + ";";
+	}
+
+	/// Returns null when the field can be indexed, otherwise a human-readable reason why it cannot.
+	/// Keyed off the emitted SQL column type rather than the FieldEnumType so that foreign 'model'
+	/// fields (persisted as bigint) are indexable, while unbounded text, binary and vector columns -
+	/// and fields that produce no column at all - are not.
+	///
+	private String getIndexRejectionReason(FieldSchema fs) {
+		if(fs.getType() == null) {
+			return "no type is defined";
+		}
+		if(fs.isVirtual() || fs.isEphemeral()) {
+			return "field is not persisted (virtual or ephemeral)";
+		}
+		if(fs.isReferenced()) {
+			return "field is persisted through a separate reference table";
+		}
+		String dataType = getDataType(fs, fs.getFieldType());
+		if(dataType == null || dataType.trim().length() == 0) {
+			return "field does not emit a database column (" + fs.getType() + ")";
+		}
+		String dt = dataType.trim().toLowerCase();
+		if(dt.equals("text")) {
+			return "unbounded text column";
+		}
+		if(dt.equals("varchar")) {
+			return "unbounded varchar column - define a maxLength";
+		}
+		if(dt.equals("bytea") || dt.equals("blob")) {
+			return "binary column";
+		}
+		if(dt.startsWith("vector")) {
+			return "vector column";
+		}
+		return null;
 	}
 	/*
 	private String generateIndices(ModelSchema schema) {
@@ -880,8 +917,16 @@ $$;""";
 	/// Returns list of FieldSchema objects that exist in the model but not in the database.
 	///
 	public List<FieldSchema> getMissingColumns(ModelSchema schema) {
-		String tableName = getTableName(schema.getName());
-		if(!haveTable(schema.getName())) {
+		return getMissingColumns(null, schema);
+	}
+
+	/// As getMissingColumns(ModelSchema), but resolves the table the way generateSchema does: when
+	/// baseSchema is a model declaring dedicatedParticipation and schema is system.participation, the
+	/// table compared against is that model's dedicated participation table rather than the shared one.
+	///
+	public List<FieldSchema> getMissingColumns(ModelSchema baseSchema, ModelSchema schema) {
+		String tableName = getTableName(baseSchema, schema.getName());
+		if(!haveTable(baseSchema, schema.getName())) {
 			return new ArrayList<>();
 		}
 
@@ -906,21 +951,34 @@ $$;""";
 
 	/// Generate ALTER TABLE ADD COLUMN statements for missing fields.
 	/// Returns empty list if table doesn't exist or no columns are missing.
+	/// A model declaring dedicatedParticipation also has its dedicated participation table checked,
+	/// since that table is otherwise only ever emitted on the CREATE TABLE path.  Column drops are
+	/// deliberately NOT extended to participation tables - see generateDropColumnSchema.
 	///
 	public List<String> generatePatchSchema(ModelSchema schema) {
-		List<FieldSchema> missing = getMissingColumns(schema);
 		List<String> statements = new ArrayList<>();
-		if(missing.isEmpty()) {
+		if(schema == null) {
 			return statements;
 		}
-		String tableName = getTableName(schema.getName());
+		addPatchColumns(statements, null, schema);
+		if(schema.isDedicatedParticipation()) {
+			addPatchColumns(statements, schema, RecordFactory.getSchema(ModelNames.MODEL_PARTICIPATION));
+		}
+		return statements;
+	}
+
+	private void addPatchColumns(List<String> statements, ModelSchema baseSchema, ModelSchema schema) {
+		List<FieldSchema> missing = getMissingColumns(baseSchema, schema);
+		if(missing.isEmpty()) {
+			return;
+		}
+		String tableName = getTableName(baseSchema, schema.getName());
 		for(FieldSchema field : missing) {
-			String colDef = generateSchemaLine(null, schema, field);
+			String colDef = generateSchemaLine(baseSchema, schema, field);
 			if(colDef != null) {
 				statements.add("ALTER TABLE " + tableName + " ADD COLUMN " + colDef + ";");
 			}
 		}
-		return statements;
 	}
 
 	/// Compute the set of column names the generator would emit for this model's table.
@@ -967,6 +1025,8 @@ $$;""";
 	/// Generate ALTER TABLE DROP COLUMN IF EXISTS statements for orphaned columns.
 	/// Returns empty list if the table doesn't exist or there are no orphaned columns.
 	/// Gated by IOProperties.isDropColumns() at the call site (IOSystem); never resets / drops tables.
+	/// Deliberately covers the model's own table only: dedicated participation tables are patched
+	/// additively (generatePatchSchema / generatePatchIndices) but are never dropped from.
 	///
 	public List<String> generateDropColumnSchema(ModelSchema schema) {
 		List<String> orphaned = getOrphanedColumns(schema);
@@ -979,6 +1039,142 @@ $$;""";
 			statements.add("ALTER TABLE " + tableName + " DROP COLUMN IF EXISTS " + getColumnName(col) + ";");
 		}
 		return statements;
+	}
+
+	/// Generate the index DDL for a model as individual statements, one per constraint / hint, for the
+	/// schema-patch path.  Indices used to be emitted only by generateSchema (the CREATE TABLE path), so
+	/// a constraint or hint added to an already-created model was silently never applied.  Every
+	/// statement carries IF NOT EXISTS and is therefore safe to replay.
+	/// This deliberately reuses generateIndices so the constraint / hint / collision logic exists once.
+	/// A model declaring dedicatedParticipation gets its dedicated participation table's indices here
+	/// as well: that table is generated only on the CREATE TABLE path, so the hints declared on
+	/// system.participation - including (participantId, participantModel), which every role entitlement
+	/// check seeks on - were never patched onto a table created before those hints existed.
+	///
+	public List<String> generatePatchIndices(ModelSchema schema) {
+		List<String> statements = new ArrayList<>();
+		if(schema == null || schema.isEphemeral() || isConstrained(schema)) {
+			return statements;
+		}
+		addIndexStatements(statements, generateIndices(null, schema));
+		if(schema.isDedicatedParticipation()) {
+			addIndexStatements(statements, generateDedicatedParticipationIndices(schema));
+		}
+		return statements;
+	}
+
+	/// Index DDL for the dedicated participation table of a model declaring dedicatedParticipation,
+	/// generated exactly the way generateSchema does it: the system.participation schema is the target
+	/// and the owning model is the baseSchema, which is what supplies the table name and index name
+	/// prefix (see generateIndex).
+	/// The table existing is a precondition - it is only ever created alongside the owning model's own
+	/// table - so it is checked here rather than left to fail as an opaque 'relation does not exist'
+	/// from the per-statement catch on the startup path.
+	///
+	private String generateDedicatedParticipationIndices(ModelSchema schema) {
+		if(!haveTable(schema, ModelNames.MODEL_PARTICIPATION)) {
+			logger.warn("Model " + schema.getName() + " declares dedicatedParticipation, but its participation table "
+				+ getTableName(schema, ModelNames.MODEL_PARTICIPATION)
+				+ " does not exist, so its indices cannot be patched.  That table is created only with the model's own table.");
+			return null;
+		}
+		return generateIndices(schema, RecordFactory.getSchema(ModelNames.MODEL_PARTICIPATION));
+	}
+
+	/// Split a generateIndices block into individual, trimmed statements.
+	///
+	private void addIndexStatements(List<String> statements, String block) {
+		if(block == null) {
+			return;
+		}
+		for(String line : block.split("\n")) {
+			String stmt = line.trim();
+			if(stmt.length() > 0) {
+				statements.add(stmt);
+			}
+		}
+	}
+
+	/// Extract the index name from a statement produced by generateIndex, or null if the statement
+	/// isn't recognized.  Used to skip DDL for indices that already exist rather than issuing a
+	/// no-op CREATE INDEX IF NOT EXISTS for every model on every startup.
+	///
+	public static String getIndexStatementName(String sql) {
+		if(sql == null) {
+			return null;
+		}
+		Matcher m = indexNamePattern.matcher(sql.trim());
+		if(m.find()) {
+			return m.group(1);
+		}
+		return null;
+	}
+
+	/// PostgreSQL identifiers are limited to NAMEDATALEN-1 (63 by default) and are silently truncated,
+	/// so an emitted index name longer than that never equals the name the database actually stores.
+	/// Without this normalization the 'already exists' check misses and the statement is re-issued on
+	/// every startup - a no-op, since the database truncates the requested name the same way, but a
+	/// misleading one.  Dedicated participation index names are the long ones: they carry both the
+	/// owning model name and 'system_participation'.
+	/// Truncation is the database's own rule, so two names that normalize alike would also collide
+	/// inside PostgreSQL; comparing this way does not skip anything the database would have created.
+	///
+	public String normalizeIndexName(String name) {
+		if(name == null) {
+			return null;
+		}
+		String norm = name.toLowerCase();
+		if(connectionType == ConnectionEnumType.POSTGRE && norm.length() > MAX_PG_IDENTIFIER_LENGTH) {
+			norm = norm.substring(0, MAX_PG_IDENTIFIER_LENGTH);
+		}
+		return norm;
+	}
+
+	/// List the index names defined in the current database, lower-cased.  Returns an empty list on
+	/// error or for an unrecognized connection type, in which case callers simply fall back to issuing
+	/// the CREATE INDEX IF NOT EXISTS statements.
+	///
+	public List<String> getIndexNames() {
+		List<String> names = new ArrayList<>();
+		String sql = null;
+		if(connectionType == ConnectionEnumType.POSTGRE) {
+			sql = "SELECT indexname AS index_name FROM pg_indexes;";
+		}
+		else if(connectionType == ConnectionEnumType.H2) {
+			sql = "SELECT index_name FROM information_schema.indexes;";
+		}
+		if(sql == null) {
+			return names;
+		}
+		try (
+			Connection con = dataSource.getConnection();
+			Statement st = con.createStatement();
+		){
+			ResultSet rset = st.executeQuery(sql);
+			while(rset.next()) {
+				String name = rset.getString(1);
+				if(name != null) {
+					names.add(name.toLowerCase());
+				}
+			}
+			rset.close();
+		} catch (SQLException e) {
+			logger.error("Failed to enumerate database indices: " + e.getMessage());
+		}
+		return names;
+	}
+
+	/// Execute a statement and surface any SQLException to the caller instead of logging and swallowing
+	/// it.  execute(String) cannot report failure (DDL always returns false), and the index patch path
+	/// must be able to report - loudly, per statement - which index could not be created.
+	///
+	public void executeWithException(String sql) throws SQLException {
+		try (
+			Connection con = dataSource.getConnection();
+			Statement statement = con.createStatement();
+		){
+			statement.execute(sql);
+		}
 	}
 
 }

@@ -10,6 +10,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -37,10 +39,80 @@ public class ColorUtil {
 		defaultColors = JSONUtil.getList(ResourceUtil.getInstance().getResource("olio/colors.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 	}
 	
-	/// TODO - these hashes need to be replaced
-	private static Map<String, BaseRecord> colorComplements = new HashMap<>();
-	private static Map<String, BaseRecord> defaultColorMap = new HashMap<>();
-	
+	/**
+	 * Complementary-color memoization, keyed {@code colorsGroupId + "|" + lowercased hex}.
+	 * <p>
+	 * It used to be a plain {@link HashMap} keyed by hex ALONE, while the lookup it serves is scoped
+	 * by {@code world.get(colors.id)} - so in a process with more than one world, world B could be
+	 * served world A's complement record for the same hex. Including the colors group id in the key
+	 * removes that. For a single-world process this is not a behaviour change; for a multi-world
+	 * process it corrects cross-world colour leakage.
+	 * <p>
+	 * {@code defaultColorMap}, which sat next to this one, was removed: it was read in
+	 * {@code getDefaultColor} and never written anywhere in the codebase - dead code.
+	 */
+	private static final Map<String, BaseRecord> colorComplements = new ConcurrentHashMap<>();
+
+	/** Maximum number of distinct colors-group scopes retained in {@link #colorComplements}. */
+	private static final int MAX_COLOR_SCOPES = 16;
+
+	/** colorsGroupId -&gt; last access tick, used for approximate-LRU scope eviction. */
+	private static final Map<Long, Long> colorScopeAccess = new ConcurrentHashMap<>();
+
+	private static final AtomicLong COLOR_SCOPE_TICK = new AtomicLong(0L);
+
+	private static String complementKey(long colorsGroupId, String hex) {
+		return colorsGroupId + "|" + (hex == null ? "" : hex.toLowerCase());
+	}
+
+	/**
+	 * Approximate LRU over colors-group SCOPES (not individual hexes): the bound is on how many
+	 * worlds' complement tables are retained, mirroring the per-world bound in {@code Decks}.
+	 * Bounding individual hex entries instead would defeat the memoization, since a world generation
+	 * pass walks hundreds of distinct hexes.
+	 */
+	private static void touchColorScope(long colorsGroupId) {
+		colorScopeAccess.put(colorsGroupId, COLOR_SCOPE_TICK.incrementAndGet());
+		if(colorScopeAccess.size() <= MAX_COLOR_SCOPES) {
+			return;
+		}
+		synchronized(colorScopeAccess) {
+			while(colorScopeAccess.size() > MAX_COLOR_SCOPES) {
+				Long oldestKey = null;
+				long oldest = Long.MAX_VALUE;
+				for(Map.Entry<Long, Long> e : colorScopeAccess.entrySet()) {
+					if(e.getValue() < oldest) {
+						oldest = e.getValue();
+						oldestKey = e.getKey();
+					}
+				}
+				if(oldestKey == null) {
+					break;
+				}
+				colorScopeAccess.remove(oldestKey);
+				String prefix = oldestKey + "|";
+				int removed = 0;
+				for(String k : new ArrayList<>(colorComplements.keySet())) {
+					if(k.startsWith(prefix)) {
+						colorComplements.remove(k);
+						removed++;
+					}
+				}
+				logger.info("Evicted " + removed + " cached complementary colors for colors group #" + oldestKey + " (scope bound " + MAX_COLOR_SCOPES + " reached)");
+			}
+		}
+	}
+
+	/** Drop all memoized complementary colors. These are self-refilling lookups, not state. */
+	public static void clearCache() {
+		int n = colorComplements.size();
+		colorComplements.clear();
+		colorScopeAccess.clear();
+		if(n > 0) {
+			logger.info("Cleared " + n + " cached complementary color(s)");
+		}
+	}
+
 	public static List<BaseRecord> getDefaultColors(){
 		return defaultColors;
 	}
@@ -115,17 +187,23 @@ public class ColorUtil {
 		return Double.valueOf(Float.valueOf(f).toString()).doubleValue();
 	}
 
+	/**
+	 * Resolve (get-or-create) a persisted {@code data.color} for one of the built-in default color
+	 * hexes.
+	 * <p>
+	 * The {@code defaultColorMap} memoization that used to short-circuit the top of this method was
+	 * removed: nothing in the codebase ever wrote to it, so the lookup could never hit.
+	 *
+	 * @param ctx optional Olio context; when present the world's shared colors group is used
+	 * @param ownerId used only on the ctx-less fallback path below
+	 * @param hex the default color hex
+	 */
 	protected static BaseRecord getDefaultColor(OlioContext ctx, long ownerId, String hex) {
-		
+
 		if(hex == null || defaultColors == null) {
 			return null;
 		}
-		
-		String lhex = hex.toLowerCase();
-		if(defaultColorMap.containsKey(lhex)) {
-			return defaultColorMap.get(lhex);
-		}
-		
+
 		BaseRecord group = null;
 		BaseRecord owner = null;
 		if(ctx != null) {
@@ -137,6 +215,16 @@ public class ColorUtil {
 				owner = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_USER, ownerId);
 				if(owner != null) {
 					IOSystem.getActiveContext().getReader().populate(owner, 2);
+					/// DEFERRED (not fixed here): this makePath is a HOME-GROUP CREATE ON A READ PATH.
+					/// It runs OWNER-SCOPED, not admin-scoped - the owner is read by ownerId just above,
+					/// and on the REST path (OlioService:353,355 -> CharacterUtil:307,309, and
+					/// ApparelUtil:442) that owner is the acting principal. So merely rolling a
+					/// character can create "~/Colors" under the caller's home and persist color
+					/// records into it.
+					/// It is NOT removed in this change because those live callers have no `world` in
+					/// scope; dropping the fallback would silently null out colors on
+					/// GET /olio/roll/{gender} - a regression an Objects7 JUnit gate would not catch.
+					/// Removal is its own change, with the world threaded down to these call sites.
 					group = IOSystem.getActiveContext().getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, "~/Colors", GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 				}
 			} catch (ReaderException e) {
@@ -158,11 +246,25 @@ public class ColorUtil {
 		
 	}
 	
+	/**
+	 * Find the complementary color to {@code colorHex} within the given world's colors group.
+	 * <p>
+	 * <b>Bypasses PBAC.</b> The lookup below is a RAW SQL read executed straight against the
+	 * datasource - it builds a statement over {@code DBUtil.getTableName(data.color)} and runs it on
+	 * a borrowed {@link java.sql.Connection}, so it goes nowhere near {@code AccessPoint} and no
+	 * authorization check is applied to the returned record. Recorded here as a known issue; fixing
+	 * it (pushing this through the query layer) is a separate change.
+	 * <p>
+	 * Results are memoized in {@link #colorComplements}, keyed by colors-group id AND hex - keying
+	 * by hex alone leaked one world's complement records into another.
+	 */
 	public static BaseRecord findComplementaryColor(BaseRecord world, String colorHex) {
-		if(colorComplements.containsKey(colorHex)) {
-			return colorComplements.get(colorHex);
-		}
 		long groupId = world.get(OlioFieldNames.FIELD_COLORS_ID);
+		String cacheKey = complementKey(groupId, colorHex);
+		if(colorComplements.containsKey(cacheKey)) {
+			touchColorScope(groupId);
+			return colorComplements.get(cacheKey);
+		}
 		BaseRecord outColor = null;
 		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
 		String tableName = dbUtil.getTableName(ModelNames.MODEL_COLOR);
@@ -203,7 +305,8 @@ public class ColorUtil {
 			}
 		}
 		if(outColor != null) {
-			colorComplements.put(colorHex, outColor);
+			colorComplements.put(cacheKey, outColor);
+			touchColorScope(groupId);
 		}
 		return outColor;
 	}

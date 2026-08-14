@@ -3,13 +3,13 @@ package org.cote.rest.services;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.IPictureBookProgressHandler;
+import org.cote.accountmanager.olio.picturebook.PictureBookCancelRegistry;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookProgressNotifier;
@@ -72,17 +72,16 @@ public class PictureBookService {
 
     private static final String PB_REQUEST_SCHEMA = "olio.pictureBookRequest";
 
-    /**
-     * KI-10: cancellation registry for long-running scene-extraction/prepare-images calls —
-     * mirrors {@code ChatService}'s {@code summarizingRefs} map (session/objectId ->
-     * {@code SummarizeProgress}), simplified to a single flat map since PictureBook has no
-     * multi-session concept here: each long-running call is keyed directly by the
-     * workObjectId/bookObjectId the client already used to start it, which the client also
-     * already has on hand to fire a concurrent cancel request. Entries are added right before the
-     * blocking {@code PictureBookUtil} call and removed in a {@code finally} block once it
-     * returns — same lifecycle as {@code ChatService}'s registration/cleanup.
+    /*
+     * KI-10 cancellation registry: MOVED to Objects7's {@link PictureBookCancelRegistry}
+     * (2026-08-14) as part of fixing the authorization defect described in PictureBook2Plan.md
+     * §5.6. It used to be a static flat map here keyed only by the client-supplied
+     * workObjectId/bookObjectId path param, with the cancel endpoint discarding its principal —
+     * so any authenticated user could cancel any other user's in-flight extraction. The registry
+     * is now keyed by (principal, key) and the ownership check is Objects7 authorization logic,
+     * not an if-block in this transport class. Registration/cleanup lifecycle is unchanged:
+     * register right before the blocking call, unregister in a finally.
      */
-    private static final Map<String, SummarizeProgress> cancelRegistry = new ConcurrentHashMap<>();
 
     // ----- WebSocket progress-forwarding registration --------------------
 
@@ -186,10 +185,9 @@ public class PictureBookService {
             promptTemplateOverride = params.get("promptTemplate");
         }
 
-        // KI-10: registered under workObjectId — the same id the client already holds to fire a
-        // concurrent POST /{workObjectId}/cancel while this call is still in-flight.
-        SummarizeProgress cancelToken = new SummarizeProgress();
-        cancelRegistry.put(workObjectId, cancelToken);
+        // KI-10: registered under (principal, workObjectId) — the same id the client already holds
+        // to fire a concurrent POST /{workObjectId}/cancel while this call is still in-flight.
+        SummarizeProgress cancelToken = PictureBookCancelRegistry.register(user, workObjectId);
         try {
             PictureBookUtil.ScenesOnlyResult result = PictureBookUtil.extractScenesOnly(
                     user, workObjectId, count, chatConfigName, promptTemplateOverride, cancelToken);
@@ -208,7 +206,7 @@ public class PictureBookService {
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         } finally {
-            cancelRegistry.remove(workObjectId, cancelToken);
+            PictureBookCancelRegistry.unregister(user, workObjectId, cancelToken);
         }
     }
 
@@ -233,15 +231,14 @@ public class PictureBookService {
         }
 
         // KI-10: see extractScenesOnly()'s identical registration pattern.
-        SummarizeProgress cancelToken = new SummarizeProgress();
-        cancelRegistry.put(workObjectId, cancelToken);
+        SummarizeProgress cancelToken = PictureBookCancelRegistry.register(user, workObjectId);
         try {
             BaseRecord result = PictureBookUtil.extractChunked(user, workObjectId, chatConfigName, cancelToken);
             return Response.status(200).entity(toJson(result)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         } finally {
-            cancelRegistry.remove(workObjectId, cancelToken);
+            PictureBookCancelRegistry.unregister(user, workObjectId, cancelToken);
         }
     }
 
@@ -441,10 +438,9 @@ public class PictureBookService {
             if (sdc instanceof BaseRecord) sdConfig = (BaseRecord) sdc;
         }
 
-        // KI-10: registered under bookObjectId — the same id the client already holds to fire a
-        // concurrent POST /{bookObjectId}/cancel while this batch is still in-flight.
-        SummarizeProgress cancelToken = new SummarizeProgress();
-        cancelRegistry.put(bookObjectId, cancelToken);
+        // KI-10: registered under (principal, bookObjectId) — the same id the client already holds
+        // to fire a concurrent POST /{bookObjectId}/cancel while this batch is still in-flight.
+        SummarizeProgress cancelToken = PictureBookCancelRegistry.register(user, bookObjectId);
         try {
             PictureBookUtil.prepareSceneImagePrompts(user, sceneObjectIds, chatConfigName, sdConfig, promptTemplateOverride, cancelToken);
             BaseRecord result = PictureBookUtil.buildResult();
@@ -452,7 +448,7 @@ public class PictureBookService {
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         } finally {
-            cancelRegistry.remove(bookObjectId, cancelToken);
+            PictureBookCancelRegistry.unregister(user, bookObjectId, cancelToken);
         }
     }
 
@@ -466,19 +462,20 @@ public class PictureBookService {
      * {@code cancelled:false} (not an error) is returned when there's nothing in-flight for that
      * key — e.g. the call already finished, or the client raced the cancel ahead of the call
      * actually registering.
+     *
+     * <p>The key is scoped to the authenticated principal ({@link PictureBookCancelRegistry}).
+     * Before 2026-08-14 the principal was fetched and discarded here and the registry was a flat
+     * process-wide map, so any authenticated user could cancel any other user's in-flight
+     * extraction by supplying its id. A cancel for a key owned by someone else now returns the
+     * same {@code cancelled:false} an unknown key returns, so it discloses nothing.
      */
     @RolesAllowed({"admin", "user"})
     @POST
     @Path("/{key:[0-9A-Za-z\\-]+}/cancel")
     @Produces(MediaType.APPLICATION_JSON)
     public Response cancel(@PathParam("key") String key, @Context HttpServletRequest request) {
-        ServiceUtil.getPrincipalUser(request);
-        SummarizeProgress progress = cancelRegistry.get(key);
-        boolean cancelled = false;
-        if (progress != null && !progress.isCancelled()) {
-            progress.cancel();
-            cancelled = true;
-        }
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        boolean cancelled = PictureBookCancelRegistry.cancel(user, key);
         return Response.status(200).entity("{\"cancelled\":" + cancelled + "}").build();
     }
 

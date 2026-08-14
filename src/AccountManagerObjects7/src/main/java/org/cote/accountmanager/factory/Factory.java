@@ -220,6 +220,29 @@ public class Factory {
 	private void setCRUEntitlement(BaseRecord adminUser, BaseRecord user, BaseRecord obj, String entType) {
 		context.getAuthorizationUtil().setEntitlement(adminUser, user, obj, new String[] {"Read", "Update", "Create"}, entType);
 	}
+	/**
+	 * Find-only counterpart to {@link #getCreateUser(BaseRecord, String, long)}: looks up a
+	 * {@code system.user} by name within an organization and returns null when it does not exist.
+	 * <p>
+	 * Exists because {@code getCreateUser(adminUser, name, organizationId)} calls
+	 * {@code makePath("/home/" + name)} BEFORE it looks anything up, so simply "resolving" a user by
+	 * name is currently a write on a read path. Callers that only need to resolve an existing
+	 * principal should use this instead.
+	 * <p>
+	 * <b>This is an UNAUTHORIZED read.</b> It passes a null contextUser to
+	 * {@code RecordUtil.getRecord}, so it bypasses PBAC entirely. It is intended solely for internal
+	 * resolution of the olioUser principal. Callers MUST NOT surface the returned record (or any
+	 * field of it) to an end user, and MUST NOT use it as a general-purpose user lookup for
+	 * request-scoped code.
+	 *
+	 * @param name the user name
+	 * @param organizationId the organization to search within
+	 * @return the matching system.user record, or null if none exists
+	 */
+	public BaseRecord findUser(String name, long organizationId) {
+		return context.getRecordUtil().getRecord(null, ModelNames.MODEL_USER, name, 0L, 0L, organizationId);
+	}
+
 	public BaseRecord getCreateUser(BaseRecord adminUser, String name, long organizationId) {
 		BaseRecord group = null;
 		if(adminUser != null) {

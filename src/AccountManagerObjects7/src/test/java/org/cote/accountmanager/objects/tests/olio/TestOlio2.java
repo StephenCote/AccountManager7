@@ -146,7 +146,10 @@ public class TestOlio2 extends BaseTest {
 			true,
 			resetUniverse
 		);
-	
+		/// PB2 phase 1: enrolActingUser defaults to false; this suite relies on it.
+		cfg.setEnrolActingUser(true);
+
+
 		/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
 		///
 		cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {

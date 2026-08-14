@@ -2,9 +2,11 @@ package org.cote.accountmanager.olio;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -31,12 +33,16 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
+import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
+import org.cote.accountmanager.util.AuditUtil;
+import org.cote.accountmanager.util.LibraryUtil;
 
 public class OlioContext {
 	public static final Logger logger = LogManager.getLogger(OlioContext.class);
@@ -69,7 +75,10 @@ public class OlioContext {
 	private ZonedDateTime currentDay = currentTime;
 	private ZonedDateTime currentHour = currentTime;
 	*/
-	private String olioUserName = "olioUser";
+	/** Name of the internal Olio principal that owns world data and the Olio roles. */
+	public static final String OLIO_USER_NAME = "olioUser";
+
+	private String olioUserName = OLIO_USER_NAME;
 	private BaseRecord olioUser = null;
 	private boolean initConfig = false;
 	
@@ -121,15 +130,69 @@ public class OlioContext {
 	public boolean isInitialized() {
 		return initialized;
 	}
-	
+
+	/**
+	 * Distinct from {@link #isInitialized()} - and the ONLY flag that means "the world authorization
+	 * grants were applied".
+	 * <p>
+	 * {@code initialized = true} is set part-way through {@link #initialize()}, BEFORE the two
+	 * {@code configureWorldAuthorization} calls, and the whole body of {@code initialize()} sits
+	 * inside a swallow-all {@code catch}. So {@code isInitialized()} returns true even when
+	 * authorization threw, and asserting it proves only that initialization reached that statement.
+	 * This flag is set only after both grant calls have completed without throwing.
+	 * <p>
+	 * (The position of {@code initialized = true} is deliberately left alone: moving it is a live
+	 * behaviour change for grid/arena and is tracked separately.)
+	 */
+	public boolean isAuthorizationConfigured() {
+		return authorizationConfigured;
+	}
+
 	private BaseRecord adminRole = null;
 	private BaseRecord userRole = null;
-	
-	public boolean enroleReader(BaseRecord user) {
-		return enrole(user, userRole);
+	private boolean authorizationConfigured = false;
+
+	/**
+	 * Resolve the user role this context should act on: the per-context role from the configuration
+	 * when present, otherwise the org-wide role held in the instance field.
+	 * <p>
+	 * This exists to close the "role instance-field trap": {@code configureEnvironment} sets
+	 * {@link #userRole}/{@link #adminRole} to the ORG-WIDE {@code ~/Roles/Olio User} /
+	 * {@code ~/Roles/Olio Admin} unconditionally, before {@code initialize()} ever reaches the
+	 * role-parameterised grant calls. Without this indirection every role-less entry point
+	 * ({@code enroleReader}, {@code enroleAdmin}, {@code scanNestedGroups}) would silently act on the
+	 * org-wide tier even on a context configured with its own roles - granting in the
+	 * isolation-losing direction, and doing it quietly.
+	 */
+	private BaseRecord effectiveUserRole() {
+		BaseRecord cfgRole = (config != null ? config.getAuthorizationUserRole() : null);
+		return (cfgRole != null ? cfgRole : userRole);
 	}
+
+	/** @see #effectiveUserRole() */
+	private BaseRecord effectiveAdminRole() {
+		BaseRecord cfgRole = (config != null ? config.getAuthorizationAdminRole() : null);
+		return (cfgRole != null ? cfgRole : adminRole);
+	}
+
+	/**
+	 * @deprecated Enrols an ARBITRARY user with NO authorization check on the caller. Use
+	 *             {@link #registerUser(BaseRecord, BaseRecord, boolean)}, which authorizes the actor
+	 *             and writes an audit record.
+	 */
+	@Deprecated
+	public boolean enroleReader(BaseRecord user) {
+		return enrole(user, effectiveUserRole());
+	}
+
+	/**
+	 * @deprecated Enrols an ARBITRARY user with NO authorization check on the caller. Use
+	 *             {@link #registerUser(BaseRecord, BaseRecord, boolean)}, which authorizes the actor
+	 *             and writes an audit record.
+	 */
+	@Deprecated
 	public boolean enroleAdmin(BaseRecord user) {
-		return enrole(user, adminRole);
+		return enrole(user, effectiveAdminRole());
 	}
 	protected boolean enrole(BaseRecord user, BaseRecord role) {
 		boolean enabled = false;
@@ -142,9 +205,104 @@ public class OlioContext {
 		return enabled;
 
 	}
-	
-	public void configureWorldAuthorization(BaseRecord cfgWorld, boolean userWrite) throws OlioException {
 
+	/**
+	 * Enrol {@code user} in this context's user or admin role, as an explicitly authorized and
+	 * audited operation. This is the supported replacement for {@link #enroleReader(BaseRecord)} /
+	 * {@link #enroleAdmin(BaseRecord)}, which take an arbitrary user and check nothing.
+	 * <p>
+	 * The target role is this context's effective pair - the per-context roles from
+	 * {@code OlioContextConfiguration} when set, otherwise the org-wide {@code ~/Roles/Olio *} pair.
+	 * <p>
+	 * {@code actor} must be a member of the effective admin role, or the organization's admin user.
+	 * The membership write itself is performed as the olio user (the owner of the roles).
+	 * <p>
+	 * <b>Idempotent.</b> Enrolling somebody who is already enrolled is SUCCESS, not failure.
+	 * {@code MemberUtil.member(..., enable=true)} returns false when the membership already exists
+	 * ("Entry already exists") - that is its contract, not an error - so this probes membership first
+	 * and returns true without writing, exactly as {@link #enrole(BaseRecord, BaseRecord)} does. The
+	 * probe deliberately comes AFTER the authorization check: an unauthorized actor is refused even
+	 * when the target happens to already be a member.
+	 *
+	 * <p>
+	 * <b>The target must belong to this context's organization.</b> Roles are organization-scoped, so
+	 * enrolling a foreign-organization principal would write a cross-tenant membership.
+	 * <p>
+	 * <b>Audit shape.</b> The audit's CONTEXT USER is the actor (who asked) and its SUBJECT is the
+	 * enrolled user (who it happened to); the resource is the role. Both must be structured fields:
+	 * with the subject set to the actor, "who was enrolled, at whose request" was answerable only by
+	 * parsing the free-text message - and on the book create path, where the actor is the org admin,
+	 * every enrolment audited identically as "admin ADD admin".
+	 *
+	 * @param actor the principal requesting the enrolment; authorized, not merely recorded
+	 * @param user the principal being enrolled
+	 * @param asAdmin true to enrol into the admin role, false for the user role
+	 * @return true when the user is enrolled - either because this call wrote the membership or
+	 *         because it already existed. False means the write was attempted and failed; never
+	 *         discard it
+	 * @throws OlioException if the context is not usable, the role cannot be resolved, the target is
+	 *         in a different organization, or the actor is not authorized
+	 */
+	public boolean registerUser(BaseRecord actor, BaseRecord user, boolean asAdmin) throws OlioException {
+		if(actor == null) {
+			throw new OlioException("Actor is null");
+		}
+		if(user == null) {
+			throw new OlioException("User is null");
+		}
+		if(olioUser == null) {
+			throw new OlioException("Olio User is null");
+		}
+		IOContext ioContext = IOSystem.getActiveContext();
+		OrganizationContext octx = ioContext.findOrganizationContext(config.getUser());
+		if(octx == null) {
+			throw new OlioException("Failed to find organization context");
+		}
+		/// Org-scope the TARGET before anything is written. The roles below belong to this context's
+		/// organization; a target from another one would be a cross-tenant membership.
+		Long userOrg = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+		if(userOrg == null || userOrg.longValue() != octx.getOrganizationId()) {
+			throw new OlioException("Cannot register " + user.get(FieldNames.FIELD_NAME)
+				+ " (organization " + userOrg + ") in organization " + octx.getOrganizationId());
+		}
+		BaseRecord admRole = effectiveAdminRole();
+		BaseRecord role = (asAdmin ? admRole : effectiveUserRole());
+		if(role == null) {
+			throw new OlioException("Failed to resolve the " + (asAdmin ? "admin" : "user") + " role");
+		}
+
+		/// contextUser = the actor (who asked), subject = the enrolled user (who it happened to),
+		/// resource = the role. See the javadoc: both have to be structured fields.
+		BaseRecord audit = AuditUtil.startAudit(actor, ActionEnumType.ADD, user, role);
+		BaseRecord orgAdmin = octx.getAdminUser();
+		boolean authorized = (
+			(orgAdmin != null && orgAdmin.get(FieldNames.FIELD_ID) != null && orgAdmin.get(FieldNames.FIELD_ID).equals(actor.get(FieldNames.FIELD_ID)))
+			|| (admRole != null && ioContext.getMemberUtil().isMember(actor, admRole, null))
+		);
+		if(!authorized) {
+			AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "Actor is not a member of the Olio administrator role");
+			throw new OlioException("Not authorized to register " + user.get(FieldNames.FIELD_NAME));
+		}
+
+		/// Already enrolled is success. member(..., true) reports false for an existing entry, so
+		/// without this probe every re-open of an already-registered world would report a failure.
+		if(ioContext.getMemberUtil().isMember(user, role, null)) {
+			AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, user.get(FieldNames.FIELD_NAME) + " is already registered in " + role.get(FieldNames.FIELD_NAME));
+			return true;
+		}
+
+		boolean enabled = ioContext.getMemberUtil().member(olioUser, role, user, null, true);
+		AuditUtil.closeAudit(audit, (enabled ? ResponseEnumType.PERMIT : ResponseEnumType.INVALID), "Register " + user.get(FieldNames.FIELD_NAME) + " in " + role.get(FieldNames.FIELD_NAME) + " at the request of " + actor.get(FieldNames.FIELD_NAME));
+		return enabled;
+	}
+
+	/**
+	 * Legacy entry point, retained so grid/arena/agent callers do not change. It resolves the
+	 * ORG-WIDE {@code ~/Roles/Olio Admin} / {@code ~/Roles/Olio User} pair, writes them to the
+	 * {@link #adminRole}/{@link #userRole} instance fields (as it always has), and then delegates.
+	 * The role-parameterised overload deliberately does NOT touch those fields.
+	 */
+	public void configureWorldAuthorization(BaseRecord cfgWorld, boolean userWrite) throws OlioException {
 		if(cfgWorld == null) {
 			throw new OlioException("World is null");
 		}
@@ -155,15 +313,148 @@ public class OlioContext {
 		if(octx == null) {
 			throw new OlioException("Failed to find organization context");
 		}
+		IOContext ioContext = IOSystem.getActiveContext();
+		adminRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), octx.getOrganizationId());
+		userRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio User", RoleEnumType.USER.toString(), octx.getOrganizationId());
+		configureWorldAuthorization(cfgWorld, userRole, adminRole, deriveContainerPath(cfgWorld), userWrite);
+	}
+
+	/**
+	 * Grant the supplied user/admin roles on the groups belonging to {@code cfgWorld}.
+	 * <p>
+	 * Unlike the 2-arg form this does NOT write the {@link #adminRole}/{@link #userRole} instance
+	 * fields, so a context configured with its own role pair keeps the org-wide pair out of its
+	 * grant path entirely.
+	 * <p>
+	 * Target groups are resolved deterministically - see
+	 * {@link #resolveGrantTargets(BaseRecord, String, long)}. The previous {@code parentId}-only
+	 * {@code findRecord} container lookup (first-row-wins on an unsorted query) is not used.
+	 * <p>
+	 * <b>Permissions.</b> Shared {@code /Library/*} groups receive at most {@code Read, Update,
+	 * Create} - never {@code Delete} - matching {@code LibraryUtil}'s own grant. The world's own
+	 * groups keep {@code Read, Update, Create, Delete} for the admin role and
+	 * {@code userWrite ? CRUD : Read} for the user role.
+	 * <p>
+	 * <b>This narrowing is not retroactive.</b> {@code AuthorizationUtil.setEntitlement} only ADDS
+	 * entitlements; it never revokes. Organizations whose shared library groups already carry a
+	 * {@code Delete} grant for the Olio roles keep it until a separate revoke utility is written and
+	 * run. Only grants issued from here onward are narrowed.
+	 *
+	 * @param cfgWorld the universe or world record whose groups are being granted on
+	 * @param cfgUserRole the role receiving read (or CRUD) access
+	 * @param cfgAdminRole the role receiving CRUD access
+	 * @param containerPath group path CONTAINING the world's own container group - i.e.
+	 *        {@code config.getUniversePath()} for a universe and {@code config.getWorldPath()} for a
+	 *        world. The leaf segment is derived from {@code cfgWorld}'s own name, never from a
+	 *        separately-passed world name that could disagree with the record
+	 * @param userWrite true to give the user role write access to the world's own groups
+	 */
+	public void configureWorldAuthorization(BaseRecord cfgWorld, BaseRecord cfgUserRole, BaseRecord cfgAdminRole, String containerPath, boolean userWrite) throws OlioException {
+
+		if(cfgWorld == null) {
+			throw new OlioException("World is null");
+		}
+		if(olioUser == null) {
+			throw new OlioException("Olio User is null");
+		}
+		if(cfgUserRole == null || cfgAdminRole == null) {
+			throw new OlioException("Both a user role and an admin role are required");
+		}
+		OrganizationContext octx = IOSystem.getActiveContext().findOrganizationContext(config.getUser());
+		if(octx == null) {
+			throw new OlioException("Failed to find organization context");
+		}
 		if(trace) {
 			logger.info("CONFIGURE WORLD " + cfgWorld.get(FieldNames.FIELD_NAME));
 		}
 		IOContext ioContext = IOSystem.getActiveContext();
 
-		adminRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), octx.getOrganizationId());
-		userRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio User", RoleEnumType.USER.toString(), octx.getOrganizationId());
+		GrantTargets targets = resolveGrantTargets(cfgWorld, containerPath, octx);
+
+		String[] rperms = new String[] {"Read"};
+		String[] cruperms = new String[] {"Read", "Update", "Create"};
+		String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
+		String[] entTypes = new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()};
+
+		/// use org admin to set entitlement to address use/references to shared libraries
+		for(BaseRecord group : targets.shared) {
+			ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), cfgUserRole, new BaseRecord[] {group}, (userWrite ? cruperms : rperms), entTypes);
+			ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), cfgAdminRole, new BaseRecord[] {group}, cruperms, entTypes);
+		}
+		for(BaseRecord group : targets.own) {
+			ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), cfgUserRole, new BaseRecord[] {group}, (userWrite ? crudperms : rperms), entTypes);
+			ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), cfgAdminRole, new BaseRecord[] {group}, crudperms, entTypes);
+		}
+	}
+
+	/**
+	 * The complete, deterministically-enumerated set of groups
+	 * {@link #configureWorldAuthorization(BaseRecord, BaseRecord, BaseRecord, String, boolean)} grants
+	 * on - shared and own together. Exposed so a caller can VERIFY grants across the whole set rather
+	 * than probing one sampled group (a single probe cannot detect one missing grant among ~36).
+	 *
+	 * @param containerPath as per the 5-arg {@code configureWorldAuthorization}
+	 */
+	public List<BaseRecord> getAuthorizationGroups(BaseRecord cfgWorld, String containerPath) throws OlioException {
+		if(cfgWorld == null) {
+			throw new OlioException("World is null");
+		}
+		if(olioUser == null) {
+			throw new OlioException("Olio User is null");
+		}
+		OrganizationContext octx = IOSystem.getActiveContext().findOrganizationContext(config.getUser());
+		if(octx == null) {
+			throw new OlioException("Failed to find organization context");
+		}
+		GrantTargets targets = resolveGrantTargets(cfgWorld, containerPath, octx);
+		List<BaseRecord> all = new ArrayList<>(targets.shared);
+		all.addAll(targets.own);
+		return all;
+	}
+
+	/** Grant-target partition: shared {@code /Library/*} groups vs the world's own groups. */
+	private static class GrantTargets {
+		private final List<BaseRecord> shared = new ArrayList<>();
+		private final List<BaseRecord> own = new ArrayList<>();
+	}
+
+	/**
+	 * Deterministically enumerate the groups a world's roles must be granted on.
+	 * <p>
+	 * Two sources, de-duplicated by group id:
+	 * <ol>
+	 * <li>the world record's own foreign {@code auth.group} fields, partitioned into shared
+	 * ({@code /Library/*} corpora) and own - note this collects the NON-shared fields too, which an
+	 * earlier implementation discarded;</li>
+	 * <li>the world's container group, resolved BY NAME via {@code pathUtil.findPath}, and that
+	 * container's children by {@code parentId}. The container itself is not a target, matching the
+	 * previous behaviour.</li>
+	 * </ol>
+	 * A null foreign group field throws, on every path. {@code WorldFactory.implement()} creates all
+	 * of a world's groups unconditionally, so a null there is a genuine anomaly and must abort
+	 * loudly rather than be skipped with a warning.
+	 * <p>
+	 * <b>The shared/own test fails CLOSED, and the {@code shared} attribute alone is not enough to
+	 * decide it.</b> {@code own} receives {@code Delete}; {@code shared} never does. But
+	 * {@code AttributeUtil.getAttributeValue} reads only the in-memory {@code attributes} list - there
+	 * is no read-through - and {@code LibraryUtil.getCreateSharedGroup} stamps that attribute on its
+	 * CREATE branch only ({@code LibraryUtil.java:39-45}: a {@code findPath} hit returns at {@code :40}
+	 * before {@code :45}). So a {@code /Library/*} group that predates the attribute, or that simply
+	 * was not populated deeply enough on this read, reports "not shared" - and an attribute-only test
+	 * would hand the Olio roles {@code Delete} over an ORG-WIDE shared corpus. The membership test is
+	 * therefore "the attribute says shared <b>OR</b> the group is a child of {@code /Library}", with
+	 * the {@code /Library} children enumerated by {@code parentId} rather than inferred from a virtual
+	 * {@code path} field that may not be computed on a foreign-field read.
+	 */
+	private GrantTargets resolveGrantTargets(BaseRecord cfgWorld, String containerPath, OrganizationContext octx) throws OlioException {
+		IOContext ioContext = IOSystem.getActiveContext();
+		long organizationId = octx.getOrganizationId();
+		GrantTargets targets = new GrantTargets();
+		List<Long> seen = new ArrayList<>();
+		Set<Long> libraryGroupIds = resolveSharedLibraryGroupIds(octx);
+		List<String> sharedDesc = new ArrayList<>();
+
 		ModelSchema ms = RecordFactory.getSchema(OlioModelNames.MODEL_WORLD);
-		List<BaseRecord> groups = new ArrayList<>();
 		for(FieldSchema fs : ms.getFields()) {
 			if(fs.getBaseModel() != null && fs.getBaseModel().equals(ModelNames.MODEL_GROUP) && fs.isForeign()) {
 				BaseRecord group = cfgWorld.get(fs.getName());
@@ -171,8 +462,19 @@ public class OlioContext {
 					throw new OlioException("Group " + fs.getName() + " is null");
 				}
 				try {
-					if((boolean)AttributeUtil.getAttributeValue(group, "shared", false) == true) {
-						groups.add(group);
+					long gid = group.get(FieldNames.FIELD_ID);
+					if(seen.contains(gid)) {
+						continue;
+					}
+					seen.add(gid);
+					boolean attrShared = ((boolean)AttributeUtil.getAttributeValue(group, "shared", false) == true);
+					boolean libShared = libraryGroupIds.contains(gid);
+					if(attrShared || libShared) {
+						targets.shared.add(group);
+						sharedDesc.add(fs.getName() + "(" + (attrShared ? "attr" : "") + (attrShared && libShared ? "+" : "") + (libShared ? "lib" : "") + ")");
+					}
+					else {
+						targets.own.add(group);
 					}
 				}
 				catch(ModelException e) {
@@ -181,44 +483,97 @@ public class OlioContext {
 			}
 		}
 
-		String[] rperms = new String[] {"Read"};
-		String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
-
-		/// Find the parent group where the world is located
-		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, cfgWorld.get(FieldNames.FIELD_GROUP_ID), cfgWorld.get(FieldNames.FIELD_ORGANIZATION_ID));
-		BaseRecord pdir = ioContext.getSearch().findRecord(pq);
+		if(containerPath == null) {
+			throw new OlioException("Container path is null");
+		}
+		String worldContainerPath = containerPath + "/" + (String)cfgWorld.get(FieldNames.FIELD_NAME);
+		BaseRecord pdir = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_GROUP, worldContainerPath, GroupEnumType.DATA.toString(), organizationId);
 		if(pdir == null) {
-			throw new OlioException("Failed to find parent group");
+			throw new OlioException("Failed to find parent group " + worldContainerPath);
 		}
-		Query ppq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, pdir.get(FieldNames.FIELD_ID), cfgWorld.get(FieldNames.FIELD_ORGANIZATION_ID));
-		
-		List<BaseRecord> recs = Arrays.asList(ioContext.getSearch().findRecords(ppq));
-		groups.addAll(recs);
-		
-		/// use org admin to set entitlement to address use/references to shared libraries
-		for(BaseRecord group : groups) {
-			ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), userRole, new BaseRecord[] {group}, (userWrite ? crudperms : rperms), new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
-			ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), adminRole, new BaseRecord[] {group}, crudperms, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+		Query ppq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, pdir.get(FieldNames.FIELD_ID), organizationId);
+		for(BaseRecord group : ioContext.getSearch().findRecords(ppq)) {
+			long gid = group.get(FieldNames.FIELD_ID);
+			if(seen.contains(gid)) {
+				continue;
+			}
+			seen.add(gid);
+			targets.own.add(group);
 		}
 
+		logger.info("Grant targets for " + cfgWorld.get(FieldNames.FIELD_NAME) + ": " + targets.shared.size()
+			+ " shared " + sharedDesc + ", " + targets.own.size() + " own (own receives Delete, shared does not)");
+
+		/// Fail loudly rather than silently: a world configured to use the shared libraries but whose
+		/// shared partition is EMPTY means every library corpus was classified as the world's own and
+		/// is about to receive Delete.
+		if(config != null && config.isUseSharedLibraries() && targets.shared.isEmpty()) {
+			logger.error("SHARED LIBRARY CLASSIFICATION FAILED for world " + cfgWorld.get(FieldNames.FIELD_NAME)
+				+ " in organization " + organizationId + ": useSharedLibraries is true but NO group classified as shared."
+				+ " Every /Library corpus is about to be granted Delete. Resolved " + libraryGroupIds.size()
+				+ " child group(s) of " + LibraryUtil.basePath + ".");
+		}
+
+		return targets;
 	}
-	
+
+	/**
+	 * Ids of the immediate children of {@code /Library} - the org-wide shared corpora.
+	 * <p>
+	 * Resolved as the organization admin (the owner {@code LibraryUtil} creates them with) and by
+	 * {@code parentId}, so the answer does not depend on the virtual {@code path} field being computed
+	 * or on the {@code shared} attribute being present in memory. An organization with no
+	 * {@code /Library} yields an empty set, which is correct: there is nothing shared to protect.
+	 */
+	private Set<Long> resolveSharedLibraryGroupIds(OrganizationContext octx) {
+		Set<Long> ids = new HashSet<>();
+		IOContext ioContext = IOSystem.getActiveContext();
+		BaseRecord libDir = ioContext.getPathUtil().findPath(octx.getAdminUser(), ModelNames.MODEL_GROUP, LibraryUtil.basePath, GroupEnumType.DATA.toString(), octx.getOrganizationId());
+		if(libDir == null) {
+			return ids;
+		}
+		Query lq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, libDir.get(FieldNames.FIELD_ID), octx.getOrganizationId());
+		for(BaseRecord group : ioContext.getSearch().findRecords(lq)) {
+			ids.add((long)group.get(FieldNames.FIELD_ID));
+		}
+		return ids;
+	}
+
+	/**
+	 * Container path for the legacy 2-arg {@code configureWorldAuthorization}: the universe record
+	 * sits under {@code config.getUniversePath()} and the world record under
+	 * {@code config.getWorldPath()}, and in both cases the container's leaf is the record's own name.
+	 */
+	private String deriveContainerPath(BaseRecord cfgWorld) {
+		String name = cfgWorld.get(FieldNames.FIELD_NAME);
+		boolean isUniverse = (universe != null && cfgWorld == universe)
+			|| (config.getUniverseName() != null && config.getUniverseName().equals(name));
+		return (isUniverse ? config.getUniversePath() : config.getWorldPath());
+	}
+
 	public void scanNestedGroups(BaseRecord cfgWorld, String fieldName, boolean userWrite) {
 		BaseRecord dir = cfgWorld.get(fieldName);
 		scanNestedGroups(dir, userWrite);
 	}
+	/**
+	 * Recursively grant this context's EFFECTIVE role pair on {@code dir} and its descendants. Group
+	 * entitlements do not inherit down the tree, so the recursion is required, not belt-and-braces.
+	 * <p>
+	 * The roles come from {@link #effectiveUserRole()}/{@link #effectiveAdminRole()}, so a context
+	 * carrying its own role pair does not grant the org-wide Olio roles here.
+	 */
 	public void scanNestedGroups(BaseRecord dir, boolean userWrite) {
 
-		
+
 		//logger.info("Configure group " + dir.get(FieldNames.FIELD_NAME));
 		String[] rperms = new String[] {"Read"};
 		String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
 		IOContext ioContext = IOSystem.getActiveContext();
-		ioContext.getAuthorizationUtil().setEntitlement(olioUser, userRole, new BaseRecord[] {dir}, (userWrite ? crudperms : rperms), new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
-		ioContext.getAuthorizationUtil().setEntitlement(olioUser, adminRole, new BaseRecord[] {dir}, crudperms, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+		ioContext.getAuthorizationUtil().setEntitlement(olioUser, effectiveUserRole(), new BaseRecord[] {dir}, (userWrite ? crudperms : rperms), new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+		ioContext.getAuthorizationUtil().setEntitlement(olioUser, effectiveAdminRole(), new BaseRecord[] {dir}, crudperms, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
 
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, dir.get(FieldNames.FIELD_ID), dir.get(FieldNames.FIELD_ORGANIZATION_ID));
-		
+
 		BaseRecord[] dirs = ioContext.getSearch().findRecords(pq);
 
 		// logger.info("Scan group " + dir.get(FieldNames.FIELD_NAME) + " (#" + dir.get(FieldNames.FIELD_ID) + " in #" +  dir.get(FieldNames.FIELD_ORGANIZATION_ID) + ") with " + dirs.length + " children");
@@ -226,7 +581,7 @@ public class OlioContext {
 			scanNestedGroups(group, userWrite);
 		}
 	}
-	
+
 	public void configureEnvironment() throws OlioException {
 		if(config == null) {
 			throw new OlioException("Configuration is null");
@@ -264,10 +619,14 @@ public class OlioContext {
 			/// subsequent init, and only configureWorldAuthorization happened to reassign it later.
 			///
 			/// enrole() is idempotent (it checks isMember first), so this is safe to run every time.
+			///
+			/// PB2 phase 1: the userRole RESOLUTION below stays unconditional (KI-35 depends on it),
+			/// but the ENROLMENT is gated on config.isEnrolActingUser(), which defaults to false.
+			/// Constructing a context must not be a way to grant yourself access.
 			if(userRole == null) {
 				userRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio User", RoleEnumType.USER.toString(), octx.getOrganizationId());
 			}
-			if(userRole != null && !enrole(config.getUser(), userRole)) {
+			if(config.isEnrolActingUser() && userRole != null && !enrole(config.getUser(), userRole)) {
 				logger.warn("Failed to enrol " + config.getUser().get(FieldNames.FIELD_NAME)
 					+ " in the Olio User role — writes to Olio-owned apparel/wearables will be denied");
 			}
@@ -278,9 +637,13 @@ public class OlioContext {
 		adminRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), octx.getOrganizationId());
 		userRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio User", RoleEnumType.USER.toString(), octx.getOrganizationId());
 		ioContext.getMemberUtil().member(olioUser, adminRole, olioUser, null, true);
-		
-		ioContext.getMemberUtil().member(olioUser, userRole, config.getUser(), null, true);
-		
+
+		/// PB2 phase 1: first-run enrolment of the acting user is gated the same way as the
+		/// every-run branch above. See OlioContextConfiguration.isEnrolActingUser().
+		if(config.isEnrolActingUser()) {
+			ioContext.getMemberUtil().member(olioUser, userRole, config.getUser(), null, true);
+		}
+
 		BaseRecord rootDir = ioContext.getPathUtil().makePath(octx.getAdminUser(), ModelNames.MODEL_GROUP, config.getBasePath(), GroupEnumType.DATA.toString(), octx.getOrganizationId());
 		if(rootDir == null) {
 			throw new OlioException("Root directory is null");
@@ -296,8 +659,31 @@ public class OlioContext {
 		if(wDir == null) {
 			throw new OlioException("World directory is null");
 		}
-		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), userRole, new BaseRecord[] {rootDir, uDir, wDir}, new String[] {"Read"}, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
-		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), adminRole, new BaseRecord[] {rootDir, uDir, wDir}, new String[] {"Read"}, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+
+		/// This block runs ONCE per organization - on whichever context happens to be the first. The
+		/// roles it grants here are the ORG-WIDE `~/Roles/Olio *` pair (the local fields, deliberately
+		/// not effectiveUserRole()/effectiveAdminRole()), so what it grants on is visible to every
+		/// Olio user in the organization.
+		///
+		/// rootDir (/Olio) and uDir (/Olio/Universes) are the deliberate org-wide root reference and
+		/// are granted unconditionally, exactly as before.
+		///
+		/// wDir is NOT. For grid/arena it is the generic per-universe Worlds container and stays in the
+		/// grant, so that behaviour is byte-for-byte unchanged. But a context carrying its OWN role
+		/// pair is a compartment (a PictureBook book), and there wDir is
+		/// /Olio/Universes/Books/Worlds - the group holding EVERY book's olio.world record. If the
+		/// first Olio context in an organization happened to be a book, granting the org-wide Olio User
+		/// role Read there would expose every book slug and every book's group FKs to the whole org.
+		boolean compartmentalized = (config.getAuthorizationUserRole() != null || config.getAuthorizationAdminRole() != null);
+		BaseRecord[] entryDirs = (compartmentalized
+			? new BaseRecord[] {rootDir, uDir}
+			: new BaseRecord[] {rootDir, uDir, wDir});
+		if(compartmentalized) {
+			logger.info("First-run Olio bootstrap on a compartmentalized context: withholding the org-wide Read grant on "
+				+ config.getWorldPath() + " (the compartment's own roles are granted separately)");
+		}
+		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), userRole, entryDirs, new String[] {"Read"}, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), adminRole, entryDirs, new String[] {"Read"}, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
 	}
 	
 	public void initialize() {
@@ -388,12 +774,29 @@ public class OlioContext {
 			}
 			
 			if(!startOrContinueRealmEvents()) {
-				logger.error("Failed to start realms");
+				if(config.isRequireRealms()) {
+					logger.error("Failed to start realms");
+				}
+				else {
+					logger.info("Realms were not started (requireRealms is false)");
+				}
 			}
-			
-			configureWorldAuthorization(universe, false);
-			configureWorldAuthorization(world, true);
-			
+
+			BaseRecord cfgUserRole = config.getAuthorizationUserRole();
+			BaseRecord cfgAdminRole = config.getAuthorizationAdminRole();
+			if(cfgUserRole != null && cfgAdminRole != null) {
+				configureWorldAuthorization(universe, cfgUserRole, cfgAdminRole, config.getUniversePath(), false);
+				configureWorldAuthorization(world, cfgUserRole, cfgAdminRole, config.getWorldPath(), true);
+			}
+			else {
+				configureWorldAuthorization(universe, false);
+				configureWorldAuthorization(world, true);
+			}
+			/// Set ONLY after both grant calls returned. `initialized` above is not evidence that
+			/// authorization ran - see isAuthorizationConfigured().
+			authorizationConfigured = true;
+
+
 			if(trace) {
 				long stop = System.currentTimeMillis();
 				logger.info("... Olio Context Initialized in " + (stop - start) + "ms");
@@ -433,8 +836,14 @@ public class OlioContext {
 		if(ep != null) {
 			List<BaseRecord> rlms = getRealms();
 			if(rlms.size() == 0) {
-				logger.error("No realms detected");
-				errors++;
+				/// A realm-free world (a PictureBook book world) is a valid configuration, not a fault.
+				if(config.isRequireRealms()) {
+					logger.error("No realms detected");
+					errors++;
+				}
+				else {
+					logger.info("No realms detected (requireRealms is false)");
+				}
 			}
 			for(BaseRecord r: rlms) {
 				r.setValue(OlioFieldNames.FIELD_CURRENT_EPOCH, ep);

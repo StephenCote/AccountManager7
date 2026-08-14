@@ -538,6 +538,8 @@ public class TestOlioGameFeatures extends BaseTest {
 				false,
 				false
 			);
+			/// PB2 phase 1: enrolActingUser defaults to false; the game path relies on it.
+			cfg.setEnrolActingUser(true);
 
 			cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {
 				new GridSquareLocationInitializationRule(),

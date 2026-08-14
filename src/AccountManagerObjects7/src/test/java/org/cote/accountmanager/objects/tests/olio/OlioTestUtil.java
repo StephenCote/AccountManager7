@@ -105,7 +105,10 @@ public class OlioTestUtil {
 			resetWorld,
 			resetUniverse
 		);
-		
+		/// PB2 phase 1: enrolActingUser now defaults to false. The Olio test harness depends on
+		/// context construction enrolling testUser1 in the Olio user role, so it opts in explicitly.
+		cfg.setEnrolActingUser(true);
+
 		resetWorld = false;
 		resetUniverse = false;
 	

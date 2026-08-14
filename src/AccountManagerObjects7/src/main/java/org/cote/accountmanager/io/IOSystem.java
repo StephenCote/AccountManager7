@@ -2,7 +2,10 @@ package org.cote.accountmanager.io;
 
 import java.io.File;
 import java.security.Security;
+import java.sql.SQLException;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -117,6 +120,13 @@ public class IOSystem {
 				checkPersistedSchema = true;
 			}
 
+			/// Index DDL is emitted on the patch path as well as at CREATE TABLE time, otherwise a
+			/// constraint or hint added to an already-created model is never applied.  Enumerate the
+			/// existing indices once so steady-state startup doesn't replay a no-op CREATE INDEX for
+			/// every model; an empty list simply means every statement is issued (they carry
+			/// IF NOT EXISTS).
+			Set<String> existingIndices = new HashSet<>(dbUtil.getIndexNames());
+
 			// Always scan for schema changes - create new tables or patch existing ones
 			for(String m : ModelNames.MODELS) {
 				ModelSchema schema = RecordFactory.getSchema(m);
@@ -143,6 +153,28 @@ public class IOSystem {
 							for(String drop : drops) {
 								logger.warn("Schema drop: " + drop);
 								dbUtil.execute(drop);
+							}
+						}
+						/// Apply index DDL last, after the columns it may reference exist.
+						/// A CREATE UNIQUE INDEX fails when the existing rows already violate the
+						/// declared constraint - that is a real finding and is logged at error, but it
+						/// must not abort the schema scan for every model that follows.
+						for(String idx : dbUtil.generatePatchIndices(schema)) {
+							/// Normalized, not raw: the database truncates long identifiers, and the
+							/// dedicated participation index names are the ones that exceed the limit.
+							String idxName = dbUtil.normalizeIndexName(DBUtil.getIndexStatementName(idx));
+							if(idxName != null && existingIndices.contains(idxName)) {
+								continue;
+							}
+							try {
+								dbUtil.executeWithException(idx);
+								if(idxName != null) {
+									existingIndices.add(idxName);
+								}
+								logger.info("Schema index: " + idx);
+							}
+							catch(SQLException | RuntimeException e) {
+								logger.error("Schema index failed for " + m + ": " + idx + " - " + e.getMessage());
 							}
 						}
 					}

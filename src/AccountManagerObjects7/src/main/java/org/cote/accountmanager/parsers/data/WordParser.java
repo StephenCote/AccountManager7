@@ -286,7 +286,14 @@ public class WordParser {
 		
 		int count = countCleanupWords(user, ModelNames.MODEL_TRAIT, groupPath, reset);
 		if(count == 0) {
-			count = IOSystem.getActiveContext().getAccessPoint().create(user, getBulkTraits(user, groupPath, basePath).toArray(new BaseRecord[0]));
+			/// Pass permitBulkContainerApproval explicitly, matching the two sibling bulk writers
+			/// (DataParseWriter:31 and GeoParseWriter:66), which already do this unconditionally.
+			/// AccessPoint.update(user, BaseRecord[]) is the only reader of that flag; the two-arg
+			/// create(user, BaseRecord[]) form delegates to it and would otherwise depend on whatever
+			/// the caller had previously pushed into AccessPoint's shared state.
+			/// NOTE: this widens bulk container approval for loadTraits to EVERY caller, not just
+			/// Olio universe init - the same unconditional shape the sibling writers already have.
+			count = IOSystem.getActiveContext().getAccessPoint().create(user, getBulkTraits(user, groupPath, basePath).toArray(new BaseRecord[0]), true);
 		}
 		else {
 			// logger.info(count + " records have already been loaded.");

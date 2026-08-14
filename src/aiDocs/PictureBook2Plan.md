@@ -38,6 +38,52 @@ a separate conversation.
   `flux2IncludeLandscapeRef`, `kontextModel`, `mannequin*`); a default there makes `flux2Defaults.json` dead.
 - `TestPictureBookCustom#TestPictureBookCustomPipeline` must pass **unchanged**. If it needs editing, stop.
 
+### Phase 0 ratification — RECORDED 2026-08-12 (Stephen)
+
+Phase 0's exit criterion ("answers recorded") is met. These are now ratified and must not be
+re-litigated; they are folded into the sections they govern.
+
+| Q | Answer | Consequence |
+|---|---|---|
+| **Q1** ownership of `olio.pb.*` | **olioUser, uniformly** — every `olio.pb.*` record including `.book` and `.run`. Authorship via `createdByObjectId`. | Confirms §0 decision 2 and **supersedes §5.2's table row** that assigned `.book`/`.run` to the acting user. The grant set is therefore uniform across all eight models. |
+| **Q2** `WorldUtil.fastDataCheck` | **Fix in place** — change the probe to the universe-local **`Traits`** corpus per the corrected §4 Blocker 1. Not colors+surnames (shared libraries; would silently leave `Traits` empty). | Live behaviour change for every existing universe. Gated on the existing grid/arena/game suites. |
+| **Q3** nondeterministic `findRecord` (`OlioContext.java:188-189`) | **Fix in place** — name-resolution via `pathUtil.findPath`, never a `parentId`-only `findRecord`. | Changes grid/arena grant targets on a multi-universe DB. Still raised as its own KI. |
+| **Q6** enrolment authority | **As proposed (§5.4).** Creation enrols the creator as Writer; only `{bookSlug}` Writer or `Olio Admin` may add members, via an audited `POST /{book}/members`; **nothing on a read path ever enrols**. | `enrolActingUser` defaults to **false**; both `OlioContext` auto-enrolment sites (`:270-273`, `:282`) are removed, with the explicit registration call added to whatever provisions game access **in the same change** (§5.4 consequence 1). **SEE THE Q6-STAGING AMENDMENT BELOW — it supersedes the "in the same change" clause.** |
+
+#### Q6 staging amendment — RATIFIED 2026-08-12 (Stephen), supersedes the Q6 row's "in the same change" clause
+
+The Q6 row above says the explicit registration call lands **in the same change** as the removal. That is
+not achievable in phase 1 and has been superseded. There is **no existing "provisions game access" hook**
+to attach registration to: all 18 `GameService` endpoints and `OlioService`'s 5 call `getOlioContext`
+inline, and `GET /game/newGame` is a read. The only plausible host, `GameUtil.adoptCharacter` (`:936`),
+**cannot satisfy `registerUser`'s own authorization rule** — it is reached from `GameService.java:829,:841`
+where a normal `@RolesAllowed("user")` caller adopts a character *for themselves*, so the actor is neither
+an admin-role member nor the org admin.
+
+**Ratified staging:**
+
+- **Phase 1 lands the mechanism only** — the `enrolActingUser` config field (default **false**), gates on
+  **both** enrolment branches (`:267-273` every-run *and* `:282` first-run), and the audited
+  `registerUser(actor, user, asAdmin)`. Book contexts get `false`. `getGridContext`/`getArenaContext` and
+  every direct config-building test site explicitly set **`true`**.
+- **Wiring the game side is its own later change**, at which point the opt-ins come out.
+- **Honest statement of where this leaves things:** after phase 1, "nothing on a read path ever enrols" is
+  true for **book contexts** and **not yet true for the game path**. Phase 1 must not be described as
+  having delivered Q6 in full.
+
+**The nine opt-in sites** (enumerate them as a checklist; grep `new OlioContextConfiguration`):
+`OlioTestUtil.java:97`, `TestGameUtilSync.java:551`, `TestOlio.java:67`, `TestOlio.java:219`,
+`TestOlio2.java:138`, `TestOlioGameFeatures.java:530`, `TestRealm.java:22`, `TestRealm.java:137`,
+**`TestSD.java:93`**. Adding `setEnrolActingUser(true)` at each **is nine test edits** — phase 1 is not
+"zero test edits". It is zero *behavioural* test change: no assertion is weakened, and the two
+`TestPictureBookKnownIssues#TestKi35*` tests (which assert that constructing a context enrols) keep
+passing unmodified because the grid path still enrols.
+| **Q7** chapter semantics | **Copy, as proposed (§3.5).** Copy carries all seven foreign sub-records; lineage via a `chapterSource` binding. | Required by `deleteGroupRecursive`'s stated no-sharing invariant (`PictureBookUtil.java:4243-4245`). |
+
+**Scope ratified for this implementation run: phases 1 through 4 (backend complete).** Phases 5 (Ux752)
+and 6 (migration) are out of this run. Q15/Q17/Q19/Q12 below remain open but block only phases 3b/5,
+outside this run's scope — except **Q17 (orphan-world reconcile)**, which phase 3 touches.
+
 ### Open questions that still block work
 
 | Q | Blocks | Note |
@@ -130,9 +176,14 @@ Three hard rules:
 
 1. **Every PB2 model is group-scoped. None groupless.** A record with a `groupId` gets the group-only
    access shortcut; a groupless one forces field/role checks. This is a security decision.
-2. **PB2 never uses the `schema.getGroup()` fallback.** Every create passes an explicit world-scoped
-   path. `"~/" + schema.getGroup()` at `PictureBookUtil.java:2189-2195` is precisely what produced the
-   KI-60 collision target.
+2. **PB2 never builds a path from `schema.getGroup()`.** Every create passes an explicit world-scoped
+   path. `"~/" + schema.getGroup()` at `PictureBookUtil.java:2169, :2190` is precisely what produced the
+   KI-60 collision target — it prefixes the **acting user's home** onto the hint.
+   *Clarified 2026-08-14: this rule is about the `"~/" + …` synthesis, **not** about the model-level
+   `"group"` declaration.* The model-level `"group"` is a legitimate, widely-used **name hint for where
+   an instance is saved relative to its parent** (57 models declare one) and PB2 models should declare it
+   like any other model. What is banned is a caller turning that hint into a home-relative path. Other
+   live instances of the banned shape: `CharPersonFactory.java:35, :44-50`.
 3. **No schema `default` on any config-ish field** (see above).
 
 **How new tables land without a reset.** `IOSystem.open`
@@ -410,11 +461,21 @@ Consequences, and they are mostly simplifications:
    `IOSystem.getActiveContext().getWriter().delete(lq)` (`:283-298`) is a **raw bulk delete that bypasses
    PBAC entirely** across ~30 groups, running as olioUser. Deleting a book world must instead reuse the
    per-record recursive teardown PictureBook already has — `deleteGroupRecursive`
-   (`PictureBookUtil.java:4212-4289`, the KI-32 fix), generalised over the world's groups via
-   `getWorldGroups` (`:312`) — so every delete passes `AccessPoint.delete` and the `{bookSlug} Writer`
+   (`PictureBookUtil.java:4212-4289`, the KI-32 fix), generalised over the world's groups —
+   so every delete passes `AccessPoint.delete` and the `{bookSlug} Writer`
    Delete grant is the gate. **Note the existing enumeration inside `deleteGroupRecursive` uses the
    unauthorized `getSearch().findRecords` (`:4220,4228,4255,4281`); generalising it is the moment to fix
    that, not to propagate it.**
+   **CORRECTED 2026-08-12 — do NOT use `getWorldGroups` for this.** An earlier draft of this point (and
+   the `WorldUtil` API list in the paragraph above) said to generalise `deleteGroupRecursive` "over the
+   world's groups via `getWorldGroups` (`:312`)". **`WorldUtil.getWorldGroups` does not return the
+   world's groups.** `:312-315` queries `MODEL_GROUP` with `parentId = world.get(population.id)` — it
+   returns the children of the world's **Population** group. Using it would enumerate population
+   subgroups only and **silently miss `Book`, `Workflow`, `Artifacts`, `Gallery` and 35 of the 36 world
+   groups**, i.e. "delete a book" would leave the entire graph and every artifact behind. Use the same
+   deterministic enumeration Blocker 3 specifies: the world record's own foreign `auth.group` fields plus
+   the world container resolved **by name** via `findPath`, then its children by `parentId`. Add a javadoc
+   note on `getWorldGroups` recording what it actually does, so this trap is not re-entered.
 5. **Orphan worlds become possible and need an answer.** If a world is created but the `olio.pb.book`
    record isn't, nothing points at it and it is invisible *and* unreclaimable — there being no
    list-worlds API is exactly what makes it unreclaimable. This is not hypothetical: it is the direct
@@ -488,6 +549,27 @@ and this codebase already has one such dead knob (`useSharedLibraries`,
   authorized create) and throws rather than returning a half-built context. **This is the single most
   likely source of future "the PBAC is broken" reports and is being designed out deliberately.**
 
+  **CORRECTED 2026-08-12 — the verification as first drafted asserts nothing. Two independent defects:**
+
+  1. **`isInitialized()` is useless as a grant check.** `initialized = true` is set at `:379`, *before*
+     the `configureWorthAuthorization` calls at `:394-395`, and the whole body sits inside the
+     swallow-all `catch (Exception e)` at `:403-406` which logs and returns normally. So
+     `isInitialized()` returns **true even when authorization threw**. Asserting it proves only that
+     `:379` was reached. **Fix:** add a distinct `authorizationConfigured` flag set only after
+     `:394-395` completes, and have `getCreateBookContext` assert *that*. (Moving `:379` itself is
+     §10 Q5 — a live behaviour change for grid/arena — and stays out of scope.)
+  2. **"Probe one authorized create" cannot detect a skipped grant among ~36 groups.** A single probe
+     hits one group; a grant missing on a different one passes. **Fix:** verify grants across the whole
+     deterministically-enumerated group set (the same set Blocker 3 specifies), not one sample.
+
+  **Consequence for the null-group-field question:** an earlier revision proposed downgrading
+  `:170-172`'s throw to skip+warn on the book path, relying on this post-init verification to catch the
+  result. Given defect 1, that trade was unsound — it removed a loud failure and replaced it with a
+  check that could not fire. **Decision: keep the throw on both paths.** `WorldFactory.implement()`
+  creates all 36 groups unconditionally, so a null foreign group field on a book world is a genuine
+  anomaly and should abort loudly. If one is ever observed, handle it with a **named allowlist** of
+  legitimately-nullable fields — do not pre-emptively soften an error that has not yet fired.
+
 ### 3.4 `OlioContextConfiguration` changes
 
 **Corrected in design review round 1 — `requireRealms` alone is not enough.** `OlioContext.java:394-395`
@@ -498,10 +580,37 @@ gives `initialize()` no way to select the role-parameterised overload. **§5.7 p
 unimplementable without this.** So the config also gains:
 
 - `BaseRecord authorizationUserRole` / `authorizationAdminRole` (nullable). When both are set,
-  `initialize()` passes them to the new 4-arg `configureWorldAuthorization`; when null it uses today's
-  org-wide pair, so grid/arena/agent behaviour is unchanged.
-- `boolean enrolActingUser = true`. When false, `configureEnvironment` skips the unconditional
-  enrolment at `:267-273`/`:282`, so PB2's explicit `POST /members` (§5.4) is the only way in.
+  `initialize()` passes them to the new role-parameterised `configureWorldAuthorization`; when null it
+  uses today's org-wide pair, so grid/arena/agent behaviour is unchanged.
+  **These two fields are also the fix for the instance-field trap — see below.**
+- `boolean enrolActingUser = false`. *(Corrected 2026-08-12: this line previously read `= true`, which
+  contradicted the ratified Q6 row in §0. The default is **false** — safe by default — and every
+  existing caller opts in explicitly. See the Q6 staging amendment in §0 for the nine opt-in sites.)*
+  When false, `configureEnvironment` skips the unconditional enrolment at **both** `:267-273` (every-run,
+  including the warn at `:270-272`) and `:282` (first-run only), so PB2's explicit `POST /members` (§5.4)
+  is the only way in.
+
+**The role instance-field trap — must be fixed by construction, not by convention.** `adminRole` and
+`userRole` are `OlioContext` **instance fields** (`:125-126`). It is not enough for the role-parameterised
+overload to take roles as parameters and leave the fields alone: `configureEnvironment` sets **both fields
+unconditionally** before `initialize()` ever reaches `:394-395` (`:248` + `:267-268` on the early-return
+branch, `:278-279` on first run). So on a book context those fields hold the **org-wide `~/Roles/Olio
+Admin` / `Olio User`**, and every role-less public entry point silently acts on the wrong tier:
+
+- `enroleReader(user)` / `enroleAdmin(user)` (`:128-133`) enrol into the **org-wide** role — precisely the
+  self-enrolment §5.1 exists to eliminate. Live callers: `Console7/.../OlioAction.java:299`,
+  `OlioTestUtil.java:376`.
+- `scanNestedGroups(cfgWorld, fieldName, userWrite)` (`:206-209`, reading the fields at `:217-218`) grants
+  the **org-wide** role CRUD on the book world's groups. Live caller:
+  `Service7/.../OlioService.java:211` (the Gallery grant), plus six `OlioAction` sites.
+
+A null field would have thrown and been noticed; an org-wide role **grants**, silently, in the
+isolation-losing direction. **Fix:** the role-less overloads resolve
+`config.getAuthorizationUserRole()/AdminRole()` first and fall back to the instance field only when those
+are null. Grid/arena is then bit-for-bit unchanged (config fields null), and book contexts are correct
+**even when reached through the legacy overloads**. This is the same shape as the "per-org value in
+process-global state" rule in `architecture.md` — a per-scope value read from a field a different scope
+wrote — and is worth adding there as its own rule line.
 
 **Related overstatement, corrected:** "the org-wide `Olio User` is not used by PB2" is not achievable.
 `configureEnvironment` is the first statement of `initialize()` (`:308`), and its first-run branch grants
@@ -1320,10 +1429,38 @@ per-world-role design: `"user"` is a coarse container role and cannot express "m
 - **Where the check belongs:** in Objects7, as PBAC data — per-book roles plus per-group entitlements —
   so `AccessPoint` stays the enforcement point and `PictureBookUtil.findBookGroup` (`:336-341`) stays
   the single choke point. **Nothing new goes in Service7.**
-- **Scene-addressed endpoints never authorize the owning book.** `generateSceneImage` (`:3277`),
-  `regenerateBlurb`/`setSceneStatus` (`:3879`) and `prepare-images` (`:3840`) resolve the scene note by
-  objectId and never resolve or authorize its book. With books in a shared world that is a direct
-  object reference with no book-level check. Each must resolve the scene's book and re-authorize.
+- **Scene-addressed endpoints never authorize the owning book.** ~~`generateSceneImage` (`:3277`),
+  `regenerateBlurb`/`setSceneStatus` (`:3879`) and `prepare-images` (`:3840`)~~ Each must resolve the
+  scene's book and re-authorize.
+  **FIXED 2026-08-14, with two corrections to this entry.**
+  *(a) The line numbers are in `PictureBookUtil.java`, not `PictureBookService.java`* (which is only 722
+  lines). Actual pre-change locations: `generateSceneImage` find at `:3277`, `regenerateBlurb` find at
+  `:3879`, `prepareSceneImagePrompts` find at `:3840`, and **`setSceneStatus` find at `:1328`** — *not*
+  alongside `regenerateBlurb` as this entry grouped it.
+  *(b) The "direct object reference" framing overstates the PB1 blast radius — measured, not assumed.*
+  An **unentitled** user is already denied at the *note* level: `AccessPoint.find` on another user's scene
+  note returns null, so the request 404s. In PB1's single-owner `~/Data/PictureBooks/...` layout an
+  arbitrary authenticated user could **not** drive someone else's book.
+  **The real gap** is a user holding Read+Update on the book's **`Scenes` group** but nothing on the
+  **book group** — reachable today via any explicit group grant, and **exactly the shape PB2's shared
+  world creates**. That user could read and write another user's scene notes; the test asserts the
+  precondition directly (`AccessPoint.update` on A's note succeeds for B) before asserting the fix. Now
+  403.
+  **Implementation:** `PictureBookUtil.authorizeSceneAccess(user, sceneObjectId, READ|WRITE)` beside
+  `findBookGroup` — resolves scene `groupId` → group → `parentId` → book group by **id-based
+  `AccessPoint.findById` at every hop, never path resolution** (§5.6b: there is no read-up), checks via
+  `AuthorizationUtil.canRead/canUpdate`, and **returns the scene** so callers don't re-query. Scenes not
+  under a `Scenes` group (the legacy `~/Chat` single-image fallback) authorize against their own group —
+  the check is never skipped. In the `prepare-images` batch the authorize call sits **outside** the
+  per-scene `try/catch`, which exists to tolerate LLM failures; swallowing a denial there would turn
+  "you may not act on this book" into a silent 200.
+  **Status codes follow this file's existing convention** rather than a new one: `findBookGroup` already
+  collapses absent and PBAC-denied into 404, so unreadable/absent scene → **404**, scene readable but book
+  denies → **403** (which leaks nothing — a caller who can read the scene already knows its book exists).
+  **Service7 gained zero authorization logic.**
+  **Related, NOT fixed — follow-up:** `tagApparelSceneIndex` (`PictureBookUtil:1171`,
+  `PUT /character/{objectId}/apparel/{apparelObjectId}/scene-tag`) resolves an apparel record by objectId
+  with **no book check** either. Same shape, out of scope for that patch.
 - **`cancel` discards the principal.** `PictureBookService.java:475-476`:
   ```java
   ServiceUtil.getPrincipalUser(request);            // :475 — return value discarded
@@ -1621,16 +1758,39 @@ of which `TestPictureBookCustom` exercises.** So the gate is:
   An earlier draft listed the whole of `TestPbSecurity` as a phase-1 exit, which was incoherent.
 
 Two scope corrections in this phase:
-- **Dropping `setPermitBulkContainerApproval` is not a one-liner.** `OlioContextUtil.java:43/:83` (and
-  `:91/:119` for arena) wrap the entire `initialize()`, and the bulk writes happen deep inside
-  `loadWorldData` → `WordParser`/`WordNetParser`. Threading the boolean down to the parameterised
-  entry points (`AccessPoint.java:155`, `:163`) is a real refactor with a real performance consequence
-  for those loaders. Budget it as such, or scope phase 1 to *not regressing* it and fix it separately.
+- **~~Dropping `setPermitBulkContainerApproval` is not a one-liner.~~ CORRECTED 2026-08-12 — it *is* a
+  one-liner, and this bullet was wrong.** Verified by reading `AccessPoint.java`: `:159-161`
+  `update(contextUser, BaseRecord[])` is the **only** reader of the field, and `:152-153`
+  `create(user, BaseRecord[])` delegates to it. The singular `update(user, BaseRecord)` (`:275`) and
+  `create(user, BaseRecord)` (`:317`) never touch it. Enumerating all 87 `getAccessPoint().create|update(`
+  sites in Objects7 `src/main`, exactly four use the array form: `io/Queue.java:66,69`,
+  `parsers/data/DataParseWriter.java:31` and `parsers/geo/GeoParseWriter.java:66` **already pass `true`**;
+  `parsers/data/WordParser.java:289` (`loadTraits`) is the sole one that does not, and is therefore the
+  only init-path call that consumes the flag. **So: change `WordParser.java:289` to pass `true`, matching
+  its two sibling writers, then delete the four `setPermitBulkContainerApproval` calls
+  (`OlioContextUtil.java:43/:83`, `:91/:119`). No signature threading, no loader performance change.**
+  State honestly that hardcoding `true` at `:289` widens bulk approval for `loadTraits` to every caller,
+  not just Olio init — the same unconditional shape the two sibling writers already have.
+  **Gate caveat:** the test harness itself turns the flag on and mostly never turns it off
+  (`OlioTestUtil.java:94`, `TestOlio.java:66,218`, `TestOlio2.java:137`, `TestGameUtilSync.java:550`,
+  `TestOlioGameFeatures.java:529`, `TestRealm.java:21,136`), so §9's `TestBookWorld` assertion 9 is
+  order-dependent in a shared JVM and will flake unless `TestBookWorld` sets it false in setup or runs
+  isolated.
 - **`CacheService` is not a one-line hook.** `clearCaches()` is a no-arg static (`CacheService.java:63-69`)
   reachable from `GET /cache/clearAll` with `@RolesAllowed({"admin","user"})`. A targeted
-  `evict(orgId, user, universe, world)` cannot hang off it, and wiring clear-all there would let any
+  evict cannot hang off it, and wiring context eviction there would let any
   authenticated user drop every cached Olio context process-wide. Add a distinct, admin-gated
   targeted-evict path, and say which one is meant.
+  **Correction 2026-08-12:** the warning above describes a state that **does not exist yet** — it would be
+  *created* by the proposed wiring. Today `OlioUtil.clearCache()` (`:67-69`) delegates **only** to
+  `ProfileUtil.clearCache()`; it clears neither `dirNameCache` nor any Olio context. And
+  `OlioContextUtil.clearCache()` (`:27-29`) has **zero callers repo-wide**. So `/cache/clearAll` currently
+  drops no Olio context at all.
+  **Wire contract:** the targeted-evict endpoint must take an **objectId**, derive `organizationId` from
+  `ServiceUtil.getPrincipalUser(request)`, and delegate to **one** Objects7 facade method that assembles
+  the cache key internally. An endpoint taking `(orgId, userName, universeName, worldName)` puts
+  key-shape logic in Service7, lets an admin name another org's `orgId` (the exact tenant boundary
+  Blocker 2 defends), and bakes the phase-1 *name* key into a wire contract that phase 1b must then break.
 
 **Phase 1b — Thread universe/world ids through Service7 + Ux752** (the ratified direction in §4
 Blocker 2). Optional `universeObjectId`/`worldObjectId` on every endpoint that constructs an Olio
@@ -1723,7 +1883,33 @@ which is not specific enough to act on:
 
 | Layer | Target | Why |
 |---|---|---|
-| **Objects7 JUnit** (`TestBookWorld`, `TestPbGraph`, `TestPbSecurity`'s Objects7-level assertions, `TestPictureBookCustom`) | the **dev** Postgres — `test.db.url=jdbc:postgresql://localhost:15432/am7db` | **Key location dependency.** The vault/keystore location is tied to that store, so Objects7 tests cannot simply be repointed at another database. Do **not** "fix" a connection failure by editing `test.db.url` — start `am7db` instead. |
+| **Objects7 JUnit** (`TestBookWorld`, `TestPbGraph`, `TestPbSecurity`'s Objects7-level assertions, `TestPictureBookCustom`) | the **dev** Postgres — `am7db`, **host port `15430`** (see the correction below) | **Key location dependency.** The vault/keystore location is tied to that store, so Objects7 tests cannot be repointed at a *different* database — in particular **never at the `am7test` container DB**, whose keys will not match. Changing the *port* to reach the same `am7db` is fine and expected. |
+
+**Port correction, 2026-08-12.** `test.db.url` read `localhost:15432/am7db`; nothing listens on 15432. The
+dev `am7db` is published on **`15430`**. `AccountManagerObjects7/src/test/resources/resource.properties:9`
+is now `jdbc:postgresql://localhost:15430/am7db`. *Do not* work around a connection failure with a port
+forwarder or by pointing at the `am7test` stack — change the port. `AccountManagerConsole7`'s
+`resource.properties:11` still reads `15432/am72db` (a different database) and was left alone.
+
+### Running the gate — the suites are excluded in the pom (discovered 2026-08-12)
+
+**`AccountManagerObjects7/pom.xml` sets `<skipTests>true</skipTests>` (`:19`) and excludes 154 test
+classes (`:108-297`).** Two consequences that invalidate the gate as §7/§9 originally wrote it:
+
+1. **`mvn … test` alone reports `BUILD SUCCESS` having run nothing** (`Tests are skipped.`). Always pass
+   `-DskipTests=false`, and **always confirm a `Tests run: N` line with N > 0** — a bare `BUILD SUCCESS`
+   is not evidence.
+2. **Every Olio/game/arena suite the phase-1 gate depends on is excluded** — `TestOlio` (`:241`),
+   `TestOlio2` (`:240`), `TestOlioRules` (`:218`), `TestOlioGameFeatures` (`:202`), `TestGameUtil`
+   (`:200`), `TestGameUtilSync` (`:199`), `TestRealm` (`:244`), `TestNestedStructures` (`:245`), plus
+   `TestLandscape`, `TestSD`, `TestPictureBookUtilE2E` and `TestPictureBookCustom`.
+   **`TestPictureBookKnownIssues` is not excluded and runs normally.**
+
+**An exclude cannot be overridden from the command line.** Verified: both `-Dtest=TestOlio#TestGrid` and
+`-Dsurefire.excludes=…` yield `Tests run: 0, BUILD SUCCESS`, because the `<excludes>` configuration is not
+bound to a user property. To run an excluded suite you must **comment out its `<exclude>` line in
+`pom.xml`**. Restore the pom afterwards (`git checkout -- AccountManagerObjects7/pom.xml`) unless the
+un-exclusion is intended to be permanent.
 | **REST / App / Ux** (Playwright, raw REST checks, `TestPictureBookRestContract`) | the **containers** — `am7test` stack per `DockerComposeDesign.md` (`docker compose -p am7test -f docker-compose.test.yml`), app `9443`, pg `15433`/`am72db`/`am7user` | Isolated, and **resettable/rebuildable on demand**, which the dev DB is not. |
 
 Corollary for the PB2 work: **the standing "never reset the schema" rule still holds for `am7db`**, but the
@@ -1766,7 +1952,14 @@ shared test users, A enrolled on book A, B on book B:
   the two-role requirement is real, not decorative).
 - After creating book B, the effective entitlements on book A's groups are **unchanged** — no grant
   naming B's role, none naming the org-wide `Olio User`.
-- No role holds Delete on `/Library/*` after N book creations.
+- **No *new* Delete grant naming a PB role exists on `/Library/*` after N book creations.**
+  *(Corrected 2026-08-12. The original assertion — "no role holds Delete on `/Library/*`" — cannot pass on
+  `am7db`. `setEntitlement` only **adds**: `OlioContext.java:185,200` has been granting the org-wide user
+  role `{Read,Update,Create,Delete}` on `/Library/*` on every grid/arena run, nothing revokes, and `am7db`
+  is deliberately not resettable. So the original form would fail for a reason unrelated to the change.
+  Narrowing the grant to CRU is **not retroactive** — every existing org stays over-granted until a
+  separate revoke utility runs. State that; do not let the narrowing read as a repair. A genuinely
+  virgin-org assertion of the original form belongs on the resettable `am7test` container side.)*
 - B attempting `DELETE /{A}/reset` deletes **zero** records.
 - B calling `POST /scene/{S}/generate|blurb`, `PUT /scene/{S}/status` with a scene from A's book → 403,
   no mutation, no SD call.
@@ -1990,8 +2183,17 @@ Five blocking findings (B1-B5) are already folded into the sections above: the D
   (`RecordFactory.java:759-763` only adds the name to the inherits set), so stated invariants —
   one workflow per book, unique `(book, index)` per scene, one `current` artifact per `(node, role)`,
   unique `handle` per book — need **explicit `constraints`** or nothing enforces them.
-- **Drop `"group": "<fallback name>"`.** Declaring a fallback that §2.1 Rule 2 forbids is a loaded gun;
-  omit it so a missing explicit path fails loudly — and verify it fails loudly rather than NPEs.
+- ~~**Drop `"group": "<fallback name>"`.**~~ **WRONG — corrected 2026-08-14 (Stephen). Keep the hint.**
+  The model-level `"group"` is **a name hint for where an instance should be saved relative to its
+  parent** — it is not a field, and **57 models in `resources/models/` declare one**. Removing it from
+  PB2 would make these eight inconsistent with the rest of the schema for no benefit.
+  **The defect §2.1 Rule 2 is actually about is caller-side:** synthesizing a path as
+  `"~/" + schema.getGroup()`, which prefixes the *acting user's home* onto a relative name hint. That is
+  what produced the KI-60 collision target. Live instances: `PictureBookUtil.java:2169` and `:2190`
+  (deleted in phase 3) and `CharPersonFactory.java:35, :44-50`.
+  **Rule for PB2:** declare `"group"` freely as a relative hint; **never** build a path from it, and
+  always pass an explicit world-scoped path on every create. The thing to verify is that no PB2 code
+  contains `"~/" + …getGroup()`, not that the hint is absent.
 - **`configOverride`-as-JSON-string costs are real and were understated.** The reasoning is right
   (`configModel.json` documents "NO SCHEMA DEFAULT ON PURPOSE" on exactly the fields cited), but the
   override is **not queryable** — which is the stated benefit of moving `sdConfig` to real records — and
@@ -2033,6 +2235,452 @@ KI-48 skip-visibly rule.
 3. **§2.1 Rule 2 should be a project rule, not a PB2-local one.** `schema.getGroup()` / `~/` home-group
    fallbacks are banned nowhere in the rules, yet they are the mechanism behind KI-42/KI-60 and appear
    in at least two files (`PictureBookUtil`, `ColorUtil.java:139`).
+
+---
+
+## Appendix D — Phase 1 as-built (2026-08-12)
+
+Phase 1 is implemented. Deviations from the plan, and defects the plan itself contained, recorded here so
+phase 2 builds on what exists rather than on what was drafted.
+
+**Defect in the plan's own grant call — §5.3 step 4 is wrong.** It specifies
+`configureWorldAuthorization(world, bookReader, bookWriter, true)`. On a `userWrite=true` call the
+*user-role* argument receives full CRUD **including Delete**, so passing `Reader` there would grant a role
+literally named *Reader* delete rights on the whole book world. As-built creates
+`~/Roles/Olio/Books/{slug}/Writer` (→ `authorizationUserRole`) and `~/Roles/Olio/Books/{slug}/Admin`
+(→ `authorizationAdminRole`). **No `Reader` role is created in phase 1** — nothing would grant to it or
+enrol into it yet. Phase 2 must add the Reader tier deliberately, not by re-reading §5.3 step 4.
+
+**Open isolation gap for phase 2 — one role pair serves both tiers.** `initialize()` passes the *same*
+role pair to the universe call and the world call, so a book's `Admin` role receives CRUD (incl. Delete)
+on the **universe's own non-shared groups**. §5.3 wants a distinct `Books Reader`/`Books Writer` tier
+there. Closing it needs either two role pairs on `OlioContextConfiguration` or a second explicit call;
+the ratified config was pinned to exactly two role fields, so this was implemented as specified and
+flagged rather than silently widened. **Phase 2 must close it.**
+
+**Grant-target widening (intended, but a real grid/arena change).** `resolveGrantTargets` collects the
+world's foreign `auth.group` fields **including non-shared ones**, which the old code discarded. Where a
+foreign group field points outside the world container, that group is now granted.
+
+**`/Library/*` narrowing, precisely.** Shared groups get `userWrite ? CRU : Read` for the user role and
+`CRU` for the admin role — never Delete. A flat "always CRU" would have *widened* the universe call, which
+grants only `Read` today. **Not retroactive:** `setEntitlement` only adds, so existing orgs keep their
+`Delete` until a revoke utility exists.
+
+**Additions not in the plan, both required:** `OlioContext.getAuthorizationGroups(cfgWorld, containerPath)`
+(public — `resolveGrantTargets` is private and `PbOlioContextUtil` is in another package, but the
+post-init check must verify the *whole* group set, not one sampled probe); and
+`OlioContext.OLIO_USER_NAME` (the olio principal must be resolved before `initialize()` so the book roles
+`makePath` under the right owner and `~` expands correctly).
+
+**The container group itself is not a grant target** — only its children, matching today's behaviour.
+One line in `resolveGrantTargets` if that turns out to be wrong.
+
+**Dead test classes — the gate is smaller than §7/§9 assumed.** `TestOlio`, `TestRealm` and `TestSD` have
+**every** `@Test` inside `/* */` blocks (`TestSD` also still uses a removed 10-arg constructor). They
+contribute zero coverage. The live phase-1 gate is `TestGameUtil` (25), `TestGameUtilSync` (15),
+`TestOlioGameFeatures` (15), `TestNestedStructures` (3), `TestOlio2` (1), `TestOlioRules` (1) = **60**,
+plus `TestPictureBookKnownIssues` (15) = **75 total, 0 failures** as of 2026-08-12.
+Consequently there were only **four** live `setEnrolActingUser(true)` opt-in sites, not nine:
+`OlioTestUtil.java:97`, `TestGameUtilSync.java:551`, `TestOlio2.java:138`, `TestOlioGameFeatures.java:530`.
+
+**Six `<exclude>` lines in `AccountManagerObjects7/pom.xml` are commented out as `PB2-GATE`** so the gate
+can run. Restore them (`git checkout`) if the gate is retired. **Better mechanism, flagged for Stephen:**
+commented-out build config is a forgettable manual step; a surefire **profile** (`-Ppb2-gate`) that removes
+the excludes would leave the default build unchanged. As it stands, six live-DB integration suites
+(including the slow `TestGameUtil`/`TestGameUtilSync`) now run in the default `mvn test` for everyone.
+
+### Phase-2 preconditions — these debts become defects if phase 2 does not honour them
+
+Recorded from the architect's final sign-off. Each is safe *today* only because of a condition phase 2
+can silently remove.
+
+1. **The single role pair across tiers is safe only because nothing auto-enrols into the book `Admin`
+   role.** `getCreateBookContext` enrols the creator into **`Writer` only**; `registerUser(..., asAdmin=true)`
+   requires the org admin or an existing Admin member. The universe call runs `userWrite=false`, so
+   `Writer` is **Read-only** on the universe and the Delete exposure is **`Admin`-only**.
+   ⇒ **Phase 2 must not add any automatic Admin enrolment before it splits the role pair.**
+2. **`scanNestedGroups` is a WRITE gap, not just a read gap.** The `PbOlioContextUtil` javadoc frames the
+   missing nested grant as "will be unreadable". Grants are Read/Update/Create/Delete together, so
+   phase 3's portrait writes into `{gallery}/Characters` will be **denied**, not merely invisible.
+   ⇒ Must be closed before anything writes below the world's own group tier.
+3. **The B1 TOCTOU remedy named in the javadoc does not exist yet.** It cites "a uniqueness constraint
+   surfaced as a create failure", but `olio/worldModel.json` has **no `constraints` block**. That remedy
+   requires a model change plus a schema migration on a DB only Stephen resets. ⇒ Phase 2 should plan a
+   per-slug lock, or budget the model change. Not a phase-1 blocker — the race is over a slug nobody owns.
+
+### §5.3 residue NOT yet satisfied — do not read §5.3 as partially done
+
+- **The Books (universe) tier roles do not exist at all.** §5.3 requires `~/Roles/Olio/Books/Reader` and
+  `~/Roles/Olio/Books/Writer` plus a two-part membership rule (*"`{slug}` role **and** Books role"*).
+  As-built creates only `{slug}/Writer` and `{slug}/Admin`, and universe grants go to the **per-book**
+  roles. So the universe tier has **no roles and no membership rule** — phase 2 must not treat §5.3's
+  membership rule as half-implemented.
+- **§5.3's verification test 1 (role-hierarchy inheritance direction, `roles_to_leaf`) was never run.**
+  No `TestBookWorld` case exercises parent-role → child-member entitlement. The plan designated this a
+  phase-1 one-run settlement and **it is still open**; §10 Q10 (per-book grant scale) depends on the
+  answer. Consistent with "explicit grants at both tiers now, hierarchy optimisation later" — so not a
+  defect, but not answered either.
+
+### Phase-2 ratifications — RECORDED 2026-08-13 (Stephen)
+
+| # | Decision | Consequence |
+|---|---|---|
+| **Universe tier is corpora-only** | The universe `UserRole` gets **Read on the `Books` universe's own corpora groups** (words, names, colours, apparel templates). **Book worlds are NOT granted to the universe tier at all.** | **Deliberate deviation from §5.3's Rocket table**, which says universe membership ⇒ read every book. It satisfies §5.3's actual requirement — *"the book role alone is useless because apparel templates and colours live in the universe"* — without creating a read-every-book role before a use case exists. Reversible later by adding the grants; the reverse (revoking) is not, since `setEntitlement` only adds. Also avoids the §10 Q10 scale cost of a second full grant set per book. |
+| **Run the role-hierarchy direction test in phase 2** | ~30 lines: grant a permission on a scratch group to a **parent** role, enrol a user in the **child** role only, assert whether `AccessPoint` permits. | Settles §5.3's "two things must be verified" test 1, which was designated a **phase-1** one-run settlement and slipped. §10 Q10 (per-book grant scale) stays open until answered. May also confirm or refute the §5.3 **SUSPECTED DEFECT** that ISO42001's role-to-role wiring is inert. **Record the observed direction in this appendix either way.** |
+
+### Model-definition corrections to Appendix A — verified in code 2026-08-13
+
+Appendix A's model guidance is wrong in two places and incomplete in a third. These drive the phase-2 JSON.
+
+- **`index: true` creates NO database index — and adds PBAC cost.** `DBUtil.java:88` sets
+  `useFieldIndexGuidance = false`, and `generateIndices` (`:553-604`) only walks field-level `index` flags
+  inside that guard. Real indexes come from **`constraints`** (UNIQUE) and **`hints`** (non-unique).
+  Meanwhile `PolicyUtil.java:255` *does* read `fs.isIndex()` (with `dynamicPolicy` defaulting **true**,
+  `FieldSchema.java:66`) to decide whether a field gets a foreign-record read-policy scan. So Appendix A's
+  *"add `index: true` to `binding.node`, `binding.sourceNode`, `binding.sourceArtifact`,
+  `artifact.producedByNode`, `artifact.current`, `node.workflow`, `node.handle`"* would add **zero indexes
+  and a per-query PBAC scan on the exact path that carries downstream propagation.**
+  ⇒ **Reverse edges are `hints`, not `index: true`.**
+- **Constraints and hints are IRREVERSIBLE after the table exists.** `IOSystem` gives a *missing* table
+  `generateNewSchemaOnly` (which calls `generateIndices`); an *existing* table gets `generatePatchSchema`,
+  which emits **`ALTER TABLE … ADD COLUMN` only**. There is no add-index-later path, and `-Dreset` is
+  unavailable. ⇒ **Every constraint and hint must be final in the commit that first registers the eight
+  models in `OlioModelNames.MODELS`.** Phase 2 front-loads a DDL pre-flight test asserting the generated
+  `CREATE [UNIQUE] INDEX` lines *before* the tables are created.
+- **"One `current` artifact per `(node, role)`" is not expressible as a unique constraint.** Booleans are
+  never NULL, so a UNIQUE index over `current` would forbid a second *superseded* row — the normal case.
+  ⇒ Constrain `(producedByNode, role, revision, organizationId)`; enforce single-`current` in
+  `PbArtifactUtil.setCurrent` with a post-write re-read assertion, covered by a test.
+- **Appendix A is wrong about `groupPath`, right about `urn`.** `common.groupExt` supplies **both**
+  `groupId` and a virtual `groupPath` (`PathProvider`); `common.baseLight` has no `urn`. So PB2 models
+  **do** get `groupPath` (virtual — must be planned/populated) and **do not** get `urn`. The constraint
+  claim stands: `likeInherits` imports no fields, so `data.directory`'s
+  `name, groupId, organizationId` is **not** inherited and every invariant needs an explicit `constraints`
+  entry.
+- **`CryptoUtil` is unusable for `inputHash` as-is:** `defaultHashAlgorithm` (`:79`) is a **mutable
+  static** currently set to SHA-512, and `getDigestAsString(String)` (`:158-159`) hashes with the
+  **platform default charset**. `computeInputHash` must name SHA-256 at the call site and encode an
+  explicit UTF-8 canonical string, with `-` for every null (never `""`, never `"null"`), bindings sorted
+  by `(role, bindingOrdinal)` via `String.compareTo`, and doubles via
+  `BigDecimal.stripTrailingZeros().toPlainString()`. Pinned by a checked-in golden vector plus a
+  Turkish-locale case.
+
+**Field rename:** `olio.pb.scene.index` → **`sceneIndex`** (§2.2 says `index`, which is not in
+`DBUtil.reservedWords` and would be emitted unquoted — legal in Postgres, questionable in H2). Phases 4-5
+must use `sceneIndex`.
+
+### Phase-2 design notes — RATIFIED 2026-08-14 (Stephen)
+
+**1. `workflow.lastRun` ↔ `run.workflow` mutual reference — capture, don't re-shape.**
+`QueryPlan.checkRecursion` (`QueryPlan.java:281-298`) only catches the immediate case where the parent
+plan's `(modelName, fieldName)` equals the child field's `(baseModel, name)`. The two-hop cycle
+`workflow → lastRun (olio.pb.run) → workflow → lastRun …` never matches it, the `pathSet` guard keys on
+`planPath()` (which grows a unique string per level), and `maximumDepth = 500` (`:218`) only **logs** —
+there is no `return`. So `planMost(true)` on either model recurses. This matters because
+`GET /rest/model/{type}/{objectId}/full` is generic and uses `planMost(true)`.
+**Disposition:** recorded as a known shape, not designed around. Use `planCommon` / an explicit
+`QueryPlan` on both models, add a `FULL_PLAN_FILTER`-style exclusion, and add a `TestPbGraph` case that
+calls `planMost(true)` on both and asserts it terminates — that test is the thing that will catch a
+regression. Breaking the cycle by declaring `lastRun` as a `long` remains available and is DDL-neutral
+(both shapes emit `bigint` under the same column name), so this stays reversible.
+
+**2. `recomputeStatus` must not write on a read path.** §2.3 has it writing `nodeStatus` while being
+"invoked on opening a book's workflow view". With ratified Q1 (uniform olioUser ownership) that is either
+a privileged write triggered by any reader, or a caller-owned write that fails silently into a discarded
+update result — the `LibraryUtil` shape `architecture.md` warns about.
+**Disposition (approved):** split it. `recomputeStatus` **computes and returns** derived status; only an
+explicitly authorized write path persists. This is consistent with §2.3's own rule — *the hash is truth;
+the status is a repairable cache* — so nothing depends on the cache being written during a read.
+
+**3. The role split is not retroactive — accepted, no migration.** `setEntitlement` only adds, so per-book
+roles created before the two-tier split keep their universe grants on `am7db` permanently. Stephen's
+call: **not an issue.** Books created before phase 2 are broken for other reasons, and a universal grant
+on the existing system is acceptable for now, to be fixed manually if it ever matters.
+⇒ Do **not** build scoping or migration machinery for this. §9's `TestPbSecurity` assertion *"a user
+holding the book role but not the universe role cannot read the universe corpora"* is therefore scoped to
+a **book created after the split**, and that scoping is a test-fixture detail, not a product requirement.
+
+**4. URN — include it, and make the names distinct.** `common.baseLight` omits `urn` (which is why PB2
+would not get one); `common.groupExt` **does** supply a virtual `groupPath`, so `UrnProvider`'s
+`MODEL_DIRECTORY` branch would work as-is. URN exists for **portability**: a human-readable, row-id-free
+reference so an object can be exported with urns for its foreign references and imported into another
+system whose ids differ. That is squarely PB2's case — the graph is nothing but cross-references
+(`binding.sourceNode`, `binding.sourceArtifact`, `artifact.producedByNode`, `scene.book`,
+`workflow.book`), phase 6 is a migration, and §3.5 copies records between worlds.
+**Caveat to honour:** `UrnProvider` composes `schema + org path + groupPath + name` and then
+`getNormalizedString` lowercases and strips non-alphanumerics, and `common.urn` declares `identity: true`
+but carries **no uniqueness constraint** — so similarly-named machine-generated records would produce
+colliding urns with nothing to catch it. If PB2 adopts urn, `node`/`binding`/`artifact`/`run` names must
+be derived to be unique within their group (e.g. from `node.handle`, or `role + bindingOrdinal`), because
+the provider reads `name`, not `handle`.
+
+**5. Second role pair on `OlioContextConfiguration` — APPROVED 2026-08-14 (Stephen): "add universal for
+grid use".** `OlioContextConfiguration` gains `universeAuthorizationUserRole` / `universeAuthorizationAdminRole`,
+**both defaulting to null**. `initialize()` uses them for the **universe** grant pass only when both are
+non-null; otherwise it falls through to today's single pair. So:
+- **Book contexts** set both and get a genuine two-tier split (closing Appendix D precondition 1 — the
+  book `Admin` no longer receives CRUD on the universe's non-shared groups).
+- **Grid/arena/agent** leave them null and keep using the **universal org-wide `~/Roles/Olio User` /
+  `Olio Admin`** exactly as today — byte-identical behaviour, no migration.
+
+This supersedes the earlier "config is pinned to exactly two role fields" constraint. Note
+`effectiveUserRole()`/`effectiveAdminRole()` must stay bound to the **world** pair — the universe pair
+must never become the fallback for `enrole`/`scanNestedGroups`, or the isolation-losing direction reopens.
+
+**6. The two live auth defects are HOISTED — approved 2026-08-14.** `/cancel` discarding its principal
+(`PictureBookService.java:474-476`; static process-wide `cancelRegistry` at `:86` keyed by a
+client-supplied path param ⇒ **any authenticated user can cancel any other user's extraction**) and the
+scene-addressed endpoints not authorizing their owning book (`generateSceneImage` `:3277`,
+`regenerateBlurb`/`setSceneStatus` `:3879`, `prepare-images` `:3840`) ship as a **standalone patch ahead
+of the phase queue**, not at phase 4. Both are exploitable today and independent of all PB2 work.
+The scene authorization check must live in an **Objects7 utility**, never as an `if` in the resource
+method, or it becomes business logic in Service7.
+
+**7. B1 TOCTOU — APPROVED.** `olio.pb.book`'s unique `(slug, organizationId)` is the serialization point:
+create the **book row first**, then the world, then patch the book's `world` FK (PATCH-shaped — `schema` +
+`id` + `objectId` + **`name`** + `world`, and the update result must be asserted, never discarded). A second
+racer's create fails on the unique index. **No `olio/worldModel.json` change and no schema migration** — the
+per-slug JVM lock is the fallback only if the unique violation does not surface as a create failure, and if
+used it must be documented as per-process only.
+
+**8. URN — INCLUDE.** All eight `olio.pb.*` models carry `urn`. Because `UrnProvider` composes from
+`name` (not `handle`) and `common.urn` has **no uniqueness constraint** to catch a collision,
+`node` / `binding` / `artifact` / `run` names must be **derived to be unique within their group** — from
+`node.handle`, and `role + bindingOrdinal` for bindings. `book` and `series` are already unique by slug
+and name. This is what makes a book graph portable: export by urn, import into a system with different
+row ids and foreign keys intact.
+
+**9. `olio.pb.artifact.current` → RENAMED to `selected`.** Stephen: rename now. `current` is legal in both
+PostgreSQL and H2 but is a word to avoid on principle, and a column rename after the fact is an
+add-plus-orphan two-step. `selected` also matches §6b.2's own language for the concept ("the chosen
+keeper") and the codebase's bare-adjective boolean style (`pinned`, `required`, `userEdited`, `vaulted`).
+**All references change**: the `producedByNode, selected` hint, `PbArtifactUtil.setSelected`, and §6b.2's
+mapping table.
+
+**10. Q17 orphan worlds — RESOLVED by the two-tier role split.** Stephen: *"should be fixed w/ 3 or adding
+user into new roles."* The reason an orphan world was unreclaimable is that nothing referenced it and there
+is no list-worlds API. With the universe-tier role in place (decision 5 above), a member of the universe
+role can enumerate the `Worlds` container and reclaim an orphan. **No separate admin-only reconcile utility
+is needed.** Creating the `olio.pb.book` row first (decision 7) also makes the orphan case rare rather than
+routine. Q17 is closed.
+
+**11. Q9 `reset()` — proposed answer ADOPTED.** `reset()` **clears artifacts and marks nodes STALE but
+KEEPS the graph** — the ComfyUI mental model. The topology (nodes, bindings, handles, canvas geometry) is
+the user's work; the artifacts are reproducible output.
+
+**12. Q12 Comfy — BACKLOGGED.** Stephen: *"it's new so we'll want an intentional use case for it. Maybe
+backlog Comfy for now."* **Phase 3b is removed from the current scope.** `SDAPIEnumType.COMFY` still lands
+in phase 2 (the enum value must exist before `olio.pb.artifact.backend` can validate against it — a
+one-line addition with no behaviour), but the `…/olio/sd/comfy/` package, `ComfyGraph`/`ComfyUtil`/
+`ComfyClient` and `TestComfyBackend` are deferred until there is a concrete use case. **SwarmUI remains
+the only backend.** §6 stays in this document as the design of record for when it is picked up.
+
+**13. Q15 cast/group entities — NO NEW MODEL.** (Stephen deferred to my recommendation.) A collective like
+"Meadow Herd" is represented as **N bindings sharing one `role`, distinguished by `bindingOrdinal`** —
+the field already added in phase 2 precisely so a multi-valued role needs no table rebuild. Each binding
+carries `refModel = olio.charPerson` + `refObjectId`. The canvas chip groups by the consuming node's
+`handle` (`character_@herd`). Rationale: `auth.group` is an authorization container and overloading it as
+a cast list conflates two meanings, while an `olio.pb.castGroup` model adds a table, a lifecycle and a
+grant surface for something the binding edge already expresses. **Revisit only if a collective needs its
+own attributes** (a name, a description, a shared style ref) rather than just membership — at which point
+`castGroup` becomes justified. Q15 closed for now.
+
+**14. Q5 `initialized = true` before authorization — FIX IT: throw.** Stephen: *"Throw an exception there
+if it shouldn't be allowed."* `OlioContext.java:379` sets `initialized = true` before
+`configureWorldAuthorization` at `:394-395`, and the swallow-all `catch` at `:403-406` turns an
+authorization failure into a context that reports itself initialized with **no grants applied** — the
+single most likely source of future "the PBAC is broken" reports. **Change:** an authorization failure
+must propagate as an exception rather than be swallowed, for **all** callers (grid/arena included), not
+just designed around by PB2's `authorizationConfigured` flag. This is a live behaviour change for
+grid/arena, so it lands with the existing gate as its non-regression check. The `authorizationConfigured`
+flag stays — it is still the honest signal for "grants completed" — but it stops being the only defence.
+
+**15. Q19 relocating `~/Roles/Olio *` — WON'T DO.** Stephen: *"Don't migrate, not worth it. I'll manually
+reset membership as needed."* The roles stay under olioUser's home. Consequence to keep stated: they
+remain awkward to administer through the role-membership UI, and membership changes are manual. Closed.
+
+**16. Q18 access-request completion — BACKLOG.** Book sharing stays **add-by-writer-only with no
+request/approval trail** until `access.accessRequest` gets a UI. The backend scaffolding exists (models,
+`AccessRequestFactory`, the policy operations, `AccessRequestService`); only the Ux752 flow is absent.
+Tracked as a design note, not phase 2-4 work.
+
+**17. Q10 grant scale — WITHDRAWN as a question.** Phase 1 measured cold book creation at ~3s (and
+~16-26s for a full grid generation), which is not a problem at the scales in play. The only live part is
+whether the role-hierarchy optimisation is available at all, and the direction test approved for phase 2
+answers that. Nothing is blocked either way, because explicit grants at both tiers work regardless.
+
+**18. Q12 Comfy — see decision 12 above (backlogged).** **Q16 canvas rendering — use an npm library**
+(Stephen), likely direct-canvas; a research prompt is being prepared for a web-enabled session rather
+than guessed at here.
+
+**19. Q16 canvas rendering — ANSWERED: DOM cards + `@panzoom/panzoom`, no canvas/graph library.**
+Researched 2026-08-14 via two independent web-enabled sessions (ChatGPT and Grok) against
+`aiDocs/CanvasLibraryResearchPrompt.md`. **They converged on the same recommendation, the same runner-up
+and the same rule-outs**, which is the main reason to trust it. (A third response, Gemini, was supplied as
+a PDF that could not be text-extracted in this environment — no `poppler`, no `pypdf`/`fitz`/`pdfminer` —
+so it is **not** reflected here.)
+
+**Recommendation:** absolutely-positioned DOM cards inside one `transform: translate() scale()` "world"
+element, with **`@panzoom/panzoom`** (MIT, ~3.7 KB gzipped, zero runtime deps, framework-agnostic,
+imperative — mounts into a DOM node Mithril owns) handling *only* the viewport: pan, wheel/pinch zoom,
+zoom-to-cursor, screen↔world conversion.
+**Runner-up:** `d3-zoom` (ISC) — choose it only if the interaction model needs to become substantially
+custom; it is not actually small in practice (pulls `d3-selection`, `d3-drag`, `d3-interpolate`,
+`d3-transition`, `d3-dispatch`).
+
+**Why DOM beats canvas here** (both responses, independently): tens-to-low-hundreds of image cards is
+well inside DOM territory — the cost is image decode, not a few hundred positioned `div`s; text stays
+crisp and selectable at any zoom; and **accessibility comes free**, which matters concretely because
+`@axe-core/playwright` is already in the Ux752 suite and a canvas board would mean re-implementing focus,
+ARIA and keyboard reachability from scratch. Native `<img>` also beats manual texture upload for
+decode/caching/memory, and there is no scene-graph serialization format to fight — the four integers
+(`canvasX/Y/W/H`) stay ours.
+
+**Ruled out, with reasons worth keeping:** `tldraw` — custom license, free for development only,
+**production requires a commercial key** (a real trap in a corporate setting); `@xyflow/react` (React
+Flow) — MIT and excellent but **React-only**, so it would mean mounting a React root inside a Mithril
+vnode with dual reconciliation; `JointJS`/`@joint/core` — MPL-2.0 plus a commercial upsell;
+`cytoscape` / `sigma` / `@antv/x6` — graph-theory and auto-layout engines, and **PB2 needs no auto-layout
+and no edge routing** (the reference UI draws no visible edges at all); `konva`/`fabric`/`pixi.js` —
+maintained and fine, but canvas-based, 50-245 KB, and they push text rendering and a11y back onto us.
+
+**What still has to be hand-rolled** (neither library solves these): card-drag versus canvas-pan
+disambiguation (pointer-down on a card drags it; on empty space it pans), selection + popover, the
+dotted-grid background (CSS `background-image` on the transformed layer), geometry persistence, and any
+optional SVG edges. Mithril integration is `oncreate`/`onremove` for mount/destroy, a container vnode
+whose children the library does not manage, and `m.redraw()` only on our own state changes — never fed
+back from panzoom events, or the viewport re-creates in a loop.
+
+This **supersedes §6b.4's guess** ("absolute-positioned divs … adds no dependency"). The direction was
+right; the correction is that the ~3.7 KB is worth paying rather than hand-rolling pinch-zoom,
+zoom-to-cursor and trackpad-versus-wheel behaviour.
+
+*Not independently verified here:* the package sizes, licences and publish dates above come from the
+research sessions and were not checked against the npm registry from this machine.
+
+#### Phase-5 implementation rules from the research — capture these, they are the expensive lessons
+
+**THE invariant: Panzoom must never own board geometry.** Its maintainers have said publicly that making
+it a complete dynamic infinite-canvas abstraction (auto content bounds, fit-to-content, element-centred
+zoom) would make it considerably larger, and declined. So the split is:
+- **the app owns** `canvasX / canvasY / canvasW / canvasH` — *application* state, persisted;
+- **Panzoom owns** `viewportX / viewportY / scale` — *UI* state, **never serialized onto the card**.
+
+Conflating them is the mistake that makes coordinate handling painful later.
+
+**Ownership boundary — Mithril must never re-render a node whose `transform` Panzoom owns:**
+```
+.board-viewport            Mithril owns; CSS grid background lives here
+└── .panzoom-world         Panzoom owns transform; Mithril must not touch style.transform
+    └── .card-layer        Mithril reconciles ONLY this
+        ├── Card …
+```
+Mount in `oncreate`, `panzoom.destroy()` in `onremove`. Do **not** call `m.redraw()` from a `panzoomend`
+handler unless another component genuinely needs viewport state — that is the redraw loop.
+
+**Card drag must divide by scale.** `newCardX = startCardX + (clientX - startClientX) / scale`. At 200%
+zoom, 100 CSS pixels of pointer movement is 50 world units. Screen→world:
+`worldX = (clientX - viewportLeft - x) / scale`.
+
+**Drag versus pan** is a UX decision the library does not make: card body → move card; empty canvas →
+pan; middle-mouse and optionally space+drag → pan; touch decided by whether the gesture starts on a card.
+Panzoom has an **exclusion mechanism** for interactive children (buttons/links inside the panzoom
+element) — use it rather than fighting event bubbling.
+
+**Grid caveat:** a grid inside the transformed world **scales with the board**. For a Figma-style grid
+that stays visually constant, put it on `.board-viewport` and drive `background-position`/`background-size`
+from the transform.
+
+**Zoom sharpness is not a rendering-engine problem.** Canvas cannot manufacture image data either; a 512px
+source scaled 2× interpolates identically. The real optimisation is serving an appropriately sized source —
+relevant because PB2's generated art is 512-1024px. Use `<img decoding="async" loading="lazy">` with
+explicit `width`/`height`.
+
+**Effort estimate for what is hand-rolled** (~200 LOC total, not a canvas engine): card drag 50-100,
+drag/pan arbitration 20-50, keyboard movement 30-50, coordinate conversion ~20, persistence 20-50,
+inertia 30-50 *only if user testing shows it is expected*, dotted grid ~5 lines of CSS.
+
+**Accessibility checks to write against `@axe-core/playwright`:** every card Tab-reachable; card has a
+meaningful accessible name; image has meaningful `alt`; action buttons named; focus visible **at all zoom
+levels**; popover focus management; Escape closes popover; keyboard movement updates geometry; dragging
+never makes a card unreachable; no duplicate accessibility representation; **and an axe scan at 25%, 100%
+and 200% zoom**. This list is the concrete reason DOM was chosen — on canvas, every one of these means
+building a parallel accessibility tree.
+
+**Maintenance signal, for the record:** `@panzoom/panzoom` 4.6.2 shipped April 2026; `d3-zoom` is still
+3.0.0, last published roughly five years ago. Mature and stable, but that is why it is the runner-up
+rather than the pick.
+
+### Runtime verification scope (corrected)
+
+`verifyGrants` as first implemented checked the **world tier only** (`ctx.getWorld()` /
+`getWorldPath()`); the universe tier was covered solely by `TestBookWorld` case03 — a test, not a runtime
+guard — so a universe-tier grant failure would still have returned a context reported as verified. Any
+summary claiming "the whole enumerated group set (46 world + 44 universe)" was describing the test, not
+the product. Extended in the sign-off fix round to verify both tiers, checking **Read** on the universe
+(the universe pass runs `userWrite=false`, so asserting CRUD there would fail a correct system).
+
+---
+
+## Appendix C — design review round 2 (architect), phase-1 findings
+
+Recorded 2026-08-12 against the phase-1 implementation plan. N1 (role instance-field trap), N2 (the
+`isInitialized()` verification asserting nothing), N5 (the Q6 default contradiction) and N6 (nine opt-in
+sites, not seven) are folded into §3.3, §3.4 and §0 above. What remains:
+
+**N3 — `TestBookWorld` must live in the production package.** Phase 1 ships `BookContext` plus a
+**package-private** `PbOlioContextUtil.assembleBookContext(BaseRecord world)` taking an already-resolved,
+already-authorized `olio.world`; the slug-addressed public entry does **not** exist until phase 2, when
+`olio.pb.book` exists and the entry can be `AccessPoint.find(user, book)` → `book.world` FK →
+`assembleBookContext` (satisfying ratified decision 9 and §5.6b point 3 by construction). But the existing
+Olio tests live in `org.cote.accountmanager.objects.tests.olio`, from which a package-private method is
+**not callable** — §9's `TestBookWorld` cases 2 and 12 would not compile, and the predictable "fix" is to
+widen the method to public, silently re-opening the finding. **Put `TestBookWorld` in
+`src/test/java/org/cote/accountmanager/olio/`.** Precedent: `TestChatMemoryPipelineWiring.java` sits in
+the production package for exactly this reason.
+
+**N4 — `Factory.java:232` is not a callable primitive.** It sits inside the *private*
+`getCreateUser(adminUser, name, group, orgId, skipSetup)`. The new find-only `Factory.findUser` must wrap
+`context.getRecordUtil().getRecord(null, ModelNames.MODEL_USER, name, 0L, 0L, organizationId)` directly.
+Both `findUser` and `WorldUtil.findWorld` are **unauthorized reads** (`WorldUtil.java:47` uses
+`getSearch().findRecord`; `findUser` passes a `null` contextUser) — say so in their javadoc, and ensure
+`BookContext` never surfaces the olioUser record to a caller.
+
+**N7 — `Decks.clearAll()` must NOT hang off `OlioUtil.clearCache()`.** Three decks self-refill when empty
+(`Decks.java:61-63,71-73,163-165` — `patternDeck`, `colorDeck`, `traitDeck`), so clearing them is a cheap
+memoization drop. The **four name decks** (`maleNamesDeck`, `femaleNamesDeck`, `surnameNamesDeck`,
+`occupationsDeck`) have **no lazy-refill guard** — they are repopulated only by an explicit `shuffleDecks`
+(`:133-147`). Today nothing clears them; wiring `clearAll()` into the `@RolesAllowed({"admin","user"})`
+`/cache/clearAll` path would let any `user`-role caller empty them mid-run, and the read path's only guard
+is a log line (`CharacterUtil.java:408`) before `randomPerson` at `:415` — the failure is
+`rand.nextInt(0)`, not a slow rebuild. **Either give the four name decks the same lazy-refill guard, or
+keep `Decks.clearAll()` behind the admin-only evict.** Prefer the latter in phase 1 (smaller change).
+Describe what *does* stay on `clearAll` as **self-refilling memoizations**, not "corpus memoizations".
+
+**N8 — evict-by-world must remove every entry for that world.** The phase-1 cache key includes the user
+name (`OlioContextUtil.java:31` keys on `FIELD_NAME` today), so one world has **N** cached contexts, one
+per user. The admin evict endpoint takes a world objectId and must remove **all** matching entries; a
+single-key delete leaves other users holding a stale context after a book delete or reset.
+
+**ColorUtil — two accuracy fixes to the phase-1 cache claim.**
+- `defaultColorMap` is **read at `ColorUtil.java:125-126` and never written** — there is no `.put` for it
+  anywhere in the file. Bounding a map that is never populated is dead work: delete it, or state plainly
+  that it is dead.
+- Keying `colorComplements` (written at `:206`, keyed by hex while the lookup is scoped by
+  `world.get(colors_id)` at `:166`) **is** a behaviour change in a multi-world JVM — that is precisely the
+  fix. Describe it as *"no change for single-world processes; corrects cross-world colour leakage
+  otherwise"*, **not** as "no behaviour change".
+
+**The deferred `~/Colors` removal is lower-severity than §2.1 Rule 2 implies — but still a violation.**
+The `makePath("~/Colors")` at `ColorUtil.java:140` runs as the **record owner**, not the org admin
+(`:136-140` reads the user by `ownerId`; on the REST path that owner is the acting principal via
+`f.newInstance(MODEL_CHAR_PERSON, user, …)` at `OlioService.java:337`). So it is a *self-scoped* write on
+a read path — **not** the `LibraryUtil` shape that `architecture.md`'s "Read paths must not create, and
+never as the org admin" is built around, and not a privilege escalation. The §5.5 audit row must say
+**owner-scoped, not admin-scoped**, or it will be triaged at the wrong priority. Phase 1 must not describe
+`ColorUtil` as fixed. The live read path is `GET /olio/roll/{gender}` (`OlioService.java:353,355`,
+`@RolesAllowed({"user"})`).
 
 ---
 

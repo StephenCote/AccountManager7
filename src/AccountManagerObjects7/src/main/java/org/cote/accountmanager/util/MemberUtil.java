@@ -104,6 +104,12 @@ public class MemberUtil implements IMember {
 		return list;
 	}
 	
+	/**
+	 * Bulk-revoke every participation of {@code rec} (optionally narrowed to one effect).
+	 * <p>
+	 * Participation query-cache invalidation is PARTIAL: see {@code clearParticipationQueryCache()}
+	 * for what is NOT covered.
+	 */
 	public int deleteMembers(BaseRecord rec, BaseRecord effect) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_PARTICIPATION, FieldNames.FIELD_PARTICIPATION_MODEL, rec.getSchema());
 		q.field(FieldNames.FIELD_PARTICIPATION_ID, rec.get(FieldNames.FIELD_ID));
@@ -123,7 +129,64 @@ public class MemberUtil implements IMember {
 			e.printStackTrace();
 		}
 		CacheUtil.clearCache(rec);
+		if(del > 0) {
+			clearParticipationQueryCache();
+		}
 		return del;
+	}
+
+	/**
+	 * Invalidate every cached participation QUERY RESULT after a participation write.
+	 * <p>
+	 * {@code CacheUtil.clearCache(record)} is not sufficient and never was. The search cache
+	 * ({@code CacheDBSearch}) is keyed by query hash inside a per-query-TYPE map, and every
+	 * participation query - {@link #findMembers}, {@link #isMember},
+	 * {@code AuthorizationUtil.checkEntitlement} - is typed {@code system.participation}. Clearing by
+	 * record only drops cached results that already CONTAIN an identity-matching record, so:
+	 * <ul>
+	 * <li>clearing by the participation TARGET (a group/role) drops nothing, because the cached
+	 * results hold participation rows, not the target record;</li>
+	 * <li>clearing by the newly created participation drops nothing either, because a row that was
+	 * just inserted cannot appear in a result cached before it existed.</li>
+	 * </ul>
+	 * The consequence was a genuine read-after-write violation: a grant written by this process was
+	 * invisible to the same process until an unrelated {@code CacheUtil.clearCache()} happened to
+	 * flush everything (PictureBook 2.0 phase 1, {@code TestBookWorld} case 12 - the group's member
+	 * list read straight back after {@code setEntitlement} was one row short).
+	 * <p>
+	 * Model-scoped invalidation is the honest granularity here: after a participation row is written
+	 * or deleted, every cached participation result is potentially stale, and nothing cheaper can
+	 * distinguish them (an insert is invisible to identity matching by construction). This drops one
+	 * bucket - other models' cached queries are untouched.
+	 * <p>
+	 * <b>What this does NOT cover.</b> Three gaps, all live, none fixed by this call:
+	 * <ol>
+	 * <li><b>The decision caches are not reached.</b> {@code CacheUtil.clearCacheByModel} fans out
+	 * across the registered caches, but two of them implement it as an empty stub -
+	 * {@code CacheAuthorizationUtil.clearCacheByModel} ({@code :97-100}) and
+	 * {@code CachePolicyUtil.clearCacheByModel} ({@code :216-219}). So
+	 * {@code clearCacheByModel(system.participation)} effectively reaches only {@code CacheDBSearch}.
+	 * Cached authorization/policy DECISIONS still depend entirely on the
+	 * {@code clearCache(object)}/{@code clearCache(actor)} calls in {@link #member} - and
+	 * {@link #deleteMembers} clears only {@code rec}, never the individual participants, so
+	 * per-participant cached decisions survive a bulk revoke.</li>
+	 * <li><b>Participation rows are also written outside {@code MemberUtil} entirely.</b>
+	 * {@code DBWriter.updateAutoCreateReference} ({@code DBWriter.java:277-282}) bulk-adds
+	 * {@code StatementUtil.getForeignParticipations(model)} on every create/update of a record that
+	 * carries a foreign LIST field, and {@code StatementUtil.java:119} emits the matching
+	 * {@code DELETE FROM ...participation} when such a record is deleted. Neither path invalidates
+	 * anything. A membership written by a full-record update therefore still exhibits the original
+	 * read-after-write bug this method exists to fix; only memberships written THROUGH
+	 * {@code MemberUtil} are covered.</li>
+	 * <li><b>Other models' queries that JOIN participation are not covered.</b>
+	 * {@code QueryUtil.filterParticipant}/{@code filterParticipation} results (e.g.
+	 * {@code ScimUserAdapter.java:204,227}, {@code AccessPoint.listMembers}/{@code countMembers}) are
+	 * cached under their OWN model's bucket, not {@code system.participation}, so dropping this bucket
+	 * leaves them stale.</li>
+	 * </ol>
+	 */
+	private void clearParticipationQueryCache() {
+		CacheUtil.clearCacheByModel(ModelNames.MODEL_PARTICIPATION);
 	}
 	
 	public List<BaseRecord> getMembers(BaseRecord rec, String fieldName, String memberModelType) throws IndexException, ReaderException {
@@ -247,9 +310,22 @@ public class MemberUtil implements IMember {
 		return outBool;
 	}
 	
+	/**
+	 * Add ({@code enable=true}) or remove ({@code enable=false}) a participation of {@code actor} in
+	 * {@code object}. Idempotent in both directions.
+	 * <p>
+	 * Participation query-cache invalidation is PARTIAL: see {@code clearParticipationQueryCache()}
+	 * for what is NOT covered.
+	 */
 	public boolean member(BaseRecord user, BaseRecord object, BaseRecord actor, BaseRecord effect, boolean enable) {
 		return member(user, object, null, actor, effect, enable);
 	}
+	/**
+	 * Field-scoped {@link #member(BaseRecord, BaseRecord, BaseRecord, BaseRecord, boolean)}.
+	 * <p>
+	 * Participation query-cache invalidation is PARTIAL: see {@code clearParticipationQueryCache()}
+	 * for what is NOT covered.
+	 */
 	public boolean member(BaseRecord user, BaseRecord object, String fieldName, BaseRecord actor, BaseRecord effect, boolean enable) {
 		boolean outBool = false;
 		
@@ -278,6 +354,9 @@ public class MemberUtil implements IMember {
 					outBool = writer.delete(res.getResults()[0]);
 					if(outBool) {
 						writer.flush();
+						/// A removed membership must not remain visible to this process - see
+						/// clearParticipationQueryCache()
+						clearParticipationQueryCache();
 					}
 				} catch (WriterException e) {
 					logger.error(e);
@@ -291,7 +370,7 @@ public class MemberUtil implements IMember {
 		else if(!enable) {
 			return false;
 		}
-		
+
 		BaseRecord part1 = null;
 		if(effect != null) {
 			part1 = ParticipationFactory.newParticipation(user, object, fieldName, actor, effect);
@@ -299,7 +378,13 @@ public class MemberUtil implements IMember {
 		else {
 			part1 = ParticipationFactory.newParticipation(user, object, fieldName, actor);
 		}
-		return recordUtil.createRecord(part1);
+		boolean created = recordUtil.createRecord(part1);
+		if(created) {
+			/// A membership this process just wrote must be visible to this process - see
+			/// clearParticipationQueryCache()
+			clearParticipationQueryCache();
+		}
+		return created;
 	}
 
 	/// Returns participation counts for a given model, sorted by count descending.

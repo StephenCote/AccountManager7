@@ -818,13 +818,26 @@ public class GeoLocationUtil {
 		return loc;
 	}
 	public static List<BaseRecord> getRegionLocations(OlioContext ctx) {
-		return getRegionLocations(ctx.getOlioUser(), ctx.getWorld());
+		return getRegionLocations(ctx.getOlioUser(), ctx.getWorld(), ctx.getConfig().isRequireRealms());
 	}
 	public static List<BaseRecord> getRegionLocations(BaseRecord user, BaseRecord world) {
+		return getRegionLocations(user, world, true);
+	}
+	/**
+	 * @param requireRegions when false, "zero region events were found" is logged at INFO instead of
+	 *        ERROR. A book world is deliberately location-free, so an empty result is expected there
+	 *        rather than a fault.
+	 */
+	public static List<BaseRecord> getRegionLocations(BaseRecord user, BaseRecord world, boolean requireRegions) {
 		List<BaseRecord> locs = new ArrayList<>();
 		BaseRecord[] evts = EventUtil.getBaseRegionEvents(user, world);
 		if(evts.length == 0) {
-			logger.error("Zero region events were found");
+			if(requireRegions) {
+				logger.error("Zero region events were found");
+			}
+			else {
+				logger.info("Zero region events were found (requireRealms is false)");
+			}
 		}
 		for(BaseRecord evt : evts) {
 			locs.add(evt.get(FieldNames.FIELD_LOCATION));

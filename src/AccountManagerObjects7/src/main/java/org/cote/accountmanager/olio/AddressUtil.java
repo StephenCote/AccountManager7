@@ -1,6 +1,5 @@
 package org.cote.accountmanager.olio;
 
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -27,7 +26,9 @@ import org.cote.accountmanager.schema.type.LocationEnumType;
 
 public class AddressUtil {
 	public static final Logger logger = LogManager.getLogger(AddressUtil.class);
-	private static SecureRandom rand = new SecureRandom();
+	/// NOTE: the class-level SecureRandom was removed with the dead Decks.surnameNamesDeck read in
+	/// randomStreetName(); it had no other reader. The remaining randomization here uses local
+	/// java.util.Random instances, as it always has.
     protected static final String[] STREET_NAME_BASE = new String[]{
 			"SN","SN","SN","SN","SN","##","##","##","##","##","First","Second","Third","Fourth","Fifth","Sixth","Seventh","Eighth","Ninth","Tenth","Main","Church","High","Elm","Washington","Walnut","Park","Broad","Chestnut","Maple","Center","Pine","Water","Oak","River","Union","Market","Spring","Prospect","Central","School","Front","Cherry","Franklin","Highland","Mill","Bridge","Cedar","Jefferson","State","Spruce","Madison","Pearl","Pleasant","Academy","Jackson","Grove","Pennsylvania","Adams","Locust","Elizabeth","Green","Lincoln","Meadow","Dogwood","Liberty","Vine","Brookside","Delaware","Hickory","Hillside","Monroe","Virginia","Winding","Charles","Clinton","College","Railroad","Summit","Colonial","Division","Valley","Williams","Woodland","Lafayette","Lake","Oak","Penn","Poplar","Primrose","Sunset","Warren","Willow","Beech","Berkshire","Deerfield","Harrison","Laurel","Cambridge","Cherry","Dogwood","Heather","Hillcrest","Holly","King","Laurel","Mulberry","Riverside","Sherwood","Smith","Valley","York","Arch","Creek","Essex","Forest","Garden","George","Glenwood","Grant","Hamilton","James","John","Magnolia","Myrtle","Olive","Orange","Oxford","Aspen","Bank","Buckingham","Canal","Canterbury","Carriage","Clark","Devon","Durham","Lilac","Locust","Maple","Surrey","Wall","Windsor","Beechwood","Columbia","Cottage","Garfield","Henry","Linden","Mechanic","Rosewood","Skyline","Sycamore","William"
 	};
@@ -228,7 +229,12 @@ public class AddressUtil {
 		String streetName = STREET_NAME_BASE[r.nextInt(STREET_NAME_BASE.length)];
 		if(streetName == "SN"){
 			// streetName = dutil.getNames().get("common")[r.nextInt(dutil.getNames().get("common").length)];
-			streetName = (Decks.surnameNamesDeck.length > 0 ? Decks.surnameNamesDeck[rand.nextInt(Decks.surnameNamesDeck.length)] : "Every Street");
+			/// The surname-deck read that used to be here was DEAD: its result was unconditionally
+			/// overwritten by the next line. Decks are now keyed by world and randomStreetName() is a
+			/// no-arg private static with no world in scope, so there is nothing to key on. Removing
+			/// the dead read is a compile fix only - behaviour is unchanged (the assignment below has
+			/// always been the effective one). Restoring real surname-based street names needs a world
+			/// threaded down to here, which is out of scope for this change.
 			streetName = "Random surname";
 		}
 		else if(streetName == "##"){

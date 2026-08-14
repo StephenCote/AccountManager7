@@ -2794,6 +2794,73 @@ unverified) and KI-54 (the stale-test cleanup that explains why these exports ar
 
 ### KI-60. Narrative creation is wrong — duplicate-key INSERT on re-create, and my recovery adopts the WRONG GROUP — OPEN, HIGH — **Stephen investigating** (2026-08-10)
 
+> **CHARACTERIZATION RESULTS — 2026-08-14.** A dedicated suite,
+> `AccountManagerObjects7/src/test/java/org/cote/accountmanager/objects/tests/TestPathUtilBehavior.java`
+> (15 cases, live `am7db`, non-admin users, uuid-scoped scratch trees), was written to reproduce this
+> entry's theories. Its path oracle is `materializedPath()` — it rebuilds the path by walking `parentId`
+> out of the DB with `setCache(false)`, so it does not trust the virtual `path` field computed by the
+> machinery under test. **Two of this entry's standing theories are now eliminated, and three separate
+> defects were proven.** Read this before spending more time on the entry below.
+>
+> **ELIMINATED — the `CacheDBSearch` query-key theory.** Driving the exact lookup `makePath` uses
+> (`findByNameInParent(auth.group, parent, <name>, "DATA", org)`) across the full KI-60 sibling set
+> (`Apparel, Wearables, Qualities, Narratives, Profiles, Statistics, Instincts, Personalities, States`)
+> in the reported order returned the correctly-named row every time; the identical sequence with
+> `setCache(false)` returned **the same ids**. Two code facts agree: `QueryUtil.fieldKey()` appends the
+> field **value** (`QueryUtil.java:137-157`), so the key distinguishes names; and
+> `CacheDBSearch.addToCache` only caches when `count > 0`, so **a miss is never cached and the cache
+> cannot manufacture a false miss.** Do not add cache workarounds.
+>
+> **NOT REPRODUCED — the wrong-*name* adoption.** With the sibling set present and `Narratives` arranged
+> so the DATA lookup misses it, the recovery fired and `findExistingNode` adopted the **correct**
+> `Narratives` (name, parent and org all matching). *Honest caveat:* that repro forces the miss with a
+> **mismatched-type** row, whereas the live case is a `Narratives` row already `DATA` missed by a `DATA`
+> lookup — a condition that could not be produced by any means tried. So this is "not reproduced under a
+> different pre-state", **not** "disproven". A setup capable of showing it would need the live org-3 data
+> (ids 151 vs 1049, ~900 apart — consistent with `Narratives` recreated long after `Apparel`), a
+> long-lived JVM where a cache entry predates the delete by more than `CacheDBSearch.checkCache()`'s 360s
+> age flush, and `PictureBookUtil.reset()`'s actual delete rather than a single `deleteRecord`.
+>
+> **PROVEN — three real defects, all now fixed or being fixed:**
+> 1. **`~` expansion re-emits the whole path beneath itself.** `makePath` performs **no normalization**:
+>    `~` is textually replaced by the home path (`PathUtil:72-88`), split on `/`, and each segment
+>    resolved/created under the previous — with no check that the remainder already begins with the home
+>    path. `~/home/<user>/X` resolves to `/home/<user>/home/<user>/X`, returning an ordinary non-null
+>    group with **no signal to the caller**. This is Stephen's separately-reported "a whole path emitted
+>    under a sub path". It is a **live input shape**: `PathProvider.provide:53-60` writes the *expanded
+>    absolute* path back onto the record and `RecordUtil.resolveUserPath:839-848` expands the same way,
+>    while ~15 sites build paths as `"~/" + value` (`CharPersonFactory:35,44-50`,
+>    `PictureBookUtil:2290,2311`, `VaultService:338,388,453,570`, `RecordUtil:139`). *Which* production
+>    caller performs the round-trip was **not** identified — every model-declared `group` hint is a bare
+>    single segment, so those concatenation sites are safe today.
+> 2. **The type-mismatch recovery returns the wrong type as if it satisfied the request.** The unique
+>    constraint is `(name, parentId, organizationId)` — **type is not in it** — while the lookup
+>    (`PathUtil:130`) **is** type-filtered. So a `DATA` request whose sibling row is `BUCKET` can never
+>    find it, can never insert it, and the recovery (`:172-200`, `findExistingNode:236-251`) adopts on the
+>    constraint key alone and hands back a `BUCKET`. *(Stephen: "it matched on the name but the sub type
+>    wasn't specified.")*
+> 3. **The recovery is not idempotent** — the direct consequence of (2), and **this is exactly this
+>    entry's "the duplicate-key INSERT is still ATTEMPTED on every run"**. The second `makePath` for an
+>    already-resolved path re-attempts the insert and collides again, because nothing ever repairs the
+>    condition that made the lookup miss.
+>
+> **NEW DEFECT, not previously catalogued — the `utype` override.** `PathUtil:113-120` overrides the
+> **lookup** type to `DATA` for any segment named `home` or named after the owner, but `:151-153`
+> **creates** with the *original* requested type. A non-DATA request whose path contains such a segment
+> therefore writes a node its own lookup can never match — a **deterministic instance of this entry's
+> otherwise-unexplained "a lookup that fails to see a row which is present", with no hand-placed row and
+> no cache involved.** It reaches only non-DATA group requests (`BUCKET` — custom collections such as
+> Favorites; `USER`/`ACCOUNT` — mostly IAM/PBAC), which are comparatively rare, so it is **unlikely to be
+> the live KI-60 cause** and is being fixed on its own merits.
+>
+> **STILL UNEXPLAINED:** the live miss itself — a `DATA` lookup failing to see a `DATA` row. None of the
+> above accounts for it.
+>
+> **Also found, not changed:** `findPath` (`:55-57`) is **not synchronized** — it calls the private
+> overload directly, bypassing the monitor `makePath` holds at `:62`, so `synchronized` does not
+> serialize reads against in-flight creates. Untested (needs a concurrency harness); flagged because
+> `PathUtil.makePath` is a JVM-global monitor and changing the locking has broad consequences.
+
 Reported live from the running service:
 
 ```

@@ -196,10 +196,10 @@
 						<exclude>**/TestMcpChatIntegration.java</exclude>
 						<exclude>**/TestMcpServer.java</exclude>
 						<exclude>**/TestLandscape</exclude>
-						<exclude>**/TestGameUtilSync</exclude>
-						<exclude>**/TestGameUtil</exclude>
+						<!-- PB2-GATE **/TestGameUtilSync -->
+						<!-- PB2-GATE **/TestGameUtil -->
 						<exclude>**/TestCombat</exclude>
-						<exclude>**/TestOlioGameFeatures</exclude>
+						<!-- PB2-GATE **/TestOlioGameFeatures -->
 						<exclude>**/TestSDStyles.java</exclude>
 						<exclude>**/TestData.java</exclude>
 						<exclude>**/TestSD.java</exclude>
@@ -215,7 +215,7 @@
 						<exclude>**/TestStartup.java</exclude>
 						
 						<exclude>**/TestAgentChat.java</exclude>
-						<exclude>**/TestOlioRules.java</exclude>
+						<!-- PB2-GATE **/TestOlioRules.java -->
 						<exclude>**/TestChat2.java</exclude>
 						
 						<exclude>**/TestDocumentSearch.java</exclude>
@@ -237,12 +237,12 @@
 
 						<exclude>**/TestQueryPlan.java</exclude>
 						<exclude>**/TestH2Database.java</exclude>
-						<exclude>**/TestOlio2.java</exclude>
+						<!-- PB2-GATE **/TestOlio2.java -->
 						<exclude>**/TestOlio.java</exclude>
 						
 						<!-- Repeatable Set -->
 						<exclude>**/TestRealm.java</exclude>
-						<exclude>**/TestNestedStructures.java</exclude>
+						<!-- PB2-GATE **/TestNestedStructures.java -->
 
 						<exclude>**/TestQdrant.java</exclude>
 						<exclude>**/TestCondensedModel.java</exclude>

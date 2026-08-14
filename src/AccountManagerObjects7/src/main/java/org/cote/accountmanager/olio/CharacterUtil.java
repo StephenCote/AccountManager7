@@ -405,14 +405,19 @@ public class CharacterUtil {
 				ZonedDateTime now = ZonedDateTime.now();
 
 				Decks.shuffleDecks(ctx.getOlioUser(), parWorld);
-				if(Decks.maleNamesDeck.length == 0 || Decks.femaleNamesDeck.length == 0 || Decks.surnameNamesDeck.length == 0 || Decks.occupationsDeck.length == 0) {
+				/// Decks are keyed by world objectId - read them back for the same (basis) world that was shuffled
+				String[] maleNames = Decks.getMaleNamesDeck(parWorld);
+				String[] femaleNames = Decks.getFemaleNamesDeck(parWorld);
+				String[] surnames = Decks.getSurnameNamesDeck(parWorld);
+				String[] occupations = Decks.getOccupationsDeck(parWorld);
+				if(maleNames.length == 0 || femaleNames.length == 0 || surnames.length == 0 || occupations.length == 0) {
 					logger.error("Empty names");
 				}
 
 				// logger.info("Creating population of " + popCount);
 
 				for(int i = 0; i < popCount; i++){
-					BaseRecord person = CharacterUtil.randomPerson(ctx, null, inceptionDate, Decks.maleNamesDeck, Decks.femaleNamesDeck, Decks.surnameNamesDeck, Decks.occupationsDeck);
+					BaseRecord person = CharacterUtil.randomPerson(ctx, null, inceptionDate, maleNames, femaleNames, surnames, occupations);
 					AddressUtil.simpleAddressPerson(ctx, location, person);
 					int alignment = AlignmentEnumType.getAlignmentScore(person);
 					long years = Math.abs(now.toInstant().toEpochMilli() - ((ZonedDateTime)person.get(FieldNames.FIELD_BIRTH_DATE)).toInstant().toEpochMilli()) / OlioUtil.YEAR;

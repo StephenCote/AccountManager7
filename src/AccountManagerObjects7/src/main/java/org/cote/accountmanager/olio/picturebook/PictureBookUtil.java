@@ -21,6 +21,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.CharacterUtil;
 import org.cote.accountmanager.olio.EthnicityEnumType;
@@ -55,6 +56,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
@@ -143,6 +145,14 @@ public class PictureBookUtil {
     }
 
     private static final String PICTURE_BOOKS_DIR = "PictureBooks";
+
+    /**
+     * Name of the sub-group every book scene note is created in (see createFromScenes'
+     * {@code ensureSubGroup(user, bookGroupPath, "Scenes")}). Used by
+     * {@link #resolveSceneBookGroup} to tell a real book scene (whose owning book group is the
+     * parent of this group) from the legacy {@code ~/Chat} single-image fallback.
+     */
+    private static final String SCENES_DIR = "Scenes";
 
     // Per-character attributes written by createFromScenes' reduce step. ATTR_SCENE_REFS = CSV of the
     // scene indices the character appears in; ATTR_DESCRIPTION = the LLM-reduced, style/setting-free
@@ -338,6 +348,118 @@ public class PictureBookUtil {
         q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
         q.planMost(true);
         return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+    }
+
+    // ----- Scene-addressed authorization ---------------------------------
+
+    /** The action a caller wants to take on a scene, for {@link #authorizeSceneAccess}. */
+    public enum SceneAccessType {
+        /** Read-only use of the scene (list/inspect). Requires Read on the owning book group. */
+        READ,
+        /**
+         * Anything that mutates the scene or produces book content from it (image generation,
+         * blurb regeneration, status persistence, prompt pre-resolution). Requires Update on the
+         * owning book group.
+         */
+        WRITE
+    }
+
+    /**
+     * Resolve a scene note by objectId AND authorize the caller against the <b>book that owns it</b>.
+     *
+     * <p><b>Why (security defect, fixed 2026-08-14).</b> The scene-addressed entry points —
+     * {@link #generateSceneImage}, {@link #regenerateBlurb}, {@link #setSceneStatus} and
+     * {@link #prepareSceneImagePrompts} — used to resolve the scene by objectId and act on it
+     * without ever resolving, let alone authorizing, its book. That is a direct object reference
+     * with no book-level check: the coarse {@code @RolesAllowed({"admin","user"})} on the REST
+     * endpoints says "is a user", never "may act on <i>this</i> book". PictureBook2Plan.md §5.6
+     * requires each of them to resolve the scene's book and re-authorize.
+     *
+     * <p><b>Where the check lives.</b> Here, in Objects7, driven by {@code AuthorizationUtil} (the
+     * same PBAC evaluator {@code AccessPoint} itself uses) — not as an {@code if} block in the
+     * Jersey resource method, which would be business logic in Service7 (.claude/rules/
+     * architecture.md). Service7 keeps doing exactly one thing: catch {@link PictureBookException}
+     * and map its status. This also mirrors §5.6's "{@code findBookGroup} stays the single choke
+     * point" by putting the scene-side choke point immediately beside it.
+     *
+     * <p><b>Book resolution is by id, never by path.</b> Per §5.6b ("there is no read-up"), the
+     * book group is reached by direct reference — scene {@code groupId} → its group → that group's
+     * {@code parentId} — and each hop goes through {@code AccessPoint}, so an unreadable hop denies
+     * rather than silently succeeding. Resolving a book <i>path</i> as the acting user and treating
+     * success as authorization is explicitly forbidden there, and is not done.
+     *
+     * <p><b>Status codes.</b> A scene that does not exist, and a scene this caller cannot read, are
+     * both {@code 404 "Scene not found"} — the convention already used throughout this class, where
+     * {@code findBookGroup} returning null (absent OR PBAC-denied, indistinguishable at the
+     * {@code AccessPoint.find} boundary) becomes {@code 404 "Book not found"}. A caller who CAN read
+     * the scene but lacks rights on its book gets {@code 403} instead: that discloses nothing extra,
+     * because a readable scene already implies its book exists.
+     *
+     * <p><b>Non-book scenes.</b> {@link #generateSceneImage} also supports a legacy single-image
+     * fallback whose "scene" lives under {@code ~/Chat} rather than {@code <book>/Scenes}. There is
+     * no book to authorize, so the scene's own group is authorized instead — the check is never
+     * skipped.
+     *
+     * @return the resolved scene note (so callers don't re-query it)
+     * @throws PictureBookException 404 when absent/unreadable, 403 when the book denies the action
+     */
+    public static BaseRecord authorizeSceneAccess(BaseRecord user, String sceneObjectId, SceneAccessType access) {
+        if (user == null || sceneObjectId == null || sceneObjectId.isEmpty()) {
+            throw new PictureBookException(404, "Scene not found");
+        }
+        Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneObjectId);
+        sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        sq.planMost(false);
+        BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+        if (scene == null) throw new PictureBookException(404, "Scene not found");
+        authorizeSceneRecord(user, scene, access);
+        return scene;
+    }
+
+    /**
+     * The book-authorization half of {@link #authorizeSceneAccess}, for callers that already hold a
+     * scene record read through {@code AccessPoint} (e.g. the per-scene loop in
+     * {@link #prepareSceneImagePrompts}). Throws 403 when the owning book denies the action.
+     */
+    public static void authorizeSceneRecord(BaseRecord user, BaseRecord scene, SceneAccessType access) {
+        BaseRecord container = resolveSceneBookGroup(user, scene);
+        if (container == null) {
+            throw new PictureBookException(403, "Not authorized for this book");
+        }
+        PolicyResponseType prr = (access == SceneAccessType.WRITE)
+                ? IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, container)
+                : IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, container);
+        if (prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+            logger.warn("Denied " + access + " on book group " + container.get(FieldNames.FIELD_NAME)
+                    + " for scene " + scene.get(FieldNames.FIELD_OBJECT_ID)
+                    + " (user " + user.get(FieldNames.FIELD_NAME) + ")");
+            throw new PictureBookException(403, "Not authorized for this book");
+        }
+    }
+
+    /**
+     * Resolve the group that owns a scene for authorization purposes: the book group when the scene
+     * sits in a book's {@code Scenes} sub-group, otherwise the scene's own group (the legacy
+     * {@code ~/Chat} single-image case). Every hop is an id-based {@code AccessPoint} read — no
+     * path resolution, no read-up (§5.6b). Returns null when nothing could be resolved/read, which
+     * the caller treats as a denial.
+     */
+    private static BaseRecord resolveSceneBookGroup(BaseRecord user, BaseRecord scene) {
+        if (scene == null) return null;
+        Long groupId = scene.get(FieldNames.FIELD_GROUP_ID);
+        if (groupId == null || groupId <= 0L) return null;
+        BaseRecord sceneGroup = IOSystem.getActiveContext().getAccessPoint()
+                .findById(user, ModelNames.MODEL_GROUP, groupId);
+        if (sceneGroup == null) return null;
+        if (!SCENES_DIR.equals(sceneGroup.get(FieldNames.FIELD_NAME))) {
+            // Not a book scene (legacy ~/Chat single-image fallback) — authorize its own group.
+            return sceneGroup;
+        }
+        Long parentId = sceneGroup.get(FieldNames.FIELD_PARENT_ID);
+        if (parentId == null || parentId <= 0L) return sceneGroup;
+        BaseRecord bookGroup = IOSystem.getActiveContext().getAccessPoint()
+                .findById(user, ModelNames.MODEL_GROUP, parentId);
+        return (bookGroup != null ? bookGroup : null);
     }
 
     /**
@@ -1323,10 +1445,9 @@ public class PictureBookUtil {
         if (status == null || !ALLOWED_SCENE_STATUSES.contains(status)) {
             throw new PictureBookException(400, "Invalid status: " + status);
         }
-        Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneObjectId);
-        sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
-        if (scene == null) throw new PictureBookException(404, "Scene not found");
+        /// Resolves the scene AND authorizes the caller against the book that owns it — a bare
+        /// AccessPoint.find here was a direct object reference with no book-level check.
+        BaseRecord scene = authorizeSceneAccess(user, sceneObjectId, SceneAccessType.WRITE);
         updateSceneStatus(user, scene, status, null);
     }
 
@@ -3271,11 +3392,9 @@ public class PictureBookUtil {
     @SuppressWarnings("unchecked")
     public static BaseRecord generateSceneImage(BaseRecord user, String sceneObjectId, SceneGenerationParams params,
             String sdApiType, String sdServer) {
-        Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneObjectId);
-        sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        sq.planMost(false);
-        BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
-        if (scene == null) throw new PictureBookException(404, "Scene not found");
+        /// Resolves the scene AND authorizes the caller against the book that owns it. This runs
+        /// BEFORE any SD/LLM work, so a denial costs nothing and generates nothing.
+        BaseRecord scene = authorizeSceneAccess(user, sceneObjectId, SceneAccessType.WRITE);
 
         if (sdApiType == null || sdServer == null) {
             throw new PictureBookException(500, "SD server not configured");
@@ -3833,15 +3952,27 @@ public class PictureBookUtil {
                         + " (" + sceneObjectIds.indexOf(sceneObjectId) + "/" + sceneObjectIds.size() + " already processed)");
                 break;
             }
+            BaseRecord scene = null;
             try {
                 Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneObjectId);
                 sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
                 sq.planMost(false);
-                BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
-                if (scene == null) {
-                    logger.warn("prepareSceneImagePrompts: scene not found: " + sceneObjectId);
-                    continue;
-                }
+                scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+            } catch (Exception e) {
+                logger.warn("prepareSceneImagePrompts: failed to resolve scene " + sceneObjectId + ": " + e.getMessage());
+                continue;
+            }
+            if (scene == null) {
+                /// Unchanged tolerance: an id the client no longer has (deleted scene) skips the
+                /// batch entry rather than failing the whole call.
+                logger.warn("prepareSceneImagePrompts: scene not found: " + sceneObjectId);
+                continue;
+            }
+            /// Deliberately OUTSIDE the per-scene try/catch below: that catch exists to tolerate
+            /// LLM/prompt failures, and swallowing an authorization denial there would turn "you
+            /// may not act on this book" into a silent 200 with nothing done. A 403 must abort.
+            authorizeSceneRecord(user, scene, SceneAccessType.WRITE);
+            try {
                 String sceneText = scene.get("text");
                 Map<String, Object> sceneData = sceneText != null ? parseLlmJsonObject(sceneText) : new LinkedHashMap<>();
                 String setting = (String) sceneData.getOrDefault("setting", "");
@@ -3873,11 +4004,9 @@ public class PictureBookUtil {
      * pictureBookResult carrying the new blurb.
      */
     public static BaseRecord regenerateBlurb(BaseRecord user, String sceneObjectId, String chatConfigName) {
-        Query sq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, sceneObjectId);
-        sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        sq.planMost(false);
-        BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
-        if (scene == null) throw new PictureBookException(404, "Scene not found");
+        /// Resolves the scene AND authorizes the caller against the book that owns it, before any
+        /// LLM call is made.
+        BaseRecord scene = authorizeSceneAccess(user, sceneObjectId, SceneAccessType.WRITE);
 
         String sceneText = scene.get("text");
         Map<String, Object> sceneData = sceneText != null ? parseLlmJsonObject(sceneText) : new LinkedHashMap<>();

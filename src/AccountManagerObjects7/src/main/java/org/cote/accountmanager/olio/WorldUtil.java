@@ -39,13 +39,44 @@ public class WorldUtil {
     
 	public static BaseRecord getWorld(BaseRecord user, String groupPath, String worldName) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		
+
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_WORLD, FieldNames.FIELD_GROUP_ID, (long)dir.get(FieldNames.FIELD_ID));
 		q.field(FieldNames.FIELD_NAME, worldName);
 		q.planMost(true, Arrays.asList(new String[] {OlioFieldNames.FIELD_REALMS, FieldNames.FIELD_TAGS, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_CONTROLS}));
 
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
-	
+
+	}
+
+	/**
+	 * Find-only counterpart to {@link #getWorld(BaseRecord, String, String)}: identical query, except
+	 * it resolves the containing group with {@code pathUtil.findPath} instead of {@code makePath}, so
+	 * it never creates the group hierarchy as a side effect of a read. Returns null when the group
+	 * path does not exist (note {@code getWorld} would instead NPE on {@code dir.get(id)} in that
+	 * case) and null when the world itself does not exist.
+	 * <p>
+	 * {@code getWorld} is deliberately left unchanged - existing callers rely on its create behaviour.
+	 * <p>
+	 * <b>This is an UNAUTHORIZED read.</b> Like {@code getWorld}, it executes via
+	 * {@code IOSystem.getActiveContext().getSearch().findRecord(...)} rather than through
+	 * {@code AccessPoint}, so no PBAC check is applied to the returned world.
+	 *
+	 * @param user the user whose organization scopes the path lookup
+	 * @param groupPath the group path expected to contain the world
+	 * @param worldName the world name
+	 * @return the world record, or null if either the group path or the world is absent
+	 */
+	public static BaseRecord findWorld(BaseRecord user, String groupPath, String worldName) {
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().findPath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		if(dir == null) {
+			return null;
+		}
+
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_WORLD, FieldNames.FIELD_GROUP_ID, (long)dir.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_NAME, worldName);
+		q.planMost(true, Arrays.asList(new String[] {OlioFieldNames.FIELD_REALMS, FieldNames.FIELD_TAGS, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_CONTROLS}));
+
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 
 	public static BaseRecord getCreateWorld(BaseRecord user, String groupPath, String worldName, String[] features) {
@@ -104,11 +135,52 @@ public class WorldUtil {
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_WORD, occDir.get(FieldNames.FIELD_PATH)));
 
 	}
+	/**
+	 * Cheap "is this universe already loaded?" probe used by {@link #loadWorldData(OlioContext)} to
+	 * short-circuit the full corpus load.
+	 * <p>
+	 * The probe is the universe-local {@code Traits} corpus: {@code count(data.trait) > 0} in the
+	 * world's Traits group. Locations are checked ADDITIONALLY, and only when the world actually
+	 * declares features (an unfeatured world never loads locations, so a location count of zero is
+	 * not evidence of an unloaded universe there).
+	 * <p>
+	 * Why Traits and not locations/colors/surnames: every corpus named in
+	 * {@link #SHARED_LIBRARY_NAMES} (Colors, Occupations, Dictionary, Words, Names, Surnames,
+	 * Patterns) is repointed at the one-per-org {@code /Library/*} groups in
+	 * {@code getCreateWorld}, so a brand-new universe in an org that already has a library would
+	 * probe as "loaded" on its very first init, return early from {@code loadWorldData}, and never
+	 * reach {@code loadTraits} - leaving Traits empty and {@code Decks.getRandomTraits} yielding
+	 * nothing.
+	 * <p>
+	 * NOTE: {@code Traits} is one of only TWO corpora that use the raw {@code reset} flag rather
+	 * than the {@code useSharedLibrary == false &amp;&amp; reset} form ({@code loadLocations} is the
+	 * other), and it is the only one that is both universe-local and unconditionally loaded - which
+	 * is exactly what makes it the correct probe.
+	 */
 	private static boolean fastDataCheck(BaseRecord user, BaseRecord world) {
 		IOSystem.getActiveContext().getReader().populate(world);
+		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+
+		BaseRecord traitsDir = world.get(OlioFieldNames.FIELD_TRAITS);
+		if(traitsDir == null) {
+			return false;
+		}
+		int traitCount = IOSystem.getActiveContext().getSearch().count(QueryUtil.getGroupQuery(ModelNames.MODEL_TRAIT, null, (long)traitsDir.get(FieldNames.FIELD_ID), orgId));
+		if(traitCount <= 0) {
+			return false;
+		}
+
+		List<String> feats = world.get(OlioFieldNames.FIELD_FEATURES);
+		if(feats == null || feats.isEmpty()) {
+			return true;
+		}
+
 		BaseRecord locDir = world.get(FieldNames.FIELD_LOCATIONS);
-		return IOSystem.getActiveContext().getSearch().count(GeoParser.getQuery(null, null, locDir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID))) > 0;
-		
+		if(locDir == null) {
+			return false;
+		}
+		return IOSystem.getActiveContext().getSearch().count(GeoParser.getQuery(null, null, locDir.get(FieldNames.FIELD_ID), orgId)) > 0;
+
 	}
 	private static int loadLocations(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
@@ -309,6 +381,17 @@ public class WorldUtil {
 		}
 		return ogrp;
 	}
+	/**
+	 * WARNING - misleading name; documented trap. This does NOT return the ~36 groups that make up a
+	 * world (Traits, Colors, Population, Events, Addresses, ...). It queries
+	 * {@code auth.group WHERE parentId = world.population.id}, i.e. it returns the CHILDREN OF THE
+	 * WORLD'S POPULATION GROUP - which is what its only real consumer,
+	 * {@link #getLocationGroup(BaseRecord, BaseRecord, BaseRecord, String)}, actually wants
+	 * (per-location population/cemetery groups named "&lt;Location&gt; &lt;name&gt;").
+	 * <p>
+	 * Do not reach for this when enumerating a world's own group set - notably, book-deletion work
+	 * must not use it to find the groups to remove; it will silently return the wrong set.
+	 */
 	public static List<BaseRecord> getWorldGroups(BaseRecord user, BaseRecord world){
 		IOSystem.getActiveContext().getReader().populate(world, new String[] {OlioFieldNames.FIELD_POPULATION});
 		return Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get(OlioFieldNames.FIELD_POPULATION_ID))));

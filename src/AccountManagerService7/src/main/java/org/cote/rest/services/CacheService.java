@@ -27,9 +27,12 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.policy.CachePolicyUtil;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.service.util.ServiceUtil;
 import org.cote.sockets.WebSocketService;
@@ -38,6 +41,7 @@ import jakarta.annotation.security.DeclareRoles;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -83,6 +87,38 @@ public class CacheService {
 		clearCaches();
 		WebSocketService.chirpAllSessions(new String[] {"clearCache", "all"});
 		return Response.status(200).entity(true).build();
+	}
+
+	/**
+	 * Evict every cached Olio context for one world, <b>within the caller's organization only</b>.
+	 * Transport only - the cache key shape and the org filter live in Objects7
+	 * ({@code OlioContextUtil.evictByWorld(long, String)}), not here.
+	 * <p>
+	 * Admin-gated, and deliberately NOT part of {@code /cache/clearAll}: that path is reachable by any
+	 * authenticated {@code user}-role caller, and dropping every Olio context process-wide is not a
+	 * user-reachable operation.
+	 * <p>
+	 * The organization is derived from the principal and never accepted from the client, and it is
+	 * PASSED to the evict rather than merely logged: the Olio context cache is process-wide, so an
+	 * unscoped evict would let an administrator of one organization drop another organization's
+	 * contexts.
+	 */
+	@RolesAllowed({"admin"})
+	@DELETE
+	@Path("/olio/context/{objectId}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response evictOlioContext(@PathParam("objectId") String objectId, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		if(user == null) {
+			return Response.status(401).entity(false).build();
+		}
+		Long organizationId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+		if(organizationId == null) {
+			return Response.status(401).entity(false).build();
+		}
+		logger.info("Request to evict Olio contexts for world " + objectId + " (" + organizationId + ")");
+		int evicted = OlioContextUtil.evictByWorld(organizationId.longValue(), objectId);
+		return Response.status(200).entity(evicted).build();
 	}
 
 	@RolesAllowed({"admin","user"})
