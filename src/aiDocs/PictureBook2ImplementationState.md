@@ -1,7 +1,9 @@
 # PictureBook 2.0 — Implementation State
 
-**As of:** 2026-08-14 · **Pause point:** all in-flight work complete; nothing half-applied.
-**Next up:** Phase 2b (the eight `olio.pb.*` model JSONs, registered, with tables + indexes verified).
+**As of:** 2026-08-14 · **Pause point:** all in-flight work complete; nothing half-applied. Nothing committed.
+**Next up:** Phase 2c (the utilities — `PbConfigUtil`, `PbWatchedFields`, `PbGraphUtil`, `PbArtifactUtil`,
+`PbBookUtil`, `PbSharingUtil`). **Read §3's Phase 2b entry first — it lists four traps 2c's create paths
+must handle, one of which silently writes a null name.**
 **Design of record:** `PictureBook2Plan.md` — read **Appendix D** first (as-built + every ratified
 decision), then Appendix C, then the body. Where the body and Appendix D disagree, **Appendix D wins**.
 
@@ -19,7 +21,8 @@ decision), then Appendix C, then the body. Where the body and Appendix D disagre
 | `PathUtil` — characterize + fix | **DONE except F3** | 14/15 + 1 |
 | Phase 2 — plan + 2 design-review rounds | **DONE** | — |
 | **Phase 2a — two-tier role split + recursive world grant** | **DONE** | 21 + 83 green |
-| Phase 2b-2d — implementation | **NOT STARTED** | — |
+| **Phase 2b — the eight `olio.pb.*` models, registered + verified** | **DONE** | 13 + 113 green |
+| Phase 2c — utilities | **NOT STARTED** | — |
 | Phase 3 / 4 | **NOT STARTED** | — |
 | Phase 5 (Ux) / 6 (migration) | out of scope this run | — |
 
@@ -44,6 +47,7 @@ TestSchemaIndexPatch           9    index DDL generation + participation tables
 TestPictureBookSceneAuthz      7    scene->book authorization, cancel-registry ownership
 TestPathUtilBehavior          15    path characterization  (14 pass, 1 RED — §4)
 TestPathUtilKi60Watch          1    the KI-60 diagnostic marker fires
+TestPbModelSchema             13    phase 2b: the eight olio.pb.* models, tables, pg_indexes, round trip
 ```
 
 **Running them — three traps that will waste your time:**
@@ -173,6 +177,140 @@ and the universe tier against the universe role, which is correct for both old a
 user shared into a book by a future phase-4 member flow needs enrolling in **both** tiers or they will hold
 the book role and no corpora access.
 
+### Phase 2b — the eight `olio.pb.*` models, registered, tables + indexes verified
+
+**Verified 2026-08-14 against `am7db` (`localhost:15432/am7db`, read from
+`resource.properties:9`), no reset.** `TestPbModelSchema` **13/13**, plus **113/113** across
+the PB/schema-adjacent suites and the phase-1 non-regression gate: `TestBookWorld` 21,
+`TestPictureBookKnownIssues` 15, `TestSchemaIndexPatch` 9, `TestPictureBookSceneAuthz` 7,
+`TestOlioCacheScope` 1, `TestGameUtil` 25, `TestGameUtilSync` 15, `TestOlioGameFeatures` 15,
+`TestNestedStructures` 3, `TestOlio2` 1, `TestOlioRules` 1. The gate matters here because registering
+the eight models adds them to `ModelNames.MODELS`, which **every** test's `IOSystem.open` scans — this
+is not a PictureBook-only diff. All eight tables were created by `IOSystem.open` on the first JUnit run, with
+**zero** errors and zero `cannot be indexed` warnings, and every declared constraint and hint is
+present in `pg_indexes` with the right columns and the right uniqueness — read out of
+`pg_indexes.indexdef` itself, not from the DDL the generator would emit, because a rejected statement
+is logged-and-continued (`IOSystem.java:169-178`) and a generated-DDL assertion would pass straight
+over it.
+
+```
+A7_olio_pb_book_0_1     UNIQUE (slug, organizationid), UNIQUE (name, groupid, organizationid), (series)
+A7_olio_pb_series_0_1   UNIQUE (name, groupid, organizationid), (universe)
+A7_olio_pb_scene_0_1    UNIQUE (name, groupid, organizationid), (book, sceneindex), (scenenode)
+A7_olio_pb_workflow_0_1 UNIQUE (book, organizationid), UNIQUE (name, groupid, organizationid)
+A7_olio_pb_node_0_1     UNIQUE (name, groupid, organizationid), (workflow), (handle), (nodestatus)
+A7_olio_pb_binding_0_1  UNIQUE (node, role, bindingordinal, organizationid), UNIQUE (name, groupid,
+                        organizationid), (node), (sourcenode), (sourceartifact), (role)
+A7_olio_pb_artifact_0_1 UNIQUE (producedbynode, role, revision, organizationid), UNIQUE (name, groupid,
+                        organizationid), (producedbynode, selected)
+A7_olio_pb_run_0_1      UNIQUE (name, groupid, organizationid), (workflow), (runstatus)
+```
+(plus the inherited `id` / `objectId` / `urn` hints on all eight, and
+`A7_olio_pb_scene_system_participation_0_1` for the scene's `characters` list.) Every constraint and
+hint column is indexable, which is why every string field carrying one has an explicit `maxLength` —
+an unbounded `text`/`varchar` column makes `generateIndex` return **null** and the index is silently
+never created.
+
+**The tables existing is not the same claim as the schema working**, so there is a create/read
+round trip: one `olio.pb.book` created through `AccessPoint`, read back, `urn` composed *from the
+name* (`…:book.pbschema.6785f134`, not the objectId fallback), the serialized `sdConfig` round-tripped
+as an `olio.sd.config` record, the enum read back UPPERCASE, and **a second book with the same slug
+rejected** — which is what makes the ratification-7 create-race remedy a measured fact rather than a
+declared one.
+
+**Four traps found while proving that round trip. Phase 2c's create paths must handle all four; two
+are silent.**
+1. **`RecordUtil.applyNameGroupOwnership` does not set `name` on these models.** It sets it only when
+   the record inherits `common.name` (`RecordUtil.java:762-764`), and the ratified plain-`name`
+   convention deliberately does not. The helper still applies group and ownership, so the call looks
+   like it worked. Found by writing a book with a null name. **`olio.narrative` has the identical
+   shape and the identical trap.** Pinned by `TestApplyNameGroupOwnershipDoesNotSetNameOnPbModels`.
+2. **A null `name` defeats the unique `(name, groupId, organizationId)` constraint** — PostgreSQL
+   treats NULLs as distinct, so two null-named rows in one group coexist and produce two identical
+   urns, which is exactly the collision ratification 8 asked to close. **The schema cannot close
+   this:** the only schema-level guard is the `$notEmpty` `\S` rule the convention exists to avoid,
+   and `FieldSchema.isRequired()` is read **only** by `RecordTranslator`, never by the writer or the
+   validator. ⇒ every PB2 create path sets the derived name explicitly, or the invariant is unenforced.
+3. **`name` and `urn` had to be added to the models' `query` array** (see the deviation list below).
+4. Non-query fields are opt-in as documented — `sdConfig` needs an explicit `request`/`planMost`.
+
+**Three deviations from §2.1/§2.2, each deliberate:**
+- **`olio.sd.config` is NOT a database-persisted model** (`ioConstraints: ["unknown"]` ⇒
+  `DBUtil.isConstrained` true, no table, no `id`). §2.2's *"foreign `olio.sd.config` — **real
+  persisted records**, making config queryable"* is therefore not buildable as written: a `foreign`
+  field emits a `bigint` column nothing could ever populate. `book.sdConfig`,
+  `book.compositeSdConfig` and `artifact.sdConfigSnapshot` are **non-foreign** `model` fields,
+  serialized into a `text` column — the shape `olio.pictureBookMeta` already uses, except not
+  `ephemeral`. **Consequences to keep stated:** config is *not* queryable by field, and this is one of
+  the few things that is **not** DDL-neutral to reverse (non-foreign emits `text`, foreign emits
+  `bigint`, and `generatePatchSchema` emits `ADD COLUMN` only) — cheap today only because the columns
+  are new and empty. `TestSdConfigFieldsAreSerializedNotForeign` asserts the premise, so it fails the
+  day that changes and forces the decision.
+  **Stephen approved *planning* the persistence 2026-08-14** — written up as `PictureBook2Plan.md` **§6c**
+  (plan only, not scheduled). Headlines: 80 fields; 38 Java references but only **3** in `src/main`
+  (`PictureBookUtil`, `SDUtil`, `OlioModelNames`); **five** competing storage shapes for the same config
+  today, including **two independent per-character systems that do not talk to each other** (the book
+  pipeline's `pictureBookCharacterStyle.sdConfig` vs the Ux's `<name>-SD.json` blob in
+  `~/Data/.preferences`); a **silent `groupPath` collision** (the model's own `groupPath` means *output
+  destination*, `common.groupExt`'s means *where the record lives*, and depth-first last-wins would
+  shadow one) that must be renamed first as its own step; and the Ux being better placed than expected
+  because `forms.sdConfig` is **already schema-driven** off `am7model.getModelField("olio.sd.config", …)`,
+  making it a storage swap rather than a form rewrite. §6c also notes that `configOverride` must stay a
+  sparse JSON string regardless, and that S6 (PB2 fields → references) is materially cheaper **before**
+  phase 3 starts writing artifacts.
+  **§6c step S1 is already DONE (2026-08-14):** `olio.sd.config.groupPath` → **`imagePath`**, pairing with
+  its sibling `imageName`. It was a **live wire contract**, not a dead field — an initial grep of
+  `SDUtil`/`PictureBookUtil` showed only *method parameters* named `groupPath`, which made it look unused;
+  the actual reader is `OlioService.generateArt:571` (required, 400 if absent) and the writers are five
+  bodies in `AccountManagerUx752/src/cardGame/services/artPipeline.js`. Renamed atomically across all three
+  layers with no compatibility shim (both sides ship together; the deprecated Ux7 never sent it, and a
+  stale client fails loudly with `400 imagePath is required`). `SD_OVERRIDE_SKIP` and the Ux
+  `APPLY_EXCLUDE` keep their `groupPath` entries — they become correct for the right reason at S2.
+  **Found in passing, behaviour unchanged:** `reimageWithConfig` derives its path from the source data
+  record's own group (`OlioService.java:165-172`) and never reads the config field, so the cardGame
+  *character* portrait assignment was **already inert** — the character art does not land in the deck art
+  dir and never did. Flagged in a code comment rather than fixed (out of scope).
+  *Verified:* Objects7 `install` + Service7 `compile` BUILD SUCCESS, `npx vite build` clean,
+  `npx vitest run` **445 passed** (the one failing file, `dialog.test.js`, fails to import identically
+  with the change stashed out — measured, not assumed), backend **46/46** including a new
+  `TestPbModelSchema#TestSdConfigHasNoCollidingGroupPathField` guard.
+  *Not verified:* no live card art was generated (needs the Docker stack + SwarmUI), so the end-to-end
+  `generateArt` round trip is untested.
+- **`query` is `[id, groupId, objectId, ownerId, organizationId, urn, name]`**, not §2.1's five.
+  `common.nameId` is where `"query": ["name"]` normally comes from and these models deliberately do
+  not inherit it, so without `name` **every default read returns a record whose name is null** — and
+  the documented PATCH rule (carry `name`, taken from what you already know) would feed that null
+  straight back into a patch. `urn` is there because ratification 8's whole point is portability;
+  `common.base` lists it in its own `query` for the same reason.
+- **Three constraints beyond the ratified list**, all invariants rather than convenience:
+  `(name, groupId, organizationId)` on all eight (this **is** ratification 8's urn-collision guard,
+  which is why the derived names matter — an artifact name must include its `revision`, a run name its
+  instant), `(book, organizationId)` on `workflow` (§2.2's "one per book"), and
+  `(node, role, bindingOrdinal, organizationId)` on `binding`. **`sceneIndex` is deliberately not
+  unique**: reordering writes overlapping indices transiently and a unique index would reject the
+  intermediate state, which is the whole point of "N patches on `sceneIndex`".
+
+**Enum values the plan did not enumerate** — `PbBookStatusEnumType` (UNKNOWN/DRAFT/EXTRACTING/
+EXTRACTED/GENERATING/COMPLETE/FAILED) and `PbRunStatusEnumType` (UNKNOWN/PENDING/RUNNING/COMPLETED/
+FAILED, **no CANCELLED** — runs are synchronous with no cancel endpoint, so a value nothing can set
+would be a false affordance). Everything else is verbatim from §2.2. Every enum field carries an
+explicit `maxLength`, without which `getDataType` emits unbounded `varchar` and `nodeStatus`/`runStatus`
+would not have been indexable.
+
+**`olio.pb.artifact.text` → `artifactText`** (Stephen, 2026-08-14: name it for what it contains). §2.2
+says `text`, which is both uninformative and the SQL type name; the field holds the **inline payload for
+the artifactTypes that have no bytes** — extracted scene text (`TEXT`), the resolved prompt (`PROMPT`),
+a serialized structure (`JSON`) — while image artifacts leave it null and carry bytes in `data`.
+`artifactText` also reads with its sibling `artifactType`. **Phases 4-5 must use `artifactText`**, the
+same way they must use `sceneIndex` and `selected`. The already-created orphan `text` column was dropped
+by a targeted `ALTER TABLE … DROP COLUMN IF EXISTS text` on `A7_olio_pb_artifact_0_1` — **0 rows**, and
+the column was minutes old from this same work; `db.schema.dropColumns` was left `false` and no other
+table was touched. Verified after: the table has `artifacttext` and no `text`.
+
+**Two null-name book rows, created by an intermediate state of the round-trip test before trap 1 was
+understood, were deleted** from `A7_olio_pb_book_0_1` (ids 1 and 3). Nothing else in `am7db` was
+deleted, dropped or reset; all other DDL was additive.
+
 ### DAL — index generation
 `generateIndices` is now recalled on the **schema-patch** path, not only at CREATE TABLE, with
 `CREATE [UNIQUE] INDEX IF NOT EXISTS` and per-statement error-log-and-continue. Indexability is keyed off
@@ -289,6 +427,16 @@ universe roles, both-tier creator enrolment, two-role `verifyGrants`).
 **Modified in phase 2a (Objects7 test):** `olio/TestBookWorld.java` (case03 universe leg re-addressed,
 case09 fixture suffixed, case19 + case20 added).
 
+**New in phase 2b (Objects7 main):** eight model JSONs under
+`src/main/resources/models/olio/pb/` (`bookModel.json`, `seriesModel.json`, `sceneModel.json`,
+`workflowModel.json`, `nodeModel.json`, `bindingModel.json`, `artifactModel.json`, `runModel.json`);
+six enums in `schema/type/` (`PbBookStatusEnumType`, `PbGraphStatusEnumType`, `PbNodeTypeEnumType`,
+`PbNodeStatusEnumType`, `PbArtifactTypeEnumType`, `PbRunStatusEnumType`).
+**Modified in phase 2b (Objects7 main):** `olio/schema/OlioModelNames.java` (eight `MODEL_PB_*`
+constants + registration in `MODELS`), `olio/schema/OlioFieldNames.java` (the `FIELD_PB_*` constants
+and the three group-name constants), `olio/sd/SDAPIEnumType.java` (`COMFY`, one value, no behaviour).
+**New in phase 2b (Objects7 test):** `objects/tests/TestPbModelSchema.java`.
+
 **Modified (Objects7 main):** `factory/Factory.java`, `io/IOSystem.java`, `io/db/DBUtil.java`,
 `olio/AddressUtil.java`, `olio/CharacterUtil.java`, `olio/ColorUtil.java`, `olio/Decks.java`,
 `olio/GeoLocationUtil.java`, `olio/OlioContext.java`, `olio/OlioContextConfiguration.java`,
@@ -325,10 +473,54 @@ characterization), `aiDocs/CanvasLibraryResearchPrompt.md` (new), this file.
 - **`pom.xml`:** six `<exclude>` lines are commented out as `PB2-GATE` so the gate can run. Stephen will
   set these to his liking. A surefire profile (`-Ppb2-gate`) would be the cleaner mechanism than
   commented-out build config.
-- **Services:** SwarmUI `192.168.1.39:7801` reachable; embedding `.42:8123`, ollama `.42:11434` and
-  ComfyUI `.39:8188` were **not** reachable from the build host at last check (possibly a local firewall
-  or interface binding). `test.swarm.server` and `test.llm.ollama.server` still point at `localhost` and
-  will need repointing before Phase 3.
+- **Services — RE-PROBED 2026-08-14, supersedes the previous bullet. Phase 3 is no longer blocked on
+  reachability.**
+  **Canonical topology (Stephen, 2026-08-14): SwarmUI on `localhost` / `192.168.1.39`; LLM and embedding
+  on `192.168.1.42` (the Spark).** Measured with `curl` from the build host:
+
+  | Service | Intended host | Probe | Result |
+  |---|---|---|---|
+  | SwarmUI | localhost / .39 | `localhost:7801`, `192.168.1.39:7801` | **302** (up, both) |
+  | Ollama (LLM) | **.42** | `192.168.1.42:11434/api/tags` | **200** (up) |
+  | Embedding | **.42** | `192.168.1.42:8123` | **up** — `/docs` 200 (FastAPI); `/` and `/embed` 404, so don't probe those and conclude it's down |
+  | TTS | .42 | `192.168.1.42:8001` | **200** (up) |
+  | ComfyUI | **bundled with Swarm** | `localhost:7821/system_stats`, `localhost:7801/ComfyBackendDirect/…` | **200 — RUNNING** (see below) |
+
+  The previous claim that embedding/ollama were unreachable is **stale** — all of them are up.
+  Note the `000` vs `404` distinction: a 404 means the HTTP server answered, so it is **up**; only `000`
+  is a connection failure.
+
+  **ComfyUI is NOT a separate install — SwarmUI bundles and self-starts it** (Stephen, 2026-08-14:
+  *"Self-Start ComfyUI-0 on port 7821 started."*). This corrects two earlier notes in this file and in
+  §6/ratification 12 of the plan, both of which probed **`.39:8188`** — the wrong port — and concluded
+  Comfy was unavailable. Measured: **ComfyUI 0.32.0**, device `cuda:0 AMD Radeon(TM) 8060S Graphics :
+  native` (the local Strix Halo iGPU), reachable two ways:
+  - **direct:** `localhost:7821` — **localhost only**; `192.168.1.39:7821` is `000`, so from another host
+    this route does not exist;
+  - **through Swarm:** `localhost:7801/ComfyBackendDirect/…` and `192.168.1.39:7801/ComfyBackendDirect/…`
+    both 200 — the route to prefer, since it works off-box and needs no second port opened.
+
+  **This does not un-backlog Comfy** (ratification 12 stands: `SDAPIEnumType.COMFY` exists, no behaviour,
+  SwarmUI remains the only backend). It does mean that when §6 is picked up there is **nothing to install**
+  and the port question is already answered.
+
+  **⚠ One config line disagrees with the canonical topology, and it fails silently.**
+  `AccountManagerObjects7/src/test/resources/resource.properties:51` reads
+  `test.llm.ollama.server=http://localhost:11434`, but LLM belongs on **`.42`**. A **local** ollama is
+  also listening on `localhost:11434` (it answered 200 and holds `qwen3:8b` 5.2 GB + `way-local:latest`
+  24.5 GB), so tests will happily run against the **wrong box** and pass — no error, just the wrong
+  hardware. `test.embedding.server` is already correct at `192.168.1.42:8123`, and
+  `test.swarm.server=http://localhost:7801` is correct for Swarm.
+  **Left unedited deliberately** — it is Stephen's config file, nothing is broken today, and the fix is
+  one line. Decide before Phase 3: repoint `:51` to `http://192.168.1.42:11434`, or confirm the local
+  ollama is intended for tests.
+- **Docker: available, but the stack must be REBUILT before it reflects this work.** Phase 2b changed the
+  Objects7 jar (new models, constants, enums) and phase-2b/S1 changed the Service7 WAR
+  (`OlioService.generateArt`) and the Ux752 bundle (`artPipeline.js`). A running container built before
+  today serves none of it. Rebuild + redeploy via the repo-root `docker-compose.yml` / `Dockerfile`
+  (`aiDocs/DockerComposeDesign.md`) before any REST or Playwright verification, or you will be testing
+  yesterday's WAR and blaming the code. Objects7 JUnit does **not** need the stack — it talks to `am7db`
+  and the services above directly.
 - **No reset was used.** (Not because one is forbidden — see the reset-permission bullet above — but as a
   statement of fact about what these phases did.) Nothing in this work reset, dropped or altered a table or index; all DDL executed
   was additive `CREATE INDEX IF NOT EXISTS`.
@@ -343,26 +535,49 @@ characterization), `aiDocs/CanvasLibraryResearchPrompt.md` (new), this file.
 1. ~~**Phase 2a** — two-tier role split + `scanNestedGroups` on the book path.~~ **DONE** — see §3.
    The two-role property it unblocked is asserted in `TestBookWorld` case19 for now; `TestPbSecurity`
    itself is still phase-2 test work (item 4), and the case19 fixture is the shape to lift into it.
-2. **Phase 2b** — the eight `olio.pb.*` model JSONs + `OlioModelNames`/`OlioFieldNames` constants + the new
-   enums + `SDAPIEnumType.COMFY`, **registered in `OlioModelNames.MODELS`**, with the tables verified via
-   `DBUtil.getTableName` and every declared constraint/hint verified present in `pg_indexes`.
-   *(The former 2b/2c split — write-but-don't-register, plus a DDL pre-flight test — was **withdrawn
-   2026-08-14**. It rested on Appendix D's claim that constraints and hints can never be added after the
-   table exists; phase 1's own `generatePatchIndices` fix, wired at `IOSystem.java:162`, had already made
-   that false, and `am7db` is a resettable container. Verify the indexes landed; don't build ceremony to
-   avoid needing to.)*
-3. **Phase 2c** — `PbConfigUtil`, `PbWatchedFields`, `PbGraphUtil`, `PbArtifactUtil`, `PbBookUtil`,
-   `PbSharingUtil`.
-4. **Phase 2 tests** — `TestPbGraph`, `TestPbSecurity`, and the **role-hierarchy direction test**
+2. ~~**Phase 2b** — the eight `olio.pb.*` model JSONs, registered, tables + indexes verified.~~
+   **DONE 2026-08-14** — see §3. The former 2b/2c split (write-but-don't-register plus a DDL pre-flight
+   test) was withdrawn before the work started, and nothing about the run argued for it back: the tables
+   and all their indexes landed on the first JUnit run, and the two corrections that *were* needed
+   (`name`/`urn` in the `query` array) were found by a round-trip test, which a DDL pre-flight would not
+   have caught.
+3. **Phase 2c — the utilities. THIS IS NEXT.** `PbConfigUtil`, `PbWatchedFields`, `PbGraphUtil` (build /
+   `validateAcyclic` / `computeInputHash` / `markStaleDownstream` / `recomputeStatus` — **compute-only**,
+   ratification 2 / `nextRunnable`), `PbArtifactUtil` (persist + sanitize + supersede chain +
+   `setSelected` with a post-write re-read), `PbBookUtil`, `PbSharingUtil`.
+   **Four traps from 2b that the create paths must handle — two are silent, all four are in §3:**
+   (a) `applyNameGroupOwnership` does **not** set `name` on these models — set the derived name
+   explicitly; (b) a null `name` defeats the unique `(name, groupId, organizationId)` constraint, which
+   is ratification 8's urn-collision guard, so the derived names are load-bearing (**artifact names must
+   include `revision`**, run names their instant); (c) `name`/`urn` are in the `query` projection but
+   nothing else is — non-query fields need an explicit `request`; (d) `computeInputHash` must name
+   SHA-256 at the call site and encode explicit UTF-8 (`CryptoUtil.defaultHashAlgorithm` is a mutable
+   static currently on SHA-512 and `getDigestAsString` uses the platform charset — Appendix D).
+   Use the ratified field names: `sceneIndex`, `selected`, **`artifactText`**.
+4. **Phase 2 tests** — `TestPbGraph` (including the `planMost(true)`-terminates case for the
+   `workflow.lastRun` ↔ `run.workflow` cycle — 2b asserted the cycle **exists** and is bigint-symmetrical,
+   not that a plan terminates), `TestPbSecurity`, and the **role-hierarchy direction test**
    (approved: grant to a parent role, enrol in the child only, assert whether `AccessPoint` permits;
    record the result in Appendix D — §10 Q10 depends on it).
-5. **Phase 3** — pipeline to graph behind `picturebook.v2`. Needs ollama **and** embedding reachable.
-6. **Phase 4** — remaining REST endpoints (the two auth fixes are already hoisted out).
+5. **Decide `olio.sd.config` persistence timing — this competes with 3 and 4 for position.**
+   Plan §6c, S1 **done**. **S6 (PB2 config fields → foreign references) is the one non-DDL-neutral step,
+   and it is cheap now while those columns are new and empty and expensive once phase 3 starts writing
+   artifacts.** So either do S2-S6 before phase 3, or accept the serialized shape for the foreseeable
+   future and say so. Not a decision to leave implicit.
+6. **Phase 3** — pipeline to graph behind `picturebook.v2`. **No longer blocked on service reachability**
+   (§6: Swarm, ollama, embedding and TTS all measured up) — but settle the one-line
+   `test.llm.ollama.server` question in §6 first, or it silently runs on the wrong box.
+7. **Phase 4** — remaining REST endpoints (the two auth fixes are already hoisted out). **First REST or
+   Playwright work must rebuild the Docker stack** — the running containers predate phase 2b and S1 (§6).
 
 **Smaller items still open:** `tagApparelSceneIndex` (`PictureBookUtil:1171`) has the same missing book
 check the hoisted patch fixed elsewhere; Q5 (make `OlioContext` **throw** on authorization failure instead
-of swallowing — approved, all callers); and the one-line KI-60 identity assertion on the existing
-`TestKi42…` test.
+of swallowing — approved, all callers); the one-line KI-60 identity assertion on the existing
+`TestKi42…` test; the `test.llm.ollama.server` line in §6; and **the cardGame character portrait does not
+land in the deck art dir** — `artPipeline.js` sets `imagePath` before POSTing to `/reimage`, but
+`reimageWithConfig` derives the path from the source data record's own group and never reads it
+(`OlioService.java:165-172`). Pre-existing, found during the S1 rename, flagged in a code comment, **not
+fixed** (out of scope).
 
 **`PathUtil` findings reported but deliberately NOT changed:** `findPath` is not synchronized (bypasses
 the monitor `makePath` holds); `nodes.length > 1` logs `Invalid search` then falls through **without

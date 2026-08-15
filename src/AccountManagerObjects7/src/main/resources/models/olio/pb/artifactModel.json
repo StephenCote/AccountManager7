@@ -1,0 +1,125 @@
+{
+	"name": "olio.pb.artifact",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "inventory_2",
+	"label": "Artifact",
+	"group": "Artifacts",
+	"constraints": ["producedByNode, role, revision, organizationId", "name, groupId, organizationId"],
+	"hints": ["producedByNode, selected"],
+	"description": "Provenance wrapper for one output of one node. The bytes stay in data.data in the world's Gallery - no new blob model. 'One selected artifact per (node, role)' is NOT expressible as a unique index: a boolean is never NULL, so a unique index over 'selected' would forbid a second superseded row, which is the normal case. The version chain is constrained on (producedByNode, role, revision, organizationId) instead, and single-selected is enforced in PbArtifactUtil.setSelected with a post-write re-read. The name must therefore include the revision to stay unique within the group, since (name, groupId, organizationId) is unique and UrnProvider composes the urn from 'name'.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "artifactType",
+			"baseClass": "org.cote.accountmanager.schema.type.PbArtifactTypeEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "data",
+			"baseModel": "data.data",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "artifactText",
+			"type": "string",
+			"description": "The inline textual payload of this artifact, for the artifactTypes that have no bytes: the extracted scene text (TEXT), the resolved prompt (PROMPT), or a serialized structure (JSON). Image artifacts leave it null and carry their bytes in the 'data' reference instead. Named artifactText rather than 'text' so it names its contents and does not collide with the SQL type name, matching its sibling artifactType."
+		},
+		{
+			"name": "refModel",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "refObjectId",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "producedByNode",
+			"baseModel": "olio.pb.node",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "role",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "revision",
+			"type": "int"
+		},
+		{
+			"name": "supersedes",
+			"baseModel": "olio.pb.artifact",
+			"type": "model",
+			"foreign": true,
+			"description": "The revision this one replaces, so old images stay viewable instead of being overwritten."
+		},
+		{
+			"name": "selected",
+			"type": "boolean",
+			"description": "The chosen keeper for its (node, role). Named selected rather than current: 'current' is legal in PostgreSQL and H2 but is a word to avoid, and a column rename after the fact is an add-plus-orphan two-step."
+		},
+		{
+			"name": "seed",
+			"type": "long"
+		},
+		{
+			"name": "sdConfigSnapshot",
+			"baseModel": "olio.sd.config",
+			"type": "model",
+			"foreign": false,
+			"description": "Per-artifact snapshot of the EFFECTIVE config actually sent, replacing the single overwriting per-book snapshot. Persisted as serialized JSON in a text column, not as a foreign reference: olio.sd.config declares ioConstraints ['unknown'] and so has no table and no id to reference. Freezing a copy is also the point here, which a shared foreign row would not do."
+		},
+		{
+			"name": "generatorRequest",
+			"type": "string",
+			"description": "The SANITIZED backend request JSON: initImage/promptImages replaced with the artifact objectIds of the references instead of inlined base64, and the Swarm session id omitted."
+		},
+		{
+			"name": "contentHash",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "mimeType",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "imageWidth",
+			"type": "int"
+		},
+		{
+			"name": "imageHeight",
+			"type": "int"
+		},
+		{
+			"name": "byteLength",
+			"type": "long"
+		},
+		{
+			"name": "backend",
+			"baseClass": "org.cote.accountmanager.olio.sd.SDAPIEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+		{
+			"name": "backendGraph",
+			"type": "string"
+		}
+	]
+}

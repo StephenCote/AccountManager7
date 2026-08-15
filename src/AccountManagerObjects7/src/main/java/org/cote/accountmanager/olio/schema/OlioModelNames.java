@@ -78,6 +78,17 @@ public class OlioModelNames extends ModelNames {
 	public static final String MODEL_PICTURE_BOOK_CHARACTER_STUB = "olio.pictureBookCharacterStub";
 	public static final String MODEL_PICTURE_BOOK_CHARACTER_STYLE = "olio.pictureBookCharacterStyle";
 
+	/// PictureBook 2 persisted graph.  These are real tables; the six olio.pictureBook* models above
+	/// stay exactly as they are because they are the REST contract the Ux depends on.
+	public static final String MODEL_PB_BOOK = "olio.pb.book";
+	public static final String MODEL_PB_SERIES = "olio.pb.series";
+	public static final String MODEL_PB_SCENE = "olio.pb.scene";
+	public static final String MODEL_PB_WORKFLOW = "olio.pb.workflow";
+	public static final String MODEL_PB_NODE = "olio.pb.node";
+	public static final String MODEL_PB_BINDING = "olio.pb.binding";
+	public static final String MODEL_PB_ARTIFACT = "olio.pb.artifact";
+	public static final String MODEL_PB_RUN = "olio.pb.run";
+
 	//static {
 	private static boolean prep = false; 
 
@@ -96,7 +107,15 @@ public class OlioModelNames extends ModelNames {
 		MODEL_PICTURE_BOOK_SCENE,
 		MODEL_PICTURE_BOOK_RESULT,
 		MODEL_PICTURE_BOOK_CHARACTER_STUB,
-		MODEL_PICTURE_BOOK_CHARACTER_STYLE
+		MODEL_PICTURE_BOOK_CHARACTER_STYLE,
+		MODEL_PB_SERIES,
+		MODEL_PB_BOOK,
+		MODEL_PB_WORKFLOW,
+		MODEL_PB_NODE,
+		MODEL_PB_ARTIFACT,
+		MODEL_PB_BINDING,
+		MODEL_PB_RUN,
+		MODEL_PB_SCENE
 	);
 	
 	public static void use() {

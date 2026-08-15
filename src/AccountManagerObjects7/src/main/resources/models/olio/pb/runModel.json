@@ -1,0 +1,72 @@
+{
+	"name": "olio.pb.run",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "play_circle",
+	"label": "Workflow Run",
+	"group": "Workflow",
+	"constraints": ["name, groupId, organizationId"],
+	"hints": ["workflow", "runStatus"],
+	"description": "One execution of a book's workflow. Mirrors tool.plan's executed-step counters. The name must be derived to be unique within the group (the run's start instant or ordinal), because (name, groupId, organizationId) is unique and UrnProvider composes the urn from 'name'. NOTE the mutual reference run.workflow -> olio.pb.workflow.lastRun -> olio.pb.run: planMost(true) recurses on this two-hop cycle, so use planCommon or an explicit QueryPlan on both models.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "workflow",
+			"baseModel": "olio.pb.workflow",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "runStatus",
+			"baseClass": "org.cote.accountmanager.schema.type.PbRunStatusEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "startedAt",
+			"type": "zonetime"
+		},
+		{
+			"name": "completedAt",
+			"type": "zonetime"
+		},
+		{
+			"name": "requestedNodeIds",
+			"type": "list",
+			"baseType": "long",
+			"description": "The nodes this run was asked to execute. A non-foreign list, persisted as serialized text."
+		},
+		{
+			"name": "executedNodeCount",
+			"type": "int"
+		},
+		{
+			"name": "failedNodeCount",
+			"type": "int"
+		},
+		{
+			"name": "error",
+			"type": "string"
+		},
+		{
+			"name": "chatConfig",
+			"baseModel": "olio.llm.chatConfig",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "createdByObjectId",
+			"type": "string",
+			"maxLength": 64
+		}
+	]
+}

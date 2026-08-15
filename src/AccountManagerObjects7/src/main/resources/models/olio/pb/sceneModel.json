@@ -1,0 +1,81 @@
+{
+	"name": "olio.pb.scene",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "photo_library",
+	"label": "Scene",
+	"group": "Book",
+	"dedicatedParticipation": true,
+	"constraints": ["name, groupId, organizationId"],
+	"hints": ["book, sceneIndex", "sceneNode"],
+	"description": "One scene of a picture book, replacing the per-scene JSON blob held in a data.note. Scene order is the sceneIndex column rather than array position in a blob, so reordering is N patches. sceneIndex is deliberately NOT part of a unique constraint: reordering writes overlapping indices transiently, and a unique index would reject the intermediate state. The field is named sceneIndex rather than index because 'index' is not in DBUtil.reservedWords and would be emitted unquoted.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "book",
+			"baseModel": "olio.pb.book",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "sceneIndex",
+			"type": "int"
+		},
+		{
+			"name": "title",
+			"type": "string"
+		},
+		{
+			"name": "description",
+			"type": "string"
+		},
+		{
+			"name": "summary",
+			"type": "string"
+		},
+		{
+			"name": "setting",
+			"type": "string"
+		},
+		{
+			"name": "action",
+			"type": "string"
+		},
+		{
+			"name": "mood",
+			"type": "string"
+		},
+		{
+			"name": "blurb",
+			"type": "string"
+		},
+		{
+			"name": "userEdited",
+			"type": "boolean"
+		},
+		{
+			"name": "characters",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true,
+			"participantModel": "pb.scene.character"
+		},
+		{
+			"name": "sceneNode",
+			"baseModel": "olio.pb.node",
+			"type": "model",
+			"foreign": true,
+			"description": "The workflow node that produces this scene's imagery. The scene's generation status is read from that node, not duplicated here."
+		}
+	]
+}

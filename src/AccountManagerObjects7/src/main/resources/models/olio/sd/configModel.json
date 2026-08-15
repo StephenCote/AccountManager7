@@ -280,9 +280,9 @@
 			"description": "Negative prompt for image generation. Quality exclusions applied by default when empty."
 		},
 		{
-			"name": "groupPath",
+			"name": "imagePath",
 			"type": "string",
-			"description": "Target group path for generated image storage."
+			"description": "Target group path for generated image storage, paired with imageName. RENAMED from 'groupPath' 2026-08-14: that name collides with the framework groupPath supplied by common.groupExt (which means 'where this record itself lives', not 'where its output goes'), and because inheritance is depth-first last-wins the collision would silently shadow one meaning with the other the moment this model becomes persisted. Both layers were already defending against the old name - SDUtil.SD_OVERRIDE_SKIP and the Ux APPLY_EXCLUDE both strip groupPath from a config overlay - which is the symptom that made the rename necessary. Read by OlioService.generateArt; see PictureBook2Plan.md S6c.4 step S1."
 		},
 		{
 			"name": "imageName",

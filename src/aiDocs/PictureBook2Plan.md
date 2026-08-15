@@ -1752,6 +1752,143 @@ That last point is the strongest argument for building the canvas rather than tr
 
 ---
 
+## 6c. Persisting `olio.sd.config` — PLAN ONLY, approved to plan 2026-08-14 (Stephen)
+
+**Status: design of record, not scheduled.** Stephen, on the phase-2b finding that the model is not
+DB-persistable: *"Let's **plan** to make it persisted then, BUT — I suspect this will turn into a big
+refactor between front and back, but it's likely critical to do the workflow right and fix
+inconsistencies in the Ux."* That suspicion is correct, and the size is quantified below. Nothing here
+is implemented; phase 2b shipped the serialized-`text` shape and a test
+(`TestPbModelSchema#TestSdConfigFieldsAreSerializedNotForeign`) that **fails the day the model becomes
+persistable**, so this decision cannot be lost silently.
+
+### 6c.1 Why — the same config has five storage shapes today
+
+| # | Where | Shape | Owner |
+|---|---|---|---|
+| 1 | `~/Data/.preferences/sharedSD.json`, `sharedApparelSD.json` | `data.data` **byte-store blob**, base64 JSON | Ux752 `components/sdConfig.js` `loadConfig`/`saveConfig` |
+| 2 | `~/Data/.preferences/<charName>-SD.json` | same blob shape, one per character | Ux752 `workflows/reimage.js:143, :826` |
+| 3 | book `meta.sdConfig` | attribute JSON, **overwritten on every generate** | `PictureBookUtil.persistBookSdConfig` |
+| 4 | `olio.pictureBookMeta.sdConfig` / `.compositeSdConfig`, `olio.pictureBookRequest.sdConfig` | `model` field, **`ephemeral`** — transport only | the PB1 REST contract |
+| 5 | `olio.pb.book.sdConfig` / `.compositeSdConfig`, `olio.pb.artifact.sdConfigSnapshot` | serialized `text` column | phase 2b (this work) |
+
+**The Ux inconsistency, precisely.** There are *two independent per-character config systems that do
+not talk to each other*, and `olio/pictureBookCharacterStyleModel.json:4` says so in its own
+description: the book pipeline reads `olio.pictureBookCharacterStyle.sdConfig`, while the UI reimage
+flow reads `<name>-SD.json` from `~/Data/.preferences`. Same user intent ("this character renders like
+*this*"), two stores, no reconciliation. A blob in a preferences folder also has **no `name`/`urn`, no
+group semantics beyond the folder, no PBAC surface of its own, and cannot be queried** — so "which
+configs use this checkpoint" is unanswerable, which is precisely what PB2's node graph needs when
+`configHash` folds in the merged effective config (§2.3).
+
+### 6c.2 Scope, measured
+
+- **`olio.sd.config` is 80 fields** — 52 string, 16 int, 6 boolean, 5 double, 1 list; `inherits`
+  nothing; `ioConstraints: ["unknown"]`; no `group`. **30 fields carry a `default`, 50 do not.**
+- **38 Java references** across 11 files; in `src/main` only three: `PictureBookUtil`, `SDUtil`,
+  `OlioModelNames`. The other eight are tests. **The backend blast radius is small.**
+- **Model-JSON field references:** `olio.pictureBookMeta` ×2 (ephemeral), `olio.pictureBookRequest` ×3,
+  `olio.pictureBookCharacterStyle` ×1, `olio.pb.*` ×3.
+- **The Ux is better placed than expected.** `formDef.js:769` `forms.sdConfig` and `:1190`
+  `forms.sdConfigOverrides` already exist, and `:6125-6137` patches their field limits from
+  `am7model.getModelField("olio.sd.config", …)` — **the editor is already schema-driven**, so for the Ux
+  this is mostly a *storage* swap (blob load/save → generic object CRUD), not a form rewrite.
+
+### 6c.3 The four things that must be decided before any code
+
+1. ~~**`groupPath` collides, and the collision is silent.**~~ **DONE 2026-08-14 — renamed to
+   `imagePath`** (Stephen: *"then it needs to be renamed — call it imagePath or targetPath or
+   something"*). It pairs with the existing sibling `imageName` (*"Output file name for the generated
+   image"*). The collision was real: `olio.sd.config` declared its own `groupPath` meaning **output
+   destination**, while `common.groupExt` supplies a **virtual** `groupPath` meaning *where this record
+   itself lives*, and depth-first **last-wins** inheritance would have shadowed one with the other at S2
+   with every caller still compiling. As-built detail in the state doc; `imageName` and
+   `referenceImageId` were reviewed at the same time and need no change.
+2. **`configOverride` must STAY a sparse JSON string** (§2.4). Persistence does not fix that argument —
+   with 30 defaulted fields, `Factory.newInstance("olio.sd.config")` still materializes every default,
+   so a *record* cannot express "only these three fields were set". The Ux already works around exactly
+   this with `SAVE_EXCLUDE`/`APPLY_EXCLUDE` (`sdConfig.js:37-38`, stripping `id`/`objectId`/`groupId`/
+   `seed`). ⇒ **A persisted config model and a sparse override string coexist; they are not the same
+   thing.** Only the *named, reusable* config becomes a record.
+3. **`sdConfigSnapshot` should probably NOT become a foreign reference even then.** Its purpose is to
+   **freeze what was actually sent**; a foreign row is shared and mutable, so a later edit to the config
+   would silently rewrite history for every past artifact. A frozen serialized copy is the correct shape
+   for a snapshot. ⇒ Expect `book.sdConfig`/`compositeSdConfig` to become references and
+   `artifact.sdConfigSnapshot` to stay serialized — a deliberate asymmetry, not an oversight.
+4. **Where do config records live, and who may read them?** The model already has a `shared` boolean
+   with no enforcement behind it. Options: a per-user `~/Data/SD Configs` group (matches today's
+   preferences-folder behaviour and needs no new grants) versus an org-shared library group (enables
+   reuse, needs a role and a PBAC decision, and is the read-path-that-creates trap in
+   `architecture.md` if a get-or-create is called from a read).
+
+### 6c.4 Ordered phases, each independently shippable
+
+- ~~**S1 — rename the colliding field.**~~ **DONE 2026-08-14.** `groupPath` → **`imagePath`** on
+  `olio.sd.config`. It turned out to be a **live cross-layer wire contract**, not the dead field an
+  initial `SDUtil`/`PictureBookUtil` grep suggested — every `groupPath` hit in those two files is a
+  *method parameter*, which is why the field looked unused. The real consumers:
+  - **Reader (exactly one):** `OlioService.generateArt` (`:571`) reads it off the posted config JSON and
+    passes it to `sdu.createImage(...)`; it is **required**, 400 if absent.
+  - **Writers (five, all `AccountManagerUx752/src/cardGame/services/artPipeline.js`):** the background,
+    tabletop, card-front/back and generic-card bodies posted to `/rest/olio/generateArt`, plus the
+    character body posted to `/{type}/{objectId}/reimage`.
+  - **`reimageWithConfig` deliberately ignores it** — it derives the path from the source data record's
+    own group (`OlioService.java:165-172`) — so the character-path assignment was **already inert**
+    before this rename. Flagged in a code comment, behaviour unchanged: the cardGame character portrait
+    does **not** land in the deck art dir, and never did.
+  - **Both layers were already defending against the old name**: `SDUtil.SD_OVERRIDE_SKIP` (`:820-823`)
+    and the Ux `APPLY_EXCLUDE` (`sdConfig.js:38`) both strip `groupPath` from a config overlay, treating
+    it as framework plumbing. Those entries were **kept** — they become correct for the right reason once
+    S2 adds `common.groupExt`.
+  - **Renamed atomically, with no compatibility shim.** Both sides ship from this repo and the deprecated
+    Ux7 never sent the field, so the only exposure is a stale un-rebuilt client, which fails loudly with
+    `400 {"error":"imagePath is required"}` rather than silently writing to the wrong group.
+  *Verified:* `mvn -o -pl AccountManagerObjects7 install`, `mvn -o -pl AccountManagerService7 compile`
+  both BUILD SUCCESS; `npx vite build` clean; `npx vitest run` 445 passed; backend 46/46 including a new
+  `TestPbModelSchema#TestSdConfigHasNoCollidingGroupPathField` guard that fails if `groupPath` is ever
+  re-declared on the model. **Not verified:** no live card-art image was generated (needs the Docker
+  stack + SwarmUI), so the end-to-end generateArt round trip is untested by me.
+- **S2 — make the model persistable.** Drop `ioConstraints`, add
+  `likeInherits: ["data.directory"]` + `inherits: [common.groupExt, common.baseLight, common.urn]`, its
+  own plain `name` (**not** `common.nameId` — same `\S`/PATCH reasoning as the `olio.pb.*` models),
+  `constraints: ["name, groupId, organizationId"]`, `query` including `name` and `urn`, a `group` hint,
+  and `maxLength` on every string that any index touches. Register in `OlioModelNames.MODELS`.
+  *Exit:* the table exists, indexes verified in `pg_indexes`, and a create/read round trip — i.e. the
+  same gate phase 2b used, which `TestPbModelSchema` already implements and which will flip its
+  `isConstrained` assertion at this point (update it deliberately, do not delete it).
+- **S3 — one read/write path in Objects7.** A `SdConfigUtil` that resolves a config by name+group and
+  is the single writer. **Find-only on read paths**; only an authorized write creates
+  (`architecture.md`, "Read paths must not create"). *Exit:* unit tests, including that a read miss
+  returns defaults rather than creating a record.
+- **S4 — Ux752 storage swap.** `components/sdConfig.js` `loadConfig`/`saveConfig` move from
+  `data.data` blobs to generic model CRUD; the forms stay. Keep a **read-through fallback** to the old
+  blob for one release so nothing breaks mid-migration. *Exit:* `npx vite build`, `npx vitest run`, and
+  a Playwright pass on the reimage flow with `ensureSharedTestUser()`.
+- **S5 — converge the two per-character systems.** Retire `<name>-SD.json` in favour of a named config
+  record referenced by `olio.pictureBookCharacterStyle`, so the pipeline and the UI read one store.
+  **This is the step that actually fixes the Ux inconsistency**; S1-S4 only make it possible.
+- **S6 — PB2 fields become references** (`book.sdConfig`, `book.compositeSdConfig`), leaving
+  `artifact.sdConfigSnapshot` serialized per 6c.3.3. **Not DDL-neutral** — non-foreign emits `text`,
+  foreign emits `bigint`, and `generatePatchSchema` emits `ADD COLUMN` only, so this needs either a
+  reset or a manual column change plus a migration of any serialized configs already written.
+
+### 6c.5 Risks worth stating up front
+
+- **S6 is the only irreversible-ish step**, and it is cheap now (the columns are new and empty) and
+  expensive later (once real books carry serialized configs). If this work is going to happen, doing S6
+  **before** phase 3 starts writing artifacts is materially cheaper than after.
+- **80 columns of mostly-nullable style knobs** is a wide table. Acceptable, but it is the argument
+  someone will raise; the alternative (a narrow config + a key/value attribute bag) loses the
+  schema-driven form generation the Ux already relies on, so the wide table is the better trade.
+- **Migration of existing blobs is best-effort**, not lossless: the blobs were written by
+  `saveObj` after `SAVE_EXCLUDE`, so they are already partial records with no provenance about which
+  fields were deliberately set.
+- **`embedding`-style provenance does not apply**, but the `configHash` in §2.3 does: once configs are
+  records, editing a shared config invalidates every node whose `configHash` folded it in. That is the
+  same class as the `PB_PIPELINE_VERSION` risk and needs the same loud logging.
+
+---
+
 ## 7. Ordered implementation phases
 
 Sequenced so nothing waits on KI-60.
@@ -1834,14 +1971,21 @@ constraints/hints are irreversible once a table exists (see Appendix D). Sub-pha
   existing green gate, and the universe tier had to exist before the two-role property could be asserted.
   *Verified:* `TestBookWorld` 21/21 + the 83-test gate. As-built under ratification 5; measurements in
   `PictureBook2ImplementationState.md` §3.
-- **Phase 2b — the eight `olio.pb.*` model JSONs, registered, with their tables and indexes verified.**
-  The JSONs; the `OlioModelNames`/`OlioFieldNames` constants; the new enums; the one-line
-  `SDAPIEnumType.COMFY` addition (ratification 12); registration in `OlioModelNames.MODELS`.
-  *Exit:* the eight tables exist (`DBUtil.getTableName`) and every declared constraint and hint appears in
-  `pg_indexes`. **The earlier 2b/2c split — write-but-don't-register plus a DDL pre-flight test — was
-  withdrawn**: it existed only because Appendix D said constraints and hints could never be added after
-  the table exists, which phase 1's own `generatePatchIndices` fix had already made false, and `am7db` is a
-  resettable container besides. Verify the indexes landed; don't build ceremony to avoid needing to.
+- **Phase 2b — the eight `olio.pb.*` model JSONs, registered, with their tables and indexes verified.
+  DONE 2026-08-14.** The JSONs; the `OlioModelNames`/`OlioFieldNames` constants; six new `Pb*EnumType`s;
+  the one-line `SDAPIEnumType.COMFY` addition (ratification 12); registration in `OlioModelNames.MODELS`.
+  *Verified:* the eight tables exist and **every declared constraint and hint is present in `pg_indexes`**
+  with the right columns and uniqueness (read from `pg_indexes.indexdef`, not from generated DDL), plus a
+  create/read round trip and a **rejected duplicate slug** proving ratification 7's create-race remedy.
+  `TestPbModelSchema` 14/14; non-regression 113/113 including the full phase-1 gate.
+  Three deliberate deviations (serialized `olio.sd.config`; `name`+`urn` added to `query`; three extra
+  invariant constraints) and four create-path traps for 2c are recorded in Appendix D and in
+  `PictureBook2ImplementationState.md` §3. Field renames beyond `sceneIndex`/`selected`:
+  **`artifact.text` → `artifactText`**.
+  *(The earlier 2b/2c split — write-but-don't-register plus a DDL pre-flight test — was withdrawn before
+  the work started, and the run did not argue for it back: every table and index landed on the first JUnit
+  run, and the two corrections that were actually needed came from a **round trip**, which a DDL pre-flight
+  could not have caught.)*
 - **Phase 2c — the utilities** (was 2d; 2c's register-and-verify step folded into 2b above).
   `PbConfigUtil`, `PbWatchedFields`, `PbGraphUtil` (build /
   `validateAcyclic` / `computeInputHash` / `markStaleDownstream` / `recomputeStatus` (compute-only, see
@@ -2449,6 +2593,41 @@ Appendix A's model guidance is wrong in two places and incomplete in a third. Th
 `DBUtil.reservedWords` and would be emitted unquoted — legal in Postgres, questionable in H2). Phases 4-5
 must use `sceneIndex`.
 
+> **AS-BUILT 2026-08-14 (phase 2b) — three corrections to §2.1/§2.2, each forced by the code.** Full
+> measurements, the pg_indexes listing and the four create-path traps are in
+> `PictureBook2ImplementationState.md` §3.
+> 1. **`olio.sd.config` is not a database-persisted model** — `ioConstraints: ["unknown"]`, so
+>    `DBUtil.isConstrained` is true, it has no table and no `id`. §2.2's "foreign `olio.sd.config` —
+>    **real persisted records** … making config queryable" is not buildable: a `foreign` field emits a
+>    `bigint` column nothing can populate. `book.sdConfig`, `book.compositeSdConfig` and
+>    `artifact.sdConfigSnapshot` are **non-foreign** `model` fields serialized into `text` (the shape
+>    `olio.pictureBookMeta` already uses, minus `ephemeral`). **Config is not queryable by field**, and
+>    this is one of the few genuinely non-DDL-neutral choices here — reversing it changes the column
+>    type and `generatePatchSchema` emits `ADD COLUMN` only. Promoting `olio.sd.config` to a persisted
+>    model is a real change across every SD caller; flagged rather than done. **Stephen approved
+>    *planning* it 2026-08-14 — see the new §6c**, which quantifies the refactor (80 fields; 38 Java
+>    references but only 3 in `src/main`; **five** competing storage shapes for the same config; and a
+>    silent `groupPath` collision that must be renamed first) and orders it S1-S6. §6c.3.3 argues
+>    `artifact.sdConfigSnapshot` should stay serialized even then, because a snapshot must freeze.
+> 2. **`query` is `[id, groupId, objectId, ownerId, organizationId, urn, name]`**, not §2.1's five.
+>    `common.nameId` supplies `"query": ["name"]` and these models deliberately do not inherit it, so
+>    without `name` every default read returns a **null name** — which the PATCH rule in `model-api.md`
+>    would then carry back into a patch. `urn` is projected because ratification 8 is about portability,
+>    and `common.base` lists it for the same reason.
+> 3. **Every model declares `(name, groupId, organizationId)` unique.** This *is* ratification 8's
+>    urn-collision guard, so the derived names are load-bearing: an artifact name must include its
+>    `revision`, a run name its instant. Two further invariants: `(book, organizationId)` on `workflow`
+>    ("one per book") and `(node, role, bindingOrdinal, organizationId)` on `binding`. **`sceneIndex` is
+>    deliberately NOT unique** — reordering writes overlapping indices transiently.
+>
+> **The guard has a hole the schema cannot close:** a null `name` satisfies the unique constraint,
+> because PostgreSQL treats NULLs as distinct. `FieldSchema.isRequired()` is read only by
+> `RecordTranslator`, never by the writer or validator, and the only real schema guard is the
+> `$notEmpty` `\S` rule this convention exists to avoid. Worse, `RecordUtil.applyNameGroupOwnership`
+> **silently does not set `name`** on a model that declares its own plain one (`RecordUtil.java:762-764`
+> gates on `common.name`) — `olio.narrative` has the same trap. ⇒ **Phase 2c's create paths must set the
+> derived name explicitly.** Both facts are pinned by tests in `TestPbModelSchema`.
+
 ### Phase-2 design notes — RATIFIED 2026-08-14 (Stephen)
 
 **1. `workflow.lastRun` ↔ `run.workflow` mutual reference — capture, don't re-shape.**
@@ -2558,6 +2737,13 @@ routine. Q17 is closed.
 **11. Q9 `reset()` — proposed answer ADOPTED.** `reset()` **clears artifacts and marks nodes STALE but
 KEEPS the graph** — the ComfyUI mental model. The topology (nodes, bindings, handles, canvas geometry) is
 the user's work; the artifacts are reproducible output.
+
+> **Availability note added 2026-08-14 (does NOT change the backlog decision).** ComfyUI needs **no
+> separate install**: SwarmUI bundles and self-starts it (*"Self-Start ComfyUI-0 on port 7821 started."*).
+> Measured **ComfyUI 0.32.0** on the local iGPU, reachable at `localhost:7821` (localhost only) or, better,
+> proxied through Swarm at `{swarm}/ComfyBackendDirect/…` which also works off-box. Earlier notes calling
+> Comfy unreachable had probed `.39:8188`, the wrong port. So when this section is picked up, the install
+> and port questions are already settled; everything else below still applies.
 
 **12. Q12 Comfy — BACKLOGGED.** Stephen: *"it's new so we'll want an intentional use case for it. Maybe
 backlog Comfy for now."* **Phase 3b is removed from the current scope.** `SDAPIEnumType.COMFY` still lands

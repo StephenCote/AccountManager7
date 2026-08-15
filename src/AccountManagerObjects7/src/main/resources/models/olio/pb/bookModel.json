@@ -1,0 +1,87 @@
+{
+	"name": "olio.pb.book",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "auto_stories",
+	"label": "Picture Book",
+	"group": "Book",
+	"constraints": ["slug, organizationId", "name, groupId, organizationId"],
+	"hints": ["series"],
+	"description": "A picture book: the root record of one PictureBook 2 graph, living in its own Olio world under the organization's Books universe. The unique (slug, organizationId) constraint is the serialization point for concurrent book creation - the book row is created first, then the world, then the book's world reference is patched, so a second racer fails on the index rather than orphaning a world. Note the 'name' field is declared here rather than inherited from common.nameId: nameId's \\S validation rule makes a PATCH that omits name fail, and every partial update of this model would have to carry it.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "description",
+			"type": "string"
+		},
+		{
+			"name": "slug",
+			"type": "string",
+			"maxLength": 64,
+			"description": "Lowercase book slug, validated against PbOlioContextUtil.BOOK_SLUG_PATTERN before any path is built. Unique per organization."
+		},
+		{
+			"name": "world",
+			"baseModel": "olio.world",
+			"type": "model",
+			"foreign": true,
+			"description": "The book's own Olio world. Nullable at create time by design: the book row is written first so its unique slug serializes creation, then this reference is patched in."
+		},
+		{
+			"name": "series",
+			"baseModel": "olio.pb.series",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "chapter",
+			"type": "int",
+			"description": "Ordinal of this book within its series. Chapter linkage is a PictureBook field and never olio.world.basis, which must keep pointing at the Books universe for every book world."
+		},
+		{
+			"name": "sourceData",
+			"baseModel": "data.data",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "sdConfig",
+			"baseModel": "olio.sd.config",
+			"type": "model",
+			"foreign": false,
+			"description": "The book's common image config. Persisted as serialized JSON in a text column, not as a foreign reference: olio.sd.config declares ioConstraints ['unknown'] and so has no table and no id to reference."
+		},
+		{
+			"name": "compositeSdConfig",
+			"baseModel": "olio.sd.config",
+			"type": "model",
+			"foreign": false,
+			"description": "Optional alternate config for the composite step only; falls back to sdConfig when absent. Serialized JSON, see sdConfig."
+		},
+		{
+			"name": "bookStatus",
+			"baseClass": "org.cote.accountmanager.schema.type.PbBookStatusEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "compositionContext",
+			"type": "string",
+			"description": "Optional book-level composition/art-direction anchor prepended to every scene and landscape prompt."
+		},
+		{
+			"name": "createdByObjectId",
+			"type": "string",
+			"maxLength": 64
+		}
+	]
+}

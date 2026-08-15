@@ -1,0 +1,109 @@
+{
+	"name": "olio.pb.node",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "widgets",
+	"label": "Workflow Node",
+	"group": "Workflow",
+	"constraints": ["name, groupId, organizationId"],
+	"hints": ["workflow", "handle", "nodeStatus"],
+	"description": "One step of a book's workflow graph. Mirrors tool.planStep but is persisted; tool.planStep itself declares ioConstraints ['undefined'] and so is never written to the database. The name must be DERIVED FROM handle and unique within the group: UrnProvider composes the urn from 'name' (not handle) and common.urn carries no uniqueness constraint, so the unique (name, groupId, organizationId) constraint here is what stops two nodes producing the same urn.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "workflow",
+			"baseModel": "olio.pb.workflow",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "handle",
+			"type": "string",
+			"maxLength": 128,
+			"description": "Stable, human-readable identifier of this node within its workflow (e.g. 'character_@herd'). The source of the derived unique name."
+		},
+		{
+			"name": "nodeType",
+			"baseClass": "org.cote.accountmanager.schema.type.PbNodeTypeEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "nodeStatus",
+			"baseClass": "org.cote.accountmanager.schema.type.PbNodeStatusEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"description": "Denormalized staleness, so 'show me the stale nodes' is one indexed query rather than a graph walk. inputHash is the authority; this is a repairable cache and is never trusted for a correctness decision."
+		},
+		{
+			"name": "pinned",
+			"type": "boolean",
+			"description": "Separate from status. Propagation still marks a pinned node stale - knowing an approved output is now inconsistent is worth having - but the executor refuses to re-run it without force."
+		},
+		{
+			"name": "ordinal",
+			"type": "int"
+		},
+		{
+			"name": "sceneIndex",
+			"type": "int"
+		},
+		{
+			"name": "scope",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "scopeRef",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "promptTemplateName",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "promptText",
+			"type": "string"
+		},
+		{
+			"name": "configOverride",
+			"type": "string",
+			"description": "JSON of ONLY the explicitly-set config fields, produced with cfg.copyRecord(changedFieldNames).toString(). Deliberately not a persisted olio.sd.config: a record instantiated from that schema materializes every defaulted field, which makes 'override' indistinguishable from 'default'."
+		},
+		{
+			"name": "inputHash",
+			"type": "string",
+			"maxLength": 128,
+			"description": "Stable SHA-256 over the node's resolved inputs as of the last successful run. Null until that first success, and a node with a null inputHash is PENDING/READY, never STALE."
+		},
+		{
+			"name": "configHash",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "createdByObjectId",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "lastError",
+			"type": "string"
+		},
+		{
+			"name": "lastRunAt",
+			"type": "zonetime"
+		}
+	]
+}

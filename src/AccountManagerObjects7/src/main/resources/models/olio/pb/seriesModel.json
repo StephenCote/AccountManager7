@@ -1,0 +1,38 @@
+{
+	"name": "olio.pb.series",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "collections_bookmark",
+	"label": "Book Series",
+	"group": "Book",
+	"constraints": ["name, groupId, organizationId"],
+	"hints": ["universe"],
+	"description": "A series of picture books - the scope for 'the chapters of one book'. Lives in the Books universe's own Book group, not in any single book's world. The universe remains the scope for 'all books'.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "description",
+			"type": "string"
+		},
+		{
+			"name": "universe",
+			"baseModel": "olio.world",
+			"type": "model",
+			"foreign": true,
+			"description": "The Books universe this series belongs to."
+		},
+		{
+			"name": "bookCount",
+			"type": "int"
+		}
+	]
+}

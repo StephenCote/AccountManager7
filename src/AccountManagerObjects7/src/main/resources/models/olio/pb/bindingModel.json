@@ -1,0 +1,86 @@
+{
+	"name": "olio.pb.binding",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "link",
+	"label": "Node Binding",
+	"group": "Workflow",
+	"constraints": ["node, role, bindingOrdinal, organizationId", "name, groupId, organizationId"],
+	"hints": ["node", "sourceNode", "sourceArtifact", "role"],
+	"description": "The edge of the workflow graph, and the answer to 'which record produced this input'. An edge model rather than an embedded list means one artifact can be consumed by many nodes and the graph records WHICH REVISION each consumer saw. A collective (a herd, a crowd) is N bindings sharing one role, distinguished by bindingOrdinal - no cast-group model. The name must be derived from role + bindingOrdinal and unique within the group, because UrnProvider composes the urn from 'name' and common.urn has no uniqueness constraint of its own.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "node",
+			"baseModel": "olio.pb.node",
+			"type": "model",
+			"foreign": true,
+			"description": "The consumer."
+		},
+		{
+			"name": "role",
+			"type": "string",
+			"maxLength": 64,
+			"description": "sourceText, sceneText, characterDescription, portrait0, portrait1, landscape, landscapeRef, initImage, referenceStrip, apparel, mannequin, chapterSource."
+		},
+		{
+			"name": "bindingOrdinal",
+			"type": "int",
+			"description": "Distinguishes multiple bindings sharing one role, so a multi-valued role needs no table rebuild."
+		},
+		{
+			"name": "sourceNode",
+			"baseModel": "olio.pb.node",
+			"type": "model",
+			"foreign": true,
+			"description": "The producer. Null for external roots."
+		},
+		{
+			"name": "sourceArtifact",
+			"baseModel": "olio.pb.artifact",
+			"type": "model",
+			"foreign": true,
+			"description": "The exact artifact revision consumed. Null for external roots."
+		},
+		{
+			"name": "refModel",
+			"type": "string",
+			"maxLength": 128,
+			"description": "For inputs that are ordinary AM7 records rather than artifacts (olio.charPerson, olio.apparel, data.data)."
+		},
+		{
+			"name": "refObjectId",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "refHash",
+			"type": "string",
+			"maxLength": 128,
+			"description": "Stable hash over the declared watched field set of the referenced record, computed at bind time and recomputed by PbGraphUtil.recomputeStatus. This is the only mechanism that can see an edit to an external record: olio.charPerson carries no revision or content hash, so artifact chaining alone cannot detect that a character changed. The watched set is a policy decision, not a derivation."
+		},
+		{
+			"name": "valueText",
+			"type": "string",
+			"description": "Literal input - a seed, a hand-typed prompt."
+		},
+		{
+			"name": "valueHash",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "required",
+			"type": "boolean"
+		}
+	]
+}

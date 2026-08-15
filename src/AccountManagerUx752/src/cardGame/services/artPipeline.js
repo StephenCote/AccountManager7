@@ -375,7 +375,7 @@ async function generateBackground(theme) {
             description: bgPrompt,
             bodyStyle: "landscape",
             seed: -1,
-            groupPath: dir.path,
+            imagePath: dir.path,
             imageName: "background-" + t.themeId + "-" + Date.now() + ".png"
         });
         am7sd.applyOverrides(entity, sdOverrides._default);
@@ -450,7 +450,7 @@ async function generateTabletop(theme) {
             description: ttPrompt,
             bodyStyle: "landscape",
             seed: -1,
-            groupPath: dir.path,
+            imagePath: dir.path,
             imageName: "tabletop-" + t.themeId + "-" + Date.now() + ".png"
         });
         am7sd.applyOverrides(entity, sdOverrides._default);
@@ -573,13 +573,16 @@ async function generateCardArt(card, theme) {
     let g_application_path = getAppPath();
 
     // Character portraits: use the charPerson/reimage endpoint with SD config
-    // Set groupPath/imageName so the server creates the image in the deck art dir
+    // Set imagePath/imageName so the server creates the image in the deck art dir.
+    // NOTE: the /reimage endpoint does NOT read imagePath - reimageWithConfig derives the path from the
+    // source data record's own group - so this assignment is inert on the character path. Pre-existing
+    // behaviour, renamed here only to stop the old colliding name spreading.
     if (card.type === "character" && card.sourceId) {
         let dir = await ensureArtDir((theme || activeTheme).themeId);
         if (!dir) throw new Error("Could not create art directory");
 
         let sdEntity = await buildSdEntity(card, theme);
-        sdEntity.groupPath = dir.path;
+        sdEntity.imagePath = dir.path;
         sdEntity.imageName = (card.name || "character").replace(/[^a-zA-Z0-9_\-]/g, "_") + "-" + Date.now() + ".png";
 
         let result = await m.request({
@@ -608,8 +611,8 @@ async function generateCardArt(card, theme) {
     if (!dir) throw new Error("Could not create art directory");
 
     let sdEntity = await buildSdEntity(card, theme);
-    // Add groupPath and imageName for the generateArt endpoint
-    sdEntity.groupPath = dir.path;
+    // Add imagePath and imageName for the generateArt endpoint
+    sdEntity.imagePath = dir.path;
     sdEntity.imageName = (card.name || "card").replace(/[^a-zA-Z0-9_\-]/g, "_") + "-" + Date.now() + ".png";
 
     let g_application_path2 = getAppPath();
@@ -688,7 +691,7 @@ async function generateTemplateArt(side) {
             description: prompt,
             seed: -1,
             imageName: "card-" + side + "-" + (theme.themeId || "default") + "-" + Date.now() + ".png",
-            groupPath: dir.path
+            imagePath: dir.path
         });
         am7sd.applyOverrides(sdEntity, sdOverrides._default);
         am7sd.applyOverrides(sdEntity, getCardTypeDelta(configKey));

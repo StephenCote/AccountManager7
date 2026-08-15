@@ -287,4 +287,100 @@ public class OlioFieldNames {
 	public static final String FIELD_SD_DENOISING_STRENGTH = "denoisingStrength";
 	public static final String FIELD_SD_LORAS = "loras";
 
+	// PictureBook 2 persisted graph (olio.pb.*)
+	public static final String FIELD_PB_SLUG = "slug";
+	public static final String FIELD_PB_WORLD = "world";
+	public static final String FIELD_PB_UNIVERSE = "universe";
+	public static final String FIELD_PB_SERIES = "series";
+	public static final String FIELD_PB_CHAPTER = "chapter";
+	public static final String FIELD_PB_BOOK_COUNT = "bookCount";
+	public static final String FIELD_PB_SOURCE_DATA = "sourceData";
+	public static final String FIELD_PB_SD_CONFIG = "sdConfig";
+	public static final String FIELD_PB_COMPOSITE_SD_CONFIG = "compositeSdConfig";
+	public static final String FIELD_PB_BOOK_STATUS = "bookStatus";
+	public static final String FIELD_PB_COMPOSITION_CONTEXT = "compositionContext";
+	public static final String FIELD_PB_CREATED_BY_OBJECT_ID = "createdByObjectId";
+
+	public static final String FIELD_PB_BOOK = "book";
+	/// Renamed from 'index': that word is not in DBUtil.reservedWords and would be emitted unquoted.
+	public static final String FIELD_PB_SCENE_INDEX = "sceneIndex";
+	public static final String FIELD_PB_TITLE = "title";
+	public static final String FIELD_PB_SUMMARY = "summary";
+	public static final String FIELD_PB_SETTING = "setting";
+	public static final String FIELD_PB_ACTION = "action";
+	public static final String FIELD_PB_MOOD = "mood";
+	public static final String FIELD_PB_BLURB = "blurb";
+	public static final String FIELD_PB_USER_EDITED = "userEdited";
+	public static final String FIELD_PB_CHARACTERS = "characters";
+	public static final String FIELD_PB_SCENE_NODE = "sceneNode";
+
+	public static final String FIELD_PB_GRAPH_VERSION = "graphVersion";
+	public static final String FIELD_PB_GRAPH_STATUS = "graphStatus";
+	public static final String FIELD_PB_NODE_COUNT = "nodeCount";
+	public static final String FIELD_PB_LAST_RUN = "lastRun";
+
+	public static final String FIELD_PB_WORKFLOW = "workflow";
+	public static final String FIELD_PB_HANDLE = "handle";
+	public static final String FIELD_PB_NODE_TYPE = "nodeType";
+	public static final String FIELD_PB_NODE_STATUS = "nodeStatus";
+	public static final String FIELD_PB_PINNED = "pinned";
+	public static final String FIELD_PB_ORDINAL = "ordinal";
+	public static final String FIELD_PB_SCOPE = "scope";
+	public static final String FIELD_PB_SCOPE_REF = "scopeRef";
+	public static final String FIELD_PB_PROMPT_TEMPLATE_NAME = "promptTemplateName";
+	public static final String FIELD_PB_PROMPT_TEXT = "promptText";
+	public static final String FIELD_PB_CONFIG_OVERRIDE = "configOverride";
+	public static final String FIELD_PB_INPUT_HASH = "inputHash";
+	public static final String FIELD_PB_CONFIG_HASH = "configHash";
+	public static final String FIELD_PB_LAST_ERROR = "lastError";
+	public static final String FIELD_PB_LAST_RUN_AT = "lastRunAt";
+
+	public static final String FIELD_PB_NODE = "node";
+	public static final String FIELD_PB_ROLE = "role";
+	public static final String FIELD_PB_BINDING_ORDINAL = "bindingOrdinal";
+	public static final String FIELD_PB_SOURCE_NODE = "sourceNode";
+	public static final String FIELD_PB_SOURCE_ARTIFACT = "sourceArtifact";
+	public static final String FIELD_PB_REF_MODEL = "refModel";
+	public static final String FIELD_PB_REF_OBJECT_ID = "refObjectId";
+	public static final String FIELD_PB_REF_HASH = "refHash";
+	public static final String FIELD_PB_VALUE_TEXT = "valueText";
+	public static final String FIELD_PB_VALUE_HASH = "valueHash";
+	public static final String FIELD_PB_REQUIRED = "required";
+
+	public static final String FIELD_PB_ARTIFACT_TYPE = "artifactType";
+	public static final String FIELD_PB_DATA = "data";
+	/// Named for its contents rather than 'text': the inline payload for the artifactTypes with no bytes.
+	public static final String FIELD_PB_ARTIFACT_TEXT = "artifactText";
+	public static final String FIELD_PB_PRODUCED_BY_NODE = "producedByNode";
+	public static final String FIELD_PB_REVISION = "revision";
+	public static final String FIELD_PB_SUPERSEDES = "supersedes";
+	/// Renamed from 'current'.
+	public static final String FIELD_PB_SELECTED = "selected";
+	public static final String FIELD_PB_SEED = "seed";
+	public static final String FIELD_PB_SD_CONFIG_SNAPSHOT = "sdConfigSnapshot";
+	public static final String FIELD_PB_GENERATOR_REQUEST = "generatorRequest";
+	public static final String FIELD_PB_CONTENT_HASH = "contentHash";
+	public static final String FIELD_PB_MIME_TYPE = "mimeType";
+	public static final String FIELD_PB_IMAGE_WIDTH = "imageWidth";
+	public static final String FIELD_PB_IMAGE_HEIGHT = "imageHeight";
+	public static final String FIELD_PB_BYTE_LENGTH = "byteLength";
+	public static final String FIELD_PB_BACKEND = "backend";
+	public static final String FIELD_PB_BACKEND_GRAPH = "backendGraph";
+
+	public static final String FIELD_PB_RUN_STATUS = "runStatus";
+	public static final String FIELD_PB_STARTED_AT = "startedAt";
+	public static final String FIELD_PB_COMPLETED_AT = "completedAt";
+	public static final String FIELD_PB_REQUESTED_NODE_IDS = "requestedNodeIds";
+	public static final String FIELD_PB_EXECUTED_NODE_COUNT = "executedNodeCount";
+	public static final String FIELD_PB_FAILED_NODE_COUNT = "failedNodeCount";
+	public static final String FIELD_PB_ERROR = "error";
+	public static final String FIELD_PB_CHAT_CONFIG = "chatConfig";
+
+	/// Group name hints declared on the models. These are name hints for where an instance is saved
+	/// relative to its parent - NEVER synthesize "~/" + group at a call site, which prefixes the
+	/// acting user's home onto the hint.
+	public static final String PB_GROUP_BOOK = "Book";
+	public static final String PB_GROUP_WORKFLOW = "Workflow";
+	public static final String PB_GROUP_ARTIFACTS = "Artifacts";
+
 }

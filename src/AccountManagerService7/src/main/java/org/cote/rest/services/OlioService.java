@@ -549,8 +549,12 @@ public class OlioService {
 		return Response.status(200).entity(sb.toString()).build();
 	}
 
-	/// Card game art generation — txt2img from prompt + groupPath, no pre-existing object needed
-	/// POST body: SD config JSON with additional fields: groupPath (target directory), imageName (output file name)
+	/// Card game art generation — txt2img from prompt + imagePath, no pre-existing object needed
+	/// POST body: SD config JSON with additional fields: imagePath (target directory), imageName (output file name)
+	/// NOTE: imagePath was named groupPath until 2026-08-14. It was renamed on olio.sd.config because that
+	/// name collides with the framework groupPath from common.groupExt ('where the record lives' vs 'where
+	/// the output goes'). This read is the ONLY server-side consumer of the field; reimageWithConfig
+	/// deliberately derives its own path from the source data record instead.
 	@RolesAllowed({"user"})
 	@POST
 	@Path("/generateArt")
@@ -569,12 +573,12 @@ public class OlioService {
 			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
 		}
 
-		String groupPath = imp.get("groupPath");
+		String imagePath = imp.get("imagePath");
 		String imageName = imp.get("imageName");
-		logger.info("generateArt: groupPath=" + groupPath + " imageName=" + imageName + " description=" + imp.get("description"));
-		if(groupPath == null || groupPath.isEmpty()) {
-			logger.error("generateArt: groupPath is required");
-			return Response.status(400).entity("{\"error\":\"groupPath is required\"}").build();
+		logger.info("generateArt: imagePath=" + imagePath + " imageName=" + imageName + " description=" + imp.get("description"));
+		if(imagePath == null || imagePath.isEmpty()) {
+			logger.error("generateArt: imagePath is required");
+			return Response.status(400).entity("{\"error\":\"imagePath is required\"}").build();
 		}
 		if(imageName == null || imageName.isEmpty()) {
 			imageName = "card-art-" + System.currentTimeMillis() + ".png";
@@ -584,7 +588,7 @@ public class OlioService {
 			SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server")));
 			sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 
-			List<BaseRecord> images = sdu.createImage(user, groupPath, imp, imageName, 1, imp.get("hires"), imp.get("seed"));
+			List<BaseRecord> images = sdu.createImage(user, imagePath, imp, imageName, 1, imp.get("hires"), imp.get("seed"));
 			if(images.size() > 0) {
 				return Response.status(200).entity(images.get(0).toFullString()).build();
 			}

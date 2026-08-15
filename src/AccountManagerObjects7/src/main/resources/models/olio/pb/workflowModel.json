@@ -1,0 +1,50 @@
+{
+	"name": "olio.pb.workflow",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "account_tree",
+	"label": "Workflow",
+	"group": "Workflow",
+	"constraints": ["book, organizationId", "name, groupId, organizationId"],
+	"description": "The node graph for one picture book - exactly one per book, which the unique (book, organizationId) constraint enforces. There is deliberately no 'nodes' foreign list: nodes reference the workflow instead, so no caller depends on an unpopulated foreign list. NOTE the mutual reference workflow.lastRun -> olio.pb.run.workflow -> olio.pb.workflow: QueryPlan.checkRecursion only catches an immediate parent/child match, so planMost(true) recurses on this two-hop cycle. Use planCommon or an explicit QueryPlan on this model and on olio.pb.run.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "book",
+			"baseModel": "olio.pb.book",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "graphVersion",
+			"type": "int",
+			"description": "Bumped when the graph topology changes."
+		},
+		{
+			"name": "graphStatus",
+			"baseClass": "org.cote.accountmanager.schema.type.PbGraphStatusEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "nodeCount",
+			"type": "int"
+		},
+		{
+			"name": "lastRun",
+			"baseModel": "olio.pb.run",
+			"type": "model",
+			"foreign": true,
+			"description": "The most recent run. Half of the workflow <-> run cycle described on this model; captured deliberately rather than reshaped, and DDL-neutral to break later (a long emits the same bigint column)."
+		}
+	]
+}
