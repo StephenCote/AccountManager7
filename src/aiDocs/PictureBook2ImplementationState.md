@@ -1,9 +1,10 @@
 # PictureBook 2.0 — Implementation State
 
-**As of:** 2026-08-14 · **Pause point:** all in-flight work complete; nothing half-applied. Nothing committed.
-**Next up:** Phase 2c (the utilities — `PbConfigUtil`, `PbWatchedFields`, `PbGraphUtil`, `PbArtifactUtil`,
-`PbBookUtil`, `PbSharingUtil`). **Read §3's Phase 2b entry first — it lists four traps 2c's create paths
-must handle, one of which silently writes a null name.**
+**As of:** 2026-08-16 · **Pause point:** all in-flight work complete; nothing half-applied. Nothing committed.
+**Next up:** Phase 3 (wire the pipeline to the graph behind `picturebook.v2`). **Read §3's Phase 2c entry
+first — it records five defects found by running the phase-2c tests, three of them pre-existing platform
+behaviour, and one of those (`AccessPoint.list` is not a per-record authorization boundary) needs
+Stephen's disposition before phase 4 exposes any list endpoint over the `olio.pb.*` models.**
 **Design of record:** `PictureBook2Plan.md` — read **Appendix D** first (as-built + every ratified
 decision), then Appendix C, then the body. Where the body and Appendix D disagree, **Appendix D wins**.
 
@@ -22,7 +23,7 @@ decision), then Appendix C, then the body. Where the body and Appendix D disagre
 | Phase 2 — plan + 2 design-review rounds | **DONE** | — |
 | **Phase 2a — two-tier role split + recursive world grant** | **DONE** | 21 + 83 green |
 | **Phase 2b — the eight `olio.pb.*` models, registered + verified** | **DONE** | 13 + 113 green |
-| Phase 2c — utilities | **NOT STARTED** | — |
+| **Phase 2c — the six utilities + graph/security tests** | **DONE** | 15 + 10 green |
 | Phase 3 / 4 | **NOT STARTED** | — |
 | Phase 5 (Ux) / 6 (migration) | out of scope this run | — |
 
@@ -48,6 +49,12 @@ TestPictureBookSceneAuthz      7    scene->book authorization, cancel-registry o
 TestPathUtilBehavior          15    path characterization  (14 pass, 1 RED — §4)
 TestPathUtilKi60Watch          1    the KI-60 diagnostic marker fires
 TestPbModelSchema             13    phase 2b: the eight olio.pb.* models, tables, pg_indexes, round trip
+TestPbGraph                   15    phase 2c: cycle refusal, propagation, hashing (golden vector +
+                                    Turkish locale), artifact revisions/selection, sanitization,
+                                    PATCH shape, planMost termination over the workflow<->run cycle
+TestPbSecurity                10    phase 2c: the Objects7-level isolation properties, the two-tier
+                                    membership rule, the fresh-org create ordering, and the ratified
+                                    ROLE-HIERARCHY DIRECTION test
 ```
 
 **Running them — three traps that will waste your time:**
@@ -311,6 +318,110 @@ table was touched. Verified after: the table has `artifacttext` and no `text`.
 understood, were deleted** from `A7_olio_pb_book_0_1` (ids 1 and 3). Nothing else in `am7db` was
 deleted, dropped or reset; all other DDL was additive.
 
+### Phase 2c — the six utilities, and five defects found by running them
+
+**New (Objects7 main), all in `olio/picturebook/`:** `PbConfigUtil` (sparse override, the §2.4
+four-tier precedence merge, `configHash`, and the locale-free hashing primitives every PB2 hash
+shares), `PbWatchedFields` (the declared watched field sets + `refHash`), `PbGraphUtil` (build /
+`validateAcyclic` / `computeInputHash` / `markStaleDownstream` / `recomputeStatus` **compute-only** /
+`nextRunnable` / runs), `PbArtifactUtil` (persist, supersede chain, `setSelected` with a post-write
+re-read, structural request sanitization), `PbBookUtil` (ratification-7 create ordering, scenes,
+reorder-by-N-patches), `PbSharingUtil` (two-tier membership, promote/copy).
+**New (Objects7 test):** `objects/tests/TestPbGraph.java`, `objects/tests/TestPbSecurity.java`.
+**Modified (docs, deliberately):** `.claude/rules/model-api.md` — see defects 1 and 2 below.
+
+**Verified 2026-08-16 against `am7db` (`localhost:15432/am7db`, read from `resource.properties:9`),
+no reset:** `TestPbGraph` **15/15**, `TestPbSecurity` **10/10**. The 113-test non-regression gate was
+re-run (result recorded in §1). Nothing in this phase changed a model JSON, so no DDL was emitted.
+
+**Two answers the phase was required to produce, both now in Appendix D:**
+- **Role-hierarchy direction (ratified, §5.3 verification test 1, §10 Q10):** grant on **PARENT** +
+  member of **CHILD** → **DENIED**; grant on **CHILD** + member of **PARENT** → **PERMITTED**.
+  Membership flows *down* the role tree, grants do not flow *up*. Usable optimisation is therefore
+  **enrol high, grant low**; the intuitive inverse silently denies.
+- **`olio.sd.config` persistence timing (§6c S2-S6):** the **serialized shape stands**, not scheduled
+  ahead of phase 3 — with a correction to §6c.5's cost claim (S6's migration surface is two columns per
+  *book*, not per artifact, because §6c.3.3 keeps `sdConfigSnapshot` serialized permanently).
+
+**Five defects found by running the tests. Two were mine; three are pre-existing platform behaviour.**
+
+1. **MINE — a patch built with `RecordFactory.newInstance(model)` overwrites EVERY field.** The bare
+   overload materialises every field of the model at its default, and the writer persists everything
+   present on the record. Measured: an `olio.pb.book` patch that set only `world` blanked `slug` and
+   `description` and reset `bookStatus` to `UNKNOWN`. **`update` returned success**; the damage surfaced
+   only as a later `find` on `slug` returning nothing. Fixed by taking the changed field names and using
+   `newInstance(model, String[])`. **`model-api.md`'s own PATCH example was the bare form** — corrected
+   there, because that example is where the mistake came from.
+2. **MINE — a query condition on a `foreign` `model` field takes the RECORD, not its id.**
+   `Query.field` routes the value through `FieldUtil.setFlex`, which calls `setModel()` for a
+   `MODEL`-typed field, so a `Long` is rejected, the condition silently becomes `<field> = null`, and
+   nothing is logged at the call site (`StatementUtil.java:1367` casts the value to `BaseRecord` and
+   reads its id itself). Five queries were affected. `model-api.md`'s "Typed query field values" section
+   named only `organizationId`/`groupId`; it now states the general rule and this case.
+3. **PLATFORM — `AccessPoint.list` is NOT a per-record authorization boundary, and §9's org-wide-list
+   assertion is false today.** `find` authorizes the query shape *and then* runs `canRead` on the result
+   (`AccessPoint.java:513-517`); `list` (`:623-636`) authorizes the shape and returns whatever `search`
+   returned, unfiltered. Measured with two users in one organization: a by-objectId read of another
+   user's node is `AUDIT DENY`, while an org-wide list with an explicit numeric `organizationId`
+   condition returns it (`AUDIT PERMIT`). **Pre-existing and general to every group-scoped model, not
+   introduced here** — but PB2 raises the stakes, because a book's whole graph becomes listable by any
+   authenticated user in the organization. Pinned as a labelled characterization
+   (`TestPbSecurity#case02_theListPathIsNotASecurityBoundary_MEASURED_DEFECT`) rather than deleted or
+   left red, the same way `TestSdConfigFieldsAreSerializedNotForeign` pins a known-wrong shape.
+   ⇒ **Phase 4 must not expose a list endpoint over the `olio.pb.*` models until this is resolved** —
+   either by constraining on `groupId` / filtering per record in the REST layer, or by fixing
+   `AccessPoint.list`. **Needs Stephen's disposition.**
+4. **PLATFORM — `planMost(true)` on `olio.pb.workflow`/`olio.pb.run` TERMINATES, but the read returns
+   nothing.** Ratification 1's requirement is satisfied: plan construction over the two-hop
+   `workflow.lastRun ↔ run.workflow` cycle completes (measured with `lastRun` actually populated, under
+   a hard time bound on another thread, so a non-terminating plan could not hang the build). The read
+   then fails for an unrelated reason: the plan lists the foreign `book` field while the generated SELECT
+   does not emit that column, so the reader throws `PSQLException: The column name book was not found in
+   this ResultSet` and `find` reports "No results". ⇒ **the generic
+   `GET /rest/model/{type}/{objectId}/full` route would return nothing for these models** — a safer
+   failure than unbounded recursion, and the reason every PB2 utility uses an explicit `setRequest`.
+   Pinned by `TestPbGraph#case01`, with a positive control proving the explicit projection does work.
+5. **PLATFORM — `RecordFactory` cannot instantiate any model under a Turkish default locale, and the
+   failure is cached.** `getBaseModel` upper-cases a field's declared type with the *default* locale, so
+   `"string"` becomes `STR<dotted-I>NG`, `FieldEnumType.valueOf` throws, the model is built broken, and
+   the broken result is cached in `looseBaseModels` for the rest of the JVM — poisoning unrelated tests.
+   Found while writing the ratified Turkish-locale case (which now hashes an already-built canonical
+   string instead of re-deriving it). **Not fixed: it is not PB2 code**, and the fix is a `Locale.ROOT`
+   argument. Worth logging as its own KI.
+
+**Two measured facts phase 4 needs:**
+- **The book `Writer` role alone cannot enrol another user.** `OlioContext.register`'s authorizing role
+  is the **Admin** tier, so `PbSharingUtil.shareBook` by a mere Writer is refused (403). Since nothing
+  auto-enrols into Admin (Appendix D precondition 1), phase 4's member flow needs the org admin or an
+  explicit Admin grant — or `registerUser`'s authorizing set has to be widened deliberately.
+  `TestPbSecurity#case05` asserts whichever way it behaves and logs which.
+- **The ratification-7 create ordering works in an organization with no Olio history.** `createBook`
+  writes the book row before the world, which pre-creates the
+  `/Olio/Universes/Books/Worlds/{slug}/Book` group skeleton ahead of the universe and world *records*;
+  `makePath` is get-or-create, so the subsequent universe/world creation adopts those groups. Measured in
+  a randomly-named virgin organization (`TestPbSecurity#case09`), including the duplicate-slug refusal
+  and writes into the `Workflow`/`Artifacts` groups the skeleton did not include.
+
+**One deviation from §2.2, forced by ratification 7.** §2.2 says the book lives in `{world}/Book`, and
+it does — but that group is created by `BookWorldInitializationRule` *during* `initialize()`, while
+ratification 7 requires the row *before* the world. Reconciled by `makePath`-ing `{container}/Book`
+directly (olio-user-owned, get-or-create — the rule then adopts it). **The alternative was rejected on
+isolation grounds:** the universe's own `Book` group (where `olio.pb.series` lives) is a child of the
+universe container, so `resolveGrantTargets` grants Read on it to the shared organization-wide universe
+`Reader` role — and every book creator is a member of that role, so every book in the organization would
+become listable by every other book's creator.
+
+**One row deleted from `am7db`:** `A7_olio_pb_book_0_1` id 28, created minutes earlier by this same work
+and corrupted by defect 1 (null `slug`, blanked `description`, `bookStatus` reset). It blocked the test
+fixture. Nothing else was deleted, dropped or reset, and no DDL was executed in this phase.
+
+**Not verified in phase 2c:** no LLM or SD service was called, no image was generated, no REST endpoint
+was exercised, and the Docker stack was not rebuilt or started — phase 2c is Objects7-only and talks to
+`am7db` directly. `PbSharingUtil.promoteToUniverse` / `copyToChapter` are **covered only by the
+authorization refusals in `TestPbSecurity`**; their copy semantics (the seven foreign sub-records per
+character, §3.5) are not exercised, because the per-model sub-record routing lands in phase 3 with the
+pipeline that knows which groups those are. Said plainly rather than implied by a green suite.
+
 ### DAL — index generation
 `generateIndices` is now recalled on the **schema-patch** path, not only at CREATE TABLE, with
 `CREATE [UNIQUE] INDEX IF NOT EXISTS` and per-statement error-log-and-continue. Indexability is keyed off
@@ -437,6 +548,15 @@ constants + registration in `MODELS`), `olio/schema/OlioFieldNames.java` (the `F
 and the three group-name constants), `olio/sd/SDAPIEnumType.java` (`COMFY`, one value, no behaviour).
 **New in phase 2b (Objects7 test):** `objects/tests/TestPbModelSchema.java`.
 
+**New in phase 2c (Objects7 main):** six utilities under `olio/picturebook/` — `PbConfigUtil.java`,
+`PbWatchedFields.java`, `PbGraphUtil.java`, `PbArtifactUtil.java`, `PbBookUtil.java`,
+`PbSharingUtil.java`. No model JSON, constant or enum changed, so phase 2c emitted **no DDL**.
+**New in phase 2c (Objects7 test):** `objects/tests/TestPbGraph.java`, `objects/tests/TestPbSecurity.java`.
+**Modified in phase 2c (docs):** `.claude/rules/model-api.md` — the PATCH example was itself the bare
+`newInstance(model)` form that caused defect 1, and the typed-query-field section named only the two id
+fields; both corrected, plus a new section stating that `AccessPoint.list` is not a per-record
+authorization boundary.
+
 **Modified (Objects7 main):** `factory/Factory.java`, `io/IOSystem.java`, `io/db/DBUtil.java`,
 `olio/AddressUtil.java`, `olio/CharacterUtil.java`, `olio/ColorUtil.java`, `olio/Decks.java`,
 `olio/GeoLocationUtil.java`, `olio/OlioContext.java`, `olio/OlioContextConfiguration.java`,
@@ -541,30 +661,26 @@ characterization), `aiDocs/CanvasLibraryResearchPrompt.md` (new), this file.
    and all their indexes landed on the first JUnit run, and the two corrections that *were* needed
    (`name`/`urn` in the `query` array) were found by a round-trip test, which a DDL pre-flight would not
    have caught.
-3. **Phase 2c — the utilities. THIS IS NEXT.** `PbConfigUtil`, `PbWatchedFields`, `PbGraphUtil` (build /
-   `validateAcyclic` / `computeInputHash` / `markStaleDownstream` / `recomputeStatus` — **compute-only**,
-   ratification 2 / `nextRunnable`), `PbArtifactUtil` (persist + sanitize + supersede chain +
-   `setSelected` with a post-write re-read), `PbBookUtil`, `PbSharingUtil`.
-   **Four traps from 2b that the create paths must handle — two are silent, all four are in §3:**
-   (a) `applyNameGroupOwnership` does **not** set `name` on these models — set the derived name
-   explicitly; (b) a null `name` defeats the unique `(name, groupId, organizationId)` constraint, which
-   is ratification 8's urn-collision guard, so the derived names are load-bearing (**artifact names must
-   include `revision`**, run names their instant); (c) `name`/`urn` are in the `query` projection but
-   nothing else is — non-query fields need an explicit `request`; (d) `computeInputHash` must name
-   SHA-256 at the call site and encode explicit UTF-8 (`CryptoUtil.defaultHashAlgorithm` is a mutable
-   static currently on SHA-512 and `getDigestAsString` uses the platform charset — Appendix D).
-   Use the ratified field names: `sceneIndex`, `selected`, **`artifactText`**.
-4. **Phase 2 tests** — `TestPbGraph` (including the `planMost(true)`-terminates case for the
-   `workflow.lastRun` ↔ `run.workflow` cycle — 2b asserted the cycle **exists** and is bigint-symmetrical,
-   not that a plan terminates), `TestPbSecurity`, and the **role-hierarchy direction test**
-   (approved: grant to a parent role, enrol in the child only, assert whether `AccessPoint` permits;
-   record the result in Appendix D — §10 Q10 depends on it).
-5. **Decide `olio.sd.config` persistence timing — this competes with 3 and 4 for position.**
-   Plan §6c, S1 **done**. **S6 (PB2 config fields → foreign references) is the one non-DDL-neutral step,
-   and it is cheap now while those columns are new and empty and expensive once phase 3 starts writing
-   artifacts.** So either do S2-S6 before phase 3, or accept the serialized shape for the foreseeable
-   future and say so. Not a decision to leave implicit.
-6. **Phase 3** — pipeline to graph behind `picturebook.v2`. **No longer blocked on service reachability**
+3. ~~**Phase 2c — the utilities.**~~ **DONE 2026-08-16** — see §3. All four 2b create-path traps are
+   handled (derived names set explicitly everywhere; artifact names carry `revision`, run names their
+   instant; explicit `request` projections throughout). Running it found five defects, two of them mine
+   (a full-instance patch overwriting every field; a foreign-field condition passed as an id) and three
+   pre-existing platform ones.
+4. ~~**Phase 2 tests**~~ **DONE 2026-08-16** — `TestPbGraph` 15/15 (including the `planMost(true)`
+   termination case for the `workflow.lastRun` ↔ `run.workflow` cycle, with `lastRun` actually populated),
+   `TestPbSecurity` 10/10, and the **role-hierarchy direction test run with its result recorded in
+   Appendix D**: membership flows DOWN the role tree, grants do not flow UP.
+5. ~~**Decide `olio.sd.config` persistence timing.**~~ **DECIDED 2026-08-16: the serialized shape
+   stands**, S2-S6 not scheduled ahead of phase 3 — recorded in Appendix D with a correction to §6c.5's
+   cost claim. `PbConfigUtil.bookConfig()` is the single seam S6 would have to move.
+
+**NEW, needs Stephen's decision before phase 4:** `AccessPoint.list` performs **no per-record
+authorization** — an org-wide list with an explicit numeric `organizationId` returns another user's
+group-scoped records, while the by-identity read of the same record is correctly denied (§3, defect 3).
+Pre-existing and general, but PB2 makes a whole book graph listable. Either constrain on `groupId` /
+filter per record in the REST layer, or fix `AccessPoint.list`.
+
+6. **Phase 3 — THIS IS NEXT.** Pipeline to graph behind `picturebook.v2`. **No longer blocked on service reachability**
    (§6: Swarm, ollama, embedding and TTS all measured up) — but settle the one-line
    `test.llm.ollama.server` question in §6 first, or it silently runs on the wrong box.
 7. **Phase 4** — remaining REST endpoints (the two auth fixes are already hoisted out). **First REST or

@@ -2888,6 +2888,71 @@ building a parallel accessibility tree.
 3.0.0, last published roughly five years ago. Mature and stable, but that is why it is the runner-up
 rather than the pick.
 
+### Role-hierarchy inheritance direction — MEASURED 2026-08-16 (closes §5.3 verification test 1)
+
+Ratified for phase 2 and run in `TestPbSecurity#case08_roleHierarchyInheritanceDirection`, against
+`am7db`. Both directions were measured, because "does hierarchy work at all" and "which way does it
+flow" are different questions and only the pair is actionable:
+
+```
+grant on PARENT role + member of CHILD role only  -> AccessPoint permits = false
+grant on CHILD  role + member of PARENT role only -> AccessPoint permits = true
+```
+
+**So membership flows DOWN the role tree; grants do not flow UP it.** The mechanism, read out of the
+SQL rather than inferred: `effectiveActorRoleTemplate.sql` emits `roles_to_leaf(membershipRole).leafid`
+as `effectiveRoleId`, `effectiveRoleTemplate.sql` emits the leaf that actually *holds* the grant as its
+`effectiveRoleId`, and `effectiveGroupObjectEntitlementTemplate.sql` joins the two on
+`effectiveRoleId`. A member of P is therefore effective in P and all its descendants, so it picks up a
+grant held by a descendant — and never one held by an ancestor.
+`MemberUtil.isMember(..., browseHierarchy=true)` walks the role's `parentId` chain in the same
+direction, and `AuthorizationUtil.checkEntitlement` uses it, so the two paths agree.
+
+**Construction that makes this evidence rather than coincidence:** the scratch group and the record in
+it are owned by the olio principal and the record is written with `RecordUtil.createRecord` (no PBAC),
+so the probing user's only possible route is the role entitlement — not ownership. Two independent role
+trees are used so one leg's grant cannot satisfy the other. A control asserts the grant actually landed
+on the role it was granted to (`checkEntitlement(grantTo, Read, group)`), so a `false` cannot be a
+failed `setEntitlement`. `CacheUtil.clearCache()` runs before each probe.
+
+**Consequence for §10 Q10** (already withdrawn as a blocking question; this closes the residual): the
+usable optimisation is **enrol high, grant low** — one parent role per user with per-book child roles
+that are each granted individually. The intuitive inverse (grant once on a shared parent, enrol users
+in per-book children) does **not** work and would produce silent denials. Nothing in phase 2a/2c
+depends on either, because both tiers are granted explicitly.
+**§5.3's SUSPECTED DEFECT about ISO42001's role-to-role wiring is neither confirmed nor refuted here** —
+that wiring was not exercised; only the platform direction was.
+
+### `olio.sd.config` persistence timing (§6c S2-S6) — DECIDED 2026-08-16: the serialized shape STANDS
+
+State-doc §7 item 5 required this to be settled before `PbConfigUtil` was written rather than left
+implicit. **Decision: S2-S6 are NOT scheduled ahead of phase 3. `book.sdConfig`,
+`book.compositeSdConfig` and `artifact.sdConfigSnapshot` stay serialized `text` for the foreseeable
+future.** Stephen's call to overturn; the reasons:
+
+1. **§6c.5's cost argument overstates S6, and the correction matters.** It says S6 is "cheap now (the
+   columns are new and empty) and expensive later (once real books carry serialized configs)". But
+   §6c.3.3 keeps `artifact.sdConfigSnapshot` serialized *permanently* — a snapshot must freeze, and a
+   shared foreign row would let a later config edit rewrite history for every past artifact. So S6
+   touches **`book.sdConfig` and `book.compositeSdConfig` only: two columns on one row per book.**
+   Phase 3 writing artifacts at volume does not grow S6's migration surface at all. The
+   "expensive later" framing assumed it did.
+2. **S6 cannot land alone, and its prerequisite is an undecided PBAC question.** S6 needs S2 (make the
+   model persistable) and S3 (`SdConfigUtil`), and S2 needs **§6c.3.4** answered — where config records
+   live and who may read them, including whether a shared library group is created and by whom (the
+   read-path-that-creates trap). Doing S2 now means making that call under time pressure from a DDL
+   argument, which is the wrong reason to decide a grant surface.
+3. **The DDL is not a one-way door on this database.** `am7db` and `am7test` may be reset (Stephen,
+   2026-08-14), and the standing guidance is explicitly not to plan around irreversibility here.
+4. **The decision cannot be lost silently.** `TestPbModelSchema#TestSdConfigFieldsAreSerializedNotForeign`
+   fails the day `olio.sd.config` becomes persistable, forcing the question back open deliberately.
+
+**What phase 2c did to keep the swap cheap:** every read of a book's config tier goes through the single
+accessor `PbConfigUtil.bookConfig(book, composite)`, and `PbConfigUtil.requestFields()` names the
+projection a caller needs. S6 then changes one method body rather than every call site.
+**Unchanged either way:** `configOverride` stays a sparse JSON string (§6c.3.2) — with 30 of 80 fields
+defaulted, a record cannot express "only these three were set".
+
 ### Runtime verification scope (corrected)
 
 `verifyGrants` as first implemented checked the **world tier only** (`ctx.getWorld()` /

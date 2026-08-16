@@ -138,14 +138,25 @@ For small updates use PATCH instead of a full record PUT/update. A patch include
 plus only the changed fields. This is also the safest way to update a record that references a
 groupless model (avoids re-persisting a full `planMost` graph that would demand extra role grants).
 
-**Java:**
+**Java — use the field-name overload of `newInstance`, NOT the bare one:**
 ```java
-BaseRecord patch = RecordFactory.newInstance(existing.getSchema());
+// RIGHT: materialises ONLY these fields
+BaseRecord patch = RecordFactory.newInstance(existing.getSchema(),
+    new String[] {"id", "objectId", "name", "description"});
 patch.set("id", existing.get("id"));            // identity (required)
 patch.set("objectId", existing.get("objectId"));// identity (required)
-patch.set("description", "New description");     // changed field
+patch.set("name", existing.get("name"));        // validated field (see below)
+patch.set("description", "New description");    // changed field
 accessPoint.update(user, patch);
 ```
+
+> **`RecordFactory.newInstance(model)` — the bare overload — materialises EVERY field of the model at
+> its default value, and the writer persists every field present on the record it is handed. So a
+> "patch" built that way silently overwrites every field the caller did not set.** Measured on `am7db`
+> 2026-08-15: an `olio.pb.book` patch that set only `world` blanked `slug` and `description` and reset
+> `bookStatus` to `UNKNOWN`. Nothing failed — `update` returned success — and the damage surfaced only
+> as a later `find` on `slug` that returned nothing. **Always pass the explicit field-name array**
+> (`newInstance(model, String[])`), or build the patch with `existing.copyRecord(fields)`.
 
 **REST:** `PATCH /rest/model`
 ```json
@@ -189,8 +200,39 @@ BaseRecord person = IOSystem.getActiveContext().getSearch().findRecord(q);
   minimal projection) and need full data. It builds a query from the record's id/objectId/urn,
   applies `OlioUtil.planMost(query)`, and returns a new fully-populated record.
 
-## Typed query field values (reminder)
+## Typed query field values
 
-`organizationId`/`groupId` are `long` — send **numbers**, not strings (`{value: 2}` not
-`{value: "2"}`) or the condition silently matches nothing. `/rest/model/search` is cached by query
-key — set `cache:false` for views that must see just-created/edited/deleted records.
+**The rule is general: a query condition's value must match the field's `FieldEnumType`, or the
+condition silently becomes `<field> = null` and matches nothing.** `Query.field()` routes the value
+through `FieldUtil.setFlex(record, name, type, value)`, which dispatches on the *schema's* type for
+that field; a mismatch is caught and logged inside `FieldUtil` and the call site sees nothing.
+
+- `organizationId` / `groupId` are `long` — send **numbers**, not strings (`{value: 2}` not
+  `{value: "2"}`).
+- **A `foreign` `model` field takes the RECORD, not its id.** `setFlex` calls `setModel()` for a
+  `MODEL`-typed field, so a `Long` is rejected; `StatementUtil` (`:1367`) casts the value to
+  `BaseRecord` and reads its `id` itself. So query by record:
+  ```java
+  // WRONG — condition becomes "workflow = null", matches nothing, logs nothing here
+  QueryUtil.createQuery("olio.pb.node", "workflow", workflow.get(FieldNames.FIELD_ID));
+  // RIGHT
+  QueryUtil.createQuery("olio.pb.node", "workflow", workflow);
+  ```
+  The audit line is the tell: `(workflow = null && organizationId = 7) … No results` versus
+  `(workflow = {schema:"olio.pb.workflow",id:1,…} && organizationId = 7)`.
+
+`/rest/model/search` is cached by query key — set `cache:false` for views that must see
+just-created/edited/deleted records.
+
+## `AccessPoint.list` is NOT a per-record authorization boundary
+
+`AccessPoint.find` authorizes the query shape **and then** runs `AuthorizationUtil.canRead` on the
+result before returning it (`AccessPoint.java:513-517`). `AccessPoint.list` (`:623-636`) authorizes
+the query shape via `authorizeQuery` and returns whatever `search` returned, **with no per-record
+filtering**. Measured on `am7db` 2026-08-16 with two users in one organization: a by-objectId read of
+another user's group-scoped record is correctly `AUDIT DENY`, while an org-wide list with an explicit
+numeric `organizationId` condition returns it (`AUDIT PERMIT`).
+
+⇒ An explicit `organizationId` condition satisfies PBAC's *query* requirement; it is not a tenancy or
+compartment filter. Any endpoint that lists group-scoped records must constrain by `groupId` (or filter
+per record itself) rather than relying on `list` to do it.
