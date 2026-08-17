@@ -1,10 +1,12 @@
 # PictureBook 2.0 — Implementation State
 
-**As of:** 2026-08-16 · **Pause point:** all in-flight work complete; nothing half-applied. Nothing committed.
-**Next up:** Phase 3 (wire the pipeline to the graph behind `picturebook.v2`). **Read §3's Phase 2c entry
-first — it records five defects found by running the phase-2c tests, three of them pre-existing platform
-behaviour, and one of those (`AccessPoint.list` is not a per-record authorization boundary) needs
-Stephen's disposition before phase 4 exposes any list endpoint over the `olio.pb.*` models.**
+**As of:** 2026-08-17 · **Pause point:** phase-3 code complete and compiling; live level-1 and level-2
+verification green; **the flag-off non-regression gate and the 113-test gate had not finished at the time of
+writing** (see the Phase 3 entry in §3). Nothing committed.
+**Next up:** finish those two gates, then Phase 4 (REST). **Read §3's Phase 3 entry first**, then Phase 2c's.
+The `AccessPoint.list` question that gated phase 4 is **DISPOSED** (2026-08-17) — constrain at the Objects7
+utility layer, `AccessPoint.list` unchanged, logged as **KI-67**; the phase-4 constraints it implies are
+recorded there and in `PictureBook2Plan.md` Appendix D.
 **Design of record:** `PictureBook2Plan.md` — read **Appendix D** first (as-built + every ratified
 decision), then Appendix C, then the body. Where the body and Appendix D disagree, **Appendix D wins**.
 
@@ -24,7 +26,8 @@ decision), then Appendix C, then the body. Where the body and Appendix D disagre
 | **Phase 2a — two-tier role split + recursive world grant** | **DONE** | 21 + 83 green |
 | **Phase 2b — the eight `olio.pb.*` models, registered + verified** | **DONE** | 13 + 113 green |
 | **Phase 2c — the six utilities + graph/security tests** | **DONE** | 15 + 10 green |
-| Phase 3 / 4 | **NOT STARTED** | — |
+| **Phase 3 — pipeline wired to the graph behind `picturebook.v2`** | **DONE, partially verified** | 25 green (2c) + 2 green (live level 1 + level 2); flag-off gate + 113-gate pending |
+| Phase 4 | **NOT STARTED** | — |
 | Phase 5 (Ux) / 6 (migration) | out of scope this run | — |
 
 **One test is RED, deliberately.** See §4. Everything else passes.
@@ -55,6 +58,13 @@ TestPbGraph                   15    phase 2c: cycle refusal, propagation, hashin
 TestPbSecurity                10    phase 2c: the Objects7-level isolation properties, the two-tier
                                     membership rule, the fresh-org create ordering, and the ratified
                                     ROLE-HIERARCHY DIRECTION test
+TestPictureBookWorkflow        2    phase 3, LIVE Swarm+LLM, flag ON, single-threaded: level-1
+                                    structural + level-2 differential (KI-59). NOT excluded in the pom.
+                                    ~180s and ~310s respectively - two/three FLUX.2 composites.
+TestPictureBookCustom          1    the phase-3+ NON-REGRESSION GATE, run with the flag OFF and
+                                    NEVER EDITED. Its pom <exclude> is already inside a <!-- --> block,
+                                    so it needs no pom change - do not comment it again (that makes a
+                                    nested XML comment and the POM stops parsing).
 ```
 
 **Running them — three traps that will waste your time:**
@@ -422,6 +432,246 @@ authorization refusals in `TestPbSecurity`**; their copy semantics (the seven fo
 character, §3.5) are not exercised, because the per-model sub-record routing lands in phase 3 with the
 pipeline that knows which groups those are. Said plainly rather than implied by a green suite.
 
+### Phase 3 — the pipeline wired to the graph behind `picturebook.v2`
+
+**Three pre-work items, settled first, none deferred.**
+
+**1. `test.llm.ollama.server` — REPOINTED to `http://192.168.1.42:11434`** (`resource.properties:51`).
+Confirmed by Stephen 2026-08-17: *"Use .42 for llm; .39/localhost is running this session and swarm"* and
+*"And .42 for embeding"* (`test.embedding.server` was already `.42:8123` — no change needed).
+**Safe swap, measured rather than assumed:** `/api/tags` on both hosts lists `qwen3:8b` at the **identical
+digest** `500a1f067a9f`, so nothing breaks. Note `way-local:latest` does **not** match across the two
+(local `2a206f419e0a` vs `.42` `0b9f7fe5fd0e`) — do not generalise the identical-digest result.
+**Two consequences that must be stated, because the one-line fix does not cover them:**
+- **Persisted connections are unaffected.** A chat config is get-or-create by name and carries an
+  `system.connection` record created with whatever URL was current then. Counted on `am7db`:
+  **48 rows at `http://localhost:11434`, 4 at `http://192.168.1.42:11434`.** The property change affects
+  only *newly created* connections; the 48 keep pointing at the local box.
+- **The gate test was already correct by accident.** `TestPictureBookCustom`'s own connection
+  (`PictureBook gpt-oss:120b 4.chat Connection`, id 10) already reads `192.168.1.42:11434` — created when
+  the property held `.42`. And `gpt-oss:120b` exists **only** on `.42`. So the misconfiguration was
+  invisible precisely because the tests that used `qwen3:8b` (present on both) silently ran on the wrong
+  hardware and passed, exactly as §6 predicted.
+- Found in passing, not fixed: `PictureBook KI qwen3:8b.chat Connection` exists **14+ times** in
+  `a7_system_connection_0_1`. A get-or-create is producing duplicates. Not this phase's scope.
+
+**2. The stack was rebuilt and verified, not assumed.** `mvn -o -pl AccountManagerObjects7 install` →
+BUILD SUCCESS; `mvn -o -pl AccountManagerService7 package` → BUILD SUCCESS; then
+`docker compose -p am7test -f docker-compose.test.yml up --build -d`. Image `am7:latest` rebuilt
+(created `2026-08-16T17:00:46Z`), container `am7test-am7-1` **recreated** from it (`StartedAt`
+`2026-08-16T17:00:57Z`, running). Probed from the build host:
+`GET /AccountManagerService7/rest/setup/state` **200**, `GET .../rest/schema` **200** (293,572 bytes).
+**The WAR genuinely serves this work**, which is the claim that matters: the schema JSON contains all
+eight `olio.pb.*` models (`book`, `series`, `scene`, `workflow`, `node`, `binding`, `artifact`, `run`),
+the phase-2b rename **`artifactText`**, and the §6c-S1 rename **`imagePath`**. Windows `curl -k` worked
+here despite §6's HTTP-000 caveat.
+Services re-probed the same day: Swarm `localhost:7801` **302** and `192.168.1.39:7801` **302**; ollama
+`.42:11434/api/tags` **200**; embedding `.42:8123/docs` **200**; TTS `.42:8001` **200**; ComfyUI **0.32.0**
+via `localhost:7801/ComfyBackendDirect/system_stats` **200** and `localhost:7821` **200**.
+
+**3. `AccessPoint.list` — DISPOSED for PB2; whether to fix `list` itself is REOPENED.** Constrain at the
+Objects7 utility layer so phase 3/4 are unblocked; `AccessPoint.list` not changed in this phase. Reasoning
+in `PictureBook2Plan.md` Appendix D, logged as **KI-67**. What stands: the behaviour is deliberate and
+documented in place (`AccessPoint.java:600-605` is the AM5/AM6 design note — `list` authorizes a *query
+shape*), and PB2 already has the correct shape, since every PB2 list is reached from an authorized `find`
+of the book (§5.6b's root-reference principle).
+**What does NOT stand — my error, corrected by Stephen the same day.** I argued that fixing `list` means an
+`AuthorizationUtil.canRead` evaluation **per row**, and made that the load-bearing reason. It is wrong: for
+a **parent- or directory-scoped** record the check resolves **at that level first**.
+`PolicyUtil.java:761-789` rewrites the policy resource to the **group's urn** for anything inheriting
+`data.directory` (`policyBase = g.replaceAll(grp.get(FIELD_URN))`), and `:795-804` does the same via
+`parentId`. So N records in one group share **one** policy key — one evaluation, then decision-cache hits,
+with a `conditionalPopulate` of identity fields per row (`AuthorizationUtil.java:158`). Every `olio.pb.*`
+model inherits `common.groupExt`, so they are exactly the cheap case. ⇒ **the cost objection is void,
+fixing `list` is much cheaper than I claimed, and the recommendation is now to fix it.** The one real
+remaining consideration is that rows would stop appearing in existing lists — the defect, not a
+regression, but still a product-wide change wanting its own baseline.
+**Phase 4 constraint recorded:** no generic `/rest/model/search` over `olio.pb.*`, and no listing on a
+caller-supplied `groupId`/`organizationId`. **Residual risk left open and stated:** an Objects7 caller
+that fabricates a record from an id without an authorized `find` can still list another user's rows.
+
+**New (Objects7 main):** `olio/picturebook/PbFeatureFlag.java` (the `picturebook.v2` switch — deployment-
+global, boot-pinned, `volatile`, default **OFF**, wired in all three hosts: `BaseTest`,
+`RestServiceEventListener`, `ConsoleMain`), `olio/picturebook/PbPipelineUtil.java` (the seam recorder),
+`olio/picturebook/PbSubRecordUtil.java` (sub-record destinations + the canonical narrative path).
+**New (Objects7 test):** `objects/tests/TestPictureBookWorkflow.java`.
+**Modified:** `PictureBookUtil.java` (v2 seams + the two deletions), `PbArtifactUtil.java` (two fixes,
+below), `resource.properties` (`picturebook.v2=false`, the ollama repoint).
+
+**The seam map is the existing `PictureBookProgressNotifier` call sites, not a new cut:**
+Stage 0 → `LANDSCAPE_PROMPT` + `SCENE_PROMPT`; `"face"` → one `PORTRAIT` node per character (keyed on the
+**character**, not the scene, so the pipeline's existing reuse branch does not fork a version chain);
+`"landscape"` → `LANDSCAPE`; `"auto_awesome_mosaic"` → `REFERENCE_STRIP`; `"image"` → `COMPOSITE`.
+
+**`PbPipelineUtil` is FIND-ONLY for the book and its world.** A render is a *use* of a book; a use that
+created the book (and so a universe, a world, three groups and a role pair) is the `LibraryUtil`
+read-path-that-creates shape `architecture.md` names, and it has been hit twice. A missing book logs at
+WARN and v2 recording is skipped. `PbBookUtil.createBook` stays the one creation path. Every v2 call site
+in `generateSceneImage` is wrapped in `try/catch(Exception)` and continues: the graph is provenance, and
+losing provenance must never lose an image the GPU spent three minutes producing.
+
+**§2.5 artifacts now persisted:** the classic composite canvas and the Kontext stitched strip (both were
+`FileUtil.emitFile("./comp-*.png")` / `("./land-*.png")` dumps into the process working directory — those
+calls survive only on the v2-**off** path); the **FLUX.2 letterboxed references**, which previously existed
+only as base64 inside the request, now `IMAGE` artifacts whose objectIds replace that base64 in the stored
+`generatorRequest`; the landscape; portraits; a **per-artifact** `sdConfigSnapshot`; and real attribution
+via `portrait0`/`portrait1` bindings where PB1 passes `null, null`.
+
+**`prepareForeignSubModelGroups` + `createPersistedForeignInstance` are DELETED**, along with
+`copyBaselineFieldValues` (moved). All eight call sites go through `PbSubRecordUtil`, which resolves the
+destination from the `olio.world` group fields (`narratives`, `profiles`, `statistics`, `stores`,
+`instincts`, `personalities`, `states` — all already declared in `worldModel.json`) and **falls back to the
+legacy `~/{schemaGroup}`** when there is no context, because `createCharPerson` is on the flag-off path.
+Narratives now go through **`NarrativeUtil.getCreateNarrative`**, which already builds into
+`{world}/Narratives`, creates-or-patches, links back via `Queue.queueUpdate` and flushes. This removes this
+pipeline from the set of `~/Narratives` writers — **KI-60's collision target** — without claiming to fix
+KI-60, which stays reachable from any `makePath` caller.
+
+**Two defects found by running the test, both mine, both fixed:**
+1. **`PbArtifactUtil.SANITIZE_KEYS` held the Java field names, not the serialized ones — so sanitization
+   stripped NOTHING and `isSanitized()` reported a FALSE CLEAN.** `SWTxt2Img` annotates
+   `@JsonProperty("initimage")` / `("promptimages")` (SwarmUI's wire contract), so `"initImage"` /
+   `"promptImages"` never appear in the JSON. A 1.6 MB base64 payload was persisted while the guard
+   reported success, because `isSanitized` counts removals and found none. Fixed: both spellings listed and
+   matching is **case-insensitive**. Caught by the level-1 assertion on a real FLUX.2 request — a
+   substring check would have caught the payload, but only the structural test caught the *false clean*.
+2. **A nested foreign record is not usable as an FK value.** Attaching `profile.portrait` (reached through
+   its parent) as the artifact's `data` made `AccessPoint.create` return null for both reused portraits,
+   with **no artifact row written at all**. Stephen's diagnosis, and the correct one: the query planner
+   restricts fields on sub-models to prevent recursion, so the record is not fully identified. Fixed by
+   re-reading it as a **top-level `data.data`** (`PictureBookUtil.readDataRecord`) — so the artifact still
+   references the character profile's own portrait, not a copy. My first fix copied the bytes into the book
+   gallery instead; Stephen corrected that, and the corrected form is what ships.
+   **Verification gap on this one, stated because a green run would otherwise imply more than it proves:**
+   the level-1 run after the correction passed, but it did **not exercise** the corrected path. The
+   copy-based build had already written `portrait r1` for both characters, so `findSelected` returned
+   non-null and the reuse branch short-circuited before reaching `readDataRecord`. Proving the corrected
+   form requires deleting those two artifact rows (created minutes earlier by this same work) and
+   re-running. Until that is done, **the corrected portrait reference is compiled and reviewed but not
+   measured.**
+   **A third, contributing defect fixed on the way:** `persistArtifact` reported a null create as "the
+   unique (producedByNode, role, revision) index rejects a duplicate", which sent the investigation down
+   the wrong path. `AccessPoint.create` returns null for a denial *and* for a constraint rejection, so the
+   message now names both.
+
+**Verified 2026-08-17 against `am7db` + live Swarm/LLM, no reset:**
+- `TestPbGraph` **15/15**, `TestPbSecurity` **10/10** (25 tests run) — the phase-2c suites still green
+  after the phase-3 diff.
+- `TestPictureBookWorkflow#TestSceneGraphIsRecordedAndStructurallySound` **1/1 PASSED**, 195 s, against
+  live Swarm and the real catatone.docx book (Duña/Duna + Jideon de Rosa — the user's real source content,
+  not a stand-in). Measured: **7 nodes** recorded (2 prompt, 2 portrait, landscape, reference, composite);
+  composite **1,569,441 bytes, decoded 1024×768**, recorded dimensions equal to the decoded ones;
+  landscape **1,603,185 bytes, decoded 1024×768** — matching the pipeline's forced size; **3** FLUX.2
+  reference artifacts, each **decoded 1024×1024**. Three references is the data-side proof that
+  `flux2IncludeLandscapeRef=true` took effect, i.e. the `landscape reference SUPPRESSED` path did not fire
+  — asserted from persisted data rather than by scraping the log line, which is the stronger evidence since
+  a log assertion passes even if the reference never reached the request.
+- The composite was **exported and actually looked at**. It is genuinely catatone scene 1: Jideon carrying
+  Duña toward the waiting cab in the rain, graffitied wall, wet cobbles, night, neon. **Visible quality
+  defects, recorded rather than glossed:** three human figures for a two-character scene (Duña appears
+  twice — once carried, once in the car), the carried figure's hair is blonde where Duña was imprinted
+  **Auburn**, confused anatomy around the carried figure, and garbled neon text. These are FLUX.2
+  multi-reference likeness behaviours, **not** introduced by the graph wiring — phase 3 changed provenance,
+  not generation — but they are real and worth their own issue.
+
+- **Level 2 (the differential, KI-59) PASSED** — `TestLandscapeReferenceChangesTheComposite` **1/1**,
+  311 s, two live composites at the **same fixed seed** and the same config, differing only in
+  `flux2IncludeLandscapeRef`:
+  ```
+  revision 4  9d0ce7aa05ff2a3599c3029bd59965e843a271e372a82f03958043dad597fbbb  (landscape ref BOUND)
+  revision 5  4f0b5a70a5b33453bf53d1458f276b9e6b893133c9eb6ef99f2837c3f18cb79f  (landscape ref SUPPRESSED)
+  ```
+  The hashes differ and the revision chain advanced 4 → 5, so the two are a genuine supersede pair rather
+  than two unrelated images. The `landscape reference SUPPRESSED` log line fired **exactly once** across
+  the whole run — in leg B only — which is the direct confirmation that the lever did what the test
+  claims and that leg A did not silently suppress it. **This is the first human-free evidence that the
+  landscape reference reaches the model**, which is what KI-59 asked for.
+  **The same-seed-same-hash corollary is deliberately NOT asserted:** seed determinism has not been
+  established for this Swarm/FLUX.2 pair, and §9 says drop the corollary rather than weaken it into a
+  tautology. Consequence to keep stated — a differing pair is also what a non-deterministic backend
+  produces, so this PASS is **necessary but not sufficient**; establishing determinism would upgrade it.
+- **The exported composites were looked at, both legs.** With the reference bound and with it suppressed,
+  both are recognisably the scene; with it suppressed the setting still lands, carried by prompt text
+  only. Both show the same likeness defects recorded above.
+- **Style fidelity is wrong, and the prompt CONTRADICTS ITSELF. Found by Stephen 2026-08-17, correcting a
+  wrong claim of mine** — I first wrote that "the request honours the style", which it does not.
+  `style=photograph` does reach the request (*"**Photograph** taken with a Kodak Brownie box camera and
+  Canon FD 50mm f/1.8 lens using Lomography 100 film processed with Kodacolor by James Van Der Zee."*),
+  and then **the same positive prompt says "no photograph"**:
+  ```
+  ... Photograph taken with a <camera/lens/film/process/artist>. Preserve facial identity ...
+  ... Do not draw the reference images themselves - no photograph, poster, screen, mirror,
+      billboard, framed picture or character sheet anywhere in the scene. ...
+  ```
+  FLUX.2 is an instruction-following edit model and this clause is in the **positive** prompt, so the
+  medium is asserted and negated in one breath. That explains the digital-art output far better than the
+  step budget does, and it is why my first diagnosis (4 steps / the `8k ultra realistic` boosters) was at
+  best secondary.
+  **`SWUtil.java:311-319` already knows about this bug class and the earlier fix was incomplete.** The
+  comment at `:317-319` records removing `"photographic"` from this very clause because *"saying it twice
+  in different words is how a comic-styled book ended up being told 'photographic' mid-prompt"* — but
+  `"no photograph"` was left in the same sentence at `:315`, so the word survived in its **negated** form
+  and now collides with the style vocabulary instead of duplicating it.
+  **One-word fix, deliberately NOT applied in this run:** drop `photograph` from the forbidden-objects
+  list at `:315-316` — `poster, screen, mirror, billboard, framed picture, character sheet` already
+  expresses "do not render the reference as a depicted object", and `photograph` is the only item that
+  collides with the medium. It is left unapplied because `SWUtil.newFlux2SceneTxt2Img` is the **shared**
+  builder (chat uses it too), the change alters generation output on the v2 **and** flag-off paths, and the
+  non-regression gate was already in flight against the current string — changing it mid-gate would
+  invalidate the gate being reported. Logged as **KI-68**.
+
+- **The flag-off non-regression gate PASSED.** `TestPictureBookCustom#TestPictureBookCustomPipeline`
+  **1/1**, 196 s, live Swarm, `BUILD SUCCESS`, with the test file **unedited** — that is the condition
+  that makes it a gate. Two checks that make the result mean what it claims: the run emitted **zero** PB2
+  recording lines (`picturebook.v2=false` was genuinely in force, so this exercised the PB1 path, not v2
+  silently succeeding), and `git diff` on both `TestPictureBookCustom.java` and `pom.xml` is **empty**.
+  **Correction to an earlier note in this file:** `pom.xml:110`'s `TestPictureBookCustom` exclude is
+  already inside a `<!-- -->` block, so it needed **no** pom edit. My first attempt commented it again and
+  produced a nested XML comment (illegal — *"in comment after two dashes (--) next character must be >"*),
+  which made the POM non-parseable and the "gate run" never started. Restored; the pom is untouched.
+
+- **The non-regression gate PASSED: `Tests run: 152, Failures: 0, Errors: 0, Skipped: 0`, BUILD SUCCESS**
+  — the 113-test gate plus the phase-2b/2c suites, re-run after the phase-3 diff (which touched
+  `PictureBookUtil` and `BaseTest`, so this was not a formality). Per suite: `TestGameUtil` 25,
+  `TestBookWorld` 21, `TestGameUtilSync` 15, `TestOlioGameFeatures` 15, `TestPbGraph` 15,
+  `TestPictureBookKnownIssues` 15, `TestPbModelSchema` 14, `TestPbSecurity` 10, `TestSchemaIndexPatch` 9,
+  `TestPictureBookSceneAuthz` 7, `TestNestedStructures` 3, `TestOlio2` 1, `TestOlioRules` 1,
+  `TestOlioCacheScope` 1.
+
+**NOT verified — say so plainly:**
+- **NO PORTRAIT WAS EVER GENERATED IN ANY OF THESE RUNS. Every run relied on the persisted test
+  portraits** (Stephen, 2026-08-17). All five live runs logged *"Reusing persisted portrait for Jideon de
+  Rosa (no re-render)"* / *"… for Duña"*, so the **portrait RENDER branch never executed**. Consequences,
+  all of them real:
+  - the `PORTRAIT` artifact rows in `am7db` (ids 41-42) were written by the **reuse** branch, carry
+    `nodeStatus = DONE_UNVERIFIED`, and describe a portrait whose config and seed are genuinely unknown —
+    which is why that status exists, but it is not the same claim as "the portrait node works";
+  - the render branch's artifact recording — including `readDataRecord` on the freshly created image, the
+    `portCfg` snapshot and the `extractSeedFromImage` seed — is **entirely unexercised**;
+  - level 1 therefore never asserted on a freshly-rendered portrait, only on the landscape, the three
+    references and the composite.
+  - the corrected profile-portrait reference (defect 2) is also unexercised for the same reason: the reuse
+    branch short-circuits on the artifact the earlier copy-based build already wrote.
+  **What would actually exercise it:** force a re-render rather than deleting fixture data — set
+  `params.isBookOverride = false` (the render-use-delete fallback), or give a character scene-tagged
+  apparel so `selectSceneApparel` returns true and the reuse branch is bypassed by design, or bump
+  `TestPictureBookCustom`'s `REIMAGE_CHARS`. Then assert a `PORTRAIT` artifact at `revision >= 1` whose
+  node is `DONE` (not `DONE_UNVERIFIED`), with a non-null seed and a `sdConfigSnapshot`.
+- **THE SUB-RECORD REROUTE IS UNEXERCISED, and it is the riskiest part of the phase-3 diff.** Deleting
+  `prepareForeignSubModelGroups` / `createPersistedForeignInstance` touched **8 call sites** inside
+  `createCharPerson`, plus the narrative path. Nothing in this session ran it: the flag-off gate reused the
+  cached catatone content (log: *"Reusing existing catatone book"*, *"Reusing 41 cached catatone scenes
+  (skipped LLM extraction)"*), so `createFromScenes` → `createCharPerson` never executed — grepping the
+  gate log for `PbSubRecordUtil` / `getCreateNarrative` / `Could not pre-resolve` returns **0**. It
+  compiles and the call sites were repointed one by one, but "compiles" is not "works".
+  **What would actually exercise it:** a character creation from scratch — a fresh book slug or
+  `iter`/`clearSceneCache` bumped in `TestPictureBookCustom` so `createFromScenes` runs a real extraction,
+  then assert that the seven sub-records (`profile`, `narrative`, `statistics`, `store`, `instinct`,
+  `personality`, `state`) land with non-zero ids and that the narrative carries `sdPrompt`. Both the
+  world-group destination (with an `OlioContext`) and the legacy `~/{schemaGroup}` fallback (without one)
+  need a case, since the fallback is what keeps flag-off behaviour identical.
+- No REST endpoint exercised the v2 path, and no Playwright ran. Phase 3 is Objects7-only.
+
 ### DAL — index generation
 `generateIndices` is now recalled on the **schema-patch** path, not only at CREATE TABLE, with
 `CREATE [UNIQUE] INDEX IF NOT EXISTS` and per-statement error-log-and-continue. Indexability is keyed off
@@ -552,6 +802,30 @@ and the three group-name constants), `olio/sd/SDAPIEnumType.java` (`COMFY`, one 
 `PbWatchedFields.java`, `PbGraphUtil.java`, `PbArtifactUtil.java`, `PbBookUtil.java`,
 `PbSharingUtil.java`. No model JSON, constant or enum changed, so phase 2c emitted **no DDL**.
 **New in phase 2c (Objects7 test):** `objects/tests/TestPbGraph.java`, `objects/tests/TestPbSecurity.java`.
+**New in phase 3 (Objects7 main):** `olio/picturebook/PbFeatureFlag.java`,
+`olio/picturebook/PbPipelineUtil.java`, `olio/picturebook/PbSubRecordUtil.java`.
+**New in phase 3 (Objects7 test):** `objects/tests/TestPictureBookWorkflow.java`.
+**Modified in phase 3:** `olio/picturebook/PictureBookUtil.java` (the v2 seams; `readDataRecord`; the two
+deleted methods and their 8 repointed call sites; `SceneGenerationParams.bookSlug`),
+`olio/picturebook/PbArtifactUtil.java` (wire-name `SANITIZE_KEYS` + case-insensitive matching; the
+misleading create-failure message), `objects/tests/BaseTest.java` (flag wiring),
+`src/test/resources/resource.properties` (`picturebook.v2=false`, ollama repointed to `.42`),
+Service7 `rest/config/RestServiceEventListener.java` and Console7 `console/ConsoleMain.java` (flag wiring).
+**`picturebook.v2` is DECLARED in all four config surfaces**, matching how `llm.ollama.unload` is handled -
+it is read by code in three hosts, so a key that is read but never declared is undiscoverable:
+`AccountManagerObjects7/src/test/resources/resource.properties:37`,
+`AccountManagerConsole7/src/main/resources/resource.properties:45`,
+`AccountManagerService7/src/main/webapp/WEB-INF/web.xml:52` and `docker/web.xml.template:52`
+(both `<context-param>`, hardcoded `false`, **no `${...}` envsubst placeholder** - deliberately matching
+`llm.ollama.unload`; `docker/entrypoint.sh` regenerates `web.xml` from the template on every boot, so a
+value edited into a deployed `web.xml` is silently discarded). Caught by Stephen 2026-08-17: the first pass
+declared it only in the Objects7 test properties while the Console7 and Service7 readers were already wired,
+so the flag existed but was invisible in two of the three hosts.
+*Verified after:* `web.xml` still parses, `mvn -o -pl AccountManagerService7 package` and
+`-pl AccountManagerConsole7 compile` both BUILD SUCCESS.
+
+**Phase 3 emitted no DDL** - no model JSON, constant or enum changed.
+
 **Modified in phase 2c (docs):** `.claude/rules/model-api.md` — the PATCH example was itself the bare
 `newInstance(model)` form that caused defect 1, and the typed-query-field section named only the two id
 fields; both corrected, plus a new section stating that `AccessPoint.list` is not a per-record
@@ -674,17 +948,39 @@ characterization), `aiDocs/CanvasLibraryResearchPrompt.md` (new), this file.
    stands**, S2-S6 not scheduled ahead of phase 3 — recorded in Appendix D with a correction to §6c.5's
    cost claim. `PbConfigUtil.bookConfig()` is the single seam S6 would have to move.
 
-**NEW, needs Stephen's decision before phase 4:** `AccessPoint.list` performs **no per-record
+~~**NEW, needs Stephen's decision before phase 4:**~~ **DISPOSED 2026-08-17 — see §3's Phase 3 entry,
+`PictureBook2Plan.md` Appendix D and KI-67.** `AccessPoint.list` performs **no per-record
 authorization** — an org-wide list with an explicit numeric `organizationId` returns another user's
 group-scoped records, while the by-identity read of the same record is correctly denied (§3, defect 3).
 Pre-existing and general, but PB2 makes a whole book graph listable. Either constrain on `groupId` /
 filter per record in the REST layer, or fix `AccessPoint.list`.
 
-6. **Phase 3 — THIS IS NEXT.** Pipeline to graph behind `picturebook.v2`. **No longer blocked on service reachability**
-   (§6: Swarm, ollama, embedding and TTS all measured up) — but settle the one-line
-   `test.llm.ollama.server` question in §6 first, or it silently runs on the wrong box.
-7. **Phase 4** — remaining REST endpoints (the two auth fixes are already hoisted out). **First REST or
-   Playwright work must rebuild the Docker stack** — the running containers predate phase 2b and S1 (§6).
+6. ~~**Phase 3** — pipeline to graph behind `picturebook.v2`.~~ **DONE 2026-08-17, partially verified** —
+   see §3. The `test.llm.ollama.server` line is **repointed to `.42`** (Stephen confirmed), the stack was
+   rebuilt and probed, and the `AccessPoint.list` question is disposed. **Two gates still owe a run:** the
+   flag-off `TestPictureBookCustom#TestPictureBookCustomPipeline` and the 113-test non-regression gate.
+7. **Phase 4 — THIS IS NEXT.** Remaining REST endpoints (the two auth fixes are already hoisted out).
+   The stack was rebuilt and verified on 2026-08-17 (§3's Phase 3 entry), so that bullet's warning is
+   satisfied for now — but rebuild again after any Objects7/Service7 change, since phase 3 changed the jar.
+   **Phase 4 is bound by the KI-67 disposition:** every list endpoint takes a **book objectId**, reads the
+   book with `AccessPoint.find`, and delegates to the Objects7 utility. No generic `/rest/model/search`
+   over `olio.pb.*`; no listing on a caller-supplied `groupId`/`organizationId`.
+
+**Phase 3's four open gaps, in the order they should be closed (each is a real gap, not a formality):**
+   1. **No portrait was ever rendered** — every run reused the persisted portraits, so the portrait render
+      branch, its artifact recording, `readDataRecord` on a fresh image, the `portCfg` snapshot and the
+      seed capture are all unexercised. Force a re-render (`isBookOverride=false`, scene-tagged apparel, or
+      `REIMAGE_CHARS`) and assert a `PORTRAIT` artifact whose node is `DONE`, not `DONE_UNVERIFIED`.
+   2. **The sub-record reroute never ran** — the gate reused the cached catatone book, so
+      `createFromScenes` → `createCharPerson` did not execute. This is the riskiest part of the phase-3
+      diff (8 call sites + the narrative path) and it only compiles. Needs a from-scratch character
+      creation, with a case for both the world-group destination and the legacy fallback.
+   3. **KI-68 — the FLUX.2 prompt asserts and then negates its own medium** (`"Photograph taken with a …"`
+      then `"no photograph"`). One-word fix identified at `SWUtil.java:315`, deliberately not applied: it
+      is the shared builder (chat uses it too) and wants a before/after visual comparison.
+   4. **KI-67 — whether to fix `AccessPoint.list` is REOPENED.** The cost argument against it was mine and
+      was wrong (the check resolves at the group/parent level, so it is one evaluation per group, cached —
+      not per row). Recommendation is now to fix `list`.
 
 **Smaller items still open:** `tagApparelSceneIndex` (`PictureBookUtil:1171`) has the same missing book
 check the hoisted patch fixed elsewhere; Q5 (make `OlioContext` **throw** on authorization failure instead

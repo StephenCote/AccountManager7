@@ -40,6 +40,21 @@
 		<param-value>false</param-value>
 	</context-param>
 	<!--
+		PictureBook 2 graph recording. OFF by default: with it off the scene pipeline runs the
+		PictureBook 1 path exactly as before, which is what makes
+		TestPictureBookCustom#TestPictureBookCustomPipeline a real non-regression gate. Deployment-global
+		and boot-pinned - it selects a code path, not a tenant entitlement - and it is NOT an
+		authorization boundary: every write it enables still goes through AccessPoint, so PBAC decides.
+		docker/entrypoint.sh regenerates web.xml from the template on EVERY boot, so a value edited into a
+		DEPLOYED web.xml is silently discarded on restart. Change it in docker/web.xml.template - and note
+		there is deliberately no ${...} envsubst placeholder here, matching llm.ollama.unload above; add one
+		only if this needs to become environment-driven.
+	-->
+	<context-param>
+		<param-name>picturebook.v2</param-name>
+		<param-value>false</param-value>
+	</context-param>
+	<!--
 		Fallback SD checkpoint for requests whose olio.sd.config carries no model. Checkpoint names are
 		per-Swarm-install and a wrong one does NOT error - Swarm returns an empty image list that
 		callers log and skip - so set this to a checkpoint your SD_SERVER actually has. Leave empty to

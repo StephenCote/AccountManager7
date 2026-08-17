@@ -246,6 +246,16 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		/// explicit unloadAll(true) path is unaffected by this switch.
 		OllamaModelUtil.setUnloadEnabled(parseBoolean(context.getInitParameter(OllamaModelUtil.CONFIG_KEY), false));
 
+		/// PictureBook 2 graph recording (picturebook.v2). Defaults OFF: with it off the scene pipeline
+		/// runs the PictureBook 1 path exactly as before. Deployment-global and boot-pinned - it selects a
+		/// code path, not a tenant entitlement, and it is NOT an authorization boundary (every write it
+		/// enables still goes through AccessPoint). docker/entrypoint.sh regenerates web.xml from the
+		/// template on EVERY boot, so this must be set in the template/env, never edited into web.xml at
+		/// runtime.
+		org.cote.accountmanager.olio.picturebook.PbFeatureFlag.setV2Enabled(
+			parseBoolean(context.getInitParameter(
+				org.cote.accountmanager.olio.picturebook.PbFeatureFlag.CONFIG_KEY), false));
+
 		/// Deployment's fallback SD checkpoint. Checkpoint names differ per Swarm install and a wrong
 		/// one returns an empty image list rather than an error, so this is worth setting explicitly.
 		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(

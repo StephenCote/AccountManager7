@@ -94,6 +94,13 @@ public class BaseTest {
 		/// picture-book tests alternate LLM and SD work repeatedly. TestPictureBookFull's
 		/// unload-verification test calls unloadAll(true) directly, so it is unaffected.
 		OllamaModelUtil.setUnloadEnabled(Boolean.parseBoolean(testProperties.getProperty(OllamaModelUtil.CONFIG_KEY)));
+		/// PictureBook 2 graph recording. OFF unless the test properties turn it on, and that default is
+		/// load-bearing: TestPictureBookCustom#TestPictureBookCustomPipeline is the phase-3
+		/// non-regression gate precisely because it runs with the flag off and is not edited.
+		/// TestPictureBookWorkflow sets it true for itself and restores it in tearDown.
+		org.cote.accountmanager.olio.picturebook.PbFeatureFlag.setV2Enabled(
+			Boolean.parseBoolean(testProperties.getProperty(
+				org.cote.accountmanager.olio.picturebook.PbFeatureFlag.CONFIG_KEY)));
 		/// Fallback SD checkpoint for anything that doesn't set one on its config. Reuses
 		/// test.swarm.model so the tests can't drift from the checkpoint the test Swarm actually has —
 		/// the failure mode is silent (empty image list, test logs and skips: KI-39).

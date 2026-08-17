@@ -1995,15 +1995,35 @@ constraints/hints are irreversible once a table exists (see Appendix D). Sub-pha
   `workflow.lastRun` ↔ `run.workflow` cycle), `TestPbSecurity` green, and the role-hierarchy direction
   test run with its result recorded in Appendix D.
 
-**Phase 3 — Wire the pipeline to the graph, behind a flag (Objects7).** Each seam in
-`generateSceneImage` (`:3272-3793`) becomes a node execution, using the **existing** per-stage
-`PictureBookProgressNotifier` call sites as node boundaries — that seam map is already in the code.
-Persist the §2.5 artifacts. Delete `prepareForeignSubModelGroups` + `createPersistedForeignInstance`;
-route sub-records into world groups and narratives through `NarrativeUtil.getCreateNarrative`.
-**Dual-write** `.pictureBookMeta` and scene notes so all 16 PB1 endpoints keep working. Feature flag
-`picturebook.v2` (existing mechanism, `aiDocs/UxFeatureFlagDesign.md`).
-*Exit:* `TestPictureBookCustom#TestPictureBookCustomPipeline` passes **unchanged with the flag off**
-(the non-regression gate), and `TestPictureBookWorkflow` passes with it on.
+**Phase 3 — Wire the pipeline to the graph, behind a flag (Objects7). DONE 2026-08-17, partially
+verified.** Each seam in `generateSceneImage` becomes a node execution, using the **existing** per-stage
+`PictureBookProgressNotifier` call sites as node boundaries. §2.5 artifacts persisted.
+`prepareForeignSubModelGroups` + `createPersistedForeignInstance` deleted; sub-records routed through
+`PbSubRecordUtil` and narratives through `NarrativeUtil.getCreateNarrative`.
+*Verified:* the flag-off gate green (`TestPictureBookCustom#TestPictureBookCustomPipeline` 1/1,
+**unedited**, zero PB2 lines), `TestPictureBookWorkflow` level 1 **and** level 2 green against live
+Swarm/LLM, non-regression **152/152**. Measurements and the four remaining gaps are in
+`PictureBook2ImplementationState.md` §3.
+
+> **Four as-built corrections to this entry.**
+> 1. **The feature flag is NOT the Ux manifest mechanism this entry pointed at.**
+>    `aiDocs/UxFeatureFlagDesign.md` describes a **Ux** feature manifest that is per-**user** rather than
+>    per-org today (§3.1, "the toggle is inert"), lives in Service7, and is explicitly **not an
+>    authorization boundary** (§5). Objects7 cannot read it without a layering violation or a
+>    read-path-that-creates. `picturebook.v2` is instead a deployment-global, boot-pinned `volatile`
+>    boolean on `PbFeatureFlag`, wired from Service7's init-param / Console7's + Objects7's
+>    `resource.properties` — the same three-host shape `OllamaModelUtil.CONFIG_KEY` already uses.
+> 2. **The dual-write requirement was RELAXED by Stephen mid-phase**: *"don't worry about backwards
+>    compatibility for old PictureBook."* The PB1 writes were left intact (they cost nothing and were
+>    already there) and `olio.pb.scene` is written alongside, but no additional machinery was built to
+>    guarantee the 16 PB1 endpoints, and PB1 compatibility is no longer a design constraint.
+> 3. **Book/world resolution is FIND-ONLY.** A render is a *use* of a book; creating a book (and so a
+>    universe, world, three groups and a role pair) as a side effect of rendering is the `LibraryUtil`
+>    read-path-that-creates shape `architecture.md` names. `PbBookUtil.createBook` stays the one creation
+>    path; a missing book logs at WARN and v2 recording is skipped.
+> 4. **Sub-record destinations are parameterised with a legacy fallback**, because `createCharPerson` is
+>    on the flag-off path: `{world}/{group}` when an `OlioContext` is available, else the original
+>    `~/{schemaGroup}`. That fallback is what keeps the flag-off gate byte-identical.
 
 **Phase 3b — ComfyUI backend (Objects7).** §6. *Exit:* `TestComfyBackend` green or visibly skipped;
 Swarm parity test green.
@@ -2952,6 +2972,55 @@ accessor `PbConfigUtil.bookConfig(book, composite)`, and `PbConfigUtil.requestFi
 projection a caller needs. S6 then changes one method body rather than every call site.
 **Unchanged either way:** `configOverride` stays a sparse JSON string (§6c.3.2) — with 30 of 80 fields
 defaulted, a record cannot express "only these three were set".
+
+### `AccessPoint.list` is not a per-record authorization boundary — DISPOSED 2026-08-17
+
+State-doc §3 defect 3, pinned by `TestPbSecurity#case02_theListPathIsNotASecurityBoundary_MEASURED_DEFECT`.
+It gated phase 4's list endpoints and had to be settled before phase 3 wrote any artifacts.
+
+**Decision (2026-08-17): constrain in the Objects7 utility layer so phase 3/4 are unblocked;
+`AccessPoint.list` is NOT changed *in this phase*. Reason 2 below was retracted the same day — see it
+before treating this as settled.** The PB2-side constraint stands on its own merits regardless of what
+happens to `list`; what is reopened is whether `list` itself should be fixed.
+
+1. **The behaviour is deliberate and documented in place.** `AccessPoint.java:600-605` is Stephen's own
+   design note: AM5 restricted lists to the parent or group, AM6 used an elaborate dynamic SQL evaluation,
+   and AM7 deliberately settled on "the count and list methods inspect the query and dynamically assemble
+   a policy based on what is being requested, so that at least one policy check becomes required." `list`
+   authorizes the **query shape**, by design. The defect is not that it fails to do something it claims —
+   it is that a caller may present an org-wide query with no group constraint and PBAC permits it.
+2. ~~**Per-record filtering means an `AuthorizationUtil.canRead` policy evaluation per row.**~~
+   **WRONG — retracted 2026-08-17 (Stephen).** This was the load-bearing argument for the disposition and
+   it does not hold. For a **parent- or directory-scoped** record the check resolves **at that level
+   first**: `PolicyUtil.java:761-789` rewrites the policy's resource to the **group's urn**
+   (`policyBase = g.replaceAll(grp.get(FIELD_URN))`) for anything inheriting `data.directory`, and
+   `:795-804` does the same via `parentId` for anything inheriting `common.parent`. So N records sharing one
+   group produce **one** policy key, evaluated once and then served from the decision cache — the per-row
+   cost is a cache lookup plus a `conditionalPopulate` of identity fields
+   (`AuthorizationUtil.java:158`), not a fresh evaluation. Every `olio.pb.*` model inherits
+   `common.groupExt`, so they are precisely the cheap case.
+   ⇒ **The cost objection is void, and fixing `AccessPoint.list` is materially cheaper than this section
+   originally claimed.** What genuinely remains is that it is a platform behaviour change: rows would stop
+   appearing in existing lists — which is the defect being fixed, not a regression, but it is still a
+   product-wide change that wants its own baseline rather than riding in on a PictureBook phase.
+   **Whether to fix `list` is therefore reopened and is Stephen's call**; the recommendation is now to fix
+   it, leaning on the group-level resolution above, rather than to work around it.
+3. **The scoped remedy is already the shape PB2 uses, and it is §5.6b's root-reference principle:
+   authorize the root by identity, then list inside its compartment.** `AccessPoint.find` *does* run
+   `canRead` on the result (`:511-517`). Every PB2 list is reached from an authorized `find`:
+   `findBookBySlug`/`readBook` (a `find`) → `findWorkflow` (a `find`) → `listNodes(workflow)` /
+   `listBindings(node)` / `listChain(node, role)`. The compartment is established by an authorized
+   identity read *before* any list runs.
+4. **What phase 4 must therefore not do**, stated so it cannot be rediscovered: do **not** expose the
+   generic `/rest/model/search` over `olio.pb.*`, and do **not** accept a caller-supplied
+   `groupId`/`organizationId` and list on it. Every phase-4 list endpoint takes a **book objectId**, reads
+   the book with `AccessPoint.find`, and delegates to the Objects7 utility — so the constraint lives in
+   Objects7 (business logic), not Service7 (transport), and cannot be forgotten per endpoint.
+
+**Residual risk, stated rather than closed:** an Objects7 caller that fabricates a workflow/node record
+from an id without an authorized `find` can still list another user's rows. That is the platform defect,
+and it is **not fixed**. It stays pinned by the labelled characterization test and is logged as **KI-67**
+so it is not lost behind a green suite.
 
 ### Runtime verification scope (corrected)
 

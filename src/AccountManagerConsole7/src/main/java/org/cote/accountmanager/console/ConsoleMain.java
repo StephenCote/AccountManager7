@@ -128,6 +128,10 @@ public class ConsoleMain {
 		/// Opportunistic Ollama unload before GPU-heavy work; OFF unless explicitly enabled (a large
 		/// model costs more to reload than the freed VRAM saves). Does not affect unloadAll(true).
 		OllamaModelUtil.setUnloadEnabled(Boolean.parseBoolean(properties.getProperty(OllamaModelUtil.CONFIG_KEY)));
+		/// PictureBook 2 graph recording; OFF unless explicitly enabled. Deployment-global, boot-pinned.
+		org.cote.accountmanager.olio.picturebook.PbFeatureFlag.setV2Enabled(
+			Boolean.parseBoolean(properties.getProperty(
+				org.cote.accountmanager.olio.picturebook.PbFeatureFlag.CONFIG_KEY)));
 		/// Fallback SD checkpoint; names are per-Swarm-install and a wrong one fails silently (empty
 		/// image list), so prefer setting this over relying on the olio.sd.config schema default.
 		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(

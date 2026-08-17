@@ -56,6 +56,9 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
+import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
+import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
@@ -304,6 +307,12 @@ public class PictureBookUtil {
         // created under .../Scenes/); the client may pass isBook:false for the legacy ~/Chat
         // fallback that should not persist/reuse portraits.
         public Boolean isBookOverride;
+        // PB2 (picturebook.v2) only: the olio.pb.book slug this scene's graph belongs to. When null,
+        // PbPipelineUtil.deriveSlug() derives one from the PB1 book group name. Naming it explicitly
+        // is preferred — the derivation is a convenience for callers that only know the PB1 group, and
+        // a slug that fails to resolve means v2 recording is SKIPPED (logged), never that a book is
+        // created on a render path. Ignored entirely when the flag is off.
+        public String bookSlug;
     }
 
     // ----- Helpers -------------------------------------------------------
@@ -322,6 +331,30 @@ public class PictureBookUtil {
             q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
             q.planMost(true);
             found = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+        }
+        return found;
+    }
+
+    /**
+     * Re-read a {@code data.data} as a TOP-LEVEL record so it is usable as a foreign reference.
+     *
+     * <p>Needed because a record reached through a parent's foreign field — {@code profile.portrait},
+     * say — is a <b>nested sub-model</b>, and the query planner deliberately restricts the fields it
+     * projects on sub-models to prevent recursion. The result is not fully identified, so handing it to
+     * {@code AccessPoint.create}/{@code update} as an FK value makes the write return null. The same
+     * applies to a record just returned by {@code AccessPoint.create}, which yields identity fields only.
+     *
+     * @return the fully-read record, or null when {@code objectId} is null or unreadable
+     */
+    private static BaseRecord readDataRecord(BaseRecord user, String objectId) {
+        if (objectId == null) return null;
+        Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, objectId);
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        q.planMost(true);
+        BaseRecord found = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+        if (found == null) {
+            logger.warn("Could not re-read data.data " + objectId + " as a top-level record;"
+                    + " a foreign reference to it will not persist");
         }
         return found;
     }
@@ -2237,92 +2270,8 @@ public class PictureBookUtil {
         return rec.toFullString();
     }
 
-    /**
-     * Create and persist a foreign-model instance (e.g. olio.narrative, identity.profile) with
-     * a resolvable group path — mirrors CharPersonFactory's nested-model path convention
-     * ("~/" + schema.getGroup()). Unlike CharPersonFactory's in-memory placeholders (which rely
-     * on autoCreateForeignReference cascading — NOT enabled for olio.charPerson — so they are
-     * silently never persisted), this goes through AccessPoint so the record gets a real
-     * id/objectId immediately and can be safely linked to a parent via a PATCH-shaped update.
-     */
-    private static BaseRecord createPersistedForeignInstance(BaseRecord user, String modelName) {
-        return createPersistedForeignInstance(user, modelName, null);
-    }
 
-    /**
-     * Every sub-model {@link #createPersistedForeignInstance} persists per character. Each one
-     * independently resolves {@code "~/" + schema.getGroup()}, so an N-character book performs the
-     * same get-or-create 13 x N times.
-     */
-    private static final String[] FOREIGN_SUB_MODELS = new String[] {
-        OlioModelNames.MODEL_NARRATIVE,
-        ModelNames.MODEL_PROFILE,
-        OlioModelNames.MODEL_CHAR_STATISTICS,
-        OlioModelNames.MODEL_STORE,
-        OlioModelNames.MODEL_INSTINCT,
-        ModelNames.MODEL_PERSONALITY,
-        OlioModelNames.MODEL_CHAR_STATE
-    };
 
-    /**
-     * KI-42: resolve each foreign sub-model's group ONCE per request, up front, instead of 13 x N
-     * times across the character loop.
-     *
-     * <p>The character-loss bug itself is fixed in {@code PathUtil.makePath}, which used to hand back
-     * a sequence-allocated but never-inserted group when its own get-or-create INSERT lost a
-     * duplicate-key race — everything persisted against that phantom id then failed PBAC with "Group
-     * could not be found". This method is the other half of KI-42's stated direction: collapsing the
-     * repeated get-or-create to one call per group means the create branch is entered at most once
-     * per group per request, so the race has almost nothing left to run against.
-     *
-     * <p>Best-effort by design. A group that cannot be made is logged and skipped rather than
-     * aborting the book — {@code createPersistedForeignInstance} will try again for itself and
-     * report its own failure with the character's name attached, which is the more useful error.
-     */
-    private static void prepareForeignSubModelGroups(BaseRecord user) {
-        long organizationId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
-        for (String modelName : FOREIGN_SUB_MODELS) {
-            try {
-                ModelSchema ms = RecordFactory.getSchema(modelName);
-                if (ms == null || ms.getGroup() == null || !seen.add(ms.getGroup())) continue;
-                BaseRecord grp = IOSystem.getActiveContext().getPathUtil().makePath(user,
-                        ModelNames.MODEL_GROUP, "~/" + ms.getGroup(), GroupEnumType.DATA.toString(), organizationId);
-                if (grp == null) {
-                    logger.warn("Could not pre-resolve the '" + ms.getGroup() + "' group for "
-                            + modelName + " — per-character creation will retry and report its own failure");
-                }
-            } catch (Exception e) {
-                logger.warn("Failed to pre-resolve the group for " + modelName + ": " + e.getMessage());
-            }
-        }
-    }
-
-    /**
-     * KI-30 overload: same as {@link #createPersistedForeignInstance(BaseRecord, String)}, but
-     * when {@code baselineSource} is non-null, seeds the new instance's own content field values
-     * from it (via {@link #copyBaselineFieldValues}) BEFORE persisting — so the one persisted
-     * instance carries {@code CharacterUtil.randomPerson()}'s randomized baseline values
-     * (statistics/instinct/personality/state/store/profile) instead of an empty placeholder.
-     */
-    private static BaseRecord createPersistedForeignInstance(BaseRecord user, String modelName, BaseRecord baselineSource) {
-        try {
-            ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH,
-                    "~/" + RecordFactory.getSchema(modelName).getGroup());
-            BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(modelName, user, null, plist);
-            if (baselineSource != null) {
-                copyBaselineFieldValues(baselineSource, inst);
-            }
-            BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, inst);
-            if (created == null) {
-                logger.error("Failed to persist new " + modelName + " instance — AccessPoint.create returned null (denied or persist failure)");
-            }
-            return created;
-        } catch (Exception e) {
-            logger.error("Failed to create persisted " + modelName + " instance: " + e.getMessage(), e);
-            return null;
-        }
-    }
 
     /**
      * KI-30: build a fully-populated random baseline character via the same population-
@@ -2371,42 +2320,6 @@ public class PictureBookUtil {
         }
     }
 
-    /**
-     * Copies non-identity "content" field values from a randomly-generated baseline sub-record
-     * (statistics/instinct/personality/state/store/profile from {@link #buildRandomBaseline}) onto
-     * a freshly-instantiated, about-to-be-persisted target of the same model — the mechanism
-     * KI-30 calls "re-target/copy the generated fields onto the book's own charsGroup-scoped
-     * charPerson record". Sets field values directly (source.get -> target.set) rather than
-     * {@code BaseRecord.copyIntoRecord}, which replaces the target's ENTIRE field list with only
-     * the named fields — that would wipe out the target's own path/groupId/name already set by
-     * {@code createPersistedForeignInstance}'s {@code Factory.newInstance} call.
-     *
-     * <p>Deliberately excludes identity/path/groupId/parentId/name fields (the target already has
-     * its own correctly-scoped values for those) and foreign fields (avoids cross-linking to the
-     * baseline's own in-memory, unpersisted sub-sub-records, e.g. {@code store.apparel}) — only
-     * plain/list-of-primitive content fields are copied.
-     */
-    private static void copyBaselineFieldValues(BaseRecord source, BaseRecord target) {
-        if (source == null || target == null) return;
-        try {
-            ModelSchema ms = RecordFactory.getSchema(target.getSchema());
-            for (FieldSchema fs : ms.getFields()) {
-                String n = fs.getName();
-                if (fs.isIdentity() || fs.isVirtual() || fs.isEphemeral() || fs.isForeign()) continue;
-                if (FieldNames.FIELD_NAME.equals(n) || FieldNames.FIELD_PATH.equals(n)
-                        || FieldNames.FIELD_GROUP_ID.equals(n) || FieldNames.FIELD_PARENT_ID.equals(n)) continue;
-                try {
-                    Object val = source.get(n);
-                    if (val != null) target.set(n, val);
-                } catch (Exception ignoredFieldCopyFailure) {
-                    // Field not present/settable on source or target for this model — skip it,
-                    // not fatal to baseline seeding as a whole.
-                }
-            }
-        } catch (Exception e) {
-            logger.warn("copyBaselineFieldValues failed for " + target.getSchema() + ": " + e.getMessage());
-        }
-    }
 
     /**
      * PATCH-shaped update: identity fields (id, objectId) + a single foreign field on
@@ -2615,7 +2528,7 @@ public class PictureBookUtil {
             BaseRecord profile = charPerson.get("profile");
             Long existingProfileId = (profile != null) ? profile.get(FieldNames.FIELD_ID) : null;
             if (profile == null || existingProfileId == null || existingProfileId <= 0L) {
-                BaseRecord newProfile = createPersistedForeignInstance(user, ModelNames.MODEL_PROFILE,
+                BaseRecord newProfile = PbSubRecordUtil.createSubRecord(user, octx, ModelNames.MODEL_PROFILE,
                         baseline != null ? baseline.get(FieldNames.FIELD_PROFILE) : null);
                 if (newProfile == null) {
                     logger.error("Failed to create persisted profile for charPerson " + name);
@@ -2637,7 +2550,18 @@ public class PictureBookUtil {
                 BaseRecord narrative = charPerson.get("narrative");
                 Long existingNarrativeId = (narrative != null) ? narrative.get(FieldNames.FIELD_ID) : null;
                 if (narrative == null || existingNarrativeId == null || existingNarrativeId <= 0L) {
-                    narrative = createPersistedForeignInstance(user, OlioModelNames.MODEL_NARRATIVE);
+                    // Through the CANONICAL Olio utility, which already builds the narrative in
+                    // {world}/Narratives, creates-or-patches it, links it back onto the person and
+                    // flushes the queue. The hand-rolled createPersistedForeignInstance it replaces
+                    // targeted ~/Narratives in the ACTING USER'S HOME — which is KI-60's collision
+                    // target (a write there recovered onto "#151 Apparel" for "#1049 Narratives").
+                    // Falls back to a plainly-created record when there is no usable OlioContext:
+                    // getCreateNarrative needs a world to build into, and returning null there would
+                    // abort character creation for a reason unrelated to the character.
+                    narrative = PbSubRecordUtil.getCreateNarrative(octx, charPerson, null);
+                    if (narrative == null) {
+                        narrative = PbSubRecordUtil.createSubRecord(user, octx, OlioModelNames.MODEL_NARRATIVE);
+                    }
                     if (narrative == null) {
                         logger.error("Failed to create persisted narrative for charPerson " + name);
                         return null;
@@ -2691,7 +2615,7 @@ public class PictureBookUtil {
             BaseRecord statistics = charPerson.get(OlioFieldNames.FIELD_STATISTICS);
             Long existingStatsId = (statistics != null) ? statistics.get(FieldNames.FIELD_ID) : null;
             if (statistics == null || existingStatsId == null || existingStatsId <= 0L) {
-                BaseRecord newStats = createPersistedForeignInstance(user, OlioModelNames.MODEL_CHAR_STATISTICS,
+                BaseRecord newStats = PbSubRecordUtil.createSubRecord(user, octx, OlioModelNames.MODEL_CHAR_STATISTICS,
                         baseline != null ? baseline.get(OlioFieldNames.FIELD_STATISTICS) : null);
                 if (newStats == null) {
                     logger.error("Failed to create persisted statistics for charPerson " + name);
@@ -2709,7 +2633,7 @@ public class PictureBookUtil {
             BaseRecord store = charPerson.get(FieldNames.FIELD_STORE);
             Long existingStoreId = (store != null) ? store.get(FieldNames.FIELD_ID) : null;
             if (store == null || existingStoreId == null || existingStoreId <= 0L) {
-                BaseRecord newStore = createPersistedForeignInstance(user, OlioModelNames.MODEL_STORE,
+                BaseRecord newStore = PbSubRecordUtil.createSubRecord(user, octx, OlioModelNames.MODEL_STORE,
                         baseline != null ? baseline.get(FieldNames.FIELD_STORE) : null);
                 if (newStore == null) {
                     logger.error("Failed to create persisted store for charPerson " + name);
@@ -2735,7 +2659,7 @@ public class PictureBookUtil {
                     BaseRecord instinct = charPerson.get(OlioFieldNames.FIELD_INSTINCT);
                     Long existingInstinctId = (instinct != null) ? instinct.get(FieldNames.FIELD_ID) : null;
                     if (instinct == null || existingInstinctId == null || existingInstinctId <= 0L) {
-                        BaseRecord newInstinct = createPersistedForeignInstance(user, OlioModelNames.MODEL_INSTINCT,
+                        BaseRecord newInstinct = PbSubRecordUtil.createSubRecord(user, octx, OlioModelNames.MODEL_INSTINCT,
                                 baseline.get(OlioFieldNames.FIELD_INSTINCT));
                         if (newInstinct != null) {
                             BaseRecord linked = patchCharPersonField(user, charPerson, OlioFieldNames.FIELD_INSTINCT, newInstinct);
@@ -2753,7 +2677,7 @@ public class PictureBookUtil {
                     BaseRecord personality = charPerson.get(FieldNames.FIELD_PERSONALITY);
                     Long existingPersonalityId = (personality != null) ? personality.get(FieldNames.FIELD_ID) : null;
                     if (personality == null || existingPersonalityId == null || existingPersonalityId <= 0L) {
-                        BaseRecord newPersonality = createPersistedForeignInstance(user, ModelNames.MODEL_PERSONALITY,
+                        BaseRecord newPersonality = PbSubRecordUtil.createSubRecord(user, octx, ModelNames.MODEL_PERSONALITY,
                                 baseline.get(FieldNames.FIELD_PERSONALITY));
                         if (newPersonality != null) {
                             BaseRecord linked = patchCharPersonField(user, charPerson, FieldNames.FIELD_PERSONALITY, newPersonality);
@@ -2782,7 +2706,7 @@ public class PictureBookUtil {
                     BaseRecord state = charPerson.get(FieldNames.FIELD_STATE);
                     Long existingStateId = (state != null) ? state.get(FieldNames.FIELD_ID) : null;
                     if (state == null || existingStateId == null || existingStateId <= 0L) {
-                        BaseRecord newState = createPersistedForeignInstance(user, OlioModelNames.MODEL_CHAR_STATE,
+                        BaseRecord newState = PbSubRecordUtil.createSubRecord(user, octx, OlioModelNames.MODEL_CHAR_STATE,
                                 baseline.get(FieldNames.FIELD_STATE));
                         if (newState != null) {
                             BaseRecord linked = patchCharPersonField(user, charPerson, FieldNames.FIELD_STATE, newState);
@@ -3269,7 +3193,7 @@ public class PictureBookUtil {
         // KI-42: resolve every foreign sub-model group once, before the character loop, rather than
         // letting all 13 createPersistedForeignInstance call sites re-run the same get-or-create for
         // each character.
-        prepareForeignSubModelGroups(user);
+        PbSubRecordUtil.prepareGroups(user, null);
 
         // Create charPerson records — use LLM for detail extraction if needed
         Map<String, String> charObjectIds = new LinkedHashMap<>();
@@ -3514,12 +3438,21 @@ public class PictureBookUtil {
             
             Object charsObjForPrompt = sceneData.get("characters");
             List<String> charNarrationsForPrompt = new ArrayList<>();
+            // Collected for the v2 graph's record bindings (role "character"): a binding onto the
+            // charPerson is the ONLY thing that can see a character EDIT, which artifact chaining
+            // structurally cannot — see PbWatchedFields and §2.3. Cheap: these are the same records
+            // the loop already resolved, so nothing extra is read.
+            List<String> promptCharObjectIds = new ArrayList<>();
             if (charsObjForPrompt instanceof List) {
                 for (Object charItem : (List<Object>) charsObjForPrompt) {
                     if (charNarrationsForPrompt.size() >= 2) break;
                     ResolvedCharacter rc = resolveSceneCharacter(user, charItem, sceneGroupPath);
                     if (rc != null) {
                         charNarrationsForPrompt.add(rc.name + ": " + SWUtil.stripSDXLWeighting(rc.sceneNarration));
+                        if (rc.charPerson != null) {
+                            String rcOid = rc.charPerson.get(FieldNames.FIELD_OBJECT_ID);
+                            if (rcOid != null) promptCharObjectIds.add(rcOid);
+                        }
                     }
                 }
             }
@@ -3531,11 +3464,82 @@ public class PictureBookUtil {
             // apparel selection below (no-ops entirely for every character/book not using it).
             int currentSceneIndex = resolveCurrentSceneIndex(user, sceneGroupPath, sceneObjectId);
 
+            // ══════════════════════════════════════════════════════════════════
+            // PB2 (picturebook.v2) — open the workflow graph for this scene
+            // ══════════════════════════════════════════════════════════════════
+            // Behind the flag, and DEFAULT OFF: with v2 off every call below is a no-op and this
+            // method behaves exactly as PictureBook 1 did, which is what makes
+            // TestPictureBookCustom#TestPictureBookCustomPipeline a real non-regression gate.
+            //
+            // openSceneGraph is FIND-ONLY for the book and its world — it never creates them. A
+            // render is a USE of a book; a use that created a book (and so a universe, a world,
+            // three groups and a role pair) would be the LibraryUtil read-path-that-creates shape
+            // .claude/rules/architecture.md warns about. A missing book logs and returns null.
+            //
+            // Every v2 call in this method is wrapped: the graph is PROVENANCE, and losing
+            // provenance must never lose an image the GPU spent ten minutes producing.
+            PbPipelineUtil.SceneGraph pbGraph = null;
+            String pbBookGroupName = null;
+            if (PbFeatureFlag.isV2Enabled()) {
+                try {
+                    if (bookGroupPath != null) {
+                        int lastSlash = bookGroupPath.lastIndexOf('/');
+                        pbBookGroupName = (lastSlash >= 0 && lastSlash < bookGroupPath.length() - 1)
+                                ? bookGroupPath.substring(lastSlash + 1) : bookGroupPath;
+                    }
+                    pbGraph = PbPipelineUtil.openSceneGraph(user, params.bookSlug, pbBookGroupName,
+                            sceneObjectId, currentSceneIndex, (String) sceneData.get("title"));
+                } catch (Exception pbe) {
+                    logger.warn("PB2: failed to open the scene graph; continuing with PB1 only: " + pbe.getMessage(), pbe);
+                    pbGraph = null;
+                }
+            }
+
+            // Stage 0's two prompt nodes. Recorded here, once the prompts are resolved, so the
+            // artifact holds what was actually used rather than what was requested. Each carries a
+            // sdConfigSnapshot because the resolved style is part of the prompt (getSDConfigPrompt).
+            if (pbGraph != null) {
+                try {
+                    BaseRecord lpNode = PbPipelineUtil.getCreateNode(pbGraph,
+                            PbPipelineUtil.landscapePromptHandle(sceneObjectId),
+                            PbNodeTypeEnumType.LANDSCAPE_PROMPT, 10,
+                            PbPipelineUtil.SCOPE_SCENE, sceneObjectId);
+                    PbGraphUtil.persistPromptText(user, lpNode, landscapePrompt);
+                    PbPipelineUtil.recordText(pbGraph, lpNode, PbPipelineUtil.ROLE_LANDSCAPE_PROMPT,
+                            PbArtifactTypeEnumType.PROMPT, landscapePrompt, common);
+                    PbPipelineUtil.completeNode(pbGraph, lpNode);
+
+                    BaseRecord spNode = PbPipelineUtil.getCreateNode(pbGraph,
+                            PbPipelineUtil.scenePromptHandle(sceneObjectId),
+                            PbNodeTypeEnumType.SCENE_PROMPT, 11,
+                            PbPipelineUtil.SCOPE_SCENE, sceneObjectId);
+                    // The character bindings go on the PROMPT node, not the composite: the prompt is
+                    // what the character's description actually feeds, so an edit to the character
+                    // invalidates the prompt first and everything downstream by propagation.
+                    for (int ci = 0; ci < promptCharObjectIds.size(); ci++) {
+                        PbPipelineUtil.bindRecord(pbGraph, spNode, PbPipelineUtil.ROLE_CHARACTER, ci,
+                                OlioModelNames.MODEL_CHAR_PERSON, promptCharObjectIds.get(ci));
+                    }
+                    PbGraphUtil.persistPromptText(user, spNode, scenePrompt);
+                    PbPipelineUtil.recordText(pbGraph, spNode, PbPipelineUtil.ROLE_SCENE_PROMPT,
+                            PbArtifactTypeEnumType.PROMPT, scenePrompt, common);
+                    PbPipelineUtil.completeNode(pbGraph, spNode);
+                } catch (Exception pbe) {
+                    logger.warn("PB2: failed to record the Stage 0 prompt nodes: " + pbe.getMessage(), pbe);
+                }
+            }
+
             // Stage 1: Portrait bytes for up to 2 scene characters
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "face", "Generating portraits...");
             // Characters may be stored as [{name:...}] maps or as objectId strings
             List<byte[]> portraitBytesList = new ArrayList<>();
             List<String> portraitPromptList = new ArrayList<>();
+            // PB2: parallel to portraitBytesList, so the composite can bind portrait0/portrait1 to the
+            // exact artifact REVISIONS it consumed. §2.5's attribution row — PB1 passes null,null for
+            // systemCharacter/userCharacter on every book image, so today nothing records which
+            // characters an image actually contains.
+            List<BaseRecord> pbPortraitNodes = new ArrayList<>();
+            List<BaseRecord> pbPortraitArtifacts = new ArrayList<>();
             // Persist+link+reuse portraits only for real books; the caller drives this
             // explicitly via isBook (default true) rather than inferring intent from scene
             // group path text. false selects the legacy ~/Chat fallback render-use-delete
@@ -3599,6 +3603,48 @@ public class PictureBookUtil {
                         portraitBytesList.add(existingPortraitBytes);
                         portraitPromptList.add(SWUtil.stripSDXLWeighting(portraitPrompt2));
                         logger.info("Reusing persisted portrait for " + cname + " (no re-render)");
+                        if (pbGraph != null) {
+                            // A reused portrait produced NOTHING this run, so it must not mint a new
+                            // revision — that would make every scene fork the version chain for a
+                            // portrait that was demonstrably not regenerated. Record a revision only
+                            // when the chain is empty (a portrait that predates the graph), and label
+                            // it DONE_UNVERIFIED: we genuinely do not know the config/seed that made
+                            // it, and claiming DONE would assert provenance we do not have.
+                            try {
+                                BaseRecord pNode = PbPipelineUtil.getCreateNode(pbGraph,
+                                        PbPipelineUtil.portraitHandle(cp.get(FieldNames.FIELD_OBJECT_ID)),
+                                        PbNodeTypeEnumType.PORTRAIT, 20,
+                                        PbPipelineUtil.SCOPE_CHARACTER, cp.get(FieldNames.FIELD_OBJECT_ID));
+                                PbPipelineUtil.bindRecord(pbGraph, pNode, PbPipelineUtil.ROLE_CHARACTER, 0,
+                                        OlioModelNames.MODEL_CHAR_PERSON, cp.get(FieldNames.FIELD_OBJECT_ID));
+                                BaseRecord reused = PbArtifactUtil.findSelected(user, pNode, PbPipelineUtil.ROLE_PORTRAIT);
+                                if (reused == null) {
+                                    // The portrait artifact points at the CHARACTER PROFILE's portrait —
+                                    // that is the portrait's canonical home and there is no second copy.
+                                    //
+                                    // But it must be re-read as a TOP-LEVEL data.data first. The record
+                                    // reached through profile.portrait is a nested sub-model, and the query
+                                    // planner deliberately restricts fields on sub-models to prevent
+                                    // recursion, so what comes back is not fully identified — handing it
+                                    // to AccessPoint.create as a foreign reference makes the create return
+                                    // null. MEASURED 2026-08-17: the artifact create failed for both
+                                    // reused portraits and no artifact row existed at all, while
+                                    // persistArtifact's message blamed the unique-revision index (since
+                                    // fixed to name both causes).
+                                    BaseRecord existingPortrait = (profile != null) ? profile.get("portrait") : null;
+                                    BaseRecord portraitRef = readDataRecord(user,
+                                            (existingPortrait != null) ? existingPortrait.get(FieldNames.FIELD_OBJECT_ID) : null);
+                                    reused = PbPipelineUtil.recordImage(pbGraph, pNode, PbPipelineUtil.ROLE_PORTRAIT,
+                                            PbArtifactTypeEnumType.IMAGE, portraitRef, existingPortraitBytes,
+                                            "image/png", null, null, null, null);
+                                    PbGraphUtil.persistStatus(user, pNode, PbNodeStatusEnumType.DONE_UNVERIFIED);
+                                }
+                                pbPortraitNodes.add(pNode);
+                                pbPortraitArtifacts.add(reused);
+                            } catch (Exception pbe) {
+                                logger.warn("PB2: failed to record the reused portrait for " + cname + ": " + pbe.getMessage(), pbe);
+                            }
+                        }
                         continue;
                     }
 
@@ -3641,6 +3687,38 @@ public class PictureBookUtil {
                         portraitBytesList.add(portBytes);
                         portraitPromptList.add(SWUtil.stripSDXLWeighting(portraitPrompt2));
 
+                        if (pbGraph != null) {
+                            // A real render: a real new revision, with the config that produced it
+                            // frozen as sdConfigSnapshot (§2.5's "one overwriting book config snapshot"
+                            // becomes per-artifact). portCfg is the effective portrait config, not the
+                            // book's common one — the portrait forces hires=false and carries the
+                            // character's own style override.
+                            try {
+                                BaseRecord pNode = PbPipelineUtil.getCreateNode(pbGraph,
+                                        PbPipelineUtil.portraitHandle(cp.get(FieldNames.FIELD_OBJECT_ID)),
+                                        PbNodeTypeEnumType.PORTRAIT, 20,
+                                        PbPipelineUtil.SCOPE_CHARACTER, cp.get(FieldNames.FIELD_OBJECT_ID));
+                                PbPipelineUtil.bindRecord(pbGraph, pNode, PbPipelineUtil.ROLE_CHARACTER, 0,
+                                        OlioModelNames.MODEL_CHAR_PERSON, cp.get(FieldNames.FIELD_OBJECT_ID));
+                                PbGraphUtil.persistPromptText(user, pNode, portCfg.get("description"));
+                                // Re-read as a top-level data.data for the same reason as the reuse branch:
+                                // AccessPoint.create returns identity fields only, so the record it handed
+                                // back is not a usable foreign reference as-is.
+                                BaseRecord portraitRef = readDataRecord(user,
+                                        (String) portImages.get(0).get(FieldNames.FIELD_OBJECT_ID));
+                                BaseRecord pArt = PbPipelineUtil.recordImage(pbGraph, pNode,
+                                        PbPipelineUtil.ROLE_PORTRAIT, PbArtifactTypeEnumType.IMAGE,
+                                        portraitRef, portBytes, "image/png",
+                                        Long.valueOf(extractSeedFromImage(portImages.get(0))), portCfg,
+                                        JSONUtil.exportObject(portCfg), null);
+                                PbPipelineUtil.completeNode(pbGraph, pNode);
+                                pbPortraitNodes.add(pNode);
+                                pbPortraitArtifacts.add(pArt);
+                            } catch (Exception pbe) {
+                                logger.warn("PB2: failed to record the portrait for " + cname + ": " + pbe.getMessage(), pbe);
+                            }
+                        }
+
                         if (isBook) {
                             // Persist+link: attach the rendered portrait to the character via a
                             // PBAC-safe partial identity.profile update (id + portrait only) — do NOT
@@ -3658,7 +3736,7 @@ public class PictureBookUtil {
                                     // No usable profile id — this character predates the createCharPerson()
                                     // fix that persists a real profile up-front. Resolve/create one now
                                     // rather than leaving the rendered portrait silently unlinked.
-                                    BaseRecord newProfile = createPersistedForeignInstance(user, ModelNames.MODEL_PROFILE);
+                                    BaseRecord newProfile = PbSubRecordUtil.createSubRecord(user, null, ModelNames.MODEL_PROFILE);
                                     if (newProfile != null) {
                                         BaseRecord linked = patchCharPersonField(user, cp, "profile", newProfile);
                                         if (linked != null) {
@@ -3743,6 +3821,33 @@ public class PictureBookUtil {
             String landscapeOid = landscapeImage.get(FieldNames.FIELD_OBJECT_ID);
             updateSceneLandscapeId(user, scene, landscapeOid);
 
+            // PB2 Stage 2: the LANDSCAPE node, bound to the landscape-prompt node's artifact so a
+            // prompt change propagates. The forced 1024x768 here is exactly what §9's level-1
+            // dimension assertion checks against — recordImage measures the DECODED bytes, not the
+            // request, so a hires/refiner pass that silently returns another size is caught.
+            BaseRecord pbLandscapeNode = null;
+            BaseRecord pbLandscapeArtifact = null;
+            if (pbGraph != null) {
+                try {
+                    pbLandscapeNode = PbPipelineUtil.getCreateNode(pbGraph,
+                            PbPipelineUtil.landscapeHandle(sceneObjectId),
+                            PbNodeTypeEnumType.LANDSCAPE, 30, PbPipelineUtil.SCOPE_SCENE, sceneObjectId);
+                    BaseRecord lpNode = pbGraph.node(PbPipelineUtil.landscapePromptHandle(sceneObjectId));
+                    if (lpNode != null) {
+                        PbPipelineUtil.bindNode(pbGraph, pbLandscapeNode, PbPipelineUtil.ROLE_PROMPT, 0, lpNode,
+                                PbArtifactUtil.findSelected(user, lpNode, PbPipelineUtil.ROLE_LANDSCAPE_PROMPT));
+                    }
+                    pbLandscapeArtifact = PbPipelineUtil.recordImage(pbGraph, pbLandscapeNode,
+                            PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE, landscapeImage,
+                            landscapeBytes, "image/png",
+                            Long.valueOf(extractSeedFromImage(landscapeImage)), common,
+                            JSONUtil.exportObject(landReq), null);
+                    PbPipelineUtil.completeNode(pbGraph, pbLandscapeNode);
+                } catch (Exception pbe) {
+                    logger.warn("PB2: failed to record the landscape node: " + pbe.getMessage(), pbe);
+                }
+            }
+
             // Landscape generation is a full hires/refiner pass when enabled — let the GPU
             // recover before the composite stage, which is heavier still (img2img on top of its
             // own base+refiner pass) and runs immediately after with zero gap otherwise. This is
@@ -3789,6 +3894,43 @@ public class PictureBookUtil {
             String sceneName = "scene_" + sceneObjectId + "_" + System.currentTimeMillis();
             List<BaseRecord> finalImages = new ArrayList<>();
 
+            // PB2 Stage 3/4 nodes. The REFERENCE node is created for all three composite modes
+            // because all three build references — they just differ in shape (letterboxed separates,
+            // a stitched strip, or a Graphics2D canvas), which is what artifactType records.
+            // referenceArtifactOids feeds sanitizeGeneratorRequest: the base64 payloads are REPLACED
+            // by these objectIds, which is what makes the persisted request both small and readable.
+            BaseRecord pbReferenceNode = null;
+            BaseRecord pbCompositeNode = null;
+            List<String> pbReferenceArtifactOids = new ArrayList<>();
+            // The request ACTUALLY sent, per branch. Captured as a local rather than re-derived, because
+            // the three branches build genuinely different requests and re-deriving one would record a
+            // request that was never sent — which is the exact class of dishonesty §9 is guarding against.
+            String pbCompositeRequestJson = null;
+            BaseRecord pbCompositeSnapshot = common;
+            if (pbGraph != null) {
+                try {
+                    pbReferenceNode = PbPipelineUtil.getCreateNode(pbGraph,
+                            PbPipelineUtil.referenceHandle(sceneObjectId),
+                            PbNodeTypeEnumType.REFERENCE_STRIP, 40, PbPipelineUtil.SCOPE_SCENE, sceneObjectId);
+                    pbCompositeNode = PbPipelineUtil.getCreateNode(pbGraph,
+                            PbPipelineUtil.compositeHandle(sceneObjectId),
+                            PbNodeTypeEnumType.COMPOSITE, 50, PbPipelineUtil.SCOPE_SCENE, sceneObjectId);
+                    // The reference node consumes the portraits and the landscape.
+                    for (int pi = 0; pi < pbPortraitNodes.size() && pi < 2; pi++) {
+                        PbPipelineUtil.bindNode(pbGraph, pbReferenceNode, PbPipelineUtil.portraitRole(pi), 0,
+                                pbPortraitNodes.get(pi), pbPortraitArtifacts.get(pi));
+                    }
+                    if (pbLandscapeNode != null) {
+                        PbPipelineUtil.bindNode(pbGraph, pbReferenceNode, PbPipelineUtil.ROLE_LANDSCAPE, 0,
+                                pbLandscapeNode, pbLandscapeArtifact);
+                    }
+                } catch (Exception pbe) {
+                    logger.warn("PB2: failed to create the reference/composite nodes: " + pbe.getMessage(), pbe);
+                    pbReferenceNode = null;
+                    pbCompositeNode = null;
+                }
+            }
+
             if (useFlux2) {
                 // FLUX.2 MULTI-REFERENCE PIPELINE. Three deliberate departures from the Kontext path,
                 // each fixing something observed in media/flux/bad.composite.png:
@@ -3815,6 +3957,23 @@ public class PictureBookUtil {
                 if (flux2Req == null) {
                     logger.warn("generateSceneImage: could not build a FLUX.2 request — falling back to classic");
                     useFlux2 = false;
+                }
+                // PB2 §2.5: the FLUX.2 letterboxed references exist ONLY as base64 inside the request
+                // today — nothing persists them, so there is no way to see what the model was actually
+                // shown. Persist each as an IMAGE artifact on the reference node and keep its objectId,
+                // which then REPLACES the base64 in the stored generatorRequest.
+                if (pbGraph != null && pbReferenceNode != null && flux2Req != null) {
+                    try {
+                        pbReferenceArtifactOids.addAll(recordFlux2References(pbGraph, pbReferenceNode,
+                                flux2Req.getPromptImages(), flux2Cfg, sceneObjectId));
+                        PbPipelineUtil.completeNode(pbGraph, pbReferenceNode);
+                    } catch (Exception pbe) {
+                        logger.warn("PB2: failed to record the FLUX.2 references: " + pbe.getMessage(), pbe);
+                    }
+                }
+                if (flux2Req != null) {
+                    pbCompositeRequestJson = JSONUtil.exportObject(flux2Req);
+                    pbCompositeSnapshot = flux2Cfg;
                 }
                 finalImages = (flux2Req != null)
                     ? sdu.createSceneImage(user, sceneGroupPath, sceneName, flux2Req, null, null)
@@ -3849,6 +4008,27 @@ public class PictureBookUtil {
                     promptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(refComposite));
                     kontextReq.setPromptImages(promptImages);
                 }
+                // PB2 §2.5: the Kontext stitched strip was a ./land-*.png-class throwaway. Persist it as
+                // an IMAGE_STRIP artifact — it is the single reference the model sees in this mode, so
+                // without it a bad composite cannot be diagnosed.
+                if (pbGraph != null && pbReferenceNode != null && refComposite != null) {
+                    try {
+                        BaseRecord stripData = PbPipelineUtil.persistBytes(pbGraph,
+                                "reference_strip_" + sceneObjectId + "_" + System.currentTimeMillis(),
+                                refComposite, "image/png");
+                        BaseRecord stripArt = PbPipelineUtil.recordImage(pbGraph, pbReferenceNode,
+                                PbPipelineUtil.ROLE_REFERENCE_STRIP, PbArtifactTypeEnumType.IMAGE_STRIP,
+                                stripData, refComposite, "image/png", null, kontextCfg, null, null);
+                        if (stripArt != null) {
+                            pbReferenceArtifactOids.add((String) stripArt.get(FieldNames.FIELD_OBJECT_ID));
+                        }
+                        PbPipelineUtil.completeNode(pbGraph, pbReferenceNode);
+                    } catch (Exception pbe) {
+                        logger.warn("PB2: failed to record the Kontext reference strip: " + pbe.getMessage(), pbe);
+                    }
+                }
+                pbCompositeRequestJson = JSONUtil.exportObject(kontextReq);
+                pbCompositeSnapshot = kontextCfg;
                 finalImages = sdu.createSceneImage(user, sceneGroupPath, sceneName, kontextReq, null, null);
                 if (finalImages == null || finalImages.isEmpty()) {
                     logger.warn("generateSceneImage: Kontext pipeline produced no images — falling back to classic");
@@ -3873,11 +4053,38 @@ public class PictureBookUtil {
                 byte[] compositeBytes = SDUtil.compositeSceneCanvas(landscapeBytes, leftBytes, centerBytes,
                         classicReq.getWidth(), classicReq.getHeight());
                 if (compositeBytes != null) {
-                	FileUtil.emitFile("./comp-" + sceneObjectId + ".png", compositeBytes);
-                	FileUtil.emitFile("./land-" + sceneObjectId + ".png", landscapeBytes);
+                    // PB2 §2.5: these two lines were the whole persistence story for the composite
+                    // canvas and the landscape — a debug dump into the process working directory, where
+                    // nothing found them, nothing cleaned them up and the product could not show them.
+                    // The canvas matters more than the name "debug dump" suggests: it is the image the
+                    // real portrait PIXELS are drawn onto, which is what actually preserves likeness, so
+                    // it is the one artifact that explains a composite. Under v2 it becomes a
+                    // COMPOSITE_CANVAS artifact in the world's Gallery. The emitFile calls stay on the
+                    // v2-off path so flag-off behaviour is unchanged.
+                    if (pbGraph != null && pbReferenceNode != null) {
+                        try {
+                            BaseRecord canvasData = PbPipelineUtil.persistBytes(pbGraph,
+                                    "composite_canvas_" + sceneObjectId + "_" + System.currentTimeMillis(),
+                                    compositeBytes, "image/png");
+                            BaseRecord canvasArt = PbPipelineUtil.recordImage(pbGraph, pbReferenceNode,
+                                    PbPipelineUtil.ROLE_COMPOSITE_CANVAS, PbArtifactTypeEnumType.COMPOSITE_CANVAS,
+                                    canvasData, compositeBytes, "image/png", null, common, null, null);
+                            if (canvasArt != null) {
+                                pbReferenceArtifactOids.add((String) canvasArt.get(FieldNames.FIELD_OBJECT_ID));
+                            }
+                            PbPipelineUtil.completeNode(pbGraph, pbReferenceNode);
+                        } catch (Exception pbe) {
+                            logger.warn("PB2: failed to record the classic composite canvas: " + pbe.getMessage(), pbe);
+                        }
+                    } else {
+                        FileUtil.emitFile("./comp-" + sceneObjectId + ".png", compositeBytes);
+                        FileUtil.emitFile("./land-" + sceneObjectId + ".png", landscapeBytes);
+                    }
                     classicReq.setInitImage("data:image/png;base64," + Base64.getEncoder().encodeToString(compositeBytes));
                     classicReq.setInitImageCreativity(sceneCreativity);
                 }
+                pbCompositeRequestJson = JSONUtil.exportObject(classicReq);
+                pbCompositeSnapshot = common;
                 finalImages = sdu.createSceneImage(user, sceneGroupPath, sceneName, classicReq, null, null);
             }
 
@@ -3890,6 +4097,49 @@ public class PictureBookUtil {
             IOSystem.getActiveContext().getAccessPoint().member(user, scene, finalImage, null, true);
             updateSceneImageId(user, scene, finalImageOid);
             updateSceneStatus(user, scene, "done", null);
+            // ══════════════════════════════════════════════════════════════════
+            // PB2 Stage 4 — the COMPOSITE node, its bindings, and the run
+            // ══════════════════════════════════════════════════════════════════
+            // This is where §2.5's attribution row is actually satisfied: portrait0/portrait1 bindings
+            // name the characters in the image, where PB1 passes null,null. The generatorRequest is
+            // sanitized on the way in — the base64 references are replaced by the reference artifacts'
+            // objectIds and the Swarm session_id is stripped.
+            if (pbGraph != null && pbCompositeNode != null) {
+                try {
+                    for (int pi = 0; pi < pbPortraitNodes.size() && pi < 2; pi++) {
+                        PbPipelineUtil.bindNode(pbGraph, pbCompositeNode, PbPipelineUtil.portraitRole(pi), 0,
+                                pbPortraitNodes.get(pi), pbPortraitArtifacts.get(pi));
+                    }
+                    if (pbLandscapeNode != null) {
+                        PbPipelineUtil.bindNode(pbGraph, pbCompositeNode, PbPipelineUtil.ROLE_LANDSCAPE, 0,
+                                pbLandscapeNode, pbLandscapeArtifact);
+                    }
+                    BaseRecord spNode = pbGraph.node(PbPipelineUtil.scenePromptHandle(sceneObjectId));
+                    if (spNode != null) {
+                        PbPipelineUtil.bindNode(pbGraph, pbCompositeNode, PbPipelineUtil.ROLE_PROMPT, 0, spNode,
+                                PbArtifactUtil.findSelected(user, spNode, PbPipelineUtil.ROLE_SCENE_PROMPT));
+                    }
+                    if (pbReferenceNode != null && !pbReferenceArtifactOids.isEmpty()) {
+                        PbPipelineUtil.bindNode(pbGraph, pbCompositeNode, PbPipelineUtil.ROLE_REFERENCE_STRIP, 0,
+                                pbReferenceNode, null);
+                    }
+                    PbGraphUtil.persistPromptText(user, pbCompositeNode, scenePrompt);
+                    // Must go through ByteModelUtil — a raw .get() bypasses decompression/decryption.
+                    byte[] finalBytes = ByteModelUtil.getValue(finalImage);
+                    PbPipelineUtil.recordImage(pbGraph, pbCompositeNode, PbPipelineUtil.ROLE_COMPOSITE,
+                            PbArtifactTypeEnumType.IMAGE, finalImage, finalBytes, "image/png",
+                            Long.valueOf(extractSeedFromImage(finalImage)), pbCompositeSnapshot,
+                            pbCompositeRequestJson, pbReferenceArtifactOids);
+                    PbPipelineUtil.completeNode(pbGraph, pbCompositeNode);
+                    PbPipelineUtil.dualWriteScene(pbGraph, (String) sceneData.get("title"), setting, action, mood,
+                            (String) sceneData.get("blurb"));
+                    PbPipelineUtil.closeRun(pbGraph, true, null);
+                } catch (Exception pbe) {
+                    logger.warn("PB2: failed to record the composite node: " + pbe.getMessage(), pbe);
+                    PbPipelineUtil.closeRun(pbGraph, false, pbe.getMessage());
+                }
+            }
+
             BaseRecord genResult = buildResult();
             genResult.set("imageObjectId", finalImageOid);
             // B9: report the actual prompt sent to SD (the Stage-0 resolved scene prompt), not a
@@ -3910,6 +4160,50 @@ public class PictureBookUtil {
         } finally {
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         }
+    }
+
+    /**
+     * PB2 §2.5: persist each FLUX.2 letterboxed reference as its own {@code IMAGE} artifact and return
+     * their objectIds.
+     * <p>
+     * The references exist <b>only</b> as base64 data URLs inside the request today, so there is no way
+     * to see what the model was actually shown - and the FLUX.2 path is precisely the one where a wrong
+     * reference (a center-cropped landscape, a propped-up board) is the observed failure mode. The
+     * returned objectIds replace the base64 in the persisted {@code generatorRequest}.
+     * <p>
+     * Ordinal order is request order, so {@code referenceArtifactObjectIds[i]} corresponds to
+     * {@code promptImages[i]} - which is what makes the stored request readable rather than merely small.
+     */
+    private static List<String> recordFlux2References(PbPipelineUtil.SceneGraph graph, BaseRecord referenceNode,
+            List<String> promptImages, BaseRecord snapshotCfg, String sceneObjectId) {
+        List<String> oids = new ArrayList<>();
+        if (promptImages == null || promptImages.isEmpty()) {
+            logger.warn("PB2: the FLUX.2 request carried no promptImages — nothing to record as references");
+            return oids;
+        }
+        for (int i = 0; i < promptImages.size(); i++) {
+            String dataUrl = promptImages.get(i);
+            if (dataUrl == null) continue;
+            int comma = dataUrl.indexOf(',');
+            String b64 = (comma >= 0 ? dataUrl.substring(comma + 1) : dataUrl);
+            byte[] refBytes;
+            try {
+                refBytes = Base64.getDecoder().decode(b64);
+            } catch (IllegalArgumentException iae) {
+                logger.warn("PB2: FLUX.2 reference " + i + " is not decodable base64: " + iae.getMessage());
+                continue;
+            }
+            BaseRecord refData = PbPipelineUtil.persistBytes(graph,
+                    "flux2_reference_" + i + "_" + sceneObjectId + "_" + System.currentTimeMillis(),
+                    refBytes, "image/png");
+            BaseRecord art = PbPipelineUtil.recordImage(graph, referenceNode,
+                    PbPipelineUtil.ROLE_REFERENCE_STRIP + i, PbArtifactTypeEnumType.IMAGE, refData, refBytes,
+                    "image/png", null, snapshotCfg, null, null);
+            if (art != null) {
+                oids.add((String) art.get(FieldNames.FIELD_OBJECT_ID));
+            }
+        }
+        return oids;
     }
 
     /**

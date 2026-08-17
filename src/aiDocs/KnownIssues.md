@@ -3093,3 +3093,111 @@ which for chat means KI-65 first, or the toggle resets per browser.
 Related: KI-64/KI-65 (the other two items from this report), KI-59 (no exported test image yet shows the
 landscape genuinely integrated into a composite — this toggle is the switch that test would need to
 flip), KI-55 (a composite default that silently refused every generation).
+
+---
+
+### KI-67. `AccessPoint.list` performs NO per-record authorization — an org-wide list returns another user's group-scoped records — OPEN, PLATFORM (2026-08-16, found running the phase-2c PictureBook 2 tests; disposed for PB2 on 2026-08-17)
+
+**Measured on `am7db` with two users in one organization.** A by-objectId read of user A's
+`olio.pb.node` as user B is correctly `AUDIT DENY`. An org-wide list of the same model with an explicit
+numeric `organizationId` condition returns it, `AUDIT PERMIT`.
+
+**Mechanism, read out of the code rather than inferred.** `AccessPoint.find` (`:480-523`) authorizes the
+query shape **and then** runs `AuthorizationUtil.canRead` on the result before returning it
+(`:511-517`). `AccessPoint.list` (`:623-636`) authorizes the shape via `authorizeQuery` and returns
+whatever `search` returned, **unfiltered**. `count` (`:607-622`) is the same shape.
+
+**This is pre-existing, general to every group-scoped model, and partly deliberate.** The design note at
+`AccessPoint.java:600-605` records the history: AM5 restricted lists to the parent or group, AM6 used an
+elaborate dynamic SQL evaluation, and AM7 settled on assembling a policy from the query "so that at least
+one policy check becomes required to perform the action." So `list` authorizes a **query shape** by
+design. What is defective is the consequence: an explicit `organizationId` condition satisfies PBAC's
+query requirement while being neither a tenancy nor a compartment filter, so any authenticated user in an
+organization can enumerate group-scoped records they cannot read by identity.
+
+**Pinned, not left red:** `TestPbSecurity#case02_theListPathIsNotASecurityBoundary_MEASURED_DEFECT`
+asserts the current (wrong) behaviour as a labelled characterization, the same way
+`TestPbModelSchema#TestSdConfigFieldsAreSerializedNotForeign` pins a known-wrong shape. It will fail the
+day this is fixed, which is the point.
+
+**Disposition for PictureBook 2 (2026-08-17) — constrain at the utility layer so phase 3/4 are unblocked;
+`AccessPoint.list` not changed in that phase.** Every PB2 list is reached from an authorized
+`AccessPoint.find` of the book (§5.6b's root-reference principle: authorize the root by identity, then
+list inside its compartment), and phase 4's endpoints take a **book objectId**, `find` it, and delegate to
+the Objects7 utility. Phase 4 must not expose the generic `/rest/model/search` over `olio.pb.*` and must
+not list on a caller-supplied `groupId`/`organizationId`. Full reasoning in `PictureBook2Plan.md`
+Appendix D.
+
+**CORRECTION 2026-08-17 (Stephen) — the cost argument against fixing `list` was WRONG, and it was the
+load-bearing one.** The disposition originally claimed that per-record filtering means an
+`AuthorizationUtil.canRead` policy evaluation **per row**. It does not: for a **parent- or
+directory-scoped** record the check resolves **at that level first**. `PolicyUtil.java:761-789` rewrites
+the policy's resource to the **group's urn** for anything inheriting `data.directory`
+(`policyBase = g.replaceAll(grp.get(FIELD_URN))`), and `:795-804` does the same through `parentId` for
+anything inheriting `common.parent`. N records in one group therefore share **one** policy key — one
+evaluation, then decision-cache hits; the per-row cost is a cache lookup plus a `conditionalPopulate` of
+identity fields (`AuthorizationUtil.java:158`). ⇒ **Fixing `list` is materially cheaper than claimed, and
+whether to fix it is reopened.** The only genuine remaining consideration is that rows would stop
+appearing in existing lists — which is the defect, not a regression, but is still a product-wide change
+deserving its own baseline rather than riding in on a PictureBook phase. **Recommendation is now to fix
+`list`**, leaning on that group-level resolution.
+
+**Residual risk (open):** an Objects7 caller that fabricates a workflow/node record from an id without an
+authorized `find` can still list another user's rows. Any endpoint anywhere that lists group-scoped
+records must constrain by `groupId` or filter per record itself — relying on `list` to do it is wrong
+today.
+
+Related: `.claude/rules/model-api.md` ("`AccessPoint.list` is NOT a per-record authorization boundary",
+added in phase 2c), KI-63 (PictureBook images not compartmentalized).
+
+---
+
+### KI-68. The FLUX.2 scene prompt asserts and then NEGATES its own medium — `"Photograph taken with a …"` followed by `"no photograph"` in the same positive prompt — OPEN (2026-08-17, Stephen)
+
+**Read out of a persisted `generatorRequest`, not inferred.** A picture-book scene rendered with
+`style=photograph` produces this positive prompt (abridged, real):
+
+```
+Combine the exact person and face from the first reference image with ... Place both people together in
+the environment shown in the third reference image (...). The first person is 8k highly detailed highest
+quality ultra realistic full body of Jideon de Rosa ... The mood is ...
+Photograph taken with a Kodak Brownie box camera and Canon FD 50mm f/1.8 lens using Lomography 100 film
+processed with Kodacolor by James Van Der Zee.
+Preserve facial identity, hair, and clothing precisely. Matching lighting, scale, and perspective across
+the whole image. No extra people.
+Do not draw the reference images themselves - no photograph, poster, screen, mirror, billboard, framed
+picture or character sheet anywhere in the scene.
+A single continuous scene, no panels, no split screen, no collage.
+```
+
+FLUX.2 is an instruction-following edit model and this is the **positive** prompt — there is no negative
+weighting to separate the two — so the medium is asserted by the style clause and cancelled four
+sentences later. Observed effect: a book configured as `photograph` renders as glossy digital art.
+
+**Location:** `SWUtil.java:315-316` (`newFlux2SceneTxt2Img`'s coherence block).
+
+**An earlier fix for the same bug class missed this occurrence.** The comment at `SWUtil.java:317-319`
+records that `"photographic"` was removed from this exact clause because *"the medium is now stated once,
+up front, by the config style … Saying it twice in different words is how a comic-styled book ended up
+being told 'photographic' mid-prompt."* `"no photograph"` was left in the same sentence, so the word
+survived in its **negated** form — which is worse than the duplication that was fixed, because it now
+contradicts the configured style rather than merely restating it.
+
+**Fix direction (one word, not applied):** drop `photograph` from the forbidden-objects list at `:315`.
+The remaining items — `poster, screen, mirror, billboard, framed picture, character sheet` — already
+express "do not render the reference as a depicted object in the scene", and `photograph` is the only one
+that collides with the medium vocabulary. Consider the same audit for any other style word that could
+appear in that list (`painting`, `drawing`, `illustration` would each break a differently-styled book).
+
+**Why it was not applied on discovery:** `newFlux2SceneTxt2Img` is the **shared** builder — the chat scene
+generator uses it too — so the change alters generation output for chat as well as for both PictureBook
+paths, and the phase-3 non-regression gate was mid-run against the current string. It needs its own
+before/after visual comparison rather than a drive-by edit.
+
+**Secondary, same prompt, lower confidence:** `8k highly detailed highest quality ultra realistic` appears
+**twice** (once per character) and pulls toward hyperreal/CGI against a film-stock directive; and
+`steps=4` at `cfgscale=2.0` on the distilled `flux2Klein_9b` contributes its own smoothed look. Both are
+worth testing after the contradiction is removed, not before — the contradiction is the dominant term.
+
+Related: KI-59 (honest verification of an image pipeline), KI-66 (include/exclude landscape as a Ux
+option), `PictureBook2Plan.md` §2.4 (the deliberate `steps:4` vs `FALLBACK_STEPS=24` split).

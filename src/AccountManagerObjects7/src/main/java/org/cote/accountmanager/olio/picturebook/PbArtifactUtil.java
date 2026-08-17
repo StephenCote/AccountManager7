@@ -68,7 +68,17 @@ public class PbArtifactUtil {
 	 * </ul>
 	 */
 	public static final List<String> SANITIZE_KEYS = Collections.unmodifiableList(Arrays.asList(
-		"initImage", "promptImages", "session_id", "sessionId"
+		/// The SERIALIZED names, which is what a persisted request actually contains.
+		/// MEASURED DEFECT, fixed 2026-08-17: this list originally held only the Java field names
+		/// ("initImage", "promptImages"). SWTxt2Img annotates them @JsonProperty("initimage") /
+		/// ("promptimages") because that is SwarmUI's wire contract, so the camelCase spellings NEVER
+		/// appear in the JSON - sanitization stripped nothing, a 1.6 MB base64 payload was persisted, and
+		/// isSanitized() reported a FALSE CLEAN because it counts removals and found none. Caught by
+		/// TestPictureBookWorkflow's level-1 assertion on a real FLUX.2 request. Both spellings are kept
+		/// and matching is case-insensitive (see stripKeys), so neither a field rename nor a wire-name
+		/// change can silently reopen it.
+		"initimage", "promptimages", "session_id", "sessionid",
+		"initImage", "promptImages", "sessionId"
 	));
 
 	/** Where the replaced reference objectIds are recorded instead. */
@@ -149,8 +159,16 @@ public class PbArtifactUtil {
 
 		BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, artifact);
 		if(created == null) {
+			/// Do NOT state a single cause here. This message previously claimed the unique
+			/// (producedByNode, role, revision) index had rejected a duplicate, which sent a real
+			/// investigation down the wrong path on 2026-08-17: the actual cause was a PBAC denial on a
+			/// cross-compartment `data` foreign reference, and no artifact row existed at all. AccessPoint
+			/// .create returns null for denial AND for constraint rejection, so name both.
 			throw new PictureBookException(500, "Failed to create artifact " + name
-				+ " - the unique (producedByNode, role, revision, organizationId) index rejects a duplicate revision");
+				+ " - AccessPoint.create returned null. Either PBAC denied it (check the audit log; a"
+				+ " foreign reference to a record OUTSIDE this book's compartment is the usual cause) or the"
+				+ " unique (producedByNode, role, revision, organizationId) index rejected a duplicate"
+				+ " revision. Revision resolved to " + revision + ".");
 		}
 		BaseRecord persisted = readArtifact(user, created.get(FieldNames.FIELD_OBJECT_ID), orgId);
 		setSelected(user, persisted);
@@ -314,9 +332,17 @@ public class PbArtifactUtil {
 		int removed = 0;
 		if(node instanceof Map) {
 			Map<String, Object> m = (Map<String, Object>) node;
-			for(String k : SANITIZE_KEYS) {
-				if(m.remove(k) != null) {
-					removed++;
+			/// Case-INSENSITIVE. A key list written against one spelling of the same field is exactly how
+			/// the false-clean defect above happened, and the cost of being robust here is one lowercase
+			/// comparison per key.
+			for(String present : new ArrayList<>(m.keySet())) {
+				for(String k : SANITIZE_KEYS) {
+					if(present.equalsIgnoreCase(k)) {
+						if(m.remove(present) != null) {
+							removed++;
+						}
+						break;
+					}
 				}
 			}
 			for(Object v : new ArrayList<>(m.values())) {
