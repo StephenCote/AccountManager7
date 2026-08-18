@@ -142,9 +142,17 @@ public class PbSubRecordUtil {
 	 * <p>
 	 * Goes through {@code AccessPoint} rather than {@code RecordUtil.createRecord}, so PBAC decides and the
 	 * record gets a real id/objectId immediately - which is what lets it be linked onto the parent by a
-	 * PATCH-shaped update. {@code CharPersonFactory}'s own in-memory placeholders are never cascaded
-	 * ({@code olio.charPerson} does not set {@code autoCreateForeignReference}), so without an explicit
-	 * create the sub-record's id stays 0 forever and a portrait can never be linked.
+	 * PATCH-shaped update.
+	 * <p>
+	 * <b>Correction, measured 2026-08-17.</b> An earlier version of this javadoc claimed
+	 * {@code CharPersonFactory}'s in-memory placeholders "are never cascaded" because
+	 * {@code olio.charPerson} does not set {@code autoCreateForeignReference}. That is backwards:
+	 * {@code ModelSchema.autoCreateForeignReference} <b>defaults to true</b> ({@code ModelSchema.java:60}),
+	 * so {@code DBWriter.applyAutoCreateList} ({@code :367-403}) auto-creates those placeholders <b>in the
+	 * acting user's home</b> on create - silently, through {@code RecordUtil.createRecords}, which bypasses
+	 * PBAC and emits no audit line. Six of the seven call sites in {@code createCharPerson} were therefore
+	 * unreachable until it began detaching the placeholders before create. Anything else adopting this
+	 * utility has to do the same, or its sub-records will already exist by the time it asks.
 	 *
 	 * @return the created record, or null (logged) on denial or failure
 	 */

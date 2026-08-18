@@ -3142,13 +3142,66 @@ appearing in existing lists — which is the defect, not a regression, but is st
 deserving its own baseline rather than riding in on a PictureBook phase. **Recommendation is now to fix
 `list`**, leaning on that group-level resolution.
 
-**Residual risk (open):** an Objects7 caller that fabricates a workflow/node record from an id without an
-authorized `find` can still list another user's rows. Any endpoint anywhere that lists group-scoped
-records must constrain by `groupId` or filter per record itself — relying on `list` to do it is wrong
-today.
+**DECIDED AND IMPLEMENTED 2026-08-17 (phase-4 prep): `list` now applies the same read decision `find`
+applies, to each returned row.** `list` calls a new private `filterReadable` that runs
+`AuthorizationUtil.canRead` on each row and drops the denials, immediately after `search`. `count` is
+unchanged.
+
+**It is NOT "per-record" filtering, and calling it that overstates it (Stephen, 2026-08-17 — my error,
+corrected).** For anything inheriting `data.directory` or `common.parent`, `canRead` rewrites the policy
+resource to the **group's** (or parent's) urn — `PolicyUtil.java:761-789` and `:795-821`, the same mechanism
+that makes the cost acceptable. So the decision is a **compartment** decision: two records in one group can
+never get different answers, and nothing here enforces record-level ownership *within* a group. What the fix
+closes is the discrepancy that `find` applied the compartment check and `list` did not — it makes `list`
+exactly as strong as `find`, no stronger. Every `olio.pb.*` model inherits `common.groupExt`, so the book
+compartment is precisely what is now enforced, which is what PB2 needed.
+
+**The cost question, settled with a number instead of an argument.** Both previous positions were asserted
+without one. Measured by `TestPbSecurity#case11_listFilteringCost_MEASURED` on `am7db`: **96 rows across 2
+distinct groups, filtered list 22 ms vs unfiltered `search` 18 ms ⇒ ~0.04 ms per row**. The original cost
+objection is void — and the reason it is void is the same group-urn rewrite above, which is why the two
+points are one point, not two. **One correction to the retraction's wording, because it matters to anyone
+extrapolating:** there is **no policy DECISION cache**. `PolicyUtil.policyBaseMap` (`:125`) caches only the
+raw policy *template text* by resource name, and `evaluateResourcePolicy` (`:368-384`) re-runs
+`getResourcePolicy` — including a full `JSONUtil.importObject` of the policy JSON at `:830` — plus an
+evaluator pass on **every** call. What is genuinely shared across rows in one group is the resolved policy
+*resource* and the DB reads underneath `checkEntitlement`, through the participation/query cache. Cheap in
+practice; repeated per-row work, not a cache hit.
+
+**Three residues, open, none closed by this fix:**
+0. **Record-level isolation inside one group is still not enforced anywhere** — not by `list` and not by
+   `find` either, since both resolve the same group-level policy resource. Anyone who reads "list is now a
+   security boundary" as "records are individually protected" is being misled; the boundary is the group.
+1. **`count` is still unfiltered** and cannot be without materialising every row, so a caller still learns
+   **how many** records exist that it may not read. Asserted as a measured fact in `case02` (A and B both
+   count 99 org-wide `olio.pb.node` rows while B's filtered list returns far fewer).
+2. **The filter runs after `LIMIT`/`OFFSET`**, so a paged request can return a short page while
+   `totalCount` reports the unfiltered total — pages get holes. The clean fix is a SQL-level group/parent
+   restriction, which is what AM5 did and what the design note at `AccessPoint.java:600-605` deliberately
+   moved away from. Separate work.
+
+**Baseline actually run, and what was NOT — the honest limit of this change.** Green: `TestPbGraph` 15/15,
+`TestPbSecurity` 11/11 (including the rewritten `case02`), the PictureBook 2 suites, and the Objects7
+non-regression gate. **Not run: every other test class that calls `AccessPoint.list`** —
+`TestAccessPoint`, `TestData`, `TestMembership`, `TestProfile`, `TestStream`, `TestValidationRules`,
+`TestBulkOperation`, `TestAccessApproval` — because **all eight are `<exclude>`d in
+`AccountManagerObjects7/pom.xml`** and `-Dtest=` does not override a pom exclude. No Ux752/Playwright
+list-view baseline was run either. The product-wide baseline this change "wants" is therefore **still
+owed**; un-excluding those eight is the cheapest way to get most of it.
+
+`TestPbSecurity#case02` was renamed from `..._theListPathIsNotASecurityBoundary_MEASURED_DEFECT` to
+`case02_theListPathNowEnforcesTheCompartmentBoundary`, as its own javadoc instructed if the leak were
+closed — "compartment", not "per record", because A and B own different books and therefore different
+groups, which is the only thing that case can demonstrate.
+
+**Residual risk (still open):** `count` remains an enumeration oracle, and any endpoint listing
+group-scoped records should still constrain by `groupId` rather than leaning on `list`. The PB2 utilities
+and `PbServiceFacade` do, deliberately, so the book compartment does not depend on this platform behaviour
+continuing to hold.
 
 Related: `.claude/rules/model-api.md` ("`AccessPoint.list` is NOT a per-record authorization boundary",
-added in phase 2c), KI-63 (PictureBook images not compartmentalized).
+added in phase 2c — **now stale; it describes the pre-fix behaviour and needs updating**), KI-63
+(PictureBook images not compartmentalized).
 
 ---
 

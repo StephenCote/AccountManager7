@@ -11,6 +11,7 @@ import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.IPictureBookProgressHandler;
 import org.cote.accountmanager.olio.picturebook.PictureBookCancelRegistry;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
+import org.cote.accountmanager.olio.picturebook.PbServiceFacade;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookProgressNotifier;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -63,6 +64,18 @@ import jakarta.ws.rs.core.Response;
  *   PUT  /scene/{sceneObjectId}/status        — Persist a client-driven scene status (accepted/skipped/pending/...)
  *   POST /{key}/cancel                        — KI-10: cancel an in-flight extraction/prepare-images call (key = the same workObjectId/bookObjectId passed to the call being cancelled)
  *   DELETE /{bookObjectId}/reset              — Delete entire book group
+ *
+ * PB2 phase 4 (the olio.pb.* workflow graph; bookObjectId here is the olio.pb.book objectId, NOT the
+ * PB1 book group — every one of these delegates to PbServiceFacade, which reads the book with
+ * AccessPoint.find before anything else, per the KI-67 disposition):
+ *   GET  /{bookObjectId}/workflow                              — nodes + edges, with stored and recomputed status
+ *   GET  /{bookObjectId}/workflow/node/{nodeObjectId}          — one node: bindings + artifact revision chains
+ *   GET  /{bookObjectId}/artifact/{artifactObjectId}           — one artifact's provenance (never the bytes)
+ *   GET  /{bookObjectId}/stale                                 — nodes whose recomputed status is STALE
+ *   POST /{bookObjectId}/node/{nodeObjectId}/regenerate        — MARK stale + downstream (does not execute)
+ *   POST /{bookObjectId}/node/{nodeObjectId}/pin               — pin/unpin a node
+ *   POST /{bookObjectId}/members                               — enrol users in both tiers
+ *   POST /chapter                                              — create the next chapter, optionally copying records
  */
 @DeclareRoles({"admin", "user"})
 @Path("/olio/picture-book")
@@ -563,12 +576,21 @@ public class PictureBookService {
             String json, @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
         BaseRecord params = parseParams(json);
-        Integer sceneIndex = params != null ? params.get("sceneIndex") : null;
-        if (sceneIndex == null) {
+        // KI-25's trap, not a null check: sceneIndex is an int field, so an ABSENT one reads back as 0,
+        // never null. hasField() is the only thing that distinguishes "not sent" from "sent as 0" — and
+        // 0 is a legitimate value here (scene 1). The previous `== null` guard could never fire once the
+        // field existed, and before 2026-08-17 the field was not declared on olio.pictureBookRequest at
+        // all, so it was dropped by the deserializer and the guard fired on EVERY request instead.
+        if (params == null || !params.hasField("sceneIndex")) {
             return Response.status(400).entity("{\"error\":true,\"message\":\"sceneIndex is required\"}").build();
         }
+        int sceneIndex = ((Number) params.get("sceneIndex")).intValue();
         try {
-            boolean ok = PictureBookUtil.tagApparelSceneIndex(user, apparelObjectId, sceneIndex);
+            // The character objectId in the path is now PASSED, not discarded: PictureBookUtil
+            // authorizes the owning character's BOOK (PB2 §5.6's last REST authorization gap) and
+            // refuses an apparel that is not in that character's store. Before 2026-08-17 this
+            // resolved an apparel record by objectId with no book check at all.
+            boolean ok = PictureBookUtil.tagApparelSceneIndex(user, objectId, apparelObjectId, sceneIndex);
             BaseRecord result = PictureBookUtil.buildResult();
             result.set("tagged", ok);
             return Response.status(200).entity(toJson(result)).build();
@@ -686,6 +708,236 @@ public class PictureBookService {
             PictureBookUtil.setSceneStatus(user, sceneObjectId, status);
             BaseRecord result = PictureBookUtil.buildResult();
             return Response.status(200).entity(toJson(result)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // PB2 PHASE 4 — the workflow graph, over the olio.pb.* models
+    //
+    // Every one of these is a thin delegate to PbServiceFacade (Objects7). None of them reads a
+    // model, builds a query, or makes an authorization decision here, and that is deliberate:
+    //
+    //   * The KI-67 disposition is that every PB2 list is reached from an AUTHORIZED read of the
+    //     book. PbServiceFacade.requireBook does that read with AccessPoint.find (which runs
+    //     canRead on its result) and 404s otherwise, so the constraint lives in Objects7 where it
+    //     cannot be forgotten per endpoint. If it lived here it would have to be re-typed eight
+    //     times and would be a business rule in a transport class.
+    //   * NO generic /rest/model/search over olio.pb.* is exposed, and NO endpoint accepts a
+    //     caller-supplied groupId or organizationId to list on. The book objectId in the path is
+    //     the only addressable root; a node or artifact belonging to a different book is a 404.
+    //
+    // Response bodies are the facade's DTO maps via JSONUtil.exportObject, matching /scenes and
+    // /characters. Artifact bytes are never inlined - the DTO carries dataObjectId and the existing
+    // resource route serves the content.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * GET /{bookObjectId}/workflow
+     * The book's whole workflow graph: nodes (with both the persisted status and the recomputed one)
+     * and edges. bookObjectId is the olio.pb.book objectId, not the PB1 book group.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/workflow")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getWorkflow(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.workflowView(user, bookObjectId))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /{bookObjectId}/workflow/node/{nodeObjectId}
+     * One node in detail: bindings, and the artifact revision chain per role.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/workflow/node/{nodeObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getWorkflowNode(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("nodeObjectId") String nodeObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.nodeView(user, bookObjectId, nodeObjectId))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /{bookObjectId}/artifact/{artifactObjectId}
+     * One artifact's provenance: revision, seed, contentHash, dimensions, the sanitized
+     * generatorRequest and the sdConfigSnapshot. Never the bytes.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/artifact/{artifactObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getArtifact(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("artifactObjectId") String artifactObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.artifactView(user, bookObjectId, artifactObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /{bookObjectId}/stale
+     * Every node whose recomputed status is STALE. A node that has never succeeded is NOT stale
+     * (inputHash is null until the first success) — see PbServiceFacade.listStale.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/stale")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listStale(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.listStale(user, bookObjectId))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/node/{nodeObjectId}/regenerate
+     * MARK a node (and everything downstream of it) for regeneration. This is not a scheduler:
+     * execution happens on the next scene generation call, and the response says so
+     * ({@code executed:false}). A pinned node is refused with 409.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/node/{nodeObjectId:[0-9A-Za-z\\-]+}/regenerate")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response regenerateNode(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("nodeObjectId") String nodeObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.requestRegenerate(user, bookObjectId, nodeObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/node/{nodeObjectId}/pin
+     * Pin or unpin a node. Body: { pinned: true|false }; an absent body pins (the common case, and
+     * the unpin call is the one worth being explicit about).
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/node/{nodeObjectId:[0-9A-Za-z\\-]+}/pin")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response pinNode(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("nodeObjectId") String nodeObjectId, String json,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        boolean pinned = true;
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            Object p = params.get("pinned");
+            if (p instanceof Boolean) pinned = ((Boolean) p).booleanValue();
+        }
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.setPinned(user, bookObjectId, nodeObjectId, pinned)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/members
+     * Enrol users in the book, in both tiers (book Writer/Admin + the organization-wide universe
+     * Reader). Body: { userNames: ["a","b"], asAdmin?: false }.
+     *
+     * <p>Measured and worth knowing before calling: a book <b>Writer</b> cannot enrol anyone —
+     * OlioContext.register's authorizing role is the Admin tier — so this needs the org admin or an
+     * explicit Admin grant. Per-target outcomes are reported individually rather than collapsed.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/members")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response addMembers(@PathParam("bookObjectId") String bookObjectId, String json,
+            @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        List<String> userNames = new ArrayList<>();
+        boolean asAdmin = false;
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            Object namesObj = params.get("userNames");
+            if (namesObj instanceof List) {
+                for (Object o : (List<?>) namesObj) {
+                    if (o instanceof String) userNames.add((String) o);
+                }
+            }
+            Object aa = params.get("asAdmin");
+            if (aa instanceof Boolean) asAdmin = ((Boolean) aa).booleanValue();
+        }
+        try {
+            return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.addMembers(user,
+                context.getInitParameter("datagen.path"), bookObjectId, userNames, asAdmin))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /chapter
+     * Create the next chapter of a book: a new book with its own world, groups and role pair, and
+     * optionally copy records into it. Body:
+     * { fromBookObjectId, slug, title?, copyRecordModel?, copyRecordObjectIds?: [...] }.
+     *
+     * <p>§3.5 chose COPY over reference deliberately — apparel/wearables are per character, so a
+     * shared instance would make deleting chapter 1 destroy chapter 2's data.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/chapter")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createChapter(String json, @Context HttpServletRequest request,
+            @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord params = parseParams(json);
+        if (params == null) {
+            return errorResponse(400, "A request body is required");
+        }
+        String fromBookObjectId = params.get("fromBookObjectId");
+        String slug = params.get("slug");
+        String title = params.get("title");
+        String copyRecordModel = params.get("copyRecordModel");
+        List<String> copyIds = new ArrayList<>();
+        Object idsObj = params.get("copyRecordObjectIds");
+        if (idsObj instanceof List) {
+            for (Object o : (List<?>) idsObj) {
+                if (o instanceof String) copyIds.add((String) o);
+            }
+        }
+        try {
+            return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.createChapter(user,
+                context.getInitParameter("datagen.path"), fromBookObjectId, slug, title, copyIds,
+                copyRecordModel))).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }

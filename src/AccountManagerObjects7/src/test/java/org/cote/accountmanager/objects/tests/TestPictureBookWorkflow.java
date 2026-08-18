@@ -24,6 +24,7 @@ import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbFeatureFlag;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
+import org.cote.accountmanager.olio.picturebook.PbSubRecordUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -31,6 +32,7 @@ import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
@@ -76,6 +78,10 @@ public class TestPictureBookWorkflow extends BaseTest {
 	private static final String ORG_PATH = "/Development/PictureBook Custom Tests";
 	private static final String TEST_USER = "pbCustomTestUser";
 	private static final String PB1_BOOK_NAME = "Catatone Custom Book 4";
+	/// This test class's OWN book, rebuilt from scratch on every run of the gap-1/2 case (see its
+	/// javadoc). Deliberately not the catatone fixture, and deliberately not timestamped - a fixed name
+	/// plus a delete-if-present start means at most one of these ever exists.
+	private static final String FRESH_BOOK_NAME = "PB2 Fresh Character Book";
 	private static final String CHAT_PATH = "~/Chat";
 	private static final String PB_LLM_MODEL = "gpt-oss:120b";
 	private static final int PB_ITER = 4;
@@ -466,6 +472,413 @@ public class TestPictureBookWorkflow extends BaseTest {
 			+ " evidence would weaken the test into a tautology (plan §9).");
 
 		logger.info("***** PB2 level-2 differential verification PASSED");
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// PHASE-3 GAP 2 — the sub-record reroute, BOTH destinations
+	// ═══════════════════════════════════════════════════════════════════
+
+	/**
+	 * {@code PbSubRecordUtil}'s destination matrix, measured for <b>all seven</b> foreign sub-models in
+	 * <b>both</b> directions: {@code {world}/{group}} with an {@code OlioContext}, and the legacy
+	 * {@code ~/{schemaGroup}} fallback without one.
+	 * <p>
+	 * <b>Why this case exists.</b> Deleting {@code prepareForeignSubModelGroups} +
+	 * {@code createPersistedForeignInstance} in phase 3 repointed eight call sites inside
+	 * {@code createCharPerson} at this utility, and <b>nothing executed it</b> - the flag-off gate reused a
+	 * cached book, so {@code createFromScenes -> createCharPerson} never ran. "It compiles" was the entire
+	 * evidence. The legacy fallback in particular is what keeps the flag-off gate byte-identical, so a
+	 * regression there is invisible until it is asserted.
+	 * <p>
+	 * Deterministic and cheap on purpose: no LLM, no SD. The end-to-end proof that the eight call sites
+	 * actually run is {@link #TestFreshCharacterSubRecordsAndPortraitRender}; this case proves the
+	 * destination resolution itself, for every model, in both directions, which a single character
+	 * creation cannot do (three of the seven are only created when a baseline exists, i.e. only with a
+	 * context).
+	 */
+	@Test
+	public void TestSubRecordDestinationsWithAndWithoutContext() throws Exception {
+		logger.info("***** PB2 phase-3 gap 2: sub-record destinations, with and without an OlioContext");
+		setupContext();
+		assertNotNull("An OlioContext is required for the world-group half of this case", olioCtx);
+		assertNotNull("The context must carry a world", olioCtx.getWorld());
+		long orgId = (long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+
+		List<BaseRecord> created = new ArrayList<>();
+		try {
+			assertEquals("All seven of the character's foreign sub-models must be routed", 7,
+				PbSubRecordUtil.WORLD_GROUP_FIELD.size());
+			for(Map.Entry<String, String> e : PbSubRecordUtil.WORLD_GROUP_FIELD.entrySet()) {
+				String model = e.getKey();
+				String worldField = e.getValue();
+
+				// ── destination 1: {world}/{group}, resolved off the world's own auth.group field ──
+				String worldPath = PbSubRecordUtil.groupPathFor(testUser, olioCtx, model);
+				assertNotNull(model + ": a world destination must resolve with a context", worldPath);
+				assertEquals(model + ": the destination must come from the world's declared '" + worldField
+					+ "' group, not be composed by this utility",
+					(String) olioCtx.getWorld().get(worldField + ".path"), worldPath);
+				assertFalse(model + ": the world destination must NOT be the acting user's home - that is"
+					+ " exactly the pre-phase-3 behaviour this replaced (and ~/Narratives is KI-60's"
+					+ " collision target)", worldPath.startsWith("~/"));
+
+				BaseRecord inCtx = PbSubRecordUtil.createSubRecord(testUser, olioCtx, model);
+				assertNotNull(model + ": createSubRecord must persist a record in " + worldPath, inCtx);
+				created.add(inCtx);
+				Long ctxId = inCtx.get(FieldNames.FIELD_ID);
+				assertTrue(model + ": the world-group sub-record must carry a real id (a 0 id is what made"
+					+ " portraits unlinkable before)", ctxId != null && ctxId.longValue() > 0L);
+				long worldGroupId = groupIdOfPath(worldPath, orgId);
+				assertEquals(model + ": the record must actually be IN the world group, not merely created"
+					+ " while that group was resolved", worldGroupId,
+					((Number) inCtx.get(FieldNames.FIELD_GROUP_ID)).longValue());
+
+				// ── destination 2: the legacy ~/{schemaGroup} fallback, with no context ──
+				String legacyPath = PbSubRecordUtil.groupPathFor(testUser, null, model);
+				String schemaGroup = RecordFactory.getSchema(model).getGroup();
+				assertEquals(model + ": with no context the destination must be the legacy home path - this"
+					+ " is what keeps the flag-off gate byte-identical", "~/" + schemaGroup, legacyPath);
+
+				BaseRecord noCtx = PbSubRecordUtil.createSubRecord(testUser, null, model);
+				assertNotNull(model + ": createSubRecord must persist a record in " + legacyPath, noCtx);
+				created.add(noCtx);
+				Long legacyId = noCtx.get(FieldNames.FIELD_ID);
+				assertTrue(model + ": the legacy-path sub-record must carry a real id",
+					legacyId != null && legacyId.longValue() > 0L);
+				long legacyGroupId = groupIdOfPath(legacyPath, orgId);
+				assertEquals(model + ": the record must actually be in the legacy home group", legacyGroupId,
+					((Number) noCtx.get(FieldNames.FIELD_GROUP_ID)).longValue());
+
+				assertTrue(model + ": the two destinations must be DIFFERENT groups, or this test would"
+					+ " pass while the reroute did nothing", worldGroupId != legacyGroupId);
+				logger.info(model + ": world group " + worldGroupId + " (" + worldPath + ") vs legacy group "
+					+ legacyGroupId + " (" + legacyPath + ")");
+			}
+			logger.info("***** PB2 phase-3 gap 2 (destination matrix) PASSED");
+		}
+		finally {
+			/// This case's OWN throwaway records, created seconds ago - not fixture data. Left behind they
+			/// would accumulate 14 rows per run in seven shared groups.
+			for(BaseRecord r : created) {
+				try {
+					IOSystem.getActiveContext().getAccessPoint().delete(testUser, r);
+				}
+				catch(Exception ignored) {
+					logger.warn("Could not clean up a " + r.getSchema() + " created by this case");
+				}
+			}
+		}
+	}
+
+	/** The numeric id of an existing group at {@code path}; fails the test if it is not there. */
+	private long groupIdOfPath(String path, long orgId) {
+		BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
+			org.cote.accountmanager.schema.ModelNames.MODEL_GROUP, path,
+			org.cote.accountmanager.schema.type.GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("The destination group '" + path + "' must exist after createSubRecord", grp);
+		return ((Number) grp.get(FieldNames.FIELD_ID)).longValue();
+	}
+
+	// ═══════════════════════════════════════════════════════════════════
+	// PHASE-3 GAPS 1 + 2 — a from-scratch character, then a REAL portrait render
+	// ═══════════════════════════════════════════════════════════════════
+
+	/**
+	 * A book built from scratch, so {@code createFromScenes -> createCharPerson} genuinely runs (gap 2's
+	 * eight call sites plus the {@code NarrativeUtil.getCreateNarrative} path), and then a scene render
+	 * against live Swarm on characters that have <b>no persisted portrait</b> - which is what forces the
+	 * portrait <b>RENDER</b> branch (gap 1) rather than the reuse branch every phase-3 run took.
+	 * <p>
+	 * <b>Why one test and not two.</b> The render branch is only reachable when the character has no
+	 * portrait to reuse, and the only honest way to get such a character is to create one. Forcing the
+	 * branch any other way (deleting the catatone portraits, or {@code isBookOverride=false}, which
+	 * renders and then <i>deletes</i> the image the artifact would reference) either destroys fixture data
+	 * or leaves a dangling artifact.
+	 * <p>
+	 * <b>Real source content.</b> Scene 1 of the cached catatone extraction - Jideon carrying Duna toward
+	 * the waiting cab in the rain - reused verbatim from the note {@code TestPictureBookCustom} caches.
+	 * One scene, not three: fewer characters to LLM-extract, and it is the known two-character scene.
+	 * <p>
+	 * <b>This test's own PB1 book group is deleted at the start of each run</b> if a previous run left one,
+	 * because "from scratch" is the whole point. That is this test's artifact, never the catatone fixture.
+	 */
+	@Test
+	public void TestFreshCharacterSubRecordsAndPortraitRender() throws Exception {
+		logger.info("***** PB2 phase-3 gaps 1+2: from-scratch character creation, then a REAL portrait render");
+		setupContext();
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		assertNotNull("test.swarm.server must be set", swarmServer);
+		assertNotNull("An OlioContext is required - the world-group destination and the random baseline"
+			+ " (which is what creates instinct/personality/state at all) both depend on it", olioCtx);
+		long orgId = (long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+
+		// ── a genuinely fresh PB1 book ──
+		deleteBookGroupIfPresent(FRESH_BOOK_NAME, orgId);
+		List<Map<String, Object>> cached = cachedCatatoneScenes();
+		List<Map<String, Object>> oneScene = new ArrayList<>();
+		oneScene.add(cached.get(0));
+		logger.info("Building '" + FRESH_BOOK_NAME + "' from catatone scene 1: "
+			+ oneScene.get(0).get("title") + " / characters=" + oneScene.get(0).get("characters"));
+
+		BaseRecord meta = PictureBookUtil.createFromScenes(testUser,
+			cachedCatatoneWorkObjectId(), chatConfig.get(FieldNames.FIELD_NAME), "dystopian sci-fi",
+			FRESH_BOOK_NAME, oneScene, new ArrayList<>(),
+			testProperties.getProperty("test.datagen.path"));
+		assertNotNull("createFromScenes must return book meta", meta);
+		List<Object> failedCharacters = meta.get("failedCharacters");
+		assertTrue("createFromScenes must not have failed any character: " + failedCharacters,
+			failedCharacters == null || failedCharacters.isEmpty());
+		String pb1BookOid = meta.get("bookObjectId");
+		assertNotNull("The fresh book meta must carry a bookObjectId", pb1BookOid);
+
+		// ── gap 2: the seven sub-records landed, in the world groups, with real ids ──
+		List<Map<String, Object>> chars = PictureBookUtil.listCharacters(testUser, pb1BookOid);
+		assertFalse("The fresh book must have characters - createCharPerson ran or it did not", chars.isEmpty());
+		logger.info("createFromScenes created " + chars.size() + " character(s) from scratch");
+		for(Map<String, Object> c : chars) {
+			assertSubRecordsPersisted((String) c.get("objectId"), (String) c.get("name"), orgId);
+		}
+
+		// ── gap 1: render scene 1. Fresh characters have no portrait, so the RENDER branch must run. ──
+		String slug = PbPipelineUtil.deriveSlug(FRESH_BOOK_NAME);
+		assertNotNull("A slug must derive from '" + FRESH_BOOK_NAME + "'", slug);
+		BaseRecord book = freshPb2Book(slug);
+		String sceneOid = firstSceneObjectId(pb1BookOid);
+
+		long t0 = System.currentTimeMillis();
+		BaseRecord result = PictureBookUtil.generateSceneImage(testUser, sceneOid,
+			params(slug, true, FIXED_SEED), "SWARM", swarmServer);
+		logger.info("Fresh-book scene generated in " + (System.currentTimeMillis() - t0) + "ms");
+		assertNotNull("generateSceneImage must return a result", result);
+		exportImage((String) result.get("imageObjectId"), "pb2_fresh_composite");
+
+		BaseRecord workflow = PbGraphUtil.findWorkflow(testUser, book);
+		assertNotNull("The fresh book must now have a workflow", workflow);
+
+		int portraitNodesAsserted = 0;
+		for(Map<String, Object> c : chars) {
+			String charOid = (String) c.get("objectId");
+			BaseRecord pNode = PbPipelineUtil.findNodeByHandle(testUser, workflow,
+				PbPipelineUtil.portraitHandle(charOid));
+			if(pNode == null) {
+				/// Only up to 2 of a scene's characters get portraits (portraitBytesList caps at 2), so a
+				/// third character legitimately has no node. Skipping is correct; the count check below is
+				/// what stops this from silently asserting nothing.
+				continue;
+			}
+			BaseRecord art = PbArtifactUtil.findSelected(testUser, pNode, PbPipelineUtil.ROLE_PORTRAIT);
+			assertNotNull(c.get("name") + ": the portrait node must have a selected artifact", art);
+
+			/// THE gap-1 assertion. DONE_UNVERIFIED is what the REUSE branch writes, and it is what every
+			/// phase-3 run produced; DONE is only reachable through completeNode() on the render branch.
+			PbNodeStatusEnumType status = pNode.getEnum(OlioFieldNames.FIELD_PB_NODE_STATUS);
+			assertEquals(c.get("name") + ": a portrait that was actually RENDERED must be DONE. "
+				+ "DONE_UNVERIFIED means the reuse branch ran, which is precisely the phase-3 gap this"
+				+ " case exists to close.", PbNodeStatusEnumType.DONE, status);
+			assertNotNull(c.get("name") + ": a rendered portrait node must carry an inputHash",
+				pNode.get(OlioFieldNames.FIELD_PB_INPUT_HASH));
+			assertNotNull(c.get("name") + ": the render branch must record the seed it used"
+				+ " (extractSeedFromImage) - the reuse branch cannot, which is why it is UNVERIFIED",
+				art.get(OlioFieldNames.FIELD_PB_SEED));
+			/// sdConfigSnapshot is declared type "model", foreign FALSE - persisted as serialized JSON in a
+			/// text column (olio.sd.config has ioConstraints ["unknown"], so no table and no id to reference)
+			/// but read back through the deserializer as a RECORD. A first attempt read it as a String and
+			/// got ClassCastException: LooseRecord cannot be cast to String.
+			BaseRecord snapshot = art.get(OlioFieldNames.FIELD_PB_SD_CONFIG_SNAPSHOT);
+			assertNotNull(c.get("name") + ": the render branch must freeze the effective portrait config"
+				+ " as sdConfigSnapshot", snapshot);
+			assertEquals(c.get("name") + ": the snapshot must deserialize as an olio.sd.config",
+				OlioModelNames.MODEL_SD_CONFIG, snapshot.getSchema());
+			String snapDesc = snapshot.get("description");
+			assertNotNull(c.get("name") + ": the snapshot must carry the portrait description that was"
+				+ " actually sent - a snapshot without it does not describe the render", snapDesc);
+			/// The node's promptText is persisted FROM portCfg.get("description"), so equality proves the
+			/// snapshot and the node describe the same request rather than two unrelated configs.
+			assertEquals(c.get("name") + ": the snapshot's description and the node's promptText both come"
+				+ " from the effective portrait config, so they must match",
+				(String) pNode.get(OlioFieldNames.FIELD_PB_PROMPT_TEXT), snapDesc);
+			Integer revision = art.get(OlioFieldNames.FIELD_PB_REVISION);
+			assertTrue(c.get("name") + ": a rendered portrait must be at revision >= 1 (got " + revision + ")",
+				revision != null && revision.intValue() >= 1);
+			assertNotNull(c.get("name") + ": the render branch must persist the portrait prompt text",
+				pNode.get(OlioFieldNames.FIELD_PB_PROMPT_TEXT));
+
+			/// Level 1 on a freshly-rendered portrait - which phase 3 never did, because it only ever had
+			/// reused ones. Portrait dimensions are not forced by the pipeline, so no expectation is
+			/// asserted beyond decoded == recorded.
+			assertLevel1Image(art, "portrait[" + c.get("name") + "]", 0, 0);
+			exportArtifactImage(art, "pb2_fresh_portrait_"
+				+ String.valueOf(c.get("name")).replace(' ', '_'));
+
+			/// The corrected profile-portrait reference (phase-3 defect 2), also unexercised until now: the
+			/// artifact's data must be the CHARACTER PROFILE's own portrait record, not a copy.
+			assertPortraitArtifactPointsAtTheProfilePortrait(art, charOid, (String) c.get("name"), orgId);
+			portraitNodesAsserted++;
+		}
+		assertTrue("At least one PORTRAIT node must have been asserted, or this case proved nothing about"
+			+ " the render branch", portraitNodesAsserted >= 1);
+		logger.info("***** PB2 phase-3 gaps 1+2 PASSED (" + portraitNodesAsserted
+			+ " freshly-rendered portrait node(s) asserted DONE with a seed and a snapshot)");
+	}
+
+	/**
+	 * Every foreign sub-record the character should now own: a real id, and (for the five that carry a
+	 * world destination) the world group rather than the acting user's home.
+	 * <p>
+	 * {@code instinct}/{@code personality}/{@code state} are only created when
+	 * {@code buildRandomBaseline} produced a baseline, i.e. only when an {@code OlioContext} was
+	 * available - so they are asserted here (this test supplies a {@code dataPath}) and are legitimately
+	 * absent on the contextless path. Stated rather than silently skipped.
+	 */
+	private void assertSubRecordsPersisted(String charObjectId, String name, long orgId) throws Exception {
+		org.cote.accountmanager.io.Query q = org.cote.accountmanager.io.QueryUtil.createQuery(
+			OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charObjectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setCache(false);
+		q.planMost(true);
+		BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
+		assertNotNull(name + ": the created character must be readable", cp);
+
+		String[][] subs = new String[][] {
+			{ "profile", ModelNames.MODEL_PROFILE },
+			{ "narrative", OlioModelNames.MODEL_NARRATIVE },
+			{ OlioFieldNames.FIELD_STATISTICS, OlioModelNames.MODEL_CHAR_STATISTICS },
+			{ FieldNames.FIELD_STORE, OlioModelNames.MODEL_STORE },
+			{ OlioFieldNames.FIELD_INSTINCT, OlioModelNames.MODEL_INSTINCT },
+			{ FieldNames.FIELD_PERSONALITY, ModelNames.MODEL_PERSONALITY },
+			{ FieldNames.FIELD_STATE, OlioModelNames.MODEL_CHAR_STATE }
+		};
+		for(String[] sub : subs) {
+			BaseRecord rec = cp.get(sub[0]);
+			assertNotNull(name + ": charPerson." + sub[0] + " must be a persisted " + sub[1]
+				+ " - CharPersonFactory's in-memory placeholder is never cascaded, so a null here means"
+				+ " the createSubRecord call site did not run", rec);
+			Long id = rec.get(FieldNames.FIELD_ID);
+			assertTrue(name + ": charPerson." + sub[0] + " must carry a real id (got " + id + ")",
+				id != null && id.longValue() > 0L);
+			String worldField = PbSubRecordUtil.WORLD_GROUP_FIELD.get(sub[1]);
+			String expectPath = olioCtx.getWorld().get(worldField + ".path");
+			assertEquals(name + ": " + sub[1] + " must live in the world's '" + worldField + "' group, not"
+				+ " the acting user's home", groupIdOfPath(expectPath, orgId),
+				((Number) rec.get(FieldNames.FIELD_GROUP_ID)).longValue());
+			logger.info(name + ": " + sub[0] + " id=" + id + " groupId=" + rec.get(FieldNames.FIELD_GROUP_ID)
+				+ " (" + expectPath + ")");
+		}
+
+		BaseRecord narrative = cp.get("narrative");
+		String sdPrompt = narrative.get("sdPrompt");
+		assertNotNull(name + ": the narrative must carry sdPrompt - it is the portrait prompt, and it is"
+			+ " persisted by a SEPARATE update that a foreign-field patch does not cascade", sdPrompt);
+		assertFalse(name + ": sdPrompt must not be blank", sdPrompt.isBlank());
+		/// physicalDescription is set from the SAME portraitPrompt in the same patch, so equality is the
+		/// assertion that the separate olio.narrative update actually landed - not merely that the field is
+		/// non-null. Deliberately NOT asserting that sdPrompt contains the character's NAME: it is a visual
+		/// prompt built by NarrativeUtil.buildPortraitPromptFromExtractedData, and for a character the
+		/// extraction described only by role it legitimately reads "...portrait of a ((woman))..." with no
+		/// name. A first attempt asserted the name and failed for that reason - the assertion was wrong,
+		/// not the pipeline.
+		assertEquals(name + ": sdPrompt and physicalDescription are written by one patch, so they must"
+			+ " match - a mismatch means only part of that update landed",
+			sdPrompt, (String) narrative.get("physicalDescription"));
+		logger.info(name + ": narrative.sdPrompt = " + sdPrompt);
+	}
+
+	/**
+	 * Phase-3 defect 2's corrected form: the {@code PORTRAIT} artifact's {@code data} must be the
+	 * character profile's <b>own</b> portrait record, re-read as a top-level {@code data.data}. The
+	 * earlier (rejected) fix copied the bytes into the book gallery instead.
+	 */
+	private void assertPortraitArtifactPointsAtTheProfilePortrait(BaseRecord artifact, String charObjectId,
+			String name, long orgId) throws Exception {
+		BaseRecord data = artifact.get(OlioFieldNames.FIELD_PB_DATA);
+		assertNotNull(name + ": the portrait artifact must reference a data.data", data);
+
+		/// planMost(true) + an explicit populate of the one nested field, NOT a "profile.portrait" entry in
+		/// setRequest: a first attempt used the nested-path projection form and find() returned null, so the
+		/// assertion failed for a query-shape reason rather than telling us anything about the portrait.
+		/// This is the same read assertSubRecordsPersisted already does successfully.
+		org.cote.accountmanager.io.Query q = org.cote.accountmanager.io.QueryUtil.createQuery(
+			OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charObjectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setCache(false);
+		q.planMost(true);
+		BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
+		assertNotNull(name + ": the character must be re-readable", cp);
+		BaseRecord profile = cp.get("profile");
+		assertNotNull(name + ": the character must still have a profile", profile);
+		IOSystem.getActiveContext().getReader().populate(profile, new String[] { "portrait" });
+		BaseRecord portrait = profile.get("portrait");
+		assertNotNull(name + ": the freshly rendered portrait must be LINKED onto profile.portrait", portrait);
+		assertEquals(name + ": the artifact must reference the profile's own portrait record, not a copy of"
+			+ " its bytes", (String) portrait.get(FieldNames.FIELD_OBJECT_ID),
+			(String) data.get(FieldNames.FIELD_OBJECT_ID));
+	}
+
+	/** Delete a PB1 book group this test previously created, so "from scratch" means it. */
+	private void deleteBookGroupIfPresent(String bookName, long orgId) {
+		String path = "~/Data/PictureBooks/" + bookName;
+		BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
+			org.cote.accountmanager.schema.ModelNames.MODEL_GROUP, path,
+			org.cote.accountmanager.schema.type.GroupEnumType.DATA.toString(), orgId);
+		if(grp == null) {
+			return;
+		}
+		boolean deleted = IOSystem.getActiveContext().getAccessPoint().delete(testUser, grp);
+		logger.info("Deleted this test's previous '" + path + "' (deleted=" + deleted + ") so character"
+			+ " creation runs from scratch. This is this test's own book, never the catatone fixture.");
+		assertTrue("This test's own previous book group at '" + path + "' must be deletable, otherwise the"
+			+ " run would reuse its characters and the render branch would never fire", deleted);
+	}
+
+	/** The catatone source work note {@code TestPictureBookCustom} caches, by its fixed name. */
+	private String cachedCatatoneWorkObjectId() {
+		BaseRecord work = DocumentUtil.getRecord(testUser, org.cote.accountmanager.schema.ModelNames.MODEL_NOTE,
+			"catatone-opening-custom " + PB_ITER, CHAT_PATH);
+		assertNotNull("The cached catatone work note 'catatone-opening-custom " + PB_ITER + "' must exist in "
+			+ CHAT_PATH + ". Run TestPictureBookCustom#TestPictureBookCustomPipeline once - this test"
+			+ " deliberately reuses the real source document rather than inventing a stand-in.", work);
+		return work.get(FieldNames.FIELD_OBJECT_ID);
+	}
+
+	/** The cached catatone scene list, so this case pays for no extract-scenes LLM call. */
+	@SuppressWarnings("unchecked")
+	private List<Map<String, Object>> cachedCatatoneScenes() {
+		BaseRecord cache = DocumentUtil.getRecord(testUser, org.cote.accountmanager.schema.ModelNames.MODEL_NOTE,
+			".scenesCache", "~/Data/PictureBooks/" + PB1_BOOK_NAME);
+		assertNotNull("The cached catatone scene list must exist at ~/Data/PictureBooks/" + PB1_BOOK_NAME
+			+ "/.scenesCache. Run TestPictureBookCustom#TestPictureBookCustomPipeline once.", cache);
+		List<Map<String, Object>> scenes = org.cote.accountmanager.util.JSONUtil.getList(
+			(String) cache.get(FieldNames.FIELD_TEXT), Map.class, null);
+		assertNotNull("The scene cache must parse", scenes);
+		assertFalse("The scene cache must hold at least one scene", scenes.isEmpty());
+		return scenes;
+	}
+
+	/** Get-or-create the PB2 book for this case's fresh PB1 book. */
+	private BaseRecord freshPb2Book(String slug) {
+		long orgId = (long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		BaseRecord book = PbBookUtil.findBookBySlug(testUser, slug, orgId);
+		if(book != null) {
+			return book;
+		}
+		book = PbBookUtil.createBook(testUser, testProperties.getProperty("test.datagen.path"), slug,
+			FRESH_BOOK_NAME);
+		assertNotNull("PB2 book creation must return a book readable by its creator", book);
+		return book;
+	}
+
+	/** Export an artifact's bytes so a freshly-rendered portrait can actually be LOOKED AT. */
+	private void exportArtifactImage(BaseRecord artifact, String label) {
+		try {
+			BaseRecord data = artifact.get(OlioFieldNames.FIELD_PB_DATA);
+			if(data == null) {
+				return;
+			}
+			exportImage((String) data.get(FieldNames.FIELD_OBJECT_ID), label);
+		}
+		catch(Exception e) {
+			logger.warn("Failed to export artifact " + label + ": " + e.getMessage());
+		}
 	}
 
 	/** Export a generated image so it can actually be LOOKED AT - decode-succeeded is not correctness. */

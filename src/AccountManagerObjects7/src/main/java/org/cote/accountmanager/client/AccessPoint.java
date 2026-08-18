@@ -631,10 +631,72 @@ public class AccessPoint {
 			return getFailedResponse(query, "Query not authorized");
 		}
 		qr = search(contextUser, query);
+		qr = filterReadable(contextUser, qr);
 		AuditUtil.closeAudit(audit, prr, null);
 		return qr;
 	}
-	
+
+	/// KI-67. Until 2026-08-17 `list` authorized the QUERY SHAPE and then returned whatever `search`
+	/// returned, unchecked - so an org-wide query carrying an explicit numeric organizationId satisfied
+	/// PBAC's query requirement and returned group-scoped records the caller could not read by identity.
+	/// `find` (:511-517) has always run canRead on its result; `list` did not. Measured on am7db with two
+	/// users in one organization: the by-objectId read of another user's olio.pb.node was AUDIT DENY while
+	/// the org-wide list returned it AUDIT PERMIT. This makes `list` exactly as strong as `find`.
+	///
+	/// CALL IT WHAT IT IS: this is NOT per-record authorization. For anything inheriting data.directory or
+	/// common.parent, canRead rewrites the policy resource to the GROUP's (or parent's) urn -
+	/// PolicyUtil.java:761-789 and :795-821 - so the decision is a COMPARTMENT decision. Two records in one
+	/// group can never get different answers, and record-level ownership inside a group is enforced neither
+	/// here nor by `find`. Describing this as per-record filtering overstates it; the boundary is the group.
+	///
+	/// That same rewrite is why the cost is acceptable: N records in one group produce ONE policyBase string
+	/// and their entitlement lookups hit the shared participation/query cache. Precisely, because an earlier
+	/// note overclaimed it: there is NO policy DECISION cache (PolicyUtil caches only the raw template text,
+	/// :125), so the policy is still assembled and evaluated per row - a JSON import plus an evaluator pass.
+	/// Measured ~0.04ms/row over 96 rows in 2 groups; see TestPbSecurity#case11.
+	///
+	/// THREE RESIDUES, deliberately not papered over:
+	///   0. Record-level isolation within one group is still not enforced anywhere.
+	///   1. `count` (:607-622) is NOT filtered and cannot be without materialising every row, so a caller
+	///      can still learn HOW MANY records exist that it may not read. The content leak is closed; the
+	///      cardinality leak is not.
+	///   2. Because the filter runs after LIMIT/OFFSET, a paged request can return fewer rows than it asked
+	///      for while totalCount still reports the unfiltered total. Pages get holes. The clean fix is a
+	///      SQL-level group/parent restriction (what AM5 did - see the design note above), which is a
+	///      separate piece of work.
+	private QueryResult filterReadable(BaseRecord contextUser, QueryResult qr) {
+		if(qr == null || qr.getResults() == null || qr.getResults().length == 0) {
+			return qr;
+		}
+		BaseRecord[] recs = qr.getResults();
+		List<BaseRecord> permitted = new ArrayList<>();
+		for(BaseRecord rec : recs) {
+			PolicyResponseType rprr = IOSystem.getActiveContext().getAuthorizationUtil().canRead(contextUser, contextUser, rec);
+			if(rprr != null && rprr.getType() == PolicyResponseEnumType.PERMIT) {
+				permitted.add(rec);
+			}
+		}
+		if(permitted.size() == recs.length) {
+			return qr;
+		}
+		/// WARN, not debug: a row disappearing from a list is exactly the symptom a UX regression report
+		/// will describe, and this line is what tells the reader it was an authorization decision.
+		logger.warn("Filtered " + (recs.length - permitted.size()) + " of " + recs.length
+			+ " unreadable record(s) from a list of " + qr.get(FieldNames.FIELD_TYPE)
+			+ " for " + contextUser.get(FieldNames.FIELD_NAME)
+			+ " - totalCount still reports the unfiltered total (KI-67 residue 1)");
+		try {
+			qr.set(FieldNames.FIELD_RESULTS, permitted);
+			qr.set(FieldNames.FIELD_COUNT, permitted.size());
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			logger.error("Failed to apply the per-record read filter; returning the unfiltered result would"
+				+ " leak, so an empty result is returned instead", e);
+			return getFailedResponse(null, "Failed to filter list results");
+		}
+		return qr;
+	}
+
 	private QueryResult getFailedResponse(Query query, String message) {
 		QueryResult qr = new QueryResult(query);
 		qr.setResponse(OperationResponseEnumType.FAILED, message);

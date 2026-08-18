@@ -157,6 +157,14 @@ public class PictureBookUtil {
      */
     private static final String SCENES_DIR = "Scenes";
 
+    /**
+     * Name of the sub-group every book charPerson is created in (see createFromScenes'
+     * {@code ensureSubGroup(user, bookGroupPath, "Characters")}). Used by
+     * {@link #authorizeCharacterApparel} to reach the owning book group the same way
+     * {@link #resolveSceneBookGroup} does from a scene.
+     */
+    private static final String CHARACTERS_DIR = "Characters";
+
     // Per-character attributes written by createFromScenes' reduce step. ATTR_SCENE_REFS = CSV of the
     // scene indices the character appears in; ATTR_DESCRIPTION = the LLM-reduced, style/setting-free
     // visual description condensed from those scenes' content blocks — the source used for imaging
@@ -1322,8 +1330,28 @@ public class PictureBookUtil {
      * Tag an apparel entry with the scene index it should first apply from (see
      * selectSceneApparel). Used by the character-editor UI after generating a new outfit via the
      * existing outfitBuilder.js flow — retroactively tags the freshly-generated apparel.
+     *
+     * <p><b>PB2 §5.6's last remaining REST authorization gap, closed 2026-08-17.</b> This method
+     * used to resolve an apparel record by objectId and write to it with <b>no book check at all</b> —
+     * the same shape {@code authorizeSceneAccess} was written to fix for the scene-addressed entry
+     * points, left as a follow-up when that patch landed. The REST route already carries the owning
+     * character ({@code PUT /character/{objectId}/apparel/{apparelObjectId}/scene-tag}) and simply
+     * discarded it. Now the character is the authorized root: it is read through {@code AccessPoint}
+     * (so {@code canRead} applies), its book group is authorized for {@code WRITE}, and the apparel
+     * must actually be in <b>that</b> character's store.
+     *
+     * <p><b>Why the apparel's own group cannot be the check.</b> {@code ApparelUtil.constructApparel}
+     * creates apparel in the <i>world's</i> Apparel group, olio-owned and shared — so authorizing
+     * the apparel's group would authorize the shared corpus, not the book. Authorization has to come
+     * from the character, which does live in {@code <book>/Characters}.
+     *
+     * @param charObjectId the owning character; required, and the thing actually authorized
+     * @throws PictureBookException 404 when the character or apparel is absent/unreadable, 403 when
+     *         the owning book denies the write, 400 when the apparel is not this character's
      */
-    public static boolean tagApparelSceneIndex(BaseRecord user, String apparelObjectId, int sceneIndex) {
+    public static boolean tagApparelSceneIndex(BaseRecord user, String charObjectId, String apparelObjectId,
+            int sceneIndex) {
+        authorizeCharacterApparel(user, charObjectId, apparelObjectId);
         Query q = QueryUtil.createQuery(OlioModelNames.MODEL_APPAREL, FieldNames.FIELD_OBJECT_ID, apparelObjectId);
         q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
         q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_ORGANIZATION_ID,
@@ -1353,6 +1381,85 @@ public class PictureBookUtil {
             logger.error("Failed to tag apparel " + apparelObjectId + " with sceneIndex " + sceneIndex + ": " + e.getMessage(), e);
             throw new PictureBookException(500, e.getMessage());
         }
+    }
+
+    /**
+     * Authorize an apparel write through its owning CHARACTER's book, and confirm the apparel really
+     * belongs to that character. See {@link #tagApparelSceneIndex}'s javadoc for why the character —
+     * not the apparel — is the authorized root.
+     *
+     * <p>Every hop is an id-based {@code AccessPoint} read, never a path resolution (§5.6b: there is
+     * no read-up). The book group is reached as character {@code groupId} → its group → that group's
+     * {@code parentId}, exactly as {@code resolveSceneBookGroup} reaches it from a scene.
+     */
+    private static void authorizeCharacterApparel(BaseRecord user, String charObjectId, String apparelObjectId) {
+        if (user == null || charObjectId == null || charObjectId.isEmpty()) {
+            throw new PictureBookException(404, "Character not found");
+        }
+        if (apparelObjectId == null || apparelObjectId.isEmpty()) {
+            throw new PictureBookException(404, "Apparel not found");
+        }
+        Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charObjectId);
+        cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        cq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+                FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_STORE });
+        cq.setCache(false);
+        BaseRecord charPerson = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+        if (charPerson == null) {
+            throw new PictureBookException(404, "Character not found");
+        }
+
+        // Book-group authorization: <book>/Characters -> <book>.
+        Long groupId = charPerson.get(FieldNames.FIELD_GROUP_ID);
+        BaseRecord container = null;
+        if (groupId != null && groupId > 0L) {
+            BaseRecord charGroup = IOSystem.getActiveContext().getAccessPoint()
+                    .findById(user, ModelNames.MODEL_GROUP, groupId);
+            if (charGroup != null) {
+                Long parentId = charGroup.get(FieldNames.FIELD_PARENT_ID);
+                if (CHARACTERS_DIR.equals(charGroup.get(FieldNames.FIELD_NAME)) && parentId != null && parentId > 0L) {
+                    container = IOSystem.getActiveContext().getAccessPoint()
+                            .findById(user, ModelNames.MODEL_GROUP, parentId);
+                }
+                if (container == null) {
+                    /// A character outside a book's Characters group authorizes against its own group —
+                    /// never skipped, same rule as a legacy ~/Chat scene.
+                    container = charGroup;
+                }
+            }
+        }
+        if (container == null) {
+            throw new PictureBookException(403, "Not authorized for this book");
+        }
+        PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, container);
+        if (prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+            logger.warn("Denied apparel scene-tag on book group " + container.get(FieldNames.FIELD_NAME)
+                    + " for character " + charObjectId + " (user " + user.get(FieldNames.FIELD_NAME) + ")");
+            throw new PictureBookException(403, "Not authorized for this book");
+        }
+
+        // The apparel must be THIS character's. Without this, an authorized book grant would let a
+        // caller tag any apparel record in the organization by pairing it with a character it holds.
+        BaseRecord storeRef = charPerson.get(FieldNames.FIELD_STORE);
+        Long storeId = (storeRef != null) ? storeRef.get(FieldNames.FIELD_ID) : null;
+        if (storeId == null || storeId <= 0L) {
+            throw new PictureBookException(400, "Character has no store, so it owns no apparel");
+        }
+        Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_STORE, FieldNames.FIELD_ID, storeId);
+        sq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        sq.setCache(false);
+        sq.planMost(true);
+        BaseRecord store = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+        List<BaseRecord> appl = (store != null) ? store.get(OlioFieldNames.FIELD_APPAREL) : null;
+        if (appl != null) {
+            for (BaseRecord a : appl) {
+                if (apparelObjectId.equals(a.get(FieldNames.FIELD_OBJECT_ID))) {
+                    return;
+                }
+            }
+        }
+        throw new PictureBookException(400, "Apparel " + apparelObjectId + " does not belong to character "
+                + charPerson.get(FieldNames.FIELD_NAME));
     }
 
     /**
@@ -2349,6 +2456,109 @@ public class PictureBookUtil {
      * callers need a definitive per-call success/failure signal (a null return here becomes a
      * logged, surfaced failedCharacters/failedPortraits entry, not a silent no-op).
      */
+    /**
+     * Ensure the character's narrative is a real persisted record carrying the SD portrait prompt, and
+     * attach it by a PATCH-shaped update (identity + narrative only) — never a full-object update on the
+     * shallow {@code planMost(false)} charPerson, which would risk re-persisting other foreign refs and a
+     * silent PBAC denial.
+     *
+     * <p><b>MUST run after personality/instinct/state, not before — measured 2026-08-17.</b> Extracted
+     * from the middle of {@code createCharPerson} for exactly this reason.
+     * {@code NarrativeUtil.getCreateNarrative} → {@code ProfileUtil.getProfile} →
+     * {@code analyzePersonality} → {@code DarkTetradUtil.getAggressiveness} dereferences
+     * {@code charPerson.personality} without a null check ({@code DarkTetradUtil.java:254}). While the
+     * factory's placeholder personality was silently auto-created before {@code create}, that reference was
+     * always non-null and the ordering never mattered; once the placeholders are detached so the sub-records
+     * can land in the world groups, running this first NPEs inside {@code getCreateNarrative}, which then
+     * falls back to a plain {@code createSubRecord}. The narrative still persisted and still landed in the
+     * right group, so every group assertion passed — the only visible symptom was a WARN, and the canonical
+     * Olio utility had quietly stopped being used.
+     *
+     * <p>The two-step write is deliberate and is not redundant: {@code patchCharPersonField} rewrites only
+     * {@code charPerson.narrative}'s FK reference (per {@code model-api.md}, "foreign fields patch by ID
+     * reference") and does <b>not</b> cascade the narrative's own field values, so {@code sdPrompt} /
+     * {@code physicalDescription} need their own update on {@code olio.narrative} — confirmed live:
+     * {@code narrative.sdPrompt} read back null without it. That update goes through
+     * {@code AccessPoint.update} rather than {@code getCreateNarrative}'s internal
+     * {@code RecordUtil.updateRecord} (a PBAC bypass, appropriate for Olio's own population generation, not
+     * for a live end-user session), so PBAC applies and a failure is detectable here.
+     *
+     * @return false when the narrative could not be created, persisted or attached — the caller aborts
+     */
+    private static boolean ensureNarrative(BaseRecord user, OlioContext octx, BaseRecord charPerson, String name,
+            String portraitPrompt) {
+        try {
+            BaseRecord narrative = charPerson.get("narrative");
+            Long existingNarrativeId = (narrative != null) ? narrative.get(FieldNames.FIELD_ID) : null;
+            if (narrative == null || existingNarrativeId == null || existingNarrativeId <= 0L) {
+                // Through the CANONICAL Olio utility, which already builds the narrative in
+                // {world}/Narratives, creates-or-patches it, links it back onto the person and
+                // flushes the queue. The hand-rolled createPersistedForeignInstance it replaces
+                // targeted ~/Narratives in the ACTING USER'S HOME — which is KI-60's collision
+                // target (a write there recovered onto "#151 Apparel" for "#1049 Narratives").
+                // Falls back to a plainly-created record when there is no usable OlioContext:
+                // getCreateNarrative needs a world to build into, and returning null there would
+                // abort character creation for a reason unrelated to the character.
+                narrative = PbSubRecordUtil.getCreateNarrative(octx, charPerson, null);
+                if (narrative == null) {
+                    narrative = PbSubRecordUtil.createSubRecord(user, octx, OlioModelNames.MODEL_NARRATIVE);
+                }
+                if (narrative == null) {
+                    logger.error("Failed to create persisted narrative for charPerson " + name);
+                    return false;
+                }
+            }
+            narrative.set("sdPrompt", portraitPrompt);
+            narrative.set("physicalDescription", portraitPrompt);
+
+            BaseRecord narrativePatch = narrative.copyRecord(
+                    new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "sdPrompt", "physicalDescription" });
+            BaseRecord narrativeFieldsPersisted = IOSystem.getActiveContext().getAccessPoint().update(user, narrativePatch);
+            if (narrativeFieldsPersisted == null) {
+                logger.error("Failed to persist narrative.sdPrompt/physicalDescription for charPerson " + name + " — AccessPoint.update denied or failed (PBAC/persist)");
+                return false;
+            }
+
+            BaseRecord narrativeLinked = patchCharPersonField(user, charPerson, "narrative", narrative);
+            if (narrativeLinked == null) {
+                logger.error("Failed to attach narrative to charPerson " + name + " — AccessPoint.update denied or failed (PBAC/persist)");
+                return false;
+            }
+            charPerson.set("narrative", narrative);
+            return true;
+        } catch (Exception e) {
+            logger.error("Failed to set portrait prompt/narrative for " + name + ": " + e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Drop a {@code CharPersonFactory}-built, still-unpersisted foreign sub-record off {@code charPerson}
+     * so {@code DBWriter}'s auto-create does not write it into the acting user's home directory.
+     * <p>
+     * Only ever clears a placeholder: a sub-record that already has an identity (a real id) belongs to
+     * someone and is left exactly where it is. Best-effort — a failure here means the record keeps its
+     * pre-phase-3 home destination, which is a wrong group, not a lost character.
+     */
+    private static void detachFactoryPlaceholder(BaseRecord charPerson, String name, String fieldName) {
+        try {
+            BaseRecord existing = charPerson.get(fieldName);
+            if (existing == null) {
+                return;
+            }
+            Long existingId = existing.get(FieldNames.FIELD_ID);
+            if (existingId != null && existingId.longValue() > 0L) {
+                /// Already persisted somewhere — not a factory placeholder. Leave it alone.
+                return;
+            }
+            charPerson.set(fieldName, null);
+        } catch (Exception e) {
+            logger.warn("Could not detach the factory placeholder charPerson." + fieldName + " for " + name
+                    + " — it will be auto-created in the acting user's home instead of the world group: "
+                    + e.getMessage());
+        }
+    }
+
     private static BaseRecord patchCharPersonField(BaseRecord user, BaseRecord charPerson, String fieldName, BaseRecord value) {
         try {
             charPerson.set(fieldName, value);
@@ -2497,6 +2707,43 @@ public class PictureBookUtil {
                 if (!skills.isEmpty()) charPerson.set("trades", skills);
             }
 
+            // ── DETACH the factory's home-directory placeholders before create ──
+            //
+            // MEASURED 2026-08-17 (TestPictureBookWorkflow#TestFreshCharacterSubRecordsAndPortraitRender,
+            // the first run that ever executed this path): six of the seven sub-records were still landing
+            // in the ACTING USER'S HOME, i.e. phase 3's reroute was not merely unexercised, it was
+            // BYPASSED. Two facts, both the opposite of what the comments below used to assert:
+            //   1. ModelSchema.autoCreateForeignReference DEFAULTS TO TRUE (ModelSchema.java:60). A model
+            //      that "does not set" it therefore HAS it on. olio.charPerson does not set it ⇒ on.
+            //   2. CharPersonFactory.implement() pre-builds statistics/instinct/behavior/personality/
+            //      state/store/profile as in-memory records path-scoped to "~/" + schemaGroup, and
+            //      DBWriter.applyAutoCreateList (:367-403) creates every non-identity foreign child on
+            //      CREATE via RecordUtil.createRecords — a PBAC bypass, which is why there is no ADD audit
+            //      line for them and why this went unnoticed.
+            // So by the time the `id <= 0` guards below run, the placeholders already have real ids in
+            // ~/Profiles, ~/Statistics, ~/Stores, ... and every PbSubRecordUtil call site is skipped.
+            // Only `narrative` ever reached the reroute, because the factory does not pre-build one.
+            //
+            // Detaching them makes the auto-create list empty for these fields, so the blocks below create
+            // them through PbSubRecordUtil in the world groups and link them by PATCH.
+            //
+            // Gated on having somewhere else to put them, deliberately: with no OlioContext the world
+            // destination does not exist, and detaching would delete behaviour rather than move it. Same
+            // for instinct/personality/state, whose creation below is conditional on `baseline != null` —
+            // detaching those without a baseline would leave the character with none at all.
+            // `behavior` is intentionally NOT detached: it is not one of the seven, nothing routes it, and
+            // it keeps its existing ~/Behaviors destination.
+            if (octx != null) {
+                detachFactoryPlaceholder(charPerson, name, FieldNames.FIELD_PROFILE);
+                detachFactoryPlaceholder(charPerson, name, OlioFieldNames.FIELD_STATISTICS);
+                detachFactoryPlaceholder(charPerson, name, FieldNames.FIELD_STORE);
+                if (baseline != null) {
+                    detachFactoryPlaceholder(charPerson, name, OlioFieldNames.FIELD_INSTINCT);
+                    detachFactoryPlaceholder(charPerson, name, FieldNames.FIELD_PERSONALITY);
+                    detachFactoryPlaceholder(charPerson, name, FieldNames.FIELD_STATE);
+                }
+            }
+
             charPerson = IOSystem.getActiveContext().getAccessPoint().create(user, charPerson);
             if (charPerson == null) return null;
 
@@ -2520,11 +2767,13 @@ public class PictureBookUtil {
                 if (!role.isEmpty()) portraitPrompt += ", " + role;
                 portraitPrompt += ", detailed face, cinematic lighting, high quality";
             }
-            // Ensure the profile is a real *persisted* record. CharPersonFactory only builds an
-            // in-memory placeholder (a path-scoped identity.profile with no id) and olio.charPerson
-            // does not set autoCreateForeignReference, so that placeholder is never cascaded into
-            // the database on create — profile.id stays 0/null forever unless we persist it here
-            // explicitly. Without this, portraits can never be linked to the character later.
+            // Ensure the profile is a real *persisted* record in the right group. CharPersonFactory builds
+            // an in-memory placeholder (a path-scoped identity.profile with no id) in the ACTING USER'S
+            // HOME, and — corrected 2026-08-17, measured — autoCreateForeignReference defaults to TRUE, so
+            // DBWriter DOES cascade that placeholder into the database on create. That is why the detach
+            // above exists: without it this guard never fires and the profile lands in ~/Profiles. With no
+            // OlioContext (nothing detached) the guard still catches a genuinely absent profile.
+            // Without a persisted profile, portraits can never be linked to the character later.
             BaseRecord profile = charPerson.get("profile");
             Long existingProfileId = (profile != null) ? profile.get(FieldNames.FIELD_ID) : null;
             if (profile == null || existingProfileId == null || existingProfileId <= 0L) {
@@ -2542,72 +2791,12 @@ public class PictureBookUtil {
                 charPerson.set("profile", newProfile);
             }
 
-            // Ensure the narrative is a real *persisted* record and carries the SD portrait
-            // prompt, then attach it via a PATCH-shaped update (identity + narrative only) —
-            // NOT a full-object update on the shallow (planMost(false)) charPerson, which would
-            // risk re-persisting other foreign refs and a silent PBAC denial.
-            try {
-                BaseRecord narrative = charPerson.get("narrative");
-                Long existingNarrativeId = (narrative != null) ? narrative.get(FieldNames.FIELD_ID) : null;
-                if (narrative == null || existingNarrativeId == null || existingNarrativeId <= 0L) {
-                    // Through the CANONICAL Olio utility, which already builds the narrative in
-                    // {world}/Narratives, creates-or-patches it, links it back onto the person and
-                    // flushes the queue. The hand-rolled createPersistedForeignInstance it replaces
-                    // targeted ~/Narratives in the ACTING USER'S HOME — which is KI-60's collision
-                    // target (a write there recovered onto "#151 Apparel" for "#1049 Narratives").
-                    // Falls back to a plainly-created record when there is no usable OlioContext:
-                    // getCreateNarrative needs a world to build into, and returning null there would
-                    // abort character creation for a reason unrelated to the character.
-                    narrative = PbSubRecordUtil.getCreateNarrative(octx, charPerson, null);
-                    if (narrative == null) {
-                        narrative = PbSubRecordUtil.createSubRecord(user, octx, OlioModelNames.MODEL_NARRATIVE);
-                    }
-                    if (narrative == null) {
-                        logger.error("Failed to create persisted narrative for charPerson " + name);
-                        return null;
-                    }
-                }
-                narrative.set("sdPrompt", portraitPrompt);
-                narrative.set("physicalDescription", portraitPrompt);
-
-                // patchCharPersonField() below only rewrites charPerson.narrative's FK reference
-                // (per .claude/rules/model-api.md, "foreign fields patch by ID reference") — it does
-                // NOT cascade-write the narrative record's own fields to the DB. sdPrompt/
-                // physicalDescription were set on the in-memory narrative object above (AFTER
-                // createPersistedForeignInstance()'s initial AccessPoint.create()), so without this
-                // second, separate update directly on olio.narrative, those field writes are lost —
-                // confirmed live: narrative.sdPrompt reads back null after the full pipeline runs.
-                // Mirrors NarrativeUtil.getCreateNarrative's own "patch an existing record's
-                // content fields" idiom — derive the minimal patch via copyRecord(fieldNames) on
-                // the already-loaded record (same as RecordUtil.patch's targ.copyRecord(upf))
-                // rather than hand-building it with RecordFactory.newInstance(schema, fieldNames).
-                // Unlike getCreateNarrative's RecordUtil.patch call (which writes via
-                // RecordUtil.updateRecord() — a PBAC bypass appropriate for Olio's internal
-                // population-generation, not for this live end-user REST session), this still
-                // goes through AccessPoint.update() directly so PBAC is respected and a
-                // null/failure return remains detectable (see the check just below).
-                BaseRecord narrativePatch = narrative.copyRecord(
-                        new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "sdPrompt", "physicalDescription" });
-                BaseRecord narrativeFieldsPersisted = IOSystem.getActiveContext().getAccessPoint().update(user, narrativePatch);
-                if (narrativeFieldsPersisted == null) {
-                    logger.error("Failed to persist narrative.sdPrompt/physicalDescription for charPerson " + name + " — AccessPoint.update denied or failed (PBAC/persist)");
-                    return null;
-                }
-
-                BaseRecord narrativeLinked = patchCharPersonField(user, charPerson, "narrative", narrative);
-                if (narrativeLinked == null) {
-                    logger.error("Failed to attach narrative to charPerson " + name + " — AccessPoint.update denied or failed (PBAC/persist)");
-                    return null;
-                }
-                charPerson.set("narrative", narrative);
-            } catch (Exception e) {
-                logger.error("Failed to set portrait prompt/narrative for " + name + ": " + e.getMessage(), e);
-                return null;
-            }
+            /// The narrative is created LAST of the seven, after personality/instinct/state below - see
+            /// ensureNarrative's javadoc. The ordering is load-bearing, not stylistic.
 
             // Ensure statistics/store are real *persisted* records — same gap as profile/narrative
-            // above (olio.charPerson has no autoCreateForeignReference, so CharPersonFactory's
-            // in-memory placeholders never cascade into the DB on create). Unlike profile/narrative,
+            // above, and reachable for the same reason (the detach before create; CharPersonFactory's
+            // placeholders DO otherwise cascade, into the acting user's home). Unlike profile/narrative,
             // these are hard prerequisites for the statistics-estimation and apparel-wizard steps
             // below, not independently optional — if either fails to persist, abort character
             // creation the same way a profile/narrative failure already does, rather than letting
@@ -2750,6 +2939,11 @@ public class PictureBookUtil {
                 } catch (Exception e) {
                     logger.warn("Failed to seed hair/eye color baseline for " + name + ": " + e.getMessage());
                 }
+            }
+
+            /// LAST of the seven, and it has to be: see ensureNarrative.
+            if (!ensureNarrative(user, octx, charPerson, name, portraitPrompt)) {
+                return null;
             }
 
             // Best-effort statistics estimation + apparel wizard — enhancements on top of an
@@ -3193,7 +3387,15 @@ public class PictureBookUtil {
         // KI-42: resolve every foreign sub-model group once, before the character loop, rather than
         // letting all 13 createPersistedForeignInstance call sites re-run the same get-or-create for
         // each character.
-        PbSubRecordUtil.prepareGroups(user, null);
+        //
+        // The context is threaded in, corrected 2026-08-17. This passed `null`, which pre-resolved the
+        // LEGACY ~/{schemaGroup} groups — not the ones createCharPerson actually writes into, since it
+        // resolves its own OlioContext from this same dataPath. So the pre-resolution warmed the wrong
+        // seven groups and left the real destinations to be get-or-created per character, i.e. it did
+        // exactly nothing for the race it exists to shrink. With no dataPath there is no context and the
+        // legacy destinations are the real ones, so passing null then is correct.
+        PbSubRecordUtil.prepareGroups(user, (dataPath != null && !dataPath.isEmpty())
+                ? OlioContextUtil.getOlioContext(user, dataPath) : null);
 
         // Create charPerson records — use LLM for detail extraction if needed
         Map<String, String> charObjectIds = new LinkedHashMap<>();

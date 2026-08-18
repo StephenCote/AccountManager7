@@ -227,16 +227,25 @@ public class TestPbSecurity extends BaseTest {
 	 * but PB2 raises the stakes, because a book's whole graph becomes listable by any authenticated user in
 	 * the organization.
 	 * <p>
-	 * <b>This case is a CHARACTERIZATION, not an approval.</b> It pins the current behaviour so the decision
-	 * cannot be lost silently, exactly as {@code TestPbModelSchema#TestSdConfigFieldsAreSerializedNotForeign}
-	 * pins the serialized-config shape. It asserts the boundary that IS enforced, and asserts the leak as a
-	 * measured fact with a message naming it a defect. <b>Phase 4 must not expose a list endpoint over the
-	 * {@code olio.pb.*} models until this is resolved</b> - either by filtering per record in the REST layer
-	 * or by fixing {@code AccessPoint.list}. If the leak is fixed, the last assertion here fails and this
-	 * case gets rewritten to §9's original form on purpose.
+	 * <b>REWRITTEN 2026-08-17 to §9's original form, deliberately, because the leak was FIXED.</b> This case
+	 * was a labelled characterization asserting the leak, with an instruction in this javadoc to rewrite it
+	 * to {@code assertFalse} if the leak were ever closed. {@code AccessPoint.list} now runs
+	 * {@code canRead} on each row it returns ({@code filterReadable}), so that is what this asserts.
+	 * <p>
+	 * <b>What this proves is a COMPARTMENT boundary, not a per-record one.</b> A and B own different books,
+	 * so their nodes sit in different groups - and {@code canRead} on a {@code data.directory} record
+	 * resolves against the <b>group's</b> urn ({@code PolicyUtil.java:761-789}). Two records in the SAME
+	 * group can never get different answers, here or in {@code find}. The name of this case says "security
+	 * boundary" in that sense only; nothing below demonstrates record-level isolation, because nothing in
+	 * the platform provides it.
+	 * <p>
+	 * <b>Residues asserted/recorded here rather than implied away</b> (see KI-67 and the comment on
+	 * {@code AccessPoint.filterReadable}): {@code count} is still unfiltered, so the CARDINALITY of
+	 * unreadable records is still observable; and because the filter runs after LIMIT/OFFSET, a paged list
+	 * can return a short page while {@code totalCount} reports the unfiltered total.
 	 */
 	@Test
-	public void case02_theListPathIsNotASecurityBoundary_MEASURED_DEFECT() {
+	public void case02_theListPathNowEnforcesTheCompartmentBoundary() {
 		BaseRecord a = user(USER_A);
 		BaseRecord b = user(USER_B);
 		BaseRecord bookA = book(a, SLUG_A);
@@ -247,23 +256,94 @@ public class TestPbSecurity extends BaseTest {
 		String nodeAOid = nodeA.get(FieldNames.FIELD_OBJECT_ID);
 
 		CacheUtil.clearCache();
-		assertTrue("Positive control: A's own org-wide list must contain A's node",
+		assertTrue("Positive control: A's own org-wide list must contain A's node. Without this, a filter"
+			+ " that removed EVERYTHING would pass the assertion below.",
 			orgWideNodeIds(a, orgId).contains(nodeAId));
 
-		/// THE BOUNDARY THAT IS ENFORCED: a by-identity read runs canRead per record and denies B.
-		assertNull("The by-identity read IS the enforced compartment boundary and must deny B",
-			PbGraphUtil.readNode(b, nodeAOid, orgId));
+		/// The boundary that was always enforced: a by-identity read runs canRead and denies B.
+		assertNull("The by-identity read must deny B", PbGraphUtil.readNode(b, nodeAOid, orgId));
 
-		/// THE LEAK, pinned as measured fact. See the javadoc: this is a defect, not a property.
-		boolean leaks = orgWideNodeIds(b, orgId).contains(nodeAId);
-		logger.error("MEASURED DEFECT - AccessPoint.list does not filter per record: B's org-wide"
-			+ " olio.pb.node list contains A's node #" + nodeAId + " = " + leaks
-			+ ". The by-identity read of the same node correctly denies B. Phase 4 must not expose a list"
-			+ " endpoint over the olio.pb.* models until this is resolved.");
-		assertTrue("Expected the CURRENT (defective) behaviour: AccessPoint.list authorizes the query shape"
-			+ " and returns rows unfiltered, so B's org-wide list contains A's node. If this assertion now"
-			+ " FAILS, the leak was fixed - rewrite this case to §9's original assertFalse form deliberately.",
-			leaks);
+		/// KI-67, now closed for content: the org-wide list must not carry A's node to B either.
+		assertFalse("KI-67: an org-wide olio.pb.node list with an explicit numeric organizationId must NOT"
+			+ " return A's node to B. If this fails, AccessPoint.list has stopped filtering per record and"
+			+ " a whole book graph is enumerable by any authenticated user in the organization.",
+			orgWideNodeIds(b, orgId).contains(nodeAId));
+
+		/// Residue 1, asserted as a measured fact so it cannot be mistaken for closed: count is not filtered.
+		Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_NODE, FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		cq.setCache(false);
+		int bCount = ioContext.getAccessPoint().count(b, cq);
+		int aCount = ioContext.getAccessPoint().count(a, cq);
+		logger.warn("KI-67 RESIDUE (open): AccessPoint.count is NOT filtered - B counts " + bCount
+			+ " olio.pb.node rows org-wide while its filtered list returns far fewer (A counts " + aCount
+			+ "). The content leak is closed; the cardinality leak is not, and closing it needs a SQL-level"
+			+ " restriction rather than a post-filter.");
+		assertEquals("Residue: count still reports the same unfiltered org-wide total for both users",
+			aCount, bCount);
+	}
+
+	// ───────── 11: what per-record list filtering actually costs ─────────
+
+	/**
+	 * The cost of KI-67's fix, <b>measured rather than argued</b>, because both earlier positions on it were
+	 * asserted without a number: the original disposition claimed per-record filtering means a policy
+	 * evaluation per row (retracted), and the retraction claimed N records in one group cost "one evaluation,
+	 * then decision-cache hits" - which the code does not support either, since there is no policy DECISION
+	 * cache ({@code PolicyUtil} caches only the raw template text, {@code :125}).
+	 * <p>
+	 * What IS true, read out of the code: for a {@code data.directory}- or {@code common.parent}-scoped
+	 * record the policy resource is rewritten to the GROUP's urn ({@code PolicyUtil.java:761-789},
+	 * {@code :795-821}), so N records in one group produce ONE policyBase string and their entitlement
+	 * lookups hit the shared participation/query cache. The repeated work is policy assembly (a
+	 * {@code JSONUtil.importObject} per row) plus an evaluator pass.
+	 * <p>
+	 * <b>Asserts correctness, logs cost.</b> A timing threshold in a suite that shares a JVM with live LLM
+	 * and SD tests would be flaky, and a flaky performance gate is worse than a recorded number.
+	 */
+	@Test
+	public void case11_listFilteringCost_MEASURED() throws Exception {
+		BaseRecord a = user(USER_A);
+		BaseRecord bookA = book(a, SLUG_A);
+		seedGraph(a, bookA, SLUG_A);
+		long orgId = orgOf(a);
+
+		CacheUtil.clearCache();
+		/// Warm the caches the way any second request in a session would find them, so the number describes
+		/// steady state rather than a cold JVM.
+		orgWideNodeIds(a, orgId);
+
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_NODE, FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(PbGraphUtil.nodeRequest());
+		q.setRequestRange(0, 1000);
+		q.setCache(false);
+		long t0 = System.currentTimeMillis();
+		BaseRecord[] rows = ioContext.getAccessPoint().list(a, q).getResults();
+		long filteredMs = System.currentTimeMillis() - t0;
+		int n = (rows != null ? rows.length : 0);
+		assertTrue("The measurement needs rows to measure", n > 0);
+
+		/// The same read WITHOUT the filter, straight through the search layer, as the baseline.
+		Query q2 = QueryUtil.createQuery(OlioModelNames.MODEL_PB_NODE, FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q2.setRequest(PbGraphUtil.nodeRequest());
+		q2.setRequestRange(0, 1000);
+		q2.setCache(false);
+		long t1 = System.currentTimeMillis();
+		int unfiltered = IOSystem.getActiveContext().getSearch().find(q2).getResults().length;
+		long unfilteredMs = System.currentTimeMillis() - t1;
+
+		java.util.Set<Object> groups = new java.util.HashSet<>();
+		for(BaseRecord r : rows) {
+			groups.add(r.get(FieldNames.FIELD_GROUP_ID));
+		}
+		double perRow = (n > 0) ? ((double) (filteredMs - unfilteredMs) / n) : 0d;
+		logger.warn("KI-67 COST (measured): AccessPoint.list returned " + n + " readable of " + unfiltered
+			+ " matched rows across " + groups.size() + " distinct group(s). Filtered list " + filteredMs
+			+ "ms vs unfiltered search " + unfilteredMs + "ms => ~"
+			+ String.format(java.util.Locale.ROOT, "%.2f", perRow) + "ms per row of authorization work."
+			+ " There is no policy decision cache; the per-row work is policy assembly + evaluation, with the"
+			+ " DB reads shared via the group-urn rewrite and the participation/query cache.");
+		assertTrue("The filtered list must not return more rows than the unfiltered search matched",
+			n <= unfiltered);
 	}
 
 	private List<Long> orgWideNodeIds(BaseRecord u, long orgId) {

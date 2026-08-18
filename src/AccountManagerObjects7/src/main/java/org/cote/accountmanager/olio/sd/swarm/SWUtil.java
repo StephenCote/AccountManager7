@@ -312,11 +312,39 @@ public class SWUtil {
 		/// appear in it. See media/flux/bad.composite.png.
 		// Plain ASCII hyphen deliberately: this string is literal SD input, and CLIP tokenizes a
 		// U+2014 em dash as its own junk token (same class of problem SDUtil.appendLoras normalizes).
-		p.append("Do not draw the reference images themselves - no photograph, poster, screen, mirror, "
+		p.append("Do not draw the reference images themselves - no poster, screen, mirror, "
 			+ "billboard, framed picture or character sheet anywhere in the scene. ");
 		/// "photographic" removed from this clause - the medium is now stated once, up front, by the
 		/// config style (or "Photorealistic" when there is none). Saying it twice in different words is
 		/// how a comic-styled book ended up being told "photographic" mid-prompt.
+		///
+		/// KI-68: "photograph" removed from the SAME clause, 2026-08-17. The earlier fix above took out the
+		/// adjective and left the noun, so the word survived in its NEGATED form - which is worse than the
+		/// duplication that was fixed, because this is the POSITIVE prompt and FLUX.2 is an
+		/// instruction-following edit model. A book configured style=photograph was told
+		/// "Photograph taken with a <camera/lens/film>..." and then "no photograph" four sentences later,
+		/// and rendered as glossy digital art. Measured against SDUtil.getSDConfigPrompt: the word collided
+		/// with THREE of the eleven styles plus the no-config fallback - "photograph" ("(Photograph) taken
+		/// with..."), "vintage" ("(Vintage photograph) from the..."), "fashion" ("(Fashion photography)...",
+		/// where "photograph" is a substring), and getSDConfigPrompt's own "(professional photograph)."
+		/// return for a null/style-less config. The remaining items still express the whole intent - do not
+		/// render the reference as a depicted OBJECT in the scene - and "photograph" was the only one that
+		/// also names a medium.
+		///
+		/// Audited the rest of the list against every style's emitted vocabulary
+		/// (SDUtil.getSDConfigPrompt + olio/sd/sdConfigData.json). Three narrower collisions exist and are
+		/// deliberately LEFT IN, because each is the load-bearing guard against the failure mode this clause
+		/// was added for (media/flux/bad.composite.png) and each collides with a single value of a single
+		/// detail list rather than with a style's medium:
+		///   - "character sheet" vs digitalArt's digitalMedium "character concept sheet" (1 of 13);
+		///   - "mirror"          vs selfie's selfieAngle "mirror reflection" (1 of 12);
+		///   - "screen"          vs selfie's selfieLighting "screen glow" and comic's comicColoring
+		///                          "screenprint color separation" (substring).
+		/// "poster", "billboard" and "framed picture" collide with nothing in any style list.
+		/// NOTHING may be added to this list that also appears in a style clause. The words the KI raised as
+		/// hypotheticals - "painting", "drawing", "illustration" - are not here, and must not be added:
+		/// each would negate the medium of art ("...painting"), anime ("Anime illustration") or digitalArt
+		/// ("digital oil painting", "vector illustration") exactly as "photograph" did.
 		p.append("A single continuous scene, no panels, no split screen, no collage. ");
 		return p.toString().trim();
 	}

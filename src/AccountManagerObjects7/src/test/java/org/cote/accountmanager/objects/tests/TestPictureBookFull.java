@@ -1178,10 +1178,13 @@ public class TestPictureBookFull extends BaseTest {
 		String secondApparelOid = secondApparel.get(FieldNames.FIELD_OBJECT_ID);
 		logger.info("Elena base apparel=" + baseApparelOid + " second apparel=" + secondApparelOid);
 
+		/// The owning character is now a required argument: tagApparelSceneIndex authorizes the CHARACTER's
+		/// book (PB2 §5.6's last REST authorization gap, closed 2026-08-17) and refuses an apparel that is
+		/// not in that character's store.
 		assertTrue("Tagging base apparel with sceneIndex=0 should succeed",
-			PictureBookUtil.tagApparelSceneIndex(testUser, baseApparelOid, 0));
+			PictureBookUtil.tagApparelSceneIndex(testUser, elenaOid, baseApparelOid, 0));
 		assertTrue("Tagging second apparel with sceneIndex=2 should succeed",
-			PictureBookUtil.tagApparelSceneIndex(testUser, secondApparelOid, 2));
+			PictureBookUtil.tagApparelSceneIndex(testUser, elenaOid, secondApparelOid, 2));
 
 		// Fast isolation check BEFORE paying for any SD calls: is the second apparel actually
 		// linked to Elena's store in the DB at all, independent of anything Stage 1 does?

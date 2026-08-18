@@ -83,6 +83,65 @@
 			"type": "list",
 			"baseType": "string",
 			"description": "Scene objectIds for POST /{bookObjectId}/prepare-images — batch-resolve landscape prompts before any SD calls."
+		},
+		{
+			"name": "sceneIndex",
+			"type": "int",
+			"description": "PUT /character/{objectId}/apparel/{apparelObjectId}/scene-tag. UNDECLARED until 2026-08-17, which made it a live KI-24-class defect: RecordDeserializer logs 'Invalid field' and DROPS any property not on this model, so the endpoint's own `sceneIndex == null` guard fired on every real request and scene-tagging always 400'd. Read it with hasField() — an int field returns 0, not null, when absent (KI-25)."
+		},
+		{
+			"name": "scenes",
+			"type": "list",
+			"baseType": "string",
+			"description": "Scene objectIds in the desired order, for PUT /{bookObjectId}/scenes/order. UNDECLARED until 2026-08-17 — same KI-24-class defect as sceneIndex above: the array was dropped, so every reorder request arrived as an empty list."
+		},
+		{
+			"name": "pinned",
+			"type": "boolean",
+			"default": true,
+			"description": "PB2 phase 4: POST /{bookObjectId}/node/{nodeObjectId}/pin. Defaults true because pinning is the common call; unpinning is the one worth sending explicitly."
+		},
+		{
+			"name": "userNames",
+			"type": "list",
+			"baseType": "string",
+			"description": "PB2 phase 4: POST /{bookObjectId}/members — the users to enrol in the book's Writer/Admin role and the organization-wide universe Reader role."
+		},
+		{
+			"name": "asAdmin",
+			"type": "boolean",
+			"default": false,
+			"description": "PB2 phase 4: enrol into the book's Admin tier rather than Writer. Note a book Writer cannot enrol anyone at all — OlioContext.register authorizes on the Admin tier."
+		},
+		{
+			"name": "fromBookObjectId",
+			"type": "string",
+			"maxLength": 64,
+			"description": "PB2 phase 4: POST /chapter — the source book. Read with AccessPoint.find before anything else, per the KI-67 disposition."
+		},
+		{
+			"name": "slug",
+			"type": "string",
+			"maxLength": 64,
+			"description": "PB2 phase 4: POST /chapter — the new chapter's book slug. Validated by PbOlioContextUtil.BOOK_SLUG_PATTERN downstream."
+		},
+		{
+			"name": "title",
+			"type": "string",
+			"maxLength": 256,
+			"description": "PB2 phase 4: POST /chapter — the new chapter's title; falls back to the slug when absent."
+		},
+		{
+			"name": "copyRecordModel",
+			"type": "string",
+			"maxLength": 128,
+			"description": "PB2 phase 4: POST /chapter — the model of the records being copied into the chapter. Required alongside copyRecordObjectIds, because the destination world group is chosen per model (PbSubRecordUtil.WORLD_GROUP_FIELD)."
+		},
+		{
+			"name": "copyRecordObjectIds",
+			"type": "list",
+			"baseType": "string",
+			"description": "PB2 phase 4: POST /chapter — records to copy from the source book's world into the new chapter's. §3.5 chose COPY over reference deliberately: apparel/wearables are per character, so a shared instance would make deleting chapter 1 destroy chapter 2's data."
 		}
 	]
 }
