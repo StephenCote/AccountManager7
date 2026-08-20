@@ -104,6 +104,32 @@ public class TestNarrativeUtilPortraitPrompt {
         assertFalse(lower.matches("(?s).*\\bnull\\b.*"));
     }
 
+    /**
+     * KI-69: a character described only by role must get an "adult" age fallback rather than an
+     * age-blind prompt. Without this fix the prompt is "…portrait of a ((woman))…" with no age
+     * qualifier, which lets the SD model decide age freely.
+     */
+    @Test
+    public void TestRoleOnlyCharacterGetsAgeBlindFix() {
+        Map<String, Object> charData = new HashMap<>();
+        charData.put("gender", "female");
+        // No age_approx, no physical, no outfit_notes — pure role-only extraction
+        charData.put("role", "innkeeper");
+
+        String prompt = NarrativeUtil.buildPortraitPromptFromExtractedData("RoleChar", charData);
+        assertNotNull(prompt);
+        String lower = prompt.toLowerCase();
+
+        assertTrue("Role-only prompt must contain the 'adult' age fallback: " + prompt,
+                lower.contains("adult"));
+        assertTrue("Role-only prompt must still contain the gender label 'woman': " + prompt,
+                lower.contains("woman"));
+        assertTrue("Role-only prompt must still contain the outfit fallback: " + prompt,
+                lower.contains("fully clothed in appropriate attire"));
+        assertFalse("Prompt must not contain the literal token 'null': " + prompt,
+                lower.matches("(?s).*\\bnull\\b.*"));
+    }
+
     /** Other recognized placeholder tokens ("n/a", "none", "unknown", "unspecified") are suppressed too. */
     @Test
     public void TestOtherPlaceholderTokensAreSuppressed() {

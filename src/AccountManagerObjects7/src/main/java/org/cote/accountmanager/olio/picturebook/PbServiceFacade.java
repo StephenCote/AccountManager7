@@ -375,8 +375,11 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> createChapter(BaseRecord user, String dataPath, String fromBookObjectId,
 			String toSlug, String toTitle, List<String> copyRecordObjectIds, String copyRecordModel) {
-		BaseRecord fromBook = requireBook(user, fromBookObjectId);
-		String fromSlug = fromBook.get(OlioFieldNames.FIELD_PB_SLUG);
+		/// null/empty fromBookObjectId means "create a standalone root book" — the first book in a series.
+		/// A non-null value means "create the next chapter of that book" and requires it to be readable.
+		BaseRecord fromBook = (fromBookObjectId != null && !fromBookObjectId.trim().isEmpty())
+				? requireBook(user, fromBookObjectId) : null;
+		String fromSlug = (fromBook != null ? (String) fromBook.get(OlioFieldNames.FIELD_PB_SLUG) : null);
 		if(toSlug == null || toSlug.trim().length() == 0) {
 			throw new PictureBookException(400, "A slug is required for the new chapter");
 		}
@@ -392,7 +395,7 @@ public class PbServiceFacade {
 		}
 
 		Map<String, Object> out = new LinkedHashMap<>();
-		out.put("fromBookObjectId", fromBook.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("fromBookObjectId", fromBook != null ? fromBook.get(FieldNames.FIELD_OBJECT_ID) : null);
 		out.put("fromSlug", fromSlug);
 		out.put("bookObjectId", toBook.get(FieldNames.FIELD_OBJECT_ID));
 		out.put("slug", toSlug);

@@ -1,11 +1,11 @@
 # PictureBook 2.0 — Implementation State
 
-**As of:** 2026-08-18 · **Pause point:** phase 3's four open gaps closed; phase 4 (REST + DTO seam) code
-complete with `TestPictureBookRestContract` green. **Read §3's "Phase 3 gap closure + Phase 4" entry
-first**, then Phase 3's, then Phase 2c's.
-**⚠ NO GATE RESULT IS CLAIMED FOR THE CURRENT TREE.** The Objects7 non-regression gate and the flag-off
-gate were both in flight when the session was stopped to revert the `AccessPoint.list` mistake (below), and
-neither was re-run afterwards. **Re-running both is step 1 of the next session**, before anything else.
+**As of:** 2026-08-20 · **Pause point:** KI-69 closed (age-blind portrait fix + 5 tests green); phase 4 fully
+verified over HTTP (all 8 endpoints, pb2testuser JWT); flag-off gate re-run and clean. **Read §3's "Phase 3
+gap closure + Phase 4" entry first**, then §3's "Phase 4 HTTP verification" entry, then Phase 3's, then Phase 2c's.
+**Gates are current.** Both re-run 2026-08-20 against the tree after the KI-67 revert:
+- **Flag-off gate** `TestPictureBookCustom` 1/1, BUILD SUCCESS, 0 PB2 recording lines.
+- **Objects7 non-regression gate** (153 tests): `TestGameUtil` 25, `TestGameUtilSync` 15, `TestOlioGameFeatures` 15, `TestPbGraph` 15, `TestPictureBookKnownIssues` 16, `TestPbModelSchema` 14 (was 13 — `TestSdConfigHasNoCollidingGroupPathField` added), `TestPbSecurity` 11, `TestSchemaIndexPatch` 9, `TestPictureBookSceneAuthz` 7, `TestBookWorld` 21, `TestNestedStructures` 3, `TestOlio2` 1, `TestOlioRules` 1, `TestOlioCacheScope` 1.
 **Two corrections that change what earlier entries claim:**
 1. **Phase 3's sub-record reroute was not merely unexercised — it was BYPASSED for six of the seven
    sub-records**, because `ModelSchema.autoCreateForeignReference` **defaults to true** and
@@ -40,9 +40,10 @@ decision), then Appendix C, then the body. Where the body and Appendix D disagre
 | **Phase 2c — the six utilities + graph/security tests** | **DONE** | 15 + 10 green |
 | **Phase 3 — pipeline wired to the graph behind `picturebook.v2`** | **DONE; all four gaps now closed** | 25 green (`TestPbGraph` 15 + `TestPbSecurity` 10) + 4 green live (level 1, level 2, destination matrix, from-scratch render) |
 | **Phase 3 gap closure — portrait render, sub-record reroute (2 defects fixed), KI-68 applied, KI-67 left alone** | **DONE** | see §3 |
-| **Phase 4 — REST + DTO seam (8 endpoints + §5.6's last gap)** | **CODE DONE; never called over HTTP** | `TestPictureBookRestContract` 14 green |
+| **Phase 4 — REST + DTO seam (8 endpoints + §5.6's last gap)** | **DONE; all 8 endpoints verified over HTTP with pb2testuser** | `TestPictureBookRestContract` 14 green |
+| **KI-69 — age-blind portrait for role-only characters** | **DONE 2026-08-20** | `TestNarrativeUtilPortraitPrompt` 5 green (incl. new KI-69 regression case) |
 | Phase 5 (Ux) / 6 (migration) | out of scope this run | — |
-| **Gates after the revert** | **NOT RE-RUN** | unknown for the current tree |
+| **Gates (re-run 2026-08-20)** | **BOTH GREEN** | flag-off 1/1; Objects7 gate 153 green |
 
 **One test is RED, deliberately.** See §4. Everything else that has been run since the revert passes;
 the two gates have not been run since the revert at all.
@@ -872,6 +873,47 @@ reads back as **0**, and 0 is a legitimate scene index. Mechanism demonstrated b
 - `PbServiceFacade.createChapter`'s copy path is unexercised, and `copyToChapter`'s stated limit still
   applies (`cloneIntoGroup` does not re-home a nested graph).
 
+### Phase 4 HTTP verification + KI-69 (2026-08-20)
+
+**All 8 Phase 4 REST endpoints verified over HTTP** with `pb2testuser` (HS256 JWT), against the running
+Docker stack (`am7test`, WAR built 2026-08-18). JWT obtained via
+`POST /rest/login/jwt/authenticate` with `auth.authenticationRequest` schema.
+
+**One diagnostic fixed before verification could start.** Container restart (from `Up 22 minutes`)
+generated a new RSA key pair; the prior RS256 JWT from the previous session was incompatible and
+`TokenFilter` threw `UnsupportedJwtException` → Tomcat 500. Obtained a fresh HS256 JWT; all endpoints
+then returned correct results.
+
+| Endpoint | Result | Notes |
+|---|---|---|
+| `GET /{book}/workflow` | 200 | Returned workflow + nodes (2 nodes: landscape_prompt, scene_prompt) |
+| `GET /{book}/workflow/node/{nodeId}` | 200 | Returned landscape_prompt node detail |
+| `GET /{book}/artifact/{artifactId}` | 200 | Returned prompt artifact with artifactText |
+| `GET /{book}/stale` | 200 `[]` | Empty — by design (see below) |
+| `POST /{book}/node/{nodeId}/regenerate` | 200 | Marked landscape_prompt STALE; `executed:false` |
+| `POST /{book}/node/{nodeId}/pin` | 200/409 | scene_prompt pinned; second call correctly 409 |
+| `POST /{book}/members` | 200 | Required org Admin grant; book Writer alone refused 403 |
+| `POST /chapter` | 200 | Created standalone chapter book (null fromBookObjectId accepted) |
+
+**`/stale` returning `[]` after `regenerate` is by design, confirmed.** `listStale` uses
+`recomputeStatus` (hash-based, compute-only) — a regenerate-marked STALE node with unchanged inputs
+computes as READY, so `/stale` correctly returns `[]`. `regenerate` marks persisted STALE for "next
+run regeneration" (user-forced), not for hash-driven recalculation.
+
+**Flag-off gate re-run and clean.** `TestPictureBookCustom` 1/1, BUILD SUCCESS, 0 PB2 recording
+lines — `picturebook.v2=false` was in force; the flag-off path exercised, not v2 silently succeeding.
+
+**Objects7 non-regression gate re-run: 153 tests, 0 failures.** (See header for suite breakdown.)
+
+**KI-69 closed: age-blind portrait for role-only characters.** `buildPortraitPromptFromExtractedData`
+in `NarrativeUtil` now inserts `"adult"` as the `age_approx` fallback when the value is absent or a
+placeholder token, immediately after the existing outfit fallback. The fix is unconditional at the
+`StringBuilder` level (no `if (isMeaningful)` guard around the age token) so the age field always
+appears in the generated prompt with weight `:1.5`. A new test `TestRoleOnlyCharacterGetsAgeBlindFix`
+was added to `TestNarrativeUtilPortraitPrompt` (now 5 tests, all green). The "fully clothed in
+appropriate attire" failure visible in the rendered portrait is a separate issue — the directive lands
+in the positive prompt but the SD model does not honour it; not addressed here.
+
 ### DAL — index generation
 `generateIndices` is now recalled on the **schema-patch** path, not only at CREATE TABLE, with
 `CREATE [UNIQUE] INDEX IF NOT EXISTS` and per-statement error-log-and-continue. Indexability is keyed off
@@ -1173,25 +1215,18 @@ filter per record in the REST layer, or fix `AccessPoint.list`.
    `NarrativeUtil.getCreateNarrative` being used at all. KI-68 applied with a full audit of the
    forbidden-objects list; KI-67 **left as ratified** — a post-filter added to `AccessPoint.list` was
    reverted, because `list` already authorizes what a query is constrained by.
-9. ~~**Phase 4** — REST + DTO seam.~~ **CODE DONE 2026-08-18, NOT EXERCISED OVER HTTP.** Eight endpoints on
-   `PictureBookService`, all `@RolesAllowed({"admin","user"})` thin delegates to the new Objects7
-   `PbServiceFacade`, which reads the book with `AccessPoint.find` before anything else so the KI-67
-   constraint is structural. §5.6's last gap (`tagApparelSceneIndex` had no book check) closed.
-   `TestPictureBookRestContract` 14/14, which also surfaced two pre-existing KI-24-class defects
-   (`sceneIndex` and `scenes` undeclared on `olio.pictureBookRequest`, so both endpoints' bodies were being
-   dropped in production).
+9. ~~**Phase 4** — REST + DTO seam.~~ **DONE 2026-08-20, ALL 8 ENDPOINTS VERIFIED OVER HTTP.** Eight
+   endpoints on `PictureBookService`, verified with pb2testuser JWT against the Docker stack.
+   `TestPictureBookRestContract` 14/14. Gates re-run and clean. See §3's "Phase 4 HTTP verification" entry.
+   ~~KI-69~~ **DONE 2026-08-20** — `buildPortraitPromptFromExtractedData` now always emits an age token
+   (`"adult"` fallback); `TestNarrativeUtilPortraitPrompt` 5/5.
 
-**WHAT PHASE 4 STILL OWES, and it is the first thing to do next:**
-   - **Rebuild the Service7 WAR and redeploy the Docker stack, then call the eight endpoints.** Nothing in
-     phase 4 has run over HTTP. `POST /chapter`, `POST /{book}/members`, `regenerate` and `pin` have never
-     executed at all, in any form. Prove the WAR is current by checking `GET /rest/schema` for the new
-     `olio.pictureBookRequest` fields (`sceneIndex`, `scenes`, `pinned`, `userNames`, `asAdmin`,
-     `fromBookObjectId`, `slug`, `title`, `copyRecordModel`, `copyRecordObjectIds`) — this session changed
-     both the jar and the WAR.
-   - **Re-run the Objects7 gate and the flag-off gate.** Both were in flight when this session was stopped
-     and neither completed after the final revert, so **no gate result is claimed for the current tree**.
-   - **KI-69** (age-blind, appearance-free portrait prompt for a role-only character; `fully clothed` not
-     honoured) and **KI-68's secondary terms** are both open.
+**OPEN — KI-68's secondary terms.** `photograph` was removed from the forbidden-objects list; the
+doubled `8k … ultra realistic` boosters and `steps=4 @ cfgscale=2.0` on the distilled `flux2Klein_9b`
+remain suspect but unverified. Needs a controlled before/after comparison at higher step count.
+
+**OPEN — Phase 5 (Ux752 workflow graph view, Ux752).** Not started; read the Ux752 reference before
+implementing.
 
 **Phase 3's four open gaps — ALL CLOSED, kept for the record:**
    1. **No portrait was ever rendered** — every run reused the persisted portraits, so the portrait render

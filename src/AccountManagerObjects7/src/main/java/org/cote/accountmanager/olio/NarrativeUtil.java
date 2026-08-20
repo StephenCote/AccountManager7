@@ -1956,11 +1956,15 @@ public class NarrativeUtil {
 			outfitNotes = "fully clothed in appropriate attire";
 			logger.warn("buildPortraitPromptFromExtractedData: no outfit_notes for {} — using fallback", name);
 		}
+		if (!isMeaningful(ageApprox)) {
+			ageApprox = "adult";
+			logger.warn("buildPortraitPromptFromExtractedData: no age_approx for {} — using 'adult' fallback to prevent age-blind generation", name);
+		}
 		StringBuilder min = new StringBuilder();
 		min.append("a");
 		if (isMeaningful(build)) min.append(" (").append(build).append(")");
 		min.append(" ((");
-		if (isMeaningful(ageApprox)) min.append(ageApprox).append(":1.5) (");
+		min.append(ageApprox).append(":1.5) (");
 		if (isMeaningful(skin)) min.append(skin.toLowerCase()).append(") (");
 		min.append(label).append("))");
 		if (isMeaningful(hair)) min.append(" with ((").append(hair).append("))");
