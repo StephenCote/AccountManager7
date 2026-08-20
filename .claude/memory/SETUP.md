@@ -777,22 +777,215 @@ vectors.db: vec_memories USING vec0(memory_name TEXT PK, embedding float[N] dist
 
 ## 11. Sharing and version control
 
-- **Commit `memory.db`.** It's tens of KB and it's the point of the exercise.
-- **Checkpoint the WAL before committing** (gotcha #8).
-- **Binary merge conflicts:** two people editing memories on separate branches produce a
-  conflict git can't merge. Resolve by picking one DB and re-adding the other side's
-  memories with `mem.ps1 set` — they're independent rows, so this is cheap. For a change
-  that needs review, attach a text export to the PR.
-- **Embeddings are committed** (they're rows in `memory.db`), so a teammate gets working
-  semantic search via the fallback path with no key and no extension. They only need a
-  provider to embed *new* memories.
+### What is committed, and what is local-only
+
+Verified against `.gitignore` and `.gitattributes` in this folder:
+
+| Committed | Local-only (gitignored) |
+|---|---|
+| `memories.sql` — the export; the only shared copy of the memories | `memory.db` + `-wal`/`-shm` — the working store |
+| `MEMORY.md` — the generated index | `vectors.db` + sidecars — derived sqlite-vec index |
+| `*.ps1`, `schema.sql`, `SETUP.md` | `hook.log` — local firing evidence |
+| `.gitignore`, `.gitattributes` | `embed.config` — per-machine provider config (durable copy lives at `~\.claude\embed.config`) |
+| | `memory-premigrate-*.db`, `*-backup.db` — local safety nets |
+
+`memory.db` is **not** committed: roughly 90% of it is derived, git cannot merge it, and every
+write rewrites most of the file. Section 9 carries the measurements and the full reasoning.
+The consequence that matters day to day: **the binary is local-only, so `git clean -xdf`
+deletes it and only what you exported survives.** Run `export.ps1` before committing — nothing
+does it for you, and section 12d is how you check whether you did.
+
+The WAL checkpoint that used to be a manual pre-commit step is now automatic: `export.ps1`
+runs `PRAGMA wal_checkpoint(TRUNCATE)` before dumping, or the export would miss writes still
+sitting in the gitignored `-wal` sidecar.
+
+### Cloning the repo does not give you a working store
+
+There is no `memory.db` until you build one from the export, and there are **no embeddings at
+all** — `embeddings` is deliberately excluded from the dump (section 9), because it is derived
+from the text *and* specific to one model and vector width.
+
+```powershell
+# 1. Rebuild the DB from the committed export. NOT a plain .read of a full dump -- gotcha #1.
+sqlite3 memory.db ".read memories.sql"    # authored tables + rows
+sqlite3 memory.db ".read schema.sql"      # adds the FTS5 table + triggers
+sqlite3 memory.db "INSERT INTO memories_fts(memories_fts) VALUES('rebuild');"
+
+# 2. Keyword search works at this point. Semantic search does NOT until you re-embed locally.
+powershell -NoProfile -ExecutionPolicy Bypass -File .claude\memory\vec.ps1 embed -All
+
+# 3. Confirm: counts equal, one model, one dimension, nothing unembedded.
+powershell -NoProfile -ExecutionPolicy Bypass -File .claude\memory\vec.ps1 status
+```
+
+Step 2 requires a configured provider (section 7) and re-embeds **every** memory, so it costs
+real provider calls and minutes. Everything except semantic search — `mem.ps1 search`, `get`,
+`list`, the generated index, the SessionStart hook — needs none of it.
+
+### Merges
+
+Two branches that each add a memory produce an ordinary **textual** conflict in
+`memories.sql`, usually adjacent `INSERT INTO memories VALUES(...)` lines, and the resolution
+is to keep both: memories are independent rows. That is the entire point of committing text —
+the binary had no resolution except discarding one side's memories.
+
+After resolving, rebuild the DB from the merged export using the clone steps above rather than
+trusting a local `memory.db` that predates the merge, then re-export so file and DB agree
+(section 12d). Re-embedding is only needed for the memories that arrived from the other branch.
+
+### Review
+
+`memories.sql` and `MEMORY.md` are pinned `-text diff` in `.gitattributes`, so they stay
+diffable and git will not rewrite their line endings on checkout (gotcha #31). A reviewer can
+read exactly what entered the assistant's memory, line by line; for LLM-authored content that
+is the control that matters. Never re-save `memories.sql` from an editor that writes cp1252 or
+adds a BOM — the encoding notes at the end of section 9 explain what that corrupts.
 
 ---
 
-## 12. Troubleshooting
+## 12. Verifying the store — set up, active, used, exported
+
+Four different questions with four different answers, and none of them is "it looks fine."
+A memory store fails *quietly*: every failure mode in section 8 leaves the tooling reporting
+success. Assume nothing here without running the command.
+
+### 12a. Is it set up and healthy?
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".claude\memory\vec.ps1" status
+```
+
+Reports vec0 availability and path, the index path, the embed provider **and which config
+file supplied it**, memory/embedded counts, model, and dimensions. Expected: the two counts
+equal, exactly one model, one dimension, and an empty `unembedded:` list. This is where an
+unset provider (gotcha #23) surfaces as a named failure instead of as quietly stale search.
+
+Then structural *and* referential integrity — the second pragma only became meaningful once
+foreign keys were actually enforced (gotcha #32):
+
+```powershell
+sqlite3 ".claude\memory\memory.db" "PRAGMA integrity_check; PRAGMA foreign_key_check;"
+```
+
+`ok` followed by no further output is clean. Any `foreign_key_check` row is an orphaned
+child row — gotcha #32 explains the cause and the audit. Note `sqlite3` is routinely **not
+on PATH**; use `$env:SQLITE3` or `~\.claude\tools\sqlite\sqlite3.exe`.
+
+Add `mem.ps1 todo` for dangling wikilinks and `mem.ps1 list` for the rows themselves.
+
+### 12b. Is it *active* — did the hook actually fire?
+
+`hook.log` is the only evidence that exists:
+
+```powershell
+Get-Content ".claude\memory\hook.log" -Tail 5
+```
+
+One line per session start. Transcripts contain **no** record of hook execution (gotcha
+#17), so without this log "fired" and "never ran" are indistinguishable — which is precisely
+why `hook-session-start.ps1` writes it. Gitignored. No line for the current session means
+the hook did not run: see the `SessionStart hook never fires` row in section 13, and gotcha
+#30 (a Restricted execution policy fails while **exiting 0**).
+
+> **Never compare these timestamps to DB timestamps directly.** `hook.log` is written with
+> `Get-Date` (**local time**); `created_at`/`updated_at` default to `datetime('now')`, which
+> SQLite evaluates as **UTC**. Verified 2026-08-20: local `15:01` was UTC `20:01`. So a
+> hook.log line at `13:56` and a memory written at `18:48` belong to the *same* session, not
+> a five-hour gap. Convert before concluding anything is stale.
+
+### 12c. Is the agent actually *using* it?
+
+The honest answer is: partially unverifiable as shipped.
+
+| Question | Evidence available today |
+|---|---|
+| Was the index injected? | `hook.log` — but that proves only that it was *offered*, not read. |
+| Were memories written? | `mem.ps1 list` (`updated_at` column), `git log -- memories.sql`. |
+| Were memories **read**? | **Nothing records this.** `get` / `search` leave no trace anywhere. |
+
+The read side is the real gap; close it with the `PostToolUse` hook in 12e.
+
+### 12d. Is the export current?
+
+"Current" means the DB and `memories.sql` agree. Compare **content, not mtimes** — mtime
+comparison is vulnerable to WAL leaving the main file behind (gotcha #8) and invites the
+UTC/local error in 12b:
+
+```powershell
+# DB truth: row count and newest edit
+sqlite3 ".claude\memory\memory.db" "SELECT count(*)||' / '||MAX(updated_at) FROM memories;"
+
+# Export truth: row count
+(Select-String -Path ".claude\memory\memories.sql" -Pattern '^INSERT INTO memories VALUES').Count
+```
+
+The counts must match, and the DB's `MAX(updated_at)` must appear somewhere in the file.
+Both signals are needed: the count catches **deletes** (which bump no `updated_at`), the
+timestamp catches **edits** (which change no count).
+
+`export.ps1 -Verify` is both the fix and the stronger check — it rewrites the artifact, then
+restores it to a temp DB and asserts `integrity_check`, `foreign_key_check`, per-table row
+counts, and a rebuilt FTS index. Prefer it to a bare `export.ps1`.
+
+Remember the export is only half the job: **the committed artifact is the text export, not
+the binary DB** (section 9, gotcha #31), and `memories.sql` is worthless uncommitted. Verify
+it is actually tracked, not merely present:
+
+```powershell
+git ls-files --error-unmatch .claude/memory/memories.sql   # non-zero exit = NOT tracked
+git status --porcelain .claude/memory/memories.sql          # empty = committed and clean
+```
+
+An untracked `memories.sql` is the one file in the store that `git clean -xdf` would erase
+permanently, since `memory.db` is gitignored by design.
+
+### 12e. Hooks that close the two gaps
+
+Neither is registered yet. Add to `hooks` in `.claude\settings.json` alongside the existing
+`SessionStart` entry.
+
+**Usage logging (12c) — records that the store was read:**
+
+```json
+"PostToolUse": [
+  { "matcher": "Bash|PowerShell",
+    "hooks": [{ "type": "command",
+                "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/.claude/memory/hook-usage-log.ps1\"" }] }
+]
+```
+
+The script reads the tool-call JSON from stdin, matches `tool_input.command` against
+`mem\.ps1|vec\.ps1`, and appends timestamp + verb + slug to a `usage.log`.
+
+**Export drift (12d) — `Stop`, not `SessionEnd`:**
+
+```json
+"Stop": [
+  { "hooks": [{ "type": "command",
+                "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/.claude/memory/hook-export-check.ps1\"" }] }
+]
+```
+
+`Stop` fires as the agent finishes responding and can hand a message back to it, so drift
+gets fixed in the same turn. `SessionEnd` can only run `export.ps1` after the agent is gone,
+cannot `git add`, and cannot report back — turning drift into silent local-only state. Have
+the script apply the 12d comparison plus the tracked/clean check, and stay silent unless
+something is actually stale.
+
+> Both hook contracts — `PostToolUse` stdin shape and `Stop`'s feedback path — must be
+> **proved here, not assumed**. Gotcha #30 is the reason: a hook can pass repeatedly when
+> tested from a bypassing host and still never run when the harness spawns it. Register with
+> `-ExecutionPolicy Bypass` and test through the same non-interactive path the harness uses.
+
+---
+
+## 13. Troubleshooting
 
 | Symptom | Cause |
 |---|---|
+| A search returns fewer rows than `-K` | Stale `vectors.db` holding vectors whose memories are gone. Gotcha #33. `vec.ps1 index`, then confirm `vec_memories` and `embeddings` counts agree. |
+| `memories.sql` behind `memory.db` | Export never re-run after a write. Section 12d; fix with `export.ps1 -Verify`. |
+| `memories.sql` present but not in git | Un-ignored by the store `.gitignore` but never `git add`ed, so the memories exist only locally. Section 12d. |
 | `sqlite3 not found` | Not on PATH and not in `~/.claude/tools/sqlite/`. Set `$env:SQLITE3`. |
 | `vec0 extension unavailable` on `index` | No platform binary. Harmless — search falls back to SQL cosine. Set `$env:SQLITE_VEC0` (no file extension). |
 | `embeddings have mixed dimensions` | Provider or model changed. `vec.ps1 embed -All`. |
