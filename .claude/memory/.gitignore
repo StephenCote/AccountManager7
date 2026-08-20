@@ -1,0 +1,47 @@
+# The BINARY store is NOT committed here -- the reviewable text export is (memories.sql,
+# written by export.ps1). Three reasons, measured 2026-08-20: ~90% of memory.db is derived
+# (FTS5 index + JSON embedding vectors) so 600 KB of binary carried only 52 KB of actual
+# knowledge; git cannot merge it, so two branches that both add memories conflict with no
+# resolution but discarding one side's memories; and every write rewrites most of the file,
+# adding a fresh ~600 KB blob to history per commit. The text export diffs line by line,
+# which also means a reviewer can SEE what was added to the assistant's memory.
+#
+# Consequence to know: memory.db is now local-only. `git clean -xdf` will delete it. It is
+# rebuildable from memories.sql (SETUP.md section 9) -- so run export.ps1 before committing,
+# or the knowledge exists nowhere shared.
+memory.db
+memory.db-wal
+memory.db-shm
+
+# ...and do NOT ignore the export itself. Listed explicitly so a future broadened *.sql
+# rule cannot silently start excluding the only committed copy of the memories.
+!memories.sql
+
+# The sqlite-vec index is derived from memory.db's `embeddings` table and is a binary
+# that would conflict on merge. Rebuild it with `vec.ps1 index` instead of committing it.
+vectors.db
+vectors.db-wal
+vectors.db-shm
+
+# Local scratch from export/restore or experiments.
+*-backup.db
+data.sql
+memory.sql
+
+# migrate.ps1 takes a timestamped backup before any DDL change. Local safety net,
+# not shared state -- delete once the migration is verified.
+memory-premigrate-*.db
+
+# Never commit credentials. Embedding providers read keys from the environment or
+# from a file outside this repo -- see SETUP.md -> Semantic search.
+*.key
+.env
+secrets.json
+
+# Hook firing log - local evidence only, not shared state.
+hook.log
+
+# Provider configuration: names connection files and hosts for THIS machine, so it is
+# per-machine state, not shared state. The durable copy lives at ~\.claude\embed.config
+# and every project inherits it -- see memconfig.ps1.
+embed.config

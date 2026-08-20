@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "memory-db": {
+      "command": "mcp-sqlite-server",
+      "args": [
+        ".claude/memory/memory.db"
+      ]
+    }
+  }
+}

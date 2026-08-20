@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "deny": [
+      "mcp__memory-db__create_record",
+      "mcp__memory-db__update_records",
+      "mcp__memory-db__delete_records"
+    ],
+    "ask": [
+      "mcp__memory-db__query"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/.claude/memory/hook-session-start.ps1\"",
+            "timeout": 30,
+            "statusMessage": "Loading project memory…"
+          }
+        ]
+      }
+    ]
+  }
+}

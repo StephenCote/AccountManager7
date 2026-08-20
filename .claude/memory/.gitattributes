@@ -1,0 +1,17 @@
+# Scoped to the memory store so nothing here affects the rest of the repo.
+#
+# memories.sql is the committed source of truth for every memory, and it is raw UTF-8 -- a
+# dump escapes control characters via unistr() but emits ordinary non-ASCII literally (138
+# em-dashes and several arrows in this store, measured 2026-08-20). This repo has
+# core.autocrlf=true and no other .gitattributes, so git would auto-detect the file as text
+# and rewrite its line endings on checkout. `-text` disables that conversion while keeping
+# the file diffable in review, which is the entire reason the text export is what we commit.
+memories.sql -text diff
+
+# Same reasoning for the generated index: UTF-8 prose, no reason to let git rewrite it.
+MEMORY.md -text diff
+
+# The PowerShell scripts are ASCII and CRLF-safe either way, but pinning them keeps a
+# checkout byte-identical across machines -- relevant because these are compared by hash
+# against the reference project at c:\Projects\ai\memory to spot drift.
+*.ps1 -text diff
