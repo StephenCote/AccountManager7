@@ -1,6 +1,7 @@
 package org.cote.accountmanager.util;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -245,9 +246,24 @@ public class ByteModelUtil {
        return new byte[0];
    }
    public static final int MINIMUM_COMPRESSION_SIZE = 512;
+
+   /// Content types whose payload is already compressed, so gzip-wrapping them on persist wastes CPU and
+   /// leaves the stored bytes needing a decompress step on read. The prefix denylist below already
+   /// excludes application/x-gzip, application/x-compressed, application/x-bzip*, etc., but "zip" registers
+   /// as "multipart/x-zip" (ContentTypeUtil), which matches no exclusion prefix and so was being gzipped -
+   /// corrupting any download that read the raw bytes.
+   private static final Set<String> ALREADY_COMPRESSED_CONTENT_TYPES = Set.of(
+           "multipart/x-zip",
+           "application/zip",
+           "application/x-zip-compressed"
+   );
+
    public static boolean tryCompress(BaseRecord d)
    {
        String contentType = d.get(FieldNames.FIELD_CONTENT_TYPE, null);
+       if(contentType != null && ALREADY_COMPRESSED_CONTENT_TYPES.contains(contentType.toLowerCase())) {
+           return false;
+       }
        return (
                contentType != null
                &&

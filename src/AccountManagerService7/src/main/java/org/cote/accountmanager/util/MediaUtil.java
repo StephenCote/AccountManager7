@@ -289,9 +289,18 @@ public class MediaUtil {
 				}
 			} /// End if thumbnail
 			else {
+				/// ByteModelUtil.getValue() decides whether to gunzip/decipher purely from fields on this same
+				/// record instance (FIELD_COMPRESSION_TYPE, FIELD_VAULTED, FIELD_ENCIPHERED/FIELD_KEYS), each
+				/// read with a silent default when absent from the projection. Omitting them makes
+				/// compressionType read back as "NONE", so gunzip is skipped and the raw (still-gzipped) bytes
+				/// are served - unreadable for anything auto-compressed on persist (e.g. a .zip, whose
+				/// "multipart/x-zip" content type isn't in tryCompress()'s exemption prefixes). Same fix as
+				/// GroupExportService.download().
 				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID,
 						FieldNames.FIELD_URN, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID,
 						FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_STREAM,
+						FieldNames.FIELD_COMPRESSION_TYPE, FieldNames.FIELD_VAULTED, FieldNames.FIELD_ENCIPHERED,
+						FieldNames.FIELD_KEYS,
 						FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_MODIFIED_DATE });
 				data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 				if (data != null && data.get(FieldNames.FIELD_CONTENT_TYPE) != null
