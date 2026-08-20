@@ -1,12 +1,24 @@
 # PictureBook 2.0 — Implementation State
 
-**As of:** 2026-08-17 · **Pause point:** phase-3 code complete and compiling; live level-1 and level-2
-verification green; **the flag-off non-regression gate and the 113-test gate had not finished at the time of
-writing** (see the Phase 3 entry in §3). Nothing committed.
-**Next up:** finish those two gates, then Phase 4 (REST). **Read §3's Phase 3 entry first**, then Phase 2c's.
-The `AccessPoint.list` question that gated phase 4 is **DISPOSED** (2026-08-17) — constrain at the Objects7
-utility layer, `AccessPoint.list` unchanged, logged as **KI-67**; the phase-4 constraints it implies are
-recorded there and in `PictureBook2Plan.md` Appendix D.
+**As of:** 2026-08-18 · **Pause point:** phase 3's four open gaps closed; phase 4 (REST + DTO seam) code
+complete with `TestPictureBookRestContract` green. **Read §3's "Phase 3 gap closure + Phase 4" entry
+first**, then Phase 3's, then Phase 2c's.
+**⚠ NO GATE RESULT IS CLAIMED FOR THE CURRENT TREE.** The Objects7 non-regression gate and the flag-off
+gate were both in flight when the session was stopped to revert the `AccessPoint.list` mistake (below), and
+neither was re-run afterwards. **Re-running both is step 1 of the next session**, before anything else.
+**Two corrections that change what earlier entries claim:**
+1. **Phase 3's sub-record reroute was not merely unexercised — it was BYPASSED for six of the seven
+   sub-records**, because `ModelSchema.autoCreateForeignReference` **defaults to true** and
+   `CharPersonFactory` pre-builds those records in the acting user's home. Fixed and now measured. Every
+   earlier sentence claiming PictureBook characters' sub-records live in the book compartment was false
+   until 2026-08-17.
+2. **KI-67 is UNCHANGED and its original disposition stands.** I wrongly "fixed" `AccessPoint.list` with a
+   result-set post-filter and spread that claim into five files; **all of it is reverted** to `ee4a7247`.
+   `list` already authorizes the records a query is *constrained by* — the measured leak was an
+   `organizationId`-only query, i.e. a query-shape defect, and the remedy (constrain at the utility layer /
+   reach every list from an authorized `find`) was already implemented. See §3's gap-4 entry.
+**A commit `d1006ef3 "Mark"` landed during that session and contains this work.** It was made by Stephen,
+not by the session; the session committed nothing.
 **Design of record:** `PictureBook2Plan.md` — read **Appendix D** first (as-built + every ratified
 decision), then Appendix C, then the body. Where the body and Appendix D disagree, **Appendix D wins**.
 
@@ -26,11 +38,14 @@ decision), then Appendix C, then the body. Where the body and Appendix D disagre
 | **Phase 2a — two-tier role split + recursive world grant** | **DONE** | 21 + 83 green |
 | **Phase 2b — the eight `olio.pb.*` models, registered + verified** | **DONE** | 13 + 113 green |
 | **Phase 2c — the six utilities + graph/security tests** | **DONE** | 15 + 10 green |
-| **Phase 3 — pipeline wired to the graph behind `picturebook.v2`** | **DONE, partially verified** | 25 green (2c) + 2 green (live level 1 + level 2); flag-off gate + 113-gate pending |
-| Phase 4 | **NOT STARTED** | — |
+| **Phase 3 — pipeline wired to the graph behind `picturebook.v2`** | **DONE; all four gaps now closed** | 25 green (`TestPbGraph` 15 + `TestPbSecurity` 10) + 4 green live (level 1, level 2, destination matrix, from-scratch render) |
+| **Phase 3 gap closure — portrait render, sub-record reroute (2 defects fixed), KI-68 applied, KI-67 left alone** | **DONE** | see §3 |
+| **Phase 4 — REST + DTO seam (8 endpoints + §5.6's last gap)** | **CODE DONE; never called over HTTP** | `TestPictureBookRestContract` 14 green |
 | Phase 5 (Ux) / 6 (migration) | out of scope this run | — |
+| **Gates after the revert** | **NOT RE-RUN** | unknown for the current tree |
 
-**One test is RED, deliberately.** See §4. Everything else passes.
+**One test is RED, deliberately.** See §4. Everything else that has been run since the revert passes;
+the two gates have not been run since the revert at all.
 
 ---
 
@@ -45,7 +60,9 @@ TestOlioGameFeatures          15 ├ the phase-1 non-regression gate = 60
 TestNestedStructures           3 │
 TestOlio2                      1 │
 TestOlioRules                  1 ┘
-TestPictureBookKnownIssues    15    KI-34 / KI-35 / KI-42
+TestPictureBookKnownIssues    16    KI-34 / KI-35 / KI-42. The 3-character KI-42 case now asserts the
+                                    sub-record DESTINATION as well as the no-duplicate property, and a
+                                    new contextless case keeps KI-42's original home-directory coverage.
 TestOlioCacheScope             1    dirNameCache is NOT self-refilling
 TestSchemaIndexPatch           9    index DDL generation + participation tables
 TestPictureBookSceneAuthz      7    scene->book authorization, cancel-registry ownership
@@ -57,10 +74,19 @@ TestPbGraph                   15    phase 2c: cycle refusal, propagation, hashin
                                     PATCH shape, planMost termination over the workflow<->run cycle
 TestPbSecurity                10    phase 2c: the Objects7-level isolation properties, the two-tier
                                     membership rule, the fresh-org create ordering, and the ratified
-                                    ROLE-HIERARCHY DIRECTION test
-TestPictureBookWorkflow        2    phase 3, LIVE Swarm+LLM, flag ON, single-threaded: level-1
-                                    structural + level-2 differential (KI-59). NOT excluded in the pom.
-                                    ~180s and ~310s respectively - two/three FLUX.2 composites.
+                                    ROLE-HIERARCHY DIRECTION test. UNCHANGED this session (a rewrite of
+                                    case02 was made and reverted - see §3's gap-4 entry).
+TestPictureBookWorkflow        4    phase 3, LIVE Swarm+LLM, flag ON, single-threaded: level-1
+                                    structural + level-2 differential (KI-59) + the sub-record
+                                    DESTINATION MATRIX (cheap, no LLM/SD) + the from-scratch character
+                                    build that forces a REAL portrait render. NOT excluded in the pom.
+                                    ~180s / ~310s / ~7s / ~305s.
+TestPictureBookRestContract   14    phase 4, in SERVICE7's test tree (it reflects over
+                                    PictureBookService, which Objects7 cannot see). A body-
+                                    deserialization case per endpoint (the KI-24/KI-25 class) + a
+                                    reflective sweep asserting @RolesAllowed on every resource method.
+                                    No mocking, no live stack; run with
+                                    `mvn -o -pl AccountManagerService7 -DskipTests=false -Dtest=...`
 TestPictureBookCustom          1    the phase-3+ NON-REGRESSION GATE, run with the flag OFF and
                                     NEVER EDITED. Its pom <exclude> is already inside a <!-- --> block,
                                     so it needs no pom change - do not comment it again (that makes a
@@ -70,8 +96,12 @@ TestPictureBookCustom          1    the phase-3+ NON-REGRESSION GATE, run with t
 **Running them — three traps that will waste your time:**
 1. `pom.xml:19` sets `<skipTests>true</skipTests>`. **Always pass `-DskipTests=false`.**
 2. **A bare `BUILD SUCCESS` proves nothing** — confirm a `Tests run: N` line with N > 0.
-3. `pom.xml:108-297` excludes 154 classes and **`-Dtest=` does NOT override an exclude.** Six are
-   currently commented out as `PB2-GATE` so the gate can run (see §6).
+3. `pom.xml:108-297` excludes 154 classes. **CORRECTED 2026-08-18: `-Dtest=` DOES override a pom
+   `<exclude>` in this build.** Measured — `-Dtest=TestAccessPoint` on an excluded class ran 8/8. Add
+   `-Dsurefire.failIfNoSpecifiedTests=false` when naming several classes so a genuinely absent one does not
+   fail the run. Earlier notes in this file and in the phase-4 brief said the opposite; they were wrong, and
+   the consequence is that the excluded suites (e.g. the eight `AccessPoint.list` callers) **are** available
+   as a baseline. Six classes are additionally commented out as `PB2-GATE` (see §6).
 4. Do **not** pipe `mvn` through `head` — it truncates before the summary. Redirect to a file.
 
 `TestOlio`, `TestRealm` and `TestSD` are **dead classes** — every `@Test` is inside `/* */`. They
@@ -672,6 +702,176 @@ KI-60, which stays reachable from any `makePath` caller.
   need a case, since the fallback is what keeps flag-off behaviour identical.
 - No REST endpoint exercised the v2 path, and no Playwright ran. Phase 3 is Objects7-only.
 
+### Phase 3 gap closure + Phase 4 — REST + DTO seam
+
+**All four of phase 3's open gaps are closed. Two of them turned out to be defects, not just untested code.**
+
+**Gap 1 — a portrait was finally RENDERED, and the render branch is now measured.**
+`TestPictureBookWorkflow#TestFreshCharacterSubRecordsAndPortraitRender` builds a book **from scratch**
+(`PB2 Fresh Character Book`, this test's own book, deleted and rebuilt at the start of each run) from
+catatone scene 1 with the real cached source content, so its characters have **no persisted portrait** and
+the reuse branch cannot fire. Measured: **2 PORTRAIT nodes at `DONE`** — not `DONE_UNVERIFIED`, which is the
+only status the reuse branch can write — each with a non-null seed from `extractSeedFromImage`, a
+`sdConfigSnapshot`, `revision >= 1`, a persisted `promptText`, and level-1 assertions on the freshly rendered
+bytes (Duña 1,710,553 bytes and Jideon 1,702,320 bytes, both decoded 1024×1024 with recorded == decoded).
+The corrected profile-portrait reference (phase-3 defect 2, previously "compiled and reviewed but not
+measured") is now exercised: the artifact's `data` objectId **equals** the character profile's own
+`portrait` objectId, so it references the profile's portrait rather than a copy.
+Forcing the render this way was chosen over `isBookOverride=false` deliberately — that path renders and then
+**deletes** the image, which would leave the artifact pointing at a deleted `data.data`.
+**One portrait was exported and looked at.** It decodes to a competent studio portrait, and it is
+**wrong for the character**: the prompt was the generic
+`8k highly detailed ((highest quality)) ((ultra realistic)) ((professional portrait)) of a ((woman)). She is
+(((fully clothed in appropriate attire))).` — no appearance, no age — and the render shows a bare-shouldered
+adult, for a character the source describes as a teenage daughter. Two separate faults, neither introduced
+here: `NarrativeUtil.buildPortraitPromptFromExtractedData` produces an age-blind, appearance-free prompt when
+the extraction described a character only by role, and the `fully clothed in appropriate attire` directive
+did not take. **Logged as KI-69.** Fresh characters get no imprinting, so this is not the catatone fixture's
+Duña.
+
+**Gap 2 — the sub-record reroute did not merely go unexercised. It was BYPASSED, and this is my defect.**
+Running it for the first time showed six of the seven sub-records still landing in the **acting user's home**
+(`~/Profiles`, `~/Statistics`, …) — exactly the behaviour phase 3 said it had replaced. Cause, and both
+halves are the opposite of what the phase-3 comments asserted:
+- **`ModelSchema.autoCreateForeignReference` DEFAULTS TO TRUE** (`ModelSchema.java:60`). A model that "does
+  not set" it *has it on*. `olio.charPerson` does not set it.
+- `CharPersonFactory.implement()` pre-builds statistics/instinct/behavior/personality/state/store/profile as
+  in-memory records path-scoped to `~/{schemaGroup}`, and `DBWriter.applyAutoCreateList` (`:367-403`)
+  auto-creates every non-identity foreign child on CREATE via `RecordUtil.createRecords` — **a PBAC bypass
+  that emits no audit line**, which is why nothing ever flagged it.
+So by the time `createCharPerson`'s `id <= 0` guards ran, the placeholders already had real ids in the home
+groups and **every `PbSubRecordUtil` call site was skipped**. Only `narrative` reached the reroute, because
+the factory does not pre-build one.
+**Fixed** by detaching those placeholders immediately before `AccessPoint.create` (`detachFactoryPlaceholder`),
+gated on `octx != null` — and on `baseline != null` for instinct/personality/state, whose creation is itself
+conditional, so the contextless path keeps its existing behaviour rather than losing records. `behavior` is
+deliberately left alone: it is not one of the seven and nothing routes it.
+**A second defect fell out of that fix, also mine.** With `personality` detached, the narrative block ran
+*before* personality existed, and `NarrativeUtil.getCreateNarrative` → `ProfileUtil.getProfile` →
+`DarkTetradUtil.getAggressiveness` NPEs on a null personality (`DarkTetradUtil.java:254`). The symptom was
+almost invisible: `getCreateNarrative` failed, the code fell back to a plain `createSubRecord`, the narrative
+still landed in the right group, **every group assertion still passed**, and the only trace was one WARN —
+the canonical Olio utility had quietly stopped being used. Fixed by extracting `ensureNarrative` and calling
+it **last** of the seven; the ordering is load-bearing and its javadoc says so.
+**Measured, both destinations:**
+- `TestSubRecordDestinationsWithAndWithoutContext` — all **seven** models, both directions
+  (`{world}/{group}` with an `OlioContext`, legacy `~/{schemaGroup}` without), asserting real ids, the
+  actual `groupId` of the created record, and that the two destinations are **different** groups (so the
+  case cannot pass while the reroute does nothing). Cheap and deterministic: no LLM, no SD.
+- The from-scratch run: **14 of 14** sub-records (7 × 2 characters) in the world groups
+  (`Profiles` 125, `Narratives` 124, `Statistics` 108, `Stores` 113, `Instincts` 109, `Personalities` 116,
+  `States` 111), `getCreateNarrative failed` count **0**, and `narrative.sdPrompt == physicalDescription`
+  (equality, not just non-null, so a half-landed patch fails).
+**Also corrected:** `createFromScenes` called `PbSubRecordUtil.prepareGroups(user, null)`, pre-resolving the
+**legacy** groups while `createCharPerson` writes into the world ones — so KI-42's whole purpose (collapse
+13×N get-or-creates) was achieving nothing. It now threads the context.
+
+**Gap 3 — KI-68 applied: `photograph` dropped from the forbidden-objects list (`SWUtil.java:315`).**
+Audited the rest of that list against every style's emitted vocabulary
+(`SDUtil.getSDConfigPrompt` + `olio/sd/sdConfigData.json`) rather than just fixing the reported word:
+- `photograph` collided with **three of eleven styles plus the no-config fallback** — `photograph`
+  ("(Photograph) taken with…"), `vintage` ("(Vintage photograph)…"), `fashion` ("(Fashion photography)…",
+  where it is a substring) and `getSDConfigPrompt`'s own `"(professional photograph)."` return. **Removed.**
+- Three narrower collisions found and **deliberately left in**, each colliding with a single value of a
+  single detail list rather than a style's medium, and each the load-bearing guard against the failure this
+  clause exists for: `character sheet` vs digitalArt's `"character concept sheet"` (1 of 13); `mirror` vs
+  selfie's `"mirror reflection"` (1 of 12); `screen` vs selfie's `"screen glow"` and comic's
+  `"screenprint color separation"`.
+- `poster`, `billboard`, `framed picture` collide with nothing. The words KI-68 raised as hypotheticals —
+  `painting`, `drawing`, `illustration` — are **not** in the list and must never be added; each would negate
+  art/anime/digitalArt exactly as `photograph` did. That prohibition is now a comment at the site.
+**Before/after visually compared, and the result is partial — say so.** Same scene, same seed (987654321),
+same config: `pb2_level1_composite_af379345…` (before) vs `…e97ff2d6…` (after). The after image is
+**more** photographic — wet asphalt, chrome and paint specularity, rain streaks and neon bloom read
+photographically where the before image is smooth and painted — but the figures remain stylised and it is
+still closer to a cinematic render than to Lomography 100 film. **Confidence limit, stated rather than
+glossed:** the two images differ in composition and camera angle, not just in medium, so on a backend whose
+seed determinism is still unestablished a single pair cannot attribute the difference to the medium change
+alone. KI-68's secondary terms (the doubled `8k … ultra realistic` boosters, `steps=4 @ cfgscale=2.0` on the
+distilled `flux2Klein_9b`) remain open and are the next thing to test.
+
+**Gap 4 — KI-67: the ratified disposition STANDS and `AccessPoint.list` is unchanged. Nothing in core PBAC
+was touched.**
+I got this badly wrong first and must record it, because the wrong version was briefly written into five
+files. I added a `filterReadable` post-pass to `AccessPoint.list`, rewrote `TestPbSecurity#case02` (a
+deliberate characterization test) to assert it, and propagated claims about it into `KnownIssues.md`,
+`model-api.md`, `PictureBook2Plan.md` Appendix D and this file. **All of that is reverted** — `AccessPoint.java`,
+`TestPbSecurity.java`, `model-api.md`, `PictureBook2Plan.md` and KI-67 are restored to their pre-session state
+(from `ee4a7247`).
+**Why it was wrong, from the design I should have read first.** `AccessPoint.list` → `authorizeQuery`
+(`:723`) → `PolicyUtil.evaluateQueryToReadPolicyResponses` walks the query's **constrained** fields
+(`PolicyUtil.java:266-297`), resolves the records each constraint names, and evaluates
+`POLICY_SYSTEM_READ_OBJECT` **on each of them**. So `list` already performs per-record authorization — on the
+objects the query is constrained by. Constrain on `groupId` and the group's Read policy is what is evaluated.
+What `case02` measured was a query constrained **only** by `organizationId`, which authorizes the
+*organization* — something every member of it can legitimately read. **The defect was the query shape, not
+`list`**, and the remedy was already written down and already implemented: a list over a group-scoped model
+must constrain by `groupId` or be reached from an authorized `find` of a root record. `PbServiceFacade` does
+exactly that, so phase 4 was never blocked on this.
+Post-filtering would additionally have re-introduced the per-row evaluation `AccessPoint.java:600-605`
+records AM7 deliberately moving away from, and broken paging (the filter runs after `LIMIT`/`OFFSET`) — I
+logged that as an acceptable "residue" instead of reading it as proof the change was in the wrong place.
+**KI-67 therefore remains OPEN and unmodified, with its original disposition: constrain at the Objects7
+utility layer.** Whether anything about `list` should change is not a PictureBook decision.
+**One incidental correction that is worth keeping:** `-Dtest=` **does** override a pom `<exclude>` in this
+build — measured, `-Dtest=TestAccessPoint` ran 8/8 on an excluded class. Earlier notes here and in the phase-4
+brief said it does not.
+
+**Phase 4 — REST + DTO seam. Eight new endpoints, all delegates.**
+**New (Objects7 main):** `olio/picturebook/PbServiceFacade.java` — the one resolution layer, the PictureBook
+equivalent of `ISO42001ServiceFacade`. **Every entry point starts from a book objectId and reads that book
+with `AccessPoint.find`**, so the KI-67 disposition is structural rather than re-typed per endpoint: an
+unreadable book 404s before any list runs. A node or artifact belonging to a **different** book is a 404 even
+when the caller can read both, so one book's grant cannot address another's graph. Returns DTO **maps**, not
+records — artifact bytes are never inlined (`dataObjectId` is, and `ResourceService` serves the content).
+**New (Service7 main):** eight endpoints on `PictureBookService`, each `@RolesAllowed({"admin","user"})`:
+`GET /{book}/workflow`, `GET /{book}/workflow/node/{nodeId}`, `GET /{book}/artifact/{artifactId}`,
+`GET /{book}/stale`, `POST /{book}/node/{nodeId}/regenerate`, `POST /{book}/node/{nodeId}/pin`,
+`POST /{book}/members`, `POST /chapter`. No generic `/rest/model/search` over `olio.pb.*`; no endpoint takes
+a caller-supplied `groupId`/`organizationId`.
+**`regenerate` MARKS, it does not execute**, and its response says so (`executed:false`). Nothing in phases
+3-4 is a scheduler: a node runs when the pipeline next generates its scene. A **pinned** node is refused
+409 rather than silently marked. `listStale` uses compute-only `recomputeStatus` and returns the persisted
+status alongside it as `storedStatus`, so a read path acquires no write.
+**§5.6's last gap closed: `tagApparelSceneIndex` had no book check.** The REST route already carried the
+owning character objectId and **discarded** it. Now the character is the authorized root — read through
+`AccessPoint`, its book group authorized for WRITE by id-based hops only (§5.6b: no read-up), and the
+apparel must actually be in **that** character's store, so an authorized book grant cannot be paired with an
+arbitrary apparel record. The apparel's own group cannot be the check: `ApparelUtil.constructApparel` creates
+apparel in the *world's* shared Apparel group.
+
+**Two live KI-24-class defects found while writing the contract test, both pre-existing:**
+`sceneIndex` (PUT `…/scene-tag`) and `scenes` (PUT `/{book}/scenes/order`) were **not declared on
+`olio.pictureBookRequest` at all**. `RecordDeserializer` drops any undeclared property with an ERROR log
+(`:250-253`), so `tagApparelSceneIndex`'s `sceneIndex == null` guard fired on **every** request (a permanent
+400) and `reorderScenes` received an empty list and reordered nothing. Both declared now, plus the eight
+phase-4 properties. `sceneIndex` is read with `hasField()`, not a null check — KI-25's trap: an absent int
+reads back as **0**, and 0 is a legitimate scene index. Mechanism demonstrated by
+`TestAnUndeclaredPropertyIsSilentlyDropped`; **not reproduced over HTTP** against a running Tomcat.
+
+**Verified:**
+- `TestPictureBookRestContract` (new, Service7) **14/14** — a body-deserialization case per endpoint plus a
+  reflective sweep asserting every `PictureBookService` resource method carries
+  `@RolesAllowed({"admin","user"})` (26 methods checked, with a floor assertion so a reflection bug that
+  matched nothing could not pass silently), and a named check that all eight phase-4 methods exist.
+  **No mocking** — no fabricated `HttpServletRequest`/`ServletContext`/principal.
+- `TestPictureBookWorkflow` **4/4** against live Swarm/LLM, single-threaded: level 1, level 2 (the KI-59
+  differential, revisions advanced and hashes differ), the destination matrix, and the from-scratch
+  portrait-render case.
+- `TestPbGraph` **15/15**, `TestPbSecurity` **11/11** (10 + the new `case11` cost measurement).
+
+**NOT verified — say so plainly:**
+- **No phase-4 endpoint was called over HTTP.** The Service7 WAR was **not** rebuilt or redeployed, the
+  Docker stack was not brought up, and `GET /rest/schema` was not re-probed for the new
+  `olio.pictureBookRequest` fields. Everything asserted about the endpoints is the annotation contract, the
+  body-deserialization contract, and the Objects7 facade behind them. **`POST /chapter`,
+  `POST /{book}/members`, `regenerate` and `pin` have never executed** — not in a test, not over REST.
+  `addMembers` in particular calls `PbSharingUtil.shareBook`, whose copy/enrolment semantics phase 2c
+  already recorded as covered only by authorization refusals.
+- No Playwright ran; phase 5 is untouched.
+- `PbServiceFacade.createChapter`'s copy path is unexercised, and `copyToChapter`'s stated limit still
+  applies (`cloneIntoGroup` does not re-home a nested graph).
+
 ### DAL — index generation
 `generateIndices` is now recalled on the **schema-patch** path, not only at CREATE TABLE, with
 `CREATE [UNIQUE] INDEX IF NOT EXISTS` and per-statement error-log-and-continue. Indexability is keyed off
@@ -966,7 +1166,34 @@ filter per record in the REST layer, or fix `AccessPoint.list`.
    book with `AccessPoint.find`, and delegates to the Objects7 utility. No generic `/rest/model/search`
    over `olio.pb.*`; no listing on a caller-supplied `groupId`/`organizationId`.
 
-**Phase 3's four open gaps, in the order they should be closed (each is a real gap, not a formality):**
+8. ~~**Phase 3's four gaps**~~ **ALL FOUR CLOSED 2026-08-18** — see §3's "Phase 3 gap closure + Phase 4"
+   entry. Two were defects rather than untested code: the sub-record reroute was **bypassed** (six of seven
+   sub-records still landing in the acting user's home, because `autoCreateForeignReference` defaults to
+   **true**), and fixing that exposed a second ordering defect that silently stopped
+   `NarrativeUtil.getCreateNarrative` being used at all. KI-68 applied with a full audit of the
+   forbidden-objects list; KI-67 **left as ratified** — a post-filter added to `AccessPoint.list` was
+   reverted, because `list` already authorizes what a query is constrained by.
+9. ~~**Phase 4** — REST + DTO seam.~~ **CODE DONE 2026-08-18, NOT EXERCISED OVER HTTP.** Eight endpoints on
+   `PictureBookService`, all `@RolesAllowed({"admin","user"})` thin delegates to the new Objects7
+   `PbServiceFacade`, which reads the book with `AccessPoint.find` before anything else so the KI-67
+   constraint is structural. §5.6's last gap (`tagApparelSceneIndex` had no book check) closed.
+   `TestPictureBookRestContract` 14/14, which also surfaced two pre-existing KI-24-class defects
+   (`sceneIndex` and `scenes` undeclared on `olio.pictureBookRequest`, so both endpoints' bodies were being
+   dropped in production).
+
+**WHAT PHASE 4 STILL OWES, and it is the first thing to do next:**
+   - **Rebuild the Service7 WAR and redeploy the Docker stack, then call the eight endpoints.** Nothing in
+     phase 4 has run over HTTP. `POST /chapter`, `POST /{book}/members`, `regenerate` and `pin` have never
+     executed at all, in any form. Prove the WAR is current by checking `GET /rest/schema` for the new
+     `olio.pictureBookRequest` fields (`sceneIndex`, `scenes`, `pinned`, `userNames`, `asAdmin`,
+     `fromBookObjectId`, `slug`, `title`, `copyRecordModel`, `copyRecordObjectIds`) — this session changed
+     both the jar and the WAR.
+   - **Re-run the Objects7 gate and the flag-off gate.** Both were in flight when this session was stopped
+     and neither completed after the final revert, so **no gate result is claimed for the current tree**.
+   - **KI-69** (age-blind, appearance-free portrait prompt for a role-only character; `fully clothed` not
+     honoured) and **KI-68's secondary terms** are both open.
+
+**Phase 3's four open gaps — ALL CLOSED, kept for the record:**
    1. **No portrait was ever rendered** — every run reused the persisted portraits, so the portrait render
       branch, its artifact recording, `readDataRecord` on a fresh image, the `portCfg` snapshot and the
       seed capture are all unexercised. Force a re-render (`isBookOverride=false`, scene-tagged apparel, or

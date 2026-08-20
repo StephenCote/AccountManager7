@@ -1481,9 +1481,17 @@ per-world-role design: `"user"` is a coarse container role and cannot express "m
   collapses absent and PBAC-denied into 404, so unreadable/absent scene → **404**, scene readable but book
   denies → **403** (which leaks nothing — a caller who can read the scene already knows its book exists).
   **Service7 gained zero authorization logic.**
-  **Related, NOT fixed — follow-up:** `tagApparelSceneIndex` (`PictureBookUtil:1171`,
+  ~~**Related, NOT fixed — follow-up:** `tagApparelSceneIndex` (`PictureBookUtil:1171`,
   `PUT /character/{objectId}/apparel/{apparelObjectId}/scene-tag`) resolves an apparel record by objectId
-  with **no book check** either. Same shape, out of scope for that patch.
+  with **no book check** either. Same shape, out of scope for that patch.~~
+  **FIXED 2026-08-18 in phase 4.** The route already carried the owning character objectId and discarded it;
+  it is now passed and is the authorized root. `authorizeCharacterApparel` reads the character through
+  `AccessPoint`, authorizes its book group for WRITE by **id-based hops only** (§5.6b), and requires the
+  apparel to be in **that** character's store — so an authorized book grant cannot be paired with an
+  arbitrary apparel record. Note the apparel's own group is deliberately *not* the check:
+  `ApparelUtil.constructApparel` creates apparel in the world's shared Apparel group, so authorizing it would
+  authorize the corpus rather than the book. Signature changed to
+  `tagApparelSceneIndex(user, charObjectId, apparelObjectId, sceneIndex)`; `TestPictureBookFull` updated.
 - **`cancel` discards the principal.** `PictureBookService.java:475-476`:
   ```java
   ServiceUtil.getPrincipalUser(request);            // :475 — return value discarded
@@ -2036,6 +2044,32 @@ Swarm parity test green.
 *Exit:* `TestPictureBookRestContract` green — including a body-deserialization test per endpoint (the
 KI-24/KI-25 class) and a reflective assertion that every resource method carries `@RolesAllowed`.
 
+> **As-built 2026-08-18 — CODE COMPLETE, NEVER CALLED OVER HTTP.** All eight endpoints exist on
+> `PictureBookService`, each `@RolesAllowed({"admin","user"})` and each a thin delegate to a **new Objects7
+> facade, `PbServiceFacade`** — the PictureBook equivalent of `ISO42001ServiceFacade`, added so the KI-67
+> constraint is structural rather than re-typed per endpoint. Every facade entry point reads the book by
+> objectId with `AccessPoint.find` first; a node/artifact belonging to another book is a 404; responses are
+> DTO maps and never inline artifact bytes. `TestPictureBookRestContract` (in **Service7's** test tree, since
+> it reflects over `PictureBookService`) is **14/14**.
+> 1. **§5.6's "three gaps" were already two-thirds done.** The scene-addressed endpoints and `/cancel` were
+>    hoisted and fixed in phase 1. The one remaining — `tagApparelSceneIndex` resolving an apparel record with
+>    **no book check** — is now closed: the character objectId the route already carried (and discarded) is the
+>    authorized root, its book group is authorized for WRITE by id-based hops only, and the apparel must be in
+>    that character's store. The apparel's own group cannot be the check — `ApparelUtil.constructApparel`
+>    creates apparel in the *world's* shared Apparel group.
+> 2. **`regenerate` MARKS, it does not execute.** Nothing in phases 3-4 is a scheduler; a node runs when the
+>    pipeline next generates its scene. The response carries `executed:false` and says so. A **pinned** node is
+>    refused 409.
+> 3. **Two pre-existing KI-24-class defects surfaced.** `sceneIndex` (PUT `…/scene-tag`) and `scenes`
+>    (PUT `/{book}/scenes/order`) were **not declared on `olio.pictureBookRequest`**, so the deserializer
+>    dropped them: scene-tagging returned a permanent 400 and reorder silently reordered nothing. Both
+>    declared, plus the eight phase-4 properties. `sceneIndex` is read with `hasField()` — KI-25's trap.
+> 4. **What phase 4 still owes:** rebuild the Service7 WAR, redeploy the Docker stack, and actually call the
+>    endpoints. `POST /chapter`, `POST /{book}/members`, `regenerate` and `pin` have **never executed** in any
+>    form. `createChapter` can only copy the seven declared sub-models — **`olio.charPerson` is not copyable**
+>    and returns 400 naming what is, following `copyToChapter`'s refusal to pretend it re-homed a graph it did
+>    not walk.
+
 **Phase 5 — Ux752.** Workflow graph view (nodes, edges, stale badges, artifact revision history,
 per-node regenerate/pin), **reading `src/workflows/pictureBook.js` (1545 lines) and
 `src/features/pictureBook.js` (658) first**.
@@ -2074,6 +2108,9 @@ records untouched.
 | KI-28 | **Separate, but PB2 raises exposure** | olioUser-owned characters mean more paths read `ownerId` on projections that `OlioUtil.FULL_PLAN_FILTER` (`:645`) excludes → the `ApparelUtil.java:694` unboxing NPE. Recommend an independent defensive fix (`Number` unboxing) plus a test running the outfit wizard against a world-scoped, olioUser-owned character. |
 | KI-27 | **Separate** | Resolving chatConfig once per `olio.pb.run` reduces resolve calls per run. Whether that touches the 404 is unknown. No claim. |
 | KI-10 | **Improved by phase 3b** | Comfy's `POST /interrupt` can abort an in-flight generation, which the current `SummarizeProgress` boundary-check design cannot. |
+| **KI-67** | **NOT a PB2 change. Disposition unchanged: constrain at the Objects7 utility layer** | Added 2026-08-18 after getting it wrong. `AccessPoint.list` already authorizes the records a query is **constrained by** (`authorizeQuery` → `PolicyUtil.evaluateQueryToReadPolicyResponses`, `:266-297`). The measured "leak" was an `organizationId`-only query, which authorizes the *organization* — a query-shape defect, not a platform hole. A `filterReadable` post-pass was added to `list` and **reverted the same day**: it duplicated the check, re-introduced the per-row evaluation `AccessPoint.java:600-605` records AM7 moving away from, and broke paging. Every PB2 list is reached from an authorized `find` of the book (`PbServiceFacade`), which is the remedy and was already in place. **Do not reopen this from a PictureBook phase.** |
+| **KI-68** | **Contradiction fixed in phase 3's gap closure; medium fidelity still open** | `photograph` removed from `SWUtil.java:315`'s forbidden-objects list, with the whole list audited against every style's emitted vocabulary (3 narrower collisions found and deliberately kept). Before/after compared visually at one seed: more photographic, not film. Composition also changed, so on a backend with unestablished seed determinism the attribution is weak. The secondary terms (doubled `8k … ultra realistic`; `steps=4 @ cfg 2.0` on `flux2Klein_9b`) are now the leading suspects. |
+| **KI-69** | **New, found by phase 3's gap-1 render. Separate from PB2** | A character the extraction described only by `role` gets `"…portrait of a ((woman))…"` — no age, no appearance — and `(((fully clothed in appropriate attire)))` is not honoured. Prompt-content defect in `NarrativeUtil.buildPortraitPromptFromExtractedData`, invisible until the first run that rendered a non-imprinted character. |
 | **New (this analysis)** | **Raise as new KIs** | (a) `configureWorldAuthorization`'s `parentId`-only `findRecord` (`:188-189`) can grant the org-wide Olio role on an unrelated universe/world — live today on multi-universe DBs. (b) `initialized = true` (`:379`) precedes authorization (`:394-395`) inside a swallow-all catch (`:403-406`). (c) `OlioContextUtil`'s cache key omits `organizationId` — cross-tenant. (d) `AccessPoint.setPermitBulkContainerApproval` is a global, non-volatile authorization relaxation. (e) Olio grants Delete on `/Library/*`, exceeding `LibraryUtil`'s own CRU. (f) `cancel` discards its principal — any user can cancel any other's extraction. (g) Scene-addressed PB endpoints never authorize the owning book. |
 
 ---

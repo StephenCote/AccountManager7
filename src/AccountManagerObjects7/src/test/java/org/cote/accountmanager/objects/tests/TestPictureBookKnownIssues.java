@@ -312,10 +312,138 @@ public class TestPictureBookKnownIssues extends BaseTest {
 		List<Map<String, Object>> listed = PictureBookUtil.listCharacters(user, meta.get("bookObjectId"));
 		assertEquals("All three characters must exist in the book", 3, listed.size());
 
+		// UPDATED 2026-08-18, and the update is the point rather than an accommodation.
+		//
+		// This loop used to assert exactly ONE group per sub-model under the user's home — a proxy for
+		// "the repeated get-or-create did not produce duplicates", which only held while the sub-records
+		// were being created in the home at all. They are not any more: phase 3 routed them into the book
+		// world's groups, and (fixed 2026-08-17) createFromScenes now threads its OlioContext into
+		// PbSubRecordUtil.prepareGroups, so nothing pre-creates the legacy home groups for the reroute's
+		// sake either.
+		//
+		// Measured, and the two halves are different — do not simplify this into one assertion:
+		//
+		//  * 'Narratives' is now ZERO. Nothing creates it, which is precisely what removes this pipeline
+		//    from the set of ~/Narratives writers — KI-60's collision target.
+		//  * The other six home groups still EXIST, and that is NOT the reroute regressing. Verified in
+		//    code: CharPersonFactory.implement() builds an in-memory placeholder for each of them via
+		//    Factory.newInstance(..., ParameterList{path: "~/{schemaGroup}"}), and Factory.java:80
+		//    makePath()s that group before it builds anything. So the GROUP is created as a side effect
+		//    of instantiating the character, whether or not a record ever lands in it. Narratives is the
+		//    exception only because the factory does not pre-build a narrative.
+		//
+		// The assertion that actually proves the reroute is therefore not the group count but the group
+		// CONTENTS: the home group exists and holds ZERO records of its model, because the records are in
+		// the world group. A regression puts records back in the home and this fails.
+		String narrativeGrp = RecordFactory.getSchema(OlioModelNames.MODEL_NARRATIVE).getGroup();
+		assertEquals("Nothing may create '" + narrativeGrp + "' under the acting user's home any more —"
+			+ " that group is KI-60's collision target and the narrative now goes to {world}/Narratives"
+			+ " through NarrativeUtil.getCreateNarrative", 0, countHomeGroups(user, narrativeGrp));
+
+		for (String model : FOREIGN_SUB_MODELS) {
+			if (OlioModelNames.MODEL_NARRATIVE.equals(model)) {
+				continue;
+			}
+			String grp = RecordFactory.getSchema(model).getGroup();
+			assertEquals("Exactly one '" + grp + "' group under the user's home — created empty by"
+				+ " CharPersonFactory/Factory.java:80, never twice (KI-42's duplicate-key race)",
+				1, countHomeGroups(user, grp));
+			assertEquals("The home '" + grp + "' group must be EMPTY of " + model + ": the records belong in"
+				+ " the book world's group now. A non-zero count here is the phase-3 sub-record reroute"
+				+ " regressing — which is exactly how it was found to be bypassed in the first place.",
+				0, countRecordsInHomeGroup(user, model, grp));
+		}
+	}
+
+	/** How many records of {@code model} actually live in the user's home group named {@code groupName}. */
+	private int countRecordsInHomeGroup(BaseRecord user, String model, String groupName) {
+		BaseRecord home = user.get(FieldNames.FIELD_HOME_DIRECTORY);
+		IOSystem.getActiveContext().getRecordUtil().populate(home);
+		Query gq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, home.get(FieldNames.FIELD_ID));
+		gq.field(FieldNames.FIELD_NAME, ComparatorEnumType.EQUALS, groupName);
+		gq.field(FieldNames.FIELD_ORGANIZATION_ID, ComparatorEnumType.EQUALS, orgId(user));
+		gq.setCache(false);
+		BaseRecord grp = IOSystem.getActiveContext().getSearch().findRecord(gq);
+		if (grp == null) {
+			return 0;
+		}
+		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, ComparatorEnumType.EQUALS, orgId(user));
+		q.setCache(false);
+		return IOSystem.getActiveContext().getSearch().count(q);
+	}
+
+	/**
+	 * KI-42's original property, preserved on the path that still uses the home directory: with <b>no</b>
+	 * {@code dataPath} there is no {@code OlioContext}, so {@code PbSubRecordUtil} falls back to
+	 * {@code ~/{schemaGroup}} — and a 3-character book must still produce exactly <b>one</b> group per
+	 * sub-model there, never two, and must not lose a character to a duplicate-key abort.
+	 *
+	 * <p>Split out when the sibling case above moved to asserting zero home groups. Without this leg the
+	 * suite would no longer cover the get-or-create race KI-42 is actually about, since the context-bearing
+	 * path no longer touches the home at all.
+	 *
+	 * <p>All seven home groups are asserted to hold exactly one group AND at least one record. With no
+	 * context nothing is detached, so {@code CharPersonFactory}'s placeholders are auto-created in the home
+	 * by {@code DBWriter.applyAutoCreateList} — which is what the pre-phase-3 behaviour was, and is what
+	 * this leg exists to keep asserting.
+	 */
+	@Test
+	public void TestKi42ContextlessCreateFromScenesUsesTheHomeAndDoesNotDuplicate() throws Exception {
+		logger.info("KI-42 contextless: with no dataPath the sub-record destination is ~/{schemaGroup}, "
+			+ "and a 3-character book must create exactly one such group per model");
+		BaseRecord user = newVirginUser("ki42c");
+		String chatConfigName = ensureChatConfig(user);
+
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, "KI42C Source " + System.currentTimeMillis());
+		BaseRecord work = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, user, null, plist);
+		work.set("text", "Jideon de Rosa walked the harbour road at dusk. Duna de Rosa followed, "
+			+ "carrying a lantern. Francois Touvier waited at the pier with the boat.");
+		BaseRecord createdWork = IOSystem.getActiveContext().getAccessPoint().create(user, work);
+		assertNotNull(createdWork);
+
+		List<Map<String, Object>> sceneList = new ArrayList<>();
+		Map<String, Object> scene0 = new LinkedHashMap<>();
+		scene0.put("title", "The Harbour Road");
+		scene0.put("blurb", "Three travellers meet at the pier.");
+		scene0.put("setting", "a stone harbour at dusk");
+		scene0.put("action", "walking toward the pier");
+		scene0.put("mood", "quiet");
+		sceneList.add(scene0);
+
+		List<Map<String, Object>> charDataList = new ArrayList<>();
+		charDataList.add(charStub("Jideon de Rosa", "MALE", "a lean man in a salt-stained coat"));
+		charDataList.add(charStub("Duna de Rosa", "FEMALE", "a young woman carrying a brass lantern"));
+		charDataList.add(charStub("Francois Touvier", "MALE", "a heavyset boatman with a grey beard"));
+
+		BaseRecord meta;
+		List<String> dupes;
+		try (LogCapture capture = new LogCapture()) {
+			/// null dataPath is the whole point: no context ⇒ the legacy home destination.
+			meta = PictureBookUtil.createFromScenes(user, createdWork.get(FieldNames.FIELD_OBJECT_ID),
+				chatConfigName, null, "KI42C Book " + System.currentTimeMillis(), sceneList, charDataList,
+				null);
+			dupes = capture.matching("duplicate key");
+		}
+		assertNotNull("createFromScenes must return meta", meta);
+		List<Object> failed = meta.get("failedCharacters");
+		assertTrue("No character may be lost on the contextless path either. failedCharacters=" + failed,
+			failed == null || failed.isEmpty());
+		assertTrue("No group insert may violate the unique constraint. Offending lines: " + dupes, dupes.isEmpty());
+		assertEquals("All three characters must exist in the book", 3,
+			PictureBookUtil.listCharacters(user, meta.get("bookObjectId")).size());
+
+		/// Exactly one group per sub-model, and it is actually USED — KI-42's original property, on the one
+		/// path that still writes into the acting user's home.
 		for (String model : FOREIGN_SUB_MODELS) {
 			String grp = RecordFactory.getSchema(model).getGroup();
-			assertEquals("Exactly one '" + grp + "' group under the user's home after a 3-character book",
-				1, countHomeGroups(user, grp));
+			assertEquals("Exactly one '" + grp + "' group under the user's home after a 3-character"
+				+ " contextless book — two would be KI-42's duplicate-key race", 1,
+				countHomeGroups(user, grp));
+			assertTrue("With no OlioContext the home IS the destination, so '" + grp + "' must actually hold"
+				+ " " + model + " records — a 0 here means this leg is no longer covering the contextless"
+				+ " path it was written for", countRecordsInHomeGroup(user, model, grp) > 0);
 		}
 	}
 

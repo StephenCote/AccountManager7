@@ -27,13 +27,11 @@ import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
  * generic {@code /rest/model/search} over an {@code olio.pb.*} model. §5.6b's root-reference principle:
  * authorize the root by identity, then read inside its compartment.
  * <p>
- * {@code AccessPoint.list} now applies the same read decision to each row it returns (KI-67, 2026-08-17), so
- * this is belt and braces rather than the only line of defence. Note what that decision actually is: for a
- * {@code data.directory}/{@code common.parent} model it resolves at the <b>group</b> level
- * ({@code PolicyUtil.java:761-789}), so it is a compartment check, <b>not</b> per-record authorization -
- * two records in one group always get the same answer. The constraint stays here regardless, because it is
- * the one that cannot be forgotten per endpoint and it does not depend on a platform behaviour continuing
- * to hold.
+ * This is also why nothing here post-filters a result set. {@code AccessPoint.list} authorizes the records
+ * its query is <b>constrained by</b> ({@code authorizeQuery} -> {@code evaluateQueryToReadPolicyResponses},
+ * {@code PolicyUtil.java:266-297}), so a list constrained inside an authorized book's compartment is already
+ * authorized. KI-67's measurement was of a query constrained only by {@code organizationId} - a query-shape
+ * problem, which this class avoids by construction.
  * <p>
  * <b>Cross-book addressing is refused, not merely unauthorized.</b> A node/artifact objectId that belongs
  * to a different book than the one in the path is a 404 even when the caller can read both, so a client
@@ -126,6 +124,12 @@ public class PbServiceFacade {
 	 * the two disagree (which is exactly what "this node is stale but has not been re-run" looks like)
 	 * without this read path acquiring a write.
 	 */
+	/// COST, stated rather than discovered later: this is O(nodes) queries, and each node costs TWO binding
+	/// reads - one from listBindings here and one inside recomputeStatus. At ~7 nodes per scene a 41-scene
+	/// book is ~287 nodes, so ~570 binding queries for one view. Fine for a chapter, not fine for a whole
+	/// long book, and the fix when it bites is to list the workflow's bindings ONCE
+	/// (PbGraphUtil.listWorkflowBindings) and hand recomputeStatus a prebuilt map. Not done here because it
+	/// changes recomputeStatus's signature, and no measurement yet says it is needed.
 	public static Map<String, Object> workflowView(BaseRecord user, String bookObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		BaseRecord workflow = requireWorkflow(user, book);
