@@ -104,7 +104,19 @@ try {
   $ftsRows = [int](& $Sqlite $tmp "SELECT count(*) FROM memories_fts;")
   if ($ftsRows -ne $counts['memories']) { $ok = $false; "  MISMATCH memories_fts : $ftsRows vs $($counts['memories'])" }
 
-  if ($ok) { "verify   : OK - restored cleanly, integrity=$integrity, FTS index rebuilt ($ftsRows rows)" }
+  # integrity_check validates page structure, not referential integrity: it passes happily on a
+  # dump whose links rows point at memories that no longer exist -- which is precisely what an
+  # uncascaded delete used to produce, and it reached this file unnoticed. Row counts match in
+  # that case too, since the orphan is a real row. foreign_key_check is the only thing that
+  # catches it, so a dump with dangling children must not be reported as a good backup.
+  $fkViolations = @(& $Sqlite $tmp "PRAGMA foreign_key_check;" | Where-Object { $_ })
+  if ($fkViolations) {
+    $ok = $false
+    "  ORPHANED ROWS ($($fkViolations.Count)) - child rows whose parent memory is gone:"
+    $fkViolations | Select-Object -First 10 | ForEach-Object { "    $_" }
+  }
+
+  if ($ok) { "verify   : OK - restored cleanly, integrity=$integrity, no orphans, FTS index rebuilt ($ftsRows rows)" }
   else     { throw "round-trip verification FAILED - do not rely on $Path" }
 }
 finally {

@@ -82,11 +82,17 @@ function Get-IndexTargets {
 function Esc([string]$s) { if ($null -eq $s) { '' } else { $s.Replace("'", "''") } }
 
 # Run SQL via a temp file so nothing has to survive shell-level quoting.
+#
+# The PRAGMA is not decoration. `foreign_keys` is a per-CONNECTION setting that defaults to OFF,
+# so schema.sql setting it once at creation time had no effect on any later connection -- which
+# made every `ON DELETE CASCADE` in the schema silently inert. `delete` then left orphans behind
+# in links/embeddings, and the orphaned links rows got exported into memories.sql pointing at
+# memories that no longer existed. It has to be re-asserted per connection, i.e. here.
 function Invoke-Sql {
   param([string]$Sql, [string[]]$SqliteArgs = @())
   $f = Join-Path ([System.IO.Path]::GetTempPath()) ("mem-" + [guid]::NewGuid().ToString('N') + ".sql")
   try {
-    [System.IO.File]::WriteAllText($f, $Sql, (New-Object System.Text.UTF8Encoding $false))
+    [System.IO.File]::WriteAllText($f, "PRAGMA foreign_keys=ON;`n" + $Sql, (New-Object System.Text.UTF8Encoding $false))
     & $Sqlite @SqliteArgs $Db ".read $($f -replace '\\','/')"
     if ($LASTEXITCODE -ne 0) { throw "sqlite3 exited $LASTEXITCODE" }
   } finally {
@@ -252,6 +258,15 @@ SELECT '  ' || file_path FROM memory_files WHERE name='$(Esc $Name)' ORDER BY fi
     Invoke-Sql "DELETE FROM memories WHERE name='$(Esc $Name)';"
     "deleted: $Name"
     & $PSCommandPath index | Out-Null
+    # links/embeddings cascade now that FKs are enforced per connection, but vectors.db is a
+    # SEPARATE database file that no foreign key can reach. Its now-stale vector would keep
+    # consuming a KNN slot on every search until the index is rebuilt, so rebuild it here.
+    # Best-effort: a missing vec0 extension must not turn a successful delete into a failure.
+    $vec = Join-Path $MemDir 'vec.ps1'
+    if (Test-Path $vec) {
+      try { & $vec index | Out-Null }
+      catch { "warning: vectors.db not rebuilt ($($_.Exception.Message)). Run: vec.ps1 index" }
+    }
   }
 
   'todo' {

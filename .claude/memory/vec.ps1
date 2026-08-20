@@ -90,11 +90,13 @@ function Invoke-Sql {
   param([string]$Sql, [string]$Target = $Db, [switch]$LoadVec)
   $f = Join-Path ([System.IO.Path]::GetTempPath()) ("vec-" + [guid]::NewGuid().ToString('N') + ".sql")
   try {
-    $prelude = ''
+    # foreign_keys is per-connection and defaults to OFF, so schema.sql's one-time setting is
+    # inert here and `ON DELETE CASCADE` on `embeddings` never fires. See mem.ps1's Invoke-Sql.
+    $prelude = "PRAGMA foreign_keys=ON;`n"
     if ($LoadVec) {
       $base = Get-Vec0Base
       if (-not $base) { throw "vec0 extension not found. Set `$env:SQLITE_VEC0 or see SETUP.md." }
-      $prelude = ".load $base`n"
+      $prelude = ".load $base`n" + $prelude
     }
     [System.IO.File]::WriteAllText($f, $prelude + $Sql, (New-Object System.Text.UTF8Encoding $false))
     $out = & $Sqlite $Target ".read $($f.Replace('\','/'))"
@@ -178,13 +180,28 @@ switch ($Command) {
   'embed' {
     $targets = @()
     if ($All) {
+      # Deletes cascade into `embeddings` now, but a DB written before FKs were enforced can
+      # still hold rows whose memory is gone. The staleness scan below cannot see them -- it
+      # walks `memories`, so an embedding with no memory is never visited -- yet they still get
+      # copied into vectors.db, where each one silently eats a KNN result slot.
+      $orphanSql = "SELECT name FROM embeddings WHERE name NOT IN (SELECT name FROM memories)"
+      $orphans = @(Invoke-Sql ".mode list`n$orphanSql;" | Where-Object { $_ })
+      if ($orphans) {
+        Invoke-Sql "DELETE FROM embeddings WHERE name NOT IN (SELECT name FROM memories);"
+        "pruned $($orphans.Count) orphaned embedding(s): $($orphans -join ', ')"
+      }
       # Missing or stale: no row, or the embedded text has changed since.
       foreach ($slug in (Invoke-Sql ".mode list`nSELECT name FROM memories ORDER BY name;")) {
         if (-not $slug) { continue }
         $stored = (Invoke-Sql ".mode list`nSELECT content_sha256 FROM embeddings WHERE name='$(Esc $slug)';") -join ''
         if ($stored -ne (Get-Sha256 (Get-EmbedText $slug))) { $targets += $slug }
       }
-      if (-not $targets) { "nothing to embed - all embeddings current"; break }
+      # A prune with nothing to re-embed still leaves vectors.db holding the pruned vectors,
+      # so it must not take the early exit that skips the index rebuild.
+      if (-not $targets) {
+        if ($orphans) { & $PSCommandPath index } else { "nothing to embed - all embeddings current" }
+        break
+      }
     } else {
       if (-not $Name) { throw "-Name or -All is required" }
       $targets = @($Name)
@@ -239,15 +256,22 @@ INSERT INTO vec_memories(memory_name, embedding)
 
     if ($useVec) {
       $m = $Db.Replace('\', '/')
+      # Over-fetch from the index, THEN join, THEN limit. vec0 applies `k` inside its own scan,
+      # so asking it for exactly $K and inner-joining afterwards means any vector whose memory
+      # is gone (vectors.db is a separate file and can lag memory.db) burns one of the $K slots
+      # and the caller silently gets fewer rows than they asked for.
+      $overfetch = $K * 3 + 10
       Invoke-Sql -Target $VecDb -LoadVec @"
 .mode list
 .separator ' | '
 ATTACH DATABASE '$m' AS mem;
-SELECT round(1.0 - v.distance, 4) AS similarity, v.memory_name, m.type, m.description
-FROM vec_memories v
-JOIN mem.memories m ON m.name = v.memory_name
-WHERE v.embedding MATCH '$(Esc $qjson)' AND k = $K
-ORDER BY v.distance;
+SELECT round(1.0 - h.d, 4) AS similarity, h.nm, m.type, m.description
+FROM (SELECT memory_name AS nm, distance AS d
+      FROM vec_memories
+      WHERE embedding MATCH '$(Esc $qjson)' AND k = $overfetch) h
+JOIN mem.memories m ON m.name = h.nm
+ORDER BY h.d
+LIMIT $K;
 "@
     } else {
       # Pure-SQL cosine over the JSON vectors: no extension required.
