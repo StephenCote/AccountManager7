@@ -37,11 +37,39 @@ try {
   $db     = Join-Path $memDir 'memory.db'
 
   if (-not (Test-Path $db)) {
-    Write-Envelope "Project memory store is configured at $memDir but memory.db does not exist yet. Create it with: sqlite3 memory.db `".read schema.sql`" (see SETUP.md section 4)."
-    exit 0
+    # Auto-bootstrap: if schema.sql is present, create the DB rather than just
+    # telling the model to do it manually. Also restore memories.sql if it exists.
+    $schema  = Join-Path $memDir 'schema.sql'
+    $export  = Join-Path $memDir 'memories.sql'
+    $sqlite  = $null
+
+    $onPath = Get-Command sqlite3 -ErrorAction SilentlyContinue
+    if ($onPath) { $sqlite = $onPath.Source }
+    $local = Join-Path $env:USERPROFILE '.claude\tools\sqlite\sqlite3.exe'
+    if (-not $sqlite -and (Test-Path $local)) { $sqlite = $local }
+
+    if ($sqlite -and (Test-Path $schema)) {
+      try {
+        & $sqlite $db ".read $($schema.Replace('\','/'))" | Out-Null
+        if (Test-Path $export) {
+          & $sqlite $db ".read $($export.Replace('\','/'))" | Out-Null
+          & $sqlite $db "INSERT INTO memories_fts(memories_fts) VALUES('rebuild');" | Out-Null
+        }
+        # DB created -- fall through to normal flow below
+      } catch {
+        Write-Envelope "memory.db bootstrap failed: $($_.Exception.Message). Create manually: sqlite3 memory.db `".read schema.sql`" (see SETUP.md section 4)."
+        exit 0
+      }
+    } else {
+      Write-Envelope "Project memory store is configured at $memDir but memory.db does not exist yet. Create it with: sqlite3 memory.db `".read schema.sql`" (see SETUP.md section 4)."
+      exit 0
+    }
   }
 
-  $rows = & powershell -NoProfile -File (Join-Path $memDir 'mem.ps1') list 2>&1
+  # -ExecutionPolicy Bypass: the hook is not signed, and the default policy on many
+  # machines blocks unsigned scripts run with -File. Bypass is scoped to this child
+  # process only; it does not change the machine or user policy. (Gotcha #30 in SETUP.md.)
+  $rows = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $memDir 'mem.ps1') list 2>&1
   if ($LASTEXITCODE -ne 0) {
     Write-Envelope "Project memory store at $db could not be read (mem.ps1 list exited $LASTEXITCODE). Investigate before relying on recall."
     exit 0
@@ -50,10 +78,10 @@ try {
   # Separate real memory rows from diagnostic noise. A child powershell.exe surfaces its
   # warning/error streams as ordinary output here, so ANY Write-Warning inside mem.ps1
   # arrives as a line like "WARNING: ..." and -- before this filter -- was injected into
-  # context as though it were a memory. Verified 2026-08-20: such a line lands at index 0,
-  # ahead of the real rows, so the first "memory" the model read was fabricated. Dropping
-  # the 2>&1 redirect does NOT fix it -- the warning comes through anyway -- so filter by
-  # shape: mem.ps1 list emits "name | type | description | updated", i.e. 3+ pipes.
+  # context as though it were a memory. Verified: such a line lands at index 0, ahead of
+  # the real rows, so the first "memory" the model read was fabricated. Dropping the 2>&1
+  # redirect does NOT fix it -- the warning comes through anyway -- so filter by shape:
+  # mem.ps1 list emits "name | type | description | updated", i.e. 3+ pipes.
   $all    = @($rows | Where-Object { $_ -and "$_".Trim() } | ForEach-Object { "$_" })
   $listed = @($all | Where-Object { ($_ -split '\|').Count -ge 4 })
   $noise  = @($all | Where-Object { ($_ -split '\|').Count -lt 4 })
