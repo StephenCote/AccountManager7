@@ -1380,6 +1380,15 @@ function buildActions() {
                 m.route.set('/picture-book/' + (bookObjectId || workObjectId));
             }
         });
+        if (bookObjectId) {
+            actions.push({
+                label: 'Workflow', icon: 'account_tree',
+                onclick: function () {
+                    Dialog.close();
+                    m.route.set('/picture-book/' + bookObjectId + '/workflow');
+                }
+            });
+        }
         actions.push({
             label: 'Done', icon: 'check', primary: true,
             onclick: function () { Dialog.close(); }
