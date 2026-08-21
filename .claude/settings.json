@@ -348,6 +348,12 @@
                                 ]
                     },
     "hooks":  {
+        {
+        "type": "command",
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/.claude/memory/hook-user-prompt.ps1\"",
+        "timeout": 20,
+        "statusMessage": "Searching project memory…"
+    },
                   "SessionStart":  [
                                        {
                                            "hooks":  [

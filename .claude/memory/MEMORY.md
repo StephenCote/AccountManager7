@@ -15,6 +15,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-bytestore-access` -- Never read/write a byte_store field with raw .get()/.set() ΓÇö use ByteModelUtil, since data may be compressed and/or encrypted
 - `feedback-deflection-patterns` -- Stephen's repeated correction ΓÇö stop shirking responsibility; \"pre-existing\" never discharges ownership of a test or bug I authored
 - `feedback-llm-literal-null-strings` -- LLM-extracted JSON fields can contain the literal string \"null\"/\"n/a\"/\"unknown\" instead of being absent or blank ΓÇö guard for that explicitly
+- `feedback-memory-active-use` -- Memory system requires active search+write calls, not just relying on the SessionStart hook
 - `feedback-nested-fk-cache-staleness` -- CacheDBSearch only invalidates a cached record by its own schema+identity ΓÇö updating a nested foreign field elsewhere doesn't invalidate parents that embed it
 - `feedback-no-irreversibility-ceremony` -- Don't build phased ceremony (pre-flight tests, write-but-don't-register steps) around schema decisions being irreversible ΓÇö the test DB is a resettable container
 - `feedback-no-rest-mocking` -- Never mock the REST/servlet layer (HttpServletRequest, ServletContext, UserPrincipal) to test business logic in-process ΓÇö test through Objects7 directly or the real Ux/REST stack
@@ -32,6 +33,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 ## project
 - `project-accountmanager7-overview` -- What AccountManager7 is: schema-first BaseRecord/PBAC platform; sessions open at the GIT ROOT while Maven/modules live under src\ - two different 'project roots'; module map
 - `project-ki69-closed` -- KI-69 closed 2026-08-20: age-blind portrait fix in NarrativeUtil with adult fallback, 5 tests green
+- `project-pb5-phase-status` -- Phase 5a Playwright gate closed; Phase 5 Mithril UI not yet started
 - `project-picturebook-backend-redo` -- PictureBook feature backend persistence redo ΓÇö charPerson/portrait/landscape not saved, reference images unused
 - `project-service-testing-docker` -- Service7/Tomcat testing should use the verified docker-compose setup, not a manually-run local Tomcat
 - `testing-db-reset` -- Which AM7 databases may be reset: am7db and am7test yes, am72db NEVER; test.db.reset=true drops schema/keys/data on the unit-test DB
