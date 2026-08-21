@@ -2,6 +2,8 @@ package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 
 import java.util.List;
@@ -10,18 +12,22 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
+import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
 import org.cote.accountmanager.olio.picturebook.PbMigrationUtil;
 import org.cote.accountmanager.olio.picturebook.PbMigrationUtil.ImportResult;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -59,7 +65,9 @@ public class TestPbMigration extends BaseTest {
 
 	/**
 	 * Find all PB1 book groups under {@code ~/Data/PictureBooks/} that have a
-	 * {@code .pictureBookMeta} note. Returns at most the first one ready for migration.
+	 * {@code .pictureBookMeta} note. Returns the most recently created one that hasn't been
+	 * migrated yet, or the most recent one if all have been migrated. Newest-first ordering
+	 * ensures that a freshly created iter-N book is tried before previously-migrated ones.
 	 */
 	private BaseRecord findMigratableBookGroup(BaseRecord user) {
 		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
@@ -72,9 +80,17 @@ public class TestPbMigration extends BaseTest {
 		}
 		long pbDirId = ((Number) pbDir.get(FieldNames.FIELD_ID)).longValue();
 
-		// List immediate child groups of the PictureBooks dir — each is a PB1 book
+		// List immediate child groups of the PictureBooks dir — newest first so a freshly
+		// created book is tried before older already-migrated ones
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, pbDirId);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		try {
+			q.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_ID);
+			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING.toString());
+		}
+		catch(Exception e) {
+			logger.warn("Could not set sort order on PB1 book group query: " + e.getMessage());
+		}
 		q.setRequestRange(0, 50);
 		q.planMost(false);
 		BaseRecord[] bookGroups = IOSystem.getActiveContext().getSearch().findRecords(q);
@@ -82,13 +98,14 @@ public class TestPbMigration extends BaseTest {
 			return null;
 		}
 
-		// Return the first book group that actually has a .pictureBookMeta note
+		// Walk newest-first; prefer a book that hasn't been migrated yet (no PB2 counterpart).
+		// Fall back to the newest with a meta note if all have been migrated.
+		BaseRecord fallback = null;
 		for (BaseRecord bg : bookGroups) {
 			String path = bg.get(FieldNames.FIELD_PATH);
 			if (path == null) {
 				continue;
 			}
-			// Check for the meta note
 			BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
 				ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), orgId);
 			if (grp == null) {
@@ -100,11 +117,20 @@ public class TestPbMigration extends BaseTest {
 			nq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
 			nq.planMost(false);
 			BaseRecord meta = IOSystem.getActiveContext().getAccessPoint().find(user, nq);
-			if (meta != null) {
-				return bg;
+			if (meta == null) {
+				continue;
+			}
+			// Prefer books that haven't been migrated yet — check for an existing PB2 counterpart
+			String groupName = bg.get(FieldNames.FIELD_NAME);
+			String slug = org.cote.accountmanager.olio.picturebook.PbPipelineUtil.deriveSlug(groupName);
+			if (slug != null && PbBookUtil.findBookBySlug(user, slug, orgId) == null) {
+				return bg;  // un-migrated: best candidate
+			}
+			if (fallback == null) {
+				fallback = bg;  // already migrated: keep as fallback
 			}
 		}
-		return null;
+		return fallback;
 	}
 
 	@Test
@@ -163,6 +189,32 @@ public class TestPbMigration extends BaseTest {
 				assertNotNull("PB2 scene list must not be null", scenes);
 				assertEquals("PB2 scene count must match imported count",
 					result.scenesImported, scenes.size());
+
+				// Phase 6 exit criterion: migrated nodes carry DONE_UNVERIFIED + null inputHash
+				// (honest labelling — PB1 had output for each scene but provenance is unknown to PB2)
+				BaseRecord workflow = PbGraphUtil.findWorkflow(user, pb2Book);
+				assertNotNull("PB2 book must have a workflow after migration", workflow);
+				Query nodeQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_NODE,
+					OlioFieldNames.FIELD_PB_WORKFLOW, workflow);
+				nodeQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+				nodeQ.setRequest(new String[]{
+					FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+					OlioFieldNames.FIELD_PB_NODE_STATUS, OlioFieldNames.FIELD_PB_INPUT_HASH
+				});
+				nodeQ.setCache(false);
+				QueryResult nodeQr = IOSystem.getActiveContext().getAccessPoint().list(user, nodeQ);
+				assertNotNull("PB2 workflow must have nodes after migration", nodeQr);
+				BaseRecord[] migrationNodes = nodeQr.getResults();
+				assertNotNull("PB2 workflow node result set must not be null", migrationNodes);
+				assertTrue("PB2 workflow must have at least one migration node", migrationNodes.length > 0);
+				for(BaseRecord node : migrationNodes) {
+					String nodeName = node.get(FieldNames.FIELD_NAME);
+					String storedStatus = node.get(OlioFieldNames.FIELD_PB_NODE_STATUS);
+					String storedHash = node.get(OlioFieldNames.FIELD_PB_INPUT_HASH);
+					assertEquals("Migrated node '" + nodeName + "' must be DONE_UNVERIFIED",
+						"done_unverified", storedStatus != null ? storedStatus.toLowerCase() : null);
+					assertNull("Migrated node '" + nodeName + "' must have null inputHash", storedHash);
+				}
 			}
 		}
 

@@ -81,7 +81,7 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final String CHAT_PATH = "~/Chat";
 
 	private static final String PB_LLM_MODEL = "gpt-oss:120b";//"qwen3:8b";
-	private static int iter = 4;
+	private static int iter = 5;
 	private static final boolean REIMAGE_CHARS = false;
 	// If true, force a fresh LLM derivation of already-cached scene data: the .scenesCache note
 	// (Step 2 extraction) and the per-scene "scenePrompt"/"landscapePrompt" values (Step 4, via

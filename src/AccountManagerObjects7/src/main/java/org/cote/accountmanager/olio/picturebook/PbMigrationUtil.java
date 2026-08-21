@@ -23,6 +23,8 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
+import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
+import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 
 /**
@@ -176,7 +178,13 @@ public class PbMigrationUtil {
 			}
 		}
 
-		// 10. Mark the book extracted when at least one scene imported (content ready, generation pending)
+		// 10. Create one SCENE node per imported scene, marked DONE_UNVERIFIED:
+		// honest labelling that PB1 had output for each scene but its provenance is unknown to PB2.
+		if(imported > 0) {
+			createMigrationNodes(user, book, slug, imported, warnings);
+		}
+
+		// 11. Mark the book extracted (content ready, generation pending)
 		if(imported > 0) {
 			PbBookUtil.setBookStatus(user, book, PbBookStatusEnumType.EXTRACTED);
 		}
@@ -351,6 +359,44 @@ public class PbMigrationUtil {
 		}
 		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 			warnings.add("Scene '" + scene.get(FieldNames.FIELD_NAME) + "': text field patch was not persisted");
+		}
+	}
+
+	/**
+	 * Create the workflow for the migrated book and add one {@code SCENE}-type node per imported
+	 * scene, each marked {@code DONE_UNVERIFIED} with {@code inputHash = null}: honest labelling
+	 * that content existed in PB1 but its pipeline provenance is unknown to PB2.
+	 * <p>
+	 * Handles are prefixed {@code "v1scene-"} to avoid collisions with nodes that PbPipelineUtil
+	 * creates later using its own handle conventions.
+	 */
+	private static void createMigrationNodes(BaseRecord user, BaseRecord book, String slug,
+			int scenesImported, List<String> warnings) {
+		String workflowPath = PbBookUtil.workflowGroupPath(slug);
+		BaseRecord workflow;
+		try {
+			workflow = PbGraphUtil.getCreateWorkflow(user, book, workflowPath);
+		}
+		catch(Exception e) {
+			warnings.add("Migration workflow creation failed: " + e.getMessage());
+			return;
+		}
+		if(workflow == null) {
+			warnings.add("Migration workflow was null after creation");
+			return;
+		}
+		for(int i = 0; i < scenesImported; i++) {
+			String handle = "v1scene-" + i;
+			try {
+				BaseRecord node = PbGraphUtil.addNode(user, workflow, handle,
+					PbNodeTypeEnumType.SCENE, workflowPath, i);
+				if(!PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED)) {
+					warnings.add("Could not mark migration node " + handle + " as DONE_UNVERIFIED");
+				}
+			}
+			catch(Exception e) {
+				warnings.add("Failed to create migration node " + handle + ": " + e.getMessage());
+			}
 		}
 	}
 
