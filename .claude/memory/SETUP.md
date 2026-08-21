@@ -32,6 +32,8 @@ copying a `Port? No` file is how one project ends up carrying another's state.
 | `embed-ollama.ps1` | Embedding provider — Ollama, local, no API key | Yes | Yes |
 | `embed-local.ps1` | Embedding provider — AM7-style local service, no API key | Yes | Yes |
 | `hook-session-start.ps1` | SessionStart hook — injects the memory index into context so the lookup is never missed | Yes | Yes |
+| `hook-user-prompt.ps1` | UserPromptSubmit hook — searches the store against each prompt (semantic + FTS) and injects hits, plus the end-of-turn write reminder. Logs every invocation to `hook.log`. | Yes | Yes |
+| `hook-stop-memory.ps1` | Stop hook — the **write-side gate**. Blocks once per session if files changed but the store did not. `MEMORY_GATE=off` disables. | Yes | Yes |
 | `.gitignore` | Excludes `memory.db`, WAL sidecars, `vectors.db`, `embed.config`, credential files. | Yes | Yes |
 | `.gitattributes` | Pins `-text` on `memories.sql`/`MEMORY.md`/`*.ps1` so `core.autocrlf` cannot rewrite the committed export (gotcha #31). Store-scoped. | Yes | Yes |
 | `SETUP.md` | This file. | Yes | Yes |
@@ -53,10 +55,20 @@ Three files outside this directory complete the wiring, all committed:
 | `<root>\.claude\settings.json` | `SessionStart` hook (injects the index) + MCP write-tool denials |
 | `<root>\.mcp.json` | Registers an `mcp-sqlite` server against `memory.db`. **Not read-only** — see gotcha #25; writes are blocked by `settings.json`, not by the server |
 
-**Three mechanisms make the store actually get used**, in increasing reliability:
+**Four mechanisms make the store actually get used**, in increasing reliability:
 the generated `MEMORY.md` header (auto-loaded, but only advisory), `CLAUDE.md` (the
-conventional durable instruction), and the `SessionStart` hook (harness-executed, so it
-cannot be overlooked). The hook emits
+conventional durable instruction), the `SessionStart` and `UserPromptSubmit` hooks
+(harness-executed, so they cannot be overlooked), and the `Stop` gate
+(`hook-stop-memory.ps1`) — the only one that acts on the **write** side. The first three are
+all read-side or advisory; on their own, whether anything ever got *recorded* still came down
+to the model choosing to run `mem.ps1`, which is why `memory.db` could sit unchanged through a
+whole working session. The gate compares the DB's fingerprint (mtime + row count + latest
+`updated`) against a baseline captured at `SessionStart`, and if the git working tree changed
+while the DB did not, it returns `decision: "block"` once with instructions to record or to say
+explicitly that nothing was worth recording. It blocks **at most once per session**, never
+fires on a session that changed no files, is disabled by `MEMORY_GATE=off`, and fails open on
+any error — a memory gate must never be able to trap a session. Baselines live in
+`.state\<session-id>.json` (gitignored, pruned after 7 days). The hook emits
 `hookSpecificOutput.additionalContext` — plain stdout is **not** reliably injected, which
 is why it wraps its output in that envelope rather than just running `mem.ps1 list`.
 

@@ -45,3 +45,7 @@ hook.log
 # per-machine state, not shared state. The durable copy lives at ~\.claude\embed.config
 # and every project inherits it -- see memconfig.ps1.
 embed.config
+
+# Per-session baselines for the Stop-hook memory gate (hook-stop-memory.ps1). Machine- and
+# session-local by definition; pruned after 7 days by the SessionStart hook.
+.state/

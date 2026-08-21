@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # detect.sh — monorepo-aware, per-module detection for the loop system.
 # Sourced by verify.sh. Provides:
-#   ROOT                      -> the src/ root (dir that contains .claude/)
+#   PROJECT_ROOT              -> the dir that contains .claude/ (= the git/session root)
+#   ROOT                      -> the MODULE root: the dir the module dirs actually sit in
 #   loop_target_modules       -> prints module dirs (relative to ROOT) to gate
 #   loop_cmds_for <abs-dir>   -> sets BUILD_CMD/TEST_CMD/LINT_CMD/E2E_CMD for a module
 #
@@ -12,7 +13,25 @@
 # A module is any immediate subdir of ROOT containing pom.xml or package.json.
 
 _SELF="${BASH_SOURCE[0]}"
-ROOT="$(cd "$(dirname "$_SELF")/../.." && pwd)"
+
+# PROJECT_ROOT and ROOT are NOT the same thing here, and conflating them is a
+# silent-vacuous-pass bug. Sessions open at the git root, so .claude/ lives there, but the
+# Maven aggregator and every module live one level down, in src/. Deriving the module root as
+# "the .claude parent" -- the pre-migration rule, valid only while .claude was at src/.claude
+# -- makes _is_module false for every module, so loop_target_modules prints nothing and
+# verify.sh reports VERIFY_OK having compiled and tested absolutely nothing.
+PROJECT_ROOT="$(cd "$(dirname "$_SELF")/../.." && pwd)"
+
+# Module root: explicit override first, else wherever the aggregator pom.xml actually is.
+if [ -n "${LOOP_ROOT:-}" ]; then
+  ROOT="$(cd "$LOOP_ROOT" && pwd)"
+elif [ -f "$PROJECT_ROOT/pom.xml" ]; then
+  ROOT="$PROJECT_ROOT"
+elif [ -f "$PROJECT_ROOT/src/pom.xml" ]; then
+  ROOT="$PROJECT_ROOT/src"
+else
+  ROOT="$PROJECT_ROOT"
+fi
 
 _is_module() { [ -f "$ROOT/$1/pom.xml" ] || [ -f "$ROOT/$1/package.json" ]; }
 
@@ -64,7 +83,9 @@ loop_cmds_for() {
   fi
 }
 
-[ -f "$ROOT/.claude/loop/loop.conf" ]       && . "$ROOT/.claude/loop/loop.conf"
-[ -f "$ROOT/.claude/loop/loop.local.conf" ] && . "$ROOT/.claude/loop/loop.local.conf"
+# Config lives next to this script (PROJECT_ROOT/.claude/loop), which is no longer under ROOT.
+_CFG="$(cd "$(dirname "$_SELF")" && pwd)"
+[ -f "$_CFG/loop.conf" ]       && . "$_CFG/loop.conf"
+[ -f "$_CFG/loop.local.conf" ] && . "$_CFG/loop.local.conf"
 
-export ROOT
+export PROJECT_ROOT ROOT

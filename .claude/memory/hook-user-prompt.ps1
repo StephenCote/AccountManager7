@@ -10,7 +10,24 @@ Registered in .claude/settings.json under hooks.UserPromptSubmit.
 #>
 $ErrorActionPreference = 'SilentlyContinue'
 
+# Claude Code reads hook stdout as UTF-8; without this PowerShell emits the console code page
+# and non-ASCII characters in injected memories arrive mangled.
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [Console]::OutputEncoding
+
+# This hook used to log NOTHING, so hook.log showed only SessionStart lines and there was no way
+# to distinguish "UserPromptSubmit never fires" from "it fires and finds nothing" -- the two have
+# completely different fixes. Log every invocation.
+function Write-HookLog([string]$m) {
+  try {
+    $log = Join-Path (Split-Path -Parent $PSCommandPath) 'hook.log'
+    Add-Content -LiteralPath $log -Encoding utf8 `
+      -Value ("{0}  UserPromptSubmit: {1}" -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'), $m)
+  } catch { }
+}
+
 function Write-Envelope([string]$text) {
+    Write-HookLog "fired, injected $($text.Length) chars"
     @{
         hookSpecificOutput = @{
             hookEventName     = 'UserPromptSubmit'
@@ -21,18 +38,20 @@ function Write-Envelope([string]$text) {
 
 try {
     # Read stdin — Claude Code sends the user prompt as JSON
-    $raw = [Console]::In.ReadToEnd()
+    # Read stdin only when it is actually a pipe. ReadToEnd() on a non-redirected
+    # console blocks forever, and a hook that blocks just burns its whole timeout.
+    $raw = if ([Console]::IsInputRedirected) { [Console]::In.ReadToEnd() } else { '' }
     $payload = $raw | ConvertFrom-Json -ErrorAction Stop
 
     # Extract prompt text; field name varies by version
     $prompt = ''
     if ($payload.prompt)   { $prompt = "$($payload.prompt)" }
     if (-not $prompt -and $payload.message) { $prompt = "$($payload.message)" }
-    if (-not $prompt) { exit 0 }
+    if (-not $prompt) { Write-HookLog 'fired, but no prompt field in payload'; exit 0 }
 
-    $memDir = Join-Path (Split-Path -Parent $PSCommandPath) '.'
+    $memDir = Split-Path -Parent $PSCommandPath
     $db     = Join-Path $memDir 'memory.db'
-    if (-not (Test-Path $db)) { exit 0 }
+    if (-not (Test-Path $db)) { Write-HookLog "fired, but memory.db not found at $db"; exit 0 }
 
     # Use first 300 chars as search query (avoids shell-arg length issues)
     $query = $prompt.Trim().Substring(0, [Math]::Min(300, $prompt.Trim().Length))
@@ -85,14 +104,24 @@ try {
         [void]$sb.AppendLine('')
     }
 
-    # ── Unconditional write reminder ───────────────────────────────────────────
-    [void]$sb.AppendLine('MEMORY OBLIGATION: After completing any non-trivial task this turn, write findings')
-    [void]$sb.AppendLine('  to memory.db via mem.ps1 set + vec.ps1 embed -All + export.ps1.')
-    [void]$sb.AppendLine('  The user monitors memory.db; an unchanged DB signals you did not use the system.')
+    # ── Write reminder ─────────────────────────────────────────────────────────
+    # Deliberately framed as a condition to evaluate at the END of the turn, not a command to run.
+    # The previous wording was an imperative list of memory commands, and it misfired badly: asked
+    # to diagnose or repair the memory system, the model would run mem.ps1/vec.ps1/export.ps1 --
+    # satisfying the reminder while ignoring the actual request. Enforcement now lives in the Stop
+    # hook (hook-stop-memory.ps1), so this text does not need to nag.
+    [void]$sb.AppendLine('MEMORY, at the END of this turn only: if you learned something durable -- a decision,')
+    [void]$sb.AppendLine('  a gotcha, a correction, a status change -- record it with mem.ps1 set, then vec.ps1')
+    [void]$sb.AppendLine('  embed -All and export.ps1. Update or supersede an existing memory over adding a')
+    [void]$sb.AppendLine('  near-duplicate. Nothing durable learned? Record nothing.')
+    [void]$sb.AppendLine('  This is not the task. If the request concerns the memory system ITSELF -- checking,')
+    [void]$sb.AppendLine('  debugging, or repairing it -- then diagnose and FIX it; running these commands is')
+    [void]$sb.AppendLine('  not a substitute for that, and is not what was asked.')
 
     Write-Envelope $sb.ToString()
     exit 0
 }
 catch {
+    Write-HookLog "error, failing open: $($_.Exception.Message)"
     exit 0   # always fail open
 }

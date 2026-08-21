@@ -31,6 +31,16 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# sqlite3 emits UTF-8. PowerShell decodes a native command's stdout using [Console]::OutputEncoding,
+# which on a default Windows console is a legacy code page (437/1252) -- so every non-ASCII character
+# round-tripped out of the DB came back double-encoded. That is why MEMORY.md rendered em-dashes as
+# mojibake while the DB itself was clean: the damage happened on READ, between sqlite3 and PowerShell,
+# before anything was written. Guarded: setting it throws when stdout is a redirected pipe.
+try {
+  [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+  $OutputEncoding = [Console]::OutputEncoding
+} catch { }   # throws when stdout/stdin is a redirected pipe (i.e. when launched from a hook)
+
 $MemDir = Split-Path -Parent $PSCommandPath
 $Db     = Join-Path $MemDir 'memory.db'
 if (-not $Path) { $Path = Join-Path $MemDir 'memories.sql' }

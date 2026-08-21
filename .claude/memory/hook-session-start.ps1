@@ -13,6 +13,11 @@ goes wrong it emits an empty context rather than blocking the session.
 #>
 $ErrorActionPreference = 'Stop'
 
+# Claude Code reads hook stdout as UTF-8. Without this, PowerShell emits the console code page
+# and every non-ASCII character in the injected index arrives mangled (em-dash -> mojibake).
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [Console]::OutputEncoding
+
 function Write-Envelope([string]$text) {
   # Durable proof of firing. A hook that silently does nothing is the worst failure
   # mode -- transcripts contain no record of SessionStart injection, so without this
@@ -32,9 +37,58 @@ function Write-Envelope([string]$text) {
   } | ConvertTo-Json -Depth 5 -Compress
 }
 
+# Records the session's starting memory.db fingerprint and working-tree signature so the Stop
+# gate (hook-stop-memory.ps1) has something to compare against. Without a baseline written HERE,
+# the gate can only see the state at the first Stop, by which point any write already happened
+# and the gate is permanently blind. Fails silently -- the gate itself fails open.
+function Write-Baseline([string]$memDir) {
+  try {
+    # Read stdin only when it is actually a pipe. ReadToEnd() on a non-redirected
+    # console blocks forever, and a hook that blocks just burns its whole timeout.
+    $raw = if ([Console]::IsInputRedirected) { [Console]::In.ReadToEnd() } else { '' }
+    $sid = 'unknown'
+    try { $p = $raw | ConvertFrom-Json; if ($p.session_id) { $sid = "$($p.session_id)" } } catch { }
+
+    $db = Join-Path $memDir 'memory.db'
+    $mtime = $null; $count = $null
+    if (Test-Path $db) { $mtime = (Get-Item $db).LastWriteTimeUtc.ToString('o') }
+    $sqlite = (Get-Command sqlite3 -ErrorAction SilentlyContinue).Source
+    if (-not $sqlite) {
+      $lp = Join-Path $env:USERPROFILE '.claude\tools\sqlite\sqlite3.exe'
+      if (Test-Path $lp) { $sqlite = $lp }
+    }
+    if ($sqlite -and $mtime) {
+      $count = (& $sqlite $db "SELECT COUNT(*) || '/' || COALESCE(MAX(updated),'') FROM memories;" 2>$null | Out-String).Trim()
+    }
+
+    $tree = $null
+    try {
+      $root = Split-Path -Parent (Split-Path -Parent $memDir)
+      $porc = (& git -C $root status --porcelain 2>$null | Out-String)
+      $sha  = [System.Security.Cryptography.SHA1]::Create().ComputeHash(
+                [System.Text.Encoding]::UTF8.GetBytes($porc))
+      $tree = ([BitConverter]::ToString($sha) -replace '-','')
+    } catch { }
+
+    $state = Join-Path $memDir '.state'
+    if (-not (Test-Path $state)) { New-Item -ItemType Directory -Path $state -Force | Out-Null }
+
+    # Prune baselines older than 7 days so .state does not grow without bound.
+    Get-ChildItem -LiteralPath $state -Filter '*.json' -ErrorAction SilentlyContinue |
+      Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
+      Remove-Item -Force -ErrorAction SilentlyContinue
+
+    @{ mtime = $mtime; count = $count; tree = $tree; blocked = $false } |
+      ConvertTo-Json -Compress |
+      Set-Content -LiteralPath (Join-Path $state "$sid.json") -Encoding utf8
+  } catch { }
+}
+
 try {
   $memDir = Split-Path -Parent $PSCommandPath
   $db     = Join-Path $memDir 'memory.db'
+
+  Write-Baseline $memDir
 
   if (-not (Test-Path $db)) {
     # Auto-bootstrap: if schema.sql is present, create the DB rather than just
