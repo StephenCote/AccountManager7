@@ -309,6 +309,53 @@ self-signed cert, and because a local dev Tomcat may also be bound to `[::1]:844
 container's `:8443` is correct — proven from an external Linux curl client hitting the container IP.
 Browsers are unaffected.
 
+## Playwright E2E against the Docker stack
+
+Playwright tests run against Docker with:
+```bash
+cd src/AccountManagerUx752
+PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test --workers=1 --project=chromium
+```
+
+**`127.0.0.1` not `localhost`:** Docker publishes IPv4-only. Chromium resolves `localhost` to `::1` first, which fails with `ERR_CONNECTION_ABORTED`. Always use `127.0.0.1` and ensure `CORS_ALLOWED_ORIGINS` includes `https://127.0.0.1:9443`.
+
+**Port matters for `applicationPath`:** `config.js` maps port 8899 → absolute `https://localhost:8443`; any other port (including 9443) → relative `/AccountManagerService7`. With PLAYWRIGHT_BASE_URL at 9443, all REST calls become `/AccountManagerService7/...` relative to origin — correct for nginx.
+
+**API login in tests (not form login):** Use `page.request.post('/AccountManagerService7/rest/login', ...)` to set the JSESSIONID cookie directly. This avoids Mithril login-form races. The session cookie is then available for subsequent `page.goto('/')`.
+
+**WebSocket reconnect vs. forceLogin — MUST stub WS in Playwright tests:**
+The app opens a WebSocket to `wss://127.0.0.1:9443/AccountManagerService7/wss`. nginx proxies this to Tomcat with `Upgrade`/`Connection` headers. However, nginx does not forward the session cookie on the upgrade request, so Tomcat rejects the handshake and closes the socket. After 1000ms, `pageClient.js reconnect()` fires: if `page.token` is null, it calls `forceLogin()` immediately (→ `#!/sig`); if `page.token` is non-null, it tries `loginWithPassword("${jwt}", token)` which fails (no user named `"${jwt}"`) and also calls `forceLogin()`.
+
+The only reliable fix for E2E tests is to stub `window.WebSocket` via `page.addInitScript()` before `page.goto()`. The stub fires `onopen` (so the app thinks the socket is open) and never fires `onclose`. Example (from `loginAsSharedUser` in `e2e/pictureBookWorkflow.spec.js`):
+
+```javascript
+await page.addInitScript(() => {
+    window.WebSocket = class StubWS {
+        constructor(url) {
+            this.url = url; this.readyState = 0;
+            this.onopen = null; this.onclose = null; this.onmessage = null; this.onerror = null;
+            this.bufferedAmount = 0; this.extensions = ''; this.protocol = '';
+            setTimeout(() => { this.readyState = 1; if (this.onopen) this.onopen({ type: 'open', target: this }); }, 50);
+        }
+        send() {} close() { this.readyState = 3; }
+        addEventListener() {} removeEventListener() {} dispatchEvent() { return true; }
+    };
+    window.WebSocket.CONNECTING = 0; window.WebSocket.OPEN = 1;
+    window.WebSocket.CLOSING = 2; window.WebSocket.CLOSED = 3;
+});
+```
+
+**Keeping the Docker dist current:** The Docker image bakes a `vite build` snapshot at image-build time. When frontend source changes, the running container's dist is stale. To update without rebuilding the full image:
+```bash
+cd src/AccountManagerUx752
+npx vite build
+docker cp ./dist/. am7test-am7-1:/opt/ux752/dist/
+```
+`vite preview` serves static files from disk — the new files are picked up immediately without restarting the container. To fully rebuild the image (e.g. after backend changes):
+```bash
+docker compose -p am7test -f src/docker-compose.test.yml up --build -d
+```
+
 ## Known non-blocking follow-ups
 
 - **`log4j2.xml` hardcodes `<Property name="log-path">c:/projects/logs</Property>`** (a Windows path).

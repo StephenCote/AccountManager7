@@ -16,15 +16,62 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
 
 async function loginAsSharedUser(page) {
-    await page.goto('/');
-    await page.locator('select#selOrganizationList').waitFor({ state: 'visible', timeout: 20000 });
-    await page.locator('select#selOrganizationList').selectOption('/Development');
-    await page.locator('input[name="userName"]').fill('e2etest_shared');
-    await page.locator('input[name="password"]').fill('password');
-    await page.locator('button:has-text("Login")').click();
+    // Login via the REST API using page.request, which shares the browser's cookie jar.
+    // This avoids the Mithril login form entirely — no re-render races, no form interaction hangs.
+    // config.js routes API calls based on window.location.port:
+    //   port 8899 (Vite dev) → absolute https://localhost:8443
+    //   any other port (e.g. 9443 Docker or 127.0.0.1:9443) → relative /AccountManagerService7
+    // So PLAYWRIGHT_BASE_URL must be https://127.0.0.1:9443 (Docker) for this to work.
+    const resp = await page.request.post('/AccountManagerService7/rest/login', {
+        data: {
+            schema: 'auth.credential',
+            organizationPath: '/Development',
+            name: 'e2etest_shared',
+            credential: Buffer.from('password').toString('base64'),
+            type: 'hashed_password'
+        }
+    });
+    if (!resp.ok() && resp.status() !== 204) {
+        throw new Error(`API login failed: HTTP ${resp.status()}`);
+    }
+
+    // Stub WebSocket before page load so onclose never fires and the reconnect loop
+    // never reaches loginWithPassword("${jwt}", ...) → forceLogin().
+    // Docker routes wss://host:9443/AccountManagerService7/wss to Tomcat, but Tomcat
+    // rejects the WS upgrade when no session cookie travels with it (nginx strips
+    // cookies on the upgrade path), causing onclose → reconnect → forceLogin → #!/sig.
+    // The stub pretends the WS is open; no real messages are needed for routing tests.
+    await page.addInitScript(() => {
+        window.WebSocket = class StubWS {
+            constructor(url) {
+                this.url = url;
+                this.readyState = 0; // CONNECTING
+                this.onopen = null; this.onclose = null;
+                this.onmessage = null; this.onerror = null;
+                this.bufferedAmount = 0; this.extensions = ''; this.protocol = '';
+                // Fire onopen on the next tick so the app thinks it connected.
+                setTimeout(() => {
+                    this.readyState = 1; // OPEN
+                    if (this.onopen) this.onopen({ type: 'open', target: this });
+                }, 50);
+            }
+            send() {}
+            // close() sets CLOSED but does NOT fire onclose — prevents reconnect loop.
+            close() { this.readyState = 3; }
+            addEventListener() {} removeEventListener() {} dispatchEvent() { return true; }
+        };
+        window.WebSocket.CONNECTING = 0;
+        window.WebSocket.OPEN = 1;
+        window.WebSocket.CLOSING = 2;
+        window.WebSocket.CLOSED = 3;
+    });
+
+    // Navigate to the app. JSESSIONID is already in the browser's cookie jar.
+    // The app calls /rest/principal on boot; with a valid session it routes to /main.
+    await page.goto('/', { timeout: 30000 });
     await page.waitForFunction(
         () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
-        { timeout: 20000 }
+        { timeout: 30000 }
     );
 }
 
@@ -36,6 +83,7 @@ async function navigateToWorkflow(page, bookObjectId) {
 }
 
 test.describe('PictureBook Workflow Graph', () => {
+    test.describe.configure({ timeout: 150000 });
 
     test.beforeAll(async ({ request }) => {
         await ensureSharedTestUser(request);

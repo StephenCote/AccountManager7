@@ -29,11 +29,12 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-use-real-test-content` -- use the user's actual provided documents/characters for PictureBook (and similar) test content instead of inventing synthetic stand-ins
 - `feedback-validate-dont-workaround-bad-queries` -- When a query/input is invalid (e.g. filters on a virtual/computed field), validate and reject with a clear error — don't build resolution logic to make it \"work\
 - `feedback-visual-inspection-required` -- For generative image/content pipelines, a passing persistence/decode test is not proof the output is correct — actually look at the emitted output
+- `playwright-docker-e2e-gotchas` -- WebSocket stub + dist freshness required for Playwright tests against the Docker stack
 
 ## project
 - `project-accountmanager7-overview` -- What AccountManager7 is: schema-first BaseRecord/PBAC platform; sessions open at the GIT ROOT while Maven/modules live under src\ - two different 'project roots'; module map
 - `project-ki69-closed` -- KI-69 closed 2026-08-20: age-blind portrait fix in NarrativeUtil with adult fallback, 5 tests green
-- `project-pb5-phase-status` -- Phase 5a Playwright gate closed; Phase 5 Mithril UI not yet started
+- `project-pb5-phase-status` -- Phase 5a Playwright gate closed (6/6 tests pass); Phase 5 Mithril UI not started
 - `project-picturebook-backend-redo` -- PictureBook feature backend persistence redo — charPerson/portrait/landscape not saved, reference images unused
 - `project-service-testing-docker` -- Service7/Tomcat testing should use the verified docker-compose setup, not a manually-run local Tomcat
 - `testing-db-reset` -- Which AM7 databases may be reset: am7db and am7test yes, am72db NEVER; test.db.reset=true drops schema/keys/data on the unit-test DB
