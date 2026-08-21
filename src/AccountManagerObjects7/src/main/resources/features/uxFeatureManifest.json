@@ -89,5 +89,12 @@
 		"description": "Generate illustrated picture books from story/document objects",
 		"required": false,
 		"deps": ["core", "chat"]
+	},
+	{
+		"id": "pictureBookWorkflow",
+		"label": "Picture Book Workflow",
+		"description": "Workflow graph view for PB2 olio.pb.* pipeline nodes and artifacts",
+		"required": false,
+		"deps": ["core"]
 	}
 ]

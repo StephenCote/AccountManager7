@@ -9,12 +9,12 @@ export default defineConfig({
     port: 8899,
     proxy: {
       '/AccountManagerService7/wss': {
-        target: 'wss://localhost:8443',
+        target: (process.env.AM7_BACKEND || 'https://localhost:8443').replace(/^https/, 'wss'),
         ws: true,
         secure: false
       },
       '/AccountManagerService7': {
-        target: 'https://localhost:8443',
+        target: process.env.AM7_BACKEND || 'https://localhost:8443',
         changeOrigin: true,
         secure: false
       }

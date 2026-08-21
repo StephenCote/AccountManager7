@@ -17,6 +17,7 @@ import {
     resolveImageUrl, resolveAllImageUrls, clearImageCache
 } from '../workflows/sceneExtractor.js';
 import { pictureBookFromId } from '../workflows/pictureBook.js';
+import { routes as wfRoutes } from './pictureBookWorkflow.js';
 
 // ── Work Selector View ────────────────────────────────────────────────
 
@@ -492,6 +493,13 @@ function renderHeader() {
         }, m('span', { class: 'material-symbols-outlined text-lg' },
             exporting ? 'hourglass_empty' : 'download')),
 
+        // Workflow graph
+        !fullscreen && viewerBookId ? m('button', {
+            class: 'text-gray-500 hover:text-blue-600',
+            title: 'View Workflow Graph',
+            onclick: function () { m.route.set('/picture-book/' + viewerBookId + '/workflow'); }
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'account_tree')) : null,
+
         // Delete picture book
         !fullscreen && viewerScenes.length ? m('button', {
             class: 'text-red-400 hover:text-red-600',
@@ -640,6 +648,7 @@ var pictureBookView = {
 // ── Routes ────────────────────────────────────────────────────────────
 
 export const routes = {
+    ...wfRoutes,
     '/picture-book': {
         oninit: function () { workSelectorView.oninit(); },
         view: function () { return layout(pageLayout(workSelectorView.view())); }

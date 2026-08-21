@@ -65,6 +65,9 @@ import jakarta.ws.rs.core.Response;
  *   POST /{key}/cancel                        — KI-10: cancel an in-flight extraction/prepare-images call (key = the same workObjectId/bookObjectId passed to the call being cancelled)
  *   DELETE /{bookObjectId}/reset              — Delete entire book group
  *
+ * PB2 bridge (book group objectId → olio.pb.book objectId):
+ *   GET  /{bookGroupObjectId}/pb2                             — resolve PB1 book group to PB2 book; 404 if no PB2 book yet
+ *
  * PB2 phase 4 (the olio.pb.* workflow graph; bookObjectId here is the olio.pb.book objectId, NOT the
  * PB1 book group — every one of these delegates to PbServiceFacade, which reads the book with
  * AccessPoint.find before anything else, per the KI-67 disposition):
@@ -708,6 +711,28 @@ public class PictureBookService {
             PictureBookUtil.setSceneStatus(user, sceneObjectId, status);
             BaseRecord result = PictureBookUtil.buildResult();
             return Response.status(200).entity(toJson(result)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /{bookGroupObjectId}/pb2
+     * Resolve a PB1 book group objectId to the corresponding olio.pb.book.
+     * Returns {pb2BookObjectId, slug, bookName}, or 404 if no PB2 book has been created for this group.
+     * Used by the workflow graph UI to bridge the PB1 auth.group objectId (in the URL) to the
+     * olio.pb.book objectId required by the Phase 4 workflow endpoints.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookGroupObjectId:[0-9A-Za-z\\-]+}/pb2")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getBookInfo(@PathParam("bookGroupObjectId") String bookGroupObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.bookInfo(user, bookGroupObjectId))).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }

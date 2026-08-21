@@ -3205,7 +3205,7 @@ added in phase 2c — **now stale; it describes the pre-fix behaviour and needs 
 
 ---
 
-### KI-68. The FLUX.2 scene prompt asserts and then NEGATES its own medium — `"Photograph taken with a …"` followed by `"no photograph"` in the same positive prompt — OPEN (2026-08-17, Stephen)
+### KI-68. The FLUX.2 scene prompt asserts and then NEGATES its own medium — `"Photograph taken with a …"` followed by `"no photograph"` in the same positive prompt — PRIMARY FIXED 2026-08-17; secondary analysis complete 2026-08-20 (visual step comparison blocked: SD server unavailable)
 
 **Read out of a persisted `generatorRequest`, not inferred.** A picture-book scene rendered with
 `style=photograph` produces this positive prompt (abridged, real):
@@ -3247,10 +3247,70 @@ generator uses it too — so the change alters generation output for chat as wel
 paths, and the phase-3 non-regression gate was mid-run against the current string. It needs its own
 before/after visual comparison rather than a drive-by edit.
 
-**Secondary, same prompt, lower confidence:** `8k highly detailed highest quality ultra realistic` appears
-**twice** (once per character) and pulls toward hyperreal/CGI against a film-stock directive; and
-`steps=4` at `cfgscale=2.0` on the distilled `flux2Klein_9b` contributes its own smoothed look. Both are
-worth testing after the contradiction is removed, not before — the contradiction is the dominant term.
+**Primary fix applied 2026-08-17.** `photograph` was removed from the forbidden-objects list at
+`SWUtil.java:315`. The remaining clause — `"no poster, screen, mirror, billboard, framed picture or
+character sheet"` — retains the full intent (do not render the reference as a depicted object in the
+scene) without colliding with any style's medium vocabulary. The inline comment block at `:321-348`
+documents the full audit of every remaining token against the 11 styles in `sdConfigData.json`; three
+narrow substring collisions are accepted as intentional (see the comment for the reasoning).
+`FALLBACK_STEPS=24` in `Flux2Defaults.java` is noted as a doc discrepancy with the JSON's `steps:4`
+default — stated in the comment, not changed (the JSON value is authoritative; the fallback only fires
+if the JSON fails to load).
+
+---
+
+**Secondary — booster token analysis (2026-08-20, code trace).**
+
+`portraitPromptList` entries fed into `buildFlux2ScenePrompt` as `leftDesc`/`rightDesc` originate from
+`portraitPrompt2`, which is the character's portrait prompt. When `portraitPrompt2` is built via
+`PORTRAIT_QUALITY_PREAMBLE + pbDescription` (the Attr2 path, `PictureBookUtil.java:949`), it starts
+with `"8k highly detailed ((highest quality)) ((ultra realistic)) ((full body)) of "`. These entries are
+passed through `SWUtil.stripSDXLWeighting()` before being added to `portraitPromptList`
+(`PictureBookUtil.java:3806,3890`), and `buildFlux2ScenePrompt` strips them a second time at `:231-232`.
+
+`stripSDXLWeighting` removes the `(...)` and `((...))` parentheses but leaves the underlying words:
+the composite positive prompt then reads (for a 2-character scene):
+
+```
+The first person is 8k highly detailed highest quality ultra realistic full body of [char1 desc]. 
+The second person is 8k highly detailed highest quality ultra realistic full body of [char2 desc].
+```
+
+**Confirmed doubling:** `"8k highly detailed highest quality ultra realistic full body"` appears once per
+character in the composite prompt. These are SDXL-era quality boosters: `"8k"` is meaningless to
+FLUX.2 (it does not scale output resolution from prompt tokens); `"highest quality"` and `"ultra
+realistic"` are unnecessary on a distilled model that defaults to high quality. Neither conflicts with the
+style clause (they are adjectives, not medium names), so they do not reproduce the photograph
+contradiction. The practical effect is wasted token budget and slightly crowded identity descriptions.
+
+**Not a correctness bug.** The tokens pull toward hyperreal/CGI but do not negate any configured style,
+and the full booster string repeating twice is a nuisance, not a generation failure. A clean-up would
+strip the `PORTRAIT_QUALITY_PREAMBLE` prefix from `portraitPrompt2` before assembling `leftDesc` /
+`rightDesc`, leaving just the character description. This is a follow-on optimization — not a fix
+gating any test.
+
+---
+
+**Secondary — step budget comparison (2026-08-20, SD server unavailable).**
+
+`TestPictureBookWorkflow#TestStepBudgetComparison` was added to `TestPictureBookWorkflow.java` to run
+the same scene at `flux2Steps` 4, 20, and 40 at `FIXED_SEED=987654321`. The test exports images to
+`./export/ki68_step4_*.png`, `./export/ki68_step20_*.png`, and `./export/ki68_step40_*.png`. Run with:
+
+```
+PICTUREBOOK_E2E=1 mvn -o -pl AccountManagerObjects7 \
+  -Dtest=TestPictureBookWorkflow#TestStepBudgetComparison \
+  -DskipTests=false test
+```
+
+**Run attempted 2026-08-20** — the test ran for 39 minutes then died with `java.net.SocketTimeoutException:
+Read timed out` at line 760. The SD server (Beelink GTR9 or DGX Spark at 192.168.1.42) was not
+responding; no images were generated. Visual comparison remains unperformed.
+
+**Expected outcome**: `flux2Klein_9b` is a distilled model documented in `flux2Defaults.json` as
+designed for ~4 steps. Higher step counts may show diminishing returns or even degradation (over-baking
+artifacts) rather than improvement. The test is the only authoritative answer; the doc prediction is a
+prior, not a result. Re-run when the SD server is available.
 
 Related: KI-59 (honest verification of an image pipeline), KI-66 (include/exclude landscape as a Ux
 option), `PictureBook2Plan.md` §2.4 (the deliberate `steps:4` vs `FALLBACK_STEPS=24` split).

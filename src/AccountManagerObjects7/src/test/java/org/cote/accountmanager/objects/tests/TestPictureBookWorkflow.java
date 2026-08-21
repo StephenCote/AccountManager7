@@ -721,6 +721,52 @@ public class TestPictureBookWorkflow extends BaseTest {
 			+ " freshly-rendered portrait node(s) asserted DONE with a seed and a snapshot)");
 	}
 
+	// ═══════════════════════════════════════════════════════════════════
+	// KI-68 secondary — step-budget comparison on flux2Klein_9b
+	// ═══════════════════════════════════════════════════════════════════
+
+	/**
+	 * KI-68 secondary: controlled step-budget comparison on flux2Klein_9b.
+	 * <p>
+	 * {@code flux2Klein_9b} is a distilled model. {@code flux2Defaults.json} documents it as designed
+	 * for ~4 steps and warns against raising the count. This test generates the same scene at the same
+	 * seed with 3 step budgets (4, 20, 40) so the rendered images can be compared visually.
+	 * <p>
+	 * No assertion on image quality is made here — quality is subjective and only a human can judge it.
+	 * The test asserts only that each run produces a decodable image. The findings go into KnownIssues.md
+	 * under KI-68 after visual inspection of the exported files.
+	 * <p>
+	 * Run with: {@code PICTUREBOOK_E2E=1 mvn -o -pl AccountManagerObjects7
+	 * -Dtest=TestPictureBookWorkflow#TestStepBudgetComparison -DskipTests=false test}
+	 */
+	@Test
+	public void TestStepBudgetComparison() throws Exception {
+		logger.info("***** KI-68: step-budget comparison (4 vs 20 vs 40) on flux2Klein_9b");
+		setupContext();
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		assertNotNull("test.swarm.server must be set", swarmServer);
+
+		BaseRecord bookGroup = pb1BookGroup();
+		String slug = PbPipelineUtil.deriveSlug(PB1_BOOK_NAME);
+		pb2Book(slug);
+		String sceneOid = firstSceneObjectId((String) bookGroup.get(FieldNames.FIELD_OBJECT_ID));
+
+		for(int steps : new int[] {4, 20, 40}) {
+			PictureBookUtil.SceneGenerationParams p = params(slug, true, FIXED_SEED);
+			p.sdConfig.set("flux2Steps", steps);
+
+			logger.info("KI-68: generating scene with flux2Steps=" + steps);
+			long t0 = System.currentTimeMillis();
+			BaseRecord result = PictureBookUtil.generateSceneImage(testUser, sceneOid, p, "SWARM", swarmServer);
+			logger.info("KI-68 steps=" + steps + ": generated in " + (System.currentTimeMillis() - t0) + "ms");
+			assertNotNull("flux2Steps=" + steps + " must produce a result", result);
+			String imageOid = result.get("imageObjectId");
+			assertNotNull("flux2Steps=" + steps + " must produce an image objectId", imageOid);
+			exportImage(imageOid, "ki68_step" + steps);
+		}
+		logger.info("***** KI-68: LOOK AT export/ki68_step4_*.png vs ki68_step20_*.png vs ki68_step40_*.png");
+	}
+
 	/**
 	 * Every foreign sub-record the character should now own: a real id, and (for the five that carry a
 	 * world destination) the world group rather than the acting user's home.

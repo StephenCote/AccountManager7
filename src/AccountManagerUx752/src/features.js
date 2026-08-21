@@ -98,6 +98,11 @@ const featureWiring = {
         routes: () => import('./features/pictureBook.js'),
         menuItems: [{ icon: 'auto_stories', label: 'Picture Book', route: '/picture-book', section: 'aside' }],
         routePrefixes: ['/picture-book']
+    },
+    pictureBookWorkflow: {
+        routes: () => import('./features/pictureBookWorkflow.js'),
+        menuItems: [],
+        routePrefixes: ['/picture-book']
     }
 };
 

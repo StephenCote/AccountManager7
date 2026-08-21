@@ -12,6 +12,7 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 
 /**
@@ -48,6 +49,34 @@ public class PbServiceFacade {
 
 	private PbServiceFacade() {
 		/// static utility
+	}
+
+	// ─────────────────────────────── bridge: PB1 group → PB2 book ───────────────────────────────
+
+	/**
+	 * Resolve a PB1 book group (auth.group) objectId to the corresponding olio.pb.book objectId.
+	 * Returns {pb2BookObjectId, slug, bookName}, or 404 when no PB2 book has been created for the group.
+	 */
+	public static Map<String, Object> bookInfo(BaseRecord user, String bookGroupObjectId) {
+		if(user == null) throw new PictureBookException(401, "No authenticated principal");
+		if(bookGroupObjectId == null || bookGroupObjectId.trim().isEmpty())
+			throw new PictureBookException(400, "A book group objectId is required");
+		long orgId = orgOf(user);
+		BaseRecord group = IOSystem.getActiveContext().getAccessPoint()
+			.findByObjectId(user, ModelNames.MODEL_GROUP, bookGroupObjectId);
+		if(group == null) throw new PictureBookException(404, "Book group not found");
+		String groupName = group.get(FieldNames.FIELD_NAME);
+		String slug = PbPipelineUtil.deriveSlug(groupName);
+		if(slug == null)
+			throw new PictureBookException(404, "Could not derive a PB2 slug from group name '" + groupName + "'");
+		BaseRecord book = PbBookUtil.findBookBySlug(user, slug, orgId);
+		if(book == null)
+			throw new PictureBookException(404, "No PB2 workflow book found for '" + groupName + "'");
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("pb2BookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("slug", book.get(OlioFieldNames.FIELD_PB_SLUG));
+		out.put("bookName", groupName);
+		return out;
 	}
 
 	// ─────────────────────────────── the authorized root ───────────────────────────────
