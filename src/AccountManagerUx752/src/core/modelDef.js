@@ -11240,6 +11240,129 @@
       ]
     },
     {
+      "name": "olio.pb.book",
+      "ioConstraints": ["unknown"],
+      "description": "PB2 book — one per authored book, lives in {world}/Book.",
+      "fields": [
+        { "name": "name", "type": "string", "maxLength": 128 },
+        { "name": "description", "type": "string" },
+        { "name": "slug", "type": "string", "maxLength": 128 },
+        { "name": "chapter", "type": "int", "default": 1 },
+        { "name": "bookStatus", "type": "enum", "baseClass": "org.cote.accountmanager.schema.type.PbBookStatusEnumType", "maxLength": 32, "default": "DRAFT" },
+        { "name": "compositionContext", "type": "string" },
+        { "name": "createdByObjectId", "type": "string", "maxLength": 64 }
+      ]
+    },
+    {
+      "name": "olio.pb.series",
+      "ioConstraints": ["unknown"],
+      "description": "PB2 series — groups multiple book chapters; lives in the universe's Book group.",
+      "fields": [
+        { "name": "name", "type": "string", "maxLength": 128 },
+        { "name": "description", "type": "string" },
+        { "name": "bookCount", "type": "int", "default": 0 }
+      ]
+    },
+    {
+      "name": "olio.pb.scene",
+      "ioConstraints": ["unknown"],
+      "description": "PB2 scene — replaces per-scene data.note JSON; lives in {world}/Book.",
+      "fields": [
+        { "name": "name", "type": "string", "maxLength": 128 },
+        { "name": "sceneIndex", "type": "int", "default": 0 },
+        { "name": "title", "type": "string", "maxLength": 256 },
+        { "name": "description", "type": "string" },
+        { "name": "summary", "type": "string" },
+        { "name": "setting", "type": "string" },
+        { "name": "action", "type": "string" },
+        { "name": "mood", "type": "string", "maxLength": 128 },
+        { "name": "blurb", "type": "string" },
+        { "name": "userEdited", "type": "boolean", "default": false }
+      ]
+    },
+    {
+      "name": "olio.pb.workflow",
+      "ioConstraints": ["unknown"],
+      "description": "PB2 workflow DAG container — one per book; lives in {world}/Workflow.",
+      "fields": [
+        { "name": "name", "type": "string", "maxLength": 128 },
+        { "name": "graphVersion", "type": "int", "default": 1 },
+        { "name": "graphStatus", "type": "enum", "baseClass": "org.cote.accountmanager.schema.type.PbGraphStatusEnumType", "maxLength": 32, "default": "CLEAN" },
+        { "name": "nodeCount", "type": "int", "default": 0 }
+      ]
+    },
+    {
+      "name": "olio.pb.node",
+      "ioConstraints": ["unknown"],
+      "description": "PB2 workflow node — one processing step; lives in {world}/Workflow.",
+      "fields": [
+        { "name": "name", "type": "string", "maxLength": 128 },
+        { "name": "handle", "type": "string", "maxLength": 128, "description": "Human-readable label, unique within workflow" },
+        { "name": "nodeType", "type": "enum", "baseClass": "org.cote.accountmanager.schema.type.PbNodeTypeEnumType", "maxLength": 64 },
+        { "name": "nodeStatus", "type": "enum", "baseClass": "org.cote.accountmanager.schema.type.PbNodeStatusEnumType", "maxLength": 32, "default": "PENDING" },
+        { "name": "pinned", "type": "boolean", "default": false },
+        { "name": "ordinal", "type": "int", "default": 0 },
+        { "name": "sceneIndex", "type": "int", "default": -1 },
+        { "name": "scope", "type": "string", "maxLength": 64 },
+        { "name": "scopeRef", "type": "string", "maxLength": 64 },
+        { "name": "promptTemplateName", "type": "string", "maxLength": 128 },
+        { "name": "promptText", "type": "string" },
+        { "name": "configOverride", "type": "string", "description": "JSON of only explicitly-set config fields" },
+        { "name": "inputHash", "type": "string", "maxLength": 128 },
+        { "name": "configHash", "type": "string", "maxLength": 128 },
+        { "name": "createdByObjectId", "type": "string", "maxLength": 64 },
+        { "name": "lastError", "type": "string" },
+        { "name": "lastRunAt", "type": "zonetime" }
+      ]
+    },
+    {
+      "name": "olio.pb.binding",
+      "ioConstraints": ["unknown"],
+      "description": "PB2 binding — a DAG edge; records which artifact revision each node consumed.",
+      "fields": [
+        { "name": "role", "type": "string", "maxLength": 64, "description": "sourceText | sceneText | portrait0 | landscape | referenceStrip | apparel | mannequin | chapterSource | …" },
+        { "name": "required", "type": "boolean", "default": true },
+        { "name": "refModel", "type": "string", "maxLength": 64 },
+        { "name": "refObjectId", "type": "string", "maxLength": 64 },
+        { "name": "valueText", "type": "string" },
+        { "name": "valueHash", "type": "string", "maxLength": 128 }
+      ]
+    },
+    {
+      "name": "olio.pb.artifact",
+      "ioConstraints": ["unknown"],
+      "description": "PB2 artifact — provenance wrapper; bytes stay in data.data in {world}/Gallery.",
+      "fields": [
+        { "name": "name", "type": "string", "maxLength": 128 },
+        { "name": "artifactType", "type": "enum", "baseClass": "org.cote.accountmanager.schema.type.PbArtifactTypeEnumType", "maxLength": 32 },
+        { "name": "text", "type": "string" },
+        { "name": "role", "type": "string", "maxLength": 64 },
+        { "name": "revision", "type": "int", "default": 1 },
+        { "name": "selected", "type": "boolean", "default": false, "description": "True for the current selected revision per (node, role)" },
+        { "name": "seed", "type": "long", "default": -1 },
+        { "name": "contentHash", "type": "string", "maxLength": 128 },
+        { "name": "mimeType", "type": "string", "maxLength": 128 },
+        { "name": "imageWidth", "type": "int", "default": 0 },
+        { "name": "imageHeight", "type": "int", "default": 0 },
+        { "name": "byteLength", "type": "long", "default": 0 },
+        { "name": "backend", "type": "string", "maxLength": 32 },
+        { "name": "backendGraph", "type": "string" }
+      ]
+    },
+    {
+      "name": "olio.pb.run",
+      "ioConstraints": ["unknown"],
+      "description": "PB2 run — one execution of the workflow graph; lives in {world}/Workflow.",
+      "fields": [
+        { "name": "name", "type": "string", "maxLength": 128 },
+        { "name": "runStatus", "type": "string", "maxLength": 32 },
+        { "name": "executedNodeCount", "type": "int", "default": 0 },
+        { "name": "failedNodeCount", "type": "int", "default": 0 },
+        { "name": "error", "type": "string" },
+        { "name": "createdByObjectId", "type": "string", "maxLength": 64 }
+      ]
+    },
+    {
       "name": "tool.memory",
       "inherits": ["data.directory", "common.dateTime"],
       "vectorize": true,
