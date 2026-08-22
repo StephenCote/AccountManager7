@@ -948,9 +948,12 @@ public class OlioContext {
 		catch(Exception e) {
 			logger.error(e);
 			e.printStackTrace();
+			if (!authorizationConfigured) {
+				throw new RuntimeException("OlioContext.initialize() failed before authorization was configured", e);
+			}
 		}
 	}
-	
+
 	public BaseRecord getRealmConstructEvent(BaseRecord realm) {
 		long eid = realm.get(FieldNames.FIELD_ID);
 		Query eq = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, OlioFieldNames.FIELD_REALM, eid);

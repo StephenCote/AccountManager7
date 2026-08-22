@@ -1,6 +1,7 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -24,8 +25,11 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
+import org.cote.accountmanager.olio.rules.BookWorldInitializationRule;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -1023,6 +1027,79 @@ public class TestPictureBookKnownIssues extends BaseTest {
 		assertTrue("...and must not still contain the previous style's clause", !comicClause.equals(photographClause));
 		assertTrue("...and must not contain a literal null: " + comicClause,
 			!comicClause.toLowerCase().contains("(null)"));
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// tagApparelSceneIndex PB1 guard
+	// ─────────────────────────────────────────────────────────────────────────
+
+	/**
+	 * PB1 guard: {@code tagApparelSceneIndex} must return {@code false} without throwing
+	 * when the character belongs to a group that has no associated {@code olio.pb.book} row
+	 * — the PB1 scenario where a book predates the PB2 migration.
+	 *
+	 * <p>Simulated by creating a character in a non-"Characters" group (no book group
+	 * navigation possible), which is what a PB1 world character looks like post-migration.
+	 */
+	@Test
+	public void TestTagApparelSceneIndexSkipsPb1Books() throws Exception {
+		logger.info("tagApparelSceneIndex PB1 guard: must return false without throwing for PB1 characters");
+		BaseRecord user = newVirginUser("pb1guard");
+		// Character in "~/Pb1Sim" — NOT in a group named "Characters", so book-group nav
+		// finds nothing; the guard returns false instead of delegating to authorizeCharacterApparel.
+		BaseRecord char1 = newNamedCharacter(user, "Pb1TestChar" + System.currentTimeMillis(), "~/Pb1Sim");
+		assertNotNull("test character must exist", char1);
+
+		boolean result = PictureBookUtil.tagApparelSceneIndex(
+			user,
+			char1.get(FieldNames.FIELD_OBJECT_ID),
+			java.util.UUID.randomUUID().toString(),
+			1);
+		assertFalse("tagApparelSceneIndex must return false for a PB1 character (no olio.pb.book)", result);
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Q5 — OlioContext auth-failure propagation
+	// ─────────────────────────────────────────────────────────────────────────
+
+	/**
+	 * Q5: {@code OlioContext.initialize()} must throw {@code RuntimeException} (not silently
+	 * swallow the exception) when authorization configuration fails, and
+	 * {@code isAuthorizationConfigured()} must remain {@code false} after the throw.
+	 *
+	 * <p>Triggered by a half-configured universe authorization pair (user role set, admin role
+	 * null) — the explicit {@code OlioException} thrown at line 905 of {@code initialize()} when
+	 * exactly one of the two roles is non-null.
+	 */
+	@Test
+	public void TestQ5OlioContextThrowsOnAuthFailure() throws Exception {
+		logger.info("Q5: OlioContext.initialize() must propagate instead of swallowing auth failure");
+		BaseRecord user = newVirginUser("q5auth");
+
+		OlioContextConfiguration cfg = new OlioContextConfiguration(
+			user,
+			testProperties.getProperty("test.datagen.path"),
+			"Q5Universe", "Q5World",
+			new String[0], 1, 1, false, false);
+		cfg.setRequireRealms(false);
+		cfg.getContextRules().add(new BookWorldInitializationRule());
+
+		// Half-configured universe pair: user role set, admin role null → OlioException at initialize():905.
+		// After the fix the catch block re-throws as RuntimeException because !authorizationConfigured.
+		BaseRecord fakeUserRole = RecordFactory.newInstance(ModelNames.MODEL_ROLE);
+		fakeUserRole.set(FieldNames.FIELD_NAME, "Q5FakeUserRole");
+		cfg.setUniverseAuthorizationUserRole(fakeUserRole);
+		// cfg.setUniverseAuthorizationAdminRole intentionally NOT set (null)
+
+		OlioContext ctx = new OlioContext(cfg);
+		RuntimeException caught = null;
+		try {
+			ctx.initialize();
+		} catch (RuntimeException e) {
+			caught = e;
+		}
+		assertNotNull("initialize() must throw RuntimeException when auth config fails", caught);
+		assertFalse("isAuthorizationConfigured() must be false after a failed initialize()", ctx.isAuthorizationConfigured());
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────

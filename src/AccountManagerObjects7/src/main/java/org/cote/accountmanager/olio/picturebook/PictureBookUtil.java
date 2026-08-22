@@ -1490,6 +1490,39 @@ public class PictureBookUtil {
      */
     public static boolean tagApparelSceneIndex(BaseRecord user, String charObjectId, String apparelObjectId,
             int sceneIndex) {
+        // PB1 guard: identical pattern to persistBookSdConfigFk. Characters in a PB1 world have no
+        // olio.pb.book row; those characters may live in a group other than a book's "Characters" folder.
+        // If the book-group lookup returns null, skip silently instead of throwing a 403.
+        Query guardCq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON,
+                FieldNames.FIELD_OBJECT_ID, charObjectId);
+        guardCq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        guardCq.setRequest(new String[] { FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID });
+        guardCq.setCache(false);
+        BaseRecord guardChar = IOSystem.getActiveContext().getAccessPoint().find(user, guardCq);
+        if (guardChar != null) {
+            Long guardGroupId = guardChar.get(FieldNames.FIELD_GROUP_ID);
+            if (guardGroupId != null && guardGroupId > 0L) {
+                BaseRecord guardCharGroup = IOSystem.getActiveContext().getAccessPoint()
+                        .findById(user, ModelNames.MODEL_GROUP, guardGroupId);
+                Long bookGroupId = null;
+                if (guardCharGroup != null && CHARACTERS_DIR.equals(guardCharGroup.get(FieldNames.FIELD_NAME))) {
+                    bookGroupId = guardCharGroup.get(FieldNames.FIELD_PARENT_ID);
+                }
+                if (bookGroupId != null && bookGroupId > 0L) {
+                    Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK,
+                            FieldNames.FIELD_GROUP_ID, bookGroupId);
+                    bq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+                    bq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID });
+                    bq.setCache(false);
+                    BaseRecord book = IOSystem.getActiveContext().getAccessPoint().find(user, bq);
+                    if (book == null) {
+                        return false; // PB1 book — no olio.pb.book row
+                    }
+                } else {
+                    return false; // Character not in a book's Characters group — PB1
+                }
+            }
+        }
         authorizeCharacterApparel(user, charObjectId, apparelObjectId);
         Query q = QueryUtil.createQuery(OlioModelNames.MODEL_APPAREL, FieldNames.FIELD_OBJECT_ID, apparelObjectId);
         q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));

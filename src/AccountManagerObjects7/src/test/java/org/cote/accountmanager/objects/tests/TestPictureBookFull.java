@@ -20,8 +20,14 @@ import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.CivilUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.picturebook.PbArtifactUtil;
+import org.cote.accountmanager.olio.picturebook.PbBookUtil;
+import org.cote.accountmanager.olio.picturebook.PbFeatureFlag;
+import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
+import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
+import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
@@ -2802,6 +2808,175 @@ public class TestPictureBookFull extends BaseTest {
 		Map<String, Object> data2 = JSONUtil.getMap(((String) refetched2.get("text")).getBytes(), String.class, Object.class);
 		assertEquals("The healed landscape prompt must be recognised as legitimate on the next call, "
 			+ "not condemned and regenerated", healedLandscapePrompt, (String) data2.get("landscapePrompt"));
+	}
+
+	/**
+	 * Exercises the portrait FRESH-RENDER branch in {@code PictureBookUtil.generateSceneImage}:
+	 * the branch that fires when a scene character has NO persisted portrait bytes, calls
+	 * {@code sdu.createImage()}, creates a {@code PORTRAIT} node (status=DONE), and records an
+	 * artifact carrying the SD seed and {@code sdConfigSnapshot}.
+	 * <p>
+	 * The character is created fresh each run (timestamp suffix) so it has no existing portrait
+	 * bytes and the reuse branch ({@code isBook && !hasSceneApparel && existingPortraitBytes != null
+	 * && existingPortraitBytes.length > 0}) cannot fire.
+	 * <p>
+	 * The PB2 book uses a stable slug ({@code portrait-fresh-render-test}) so the Olio world is
+	 * only created once; subsequent runs find the existing book.
+	 */
+	@Test
+	public void TestPortraitFreshRenderBranch() throws Exception {
+		logger.info("Test: portrait fresh-render branch creates a PORTRAIT node (DONE), captures seed, sdConfigSnapshot, and persists portrait bytes to the character profile");
+		setupTestContext();
+
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		assumeTrue("test.swarm.server must be set for this test",
+			swarmServer != null && !swarmServer.trim().isEmpty());
+
+		// ── Stable PB1 book structure (created once, reused across runs) ────────────────────────
+		String PB1_BOOK_PATH = "~/Data/PictureBooks/Portrait-Fresh-Render-Test";
+		String PB2_SLUG = "portrait-fresh-render-test";
+		String PB2_TITLE = "Portrait Fresh Render Test";
+
+		BaseRecord bookGroup = ensureGroup(PB1_BOOK_PATH);
+		ensureGroup(PB1_BOOK_PATH + "/Scenes");
+		ensureGroup(PB1_BOOK_PATH + "/Characters");
+		assertNotNull("PB1 book group must exist at " + PB1_BOOK_PATH, bookGroup);
+
+		// ── Fresh character per run — no portrait bytes, guaranteeing fresh render fires ────────
+		String charSuffix = String.valueOf(System.currentTimeMillis());
+		String charName = "PortraitTest-" + charSuffix;
+		ParameterList charPlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, PB1_BOOK_PATH + "/Characters");
+		charPlist.parameter(FieldNames.FIELD_NAME, charName);
+		BaseRecord charPerson = IOSystem.getActiveContext().getFactory().newInstance(
+			OlioModelNames.MODEL_CHAR_PERSON, testUser, null, charPlist);
+		charPerson.set(FieldNames.FIELD_GENDER, "female");
+		BaseRecord createdChar = IOSystem.getActiveContext().getAccessPoint().create(testUser, charPerson);
+		assertNotNull("Character should be created", createdChar);
+		String charOid = createdChar.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Created character must have an objectId", charOid);
+
+		// Set ATTR_DESCRIPTION ("pbDescription") so resolveSceneCharacter finds a portrait prompt.
+		// Without this attribute AND without a narrative.sdPrompt, the character is silently skipped
+		// and no portrait is generated — no PB2 PORTRAIT node is ever written.
+		BaseRecord attrRecord = AttributeUtil.addAttribute(createdChar, PictureBookUtil.ATTR_DESCRIPTION,
+			"a red-haired woman in a forest, wearing a dark green cloak, determined expression");
+		assertTrue("ATTR_DESCRIPTION attribute must be persisted on the character",
+			IOSystem.getActiveContext().getRecordUtil().createRecord(attrRecord));
+
+		// ── Scene note referencing the character by objectId ─────────────────────────────────────
+		// resolveSceneCharacter handles charItem instanceof String → looks up by objectId directly.
+		String sceneTitle = "Portrait Fresh Render Scene";
+		ParameterList scenePlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, PB1_BOOK_PATH + "/Scenes");
+		scenePlist.parameter(FieldNames.FIELD_NAME, sceneTitle + "-" + charSuffix);
+		BaseRecord sceneNote = IOSystem.getActiveContext().getFactory().newInstance(
+			ModelNames.MODEL_NOTE, testUser, null, scenePlist);
+		Map<String, Object> sceneData = new LinkedHashMap<>();
+		sceneData.put("title", sceneTitle);
+		sceneData.put("setting", "A quiet forest clearing at dawn");
+		sceneData.put("action", "The woman stands still, looking at the horizon");
+		sceneData.put("mood", "peaceful");
+		sceneData.put("characters", java.util.Collections.singletonList(charOid));
+		sceneNote.set("text", JSONUtil.exportObject(sceneData));
+		BaseRecord createdScene = IOSystem.getActiveContext().getAccessPoint().create(testUser, sceneNote);
+		assertNotNull("Scene note should be created", createdScene);
+		String sceneOid = createdScene.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Scene note must have an objectId", sceneOid);
+
+		long orgId = ((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		boolean priorFlag = PbFeatureFlag.isV2Enabled();
+		try {
+			PbFeatureFlag.setV2Enabled(true);
+
+			// ── PB2 book: find or create (world creation is slow on first run only) ─────────────
+			BaseRecord pb2Book = PbBookUtil.findBookBySlug(testUser, PB2_SLUG, orgId);
+			if (pb2Book == null) {
+				logger.info("Creating PB2 book with slug '" + PB2_SLUG + "' (one-time world creation)...");
+				pb2Book = PbBookUtil.createBook(testUser,
+					testProperties.getProperty("test.datagen.path"), PB2_SLUG, PB2_TITLE);
+			}
+			assertNotNull("PB2 book must exist with slug '" + PB2_SLUG + "'", pb2Book);
+
+			// ── Generate — fresh render fires because this character has no portrait bytes ────────
+			String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
+			PictureBookUtil.SceneGenerationParams params = new PictureBookUtil.SceneGenerationParams();
+			params.chatConfigName = chatConfigName;
+			params.bookSlug = PB2_SLUG;
+			params.isBookOverride = true;
+			BaseRecord genCfg = newSdConfig(null);
+			genCfg.setValue("steps", 12);
+			genCfg.setValue("cfg", 5);
+			genCfg.setValue("hires", false);
+			genCfg.setValue("model", testProperties.getProperty("test.swarm.model"));
+			params.sdConfig = genCfg;
+
+			logger.info("Calling generateSceneImage for scene " + sceneOid + " against " + swarmServer);
+			long genStart = System.currentTimeMillis();
+			BaseRecord result = PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", swarmServer);
+			logger.info("generateSceneImage took " + (System.currentTimeMillis() - genStart) + "ms, imageObjectId=" + (result != null ? result.get("imageObjectId") : "null"));
+			assertNotNull("generateSceneImage must return a result", result);
+
+			// ── Assert: PORTRAIT node created with status DONE (fresh render, not DONE_UNVERIFIED reuse) ──
+			BaseRecord workflow = PbGraphUtil.findWorkflow(testUser, pb2Book);
+			assertNotNull("Workflow must exist on the PB2 book after generation", workflow);
+
+			String portraitHandle = PbPipelineUtil.portraitHandle(charOid);
+			BaseRecord portraitNode = PbPipelineUtil.findNodeByHandle(testUser, workflow, portraitHandle);
+			assertNotNull("PORTRAIT node '" + portraitHandle + "' must exist after fresh render", portraitNode);
+
+			PbNodeStatusEnumType nodeStatus = portraitNode.getEnum(OlioFieldNames.FIELD_PB_NODE_STATUS);
+			logger.info("Portrait node handle: " + portraitHandle + " status: " + nodeStatus);
+			assertEquals("Portrait node status must be DONE (fresh render) not DONE_UNVERIFIED (reuse)", PbNodeStatusEnumType.DONE, nodeStatus);
+
+			// ── Assert: artifact carries non-zero seed and non-null sdConfigSnapshot ──────────────
+			BaseRecord artifact = PbArtifactUtil.findSelected(testUser, portraitNode, PbPipelineUtil.ROLE_PORTRAIT);
+			assertNotNull("A selected PORTRAIT artifact must exist", artifact);
+			String artifactOid = artifact.get(FieldNames.FIELD_OBJECT_ID);
+			BaseRecord fullArtifact = PbArtifactUtil.readArtifact(testUser, artifactOid, orgId);
+			assertNotNull("Full artifact must be readable", fullArtifact);
+
+			Long seed = fullArtifact.get(OlioFieldNames.FIELD_PB_SEED);
+			assertNotNull("Artifact seed must be non-null (fresh render must capture the SD seed)", seed);
+			assertNotEquals("Artifact seed must be non-zero", 0L, seed.longValue());
+			logger.info("Portrait artifact seed: " + seed);
+
+			// sdConfigSnapshot is type: model (olio.sd.config), not a String — reads back as a BaseRecord.
+			BaseRecord sdConfigSnapshot = fullArtifact.get(OlioFieldNames.FIELD_PB_SD_CONFIG_SNAPSHOT);
+			assertNotNull("Artifact sdConfigSnapshot must be non-null (fresh render freezes the effective portCfg)", sdConfigSnapshot);
+			// Serialize to confirm it has meaningful content (schema + at least one field).
+			String snapshotJson = sdConfigSnapshot.toFullString();
+			assertNotNull("Artifact sdConfigSnapshot must serialize to JSON", snapshotJson);
+			assertFalse("Artifact sdConfigSnapshot JSON must not be empty", snapshotJson.trim().isEmpty());
+			logger.info("Portrait artifact sdConfigSnapshot schema: " + sdConfigSnapshot.getSchema() + " json length: " + snapshotJson.length());
+
+			// ── Assert: portrait bytes persisted on the character's profile ───────────────────────
+			Query charQ = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charOid);
+			charQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			charQ.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "profile" });
+			charQ.setCache(false);
+			BaseRecord charReloaded = IOSystem.getActiveContext().getAccessPoint().find(testUser, charQ);
+			assertNotNull("Character must still be readable after generation", charReloaded);
+
+			BaseRecord profile = charReloaded.get("profile");
+			assertNotNull("Character profile must exist", profile);
+			IOSystem.getActiveContext().getReader().populate(profile, new String[] { "portrait" });
+			BaseRecord portraitImage = profile.get("portrait");
+			assertNotNull("Profile must have a portrait FK linked after fresh render (isBook=true persists it)", portraitImage);
+			IOSystem.getActiveContext().getReader().populate(portraitImage, new String[] { FieldNames.FIELD_BYTE_STORE });
+			byte[] portraitBytes = ByteModelUtil.getValue(portraitImage);
+			assertNotNull("Portrait bytes must be non-null", portraitBytes);
+			assertTrue("Portrait bytes must be non-empty", portraitBytes.length > 0);
+			logger.info("Portrait bytes on profile: " + portraitBytes.length + " bytes");
+
+			// ── Write portrait to disk for visual inspection ──────────────────────────────────────
+			java.io.File outDir = new java.io.File("./kontext-test-output");
+			if (!outDir.exists()) outDir.mkdirs();
+			String outputPath = "./kontext-test-output/portrait-fresh-render-" + charName + ".png";
+			FileUtil.emitFile(outputPath, portraitBytes);
+			logger.info("Portrait written to: " + outputPath);
+
+		} finally {
+			PbFeatureFlag.setV2Enabled(priorFlag);
+		}
 	}
 
 }
