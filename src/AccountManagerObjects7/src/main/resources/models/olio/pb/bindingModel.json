@@ -12,7 +12,7 @@
 	"group": "Workflow",
 	"constraints": ["node, role, bindingOrdinal, organizationId", "name, groupId, organizationId"],
 	"hints": ["node", "sourceNode", "sourceArtifact", "role"],
-	"description": "The edge of the workflow graph, and the answer to 'which record produced this input'. An edge model rather than an embedded list means one artifact can be consumed by many nodes and the graph records WHICH REVISION each consumer saw. A collective (a herd, a crowd) is N bindings sharing one role, distinguished by bindingOrdinal - no cast-group model. The name must be derived from role + bindingOrdinal and unique within the group, because UrnProvider composes the urn from 'name' and common.urn has no uniqueness constraint of its own.",
+	"description": "The edge of the workflow graph, and the answer to 'which record produced this input'. An edge model rather than an embedded list means one artifact can be consumed by many nodes and the graph records WHICH REVISION each consumer saw. A collective (a herd, a crowd) binds via refModel='olio.pb.castGroup' + refObjectId. The name must be derived from role + bindingOrdinal and unique within the group, because UrnProvider composes the urn from 'name' and common.urn has no uniqueness constraint of its own.",
 	"fields": [
 		{
 			"name": "name",

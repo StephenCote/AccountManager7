@@ -1,10 +1,12 @@
 /**
  * Picture Book feature — Book-format viewer for illustrated picture books.
  * Phase 16 completion: sequential page viewer with cover, export, keyboard nav.
+ * Phase 5b: PB2 native book list + scene page reader.
  *
  * Routes:
- *   /picture-book                — Work selector (browse existing books + create new)
- *   /picture-book/:bookObjectId  — Book viewer (cover + scene pages, bookObjectId = book group objectId)
+ *   /picture-book                        — Work selector (PB1 books + PB2 books + create new)
+ *   /picture-book/:bookObjectId          — PB1 book viewer (bookObjectId = PB1 book group objectId)
+ *   /picture-book/v2/:pb2BookObjectId    — PB2 scene page reader (pb2BookObjectId = olio.pb.book objectId)
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
@@ -18,6 +20,7 @@ import {
 } from '../workflows/sceneExtractor.js';
 import { pictureBookFromId } from '../workflows/pictureBook.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
+import { listPb2Books, bookPages } from '../workflows/pictureBookWorkflow.js';
 
 // ── Work Selector View ────────────────────────────────────────────────
 
@@ -42,6 +45,23 @@ function openDocumentPicker(type) {
 
 let existingBooks = [];
 let existingLoading = false;
+
+// PB2 native books
+let pb2Books = [];
+let pb2Loading = false;
+
+async function loadPb2Books() {
+    pb2Loading = true;
+    m.redraw();
+    try {
+        let result = await listPb2Books();
+        pb2Books = Array.isArray(result) ? result : [];
+    } catch (e) {
+        pb2Books = [];
+    }
+    pb2Loading = false;
+    m.redraw();
+}
 
 async function loadExistingBooks() {
     existingLoading = true;
@@ -94,7 +114,7 @@ async function deleteBookFromList(book) {
 }
 
 var workSelectorView = {
-    oninit: function () { loadExistingBooks(); },
+    oninit: function () { loadExistingBooks(); loadPb2Books(); },
     view: function () {
         return m('div', { class: 'p-4 max-w-3xl' }, [
             m('div', { class: 'flex items-center gap-2 mb-4' }, [
@@ -102,9 +122,35 @@ var workSelectorView = {
                 m('h2', { class: 'text-xl font-semibold' }, 'Picture Book')
             ]),
 
-            // Existing picture books
+            // PB2 native books
+            pb2Books.length > 0 ? m('div', { class: 'mb-6' }, [
+                m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'Workflow Books (PB2)'),
+                m('div', { class: 'grid grid-cols-1 gap-2' },
+                    pb2Books.map(function (b) {
+                        let status = (b.bookStatus || '').toLowerCase();
+                        let statusLabel = status === 'active' ? 'Active' : status === 'extracted' ? 'Migrated' : status || '';
+                        return m('div', {
+                            key: b.objectId,
+                            class: 'flex items-center justify-between border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900/20',
+                            onclick: function () { m.route.set('/picture-book/v2/' + b.objectId); }
+                        }, [
+                            m('div', { class: 'flex items-center gap-3' }, [
+                                m('span', { class: 'material-symbols-outlined text-purple-500' }, 'schema'),
+                                m('div', [
+                                    m('div', { class: 'font-medium text-sm' }, b.name),
+                                    m('div', { class: 'text-xs text-gray-500' },
+                                        b.slug + (statusLabel ? ' · ' + statusLabel : ''))
+                                ])
+                            ]),
+                            m('span', { class: 'material-symbols-outlined text-gray-400' }, 'chevron_right')
+                        ]);
+                    })
+                )
+            ]) : pb2Loading ? m('div', { class: 'text-sm text-gray-500 mb-6' }, 'Loading PB2 books...') : null,
+
+            // Existing PB1 picture books
             existingBooks.length > 0 ? m('div', { class: 'mb-6' }, [
-                m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'Existing Picture Books'),
+                m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'Legacy Books (PB1)'),
                 m('div', { class: 'grid grid-cols-1 gap-2' },
                     existingBooks.map(function (b) {
                         let incomplete = !b.sceneCount;
@@ -645,6 +691,197 @@ var pictureBookView = {
     }
 };
 
+// ── PB2 Page Reader ───────────────────────────────────────────────────
+
+let pb2Pages = [];
+let pb2PageLoading = false;
+let pb2PageError = null;
+let pb2CurrentPage = 0;
+let pb2BookName = '';
+let pb2BookObjectId = null;
+
+function pb2TotalPages() { return pb2Pages.length + 1; } // cover + scenes
+function pb2CurrentScene() { return pb2CurrentPage > 0 ? pb2Pages[pb2CurrentPage - 1] : null; }
+
+function pb2GoToPage(n) {
+    let max = pb2TotalPages() - 1;
+    pb2CurrentPage = Math.max(0, Math.min(n, max));
+    m.redraw();
+}
+
+function pb2OnKeyDown(e) {
+    if (e.key === 'ArrowRight' || e.key === 'Right') { e.preventDefault(); pb2GoToPage(pb2CurrentPage + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'Left') { e.preventDefault(); pb2GoToPage(pb2CurrentPage - 1); }
+    else if (e.key === 'Home') { e.preventDefault(); pb2GoToPage(0); }
+    else if (e.key === 'End') { e.preventDefault(); pb2GoToPage(pb2TotalPages() - 1); }
+}
+
+function pb2ImageUrl(dataObjectId) {
+    return applicationPath + '/rest/resource/data.data/' + dataObjectId;
+}
+
+async function loadPb2Pages(pb2ObjId) {
+    if (!pb2ObjId || pb2ObjId === 'undefined') return;
+    pb2PageLoading = true;
+    pb2PageError = null;
+    pb2Pages = [];
+    pb2CurrentPage = 0;
+    pb2BookName = 'Loading...';
+    m.redraw();
+    try {
+        let pages = await bookPages(pb2ObjId);
+        pb2Pages = Array.isArray(pages) ? pages : [];
+        if (pb2Pages.length > 0) {
+            pb2BookName = pb2Pages[0].title || 'Untitled';
+        }
+    } catch (e) {
+        pb2PageError = 'Failed to load pages: ' + (e.message || '');
+    }
+    pb2PageLoading = false;
+    m.redraw();
+}
+
+function renderPb2Cover() {
+    let firstPage = pb2Pages.length > 0 ? pb2Pages[0] : null;
+    let coverImgUrl = firstPage && firstPage.dataObjectId ? pb2ImageUrl(firstPage.dataObjectId) : null;
+    return m('div', {
+        class: 'flex flex-col items-center justify-center min-h-[60vh] relative overflow-hidden rounded-lg',
+        style: 'background: linear-gradient(135deg, #2d1b69 0%, #1a1a4e 50%, #0f0f3d 100%);'
+    }, [
+        coverImgUrl ? m('img', {
+            src: coverImgUrl,
+            class: 'absolute inset-0 w-full h-full object-cover opacity-40'
+        }) : null,
+        m('div', { class: 'relative z-10 text-center p-8' }, [
+            m('div', { class: 'text-purple-300 text-sm mb-2 uppercase tracking-widest' }, 'PB2 · Workflow Book'),
+            m('h1', {
+                class: 'text-4xl font-bold text-white mb-3',
+                style: 'text-shadow: 0 2px 8px rgba(0,0,0,0.7); font-family: Georgia, serif;'
+            }, pb2BookName || 'Untitled'),
+            m('p', { class: 'text-lg text-gray-300 opacity-70' },
+                pb2Pages.length + ' scene' + (pb2Pages.length !== 1 ? 's' : '')),
+            pb2Pages.length > 0 ? m('button', {
+                class: 'mt-8 px-6 py-2 bg-purple-500/30 hover:bg-purple-500/50 text-white rounded-full backdrop-blur-sm transition-colors',
+                onclick: function () { pb2GoToPage(1); }
+            }, [
+                m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'arrow_forward'),
+                'Begin'
+            ]) : null
+        ])
+    ]);
+}
+
+function renderPb2ScenePage() {
+    let scene = pb2CurrentScene();
+    if (!scene) return m('div', { class: 'text-sm text-gray-500 italic p-4' }, 'No scene data.');
+    let imgUrl = scene.dataObjectId ? pb2ImageUrl(scene.dataObjectId) : null;
+    let text = scene.blurb || scene.summary || '';
+    return m('div', { class: 'flex flex-col items-center' }, [
+        imgUrl
+            ? m('img', {
+                src: imgUrl,
+                class: 'w-full rounded-lg mb-4',
+                style: 'max-height: 55vh; object-fit: contain;'
+            })
+            : m('div', {
+                class: 'w-full rounded-lg mb-4 bg-gray-100 dark:bg-gray-800 flex items-center justify-center',
+                style: 'height: 240px;'
+            }, m('span', { class: 'material-symbols-outlined text-gray-400 text-5xl' }, 'image')),
+
+        m('h2', {
+            class: 'text-2xl font-semibold mb-3 text-center',
+            style: 'font-family: Georgia, serif;'
+        }, scene.title || 'Scene ' + (pb2CurrentPage)),
+
+        m('div', { class: 'max-w-2xl w-full px-4' },
+            m('p', {
+                class: 'text-base text-gray-700 dark:text-gray-300 text-center italic',
+                style: 'line-height: 1.8; font-family: Georgia, serif;'
+            }, text || m('em', { class: 'text-gray-400 not-italic' }, 'No text yet.'))
+        ),
+
+        m('div', { class: 'mt-6 text-xs text-gray-400 text-center' },
+            'Page ' + pb2CurrentPage + ' of ' + pb2Pages.length)
+    ]);
+}
+
+function renderPb2Header() {
+    let total = pb2TotalPages();
+    let pageLabel = pb2CurrentPage === 0
+        ? 'Cover'
+        : 'Page ' + pb2CurrentPage + ' of ' + pb2Pages.length;
+    return m('div', { class: 'flex items-center gap-3 mb-4' }, [
+        m('button', {
+            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
+            title: 'Back to book list',
+            onclick: function () { m.route.set('/picture-book'); }
+        }, m('span', { class: 'material-symbols-outlined' }, 'arrow_back')),
+
+        m('button', {
+            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30',
+            disabled: pb2CurrentPage === 0,
+            onclick: function () { pb2GoToPage(pb2CurrentPage - 1); }
+        }, m('span', { class: 'material-symbols-outlined' }, 'chevron_left')),
+
+        m('div', { class: 'flex-1 text-center' }, [
+            m('span', { class: 'font-semibold text-sm' }, pb2BookName),
+            m('span', { class: 'text-gray-400 text-xs ml-2' }, pageLabel)
+        ]),
+
+        m('button', {
+            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30',
+            disabled: pb2CurrentPage >= total - 1,
+            onclick: function () { pb2GoToPage(pb2CurrentPage + 1); }
+        }, m('span', { class: 'material-symbols-outlined' }, 'chevron_right'))
+    ]);
+}
+
+function renderPb2PageDots() {
+    let total = pb2TotalPages();
+    if (total <= 1) return null;
+    return m('div', { class: 'flex justify-center gap-2 mt-4 py-2' },
+        Array.from({ length: total }, function (_, i) {
+            let active = i === pb2CurrentPage;
+            return m('button', {
+                key: i,
+                class: 'w-2.5 h-2.5 rounded-full transition-colors ' +
+                    (active ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500'),
+                title: i === 0 ? 'Cover' : 'Page ' + i,
+                onclick: function () { pb2GoToPage(i); }
+            });
+        })
+    );
+}
+
+var pb2PageReaderView = {
+    oninit: function (vnode) {
+        if (vnode.attrs.pb2BookObjectId) {
+            pb2BookObjectId = vnode.attrs.pb2BookObjectId;
+            loadPb2Pages(pb2BookObjectId);
+        }
+    },
+    oncreate: function () { document.addEventListener('keydown', pb2OnKeyDown); },
+    onremove: function () { document.removeEventListener('keydown', pb2OnKeyDown); },
+    view: function () {
+        return m('div', { class: 'p-4 flex flex-col h-full' }, [
+            renderPb2Header(),
+            pb2PageLoading
+                ? m('div', { class: 'text-sm text-gray-500 text-center py-12' }, 'Loading scenes...')
+                : pb2PageError
+                    ? m('div', { class: 'text-red-500 text-sm text-center py-12' }, pb2PageError)
+                    : pb2Pages.length === 0
+                        ? m('div', { class: 'text-center py-12' }, [
+                            m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 mb-4' }, 'auto_stories'),
+                            m('div', { class: 'text-sm text-gray-500' }, 'No scenes in this book yet.')
+                        ])
+                        : m('div', { class: 'flex-1 overflow-y-auto max-w-3xl mx-auto w-full' }, [
+                            pb2CurrentPage === 0 ? renderPb2Cover() : renderPb2ScenePage(),
+                            renderPb2PageDots()
+                        ])
+        ]);
+    }
+};
+
 // ── Routes ────────────────────────────────────────────────────────────
 
 export const routes = {
@@ -652,6 +889,12 @@ export const routes = {
     '/picture-book': {
         oninit: function () { workSelectorView.oninit(); },
         view: function () { return layout(pageLayout(workSelectorView.view())); }
+    },
+    '/picture-book/v2/:pb2BookObjectId': {
+        oninit: function (vnode) { pb2PageReaderView.oninit(vnode); },
+        oncreate: function () { pb2PageReaderView.oncreate(); },
+        onremove: function () { pb2PageReaderView.onremove(); },
+        view: function () { return layout(pageLayout(m(pb2PageReaderView))); }
     },
     '/picture-book/:bookObjectId': {
         oninit: function (vnode) { pictureBookView.oninit(vnode); },

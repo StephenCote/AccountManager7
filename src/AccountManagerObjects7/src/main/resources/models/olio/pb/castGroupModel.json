@@ -1,0 +1,42 @@
+{
+	"name": "olio.pb.castGroup",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "group",
+	"label": "Cast Group",
+	"group": "Book",
+	"dedicatedParticipation": true,
+	"constraints": ["name, groupId, organizationId"],
+	"hints": ["book"],
+	"description": "A named collective entity (herd, crowd, ensemble) that a canvas chip can bind to as a single unit. A binding references it via refModel='olio.pb.castGroup' + refObjectId. Members are olio.charPerson records tracked via the pb.castGroup.member participation table.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "description",
+			"type": "string"
+		},
+		{
+			"name": "book",
+			"baseModel": "olio.pb.book",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "members",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true,
+			"participantModel": "pb.castGroup.member"
+		}
+	]
+}

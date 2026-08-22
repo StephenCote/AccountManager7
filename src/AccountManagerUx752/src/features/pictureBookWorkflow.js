@@ -604,6 +604,12 @@ var pictureBookWorkflowView = {
                     style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
                     onclick: function () { chapterDialog = true; m.redraw(); }
                 }, '📖 Chapter') : null,
+                // Pages button — PB2 page reader
+                pb2BookObjectId ? m('button', {
+                    title: 'View scene pages',
+                    style: 'border:1px solid #a855f7;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;color:#7c3aed;',
+                    onclick: function () { m.route.set('/picture-book/v2/' + pb2BookObjectId); }
+                }, '📖 Pages') : null,
                 // Back button
                 m('button', {
                     style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',

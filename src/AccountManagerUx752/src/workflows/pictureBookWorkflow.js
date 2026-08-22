@@ -73,6 +73,27 @@ export async function addMembers(pb2BookObjectId, userNames, asAdmin) {
     return resp.json();
 }
 
+/**
+ * List all olio.pb.book records the current user can read.
+ * Returns [{objectId, name, slug, bookStatus}, ...] sorted by name.
+ */
+export async function listPb2Books() {
+    let resp = await fetch(wfBase() + '/books', { credentials: 'include' });
+    if (!resp.ok) throw new Error('listPb2Books failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
+ * Ordered scene pages for a PB2 book.
+ * Returns [{objectId, sceneIndex, title, blurb, summary, dataObjectId}, ...].
+ * dataObjectId is null when no composite artifact has been generated yet.
+ */
+export async function bookPages(pb2BookObjectId) {
+    let resp = await fetch(wfBase() + '/' + pb2BookObjectId + '/pages', { credentials: 'include' });
+    if (!resp.ok) throw new Error('bookPages failed: ' + resp.status);
+    return resp.json();
+}
+
 /** Create the next chapter of a book. */
 export async function createChapter(fromPb2BookObjectId, slug, title, copyRecordModel, copyRecordObjectIds) {
     let body = { fromBookObjectId: fromPb2BookObjectId, slug: slug };

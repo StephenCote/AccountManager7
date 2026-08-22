@@ -34,7 +34,9 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 ## project
 - `project-accountmanager7-overview` -- What AccountManager7 is: schema-first BaseRecord/PBAC platform; sessions open at the GIT ROOT while Maven/modules live under src\ - two different 'project roots'; module map
 - `project-ki69-closed` -- KI-69 closed 2026-08-20: age-blind portrait fix in NarrativeUtil with adult fallback, 5 tests green
-- `project-pb5-phase-status` -- Phase 5a Playwright gate closed (6/6 tests pass); Phase 5 Mithril UI not started
+- `project-pb-castgroup-q15` -- Q15 resolved: olio.pb.castGroup for collective canvas entities — model created 2026-08-21
+- `project-pb-security-status` -- TestPbSecurity status: 10/10 green on 2026-08-21
+- `project-pb5-phase-status` -- Phase 5a Playwright gate closed (6/6 tests pass); Phase 5b Mithril UI implementation complete — code, build, and Vitest green; Playwright E2E not yet written
 - `project-pb6-phase-status` -- Phase 6 (Migration) status: PbMigrationUtil + TestPbMigration green
 - `project-picturebook-backend-redo` -- PictureBook feature backend persistence redo — charPerson/portrait/landscape not saved, reference images unused
 - `project-service-testing-docker` -- Service7/Tomcat testing should use the verified docker-compose setup, not a manually-run local Tomcat

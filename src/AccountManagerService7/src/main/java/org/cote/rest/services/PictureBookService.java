@@ -68,6 +68,10 @@ import jakarta.ws.rs.core.Response;
  * PB2 bridge (book group objectId → olio.pb.book objectId):
  *   GET  /{bookGroupObjectId}/pb2                             — resolve PB1 book group to PB2 book; 404 if no PB2 book yet
  *
+ * PB2 Phase 5b (book list + page view):
+ *   GET  /books                                               — list all olio.pb.book records the user can read
+ *   GET  /{bookObjectId}/pages                                — ordered scene pages with composite artifact dataObjectId
+ *
  * PB2 phase 4 (the olio.pb.* workflow graph; bookObjectId here is the olio.pb.book objectId, NOT the
  * PB1 book group — every one of these delegates to PbServiceFacade, which reads the book with
  * AccessPoint.find before anything else, per the KI-67 disposition):
@@ -162,6 +166,13 @@ public class PictureBookService {
 
     private Response handlePictureBookException(PictureBookException e) {
         return errorResponse(e.getStatus(), e.getMessage());
+    }
+
+    private Integer getInt(BaseRecord params, String key) {
+        if (params == null) return null;
+        Object v = params.get(key);
+        if (v instanceof Number) return ((Number) v).intValue();
+        return null;
     }
 
     // ----- Endpoints -----------------------------------------------------
@@ -963,6 +974,143 @@ public class PictureBookService {
             return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.createChapter(user,
                 context.getInitParameter("datagen.path"), fromBookObjectId, slug, title, copyIds,
                 copyRecordModel))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /books
+     * All olio.pb.book records the authenticated user can read in their organisation, sorted by name.
+     * Returns lightweight DTOs: objectId, name, slug, bookStatus.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/books")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listBooks(@Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.listBooks(user))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /{bookObjectId}/pages
+     * Ordered scene pages for a PB2 book: sceneIndex, title, blurb, summary, and the selected
+     * composite artifact's dataObjectId (null when no composite generated yet). bookObjectId here is
+     * the olio.pb.book objectId (not the PB1 book group). Delegates to PbServiceFacade.bookPageView,
+     * which authorises via requireBook before listing scenes or touching artifacts.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/pages")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response bookPages(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.bookPageView(user, bookObjectId))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * PUT /{bookObjectId}/artifact/{artifactObjectId}/select
+     * Mark an artifact as the selected revision in its (node, role) chain.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/artifact/{artifactObjectId:[0-9A-Za-z\\-]+}/select")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response selectArtifact(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("artifactObjectId") String artifactObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.selectArtifact(user, bookObjectId, artifactObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * PUT /{bookObjectId}/node/{nodeObjectId}/canvas
+     * Persist canvas geometry. Body: { x, y, w, h } — any subset accepted (absent keys are not touched).
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/node/{nodeObjectId:[0-9A-Za-z\\-]+}/canvas")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response saveCanvas(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("nodeObjectId") String nodeObjectId, String json,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord params = parseParams(json);
+        Integer x = getInt(params, "x");
+        Integer y = getInt(params, "y");
+        Integer w = getInt(params, "w");
+        Integer h = getInt(params, "h");
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(
+                    PbServiceFacade.saveCanvas(user, bookObjectId, nodeObjectId, x, y, w, h)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * PUT /{bookObjectId}/node/{nodeObjectId}/handle
+     * Rename a node's handle (and its derived name). Body: { handle: "new-handle" }
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/node/{nodeObjectId:[0-9A-Za-z\\-]+}/handle")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response renameHandle(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("nodeObjectId") String nodeObjectId, String json,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord params = parseParams(json);
+        String handle = params != null ? (String) params.get("handle") : null;
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(
+                    PbServiceFacade.renameHandle(user, bookObjectId, nodeObjectId, handle)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/node/{nodeObjectId}/test
+     * Execute a single node synchronously: generate a new artifact revision from the SD backend.
+     * Returns the new artifact identity, byte length, and downstream staleness list.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/node/{nodeObjectId:[0-9A-Za-z\\-]+}/test")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response testNode(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("nodeObjectId") String nodeObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.testNode(user, bookObjectId, nodeObjectId)))
+                .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }

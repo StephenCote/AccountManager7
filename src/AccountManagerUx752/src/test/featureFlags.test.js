@@ -393,7 +393,7 @@ describe('§3.6 — routePrefixes are self-verifying', () => {
         expect(extractRouteKeys(readFileSync(wiringSourcePath('media'), 'utf-8'))).toEqual([]);
         expect(extractRouteKeys(readFileSync(wiringSourcePath('iso42001'), 'utf-8')).length).toBe(12);
         expect(extractRouteKeys(readFileSync(wiringSourcePath('pictureBook'), 'utf-8')))
-            .toEqual(['/picture-book', '/picture-book/:bookObjectId']);
+            .toEqual(['/picture-book', '/picture-book/v2/:pb2BookObjectId', '/picture-book/:bookObjectId']);
     });
 
     it('no declared prefix collides with a core route', () => {

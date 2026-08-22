@@ -334,6 +334,10 @@ public class OlioFieldNames {
 	public static final String FIELD_PB_CONFIG_HASH = "configHash";
 	public static final String FIELD_PB_LAST_ERROR = "lastError";
 	public static final String FIELD_PB_LAST_RUN_AT = "lastRunAt";
+	public static final String FIELD_PB_CANVAS_X = "canvasX";
+	public static final String FIELD_PB_CANVAS_Y = "canvasY";
+	public static final String FIELD_PB_CANVAS_W = "canvasW";
+	public static final String FIELD_PB_CANVAS_H = "canvasH";
 
 	public static final String FIELD_PB_NODE = "node";
 	public static final String FIELD_PB_ROLE = "role";

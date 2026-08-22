@@ -104,6 +104,24 @@
 		{
 			"name": "lastRunAt",
 			"type": "zonetime"
+		},
+		{
+			"name": "canvasX",
+			"type": "int",
+			"description": "Canvas X position (absolute pixels). Null until the user arranges the card."
+		},
+		{
+			"name": "canvasY",
+			"type": "int"
+		},
+		{
+			"name": "canvasW",
+			"type": "int",
+			"description": "Canvas card width override. Null = use type default."
+		},
+		{
+			"name": "canvasH",
+			"type": "int"
 		}
 	]
 }

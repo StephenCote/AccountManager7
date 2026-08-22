@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio.picturebook;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -8,6 +9,8 @@ import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -557,6 +560,229 @@ public class PbServiceFacade {
 			}
 		}
 		return roles;
+	}
+
+	// ─────────────────────────────── Phase 5b: book list + page view ───────────────────────────────
+
+	/**
+	 * All {@code olio.pb.book} records the user can read in their organisation, sorted by name.
+	 * Returns lightweight DTOs — objectId, slug, name, bookStatus — to populate a book selector.
+	 * <p>
+	 * Uses {@code AccessPoint.list} with an explicit {@code organizationId} condition following
+	 * §5.6b: the query shape is authorized through PBAC's query-evaluation path; per-record filtering
+	 * is not applied (the measured KI-67 defect), but org-scoped list access is the accepted trade-off
+	 * for a read-only selector view.
+	 */
+	public static List<Map<String, Object>> listBooks(BaseRecord user) {
+		if(user == null) throw new PictureBookException(401, "No authenticated principal");
+		long orgId = orgOf(user);
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(PbBookUtil.bookRequest());
+		q.setCache(false);
+		q.setValue(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+		q.setValue(FieldNames.FIELD_ORDER, "ASCENDING");
+		q.setRequestRange(0, 100);
+		BaseRecord[] books = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
+		List<Map<String, Object>> out = new ArrayList<>();
+		if(books == null) return out;
+		for(BaseRecord b : books) {
+			Map<String, Object> dto = new LinkedHashMap<>();
+			dto.put("objectId", b.get(FieldNames.FIELD_OBJECT_ID));
+			dto.put("name", b.get(FieldNames.FIELD_NAME));
+			dto.put("slug", b.get(OlioFieldNames.FIELD_PB_SLUG));
+			dto.put("bookStatus", enumString(b, OlioFieldNames.FIELD_PB_BOOK_STATUS));
+			out.add(dto);
+		}
+		return out;
+	}
+
+	/**
+	 * Ordered scene pages for a PB2 book, each with scene metadata and the composite artifact's
+	 * data objectId (or null when no composite has been generated yet).
+	 * <p>
+	 * Authorized via {@code requireBook} before anything else — KI-67 pattern. Scenes are listed
+	 * ordered by {@code sceneIndex}. For each scene the composite node is resolved via the
+	 * {@code sceneNode} FK and the selected composite artifact is fetched. Migrated scenes
+	 * ({@code sceneNode} null) return {@code dataObjectId: null} — correct, since migration does not
+	 * produce PB2 artifacts.
+	 */
+	public static List<Map<String, Object>> bookPageView(BaseRecord user, String bookObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
+		if(scenes.isEmpty()) {
+			return new ArrayList<>();
+		}
+
+		Map<Long, BaseRecord> nodeMap = new HashMap<>();
+		try {
+			BaseRecord workflow = requireWorkflow(user, book);
+			nodeMap = PbGraphUtil.nodesById(user, workflow);
+		}
+		catch(PictureBookException e) {
+			// no workflow yet — pages have null dataObjectId
+		}
+
+		List<Map<String, Object>> out = new ArrayList<>();
+		for(BaseRecord scene : scenes) {
+			Map<String, Object> p = new LinkedHashMap<>();
+			p.put("objectId", scene.get(FieldNames.FIELD_OBJECT_ID));
+			p.put("sceneIndex", scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
+			p.put("title", scene.get(OlioFieldNames.FIELD_PB_TITLE));
+			p.put("blurb", scene.get(OlioFieldNames.FIELD_PB_BLURB));
+			p.put("summary", scene.get(OlioFieldNames.FIELD_PB_SUMMARY));
+
+			String dataObjectId = null;
+			if(!nodeMap.isEmpty()) {
+				BaseRecord sceneNodeRef = scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE);
+				if(sceneNodeRef != null) {
+					Object nodeIdObj = sceneNodeRef.get(FieldNames.FIELD_ID);
+					Long nodeId = (nodeIdObj instanceof Number) ? ((Number) nodeIdObj).longValue() : null;
+					if(nodeId != null) {
+						BaseRecord node = nodeMap.get(nodeId);
+						if(node != null) {
+							BaseRecord artifact = PbArtifactUtil.findSelected(user, node, "composite");
+							if(artifact != null) {
+								BaseRecord data = artifact.get(OlioFieldNames.FIELD_PB_DATA);
+								if(data != null) {
+									dataObjectId = data.get(FieldNames.FIELD_OBJECT_ID);
+								}
+							}
+						}
+					}
+				}
+			}
+			p.put("dataObjectId", dataObjectId);
+			out.add(p);
+		}
+		return out;
+	}
+
+	// ─────────────────────────────── canvas writes ───────────────────────────────
+
+	/**
+	 * Mark an artifact as the selected revision in its (node, role) chain.
+	 * <p>
+	 * Authorization: the artifact must belong to a node in this book's workflow (cross-book addressing
+	 * is a 404). {@code PbArtifactUtil.setSelected} then patches all siblings atomically.
+	 */
+	public static Map<String, Object> selectArtifact(BaseRecord user, String bookObjectId, String artifactObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		BaseRecord workflow = requireWorkflow(user, book);
+		if(artifactObjectId == null || artifactObjectId.trim().length() == 0) {
+			throw new PictureBookException(400, "An artifact objectId is required");
+		}
+		long orgId = PbGraphUtil.orgId(book);
+		BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactObjectId, orgId);
+		if(artifact == null) {
+			throw new PictureBookException(404, "Artifact not found");
+		}
+		// cross-book check: the artifact's producedByNode must be in this book's workflow
+		BaseRecord producedBy = artifact.get(OlioFieldNames.FIELD_PB_PRODUCED_BY_NODE);
+		if(producedBy != null) {
+			String nodeOid = producedBy.get(FieldNames.FIELD_OBJECT_ID);
+			if(nodeOid != null) {
+				requireNodeOfBook(user, workflow, nodeOid);
+			}
+		}
+		BaseRecord selected = PbArtifactUtil.setSelected(user, artifact);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("artifactObjectId", selected.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("selected", Boolean.TRUE);
+		return out;
+	}
+
+	/**
+	 * Persist canvas geometry ({@code canvasX, canvasY, canvasW, canvasH}) on a node.
+	 * <p>
+	 * Any combination of the four keys is accepted; absent keys are not touched (PATCH semantics).
+	 * All four are nullable — a null value clears the stored position, falling back to auto-layout.
+	 */
+	public static Map<String, Object> saveCanvas(BaseRecord user, String bookObjectId, String nodeObjectId,
+			Integer x, Integer y, Integer w, Integer h) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		BaseRecord workflow = requireWorkflow(user, book);
+		BaseRecord node = requireNodeOfBook(user, workflow, nodeObjectId);
+
+		List<String> changedFields = new ArrayList<>();
+		changedFields.add(OlioFieldNames.FIELD_PB_CANVAS_X);
+		changedFields.add(OlioFieldNames.FIELD_PB_CANVAS_Y);
+		changedFields.add(OlioFieldNames.FIELD_PB_CANVAS_W);
+		changedFields.add(OlioFieldNames.FIELD_PB_CANVAS_H);
+		BaseRecord patch = PbGraphUtil.patchOf(node, OlioModelNames.MODEL_PB_NODE,
+			changedFields.toArray(new String[0]));
+		try {
+			patch.set(OlioFieldNames.FIELD_PB_CANVAS_X, x);
+			patch.set(OlioFieldNames.FIELD_PB_CANVAS_Y, y);
+			patch.set(OlioFieldNames.FIELD_PB_CANVAS_W, w);
+			patch.set(OlioFieldNames.FIELD_PB_CANVAS_H, h);
+		}
+		catch(Exception e) {
+			throw new PictureBookException(500, "Failed to assemble canvas patch: " + e.getMessage());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to save canvas geometry for node " + nodeObjectId);
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("nodeObjectId", nodeObjectId);
+		out.put("canvasX", x);
+		out.put("canvasY", y);
+		out.put("canvasW", w);
+		out.put("canvasH", h);
+		return out;
+	}
+
+	/**
+	 * Rename a node's handle (and its derived {@code name}, since name = handle-based unique key).
+	 * <p>
+	 * The handle is the stable human-readable token used in prompt templates ({@code @handle}); the
+	 * derived name is what the URN provider composes from. Both are updated atomically.
+	 */
+	public static Map<String, Object> renameHandle(BaseRecord user, String bookObjectId,
+			String nodeObjectId, String newHandle) {
+		if(newHandle == null || newHandle.trim().length() == 0) {
+			throw new PictureBookException(400, "A non-blank handle is required");
+		}
+		BaseRecord book = requireBook(user, bookObjectId);
+		BaseRecord workflow = requireWorkflow(user, book);
+		BaseRecord node = requireNodeOfBook(user, workflow, nodeObjectId);
+
+		String newName = PbGraphUtil.nodeName(newHandle);
+		BaseRecord patch = PbGraphUtil.patchOf(node, OlioModelNames.MODEL_PB_NODE,
+			OlioFieldNames.FIELD_PB_HANDLE, FieldNames.FIELD_NAME);
+		try {
+			patch.set(OlioFieldNames.FIELD_PB_HANDLE, newHandle);
+			patch.set(FieldNames.FIELD_NAME, newName);
+		}
+		catch(Exception e) {
+			throw new PictureBookException(500, "Failed to assemble handle patch: " + e.getMessage());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to rename handle for node " + nodeObjectId);
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("nodeObjectId", nodeObjectId);
+		out.put("handle", newHandle);
+		out.put("name", newName);
+		return out;
+	}
+
+	/**
+	 * Execute a single node synchronously against the SD backend and persist a new artifact revision.
+	 * <p>
+	 * The SD server URL is resolved from {@link org.cote.accountmanager.util.ServerConfigUtil#SERVER_SD}
+	 * (the DB-backed runtime-configurable connection), falling back to {@code null} if not configured. A
+	 * null server is a 503 at the executor rather than a silent no-op, so the error reaches the caller
+	 * clearly.
+	 * <p>
+	 * Only PORTRAIT nodes are implemented today. All other node types return 400.
+	 */
+	public static Map<String, Object> testNode(BaseRecord user, String bookObjectId, String nodeObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		BaseRecord workflow = requireWorkflow(user, book);
+		BaseRecord node = requireNodeOfBook(user, workflow, nodeObjectId);
+		String swarmServer = org.cote.accountmanager.util.ServerConfigUtil.getServerUrl(
+			org.cote.accountmanager.util.ServerConfigUtil.SERVER_SD, null);
+		return PbNodeExecutor.executeNode(user, book, workflow, node, swarmServer);
 	}
 
 	/**

@@ -2809,15 +2809,7 @@ one-line addition with no behaviour), but the `…/olio/sd/comfy/` package, `Com
 `ComfyClient` and `TestComfyBackend` are deferred until there is a concrete use case. **SwarmUI remains
 the only backend.** §6 stays in this document as the design of record for when it is picked up.
 
-**13. Q15 cast/group entities — NO NEW MODEL.** (Stephen deferred to my recommendation.) A collective like
-"Meadow Herd" is represented as **N bindings sharing one `role`, distinguished by `bindingOrdinal`** —
-the field already added in phase 2 precisely so a multi-valued role needs no table rebuild. Each binding
-carries `refModel = olio.charPerson` + `refObjectId`. The canvas chip groups by the consuming node's
-`handle` (`character_@herd`). Rationale: `auth.group` is an authorization container and overloading it as
-a cast list conflates two meanings, while an `olio.pb.castGroup` model adds a table, a lifecycle and a
-grant surface for something the binding edge already expresses. **Revisit only if a collective needs its
-own attributes** (a name, a description, a shared style ref) rather than just membership — at which point
-`castGroup` becomes justified. Q15 closed for now.
+**13. Q15 cast/group entities — `olio.pb.castGroup`.** (Revised 2026-08-21: the NO NEW MODEL call was mine and Stephen overrode it.) A collective like "Meadow Herd" gets its own `olio.pb.castGroup` record: `name`, `description`, `book` FK, and a `members` list of `olio.charPerson` via the `pb.castGroup.member` participation table. A binding references it via `refModel = "olio.pb.castGroup"` + `refObjectId`. The canvas chip label comes from `castGroup.name`. Model registered in `OlioModelNames.MODEL_PB_CAST_GROUP`. `castGroupModel.json` created 2026-08-21.
 
 **14. Q5 `initialized = true` before authorization — FIX IT: throw.** Stephen: *"Throw an exception there
 if it shouldn't be allowed."* `OlioContext.java:379` sets `initialized = true` before

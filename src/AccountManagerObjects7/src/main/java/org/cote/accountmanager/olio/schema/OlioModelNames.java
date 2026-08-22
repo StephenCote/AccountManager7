@@ -88,6 +88,7 @@ public class OlioModelNames extends ModelNames {
 	public static final String MODEL_PB_BINDING = "olio.pb.binding";
 	public static final String MODEL_PB_ARTIFACT = "olio.pb.artifact";
 	public static final String MODEL_PB_RUN = "olio.pb.run";
+	public static final String MODEL_PB_CAST_GROUP = "olio.pb.castGroup";
 
 	//static {
 	private static boolean prep = false; 
@@ -115,7 +116,8 @@ public class OlioModelNames extends ModelNames {
 		MODEL_PB_ARTIFACT,
 		MODEL_PB_BINDING,
 		MODEL_PB_RUN,
-		MODEL_PB_SCENE
+		MODEL_PB_SCENE,
+		MODEL_PB_CAST_GROUP
 	);
 	
 	public static void use() {

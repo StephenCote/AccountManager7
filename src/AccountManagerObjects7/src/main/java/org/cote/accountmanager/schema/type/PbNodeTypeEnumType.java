@@ -26,7 +26,8 @@ public enum PbNodeTypeEnumType {
     REFERENCE_STRIP,
     COMPOSITE,
     PAGE,
-    BOOK_ASSEMBLY
+    BOOK_ASSEMBLY,
+    STYLE_BIBLE
     ;
 
     public String value() {
