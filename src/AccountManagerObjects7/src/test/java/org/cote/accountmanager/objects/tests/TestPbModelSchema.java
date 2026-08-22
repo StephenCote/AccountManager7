@@ -324,18 +324,18 @@ public class TestPbModelSchema extends BaseTest {
 			ioContext.getDbUtil().getDataType(lastRun, lastRun.getFieldType()));
 	}
 
-	/// olio.sd.config is NOT a database-persisted model (ioConstraints ['unknown']), so the three
-	/// config fields cannot be foreign references - a foreign field would emit a bigint column that
-	/// nothing can ever populate.  They are non-foreign model fields, serialized into a text column.
-	/// This test states the dependency: if olio.sd.config is ever promoted to a persisted model, it
-	/// fails and the decision gets revisited deliberately.
+	/// olio.sd.config is now a database-persisted model (plan S6c step S2 done). The three config
+	/// fields on book/artifact still emit a text column — they remain serialized snapshots, not foreign
+	/// references. Making them foreign references is plan step S6; until then asserting non-foreign here
+	/// is the guard so that step cannot happen silently. Deliberately flipped from assertTrue to
+	/// assertFalse 2026-08-21 when S2 was implemented.
 	///
 	@Test
 	public void TestSdConfigFieldsAreSerializedNotForeign() {
 		DBUtil dbUtil = ioContext.getDbUtil();
 		ModelSchema sdConfig = RecordFactory.getSchema(OlioModelNames.MODEL_SD_CONFIG);
-		assertTrue("olio.sd.config is expected to be constrained from the database; if that changed, "
-			+ "the PB2 config fields should be reconsidered as foreign references",
+		assertFalse("olio.sd.config must now be persistable (plan S6c step S2); "
+			+ "if this reverts to constrained, check configModel.json inherits/likeInherits",
 			dbUtil.isConstrained(sdConfig));
 
 		assertSerializedConfig(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SD_CONFIG);
@@ -344,26 +344,28 @@ public class TestPbModelSchema extends BaseTest {
 	}
 
 	/// olio.sd.config declared its own 'groupPath' meaning "target group path for generated image
-	/// storage" - an OUTPUT destination - which collides with the framework groupPath that
-	/// common.groupExt supplies (meaning "where this record itself lives").  Inheritance is depth-first
-	/// LAST-WINS, so the moment the model is made persistable (plan S6c step S2) the collision would
-	/// silently shadow one meaning with the other and every caller would still compile.  Renamed to
-	/// imagePath, pairing with its sibling imageName.
-	///
-	/// This test is the guard: it fails if 'groupPath' is ever re-declared as a field on olio.sd.config,
-	/// which is the only way the collision can come back.
+	/// storage" - renamed to imagePath before the model was made persistable (plan S6c step S1) to
+	/// avoid the common.groupExt collision. The model now inherits common.groupExt for its own location.
+	/// This test guards that 'groupPath' is never re-declared on the model itself.
 	///
 	@Test
 	public void TestSdConfigHasNoCollidingGroupPathField() {
 		ModelSchema ms = RecordFactory.getSchema(OlioModelNames.MODEL_SD_CONFIG);
 		assertNotNull("Expected the olio.sd.config schema", ms);
 
-		/// Declared directly, not inherited - the model inherits nothing today
-		assertTrue("olio.sd.config is expected to inherit nothing; if that changed, re-check the "
-			+ "groupPath collision this test guards", ms.getInherits().isEmpty());
-		assertNull("olio.sd.config must NOT declare a 'groupPath' field - it collides with the virtual "
+		/// The model inherits data.directory (S2 corrected from likeInherits to real inherits).
+		/// data.directory transitively provides common.groupExt (groupId, groupPath) and common.nameId (name).
+		/// The guard is that the model's own fields list does NOT also declare a field named groupPath
+		/// (which would shadow the inherited one).
+		/// Use ms.getFields() + isInherited() to check only declared fields — getFieldSchema() walks
+		/// the full inheritance chain and would find the groupExt-supplied field.
+		assertFalse("olio.sd.config must inherit data.directory after S2", ms.getInherits().isEmpty());
+		assertTrue("olio.sd.config must inherit data.directory", ms.getInherits().contains("data.directory"));
+		boolean declaresOwnGroupPath = ms.getFields().stream()
+			.anyMatch(f -> !f.isInherited() && "groupPath".equals(f.getName()));
+		assertFalse("olio.sd.config must NOT declare its own 'groupPath' field - it collides with the "
 			+ "groupPath from common.groupExt under depth-first last-wins inheritance",
-			ms.getFieldSchema("groupPath"));
+			declaresOwnGroupPath);
 		assertNotNull("olio.sd.config must declare 'imagePath' (the renamed output destination)",
 			ms.getFieldSchema("imagePath"));
 		assertNotNull("imagePath pairs with imageName", ms.getFieldSchema("imageName"));
@@ -374,7 +376,8 @@ public class TestPbModelSchema extends BaseTest {
 		assertNotNull(modelName + "." + fieldName + " is missing", fs);
 		assertEquals(modelName + "." + fieldName + " must target olio.sd.config",
 			OlioModelNames.MODEL_SD_CONFIG, fs.getBaseModel());
-		assertFalse(modelName + "." + fieldName + " must not be foreign - olio.sd.config has no table",
+		assertFalse(modelName + "." + fieldName + " must not be foreign — promoting to foreign is plan S6,"
+			+ " not yet done; asserting non-foreign prevents that step from landing silently",
 			fs.isForeign());
 		assertEquals(modelName + "." + fieldName + " must emit a text column", "text",
 			ioContext.getDbUtil().getDataType(fs, fs.getFieldType()));
@@ -552,6 +555,165 @@ public class TestPbModelSchema extends BaseTest {
 			fail("Failed to assemble an olio.pb.book: " + e.getMessage());
 		}
 		return book;
+	}
+
+	/// Plan S6c S2 exit criterion: the olio.sd.config table exists and is indexed.  Same gate as
+	/// TestPbTablesAndIndexesExistInTheDatabase but scoped to just this model.
+	///
+	@Test
+	public void TestSdConfigTableAndIndexesExist() throws SQLException {
+		DBUtil dbUtil = ioContext.getDbUtil();
+		ModelSchema ms = RecordFactory.getSchema(OlioModelNames.MODEL_SD_CONFIG);
+		assertNotNull("olio.sd.config schema must load", ms);
+		assertFalse("olio.sd.config must be persistable after S2", dbUtil.isConstrained(ms));
+		assertTrue("olio.sd.config table must exist after S2", dbUtil.haveTable(OlioModelNames.MODEL_SD_CONFIG));
+
+		String table = dbUtil.getTableName(OlioModelNames.MODEL_SD_CONFIG);
+		Map<List<String>, Boolean> live = readLiveIndexes(table);
+		assertFalse("Expected at least the name+groupId+organizationId unique index on " + table, live.isEmpty());
+		List<String> nameKey = columnKey("name, groupId, organizationId");
+		assertTrue("Expected a UNIQUE index on (name, groupId, organizationId), got " + live, live.containsKey(nameKey));
+		assertTrue("(name, groupId, organizationId) must be UNIQUE", live.get(nameKey));
+	}
+
+	/// Plan S6c S2 exit criterion: create one olio.sd.config, read it back, assert the urn was
+	/// composed (urn is a not-null identity column filled by UrnProvider from name and groupPath,
+	/// so a create fails outright if that composition doesn't work).
+	///
+	@Test
+	public void TestSdConfigRoundTrips() {
+		OlioModelNames.use();
+		BaseRecord user = getCreateUser("sdConfigSchemaUser");
+		assertNotNull("Expected a test user", user);
+		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String path = "~/SdConfigSchemaCheck";
+		assertNotNull("Expected the scratch group", ioContext.getPathUtil()
+			.makePath(user, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), orgId));
+
+		String configName = "sd-s2-" + UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord config = null;
+		try {
+			config = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+			ioContext.getRecordUtil().applyNameGroupOwnership(user, config, configName, path, orgId);
+			config.set(FieldNames.FIELD_NAME, configName);
+			config.set("style", "art");
+			config.set("steps", 25);
+		}
+		catch(Exception e) {
+			fail("Failed to assemble olio.sd.config: " + e.getMessage());
+		}
+
+		BaseRecord created = ioContext.getAccessPoint().create(user, config);
+		assertNotNull("Failed to create olio.sd.config — table must exist and model must be persistable", created);
+
+		BaseRecord read = ioContext.getAccessPoint().findByObjectId(user, OlioModelNames.MODEL_SD_CONFIG,
+			created.get(FieldNames.FIELD_OBJECT_ID));
+		assertNotNull("Failed to read back olio.sd.config", read);
+		assertEquals("name must survive the round trip", configName, read.get(FieldNames.FIELD_NAME));
+
+		String urn = read.get(FieldNames.FIELD_URN);
+		assertTrue("UrnProvider must compose a urn for olio.sd.config, got '" + urn + "'",
+			urn != null && urn.trim().length() > 0);
+		String normalizedName = configName.toLowerCase().replaceAll("[^a-z0-9]+", ".");
+		assertTrue("urn must end with the normalized name '" + normalizedName + "', got " + urn,
+			urn.endsWith(normalizedName));
+
+		logger.info("olio.sd.config round trip: urn=" + urn + " name=" + configName);
+	}
+
+	/// Plan S6c S3 exit criteria: SdConfigUtil read-path never creates, write-path creates on demand.
+	///
+	/// Test 1: findConfig returns null on a miss — the read path must not trigger a create.
+	///
+	@Test
+	public void TestSdConfigFindMissReturnsNull() {
+		OlioModelNames.use();
+		BaseRecord user = getCreateUser("sdConfigUtilUser");
+		assertNotNull("Expected a test user", user);
+		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String path = "~/SdConfigUtilCheck";
+		BaseRecord dir = ioContext.getPathUtil()
+			.makePath(user, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("Expected the scratch group", dir);
+		long groupId = dir.get(FieldNames.FIELD_ID);
+
+		String impossibleName = "sdcfg-miss-" + UUID.randomUUID().toString();
+		BaseRecord result = org.cote.accountmanager.olio.sd.SdConfigUtil.findConfig(user, impossibleName, groupId, orgId);
+		assertNull("findConfig must return null on a miss — the read path must not create a record", result);
+
+		/// Confirm nothing was created as a side-effect
+		BaseRecord sideEffect = org.cote.accountmanager.olio.sd.SdConfigUtil.findConfig(user, impossibleName, groupId, orgId);
+		assertNull("A second findConfig must still return null — no side-effect creation", sideEffect);
+	}
+
+	/// Plan S6c S3 exit criteria: getOrDefaultConfig returns a schema-defaults instance, never persisted.
+	///
+	@Test
+	public void TestSdConfigGetOrDefaultReturnsUnpersistedInstance() {
+		OlioModelNames.use();
+		BaseRecord user = getCreateUser("sdConfigUtilUser");
+		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String path = "~/SdConfigUtilCheck";
+		BaseRecord dir = ioContext.getPathUtil()
+			.makePath(user, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("Expected the scratch group", dir);
+		long groupId = dir.get(FieldNames.FIELD_ID);
+
+		String impossibleName = "sdcfg-default-" + UUID.randomUUID().toString();
+		BaseRecord result = org.cote.accountmanager.olio.sd.SdConfigUtil.getOrDefaultConfig(user, impossibleName, groupId, orgId);
+		assertNotNull("getOrDefaultConfig must never return null", result);
+		assertEquals("Default instance must have the olio.sd.config schema",
+			OlioModelNames.MODEL_SD_CONFIG, result.getSchema());
+
+		/// The default instance must NOT be persisted: id is 0 or null, objectId is null/empty
+		Long id = result.get(FieldNames.FIELD_ID);
+		String objectId = result.get(FieldNames.FIELD_OBJECT_ID);
+		boolean hasPersistentId = (id != null && id.longValue() > 0L);
+		boolean hasObjectId = (objectId != null && !objectId.trim().isEmpty());
+		assertFalse("Default instance must not be persisted (id must be 0/null on a miss): "
+			+ "id=" + id + " objectId=" + objectId, hasPersistentId || hasObjectId);
+	}
+
+	/// Plan S6c S3 exit criteria: createOrUpdateConfig creates a record, which findConfig then sees.
+	///
+	@Test
+	public void TestSdConfigCreateAndFindRoundTrips() {
+		OlioModelNames.use();
+		BaseRecord user = getCreateUser("sdConfigUtilUser");
+		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String path = "~/SdConfigUtilCheck";
+		BaseRecord dir = ioContext.getPathUtil()
+			.makePath(user, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("Expected the scratch group", dir);
+		long groupId = dir.get(FieldNames.FIELD_ID);
+
+		String configName = "sdcfg-write-" + UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord config = null;
+		try {
+			config = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+			ioContext.getRecordUtil().applyNameGroupOwnership(user, config, configName, path, orgId);
+			config.set(FieldNames.FIELD_NAME, configName);
+			config.set("style", "art");
+		}
+		catch (Exception e) {
+			fail("Failed to assemble olio.sd.config: " + e.getMessage());
+		}
+
+		/// Write through the authorized path
+		BaseRecord written = org.cote.accountmanager.olio.sd.SdConfigUtil.createOrUpdateConfig(user, config);
+		assertNotNull("createOrUpdateConfig must return the created record", written);
+
+		/// Now the read path must find it
+		BaseRecord found = org.cote.accountmanager.olio.sd.SdConfigUtil.findConfig(user, configName, groupId, orgId);
+		assertNotNull("findConfig must see the record after createOrUpdateConfig", found);
+		assertEquals("Name must survive the write+read cycle", configName, found.get(FieldNames.FIELD_NAME));
+
+		/// And getOrDefaultConfig must return the real record, not a fresh default
+		BaseRecord got = org.cote.accountmanager.olio.sd.SdConfigUtil.getOrDefaultConfig(user, configName, groupId, orgId);
+		assertNotNull("getOrDefaultConfig must return the real record when it exists", got);
+		String gotObjectId = got.get(FieldNames.FIELD_OBJECT_ID);
+		assertTrue("getOrDefaultConfig must return the persisted record (has objectId)",
+			gotObjectId != null && !gotObjectId.trim().isEmpty());
 	}
 
 	/// Normalize a comma-separated column list into a comparable key.  Lower-cased on purpose:

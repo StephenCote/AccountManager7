@@ -1,112 +1,141 @@
 /**
- * SD config persistence test — verifies save/load cycle via API
+ * SD config persistence test — verifies create/patch/search round-trip via REST API.
+ *
+ * Phase 6c S3/S4: olio.sd.config is now a persistable model (no longer embedded).
+ * Runs against the Docker stack with PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443.
+ * Does not use Vite dev-server source imports (cross-origin session cookies break those).
  */
-import { test, expect } from './helpers/fixtures.js';
-import { login } from './helpers/auth.js';
+import { test, expect, request as pwRequest } from '@playwright/test';
 import { ensureSharedTestUser } from './helpers/api.js';
 
-test.describe('SD config save/load cycle', () => {
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
+const REST = BASE_URL + '/AccountManagerService7/rest';
+
+function b64(str) {
+    return Buffer.from(str).toString('base64');
+}
+
+function encodePath(p) {
+    return 'B64-' + Buffer.from(p).toString('base64').replace(/=/g, '%3D');
+}
+
+test.describe('SD config persistence (REST API round-trip)', () => {
     let testInfo = {};
 
     test.beforeAll(async ({ request }) => {
         testInfo = await ensureSharedTestUser(request);
     });
 
-    test('sdConfig saveConfig then loadConfig round-trips correctly', async ({ page }) => {
+    test('olio.sd.config create then search then patch round-trips correctly', async ({}) => {
         test.setTimeout(60000);
-        await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-        let result = await page.evaluate(async () => {
-            let { am7sd } = await import('/src/components/sdConfig.js');
-            let { am7model } = await import('/src/core/model.js');
+        // Isolated API context for this test
+        const ctx = await pwRequest.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
 
-            let ts = Date.now().toString(36);
-            let configName = 'E2E-SDTest-' + ts + '.json';
+        try {
+            // Login as shared test user
+            const loginResp = await ctx.post(REST + '/login', {
+                data: {
+                    schema: 'auth.credential',
+                    organizationPath: '/Development',
+                    name: testInfo.testUserName,
+                    credential: b64(testInfo.testPassword),
+                    type: 'hashed_password'
+                }
+            });
+            expect(loginResp.ok(), 'login must succeed').toBe(true);
 
-            // Create an SD config instance
-            let entity = am7model.newPrimitive('olio.sd.config');
-            let cinst = am7model.prepareInstance(entity);
+            // Ensure the preferences directory exists
+            const dirResp = await ctx.get(REST + '/path/make/auth.group/DATA/' + encodePath('~/Data/.preferences'));
+            expect(dirResp.ok(), 'make preferences dir must succeed').toBe(true);
+            const dir = await dirResp.json().catch(() => null);
+            expect(dir, 'preferences dir must be returned').toBeTruthy();
+            expect(dir.id, 'dir must have numeric id').toBeGreaterThan(0);
 
-            // Set values via API (goes through decorators)
-            cinst.api.cfg(7);
-            cinst.api.steps(25);
-            cinst.api.denoisingStrength(60); // decorator: 60/100 = 0.6 in entity
-            cinst.entity.bodyStyle = 'portrait';
-            cinst.entity.style = 'photograph';
+            // Create an olio.sd.config record
+            const configName = 'E2E-SDPersist-' + Date.now().toString(36);
+            const createResp = await ctx.post(REST + '/model', {
+                data: {
+                    schema: 'olio.sd.config',
+                    name: configName,
+                    groupId: dir.id,
+                    groupPath: dir.path,
+                    style: 'photograph',
+                    cfg: 9,
+                    steps: 25,
+                    sampler: 'Euler'
+                }
+            });
+            expect(createResp.ok(), 'POST /rest/model for olio.sd.config must succeed').toBe(true);
+            const created = await createResp.json().catch(() => null);
+            console.log('[sdConfig create]', JSON.stringify(created));
+            expect(created, 'create must return a record').toBeTruthy();
 
-            let entityBeforeSave = {
-                cfg: cinst.entity.cfg,
-                steps: cinst.entity.steps,
-                denoisingStrength: cinst.entity.denoisingStrength,
-                bodyStyle: cinst.entity.bodyStyle,
-                style: cinst.entity.style
-            };
+            // Search for the config by name + groupId
+            const searchResp = await ctx.post(REST + '/model/search', {
+                data: {
+                    schema: 'io.query',
+                    type: 'olio.sd.config',
+                    cache: false,
+                    fields: [
+                        { name: 'name', comparator: 'equals', value: configName },
+                        { name: 'groupId', comparator: 'equals', value: dir.id }
+                    ],
+                    request: ['id', 'objectId', 'name', 'style', 'cfg', 'steps', 'sampler'],
+                    recordCount: 1
+                }
+            });
+            expect(searchResp.ok(), 'search for olio.sd.config must succeed').toBe(true);
+            const searchResult = await searchResp.json().catch(() => null);
+            console.log('[sdConfig search]', JSON.stringify(searchResult));
+            expect(searchResult, 'search result must not be null').toBeTruthy();
+            const found = searchResult.results && searchResult.results[0];
+            expect(found, 'must find the created olio.sd.config record').toBeTruthy();
+            expect(found.name).toBe(configName);
+            expect(found.style).toBe('photograph');
+            expect(Number(found.cfg)).toBe(9);
+            expect(Number(found.steps)).toBe(25);
+            expect(found.sampler).toBe('Euler');
 
-            // Save
-            let saveEntity = Object.assign({}, cinst.entity);
-            saveEntity.shared = false;
-            let saved = await am7sd.saveConfig(configName, saveEntity);
+            // PATCH: update style only (must include name per model validation; value must be in the style limit list)
+            const patchResp = await ctx.patch(REST + '/model', {
+                data: {
+                    schema: 'olio.sd.config',
+                    id: found.id,
+                    objectId: found.objectId,
+                    name: found.name,
+                    style: 'art'
+                }
+            });
+            expect(patchResp.ok(), 'PATCH for olio.sd.config must succeed').toBe(true);
+            const patchBody = await patchResp.text().catch(() => '');
+            console.log('[sdConfig patch response]', patchBody);
+            expect(patchBody.trim(), 'PATCH must return true (not silent false)').toBe('true');
 
-            // Clear cache before loading
-            let { am7client } = await import('/src/core/am7client.js');
-            am7client.clearCache('data.data');
+            // Search again to confirm patch applied
+            const searchResp2 = await ctx.post(REST + '/model/search', {
+                data: {
+                    schema: 'io.query',
+                    type: 'olio.sd.config',
+                    cache: false,
+                    fields: [
+                        { name: 'name', comparator: 'equals', value: configName },
+                        { name: 'groupId', comparator: 'equals', value: dir.id }
+                    ],
+                    request: ['id', 'objectId', 'name', 'style'],
+                    recordCount: 1
+                }
+            });
+            const searchResult2 = await searchResp2.json().catch(() => null);
+            console.log('[sdConfig after patch]', JSON.stringify(searchResult2));
+            const patched = searchResult2 && searchResult2.results && searchResult2.results[0];
+            expect(patched, 'patched record must be found').toBeTruthy();
+            expect(patched.style, 'style must be updated to art').toBe('art');
+            expect(patched.name, 'name must be unchanged after patch').toBe(configName);
 
-            // Load into a fresh instance
-            let entity2 = am7model.newPrimitive('olio.sd.config');
-            let cinst2 = am7model.prepareInstance(entity2);
-
-            let loaded = await am7sd.loadConfig(configName);
-            if (loaded) am7sd.applyConfig(cinst2, loaded);
-
-            let entityAfterLoad = {
-                cfg: cinst2.entity.cfg,
-                steps: cinst2.entity.steps,
-                denoisingStrength: cinst2.entity.denoisingStrength,
-                bodyStyle: cinst2.entity.bodyStyle,
-                style: cinst2.entity.style
-            };
-
-            // Read via API (through decorators) — this is what the form displays
-            let apiAfterLoad = {
-                cfg: cinst2.api.cfg(),
-                steps: cinst2.api.steps(),
-                denoisingStrength: cinst2.api.denoisingStrength ? cinst2.api.denoisingStrength() : 'N/A',
-                bodyStyle: cinst2.entity.bodyStyle,
-                style: cinst2.entity.style
-            };
-
-            return {
-                saved,
-                loadedRaw: loaded ? {
-                    cfg: loaded.cfg,
-                    steps: loaded.steps,
-                    denoisingStrength: loaded.denoisingStrength,
-                    bodyStyle: loaded.bodyStyle,
-                    style: loaded.style
-                } : null,
-                entityBeforeSave,
-                entityAfterLoad,
-                apiAfterLoad,
-                configName
-            };
-        });
-
-        console.log('SD config persistence:', JSON.stringify(result, null, 2));
-
-        expect(result.saved).toBe(true);
-        expect(result.loadedRaw).not.toBeNull();
-
-        // Entity values should match
-        expect(result.entityAfterLoad.cfg).toBe(result.entityBeforeSave.cfg);
-        expect(result.entityAfterLoad.steps).toBe(result.entityBeforeSave.steps);
-        expect(result.entityAfterLoad.denoisingStrength).toBe(result.entityBeforeSave.denoisingStrength);
-        expect(result.entityAfterLoad.bodyStyle).toBe(result.entityBeforeSave.bodyStyle);
-        expect(result.entityAfterLoad.style).toBe(result.entityBeforeSave.style);
-
-        // API values should be display-ready
-        expect(result.apiAfterLoad.cfg).toBe(7);
-        expect(result.apiAfterLoad.steps).toBe(25);
-        // denoisingStrength stored as-is (no range decorator without form), numberDecorator returns parseFloat
-        expect(parseFloat(result.apiAfterLoad.denoisingStrength)).toBe(60);
+        } finally {
+            await ctx.get(REST + '/logout').catch(() => {});
+            await ctx.dispose();
+        }
     });
 });

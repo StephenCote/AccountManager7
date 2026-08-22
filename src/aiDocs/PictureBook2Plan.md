@@ -1856,22 +1856,37 @@ configs use this checkpoint" is unanswerable, which is precisely what PB2's node
   `TestPbModelSchema#TestSdConfigHasNoCollidingGroupPathField` guard that fails if `groupPath` is ever
   re-declared on the model. **Not verified:** no live card-art image was generated (needs the Docker
   stack + SwarmUI), so the end-to-end generateArt round trip is untested by me.
-- **S2 — make the model persistable.** Drop `ioConstraints`, add
-  `likeInherits: ["data.directory"]` + `inherits: [common.groupExt, common.baseLight, common.urn]`, its
-  own plain `name` (**not** `common.nameId` — same `\S`/PATCH reasoning as the `olio.pb.*` models),
-  `constraints: ["name, groupId, organizationId"]`, `query` including `name` and `urn`, a `group` hint,
-  and `maxLength` on every string that any index touches. Register in `OlioModelNames.MODELS`.
-  *Exit:* the table exists, indexes verified in `pg_indexes`, and a create/read round trip — i.e. the
-  same gate phase 2b used, which `TestPbModelSchema` already implements and which will flip its
-  `isConstrained` assertion at this point (update it deliberately, do not delete it).
-- **S3 — one read/write path in Objects7.** A `SdConfigUtil` that resolves a config by name+group and
-  is the single writer. **Find-only on read paths**; only an authorized write creates
-  (`architecture.md`, "Read paths must not create"). *Exit:* unit tests, including that a read miss
-  returns defaults rather than creating a record.
-- **S4 — Ux752 storage swap.** `components/sdConfig.js` `loadConfig`/`saveConfig` move from
-  `data.data` blobs to generic model CRUD; the forms stay. Keep a **read-through fallback** to the old
-  blob for one release so nothing breaks mid-migration. *Exit:* `npx vite build`, `npx vitest run`, and
-  a Playwright pass on the reimage flow with `ensureSharedTestUser()`.
+- ~~**S2 — make the model persistable.**~~ **DONE 2026-08-22.**
+  **As-built (differs from plan):** `likeInherits` was found to be a `ModelSchema.java`
+  getter/setter that no code in `RecordFactory` or `DBUtil` ever reads — it is pure metadata with
+  no DDL effect. The plan's intended approach (inherit `data.directory`'s fields) required **real
+  `inherits`**, not `likeInherits`. Final model: `"inherits": ["data.directory"]`, removed its own
+  duplicate `name` field (provided by `common.nameId` via the chain), kept the `constraints`,
+  `query`, `hints`, and `group` hint the plan called for. The `a7_olio_sd_config_0_1` table was
+  created on the next Docker startup; the `TestPbModelSchema` `isConstrained` assertion was updated
+  to match the direct `data.directory` inheritance. Also required: Dockerfile Tomcat version
+  11.0.24 → 11.0.25 (11.0.24 was removed from dlcdn.apache.org, causing all Docker builds to
+  silently fail at the `curl` step while reporting exit 0).
+  *Verified:* `TestPbModelSchema` 19/19 BUILD SUCCESS; `a7_olio_sd_config_0_1` table + constraints
+  confirmed in `pg_indexes` on `am72db`.
+- ~~**S3 — one read/write path in Objects7.**~~ **DONE 2026-08-22.** `SdConfigUtil` created in
+  `org.cote.accountmanager.olio.sd`: `findConfig(user, group, name)` returns null on miss;
+  `getOrDefaultConfig(user, group, name)` returns an unpersisted default instance on miss (never
+  creates); `createOrUpdateConfig(user, group, name, partial)` is the sole write path. Follows
+  `architecture.md` "Read paths must not create".
+  *Verified:* `TestPbModelSchema` 19/19 BUILD SUCCESS (includes SdConfigUtil round-trip tests).
+- ~~**S4 — Ux752 storage swap.**~~ **DONE 2026-08-22.** `components/sdConfig.js`
+  `loadConfig`/`saveConfig` rewritten to use `olio.sd.config` generic model CRUD with a read-through
+  fallback to the old `data.data` blob for one-release compatibility. `modelDef.js` `olio.sd.config`
+  block had its `"ioConstraints": ["unknown"]` removed so the generic editor can see the model.
+  **Playwright gate:** the plan called for a reimage-flow test, but that requires SwarmUI in the
+  Playwright environment. Substitute gate shipped instead: `e2e/sdConfigPersist.spec.js` tests
+  `olio.sd.config` create → search → PATCH → verify via REST API against the Docker stack
+  (`PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443`). Key gotchas: (a) cfg=9 not 7 (serializer skips
+  fields whose value equals the schema default); (b) style='art' not 'painting' (must be in the
+  field's `limit` list or the PATCH silently returns HTTP 200 with body `false` and writes nothing).
+  *Verified:* `npx vite build` clean; `npx vitest run` 445 passed; Playwright `sdConfigPersist.spec.js`
+  1/1; `TestPictureBookCustomPipeline` 1/1 with Swarm (258s, actual image generation).
 - **S5 — converge the two per-character systems.** Retire `<name>-SD.json` in favour of a named config
   record referenced by `olio.pictureBookCharacterStyle`, so the pipeline and the UI read one store.
   **This is the step that actually fixes the Ux inconsistency**; S1-S4 only make it possible.

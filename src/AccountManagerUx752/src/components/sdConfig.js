@@ -91,11 +91,36 @@ async function fetchTemplate(forceRefresh) {
 }
 
 // ── loadConfig ────────────────────────────────────────────────────
+// S4: Load from olio.sd.config records; fall back to legacy data.data blob for one release.
 async function loadConfig(name, groupPath) {
     let page = getPage();
+    let am7client = getClient();
     let gp = groupPath || "~/Data/.preferences";
     let grp = await page.makePath("auth.group", "DATA", gp);
     if (!grp) return null;
+
+    // Primary path: olio.sd.config record
+    try {
+        let q = am7client.newQuery("olio.sd.config");
+        q.field("name", name);
+        q.field("groupId", grp.id);
+        q.cache(false);
+        let qr = await page.search(q);
+        if (qr && qr.results && qr.results.length) {
+            am7model.updateListModel(qr.results);
+            let hit = qr.results[0];
+            // newQuery only projects the query fields (id, objectId, name, etc.) — fetch full record
+            if (hit.objectId) {
+                let full = await am7client.getFullByObjectId("olio.sd.config", hit.objectId);
+                if (full) return full;
+            }
+            return hit;
+        }
+    } catch (e) {
+        console.warn("[am7sd] Failed to load olio.sd.config:", name, e);
+    }
+
+    // Read-through fallback: legacy data.data blob (one-release compat)
     try {
         let q = am7view.viewQuery(am7model.newInstance("data.data"));
         q.entity.request.push("dataBytesStore");
@@ -110,54 +135,62 @@ async function loadConfig(name, groupPath) {
             }
         }
     } catch (e) {
-        console.warn("[am7sd] Failed to load config: " + name, e);
+        console.warn("[am7sd] Failed to load data.data fallback for config:", name, e);
     }
     return null;
 }
 
 // ── saveConfig ────────────────────────────────────────────────────
+// S4: Save to olio.sd.config records via generic model CRUD.
 async function saveConfig(name, config, groupPath) {
     let page = getPage();
+    let am7client = getClient();
     let gp = groupPath || "~/Data/.preferences";
     let grp = await page.makePath("auth.group", "DATA", gp);
     if (!grp) return false;
 
-    let saveObj = {};
-    for (let k in config) {
-        if (!SAVE_EXCLUDE.includes(k)) {
-            saveObj[k] = config[k];
-        }
-    }
-
-    // Use search query (same as loadConfig) to reliably find existing config
-    // getByName URL-embeds the name which fails with dots/spaces, and may not return 'id'
-    let obj = null;
+    // Find existing olio.sd.config by name+group
+    let existing = null;
     try {
-        let q = am7view.viewQuery(am7model.newInstance("data.data"));
-        q.entity.request.push("id");
-        q.field("groupId", grp.id);
+        let q = am7client.newQuery("olio.sd.config");
         q.field("name", name);
+        q.field("groupId", grp.id);
+        q.cache(false);
         let qr = await page.search(q);
         if (qr && qr.results && qr.results.length) {
-            obj = qr.results[0];
+            am7model.updateListModel(qr.results);
+            existing = qr.results[0];
         }
-    } catch (e) { /* doesn't exist yet */ }
+    } catch (e) { /* not found — will create */ }
 
-    if (!obj) {
-        obj = am7model.newPrimitive("data.data");
+    if (!existing) {
+        // Create new olio.sd.config record
+        let obj = {};
+        obj[am7model.jsonModelKey] = "olio.sd.config";
         obj.name = name;
-        obj.contentType = "application/json";
         obj.groupId = grp.id;
         obj.groupPath = grp.path;
-        obj.dataBytesStore = btoa(JSON.stringify(saveObj));
+        for (let k in config) {
+            if (!SAVE_EXCLUDE.includes(k)) {
+                obj[k] = config[k];
+            }
+        }
         await page.createObject(obj);
     } else {
-        let patch = { id: obj.id, compressionType: "none", dataBytesStore: btoa(JSON.stringify(saveObj)) };
-        patch[am7model.jsonModelKey] = "data.data";
+        // Patch existing — identity + name + all changed fields
+        let patch = {};
+        patch[am7model.jsonModelKey] = "olio.sd.config";
+        patch.id = existing.id;
+        patch.objectId = existing.objectId;
+        patch.name = name;
+        for (let k in config) {
+            if (!SAVE_EXCLUDE.includes(k)) {
+                patch[k] = config[k];
+            }
+        }
         await page.patchObject(patch);
     }
-    // Clear cache so subsequent loadConfig finds the updated data
-    am7model._client.clearCache("data.data");
+    am7client.clearCache("olio.sd.config");
     return true;
 }
 

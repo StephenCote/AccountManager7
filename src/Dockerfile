@@ -51,7 +51,7 @@ RUN npx vite build
 FROM eclipse-temurin:26-jre-alpine AS runtime
 
 # Check https://tomcat.apache.org/download-11.cgi for newer patch releases.
-ARG TOMCAT_VERSION=11.0.24
+ARG TOMCAT_VERSION=11.0.25
 ENV CATALINA_HOME=/opt/tomcat \
     APP_CONTEXT=AccountManagerService7
 

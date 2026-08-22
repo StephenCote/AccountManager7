@@ -9931,9 +9931,6 @@
     },
        {
       "name": "olio.sd.config",
-      "ioConstraints": [
-        "unknown"
-      ],
       "fields": [
         {
           "name": "description",

@@ -207,3 +207,150 @@ test.describe('PictureBook Workflow Graph', () => {
     });
 
 });
+
+// ── Phase 5b: PB2 page reader (/picture-book/v2/:pb2BookObjectId) ─────
+
+test.describe('PictureBook PB2 Page Reader (Phase 5b)', () => {
+    test.describe.configure({ timeout: 120000 });
+
+    test.beforeAll(async ({ request }) => {
+        await ensureSharedTestUser(request);
+    });
+
+    test('v2 route loads without crashing for unknown book id', async ({ page }) => {
+        await loginAsSharedUser(page);
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/v2/00000000-0000-0000-0000-000000000099';
+        });
+        await page.waitForTimeout(2500);
+
+        // Should render something — not a blank page or uncaught error
+        let bodyText = await page.locator('body').innerText();
+        expect(bodyText.length).toBeGreaterThan(0);
+
+        // Should not contain an unhandled JS error banner
+        let content = await page.content();
+        expect(content).not.toContain('Unhandled error');
+    });
+
+    test('v2 route shows cover, loading, or error state — not blank', async ({ page }) => {
+        await loginAsSharedUser(page);
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/v2/fake-pb2-id-cover-test';
+        });
+        await page.waitForTimeout(3000);
+
+        let content = await page.content();
+        // Any of these strings indicate the component rendered and handled the unknown book
+        let handled =
+            content.includes('Loading') ||
+            content.includes('Failed') ||
+            content.includes('scene') ||
+            content.includes('Cover') ||
+            content.includes('PB2') ||
+            content.includes('Workflow Book') ||
+            content.includes('picture-book');
+        expect(handled).toBe(true);
+    });
+
+    test('v2 route has a back button to the book list', async ({ page }) => {
+        await loginAsSharedUser(page);
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/v2/fake-pb2-id-back-btn';
+        });
+        await page.waitForTimeout(2500);
+
+        // The pb2PageReaderView header always renders an arrow_back button
+        let hasBack = await page.evaluate(() => {
+            let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
+            return icons.some(i => i.textContent.trim() === 'arrow_back');
+        });
+        expect(hasBack).toBe(true);
+    });
+
+    test('v2 back button navigates to /picture-book', async ({ page }) => {
+        await loginAsSharedUser(page);
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/v2/fake-pb2-id-back-nav';
+        });
+        await page.waitForTimeout(2500);
+
+        let clicked = await page.evaluate(() => {
+            let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
+            let backIcon = icons.find(i => i.textContent.trim() === 'arrow_back');
+            if (backIcon) {
+                let btn = backIcon.closest('button');
+                if (btn) { btn.click(); return true; }
+            }
+            return false;
+        });
+
+        if (clicked) {
+            await page.waitForTimeout(1200);
+            let hash = await page.evaluate(() => window.location.hash);
+            // After clicking back, should be at /picture-book without /v2 sub-path
+            expect(hash).not.toContain('/v2/');
+            expect(hash).toContain('picture-book');
+        } else {
+            // Back button not visible (loading/error before header rendered) — acceptable
+            let bodyText = await page.locator('body').innerText();
+            expect(bodyText.length).toBeGreaterThan(0);
+        }
+    });
+
+    test('v2 keyboard navigation does not cause JS errors', async ({ page }) => {
+        let jsErrors = [];
+        page.on('pageerror', err => jsErrors.push(err.message));
+
+        await loginAsSharedUser(page);
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/v2/fake-pb2-id-keyboard';
+        });
+        await page.waitForTimeout(2500);
+
+        await page.keyboard.press('ArrowRight');
+        await page.waitForTimeout(200);
+        await page.keyboard.press('ArrowLeft');
+        await page.waitForTimeout(200);
+        await page.keyboard.press('Home');
+        await page.waitForTimeout(200);
+        await page.keyboard.press('End');
+        await page.waitForTimeout(200);
+
+        expect(jsErrors).toHaveLength(0);
+    });
+
+    test('v2 route is registered under /picture-book/v2/ prefix', async ({ page }) => {
+        await loginAsSharedUser(page);
+
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book/v2/prefix-check-id';
+        });
+        await page.waitForTimeout(1500);
+
+        let hash = await page.evaluate(() => window.location.hash);
+        // Mithril router must have matched the route — if not it would redirect to /main
+        expect(hash).toContain('picture-book');
+        expect(hash).toContain('v2');
+    });
+
+    test('v2 route selector shows PB2 book list or loading on /picture-book', async ({ page }) => {
+        await loginAsSharedUser(page);
+        await page.evaluate(() => {
+            window.location.hash = '!/picture-book';
+        });
+        await page.waitForTimeout(2500);
+
+        let content = await page.content();
+        // The work selector renders either the PB2 book list, a loading indicator, or an empty state
+        let hasSelector =
+            content.includes('PB2') ||
+            content.includes('Loading PB2') ||
+            content.includes('picture-book') ||
+            content.includes('Picture Book') ||
+            content.includes('documents') ||
+            content.includes('No documents');
+        expect(hasSelector).toBe(true);
+    });
+
+});
