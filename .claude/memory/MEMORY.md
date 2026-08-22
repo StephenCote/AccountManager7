@@ -37,6 +37,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `project-ki69-closed` -- KI-69 closed 2026-08-20: age-blind portrait fix in NarrativeUtil with adult fallback, 5 tests green
 - `project-pb-castgroup-q15` -- Q15 resolved: olio.pb.castGroup for collective canvas entities — model created 2026-08-21
 - `project-pb-security-status` -- TestPbSecurity status: 10/10 green on 2026-08-21
+- `project-pb2-open-gaps` -- PB2 open gaps: portrait render branch unexercised, KI-68 secondary terms, tagApparelSceneIndex missing book check - sub-record reroute gap CLOSED 2026-08-22
 - `project-pb5-phase-status` -- Phase 5a+5b Playwright gates closed — 13/13 tests pass; full Phase 5 exit criterion met
 - `project-pb6-phase-status` -- Phase 6 (Migration) status: PbMigrationUtil + TestPbMigration green
 - `project-pb6b-phase-status` -- Phase 6b (Interactive Canvas Backend) complete: PbNodeExecutor + TestPbCanvas green

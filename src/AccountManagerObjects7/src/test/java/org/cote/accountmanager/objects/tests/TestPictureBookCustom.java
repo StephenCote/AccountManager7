@@ -1321,7 +1321,6 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 	 * used for imaging. Drives createFromScenes with a synthetic 2-scene book (unique per run so the
 	 * reduce always fires). Live LLM (Ollama) + DB required.
 	 */
-	/*
 	@Test
 	public void TestSceneReducedCharacterDescription() throws Exception {
 		setupTestContext();
@@ -1397,16 +1396,37 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 			containsIgnoreCase(guardScenePrompt, "bald") || containsIgnoreCase(guardScenePrompt, "scar")
 			|| containsIgnoreCase(guardScenePrompt, "chainmail") || containsIgnoreCase(guardScenePrompt, "halberd"));
 
-		logger.info("TestSceneReducedCharacterDescription: block-scoped reduce + Attr1/Attr2 + imaging-uses-Attr2 verified");
+		// --- Sub-record reroute: Anna's statistics must be in world groups, not home ~/Statistics ---
+		{
+			BaseRecord cg = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
+				ModelNames.MODEL_GROUP, charsGroupPath, GroupEnumType.DATA.toString(),
+				(long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			assertNotNull("Characters group must exist for reroute check", cg);
+			Query cpq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, cg.get(FieldNames.FIELD_ID));
+			cpq.field(FieldNames.FIELD_NAME, "Anna");
+			cpq.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			cpq.planMost(true);
+			BaseRecord anna = IOSystem.getActiveContext().getAccessPoint().find(testUser, cpq);
+			assertNotNull("Anna charPerson must exist in Characters group (createCharPerson ran from scratch)", anna);
+			BaseRecord annaStats = anna.get(OlioFieldNames.FIELD_STATISTICS);
+			if (annaStats != null) {
+				String statGP = annaStats.get(FieldNames.FIELD_GROUP_PATH);
+				logger.info("Anna statistics groupPath = [" + statGP + "]");
+				assertNotNull("Anna statistics must have a groupPath (persisted in a real group)", statGP);
+				assertFalse("Anna statistics must NOT be in home ~/Statistics — sub-record reroute failed",
+					statGP.startsWith("~/Statistics"));
+			} else {
+				logger.warn("Anna statistics null after planMost(true) — world-group reroute assertion skipped");
+			}
+		}
+		logger.info("TestSceneReducedCharacterDescription: block-scoped reduce + Attr1/Attr2 + imaging-uses-Attr2 + sub-record reroute verified");
 	}
-	 */
 	/**
 	 * Verifies the LEGACY all-in-one extract() now goes through the SAME reduce/attribute path as
 	 * createFromScenes (not the old inline extract-character loop): after extract() runs, at least one
 	 * created character carries a non-blank ATTR_DESCRIPTION (Attribute 2), which only the reduce path
 	 * produces. Live LLM + DB. Uses a unique book per run so extract() actually creates fresh.
 	 */
-	/*
 	@Test
 	public void TestExtractLegacyUsesReduce() throws Exception {
 		setupTestContext();
@@ -1450,7 +1470,6 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		assertTrue("legacy extract() must go through the reduce path (a character has an ATTR_DESCRIPTION)", anyDesc);
 		logger.info("TestExtractLegacyUsesReduce: legacy extract() delegates to the reduce/attribute path");
 	}
-	 */
 	/**
 	 * Guards the prompt-bloat regression: the transient raw {@code sourceText} content block (carried
 	 * on scenes to feed the per-character reduce) must NEVER be serialized into the chunk extractor's
