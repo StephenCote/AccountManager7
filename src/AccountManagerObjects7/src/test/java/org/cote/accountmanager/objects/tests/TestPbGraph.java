@@ -621,9 +621,9 @@ public class TestPbGraph extends BaseTest {
 		}
 	}
 
-	/** Filled from the first run; see {@link #case09_computeInputHashGoldenVector()}. */
+	/** Filled from the first run; see {@link #case09_computeInputHashGoldenVector()}. Updated after S6: book.sdConfig/compositeSdConfig promoted to foreign FK, which changed the effective-config canonical form. */
 	private static final String GOLDEN_INPUT_HASH =
-		"c310f4894e9ec0dd03e03245a0efb1f251880fba379b8aa964e5e578cecfb5f9";
+		"879405447e367aa8235c053aee863cd856ea93ea46e5261b0c6b68dcb33cdef4";
 
 	// ───────── 10: recomputeStatus computes, it does not write ─────────
 

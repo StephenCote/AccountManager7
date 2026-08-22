@@ -42,7 +42,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `project-pb5-phase-status` -- Phase 5a+5b Playwright gates closed — 13/13 tests pass; full Phase 5 exit criterion met
 - `project-pb6-phase-status` -- Phase 6 (Migration) status: PbMigrationUtil + TestPbMigration green
 - `project-pb6b-phase-status` -- Phase 6b (Interactive Canvas Backend) complete: PbNodeExecutor + TestPbCanvas green
-- `project-pb6c-phase-status` -- Phase 6c (SD config persistability) complete: S1-S6 all done, TestS6BookSdConfigForeignRef green
+- `project-pb6c-phase-status` -- Phase 6c (SD config persistability) complete: S1-S6 all done, all tests green
 - `project-picturebook-backend-redo` -- PictureBook feature backend persistence redo — charPerson/portrait/landscape not saved, reference images unused
 - `project-service-testing-docker` -- Service7/Tomcat testing should use the verified docker-compose setup, not a manually-run local Tomcat
 - `testing-db-reset` -- Which AM7 databases may be reset: am7db and am7test yes, am72db NEVER; test.db.reset=true drops schema/keys/data on the unit-test DB

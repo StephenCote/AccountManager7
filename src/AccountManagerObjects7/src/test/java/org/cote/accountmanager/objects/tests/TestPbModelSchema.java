@@ -324,23 +324,33 @@ public class TestPbModelSchema extends BaseTest {
 			ioContext.getDbUtil().getDataType(lastRun, lastRun.getFieldType()));
 	}
 
-	/// olio.sd.config is now a database-persisted model (plan S6c step S2 done). The three config
-	/// fields on book/artifact still emit a text column — they remain serialized snapshots, not foreign
-	/// references. Making them foreign references is plan step S6; until then asserting non-foreign here
-	/// is the guard so that step cannot happen silently. Deliberately flipped from assertTrue to
-	/// assertFalse 2026-08-21 when S2 was implemented.
+	/// S6 landed: book.sdConfig and book.compositeSdConfig were promoted from non-foreign (text)
+	/// columns to foreign (bigint FK) columns referencing olio.sd.config rows.
+	/// artifact.sdConfigSnapshot remains non-foreign by design — it is a frozen per-artifact copy,
+	/// not a live reference; a shared FK would not preserve the effective config at generation time.
+	/// Guards against an accidental revert of either book field back to non-foreign.
 	///
 	@Test
-	public void TestSdConfigFieldsAreSerializedNotForeign() {
+	public void TestSdConfigIsNowForeignRefAfterS6() {
 		DBUtil dbUtil = ioContext.getDbUtil();
 		ModelSchema sdConfig = RecordFactory.getSchema(OlioModelNames.MODEL_SD_CONFIG);
-		assertFalse("olio.sd.config must now be persistable (plan S6c step S2); "
-			+ "if this reverts to constrained, check configModel.json inherits/likeInherits",
+		assertFalse("olio.sd.config must be persistable after S6c step S2",
 			dbUtil.isConstrained(sdConfig));
 
-		assertSerializedConfig(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SD_CONFIG);
-		assertSerializedConfig(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_COMPOSITE_SD_CONFIG);
+		assertForeignConfigRef(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SD_CONFIG);
+		assertForeignConfigRef(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_COMPOSITE_SD_CONFIG);
 		assertSerializedConfig(OlioModelNames.MODEL_PB_ARTIFACT, OlioFieldNames.FIELD_PB_SD_CONFIG_SNAPSHOT);
+	}
+
+	private void assertForeignConfigRef(String modelName, String fieldName) {
+		FieldSchema fs = RecordFactory.getSchema(modelName).getFieldSchema(fieldName);
+		assertNotNull(modelName + "." + fieldName + " is missing", fs);
+		assertEquals(modelName + "." + fieldName + " must target olio.sd.config",
+			OlioModelNames.MODEL_SD_CONFIG, fs.getBaseModel());
+		assertTrue(modelName + "." + fieldName + " must be foreign after S6 — revert is a regression",
+			fs.isForeign());
+		assertEquals(modelName + "." + fieldName + " must emit a bigint column", "bigint",
+			ioContext.getDbUtil().getDataType(fs, fs.getFieldType()));
 	}
 
 	/// olio.sd.config declared its own 'groupPath' meaning "target group path for generated image
@@ -376,8 +386,8 @@ public class TestPbModelSchema extends BaseTest {
 		assertNotNull(modelName + "." + fieldName + " is missing", fs);
 		assertEquals(modelName + "." + fieldName + " must target olio.sd.config",
 			OlioModelNames.MODEL_SD_CONFIG, fs.getBaseModel());
-		assertFalse(modelName + "." + fieldName + " must not be foreign — promoting to foreign is plan S6,"
-			+ " not yet done; asserting non-foreign prevents that step from landing silently",
+		assertFalse(modelName + "." + fieldName + " must remain non-foreign — this is a frozen per-artifact"
+			+ " snapshot, not a live reference; asserting non-foreign guards against an accidental promotion",
 			fs.isForeign());
 		assertEquals(modelName + "." + fieldName + " must emit a text column", "text",
 			ioContext.getDbUtil().getDataType(fs, fs.getFieldType()));
@@ -419,8 +429,8 @@ public class TestPbModelSchema extends BaseTest {
 	/// A table that exists is not the same claim as a schema that works.  Creates one olio.pb.book,
 	/// reads it back, and asserts the urn was composed - urn is a not-null identity column filled by
 	/// UrnProvider from 'name' and the virtual groupPath, so a create would fail outright if that
-	/// composition did not work for these models.  Also exercises the serialized (non-foreign) config
-	/// column, which is the one deviation from the plan's field shapes.
+	/// composition did not work for these models.  Also exercises the sdConfig foreign-key round-trip
+	/// (S6): a persisted olio.sd.config is attached as a FK and the objectId survives create + read.
 	///
 	@Test
 	public void TestBookRoundTripsAndUrnIsComposed() {
@@ -432,7 +442,31 @@ public class TestPbModelSchema extends BaseTest {
 			.makePath(user, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), orgId));
 
 		String slug = "pbschema-" + UUID.randomUUID().toString().substring(0, 8);
+
+		/// sdConfig is now a foreign FK (bigint) referencing an olio.sd.config row (S6).
+		/// Persist the config first so its id is available when the book FK is written.
+		String cfgName = "sdcfg-" + slug;
+		BaseRecord sdCfg = null;
+		try {
+			sdCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+			ioContext.getRecordUtil().applyNameGroupOwnership(user, sdCfg, cfgName, path, orgId);
+			sdCfg.set(FieldNames.FIELD_NAME, cfgName);
+			sdCfg.set("style", "art");
+		}
+		catch(Exception e) {
+			fail("Failed to assemble olio.sd.config for round-trip: " + e.getMessage());
+		}
+		BaseRecord createdCfg = ioContext.getAccessPoint().create(user, sdCfg);
+		assertNotNull("Failed to persist olio.sd.config for round-trip", createdCfg);
+		String cfgObjectId = createdCfg.get(FieldNames.FIELD_OBJECT_ID);
+
 		BaseRecord book = newBook(user, slug, path, orgId);
+		try {
+			book.set(OlioFieldNames.FIELD_PB_SD_CONFIG, createdCfg);
+		}
+		catch(Exception e) {
+			fail("Failed to set sdConfig on book: " + e.getMessage());
+		}
 		BaseRecord created = ioContext.getAccessPoint().create(user, book);
 		assertNotNull("Failed to create an olio.pb.book - the table exists but the model does not work", created);
 
@@ -453,8 +487,10 @@ public class TestPbModelSchema extends BaseTest {
 			urn.endsWith(normalizedName));
 		logger.info("olio.pb.book round trip: urn=" + urn + " slug=" + slug);
 
-		/// The serialized config column: a non-foreign model field, so it comes back as a record - but
-		/// only when requested.  It is not a query field, and non-query fields are opt-in.
+		/// The sdConfig foreign-key column (S6): sdConfig is now a bigint FK referencing an
+		/// olio.sd.config row.  Including the field in setRequest causes the FK deserializer to fetch
+		/// the referenced record using its default query fields (id, objectId, urn, name, ...) — style
+		/// is absent from those defaults.  Assert the objectId round-trips to confirm the FK persists.
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID,
 			created.get(FieldNames.FIELD_OBJECT_ID));
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
@@ -467,10 +503,10 @@ public class TestPbModelSchema extends BaseTest {
 		assertEquals("Expected the enum to persist", PbBookStatusEnumType.DRAFT,
 			projected.getEnum(OlioFieldNames.FIELD_PB_BOOK_STATUS));
 		BaseRecord cfg = projected.get(OlioFieldNames.FIELD_PB_SD_CONFIG);
-		assertNotNull("Expected the serialized sdConfig to round trip", cfg);
-		assertEquals("Expected the sdConfig to deserialize as its own model",
-			OlioModelNames.MODEL_SD_CONFIG, cfg.getSchema());
-		assertEquals("Expected the sdConfig contents to survive", "pbSchemaStyle", cfg.get("style"));
+		assertNotNull("Expected the sdConfig FK to resolve to a record with identity fields", cfg);
+		assertEquals("Expected the sdConfig FK to reference the persisted record",
+			cfgObjectId, cfg.get(FieldNames.FIELD_OBJECT_ID));
+		logger.info("olio.pb.book sdConfig FK round trip: objectId=" + cfgObjectId);
 	}
 
 	/// The unique constraints are the model's invariants, so the test has to show they ENFORCE, not
@@ -546,9 +582,6 @@ public class TestPbModelSchema extends BaseTest {
 			book.set(FieldNames.FIELD_NAME, "Book " + slug);
 			book.set(OlioFieldNames.FIELD_PB_SLUG, slug);
 			book.set(OlioFieldNames.FIELD_PB_BOOK_STATUS, PbBookStatusEnumType.DRAFT.toString());
-			BaseRecord cfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-			cfg.set("style", "pbSchemaStyle");
-			book.set(OlioFieldNames.FIELD_PB_SD_CONFIG, cfg);
 		}
 		catch(Exception e) {
 			logger.error(e);
