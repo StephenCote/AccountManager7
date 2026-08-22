@@ -25,6 +25,8 @@ import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
+import org.cote.accountmanager.olio.picturebook.PbBookUtil;
+import org.cote.accountmanager.olio.picturebook.PbConfigUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -1588,6 +1590,72 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		assertEquals("pipeline prefers persisted SdConfigUtil config over meta", "comic", fromPipeline.get("style"));
 
 		logger.info("TestS5SdConfigStoreConvergence: store convergence verified for synthetic charOid + real book character (no SD call)");
+	}
+
+	/**
+	 * S6 exit criterion: {@code olio.pb.book.sdConfig} is a real FK (foreign:true) to an
+	 * {@code olio.sd.config} row. Verifies the round-trip:
+	 * <ol>
+	 *   <li>Create (or reuse) a book via {@code PbBookUtil.createBook}.</li>
+	 *   <li>Set a fresh sdConfig with a known style via {@code PictureBookUtil.setBookSdConfig}.</li>
+	 *   <li>Read the book back via {@code PbBookUtil.readBook}.</li>
+	 *   <li>Assert {@code PbConfigUtil.bookConfig} returns the config with the correct style —
+	 *       which proves {@code ensureFullSdConfig} re-fetched the full record beyond the FK-partial
+	 *       default returned by RecordDeserializer.</li>
+	 * </ol>
+	 * No SD or LLM call is made. The book is created once and reused across runs (find-or-create
+	 * on slug "s6-fk-test"). The sdConfig named "book-sdConfig" is deleted before each run so
+	 * idempotency is not defeated by the unique (name, groupId, organizationId) constraint.
+	 */
+	@Test
+	public void TestS6BookSdConfigForeignRef() throws Exception {
+		setupTestContext();
+		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String dataPath = testProperties.getProperty("test.datagen.path");
+
+		// Get or create the PB2 book (createBook is idempotent via findBookBySlug pre-flight)
+		String slug = "s6-fk-test";
+		BaseRecord book = PbBookUtil.findBookBySlug(testUser, slug, orgId);
+		if (book == null) {
+			book = PbBookUtil.createBook(testUser, dataPath, slug, "S6 FK Foreign-Ref Test Book");
+			assertNotNull("createBook must succeed for slug " + slug, book);
+		}
+
+		// Resolve the book group (auth.group whose objectId setBookSdConfig takes)
+		long bookGroupId = book.get(FieldNames.FIELD_GROUP_ID);
+		Query gq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_ID, bookGroupId);
+		BaseRecord bookGroup = IOSystem.getActiveContext().getAccessPoint().find(testUser, gq);
+		assertNotNull("Book group must be findable by groupId", bookGroup);
+		String bookGroupObjectId = bookGroup.get(FieldNames.FIELD_OBJECT_ID);
+
+		// Remove any prior "book-sdConfig" row so the create-path in persistBookSdConfigFk
+		// is exercised cleanly (unique constraint: name + groupId + organizationId).
+		BaseRecord priorSdConfig = SdConfigUtil.findConfig(testUser, "book-sdConfig", bookGroupId, orgId);
+		if (priorSdConfig != null) {
+			IOSystem.getActiveContext().getAccessPoint().delete(testUser, priorSdConfig);
+		}
+
+		// Build an in-memory sdConfig with a known style; setBookSdConfig will persist it
+		// as a real olio.sd.config row (the FK row) and patch the olio.pb.book sdConfig FK.
+		String expectedStyle = "photograph";
+		BaseRecord sdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		sdConfig.set("style", expectedStyle);
+
+		PictureBookUtil.setBookSdConfig(testUser, bookGroupObjectId, sdConfig, null);
+
+		// Read the book back — bookRequest() projects FIELD_PB_SD_CONFIG so the FK column is read;
+		// RecordDeserializer returns a FK-partial record (default query fields only, style absent).
+		String bookObjectId = book.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord readBack = PbBookUtil.readBook(testUser, bookObjectId, orgId);
+		assertNotNull("Book must be readable after setBookSdConfig", readBack);
+
+		// bookConfig must trigger ensureFullSdConfig (FK-partial → planMost re-fetch) and return
+		// the full olio.sd.config with the style we set.
+		BaseRecord cfg = PbConfigUtil.bookConfig(readBack, false);
+		assertNotNull("PbConfigUtil.bookConfig must return non-null after S6 FK persist", cfg);
+		assertEquals("bookConfig style must match the style set on the sdConfig", expectedStyle, cfg.get("style"));
+
+		logger.info("TestS6BookSdConfigForeignRef: FK round-trip verified — style=" + cfg.get("style"));
 	}
 
 }

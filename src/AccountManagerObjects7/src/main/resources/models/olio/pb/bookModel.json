@@ -57,15 +57,15 @@
 			"name": "sdConfig",
 			"baseModel": "olio.sd.config",
 			"type": "model",
-			"foreign": false,
-			"description": "The book's common image config. Persisted as serialized JSON in a text column, not as a foreign reference: olio.sd.config declares ioConstraints ['unknown'] and so has no table and no id to reference."
+			"foreign": true,
+			"description": "The book's common image config. FK to an olio.sd.config row (promoted from non-foreign text column in S6)."
 		},
 		{
 			"name": "compositeSdConfig",
 			"baseModel": "olio.sd.config",
 			"type": "model",
-			"foreign": false,
-			"description": "Optional alternate config for the composite step only; falls back to sdConfig when absent. Serialized JSON, see sdConfig."
+			"foreign": true,
+			"description": "Optional alternate config for the composite step only; falls back to sdConfig when absent. FK to an olio.sd.config row (promoted from non-foreign text column in S6)."
 		},
 		{
 			"name": "bookStatus",

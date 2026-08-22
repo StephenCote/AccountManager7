@@ -16,6 +16,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.SdConfigUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -258,9 +259,35 @@ public class PbMigrationUtil {
 		if(raw == null) {
 			return;
 		}
+		if(!(raw instanceof BaseRecord)) {
+			warnings.add(fieldName + " is not a BaseRecord; skipping FK persistence");
+			return;
+		}
+		BaseRecord cfg = (BaseRecord) raw;
+		// S6: persist as an olio.sd.config FK row before patching the book field
+		try {
+			String oid = cfg.get(FieldNames.FIELD_OBJECT_ID);
+			if(oid == null || oid.trim().isEmpty()) {
+				long bookGroupId = book.get(FieldNames.FIELD_GROUP_ID);
+				long orgId = book.get(FieldNames.FIELD_ORGANIZATION_ID);
+				cfg.set(FieldNames.FIELD_NAME, "migrate-" + fieldName);
+				cfg.set(FieldNames.FIELD_GROUP_ID, bookGroupId);
+				cfg.set(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			}
+			BaseRecord persisted = SdConfigUtil.createOrUpdateConfig(user, cfg);
+			if(persisted == null) {
+				warnings.add(fieldName + " config row could not be persisted");
+				return;
+			}
+			cfg = persisted;
+		}
+		catch(Exception e) {
+			warnings.add(fieldName + " config persistence error: " + e.getMessage());
+			return;
+		}
 		BaseRecord patch = PbGraphUtil.patchOf(book, OlioModelNames.MODEL_PB_BOOK, fieldName);
 		try {
-			patch.set(fieldName, raw);
+			patch.set(fieldName, cfg);
 		}
 		catch(FieldException | ValueException | ModelNotFoundException e) {
 			warnings.add(fieldName + " patch error: " + e.getMessage());

@@ -673,20 +673,68 @@ public class PictureBookUtil {
      * Lets the test/Ux "set one config" then have generation pick it up (PUT /{bookObjectId}/settings).
      * fillStyleDefaults is applied so the stored config yields a complete getSDConfigPrompt style.
      * Returns the stored common config (or null if none supplied / no book meta).
+     * <p>
+     * S6: also persists each config as an olio.sd.config row and patches the olio.pb.book FK when
+     * a PB2 book record exists in the book group.
      */
     public static BaseRecord setBookSdConfig(BaseRecord user, String bookObjectId, BaseRecord sdConfig, BaseRecord compositeSdConfig) {
         BaseRecord bookGroup = findBookGroup(user, bookObjectId);
         if (bookGroup == null) throw new PictureBookException(404, "Book not found");
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+        long bookGroupId = bookGroup.get(FieldNames.FIELD_ID);
+        long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
         if (sdConfig != null) {
             SDUtil.fillStyleDefaults(sdConfig);
             persistBookSdConfig(user, bookGroupPath, sdConfig);
+            persistBookSdConfigFk(user, sdConfig, "book-sdConfig",
+                OlioFieldNames.FIELD_PB_SD_CONFIG, bookGroupId, orgId);
         }
         if (compositeSdConfig != null) {
             SDUtil.fillStyleDefaults(compositeSdConfig);
             persistBookCompositeSdConfig(user, bookGroupPath, compositeSdConfig);
+            persistBookSdConfigFk(user, compositeSdConfig, "book-compositeSdConfig",
+                OlioFieldNames.FIELD_PB_COMPOSITE_SD_CONFIG, bookGroupId, orgId);
         }
         return getBookSdConfigByPath(user, bookGroupPath);
+    }
+
+    /**
+     * Persist an olio.sd.config as a FK row in the book group and patch the book record's field.
+     * Best-effort: no-ops if there is no PB2 book record in the group yet.
+     */
+    private static void persistBookSdConfigFk(BaseRecord user, BaseRecord sdConfig,
+            String configName, String bookFieldName, long bookGroupId, long orgId) {
+        try {
+            String existingOid = sdConfig.get(FieldNames.FIELD_OBJECT_ID);
+            if (existingOid == null || existingOid.trim().isEmpty()) {
+                sdConfig.set(FieldNames.FIELD_NAME, configName);
+                sdConfig.set(FieldNames.FIELD_GROUP_ID, bookGroupId);
+                sdConfig.set(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            }
+            BaseRecord persisted = SdConfigUtil.createOrUpdateConfig(user, sdConfig);
+            if (persisted == null) {
+                logger.warn("persistBookSdConfigFk: failed to persist " + configName);
+                return;
+            }
+            // Find the olio.pb.book in the book group (PB2 only; PB1 books have no row)
+            Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK,
+                FieldNames.FIELD_GROUP_ID, bookGroupId);
+            bq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            bq.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID,
+                FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID});
+            bq.setCache(false);
+            BaseRecord book = IOSystem.getActiveContext().getAccessPoint().find(user, bq);
+            if (book == null) {
+                return; // PB1 book, no olio.pb.book row
+            }
+            BaseRecord patch = PbGraphUtil.patchOf(book, OlioModelNames.MODEL_PB_BOOK, bookFieldName);
+            patch.set(bookFieldName, persisted);
+            if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+                logger.warn("persistBookSdConfigFk: failed to patch book " + bookFieldName);
+            }
+        } catch (Exception e) {
+            logger.warn("persistBookSdConfigFk error for " + configName + ": " + e.getMessage());
+        }
     }
 
     /**

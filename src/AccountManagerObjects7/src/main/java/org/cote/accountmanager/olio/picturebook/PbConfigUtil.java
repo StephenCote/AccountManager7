@@ -18,6 +18,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.Flux2Defaults;
@@ -184,16 +187,15 @@ public class PbConfigUtil {
 	// ───────────────────────────── precedence chain ─────────────────────────────
 
 	/**
-	 * The book's own config tier. <b>The single seam plan §6c step S6 has to move.</b>
+	 * The book's own config tier.
 	 * <p>
-	 * Today {@code book.sdConfig} / {@code book.compositeSdConfig} are non-foreign {@code model} fields
-	 * serialized into a {@code text} column, so this is a plain field read - but the field is NOT in the
-	 * models' {@code query} projection, so a caller that read the book with a default projection gets
-	 * null here and silently falls through to the resource defaults. {@link #requestFields()} names what
-	 * a caller must project.
+	 * After S6, {@code book.sdConfig} / {@code book.compositeSdConfig} are {@code foreign: true} FK
+	 * references. The deserializer resolves them using only the {@code olio.sd.config} default query
+	 * fields — which do NOT include {@code style}. {@link #ensureFullSdConfig} detects a FK-partial
+	 * record and does a follow-up {@code planMost} fetch to fill the missing fields.
 	 *
 	 * @param composite when true prefer {@code compositeSdConfig}, falling back to {@code sdConfig}
-	 * @return the book's config record, or null when the book carries none
+	 * @return the book's config record (fully populated), or null when the book carries none
 	 */
 	public static BaseRecord bookConfig(BaseRecord book, boolean composite) {
 		if(book == null) {
@@ -202,13 +204,40 @@ public class PbConfigUtil {
 		if(composite && book.hasField(OlioFieldNames.FIELD_PB_COMPOSITE_SD_CONFIG)) {
 			BaseRecord cfg = book.get(OlioFieldNames.FIELD_PB_COMPOSITE_SD_CONFIG);
 			if(cfg != null) {
-				return cfg;
+				return ensureFullSdConfig(cfg);
 			}
 		}
 		if(book.hasField(OlioFieldNames.FIELD_PB_SD_CONFIG)) {
-			return book.get(OlioFieldNames.FIELD_PB_SD_CONFIG);
+			return ensureFullSdConfig(book.get(OlioFieldNames.FIELD_PB_SD_CONFIG));
 		}
 		return null;
+	}
+
+	/**
+	 * Ensure {@code cfg} is fully populated (includes {@code style} and other non-query fields).
+	 * <p>
+	 * The FK deserializer fetches a foreign {@code olio.sd.config} using only its default query
+	 * fields ({@code id, groupId, objectId, ownerId, organizationId, urn, name}) — {@code style} is
+	 * absent. A FK-partial record is detected by the absence of the {@code style} field; when absent,
+	 * a follow-up {@code planMost} fetch is done via the search layer (no PBAC — the book was already
+	 * authorized by the caller's read).
+	 */
+	private static BaseRecord ensureFullSdConfig(BaseRecord cfg) {
+		if(cfg == null) {
+			return null;
+		}
+		if(!cfg.hasField("style")) {
+			Long id = cfg.get(FieldNames.FIELD_ID);
+			if(id == null || id <= 0L) {
+				return cfg;
+			}
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_SD_CONFIG, FieldNames.FIELD_ID, id);
+			q.planMost(false);
+			q.setCache(false);
+			BaseRecord full = IOSystem.getActiveContext().getSearch().findRecord(q);
+			return (full != null ? full : cfg);
+		}
+		return cfg;
 	}
 
 	/**
