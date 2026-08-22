@@ -43,6 +43,7 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
+import org.cote.accountmanager.olio.sd.SdConfigUtil;
 import org.cote.accountmanager.olio.sd.SceneCompositeUtil;
 import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.olio.sd.swarm.SWUtil;
@@ -690,11 +691,13 @@ public class PictureBookUtil {
 
     /**
      * Set (or clear) a per-character LOCAL style override on the book, persisted on
-     * {@code pictureBookMeta.characterStyles} keyed by charPerson objectId. Styles ONLY that
-     * character's pipeline-rendered portrait; the composite, landscape, and every other character keep
-     * the book's global common config. A null {@code sdConfig} removes any existing override for the
-     * character. This is the book-pipeline override — it does NOT touch the UI reimage per-character
-     * portrait config ({@code <name>-SD.json}). Returns the resulting override list size.
+     * {@code pictureBookMeta.characterStyles} keyed by charPerson objectId, and syncs the same
+     * config to the persisted UI config store ({@code sdcfg-<charObjectId>} in the book owner's
+     * {@code ~/Data/.preferences}) so the pipeline and the UI reimage workflow share one store (S5).
+     * Styles ONLY that character's pipeline-rendered portrait; the composite, landscape, and every
+     * other character keep the book's global common config. A null {@code sdConfig} removes the
+     * meta-embedded override (but does NOT delete the persisted UI config, since the UI manages that
+     * independently). Returns the resulting override list size.
      */
     @SuppressWarnings("unchecked")
     public static int setCharacterStyleOverride(BaseRecord user, String bookObjectId, String characterObjectId,
@@ -721,6 +724,20 @@ public class PictureBookUtil {
             }
             meta.set("characterStyles", styles);
             saveMeta(user, bookGroupPath, meta);
+            // S5: sync to the persisted UI config store so pipeline and reimage.js share one store
+            if (sdConfig != null) {
+                try {
+                    BaseRecord prefsGroup = resolveUserPrefsGroup(user);
+                    if (prefsGroup != null) {
+                        long prefsGroupId = prefsGroup.get(FieldNames.FIELD_ID);
+                        long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+                        SdConfigUtil.syncConfig(user, "sdcfg-" + characterObjectId, prefsGroupId, orgId, sdConfig);
+                    }
+                }
+                catch (Exception e) {
+                    logger.warn("setCharacterStyleOverride: failed to sync to SdConfigUtil for " + characterObjectId + ": " + e.getMessage());
+                }
+            }
             return styles.size();
         } catch (PictureBookException pbe) {
             throw pbe;
@@ -1068,36 +1085,110 @@ public class PictureBookUtil {
     }
 
     /**
-     * Resolve the effective STYLE config for ONE character's portrait: the book's per-character LOCAL
-     * override ({@code pictureBookMeta.characterStyles}, matched by charPerson objectId) when present,
-     * otherwise the book's global {@code common} config. Only the style clause differs — other
-     * generation params come from {@code common} at the call site. This is the picture-book-owned
-     * override; it is deliberately independent of the UI reimage per-character portrait config
-     * ({@code <name>-SD.json} in {@code ~/Data/.preferences}, see reimage.js) and never reads/writes it.
-     * Never throws — any lookup failure degrades to {@code common}.
+     * Find the book owner's {@code ~/Data/.preferences} group (DATA type).
+     * Uses the denormalized {@code homeDirectory.path} string (always stored on the user record,
+     * even when {@code homeDirectory} model is not planned) to build the full path, then delegates
+     * to {@code PathUtil.findPath}. Returns {@code null} when the group has never been created by
+     * the UI — callers must degrade gracefully. Never creates.
+     */
+    private static BaseRecord resolveUserPrefsGroup(BaseRecord user) {
+        try {
+            long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+            // FIELD_HOME_DIRECTORY_FIELD_PATH = "homeDirectory.path" — a denormalized string field
+            // always stored on the user row, even without planning the homeDirectory model.
+            // PathUtil.makePath uses the same field, so both expand ~/... the same way.
+            String homePath = user.get(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH);
+            if (homePath != null && !homePath.isEmpty()) {
+                String prefsPath = homePath + "/Data/.preferences";
+                return IOSystem.getActiveContext().getPathUtil().findPath(
+                    user, ModelNames.MODEL_GROUP, prefsPath, GroupEnumType.DATA.toString(), orgId);
+            }
+            // Fallback: walk via homeDirectory group model if the path string is not available.
+            BaseRecord homeDir = user.get(FieldNames.FIELD_HOME_DIRECTORY);
+            if (homeDir == null) return null;
+            Long homeId = homeDir.get(FieldNames.FIELD_ID);
+            if (homeId == null || homeId == 0L) return null;
+            Query dataQ = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_NAME, "Data");
+            dataQ.field(FieldNames.FIELD_PARENT_ID, homeId);
+            dataQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            dataQ.setCache(false);
+            BaseRecord dataDir = IOSystem.getActiveContext().getAccessPoint().find(user, dataQ);
+            if (dataDir == null) return null;
+            Long dataId = dataDir.get(FieldNames.FIELD_ID);
+            Query prefQ = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_NAME, ".preferences");
+            prefQ.field(FieldNames.FIELD_PARENT_ID, dataId);
+            prefQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            prefQ.setCache(false);
+            return IOSystem.getActiveContext().getAccessPoint().find(user, prefQ);
+        }
+        catch (Exception e) {
+            logger.warn("resolveUserPrefsGroup: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Resolve the effective STYLE config for ONE character's portrait. Priority (highest first):
+     * <ol>
+     *   <li>The persisted {@code olio.sd.config} record keyed {@code sdcfg-<charObjectId>} in the
+     *       user's {@code ~/Data/.preferences} group — written by the UI reimage workflow (S5).</li>
+     *   <li>The book's per-character LOCAL meta override ({@code pictureBookMeta.characterStyles},
+     *       matched by charPerson objectId).</li>
+     *   <li>The book's global {@code common} config.</li>
+     * </ol>
+     * Only the style clause differs across configs — other generation params come from {@code common}
+     * at the call site. Never throws — any lookup failure degrades to {@code common}.
+     * <p>
+     * Public so the S5 convergence test can call it without a live SD server.
      */
     @SuppressWarnings("unchecked")
-    private static BaseRecord resolveCharacterStyleConfig(BaseRecord user, String sceneGroupPath, String characterObjectId, BaseRecord common) {
+    public static BaseRecord resolveCharacterStyleConfig(BaseRecord user, String sceneGroupPath, String characterObjectId, BaseRecord common) {
         if (characterObjectId == null || sceneGroupPath == null) return common;
+        BaseRecord metaOverride = null;
         try {
             String bookGroupPath = sceneGroupPath.replace("/Scenes", "");
             BaseRecord meta = loadTypedMeta(user, bookGroupPath);
-            if (meta == null) return common;
-            List<BaseRecord> styles = meta.get("characterStyles");
-            if (styles == null || styles.isEmpty()) return common;
-            for (BaseRecord s : styles) {
-                if (s != null && characterObjectId.equals(s.get("characterObjectId"))) {
-                    BaseRecord ov = s.get("sdConfig");
-                    if (ov != null) {
-                        SDUtil.fillStyleDefaults(ov);   // complete a partial override so getSDConfigPrompt yields a full style
-                        logger.info("Portrait style override for character " + characterObjectId
-                                + " -> style '" + ov.get("style") + "' (composite/landscape/others stay global)");
-                        return ov;
+            if (meta != null) {
+                List<BaseRecord> styles = meta.get("characterStyles");
+                if (styles != null) {
+                    for (BaseRecord s : styles) {
+                        if (s != null && characterObjectId.equals(s.get("characterObjectId"))) {
+                            BaseRecord ov = s.get("sdConfig");
+                            if (ov != null) {
+                                SDUtil.fillStyleDefaults(ov);
+                                metaOverride = ov;
+                                break;
+                            }
+                        }
                     }
                 }
             }
-        } catch (Exception e) {
-            logger.warn("Failed to resolve character style override for " + characterObjectId + ": " + e.getMessage());
+        }
+        catch (Exception e) {
+            logger.warn("Failed to resolve meta character style override for " + characterObjectId + ": " + e.getMessage());
+        }
+        // Check persisted UI config store (sdcfg-<charObjectId>) — preferred over meta
+        try {
+            BaseRecord prefsGroup = resolveUserPrefsGroup(user);
+            if (prefsGroup != null) {
+                long prefsGroupId = prefsGroup.get(FieldNames.FIELD_ID);
+                long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+                BaseRecord persisted = SdConfigUtil.findConfig(user, "sdcfg-" + characterObjectId, prefsGroupId, orgId);
+                if (persisted != null) {
+                    SDUtil.fillStyleDefaults(persisted);
+                    logger.info("Portrait style override for character " + characterObjectId
+                            + " -> persisted sdcfg record, style '" + persisted.get("style") + "'");
+                    return persisted;
+                }
+            }
+        }
+        catch (Exception e) {
+            logger.warn("Failed to check persisted style config for " + characterObjectId + ": " + e.getMessage());
+        }
+        if (metaOverride != null) {
+            logger.info("Portrait style override for character " + characterObjectId
+                    + " -> meta inline style '" + metaOverride.get("style") + "'");
+            return metaOverride;
         }
         return common;
     }

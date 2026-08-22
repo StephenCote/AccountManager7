@@ -139,8 +139,8 @@ async function reimage(entity, inst) {
     cinst.entity.style = 'photograph';
     if (cinst.api.hires) cinst.api.hires(false);
 
-    // Load character-specific config
-    let charConfigName = inst.api.name() + '-SD.json';
+    // Load character-specific config — keyed by objectId (canonical S5 convergence key)
+    let charConfigName = 'sdcfg-' + inst.api.objectId();
     let charConfig = await am7sd.loadConfig(charConfigName);
     if (charConfig) am7sd.applyConfig(cinst, charConfig);
 
@@ -821,9 +821,9 @@ async function createApparelSequence(inst, cinst, am7olio) {
     // Restore seed
     cinst.api.seed(baseSeed);
 
-    // Save config
+    // Save config — keyed by objectId (canonical S5 convergence key)
     if (images.length > 0) {
-        let charConfigName = inst.api.name() + '-SD.json';
+        let charConfigName = 'sdcfg-' + inst.api.objectId();
         let saveEntity = Object.assign({}, cinst.entity);
         saveEntity.shared = false;
         await am7sd.saveConfig(charConfigName, saveEntity);

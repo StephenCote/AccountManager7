@@ -1,16 +1,24 @@
 package org.cote.accountmanager.olio.sd;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
+import org.cote.accountmanager.schema.ModelSchema;
 
 /**
  * Find-only read path and authorized write path for {@code olio.sd.config}.
@@ -28,6 +36,13 @@ public class SdConfigUtil {
 		/// static utility
 	}
 
+	/** Fields never copied when syncing a config — identity, location, and the name key itself. */
+	private static final Set<String> SYNC_SKIP = new HashSet<>(Arrays.asList(
+		FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
+		FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH,
+		FieldNames.FIELD_ORGANIZATION_ID, "organizationPath", FieldNames.FIELD_NAME
+	));
+
 	/**
 	 * Find a named {@code olio.sd.config} in the specified group. Never creates one.
 	 * <p>
@@ -44,6 +59,7 @@ public class SdConfigUtil {
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_SD_CONFIG, FieldNames.FIELD_NAME, name);
 		q.field(FieldNames.FIELD_GROUP_ID, groupId);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.planMost(false);
 		q.setCache(false);
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
 	}
@@ -106,5 +122,55 @@ public class SdConfigUtil {
 			return null;
 		}
 		return updated;
+	}
+
+	/**
+	 * Find-or-create an {@code olio.sd.config} under {@code name} in the given group, copying all
+	 * non-identity style/generation fields from {@code sdConfig}. Used by S5 store convergence:
+	 * callers that own a write path (e.g. {@code setCharacterStyleOverride}) call this to keep the
+	 * persisted UI config store ({@code sdcfg-<charObjectId>}) in sync with the book's meta-embedded
+	 * override.
+	 * <p>
+	 * If {@code groupId} is zero (prefsGroup not found) this is a no-op — callers must degrade
+	 * gracefully when the user's ~/Data/.preferences directory has never been created by the UI.
+	 *
+	 * @return the persisted record, or {@code null} on any write failure
+	 */
+	public static BaseRecord syncConfig(BaseRecord user, String name, long groupId, long orgId, BaseRecord sdConfig) {
+		if (sdConfig == null || groupId == 0L) return null;
+		BaseRecord existing = findConfig(user, name, groupId, orgId);
+		BaseRecord target;
+		if (existing != null) {
+			target = existing;
+		}
+		else {
+			try {
+				target = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+				target.set(FieldNames.FIELD_NAME, name);
+				target.set(FieldNames.FIELD_GROUP_ID, groupId);
+				target.set(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			}
+			catch (FieldException | ModelNotFoundException | ValueException e) {
+				logger.error("syncConfig: failed to create target record: " + e.getMessage(), e);
+				return null;
+			}
+		}
+		ModelSchema ms = RecordFactory.getSchema(OlioModelNames.MODEL_SD_CONFIG);
+		for (FieldType f : sdConfig.getFields()) {
+			String fn = f.getName();
+			if (SYNC_SKIP.contains(fn)) continue;
+			FieldSchema lf = ms.getFieldSchema(fn);
+			if (lf == null || lf.isIdentity()) continue;
+			Object val = sdConfig.get(fn);
+			if (val != null) {
+				try {
+					target.set(fn, val);
+				}
+				catch (Exception e) {
+					logger.warn("syncConfig: skipping field '{}': {}", fn, e.getMessage());
+				}
+			}
+		}
+		return createOrUpdateConfig(user, target);
 	}
 }

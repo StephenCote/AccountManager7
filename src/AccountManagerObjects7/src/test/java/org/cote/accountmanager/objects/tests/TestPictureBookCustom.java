@@ -30,6 +30,7 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
+import org.cote.accountmanager.olio.sd.SdConfigUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -1489,6 +1490,104 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		s.put("characters", new ArrayList<>(Arrays.asList(ch)));
 		s.put("sourceText", sourceText);
 		return s;
+	}
+
+	/**
+	 * S5 convergence gate: verifies that the pipeline and the UI reimage workflow read from one store.
+	 * <p>
+	 * (1) Saves a named {@code olio.sd.config} via {@code SdConfigUtil.createOrUpdateConfig} with key
+	 * {@code sdcfg-<charObjectId>}; confirms {@code resolveCharacterStyleConfig} returns the persisted
+	 * record even when the book has no meta-embedded override (proving the SdConfigUtil lookup path).
+	 * <p>
+	 * (2) Calls {@code setCharacterStyleOverride} on a real book character and verifies that the
+	 * SdConfigUtil store is synced; then confirms {@code resolveCharacterStyleConfig} prefers the
+	 * persisted SdConfigUtil config over the meta-embedded one (proving the priority ordering).
+	 * <p>
+	 * No SD image call — pure DB + schema roundtrip.
+	 */
+	@Test
+	public void TestS5SdConfigStoreConvergence() throws Exception {
+		logger.info("***** S5: SdConfigUtil store convergence");
+		setupTestContext();
+		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+
+		// Create or find ~/Data/.preferences; makePath creates missing segments automatically
+		BaseRecord prefsGroup = IOSystem.getActiveContext().getPathUtil()
+			.makePath(testUser, ModelNames.MODEL_GROUP, "~/Data/.preferences", GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("prefsGroup must exist", prefsGroup);
+		long prefsGroupId = prefsGroup.get(FieldNames.FIELD_ID);
+		assertTrue("prefsGroupId must be set", prefsGroupId > 0L);
+
+		// Stable synthetic char id for the SdConfigUtil-only roundtrip (no real character needed)
+		String testCharOid = "s5-synthetic-char-oid";
+		String configKey = "sdcfg-" + testCharOid;
+
+		// (1a) Save "vintage" via SdConfigUtil.createOrUpdateConfig.
+		// Update in place if a record already exists (avoids delete + unique-constraint race on reruns).
+		BaseRecord existing = SdConfigUtil.findConfig(testUser, configKey, prefsGroupId, orgId);
+		BaseRecord vintageCfg;
+		if (existing != null) {
+			existing.set("style", "vintage");
+			vintageCfg = existing;
+		} else {
+			vintageCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+			vintageCfg.set(FieldNames.FIELD_NAME, configKey);
+			vintageCfg.set(FieldNames.FIELD_GROUP_ID, prefsGroupId);
+			vintageCfg.set(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			vintageCfg.set("style", "vintage");
+		}
+		BaseRecord saved = SdConfigUtil.createOrUpdateConfig(testUser, vintageCfg);
+		assertNotNull("vintage config must be persisted or updated", saved);
+
+		// (1b) resolveCharacterStyleConfig with a fake book path (no meta) must return the SdConfigUtil config
+		BaseRecord common = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		common.set("style", "photograph");
+		BaseRecord resolved = PictureBookUtil.resolveCharacterStyleConfig(
+			testUser, "/fake/S5TestBook/Scenes", testCharOid, common);
+		assertNotNull("resolved must not be null", resolved);
+		assertEquals("SdConfigUtil persisted record must take priority over common", "vintage", resolved.get("style"));
+
+		// (2a) Use the cached catatone book to test the full setCharacterStyleOverride -> sync path
+		String workObjectId = getOrCreateCatatoneWork();
+		List<Map<String, Object>> sceneList = getOrCreateCatatoneScenes(workObjectId);
+		String bookObjectId = getOrCreateCatatoneBook(workObjectId, sceneList);
+		BaseRecord bookGroup = PictureBookUtil.findBookGroup(testUser, bookObjectId);
+		String charsGroupPath = ((String) bookGroup.get(FieldNames.FIELD_PATH)) + "/Characters";
+		BaseRecord charsGroup = IOSystem.getActiveContext().getPathUtil().findPath(
+			testUser, ModelNames.MODEL_GROUP, charsGroupPath, GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("Characters group must exist", charsGroup);
+		Query charQ = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON,
+			FieldNames.FIELD_GROUP_ID, charsGroup.get(FieldNames.FIELD_ID));
+		charQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		charQ.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME });
+		BaseRecord[] chars = IOSystem.getActiveContext().getSearch().findRecords(charQ);
+		assertTrue("need at least one character in the book", chars != null && chars.length > 0);
+		String charOid = chars[0].get(FieldNames.FIELD_OBJECT_ID);
+		String charName = chars[0].get(FieldNames.FIELD_NAME);
+		String bookCharKey = "sdcfg-" + charOid;
+
+		// Clean up prior synced config for this character so the assertion is fresh
+		BaseRecord priorSynced = SdConfigUtil.findConfig(testUser, bookCharKey, prefsGroupId, orgId);
+		if (priorSynced != null) IOSystem.getActiveContext().getAccessPoint().delete(testUser, priorSynced);
+
+		// (2b) setCharacterStyleOverride must sync comic config to SdConfigUtil
+		BaseRecord comicCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		comicCfg.set("style", "comic");
+		SDUtil.fillStyleDefaults(comicCfg);
+		PictureBookUtil.setCharacterStyleOverride(testUser, bookObjectId, charOid, charName, comicCfg);
+
+		BaseRecord synced = SdConfigUtil.findConfig(testUser, bookCharKey, prefsGroupId, orgId);
+		assertNotNull("setCharacterStyleOverride must sync to SdConfigUtil", synced);
+		assertEquals("synced config has comic style", "comic", synced.get("style"));
+
+		// (2c) resolveCharacterStyleConfig must prefer the SdConfigUtil record over the meta-embedded one
+		String sceneGroupPath = bookGroup.get(FieldNames.FIELD_PATH) + "/Scenes";
+		BaseRecord fromPipeline = PictureBookUtil.resolveCharacterStyleConfig(
+			testUser, sceneGroupPath, charOid, common);
+		assertNotNull("pipeline resolved config must not be null", fromPipeline);
+		assertEquals("pipeline prefers persisted SdConfigUtil config over meta", "comic", fromPipeline.get("style"));
+
+		logger.info("TestS5SdConfigStoreConvergence: store convergence verified for synthetic charOid + real book character (no SD call)");
 	}
 
 }

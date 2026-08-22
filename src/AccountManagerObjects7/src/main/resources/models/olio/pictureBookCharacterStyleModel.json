@@ -1,7 +1,7 @@
 {
 	"name": "olio.pictureBookCharacterStyle",
 	"ioConstraints": ["unknown"],
-	"description": "Per-character LOCAL style override for a picture book: styles ONLY this one character's pipeline-rendered portrait (matched by its charPerson objectId) with its own olio.sd.config, while the composite, landscape, and every other character keep the book's global sdConfig. This is the book-pipeline-owned override, read during Stage 1 portrait generation; it is DISTINCT from — and does not touch — the UI reimage per-character portrait config ('<name>-SD.json' in ~/Data/.preferences, see reimage.js).",
+	"description": "Per-character style override for a picture book: styles ONLY this one character's pipeline-rendered portrait (matched by its charPerson objectId) with its own olio.sd.config, while the composite, landscape, and every other character keep the book's global sdConfig. This is the book-pipeline meta-embedded override (Stage 1 portrait generation). Since S5, setCharacterStyleOverride also syncs to 'sdcfg-<charObjectId>' in ~/Data/.preferences so the pipeline and the UI reimage workflow share one config store.",
 	"fields": [
 		{ "name": "characterObjectId", "type": "string", "maxLength": 64, "description": "objectId of the olio.charPerson this override styles." },
 		{ "name": "characterName", "type": "string", "maxLength": 256, "description": "Convenience label for UI/debug; matching is by characterObjectId, not name." },
