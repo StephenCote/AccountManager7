@@ -12,6 +12,42 @@ import { am7view } from '../core/view.js';
 function getClient() { return am7model._client; }
 function getPage() { return am7model._page; }
 
+// ── Book context (Phase 1b) ──────────────────────────────────────
+// Set by pictureBook.js when a PB2 book is opened; read by any code
+// that needs to append universeObjectId/worldObjectId to game REST calls.
+let _currentWorldObjectId = null;
+let _currentUniverseObjectId = null;
+
+function setCurrentBook(book) {
+    if (!book) {
+        _currentWorldObjectId = null;
+        _currentUniverseObjectId = null;
+        return;
+    }
+    let world = book.world;
+    _currentWorldObjectId = world?.objectId || null;
+    // The universe (basis) is also an olio.world record; populated via /full.
+    let basis = world?.basis;
+    _currentUniverseObjectId = basis?.objectId || null;
+}
+
+function currentWorldObjectId() { return _currentWorldObjectId; }
+function currentUniverseObjectId() { return _currentUniverseObjectId; }
+
+/**
+ * Append universeObjectId/worldObjectId as URL query parameters when a book
+ * context is active.  Returns the url unchanged when no context is set.
+ */
+function withBookContext(url) {
+    if (!_currentWorldObjectId) return url;
+    let sep = url.includes('?') ? '&' : '?';
+    let params = 'worldObjectId=' + encodeURIComponent(_currentWorldObjectId);
+    if (_currentUniverseObjectId) {
+        params += '&universeObjectId=' + encodeURIComponent(_currentUniverseObjectId);
+    }
+    return url + sep + params;
+}
+
 // ── Dress Operations ────────────────────────────────────────────
 
 async function dressUp(object, inst, name) {
@@ -341,7 +377,7 @@ async function generateOutfit(characterId, techTier, climate, style) {
 
         let resp = await m.request({
             method: 'POST',
-            url: am7client.base() + "/game/outfit/generate",
+            url: withBookContext(am7client.base() + "/game/outfit/generate"),
             body: body,
             withCredentials: true
         });
@@ -684,7 +720,12 @@ const am7olio = {
     getMannequinBaseUrl,
     OutfitBuilderPanel,
     MannequinViewer,
-    PieceEditorPanel
+    PieceEditorPanel,
+    // Phase 1b book context
+    setCurrentBook,
+    currentWorldObjectId,
+    currentUniverseObjectId,
+    withBookContext
 };
 
 export { am7olio };

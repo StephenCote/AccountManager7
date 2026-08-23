@@ -125,6 +125,41 @@ public class OlioContextUtil {
 	}
 
 	/**
+	 * Return the first cached {@link OlioContext} whose world objectId matches {@code worldObjectId}
+	 * within the given organization. Returns {@code null} when no matching entry is in the cache.
+	 * <p>
+	 * This is the Phase 1b lookup: the caller already holds the world objectId (from the open
+	 * {@code olio.pb.book} record) and wants the cached context without knowing the universe/world
+	 * name pair that is the actual key.
+	 */
+	public static OlioContext findCachedByWorldObjectId(long organizationId, String worldObjectId) {
+		if(worldObjectId == null) {
+			return null;
+		}
+		String prefix = organizationId + "/";
+		for(Map.Entry<String, CacheEntry> e : contextMap.entrySet()) {
+			if(!e.getKey().startsWith(prefix)) {
+				continue;
+			}
+			CacheEntry ce = e.getValue();
+			OlioContext ctx = (ce != null ? ce.context : null);
+			if(ctx == null) {
+				continue;
+			}
+			BaseRecord world = ctx.getWorld();
+			if(world == null) {
+				continue;
+			}
+			String oid = world.get(FieldNames.FIELD_OBJECT_ID);
+			if(worldObjectId.equals(oid)) {
+				ce.lastAccess = System.nanoTime();
+				return ctx;
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Remove one specific cached context.
 	 * <p>
 	 * The CONTEXT is removed before its lock. The other order has a window in which the context is

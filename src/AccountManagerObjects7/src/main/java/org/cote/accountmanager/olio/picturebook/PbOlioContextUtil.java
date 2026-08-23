@@ -17,6 +17,7 @@ import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.olio.rules.BookWorldInitializationRule;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.record.BaseRecord;
@@ -382,6 +383,48 @@ public class PbOlioContextUtil {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Phase 1b lookup: return the cached (or newly-opened) book context using the world objectId the
+	 * UX already holds from the open {@code olio.pb.book} record.
+	 * <p>
+	 * <b>Fast path</b> – if the context for this world is already in the cache it is returned without
+	 * any database round-trip. <b>Slow path</b> – looks up the {@code olio.world} record by objectId,
+	 * reads its {@code name} (= the book slug), and delegates to
+	 * {@link #getCreateBookContext(BaseRecord, String, String)}, which handles authorization, cache
+	 * population, and entitlement checking in one place.
+	 *
+	 * @param user             the acting user
+	 * @param dataPath         value of the {@code datagen.path} servlet init-param; forwarded to the
+	 *                         create path when a cache miss requires context construction
+	 * @param universeObjectId objectId of the {@code olio.world} that is the universe (accepted for
+	 *                         symmetry with the wire contract; not used because the universe is always
+	 *                         the organization-level "Books" world)
+	 * @param worldObjectId    objectId of the book's own {@code olio.world}
+	 */
+	public static OlioContext getBookContextByIds(BaseRecord user, String dataPath,
+			String universeObjectId, String worldObjectId) throws OlioException {
+		if(user == null) {
+			throw new OlioException("User is null");
+		}
+		if(worldObjectId == null || worldObjectId.isEmpty()) {
+			throw new OlioException("worldObjectId is required");
+		}
+		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+
+		OlioContext cached = OlioContextUtil.findCachedByWorldObjectId(orgId, worldObjectId);
+		if(cached != null) {
+			return cached;
+		}
+
+		IOContext ioContext = IOSystem.getActiveContext();
+		BaseRecord world = ioContext.getAccessPoint().findByObjectId(user, OlioModelNames.MODEL_WORLD, worldObjectId);
+		if(world == null) {
+			throw new OlioException("No olio.world found for objectId: " + worldObjectId);
+		}
+		String bookSlug = world.get(FieldNames.FIELD_NAME);
+		return getCreateBookContext(user, dataPath, bookSlug);
 	}
 
 	/**

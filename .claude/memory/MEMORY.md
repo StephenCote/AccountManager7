@@ -37,6 +37,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `project-accountmanager7-overview` -- What AccountManager7 is: schema-first BaseRecord/PBAC platform; sessions open at the GIT ROOT while Maven/modules live under src\ - two different 'project roots'; module map
 - `project-ki69-closed` -- KI-69 closed 2026-08-20: age-blind portrait fix in NarrativeUtil with adult fallback, 5 tests green
 - `project-pb-castgroup-q15` -- Q15 resolved: olio.pb.castGroup for collective canvas entities — model created 2026-08-21
+- `project-pb-phase1b-status` -- Phase 1b (universe/world IDs in Service7+Ux) implementation complete and verified
 - `project-pb-security-status` -- TestPbSecurity status: 10/10 green on 2026-08-21
 - `project-pb2-open-gaps` -- PB2 all phases done 2026-08-22; remaining: Phase 1b (universe/world IDs in Service7+Ux) and Phase 3b (ComfyUI, optional)
 - `project-pb5-phase-status` -- Phase 5a+5b Playwright gates closed — 13/13 tests pass; full Phase 5 exit criterion met

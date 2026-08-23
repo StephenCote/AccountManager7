@@ -2,6 +2,7 @@ import m from 'mithril';
 import { am7client } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
+import { am7olio } from '../components/olio.js';
 
 /**
  * Adopt Character workflow — moves a character into the Olio world population.
@@ -51,7 +52,7 @@ async function adoptCharacter(entity, inst) {
                     try {
                         let result = await m.request({
                             method: 'POST',
-                            url: am7client.base() + '/game/adopt/' + (character.objectId || character.id),
+                            url: am7olio.withBookContext(am7client.base() + '/game/adopt/' + (character.objectId || character.id)),
                             withCredentials: true,
                             body: { schema: "loosebase" }
                         });

@@ -21,6 +21,7 @@ import {
 import { pictureBookFromId } from '../workflows/pictureBook.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
 import { listPb2Books, bookPages } from '../workflows/pictureBookWorkflow.js';
+import { am7olio } from '../components/olio.js';
 
 // ── Work Selector View ────────────────────────────────────────────────
 
@@ -729,10 +730,18 @@ async function loadPb2Pages(pb2ObjId) {
     pb2BookName = 'Loading...';
     m.redraw();
     try {
+        // Phase 1b: fetch the full book record so world.objectId and world.basis.objectId
+        // are available for threading into game REST calls.
+        let bookFull = await am7client.getFull('olio.pb.book', pb2ObjId);
+        am7olio.setCurrentBook(bookFull || null);
+        if (bookFull) {
+            pb2BookName = bookFull.name || 'Untitled';
+        }
+
         let pages = await bookPages(pb2ObjId);
         pb2Pages = Array.isArray(pages) ? pages : [];
         if (pb2Pages.length > 0) {
-            pb2BookName = pb2Pages[0].title || 'Untitled';
+            pb2BookName = pb2Pages[0].title || pb2BookName;
         }
     } catch (e) {
         pb2PageError = 'Failed to load pages: ' + (e.message || '');
@@ -861,7 +870,10 @@ var pb2PageReaderView = {
         }
     },
     oncreate: function () { document.addEventListener('keydown', pb2OnKeyDown); },
-    onremove: function () { document.removeEventListener('keydown', pb2OnKeyDown); },
+    onremove: function () {
+        document.removeEventListener('keydown', pb2OnKeyDown);
+        am7olio.setCurrentBook(null);
+    },
     view: function () {
         return m('div', { class: 'p-4 flex flex-col h-full' }, [
             renderPb2Header(),

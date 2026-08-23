@@ -17,6 +17,7 @@ import org.cote.accountmanager.olio.InteractionEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
@@ -50,6 +51,30 @@ public class GameService {
 	@Context
 	ServletContext context;
 
+	/**
+	 * Resolve the Olio context for the acting user.
+	 * <p>
+	 * When {@code universeObjectId} and {@code worldObjectId} are both present as URL query
+	 * parameters (Phase 1b), the call is routed to the book-world context identified by those IDs.
+	 * When absent, the default grid context ({@link OlioContextUtil#getOlioContext}) is used so that
+	 * all pre-Phase-1b callers continue to work without modification.
+	 */
+	private OlioContext resolveOlioContext(BaseRecord user, HttpServletRequest request) {
+		String universeObjId = request.getParameter("universeObjectId");
+		String worldObjId = request.getParameter("worldObjectId");
+		String dataPath = context.getInitParameter("datagen.path");
+		if(universeObjId != null && !universeObjId.isEmpty()
+				&& worldObjId != null && !worldObjId.isEmpty()) {
+			try {
+				return PbOlioContextUtil.getBookContextByIds(user, dataPath, universeObjId, worldObjId);
+			} catch(OlioException e) {
+				logger.warn("Failed to resolve book context by IDs ({}), falling back to default: {}",
+						worldObjId, e.getMessage());
+			}
+		}
+		return OlioContextUtil.getOlioContext(user, dataPath);
+	}
+
 	/// Submit an interaction between two characters.
 	/// JSON body: { "actorId": "uuid", "interactorId": "uuid", "interactionType": "COMBAT" }
 	///
@@ -59,7 +84,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response interact(String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -184,7 +209,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response consumeItem(@PathParam("objectId") String objectId, String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -238,7 +263,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response advanceTurn(@Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -263,7 +288,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getSituation(@PathParam("objectId") String objectId, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -291,7 +316,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response resolveAction(@PathParam("objectId") String objectId, String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -346,7 +371,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response moveCharacter(@PathParam("objectId") String objectId, String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -397,7 +422,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response moveToPosition(@PathParam("objectId") String objectId, String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -561,7 +586,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response investigateLocation(@PathParam("objectId") String objectId, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -589,7 +614,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response chat(String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -647,7 +672,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getPendingChatRequests(String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -701,7 +726,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response createNpcChatRequest(String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -783,7 +808,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response generateOutfit(String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -828,7 +853,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response adoptCharacter(@PathParam("objectId") String objectId, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -855,7 +880,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response newGame(@Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -876,7 +901,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response isCharacterInWorld(@PathParam("objectId") String objectId, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
@@ -980,7 +1005,7 @@ public class GameService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response concludeChat(String json, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		if(octx == null) {
 			return Response.status(500).entity("{\"error\":\"Failed to initialize context\"}").build();
 		}
