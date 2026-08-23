@@ -5,6 +5,7 @@ import { am7view } from '../core/view.js';
 import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import { am7sd } from '../components/sdConfig.js';
+import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { formFieldRenderers } from '../components/formFieldRenderers.js';
 
 /**
@@ -132,7 +133,7 @@ async function reimage(entity, inst) {
         cinst.api.refinerCfg(5);
         cinst.entity.scheduler = 'karras';
         cinst.entity.refinerScheduler = 'karras';
-        if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(75);
+        cinst.entity.denoisingStrength = 0.75;
     }
 
     tempApplyDefaults();
@@ -196,11 +197,15 @@ async function reimage(entity, inst) {
     }
 
     function renderContent() {
+        // Lazily trigger LoRA list load on first render; SdConfigPanel will redraw once they arrive.
+        let loraList = am7sd.getLoraList();
+        if (!loraList.length) am7sd.fetchLoras().then(function () { m.redraw(); });
+
         return m('div', { class: 'p-4 space-y-3', style: 'max-height: 70vh; overflow-y: auto;' }, [
             // Narration description
             cinst.entity.narDescription ? m('div', { class: 'p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm max-h-24 overflow-y-auto mb-2' }, cinst.entity.narDescription) : '',
 
-            // Row: buttons
+            // Row: action buttons (dress up/down, seed, config, load shared, reference, sequence)
             m('div', { class: 'flex flex-wrap gap-2 mb-2' }, [
                 isCharPerson ? m('button', {
                     class: 'button', onclick: async function () {
@@ -212,9 +217,6 @@ async function reimage(entity, inst) {
                         if (am7olio) { await am7olio.dressCharacter(inst, true); await am7olio.setNarDescription(inst, cinst); m.redraw(); }
                     }
                 }, [m('span', { class: 'material-symbols-outlined md-18 mr-1' }, 'add'), 'Dress Up']) : null,
-                m('button', {
-                    class: 'button', title: 'Random seed', onclick: function () { seed = '-1'; cinst.api.seed(-1); }
-                }, [m('span', { class: 'material-symbols-outlined md-18 mr-1' }, 'casino'), 'Random Seed']),
                 m('button', {
                     class: 'button', title: 'New random config', onclick: async function () {
                         let ncfg = await am7sd.fetchTemplate(true);
@@ -261,212 +263,24 @@ async function reimage(entity, inst) {
                 }, [m('span', { class: 'material-symbols-outlined md-18 mr-1' }, 'checkroom'), 'Sequence']) : null
             ]),
 
-            // Grid: core fields
-            m('div', { class: 'grid grid-cols-3 gap-3' }, [
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Composition'),
-                    m('input', { class: 'text-field-compact', value: cinst.entity.bodyStyle || '', oninput: function (e) { cinst.entity.bodyStyle = e.target.value; } })
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Action'),
-                    m('input', { class: 'text-field-compact', value: cinst.entity.imageAction || '', oninput: function (e) { cinst.entity.imageAction = e.target.value; } })
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Setting'),
-                    m('input', { class: 'text-field-compact', value: cinst.entity.imageSetting || '', oninput: function (e) { cinst.entity.imageSetting = e.target.value; } })
-                ])
-            ]),
+            // Shared SD config panel — replaces the bespoke form (Steps, CFG, Denoising, etc.).
+            // Passes config: cinst.entity so reads/writes go directly to the entity at native scale
+            // (denoisingStrength 0–1, width/height as selected strings, etc.).
+            m(SdConfigPanel, {
+                config: cinst.entity,
+                models: sdModelList,
+                loras: loraList,
+                onChange: function () { m.redraw(); }
+            }),
 
-            // Style dropdown
-            m('div', { class: 'grid grid-cols-2 gap-3' }, [
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Style'),
-                    m('select', {
-                        class: 'text-field-compact', value: cinst.entity.style || '',
-                        onchange: function (e) {
-                            cinst.entity.style = e.target.value;
-                            am7sd.fillStyleDefaults(cinst.entity);
-                        }
-                    }, ['', 'art', 'movie', 'photograph', 'selfie', 'anime', 'portrait', 'comic', 'digitalArt', 'fashion', 'vintage', 'custom'].map(function (s) {
-                        return m('option', { value: s, selected: s === (cinst.entity.style || '') }, s || '-- Select --');
-                    }))
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Denoising: ' + (cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75)),
-                    formFieldRenderers.renderRange({
-                        value: String(cinst.api.denoisingStrength ? cinst.api.denoisingStrength() : 75),
-                        min: 0, max: 100, step: 5, label: 'Denoising',
-                        onInput: function (e) {
-                            let v = parseInt(e.target.value);
-                            if (cinst.api.denoisingStrength) cinst.api.denoisingStrength(v);
-                            else cinst.entity.denoisingStrength = v / 100;
-                        }
-                    })
-                ])
-            ]),
-
-            // Style-specific fields
-            m('div', { class: 'grid grid-cols-2 gap-3' }, [
-                styleField('Art Style', 'artStyle', 'art'),
-                styleField('Director', 'director', 'movie'),
-                styleField('Photographer', 'photographer', 'photograph|portrait|fashion'),
-                styleField('Phone', 'selfiePhone', 'selfie'),
-                styleField('Angle', 'selfieAngle', 'selfie'),
-                styleField('Lighting', 'selfieLighting', 'selfie'),
-                styleField('Studio', 'animeStudio', 'anime'),
-                styleField('Era', 'animeEra', 'anime'),
-                styleField('Lighting', 'portraitLighting', 'portrait'),
-                styleField('Backdrop', 'portraitBackdrop', 'portrait'),
-                styleField('Publisher', 'comicPublisher', 'comic'),
-                styleField('Era', 'comicEra', 'comic'),
-                styleField('Coloring', 'comicColoring', 'comic'),
-                styleField('Medium', 'digitalMedium', 'digitalArt'),
-                styleField('Software', 'digitalSoftware', 'digitalArt'),
-                styleField('Artist', 'digitalArtist', 'digitalArt'),
-                styleField('Magazine', 'fashionMagazine', 'fashion'),
-                styleField('Decade', 'fashionDecade', 'fashion'),
-                styleField('Decade', 'vintageDecade', 'vintage'),
-                styleField('Processing', 'vintageProcessing', 'vintage'),
-                styleField('Camera', 'vintageCamera', 'vintage'),
-                styleField('Still Camera', 'stillCamera', 'photograph'),
-                styleField('Lens', 'lens', 'photograph'),
-                styleField('Film', 'film', 'photograph'),
-                styleField('Process', 'colorProcess', 'movie|photograph'),
-                styleField('Movie Camera', 'movieCamera', 'movie'),
-                styleField('Movie Film', 'movieFilm', 'movie')
-            ].filter(Boolean)),
-
-            // Custom prompt
-            (cinst.entity.style === 'custom') ? m('div', [
-                m('label', { class: 'field-label' }, 'Custom Style Prompt'),
-                m('textarea', { class: 'text-field-compact', rows: 3, value: cinst.entity.customPrompt || '', oninput: function (e) { cinst.entity.customPrompt = e.target.value; } })
-            ]) : null,
-
-            // Grid: model/refiner/steps/cfg
-            m('div', { class: 'grid grid-cols-2 gap-3' }, [
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Model'),
-                    modelSelect('model')
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Refiner Model'),
-                    modelSelect('refinerModel')
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Steps: ' + cinst.api.steps()),
-                    formFieldRenderers.renderRange({ value: cinst.api.steps(), min: 1, max: 100, step: 1, label: 'Steps', onInput: function (e) { cinst.api.steps(parseInt(e.target.value) || 20); } })
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Refiner Steps: ' + cinst.api.refinerSteps()),
-                    formFieldRenderers.renderRange({ value: cinst.api.refinerSteps(), min: 0, max: 100, step: 1, label: 'Refiner Steps', onInput: function (e) { cinst.api.refinerSteps(parseInt(e.target.value) || 20); } })
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'CFG: ' + cinst.api.cfg()),
-                    formFieldRenderers.renderRange({ value: cinst.api.cfg(), min: 1, max: 30, step: 0.5, label: 'CFG', onInput: function (e) { cinst.api.cfg(parseFloat(e.target.value) || 5); } })
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Refiner CFG: ' + cinst.api.refinerCfg()),
-                    formFieldRenderers.renderRange({ value: cinst.api.refinerCfg(), min: 1, max: 30, step: 0.5, label: 'Refiner CFG', onInput: function (e) { cinst.api.refinerCfg(parseFloat(e.target.value) || 5); } })
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Sampler'),
-                    m('select', { class: 'text-field-compact', value: cinst.entity.sampler || 'dpmpp_2m', onchange: function (e) { cinst.entity.sampler = e.target.value; } },
-                        ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm'].map(function (s) {
-                            return m('option', { value: s }, s);
-                        }))
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Scheduler'),
-                    m('select', { class: 'text-field-compact', value: cinst.entity.scheduler || 'karras', onchange: function (e) { cinst.entity.scheduler = e.target.value; } },
-                        ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal'].map(function (s) {
-                            return m('option', { value: s }, s);
-                        }))
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Refiner Sampler'),
-                    m('select', { class: 'text-field-compact', value: cinst.entity.refinerSampler || 'dpmpp_2m', onchange: function (e) { cinst.entity.refinerSampler = e.target.value; } },
-                        ['dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_2s_ancestral', 'dpmpp_3m_sde', 'dpmpp_sde', 'euler', 'euler_ancestral', 'heun', 'lms', 'ddim', 'ddpm', 'dpm_2', 'dpm_2_ancestral', 'dpm_adaptive', 'dpm_fast', 'uni_pc', 'uni_pc_bh2', 'ipndm', 'ipndm_v', 'lcm'].map(function (s) {
-                            return m('option', { value: s }, s);
-                        }))
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Refiner Scheduler'),
-                    m('select', { class: 'text-field-compact', value: cinst.entity.refinerScheduler || 'karras', onchange: function (e) { cinst.entity.refinerScheduler = e.target.value; } },
-                        ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal'].map(function (s) {
-                            return m('option', { value: s }, s);
-                        }))
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Seed'),
-                    m('div', { style: 'display:flex;gap:4px;' }, [
-                        m('input', {
-                            class: 'text-field-compact', style: 'flex:1;', type: 'number', value: seed,
-                            oninput: function (e) { seed = e.target.value; cinst.api.seed(parseInt(e.target.value) || -1); }
-                        }),
-                        m('button', { class: 'button', title: 'Random seed', onclick: function () { seed = '-1'; cinst.api.seed(-1); } },
-                            m('span', { class: 'material-symbols-outlined md-18' }, 'casino'))
-                    ])
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Image Count'),
-                    m('input', {
-                        class: 'text-field-compact', type: 'number', value: imageCount,
-                        oninput: function (e) { imageCount = e.target.value; }
-                    })
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Hi-Res'),
-                    m('input', {
-                        type: 'checkbox', checked: cinst.api.hires ? cinst.api.hires() : false,
-                        onchange: function (e) { if (cinst.api.hires) cinst.api.hires(e.target.checked); }
-                    })
-                ]),
-                m('div', [
-                    m('label', { class: 'field-label' }, 'Save Shared'),
-                    m('input', {
-                        type: 'checkbox', checked: cinst.entity.shared || false,
-                        onchange: function (e) { cinst.entity.shared = e.target.checked; }
-                    })
-                ])
-            ]),
-
-            // LORAs
-            m('div', { class: 'mt-2' }, [
-                m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-1' }, 'LORAs'),
-                (function () {
-                    let currentLoras = cinst.entity.loras || [];
-                    if (!Array.isArray(currentLoras)) currentLoras = [];
-                    let loraMap = {};
-                    currentLoras.forEach(function (entry) {
-                        let parts = String(entry).split(':');
-                        loraMap[parts[0]] = parts.length > 1 ? parseFloat(parts[1]) || 0.8 : 0.8;
-                    });
-                    function sync() {
-                        cinst.entity.loras = Object.keys(loraMap).map(function (k) { return k + ':' + loraMap[k]; });
-                    }
-                    let available = am7sd.getLoraList();
-                    if (!available.length) { am7sd.fetchLoras().then(function () { m.redraw(); }); }
-                    return m('div', { class: 'space-y-1' }, [
-                        available.map(function (name) {
-                            let selected = loraMap.hasOwnProperty(name);
-                            return m('div', { key: name, class: 'flex items-center gap-2 text-xs' }, [
-                                m('input', { type: 'checkbox', checked: selected, onchange: function () {
-                                    if (selected) delete loraMap[name]; else loraMap[name] = 0.8;
-                                    sync(); m.redraw();
-                                } }),
-                                m('span', { class: 'truncate', style: 'max-width:180px', title: name }, name),
-                                selected ? m('input', { type: 'number', class: 'text-field-compact text-xs w-16', min: 0, max: 2, step: 0.05, value: loraMap[name], oninput: function (e) { loraMap[name] = parseFloat(e.target.value) || 0.8; sync(); } }) : null
-                            ]);
-                        }),
-                        m('input', { type: 'text', class: 'text-field-compact text-xs mt-1 w-full', placeholder: 'loraName:weight + Enter', onkeydown: function (e) {
-                            if (e.key === 'Enter' && e.target.value.trim()) {
-                                let parts = e.target.value.trim().split(':');
-                                loraMap[parts[0]] = parts.length > 1 ? parseFloat(parts[1]) || 0.8 : 0.8;
-                                e.target.value = ''; sync(); m.redraw();
-                            }
-                        } })
-                    ]);
-                })()
+            // Save Shared — controls whether Generate also persists a shared copy; kept separate
+            // because SdConfigPanel has no concept of save-on-generate behaviour.
+            m('div', { class: 'flex items-center gap-2 mt-1' }, [
+                m('input', {
+                    type: 'checkbox', checked: cinst.entity.shared || false,
+                    onchange: function (e) { cinst.entity.shared = e.target.checked; }
+                }),
+                m('label', { class: 'field-label' }, 'Save as Shared Config')
             ])
         ]);
     }

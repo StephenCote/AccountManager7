@@ -29,6 +29,7 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.RaceEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.llm.Chat;
@@ -1990,6 +1991,18 @@ public class PictureBookUtil {
         return callLlmInternal(user, chatConfig, promptName, vars);
     }
 
+    /// Package-private bridge for ChapBookUtil — delegates directly to callLlmInternal without
+    /// the promptTemplateOverride mechanism, which is a PictureBook-specific wizard feature.
+    static String callLlmForChapBook(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars) {
+        return callLlmInternal(user, chatConfig, promptName, vars);
+    }
+
+    /// Package-private bridge for ChapBookUtil — exposes parseLlmJsonObject for non-PB callers
+    /// in the same package that need structured LLM output parsed the same way.
+    static Map<String, Object> parseLlmJsonObjectForChapBook(String response, String context, List<String> failedExtractions) {
+        return parseLlmJsonObject(response, context, failedExtractions);
+    }
+
     private static String callLlmInternal(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars) {
         String system = null;
         String userTpl = null;
@@ -3672,6 +3685,185 @@ public class PictureBookUtil {
         // One LLM call per character needing detail extraction above — flush once at the end.
         OllamaModelUtil.unloadAll();
 
+        return meta;
+    }
+
+    /**
+     * Overload that accepts an optional PB2 book objectId.
+     * <p>
+     * When {@code pb2BookObjectId} is non-null, the created characters' sub-records (narratives,
+     * statistics, etc.) are routed into the PB2 book's own Olio world groups rather than the
+     * legacy home-directory groups. The returned meta's {@code bookObjectId} field is also
+     * overridden to point at the PB2 book rather than the PB1 group.
+     */
+    @SuppressWarnings("unchecked")
+    public static BaseRecord createFromScenes(BaseRecord user, String workObjectId, String chatConfigName,
+            String genre, String bookName, List<Map<String, Object>> sceneList, List<Map<String, Object>> charDataListIn,
+            String dataPath, String pb2BookObjectId) {
+        if (pb2BookObjectId == null || pb2BookObjectId.isBlank()) {
+            // backward-compat: delegate unchanged
+            return createFromScenes(user, workObjectId, chatConfigName, genre, bookName, sceneList, charDataListIn, dataPath);
+        }
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        BaseRecord pb2Book = PbBookUtil.readBook(user, pb2BookObjectId, orgId);
+        if (pb2Book == null) {
+            throw new PictureBookException(404, "PB2 book not found: " + pb2BookObjectId);
+        }
+        String bookSlug = pb2Book.get(OlioFieldNames.FIELD_PB_SLUG);
+        if (bookSlug == null || bookSlug.isBlank()) {
+            throw new PictureBookException(500, "PB2 book has no slug — cannot resolve its Olio context");
+        }
+
+        // Run the standard extraction but swap the prepareGroups context with the PB2 world's context
+        // by temporarily resolving the book's OlioContext before the character loop.
+        // Because createFromScenes calls prepareGroups inline, we intercept by calling the new
+        // overload's path directly: reproduce the method body with the overridden prepareGroups call.
+        OlioContext pb2OlioCtx = null;
+        try {
+            pb2OlioCtx = PbOlioContextUtil.getCreateBookContext(user, dataPath, bookSlug);
+        } catch (OlioException e) {
+            logger.warn("createFromScenes(pb2): could not resolve Olio context for slug=" + bookSlug + ": " + e.getMessage()
+                + " — falling back to legacy group routing");
+        }
+
+        BaseRecord work = findWork(user, workObjectId);
+        if (work == null) throw new PictureBookException(404, "Work not found");
+        if (sceneList == null || sceneList.isEmpty()) throw new PictureBookException(400, "sceneList is required");
+
+        List<Map<String, Object>> charDataList = (charDataListIn != null) ? new ArrayList<>(charDataListIn) : new ArrayList<>();
+        String effectiveBookName = (bookName != null && !bookName.isEmpty()) ? bookName : work.get(FieldNames.FIELD_NAME);
+        BaseRecord bookGroup = ensureBookGroup(user, effectiveBookName);
+        if (bookGroup == null) throw new PictureBookException(500, "Failed to create book group");
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+        if (bookGroupPath == null) bookGroupPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + effectiveBookName;
+
+        BaseRecord scenesGroup = ensureSubGroup(user, bookGroupPath, "Scenes");
+        BaseRecord charsGroup = ensureSubGroup(user, bookGroupPath, "Characters");
+        if (scenesGroup == null || charsGroup == null) throw new PictureBookException(500, "Failed to create sub-groups");
+
+        BaseRecord chatConfig = null;
+        if (chatConfigName != null) {
+            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
+        }
+        String text = extractWorkText(user, work);
+
+        if (charDataList.isEmpty()) {
+            Map<String, Map<String, Object>> uniqueChars = new LinkedHashMap<>();
+            for (Map<String, Object> scene : sceneList) {
+                Object charsObj = scene.get("characters");
+                if (charsObj instanceof List) {
+                    for (Object sc : (List<Object>) charsObj) {
+                        String cname = null;
+                        Map<String, Object> cmap = null;
+                        if (sc instanceof Map) { cmap = (Map<String, Object>) sc; cname = (String) cmap.get("name"); }
+                        else if (sc instanceof String) { cname = (String) sc; cmap = new LinkedHashMap<>(); cmap.put("name", cname); }
+                        if (cname != null && !cname.isEmpty() && !uniqueChars.containsKey(cname)) uniqueChars.put(cname, cmap);
+                    }
+                }
+            }
+            for (Map.Entry<String, Map<String, Object>> entry : uniqueChars.entrySet()) charDataList.add(entry.getValue());
+        }
+
+        Map<String, List<Integer>> charSceneIndices = new LinkedHashMap<>();
+        Map<String, java.util.LinkedHashSet<String>> charBlocks = new LinkedHashMap<>();
+        for (int si = 0; si < sceneList.size(); si++) {
+            Map<String, Object> scene = sceneList.get(si);
+            Object stObj = scene.get("sourceText");
+            String block = (stObj instanceof String) ? (String) stObj : null;
+            Object charsObj = scene.get("characters");
+            if (!(charsObj instanceof List)) continue;
+            for (Object sc : (List<Object>) charsObj) {
+                String cn = (sc instanceof Map) ? (String) ((Map<String, Object>) sc).get("name")
+                        : (sc instanceof String ? (String) sc : null);
+                if (cn == null || cn.isEmpty()) continue;
+                charSceneIndices.computeIfAbsent(cn, k -> new ArrayList<>()).add(si);
+                if (block != null && !block.isBlank()) charBlocks.computeIfAbsent(cn, k -> new java.util.LinkedHashSet<>()).add(block);
+            }
+        }
+
+        // Route sub-records into the PB2 book's world groups instead of the legacy home groups
+        PbSubRecordUtil.prepareGroups(user, pb2OlioCtx);
+
+        Map<String, String> charObjectIds = new LinkedHashMap<>();
+        List<String> failedCharacters = new ArrayList<>();
+        List<String> failedApparel = new ArrayList<>();
+        List<String> failedStatistics = new ArrayList<>();
+        List<String> failedExtractions = new ArrayList<>();
+        int cfsCharIdx = 0;
+        for (Map<String, Object> charData : charDataList) {
+            String cname = (String) charData.get("name");
+            if (cname == null || cname.isEmpty()) continue;
+            cfsCharIdx++;
+            PictureBookProgressNotifier.getInstance().notifyProgress(user, "person",
+                    "Creating character " + cfsCharIdx + "/" + charDataList.size() + ": " + cname);
+            String reducedDescription = null;
+            java.util.LinkedHashSet<String> blocks = charBlocks.get(cname);
+            String passages = (blocks != null && !blocks.isEmpty())
+                    ? boundedPassages(cname, blocks, MAX_EXTRACTION_TEXT_CHARS)
+                    : (text != null && !text.isEmpty()
+                        ? (text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text)
+                        : null);
+            if ((charData.get("appearance") == null || ((String) charData.getOrDefault("appearance", "")).isEmpty())
+                    && passages != null && !passages.isBlank() && chatConfig != null) {
+                Map<String, String> charVars = new LinkedHashMap<>();
+                charVars.put("name", cname);
+                charVars.put("passages", passages);
+                charVars.put("raceOptions", raceOptionsCsv());
+                charVars.put("ethnicityOptions", ethnicityOptionsCsv());
+                String llmChar = callLlm(user, chatConfig, "pictureBook.reduce-character", charVars);
+                Map<String, Object> llmData = parseLlmJsonObject(llmChar, "reduce-character:" + cname, failedExtractions);
+                if (!llmData.isEmpty()) {
+                    Object d = llmData.remove("description");
+                    if (d instanceof String && !((String) d).isBlank()) reducedDescription = ((String) d).trim();
+                    for (Map.Entry<String, Object> e : llmData.entrySet()) {
+                        if (!charData.containsKey(e.getKey()) || charData.get(e.getKey()) == null
+                                || ((charData.get(e.getKey()) instanceof String) && ((String) charData.get(e.getKey())).isEmpty())) {
+                            charData.put(e.getKey(), e.getValue());
+                        }
+                    }
+                }
+            }
+            BaseRecord cp = createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath);
+            if (cp != null) {
+                charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
+                persistCharacterSceneAttributes(user, cp, charSceneIndices.get(cname), reducedDescription);
+            } else {
+                logger.error("createCharPerson failed for '" + cname + "' during /create-from-scenes (pb2) — character will be absent from the book");
+                failedCharacters.add(cname);
+            }
+        }
+
+        List<BaseRecord> metaScenes = new ArrayList<>();
+        int idx = 0;
+        for (Map<String, Object> sceneData : sceneList) {
+            BaseRecord note = createSceneNote(user, scenesGroup, sceneData, idx);
+            if (note != null) {
+                BaseRecord sceneEntry = buildSceneEntry(note, sceneData, idx, charObjectIds);
+                if (sceneEntry != null) metaScenes.add(sceneEntry);
+            }
+            idx++;
+        }
+
+        PictureBookProgressNotifier.getInstance().notifyProgress(user, "save", "Saving book...");
+        BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
+        if (!failedCharacters.isEmpty()) {
+            try { meta.set("failedCharacters", failedCharacters); } catch (Exception e) { logger.warn("Failed to record failedCharacters: " + e.getMessage()); }
+        }
+        if (!failedApparel.isEmpty()) {
+            try { meta.set("failedApparel", failedApparel); } catch (Exception e) { logger.warn("Failed to record failedApparel: " + e.getMessage()); }
+        }
+        if (!failedStatistics.isEmpty()) {
+            try { meta.set("failedStatistics", failedStatistics); } catch (Exception e) { logger.warn("Failed to record failedStatistics: " + e.getMessage()); }
+        }
+        if (!failedExtractions.isEmpty()) {
+            try { meta.set("failedExtractions", failedExtractions); } catch (Exception e) { logger.warn("Failed to record failedExtractions: " + e.getMessage()); }
+        }
+        try { meta.set("compositionContext", ""); } catch (Exception e) { logger.warn("Failed to default compositionContext: " + e.getMessage()); }
+        // Override bookObjectId to point at the PB2 book rather than the PB1 group
+        try { meta.set("bookObjectId", pb2BookObjectId); } catch (Exception e) { logger.warn("Failed to set pb2 bookObjectId on meta: " + e.getMessage()); }
+        saveMeta(user, bookGroupPath, meta);
+        PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
+        OllamaModelUtil.unloadAll();
         return meta;
     }
 

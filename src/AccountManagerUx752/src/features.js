@@ -103,6 +103,11 @@ const featureWiring = {
         routes: () => import('./features/pictureBookWorkflow.js'),
         menuItems: [],
         routePrefixes: ['/picture-book']
+    },
+    chapBook: {
+        routes: () => import('./features/chapBook.js'),
+        menuItems: [{ icon: 'menu_book', label: 'ChapBook', route: '/chap-book', section: 'aside' }],
+        routePrefixes: ['/chap-book']
     }
 };
 

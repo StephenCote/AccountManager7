@@ -387,4 +387,16 @@ public class OlioFieldNames {
 	public static final String PB_GROUP_WORKFLOW = "Workflow";
 	public static final String PB_GROUP_ARTIFACTS = "Artifacts";
 
+	/// olio.pb.book — bookType added for ChapBook variant detection
+	public static final String FIELD_PB_BOOK_TYPE = "bookType";
+	/// olio.pb.scene — poemStanza holds the stanza text for ChapBook scenes
+	public static final String FIELD_CB_POEM_STANZA = "poemStanza";
+	/// olio.cb.book fields
+	public static final String FIELD_CB_MAX_LINES = "maxLinesPerPage";
+	public static final String FIELD_CB_OVERLAY_OPACITY = "overlayOpacity";
+	/// olio.cb.poem LLM-extracted fields
+	public static final String FIELD_CB_THEME = "theme";
+	public static final String FIELD_CB_MOOD = "mood";
+	public static final String FIELD_CB_KEYWORDS = "keywords";
+
 }

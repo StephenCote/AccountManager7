@@ -4,7 +4,7 @@ import { am7model } from '../core/model.js';
 import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import {
-    extractScenes, createFromScenes, generateSceneImage, prepareSceneImagePrompts,
+    extractScenes, createFromScenes, createChapBookRecord, generateSceneImage, prepareSceneImagePrompts,
     cancelPictureBook, regenerateBlurb, loadPictureBook, getBookSdConfig, setBookSdConfig, setSceneStatus,
     resolveImageUrl, resolveAllImageUrls
 } from './sceneExtractor.js';
@@ -186,6 +186,14 @@ function pinPictureBookDefaults(entity) {
     return entity;
 }
 
+// URL-safe slug from a book name — used as the PB2 olio.pb.book slug when calling createChapBookRecord.
+function generateSlug(name) {
+    return (name || '').toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .substring(0, 64) || 'book-' + Date.now().toString(36);
+}
+
 // Build the common config instance lazily (async — needs the /olio/randomImageConfig template).
 // Mirrors reimage.js: fetch a fully-populated random template, then wrap it in an am7model instance
 // so every field read/write round-trips the model decorators. A single shared in-flight promise
@@ -197,10 +205,25 @@ function ensureSdConfig() {
     sdConfigLoading = true;
     _sdConfigPromise = (async function () {
         try {
-            let entity = await am7sd.buildEntity();
-            if (!entity) entity = am7model.newPrimitive('olio.sd.config');
+            // Try user's saved default config first (same path reimage uses)
+            let savedConfig = null;
+            try {
+                savedConfig = await am7sd.loadConfig('sdcfg-default', '~/Data/.preferences');
+            } catch (e) {
+                // non-fatal — fall through to buildEntity
+            }
+            let entity;
+            if (savedConfig) {
+                // Use saved config as base, strip identity fields so it creates fresh
+                entity = Object.assign({}, savedConfig);
+                SD_CONFIG_IDENTITY.forEach(function (k) { delete entity[k]; });
+            } else {
+                entity = await am7sd.buildEntity();
+                if (!entity) entity = am7model.newPrimitive('olio.sd.config');
+            }
             if (!entity[am7model.jsonModelKey]) entity[am7model.jsonModelKey] = 'olio.sd.config';
             SD_CONFIG_IDENTITY.forEach(function (k) { delete entity[k]; });
+            // PB-specific overrides applied after saved config — compositeMode, hires, style
             pinPictureBookDefaults(entity);
             sdConfigEntity = entity;
             sdConfigInst = am7model.prepareInstance(entity, am7model.forms.sdConfig);
@@ -1244,17 +1267,29 @@ function buildActions() {
                 creatingChars = true;
                 m.redraw();
                 try {
+                    // Create PB2 book first so universe/world exist before scenes are linked
+                    let slug = generateSlug(bookName || workName);
+                    let pb2 = null;
+                    try {
+                        pb2 = await createChapBookRecord(slug, bookName || workName);
+                    } catch (slugErr) {
+                        // Likely a slug conflict (409) — append timestamp suffix and retry once
+                        slug = generateSlug(bookName || workName) + '-' + Date.now().toString(36).slice(-4);
+                        pb2 = await createChapBookRecord(slug, bookName || workName);
+                    }
+                    let pb2BookObjectId = pb2 ? pb2.bookObjectId : null;
+
                     let meta = await createFromScenes(
                         workObjectId, chatConfigName(), genre || null,
-                        bookName || workName, extractedScenes, buildCharacterStubs()
+                        bookName || workName, extractedScenes, buildCharacterStubs(), pb2BookObjectId
                     );
-                    bookObjectId = meta.bookObjectId || null;
+                    bookObjectId = (meta.pb2BookObjectId || meta.bookObjectId) || null;
                     metaScenes = meta.scenes || [];
                     scenes = metaScenes;
                     await initCharacterManager(bookObjectId);
                     step = 3;
                 } catch (e) {
-                    page.toast('error', 'Failed to create characters: ' + (e.message || ''));
+                    page.toast('error', 'Failed to create book: ' + (e.message || ''));
                 }
                 creatingChars = false;
                 m.redraw();

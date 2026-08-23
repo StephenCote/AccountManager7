@@ -90,6 +90,11 @@ public class OlioModelNames extends ModelNames {
 	public static final String MODEL_PB_RUN = "olio.pb.run";
 	public static final String MODEL_PB_CAST_GROUP = "olio.pb.castGroup";
 
+	/// ChapBook models — poem library, sets, and the ChapBook variant of olio.pb.book
+	public static final String MODEL_CB_POEM = "olio.cb.poem";
+	public static final String MODEL_CB_SET = "olio.cb.set";
+	public static final String MODEL_CB_BOOK = "olio.cb.book";
+
 	//static {
 	private static boolean prep = false; 
 
@@ -117,7 +122,10 @@ public class OlioModelNames extends ModelNames {
 		MODEL_PB_BINDING,
 		MODEL_PB_RUN,
 		MODEL_PB_SCENE,
-		MODEL_PB_CAST_GROUP
+		MODEL_PB_CAST_GROUP,
+		MODEL_CB_POEM,
+		MODEL_CB_SET,
+		MODEL_CB_BOOK
 	);
 	
 	public static void use() {

@@ -76,6 +76,11 @@
 			"type": "model",
 			"foreign": true,
 			"description": "The workflow node that produces this scene's imagery. The scene's generation status is read from that node, not duplicated here."
+		},
+		{
+			"name": "poemStanza",
+			"type": "string",
+			"description": "For ChapBook scenes: the stanza text for this page. Separate from blurb (LLM-generated captions)."
 		}
 	]
 }

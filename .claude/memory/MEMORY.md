@@ -53,6 +53,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `uat-pb2-issue1-no-universe-on-create` -- UAT Issue #1: Ux book creation wizard does not create PB2 olio.pb.book / universe / world; characters land in user home dir
 - `uat-pb2-issue2-denoise-scale` -- UAT Issue #2: Denoise slider 0-100 in reimage vs 0-1 in SdConfigPanel — bespoke form never replaced
 - `uat-pb2-issue3-no-model-defaults` -- UAT Issue #3: PB wizard new-book sdConfig starts from randomImageConfig not user saved defaults
+- `uat-pb2-issues-status` -- PB2 UAT issues 1/2/3 fix status — all three implemented and compile-verified 2026-08-23
 
 ## reference
 - `reference-sd-llm-hardware` -- The two GPU boxes: local Beelink GTR9 (Strix Halo) for sustained SD work, DGX Spark at 192.168.1.42 for LLM — Spark crashes under sustained load

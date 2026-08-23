@@ -42,20 +42,44 @@ async function extractScenes(workObjectId, chatConfigName, count, promptTemplate
  * @param {string|null} bookName
  * @param {Array} sceneList - user-curated scenes from Step 2
  * @param {Array|null} characters - user-edited character data from Step 3
- * @returns {Promise<Object>} meta with bookObjectId
+ * @param {string|null} pb2BookObjectId - optional PB2 olio.pb.book objectId; when provided the
+ *   server links the PB1 group to the existing PB2 universe/world and returns the pb2BookObjectId
+ *   in the response so the caller can use it as the canonical book identity.
+ * @returns {Promise<Object>} meta with bookObjectId (and pb2BookObjectId when linked)
  */
-async function createFromScenes(workObjectId, chatConfigName, genre, bookName, sceneList, characters) {
+async function createFromScenes(workObjectId, chatConfigName, genre, bookName, sceneList, characters, pb2BookObjectId) {
     let body = { schema: 'olio.pictureBookRequest', sceneList: sceneList };
     if (chatConfigName) body.chatConfig = chatConfigName;
     if (genre) body.genre = genre;
     if (bookName) body.bookName = bookName;
     if (characters && characters.length) body.characters = characters;
+    if (pb2BookObjectId) body.pb2BookObjectId = pb2BookObjectId;
     let resp = await fetch(pbBase() + '/' + workObjectId + '/create-from-scenes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(body)
     });
     if (!resp.ok) throw new Error('Create from scenes failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
+ * Create a new PB2 olio.pb.book + universe + world via the /chapter endpoint.
+ * This is the first step in the wizard's Step-2 Continue path: the PB2 record must
+ * exist before createFromScenes is called so the server can link the PB1 group into
+ * the PB2 universe/world rather than leaving characters in a PB1-only group.
+ * @param {string} slug - URL-safe identifier (e.g. 'my-story-2026')
+ * @param {string} title - human-readable title
+ * @returns {Promise<{bookObjectId: string, slug: string}>}
+ */
+async function createChapBookRecord(slug, title) {
+    let body = { slug: slug, title: title };
+    let resp = await fetch(pbBase() + '/chapter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) throw new Error('Create ChapBook record failed: ' + resp.status);
     return resp.json();
 }
 
@@ -374,6 +398,7 @@ export {
     MAX_SCENES_DEFAULT,
     extractScenes,
     createFromScenes,
+    createChapBookRecord,
     generateSceneImage,
     prepareSceneImagePrompts,
     cancelPictureBook,

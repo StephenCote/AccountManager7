@@ -96,5 +96,12 @@
 		"description": "Workflow graph view for PB2 olio.pb.* pipeline nodes and artifacts",
 		"required": false,
 		"deps": ["core"]
+	},
+	{
+		"id": "chapBook",
+		"label": "ChapBook",
+		"description": "Poem library, LLM analysis, and landscape-illustrated poetry-book creation",
+		"required": false,
+		"deps": ["core"]
 	}
 ]

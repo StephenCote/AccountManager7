@@ -334,6 +334,7 @@ public class PictureBookService {
         String chatConfigName = null;
         String genre = null;
         String bookName = null;
+        String pb2BookObjectId = null;
         List<Map<String, Object>> sceneList = new ArrayList<>();
         List<Map<String, Object>> charDataList = new ArrayList<>();
         BaseRecord params = parseParams(json);
@@ -341,6 +342,7 @@ public class PictureBookService {
             chatConfigName = params.get("chatConfig");
             genre = params.get("genre");
             bookName = params.get("bookName");
+            pb2BookObjectId = params.get("pb2BookObjectId");
             Object sl = params.get("sceneList");
             if (sl instanceof List) {
                 for (Object item : (List<?>) sl) {
@@ -360,7 +362,7 @@ public class PictureBookService {
 
         try {
             BaseRecord meta = PictureBookUtil.createFromScenes(user, workObjectId, chatConfigName, genre, bookName,
-                    sceneList, charDataList, dataPath);
+                    sceneList, charDataList, dataPath, pb2BookObjectId);
             return Response.status(200).entity(toJson(meta)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);

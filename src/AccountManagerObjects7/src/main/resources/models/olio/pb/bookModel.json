@@ -82,6 +82,13 @@
 			"name": "createdByObjectId",
 			"type": "string",
 			"maxLength": 64
+		},
+		{
+			"name": "bookType",
+			"baseClass": "org.cote.accountmanager.schema.type.PbBookTypeEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"description": "STORY for a standard PB2 narrative book; CHAPBOOK for a poetry ChapBook variant. Existing books default to UNKNOWN."
 		}
 	]
 }

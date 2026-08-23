@@ -1,0 +1,54 @@
+{
+	"name": "olio.cb.poem",
+	"likeInherits": ["data.note"],
+	"inherits": [
+		"data.directory",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "menu_book",
+	"label": "Poem",
+	"group": "ChapBook",
+	"constraints": ["name, groupId, organizationId"],
+	"description": "A poem for ChapBook: stores the poem text (via data.directory's content/text field from data.note likeInherits), plus LLM-extracted theme/mood/keywords.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "text",
+			"type": "string",
+			"description": "The full poem text. likeInherits from data.note is metadata-only, so this field is declared explicitly."
+		},
+		{
+			"name": "title",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "author",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "theme",
+			"type": "string",
+			"maxLength": 256,
+			"description": "LLM-identified dominant theme. Null until analyzePoemTheme runs."
+		},
+		{
+			"name": "mood",
+			"type": "string",
+			"maxLength": 256,
+			"description": "LLM-identified emotional mood. Fed into landscape prompt as mood parameter."
+		},
+		{
+			"name": "keywords",
+			"type": "string",
+			"description": "Comma-separated imagery keywords extracted by LLM. Optionally enriches the SD prompt."
+		}
+	]
+}
