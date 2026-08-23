@@ -35,6 +35,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 
 ## project
 - `project-accountmanager7-overview` -- What AccountManager7 is: schema-first BaseRecord/PBAC platform; sessions open at the GIT ROOT while Maven/modules live under src\ - two different 'project roots'; module map
+- `project-chapbook-design` -- ChapBook feature design: poetry PictureBook variant with olio.cb.book/poem/set models, theme LLM, landscape-only pipeline, text overlay
 - `project-ki69-closed` -- KI-69 closed 2026-08-20: age-blind portrait fix in NarrativeUtil with adult fallback, 5 tests green
 - `project-pb-castgroup-q15` -- Q15 resolved: olio.pb.castGroup for collective canvas entities — model created 2026-08-21
 - `project-pb-phase1b-status` -- Phase 1b (universe/world IDs in Service7+Ux) implementation complete and verified
@@ -49,6 +50,9 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `testing-db-reset` -- Which AM7 databases may be reset: am7db and am7test yes, am72db NEVER; test.db.reset=true drops schema/keys/data on the unit-test DB
 - `testing-olio-org-seed` -- Olio seed data loads per-organization and takes minutes on first use; reuse a single stable test org rather than random or multiple org names
 - `tomcat-eclipse-redeploy` -- Tomcat runs inside Eclipse's managed server; frequent backend Java saves can hang it on redeploy
+- `uat-pb2-issue1-no-universe-on-create` -- UAT Issue #1: Ux book creation wizard does not create PB2 olio.pb.book / universe / world; characters land in user home dir
+- `uat-pb2-issue2-denoise-scale` -- UAT Issue #2: Denoise slider 0-100 in reimage vs 0-1 in SdConfigPanel — bespoke form never replaced
+- `uat-pb2-issue3-no-model-defaults` -- UAT Issue #3: PB wizard new-book sdConfig starts from randomImageConfig not user saved defaults
 
 ## reference
 - `reference-sd-llm-hardware` -- The two GPU boxes: local Beelink GTR9 (Strix Halo) for sustained SD work, DGX Spark at 192.168.1.42 for LLM — Spark crashes under sustained load
