@@ -17,7 +17,7 @@ import { page } from '../core/pageClient.js';
 import { applicationPath } from '../core/config.js';
 import {
     getBookInfo, workflowView, nodeView, listStale,
-    regenerateNode, pinNode, addMembers, createChapter
+    regenerateNode, pinNode, addMembers, createChapter, testNode
 } from '../workflows/pictureBookWorkflow.js';
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -30,6 +30,7 @@ const CANVAS_PAD = 40;
 
 const STATUS_COLOR = {
     DONE: '#16a34a',
+    DONE_UNVERIFIED: '#84cc16',
     STALE: '#d97706',
     PENDING: '#6b7280',
     READY: '#3b82f6',
@@ -79,6 +80,7 @@ let nodeDetailsLoading = false;
 
 let pinLoading = {};
 let regenLoading = {};
+let testLoading = {};
 
 let pan = { x: 0, y: 0 };
 let zoom = 1;
@@ -91,6 +93,7 @@ let memberNames = '';
 let chapterDialog = false;
 let chapterSlug = '';
 let chapterTitle = '';
+let recheckingStale = false;
 
 // ── Layout calculation ────────────────────────────────────────────────
 
@@ -221,6 +224,29 @@ async function doRegen(n) {
     m.redraw();
 }
 
+async function doTest(n) {
+    if (testLoading[n.objectId] || n.pinned) return;
+    let nodeOid = n.objectId;
+    let wasSelected = selectedNodeId === nodeOid;
+    testLoading[nodeOid] = true;
+    m.redraw();
+    try {
+        let result = await testNode(pb2BookObjectId, nodeOid);
+        let revMsg = result.artifactRevision != null ? ' (rev ' + result.artifactRevision + ')' : '';
+        let downMsg = result.downstreamMarked ? ' — ' + result.downstreamMarked + ' downstream marked stale' : '';
+        page.toast('success', 'Executed' + revMsg + downMsg);
+        await loadGraph(bookGroupObjectId);
+        if (wasSelected) {
+            // Re-select so the detail panel shows the new artifact
+            await selectNode(nodeOid);
+        }
+    } catch (e) {
+        page.toast('error', 'Test failed: ' + e.message);
+    }
+    delete testLoading[nodeOid];
+    m.redraw();
+}
+
 async function doAddMembers() {
     let names = memberNames.split(/[\s,]+/).filter(Boolean);
     if (!names.length) return;
@@ -347,7 +373,7 @@ function renderNodeCard(n) {
         status === 'STALE' ? m('div', { style: 'font-size:10px;color:#d97706;margin-bottom:4px;' }, '⚠ Stale — inputs changed') : null,
 
         // Actions row
-        m('div', { style: 'display:flex;gap:4px;margin-top:4px;' }, [
+        m('div', { style: 'display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;align-items:center;' }, [
             // Pin toggle
             m('button', {
                 title: n.pinned ? 'Unpin' : 'Pin',
@@ -359,8 +385,20 @@ function renderNodeCard(n) {
                 disabled: !!pinLoading[n.objectId],
             }, pinLoading[n.objectId] ? '…' : (n.pinned ? '📌' : '📍')),
 
-            // Regenerate (only for DONE nodes, not pinned)
-            status === 'DONE' && !n.pinned ? m('button', {
+            // Test button — execute this node against the SD/LLM backend right now
+            !n.pinned ? m('button', {
+                title: 'Execute this node now',
+                style: [
+                    'border:1px solid #6366f1;border-radius:4px;padding:1px 6px;cursor:pointer;',
+                    'font-size:11px;color:#6366f1;background:none;',
+                    testLoading[n.objectId] ? 'opacity:.6;' : '',
+                ].join(''),
+                onclick: function (e) { e.stopPropagation(); doTest(n); },
+                disabled: !!testLoading[n.objectId],
+            }, testLoading[n.objectId] ? '…' : '▶ Test') : null,
+
+            // Regenerate (mark stale) — for DONE and DONE_UNVERIFIED, not pinned
+            (status === 'DONE' || status === 'DONE_UNVERIFIED') && !n.pinned ? m('button', {
                 title: 'Mark stale for regeneration',
                 style: 'border:none;background:none;cursor:pointer;padding:2px 4px;border-radius:4px;font-size:14px;color:#6b7280;',
                 onclick: function (e) { e.stopPropagation(); doRegen(n); },
@@ -521,6 +559,23 @@ function renderChapterDialog() {
     ]));
 }
 
+// ── Stale recheck ─────────────────────────────────────────────────────
+
+async function doRecheckStale() {
+    if (!pb2BookObjectId || recheckingStale) return;
+    recheckingStale = true;
+    m.redraw();
+    try {
+        let staleList = await listStale(pb2BookObjectId);
+        page.toast('info', (staleList.length || 0) + ' stale node(s) detected — reloading graph');
+        await loadGraph(bookGroupObjectId);
+    } catch (e) {
+        page.toast('error', 'Stale recheck failed: ' + e.message);
+    }
+    recheckingStale = false;
+    m.redraw();
+}
+
 // ── Canvas interaction ────────────────────────────────────────────────
 
 function onCanvasMouseDown(e) {
@@ -562,8 +617,19 @@ var pictureBookWorkflowView = {
         positions = {};
         selectedNodeId = null;
         nodeDetails = null;
+        nodeDetailsLoading = false;
         pan = { x: 0, y: 0 };
         zoom = 1;
+        dragging = false;
+        pinLoading = {};
+        regenLoading = {};
+        testLoading = {};
+        memberDialog = false;
+        memberNames = '';
+        chapterDialog = false;
+        chapterSlug = '';
+        chapterTitle = '';
+        recheckingStale = false;
         loadGraph(bookGroupObjectId);
     },
     view: function () {
@@ -577,8 +643,25 @@ var pictureBookWorkflowView = {
                 loading ? m('span', { style: 'font-size:12px;color:#64748b;margin-left:8px;' }, 'Loading…') : null,
                 graphData ? m('span', { style: 'font-size:12px;color:#64748b;margin-left:8px;' },
                     (graphData.nodeCount || 0) + ' nodes') : null,
+                // Stale count badge
+                graphData && graphData.nodes ? (function () {
+                    let staleCount = graphData.nodes.filter(function (n) {
+                        return (n.status || n.storedStatus || '').toUpperCase() === 'STALE';
+                    }).length;
+                    return staleCount > 0
+                        ? m('span', { style: 'font-size:11px;color:#d97706;font-weight:600;margin-left:4px;' },
+                            staleCount + ' stale')
+                        : null;
+                })() : null,
                 // Spacer
                 m('div', { style: 'flex:1;' }),
+                // Recheck stale button
+                pb2BookObjectId ? m('button', {
+                    title: 'Recompute staleness from backend and reload graph',
+                    style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
+                    onclick: doRecheckStale,
+                    disabled: recheckingStale,
+                }, recheckingStale ? '…' : '↻ Stale') : null,
                 // Zoom controls
                 m('button', {
                     style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;',

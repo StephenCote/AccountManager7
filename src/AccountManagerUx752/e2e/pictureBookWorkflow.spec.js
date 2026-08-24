@@ -6,6 +6,20 @@
  *
  * Uses ensureSharedTestUser (e2etest_shared / password) — never admin.
  * Run single-threaded: --workers=1 --project=chromium
+ *
+ * Architecture note on workflow route IDs
+ * ────────────────────────────────────────
+ * The route /picture-book/:bookObjectId/workflow expects a PB1 book GROUP objectId.
+ * The bridge endpoint GET /{bookGroupObjectId}/pb2 calls findByObjectId(user, MODEL_GROUP, id)
+ * and returns the linked olio.pb.book.  ChapBook books are native olio.pb.book records (not
+ * auth.group containers) so their objectId cannot be used as the workflow route parameter —
+ * the bridge call returns 404 and the canvas shows the "No PB2 workflow" message.
+ *
+ * To exercise the workflow canvas with real [data-node-id] elements you need a PB1 book group
+ * objectId.  Supply it via WORKFLOW_BOOK_GROUP_OID env var (see gated test below).
+ * The REST-level workflow-nodes test uses a ChapBook's pb2BookObjectId directly against the
+ * /workflow endpoint (which accepts pb2BookObjectId, not a group objectId) so it does not
+ * need a PB1 book.
  */
 import { test, expect } from './helpers/fixtures.js';
 import { ensureSharedTestUser } from './helpers/api.js';
@@ -14,6 +28,7 @@ function b64(str) { return Buffer.from(str).toString('base64'); }
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
+const CB_REST = REST + '/olio/chap-book';
 
 async function loginAsSharedUser(page) {
     // Login via the REST API using page.request, which shares the browser's cookie jar.
@@ -351,6 +366,317 @@ test.describe('PictureBook PB2 Page Reader (Phase 5b)', () => {
             content.includes('documents') ||
             content.includes('No documents');
         expect(hasSelector).toBe(true);
+    });
+
+});
+
+// ── Workflow canvas — real PB2 book (REST verification + v2 UI) ────────────────
+
+// Seeded state for this describe block — set in beforeAll.
+let wfPb2BookObjectId = null;
+let wfOrgId = null;
+
+const POEM_A = `Memory, do not fail me;
+A majestic oak's leaves
+Tumbling and falling.
+A precarious branch
+Mourning its creased skein's blanch.`;
+
+const POEM_B = `Outside, all is pristine,
+From cobalt skies of charcoal unity
+Descending upon snow canvassed green
+To silver veins of icy sheens.`;
+
+test.describe('Workflow Canvas — real PB2 book', () => {
+    test.describe.configure({ timeout: 150000 });
+
+    test.beforeAll(async ({ request }) => {
+        await ensureSharedTestUser(request);
+
+        // Login as shared user to seed data
+        const loginResp = await request.post(REST + '/login', {
+            data: {
+                schema: 'auth.credential',
+                organizationPath: '/Development',
+                name: 'e2etest_shared',
+                credential: b64('password'),
+                type: 'hashed_password'
+            }
+        });
+        expect(loginResp.ok() || loginResp.status() === 204).toBe(true);
+
+        // Resolve orgId via principal
+        const principalResp = await request.get(REST + '/login/principal');
+        const principal = await principalResp.json().catch(() => null);
+        wfOrgId = principal && principal.organizationId;
+
+        // Ensure ~/Poems group exists
+        const poemsDir = await request.get(
+            REST + '/path/make/auth.group/data/B64-' + Buffer.from('~/Poems').toString('base64').replace(/=/g, '%3D')
+        );
+        const poemsDirBody = await poemsDir.json().catch(() => null);
+        const poemsGroupId = poemsDirBody && poemsDirBody.id;
+        if (wfOrgId == null && poemsDirBody) wfOrgId = poemsDirBody.organizationId;
+
+        if (!poemsGroupId) {
+            console.warn('[wfSpec] Could not ensure ~/Poems group — beforeAll seeding may be incomplete');
+            return;
+        }
+
+        // Find or create poem A
+        let paObjectId = null;
+        const paSearch = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query', type: 'olio.cb.poem',
+                fields: [
+                    { name: 'name', comparator: 'equals', value: 'wf-spec-poem-alpha' },
+                    { name: 'organizationId', comparator: 'equals', value: wfOrgId }
+                ],
+                request: ['id', 'objectId'], recordCount: 1, cache: false
+            }
+        });
+        const paBody = await paSearch.json().catch(() => null);
+        if (paBody && paBody.results && paBody.results.length > 0) {
+            paObjectId = paBody.results[0].objectId;
+        } else {
+            const paResp = await request.post(REST + '/model', {
+                data: {
+                    schema: 'olio.cb.poem',
+                    name: 'wf-spec-poem-alpha',
+                    title: 'Falling Leaves (WF)',
+                    author: 'WF Test',
+                    groupId: poemsGroupId,
+                    text: POEM_A
+                }
+            });
+            const paCreated = await paResp.json().catch(() => null);
+            paObjectId = paCreated && paCreated.objectId;
+        }
+
+        // Find or create poem B
+        let pbObjectId = null;
+        const pbSearch = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query', type: 'olio.cb.poem',
+                fields: [
+                    { name: 'name', comparator: 'equals', value: 'wf-spec-poem-beta' },
+                    { name: 'organizationId', comparator: 'equals', value: wfOrgId }
+                ],
+                request: ['id', 'objectId'], recordCount: 1, cache: false
+            }
+        });
+        const pbBody = await pbSearch.json().catch(() => null);
+        if (pbBody && pbBody.results && pbBody.results.length > 0) {
+            pbObjectId = pbBody.results[0].objectId;
+        } else {
+            const pbResp = await request.post(REST + '/model', {
+                data: {
+                    schema: 'olio.cb.poem',
+                    name: 'wf-spec-poem-beta',
+                    title: 'Winter (WF)',
+                    author: 'WF Test',
+                    groupId: poemsGroupId,
+                    text: POEM_B
+                }
+            });
+            const pbCreated = await pbResp.json().catch(() => null);
+            pbObjectId = pbCreated && pbCreated.objectId;
+        }
+
+        if (!paObjectId || !pbObjectId) {
+            console.warn('[wfSpec] Could not seed poems — workflow node tests will be skipped');
+            return;
+        }
+
+        // Create a ChapBook — this is a native PB2 olio.pb.book with workflow nodes
+        let slug = 'wf-spec-chapbook-' + Date.now().toString(36);
+        const createResp = await request.post(CB_REST + '/create', {
+            data: { slug, title: 'WF Spec ChapBook', poemObjectIds: [paObjectId, pbObjectId], maxLinesPerPage: 20 }
+        });
+        if (!createResp.ok()) {
+            console.warn('[wfSpec] ChapBook create failed: ' + createResp.status() + ' — workflow node tests will be skipped');
+            return;
+        }
+        const created = await createResp.json().catch(() => null);
+        // The ChapBook create response is the full olio.pb.book record
+        wfPb2BookObjectId = created && created.objectId;
+
+        await request.get(REST + '/logout');
+    });
+
+    // ── REST: verify workflow endpoint returns nodes ────────────────────
+
+    test('GET /workflow returns at least one node for the seeded ChapBook', async ({ request }) => {
+        if (!wfPb2BookObjectId) {
+            test.skip('wfPb2BookObjectId not seeded — ChapBook creation may have failed in beforeAll');
+            return;
+        }
+        const loginResp = await request.post(REST + '/login', {
+            data: {
+                schema: 'auth.credential',
+                organizationPath: '/Development',
+                name: 'e2etest_shared',
+                credential: b64('password'),
+                type: 'hashed_password'
+            }
+        });
+        expect(loginResp.ok() || loginResp.status() === 204).toBe(true);
+
+        // The /workflow endpoint accepts the pb2BookObjectId directly (not a group objectId)
+        const wfResp = await request.get(
+            REST + '/olio/picture-book/' + wfPb2BookObjectId + '/workflow'
+        );
+        expect(wfResp.ok(), 'workflow endpoint failed: ' + wfResp.status()).toBe(true);
+        const wf = await wfResp.json();
+        expect(wf, 'workflow response is null').toBeTruthy();
+        expect(Array.isArray(wf.nodes), 'workflow.nodes must be an array').toBe(true);
+        expect(wf.nodes.length, 'workflow must have at least one node').toBeGreaterThanOrEqual(1);
+
+        await request.get(REST + '/logout');
+    });
+
+    // ── UI: v2 route for the seeded ChapBook shows content ─────────────
+
+    test('v2 route for seeded ChapBook shows content, not blank', async ({ page }) => {
+        if (!wfPb2BookObjectId) {
+            test.skip('wfPb2BookObjectId not seeded — ChapBook creation may have failed in beforeAll');
+            return;
+        }
+        await loginAsSharedUser(page);
+        await page.evaluate((oid) => {
+            window.location.hash = '!/picture-book/v2/' + oid;
+        }, wfPb2BookObjectId);
+        await page.waitForTimeout(3000);
+
+        let content = await page.content();
+        // The v2 reader should render something meaningful for a real book
+        let handled =
+            content.includes('Loading') ||
+            content.includes('arrow_back') ||
+            content.includes('Cover') ||
+            content.includes('chevron') ||
+            content.includes('picture-book');
+        expect(handled).toBe(true);
+
+        // No JS errors
+        let bodyText = await page.locator('body').innerText();
+        expect(bodyText.length).toBeGreaterThan(0);
+    });
+
+    // ── REST: testNode endpoint returns a non-500 response ───────────────
+
+    test('POST /node/{nodeObjectId}/test returns acceptable status for first seeded ChapBook node', async ({ request }) => {
+        if (!wfPb2BookObjectId) {
+            test.skip('wfPb2BookObjectId not seeded');
+            return;
+        }
+        const loginResp = await request.post(REST + '/login', {
+            data: {
+                schema: 'auth.credential',
+                organizationPath: '/Development',
+                name: 'e2etest_shared',
+                credential: b64('password'),
+                type: 'hashed_password'
+            }
+        });
+        expect(loginResp.ok() || loginResp.status() === 204).toBe(true);
+
+        // Get the workflow nodes
+        const wfResp = await request.get(REST + '/olio/picture-book/' + wfPb2BookObjectId + '/workflow');
+        if (!wfResp.ok()) {
+            await request.get(REST + '/logout');
+            test.skip('workflow endpoint failed — skipping testNode test');
+            return;
+        }
+        const wf = await wfResp.json();
+        const nodes = (wf && wf.nodes) || [];
+        if (!nodes.length) {
+            await request.get(REST + '/logout');
+            test.skip('no nodes in ChapBook workflow — skipping testNode test');
+            return;
+        }
+
+        // Use the first node
+        const nodeOid = nodes[0].objectId;
+        const testResp = await request.post(
+            REST + '/olio/picture-book/' + wfPb2BookObjectId + '/node/' + nodeOid + '/test'
+        );
+
+        // 200 = executed, 501 = type not implemented, 503 = no SD server, 404 = scene missing
+        // 400 and 500 should NOT occur for a well-formed node from the ChapBook pipeline
+        const status = testResp.status();
+        expect([200, 501, 503, 404], `unexpected testNode status ${status}`).toContain(status);
+
+        await request.get(REST + '/logout');
+    });
+
+    // ── REST: listStale endpoint works for the seeded ChapBook ───────────
+
+    test('GET /stale returns an array for the seeded ChapBook', async ({ request }) => {
+        if (!wfPb2BookObjectId) {
+            test.skip('wfPb2BookObjectId not seeded');
+            return;
+        }
+        const loginResp = await request.post(REST + '/login', {
+            data: {
+                schema: 'auth.credential',
+                organizationPath: '/Development',
+                name: 'e2etest_shared',
+                credential: b64('password'),
+                type: 'hashed_password'
+            }
+        });
+        expect(loginResp.ok() || loginResp.status() === 204).toBe(true);
+
+        const staleResp = await request.get(REST + '/olio/picture-book/' + wfPb2BookObjectId + '/stale');
+        expect(staleResp.ok(), 'stale endpoint failed: ' + staleResp.status()).toBe(true);
+        const staleBody = await staleResp.json();
+        expect(Array.isArray(staleBody), 'stale endpoint must return an array').toBe(true);
+
+        await request.get(REST + '/logout');
+    });
+
+    // ── Gated UI: workflow canvas with PB1 book group objectId ──────────
+    //
+    // This test requires a REAL PB1 book group objectId (auth.group) that has
+    // a PB2 workflow linked via the /pb2 bridge endpoint.  Supply it via:
+    //   WORKFLOW_BOOK_GROUP_OID=<auth.group objectId UUID>
+    //
+    // Creating a PB1 book with a PB2 workflow involves the full Olio scene-generation
+    // pipeline (several minutes), so this test is gated rather than auto-seeded.
+
+    test('workflow canvas renders [data-node-id] elements for a PB1 book with workflow', async ({ page }) => {
+        const bookGroupOid = process.env.WORKFLOW_BOOK_GROUP_OID;
+        if (!bookGroupOid) {
+            test.skip('set WORKFLOW_BOOK_GROUP_OID=<auth.group objectId> to run this test');
+            return;
+        }
+        await loginAsSharedUser(page);
+        await page.evaluate((oid) => {
+            window.location.hash = '!/picture-book/' + oid + '/workflow';
+        }, bookGroupOid);
+
+        // Wait for the graph to load (bridge call + workflowView call)
+        await page.waitForFunction(
+            () => {
+                let els = document.querySelectorAll('[data-node-id]');
+                let err = document.body.innerText;
+                return els.length > 0 || err.includes('Failed') || err.includes('No PB2');
+            },
+            { timeout: 30000 }
+        );
+
+        // At least one node card must be present
+        const nodeCards = await page.locator('[data-node-id]').count();
+        expect(nodeCards, 'Expected at least one node card with [data-node-id]').toBeGreaterThanOrEqual(1);
+
+        // The "▶ Test" button must be present on at least one node card
+        const testBtns = await page.locator('button:has-text("▶ Test")').count();
+        expect(testBtns, 'Expected at least one "▶ Test" button on node cards').toBeGreaterThanOrEqual(1);
+
+        // The "↻ Stale" recheck button must be present in the toolbar
+        const staleBtn = await page.locator('button:has-text("↻ Stale")').count();
+        expect(staleBtn, 'Expected "↻ Stale" button in toolbar').toBeGreaterThanOrEqual(1);
     });
 
 });

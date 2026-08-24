@@ -159,6 +159,44 @@ public class ChapBookUtil {
 		return s;
 	}
 
+	// ─────────────────────────────── poem creation ───────────────────────────────
+
+	/**
+	 * Create an {@code olio.cb.poem} record in the specified group path (default {@code ~/Poems}).
+	 * The group is created if absent (via the factory path resolution). Returns the created
+	 * record's identity fields only — callers that need the full record should do a subsequent find.
+	 *
+	 * @param user      the acting user
+	 * @param title     poem title — also used as the {@code name} field (required)
+	 * @param author    optional author attribution
+	 * @param text      the full poem text (required)
+	 * @param groupPath the directory path; null or blank defaults to {@code ~/Poems}
+	 * @return the identity fields of the created record
+	 * @throws PictureBookException 400 if required fields are absent, 500 on persistence failure
+	 */
+	public static BaseRecord createPoem(BaseRecord user, String title, String author, String text, String groupPath) {
+		if (title == null || title.isBlank()) throw new PictureBookException(400, "title is required");
+		if (text == null || text.isBlank()) throw new PictureBookException(400, "text is required");
+		String effectivePath = (groupPath != null && !groupPath.isBlank()) ? groupPath : "~/Poems";
+		try {
+			org.cote.accountmanager.io.ParameterList plist = org.cote.accountmanager.io.ParameterList.newParameterList(
+				FieldNames.FIELD_PATH, effectivePath);
+			plist.parameter(FieldNames.FIELD_NAME, title);
+			BaseRecord poem = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CB_POEM, user, null, plist);
+			if (poem == null) throw new PictureBookException(500, "Failed to instantiate poem record");
+			poem.set(OlioFieldNames.FIELD_PB_TITLE, title);
+			if (author != null && !author.isBlank()) poem.set("author", author);
+			poem.set("text", text);
+			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, poem);
+			if (created == null) throw new PictureBookException(500, "Failed to create poem in path " + effectivePath);
+			return created;
+		} catch (PictureBookException e) {
+			throw e;
+		} catch (Exception e) {
+			throw new PictureBookException(500, "createPoem failed: " + e.getMessage());
+		}
+	}
+
 	// ─────────────────────────────── ChapBook creation ───────────────────────────────
 
 	/**

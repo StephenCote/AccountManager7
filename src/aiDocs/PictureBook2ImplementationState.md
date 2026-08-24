@@ -42,7 +42,7 @@ decision), then Appendix C, then the body. Where the body and Appendix D disagre
 | **Phase 3 gap closure — portrait render, sub-record reroute (2 defects fixed), KI-68 applied, KI-67 left alone** | **DONE** | see §3 |
 | **Phase 4 — REST + DTO seam (8 endpoints + §5.6's last gap)** | **DONE; all 8 endpoints verified over HTTP with pb2testuser** | `TestPictureBookRestContract` 14 green |
 | **KI-69 — age-blind portrait for role-only characters** | **DONE 2026-08-20** | `TestNarrativeUtilPortraitPrompt` 5 green (incl. new KI-69 regression case) |
-| Phase 5 (Ux) / 6 (migration) | out of scope this run | — |
+| **Phase 5 — Ux workflow graph canvas** | **DONE 2026-08-24** | vite build ✓; vitest 445/445 pass; 15 Playwright tests (2 REST + 13 UI smoke); gated Test-button + ↻ Stale button tests verified |
 | **Gates (re-run 2026-08-20)** | **BOTH GREEN** | flag-off 1/1; Objects7 gate 153 green |
 
 **One test is RED, deliberately.** See §4. Everything else that has been run since the revert passes;
@@ -1225,8 +1225,12 @@ filter per record in the REST layer, or fix `AccessPoint.list`.
 doubled `8k … ultra realistic` boosters and `steps=4 @ cfgscale=2.0` on the distilled `flux2Klein_9b`
 remain suspect but unverified. Needs a controlled before/after comparison at higher step count.
 
-**OPEN — Phase 5 (Ux752 workflow graph view, Ux752).** Not started; read the Ux752 reference before
-implementing.
+**DONE (2026-08-24) — Phase 5 (Ux752 workflow graph view).** Canvas has: pan/zoom, SVG edges, node cards
+with status badges, pin/unpin, mark-stale-for-regen, **▶ Test button** (fires `POST /node/{oid}/test`
+to execute a node against the SD/LLM backend), **↻ Stale** toolbar button (calls `GET /stale` then reloads
+graph), DONE_UNVERIFIED status color (#84cc16), artifact history thumbnails in the detail panel, Share and
+Chapter dialogs, Pages navigation. `testNode` export added to `workflows/pictureBookWorkflow.js`. Build and
+vitest gate green; 15 Playwright tests (auto-seeded ChapBook REST + UI, gated PB1-book canvas).
 
 **DEFERRED — olio.cb.set membership (ChapBook Phase 2).** `GET /olio/chap-book/sets` and `POST /olio/chap-book/set` stubs are in place and create/list `olio.cb.set` records. Set membership management (add/remove poem endpoints, set-to-book binding, set selection UI in Ux) is deferred to ChapBook Phase 2. `fetchSets()` in `chapBook.js` is defined but not wired to any component.
 

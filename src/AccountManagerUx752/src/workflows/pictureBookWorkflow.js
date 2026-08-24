@@ -109,3 +109,20 @@ export async function createChapter(fromPb2BookObjectId, slug, title, copyRecord
     if (!resp.ok) throw new Error('createChapter failed: ' + resp.status);
     return resp.json();
 }
+
+/**
+ * Execute a single node synchronously via the SD backend.
+ * Returns {nodeObjectId, handle, nodeStatus, artifactObjectId, artifactRevision, byteLength?, downstreamMarked, downstreamHandles}.
+ * Throws with HTTP status embedded in the message on non-2xx (e.g. 501 = not yet implemented for that node type).
+ */
+export async function testNode(pb2BookObjectId, nodeObjectId) {
+    let resp = await fetch(wfBase() + '/' + pb2BookObjectId + '/node/' + nodeObjectId + '/test', {
+        method: 'POST', credentials: 'include'
+    });
+    if (!resp.ok) {
+        let body = '';
+        try { body = await resp.text(); } catch (_) {}
+        throw new Error('(' + resp.status + ') ' + (body || 'testNode failed'));
+    }
+    return resp.json();
+}

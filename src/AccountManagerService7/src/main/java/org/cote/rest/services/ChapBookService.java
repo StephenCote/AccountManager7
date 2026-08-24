@@ -282,6 +282,43 @@ public class ChapBookService {
             JSONUtil.exportObject(results, RecordSerializerConfig.getForeignUnfilteredModule())).build();
     }
 
+    /**
+     * POST /poem
+     * Create an {@code olio.cb.poem} record.
+     * Body: { title, author?, text, groupPath? }
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/poem")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createPoem(String json, @Context HttpServletRequest request) {
+        OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+
+        BaseRecord params = parseParams(json);
+        if (params == null) return errorResponse(400, "Request body is required");
+
+        String title = params.get("title");
+        String author = params.get("author");
+        String text = params.get("text");
+        String groupPath = params.get("groupPath");
+
+        if (title == null || title.isBlank()) return errorResponse(400, "title is required");
+        if (text == null || text.isBlank()) return errorResponse(400, "text is required");
+
+        try {
+            BaseRecord created = ChapBookUtil.createPoem(user, title, author, text, groupPath);
+            return Response.status(200).entity(created.toFullString()).build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
+        } catch (Exception e) {
+            logger.error("createPoem failed: " + e.getMessage(), e);
+            return errorResponse(500, "Failed to create poem: " + e.getMessage());
+        }
+    }
+
     // ─────────────────────────────── Poem sets ───────────────────────────────
 
     /**

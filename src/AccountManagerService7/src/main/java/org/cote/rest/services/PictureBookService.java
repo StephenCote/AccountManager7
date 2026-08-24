@@ -9,6 +9,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.IPictureBookProgressHandler;
+import org.cote.accountmanager.olio.picturebook.PbMigrationUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookCancelRegistry;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.picturebook.PbServiceFacade;
@@ -1115,6 +1116,49 @@ public class PictureBookService {
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /migrate-v1
+     * Migrate a PB1 book group to a PB2 {@code olio.pb.book}.
+     * Body: { groupObjectId: "&lt;v1 book group objectId&gt;" }
+     * Returns: { bookObjectId, slug, scenesImported, scenesFailed, warnings[] }
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/migrate-v1")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response migrateV1Book(String json, @Context HttpServletRequest request,
+            @Context ServletContext context) {
+        OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+
+        BaseRecord params = parseParams(json);
+        if (params == null) return errorResponse(400, "Request body required: {groupObjectId}");
+
+        String groupObjectId = params.get("groupObjectId");
+        if (groupObjectId == null || groupObjectId.isBlank()) {
+            return errorResponse(400, "groupObjectId is required");
+        }
+
+        String dataPath = context.getInitParameter("datagen.path");
+        try {
+            PbMigrationUtil.ImportResult result = PbMigrationUtil.importV1Book(user, dataPath, groupObjectId);
+            Map<String, Object> out = new java.util.LinkedHashMap<>();
+            out.put("bookObjectId", result.bookObjectId);
+            out.put("slug", result.slug);
+            out.put("scenesImported", result.scenesImported);
+            out.put("scenesFailed", result.scenesFailed);
+            out.put("warnings", result.warnings);
+            return Response.status(200).entity(JSONUtil.exportObject(out)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (Exception e) {
+            logger.error("migrateV1Book failed: " + e.getMessage(), e);
+            return errorResponse(500, "Migration failed: " + e.getMessage());
         }
     }
 

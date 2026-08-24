@@ -76,6 +76,159 @@ public class PbNodeExecutor {
 		}
 	}
 
+	// ─── landscape ───────────────────────────────────────────────────────────────
+
+	private static Map<String, Object> executeLandscape(BaseRecord user, BaseRecord book,
+			BaseRecord workflow, BaseRecord node, String swarmServer) {
+		if(swarmServer == null || swarmServer.trim().isEmpty()) {
+			throw new PictureBookException(503, "No SD server URL available — configure it via ServerConfigUtil.SERVER_SD");
+		}
+		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
+		if(scopeRef == null || scopeRef.trim().isEmpty()) {
+			throw new PictureBookException(400, "Landscape node "
+				+ node.get(OlioFieldNames.FIELD_PB_HANDLE) + " carries no scopeRef (scene objectId)");
+		}
+
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_SCENE, FieldNames.FIELD_OBJECT_ID, scopeRef);
+		sq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		sq.setRequest(new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID,
+			OlioFieldNames.FIELD_CB_SD_PROMPT, OlioFieldNames.FIELD_PB_MOOD
+		});
+		sq.setCache(false);
+		BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+		if(scene == null) {
+			throw new PictureBookException(404, "Scene " + scopeRef + " not found");
+		}
+
+		String sdPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		if(sdPrompt == null || sdPrompt.trim().isEmpty()) {
+			String mood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
+			sdPrompt = "landscape, scenic, painterly, soft light" + (mood != null ? ", " + mood + " atmosphere" : "");
+			logger.warn("executeLandscape: scene {} has no sdPrompt — using generic fallback", scopeRef);
+		}
+
+		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, false);
+		try {
+			effectiveConfig.set("description", sdPrompt);
+			effectiveConfig.set("hires", false);
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to set description on effective landscape config: " + e.getMessage());
+		}
+
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+		String artifactPath = PbBookUtil.artifactGroupPath(slug);
+		String landscapeName = "landscape_" + System.currentTimeMillis();
+
+		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
+		List<BaseRecord> images = sdu.createImage(user, artifactPath, effectiveConfig, landscapeName, 1, false, -1);
+		if(images == null || images.isEmpty()) {
+			throw new PictureBookException(500, "SD backend returned no images for landscape of scene " + scopeRef);
+		}
+		BaseRecord image = images.get(0);
+		byte[] bytes;
+		try {
+			bytes = ByteModelUtil.getValue(image);
+		}
+		catch(FieldException | ValueException e) {
+			throw new PictureBookException(500, "Failed to read landscape bytes for scene " + scopeRef + ": " + e.getMessage());
+		}
+		if(bytes == null || bytes.length == 0) {
+			throw new PictureBookException(500, "Landscape image for scene " + scopeRef + " decoded to empty bytes");
+		}
+
+		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_LANDSCAPE,
+			PbArtifactTypeEnumType.IMAGE, artifactPath, image, null, effectiveConfig, null);
+
+		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, workflow, node);
+		PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
+
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
+		out.put("nodeStatus", "DONE_UNVERIFIED");
+		out.put("artifactObjectId", artifact.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("artifactRevision", artifact.get(OlioFieldNames.FIELD_PB_REVISION));
+		out.put("byteLength", Long.valueOf(bytes.length));
+		out.put("downstreamMarked", Integer.valueOf(marked.size()));
+		List<String> downstreamHandles = new java.util.ArrayList<>();
+		for(BaseRecord d : marked) {
+			downstreamHandles.add((String) d.get(OlioFieldNames.FIELD_PB_HANDLE));
+		}
+		out.put("downstreamHandles", downstreamHandles);
+		return out;
+	}
+
+	// ─── prompt nodes (SCENE_PROMPT / LANDSCAPE_PROMPT) ──────────────────────────
+
+	private static Map<String, Object> executePromptNode(BaseRecord user, BaseRecord book,
+			BaseRecord workflow, BaseRecord node, PbNodeTypeEnumType nodeType) {
+		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
+		if(scopeRef == null || scopeRef.trim().isEmpty()) {
+			throw new PictureBookException(400, "Prompt node "
+				+ node.get(OlioFieldNames.FIELD_PB_HANDLE) + " carries no scopeRef (scene objectId)");
+		}
+
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_SCENE, FieldNames.FIELD_OBJECT_ID, scopeRef);
+		sq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		sq.setRequest(new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID,
+			OlioFieldNames.FIELD_CB_SD_PROMPT, "description"
+		});
+		sq.setCache(false);
+		BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+		if(scene == null) {
+			throw new PictureBookException(404, "Scene " + scopeRef + " not found");
+		}
+
+		String role = (nodeType == PbNodeTypeEnumType.LANDSCAPE_PROMPT)
+			? PbPipelineUtil.ROLE_LANDSCAPE_PROMPT
+			: PbPipelineUtil.ROLE_SCENE_PROMPT;
+
+		String promptText = (nodeType == PbNodeTypeEnumType.LANDSCAPE_PROMPT)
+			? scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT)
+			: scene.get(FieldNames.FIELD_DESCRIPTION);
+		if(promptText == null) promptText = "";
+
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+		String artifactPath = PbBookUtil.artifactGroupPath(slug);
+
+		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, role,
+			PbArtifactTypeEnumType.TEXT, artifactPath, null, promptText, null, null);
+
+		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, workflow, node);
+		PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
+
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
+		out.put("nodeStatus", "DONE_UNVERIFIED");
+		out.put("artifactObjectId", artifact.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("artifactRevision", artifact.get(OlioFieldNames.FIELD_PB_REVISION));
+		out.put("downstreamMarked", Integer.valueOf(marked.size()));
+		List<String> downstreamHandles = new java.util.ArrayList<>();
+		for(BaseRecord d : marked) {
+			downstreamHandles.add((String) d.get(OlioFieldNames.FIELD_PB_HANDLE));
+		}
+		out.put("downstreamHandles", downstreamHandles);
+		return out;
+	}
+
+	// ─── composite ───────────────────────────────────────────────────────────────
+
+	private static Map<String, Object> executeComposite(BaseRecord user, BaseRecord book,
+			BaseRecord workflow, BaseRecord node, String swarmServer) {
+		throw new PictureBookException(501,
+			"COMPOSITE requires img2img pipeline — not yet implemented");
+	}
+
+	// ─── portrait ────────────────────────────────────────────────────────────────
+
 	private static Map<String, Object> executePortrait(BaseRecord user, BaseRecord book,
 			BaseRecord workflow, BaseRecord node, String swarmServer) {
 		if(swarmServer == null || swarmServer.trim().isEmpty()) {

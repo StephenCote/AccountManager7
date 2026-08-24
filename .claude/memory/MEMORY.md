@@ -47,7 +47,8 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `project-pb-phase1b-status` -- Phase 1b (universe/world IDs in Service7+Ux) implementation complete and verified
 - `project-pb-security-status` -- TestPbSecurity status: 10/10 green on 2026-08-21
 - `project-pb2-open-gaps` -- PB2 all phases done 2026-08-23 including Phase 1b; only Phase 3b (ComfyUI, optional) remains
-- `project-pb5-phase-status` -- Phase 5a+5b Playwright gates closed — 13/13 tests pass; full Phase 5 exit criterion met
+- `project-pb2-remaining-work-status` -- B1/B2/B3/D3/M1/M3 implementation status from 2026-08-24 session — complete with architect-required fix
+- `project-pb5-phase-status` -- Phase 5 workflow canvas complete — Test button, Stale recheck, DONE_UNVERIFIED color, 15 Playwright tests
 - `project-pb6-phase-status` -- Phase 6 (Migration) status: PbMigrationUtil + TestPbMigration green
 - `project-pb6b-phase-status` -- Phase 6b (Interactive Canvas Backend) complete: PbNodeExecutor + TestPbCanvas green
 - `project-pb6c-phase-status` -- Phase 6c (SD config persistability) complete: S1-S6 all done, all tests green
