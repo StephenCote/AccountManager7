@@ -39,9 +39,10 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `ki-chapbook-sdprompt-design-debt` -- ChapBook olio.pb.scene sdPrompt is a bare string — design debt; full sdConfig-per-scene needed for PB2 redesign parity
 - `ki-task-api-key-unknown` -- TASK_API_KEY in entrypoint.sh is remote task-queue auth — inert (task.poll.remote=false), hardcoded JWT default in git history, feature appears dormant
 - `project-accountmanager7-overview` -- What AccountManager7 is: schema-first BaseRecord/PBAC platform; sessions open at the GIT ROOT while Maven/modules live under src\ - two different 'project roots'; module map
+- `project-chapbook-add-poem-design` -- ChapBook Add Poems UX design — multi-select notes/data with ordering, bulk import via POST /poems
 - `project-chapbook-design` -- ChapBook feature design: poetry PictureBook variant with olio.cb.book/poem/set models, theme LLM, landscape-only pipeline, text overlay
 - `project-chapbook-image-pipeline` -- ChapBook image render pipeline design: sdPrompt+imageObjectId on scene, renderChapBook direct SDUtil path, bookPageView fallback
-- `project-chapbook-test-status` -- ChapBook Playwright gate: 6/6 green (1 skipped LLM-gated) as of 2026-08-24; SD test via PB2 viewer /v2/ route
+- `project-chapbook-test-status` -- ChapBook Playwright gate: 7/7 green as of 2026-08-24
 - `project-ki69-closed` -- KI-69 closed 2026-08-20: age-blind portrait fix in NarrativeUtil with adult fallback, 5 tests green
 - `project-pb-castgroup-q15` -- Q15 resolved: olio.pb.castGroup for collective canvas entities — model created 2026-08-21
 - `project-pb-phase1b-status` -- Phase 1b (universe/world IDs in Service7+Ux) implementation complete and verified

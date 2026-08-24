@@ -130,6 +130,7 @@ const ObjectPicker = {
         }
         pickerState.handler = opts.onSelect || null;
         pickerState.title = opts.title || "Select";
+        pickerState.multiSelect = opts.multiSelect || false;
 
         // Some types are NOT group/parent-contained (e.g. system.user, identity.account, identity.person —
         // org-scoped). For those, do NOT resolve or require a container: list org-scoped. Only group/parent/
@@ -179,11 +180,17 @@ const ObjectPicker = {
             favoritesContainerId: favoritesContainerId,
             onSelect: function(items) {
                 let handler = pickerState.handler;
+                let multiSel = pickerState.multiSelect;
                 ObjectPicker.close();
                 if (handler && items) {
-                    // getSelected() returns array; unwrap for single-select
-                    let item = Array.isArray(items) ? items[0] : items;
-                    if (item) handler(item);
+                    if (multiSel) {
+                        let arr = Array.isArray(items) ? items : [items];
+                        if (arr.length) handler(arr);
+                    } else {
+                        // single-select: unwrap array to first item
+                        let item = Array.isArray(items) ? items[0] : items;
+                        if (item) handler(item);
+                    }
                 }
             }
         });

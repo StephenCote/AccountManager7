@@ -188,6 +188,14 @@ public class ChapBookUtil {
 			if (author != null && !author.isBlank()) poem.set("author", author);
 			poem.set("text", text);
 			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, poem);
+			if (created == null) {
+				// May already exist (UNIQUE constraint) — look up existing poem by name in the group
+				org.cote.accountmanager.io.Query fq = org.cote.accountmanager.io.QueryUtil.createQuery(OlioModelNames.MODEL_CB_POEM, FieldNames.FIELD_NAME, title);
+				Object gid = poem.get(FieldNames.FIELD_GROUP_ID);
+				if (gid instanceof Number && ((Number)gid).longValue() > 0L) fq.field(FieldNames.FIELD_GROUP_ID, ((Number)gid).longValue());
+				fq.setCache(false);
+				created = IOSystem.getActiveContext().getAccessPoint().find(user, fq);
+			}
 			if (created == null) throw new PictureBookException(500, "Failed to create poem in path " + effectivePath);
 			return created;
 		} catch (PictureBookException e) {

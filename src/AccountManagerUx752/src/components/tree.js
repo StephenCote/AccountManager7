@@ -41,20 +41,30 @@ function newTreeComponent() {
 
         page.components.dialog.open({
             title: "New " + type,
-            content: function() {
-                return m("div", { class: "p-4" }, [
-                    m("label", { class: "block text-sm font-medium mb-1" }, "Name"),
-                    m("input", {
-                        class: "w-full px-3 py-2 border rounded text-sm",
-                        type: "text",
-                        value: entity.name || "",
-                        oninput: function(e) { entity.name = e.target.value; }
-                    })
-                ]);
+            content: {
+                view: function() {
+                    return m("div", { class: "p-4" }, [
+                        m("label", { class: "block text-sm font-medium mb-1" }, "Name"),
+                        m("input", {
+                            class: "w-full px-3 py-2 border rounded text-sm",
+                            type: "text",
+                            value: entity.name || "",
+                            oninput: function(e) { entity.name = e.target.value; }
+                        })
+                    ]);
+                }
             },
-            onConfirm: function() {
-                if (fConfirm) fConfirm({ entity });
-            }
+            actions: [
+                {
+                    label: "Cancel",
+                    onclick: function() { page.components.dialog.close(); if (fCancel) fCancel(); }
+                },
+                {
+                    label: "Create",
+                    primary: true,
+                    onclick: function() { page.components.dialog.close(); if (fConfirm) fConfirm({ entity }); }
+                }
+            ]
         });
     }
 

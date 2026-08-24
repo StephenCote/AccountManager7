@@ -3,13 +3,18 @@ package org.cote.rest.services;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.ServerConfigUtil;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.picturebook.ChapBookUtil;
@@ -50,6 +55,8 @@ import jakarta.ws.rs.core.Response;
  *   POST /analyze/{poemObjectId}     — trigger LLM theme/mood/keywords analysis on one poem
  *   POST /create                     — create a ChapBook from selected poems
  *   GET  /poems                      — list olio.cb.poem records
+ *   POST /poems                      — bulk-import poems from data.note / data.data sources
+ *   POST /poem                       — create a single olio.cb.poem record
  *   GET  /sets                       — list olio.cb.set records
  *   POST /set                        — create a poem set
  */
@@ -285,7 +292,15 @@ public class ChapBookService {
     /**
      * POST /poem
      * Create an {@code olio.cb.poem} record.
-     * Body: { title, author?, text, groupPath? }
+     * Body: { title, author?, text?, groupPath?, noteObjectId?, dataObjectId? }
+     * <p>
+     * Text is resolved in priority order:
+     * <ol>
+     *   <li>{@code noteObjectId} — loads a {@code data.note} and reads its {@code text} field.</li>
+     *   <li>{@code dataObjectId} — loads a {@code data.data} and extracts its byteStore as UTF-8
+     *       text via {@link ByteModelUtil#getValueString} (handles decompression/decryption).</li>
+     *   <li>{@code text} — raw text supplied directly in the request body (backwards-compatible).</li>
+     * </ol>
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -304,9 +319,50 @@ public class ChapBookService {
         String author = params.get("author");
         String text = params.get("text");
         String groupPath = params.get("groupPath");
+        String noteObjectId = params.get("noteObjectId");
+        String dataObjectId = params.get("dataObjectId");
 
         if (title == null || title.isBlank()) return errorResponse(400, "title is required");
-        if (text == null || text.isBlank()) return errorResponse(400, "text is required");
+
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+
+        // Resolve text from a data.note source
+        if (noteObjectId != null && !noteObjectId.isBlank()) {
+            Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, noteObjectId);
+            q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            q.setRequest(new String[]{"id", "objectId", "name", "text"});
+            q.setCache(false);
+            BaseRecord note = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+            if (note == null) {
+                return errorResponse(404, "data.note not found: " + noteObjectId);
+            }
+            text = note.get("text");
+            if (text == null || text.isBlank()) {
+                return errorResponse(400, "data.note '" + noteObjectId + "' has no text content");
+            }
+        }
+        // Resolve text from a data.data byteStore source
+        else if (dataObjectId != null && !dataObjectId.isBlank()) {
+            Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, dataObjectId);
+            q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            q.planMost(true);
+            q.setCache(false);
+            BaseRecord data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+            if (data == null) {
+                return errorResponse(404, "data.data not found: " + dataObjectId);
+            }
+            try {
+                text = ByteModelUtil.getValueString(data);
+            } catch (Exception e) {
+                logger.error("Failed to extract text from data.data " + dataObjectId + ": " + e.getMessage(), e);
+                return errorResponse(500, "Failed to read data.data content: " + e.getMessage());
+            }
+            if (text == null || text.isBlank()) {
+                return errorResponse(400, "data.data '" + dataObjectId + "' has no text content");
+            }
+        }
+
+        if (text == null || text.isBlank()) return errorResponse(400, "text is required (provide text, noteObjectId, or dataObjectId)");
 
         try {
             BaseRecord created = ChapBookUtil.createPoem(user, title, author, text, groupPath);
@@ -317,6 +373,124 @@ public class ChapBookService {
             logger.error("createPoem failed: " + e.getMessage(), e);
             return errorResponse(500, "Failed to create poem: " + e.getMessage());
         }
+    }
+
+    /**
+     * POST /poems
+     * Bulk import an ordered list of {@code data.note} and/or {@code data.data} objects as poems.
+     * Body: { "sources": [ {"type":"data.note","objectId":"...","title":"optional"}, {"type":"data.data","objectId":"..."}, ... ] }
+     * Returns: { "poems": [{"objectId":"...","title":"..."},...], "errors":["..."] }
+     * The returned poem array preserves the input order; failed sources appear in "errors".
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/poems")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createPoems(String json, @Context HttpServletRequest request) {
+        OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+
+        BaseRecord params = parseParams(json);
+        if (params == null) return errorResponse(400, "Request body is required");
+
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+
+        // Parse sources directly from the raw JSON — the "sources" field is not defined in the
+        // olio.pictureBookRequest schema, so schema-driven deserialization drops it. Use Jackson.
+        List<String> srcTypes = new ArrayList<>();
+        List<String> srcObjectIds = new ArrayList<>();
+        List<String> srcTitles = new ArrayList<>();
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(json);
+            JsonNode srcArr = root.path("sources");
+            if (srcArr.isArray()) {
+                for (JsonNode n : srcArr) {
+                    String t = n.path("type").asText(null);
+                    String oid = n.path("objectId").asText(null);
+                    String ttl = n.path("title").asText(null);
+                    if (t != null && oid != null) {
+                        srcTypes.add(t);
+                        srcObjectIds.add(oid);
+                        srcTitles.add(ttl);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to parse sources from request body: " + e.getMessage());
+        }
+        if (srcObjectIds.isEmpty()) return errorResponse(400, "sources must contain at least one entry");
+
+        List<String> poemJsonList = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+
+        for (int si = 0; si < srcObjectIds.size(); si++) {
+            String srcType = srcTypes.get(si);
+            String objectId = srcObjectIds.get(si);
+            String titleOverride = srcTitles.get(si);
+            if (objectId == null || objectId.isBlank()) { errors.add("source missing objectId"); continue; }
+
+            String title = null;
+            String text = null;
+            try {
+                if ("data.note".equals(srcType)) {
+                    Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, objectId);
+                    q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+                    q.setRequest(new String[]{"id", "objectId", "name", "text"});
+                    q.setCache(false);
+                    BaseRecord note = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+                    if (note == null) { errors.add("data.note not found: " + objectId); continue; }
+                    text = note.get("text");
+                    title = (titleOverride != null && !titleOverride.isBlank()) ? titleOverride : (String) note.get(FieldNames.FIELD_NAME);
+                } else if ("data.data".equals(srcType)) {
+                    Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, objectId);
+                    q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+                    q.planMost(true);
+                    q.setCache(false);
+                    BaseRecord data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+                    if (data == null) { errors.add("data.data not found: " + objectId); continue; }
+                    text = ByteModelUtil.getValueString(data);
+                    title = (titleOverride != null && !titleOverride.isBlank()) ? titleOverride : (String) data.get(FieldNames.FIELD_NAME);
+                } else {
+                    errors.add("unknown source type: " + srcType); continue;
+                }
+            } catch (Exception e) {
+                errors.add("read failed for " + objectId + ": " + e.getMessage()); continue;
+            }
+            if (title == null || title.isBlank()) title = "Untitled";
+            if (text == null || text.isBlank()) { errors.add("no text in " + objectId); continue; }
+            try {
+                BaseRecord created = ChapBookUtil.createPoem(user, title, null, text, null);
+                if (created == null) { errors.add("poem creation returned null for " + objectId); continue; }
+                String oid = created.get(FieldNames.FIELD_OBJECT_ID);
+                String tl = created.get("title");
+                if (tl == null) tl = title;
+                poemJsonList.add("{\"objectId\":\"" + oid + "\",\"title\":\"" + tl.replace("\"", "'") + "\"}");
+            } catch (PictureBookException e) {
+                errors.add(e.getMessage());
+            } catch (Exception e) {
+                errors.add("poem creation failed for " + objectId + ": " + e.getMessage());
+            }
+        }
+
+        StringBuilder sb = new StringBuilder("{\"poems\":[");
+        for (int i = 0; i < poemJsonList.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append(poemJsonList.get(i));
+        }
+        sb.append("]");
+        if (!errors.isEmpty()) {
+            sb.append(",\"errors\":[");
+            for (int i = 0; i < errors.size(); i++) {
+                if (i > 0) sb.append(",");
+                sb.append("\"").append(errors.get(i).replace("\\", "\\\\").replace("\"", "'")).append("\"");
+            }
+            sb.append("]");
+        }
+        sb.append("}");
+        return Response.status(200).entity(sb.toString()).build();
     }
 
     // ─────────────────────────────── Poem sets ───────────────────────────────

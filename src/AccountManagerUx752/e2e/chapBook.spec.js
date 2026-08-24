@@ -100,6 +100,8 @@ let poem1ObjectId = null;
 let poem2ObjectId = null;
 let chapBookObjectId = null;
 let orgId = null;
+let notesGroupId = null;
+let testNoteObjectId = null;
 
 test.describe('ChapBook — UI', () => {
     test.describe.configure({ timeout: 120000 });
@@ -126,6 +128,40 @@ test.describe('ChapBook — UI', () => {
         expect(poemsDirBody && poemsDirBody.id, 'Could not ensure ~/Poems group').toBeTruthy();
         const poemsGroupId = poemsDirBody.id;
         orgId = poemsDirBody.organizationId;
+
+        // Ensure ~/Notes group for data.note import test
+        const notesDir = await request.get(REST + '/path/make/auth.group/data/B64-' + Buffer.from('~/Notes').toString('base64').replace(/=/g, '%3D'));
+        const notesDirBody = await notesDir.json();
+        notesGroupId = notesDirBody && notesDirBody.id;
+
+        // Seed a data.note for POST /poems import test
+        if (notesGroupId && orgId) {
+            let noteSearch = await request.post(REST + '/model/search', {
+                data: {
+                    schema: 'io.query', type: 'data.note',
+                    fields: [
+                        { name: 'name', comparator: 'equals', value: 'chapbook-test-note-fallingleaves' },
+                        { name: 'organizationId', comparator: 'equals', value: orgId }
+                    ],
+                    request: ['id', 'objectId'], recordCount: 1, cache: false
+                }
+            });
+            let noteBody = await noteSearch.json().catch(() => null);
+            if (noteBody && noteBody.results && noteBody.results.length > 0) {
+                testNoteObjectId = noteBody.results[0].objectId;
+            } else {
+                let noteResp = await request.post(REST + '/model', {
+                    data: {
+                        schema: 'data.note',
+                        name: 'chapbook-test-note-fallingleaves',
+                        groupId: notesGroupId,
+                        text: POEM_1
+                    }
+                });
+                let noteCreated = await noteResp.json().catch(() => null);
+                testNoteObjectId = noteCreated && noteCreated.objectId;
+            }
+        }
 
         // Create poem 1 — idempotent by name search first
         // organizationId required: olio.cb.poem inherits data.directory and PBAC denies list queries without it
@@ -219,9 +255,9 @@ test.describe('ChapBook — UI', () => {
         await page.evaluate(() => { window.location.hash = '!/chap-book'; });
         await page.waitForTimeout(2000);
 
-        // Both poems should appear in the table
-        await expect(page.locator('text=Falling Leaves')).toBeVisible({ timeout: 10000 });
-        await expect(page.locator('text=Winter (part 1)')).toBeVisible({ timeout: 5000 });
+        // Both poems should appear in the table (use .first() since multiple runs may create duplicates)
+        await expect(page.locator('text=Falling Leaves').first()).toBeVisible({ timeout: 10000 });
+        await expect(page.locator('text=Winter (part 1)').first()).toBeVisible({ timeout: 5000 });
     });
 
     // ── Test 3: Multi-select and Create ChapBook dialog opens ─────────────────
@@ -346,6 +382,56 @@ test.describe('ChapBook — UI', () => {
             let stanzaEl = page.locator('p').filter({ hasText: /memory|leaves|falling|pristine|snow|spells/i }).first();
             await expect(stanzaEl).toBeVisible({ timeout: 5000 });
         }
+    });
+
+    // ── Test 6: POST /poems bulk import from ordered data.note sources ────────
+
+    test('POST /olio/chap-book/poems imports ordered notes as poems', async ({ request }) => {
+        if (!testNoteObjectId) {
+            test.skip('testNoteObjectId not seeded — check beforeAll note creation');
+            return;
+        }
+        const loginResp = await request.post(REST + '/login', {
+            data: {
+                schema: 'auth.credential',
+                organizationPath: '/Development',
+                name: 'e2etest_shared',
+                credential: Buffer.from('password').toString('base64'),
+                type: 'hashed_password'
+            }
+        });
+        expect(loginResp.ok() || loginResp.status() === 204).toBe(true);
+
+        let importResp = await request.post(CB_REST + '/poems', {
+            data: {
+                sources: [
+                    { type: 'data.note', objectId: testNoteObjectId, title: 'Falling Leaves (from note)' }
+                ]
+            }
+        });
+        expect(importResp.ok(), 'POST /poems failed: ' + importResp.status() + ' ' + await importResp.text()).toBe(true);
+
+        let result = await importResp.json();
+        expect(Array.isArray(result.poems), 'result.poems should be an array').toBe(true);
+        expect(result.poems.length, 'should have imported 1 poem').toBe(1);
+        expect(result.poems[0].objectId, 'imported poem should have objectId').toBeTruthy();
+        expect(result.poems[0].title, 'imported poem should have title').toBeTruthy();
+        // errors array should be absent or empty
+        expect(!result.errors || result.errors.length === 0, 'no errors expected: ' + JSON.stringify(result.errors)).toBe(true);
+
+        await request.get(REST + '/logout');
+    });
+
+    // ── Test 7: UI — Add from Note and Add from Data buttons are present ──────
+
+    test('UI: Add from Note and Add from Data buttons are present in poem library', async ({ page }) => {
+        await loginAsSharedUser(page);
+        await page.evaluate(() => { window.location.hash = '!/chap-book'; });
+        await page.waitForTimeout(2000);
+
+        // Both import buttons should be visible
+        await expect(page.locator('button:has-text("Add from Note")').first()).toBeVisible({ timeout: 10000 });
+        await expect(page.locator('button:has-text("Add from Data")').first()).toBeVisible({ timeout: 5000 });
     });
 
     // ── LLM-gated test: poem analysis enriches theme/mood/keywords ────────────

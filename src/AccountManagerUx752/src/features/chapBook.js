@@ -10,6 +10,7 @@ import { am7client } from '../core/am7client.js';
 import { applicationPath } from '../core/config.js';
 import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
+import { ObjectPicker } from '../components/picker.js';
 
 // ── REST base ─────────────────────────────────────────────────────────
 
@@ -68,6 +69,18 @@ async function createPoem(title, author, text) {
     return resp.json();
 }
 
+async function importPoemsFromSources(sources) {
+    let body = { sources: sources };
+    let resp = await fetch(cbBase() + '/poems', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) throw new Error('Import failed: ' + resp.status);
+    return resp.json();
+}
+
 // ── renderChapBookPage — landscape page with text overlay ─────────────
 
 /**
@@ -116,13 +129,10 @@ let createTitle = '';
 let createMaxLines = 8;
 let creating = false;
 
-// Add Poem form state
-let showAddPoemDialog = false;
-let addPoemTitle = '';
-let addPoemAuthor = '';
-let addPoemText = '';
+// Add Poems from Notes — multi-select + order before import
 let addingPoem = false;
-let addPoemError = null;
+let pendingNotes = [];       // [{objectId, name}] — notes selected, awaiting order confirmation
+let showNoteOrderDialog = false;
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -210,44 +220,125 @@ function closeCreateDialog() {
     m.redraw();
 }
 
-function openAddPoemDialog() {
-    addPoemTitle = '';
-    addPoemAuthor = '';
-    addPoemText = '';
-    addPoemError = null;
-    showAddPoemDialog = true;
+function openSourcePicker(sourceType) {
+    let isData = sourceType === 'data.data';
+    ObjectPicker.open({
+        type: sourceType,
+        title: 'Select ' + (isData ? 'data objects' : 'notes') + ' to import as poems (use checkboxes, then ✓)',
+        multiSelect: true,
+        onSelect: function (items) {
+            if (!items || !items.length) return;
+            pendingNotes = items.map(function (it) {
+                return { objectId: it.objectId, name: it.name || 'Untitled', sourceType: sourceType };
+            });
+            showNoteOrderDialog = true;
+            m.redraw();
+        }
+    });
+}
+
+function moveNoteUp(idx) {
+    if (idx <= 0) return;
+    let tmp = pendingNotes[idx - 1];
+    pendingNotes[idx - 1] = pendingNotes[idx];
+    pendingNotes[idx] = tmp;
     m.redraw();
 }
 
-function closeAddPoemDialog() {
-    showAddPoemDialog = false;
+function moveNoteDown(idx) {
+    if (idx >= pendingNotes.length - 1) return;
+    let tmp = pendingNotes[idx + 1];
+    pendingNotes[idx + 1] = pendingNotes[idx];
+    pendingNotes[idx] = tmp;
     m.redraw();
 }
 
-async function doAddPoem() {
-    if (!addPoemTitle.trim()) {
-        addPoemError = 'Title is required';
-        m.redraw();
-        return;
-    }
-    if (!addPoemText.trim()) {
-        addPoemError = 'Poem text is required';
-        m.redraw();
-        return;
-    }
+function removeNote(idx) {
+    pendingNotes.splice(idx, 1);
+    if (!pendingNotes.length) showNoteOrderDialog = false;
+    m.redraw();
+}
+
+async function doImportNotes() {
+    if (!pendingNotes.length) return;
     addingPoem = true;
-    addPoemError = null;
+    showNoteOrderDialog = false;
     m.redraw();
+    let sources = pendingNotes.map(function (n) {
+        return { type: n.sourceType, objectId: n.objectId, title: n.name };
+    });
+    let toImport = pendingNotes.length;
+    pendingNotes = [];
     try {
-        await createPoem(addPoemTitle.trim(), addPoemAuthor.trim(), addPoemText.trim());
-        page.toast('success', 'Poem added: ' + addPoemTitle);
-        showAddPoemDialog = false;
-        await loadPoems();
+        let result = await importPoemsFromSources(sources);
+        let imported = (result.poems || []).length;
+        if (imported) {
+            page.toast('success', 'Imported ' + imported + ' of ' + toImport + ' poem(s)');
+            await loadPoems();
+        }
+        if (result.errors && result.errors.length) {
+            page.toast('error', result.errors.join('; '));
+        }
     } catch (e) {
-        addPoemError = e.message || 'Failed to add poem';
+        page.toast('error', 'Import failed: ' + (e.message || ''));
     }
     addingPoem = false;
     m.redraw();
+}
+
+function renderNoteOrderDialog() {
+    if (!showNoteOrderDialog || !pendingNotes.length) return null;
+    return m('div', {
+        class: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50',
+        onclick: function (e) { if (e.target === e.currentTarget) { showNoteOrderDialog = false; m.redraw(); } }
+    },
+        m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-lg mx-4' }, [
+            m('div', { class: 'flex items-center justify-between mb-4' }, [
+                m('h3', { class: 'text-lg font-semibold dark:text-white' }, 'Set poem order (' + pendingNotes.length + ' notes)'),
+                m('button', {
+                    class: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200',
+                    onclick: function () { showNoteOrderDialog = false; pendingNotes = []; m.redraw(); }
+                }, m('span', { class: 'material-symbols-outlined' }, 'close'))
+            ]),
+            m('p', { class: 'text-xs text-gray-500 dark:text-gray-400 mb-3' },
+                'Use ↑ / ↓ to reorder. Poems will be imported in this sequence.'),
+            m('ol', { class: 'space-y-1 mb-4 max-h-72 overflow-y-auto' },
+                pendingNotes.map(function (note, idx) {
+                    return m('li', { key: note.objectId, class: 'flex items-center gap-2 px-2 py-1 rounded bg-gray-50 dark:bg-gray-800' }, [
+                        m('span', { class: 'text-xs text-gray-400 w-6 text-right flex-shrink-0' }, (idx + 1) + '.'),
+                        m('span', { class: 'flex-1 text-sm dark:text-white truncate', title: note.name }, note.name),
+                        m('button', {
+                            class: 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30',
+                            title: 'Move up',
+                            disabled: idx === 0,
+                            onclick: function (e) { e.stopPropagation(); moveNoteUp(idx); }
+                        }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'arrow_upward')),
+                        m('button', {
+                            class: 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30',
+                            title: 'Move down',
+                            disabled: idx === pendingNotes.length - 1,
+                            onclick: function (e) { e.stopPropagation(); moveNoteDown(idx); }
+                        }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'arrow_downward')),
+                        m('button', {
+                            class: 'text-red-400 hover:text-red-600 ml-1',
+                            title: 'Remove',
+                            onclick: function (e) { e.stopPropagation(); removeNote(idx); }
+                        }, m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, 'close'))
+                    ]);
+                })
+            ),
+            m('div', { class: 'flex justify-end gap-2' }, [
+                m('button', {
+                    class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
+                    onclick: function () { showNoteOrderDialog = false; pendingNotes = []; m.redraw(); }
+                }, 'Cancel'),
+                m('button', {
+                    class: 'px-4 py-1.5 rounded bg-green-600 text-white text-sm hover:bg-green-700',
+                    onclick: doImportNotes
+                }, 'Import ' + pendingNotes.length + ' poem(s) in this order')
+            ])
+        ])
+    );
 }
 
 async function doCreateChapBook() {
@@ -282,13 +373,10 @@ const PoemLibrary = {
         selectedIds = new Set();
         loading = false;
         loadError = null;
-        showCreateDialog = false;
-        showAddPoemDialog = false;
-        addPoemTitle = '';
-        addPoemAuthor = '';
-        addPoemText = '';
         addingPoem = false;
-        addPoemError = null;
+        pendingNotes = [];
+        showNoteOrderDialog = false;
+        showCreateDialog = false;
         loadPoems();
     },
     view: function () {
@@ -316,11 +404,20 @@ const PoemLibrary = {
                     onclick: loadPoems
                 }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'refresh'), ' Refresh']),
                 m('button', {
-                    class: 'px-3 py-1 rounded bg-green-600 text-white text-sm hover:bg-green-700 flex items-center gap-1',
-                    onclick: openAddPoemDialog
+                    class: 'px-3 py-1 rounded bg-green-600 text-white text-sm hover:bg-green-700 flex items-center gap-1 disabled:opacity-50',
+                    onclick: function () { openSourcePicker('data.note'); },
+                    disabled: addingPoem
                 }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'add'),
-                    ' Add Poem'
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, addingPoem ? 'hourglass_empty' : 'note_add'),
+                    addingPoem ? ' Importing...' : ' Add from Note'
+                ]),
+                m('button', {
+                    class: 'px-3 py-1 rounded bg-teal-600 text-white text-sm hover:bg-teal-700 flex items-center gap-1 disabled:opacity-50',
+                    onclick: function () { openSourcePicker('data.data'); },
+                    disabled: addingPoem
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'description'),
+                    ' Add from Data'
                 ]),
                 selectedIds.size > 0 ? m('button', {
                     class: 'px-3 py-1 rounded bg-purple-600 text-white text-sm hover:bg-purple-700',
@@ -417,60 +514,10 @@ const PoemLibrary = {
                 ])
             ),
 
-            // Add Poem dialog — inline overlay
-            showAddPoemDialog ? m('div', {
-                class: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50',
-                onclick: function (e) { if (e.target === e.currentTarget) closeAddPoemDialog(); }
-            },
-                m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-lg mx-4' }, [
-                    m('div', { class: 'flex items-center justify-between mb-4' }, [
-                        m('h3', { class: 'text-lg font-semibold dark:text-white' }, 'Add Poem'),
-                        m('button', { class: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200', onclick: closeAddPoemDialog },
-                            m('span', { class: 'material-symbols-outlined' }, 'close'))
-                    ]),
-                    m('div', { class: 'space-y-3' }, [
-                        m('div', [
-                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Title *'),
-                            m('input', {
-                                type: 'text',
-                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
-                                value: addPoemTitle,
-                                oninput: function (e) { addPoemTitle = e.target.value; }
-                            })
-                        ]),
-                        m('div', [
-                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Author'),
-                            m('input', {
-                                type: 'text',
-                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
-                                value: addPoemAuthor,
-                                oninput: function (e) { addPoemAuthor = e.target.value; }
-                            })
-                        ]),
-                        m('div', [
-                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Poem Text *'),
-                            m('textarea', {
-                                rows: 10,
-                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white font-mono resize-y',
-                                value: addPoemText,
-                                oninput: function (e) { addPoemText = e.target.value; }
-                            })
-                        ]),
-                        addPoemError ? m('div', { class: 'text-sm text-red-500' }, addPoemError) : null
-                    ]),
-                    m('div', { class: 'flex justify-end gap-2 mt-4' }, [
-                        m('button', {
-                            class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
-                            onclick: closeAddPoemDialog
-                        }, 'Cancel'),
-                        m('button', {
-                            class: 'px-4 py-1.5 rounded bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50',
-                            disabled: addingPoem,
-                            onclick: doAddPoem
-                        }, addingPoem ? 'Adding...' : 'Add Poem')
-                    ])
-                ])
-            ) : null,
+            // Note order dialog — shown after multi-select pick, before import.
+            renderNoteOrderDialog(),
+
+            // ObjectPicker renders itself as a portal — no inline dialog needed here.
 
             // Create ChapBook dialog — inline overlay following the Dialog pattern
             showCreateDialog ? m('div', {
