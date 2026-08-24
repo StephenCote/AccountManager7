@@ -1,0 +1,169 @@
+package org.cote.accountmanager.objects.tests;
+
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.picturebook.ChapBookUtil;
+import org.cote.accountmanager.olio.picturebook.PbBookUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
+import org.junit.Before;
+import org.junit.Test;
+
+/**
+ * Integration test for ChapBookUtil.renderChapBook.
+ * Creates real olio.cb.poem records, builds a ChapBook via createChapBook,
+ * then calls renderChapBook against the live Swarm SD server and verifies
+ * that at least one scene has an imageObjectId persisted.
+ *
+ * Gated on test.swarm.server — skipped when the property is absent.
+ */
+public class TestChapBook extends BaseTest {
+
+	private static final String ORG_PATH = "/Development/ChapBook Tests";
+
+	private BaseRecord testUser;
+
+	@Before
+	public void setUpChapBook() {
+		// BaseTest.setup() is @Before too and runs first; OlioModelNames.use() is called there.
+		// Create a stable test user for this suite.
+		org.cote.accountmanager.io.OrganizationContext ctx =
+			getTestOrganization(ORG_PATH);
+		testUser = IOSystem.getActiveContext().getFactory()
+			.getCreateUser(ctx.getAdminUser(), "chapbookTestUser", ctx.getOrganizationId());
+		assertNotNull("chapbookTestUser must be created", testUser);
+	}
+
+	/**
+	 * End-to-end test: create two poems → createChapBook → renderChapBook.
+	 * Asserts rendered >= 1 and that at least one scene has imageObjectId set in the DB.
+	 */
+	@Test
+	public void TestChapBookRender() throws Exception {
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		assumeTrue("test.swarm.server not configured — skipping SD test", swarmServer != null && !swarmServer.isBlank());
+
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be set", dataPath);
+
+		long ts = System.currentTimeMillis();
+		String slug = "cb-test-" + ts;
+		String title = "ChapBook Test " + ts;
+
+		// ── 1. Create two olio.cb.poem records ──────────────────────────────────
+		String poem1Text =
+			"The light falls soft on winter boughs,\n" +
+			"A silver hush where no bird calls,\n" +
+			"The world holds still as snowfall flows,\n" +
+			"And quiet fills the frozen halls.";
+
+		String poem2Text =
+			"Come spring and break the ice apart,\n" +
+			"Let green reclaim the barren earth,\n" +
+			"With warmth restored to every heart,\n" +
+			"And songs reborn to celebrate birth.";
+
+		String poemPath = "~/Data/ChapBookTest-" + ts;
+
+		BaseRecord poem1 = createPoem(testUser, poemPath, "Poem One " + ts, poem1Text);
+		assertNotNull("Poem 1 should be created", poem1);
+		String poem1Oid = poem1.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Poem 1 must have objectId", poem1Oid);
+
+		BaseRecord poem2 = createPoem(testUser, poemPath, "Poem Two " + ts, poem2Text);
+		assertNotNull("Poem 2 should be created", poem2);
+		String poem2Oid = poem2.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Poem 2 must have objectId", poem2Oid);
+
+		logger.info("Created poem1={} poem2={}", poem1Oid, poem2Oid);
+
+		// ── 2. Create ChapBook (null chatConfig = no LLM, uses default sdPrompt) ──
+		List<String> poemOids = new ArrayList<>();
+		poemOids.add(poem1Oid);
+		poemOids.add(poem2Oid);
+
+		long createStart = System.currentTimeMillis();
+		// maxLinesPerPage=4 so each 4-line stanza becomes one scene (2 poems → 2 scenes)
+		BaseRecord book = ChapBookUtil.createChapBook(testUser, dataPath, slug, title, poemOids, 4, null);
+		logger.info("createChapBook took {}ms", System.currentTimeMillis() - createStart);
+
+		assertNotNull("createChapBook must return a book record", book);
+		String bookObjectId = book.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Book must have an objectId", bookObjectId);
+
+		// Verify bookType was patched to CHAPBOOK
+		Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
+		bq.field(FieldNames.FIELD_ORGANIZATION_ID, ((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
+		bq.setRequest(new String[]{
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID,
+			FieldNames.FIELD_OWNER_ID, OlioFieldNames.FIELD_PB_BOOK_TYPE
+		});
+		bq.setCache(false);
+		BaseRecord bookCheck = IOSystem.getActiveContext().getAccessPoint().find(testUser, bq);
+		assertNotNull("Book must be findable by objectId", bookCheck);
+		String bookType = bookCheck.get(OlioFieldNames.FIELD_PB_BOOK_TYPE);
+		assertTrue("bookType must be CHAPBOOK, got: " + bookType,
+			bookType != null && "CHAPBOOK".equalsIgnoreCase(bookType));
+
+		// Verify scenes were created
+		List<BaseRecord> scenes = PbBookUtil.listScenes(testUser, bookCheck);
+		assertTrue("At least one scene must have been created from the poems", !scenes.isEmpty());
+		logger.info("Scenes created: {}", scenes.size());
+
+		// ── 3. Render the ChapBook against the live Swarm SD server ─────────────
+		long renderStart = System.currentTimeMillis();
+		int rendered = ChapBookUtil.renderChapBook(testUser, bookObjectId, "SWARM", swarmServer);
+		logger.info("renderChapBook took {}ms, rendered={}/{} scenes",
+			System.currentTimeMillis() - renderStart, rendered, scenes.size());
+
+		assertTrue("At least 1 scene must be rendered (returned " + rendered + ")", rendered >= 1);
+
+		// ── 4. Verify imageObjectId persisted on at least one scene ─────────────
+		// Re-query scenes from the DB to get the updated imageObjectId fields
+		List<BaseRecord> updatedScenes = PbBookUtil.listScenes(testUser, bookCheck);
+		long scenesWithImage = updatedScenes.stream()
+			.filter(s -> {
+				String oid = s.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID);
+				return oid != null && !oid.isBlank();
+			})
+			.count();
+
+		logger.info("Scenes with imageObjectId set: {}/{}", scenesWithImage, updatedScenes.size());
+		assertTrue("At least one scene must have imageObjectId persisted after renderChapBook; got "
+			+ scenesWithImage + "/" + updatedScenes.size() + " with image",
+			scenesWithImage >= 1);
+	}
+
+	// ── helpers ──────────────────────────────────────────────────────────────
+
+	/**
+	 * Create an {@code olio.cb.poem} record at the given group path with the given name and text.
+	 * Returns the identity-only record (objectId) from AccessPoint.create.
+	 */
+	private BaseRecord createPoem(BaseRecord user, String groupPath, String name, String text) {
+		try {
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+			plist.parameter(FieldNames.FIELD_NAME, name);
+			BaseRecord poem = IOSystem.getActiveContext().getFactory()
+				.newInstance(OlioModelNames.MODEL_CB_POEM, user, null, plist);
+			poem.set("text", text);
+			poem.set("title", name);
+			return IOSystem.getActiveContext().getAccessPoint().create(user, poem);
+		} catch (Exception e) {
+			logger.error("createPoem failed: {}", e.getMessage(), e);
+			return null;
+		}
+	}
+}

@@ -7,8 +7,7 @@
  * Tests that touch the LLM (analyzePoemTheme) are gated behind CHAPBOOK_LLM_TESTS=1
  * because they hit the DGX Spark at 192.168.1.42 and can take several minutes.
  *
- * NOTE: Poem text below is synthetic placeholder. Replace with Stephen's real samples
- *       when they are provided — see feedback-use-real-test-content.
+ * Tests that touch SD image generation are gated behind CHAPBOOK_SD_TESTS=1.
  */
 import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser } from './helpers/api.js';
@@ -16,22 +15,38 @@ import { ensureSharedTestUser } from './helpers/api.js';
 const REST = '/AccountManagerService7/rest';
 const CB_REST = REST + '/olio/chap-book';
 
-// Minimal synthetic poem text — sufficient to exercise chunking and scene creation.
-// REPLACE with real sample poems when Stephen provides them.
-const POEM_1 = `The wind forgets its name in autumn leaves
-and every branch remembers, still.
-A silence folds itself along the eaves,
-the light goes thin and cold with will.
+// Real poems by Stephen W. Cote — stanza text only (header lines stripped).
+const POEM_1 = `Memory, do not fail me;
+A majestic oak's leaves
+Tumbling and falling.
+A precarious branch
+Mourning its creased skein's blanch
+Weeps spirals of methodical floating
+Falling through a brisk wind pirouette
+Upon an earthen collet,
+The crumpled remains are fleeting.
 
-Through the glass the garden holds its breath,
-waits for what it cannot name.
-Even stones have learned to speak of death
-the way a candle speaks of flame.`;
+Memory, do not forget me;
+You, sir, have betrayed me.
+Languishing in rivulets
+Of pollen speckled rain,
+Spattering the falling
+Offspring moments of magnificence,
+Are mere minutes of memories failing
+To recall your pitch black heart.
+Revel in those falling leaves.`;
 
-const POEM_2 = `Rain against the window, patient, slow,
-each drop a small announcement of the night.
-The street below learns what the sleeping know:
-that ordinary dark can hold some light.`;
+const POEM_2 = `Outside, all is pristine,
+From cobalt skies of charcoal unity
+Descending upon snow canvassed green
+To silver veins of icy sheens,
+Born of spells and sorcery.
+
+Inside hearts and hearths and homes,
+Ochre embers and ebon cinders,
+Faded life stirred by motherly crones,
+Dry damp clothes and warm cold bones
+And illuminate the age-old spellbound tomes.`;
 
 async function loginAsSharedUser(page) {
     const resp = await page.request.post(REST + '/login', {
@@ -119,7 +134,7 @@ test.describe('ChapBook — UI', () => {
                 schema: 'io.query',
                 type: 'olio.cb.poem',
                 fields: [
-                    { name: 'name', comparator: 'equals', value: 'chapbook-test-autumn' },
+                    { name: 'name', comparator: 'equals', value: 'chapbook-real-fallingleaves' },
                     { name: 'organizationId', comparator: 'equals', value: orgId }
                 ],
                 request: ['id', 'objectId', 'name'],
@@ -134,8 +149,8 @@ test.describe('ChapBook — UI', () => {
             let p1Resp = await request.post(REST + '/model', {
                 data: {
                     schema: 'olio.cb.poem',
-                    name: 'chapbook-test-autumn',
-                    title: 'Autumn Study',
+                    name: 'chapbook-real-fallingleaves',
+                    title: 'Falling Leaves',
                     author: 'E2E Test',
                     groupId: poemsGroupId,
                     text: POEM_1
@@ -152,7 +167,7 @@ test.describe('ChapBook — UI', () => {
                 schema: 'io.query',
                 type: 'olio.cb.poem',
                 fields: [
-                    { name: 'name', comparator: 'equals', value: 'chapbook-test-rain' },
+                    { name: 'name', comparator: 'equals', value: 'chapbook-real-winter1' },
                     { name: 'organizationId', comparator: 'equals', value: orgId }
                 ],
                 request: ['id', 'objectId', 'name'],
@@ -167,8 +182,8 @@ test.describe('ChapBook — UI', () => {
             let p2Resp = await request.post(REST + '/model', {
                 data: {
                     schema: 'olio.cb.poem',
-                    name: 'chapbook-test-rain',
-                    title: 'Rain Study',
+                    name: 'chapbook-real-winter1',
+                    title: 'Winter (part 1)',
                     author: 'E2E Test',
                     groupId: poemsGroupId,
                     text: POEM_2
@@ -205,8 +220,8 @@ test.describe('ChapBook — UI', () => {
         await page.waitForTimeout(2000);
 
         // Both poems should appear in the table
-        await expect(page.locator('text=Autumn Study')).toBeVisible({ timeout: 10000 });
-        await expect(page.locator('text=Rain Study')).toBeVisible({ timeout: 5000 });
+        await expect(page.locator('text=Falling Leaves')).toBeVisible({ timeout: 10000 });
+        await expect(page.locator('text=Winter (part 1)')).toBeVisible({ timeout: 5000 });
     });
 
     // ── Test 3: Multi-select and Create ChapBook dialog opens ─────────────────
@@ -328,7 +343,7 @@ test.describe('ChapBook — UI', () => {
             await nextBtn.click();
             await page.waitForTimeout(500);
             // Poem text should be visible on scene page
-            let stanzaEl = page.locator('p').filter({ hasText: /wind|rain|autumn|stone|window|light/i }).first();
+            let stanzaEl = page.locator('p').filter({ hasText: /memory|leaves|falling|pristine|snow|spells/i }).first();
             await expect(stanzaEl).toBeVisible({ timeout: 5000 });
         }
     });
@@ -360,6 +375,138 @@ test.describe('ChapBook — UI', () => {
         let poem = await poemResp.json();
         expect(poem.theme, 'theme not populated after analyze').toBeTruthy();
         expect(poem.mood, 'mood not populated after analyze').toBeTruthy();
+
+        await request.get(REST + '/logout');
+    });
+
+    // ── SD-gated test: render produces scene images ───────────────────────────
+
+    test('POST /olio/chap-book/render generates scene images', async ({ page, request }) => {
+        if (!process.env.CHAPBOOK_SD_TESTS) {
+            test.skip('set CHAPBOOK_SD_TESTS=1 to run SD-dependent ChapBook tests');
+            return;
+        }
+        // SD image generation + LLM landscape prompt can take several minutes per scene.
+        // Override the 120s describe-level timeout for this test only.
+        test.setTimeout(900000);
+
+        const loginResp = await request.post(REST + '/login', {
+            data: {
+                schema: 'auth.credential',
+                organizationPath: '/Development',
+                name: 'e2etest_shared',
+                credential: Buffer.from('password').toString('base64'),
+                type: 'hashed_password'
+            }
+        });
+        expect(loginResp.ok() || loginResp.status() === 204).toBe(true);
+
+        // Look up any available olio.llm.chatConfig for LLM landscape prompt generation.
+        // When a chatConfig is found it is passed to the render endpoint so the LLM generates
+        // a poem-specific landscape prompt for each scene instead of the generic template fallback.
+        // (Different poems — e.g. Falling Leaves vs Winter — should produce visually distinct images.)
+        let chatConfigName = null;
+        if (orgId) {
+            const ccResp = await request.post(REST + '/model/search', {
+                data: {
+                    schema: 'io.query',
+                    type: 'olio.llm.chatConfig',
+                    fields: [{ name: 'organizationId', comparator: 'equals', value: orgId }],
+                    request: ['id', 'objectId', 'name'],
+                    recordCount: 1,
+                    cache: false
+                }
+            });
+            const ccBody = await ccResp.json().catch(() => null);
+            if (ccBody && ccBody.results && ccBody.results.length > 0) {
+                chatConfigName = ccBody.results[0].name;
+            }
+        }
+        if (chatConfigName) {
+            console.log('[chapBook.spec] using chatConfig "' + chatConfigName + '" for LLM landscape prompts');
+        } else {
+            console.log('[chapBook.spec] no chatConfig found — render will use stored sdPrompt fallback');
+        }
+
+        // Always create a fresh book for the SD test so we control scene count via
+        // maxLinesPerPage=20 (4 scenes total — manageable within the 10-min timeout).
+        // Test 4's book used maxLinesPerPage=4 which produces ~8 scenes and times out.
+        // When running in isolation beforeAll poem IDs may be null — look them up.
+        let bookOid = null;
+        if (!bookOid) {
+            let p1Oid = poem1ObjectId;
+            let p2Oid = poem2ObjectId;
+            if (!p1Oid || !p2Oid) {
+                const principalResp = await request.get(REST + '/login/principal');
+                const principal = await principalResp.json().catch(() => null);
+                const resolvedOrgId = principal && principal.organizationId;
+                const lookupPoem = async (name) => {
+                    if (!resolvedOrgId) return null;
+                    const sr = await request.post(REST + '/model/search', {
+                        data: {
+                            schema: 'io.query', type: 'olio.cb.poem',
+                            fields: [
+                                { name: 'name', comparator: 'equals', value: name },
+                                { name: 'organizationId', comparator: 'equals', value: resolvedOrgId }
+                            ],
+                            request: ['id', 'objectId'], recordCount: 1, cache: false
+                        }
+                    });
+                    const body = await sr.json().catch(() => null);
+                    return body && body.results && body.results[0] && body.results[0].objectId;
+                };
+                if (!p1Oid) p1Oid = await lookupPoem('chapbook-real-fallingleaves');
+                if (!p2Oid) p2Oid = await lookupPoem('chapbook-real-winter1');
+                if (!p1Oid || !p2Oid) {
+                    test.skip('poems not found in isolated run — seed poems by running the full suite first');
+                    return;
+                }
+            }
+            // maxLinesPerPage=20 keeps each natural stanza as one scene (both poems have
+            // stanzas of ≤10 lines), producing 4 scenes total — faster for CI than smaller values.
+            let slug = 'chapbook-sd-' + Date.now().toString(36);
+            let createResp = await request.post(CB_REST + '/create', {
+                data: { slug, title: 'SD Test ChapBook', poemObjectIds: [p1Oid, p2Oid], maxLinesPerPage: 20 }
+            });
+            expect(createResp.ok(), 'create failed: ' + createResp.status()).toBe(true);
+            let created = await createResp.json();
+            bookOid = created && (created.bookObjectId || created.objectId);
+        }
+        expect(bookOid, 'no bookObjectId for render test').toBeTruthy();
+
+        // Trigger SD render — allow up to 10 minutes for LLM + image generation per scene
+        let renderBody = chatConfigName ? { chatConfig: chatConfigName } : undefined;
+        let renderResp = await request.post(CB_REST + '/render/' + bookOid, {
+            data: renderBody,
+            timeout: 600000
+        });
+        expect(renderResp.ok(), 'render failed: ' + renderResp.status() + ' ' + await renderResp.text()).toBe(true);
+        let renderResult = await renderResp.json();
+        expect(renderResult.rendered, 'rendered count must be >= 1').toBeGreaterThanOrEqual(1);
+
+        // Verify at least one page has a dataObjectId (populated from imageObjectId by bookPageView)
+        let pagesResp = await request.get(REST + '/olio/picture-book/' + bookOid + '/pages');
+        expect(pagesResp.ok(), 'pages fetch failed').toBe(true);
+        let pages = await pagesResp.json();
+        expect(Array.isArray(pages) && pages.length > 0, 'no pages returned').toBe(true);
+        let pageWithImage = pages.find(p => p.dataObjectId);
+        expect(pageWithImage, 'no page has a dataObjectId after render').toBeTruthy();
+
+        // Navigate to PB2 viewer (/v2/ prefix) and verify image is visible.
+        // ChapBook is a PB2 book — using /picture-book/{oid} (PB1) would land on the
+        // legacy viewer which never calls the olio/picture-book/pages endpoint and
+        // always shows the empty "no images" state for CHAPBOOK books.
+        await loginAsSharedUser(page);
+        await page.evaluate((oid) => { window.location.hash = '!/picture-book/v2/' + oid; }, bookOid);
+        await page.waitForTimeout(3000);
+        let nextBtn = page.locator('button[aria-label*="next"], button:has-text("chevron_right"), button:has-text("›")').first();
+        if (await nextBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+            await nextBtn.click();
+            await page.waitForTimeout(1500);
+        }
+        // At least one img element should be visible (the SD-generated landscape)
+        let imgEl = page.locator('img[src*="data.data"]').first();
+        await expect(imgEl).toBeVisible({ timeout: 15000 });
 
         await request.get(REST + '/logout');
     });

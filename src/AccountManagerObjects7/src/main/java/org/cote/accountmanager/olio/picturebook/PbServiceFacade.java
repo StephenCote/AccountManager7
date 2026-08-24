@@ -630,6 +630,7 @@ public class PbServiceFacade {
 			p.put("title", scene.get(OlioFieldNames.FIELD_PB_TITLE));
 			p.put("blurb", scene.get(OlioFieldNames.FIELD_PB_BLURB));
 			p.put("summary", scene.get(OlioFieldNames.FIELD_PB_SUMMARY));
+			p.put("poemStanza", scene.get(OlioFieldNames.FIELD_CB_POEM_STANZA));
 
 			String dataObjectId = null;
 			if(!nodeMap.isEmpty()) {
@@ -650,6 +651,10 @@ public class PbServiceFacade {
 						}
 					}
 				}
+			}
+			// For ChapBook scenes with no workflow node, fall back to the directly-generated image
+			if (dataObjectId == null) {
+				dataObjectId = (String) scene.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID);
 			}
 			p.put("dataObjectId", dataObjectId);
 			out.add(p);

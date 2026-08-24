@@ -13,6 +13,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 
 ## feedback
 - `feedback-bytestore-access` -- Never read/write a byte_store field with raw .get()/.set() — use ByteModelUtil, since data may be compressed and/or encrypted
+- `feedback-chapbook-authorize-scene-gotcha` -- authorizeSceneAccess queries data.note not olio.pb.scene — generateSceneImage cannot be used for ChapBook scenes
 - `feedback-deflection-patterns` -- Stephen's repeated correction — stop shirking responsibility; \"pre-existing\" never discharges ownership of a test or bug I authored
 - `feedback-likeInherits-noop` -- likeInherits in ModelSchema is metadata-only — no DDL or field-inheritance effect
 - `feedback-llm-literal-null-strings` -- LLM-extracted JSON fields can contain the literal string \"null\"/\"n/a\"/\"unknown\" instead of being absent or blank — guard for that explicitly
@@ -35,9 +36,12 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `playwright-docker-e2e-gotchas` -- WebSocket stub + dist freshness required for Playwright tests against the Docker stack
 
 ## project
+- `ki-chapbook-sdprompt-design-debt` -- ChapBook olio.pb.scene sdPrompt is a bare string — design debt; full sdConfig-per-scene needed for PB2 redesign parity
+- `ki-task-api-key-unknown` -- TASK_API_KEY in entrypoint.sh is remote task-queue auth — inert (task.poll.remote=false), hardcoded JWT default in git history, feature appears dormant
 - `project-accountmanager7-overview` -- What AccountManager7 is: schema-first BaseRecord/PBAC platform; sessions open at the GIT ROOT while Maven/modules live under src\ - two different 'project roots'; module map
 - `project-chapbook-design` -- ChapBook feature design: poetry PictureBook variant with olio.cb.book/poem/set models, theme LLM, landscape-only pipeline, text overlay
-- `project-chapbook-test-status` -- ChapBook Playwright gate: 5/5 green as of 2026-08-24; test run command for Docker test stack
+- `project-chapbook-image-pipeline` -- ChapBook image render pipeline design: sdPrompt+imageObjectId on scene, renderChapBook direct SDUtil path, bookPageView fallback
+- `project-chapbook-test-status` -- ChapBook Playwright gate: 6/6 green (1 skipped LLM-gated) as of 2026-08-24; SD test via PB2 viewer /v2/ route
 - `project-ki69-closed` -- KI-69 closed 2026-08-20: age-blind portrait fix in NarrativeUtil with adult fallback, 5 tests green
 - `project-pb-castgroup-q15` -- Q15 resolved: olio.pb.castGroup for collective canvas entities — model created 2026-08-21
 - `project-pb-phase1b-status` -- Phase 1b (universe/world IDs in Service7+Ux) implementation complete and verified
@@ -48,7 +52,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `project-pb6b-phase-status` -- Phase 6b (Interactive Canvas Backend) complete: PbNodeExecutor + TestPbCanvas green
 - `project-pb6c-phase-status` -- Phase 6c (SD config persistability) complete: S1-S6 all done, all tests green
 - `project-picturebook-backend-redo` -- PictureBook feature backend persistence redo — charPerson/portrait/landscape not saved, reference images unused
-- `project-service-testing-docker` -- Service7/Tomcat testing via Docker — database mapping, Playwright command, what verified-working means
+- `project-service-testing-docker` -- Service7/Tomcat testing via Docker — database mapping, clean-env procedure, hot-deploy steps, Playwright command
 - `testing-db-reset` -- Database reset rules: am7db and am7test resettable; am72db NEVER touched at all — no DDL, no migrations, no SQL
 - `testing-olio-org-seed` -- Olio seed data loads per-organization and takes minutes on first use; reuse a single stable test org rather than random or multiple org names
 - `tomcat-eclipse-redeploy` -- Tomcat runs inside Eclipse's managed server; frequent backend Java saves can hang it on redeploy
@@ -58,4 +62,4 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `uat-pb2-issues-status` -- PB2 UAT issues 1/2/3 fix status — all three implemented and compile-verified 2026-08-23
 
 ## reference
-- `reference-sd-llm-hardware` -- The two GPU boxes: local Beelink GTR9 (Strix Halo) for sustained SD work, DGX Spark at 192.168.1.42 for LLM — Spark crashes under sustained load
+- `reference-sd-llm-hardware` -- SD at 192.168.1.39 (GTR9 Swarm :7801), LLM at 192.168.1.42 (Spark Ollama :11434) — not interchangeable; .42 crashes under sustained SD load

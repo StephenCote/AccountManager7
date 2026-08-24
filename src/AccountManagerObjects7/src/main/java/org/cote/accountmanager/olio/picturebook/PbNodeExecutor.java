@@ -9,6 +9,9 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.GameUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
@@ -60,10 +63,16 @@ public class PbNodeExecutor {
 		switch(nodeType) {
 			case PORTRAIT:
 				return executePortrait(user, book, workflow, node, swarmServer);
+			case LANDSCAPE:
+				return executeLandscape(user, book, workflow, node, swarmServer);
+			case SCENE_PROMPT:
+			case LANDSCAPE_PROMPT:
+				return executePromptNode(user, book, workflow, node, nodeType);
+			case COMPOSITE:
+				return executeComposite(user, book, workflow, node, swarmServer);
 			default:
-				throw new PictureBookException(400,
-					"Single-node execution is not yet implemented for node type " + nodeType
-						+ ". Supported types: PORTRAIT");
+				throw new PictureBookException(501,
+					"Single-node execution is not yet implemented for node type " + nodeType);
 		}
 	}
 

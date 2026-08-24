@@ -16,6 +16,8 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.SDAPIEnumType;
+import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -249,20 +251,157 @@ public class ChapBookUtil {
 		if (scene == null) {
 			throw new PictureBookException(500, "Failed to create ChapBook scene at index " + sceneIndex);
 		}
-		// Patch poemStanza, mood, and title onto the scene
+		// Patch poemStanza, mood, title, and sdPrompt onto the scene
 		try {
+			String sdPromptVal = "landscape, " + (poemTitle != null ? poemTitle : "poetic scene") + ", "
+				+ (mood != null ? mood : "poetic") + " atmosphere, painterly, soft light";
 			BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
-				OlioFieldNames.FIELD_CB_POEM_STANZA, OlioFieldNames.FIELD_PB_MOOD, OlioFieldNames.FIELD_PB_TITLE);
+				OlioFieldNames.FIELD_CB_POEM_STANZA, OlioFieldNames.FIELD_PB_MOOD, OlioFieldNames.FIELD_PB_TITLE,
+				OlioFieldNames.FIELD_CB_SD_PROMPT);
 			if (stanzaText != null) patch.set(OlioFieldNames.FIELD_CB_POEM_STANZA, stanzaText);
 			if (mood != null) patch.set(OlioFieldNames.FIELD_PB_MOOD, mood);
 			if (poemTitle != null) patch.set(OlioFieldNames.FIELD_PB_TITLE, poemTitle);
+			patch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, sdPromptVal);
 			if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
-				logger.warn("createChapBookScene: failed to patch stanza/mood onto scene " + sceneIndex);
+				logger.warn("createChapBookScene: failed to patch stanza/mood/sdPrompt onto scene " + sceneIndex);
 			}
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.warn("createChapBookScene: patch field error at index " + sceneIndex + ": " + e.getMessage());
 		}
 		return scene;
+	}
+
+	// ─────────────────────────────── ChapBook rendering ───────────────────────────────
+
+	/**
+	 * Generate SD images for all scenes of a CHAPBOOK-typed {@code olio.pb.book}.
+	 * Delegates to {@link #renderChapBook(BaseRecord, String, String, String, BaseRecord)} with no chatConfig.
+	 */
+	public static int renderChapBook(BaseRecord user, String bookObjectId,
+			String sdApiType, String sdServer) {
+		return renderChapBook(user, bookObjectId, sdApiType, sdServer, null);
+	}
+
+	/**
+	 * Generate SD images for all scenes of a CHAPBOOK-typed {@code olio.pb.book}.
+	 * <p>
+	 * When {@code chatConfig} is provided, the LLM generates a landscape SD prompt from each
+	 * scene's {@code poemStanza} text (using the {@code chapBook.landscape-prompt} template),
+	 * producing imagery appropriate for the poem's imagery and atmosphere. When null, the
+	 * stored {@code sdPrompt} template string is used as a fallback.
+	 * <p>
+	 * The resulting {@code data.data} image objectId is stored in {@code imageObjectId} on
+	 * each scene; {@code bookPageView} uses this as the {@code dataObjectId} fallback when
+	 * no workflow sceneNode exists.
+	 *
+	 * @param user         the acting user (must have WRITE access to the book)
+	 * @param bookObjectId objectId of the {@code olio.pb.book} to render
+	 * @param sdApiType    SD API type string (e.g. "SWARM"); must match a {@link SDAPIEnumType} name
+	 * @param sdServer     SD server URL
+	 * @param chatConfig   optional LLM config for landscape prompt generation; null = use stored sdPrompt
+	 * @return number of scenes for which an image was successfully generated
+	 * @throws PictureBookException if the book is not found or is not a CHAPBOOK
+	 */
+	public static int renderChapBook(BaseRecord user, String bookObjectId,
+			String sdApiType, String sdServer, BaseRecord chatConfig) {
+		if (user == null || bookObjectId == null || bookObjectId.isBlank()) {
+			throw new PictureBookException(400, "user and bookObjectId are required");
+		}
+		if (sdApiType == null || sdServer == null) {
+			throw new PictureBookException(500, "SD server not configured");
+		}
+
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
+		bq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		bq.setRequest(new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID,
+			FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
+			OlioFieldNames.FIELD_PB_BOOK_TYPE, OlioFieldNames.FIELD_PB_WORLD
+		});
+		bq.setCache(false);
+		BaseRecord book = IOSystem.getActiveContext().getAccessPoint().find(user, bq);
+		if (book == null) {
+			throw new PictureBookException(404, "Book not found: " + bookObjectId);
+		}
+
+		String bookType = book.get(OlioFieldNames.FIELD_PB_BOOK_TYPE);
+		if (bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
+			throw new PictureBookException(400, "Book " + bookObjectId + " is not a CHAPBOOK");
+		}
+
+		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
+		if (scenes.isEmpty()) {
+			logger.info("renderChapBook: no scenes for book {}", bookObjectId);
+			return 0;
+		}
+
+		String bookGroupPath = book.get(FieldNames.FIELD_GROUP_PATH);
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType.toUpperCase()), sdServer);
+
+		int rendered = 0;
+		for (BaseRecord scene : scenes) {
+			String sceneOid = (String) scene.get(FieldNames.FIELD_OBJECT_ID);
+			String stanza = scene.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
+			String mood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
+			String sceneTitle = scene.get(OlioFieldNames.FIELD_PB_TITLE);
+
+			// Use LLM to generate a landscape prompt from the stanza when chatConfig is available.
+			// Falls back to the stored sdPrompt template when the LLM is not configured or returns blank.
+			String sdPrompt = null;
+			if (chatConfig != null && stanza != null && !stanza.isBlank()) {
+				Map<String, String> vars = new LinkedHashMap<>();
+				vars.put("stanzaText", stanza);
+				vars.put("mood", mood != null ? mood : "poetic");
+				vars.put("compositionContext", sceneTitle != null ? sceneTitle : "poetic scene");
+				String llmResult = PictureBookUtil.callLlmForChapBook(user, chatConfig, "chapBook.landscape-prompt", vars);
+				if (llmResult != null && !llmResult.isBlank()) {
+					sdPrompt = llmResult.trim();
+					logger.info("renderChapBook: LLM landscape prompt for scene {}: {}", sceneOid, sdPrompt.length() > 80 ? sdPrompt.substring(0, 80) + "…" : sdPrompt);
+				} else {
+					logger.warn("renderChapBook: LLM returned no landscape prompt for scene {} — falling back to stored sdPrompt", sceneOid);
+				}
+			}
+			if (sdPrompt == null || sdPrompt.isBlank()) {
+				sdPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+			}
+			if (sdPrompt == null || sdPrompt.isBlank()) {
+				logger.warn("renderChapBook: scene " + sceneOid + " has no sdPrompt — skipping");
+				continue;
+			}
+			String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
+			if (sceneGroupPath == null) sceneGroupPath = (bookGroupPath != null ? bookGroupPath + "/Scenes" : "~/Scenes");
+
+			try {
+				BaseRecord sdConfig = SDUtil.randomSDConfig();
+				SDUtil.fillStyleDefaults(sdConfig);
+				sdConfig.set("description", sdPrompt);
+
+				String imageName = "chapbook_" + sceneOid + "_" + System.currentTimeMillis();
+				List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, sdConfig, imageName, 1, false, -1);
+				if (images == null || images.isEmpty()) {
+					logger.warn("renderChapBook: SD generation returned no images for scene " + sceneOid);
+					continue;
+				}
+				BaseRecord image = images.get(0);
+				String imageOid = image.get(FieldNames.FIELD_OBJECT_ID);
+
+				// Patch imageObjectId onto the scene record using patchOf pattern
+				BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
+					OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID);
+				patch.set(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID, imageOid);
+				if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+					logger.warn("renderChapBook: failed to patch imageObjectId on scene " + sceneOid);
+				} else {
+					rendered++;
+					logger.info("renderChapBook: rendered scene " + sceneOid);
+				}
+			} catch (Exception e) {
+				logger.warn("renderChapBook: error rendering scene " + sceneOid + ": " + e.getMessage());
+			}
+		}
+		logger.info("renderChapBook: rendered {}/{} scenes for book {}", rendered, scenes.size(), bookObjectId);
+		return rendered;
 	}
 
 	/**

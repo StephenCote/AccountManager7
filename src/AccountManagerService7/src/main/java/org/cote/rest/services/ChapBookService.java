@@ -7,6 +7,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.util.ServerConfigUtil;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.schema.type.OrderEnumType;
@@ -190,6 +191,55 @@ public class ChapBookService {
         } catch (Exception e) {
             logger.error("createChapBook failed: " + e.getMessage(), e);
             return errorResponse(500, "ChapBook creation failed: " + e.getMessage());
+        }
+    }
+
+    // ─────────────────────────────── ChapBook rendering ───────────────────────────────
+
+    /**
+     * POST /render/{bookObjectId}
+     * Generate SD images for all scenes of a CHAPBOOK book.
+     * {@code sdApiType} and {@code sdServer} are read per-request from Servlet init-params —
+     * never cached on the service class per architecture.md "Per-org config must never be
+     * written to process-global state".
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/render/{bookObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response renderChapBook(@PathParam("bookObjectId") String bookObjectId,
+            String json, @Context HttpServletRequest request,
+            @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+
+        String sdApiType = context.getInitParameter("sd.server.apiType");
+        String sdServer  = ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server"));
+        if (sdApiType == null || sdServer == null) {
+            return errorResponse(500, "SD server not configured (sd.server.apiType / sd.server init-params)");
+        }
+
+        BaseRecord chatConfig = null;
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            String chatConfigName = params.get("chatConfig");
+            if (chatConfigName != null && !chatConfigName.isBlank()) {
+                chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
+                if (chatConfig == null) {
+                    logger.warn("renderChapBook: chatConfig '{}' not found — landscape prompts will use stored sdPrompt", chatConfigName);
+                }
+            }
+        }
+
+        try {
+            int rendered = ChapBookUtil.renderChapBook(user, bookObjectId, sdApiType, sdServer, chatConfig);
+            return Response.status(200).entity("{\"rendered\":" + rendered + "}").build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
+        } catch (Exception e) {
+            logger.error("renderChapBook failed: " + e.getMessage(), e);
+            return errorResponse(500, "Render failed: " + e.getMessage());
         }
     }
 

@@ -48,9 +48,23 @@ async function createChapBook(slug, title, poemObjectIds, maxLinesPerPage) {
     return resp.json();
 }
 
+// TODO(ChapBook Phase 2): set membership for ChapBook creation — select poems by set rather than individual checkbox.
+// Set creation and listing are in place (GET /sets, POST /set); add/remove poem endpoints and set-selection UI are deferred.
 async function fetchSets() {
     let resp = await fetch(cbBase() + '/sets', { credentials: 'include' });
     if (!resp.ok) throw new Error('Failed to load sets: ' + resp.status);
+    return resp.json();
+}
+
+async function createPoem(title, author, text) {
+    let body = { title, author, text };
+    let resp = await fetch(cbBase() + '/poem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) throw new Error('Create poem failed: ' + resp.status);
     return resp.json();
 }
 
@@ -65,7 +79,8 @@ async function fetchSets() {
  * @param {number} overlayOpacity — 0–1, default 0.4 (background image dimming)
  */
 function renderChapBookPage(scene, overlayOpacity) {
-    let imageUrl = scene.imageUrl || null;
+    let imageUrl = scene.imageUrl
+        || (scene.dataObjectId ? applicationPath + '/rest/resource/data.data/' + scene.dataObjectId : null);
     let stanzaText = scene.poemStanza || scene.blurb || '';
     let poemTitle = scene.title || '';
     let opacity = overlayOpacity != null ? overlayOpacity : 0.4;
@@ -100,6 +115,14 @@ let createSlug = '';
 let createTitle = '';
 let createMaxLines = 8;
 let creating = false;
+
+// Add Poem form state
+let showAddPoemDialog = false;
+let addPoemTitle = '';
+let addPoemAuthor = '';
+let addPoemText = '';
+let addingPoem = false;
+let addPoemError = null;
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -187,6 +210,46 @@ function closeCreateDialog() {
     m.redraw();
 }
 
+function openAddPoemDialog() {
+    addPoemTitle = '';
+    addPoemAuthor = '';
+    addPoemText = '';
+    addPoemError = null;
+    showAddPoemDialog = true;
+    m.redraw();
+}
+
+function closeAddPoemDialog() {
+    showAddPoemDialog = false;
+    m.redraw();
+}
+
+async function doAddPoem() {
+    if (!addPoemTitle.trim()) {
+        addPoemError = 'Title is required';
+        m.redraw();
+        return;
+    }
+    if (!addPoemText.trim()) {
+        addPoemError = 'Poem text is required';
+        m.redraw();
+        return;
+    }
+    addingPoem = true;
+    addPoemError = null;
+    m.redraw();
+    try {
+        await createPoem(addPoemTitle.trim(), addPoemAuthor.trim(), addPoemText.trim());
+        page.toast('success', 'Poem added: ' + addPoemTitle);
+        showAddPoemDialog = false;
+        await loadPoems();
+    } catch (e) {
+        addPoemError = e.message || 'Failed to add poem';
+    }
+    addingPoem = false;
+    m.redraw();
+}
+
 async function doCreateChapBook() {
     if (!createSlug || !createTitle) {
         page.toast('warn', 'Slug and title are required');
@@ -220,6 +283,12 @@ const PoemLibrary = {
         loading = false;
         loadError = null;
         showCreateDialog = false;
+        showAddPoemDialog = false;
+        addPoemTitle = '';
+        addPoemAuthor = '';
+        addPoemText = '';
+        addingPoem = false;
+        addPoemError = null;
         loadPoems();
     },
     view: function () {
@@ -246,6 +315,13 @@ const PoemLibrary = {
                     class: 'px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 text-sm dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600',
                     onclick: loadPoems
                 }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'refresh'), ' Refresh']),
+                m('button', {
+                    class: 'px-3 py-1 rounded bg-green-600 text-white text-sm hover:bg-green-700 flex items-center gap-1',
+                    onclick: openAddPoemDialog
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'add'),
+                    ' Add Poem'
+                ]),
                 selectedIds.size > 0 ? m('button', {
                     class: 'px-3 py-1 rounded bg-purple-600 text-white text-sm hover:bg-purple-700',
                     onclick: openCreateDialog
@@ -340,6 +416,61 @@ const PoemLibrary = {
                     )
                 ])
             ),
+
+            // Add Poem dialog — inline overlay
+            showAddPoemDialog ? m('div', {
+                class: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50',
+                onclick: function (e) { if (e.target === e.currentTarget) closeAddPoemDialog(); }
+            },
+                m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-lg mx-4' }, [
+                    m('div', { class: 'flex items-center justify-between mb-4' }, [
+                        m('h3', { class: 'text-lg font-semibold dark:text-white' }, 'Add Poem'),
+                        m('button', { class: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200', onclick: closeAddPoemDialog },
+                            m('span', { class: 'material-symbols-outlined' }, 'close'))
+                    ]),
+                    m('div', { class: 'space-y-3' }, [
+                        m('div', [
+                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Title *'),
+                            m('input', {
+                                type: 'text',
+                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
+                                value: addPoemTitle,
+                                oninput: function (e) { addPoemTitle = e.target.value; }
+                            })
+                        ]),
+                        m('div', [
+                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Author'),
+                            m('input', {
+                                type: 'text',
+                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
+                                value: addPoemAuthor,
+                                oninput: function (e) { addPoemAuthor = e.target.value; }
+                            })
+                        ]),
+                        m('div', [
+                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Poem Text *'),
+                            m('textarea', {
+                                rows: 10,
+                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white font-mono resize-y',
+                                value: addPoemText,
+                                oninput: function (e) { addPoemText = e.target.value; }
+                            })
+                        ]),
+                        addPoemError ? m('div', { class: 'text-sm text-red-500' }, addPoemError) : null
+                    ]),
+                    m('div', { class: 'flex justify-end gap-2 mt-4' }, [
+                        m('button', {
+                            class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
+                            onclick: closeAddPoemDialog
+                        }, 'Cancel'),
+                        m('button', {
+                            class: 'px-4 py-1.5 rounded bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50',
+                            disabled: addingPoem,
+                            onclick: doAddPoem
+                        }, addingPoem ? 'Adding...' : 'Add Poem')
+                    ])
+                ])
+            ) : null,
 
             // Create ChapBook dialog — inline overlay following the Dialog pattern
             showCreateDialog ? m('div', {

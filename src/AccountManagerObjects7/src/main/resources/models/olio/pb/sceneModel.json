@@ -81,6 +81,16 @@
 			"name": "poemStanza",
 			"type": "string",
 			"description": "For ChapBook scenes: the stanza text for this page. Separate from blurb (LLM-generated captions)."
+		},
+		{
+			"name": "sdPrompt",
+			"type": "string",
+			"description": "For ChapBook scenes: landscape SD prompt derived from poemStanza + mood."
+		},
+		{
+			"name": "imageObjectId",
+			"type": "string",
+			"description": "For ChapBook scenes: objectId of the data.data image produced by ChapBook render. Used by bookPageView as the dataObjectId fallback when sceneNode is null."
 		}
 	]
 }

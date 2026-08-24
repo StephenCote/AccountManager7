@@ -124,7 +124,7 @@
 	<context-param>
 		<description>Stable Diffusion Server</description>
 		<param-name>sd.server</param-name>
-		<param-value>http://localhost:7801</param-value>
+		<param-value>http://192.168.1.39:7801</param-value>
 	</context-param>
 		<context-param>
 		<description>Stable Diffusion API Type</description>

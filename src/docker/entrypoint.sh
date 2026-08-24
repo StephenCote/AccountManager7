@@ -14,11 +14,10 @@ set -euo pipefail
 : "${SESSION_STORE_PATH:=/data/am7/sessions}"
 
 : "${TASK_SERVER:=https://localhost:8443/AccountManagerService7}"
-# Stale am6-era JWT from the tracked web.xml, kept as the default for
-# continuity -- confirmed with Stephen it is not a live credential. Override
-# via env var for any deployment where it matters.
-: "${TASK_API_KEY:=eyJraWQiOiJhbTY6c3lzdGVtLnVzZXIubm9ybWFsOnB1YmxpYzpzdGV2ZSIsInN1YmplY3RUeXBlIjoic3lzdGVtLnVzZXIiLCJpc3N1ZXJVcm4iOiJhbTY6c3lzdGVtLnVzZXIubm9ybWFsOnB1YmxpYzphZG1pbiIsInNiaSI6dHJ1ZSwiemlwIjoiR1pJUCIsImFsZyI6IkhTMjU2In0.H4sIAAAAAAAA_4WQT0-EMBDFv4qZM10X6B_ojaMnN0ZPmz0UOqxdoUXaGlfjd7egJN68zbzOb-a9foKPLUjwAd8QMvCdm9CDPB6h6ToXbXjyOPv00kxmKx_wNWIi1mYj7wfjbho9Grs1yzicThm49oJduNPpDqt0rSgviWAlEtrzgtSIlJR537KiYizPeeKDe0G7AhW2nNeUEi10RyhnSFSvEyVqLfK-2JeFSICbz8qaDxWMswcVnhN5e4jtYLrFYlwNPF4nXKJek-VxFxd3GRif0oIaufyj76ybRzXIad0g1W8qowLIXLA9LWsuqgzwfVqEiotCrMIlmH-3_XzY1zeUspAAegEAAA.M1_LUd3jxJ6qxExsxXtogd_AL0-aJ0TdPerKO47czgY}"
-: "${SD_SERVER:=http://192.168.1.42:7801}"
+# Remote task-queue auth token — only used when task.poll.remote=true (default: false, feature dormant).
+# No default value: if the feature is ever enabled, set TASK_API_KEY explicitly via env var.
+: "${TASK_API_KEY:=}"
+: "${SD_SERVER:=http://192.168.1.39:7801}"
 : "${FACE_SERVER:=http://192.168.1.42:8003}"
 : "${TAG_SERVER:=http://192.168.1.42:8000}"
 : "${VOICE_TTS_SERVER:=http://192.168.1.42:8001}"

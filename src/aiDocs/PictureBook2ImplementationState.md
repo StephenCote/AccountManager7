@@ -1228,6 +1228,8 @@ remain suspect but unverified. Needs a controlled before/after comparison at hig
 **OPEN — Phase 5 (Ux752 workflow graph view, Ux752).** Not started; read the Ux752 reference before
 implementing.
 
+**DEFERRED — olio.cb.set membership (ChapBook Phase 2).** `GET /olio/chap-book/sets` and `POST /olio/chap-book/set` stubs are in place and create/list `olio.cb.set` records. Set membership management (add/remove poem endpoints, set-to-book binding, set selection UI in Ux) is deferred to ChapBook Phase 2. `fetchSets()` in `chapBook.js` is defined but not wired to any component.
+
 **Phase 3's four open gaps — ALL CLOSED, kept for the record:**
    1. **No portrait was ever rendered** — every run reused the persisted portraits, so the portrait render
       branch, its artifact recording, `readDataRecord` on a fresh image, the `portCfg` snapshot and the

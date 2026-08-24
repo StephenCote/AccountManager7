@@ -784,7 +784,7 @@ function renderPb2ScenePage() {
     let scene = pb2CurrentScene();
     if (!scene) return m('div', { class: 'text-sm text-gray-500 italic p-4' }, 'No scene data.');
     let imgUrl = scene.dataObjectId ? pb2ImageUrl(scene.dataObjectId) : null;
-    let text = scene.blurb || scene.summary || '';
+    let text = scene.poemStanza || scene.blurb || scene.summary || '';
     return m('div', { class: 'flex flex-col items-center' }, [
         imgUrl
             ? m('img', {

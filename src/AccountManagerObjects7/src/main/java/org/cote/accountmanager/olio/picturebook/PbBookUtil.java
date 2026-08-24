@@ -479,7 +479,10 @@ public class PbBookUtil {
 			OlioFieldNames.FIELD_PB_BOOK, OlioFieldNames.FIELD_PB_SCENE_INDEX, OlioFieldNames.FIELD_PB_TITLE,
 			OlioFieldNames.FIELD_PB_SUMMARY, OlioFieldNames.FIELD_PB_SETTING, OlioFieldNames.FIELD_PB_ACTION,
 			OlioFieldNames.FIELD_PB_MOOD, OlioFieldNames.FIELD_PB_BLURB, OlioFieldNames.FIELD_PB_USER_EDITED,
-			OlioFieldNames.FIELD_PB_SCENE_NODE
+			OlioFieldNames.FIELD_PB_SCENE_NODE,
+			OlioFieldNames.FIELD_CB_POEM_STANZA,
+			OlioFieldNames.FIELD_CB_SD_PROMPT,
+			OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID
 		};
 	}
 }
