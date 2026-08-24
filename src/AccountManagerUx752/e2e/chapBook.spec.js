@@ -84,6 +84,7 @@ async function loginAsSharedUser(page) {
 let poem1ObjectId = null;
 let poem2ObjectId = null;
 let chapBookObjectId = null;
+let orgId = null;
 
 test.describe('ChapBook — UI', () => {
     test.describe.configure({ timeout: 120000 });
@@ -109,15 +110,21 @@ test.describe('ChapBook — UI', () => {
         const poemsDirBody = await poemsDir.json();
         expect(poemsDirBody && poemsDirBody.id, 'Could not ensure ~/Poems group').toBeTruthy();
         const poemsGroupId = poemsDirBody.id;
+        orgId = poemsDirBody.organizationId;
 
         // Create poem 1 — idempotent by name search first
+        // organizationId required: olio.cb.poem inherits data.directory and PBAC denies list queries without it
         let p1Search = await request.post(REST + '/model/search', {
             data: {
                 schema: 'io.query',
                 type: 'olio.cb.poem',
-                fields: [{ name: 'name', comparator: 'equals', value: 'chapbook-test-autumn' }],
+                fields: [
+                    { name: 'name', comparator: 'equals', value: 'chapbook-test-autumn' },
+                    { name: 'organizationId', comparator: 'equals', value: orgId }
+                ],
                 request: ['id', 'objectId', 'name'],
-                recordCount: 1
+                recordCount: 1,
+                cache: false
             }
         });
         let p1Body = await p1Search.json().catch(() => null);
@@ -144,9 +151,13 @@ test.describe('ChapBook — UI', () => {
             data: {
                 schema: 'io.query',
                 type: 'olio.cb.poem',
-                fields: [{ name: 'name', comparator: 'equals', value: 'chapbook-test-rain' }],
+                fields: [
+                    { name: 'name', comparator: 'equals', value: 'chapbook-test-rain' },
+                    { name: 'organizationId', comparator: 'equals', value: orgId }
+                ],
                 request: ['id', 'objectId', 'name'],
-                recordCount: 1
+                recordCount: 1,
+                cache: false
             }
         });
         let p2Body = await p2Search.json().catch(() => null);
@@ -251,10 +262,26 @@ test.describe('ChapBook — UI', () => {
         chapBookObjectId = created && (created.bookObjectId || created.objectId);
         expect(chapBookObjectId, 'no bookObjectId in create response').toBeTruthy();
 
-        // Verify the olio.pb.book record exists
-        let bookResp = await request.get(REST + '/model/olio.pb.book/' + chapBookObjectId + '/full');
-        expect(bookResp.ok(), 'book full fetch failed').toBe(true);
-        let book = await bookResp.json();
+        // Verify the olio.pb.book record exists — use a targeted search rather than /full
+        // because planMost(true) on olio.pb.book generates JSON_BUILD_OBJECT with >100 args
+        // (PostgreSQL's limit) when olio.world is recursively expanded.
+        let bookResp = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query',
+                type: 'olio.pb.book',
+                fields: [
+                    { name: 'objectId', comparator: 'equals', value: chapBookObjectId },
+                    { name: 'organizationId', comparator: 'equals', value: orgId }
+                ],
+                request: ['id', 'objectId', 'name', 'slug', 'world', 'bookType', 'groupId', 'organizationId'],
+                recordCount: 1,
+                cache: false
+            }
+        });
+        expect(bookResp.ok(), 'book fetch failed: ' + bookResp.status()).toBe(true);
+        let bookResult = await bookResp.json();
+        let book = bookResult && bookResult.results && bookResult.results[0];
+        expect(book, 'book record not found in search results').toBeTruthy();
         expect(book.slug, 'book has no slug').toBeTruthy();
         expect(book.world || book.world_FK, 'book has no world FK — PB2 world not created').toBeTruthy();
 

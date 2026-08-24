@@ -142,6 +142,17 @@
 			"type": "list",
 			"baseType": "string",
 			"description": "PB2 phase 4: POST /chapter — records to copy from the source book's world into the new chapter's. §3.5 chose COPY over reference deliberately: apparel/wearables are per character, so a shared instance would make deleting chapter 1 destroy chapter 2's data."
+		},
+		{
+			"name": "poemObjectIds",
+			"type": "list",
+			"baseType": "string",
+			"description": "ChapBook creation: objectIds of olio.cb.poem records to include, in order. Undeclared fields are silently dropped by RecordDeserializer (KI-24 pattern) so this must be listed explicitly."
+		},
+		{
+			"name": "maxLinesPerPage",
+			"type": "int",
+			"description": "ChapBook creation: maximum stanza lines per page. ChapBookUtil defaults to 8 when absent."
 		}
 	]
 }

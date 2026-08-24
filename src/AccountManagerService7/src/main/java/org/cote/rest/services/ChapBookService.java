@@ -9,6 +9,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.picturebook.ChapBookUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
@@ -206,18 +207,29 @@ public class ChapBookService {
             @QueryParam("recordCount") int recordCount,
             @Context HttpServletRequest request) {
         OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+
         int count = (recordCount > 0) ? recordCount : 25;
-        QueryResult result = ServiceUtil.generateListQueryResponse(
-            OlioModelNames.MODEL_CB_POEM, null, null,
-            new String[] {
-                FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
-                FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
-                "title", "author", "theme", "mood", "keywords"
-            },
-            startRecord, count, request);
-        if (result == null) return errorResponse(500, "Failed to list poems");
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+
+        Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CB_POEM);
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        q.setRequestRange(startRecord, count);
+        q.setRequest(new String[]{
+            FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+            FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
+            "title", "author", "theme", "mood", "keywords"
+        });
+        try {
+            q.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+            q.set(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
+        } catch (Exception ignored) {}
+
+        QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, q);
+        BaseRecord[] results = (qr != null) ? qr.getResults() : new BaseRecord[0];
         return Response.status(200).entity(
-            JSONUtil.exportObject(result.getResults(), RecordSerializerConfig.getForeignUnfilteredModule())).build();
+            JSONUtil.exportObject(results, RecordSerializerConfig.getForeignUnfilteredModule())).build();
     }
 
     // ─────────────────────────────── Poem sets ───────────────────────────────
