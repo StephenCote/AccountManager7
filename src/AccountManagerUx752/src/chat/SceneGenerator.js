@@ -81,7 +81,7 @@ async function ensureSdConfig() {
                     if (SD_CONFIG_IDENTITY.includes(k) || SD_CONFIG_NEVER_RESTORE.includes(k)) continue;
                     if (k === am7model.jsonModelKey) continue;
                     let v = stored[k];
-                    if (v === undefined || v === null || v === '') continue;
+                    if (v === undefined || v === null || v === '' || v === 0) continue;
                     if (!(k in entity)) continue;
                     entity[k] = v;
                 }

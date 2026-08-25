@@ -39,6 +39,8 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 
 ## project
 - `issue-tracker-uat-blockers` -- Three UAT blocker issues fixed 2026-08-25: list picker nav, poem ~/Poems PBAC, text-bigint wiring
+- `issue4-chapbook-poem-import` -- ChapBook poem import: UX dead-end (selectedIds not updated) + backend byte sequence error -- both fixed 2026-08-25
+- `issue5-sdconfig-defaults` -- SD config defaults bugs in SdConfigPanel + SceneGenerator localStorage overlay -- all fixed 2026-08-25
 - `ki-chapbook-sdprompt-design-debt` -- ChapBook olio.pb.scene sdPrompt is a bare string — design debt; full sdConfig-per-scene needed for PB2 redesign parity
 - `ki-task-api-key-unknown` -- TASK_API_KEY in entrypoint.sh is remote task-queue auth — inert (task.poll.remote=false), hardcoded JWT default in git history, feature appears dormant
 - `project-accountmanager7-overview` -- What AccountManager7 is: schema-first BaseRecord/PBAC platform; sessions open at the GIT ROOT while Maven/modules live under src\ - two different 'project roots'; module map

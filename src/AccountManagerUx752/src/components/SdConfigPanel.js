@@ -106,9 +106,9 @@ function numberInput(config, key, min, max, step, onChange) {
 // bespoke single-input-with-no-spinner variant, the fourth near-copy of the same pattern cataloged
 // across reimage.js/reimageApparel.js/pictureBook.js, only here already deduplicated into one local
 // helper reused by its own callers below.
-function rangeInput(config, key, min, max, step, onChange) {
+function rangeInput(config, key, min, max, step, onChange, defaultVal) {
     return formFieldRenderers.renderRange({
-        value: config[key] != null ? config[key] : min,
+        value: (config[key] != null) ? config[key] : (defaultVal != null ? defaultVal : min),
         min: min,
         max: max,
         step: step || 1,
@@ -221,8 +221,8 @@ const SdConfigPanel = {
                 } catch (e) { /* never let a defaults refill break the picker */ }
                 if (onChange) onChange();
             })),
-            field("Denoising: " + (config.denoisingStrength != null ? config.denoisingStrength : 0.65),
-                rangeInput(config, "denoisingStrength", 0, 1, 0.05, onChange))
+            field("Denoising: " + (config.denoisingStrength != null ? config.denoisingStrength : 0.75),
+                rangeInput(config, "denoisingStrength", 0, 1, 0.05, onChange, 0.75))
         ]));
 
         /// Style-specific fields — only those matching the current style appear.
@@ -276,8 +276,8 @@ const SdConfigPanel = {
             field("Model", modelSelectInput(config, "model", modelNames, onChange)),
             field("Refiner Model", modelSelectInput(config, "refinerModel", modelNames, onChange)),
 
-            field("Steps: " + (config.steps != null ? config.steps : 30),
-                rangeInput(config, "steps", 1, 100, 1, onChange)),
+            field("Steps: " + (config.steps != null ? config.steps : 20),
+                rangeInput(config, "steps", 1, 100, 1, onChange, 20)),
             field("Refiner Steps: " + (config.refinerSteps != null ? config.refinerSteps : 20),
                 rangeInput(config, "refinerSteps", 0, 100, 1, onChange)),
 

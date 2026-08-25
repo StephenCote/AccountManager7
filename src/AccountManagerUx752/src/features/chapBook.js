@@ -295,6 +295,11 @@ async function doImportNotes() {
         if (imported) {
             page.toast('success', 'Imported ' + imported + ' of ' + toImport + ' poem(s)');
             await loadPoems();
+            // Auto-select the newly imported poems so "Create ChapBook" button appears immediately.
+            let newIds = (result.poems || []).map(function (p) { return p.objectId; }).filter(Boolean);
+            newIds.forEach(function (id) { selectedIds.add(id); });
+        } else if (!result.errors || !result.errors.length) {
+            page.toast('warn', 'No poems were imported');
         }
         if (result.errors && result.errors.length) {
             page.toast('error', result.errors.join('; '));
