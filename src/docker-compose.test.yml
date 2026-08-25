@@ -68,7 +68,7 @@ services:
       DB_PASSWORD: password
 
       TASK_SERVER: ${TASK_SERVER:-https://localhost:9443/AccountManagerService7}
-      SD_SERVER: ${SD_SERVER:-http://192.168.1.42:7801}
+      SD_SERVER: ${SD_SERVER:-http://192.168.1.39:7801}
       FACE_SERVER: ${FACE_SERVER:-http://192.168.1.42:8003}
       TAG_SERVER: ${TAG_SERVER:-http://192.168.1.42:8000}
       VOICE_TTS_SERVER: ${VOICE_TTS_SERVER:-http://192.168.1.42:8001}

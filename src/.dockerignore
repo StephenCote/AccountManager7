@@ -1,5 +1,7 @@
 .git/
 **/target/
+# Un-exclude the pre-built WAR so PREBUILT=1 builds can use it (PREBUILT=0 ignores it, Maven builds fresh)
+!AccountManagerService7/target/AccountManagerService7.war
 **/node_modules/
 **/dist/
 **/.vscode/

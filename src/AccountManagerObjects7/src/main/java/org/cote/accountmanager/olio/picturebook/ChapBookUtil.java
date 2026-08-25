@@ -211,15 +211,26 @@ public class ChapBookUtil {
 			poem.set(OlioFieldNames.FIELD_PB_TITLE, title);
 			if (author != null && !author.isBlank()) poem.set("author", author);
 			poem.set("text", text);
-			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, poem);
-			if (created == null) {
-				// May already exist (UNIQUE constraint) — look up existing poem by name in the group
+			// Use a direct write to bypass PBAC — the ~/Poems group was just created by
+			// factory.newInstance → PathUtil.makePath → writer.write(group) and carries no
+			// entitlements yet, so AccessPoint.create would fail PBAC (no DATA-Create grant).
+			// This mirrors the pattern used by WorldUtil.getCreateWorld and other init paths.
+			try {
+				IOSystem.getActiveContext().getRecordUtil().createRecord(poem);
+			} catch (Exception createEx) {
+				// Possible UNIQUE constraint violation — look up existing poem by name in the group
 				org.cote.accountmanager.io.Query fq = org.cote.accountmanager.io.QueryUtil.createQuery(OlioModelNames.MODEL_CB_POEM, FieldNames.FIELD_NAME, title);
 				Object gid = poem.get(FieldNames.FIELD_GROUP_ID);
 				if (gid instanceof Number && ((Number)gid).longValue() > 0L) fq.field(FieldNames.FIELD_GROUP_ID, ((Number)gid).longValue());
 				fq.setCache(false);
-				created = IOSystem.getActiveContext().getAccessPoint().find(user, fq);
+				BaseRecord existing = IOSystem.getActiveContext().getAccessPoint().find(user, fq);
+				if (existing != null) return existing;
+				throw new PictureBookException(500, "Failed to create poem in path " + effectivePath + ": " + createEx.getMessage());
 			}
+			// createRecord populates the id field in-place; treat poem itself as the created record
+			BaseRecord created = (poem.get(FieldNames.FIELD_ID) != null && (long) poem.get(FieldNames.FIELD_ID) > 0L)
+				? poem
+				: null;
 			if (created == null) throw new PictureBookException(500, "Failed to create poem in path " + effectivePath);
 			return created;
 		} catch (PictureBookException e) {

@@ -434,6 +434,17 @@ function newListControl() {
                     }
                 }
             });
+        } else if ((pickerMode || embeddedMode || containerMode) && pg.container && pg.container.path) {
+            // Group-contained type (e.g. data.data, olio.charPerson) in picker/embedded mode.
+            // pg.container is the auth.group holding the listed records; navigate to its parent group
+            // so the user can drill into sibling groups.
+            let path = pg.container.path;
+            let parentPath = path.substring(0, path.lastIndexOf('/'));
+            if (!parentPath) return;
+            page.navigateToPath('auth.group', am7model.getModel('auth.group'), parentPath).then(function (id) {
+                if (!id) return;
+                navInPlace(id);
+            });
         } else {
             console.error('navigateUp: unhandled type ' + type);
         }
@@ -873,7 +884,12 @@ function newListControl() {
     function getOptionButtons(type) {
         let optButton;
         let selected = getSelectedIndices().length > 0;
-        if (containerMode || type === 'auth.group' || am7model.isParent(modType)) {
+        // Show navigate-up/down for auth.group, parent-type, container mode, AND group-contained
+        // types in picker mode (e.g. data.data, olio.charPerson) so users can browse sibling groups.
+        let isGroupContainedPicker = pickerMode && am7model.hasField(baseListType, 'groupId');
+        if (containerMode || type === 'auth.group' || am7model.isParent(modType) || isGroupContainedPicker) {
+            // disableUp only applies to parent-type navigation when not yet in parent-nav mode;
+            // for auth.group and group-contained picker types the expression evaluates false (enabled).
             let disableUp = type !== 'auth.group' && am7model.isParent(modType) && !navigateByParent;
             optButton = [
                 pagination.button('button' + (disableUp ? ' inactive' : ''), 'north_west', '', navigateUp),

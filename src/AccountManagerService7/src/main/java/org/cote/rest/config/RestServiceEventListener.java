@@ -289,9 +289,11 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		String dsName = context.getInitParameter("database.dsname");
 		boolean chkSchema = Boolean.parseBoolean(context.getInitParameter("database.checkSchema"));
 		boolean dropCols = Boolean.parseBoolean(context.getInitParameter("database.dropColumns"));
+		boolean repairColTypes = Boolean.parseBoolean(context.getInitParameter("database.repairColumnTypes"));
 		IOProperties props = getDBProperties(null, null, null, dsName);
 		props.setSchemaCheck(chkSchema);
 		props.setDropColumns(dropCols);
+		props.setRepairColumnTypes(repairColTypes);
 		try {
 			IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
 			String authToken = context.getInitParameter("embedding.authorizationToken");

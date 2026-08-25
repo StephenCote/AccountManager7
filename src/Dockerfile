@@ -1,12 +1,22 @@
 # syntax=docker/dockerfile:1
 
+# PREBUILT=1: skip the Maven network build and use the host-built WAR already in
+# AccountManagerService7/target/. Required when the corp TLS proxy blocks Maven Central.
+# Before building with PREBUILT=1, run on the host:
+#   cd src && mvn -o -pl AccountManagerObjects7,AccountManagerISO42001 install -DskipTests
+#   cd src && mvn -o -pl AccountManagerService7 package -DskipTests
+# The bcprov jar must also be staged at docker/bcprov-jdk18on-1.76.jar (already done).
+ARG PREBUILT=0
+
 ########################################
 # Stage 1: build the WAR (Objects7 -> Agent7/ISO42001 -> Service7).
 # Uses normal network access to Maven Central -- a fresh build stage has no
 # populated .m2 cache, so this intentionally differs from the repo's usual
 # `mvn -o` offline local-dev convention (that convention is unaffected).
+# With PREBUILT=1, this stage just reuses the host-built artifacts instead.
 ########################################
 FROM maven:3.9-eclipse-temurin-26 AS java-build
+ARG PREBUILT
 WORKDIR /build
 COPY pom.xml ./
 COPY AccountManagerObjects7 AccountManagerObjects7
@@ -14,8 +24,8 @@ COPY AccountManagerAgent7 AccountManagerAgent7
 COPY AccountManagerISO42001 AccountManagerISO42001
 COPY AccountManagerConsole7 AccountManagerConsole7
 COPY AccountManagerService7 AccountManagerService7
-RUN mvn -q -pl AccountManagerObjects7,AccountManagerAgent7,AccountManagerISO42001,AccountManagerService7 \
-    -am package -DskipTests
+# bcprov staged for PREBUILT=1 path (no-op when PREBUILT=0; Maven resolves it instead)
+COPY docker/bcprov-jdk18on-1.76.jar /build/docker/bcprov-jdk18on-1.76.jar
 # The WAR marks bcprov-jdk18on as `provided` (AccountManagerService7/pom.xml) --
 # on the dev box BouncyCastle is a container/JVM-level security provider, so it
 # is deliberately excluded from WEB-INF/lib. The container has no such provider,
@@ -25,9 +35,16 @@ RUN mvn -q -pl AccountManagerObjects7,AccountManagerAgent7,AccountManagerISO4200
 # bcprov) rather than hardcoding it, so it can never drift from the bcpkix/bcutil
 # version the WAR actually ships -- a version skew across signed/sealed BC jars in
 # the same classloader would trip JCE signature verification at runtime.
-RUN mvn -q -pl AccountManagerObjects7 dependency:copy-dependencies \
-    -DincludeArtifactIds=bcprov-jdk18on \
-    -DoutputDirectory=/build/bclib
+RUN mkdir -p /build/bclib && \
+    if [ "$PREBUILT" = "0" ]; then \
+      mvn -q -pl AccountManagerObjects7,AccountManagerAgent7,AccountManagerISO42001,AccountManagerService7 \
+          -am package -DskipTests && \
+      mvn -q -pl AccountManagerObjects7 dependency:copy-dependencies \
+          -DincludeArtifactIds=bcprov-jdk18on \
+          -DoutputDirectory=/build/bclib; \
+    else \
+      cp /build/docker/bcprov-jdk18on-1.76.jar /build/bclib/; \
+    fi
 
 ########################################
 # Stage 2: build Ux752. node_modules is kept (not just dist/) because the
