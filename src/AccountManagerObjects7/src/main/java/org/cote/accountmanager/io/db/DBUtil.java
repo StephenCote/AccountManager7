@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -1175,6 +1176,128 @@ $$;""";
 		){
 			statement.execute(sql);
 		}
+	}
+
+	/// Get existing column names and data types for a table from information_schema.
+	/// Returns a map of lowercased column name to lowercased data_type.
+	/// Mirrors getTableColumns casing logic for H2 vs PostgreSQL.
+	/// Returns empty map on SQL error or missing table.
+	///
+	private Map<String, String> getColumnDataTypes(String tableName) {
+		Map<String, String> types = new HashMap<>();
+		String useName = tableName;
+		if(this.connectionType == ConnectionEnumType.H2) {
+			useName = useName.toUpperCase();
+		}
+		else if(this.connectionType == ConnectionEnumType.POSTGRE) {
+			useName = useName.toLowerCase();
+		}
+		try (
+			Connection con = dataSource.getConnection();
+			PreparedStatement st = con.prepareStatement("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = ?;");
+		){
+			st.setString(1, useName);
+			ResultSet rset = st.executeQuery();
+			while(rset.next()) {
+				types.put(rset.getString("column_name").toLowerCase(), rset.getString("data_type").toLowerCase());
+			}
+			rset.close();
+		} catch (SQLException e) {
+			logger.error(e);
+		}
+		return types;
+	}
+
+	/// Normalize a SQL data type string to a common comparison token.
+	/// Handles both getDataType() output and information_schema.data_type values so that
+	/// equivalent types (e.g. "int" and "integer", "varchar(N)" and "character varying") compare equal.
+	/// Returns null for null input.  Returns "vector" for vector-like types so callers can skip them.
+	///
+	private static String normalizeForTypeComparison(String dt) {
+		if(dt == null) {
+			return null;
+		}
+		String dtl = dt.toLowerCase();
+		if(dtl.startsWith("varchar") || dtl.equals("character varying")) {
+			return "varchar";
+		}
+		if(dtl.equals("integer") || dtl.equals("int")) {
+			return "int";
+		}
+		if(dtl.startsWith("timestamp")) {
+			return "timestamp";
+		}
+		if(dtl.startsWith("vector") || dtl.equals("user-defined")) {
+			return "vector";
+		}
+		return dtl;
+	}
+
+	/// Compare model schema field types against actual database column types.
+	/// Returns a list of FieldSchema objects whose persisted column type differs from the
+	/// schema-declared type.  Mirrors getMissingColumns field-skip guards.
+	/// Returns empty list if the table does not exist.
+	///
+	public List<FieldSchema> getMismatchedColumns(ModelSchema schema) {
+		List<FieldSchema> mismatched = new ArrayList<>();
+		if(!haveTable(schema.getName())) {
+			return mismatched;
+		}
+		String tableName = getTableName(schema.getName());
+		Map<String, String> actualTypes = getColumnDataTypes(tableName);
+
+		for(FieldSchema field : schema.getFields()) {
+			if(field.isVirtual() || field.isEphemeral() || field.isReferenced()) {
+				continue;
+			}
+			String expectedRaw = getDataType(field, field.getFieldType());
+			if(expectedRaw == null) {
+				continue;
+			}
+			String expectedNorm = normalizeForTypeComparison(expectedRaw);
+			if("vector".equals(expectedNorm)) {
+				continue;
+			}
+			String colName = getColumnName(field.getName()).replace("\"", "").toLowerCase();
+			String actualRaw = actualTypes.get(colName);
+			if(actualRaw == null) {
+				// Column is absent — let getMissingColumns handle it
+				continue;
+			}
+			String actualNorm = normalizeForTypeComparison(actualRaw);
+			if("vector".equals(actualNorm)) {
+				continue;
+			}
+			if(expectedNorm != null && !expectedNorm.equals(actualNorm)) {
+				logger.warn("Column type mismatch for " + schema.getName() + "." + field.getName()
+					+ ": expected " + expectedNorm + " (" + expectedRaw + "), found " + actualNorm + " (" + actualRaw + ")");
+				mismatched.add(field);
+			}
+		}
+		return mismatched;
+	}
+
+	/// Generate ALTER TABLE ... ALTER COLUMN ... TYPE ... USING ... statements to repair mismatched
+	/// column types.  PostgreSQL-only: H2 does not support the USING clause.
+	/// Returns empty list if not PostgreSQL, table does not exist, or no mismatches found.
+	///
+	public List<String> generateAlterColumnTypeSchema(ModelSchema schema) {
+		List<String> statements = new ArrayList<>();
+		if(connectionType != ConnectionEnumType.POSTGRE) {
+			return statements;
+		}
+		List<FieldSchema> mismatched = getMismatchedColumns(schema);
+		if(mismatched.isEmpty()) {
+			return statements;
+		}
+		String tableName = getTableName(schema.getName());
+		for(FieldSchema field : mismatched) {
+			String targetType = getDataType(field, field.getFieldType());
+			String colName = getColumnName(field.getName());
+			statements.add("ALTER TABLE " + tableName + " ALTER COLUMN " + colName
+				+ " TYPE " + targetType + " USING " + colName + "::" + targetType + ";");
+		}
+		return statements;
 	}
 
 }

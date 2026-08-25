@@ -153,6 +153,18 @@
 			"name": "maxLinesPerPage",
 			"type": "int",
 			"description": "ChapBook creation: maximum stanza lines per page. ChapBookUtil defaults to 8 when absent."
+		},
+		{
+			"name": "role",
+			"type": "string",
+			"maxLength": 64,
+			"description": "PB2 phase D: POST /{bookObjectId}/node/{nodeObjectId}/bind — the binding role (e.g. 'portrait', 'landscape')."
+		},
+		{
+			"name": "sourceNodeObjectId",
+			"type": "string",
+			"maxLength": 64,
+			"description": "PB2 phase D: POST /{bookObjectId}/node/{nodeObjectId}/bind — the source node objectId."
 		}
 	]
 }

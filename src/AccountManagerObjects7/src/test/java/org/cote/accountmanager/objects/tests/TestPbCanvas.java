@@ -23,6 +23,7 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.junit.Before;
 import org.junit.Test;
@@ -148,6 +149,236 @@ public class TestPbCanvas extends BaseTest {
 		assertTrue("Artifact must be marked selected", selected != null && selected.booleanValue());
 
 		logger.info("Portrait node '{}' executed: artifact={}, bytes={}, downstream={}",
+			nodeHandle, artifactObjectId, byteLength, result.get("downstreamMarked"));
+	}
+
+	// ─── finder helpers ───────────────────────────────────────────────────────────
+
+	/** Find [book, workflow, node] for the first node of {@code type} in any PB2 book. */
+	private BaseRecord[] findAnyNodeOfType(BaseRecord user, PbNodeTypeEnumType type) {
+		BaseRecord[] books = listBooks(user);
+		if(books == null || books.length == 0) return null;
+		for(BaseRecord book : books) {
+			if(book.get(FieldNames.FIELD_ID) == null) continue;
+			BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);
+			if(workflow == null) continue;
+			List<BaseRecord> nodes = PbGraphUtil.listNodes(user, workflow);
+			for(BaseRecord n : nodes) {
+				PbNodeTypeEnumType t = n.getEnum(OlioFieldNames.FIELD_PB_NODE_TYPE);
+				if(t == type) {
+					return new BaseRecord[] {book, workflow, n};
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Find [book, workflow, node] for the first node of {@code type} that has a scopeRef
+	 * AND whose source bindings each have a selected artifact.
+	 */
+	private BaseRecord[] findAnyExecutableNode(BaseRecord user, PbNodeTypeEnumType type) {
+		BaseRecord[] books = listBooks(user);
+		if(books == null || books.length == 0) return null;
+		for(BaseRecord book : books) {
+			if(book.get(FieldNames.FIELD_ID) == null) continue;
+			BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);
+			if(workflow == null) continue;
+			List<BaseRecord> nodes = PbGraphUtil.listNodes(user, workflow);
+			for(BaseRecord n : nodes) {
+				PbNodeTypeEnumType t = n.getEnum(OlioFieldNames.FIELD_PB_NODE_TYPE);
+				if(t != type) continue;
+				// Verify at least one binding has a source node
+				List<BaseRecord> bindings = PbGraphUtil.listBindings(user, n);
+				if(bindings.isEmpty()) continue;
+				boolean hasSrc = false;
+				for(BaseRecord b : bindings) {
+					if(b.get(OlioFieldNames.FIELD_PB_SOURCE_NODE) != null) {
+						hasSrc = true;
+						break;
+					}
+				}
+				if(!hasSrc) continue;
+				return new BaseRecord[] {book, workflow, n};
+			}
+		}
+		return null;
+	}
+
+	// ─── new tests ────────────────────────────────────────────────────────────────
+
+	@Test
+	public void testScenePromptNodeExecution() {
+		BaseRecord user = user();
+
+		BaseRecord[] fixture = findAnyNodeOfType(user, PbNodeTypeEnumType.SCENE_PROMPT);
+		assumeNotNull("A SCENE_PROMPT node must exist in the org — "
+			+ "run TestPbMigration or the full picture-book pipeline first", fixture);
+
+		BaseRecord book = fixture[0];
+		BaseRecord workflow = fixture[1];
+		BaseRecord node = fixture[2];
+
+		// SCENE_PROMPT nodes need a scopeRef
+		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
+		assumeTrue("SCENE_PROMPT node must carry a scopeRef",
+			scopeRef != null && !scopeRef.trim().isEmpty());
+
+		String nodeHandle = node.get(OlioFieldNames.FIELD_PB_HANDLE);
+		logger.info("Executing SCENE_PROMPT node '{}' (scopeRef={}) for book '{}'",
+			nodeHandle, scopeRef, book.get(OlioFieldNames.FIELD_PB_SLUG));
+
+		// No swarm server needed for prompt nodes
+		Map<String, Object> result = PbNodeExecutor.executeNode(user, book, workflow, node, null);
+		assertNotNull("executeNode must return a result map", result);
+
+		String artifactObjectId = (String) result.get("artifactObjectId");
+		assertNotNull("Result must contain artifactObjectId", artifactObjectId);
+
+		String nodeStatus = (String) result.get("nodeStatus");
+		assertEquals("Node status must be DONE_UNVERIFIED", "DONE_UNVERIFIED", nodeStatus);
+
+		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+		org.cote.accountmanager.record.BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactObjectId, orgId);
+		assertNotNull("Artifact must be readable after creation", artifact);
+		Boolean selected = artifact.get(OlioFieldNames.FIELD_PB_SELECTED);
+		assertTrue("Artifact must be marked selected", selected != null && selected.booleanValue());
+
+		logger.info("SCENE_PROMPT node '{}' executed: artifact={}, downstream={}",
+			nodeHandle, artifactObjectId, result.get("downstreamMarked"));
+	}
+
+	@Test
+	public void testLandscapeNodeExecution() {
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		assumeTrue("test.swarm.server must be set for this test",
+			swarmServer != null && !swarmServer.trim().isEmpty());
+
+		BaseRecord user = user();
+
+		BaseRecord[] fixture = findAnyNodeOfType(user, PbNodeTypeEnumType.LANDSCAPE);
+		assumeNotNull("A LANDSCAPE node must exist in the org — "
+			+ "run TestPbMigration or the full picture-book pipeline first", fixture);
+
+		BaseRecord book = fixture[0];
+		BaseRecord workflow = fixture[1];
+		BaseRecord node = fixture[2];
+
+		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
+		assumeTrue("LANDSCAPE node must carry a scopeRef (scene objectId)",
+			scopeRef != null && !scopeRef.trim().isEmpty());
+
+		String nodeHandle = node.get(OlioFieldNames.FIELD_PB_HANDLE);
+		logger.info("Executing LANDSCAPE node '{}' (scopeRef={}) for book '{}'",
+			nodeHandle, scopeRef, book.get(OlioFieldNames.FIELD_PB_SLUG));
+
+		Map<String, Object> result = PbNodeExecutor.executeNode(user, book, workflow, node, swarmServer);
+		assertNotNull("executeNode must return a result map", result);
+
+		String artifactObjectId = (String) result.get("artifactObjectId");
+		assertNotNull("Result must contain artifactObjectId", artifactObjectId);
+
+		Number byteLength = (Number) result.get("byteLength");
+		assertNotNull("Result must contain byteLength", byteLength);
+		assertTrue("byteLength must be > 0, got " + byteLength, byteLength.longValue() > 0);
+
+		String nodeStatus = (String) result.get("nodeStatus");
+		assertEquals("Node status must be DONE_UNVERIFIED", "DONE_UNVERIFIED", nodeStatus);
+
+		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+		org.cote.accountmanager.record.BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactObjectId, orgId);
+		assertNotNull("Artifact must be readable after creation", artifact);
+		Boolean selected = artifact.get(OlioFieldNames.FIELD_PB_SELECTED);
+		assertTrue("Artifact must be marked selected", selected != null && selected.booleanValue());
+
+		logger.info("Landscape node '{}' executed: artifact={}, bytes={}, downstream={}",
+			nodeHandle, artifactObjectId, byteLength, result.get("downstreamMarked"));
+	}
+
+	@Test
+	public void testReferenceStripNodeExecution() {
+		BaseRecord user = user();
+
+		BaseRecord[] fixture = findAnyExecutableNode(user, PbNodeTypeEnumType.REFERENCE_STRIP);
+		assumeNotNull("A REFERENCE_STRIP node with source bindings must exist in the org — "
+			+ "run TestPbMigration or the full picture-book pipeline first", fixture);
+
+		BaseRecord book = fixture[0];
+		BaseRecord workflow = fixture[1];
+		BaseRecord node = fixture[2];
+
+		String nodeHandle = node.get(OlioFieldNames.FIELD_PB_HANDLE);
+		logger.info("Executing REFERENCE_STRIP node '{}' for book '{}'",
+			nodeHandle, book.get(OlioFieldNames.FIELD_PB_SLUG));
+
+		// No swarm server required for REFERENCE_STRIP
+		Map<String, Object> result = PbNodeExecutor.executeNode(user, book, workflow, node, null);
+		assertNotNull("executeNode must return a result map", result);
+
+		String artifactObjectId = (String) result.get("artifactObjectId");
+		assertNotNull("Result must contain artifactObjectId", artifactObjectId);
+
+		Number byteLength = (Number) result.get("byteLength");
+		assertNotNull("Result must contain byteLength", byteLength);
+		assertTrue("byteLength must be > 0, got " + byteLength, byteLength.longValue() > 0);
+
+		String nodeStatus = (String) result.get("nodeStatus");
+		assertEquals("Node status must be DONE_UNVERIFIED", "DONE_UNVERIFIED", nodeStatus);
+
+		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+		org.cote.accountmanager.record.BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactObjectId, orgId);
+		assertNotNull("Artifact must be readable after creation", artifact);
+		Boolean selected = artifact.get(OlioFieldNames.FIELD_PB_SELECTED);
+		assertTrue("Artifact must be marked selected", selected != null && selected.booleanValue());
+
+		logger.info("Reference-strip node '{}' executed: artifact={}, bytes={}, downstream={}",
+			nodeHandle, artifactObjectId, byteLength, result.get("downstreamMarked"));
+	}
+
+	@Test
+	public void testCompositeNodeExecution() {
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		assumeTrue("test.swarm.server must be set for this test",
+			swarmServer != null && !swarmServer.trim().isEmpty());
+
+		BaseRecord user = user();
+
+		BaseRecord[] fixture = findAnyExecutableNode(user, PbNodeTypeEnumType.COMPOSITE);
+		assumeNotNull("A COMPOSITE node with source bindings must exist in the org — "
+			+ "run TestPbMigration or the full picture-book pipeline first", fixture);
+
+		BaseRecord book = fixture[0];
+		BaseRecord workflow = fixture[1];
+		BaseRecord node = fixture[2];
+
+		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
+		assumeTrue("COMPOSITE node must carry a scopeRef (scene objectId)",
+			scopeRef != null && !scopeRef.trim().isEmpty());
+
+		String nodeHandle = node.get(OlioFieldNames.FIELD_PB_HANDLE);
+		logger.info("Executing COMPOSITE node '{}' (scopeRef={}) for book '{}'",
+			nodeHandle, scopeRef, book.get(OlioFieldNames.FIELD_PB_SLUG));
+
+		Map<String, Object> result = PbNodeExecutor.executeNode(user, book, workflow, node, swarmServer);
+		assertNotNull("executeNode must return a result map", result);
+
+		String artifactObjectId = (String) result.get("artifactObjectId");
+		assertNotNull("Result must contain artifactObjectId", artifactObjectId);
+
+		Number byteLength = (Number) result.get("byteLength");
+		assertNotNull("Result must contain byteLength", byteLength);
+		assertTrue("byteLength must be > 0, got " + byteLength, byteLength.longValue() > 0);
+
+		String nodeStatus = (String) result.get("nodeStatus");
+		assertEquals("Node status must be DONE_UNVERIFIED", "DONE_UNVERIFIED", nodeStatus);
+
+		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+		org.cote.accountmanager.record.BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactObjectId, orgId);
+		assertNotNull("Artifact must be readable after creation", artifact);
+		Boolean selected = artifact.get(OlioFieldNames.FIELD_PB_SELECTED);
+		assertTrue("Artifact must be marked selected", selected != null && selected.booleanValue());
+
+		logger.info("Composite node '{}' executed: artifact={}, bytes={}, downstream={}",
 			nodeHandle, artifactObjectId, byteLength, result.get("downstreamMarked"));
 	}
 }

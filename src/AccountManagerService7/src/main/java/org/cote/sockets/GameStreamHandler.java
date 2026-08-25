@@ -17,6 +17,7 @@ import org.cote.accountmanager.olio.InteractionEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordSerializerConfig;
@@ -102,11 +103,29 @@ public class GameStreamHandler implements IGameEventHandler {
     }
 
     /**
-     * Execute a game action and send streaming updates
+     * Execute a game action and send streaming updates.
+     * <p>
+     * Optional params fields: {@code universeObjectId} and {@code worldObjectId} — when both are
+     * present the book-world context is resolved via {@link PbOlioContextUtil#getBookContextByIds}.
+     * When absent (or on failure) the default grid context is used with a null dataPath
+     * (pre-existing behaviour — not a regression).
      */
     private static void executeAction(Session session, BaseRecord user, String actionId, String actionType, BaseRecord params) {
-        // Get OlioContext
-        OlioContext octx = OlioContextUtil.getOlioContext(user, null);
+        // Get OlioContext — use book context when universe/world IDs are supplied, otherwise default
+        String universeOid = params != null ? (String) params.get("universeObjectId") : null;
+        String worldOid = params != null ? (String) params.get("worldObjectId") : null;
+        OlioContext octx;
+        if (universeOid != null && !universeOid.isEmpty() && worldOid != null && !worldOid.isEmpty()) {
+            try {
+                octx = PbOlioContextUtil.getBookContextByIds(user, null, universeOid, worldOid);
+            } catch (OlioException e) {
+                logger.warn("GameStreamHandler: Failed to resolve book context by IDs ({}), falling back to default: {}",
+                        worldOid, e.getMessage());
+                octx = OlioContextUtil.getOlioContext(user, null);
+            }
+        } else {
+            octx = OlioContextUtil.getOlioContext(user, null);
+        }
         if (octx == null) {
             chirpError(session, actionId, "Failed to initialize game context");
             return;

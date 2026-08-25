@@ -130,7 +130,10 @@ public class ChapBookService {
             chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
         if (chatConfig == null) {
-            return errorResponse(400, "chatConfig is required for theme analysis");
+            chatConfig = ChapBookUtil.resolveDefaultChatConfig(user);
+        }
+        if (chatConfig == null) {
+            return errorResponse(503, "No chatConfig is configured for this organization");
         }
 
         try {
@@ -240,6 +243,9 @@ public class ChapBookService {
         }
 
         try {
+            // TODO(ChapBook async): This render is synchronous and will gateway-timeout for books
+            // with many scenes (~10s per scene × 20 scenes = 200s exceeds typical 60-120s gateway
+            // limit). When PB2 adopts an async render pattern, ChapBook should follow it.
             int rendered = ChapBookUtil.renderChapBook(user, bookObjectId, sdApiType, sdServer, chatConfig);
             return Response.status(200).entity("{\"rendered\":" + rendered + "}").build();
         } catch (PictureBookException e) {

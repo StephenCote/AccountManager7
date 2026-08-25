@@ -17,7 +17,8 @@ import { page } from '../core/pageClient.js';
 import { applicationPath } from '../core/config.js';
 import {
     getBookInfo, workflowView, nodeView, listStale,
-    regenerateNode, pinNode, addMembers, createChapter, testNode
+    regenerateNode, pinNode, addMembers, createChapter, testNode,
+    saveCanvas, addBinding, deleteBinding
 } from '../workflows/pictureBookWorkflow.js';
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -88,6 +89,14 @@ let dragging = false;
 let dragStart = null;
 let panStart = null;
 
+// Node drag state (B8)
+let draggingNodeId = null;
+let dragStartClient = null;
+let dragStartPos = null;
+
+// Edge drag state (B8 — port-to-port binding creation)
+let pendingEdgeSrc = null;
+
 let memberDialog = false;
 let memberNames = '';
 let chapterDialog = false;
@@ -151,18 +160,38 @@ async function loadGraph(groupOid) {
     nodeDetails = null;
     m.redraw();
     try {
-        let info = await getBookInfo(groupOid);
-        if (!info) {
-            error = 'No PB2 workflow book found for this book. Generate some scenes to create one.';
+        // B7: Try direct PB2 path first — ChapBook objectIds ARE pb2BookObjectIds.
+        // If workflowView succeeds the route ID is already the pb2BookObjectId.
+        // If it throws (e.g. 404 for a PB1 group objectId), fall back to the bridge.
+        let gd = null;
+        // workflowView returns null on 404 (PB1 group objectId), throws on 401/403/500
+        try {
+            gd = await workflowView(groupOid);
+        } catch (directErr) {
+            // Real error (401/403/500) — surface it directly, do not fall back
+            error = 'Failed to load workflow: ' + directErr.message;
             loading = false;
             m.redraw();
             return;
         }
-        pb2BookObjectId = info.pb2BookObjectId;
-        bookName = info.bookName || '';
-        let gd = await workflowView(pb2BookObjectId);
+        if (gd !== null) {
+            pb2BookObjectId = groupOid;
+            bookName = (gd && gd.bookName) || '';
+        } else {
+            // null = 404: fall back to PB1 bridge: resolve group objectId → pb2BookObjectId
+            let info = await getBookInfo(groupOid);
+            if (!info) {
+                error = 'No PB2 workflow book found for this book. Generate some scenes to create one.';
+                loading = false;
+                m.redraw();
+                return;
+            }
+            pb2BookObjectId = info.pb2BookObjectId;
+            bookName = info.bookName || '';
+            gd = await workflowView(pb2BookObjectId);
+        }
         graphData = gd;
-        positions = computePositions(gd.nodes || []);
+        positions = computePositions((gd && gd.nodes) || []);
     } catch (e) {
         error = 'Failed to load workflow graph: ' + (e.message || '');
     }
@@ -279,7 +308,7 @@ async function doCreateChapter() {
 
 function renderEdges() {
     if (!graphData || !graphData.edges) return null;
-    let paths = [];
+    let elements = [];
     for (let e of graphData.edges) {
         let src = e.sourceNodeObjectId;
         let dst = e.consumerObjectId;
@@ -290,21 +319,43 @@ function renderEdges() {
         let x1 = sp.x + CARD_W, y1 = sp.y + CARD_H / 2;
         let x2 = dp.x, y2 = dp.y + CARD_H / 2;
         let cx = (x1 + x2) / 2;
-        paths.push(m('path', {
-            key: e.objectId || (src + '-' + dst),
+        let mx = (x1 + x2) / 2;
+        let my = (y1 + y2) / 2;
+        let edgeKey = e.objectId || (src + '-' + dst);
+        elements.push(m('path', {
+            key: edgeKey,
             d: 'M' + x1 + ',' + y1 + ' C' + cx + ',' + y1 + ' ' + cx + ',' + y2 + ' ' + x2 + ',' + y2,
             fill: 'none',
             stroke: '#94a3b8',
             'stroke-width': '1.5',
             opacity: '0.6',
+            style: 'pointer-events:none;',
         }));
+        // Delete button at curve midpoint — only when binding has a known objectId
+        if (e.objectId) {
+            let bindingId = e.objectId;
+            elements.push(m('g', {
+                key: 'del-' + edgeKey,
+                style: 'pointer-events:auto;cursor:pointer;',
+                onclick: function () { doDeleteBinding(bindingId); },
+            }, [
+                m('circle', { cx: mx, cy: my, r: 7, fill: '#fff', stroke: '#ef4444', 'stroke-width': 1.5 }),
+                m('text', {
+                    x: mx, y: my + 4,
+                    'text-anchor': 'middle',
+                    'font-size': '10',
+                    fill: '#ef4444',
+                    style: 'user-select:none;',
+                }, '×'),
+            ]));
+        }
     }
     let sz = canvasSize();
     return m('svg', {
         style: 'position:absolute;top:0;left:0;pointer-events:none;',
         width: sz.w,
         height: sz.h,
-    }, paths);
+    }, elements);
 }
 
 // ── Node cards ────────────────────────────────────────────────────────
@@ -352,8 +403,23 @@ function renderNodeCard(n) {
             'user-select:none',
             'box-sizing:border-box',
         ].join(';'),
-        onclick: function (e) { e.stopPropagation(); selectNode(n.objectId); }
+        onclick: function (e) { e.stopPropagation(); selectNode(n.objectId); },
+        onmousedown: function (e) { onNodeMouseDown(e, n.objectId); },
     }, [
+        // Input port — left edge (drop target for incoming bindings)
+        m('div', {
+            'data-port-in': n.objectId,
+            style: 'position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:12px;height:12px;border-radius:50%;background:#34d399;cursor:crosshair;z-index:10;',
+            title: 'Drop here to receive binding',
+            onmouseup: function (e) { endEdgeDrag(e, n.objectId); },
+        }),
+        // Output port — right edge (drag source for outgoing bindings)
+        m('div', {
+            'data-port-out': n.objectId,
+            style: 'position:absolute;right:-6px;top:50%;transform:translateY(-50%);width:12px;height:12px;border-radius:50%;background:#818cf8;cursor:crosshair;z-index:10;',
+            title: 'Drag to create binding',
+            onmousedown: function (e) { startEdgeDrag(e, n.objectId); },
+        }),
         // Header: handle + status badge
         m('div', { style: 'display:flex;align-items:center;gap:6px;margin-bottom:6px;' }, [
             m('span', {
@@ -576,7 +642,55 @@ async function doRecheckStale() {
     m.redraw();
 }
 
+// ── Binding management ────────────────────────────────────────────────
+
+function startEdgeDrag(e, nodeId) {
+    pendingEdgeSrc = nodeId;
+    e.stopPropagation();
+    e.preventDefault();
+}
+
+function endEdgeDrag(e, targetNodeId) {
+    if (!pendingEdgeSrc || pendingEdgeSrc === targetNodeId) {
+        pendingEdgeSrc = null;
+        return;
+    }
+    let srcId = pendingEdgeSrc;
+    pendingEdgeSrc = null;
+    if (!pb2BookObjectId) return;
+    addBinding(pb2BookObjectId, targetNodeId, 'source', srcId)
+        .then(function () {
+            page.toast('success', 'Binding created');
+            return loadGraph(bookGroupObjectId);
+        })
+        .catch(function (err) {
+            page.toast('error', 'Add binding failed: ' + err.message);
+        });
+}
+
+async function doDeleteBinding(bindingObjectId) {
+    if (!pb2BookObjectId) return;
+    try {
+        await deleteBinding(pb2BookObjectId, bindingObjectId);
+        page.toast('success', 'Binding removed');
+        await loadGraph(bookGroupObjectId);
+    } catch (e) {
+        page.toast('error', 'Delete binding failed: ' + e.message);
+    }
+    m.redraw();
+}
+
 // ── Canvas interaction ────────────────────────────────────────────────
+
+function onNodeMouseDown(e, nodeId) {
+    if (e.button !== 0) return;
+    // Don't start a node drag when clicking a button inside the card
+    if (e.target.closest && e.target.closest('button')) return;
+    draggingNodeId = nodeId;
+    dragStartClient = { x: e.clientX, y: e.clientY };
+    dragStartPos = { ...(positions[nodeId] || { x: 0, y: 0 }) };
+    e.stopPropagation();
+}
 
 function onCanvasMouseDown(e) {
     if (e.button !== 0) return;
@@ -589,6 +703,16 @@ function onCanvasMouseDown(e) {
 }
 
 function onCanvasMouseMove(e) {
+    if (draggingNodeId) {
+        let dx = (e.clientX - dragStartClient.x) / zoom;
+        let dy = (e.clientY - dragStartClient.y) / zoom;
+        positions[draggingNodeId] = {
+            x: dragStartPos.x + dx,
+            y: dragStartPos.y + dy,
+        };
+        m.redraw();
+        return;
+    }
     if (!dragging) return;
     pan.x = panStart.x + (e.clientX - dragStart.x);
     pan.y = panStart.y + (e.clientY - dragStart.y);
@@ -596,7 +720,22 @@ function onCanvasMouseMove(e) {
 }
 
 function onCanvasMouseUp() {
+    if (draggingNodeId) {
+        let nodeId = draggingNodeId;
+        let pos = positions[nodeId];
+        draggingNodeId = null;
+        dragStartClient = null;
+        dragStartPos = null;
+        if (pb2BookObjectId && pos) {
+            saveCanvas(pb2BookObjectId, nodeId, pos).catch(function (err) {
+                page.toast('error', 'Save position failed: ' + err.message);
+            });
+        }
+        m.redraw();
+        return;
+    }
     dragging = false;
+    pendingEdgeSrc = null;
 }
 
 function onCanvasWheel(e) {
@@ -621,6 +760,10 @@ var pictureBookWorkflowView = {
         pan = { x: 0, y: 0 };
         zoom = 1;
         dragging = false;
+        draggingNodeId = null;
+        dragStartClient = null;
+        dragStartPos = null;
+        pendingEdgeSrc = null;
         pinLoading = {};
         regenLoading = {};
         testLoading = {};

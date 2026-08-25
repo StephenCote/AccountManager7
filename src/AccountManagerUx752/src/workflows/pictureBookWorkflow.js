@@ -21,6 +21,7 @@ export async function getBookInfo(bookGroupObjectId) {
 /** Full workflow graph: {bookObjectId, slug, bookName, nodeCount, nodes[], edges[]} */
 export async function workflowView(pb2BookObjectId) {
     let resp = await fetch(wfBase() + '/' + pb2BookObjectId + '/workflow', { credentials: 'include' });
+    if (resp.status === 404) return null;
     if (!resp.ok) throw new Error('workflowView failed: ' + resp.status);
     return resp.json();
 }
@@ -124,5 +125,44 @@ export async function testNode(pb2BookObjectId, nodeObjectId) {
         try { body = await resp.text(); } catch (_) {}
         throw new Error('(' + resp.status + ') ' + (body || 'testNode failed'));
     }
+    return resp.json();
+}
+
+/** Save canvas position for a node. pos = {x, y, w, h} (all optional, rounded to int). */
+export async function saveCanvas(pb2BookObjectId, nodeObjectId, pos = {}) {
+    let body = {};
+    if (pos.x != null) body.x = Math.round(pos.x);
+    if (pos.y != null) body.y = Math.round(pos.y);
+    if (pos.w != null) body.w = Math.round(pos.w);
+    if (pos.h != null) body.h = Math.round(pos.h);
+    let resp = await fetch(wfBase() + '/' + pb2BookObjectId + '/node/' + nodeObjectId + '/canvas', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) throw new Error('saveCanvas failed: ' + resp.status);
+    return resp.json();
+}
+
+/** Add a binding: sourceNodeObjectId feeds into nodeObjectId with the given role. */
+export async function addBinding(pb2BookObjectId, nodeObjectId, role, sourceNodeObjectId) {
+    let resp = await fetch(wfBase() + '/' + pb2BookObjectId + '/node/' + nodeObjectId + '/bind', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ role, sourceNodeObjectId })
+    });
+    if (!resp.ok) throw new Error('addBinding failed: ' + resp.status);
+    return resp.json();
+}
+
+/** Delete a binding record by its objectId. */
+export async function deleteBinding(pb2BookObjectId, bindingObjectId) {
+    let resp = await fetch(wfBase() + '/' + pb2BookObjectId + '/binding/' + bindingObjectId, {
+        method: 'DELETE',
+        credentials: 'include',
+    });
+    if (!resp.ok) throw new Error('deleteBinding failed: ' + resp.status);
     return resp.json();
 }

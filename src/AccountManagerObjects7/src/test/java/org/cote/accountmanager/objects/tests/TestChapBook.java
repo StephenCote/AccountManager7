@@ -13,8 +13,10 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.picturebook.ChapBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
+import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.junit.Before;
@@ -144,6 +146,67 @@ public class TestChapBook extends BaseTest {
 		assertTrue("At least one scene must have imageObjectId persisted after renderChapBook; got "
 			+ scenesWithImage + "/" + updatedScenes.size() + " with image",
 			scenesWithImage >= 1);
+	}
+
+	/**
+	 * B7 verification: createChapBook now creates a workflow with one SCENE node per stanza.
+	 * No SD server required.
+	 */
+	@Test
+	public void testChapBookWorkflow() throws Exception {
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be set", dataPath);
+
+		long ts = System.currentTimeMillis();
+		String slug = "cb-wf-test-" + ts;
+		String title = "ChapBook Workflow Test " + ts;
+
+		String poem1Text =
+			"The light falls soft on winter boughs,\n" +
+			"A silver hush where no bird calls.";
+
+		String poem2Text =
+			"Come spring and break the ice apart,\n" +
+			"Let green reclaim the barren earth.";
+
+		String poemPath = "~/Data/ChapBookWfTest-" + ts;
+
+		BaseRecord poem1 = createPoem(testUser, poemPath, "Poem WF One " + ts, poem1Text);
+		assertNotNull("Poem 1 should be created", poem1);
+		String poem1Oid = poem1.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Poem 1 must have objectId", poem1Oid);
+
+		BaseRecord poem2 = createPoem(testUser, poemPath, "Poem WF Two " + ts, poem2Text);
+		assertNotNull("Poem 2 should be created", poem2);
+		String poem2Oid = poem2.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Poem 2 must have objectId", poem2Oid);
+
+		List<String> poemOids = new ArrayList<>();
+		poemOids.add(poem1Oid);
+		poemOids.add(poem2Oid);
+
+		// maxLinesPerPage=4 so each 2-line stanza becomes one scene (2 poems → 2 scenes)
+		BaseRecord book = ChapBookUtil.createChapBook(testUser, dataPath, slug, title, poemOids, 4, null);
+		assertNotNull("createChapBook must return a book record", book);
+		String bookObjectId = book.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Book must have an objectId", bookObjectId);
+
+		// Verify the workflow was created
+		BaseRecord workflow = PbGraphUtil.findWorkflow(testUser, book);
+		assertNotNull("createChapBook must create a workflow (B7)", workflow);
+
+		// Verify at least one SCENE node was added
+		List<BaseRecord> nodes = PbGraphUtil.listNodes(testUser, workflow);
+		assertTrue("Workflow must have at least one node (B7)", !nodes.isEmpty());
+
+		// Verify the first node is SCENE type (case-insensitive, as enums come back UPPERCASE in Java)
+		String nodeType = nodes.get(0).get(OlioFieldNames.FIELD_PB_NODE_TYPE);
+		assertNotNull("First node must have a nodeType", nodeType);
+		assertTrue("First node type must be SCENE, got: " + nodeType,
+			PbNodeTypeEnumType.SCENE.toString().equalsIgnoreCase(nodeType));
+
+		logger.info("testChapBookWorkflow: book={} workflow={} nodes={}",
+			bookObjectId, workflow.get(FieldNames.FIELD_OBJECT_ID), nodes.size());
 	}
 
 	// ── helpers ──────────────────────────────────────────────────────────────

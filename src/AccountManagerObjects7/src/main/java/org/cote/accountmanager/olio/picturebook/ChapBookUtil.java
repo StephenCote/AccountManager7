@@ -18,9 +18,11 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
+import org.cote.accountmanager.olio.picturebook.PictureBookProgressNotifier;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 
 /**
  * ChapBook utility — poem-library management and ChapBook (poetry picture book) creation.
@@ -75,6 +77,28 @@ public class ChapBookUtil {
 			}
 		}
 		return chunks;
+	}
+
+	// ─────────────────────────────── chatConfig resolution ───────────────────────────────
+
+	/**
+	 * Return the first {@code olio.llm.chatConfig} record accessible to the user in their
+	 * organization, or {@code null} when none is configured.
+	 * <p>
+	 * Uses {@code AccessPoint.find} (not {@code list}) to enforce per-record PBAC authorization.
+	 * The query is scoped to the user's organization and owner to avoid returning configs that
+	 * belong to other users in the same org.
+	 *
+	 * @param user the acting user (must be non-null and have a valid organizationId)
+	 * @return first accessible chatConfig record, or null
+	 */
+	public static BaseRecord resolveDefaultChatConfig(BaseRecord user) {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.field(FieldNames.FIELD_OWNER_ID, user.get(FieldNames.FIELD_ID));
+		q.setContextUser(user);
+		q.planMost(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
 	}
 
 	// ─────────────────────────────── LLM theme analysis ───────────────────────────────
@@ -253,6 +277,20 @@ public class ChapBookUtil {
 			logger.warn("createChapBook: could not patch bookType: " + e.getMessage());
 		}
 
+		// Patch maxLinesPerPage if the caller supplied a positive value
+		if (maxLinesPerPage > 0) {
+			try {
+				BaseRecord mlpPatch = PbGraphUtil.patchOf(book, OlioModelNames.MODEL_PB_BOOK,
+					OlioFieldNames.FIELD_PB_MAX_LINES_PER_PAGE);
+				mlpPatch.set(OlioFieldNames.FIELD_PB_MAX_LINES_PER_PAGE, maxLinesPerPage);
+				if (IOSystem.getActiveContext().getAccessPoint().update(user, mlpPatch) == null) {
+					logger.warn("createChapBook: failed to persist maxLinesPerPage on book " + slug);
+				}
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.warn("createChapBook: could not patch maxLinesPerPage: " + e.getMessage());
+			}
+		}
+
 		String bookGroupPath = PbBookUtil.bookGroupPath(slug);
 		int sceneIndex = 0;
 		for (String poemObjectId : poemObjectIds) {
@@ -281,6 +319,25 @@ public class ChapBookUtil {
 			}
 		}
 		logger.info("createChapBook: created {} scenes for slug={}", sceneIndex, slug);
+
+		// Book and scenes are already committed. Workflow creation is non-fatal.
+		String workflowPath = PbBookUtil.workflowGroupPath(slug);
+		try {
+			BaseRecord workflow = PbGraphUtil.getCreateWorkflow(user, book, workflowPath);
+			if (workflow != null) {
+				for (int i = 0; i < sceneIndex; i++) {
+					String handle = "cb-scene-" + i;
+					try {
+						PbGraphUtil.addNode(user, workflow, handle, PbNodeTypeEnumType.SCENE, workflowPath, i);
+					} catch (Exception e) {
+						logger.warn("createChapBook: failed to add workflow node {} : {}", handle, e.getMessage());
+					}
+				}
+			}
+		} catch (Exception e) {
+			logger.warn("createChapBook: workflow creation failed (non-fatal): {}", e.getMessage());
+		}
+
 		return book;
 	}
 
@@ -381,6 +438,7 @@ public class ChapBookUtil {
 			logger.info("renderChapBook: no scenes for book {}", bookObjectId);
 			return 0;
 		}
+		PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_stories", "ChapBook render: " + scenes.size() + " scene(s)…");
 
 		String bookGroupPath = book.get(FieldNames.FIELD_GROUP_PATH);
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType.toUpperCase()), sdServer);
@@ -440,12 +498,14 @@ public class ChapBookUtil {
 					logger.warn("renderChapBook: failed to patch imageObjectId on scene " + sceneOid);
 				} else {
 					rendered++;
+					PictureBookProgressNotifier.getInstance().notifyProgress(user, "image", "Scene " + rendered + "/" + scenes.size() + " rendered");
 					logger.info("renderChapBook: rendered scene " + sceneOid);
 				}
 			} catch (Exception e) {
 				logger.warn("renderChapBook: error rendering scene " + sceneOid + ": " + e.getMessage());
 			}
 		}
+		PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
 		logger.info("renderChapBook: rendered {}/{} scenes for book {}", rendered, scenes.size(), bookObjectId);
 		return rendered;
 	}

@@ -1,0 +1,13 @@
+{
+  "name": "test.coltyperepair",
+  "version": "1",
+  "inherits": ["common.nameId"],
+  "fields": [
+    {
+      "name": "fkField",
+      "type": "model",
+      "foreign": true,
+      "baseModel": "auth.group"
+    }
+  ]
+}

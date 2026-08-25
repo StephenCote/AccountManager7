@@ -88,6 +88,13 @@ public class OlioModelNames extends ModelNames {
 	public static final String MODEL_PB_BINDING = "olio.pb.binding";
 	public static final String MODEL_PB_ARTIFACT = "olio.pb.artifact";
 	public static final String MODEL_PB_RUN = "olio.pb.run";
+	/**
+	 * A castGroup is a collective noun entity (herd, crowd, ensemble) that a canvas binding chip
+	 * can reference as a single unit. Bindings reference it via {@code refModel="olio.pb.castGroup"}
+	 * and {@code refObjectId}; members are {@code olio.charPerson} records via the participation
+	 * table {@code pb.castGroup.member}. Schema commitment for Phase 6+ canvas collective entity
+	 * work; no factory or REST endpoint exists yet.
+	 */
 	public static final String MODEL_PB_CAST_GROUP = "olio.pb.castGroup";
 
 	/// ChapBook models — poem library, sets, and the ChapBook variant of olio.pb.book
@@ -124,8 +131,10 @@ public class OlioModelNames extends ModelNames {
 		MODEL_PB_SCENE,
 		MODEL_PB_CAST_GROUP,
 		MODEL_CB_POEM,
-		MODEL_CB_SET,
-		MODEL_CB_BOOK
+		MODEL_CB_SET
+		/// MODEL_CB_BOOK (olio.cb.book) removed from registration — superseded by olio.pb.book
+		/// with bookType=CHAPBOOK. The constant and JSON are kept for reference; A7_olio_cb_book_1
+		/// never existed in am7test (confirmed 2026-08-25).
 	);
 	
 	public static void use() {

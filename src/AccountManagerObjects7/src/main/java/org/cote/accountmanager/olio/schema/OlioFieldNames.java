@@ -389,6 +389,9 @@ public class OlioFieldNames {
 
 	/// olio.pb.book — bookType added for ChapBook variant detection
 	public static final String FIELD_PB_BOOK_TYPE = "bookType";
+	/// olio.pb.book — CHAPBOOK-only fields (promoted from olio.cb.book)
+	public static final String FIELD_PB_MAX_LINES_PER_PAGE = "maxLinesPerPage";
+	public static final String FIELD_PB_OVERLAY_OPACITY = "overlayOpacity";
 	/// olio.pb.scene — poemStanza holds the stanza text for ChapBook scenes
 	public static final String FIELD_CB_POEM_STANZA = "poemStanza";
 	/// olio.pb.scene — sdPrompt for ChapBook: landscape SD prompt derived from poemStanza + mood

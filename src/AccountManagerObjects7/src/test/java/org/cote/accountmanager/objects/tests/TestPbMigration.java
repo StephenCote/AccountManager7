@@ -11,6 +11,7 @@ import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
@@ -131,6 +132,123 @@ public class TestPbMigration extends BaseTest {
 			}
 		}
 		return fallback;
+	}
+
+	/**
+	 * Deterministic synthetic fixture test: seeds a minimal PB1-shaped group + notes inline and
+	 * verifies the full migration path without relying on any pre-existing real PB1 data.
+	 * Idempotent — safe to run multiple times; handles both fresh import and already-migrated state.
+	 */
+	@Test
+	public void testImportV1BookSynthetic() throws Exception {
+		BaseRecord user = user();
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+
+		// ── 1. Create the PB1 fixture book group ────────────────────────────────────
+		String fixtureGroupPath = PICTURES_BOOKS_PATH + "/TestMigrationFixture";
+		BaseRecord fixtureGroup = IOSystem.getActiveContext().getPathUtil().makePath(
+			user, ModelNames.MODEL_GROUP, fixtureGroupPath, GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("Fixture PB1 book group must be created/found", fixtureGroup);
+		String fixtureGroupObjectId = fixtureGroup.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Fixture group objectId must not be null", fixtureGroupObjectId);
+		long fixtureGroupId = ((Number) fixtureGroup.get(FieldNames.FIELD_ID)).longValue();
+
+		// ── 2. Create or retrieve the synthetic scene note ──────────────────────────
+		//    The note's text is a JSON map matching the keys importScene reads
+		String sceneNoteName = ".syntheticScene0";
+		String sceneJson = "{\"title\":\"Synthetic Scene\",\"summary\":\"A quiet field at dawn.\","
+			+ "\"setting\":\"Rolling meadows at sunrise.\",\"action\":\"A figure walks slowly.\","
+			+ "\"mood\":\"Peaceful\",\"blurb\":\"A serene opening.\"}";
+
+		Query sceneNoteQ = QueryUtil.createQuery(ModelNames.MODEL_NOTE,
+			FieldNames.FIELD_GROUP_ID, fixtureGroupId);
+		sceneNoteQ.field(FieldNames.FIELD_NAME, sceneNoteName);
+		sceneNoteQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		sceneNoteQ.planMost(false);
+		BaseRecord sceneNote = IOSystem.getActiveContext().getAccessPoint().find(user, sceneNoteQ);
+		if (sceneNote == null) {
+			ParameterList scenePlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, fixtureGroupPath);
+			scenePlist.parameter(FieldNames.FIELD_NAME, sceneNoteName);
+			sceneNote = IOSystem.getActiveContext().getFactory().newInstance(
+				ModelNames.MODEL_NOTE, user, null, scenePlist);
+			sceneNote.set("text", sceneJson);
+			sceneNote = IOSystem.getActiveContext().getAccessPoint().create(user, sceneNote);
+			assertNotNull("Synthetic scene note must be created", sceneNote);
+		}
+		String sceneNoteObjectId = sceneNote.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Scene note objectId must not be null", sceneNoteObjectId);
+		logger.info("Synthetic scene note objectId: {}", sceneNoteObjectId);
+
+		// ── 3. Create or retrieve the .pictureBookMeta note ─────────────────────────
+		//    The JSON must carry the schema so the deserializer can resolve the scenes list type
+		String metaJson = "{\"schema\":\"olio.pictureBookMeta\","
+			+ "\"workName\":\"Synthetic Migration Test Book\","
+			+ "\"scenes\":[{\"schema\":\"olio.pictureBookScene\","
+			+ "\"objectId\":\"" + sceneNoteObjectId + "\"}]}";
+
+		Query metaNoteQ = QueryUtil.createQuery(ModelNames.MODEL_NOTE,
+			FieldNames.FIELD_GROUP_ID, fixtureGroupId);
+		metaNoteQ.field(FieldNames.FIELD_NAME, V1_META_NOTE_NAME);
+		metaNoteQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		metaNoteQ.planMost(false);
+		BaseRecord metaNote = IOSystem.getActiveContext().getAccessPoint().find(user, metaNoteQ);
+		if (metaNote == null) {
+			ParameterList metaPlist = ParameterList.newParameterList(FieldNames.FIELD_PATH, fixtureGroupPath);
+			metaPlist.parameter(FieldNames.FIELD_NAME, V1_META_NOTE_NAME);
+			metaNote = IOSystem.getActiveContext().getFactory().newInstance(
+				ModelNames.MODEL_NOTE, user, null, metaPlist);
+			metaNote.set("text", metaJson);
+			metaNote = IOSystem.getActiveContext().getAccessPoint().create(user, metaNote);
+			assertNotNull("Meta note must be created", metaNote);
+		}
+		logger.info("Meta note present; meta JSON points to scene objectId={}", sceneNoteObjectId);
+
+		// ── 4. Determine the expected slug and check for a prior migration run ───────
+		String fixtureGroupName = fixtureGroup.get(FieldNames.FIELD_NAME);
+		String expectedSlug = org.cote.accountmanager.olio.picturebook.PbPipelineUtil.deriveSlug(fixtureGroupName);
+		assertNotNull("Slug derivation must succeed for fixture group name '" + fixtureGroupName + "'", expectedSlug);
+		logger.info("Expected PB2 slug: {}", expectedSlug);
+
+		BaseRecord pb2Book = PbBookUtil.findBookBySlug(user, expectedSlug, orgId);
+		if (pb2Book != null) {
+			logger.info("PB2 book '{}' already exists — verifying idempotency (prior run)", expectedSlug);
+		} else {
+			// ── 5. Run the migration ───────────────────────────────────────────────
+			ImportResult result;
+			try {
+				result = PbMigrationUtil.importV1Book(user, dataPath(), fixtureGroupObjectId);
+			} catch (org.cote.accountmanager.olio.picturebook.PictureBookException e) {
+				if (e.getStatus() == 409) {
+					// Race between the findBookBySlug check above and the guard inside importV1Book —
+					// treat as a successful prior run
+					logger.info("importV1Book returned 409 on first call — treating as already-migrated");
+					pb2Book = PbBookUtil.findBookBySlug(user, expectedSlug, orgId);
+					assertNotNull("PB2 book must exist after 409", pb2Book);
+					return;
+				}
+				throw e;
+			}
+			assertNotNull("importV1Book must return a non-null result", result);
+			logger.info("Synthetic migration result: {}", result);
+
+			assertNotNull("result.slug must not be null", result.slug);
+			assertNotNull("result.bookObjectId must not be null", result.bookObjectId);
+			assertEquals("scenesFailed must be 0", 0, result.scenesFailed);
+			assertTrue("scenesImported must be >= 1", result.scenesImported >= 1);
+
+			pb2Book = PbBookUtil.findBookBySlug(user, result.slug, orgId);
+		}
+
+		// ── 6. Post-migration assertions ─────────────────────────────────────────
+		assertNotNull("PB2 book must exist for slug '" + expectedSlug + "'", pb2Book);
+
+		// PB1 auth.group must still exist and be unchanged
+		BaseRecord pb1GroupAfter = PictureBookUtil.findBookGroup(user, fixtureGroupObjectId);
+		assertNotNull("PB1 fixture group must still exist after migration", pb1GroupAfter);
+		assertEquals("PB1 fixture group name must be unchanged",
+			fixtureGroupName, (String) pb1GroupAfter.get(FieldNames.FIELD_NAME));
+
+		logger.info("testImportV1BookSynthetic PASSED — PB2 book exists for slug '{}'", expectedSlug);
 	}
 
 	@Test

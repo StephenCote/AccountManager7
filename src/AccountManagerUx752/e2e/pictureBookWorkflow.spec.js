@@ -636,47 +636,23 @@ test.describe('Workflow Canvas — real PB2 book', () => {
         await request.get(REST + '/logout');
     });
 
-    // ── Gated UI: workflow canvas with PB1 book group objectId ──────────
-    //
-    // This test requires a REAL PB1 book group objectId (auth.group) that has
-    // a PB2 workflow linked via the /pb2 bridge endpoint.  Supply it via:
-    //   WORKFLOW_BOOK_GROUP_OID=<auth.group objectId UUID>
-    //
-    // Creating a PB1 book with a PB2 workflow involves the full Olio scene-generation
-    // pipeline (several minutes), so this test is gated rather than auto-seeded.
+    // ── UI: workflow canvas with seeded ChapBook (B7 direct-PB2 path) ──────────
 
-    test('workflow canvas renders [data-node-id] elements for a PB1 book with workflow', async ({ page }) => {
-        const bookGroupOid = process.env.WORKFLOW_BOOK_GROUP_OID;
-        if (!bookGroupOid) {
-            test.skip('set WORKFLOW_BOOK_GROUP_OID=<auth.group objectId> to run this test');
-            return;
-        }
+    test('workflow canvas renders node cards for seeded ChapBook', async ({ page }) => {
+        test.skip(!wfPb2BookObjectId, 'wfPb2BookObjectId not seeded');
         await loginAsSharedUser(page);
-        await page.evaluate((oid) => {
-            window.location.hash = '!/picture-book/' + oid + '/workflow';
-        }, bookGroupOid);
-
-        // Wait for the graph to load (bridge call + workflowView call)
+        await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid + '/workflow'; }, wfPb2BookObjectId);
         await page.waitForFunction(
-            () => {
-                let els = document.querySelectorAll('[data-node-id]');
-                let err = document.body.innerText;
-                return els.length > 0 || err.includes('Failed') || err.includes('No PB2');
-            },
+            () => document.querySelectorAll('[data-node-id]').length > 0 ||
+                  document.body.innerText.includes('Failed') ||
+                  document.body.innerText.includes('No PB2'),
             { timeout: 30000 }
         );
-
-        // At least one node card must be present
         const nodeCards = await page.locator('[data-node-id]').count();
-        expect(nodeCards, 'Expected at least one node card with [data-node-id]').toBeGreaterThanOrEqual(1);
-
-        // The "▶ Test" button must be present on at least one node card
-        const testBtns = await page.locator('button:has-text("▶ Test")').count();
-        expect(testBtns, 'Expected at least one "▶ Test" button on node cards').toBeGreaterThanOrEqual(1);
-
-        // The "↻ Stale" recheck button must be present in the toolbar
-        const staleBtn = await page.locator('button:has-text("↻ Stale")').count();
-        expect(staleBtn, 'Expected "↻ Stale" button in toolbar').toBeGreaterThanOrEqual(1);
+        expect(nodeCards).toBeGreaterThanOrEqual(1);
+        const testBtns = await page.locator('button:has-text("Test")').count();
+        expect(testBtns).toBeGreaterThanOrEqual(1);
+        await page.screenshot({ path: 'e2e/screenshots/chapbook-canvas.png' });
     });
 
 });

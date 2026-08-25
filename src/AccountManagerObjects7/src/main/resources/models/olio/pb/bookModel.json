@@ -89,6 +89,16 @@
 			"type": "enum",
 			"maxLength": 32,
 			"description": "STORY for a standard PB2 narrative book; CHAPBOOK for a poetry ChapBook variant. Existing books default to UNKNOWN."
+		},
+		{
+			"name": "maxLinesPerPage",
+			"type": "int",
+			"description": "CHAPBOOK only: maximum stanza lines per rendered page. Ignored for STORY books. ChapBookUtil uses 8 when null."
+		},
+		{
+			"name": "overlayOpacity",
+			"type": "double",
+			"description": "CHAPBOOK only: opacity of the background landscape image behind poem text overlay. Ignored for STORY books. Renderer uses 0.4 when null."
 		}
 	]
 }

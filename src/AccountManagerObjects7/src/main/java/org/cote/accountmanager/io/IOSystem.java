@@ -155,6 +155,18 @@ public class IOSystem {
 								dbUtil.execute(drop);
 							}
 						}
+						if(properties.isRepairColumnTypes()) {
+							List<String> repairs = dbUtil.generateAlterColumnTypeSchema(schema);
+							for(String repair : repairs) {
+								try {
+									logger.warn("Schema column type repair: " + repair);
+									dbUtil.executeWithException(repair);
+								}
+								catch(SQLException | RuntimeException e) {
+									logger.error("Schema column type repair failed for " + m + ": " + repair + " - " + e.getMessage());
+								}
+							}
+						}
 						/// Apply index DDL last, after the columns it may reference exist.
 						/// A CREATE UNIQUE INDEX fails when the existing rows already violate the
 						/// declared constraint - that is a real finding and is logged at error, but it

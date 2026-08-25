@@ -22,6 +22,8 @@ import org.cote.accountmanager.olio.EthnicityEnumType;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileComparison;
@@ -64,6 +66,32 @@ public class OlioService {
 	@Context
 	ServletContext context;
 	
+	/**
+	 * Resolve the Olio context for the acting user.
+	 * <p>
+	 * When {@code universeObjectId} and {@code worldObjectId} are both present as URL query
+	 * parameters (Phase 1b), the call is routed to the book-world context identified by those IDs.
+	 * When absent, the default grid context ({@link OlioContextUtil#getOlioContext}) is used so that
+	 * all pre-Phase-1b callers continue to work without modification.
+	 */
+	private OlioContext resolveOlioContext(BaseRecord user, HttpServletRequest request) {
+		String uOid = request.getParameter("universeObjectId");
+		String wOid = request.getParameter("worldObjectId");
+		String dataPath = context.getInitParameter("datagen.path");
+		if (uOid != null && !uOid.isEmpty() && wOid != null && !wOid.isEmpty()) {
+			try {
+				return PbOlioContextUtil.getBookContextByIds(user, null, uOid, wOid);
+			} catch (OlioException e) {
+				/// Graceful degradation: an invalid/stale worldObjectId returns the default grid context
+				/// rather than 404-ing the endpoint. This allows pre-book-context UI calls to succeed.
+				/// If strict enforcement is needed, change to throw new WebApplicationException(404) here.
+				logger.warn("Failed to resolve book context by IDs ({}), falling back to default: {}",
+						wOid, e.getMessage());
+			}
+		}
+		return OlioContextUtil.getOlioContext(user, dataPath);
+	}
+
 	@RolesAllowed({"user"})
 	@GET
 	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/narrate")
@@ -73,7 +101,7 @@ public class OlioService {
 		/// Need to clear all the caches because the narrative will get loaded in the population lists
 		///
 		CacheService.clearCaches();
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "narrative"});
 		q.planMost(true);
@@ -199,7 +227,7 @@ public class OlioService {
 			}
 		}
 
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
 		BaseRecord a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
@@ -296,7 +324,7 @@ public class OlioService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response rollCharacter(@Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord a1 = rollCharacter(user, (Math.random() <= 0.5 ? "male" : "female"));
+		BaseRecord a1 = rollCharacter(user, (Math.random() <= 0.5 ? "male" : "female"), request);
 		return Response.status((a1 != null ? 200 : 404)).entity((a1 != null ? a1.toFullString() : null)).build();
 	}
 
@@ -310,13 +338,13 @@ public class OlioService {
 		if(!gender.equals("male") && !gender.equals("female")) {
 			gender = "male";
 		}
-		BaseRecord a1 = rollCharacter(user, gender);
+		BaseRecord a1 = rollCharacter(user, gender, request);
 		return Response.status((a1 != null ? 200 : 404)).entity((a1 != null ? a1.toFullString() : null)).build();
 	}
-	
-	private BaseRecord rollCharacter(BaseRecord user, String gender) {
+
+	private BaseRecord rollCharacter(BaseRecord user, String gender, HttpServletRequest request) {
 		Factory f = IOSystem.getActiveContext().getFactory();
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		BaseRecord world = octx.getWorld();
 		BaseRecord parWorld = world.get(OlioFieldNames.FIELD_BASIS);
 		if(parWorld == null) {
@@ -373,7 +401,7 @@ public class OlioService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response personalityProfile(@PathParam("objectId") String objectId, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
 		BaseRecord person = IOSystem.getActiveContext().getAccessPoint().find(user, q);
@@ -390,7 +418,7 @@ public class OlioService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response profileComparison(@PathParam("objectId1") String objectId1, @PathParam("objectId2") String objectId2, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		OlioContext octx = resolveOlioContext(user, request);
 		Query q1 = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId1);
 		q1.planMost(true);
 		BaseRecord person1 = IOSystem.getActiveContext().getAccessPoint().find(user, q1);

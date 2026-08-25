@@ -1587,3 +1587,15 @@ export function __setPromptStateForTest(mode, single, perPrompt) {
     if (perPrompt) Object.assign(promptTemplates, perPrompt);
 }
 export { getPromptTemplate };
+
+// Test-only seam: ensureSdConfig() — UAT#3 regression (new-book must use saved sdcfg-default
+// before falling back to randomImageConfig). The function is module-private so it is exported here
+// for testing; __resetSdConfigForTest resets the module-level cache variables so each test gets a
+// fresh run of the async logic (same reason __setPromptStateForTest was added above).
+export { ensureSdConfig };
+export function __resetSdConfigForTest() {
+    sdConfigInst = null;
+    sdConfigLoading = false;
+    _sdConfigPromise = null;
+    sdConfigEntity = null;
+}

@@ -16,6 +16,7 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 
 /**
@@ -565,22 +566,24 @@ public class PbServiceFacade {
 	// ─────────────────────────────── Phase 5b: book list + page view ───────────────────────────────
 
 	/**
-	 * All {@code olio.pb.book} records the user can read in their organisation, sorted by name.
+	 * All {@code olio.pb.book} records owned by the requesting user in their organisation, sorted by name.
 	 * Returns lightweight DTOs — objectId, slug, name, bookStatus — to populate a book selector.
 	 * <p>
-	 * Uses {@code AccessPoint.list} with an explicit {@code organizationId} condition following
-	 * §5.6b: the query shape is authorized through PBAC's query-evaluation path; per-record filtering
-	 * is not applied (the measured KI-67 defect), but org-scoped list access is the accepted trade-off
-	 * for a read-only selector view.
+	 * Uses {@code AccessPoint.list} with explicit {@code organizationId} and {@code ownerId} conditions
+	 * following §5.6b: the query shape is authorized through PBAC's query-evaluation path; per-record
+	 * filtering is not applied; however {@code ownerId} constrains results to the requesting user's own
+	 * books, closing the KI-67 cross-owner leak for the selector view. Shared books accessible via
+	 * collaboration roles are not listed here — they are reached by objectId directly.
 	 */
 	public static List<Map<String, Object>> listBooks(BaseRecord user) {
 		if(user == null) throw new PictureBookException(401, "No authenticated principal");
 		long orgId = orgOf(user);
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.field(FieldNames.FIELD_OWNER_ID, (Long) user.get(FieldNames.FIELD_ID));
 		q.setRequest(PbBookUtil.bookRequest());
 		q.setCache(false);
 		q.setValue(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
-		q.setValue(FieldNames.FIELD_ORDER, "ASCENDING");
+		q.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING.toString());
 		q.setRequestRange(0, 100);
 		BaseRecord[] books = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
 		List<Map<String, Object>> out = new ArrayList<>();
@@ -788,6 +791,93 @@ public class PbServiceFacade {
 		String swarmServer = org.cote.accountmanager.util.ServerConfigUtil.getServerUrl(
 			org.cote.accountmanager.util.ServerConfigUtil.SERVER_SD, null);
 		return PbNodeExecutor.executeNode(user, book, workflow, node, swarmServer);
+	}
+
+	// ─────────────────────────────── Phase D: binding writes ───────────────────────────────
+
+	/**
+	 * Add an edge from {@code sourceNodeObjectId} to {@code consumerNodeObjectId} with the given role.
+	 * <p>
+	 * <b>Both nodes are verified as belonging to this book's workflow</b> (architect requirement): a node
+	 * from another book cannot be named as the source, and a node from another book cannot be named as
+	 * the consumer. Cross-book addressing is a 404, not an authorization decision, so it discloses nothing
+	 * about the other book.
+	 * <p>
+	 * The binding ordinal is derived from the consumer node's current binding count, so subsequent calls
+	 * with different roles produce distinct ordinals. {@code PbGraphUtil.addBinding} runs
+	 * {@link PbGraphUtil#validateAcyclic} before persisting, so a cycle is a 400.
+	 */
+	public static Map<String, Object> addBinding(BaseRecord user, String bookObjectId,
+			String consumerNodeObjectId, String role, String sourceNodeObjectId) {
+		if(role == null || role.trim().length() == 0) {
+			throw new PictureBookException(400, "A role is required for the binding");
+		}
+		if(sourceNodeObjectId == null || sourceNodeObjectId.trim().length() == 0) {
+			throw new PictureBookException(400, "A sourceNodeObjectId is required for the binding");
+		}
+		BaseRecord book = requireBook(user, bookObjectId);
+		BaseRecord workflow = requireWorkflow(user, book);
+		/// ARCHITECT REQUIRED: verify BOTH nodes belong to this book's workflow.
+		BaseRecord consumerNode = requireNodeOfBook(user, workflow, consumerNodeObjectId);
+		BaseRecord sourceNode = requireNodeOfBook(user, workflow, sourceNodeObjectId);
+
+		int ordinal = PbGraphUtil.listBindings(user, consumerNode).size();
+		String groupPath = PbBookUtil.workflowGroupPath((String) book.get(OlioFieldNames.FIELD_PB_SLUG));
+		BaseRecord binding = PbGraphUtil.addBinding(user, workflow, consumerNode, role, ordinal, sourceNode, null, groupPath);
+
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bindingObjectId", binding.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("consumerNodeObjectId", consumerNodeObjectId);
+		out.put("sourceNodeObjectId", sourceNodeObjectId);
+		out.put("role", role);
+		out.put("ordinal", Integer.valueOf(ordinal));
+		return out;
+	}
+
+	/**
+	 * Delete a binding, after verifying it belongs to this book's workflow.
+	 * <p>
+	 * <b>The consumer node is resolved from the binding and verified</b> (architect requirement): a
+	 * binding not reachable from this book's workflow is a 404 — the same cross-book refusal as
+	 * {@link #requireNodeOfBook}.
+	 */
+	public static Map<String, Object> deleteBinding(BaseRecord user, String bookObjectId, String bindingObjectId) {
+		if(bindingObjectId == null || bindingObjectId.trim().length() == 0) {
+			throw new PictureBookException(400, "A bindingObjectId is required");
+		}
+		BaseRecord book = requireBook(user, bookObjectId);
+		BaseRecord workflow = requireWorkflow(user, book);
+
+		long orgId = orgOf(user);
+		/// Read the binding so we can resolve its consumer node and verify book membership.
+		BaseRecord binding = PbGraphUtil.readBinding(user, bindingObjectId, orgId);
+		if(binding == null) {
+			throw new PictureBookException(404, "Binding not found");
+		}
+
+		/// The binding's node FK carries at least its numeric id. Look up the full node from this
+		/// workflow's node map so we have its objectId for requireNodeOfBook.
+		BaseRecord nodeRef = binding.get(OlioFieldNames.FIELD_PB_NODE);
+		Long nodeId = (nodeRef != null) ? (Long) nodeRef.get(FieldNames.FIELD_ID) : null;
+		Map<Long, BaseRecord> nodes = PbGraphUtil.nodesById(user, workflow);
+		BaseRecord consumerNode = (nodeId != null) ? nodes.get(nodeId) : null;
+		if(consumerNode == null) {
+			/// The binding's consumer node is not in this book's workflow — cross-book addressing.
+			throw new PictureBookException(404, "Binding does not belong to this book's workflow");
+		}
+		/// ARCHITECT REQUIRED: verify via requireNodeOfBook (reads by objectId and checks workflow FK).
+		String consumerNodeObjectId = consumerNode.get(FieldNames.FIELD_OBJECT_ID);
+		requireNodeOfBook(user, workflow, consumerNodeObjectId);
+
+		boolean deleted = IOSystem.getActiveContext().getAccessPoint().delete(user, binding);
+		if(!deleted) {
+			throw new PictureBookException(500, "Failed to delete binding " + bindingObjectId);
+		}
+
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("deleted", Boolean.TRUE);
+		out.put("bindingObjectId", bindingObjectId);
+		return out;
 	}
 
 	/**

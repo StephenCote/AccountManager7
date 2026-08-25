@@ -3784,6 +3784,38 @@ public class PictureBookUtil {
         // Route sub-records into the PB2 book's world groups instead of the legacy home groups
         PbSubRecordUtil.prepareGroups(user, pb2OlioCtx);
 
+        // B4: re-route charPerson into the world's population group rather than the legacy
+        // ~/Data/PictureBooks/.../Characters group. findPath is read-only — the population
+        // group is guaranteed to exist because getCreateBookContext created it above.
+        if (pb2OlioCtx != null && pb2OlioCtx.getWorld() != null) {
+            String populationPath = pb2OlioCtx.getWorld().get("population.path");
+            if (populationPath == null) {
+                // World may have been loaded shallow; try to re-query with population projected
+                String worldObjId = pb2OlioCtx.getWorld().get(FieldNames.FIELD_OBJECT_ID);
+                if (worldObjId != null) {
+                    long orgId2 = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+                    Query wq = QueryUtil.createQuery(OlioModelNames.MODEL_WORLD, FieldNames.FIELD_OBJECT_ID, worldObjId);
+                    wq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId2);
+                    wq.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "population.path"});
+                    wq.setCache(false);
+                    BaseRecord fullWorld = IOSystem.getActiveContext().getAccessPoint().find(user, wq);
+                    if (fullWorld != null) {
+                        populationPath = fullWorld.get("population.path");
+                    }
+                }
+            }
+            if (populationPath != null && !populationPath.isBlank()) {
+                BaseRecord worldCharsGroup = IOSystem.getActiveContext().getPathUtil()
+                    .findPath(user, ModelNames.MODEL_GROUP, populationPath,
+                        GroupEnumType.DATA.toString(), ((Number)user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
+                if (worldCharsGroup != null) {
+                    charsGroup = worldCharsGroup;
+                } else {
+                    logger.warn("createFromScenes(pb2): population group not found at {} — keeping legacy charsGroup", populationPath);
+                }
+            }
+        }
+
         Map<String, String> charObjectIds = new LinkedHashMap<>();
         List<String> failedCharacters = new ArrayList<>();
         List<String> failedApparel = new ArrayList<>();

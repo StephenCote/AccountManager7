@@ -30,6 +30,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-scope-discipline` -- Don't drive-by-fix issues spotted outside the current task's scope — note them, don't touch them, unless asked
 - `feedback-sd-config-consistency` -- Stephen has raised SD-config inconsistency across reimage/pictureBook workflows multiple times; treat as unresolved until values (not just slider markup) are verified consistent
 - `feedback-search-existing-olio-utils-first` -- Before writing any custom record-persistence/patching logic in Olio, search for an existing utility that already does it — don't hand-roll
+- `feedback-swarm-model-names-need-extension` -- Swarm .39 model names include .safetensors extension - omitting it causes silent failures
 - `feedback-test-only-instrumentation` -- Debug/inspection hooks (e.g. emit-to-disk) belong in the test itself, never wired into production code
 - `feedback-use-real-test-content` -- use the user's actual provided documents/characters for PictureBook (and similar) test content instead of inventing synthetic stand-ins
 - `feedback-validate-dont-workaround-bad-queries` -- When a query/input is invalid (e.g. filters on a virtual/computed field), validate and reject with a clear error — don't build resolution logic to make it \"work\
@@ -48,9 +49,8 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `project-pb-castgroup-q15` -- Q15 resolved: olio.pb.castGroup for collective canvas entities — model created 2026-08-21
 - `project-pb-phase1b-status` -- Phase 1b (universe/world IDs in Service7+Ux) implementation complete and verified
 - `project-pb-security-status` -- TestPbSecurity status: 10/10 green on 2026-08-21
+- `project-pb2-chapbook-remediation-complete` -- PB2+ChapBook remediation all 6 phases complete 2026-08-25 with open UAT#3 Playwright obligation
 - `project-pb2-chapbook-remediation-plan` -- Recorded evidence-based PB2+ChapBook remediation plan (src/aiDocs/PictureBook2ChapBookRemediationPlan.md) + verified blockers, corrections (M3 fixed), stack port 9443, real poem corpus
-- `project-pb2-open-gaps` -- PB2 all phases done 2026-08-23 including Phase 1b; only Phase 3b (ComfyUI, optional) remains
-- `project-pb2-remaining-work-status` -- B1/B2/B3/D3/M1/M3 implementation status from 2026-08-24 session — complete with architect-required fix
 - `project-pb5-phase-status` -- Phase 5 workflow canvas complete — Test button, Stale recheck, DONE_UNVERIFIED color, 15 Playwright tests
 - `project-pb6-phase-status` -- Phase 6 (Migration) status: PbMigrationUtil + TestPbMigration green
 - `project-pb6b-phase-status` -- Phase 6b (Interactive Canvas Backend) complete: PbNodeExecutor + TestPbCanvas green

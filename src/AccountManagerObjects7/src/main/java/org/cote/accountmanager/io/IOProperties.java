@@ -10,6 +10,7 @@ public class IOProperties {
 	
 	private boolean schemaCheck = false;
 	private boolean dropColumns = false;
+	private boolean repairColumnTypes = false;
 
 	public IOProperties() {
 
@@ -22,7 +23,15 @@ public class IOProperties {
 	public void setDropColumns(boolean dropColumns) {
 		this.dropColumns = dropColumns;
 	}
-	
+
+	public boolean isRepairColumnTypes() {
+		return repairColumnTypes;
+	}
+
+	public void setRepairColumnTypes(boolean repairColumnTypes) {
+		this.repairColumnTypes = repairColumnTypes;
+	}
+
 	public String getJndiName() {
 		return jndiName;
 	}

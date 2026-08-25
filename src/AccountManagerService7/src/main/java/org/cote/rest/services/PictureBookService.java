@@ -1120,6 +1120,60 @@ public class PictureBookService {
     }
 
     /**
+     * POST /{bookObjectId}/node/{nodeObjectId}/bind
+     * Add a directed edge from sourceNodeObjectId → nodeObjectId (the consumer) with the given role.
+     * Both nodes must belong to this book's workflow (cross-book addressing is a 404). A binding that
+     * would create a cycle is refused with 400. Body: { role, sourceNodeObjectId }.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/node/{nodeObjectId:[0-9A-Za-z\\-]+}/bind")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response addBinding(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("nodeObjectId") String nodeObjectId,
+            String body, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord params = parseParams(body);
+        if (params == null) {
+            return errorResponse(400, "Request body with role and sourceNodeObjectId is required");
+        }
+        String role = params.get("role");
+        String sourceNodeObjectId = params.get("sourceNodeObjectId");
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(
+                    PbServiceFacade.addBinding(user, bookObjectId, nodeObjectId, role, sourceNodeObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * DELETE /{bookObjectId}/binding/{bindingObjectId}
+     * Delete a binding. The binding's consumer node must belong to this book's workflow —
+     * a binding from another book is a 404.
+     */
+    @RolesAllowed({"admin", "user"})
+    @DELETE
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/binding/{bindingObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response deleteBinding(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("bindingObjectId") String bindingObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(
+                    PbServiceFacade.deleteBinding(user, bookObjectId, bindingObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
      * POST /migrate-v1
      * Migrate a PB1 book group to a PB2 {@code olio.pb.book}.
      * Body: { groupObjectId: "&lt;v1 book group objectId&gt;" }
