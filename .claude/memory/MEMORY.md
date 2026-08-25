@@ -24,6 +24,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-objects7-skiptest` -- Objects7 POM skips tests by default; always pass -DskipTests=false or the run silently no-ops
 - `feedback-own-it-no-defending` -- When something is wrong in code I changed, say so plainly and fix it — no self-defense, no lengthy justification, no attributing to agents
 - `feedback-patch-no-cascade` -- AccessPoint.update()/PATCH only writes fields at the model level you called it on — it does not walk down and patch foreign/nested objects, with a few named exceptions
+- `feedback-pb2-completion-overclaimed` -- Stephen rejected PB2/ChapBook 'complete/green' claims as overclaimed; treat those status memories as unverified until re-audited with real tests + visual proof
 - `feedback-planmost-json-build-100args` -- planMost(true) recursive expansion hits PostgreSQL 100-arg JSON_BUILD_OBJECT limit on olio.pb.book — use targeted search with explicit request instead
 - `feedback-referenced-field-patch-no-cascade` -- common.attributeList's \"attributes\" field (referenced-table storage) never persists via a parent-record copyRecord patch — must create/update the attribute record itself directly
 - `feedback-scope-discipline` -- Don't drive-by-fix issues spotted outside the current task's scope — note them, don't touch them, unless asked
@@ -47,6 +48,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `project-pb-castgroup-q15` -- Q15 resolved: olio.pb.castGroup for collective canvas entities — model created 2026-08-21
 - `project-pb-phase1b-status` -- Phase 1b (universe/world IDs in Service7+Ux) implementation complete and verified
 - `project-pb-security-status` -- TestPbSecurity status: 10/10 green on 2026-08-21
+- `project-pb2-chapbook-remediation-plan` -- Recorded evidence-based PB2+ChapBook remediation plan (src/aiDocs/PictureBook2ChapBookRemediationPlan.md) + verified blockers, corrections (M3 fixed), stack port 9443, real poem corpus
 - `project-pb2-open-gaps` -- PB2 all phases done 2026-08-23 including Phase 1b; only Phase 3b (ComfyUI, optional) remains
 - `project-pb2-remaining-work-status` -- B1/B2/B3/D3/M1/M3 implementation status from 2026-08-24 session — complete with architect-required fix
 - `project-pb5-phase-status` -- Phase 5 workflow canvas complete — Test button, Stale recheck, DONE_UNVERIFIED color, 15 Playwright tests
