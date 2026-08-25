@@ -42,7 +42,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `project-chapbook-add-poem-design` -- ChapBook Add Poems UX design — multi-select notes/data with ordering, bulk import via POST /poems
 - `project-chapbook-design` -- ChapBook feature design: poetry PictureBook variant with olio.cb.book/poem/set models, theme LLM, landscape-only pipeline, text overlay
 - `project-chapbook-image-pipeline` -- ChapBook image render pipeline design: sdPrompt+imageObjectId on scene, renderChapBook direct SDUtil path, bookPageView fallback
-- `project-chapbook-test-status` -- ChapBook Playwright gate: 7/7 green as of 2026-08-24
+- `project-chapbook-test-status` -- ChapBook Playwright gate status
 - `project-ki69-closed` -- KI-69 closed 2026-08-20: age-blind portrait fix in NarrativeUtil with adult fallback, 5 tests green
 - `project-pb-castgroup-q15` -- Q15 resolved: olio.pb.castGroup for collective canvas entities — model created 2026-08-21
 - `project-pb-phase1b-status` -- Phase 1b (universe/world IDs in Service7+Ux) implementation complete and verified

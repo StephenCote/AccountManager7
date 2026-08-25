@@ -640,6 +640,7 @@ async function favorites() {
         grp.type = 'bucket';
         grp.parentId = origin.id;
         grp.name = 'Favorites';
+        grp.organizationId = page.user.organizationId;
         await createObject(grp);
         am7client.clearCache('auth.group', true);
         grp = await searchByName('auth.group', origin.objectId, 'Favorites');
