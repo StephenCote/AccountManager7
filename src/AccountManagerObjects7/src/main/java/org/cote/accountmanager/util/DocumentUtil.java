@@ -262,7 +262,31 @@ public class DocumentUtil {
 	    	BodyContentHandler handler = new BodyContentHandler(Integer.MAX_VALUE);
 	    	parser.parse(bais, handler, metadata);
 			out = replaceSmartQuotes(handler.toString());
-			
+
+    	}
+    	catch(Exception e) {
+    		logger.error(e);
+    		e.printStackTrace();
+    	}
+    	return out;
+    }
+
+    /**
+     * Bounded byte[] document extraction. {@code maxChars} caps the number of characters Tika will
+     * accumulate, bounding heap against a crafted/oversized upload — the unbounded
+     * {@link #readDocument(byte[])} uses {@code BodyContentHandler(Integer.MAX_VALUE)}, which is
+     * effectively unbounded. Returns null if extraction fails or the content exceeds {@code maxChars}.
+     */
+    public static String readDocument(byte[] data, int maxChars) {
+    	String out = null;
+    	try {
+	    	ByteArrayInputStream bais = new ByteArrayInputStream(data);
+	    	AutoDetectParser parser = new AutoDetectParser();
+	    	Metadata metadata = new Metadata();
+	    	BodyContentHandler handler = new BodyContentHandler(maxChars);
+	    	parser.parse(bais, handler, metadata);
+			out = replaceSmartQuotes(handler.toString());
+
     	}
     	catch(Exception e) {
     		logger.error(e);

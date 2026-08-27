@@ -2587,6 +2587,35 @@ public class PictureBookUtil {
      * {@code dataPath}, {@code OlioContext} init failure, etc., rather than throwing — this is an
      * enhancement to character richness, not a hard requirement for character creation.
      */
+    /**
+     * KI-30 root-cause guard: acquire an {@link OlioContext} for {@code dataPath} without letting a
+     * build failure escape the request. {@code OlioContextUtil.getOlioContext} →
+     * {@code OlioContext.initialize()} <b>rethrows as a {@code RuntimeException}</b> when its build
+     * throws before authorization is configured (OlioContext.java:948-953): an un-seeded world whose
+     * population group is empty makes region/realm generation dereference a null record
+     * ({@code object.getSchema()} NPE), which initialize() catches and rethrows because
+     * {@code authorizationConfigured} is still false. Both KI-30 call sites (the pre-loop
+     * {@code prepareGroups} warm-up and {@code createCharPerson}'s random-baseline acquisition)
+     * previously called {@code getOlioContext} BARE, so that RuntimeException escaped
+     * {@code createFromScenes} past the endpoint's {@code PictureBookException}-only catch as an
+     * uncaught 500. Returning null here degrades to the pre-KI-30 sparse fallback (a plainly created
+     * character with no world placement) — exactly the best-effort contract {@link #buildRandomBaseline}
+     * already documents. {@code null}/empty {@code dataPath} returns null without a warning (already an
+     * expected, logged-elsewhere configuration state).
+     */
+    private static OlioContext safeGetOlioContext(BaseRecord user, String dataPath, String forWhat) {
+        if (dataPath == null || dataPath.isEmpty()) {
+            return null;
+        }
+        try {
+            return OlioContextUtil.getOlioContext(user, dataPath);
+        } catch (RuntimeException e) {
+            logger.warn("OlioContext init failed (dataPath=" + dataPath + ") for " + forWhat
+                    + " — degrading to the sparse, world-unplaced character fallback: " + e.getMessage());
+            return null;
+        }
+    }
+
     private static BaseRecord buildRandomBaseline(OlioContext octx, String preferredLastName, int ageApprox) {
         if (octx == null) return null;
         try {
@@ -2798,9 +2827,12 @@ public class PictureBookUtil {
         // world's shared color library (ctx.getUniverse().colors) rather than a per-owner fallback group.
         OlioContext octx = null;
         if (dataPath != null && !dataPath.isEmpty()) {
-            octx = OlioContextUtil.getOlioContext(user, dataPath);
+            // KI-30: tolerate an OlioContext init failure (e.g. an un-seeded, empty-population world
+            // whose initialize() NPEs and rethrows a RuntimeException) — degrade to the sparse fallback
+            // rather than letting it escape as a 500. See safeGetOlioContext().
+            octx = safeGetOlioContext(user, dataPath, name);
             if (octx == null) {
-                logger.warn("OlioContextUtil.getOlioContext returned null (dataPath=" + dataPath + ") for "
+                logger.warn("OlioContext unavailable (dataPath=" + dataPath + ") for "
                         + name + " — random baseline + shared-library colors unavailable");
             }
         } else {
@@ -3579,8 +3611,9 @@ public class PictureBookUtil {
         // seven groups and left the real destinations to be get-or-created per character, i.e. it did
         // exactly nothing for the race it exists to shrink. With no dataPath there is no context and the
         // legacy destinations are the real ones, so passing null then is correct.
-        PbSubRecordUtil.prepareGroups(user, (dataPath != null && !dataPath.isEmpty())
-                ? OlioContextUtil.getOlioContext(user, dataPath) : null);
+        // KI-30: guarded — a failing OlioContext.initialize() rethrows a RuntimeException, which here
+        // (before the character loop) would otherwise escape as a 500. Degrade to legacy group routing.
+        PbSubRecordUtil.prepareGroups(user, safeGetOlioContext(user, dataPath, "prepareGroups"));
 
         // Create charPerson records — use LLM for detail extraction if needed
         Map<String, String> charObjectIds = new LinkedHashMap<>();

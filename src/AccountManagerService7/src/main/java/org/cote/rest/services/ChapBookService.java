@@ -93,36 +93,6 @@ public class ChapBookService {
         return Response.status(status).entity("{\"error\":\"" + message + "\"}").build();
     }
 
-    /**
-     * Sanitize raw extracted text before persisting it as a poem.
-     * <p>
-     * Handles text extracted from DOCX, DOC, RTF, and other binary-adjacent formats that
-     * {@link ByteModelUtil#getValueString} may return with embedded null bytes, control
-     * characters, or Windows-style CRLF line endings — all of which PostgreSQL may reject
-     * with {@code ERROR: invalid byte sequence for encoding "UTF8"} or similar.
-     * <ul>
-     *   <li>Null bytes (U+0000) are stripped entirely — PostgreSQL rejects them
-     *       regardless of encoding.</li>
-     *   <li>C0 control characters (U+0001–U+001F) other than horizontal tab ({@code \t}),
-     *       newline ({@code \n}), and carriage return ({@code \r}) are stripped — these are
-     *       non-printable and meaningless in poem text.</li>
-     *   <li>CRLF ({@code \r\n}) and bare {@code \r} are normalised to {@code \n}.</li>
-     * </ul>
-     *
-     * @param raw the raw string to sanitize; may be null
-     * @return sanitized string, or null if the result is null or blank after sanitization
-     */
-    private String sanitizeText(String raw) {
-        if (raw == null) return null;
-        // 1. Strip null bytes — PostgreSQL rejects U+0000 unconditionally.
-        String s = raw.replace("\u0000", "");
-        // 2. Strip C0 control characters except horizontal tab, LF, and CR.
-        s = s.replaceAll("[\\p{Cntrl}&&[^\t\n\r]]", "");
-        // 3. Normalize line endings to LF only.
-        s = s.replace("\r\n", "\n").replace("\r", "\n");
-        return s.isBlank() ? null : s;
-    }
-
     // ─────────────────────────────── Poem analysis ───────────────────────────────
 
     /**
@@ -149,6 +119,14 @@ public class ChapBookService {
         long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
         Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CB_POEM, FieldNames.FIELD_OBJECT_ID, poemObjectId);
         q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        // olio.cb.poem's query defaults do NOT include "text", so an unprojected find returns
+        // the poem with a null text field — analyzePoemTheme would then silently skip the LLM
+        // call ("poem has no text content") while the endpoint still reported success. Project
+        // text (plus the identity/group fields the downstream PATCH needs) explicitly.
+        q.setRequest(new String[] {
+            FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+            FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, "text"
+        });
         q.setCache(false);
         BaseRecord poem = IOSystem.getActiveContext().getAccessPoint().find(user, q);
         if (poem == null) {
@@ -337,7 +315,7 @@ public class ChapBookService {
      *       text via {@link ByteModelUtil#getValueString} (handles decompression/decryption).</li>
      *   <li>{@code text} — raw text supplied directly in the request body (backwards-compatible).</li>
      * </ol>
-     * Text from any source is sanitized via {@link #sanitizeText} before being persisted.
+     * Text from any source is sanitized via {@link ChapBookUtil#sanitizeText} before being persisted.
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -373,7 +351,7 @@ public class ChapBookService {
             if (note == null) {
                 return errorResponse(404, "data.note not found: " + noteObjectId);
             }
-            text = sanitizeText(note.get("text"));
+            text = ChapBookUtil.sanitizeText(note.get("text"));
             if (text == null || text.isBlank()) {
                 return errorResponse(400, "data.note '" + noteObjectId + "' has no text content");
             }
@@ -389,7 +367,9 @@ public class ChapBookService {
                 return errorResponse(404, "data.data not found: " + dataObjectId);
             }
             try {
-                text = sanitizeText(ByteModelUtil.getValueString(data));
+                text = ChapBookUtil.extractPoemText(data);
+            } catch (PictureBookException pbe) {
+                return errorResponse(pbe.getStatus(), pbe.getMessage());
             } catch (Exception e) {
                 logger.error("Failed to extract text from data.data " + dataObjectId + ": " + e.getMessage(), e);
                 return errorResponse(500, "Failed to read data.data content: " + e.getMessage());
@@ -481,7 +461,7 @@ public class ChapBookService {
                     q.setCache(false);
                     BaseRecord note = IOSystem.getActiveContext().getAccessPoint().find(user, q);
                     if (note == null) { errors.add("data.note not found: " + objectId); continue; }
-                    text = sanitizeText((String) note.get("text"));
+                    text = ChapBookUtil.sanitizeText((String) note.get("text"));
                     title = (titleOverride != null && !titleOverride.isBlank()) ? titleOverride : (String) note.get(FieldNames.FIELD_NAME);
                 } else if ("data.data".equals(srcType)) {
                     Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, objectId);
@@ -490,7 +470,11 @@ public class ChapBookService {
                     q.setCache(false);
                     BaseRecord data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
                     if (data == null) { errors.add("data.data not found: " + objectId); continue; }
-                    text = sanitizeText(ByteModelUtil.getValueString(data));
+                    try {
+                        text = ChapBookUtil.extractPoemText(data);
+                    } catch (PictureBookException pbe) {
+                        errors.add(pbe.getMessage() + " (" + objectId + ")"); continue;
+                    }
                     title = (titleOverride != null && !titleOverride.isBlank()) ? titleOverride : (String) data.get(FieldNames.FIELD_NAME);
                 } else {
                     errors.add("unknown source type: " + srcType); continue;

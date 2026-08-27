@@ -9926,6 +9926,11 @@
         {
           "name": "promptOverride",
           "type": "string"
+        },
+        {
+          "name": "pb2BookObjectId",
+          "type": "string",
+          "maxLength": 64
         }
       ]
     },

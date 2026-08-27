@@ -11,6 +11,7 @@ import { applicationPath } from '../core/config.js';
 import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
 import { ObjectPicker } from '../components/picker.js';
+import { bookPages } from '../workflows/pictureBookWorkflow.js';
 
 // ── REST base ─────────────────────────────────────────────────────────
 
@@ -101,8 +102,14 @@ async function importPoemsFromSources(sources) {
  * @param {number} overlayOpacity — 0–1, default 0.4 (background image dimming)
  */
 function renderChapBookPage(scene, overlayOpacity) {
+    // Images are served by MediaServlet at /media/{orgDotPath}/data.data{groupPath}/{name}
+    // (the canonical path-based route — there is no objectId-based /rest/resource route).
+    // bookPageView supplies imageGroupPath + imageName for exactly this.
     let imageUrl = scene.imageUrl
-        || (scene.dataObjectId ? applicationPath + '/rest/resource/data.data/' + scene.dataObjectId : null);
+        || ((scene.imageGroupPath && scene.imageName)
+            ? applicationPath + '/media/' + am7client.dotPath(am7client.currentOrganization)
+                + '/data.data' + scene.imageGroupPath + '/' + scene.imageName
+            : null);
     let stanzaText = scene.poemStanza || scene.blurb || '';
     let poemTitle = scene.title || '';
     let opacity = overlayOpacity != null ? overlayOpacity : 0.4;
@@ -423,11 +430,14 @@ async function doCreateChapBook() {
         let result = await createChapBook(createSlug, createTitle, ids, createMaxLines);
         lastCreatedBook = result;
         page.toast('success', 'ChapBook created: ' + (result.slug || createSlug));
+        // Carry the source poem objectIds forward: analyze is per-poem and the book does not
+        // retain poem references, so the reader's Analyze button needs the ids from this step.
+        readerPoemIds = ids.slice();
         selectedIds = new Set();
         showCreateDialog = false;
         let navObjectId = result.objectId || result.bookObjectId;
         if (navObjectId) {
-            m.route.set('/picture-book/v2/' + navObjectId);
+            m.route.set('/chap-book/read/' + navObjectId);
         }
     } catch (e) {
         page.toast('error', 'Failed to create: ' + (e.message || ''));
@@ -733,6 +743,140 @@ const PoemLibrary = {
     }
 };
 
+// ── ChapBook reader state ─────────────────────────────────────────────
+
+let readerBookObjectId = null;
+let readerBook = null;
+let readerPages = [];
+let readerLoading = false;
+let readerError = null;
+let readerAnalyzing = false;
+let readerRendering = false;
+// Poem objectIds carried from the create flow. Analyze is a PER-POEM endpoint and the
+// olio.pb.book does not retain references to its source poems (they become olio.pb.scene
+// stanza chunks), so the only way to iterate "the book's poems" is to remember them here.
+let readerPoemIds = [];
+
+async function loadReaderBook(bookObjectId) {
+    readerLoading = true;
+    readerError = null;
+    m.redraw();
+    try {
+        readerBook = await am7client.getFull('olio.pb.book', bookObjectId) || null;
+        // bookPages returns [{objectId, sceneIndex, title, blurb, summary, poemStanza, dataObjectId}, ...]
+        // — poemStanza is visible immediately (6D) and dataObjectId is the render fallback image.
+        let pages = await bookPages(bookObjectId);
+        readerPages = Array.isArray(pages) ? pages : [];
+    } catch (e) {
+        readerError = e.message || 'Failed to load book';
+        readerPages = [];
+    }
+    readerLoading = false;
+    m.redraw();
+}
+
+async function analyzeReaderPoems() {
+    if (!readerPoemIds.length) {
+        page.toast('warn', 'No poems are associated with this session — analyze poems from the Poem Library, then create the ChapBook.');
+        return;
+    }
+    readerAnalyzing = true;
+    m.redraw();
+    let ok = 0, fail = 0;
+    for (let pid of readerPoemIds) {
+        try {
+            await analyzePoem(pid);
+            ok++;
+        } catch (e) {
+            fail++;
+        }
+    }
+    readerAnalyzing = false;
+    if (fail) page.toast('warn', 'Analyzed ' + ok + ' poem(s); ' + fail + ' failed');
+    else page.toast('success', 'Analyzed ' + ok + ' poem(s)');
+    m.redraw();
+}
+
+async function renderReaderBook() {
+    if (!readerBookObjectId) return;
+    readerRendering = true;
+    m.redraw();
+    try {
+        let result = await renderChapBook(readerBookObjectId);
+        page.toast('success', 'Render complete: ' + (result.rendered || 0) + ' scene(s) generated');
+        // Reload so the freshly-generated images (dataObjectId) appear (6C).
+        await loadReaderBook(readerBookObjectId);
+    } catch (e) {
+        page.toast('error', 'Render failed: ' + (e.message || ''));
+    }
+    readerRendering = false;
+    m.redraw();
+}
+
+// ── ChapBookReader component — dedicated poem-book reader (6B/6C/6D) ──
+
+const ChapBookReader = {
+    oninit: function (vnode) {
+        readerBookObjectId = vnode.attrs.bookObjectId || null;
+        readerBook = null;
+        readerPages = [];
+        readerError = null;
+        readerAnalyzing = false;
+        readerRendering = false;
+        if (readerBookObjectId) loadReaderBook(readerBookObjectId);
+    },
+    view: function () {
+        let title = (readerBook && (readerBook.name || readerBook.slug)) || 'ChapBook';
+        let busy = readerAnalyzing || readerRendering;
+        return m('div', { class: 'p-4 max-w-4xl mx-auto' }, [
+            // Header — back, title, Analyze + Render controls
+            m('div', { class: 'flex flex-wrap items-center gap-3 mb-6' }, [
+                m('button', {
+                    class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
+                    title: 'Back to Poem Library',
+                    onclick: function () { m.route.set('/chap-book'); }
+                }, m('span', { class: 'material-symbols-outlined' }, 'arrow_back')),
+                m('span', { class: 'material-symbols-outlined text-2xl text-purple-500' }, 'menu_book'),
+                m('h2', { class: 'flex-1 text-xl font-semibold dark:text-white truncate', title: title }, title),
+                m('button', {
+                    class: 'px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50',
+                    disabled: busy,
+                    onclick: analyzeReaderPoems
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, readerAnalyzing ? 'hourglass_empty' : 'psychology'),
+                    readerAnalyzing ? ' Analyzing...' : ' Analyze'
+                ]),
+                m('button', {
+                    class: 'px-3 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1 disabled:opacity-50',
+                    disabled: busy,
+                    onclick: renderReaderBook
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, readerRendering ? 'hourglass_empty' : 'image'),
+                    readerRendering ? ' Rendering...' : ' Render'
+                ])
+            ]),
+
+            // Body — status or pages
+            readerLoading ? m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-12 text-center' }, 'Loading book...') :
+            readerError ? m('div', { class: 'text-sm text-red-500 py-12 text-center' }, 'Error: ' + readerError) :
+            readerPages.length === 0 ? m('div', { class: 'text-center py-12' }, [
+                m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 mb-4' }, 'auto_stories'),
+                m('div', { class: 'text-sm text-gray-500 dark:text-gray-400' }, 'No pages in this book yet.')
+            ]) :
+
+            m('div', { class: 'space-y-6' },
+                readerPages.map(function (pg, idx) {
+                    return m('div', { key: pg.objectId || idx, class: 'rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700' }, [
+                        renderChapBookPage(pg),
+                        m('div', { class: 'px-3 py-1.5 text-xs text-gray-400 text-center bg-gray-50 dark:bg-gray-800/50' },
+                            'Page ' + (idx + 1) + ' of ' + readerPages.length)
+                    ]);
+                })
+            )
+        ]);
+    }
+};
+
 // ── ChapBookFeature — top-level route component ───────────────────────
 
 const ChapBookFeature = {
@@ -748,8 +892,13 @@ export const routes = {
         view: function () {
             return layout(pageLayout(m(ChapBookFeature)));
         }
+    },
+    '/chap-book/read/:bookObjectId': {
+        view: function (vnode) {
+            return layout(pageLayout(m(ChapBookReader, { bookObjectId: vnode.attrs.bookObjectId })));
+        }
     }
 };
 
-export { renderChapBookPage, ChapBookFeature, PoemLibrary };
+export { renderChapBookPage, ChapBookFeature, ChapBookReader, PoemLibrary };
 export default ChapBookFeature;

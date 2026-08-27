@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -23,6 +24,8 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
+import org.cote.accountmanager.util.ByteModelUtil;
+import org.cote.accountmanager.util.DocumentUtil;
 
 /**
  * ChapBook utility — poem-library management and ChapBook (poetry picture book) creation.
@@ -41,6 +44,99 @@ public class ChapBookUtil {
 
 	private ChapBookUtil() {
 		/// static utility
+	}
+
+	// ─────────────────────────────── poem text extraction ───────────────────────────────
+
+	/**
+	 * Binary office document content types whose text must be extracted via Apache Tika
+	 * rather than read as raw UTF-8 bytes. A raw {@code new String(bytes, UTF_8)} on any of
+	 * these yields garbled binary, not readable prose.
+	 */
+	private static final Set<String> OFFICE_CONTENT_TYPES = Set.of(
+			"application/msword",                                                          // .doc
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",     // .docx
+			"application/rtf",                                                             // .rtf
+			"text/rtf"                                                                     // .rtf (alt)
+	);
+
+	/**
+	 * Upper bound on the number of characters extracted from an uploaded document. A finite cap
+	 * prevents a crafted/oversized upload from exhausting heap during Tika extraction (Tika's own
+	 * default is unbounded); 16M characters is generous for any reasonable poem/chapbook.
+	 */
+	private static final int MAX_EXTRACT_CHARS = 16 * 1024 * 1024;
+
+	/**
+	 * Extract readable, sanitized poem text from a {@code data.data} byteStore record.
+	 * <ul>
+	 *   <li>{@code text/*}, null, or empty content type — read directly as UTF-8 (backwards
+	 *       compatible with existing plain-text imports).</li>
+	 *   <li>Binary office formats (.doc/.docx/.rtf) — extract plain text via Apache Tika.</li>
+	 *   <li>Any other binary type — {@link PictureBookException} with status 400 so the transport
+	 *       layer can return HTTP 400.</li>
+	 * </ul>
+	 * The returned text is always run through {@link #sanitizeText(String)}.
+	 *
+	 * @param data a {@code data.data} record with its byteStore populated
+	 * @return sanitized text, or null if the source has no content
+	 * @throws PictureBookException (status 400) for unsupported content types or extraction failure
+	 */
+	public static String extractPoemText(BaseRecord data) throws PictureBookException {
+		String contentType = data.get(FieldNames.FIELD_CONTENT_TYPE);
+		String ct = (contentType == null) ? null : contentType.trim().toLowerCase();
+
+		try {
+			if (ct == null || ct.isEmpty() || ct.startsWith("text/")) {
+				return sanitizeText(ByteModelUtil.getValueString(data));
+			}
+			if (OFFICE_CONTENT_TYPES.contains(ct)) {
+				byte[] bytes = ByteModelUtil.getValue(data);
+				if (bytes == null || bytes.length == 0) return null;
+				// Bounded extraction (MAX_EXTRACT_CHARS) — do not let Tika accumulate unbounded output.
+				String extracted = DocumentUtil.readDocument(bytes, MAX_EXTRACT_CHARS);
+				if (extracted == null) {
+					throw new PictureBookException(400,
+						"Failed to extract text from document (" + contentType + ")");
+				}
+				return sanitizeText(extracted);
+			}
+		} catch (ValueException | FieldException e) {
+			throw new PictureBookException(400,
+				"Failed to read document content (" + contentType + "): " + e.getMessage());
+		}
+		throw new PictureBookException(400,
+			"Unsupported content type '" + contentType + "' — only text and common document "
+			+ "formats (.doc, .docx, .rtf) are supported");
+	}
+
+	/**
+	 * Sanitize raw extracted text before persisting it as a poem.
+	 * <p>
+	 * Handles text extracted from DOCX, DOC, RTF, and other binary-adjacent formats that
+	 * {@link ByteModelUtil#getValueString} may return with embedded null bytes, control
+	 * characters, or Windows-style CRLF line endings — all of which PostgreSQL may reject
+	 * with {@code ERROR: invalid byte sequence for encoding "UTF8"} or similar.
+	 * <ul>
+	 *   <li>Null bytes (U+0000) are stripped entirely — PostgreSQL rejects them regardless of
+	 *       encoding.</li>
+	 *   <li>C0 control characters (U+0001–U+001F) other than horizontal tab ({@code \t}),
+	 *       newline ({@code \n}), and carriage return ({@code \r}) are stripped.</li>
+	 *   <li>CRLF ({@code \r\n}) and bare {@code \r} are normalised to {@code \n}.</li>
+	 * </ul>
+	 *
+	 * @param raw the raw string to sanitize; may be null
+	 * @return sanitized string, or null if the result is null or blank after sanitization
+	 */
+	public static String sanitizeText(String raw) {
+		if (raw == null) return null;
+		// 1. Strip null bytes — PostgreSQL rejects U+0000 unconditionally.
+		String s = raw.replace("\u0000", "");
+		// 2. Strip C0 control characters except horizontal tab, LF, and CR.
+		s = s.replaceAll("[\\p{Cntrl}&&[^\t\n\r]]", "");
+		// 3. Normalize line endings to LF only.
+		s = s.replace("\r\n", "\n").replace("\r", "\n");
+		return s.isBlank() ? null : s;
 	}
 
 	// ─────────────────────────────── poem chunking ───────────────────────────────

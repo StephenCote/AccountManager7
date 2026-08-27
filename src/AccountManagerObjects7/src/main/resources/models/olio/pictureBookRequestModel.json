@@ -165,6 +165,12 @@
 			"type": "string",
 			"maxLength": 64,
 			"description": "PB2 phase D: POST /{bookObjectId}/node/{nodeObjectId}/bind — the source node objectId."
+		},
+		{
+			"name": "pb2BookObjectId",
+			"type": "string",
+			"maxLength": 64,
+			"description": "STORY→PB2 linkage: POST /{workObjectId}/create-from-scenes — the target olio.pb.book objectId whose universe/world the STORY-created characters should be placed into (PictureBookUtil.createFromScenes reads it via PbBookUtil.readBook and routes characters into that book's world population group). Sent by the Ux (sceneExtractor.js), so it must be declared or RecordDeserializer drops it (KI-24 pattern). Distinct from fromBookObjectId (POST /chapter source book) and sourceNodeObjectId (bind source node)."
 		}
 	]
 }

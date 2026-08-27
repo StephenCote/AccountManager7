@@ -6,6 +6,7 @@ import static org.junit.Assume.assumeTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
@@ -14,6 +15,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.picturebook.ChapBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
+import org.cote.accountmanager.olio.picturebook.PbServiceFacade;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
@@ -146,6 +148,30 @@ public class TestChapBook extends BaseTest {
 		assertTrue("At least one scene must have imageObjectId persisted after renderChapBook; got "
 			+ scenesWithImage + "/" + updatedScenes.size() + " with image",
 			scenesWithImage >= 1);
+
+		// ── 5. Verify bookPageView enriches rendered pages with MediaServlet URL fields ──────────
+		// The viewer needs the image data.data record's groupPath + name to build a /media URL;
+		// dataObjectId alone 404s (no /rest/resource route exists). Assert the facade now supplies them.
+		List<Map<String, Object>> pages = PbServiceFacade.bookPageView(testUser, bookObjectId);
+		assertNotNull("bookPageView must return pages", pages);
+		assertTrue("bookPageView must return at least one page", !pages.isEmpty());
+		long pagesWithImageUrl = pages.stream()
+			.filter(pg -> pg.get("dataObjectId") != null)
+			.filter(pg -> {
+				String gp = (String) pg.get("imageGroupPath");
+				String nm = (String) pg.get("imageName");
+				return gp != null && !gp.isBlank() && nm != null && !nm.isBlank();
+			})
+			.count();
+		logger.info("Pages with resolvable image URL fields (imageGroupPath+imageName): {}/{}",
+			pagesWithImageUrl, pages.size());
+		for (Map<String, Object> pg : pages) {
+			logger.info("page dataObjectId={} imageGroupPath={} imageName={} imageContentType={}",
+				pg.get("dataObjectId"), pg.get("imageGroupPath"), pg.get("imageName"), pg.get("imageContentType"));
+		}
+		assertTrue("At least one rendered page must carry non-null imageGroupPath + imageName so the "
+			+ "viewer can build a MediaServlet URL; got " + pagesWithImageUrl + "/" + pages.size(),
+			pagesWithImageUrl >= 1);
 	}
 
 	/**

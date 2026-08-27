@@ -10,10 +10,20 @@
  * Tests that touch SD image generation are gated behind CHAPBOOK_SD_TESTS=1.
  */
 import { test, expect } from '@playwright/test';
-import { ensureSharedTestUser } from './helpers/api.js';
+import { ensureSharedTestUser, ensureChatConfig } from './helpers/api.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const REST = '/AccountManagerService7/rest';
 const CB_REST = REST + '/olio/chap-book';
+
+// Resolve the real poem corpus + the binary .docx fixture relative to THIS spec file,
+// so the paths hold regardless of the process cwd. The spec lives in
+// src/AccountManagerUx752/e2e/, the corpus at the git root under volatile/poemsXml/txt.
+const SPEC_DIR = path.dirname(fileURLToPath(import.meta.url));
+const CORPUS_DIR = path.resolve(SPEC_DIR, '../../../volatile/poemsXml/txt');
+const DOCX_FIXTURE = path.resolve(SPEC_DIR, 'fixtures/winter_1.docx');
 
 // Real poems by Stephen W. Cote — stanza text only (header lines stripped).
 const POEM_1 = `Memory, do not fail me;
@@ -456,6 +466,13 @@ test.describe('ChapBook — UI', () => {
         if (!process.env.CHAPBOOK_LLM_TESTS) {
             test.skip('set CHAPBOOK_LLM_TESTS=1 to run LLM-dependent ChapBook tests');
         }
+        // A cold Ollama model load + JSON theme/mood analysis can exceed the 120s describe timeout.
+        test.setTimeout(300000);
+
+        // Provision a real LLM chatConfig owned by the shared test user (idempotent). A clean Docker
+        // test DB has none, so analyze would 503 "No chatConfig is configured for this organization".
+        const chatConfigName = await ensureChatConfig(request, orgId);
+        expect(chatConfigName, 'ensureChatConfig did not return a chatConfig name').toBeTruthy();
 
         const loginResp = await request.post(REST + '/login', {
             data: {
@@ -468,8 +485,11 @@ test.describe('ChapBook — UI', () => {
         });
         expect(loginResp.ok() || loginResp.status() === 204).toBe(true);
 
-        let analyzeResp = await request.post(CB_REST + '/analyze/' + poem1ObjectId);
-        expect(analyzeResp.ok(), 'analyze failed: ' + analyzeResp.status()).toBe(true);
+        let analyzeResp = await request.post(CB_REST + '/analyze/' + poem1ObjectId, {
+            data: { chatConfig: chatConfigName },
+            timeout: 300000
+        });
+        expect(analyzeResp.ok(), 'analyze failed: ' + analyzeResp.status() + ' ' + await analyzeResp.text()).toBe(true);
 
         // Verify the poem record now has theme/mood/keywords populated
         let poemResp = await request.get(REST + '/model/olio.cb.poem/' + poem1ObjectId + '/full');
@@ -503,27 +523,13 @@ test.describe('ChapBook — UI', () => {
         });
         expect(loginResp.ok() || loginResp.status() === 204).toBe(true);
 
-        // Look up any available olio.llm.chatConfig for LLM landscape prompt generation.
-        // When a chatConfig is found it is passed to the render endpoint so the LLM generates
-        // a poem-specific landscape prompt for each scene instead of the generic template fallback.
-        // (Different poems — e.g. Falling Leaves vs Winter — should produce visually distinct images.)
-        let chatConfigName = null;
-        if (orgId) {
-            const ccResp = await request.post(REST + '/model/search', {
-                data: {
-                    schema: 'io.query',
-                    type: 'olio.llm.chatConfig',
-                    fields: [{ name: 'organizationId', comparator: 'equals', value: orgId }],
-                    request: ['id', 'objectId', 'name'],
-                    recordCount: 1,
-                    cache: false
-                }
-            });
-            const ccBody = await ccResp.json().catch(() => null);
-            if (ccBody && ccBody.results && ccBody.results.length > 0) {
-                chatConfigName = ccBody.results[0].name;
-            }
-        }
+        // Provision (idempotent) a real olio.llm.chatConfig owned by the shared test user for LLM
+        // landscape prompt generation. When a chatConfig is found it is passed to the render endpoint
+        // so the LLM generates a poem-specific landscape prompt for each scene instead of the generic
+        // template fallback. (Different poems — e.g. Falling Leaves vs Winter — should produce visually
+        // distinct images.) resolveDefaultChatConfig filters by ownerId, so the config must be owned by
+        // this user — ensureChatConfig guarantees that.
+        let chatConfigName = await ensureChatConfig(request, orgId);
         if (chatConfigName) {
             console.log('[chapBook.spec] using chatConfig "' + chatConfigName + '" for LLM landscape prompts');
         } else {
@@ -539,9 +545,12 @@ test.describe('ChapBook — UI', () => {
             let p1Oid = poem1ObjectId;
             let p2Oid = poem2ObjectId;
             if (!p1Oid || !p2Oid) {
-                const principalResp = await request.get(REST + '/login/principal');
-                const principal = await principalResp.json().catch(() => null);
-                const resolvedOrgId = principal && principal.organizationId;
+                // organizationId comes from a path/make response (it carries organizationId).
+                // There is NO /login/principal route — it 404s — so never read org from one.
+                const poemsDir = await request.get(REST + '/path/make/auth.group/data/B64-' +
+                    Buffer.from('~/Poems').toString('base64').replace(/=/g, '%3D'));
+                const poemsDirBody = await poemsDir.json().catch(() => null);
+                const resolvedOrgId = poemsDirBody && poemsDirBody.organizationId;
                 const lookupPoem = async (name) => {
                     if (!resolvedOrgId) return null;
                     const sr = await request.post(REST + '/model/search', {
@@ -606,10 +615,318 @@ test.describe('ChapBook — UI', () => {
             await nextBtn.click();
             await page.waitForTimeout(1500);
         }
-        // At least one img element should be visible (the SD-generated landscape)
-        let imgEl = page.locator('img[src*="data.data"]').first();
+        // At least one img element should be visible (the SD-generated landscape).
+        // Images are served by MediaServlet at /media/{orgDotPath}/data.data{groupPath}/{name}.
+        let imgEl = page.locator('img[src*="/media/"][src*="data.data"]').first();
         await expect(imgEl).toBeVisible({ timeout: 15000 });
 
+        // Real proof #1: the BROWSER actually decoded the raster (naturalWidth>0).
+        // toBeVisible alone passes on a broken <img>, so it is NOT proof.
+        let naturalWidth = await imgEl.evaluate(el => el.naturalWidth);
+        expect(naturalWidth, 'image did not decode in browser (naturalWidth=0 — broken src)').toBeGreaterThan(0);
+
+        // Real proof #2: pull the raw bytes from the EXACT url the app produced (not a
+        // guessed route), write them to a temp file, and confirm valid PNG/JPEG magic.
+        let imgSrc = await imgEl.getAttribute('src');
+        let absUrl = imgSrc.startsWith('http') ? imgSrc : new URL(imgSrc, page.url()).toString();
+        let imgResp = await request.get(absUrl, { timeout: 60000 });
+        expect(imgResp.ok(), 'media fetch failed: ' + imgResp.status() + ' for ' + absUrl).toBe(true);
+        let imgBuf = Buffer.from(await imgResp.body());
+        expect(imgBuf.length, 'rendered image is empty').toBeGreaterThan(1000);
+
+        let outDir = path.resolve(SPEC_DIR, '../test-results');
+        fs.mkdirSync(outDir, { recursive: true });
+        let outPath = path.join(outDir, '6C-chapbook-render-bytes.bin');
+        fs.writeFileSync(outPath, imgBuf);
+        console.log('[chapBook.spec] 6C wrote ' + imgBuf.length + ' image bytes to ' + outPath);
+
+        let isPng = imgBuf[0] === 0x89 && imgBuf[1] === 0x50 && imgBuf[2] === 0x4e && imgBuf[3] === 0x47;
+        let isJpeg = imgBuf[0] === 0xff && imgBuf[1] === 0xd8 && imgBuf[2] === 0xff;
+        expect(isPng || isJpeg,
+            'rendered bytes are neither PNG nor JPEG — magic: ' +
+            imgBuf.slice(0, 4).toString('hex')).toBe(true);
+
+        // Full-page screenshot of the rendered scene as the required visual proof.
+        let shotPath = path.join(outDir, '6C-chapbook-render.png');
+        await page.screenshot({ path: shotPath, fullPage: true });
+        console.log('[chapBook.spec] 6C screenshot: ' + shotPath);
+
         await request.get(REST + '/logout');
+    });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// Issue 6A / 6D regression proofs — dedicated ChapBook reader route.
+//
+// These target the NEW reader route #!/chap-book/read/{bookObjectId}
+// (component ChapBookReader in src/features/chapBook.js), NOT the generic
+// PB2 viewer the older tests used.
+//   6A — a binary .docx import yields READABLE prose (Apache Tika extraction),
+//        not raw-UTF-8 zip garbage.
+//   6D — the reader shows poem stanza text IMMEDIATELY on load, with no Render.
+// Neither test touches the LLM or SD backends, so both run in the default suite.
+// ══════════════════════════════════════════════════════════════════════════
+
+const REAL_DOCX_CT = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+// Deterministic set of 10 REAL poems from the corpus (volatile/poemsXml/txt/winter/).
+// Fixed list => stable reruns; every entry is a real file verified present at author time.
+const WINTER_SET = ['winter_1', 'winter_2', 'winter_3', 'winter_4', 'winter_5',
+                    'winter_6', 'winter_7', 'winter_8', 'winter_9', 'winter_10'];
+
+function readCorpusPoem(collection, base) {
+    return fs.readFileSync(path.join(CORPUS_DIR, collection, base + '.txt'), 'utf8');
+}
+
+// Extract distinctive (long, alphabetic) words from real poem text so the DOM
+// assertion is tied to the ACTUAL seeded content, not a hard-coded guess.
+function distinctiveWords(text, minLen, max) {
+    let seen = new Set();
+    let out = [];
+    let words = (text || '').split(/[^A-Za-z]+/);
+    for (let w of words) {
+        let lw = w.toLowerCase();
+        if (w.length >= (minLen || 7) && !seen.has(lw)) {
+            seen.add(lw);
+            out.push(lw);
+            if (out.length >= (max || 12)) break;
+        }
+    }
+    return out;
+}
+
+async function restLoginShared(request) {
+    const resp = await request.post(REST + '/login', {
+        data: {
+            schema: 'auth.credential',
+            organizationPath: '/Development',
+            name: 'e2etest_shared',
+            credential: Buffer.from('password').toString('base64'),
+            type: 'hashed_password'
+        }
+    });
+    expect(resp.ok() || resp.status() === 204, 'shared-user login failed: ' + resp.status()).toBe(true);
+}
+
+test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
+    test.describe.configure({ timeout: 180000 });
+
+    let readerOrgId = null;
+    let dataGroupId = null;
+    let poemsGroupId = null;
+
+    test.beforeAll(async ({ request }) => {
+        await ensureSharedTestUser(request);
+        await restLoginShared(request);
+
+        const dataDir = await request.get(REST + '/path/make/auth.group/data/B64-' + Buffer.from('~/Data').toString('base64').replace(/=/g, '%3D'));
+        const dataBody = await dataDir.json();
+        expect(dataBody && dataBody.id, 'could not ensure ~/Data group').toBeTruthy();
+        dataGroupId = dataBody.id;
+        readerOrgId = dataBody.organizationId;
+
+        const poemsDir = await request.get(REST + '/path/make/auth.group/data/B64-' + Buffer.from('~/Poems').toString('base64').replace(/=/g, '%3D'));
+        const poemsBody = await poemsDir.json();
+        expect(poemsBody && poemsBody.id, 'could not ensure ~/Poems group').toBeTruthy();
+        poemsGroupId = poemsBody.id;
+
+        await request.get(REST + '/logout');
+    });
+
+    // ── Task 1 — Issue 6A: binary .docx import produces READABLE prose ─────────
+    test('6A: binary .docx import extracts readable prose (Tika), not zip garbage', async ({ page, request }) => {
+        await restLoginShared(request);
+
+        // 1. Upload the real winter_1.docx bytes as a data.data record.
+        //    data.data inherits data.byteStore whose blob field is "dataBytesStore"
+        //    (FieldNames.FIELD_BYTE_STORE). Sending it inline as base64 on POST /model
+        //    stores the raw bytes (compression is only applied by ByteModelUtil.setValue,
+        //    which this path does not invoke), so the reader reads them back verbatim.
+        const docxBytes = fs.readFileSync(DOCX_FIXTURE);
+        expect(docxBytes.length, 'fixture is empty').toBeGreaterThan(0);
+        // Sanity: the raw bytes really are a zip container ("PK") and NOT readable prose.
+        const rawAscii = docxBytes.toString('latin1');
+        expect(rawAscii.startsWith('PK'), 'fixture should be a PK/zip container').toBe(true);
+        expect(/pristine/i.test(rawAscii), 'raw bytes must NOT already contain readable prose').toBe(false);
+
+        const dataName = '6a-winter-import-' + Date.now().toString(36) + '.docx';
+        const createDataResp = await request.post(REST + '/model', {
+            data: {
+                schema: 'data.data',
+                name: dataName,
+                groupId: dataGroupId,
+                contentType: REAL_DOCX_CT,
+                dataBytesStore: docxBytes.toString('base64')
+            }
+        });
+        expect(createDataResp.ok(), 'data.data create failed: ' + createDataResp.status() + ' ' + await createDataResp.text()).toBe(true);
+        const dataRec = await createDataResp.json();
+        const dataObjectId = dataRec && dataRec.objectId;
+        expect(dataObjectId, 'no objectId for uploaded data.data').toBeTruthy();
+
+        // 2. Import it as a poem. Title MUST be unique per run: olio.cb.poem has a
+        //    unique constraint on (name, groupId, organizationId); a fixed title makes
+        //    re-runs fail with a duplicate-key INSERT abort.
+        const poemTitle = 'Winter Doc Import ' + Date.now().toString(36);
+        const importResp = await request.post(CB_REST + '/poems', {
+            data: { sources: [{ type: 'data.data', objectId: dataObjectId, title: poemTitle }] }
+        });
+        expect(importResp.ok(), 'POST /poems failed: ' + importResp.status() + ' ' + await importResp.text()).toBe(true);
+        const importResult = await importResp.json();
+
+        // 3. No UnsupportedContent/400 masquerading as a soft error — 6A would be UNFIXED if it did.
+        expect(!importResult.errors || importResult.errors.length === 0,
+            'import reported errors (6A would be a real bug): ' + JSON.stringify(importResult.errors)).toBe(true);
+        expect(Array.isArray(importResult.poems) && importResult.poems.length === 1,
+            'expected exactly one imported poem: ' + JSON.stringify(importResult)).toBe(true);
+        const poemObjectId = importResult.poems[0].objectId;
+        expect(poemObjectId, 'imported poem has no objectId').toBeTruthy();
+
+        // 4. Fetch the poem's text via targeted projection and assert it is READABLE
+        //    English. NOTE: do NOT use GET /model/olio.cb.poem/{id}/full — planMost(true)
+        //    on this model exceeds PostgreSQL's 100-arg JSON_BUILD_OBJECT limit and 404s
+        //    (same class as olio.pb.book, IssueLog #10). `text` is not a default query
+        //    field, so it must be explicitly projected (IssueLog #8).
+        const poemResp = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query',
+                type: 'olio.cb.poem',
+                fields: [
+                    { name: 'objectId', comparator: 'equals', value: poemObjectId },
+                    { name: 'organizationId', comparator: 'equals', value: readerOrgId }
+                ],
+                request: ['id', 'objectId', 'name', 'title', 'text'],
+                recordCount: 1,
+                cache: false
+            }
+        });
+        expect(poemResp.ok(), 'poem search failed: ' + poemResp.status()).toBe(true);
+        const poemBody = await poemResp.json();
+        expect(poemBody && Array.isArray(poemBody.results) && poemBody.results.length === 1,
+            'poem not found by objectId (import did not persist?): ' + JSON.stringify(poemBody)).toBe(true);
+        const poem = poemBody.results[0];
+        const text = (poem && poem.text) || '';
+        expect(text.length, 'imported poem text is empty').toBeGreaterThan(0);
+
+        // 4a. Contains the real words Tika should have extracted from winter_1.docx.
+        expect(/pristine/i.test(text), 'poem text missing "pristine": ' + text.slice(0, 120)).toBe(true);
+        expect(/sorcery/i.test(text), 'poem text missing "sorcery": ' + text.slice(0, 120)).toBe(true);
+
+        // 4b. NOT raw zip garbage: no leading "PK", no null byte, mostly-printable.
+        expect(text.startsWith('PK'), 'poem text starts with zip magic "PK" — extraction failed').toBe(false);
+        expect(text.indexOf('\u0000') >= 0, 'poem text contains a null byte').toBe(false);
+        let printable = 0;
+        for (let i = 0; i < text.length; i++) {
+            const c = text.charCodeAt(i);
+            if (c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126)) printable++;
+        }
+        const ratio = printable / text.length;
+        expect(ratio, 'printable-char ratio too low (' + ratio.toFixed(3) + ') — text looks binary').toBeGreaterThan(0.95);
+
+        console.log('[6A] extracted text (first 120 chars): ' + JSON.stringify(text.slice(0, 120)));
+
+        // 5. Build a 1-poem ChapBook from the imported poem and screenshot the reader
+        //    showing the readable stanza.
+        const slug = '6a-docx-' + Date.now().toString(36);
+        const createBookResp = await request.post(CB_REST + '/create', {
+            data: { slug, title: 'Winter Doc ChapBook', poemObjectIds: [poemObjectId], maxLinesPerPage: 8 }
+        });
+        expect(createBookResp.ok(), 'create ChapBook failed: ' + createBookResp.status() + ' ' + await createBookResp.text()).toBe(true);
+        const book = await createBookResp.json();
+        const bookObjectId = book && (book.objectId || book.bookObjectId);
+        expect(bookObjectId, 'no bookObjectId for 6A book').toBeTruthy();
+        await request.get(REST + '/logout');
+
+        await loginAsSharedUser(page);
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookObjectId);
+
+        // The stanza text must be visible without any Render step.
+        const stanza = page.locator('p').filter({ hasText: /pristine|cobalt|sorcery|charcoal/i }).first();
+        await expect(stanza, 'readable stanza not visible in reader for 6A book').toBeVisible({ timeout: 20000 });
+
+        const shot6a = path.resolve(SPEC_DIR, '../test-results/6A-docx-readable.png');
+        fs.mkdirSync(path.dirname(shot6a), { recursive: true });
+        await page.screenshot({ path: shot6a, fullPage: true });
+        console.log('[6A] screenshot: ' + shot6a);
+    });
+
+    // ── Task 2 — Issue 6D: reader shows stanzas immediately (no blank book) ────
+    test('6D: reader shows poem stanzas immediately, no Render required', async ({ page, request }) => {
+        await restLoginShared(request);
+
+        // 1. Seed 10 real winter poems (idempotent by name). Capture the first poem's
+        //    real text so the DOM assertion is derived from actual content.
+        const poemObjectIds = [];
+        let firstPoemText = null;
+        for (const base of WINTER_SET) {
+            const text = readCorpusPoem('winter', base);
+            if (firstPoemText === null) firstPoemText = text;
+            const recName = 'chapbook-6d-' + base;
+
+            const search = await request.post(REST + '/model/search', {
+                data: {
+                    schema: 'io.query', type: 'olio.cb.poem',
+                    fields: [
+                        { name: 'name', comparator: 'equals', value: recName },
+                        { name: 'organizationId', comparator: 'equals', value: readerOrgId }
+                    ],
+                    request: ['id', 'objectId', 'name'], recordCount: 1, cache: false
+                }
+            });
+            const sBody = await search.json().catch(() => null);
+            let oid = (sBody && sBody.results && sBody.results[0]) ? sBody.results[0].objectId : null;
+            if (!oid) {
+                const cResp = await request.post(REST + '/model', {
+                    data: {
+                        schema: 'olio.cb.poem',
+                        name: recName,
+                        title: base.replace('_', ' '),
+                        author: 'Stephen W. Cote',
+                        groupId: poemsGroupId,
+                        text: text
+                    }
+                });
+                const created = await cResp.json().catch(() => null);
+                oid = created && created.objectId;
+            }
+            expect(oid, 'failed to seed poem ' + recName).toBeTruthy();
+            poemObjectIds.push(oid);
+        }
+        expect(poemObjectIds.length, 'expected 10 seeded poems').toBe(10);
+
+        // 2. Create the ChapBook (result.objectId is the book).
+        const slug = '6d-winter-' + Date.now().toString(36);
+        const createResp = await request.post(CB_REST + '/create', {
+            data: { slug, title: 'Winter Cycle ChapBook', poemObjectIds, maxLinesPerPage: 8 }
+        });
+        expect(createResp.ok(), 'create ChapBook failed: ' + createResp.status() + ' ' + await createResp.text()).toBe(true);
+        const result = await createResp.json();
+        const bookObjectId = result && (result.objectId || result.bookObjectId);
+        expect(bookObjectId, 'no bookObjectId in 6D create response').toBeTruthy();
+        await request.get(REST + '/logout');
+
+        // 3. Open the dedicated reader route.
+        await loginAsSharedUser(page);
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookObjectId);
+
+        // 4. Stanza text visible WITHOUT clicking Render. Regex derived from the real
+        //    seeded winter_1 text (distinctive long words).
+        const words = distinctiveWords(firstPoemText, 7, 12);
+        expect(words.length, 'could not derive distinctive words from real poem').toBeGreaterThan(0);
+        const stanzaRe = new RegExp(words.join('|'), 'i');
+        const stanza = page.locator('p').filter({ hasText: stanzaRe }).first();
+        await expect(stanza, 'no <p> matched real poem words ' + JSON.stringify(words)).toBeVisible({ timeout: 20000 });
+
+        // Page N of M footer present.
+        await expect(page.locator('text=/Page \\d+ of \\d+/').first(), 'no "Page N of M" footer').toBeVisible({ timeout: 10000 });
+
+        // 5. Analyze + Render controls both present.
+        await expect(page.locator('button:has-text("Analyze")').first()).toBeVisible({ timeout: 10000 });
+        await expect(page.locator('button:has-text("Render")').first()).toBeVisible({ timeout: 5000 });
+
+        const shot6d = path.resolve(SPEC_DIR, '../test-results/6D-reader-stanzas.png');
+        fs.mkdirSync(path.dirname(shot6d), { recursive: true });
+        await page.screenshot({ path: shot6d, fullPage: true });
+        console.log('[6D] screenshot: ' + shot6d);
     });
 });

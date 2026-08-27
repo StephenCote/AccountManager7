@@ -351,6 +351,124 @@ export async function ensureSharedTestUser(request, opts = {}) {
     return { user, testUserName: SHARED_USER, testPassword: SHARED_PASSWORD };
 }
 
+// ── ChapBook / LLM chatConfig provisioning ─────────────────────────────
+//
+// The ChapBook analyze (6B) and render (6C) endpoints resolve a default
+// olio.llm.chatConfig via ChapBookUtil.resolveDefaultChatConfig(user), which
+// filters by organizationId AND ownerId. A clean Docker test DB has none, so
+// analyze/render 503 with "No chatConfig is configured for this organization".
+// This helper provisions one — owned by the shared test user so the ownerId
+// filter matches — mirroring the canonical creation path in
+// AccountManagerObjects7 ChatLibraryUtil.createLibraryConnection /
+// createLibraryChatConfig: a system.connection holding the serverUrl, and an
+// olio.llm.chatConfig with serviceType=ollama + model, referencing that
+// connection by FK. Idempotent: searches by stable name (cache:false) first.
+const CHATCONFIG_NAME = 'e2e-chapbook-llm';
+const CHATCONN_NAME = 'e2e-chapbook-conn';
+// CHAT models on the Ollama server at the DGX Spark (192.168.1.42:11434).
+// qwen3:8b is the fast CHAT model — adequate for JSON theme/mood analysis.
+const CHAT_SERVER_URL = 'http://192.168.1.42:11434';
+const CHAT_MODEL = 'qwen3:8b';
+
+/** Search a data.directory-derived model by name within an org (cache:false so freshly-created records are seen). */
+async function searchByNameOrgCtx(ctx, type, name, orgId, fields) {
+    let resp = await ctx.post(REST + '/model/search', {
+        data: {
+            schema: 'io.query',
+            type: type,
+            fields: [
+                { name: 'name', comparator: 'equals', value: name },
+                { name: 'organizationId', comparator: 'equals', value: orgId }
+            ],
+            request: fields || ['id', 'objectId', 'name'],
+            recordCount: 1,
+            cache: false
+        }
+    });
+    let result = await safeJson(resp);
+    return (result && result.results && result.results.length > 0) ? result.results[0] : null;
+}
+
+/**
+ * Ensure an olio.llm.chatConfig (named `e2e-chapbook-llm`) owned by the shared test user exists in
+ * the given org, pointing at the Ollama CHAT server via a system.connection, so ChapBook analyze/render
+ * can resolve a default chatConfig. Idempotent — safe to call repeatedly.
+ *
+ * @param request Playwright APIRequestContext (unused directly; helper opens its own session so the
+ *                chatConfig is owned by the shared user regardless of the caller's session state).
+ * @param orgId   numeric organizationId (e.g. 2 for /Development on the Docker stack).
+ * @returns the chatConfig name to pass in the analyze/render body ({chatConfig: name}), or null on failure.
+ */
+export async function ensureChatConfig(request, orgId, opts = {}) {
+    const org = opts.org || '/Development';
+    const user = opts.user || SHARED_USER;
+    const password = opts.password || SHARED_PASSWORD;
+    const serverUrl = opts.serverUrl || CHAT_SERVER_URL;
+    const model = opts.model || CHAT_MODEL;
+
+    let ctx = await newApiContext();
+    try {
+        await loginCtx(ctx, { org, user, password });
+
+        // A data.directory group to hold the connection + config (mirrors the UI's ~/Chat dir).
+        // The path/make response also carries organizationId — there is NO /login/principal route
+        // (it 404s), so resolve orgId from this group rather than a phantom principal endpoint.
+        let chatDir = await ensurePathCtx(ctx, 'auth.group', 'data', '~/Chat');
+        let groupId = chatDir && chatDir.id;
+        let groupPath = chatDir && chatDir.path;
+        if (!groupId) { await logoutCtx(ctx); return null; }
+
+        // Resolve orgId if the caller did not supply it (from the group we just ensured).
+        let resolvedOrgId = orgId || (chatDir && chatDir.organizationId);
+        if (!resolvedOrgId) { await logoutCtx(ctx); return null; }
+
+        // 1. system.connection holding the Ollama serverUrl (find-or-create).
+        let conn = await searchByNameOrgCtx(ctx, 'system.connection', CHATCONN_NAME, resolvedOrgId,
+            ['id', 'objectId', 'name', 'serverUrl']);
+        if (!conn) {
+            await ctx.post(REST + '/model', {
+                data: {
+                    schema: 'system.connection',
+                    name: CHATCONN_NAME,
+                    groupId: groupId,
+                    groupPath: groupPath,
+                    serverUrl: serverUrl,
+                    requestTimeout: 300
+                }
+            });
+            conn = await searchByNameOrgCtx(ctx, 'system.connection', CHATCONN_NAME, resolvedOrgId,
+                ['id', 'objectId', 'name', 'serverUrl']);
+        }
+        if (!conn || !conn.id) { await logoutCtx(ctx); return null; }
+
+        // 2. olio.llm.chatConfig referencing that connection by FK (find-or-create).
+        //    serviceType enum is lowercase on the wire ("ollama" → LLMServiceEnumType.OLLAMA).
+        let cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', CHATCONFIG_NAME, resolvedOrgId,
+            ['id', 'objectId', 'name']);
+        if (!cfg) {
+            await ctx.post(REST + '/model', {
+                data: {
+                    schema: 'olio.llm.chatConfig',
+                    name: CHATCONFIG_NAME,
+                    groupId: groupId,
+                    groupPath: groupPath,
+                    serviceType: 'ollama',
+                    model: model,
+                    analyzeModel: model,
+                    connection: { schema: 'system.connection', id: conn.id, objectId: conn.objectId }
+                }
+            });
+            cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', CHATCONFIG_NAME, resolvedOrgId,
+                ['id', 'objectId', 'name']);
+        }
+
+        await logoutCtx(ctx);
+        return cfg ? cfg.name : null;
+    } finally {
+        await ctx.dispose();
+    }
+}
+
 /**
  * Ensure a persistent test user that holds the AccountAdministrators role, so tests can exercise
  * @RolesAllowed({"admin"}) endpoints WITHOUT ever logging in as `admin`.

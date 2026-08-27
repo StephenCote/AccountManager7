@@ -13,6 +13,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 
 ## feedback
 - `feedback-bytestore-access` -- Never read/write a byte_store field with raw .get()/.set() — use ByteModelUtil, since data may be compressed and/or encrypted
+- `feedback-cb-poem-text-projection` -- olio.cb.poem query defaults omit text; any poem read needing text MUST project it — the analyze endpoint silently no-oped (returned success:true) without it
 - `feedback-chapbook-authorize-scene-gotcha` -- authorizeSceneAccess queries data.note not olio.pb.scene — generateSceneImage cannot be used for ChapBook scenes
 - `feedback-deflection-patterns` -- Stephen's repeated correction — stop shirking responsibility; \"pre-existing\" never discharges ownership of a test or bug I authored
 - `feedback-likeInherits-noop` -- likeInherits in ModelSchema is metadata-only — no DDL or field-inheritance effect
@@ -33,6 +34,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-swarm-model-names-need-extension` -- Swarm .39 model names include .safetensors extension - omitting it causes silent failures
 - `feedback-test-only-instrumentation` -- Debug/inspection hooks (e.g. emit-to-disk) belong in the test itself, never wired into production code
 - `feedback-use-real-test-content` -- use the user's actual provided documents/characters for PictureBook (and similar) test content instead of inventing synthetic stand-ins
+- `feedback-ux752-vitest-node-mithril-raf` -- Ux752 vitest runs in node env; Mithril captures schedule=requestAnimationFrame at import (null in node) so m.request completions throw 'schedule is not a function' — fix via setupFiles RAF shim (do not import mithril there)
 - `feedback-validate-dont-workaround-bad-queries` -- When a query/input is invalid (e.g. filters on a virtual/computed field), validate and reject with a clear error — don't build resolution logic to make it \"work\
 - `feedback-visual-inspection-required` -- For generative image/content pipelines, a passing persistence/decode test is not proof the output is correct — actually look at the emitted output
 - `playwright-docker-e2e-gotchas` -- WebSocket stub + dist freshness required for Playwright tests against the Docker stack
@@ -69,4 +71,5 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `uat-pb2-issues-status` -- PB2 UAT issues 1/2/3 fix status — all three implemented and compile-verified 2026-08-23
 
 ## reference
+- `reference-chapbook-tika-extraction-objects7` -- ChapBook/office-doc text extraction lives in Objects7 ChapBookUtil.extractPoemText + bounded DocumentUtil.readDocument(byte[],int) 16MB cap; Service7 only delegates PictureBookException->400 — never inline Tika in Service7
 - `reference-sd-llm-hardware` -- SD at 192.168.1.39 (GTR9 Swarm :7801), LLM at 192.168.1.42 (Spark Ollama :11434) — not interchangeable; .42 crashes under sustained SD load

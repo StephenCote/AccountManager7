@@ -611,6 +611,7 @@ public class PbServiceFacade {
 	 */
 	public static List<Map<String, Object>> bookPageView(BaseRecord user, String bookObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
+		long orgId = orgOf(user);
 		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
 		if(scenes.isEmpty()) {
 			return new ArrayList<>();
@@ -660,9 +661,55 @@ public class PbServiceFacade {
 				dataObjectId = (String) scene.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID);
 			}
 			p.put("dataObjectId", dataObjectId);
+
+			// The viewer builds a MediaServlet URL (/media/{dotPath}/data.data{groupPath}/{name}),
+			// which is path-based, not objectId-based. Neither path above yields those fields: the
+			// composite artifact projects its 'data' FK id-only (PbArtifactUtil.artifactRequest), and
+			// the ChapBook fallback carries only the objectId string. So resolve the data.data record
+			// explicitly, projecting the path fields the URL needs. Foreign/non-query fields are NOT
+			// auto-populated — they must be requested.
+			String imageGroupPath = null;
+			String imageName = null;
+			String imageContentType = null;
+			if (dataObjectId != null) {
+				BaseRecord data = resolveImageData(user, dataObjectId, orgId);
+				if (data != null) {
+					imageGroupPath = data.get(FieldNames.FIELD_GROUP_PATH);
+					imageName = data.get(FieldNames.FIELD_NAME);
+					imageContentType = data.get(FieldNames.FIELD_CONTENT_TYPE);
+				}
+			}
+			p.put("imageGroupPath", imageGroupPath);
+			p.put("imageName", imageName);
+			p.put("imageContentType", imageContentType);
 			out.add(p);
 		}
 		return out;
+	}
+
+	/**
+	 * Load the {@code data.data} image record for a scene by objectId, projecting only the fields a
+	 * MediaServlet/ThumbnailServlet URL needs ({@code groupPath}, {@code name}, {@code contentType}).
+	 * <p>
+	 * Read through {@code AccessPoint.find} so {@code canRead} applies to the image record itself, and
+	 * constrained by {@code organizationId} so the objectId is resolved within the caller's tenant.
+	 * Returns {@code null} when the objectId does not resolve to a readable {@code data.data}.
+	 */
+	private static BaseRecord resolveImageData(BaseRecord user, String dataObjectId, long orgId) {
+		if(dataObjectId == null || dataObjectId.trim().length() == 0) {
+			return null;
+		}
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, dataObjectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		// groupPath is a virtual field computed by PathProvider from groupId — it must be projected too,
+		// or the provider has no baseProperty to walk and groupPath comes back null.
+		q.setRequest(new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_CONTENT_TYPE,
+			FieldNames.FIELD_ORGANIZATION_ID
+		});
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
 	}
 
 	// ─────────────────────────────── canvas writes ───────────────────────────────

@@ -735,11 +735,11 @@ const page = {
     clearCache: clearPageCache,
     components: {
         dialog: {
-            open: Dialog.open,
-            close: Dialog.close,
-            closeAll: Dialog.closeAll,
-            confirm: Dialog.confirm,
-            loadDialogs: Dialog.loadDialogs
+            open: (...a) => Dialog.open(...a),
+            close: (...a) => Dialog.close(...a),
+            closeAll: (...a) => Dialog.closeAll(...a),
+            confirm: (...a) => Dialog.confirm(...a),
+            loadDialogs: (...a) => Dialog.loadDialogs(...a)
         },
         picker: null,
         dnd: null,

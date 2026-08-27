@@ -717,8 +717,14 @@ function pb2OnKeyDown(e) {
     else if (e.key === 'End') { e.preventDefault(); pb2GoToPage(pb2TotalPages() - 1); }
 }
 
-function pb2ImageUrl(dataObjectId) {
-    return applicationPath + '/rest/resource/data.data/' + dataObjectId;
+function pb2ImageUrl(page) {
+    // Images are served by MediaServlet at /media/{orgDotPath}/data.data{groupPath}/{name}
+    // (the canonical path-based route used across the UI — see components/decorator.js).
+    // There is no objectId-based /rest/resource route, so dataObjectId alone cannot fetch bytes;
+    // bookPageView supplies imageGroupPath + imageName for exactly this.
+    if (!page || !page.imageGroupPath || !page.imageName) return null;
+    return applicationPath + '/media/' + am7client.dotPath(am7client.currentOrganization)
+        + '/data.data' + page.imageGroupPath + '/' + page.imageName;
 }
 
 async function loadPb2Pages(pb2ObjId) {
@@ -752,7 +758,7 @@ async function loadPb2Pages(pb2ObjId) {
 
 function renderPb2Cover() {
     let firstPage = pb2Pages.length > 0 ? pb2Pages[0] : null;
-    let coverImgUrl = firstPage && firstPage.dataObjectId ? pb2ImageUrl(firstPage.dataObjectId) : null;
+    let coverImgUrl = firstPage ? pb2ImageUrl(firstPage) : null;
     return m('div', {
         class: 'flex flex-col items-center justify-center min-h-[60vh] relative overflow-hidden rounded-lg',
         style: 'background: linear-gradient(135deg, #2d1b69 0%, #1a1a4e 50%, #0f0f3d 100%);'
@@ -783,7 +789,7 @@ function renderPb2Cover() {
 function renderPb2ScenePage() {
     let scene = pb2CurrentScene();
     if (!scene) return m('div', { class: 'text-sm text-gray-500 italic p-4' }, 'No scene data.');
-    let imgUrl = scene.dataObjectId ? pb2ImageUrl(scene.dataObjectId) : null;
+    let imgUrl = pb2ImageUrl(scene);
     let text = scene.poemStanza || scene.blurb || scene.summary || '';
     return m('div', { class: 'flex flex-col items-center' }, [
         imgUrl

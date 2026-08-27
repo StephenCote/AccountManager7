@@ -459,6 +459,26 @@ public class TestPictureBookKnownIssues extends BaseTest {
 		return m;
 	}
 
+	/**
+	 * KI-30 (STORY→PB2 linkage): {@code PictureBookService.createFromScenes} reads
+	 * {@code params.get("pb2BookObjectId")} — the target {@code olio.pb.book} whose universe/world the
+	 * STORY-created characters are routed into. The Ux ({@code sceneExtractor.js}) sends it in the
+	 * create-from-scenes body, but {@code olio.pictureBookRequest} did not declare the field, so
+	 * {@code RecordDeserializer} logged a FieldException and DROPPED it (the KI-24 pattern) — the
+	 * linkage silently never happened. This asserts the field is now on the model and typed as a
+	 * string, so the deserializer keeps it instead of dropping it.
+	 */
+	@Test
+	public void TestKi30PictureBookRequestHasPb2BookObjectIdField() {
+		org.cote.accountmanager.schema.ModelSchema ms = RecordFactory.getSchema(OlioModelNames.MODEL_PICTURE_BOOK_REQUEST);
+		assertNotNull("olio.pictureBookRequest schema must be registered", ms);
+		org.cote.accountmanager.schema.FieldSchema fs = ms.getFieldSchema("pb2BookObjectId");
+		assertNotNull("olio.pictureBookRequest must declare pb2BookObjectId so RecordDeserializer keeps"
+			+ " the STORY→PB2 linkage id instead of dropping it (KI-24 pattern)", fs);
+		assertEquals("pb2BookObjectId must be a string field",
+			org.cote.accountmanager.model.field.FieldEnumType.STRING, fs.getFieldType());
+	}
+
 	private String ensureChatConfig(BaseRecord user) throws Exception {
 		String model = testProperties.getProperty("test.llm.ollama.model");
 		String serverUrl = testProperties.getProperty("test.llm.ollama.server");
