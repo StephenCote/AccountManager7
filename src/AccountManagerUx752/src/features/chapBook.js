@@ -161,6 +161,11 @@ let renderingBook = false;
 let lastRenderResult = null;
 let lastCreatedBook = null;
 
+// My ChapBooks list state
+let myBooks = [];
+let myBooksLoading = false;
+let myBooksError = null;
+
 // ── Helpers ───────────────────────────────────────────────────────────
 
 function slugify(name) {
@@ -446,6 +451,49 @@ async function doCreateChapBook() {
     m.redraw();
 }
 
+// ── My ChapBooks API helpers ──────────────────────────────────────────
+
+async function fetchMyBooks() {
+    let resp = await fetch(cbBase() + '/books', { credentials: 'include' });
+    if (!resp.ok) throw new Error('Failed to load chapbooks: ' + resp.status);
+    return resp.json();
+}
+
+async function deleteBook(bookObjectId) {
+    let resp = await fetch(cbBase() + '/' + bookObjectId, {
+        method: 'DELETE',
+        credentials: 'include'
+    });
+    if (!resp.ok) throw new Error('Delete failed: ' + resp.status);
+    return resp.json();
+}
+
+async function loadMyBooks() {
+    myBooksLoading = true;
+    myBooksError = null;
+    m.redraw();
+    try {
+        let result = await fetchMyBooks();
+        myBooks = Array.isArray(result) ? result : [];
+    } catch (e) {
+        myBooksError = e.message || 'Failed to load';
+        myBooks = [];
+    }
+    myBooksLoading = false;
+    m.redraw();
+}
+
+async function doDeleteBook(book) {
+    if (!confirm('Delete "' + (book.name || book.slug) + '"? This cannot be undone.')) return;
+    try {
+        await deleteBook(book.objectId);
+        page.toast('success', 'Deleted: ' + (book.name || book.slug));
+        await loadMyBooks();
+    } catch (e) {
+        page.toast('error', 'Delete failed: ' + (e.message || ''));
+    }
+}
+
 // ── PoemLibrary component ─────────────────────────────────────────────
 
 const PoemLibrary = {
@@ -462,7 +510,11 @@ const PoemLibrary = {
         addPoemTitle = '';
         addPoemAuthor = '';
         addPoemText = '';
+        myBooks = [];
+        myBooksLoading = false;
+        myBooksError = null;
         loadPoems();
+        loadMyBooks();
     },
     view: function () {
         let list = filteredPoems();
@@ -517,6 +569,14 @@ const PoemLibrary = {
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'auto_stories'),
                     ' Create ChapBook (' + selectedIds.size + ')'
+                ]) : null,
+                selectedIds.size > 0 ? m('button', {
+                    class: 'px-3 py-1 rounded bg-gray-400 text-white text-sm hover:bg-gray-500 flex items-center gap-1',
+                    title: 'Clear all selections',
+                    onclick: function() { selectedIds = new Set(); m.redraw(); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'deselect'),
+                    ' Clear (' + selectedIds.size + ')'
                 ]) : null
             ]),
 
@@ -624,6 +684,44 @@ const PoemLibrary = {
                     renderingBook ? ' Rendering...' : ' Render'
                 ])
             ]) : null,
+
+            // My ChapBooks section
+            m('div', { class: 'mt-6' }, [
+                m('div', { class: 'flex items-center gap-2 mb-3' }, [
+                    m('span', { class: 'material-symbols-outlined text-purple-500' }, 'auto_stories'),
+                    m('h3', { class: 'text-base font-semibold dark:text-white' }, 'My ChapBooks'),
+                    m('button', {
+                        class: 'ml-auto px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-xs dark:text-white hover:bg-gray-200',
+                        onclick: loadMyBooks
+                    }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'refresh'), ' Refresh'])
+                ]),
+                myBooksLoading ? m('div', { class: 'text-sm text-gray-400' }, 'Loading...') :
+                myBooksError ? m('div', { class: 'text-sm text-red-500' }, myBooksError) :
+                myBooks.length === 0 ? m('div', { class: 'text-sm text-gray-400 dark:text-gray-500' }, 'No ChapBooks yet.') :
+                m('div', { class: 'space-y-2' },
+                    myBooks.map(function(b) {
+                        return m('div', {
+                            key: b.objectId,
+                            class: 'flex items-center gap-3 px-3 py-2 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-purple-50 dark:hover:bg-purple-900/20'
+                        }, [
+                            m('span', { class: 'material-symbols-outlined text-purple-400' }, 'menu_book'),
+                            m('span', {
+                                class: 'flex-1 text-sm font-medium dark:text-white truncate cursor-pointer hover:text-purple-600',
+                                onclick: function() { m.route.set('/chap-book/read/' + b.objectId); }
+                            }, b.name || b.slug || b.objectId),
+                            m('span', { class: 'text-xs text-gray-400' }, b.bookStatus ? b.bookStatus.toLowerCase() : ''),
+                            m('button', {
+                                class: 'ml-auto px-2 py-1 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs hover:bg-purple-200',
+                                onclick: function() { m.route.set('/chap-book/read/' + b.objectId); }
+                            }, 'Open'),
+                            m('button', {
+                                class: 'px-2 py-1 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs hover:bg-red-200',
+                                onclick: function() { doDeleteBook(b); }
+                            }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'delete')])
+                        ]);
+                    })
+                )
+            ]),
 
             // Create ChapBook dialog — inline overlay following the Dialog pattern
             showCreateDialog ? m('div', {
@@ -762,7 +860,24 @@ async function loadReaderBook(bookObjectId) {
     readerError = null;
     m.redraw();
     try {
-        readerBook = await am7client.getFull('olio.pb.book', bookObjectId) || null;
+        try {
+            let resp = await fetch(applicationPath + '/rest/model/search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    schema: 'io.query',
+                    type: 'olio.pb.book',
+                    cache: false,
+                    request: ['id','objectId','name','urn','groupId','organizationId','ownerId','description','slug','bookStatus','createdByObjectId'],
+                    fields: [{ name: 'objectId', comparator: 'EQUALS', value: bookObjectId }]
+                })
+            });
+            let arr = resp.ok ? await resp.json() : [];
+            readerBook = Array.isArray(arr) && arr.length ? arr[0] : null;
+        } catch (_) {
+            readerBook = null;
+        }
         // bookPages returns [{objectId, sceneIndex, title, blurb, summary, poemStanza, dataObjectId}, ...]
         // — poemStanza is visible immediately (6D) and dataObjectId is the render fallback image.
         let pages = await bookPages(bookObjectId);

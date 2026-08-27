@@ -4,6 +4,7 @@
 	"fields": [
 		{ "name": "sourceObjectId", "type": "string", "maxLength": 64 },
 		{ "name": "bookObjectId", "type": "string", "maxLength": 64 },
+		{ "name": "pb2BookObjectId", "type": "string", "maxLength": 64 },
 		{ "name": "workName", "type": "string", "maxLength": 256 },
 		{ "name": "sceneCount", "type": "int" },
 		{

@@ -929,4 +929,122 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
         await page.screenshot({ path: shot6d, fullPage: true });
         console.log('[6D] screenshot: ' + shot6d);
     });
+
+    // ── Task 4 — Issue 4: screenshot every ChapBook page (image + stanza) ────────
+    // Gate: CHAPBOOK_SD_TESTS=1 — requires SD at 192.168.1.39 and LLM at 192.168.1.42.
+    test('4: screenshot each rendered ChapBook page — image + stanza text on disk', async ({ page, request }) => {
+        if (!process.env.CHAPBOOK_SD_TESTS) {
+            test.skip('set CHAPBOOK_SD_TESTS=1 to run SD-dependent ChapBook tests');
+            return;
+        }
+        test.setTimeout(900000);
+
+        await restLoginShared(request);
+
+        // Seed 2 real winter poems (idempotent by name).
+        const SEEDS = ['winter_1', 'winter_2'];
+        const seedOids = [];
+        for (const base of SEEDS) {
+            const text = readCorpusPoem('winter', base);
+            const recName = 'chapbook-4-' + base;
+            const search = await request.post(REST + '/model/search', {
+                data: {
+                    schema: 'io.query', type: 'olio.cb.poem',
+                    fields: [
+                        { name: 'name', comparator: 'equals', value: recName },
+                        { name: 'organizationId', comparator: 'equals', value: readerOrgId }
+                    ],
+                    request: ['id', 'objectId', 'name'], recordCount: 1, cache: false
+                }
+            });
+            const sBody = await search.json().catch(() => null);
+            let oid = (sBody && sBody.results && sBody.results[0]) ? sBody.results[0].objectId : null;
+            if (!oid) {
+                const cResp = await request.post(REST + '/model', {
+                    data: {
+                        schema: 'olio.cb.poem',
+                        name: recName,
+                        title: base.replace('_', ' '),
+                        author: 'Stephen W. Cote',
+                        groupId: poemsGroupId,
+                        text: text
+                    }
+                });
+                const created = await cResp.json().catch(() => null);
+                oid = created && created.objectId;
+            }
+            expect(oid, 'failed to seed poem ' + recName).toBeTruthy();
+            seedOids.push(oid);
+        }
+
+        // Create a fresh ChapBook. maxLinesPerPage=20 keeps each natural stanza as one
+        // scene (winter poems have ≤10 lines per stanza) — ~4 scenes total, faster for SD.
+        const slug = '4-pager-' + Date.now().toString(36);
+        const createResp = await request.post(CB_REST + '/create', {
+            data: { slug, title: 'Page Screenshot ChapBook', poemObjectIds: seedOids, maxLinesPerPage: 20 }
+        });
+        expect(createResp.ok(), 'create failed: ' + createResp.status()).toBe(true);
+        const created = await createResp.json();
+        const bookOid = created && (created.objectId || created.bookObjectId);
+        expect(bookOid, 'no bookObjectId for screenshot test').toBeTruthy();
+
+        // Trigger SD render. Each scene = LLM landscape prompt + SD image (~2–3 min each).
+        const renderResp = await request.post(CB_REST + '/render/' + bookOid, { timeout: 600000 });
+        expect(renderResp.ok(), 'render failed: ' + renderResp.status() + ' ' + await renderResp.text()).toBe(true);
+        const renderResult = await renderResp.json();
+        expect(renderResult.rendered, 'at least 1 scene must have rendered').toBeGreaterThanOrEqual(1);
+        const renderedCount = renderResult.rendered;
+        console.log('[4] rendered ' + renderedCount + ' scenes');
+
+        // Open the ChapBook reader — it shows ALL pages in a scrollable list.
+        await request.get(REST + '/logout');
+        await loginAsSharedUser(page);
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookOid);
+
+        // Wait until at least one rendered MediaServlet image is visible in the reader.
+        await expect(
+            page.locator('img[src*="/media/"][src*="data.data"]').first(),
+            'no rendered image appeared in ChapBook reader'
+        ).toBeVisible({ timeout: 30000 });
+
+        // Allow remaining images to decode.
+        await page.waitForTimeout(2000);
+
+        // Each page is a div.rounded-lg.overflow-hidden.border (one per scene in the reader).
+        const pageEls = page.locator('div.rounded-lg.overflow-hidden.border');
+        const pageCount = await pageEls.count();
+        expect(pageCount, 'no page elements found in reader').toBeGreaterThan(0);
+        console.log('[4] found ' + pageCount + ' page element(s) in reader');
+
+        const outDir = path.resolve(SPEC_DIR, '../test-results');
+        fs.mkdirSync(outDir, { recursive: true });
+
+        // Screenshot each rendered page to disk.
+        const toShot = Math.min(pageCount, renderedCount);
+        for (let i = 0; i < toShot; i++) {
+            const el = pageEls.nth(i);
+            await el.scrollIntoViewIfNeeded();
+            await page.waitForTimeout(500); // allow image decode after scroll
+
+            const outPath = path.join(outDir, 'chapbook-page-' + (i + 1) + '.png');
+            await el.screenshot({ path: outPath });
+            console.log('[4] page ' + (i + 1) + ' screenshot: ' + outPath);
+
+            // Assert landscape image decoded (naturalWidth > 0 — not a broken <img>).
+            const img = el.locator('img[src*="/media/"]').first();
+            if (await img.count() > 0) {
+                const nw = await img.evaluate(el => el.naturalWidth).catch(() => 0);
+                expect(nw, 'page ' + (i + 1) + ' image did not decode (naturalWidth=0)').toBeGreaterThan(0);
+            }
+
+            // Assert stanza poem text is visible.
+            const textEl = el.locator('p').first();
+            const stanzaText = await textEl.textContent().catch(() => '');
+            expect(stanzaText.trim().length, 'page ' + (i + 1) + ' has no stanza text').toBeGreaterThan(0);
+            console.log('[4] page ' + (i + 1) + ' stanza preview: ' + stanzaText.trim().slice(0, 60));
+        }
+
+        await request.get(REST + '/logout');
+        console.log('[4] saved ' + toShot + ' page screenshot(s) to ' + outDir);
+    });
 });

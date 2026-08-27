@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio.picturebook;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -154,21 +155,54 @@ public class ChapBookUtil {
 	public static List<String> chunkPoem(String poemText, int maxLinesPerPage) {
 		List<String> chunks = new ArrayList<>();
 		if (poemText == null || poemText.isBlank()) return chunks;
-		// Split on one or more blank lines (blank = only whitespace)
-		String[] stanzas = poemText.split("(?m)^\\s*$\\n?");
-		for (String stanza : stanzas) {
-			String trimmed = stanza.trim();
-			if (trimmed.isEmpty()) continue;
-			String[] lines = trimmed.split("\\r?\\n");
-			if (lines.length <= maxLinesPerPage) {
-				chunks.add(trimmed);
-			} else {
-				// Further split by maxLinesPerPage
-				List<String> lineList = new ArrayList<>();
-				for (String line : lines) lineList.add(line);
-				for (int i = 0; i < lineList.size(); i += maxLinesPerPage) {
-					int end = Math.min(i + maxLinesPerPage, lineList.size());
-					chunks.add(String.join("\n", lineList.subList(i, end)));
+		// Split on one OR MORE consecutive blank lines — handles Tika's DOCX extraction
+		// where each paragraph ends with \n\n, producing single-line "stanzas".
+		String[] stanzas = poemText.split("(?m)(^\\s*$\\n?)+");
+		List<String> realStanzas = new ArrayList<>();
+		for (String s : stanzas) {
+			String trimmed = s.trim();
+			if (!trimmed.isEmpty()) realStanzas.add(trimmed);
+		}
+		if (realStanzas.isEmpty()) return chunks;
+
+		// Strip a leading header line of the form "Title  by Author  (year)" — the
+		// corpus format and Tika-extracted .docx headers both produce exactly this
+		// pattern as the first single-line chunk before the first real stanza.
+		// A poem whose opening line genuinely begins with "By" (e.g. "By moonlight pale")
+		// will NOT be stripped because " by " requires a preceding space.
+		if (!realStanzas.isEmpty()) {
+			String first = realStanzas.get(0);
+			if (!first.contains("\n") && first.toLowerCase().contains(" by ")) {
+				realStanzas.remove(0);
+			}
+		}
+		if (realStanzas.isEmpty()) return chunks;
+
+		// Detect the Tika "one paragraph = one line" artifact: if the majority of stanzas
+		// are single-line and there are at least 3 of them, treat them as bare lines and
+		// re-chunk by maxLinesPerPage rather than by stanza.
+		long singleLine = realStanzas.stream().filter(s -> !s.contains("\n")).count();
+		boolean linePerParagraph = realStanzas.size() >= 3 && singleLine * 2 > realStanzas.size();
+
+		if (linePerParagraph) {
+			// Flatten all single-line stanzas into one list and page by maxLinesPerPage
+			for (int i = 0; i < realStanzas.size(); i += maxLinesPerPage) {
+				int end = Math.min(i + maxLinesPerPage, realStanzas.size());
+				chunks.add(String.join("\n", realStanzas.subList(i, end)));
+			}
+		} else {
+			for (String stanza : realStanzas) {
+				String[] lines = stanza.split("\\r?\\n");
+				if (lines.length <= maxLinesPerPage) {
+					chunks.add(stanza);
+				} else {
+					// Further split long stanzas by maxLinesPerPage
+					List<String> lineList = new ArrayList<>();
+					for (String line : lines) lineList.add(line);
+					for (int i = 0; i < lineList.size(); i += maxLinesPerPage) {
+						int end = Math.min(i + maxLinesPerPage, lineList.size());
+						chunks.add(String.join("\n", lineList.subList(i, end)));
+					}
 				}
 			}
 		}
@@ -479,6 +513,63 @@ public class ChapBookUtil {
 			logger.warn("createChapBookScene: patch field error at index " + sceneIndex + ": " + e.getMessage());
 		}
 		return scene;
+	}
+
+	// ─────────────────────────────── ChapBook list / delete ───────────────────────────────
+
+	/**
+	 * List all {@code olio.pb.book} records with {@code bookType=CHAPBOOK} accessible to the user
+	 * within their organization.
+	 * <p>
+	 * Uses {@link PbBookUtil#bookRequest()} as the projection extended with
+	 * {@link OlioFieldNames#FIELD_PB_BOOK_TYPE} so clients can confirm the type. Sorted by name.
+	 *
+	 * @param user the acting user
+	 * @return list of matching book records (never null)
+	 */
+	public static List<BaseRecord> listChapBooks(BaseRecord user) {
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.field(OlioFieldNames.FIELD_PB_BOOK_TYPE, "CHAPBOOK");
+		// Build a projection that is a superset of bookRequest() plus bookType
+		String[] base = PbBookUtil.bookRequest();
+		List<String> req = new ArrayList<>(Arrays.asList(base));
+		if (!req.contains(OlioFieldNames.FIELD_PB_BOOK_TYPE)) {
+			req.add(OlioFieldNames.FIELD_PB_BOOK_TYPE);
+		}
+		q.setRequest(req.toArray(new String[0]));
+		q.setCache(false);
+		try {
+			q.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+			q.set(FieldNames.FIELD_ORDER, "ASCENDING");
+		} catch (Exception ignored) {}
+		org.cote.accountmanager.io.QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, q);
+		BaseRecord[] results = (qr != null) ? qr.getResults() : null;
+		return results != null ? Arrays.asList(results) : new ArrayList<>();
+	}
+
+	/**
+	 * Delete an {@code olio.pb.book} by objectId.
+	 * <p>
+	 * Verifies the book has {@code bookType=CHAPBOOK} before deleting — returns {@code false}
+	 * if the book is not found or is not a ChapBook (callers should 404/403 accordingly).
+	 *
+	 * @param user         the acting user
+	 * @param bookObjectId objectId of the book to delete
+	 * @return true if deleted, false if not found or not a CHAPBOOK
+	 */
+	public static boolean deleteChapBook(BaseRecord user, String bookObjectId) {
+		if (user == null || bookObjectId == null || bookObjectId.isBlank()) return false;
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		BaseRecord book = PbBookUtil.readBook(user, bookObjectId, orgId);
+		if (book == null) return false;
+		String bookType = book.get(OlioFieldNames.FIELD_PB_BOOK_TYPE);
+		if (bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
+			logger.warn("deleteChapBook: book {} is not a CHAPBOOK (type={})", bookObjectId, bookType);
+			return false;
+		}
+		return IOSystem.getActiveContext().getAccessPoint().delete(user, book);
 	}
 
 	// ─────────────────────────────── ChapBook rendering ───────────────────────────────
