@@ -2796,6 +2796,11 @@ public class PictureBookUtil {
     @SuppressWarnings("unchecked")
     private static BaseRecord createCharPerson(BaseRecord user, BaseRecord chatConfig, Map<String, Object> charData, BaseRecord charsGroup, String genre,
             List<String> failedApparelOut, List<String> failedStatisticsOut, String dataPath) {
+        return createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparelOut, failedStatisticsOut, dataPath, null);
+    }
+
+    private static BaseRecord createCharPerson(BaseRecord user, BaseRecord chatConfig, Map<String, Object> charData, BaseRecord charsGroup, String genre,
+            List<String> failedApparelOut, List<String> failedStatisticsOut, String dataPath, OlioContext octxHint) {
         String name = (String) charData.get("name");
         if (name == null || name.isEmpty()) return null;
 
@@ -2827,10 +2832,16 @@ public class PictureBookUtil {
         // world's shared color library (ctx.getUniverse().colors) rather than a per-owner fallback group.
         OlioContext octx = null;
         if (dataPath != null && !dataPath.isEmpty()) {
-            // KI-30: tolerate an OlioContext init failure (e.g. an un-seeded, empty-population world
-            // whose initialize() NPEs and rethrows a RuntimeException) — degrade to the sparse fallback
-            // rather than letting it escape as a 500. See safeGetOlioContext().
-            octx = safeGetOlioContext(user, dataPath, name);
+            if (octxHint != null) {
+                // Use the caller-supplied book OlioContext (PB2 path) — avoids opening
+                // the default world, which may not exist for a PB2-only user.
+                octx = octxHint;
+            } else {
+                // KI-30: tolerate an OlioContext init failure (e.g. an un-seeded, empty-population world
+                // whose initialize() NPEs and rethrows a RuntimeException) — degrade to the sparse fallback
+                // rather than letting it escape as a 500. See safeGetOlioContext().
+                octx = safeGetOlioContext(user, dataPath, name);
+            }
             if (octx == null) {
                 logger.warn("OlioContext unavailable (dataPath=" + dataPath + ") for "
                         + name + " — random baseline + shared-library colors unavailable");
@@ -3888,7 +3899,7 @@ public class PictureBookUtil {
                     }
                 }
             }
-            BaseRecord cp = createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath);
+            BaseRecord cp = createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath, pb2OlioCtx);
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
                 persistCharacterSceneAttributes(user, cp, charSceneIndices.get(cname), reducedDescription);
@@ -3924,8 +3935,8 @@ public class PictureBookUtil {
             try { meta.set("failedExtractions", failedExtractions); } catch (Exception e) { logger.warn("Failed to record failedExtractions: " + e.getMessage()); }
         }
         try { meta.set("compositionContext", ""); } catch (Exception e) { logger.warn("Failed to default compositionContext: " + e.getMessage()); }
-        // Override bookObjectId to point at the PB2 book rather than the PB1 group
-        try { meta.set("bookObjectId", pb2BookObjectId); } catch (Exception e) { logger.warn("Failed to set pb2 bookObjectId on meta: " + e.getMessage()); }
+        // Store PB2 book objectId separately — bookObjectId remains the book GROUP objectId (needed for delete/reset)
+        try { meta.set("pb2BookObjectId", pb2BookObjectId); } catch (Exception e) { logger.warn("Failed to set pb2BookObjectId on meta: " + e.getMessage()); }
         saveMeta(user, bookGroupPath, meta);
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         OllamaModelUtil.unloadAll();
@@ -5212,10 +5223,49 @@ public class PictureBookUtil {
      */
     public static boolean reset(BaseRecord user, String bookObjectId) {
         BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+
+        // If not found as a data.group objectId, try treating it as an olio.pb.book objectId
+        String pb2BookToDelete = null;
+        if (bookGroup == null) {
+            long orgId2 = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+            Query pbQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
+            pbQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId2);
+            pbQ.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_SLUG });
+            BaseRecord pb2Book = IOSystem.getActiveContext().getAccessPoint().find(user, pbQ);
+            if (pb2Book != null) {
+                pb2BookToDelete = bookObjectId;
+                String slug = pb2Book.get(OlioFieldNames.FIELD_PB_SLUG);
+                if (slug != null && !slug.isBlank()) {
+                    String bookPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + slug;
+                    bookGroup = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                        ModelNames.MODEL_GROUP, bookPath, GroupEnumType.DATA.toString(), orgId2);
+                }
+            }
+        }
+
         if (bookGroup == null) throw new PictureBookException(404, "Book not found");
 
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
         boolean ok = true;
+
+        // Read meta before deleting to capture pb2BookObjectId for olio.pb.book cleanup
+        if (pb2BookToDelete == null) {
+            BaseRecord metaForPb2 = loadMeta(user, bookGroupPath);
+            if (metaForPb2 != null) {
+                try {
+                    String metaText = metaForPb2.get(FieldNames.FIELD_TEXT);
+                    if (metaText != null) {
+                        Map<String, Object> metaMap = JSONUtil.getMap(metaText.getBytes(), String.class, Object.class);
+                        if (metaMap != null) {
+                            Object pb2ObjIdObj = metaMap.get("pb2BookObjectId");
+                            if (pb2ObjIdObj instanceof String && !((String) pb2ObjIdObj).isBlank()) {
+                                pb2BookToDelete = (String) pb2ObjIdObj;
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
 
         // Recursively delete sub-groups (Scenes/, Characters/) and everything nested under them
         for (String sub : new String[]{"Scenes", "Characters"}) {
@@ -5249,6 +5299,21 @@ public class PictureBookUtil {
         } catch (Exception e) {
             logger.warn("Failed to delete book group: " + e.getMessage());
             ok = false;
+        }
+
+        // Delete the olio.pb.book record when this is (or was) a PB2 book
+        if (pb2BookToDelete != null) {
+            try {
+                long orgId3 = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+                Query pbDelQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, pb2BookToDelete);
+                pbDelQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId3);
+                BaseRecord pb2BookRec = IOSystem.getActiveContext().getAccessPoint().find(user, pbDelQ);
+                if (pb2BookRec != null) {
+                    IOSystem.getActiveContext().getAccessPoint().delete(user, pb2BookRec);
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to delete olio.pb.book record: " + e.getMessage());
+            }
         }
 
         return ok;

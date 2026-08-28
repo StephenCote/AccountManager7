@@ -9,6 +9,7 @@ import {
     resolveImageUrl, resolveAllImageUrls
 } from './sceneExtractor.js';
 import { openCharacterManager, initCharacterManager, renderCharacterManagerContent } from './pictureBookCharacters.js';
+import { listPb2Books } from './pictureBookWorkflow.js';
 import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
@@ -1273,11 +1274,25 @@ function buildActions() {
                     try {
                         pb2 = await createChapBookRecord(slug, bookName || workName);
                     } catch (slugErr) {
-                        // Likely a slug conflict (409) — append timestamp suffix and retry once
-                        slug = generateSlug(bookName || workName) + '-' + Date.now().toString(36).slice(-4);
-                        pb2 = await createChapBookRecord(slug, bookName || workName);
+                        // Only handle 409 slug conflicts — any other error propagates.
+                        if (!slugErr.message || !slugErr.message.includes('409')) throw slugErr;
+                        // Before creating a second world with a new slug, check whether the
+                        // user already owns a book with this slug (e.g. a previous partial run
+                        // that created the book+world but failed on character creation). If so,
+                        // reuse it — creating a new slug would litter an additional world.
+                        let existingBooks = [];
+                        try { existingBooks = await listPb2Books(); } catch (_) {}
+                        let existing = existingBooks.find(b => b.slug === slug);
+                        if (existing) {
+                            pb2 = existing;
+                        } else {
+                            // Slug belongs to another user — pick a unique suffix.
+                            slug = generateSlug(bookName || workName) + '-' + Date.now().toString(36).slice(-4);
+                            pb2 = await createChapBookRecord(slug, bookName || workName);
+                        }
                     }
-                    let pb2BookObjectId = pb2 ? pb2.bookObjectId : null;
+                    // createChapBookRecord returns { bookObjectId }; listPb2Books returns { objectId }
+                    let pb2BookObjectId = pb2 ? (pb2.bookObjectId || pb2.objectId) : null;
 
                     let meta = await createFromScenes(
                         workObjectId, chatConfigName(), genre || null,

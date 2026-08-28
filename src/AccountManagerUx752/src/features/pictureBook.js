@@ -114,6 +114,20 @@ async function deleteBookFromList(book) {
     }
 }
 
+async function deletePb2BookFromList(b) {
+    if (!b || !b.objectId) return;
+    if (!confirm('Delete "' + (b.name || 'this book') + '"? Scenes, characters, and images will be removed.')) return;
+    try {
+        // Backend reset() accepts either data.group objectId or olio.pb.book objectId
+        await resetPictureBook(b.objectId);
+        page.toast('success', 'Picture book deleted');
+        am7client.clearCache(0, true);
+        await loadPb2Books();
+    } catch (e) {
+        page.toast('error', 'Failed to delete');
+    }
+}
+
 var workSelectorView = {
     oninit: function () { loadExistingBooks(); loadPb2Books(); },
     view: function () {
@@ -143,7 +157,17 @@ var workSelectorView = {
                                         b.slug + (statusLabel ? ' · ' + statusLabel : ''))
                                 ])
                             ]),
-                            m('span', { class: 'material-symbols-outlined text-gray-400' }, 'chevron_right')
+                            m('div', { class: 'flex items-center gap-1' }, [
+                                m('button', {
+                                    class: 'text-red-400 hover:text-red-600 p-1',
+                                    title: 'Delete picture book',
+                                    onclick: function (e) {
+                                        e.stopPropagation();
+                                        deletePb2BookFromList(b);
+                                    }
+                                }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')),
+                                m('span', { class: 'material-symbols-outlined text-gray-400' }, 'chevron_right')
+                            ])
                         ]);
                     })
                 )
@@ -742,6 +766,11 @@ async function loadPb2Pages(pb2ObjId) {
         am7olio.setCurrentBook(bookFull || null);
         if (bookFull) {
             pb2BookName = bookFull.name || 'Untitled';
+        } else {
+            // Fallback: look for this book in the already-loaded pb2Books list
+            let known = pb2Books.find(function (b) { return b.objectId === pb2ObjId; });
+            if (known) pb2BookName = known.name || 'Untitled';
+            else pb2BookName = 'Untitled';
         }
 
         let pages = await bookPages(pb2ObjId);
@@ -839,7 +868,7 @@ function renderPb2Header() {
         }, m('span', { class: 'material-symbols-outlined' }, 'chevron_left')),
 
         m('div', { class: 'flex-1 text-center' }, [
-            m('span', { class: 'font-semibold text-sm' }, pb2BookName),
+            m('span', { class: 'font-semibold text-sm' }, pb2BookName && pb2BookName !== 'Loading...' ? pb2BookName : 'Picture Book'),
             m('span', { class: 'text-gray-400 text-xs ml-2' }, pageLabel)
         ]),
 
@@ -847,7 +876,30 @@ function renderPb2Header() {
             class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30',
             disabled: pb2CurrentPage >= total - 1,
             onclick: function () { pb2GoToPage(pb2CurrentPage + 1); }
-        }, m('span', { class: 'material-symbols-outlined' }, 'chevron_right'))
+        }, m('span', { class: 'material-symbols-outlined' }, 'chevron_right')),
+
+        // Open workflow canvas — always visible for PB2 books
+        pb2BookObjectId ? m('button', {
+            class: 'text-gray-500 hover:text-purple-600',
+            title: 'Open Workflow Canvas',
+            onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/workflow'); }
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'account_tree')) : null,
+
+        // Delete button — always available
+        pb2BookObjectId ? m('button', {
+            class: 'text-red-400 hover:text-red-600',
+            title: 'Delete picture book',
+            onclick: function () {
+                if (!confirm('Delete this picture book? Scenes, characters, and images will be removed.')) return;
+                resetPictureBook(pb2BookObjectId).then(function () {
+                    page.toast('success', 'Picture book deleted');
+                    am7client.clearCache(0, true);
+                    m.route.set('/picture-book');
+                }).catch(function () {
+                    page.toast('error', 'Failed to delete');
+                });
+            }
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')) : null
     ]);
 }
 
@@ -889,8 +941,15 @@ var pb2PageReaderView = {
                     ? m('div', { class: 'text-red-500 text-sm text-center py-12' }, pb2PageError)
                     : pb2Pages.length === 0
                         ? m('div', { class: 'text-center py-12' }, [
-                            m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 mb-4' }, 'auto_stories'),
-                            m('div', { class: 'text-sm text-gray-500' }, 'No scenes in this book yet.')
+                            m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 block mb-4' }, 'auto_stories'),
+                            m('div', { class: 'text-sm text-gray-500 mb-4' }, 'No scenes in this book yet.'),
+                            pb2BookObjectId ? m('button', {
+                                class: 'px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm',
+                                onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/workflow'); }
+                            }, [
+                                m('span', { class: 'material-symbols-outlined align-middle mr-1 text-sm' }, 'account_tree'),
+                                'Open Workflow Canvas'
+                            ]) : null
                         ])
                         : m('div', { class: 'flex-1 overflow-y-auto max-w-3xl mx-auto w-full' }, [
                             pb2CurrentPage === 0 ? renderPb2Cover() : renderPb2ScenePage(),

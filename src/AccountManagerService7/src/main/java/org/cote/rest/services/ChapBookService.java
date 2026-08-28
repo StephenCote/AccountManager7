@@ -33,6 +33,7 @@ import jakarta.annotation.security.RolesAllowed;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -514,6 +515,68 @@ public class ChapBookService {
         }
         sb.append("}");
         return Response.status(200).entity(sb.toString()).build();
+    }
+
+    // ─────────────────────────────── ChapBook list / delete ───────────────────────────────
+
+    /**
+     * GET /books
+     * List {@code olio.pb.book} records with {@code bookType=CHAPBOOK} accessible to the user.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/books")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listBooks(@Context HttpServletRequest request) {
+        OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Not authenticated");
+        try {
+            List<BaseRecord> books = ChapBookUtil.listChapBooks(user);
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < books.size(); i++) {
+                if (i > 0) sb.append(",");
+                sb.append(books.get(i).toFullString());
+            }
+            sb.append("]");
+            return Response.status(200).entity(sb.toString()).build();
+        } catch (Exception e) {
+            logger.error("listBooks failed: " + e.getMessage(), e);
+            return errorResponse(500, "Failed to list chapbooks: " + e.getMessage());
+        }
+    }
+
+    /**
+     * DELETE /{bookObjectId}
+     * Delete a {@code olio.pb.book} with {@code bookType=CHAPBOOK} by objectId.
+     * Returns 404 if the book does not exist, 403 if it is not a CHAPBOOK.
+     */
+    @RolesAllowed({"admin", "user"})
+    @DELETE
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response deleteChapBook(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Not authenticated");
+        if (bookObjectId == null || bookObjectId.isBlank()) return errorResponse(400, "bookObjectId is required");
+        try {
+            // readBook is used internally by deleteChapBook; a null return means not found
+            long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+            BaseRecord book = org.cote.accountmanager.olio.picturebook.PbBookUtil.readBook(user, bookObjectId, orgId);
+            if (book == null) return errorResponse(404, "ChapBook not found: " + bookObjectId);
+            String bookType = book.get(org.cote.accountmanager.olio.schema.OlioFieldNames.FIELD_PB_BOOK_TYPE);
+            if (bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
+                return errorResponse(403, "Book " + bookObjectId + " is not a CHAPBOOK");
+            }
+            boolean deleted = ChapBookUtil.deleteChapBook(user, bookObjectId);
+            if (!deleted) return errorResponse(500, "Failed to delete chapbook: " + bookObjectId);
+            return Response.status(200).entity("{\"deleted\":true}").build();
+        } catch (Exception e) {
+            logger.error("deleteChapBook failed for " + bookObjectId + ": " + e.getMessage(), e);
+            return errorResponse(500, "Failed to delete chapbook: " + e.getMessage());
+        }
     }
 
     // ─────────────────────────────── Poem sets ───────────────────────────────
