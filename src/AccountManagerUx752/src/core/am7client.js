@@ -240,6 +240,16 @@ import { cacheDb } from './cacheDb.js';
 		return del(sModelSvc + "/" + sType + "/" + sObjId,fH);
 	}
 
+	function deleteWorld(worldObjectId) {
+		delete cache['olio.world'];
+		delete cache["COUNT"];
+		if (_cacheDbReady) {
+			cacheDb.removeByType('olio.world');
+			cacheDb.removeByType("COUNT");
+		}
+		return del(sBase + "/olio/world/" + worldObjectId);
+	}
+
 	function patchObject(sType, oObj, fH){
 	   delete cache[sType];
 	   delete cache["COUNT"];
@@ -1339,6 +1349,7 @@ import { cacheDb } from './cacheDb.js';
 		create,
 		updateBulk : updateBulk,
 		delete : deleteObject,
+		deleteWorld,
 		cache : getCache,
 		getCache: getFromCache,
 		principal : getPrincipal,

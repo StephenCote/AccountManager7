@@ -249,7 +249,9 @@ import { am7model } from './model.js';
     }
     let worldView = {
         "Population": "olio.charPerson",
-        "Characters": "olio.charPerson"
+        "Characters": "olio.charPerson",
+        "Universes": "olio.world",
+        "Worlds": "olio.world"
     }
     function getTypeByPath(sPath) {
         let subPath = sPath.substring(sPath.lastIndexOf("/") + 1);

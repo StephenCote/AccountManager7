@@ -80,6 +80,31 @@ describe('am7view field rendering', () => {
     });
 });
 
+describe('am7view getTypeByPath / typeByPath (breadcrumb type resolution)', () => {
+    // Verifies the fix: worldView["Universes"] = "olio.world" was added so that
+    // clicking "Universes" in a breadcrumb dropdown navigates to an olio.world list,
+    // not data.data (which was the pre-fix behaviour when getTypeByPath returned undefined).
+    it('should return olio.world for "Universes" path segment', () => {
+        expect(am7view.typeByPath('Universes')).toBe('olio.world');
+    });
+
+    it('should return olio.world for "Worlds" path segment', () => {
+        expect(am7view.typeByPath('Worlds')).toBe('olio.world');
+    });
+
+    it('should return olio.charPerson for "Population" path segment', () => {
+        expect(am7view.typeByPath('Population')).toBe('olio.charPerson');
+    });
+
+    it('should return olio.charPerson for "Characters" path segment', () => {
+        expect(am7view.typeByPath('Characters')).toBe('olio.charPerson');
+    });
+
+    it('should return undefined for an unknown path segment (falls back to data.data in breadcrumb)', () => {
+        expect(am7view.typeByPath('SomethingUnknownXyz123')).toBeUndefined();
+    });
+});
+
 describe('am7view showField', () => {
     it('should show field with no required roles', () => {
         let ref = {};

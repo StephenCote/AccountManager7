@@ -370,6 +370,71 @@ public class WorldUtil {
 	}
 	
 
+	/**
+	 * Delete a world's container group tree (all sub-groups and their contents).
+	 * Mirrors PictureBookUtil.deleteGroupRecursive but lives in the olio package
+	 * to avoid cross-package cyclic calls from WorldUtil.
+	 */
+	private static void deleteGroupTree(BaseRecord user, long groupId, long orgId) {
+		Query subQ = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, groupId);
+		subQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		BaseRecord[] subGroups = IOSystem.getActiveContext().getSearch().findRecords(subQ);
+		if (subGroups != null) {
+			for (BaseRecord sg : subGroups) {
+				deleteGroupTree(user, (long) sg.get(FieldNames.FIELD_ID), orgId);
+				try {
+					IOSystem.getActiveContext().getAccessPoint().delete(user, sg);
+				} catch (Exception e) {
+					logger.warn("deleteGroupTree: failed to delete group " + sg.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+				}
+			}
+		}
+	}
+
+	/**
+	 * Full wipe of an {@code olio.world} record: cleans all data records in the world's
+	 * sub-groups (via {@link #cleanupWorld}), deletes the world's own container group tree,
+	 * then deletes the world record itself.
+	 *
+	 * @param user  the acting user (must own the world)
+	 * @param world a world record — must be populated at least 2 levels deep
+	 *              (call {@link IOSystem#getActiveContext()}.getReader().populate(world, 2) first)
+	 * @return true if the world record was successfully deleted
+	 */
+	public static boolean deleteWorld(BaseRecord user, BaseRecord world) {
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+
+		// 1. Delete all data records in the world's sub-groups
+		cleanupWorld(user, world);
+
+		// 2. Find the world's OWN container group (child of the "Worlds/" parent, named by world.name)
+		long worldsGroupId = ((Number) world.get(FieldNames.FIELD_GROUP_ID)).longValue();
+		String worldName = world.get(FieldNames.FIELD_NAME);
+		if (worldsGroupId > 0 && worldName != null) {
+			Query cgQ = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, worldsGroupId);
+			cgQ.field(FieldNames.FIELD_NAME, worldName);
+			cgQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			BaseRecord worldContainer = IOSystem.getActiveContext().getAccessPoint().find(user, cgQ);
+			if (worldContainer != null) {
+				long containerId = ((Number) worldContainer.get(FieldNames.FIELD_ID)).longValue();
+				deleteGroupTree(user, containerId, orgId);
+				try {
+					IOSystem.getActiveContext().getAccessPoint().delete(user, worldContainer);
+				} catch (Exception e) {
+					logger.warn("deleteWorld: failed to delete world container group: " + e.getMessage());
+				}
+			}
+		}
+
+		// 3. Delete the world record itself
+		try {
+			return IOSystem.getActiveContext().getAccessPoint().delete(user, world);
+		} catch (Exception e) {
+			logger.warn("deleteWorld: failed to delete world record: " + e.getMessage());
+			return false;
+		}
+	}
+
 	public static BaseRecord getLocationGroup(BaseRecord user, BaseRecord world, BaseRecord location, String name) {
 		List<BaseRecord> grps = getWorldGroups(user, world);
 		BaseRecord ogrp = null;

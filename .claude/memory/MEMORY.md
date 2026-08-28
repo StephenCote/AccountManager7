@@ -23,6 +23,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-no-irreversibility-ceremony` -- Don't build phased ceremony (pre-flight tests, write-but-don't-register steps) around schema decisions being irreversible — the test DB is a resettable container
 - `feedback-no-rest-mocking` -- Never mock the REST/servlet layer (HttpServletRequest, ServletContext, UserPrincipal) to test business logic in-process — test through Objects7 directly or the real Ux/REST stack
 - `feedback-objects7-skiptest` -- Objects7 POM skips tests by default; always pass -DskipTests=false or the run silently no-ops
+- `feedback-olio-world-principal` -- olio.world Books-universe records are owned by the olio principal, not the request user — use Factory.findUser(OlioContext.OLIO_USER_NAME) for AccessPoint calls
 - `feedback-own-it-no-defending` -- When something is wrong in code I changed, say so plainly and fix it — no self-defense, no lengthy justification, no attributing to agents
 - `feedback-patch-no-cascade` -- AccessPoint.update()/PATCH only writes fields at the model level you called it on — it does not walk down and patch foreign/nested objects, with a few named exceptions
 - `feedback-pb-duplicate-world-retry` -- PictureBook 409 retry was creating duplicate worlds — narrowed catch + check existing books before forking new slug
@@ -64,6 +65,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `project-pb6c-phase-status` -- Phase 6c (SD config persistability) complete: S1-S6 all done, all tests green
 - `project-picturebook-backend-redo` -- PictureBook feature backend persistence redo — charPerson/portrait/landscape not saved, reference images unused
 - `project-service-testing-docker` -- Service7/Tomcat testing via Docker — database mapping, clean-env procedure, hot-deploy steps, Playwright command
+- `project-world-delete-endpoint` -- DELETE /rest/olio/world/{worldObjectId} — full world wipe; uses olio principal; PB2 book cleanup falls back to direct delete if no PB1 group
 - `testing-db-reset` -- Database reset rules: am7db and am7test resettable; am72db NEVER touched at all — no DDL, no migrations, no SQL
 - `testing-olio-org-seed` -- Olio seed data loads per-organization and takes minutes on first use; reuse a single stable test org rather than random or multiple org names
 - `tomcat-eclipse-redeploy` -- Tomcat runs inside Eclipse's managed server; frequent backend Java saves can hang it on redeploy

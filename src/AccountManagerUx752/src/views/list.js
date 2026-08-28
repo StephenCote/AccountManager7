@@ -184,6 +184,12 @@ function newListControl() {
                             if (r) page.toast('success', 'Removed member');
                             else page.toast('error', 'Failed to remove member');
                         }));
+                    } else if (getType(obj) === 'olio.world') {
+                        // World delete: full wipe via dedicated endpoint (cleans all sub-group data)
+                        aP.push(am7client.deleteWorld(obj.objectId).then(function (r) {
+                            if (r && r.deleted !== false) page.toast('success', 'World deleted');
+                            else page.toast('error', 'Failed to delete world');
+                        }));
                     } else {
                         aP.push(page.deleteObject(getType(obj), obj.objectId).then(function (r) {
                             if (r) page.toast('success', 'Deleted object');

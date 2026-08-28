@@ -48,6 +48,11 @@ import jakarta.annotation.security.RolesAllowed;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.cote.accountmanager.olio.WorldUtil;
+import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
+import org.cote.accountmanager.olio.picturebook.PictureBookException;
+
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -674,6 +679,70 @@ public class OlioService {
 			logger.warn("getOrCreateSettingLandscape failed: " + e.getMessage());
 			return null;
 		}
+	}
+
+	@DELETE
+	@Path("/world/{worldObjectId}")
+	@RolesAllowed({"user"})
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response deleteWorld(
+			@PathParam("worldObjectId") String worldObjectId,
+			@Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		if (user == null) return Response.status(401).build();
+
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+
+		// Find the world record
+		Query wq = QueryUtil.createQuery(OlioModelNames.MODEL_WORLD, FieldNames.FIELD_OBJECT_ID, worldObjectId);
+		wq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		BaseRecord world = IOSystem.getActiveContext().getAccessPoint().find(user, wq);
+		if (world == null) return Response.status(404).entity("{\"error\":\"World not found\"}").build();
+
+		// Populate 2 levels deep for cleanupWorld sub-group IDs
+		IOSystem.getActiveContext().getReader().populate(world, 2);
+
+		// Resolve the olio principal upfront — PB2 book worlds and olio.pb.book records are owned
+		// by the olio user (not the request user). The request user's access was verified above
+		// (accessPoint.find succeeded = canRead passed), so we elevate for the actual wipe.
+		BaseRecord olioUser = null;
+		try {
+			olioUser = IOSystem.getActiveContext().getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		} catch (Exception e) {
+			logger.warn("deleteWorld: could not resolve olio principal: " + e.getMessage());
+		}
+		BaseRecord deleteAs = (olioUser != null) ? olioUser : user;
+
+		// For Books universe worlds: also wipe the associated PB2 book record and book group.
+		// The olio.pb.book is owned by the olio principal (not the request user), so the query
+		// must NOT filter by ownerId — slug + orgId is the unique constraint on olio.pb.book.
+		try {
+			String worldName = world.get(FieldNames.FIELD_NAME);
+			Query pbQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SLUG, worldName);
+			pbQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			pbQ.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_SLUG });
+			BaseRecord pb2Book = IOSystem.getActiveContext().getAccessPoint().find(user, pbQ);
+			if (pb2Book != null) {
+				String pb2BookOid = pb2Book.get(FieldNames.FIELD_OBJECT_ID);
+				try {
+					PictureBookUtil.reset(user, pb2BookOid);
+				} catch (Exception resetEx) {
+					// reset throws 404 when the PB1 book group (~/Data/PictureBooks/{slug}) does not
+					// exist — this is expected for pure PB2 books created via POST /chapter with no
+					// PB1 migration. Fall back: delete the olio.pb.book record directly via the olio
+					// principal (which owns it).
+					logger.warn("deleteWorld: PictureBookUtil.reset failed (" + resetEx.getMessage()
+						+ ") — deleting olio.pb.book directly via olio principal");
+					IOSystem.getActiveContext().getAccessPoint().delete(deleteAs, pb2Book);
+				}
+			}
+		} catch (Exception e) {
+			logger.warn("deleteWorld: PB2 book cleanup failed (non-fatal): " + e.getMessage());
+		}
+
+		// Full world wipe: data records + group tree + world record.
+		boolean deleted = WorldUtil.deleteWorld(deleteAs, world);
+		return Response.ok("{\"deleted\":" + deleted + "}").build();
 	}
 
 }
