@@ -5,7 +5,7 @@
 	"label": "ISO 42001 Analysis Profile",
 	"description": "A named, reusable bundle of statistics/scoring thresholds (the ScoringConfig knobs) applied to a test run. A campaign (testConfig) references one profile that applies to every rule by default; a rule may reference its own to override. Defaults reproduce iso42001.md §4.3/§4.4 exactly.",
 	"dedicatedParticipation": true,
-	"constraints": ["name, groupId, organizationId"],
+
 	"access": {
 		"roles": {
 			"create": ["ISO42001Testers"],

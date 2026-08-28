@@ -10,7 +10,7 @@
 	"icon": "menu_book",
 	"label": "Poem",
 	"group": "ChapBook",
-	"constraints": ["name, groupId, organizationId"],
+
 	"description": "A poem for ChapBook: stores the poem text (via data.directory's content/text field from data.note likeInherits), plus LLM-extracted theme/mood/keywords.",
 	"fields": [
 		{

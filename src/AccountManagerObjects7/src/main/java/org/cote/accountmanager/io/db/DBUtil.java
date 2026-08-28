@@ -509,7 +509,7 @@ $$;""";
 		for(String s : coll) {
 			FieldSchema fs = schema.getFieldSchema(s);
 			if(fs == null) {
-				logger.error("Column does not exist: '" + s + "'");
+				logger.error(schema.getName() + " Column does not exist: '" + s + "'");
 				notIndexable = true;
 			}
 			else {
@@ -628,7 +628,7 @@ $$;""";
 		List<String> hints = RecordUtil.getHints(schema);
 		for(String ic : hints) {
 			if(idxSet.contains(ic)) {
-				logger.error("Index collision: (" + ic + ")");
+				logger.error(schema.getName() + " Index collision: (" + ic + ")");
 				continue;
 			}
 			String idx = generateIndex(baseSchema, schema, ic, false, idxCounter++);

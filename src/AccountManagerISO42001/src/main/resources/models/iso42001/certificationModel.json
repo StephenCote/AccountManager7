@@ -5,7 +5,7 @@
 	"label": "ISO 42001 Certification",
 	"description": "Digital certification of an ISO 42001 compliance report. Contains the signer's signature over the report hash.",
 	"dedicatedParticipation": true,
-	"constraints": ["name, groupId, organizationId"],
+
 	"access": {
 		"roles": {
 			"create": ["ISO42001Certifiers"],

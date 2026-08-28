@@ -3,7 +3,7 @@
 	"inherits": ["data.directory"],
 	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
 	"group": "SD Config",
-	"constraints": ["name, groupId, organizationId"],
+
 	"hints": ["name"],
 	"description": "Named, reusable SD generation config. Lives in a per-user or org-shared group. The 'configOverride' field on olio.pb.node remains a sparse JSON string (see PictureBook2Plan.md §6c.3.2); only *named*, reusable configs become records.",
 	"fields": [

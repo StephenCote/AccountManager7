@@ -4,7 +4,7 @@
 	"icon": "approval",
 	"label": "ISO 42001 Certification Request",
 	"description": "Request for digital signature certification of an ISO 42001 report. Follows the AM7 access request workflow.",
-	"constraints": ["name, groupId, organizationId"],
+
 	"access": {
 		"roles": {
 			"create": ["ISO42001Reporters"],
