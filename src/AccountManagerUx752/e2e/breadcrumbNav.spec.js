@@ -6,7 +6,7 @@ import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
 import { setupTestUser, cleanupTestUser } from './helpers/api.js';
 
-const BASE_URL = 'https://localhost:8899';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 
 test.describe('Breadcrumb dropdown navigation', () => {
     let testInfo = {};

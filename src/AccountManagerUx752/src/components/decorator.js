@@ -279,7 +279,12 @@ function getHeadersView(ctl, map) {
         }
         let ico = "";
         if (h == "_icon" && mod && mod.icon) {
-            ico = m("span", { class: "material-icons-cm material-symbols-outlined" }, mod.icon);
+            let iconClickable = !ctl.pickerMode && !!ctl.toggleTypePicker;
+            ico = m("span", {
+                class: "material-icons-cm material-symbols-outlined" + (iconClickable ? " cursor-pointer" : ""),
+                title: iconClickable ? "Switch type" : undefined,
+                onclick: iconClickable ? function(e) { e.stopPropagation(); ctl.toggleTypePicker(); } : undefined
+            }, mod.icon);
         }
         else if (h == "_rowNum") {
             function selectHandler() {

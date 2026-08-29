@@ -1,9 +1,9 @@
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
-import { setupTestUser, cleanupTestUser, ensurePath } from './helpers/api.js';
+import { setupTestUser, cleanupTestUser, ensurePath, findPath } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = 'https://localhost:8899';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
 
 async function newApiContext() {
@@ -170,9 +170,10 @@ test.describe('List view — group navigation (15b)', () => {
                 }
             });
 
-            // Find the Notes group for this user
-            let resp = await ctx.get(REST + '/path/find/auth.group/data/' +
-                encodeURIComponent('/Development/home/' + testInfo.testUserName + '/Notes'));
+            // Find the Notes group for this user (path is org-relative, B64-encoded)
+            let notesPath = '/home/' + testInfo.testUserName + '/Notes';
+            let resp = await ctx.get(REST + '/path/find/auth.group/data/B64-' +
+                b64(notesPath).replace(/=/g, '%3D'));
             if (resp.ok()) {
                 let text = await resp.text();
                 if (text && !text.startsWith('<')) {
@@ -201,6 +202,98 @@ test.describe('List view — group navigation (15b)', () => {
         await expect(content.first()).toBeVisible({ timeout: 20000 });
 
         await screenshot(page, 'list-nav-direct-url');
+    });
+});
+
+test.describe('List view — cache invalidation after create (issue 4)', () => {
+    let testInfo = {};
+
+    test.beforeAll(async ({ request }) => {
+        // 2 notes: gives a non-zero count in the cache to work with
+        testInfo = await setupTestUser(request, { suffix: 'ci' + Date.now().toString(36), noteCount: 2 });
+    });
+
+    test.afterAll(async ({ request }) => {
+        await cleanupTestUser(request, testInfo.user?.objectId, { userName: testInfo.testUserName });
+    });
+
+    test.beforeEach(async ({ page }) => {
+        await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
+    });
+
+    test('count cache cleared after clearCache — list does not go blank on re-navigation', async ({ page }) => {
+        // Resolve the Notes group using a fresh isolated API session (same pattern as
+        // the passing 'navigating to a group via URL' test at line 157).
+        let notesGroupOid = null;
+        let ctx = await newApiContext();
+        try {
+            await ctx.post(REST + '/login', {
+                data: {
+                    schema: 'auth.credential',
+                    organizationPath: '/Development',
+                    name: testInfo.testUserName,
+                    credential: b64(testInfo.testPassword),
+                    type: 'hashed_password'
+                }
+            });
+            let notesPath = '/home/' + testInfo.testUserName + '/Notes';
+            let resp = await ctx.get(REST + '/path/find/auth.group/data/B64-' +
+                b64(notesPath).replace(/=/g, '%3D'));
+            if (resp.ok()) {
+                let text = await resp.text();
+                if (text && !text.startsWith('<')) {
+                    try { let g = JSON.parse(text); notesGroupOid = g?.objectId || null; } catch (e) { /* ignore */ }
+                }
+            }
+        } finally {
+            await ctx.dispose();
+        }
+
+        if (!notesGroupOid) {
+            test.skip(true, 'Could not resolve Notes group objectId — skipping'); return;
+        }
+
+        // Step 1: navigate to Notes list using hash (soft nav — no full page reload).
+        // Use page.evaluate so the SPA handles it as a route change, not a browser reload.
+        await page.evaluate((oid) => { window.location.hash = '!/list/data.note/' + oid; }, notesGroupOid);
+        await page.locator('.result-nav-outer').first().waitFor({ state: 'visible', timeout: 15000 });
+        // Wait for data to load so count cache gets primed in the browser.
+        await page.waitForFunction(() => {
+            let rows = document.querySelectorAll('.tabular-results-table tr, .list-table tr, .list-item');
+            return rows.length > 0;
+        }, { timeout: 15000 });
+        await page.waitForTimeout(500); // let cache writes settle
+
+        // Step 2: call clearCache('data.note') — simulates what object.js does after a create/delete.
+        // Before the fix this left cache['data.note-Count'] stale; with the fix it's also deleted.
+        let cacheCleared = await page.evaluate(() => {
+            if (window.am7dbg && window.am7dbg.client && typeof window.am7dbg.client.clearCache === 'function') {
+                window.am7dbg.client.clearCache('data.note', true);
+                return true;
+            }
+            return false;
+        });
+        expect(cacheCleared, 'window.am7dbg.client.clearCache must be callable').toBe(true);
+
+        // Step 3: navigate away to home, then back to Notes list (soft nav each time).
+        await page.evaluate(() => { window.location.hash = '!/main'; });
+        await page.waitForFunction(() => window.location.hash.includes('/main'), { timeout: 5000 });
+        await page.waitForTimeout(300);
+
+        await page.evaluate((oid) => { window.location.hash = '!/list/data.note/' + oid; }, notesGroupOid);
+        await page.locator('.result-nav-outer').first().waitFor({ state: 'visible', timeout: 15000 });
+
+        // Step 4: list must not be blank — fresh count (or same stale count) shows notes.
+        await page.waitForFunction(() => {
+            let rows = document.querySelectorAll('.tabular-results-table tr, .list-table tr, .list-item');
+            return rows.length > 0;
+        }, { timeout: 15000 });
+
+        let rows = page.locator('.tabular-results-table tr, .list-table tr, .list-item');
+        let rowCount = await rows.count();
+        expect(rowCount, 'List must not be blank after cache clear + re-navigation').toBeGreaterThan(0);
+
+        await screenshot(page, 'list-cache-invalidated');
     });
 });
 

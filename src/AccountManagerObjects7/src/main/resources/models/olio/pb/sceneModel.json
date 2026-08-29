@@ -91,6 +91,9 @@
 			"name": "imageObjectId",
 			"type": "string",
 			"description": "For ChapBook scenes: objectId of the data.data image produced by ChapBook render. Used by bookPageView as the dataObjectId fallback when sceneNode is null."
-		}
+		},
+		{ "name": "pageFont",      "type": "string", "maxLength": 128 },
+		{ "name": "pageBgColor",   "type": "string", "maxLength": 32  },
+		{ "name": "pageTextAlign", "type": "string", "maxLength": 16  }
 	]
 }

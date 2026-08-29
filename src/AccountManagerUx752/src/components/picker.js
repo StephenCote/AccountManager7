@@ -56,6 +56,23 @@ async function resolveLibraryContainer(type) {
 }
 
 /**
+ * Resolve the user's home directory (~/  root) — the parent of type-specific folders.
+ * pathForType('auth.group') has no sub-group → expands to the user's home directory path.
+ * Returns objectId or null.
+ */
+async function resolveHomeContainer() {
+    let homePath = am7view.pathForType('auth.group');
+    if (!homePath) return null;
+    try {
+        let grp = await page.findObject('auth.group', 'DATA', homePath);
+        return grp ? (grp.objectId || grp.id) : null;
+    } catch(e) {
+        console.warn('[Picker] resolveHomeContainer failed', e);
+        return null;
+    }
+}
+
+/**
  * Resolve the user's Favorites bucket.
  * Returns objectId or null.
  */
@@ -144,14 +161,15 @@ const ObjectPicker = {
             am7model.hasField(opts.type, "groupId") || am7model.isGroup(pmodel) || am7model.isParent(pmodel)
         );
 
-        // Resolve containers: user path, library, favorites
+        // Resolve containers: user path, library, favorites, home root
         let userContainerId = opts.userContainerId || null;
         let libraryContainerId = opts.libraryContainerId || null;
         let favoritesContainerId = opts.favoritesContainerId || null;
+        let homeContainerId = opts.homeContainerId || null;
         let containerId = opts.containerId || null;
 
         if (!containerId && usesContainer) {
-            // Resolve model default path (~/Colors), library (/Library/Colors), favorites
+            // Resolve model default path (~/Colors), library (/Library/Colors), favorites, home root
             if (!userContainerId) userContainerId = await resolveUserContainer(opts.type);
             if (!libraryContainerId) {
                 // Use explicit library path from field definition if provided
@@ -162,6 +180,7 @@ const ObjectPicker = {
                 if (!libraryContainerId) libraryContainerId = await resolveLibraryContainer(opts.type);
             }
             if (!favoritesContainerId) favoritesContainerId = await resolveFavoritesContainer();
+            if (!homeContainerId) homeContainerId = await resolveHomeContainer();
 
             // Start at user's own path; fall back to library; fall back to generic resolve
             containerId = userContainerId || libraryContainerId || await resolveContainer(opts.type);
@@ -176,6 +195,7 @@ const ObjectPicker = {
             type: opts.type,
             containerId: containerId,
             userContainerId: userContainerId,
+            homeContainerId: homeContainerId,
             libraryContainerId: libraryContainerId,
             favoritesContainerId: favoritesContainerId,
             onSelect: function(items) {

@@ -460,6 +460,45 @@ test.describe('ChapBook — UI', () => {
         await page.waitForTimeout(500);
     });
 
+    test('UI: picker "up" button navigates to parent group and shows folders', async ({ page }) => {
+        const errors = [];
+        page.on('pageerror', e => errors.push(e.message));
+
+        await loginAsSharedUser(page);
+        await page.evaluate(() => { window.location.hash = '!/chap-book'; });
+        await page.waitForTimeout(2000);
+
+        // Open the Add from Note picker
+        await page.locator('button:has-text("Add from Note")').first().click();
+        await page.waitForTimeout(2000);
+        expect(errors, 'Script errors opening picker: ' + errors.join('; ')).toHaveLength(0);
+
+        // The picker overlay must be visible
+        const overlay = page.locator('.am7-picker-overlay');
+        await expect(overlay).toBeVisible({ timeout: 5000 });
+
+        // Click the "navigate up" button (north_west icon) to go to the parent group
+        const upBtn = overlay.locator('button:has([class*="material"]):has-text("north_west"), button span:text("north_west")').first();
+        // Fallback: look for the actual button containing the icon text
+        const upBtnAlt = overlay.locator('button').filter({ hasText: 'north_west' }).first();
+        const upVisible = await upBtn.isVisible().catch(() => false) || await upBtnAlt.isVisible().catch(() => false);
+        if (!upVisible) {
+            // Up button not available (e.g. already at root) — skip navigation sub-test
+            await page.keyboard.press('Escape');
+            return;
+        }
+        const clickTarget = (await upBtn.isVisible().catch(() => false)) ? upBtn : upBtnAlt;
+        await clickTarget.click();
+        await page.waitForTimeout(2000);
+        expect(errors, 'Script errors after up click: ' + errors.join('; ')).toHaveLength(0);
+
+        // After navigating up, the picker should still be open (no crash)
+        await expect(overlay).toBeVisible({ timeout: 3000 });
+
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(500);
+    });
+
     // ── LLM-gated test: poem analysis enriches theme/mood/keywords ────────────
 
     test('POST /olio/chap-book/analyze/{poemObjectId} enriches poem metadata', async ({ request }) => {

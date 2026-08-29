@@ -14,7 +14,7 @@
 	</context-param>
 	<context-param>
 		<param-name>log4jConfiguration</param-name>
-		<param-value>WEB-INF/resource/AccountManagerServiceLogging.xml</param-value>
+		<param-value>classpath:log4j2.xml</param-value>
 	</context-param>
 	<context-param>
 		<param-name>amauthrole</param-name>
@@ -230,7 +230,7 @@
 	<context-param>
 		<description>Task API Key</description>
 		<param-name>task.api.key</param-name>
-		<param-value>eyJraWQiOiJhbTY6c3lzdGVtLnVzZXIubm9ybWFsOnB1YmxpYzpzdGV2ZSIsInN1YmplY3RUeXBlIjoic3lzdGVtLnVzZXIiLCJpc3N1ZXJVcm4iOiJhbTY6c3lzdGVtLnVzZXIubm9ybWFsOnB1YmxpYzphZG1pbiIsInNiaSI6dHJ1ZSwiemlwIjoiR1pJUCIsImFsZyI6IkhTMjU2In0.H4sIAAAAAAAA_4WQT0-EMBDFv4qZM10X6B_ojaMnN0ZPmz0UOqxdoUXaGlfjd7egJN68zbzOb-a9foKPLUjwAd8QMvCdm9CDPB6h6ToXbXjyOPv00kxmKx_wNWIi1mYj7wfjbho9Grs1yzicThm49oJduNPpDqt0rSgviWAlEtrzgtSIlJR537KiYizPeeKDe0G7AhW2nNeUEi10RyhnSFSvEyVqLfK-2JeFSICbz8qaDxWMswcVnhN5e4jtYLrFYlwNPF4nXKJek-VxFxd3GRif0oIaufyj76ybRzXIad0g1W8qowLIXLA9LWsuqgzwfVqEiotCrMIlmH-3_XzY1zeUspAAegEAAA.M1_LUd3jxJ6qxExsxXtogd_AL0-aJ0TdPerKO47czgY</param-value>
+		<param-value></param-value>
 	</context-param>
 	<context-param>
 		<description>Disable SSL Verification</description>

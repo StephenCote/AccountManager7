@@ -12,10 +12,55 @@ import { page } from '../core/pageClient.js';
 
 let crumbButtons;
 let showBreadcrumb = true; // default on for testing — Ux7 defaulted to false
-// Last successfully-built crumbs. While a newly-selected group's context is still
-// fetching ('pending'), we return these instead of [] so the bar doesn't blank on
-// each hop deeper; replaced once the fetch resolves and triggers a redraw.
-let lastRenderedCrumbs = [];
+// Last successfully-built path string. While a newly-selected group's context is
+// fetching ('pending'), we rebuild crumbs from this path so the bar doesn't blank
+// on each hop.
+let lastRenderedPath = null;
+let _prevFetchOid = null;
+
+// Compute route params needed for context fetching (shared by _fetchContext and modelBreadCrumb).
+function _routeParams() {
+    let type = m.route.param("type") || "data.data";
+    let modType = am7model.getModel(type);
+    type = (modType && modType.type) || type;
+    let objType = type;
+    if (m.route.get().match(/\/(list|new)\//gi)) objType = "auth.group";
+    let needsGroupContext = objType === "auth.group" || (modType && (am7model.isGroup(modType) || am7model.isParent(modType)));
+    return { type: type, modType: modType, objType: objType, needsGroupContext: needsGroupContext };
+}
+
+// Fetch group context for the current objectId if not already cached.
+// Must be called from lifecycle hooks (oninit/onupdate), NOT from view() — calling
+// m.request from inside view() makes Mithril's auto-redraw unreliable on route changes.
+function _fetchContext() {
+    let objectId = m.route.param("objectId");
+    if (!objectId || objectId === 'null' || objectId === 'undefined') return;
+    let p = _routeParams();
+    if (!p.needsGroupContext) return;
+    let model = page.context();
+    if (model.contextObjects[objectId] !== undefined) return; // already fetched or pending
+    model.contextObjects[objectId] = 'pending';
+    am7client.getFull(p.objType, objectId).then(function (v) {
+        if (v && (v.path || v.groupPath)) {
+            model.contextObjects[objectId] = v;
+            setTimeout(m.redraw, 0);
+        } else if (p.objType !== p.type) {
+            am7client.getFull(p.type, objectId).then(function (v2) {
+                model.contextObjects[objectId] = (v2 && v2 != null) ? v2 : null;
+                setTimeout(m.redraw, 0);
+            }).catch(function () {
+                model.contextObjects[objectId] = null;
+                setTimeout(m.redraw, 0);
+            });
+        } else {
+            model.contextObjects[objectId] = null;
+            setTimeout(m.redraw, 0);
+        }
+    }).catch(function () {
+        model.contextObjects[objectId] = null;
+        setTimeout(m.redraw, 0);
+    });
+}
 
 function modelBreadCrumb() {
     let sPath = page.user.homeDirectory.path;
@@ -23,39 +68,20 @@ function modelBreadCrumb() {
     let contextLoaded = false;
 
     let objectId = m.route.param("objectId");
+    let rp = _routeParams();
+    let modType = rp.modType;
+    let type = rp.type;
 
-
-    let modType;
-    let type = m.route.param("type") || "data.data";
-    if (type) {
-        modType = am7model.getModel(type);
-        type = modType.type || type;
-    }
-
-    let objType = type;
-    if (m.route.get().match(/\/(list|new)\//gi)) {
-        objType = "auth.group";
-    }
-
-    if (modType && am7model.isGroup(modType) && objectId != null && objectId != "null" && objectId != undefined && objectId != "undefined") {
+    if (rp.needsGroupContext && objectId != null && objectId != "null" && objectId != undefined && objectId != "undefined") {
         let ctxVal = model.contextObjects[objectId];
-        if (ctxVal === undefined) {
-            // Not fetched yet — start fetch
-            model.contextObjects[objectId] = 'pending';
-            am7client.get(objType, objectId, function (v) {
-                    if (v && v != null) {
-                    model.contextObjects[objectId] = v;
-                    m.redraw();
-                }
-                else {
-                    model.contextObjects[objectId] = undefined;
-                    console.error("Failed to retrieve group", objType, objectId);
-                }
-            });
+        if (ctxVal === undefined || ctxVal === 'pending') {
+            // fetch is in-flight (triggered by oninit/onupdate) — show last known path
         }
-        else if (ctxVal && ctxVal !== 'pending') {
-            // Context loaded — use its path
-            sPath = ctxVal[(objType.match(/^auth\.group/gi) ? "path" : "groupPath")];
+        else if (ctxVal === null) {
+            contextLoaded = true;
+        }
+        else {
+            sPath = ctxVal.path || ctxVal.groupPath;
             contextLoaded = true;
         }
     } else {
@@ -64,11 +90,13 @@ function modelBreadCrumb() {
 
     let crumbs = [];
     crumbButtons = [];
-    // While context is loading for a group-type route, do NOT render home crumbs
-    // — they let the user click "home" and accidentally navigate away from the
-    // sub-group they just chose, which was the /Olio/Universes regression
-    // (selecting a sub-group flashed ~/ and a follow-up click bounced there).
-    if (!contextLoaded) return lastRenderedCrumbs;
+    // While context is loading for a group-type route, do NOT render home crumbs.
+    // Use lastRenderedPath to rebuild fresh vnodes from the last known path.
+    if (!contextLoaded) {
+        sPath = lastRenderedPath || sPath;
+        if (!sPath || !sPath.length) return crumbs;
+        // fall through to rebuild crumbs from the last known path
+    }
     if (!sPath || !sPath.length) {
         console.warn("Unexpected path: " + sPath);
         return crumbs;
@@ -113,7 +141,7 @@ function modelBreadCrumb() {
             ])
         ]));
     });
-    lastRenderedCrumbs = crumbs;
+    lastRenderedPath = sPath;
     return crumbs;
 }
 
@@ -123,8 +151,22 @@ function contextMenuItemHandler(query, object) {
         return false;
     });
 
-    // Ux7 pattern: determine type from folder name, not route param
-    let type = am7view.typeByPath(object.name) || "data.data";
+    let navObj = (aP.length && aP[0]) ? aP[0] : object;
+    let navId = navObj ? navObj.objectId : null;
+
+    // Pre-populate context so the breadcrumb renders with the correct path
+    // on the FIRST render after the route change — avoids a missing second render.
+    if (navId && navObj && (navObj.path || navObj.groupPath)) {
+        let model = page.context();
+        if (model.contextObjects[navId] === undefined || model.contextObjects[navId] === null) {
+            model.contextObjects[navId] = navObj;
+        }
+    }
+
+    // Ux7 pattern: determine type from folder name, not route param.
+    // Fall back to the PARENT segment path (e.g., "/Universes" → "olio.world") so children of
+    // olio-typed segments navigate correctly even when the child name is arbitrary (e.g., "MyWorld").
+    let type = am7view.typeByPath(object.name) || am7view.typeByPath(query.path) || "data.data";
     if (aP.length) {
         page.listByType(type, aP[0].objectId);
     } else if (object.objectId) {
@@ -167,19 +209,13 @@ function setupDisplayState() {
 
 function buildBreadCrumb() {
     if (!showBreadcrumb) return "";
-    let type = m.route.param("type") || "data.data";
-    let modType = am7model.getModel(type);
-
-    // Build crumbs first — this sets pathResolved
+    let rp = _routeParams();
     let crumbs = modelBreadCrumb();
-
-    // Always render — guards on click handlers prevent navigation with stale path
-
     return m("nav", { class: "breadcrumb-bar", 'aria-label': "Breadcrumb" }, [
         m("div", { class: "breadcrumb-container" }, [
             m("nav", { class: "breadcrumb" }, [
                 m("ol", { id: "listBreadcrumb", class: "breadcrumb-list" }, [
-                    m("li", m("span", { class: "material-symbols-outlined material-icons-24" }, modType.icon)),
+                    m("li", m("span", { class: "material-symbols-outlined material-icons-24" }, rp.modType.icon)),
                     crumbs
                 ])
             ])
@@ -196,10 +232,18 @@ const breadCrumb = {
         return showBreadcrumb;
     },
     oninit: function () {
+        _prevFetchOid = m.route.param("objectId");
+        _fetchContext();
     },
     onupdate: function () {
+        let currentOid = m.route.param("objectId");
+        _fetchContext();
         cleanupContextMenus();
         setupDisplayState();
+        if (currentOid !== _prevFetchOid) {
+            _prevFetchOid = currentOid;
+            setTimeout(m.redraw, 0);
+        }
     },
     oncreate: function () {
         setupDisplayState();

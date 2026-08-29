@@ -406,12 +406,14 @@ public class ChapBookUtil {
 		BaseRecord book = PbBookUtil.createBook(user, dataPath, slug, title);
 		if (book == null) throw new PictureBookException(500, "createBook returned null for slug=" + slug);
 
-		// Patch bookType = CHAPBOOK
+		// Patch bookType = CHAPBOOK — use RecordUtil directly (book is owned by the olio principal,
+		// so accessPoint.update(user,...) would be denied; this is an internal post-create write
+		// consistent with writeBookRow using RecordUtil.createRecord for the same reason).
 		try {
 			BaseRecord typePatch = PbGraphUtil.patchOf(book, OlioModelNames.MODEL_PB_BOOK,
 				OlioFieldNames.FIELD_PB_BOOK_TYPE);
 			typePatch.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, "CHAPBOOK");
-			if (IOSystem.getActiveContext().getAccessPoint().update(user, typePatch) == null) {
+			if (!IOSystem.getActiveContext().getRecordUtil().updateRecord(typePatch)) {
 				logger.warn("createChapBook: failed to set bookType CHAPBOOK on book " + slug);
 			}
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
@@ -424,7 +426,7 @@ public class ChapBookUtil {
 				BaseRecord mlpPatch = PbGraphUtil.patchOf(book, OlioModelNames.MODEL_PB_BOOK,
 					OlioFieldNames.FIELD_PB_MAX_LINES_PER_PAGE);
 				mlpPatch.set(OlioFieldNames.FIELD_PB_MAX_LINES_PER_PAGE, maxLinesPerPage);
-				if (IOSystem.getActiveContext().getAccessPoint().update(user, mlpPatch) == null) {
+				if (!IOSystem.getActiveContext().getRecordUtil().updateRecord(mlpPatch)) {
 					logger.warn("createChapBook: failed to persist maxLinesPerPage on book " + slug);
 				}
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
@@ -495,9 +497,16 @@ public class ChapBookUtil {
 		if (scene == null) {
 			throw new PictureBookException(500, "Failed to create ChapBook scene at index " + sceneIndex);
 		}
-		// Patch poemStanza, mood, title, and sdPrompt onto the scene
+		// Patch poemStanza, mood, title, and sdPrompt onto the scene.
+		// Use RecordUtil.updateRecord (bypass PBAC) — consistent with how createChapBook patches bookType.
 		try {
-			String sdPromptVal = "landscape, " + (poemTitle != null ? poemTitle : "poetic scene") + ", "
+			// Build an initial sdPrompt from stanza text so the SD fallback (no-LLM) is meaningful.
+			// If stanza text is available, use the first ~150 chars instead of just the poem title.
+			String stanzaExcerpt = (stanzaText != null && !stanzaText.isBlank())
+				? stanzaText.substring(0, Math.min(150, stanzaText.length())).replaceAll("\\s+", " ").trim()
+				: null;
+			String sdPromptVal = "landscape, "
+				+ (stanzaExcerpt != null ? stanzaExcerpt + ", " : (poemTitle != null ? poemTitle + ", " : "poetic scene, "))
 				+ (mood != null ? mood : "poetic") + " atmosphere, painterly, soft light";
 			BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
 				OlioFieldNames.FIELD_CB_POEM_STANZA, OlioFieldNames.FIELD_PB_MOOD, OlioFieldNames.FIELD_PB_TITLE,
@@ -506,7 +515,7 @@ public class ChapBookUtil {
 			if (mood != null) patch.set(OlioFieldNames.FIELD_PB_MOOD, mood);
 			if (poemTitle != null) patch.set(OlioFieldNames.FIELD_PB_TITLE, poemTitle);
 			patch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, sdPromptVal);
-			if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			if (!IOSystem.getActiveContext().getRecordUtil().updateRecord(patch)) {
 				logger.warn("createChapBookScene: failed to patch stanza/mood/sdPrompt onto scene " + sceneIndex);
 			}
 		} catch (FieldException | ValueException | ModelNotFoundException e) {

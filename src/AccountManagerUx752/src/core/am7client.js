@@ -161,13 +161,17 @@ import { cacheDb } from './cacheDb.js';
 		}
 		else{
 			delete cache[sType];
+			delete cache[sType + "-Count"];
 			if (_cacheDbReady) cacheDb.removeByType(sType);
 			if(sType.match(/^(project|lifecycle)$/gi)){
 				delete cache["GROUP"];
 				if (_cacheDbReady) cacheDb.removeByType("GROUP");
 			}
 			delete cache["COUNT"];
-			if (_cacheDbReady) cacheDb.removeByType("COUNT");
+			if (_cacheDbReady) {
+				cacheDb.removeByType("COUNT");
+				cacheDb.removeByType(sType + "-Count");
+			}
 			clearLocalStorageCache(sType);
 			return (bLocalOnly ? Promise.resolve(true) : get(sCache + "/clear/" + sType,fH));
 		}

@@ -1301,10 +1301,21 @@ function buildActions() {
                     bookObjectId = (meta.pb2BookObjectId || meta.bookObjectId) || null;
                     metaScenes = meta.scenes || [];
                     scenes = metaScenes;
-                    await initCharacterManager(bookObjectId);
+                    if (meta.failedCharacters && meta.failedCharacters.length) {
+                        page.toast('warning', meta.failedCharacters.length + ' character(s) failed to create: ' + meta.failedCharacters.join(', '));
+                    } else if (meta.failedExtractions && meta.failedExtractions.length) {
+                        page.toast('warning', meta.failedExtractions.length + ' character(s) had LLM extraction failures and may be incomplete.');
+                    }
                     step = 3;
                 } catch (e) {
-                    page.toast('error', 'Failed to create book: ' + (e.message || ''));
+                    const msg = e?.message || (typeof e === 'string' ? e : null) || 'Unknown error';
+                    console.error('[PictureBook] book creation failed:', e);
+                    page.toast('error', 'Failed to create book: ' + msg);
+                }
+                // Non-fatal: initialize character list after the main try so a
+                // fetch failure doesn't mask a successful book creation.
+                if (bookObjectId) {
+                    try { await initCharacterManager(bookObjectId); } catch (_) {}
                 }
                 creatingChars = false;
                 m.redraw();

@@ -13,27 +13,53 @@ export async function login(page, opts = {}) {
     const org = opts.org || '/Development';
     const user = opts.user || 'admin';
     const password = opts.password || 'password';
+    const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
+    const REST = BASE_URL + '/AccountManagerService7/rest';
 
-    await page.goto('/');
+    // Log in via the REST API using Playwright's request context so the session
+    // cookie is established BEFORE page.goto(). Cookies set here are shared with
+    // the page context, so the SPA loads already authenticated and stays on #!/main
+    // rather than bouncing to #!/sig.
+    const resp = await page.request.post(REST + '/login', {
+        data: {
+            schema: 'auth.credential',
+            organizationPath: org,
+            name: user,
+            credential: Buffer.from(password).toString('base64'),
+            type: 'hashed_password'
+        }
+    });
+    if (!resp.ok() && resp.status() !== 204) {
+        throw new Error('API login failed for ' + user + ': HTTP ' + resp.status());
+    }
 
-    // Wait for the login form's organization selector
-    await page.locator('select#selOrganizationList').waitFor({ state: 'visible', timeout: 10000 });
+    // Stub WebSocket — Docker's nginx strips session cookies on the WS upgrade so
+    // Tomcat closes the connection immediately, then after 1000ms forceLogin() fires
+    // and redirects to #!/sig. The stub fires onopen but never onclose.
+    await page.addInitScript(() => {
+        window.WebSocket = class StubWS {
+            constructor(url) {
+                this.url = url; this.readyState = 0;
+                this.onopen = null; this.onclose = null;
+                this.onmessage = null; this.onerror = null;
+                this.bufferedAmount = 0; this.extensions = ''; this.protocol = '';
+                setTimeout(() => { this.readyState = 1; if (this.onopen) this.onopen({ type: 'open', target: this }); }, 50);
+            }
+            send() {} close() { this.readyState = 3; }
+            addEventListener() {} removeEventListener() {} dispatchEvent() { return true; }
+        };
+        window.WebSocket.CONNECTING = 0; window.WebSocket.OPEN = 1;
+        window.WebSocket.CLOSING = 2; window.WebSocket.CLOSED = 3;
+    });
 
-    // Select organization
-    await page.locator('select#selOrganizationList').selectOption(org);
+    // Navigate to the app — session cookie is already set so the SPA initializes
+    // as an authenticated user and routes to #!/main.
+    await page.goto('/', { timeout: 30000 });
 
-    // Fill credentials — form fields have name attributes from model
-    await page.locator('input[name="userName"]').fill(user);
-    await page.locator('input[name="password"]').fill(password);
-
-    // Click the Login button (rendered by form command system)
-    await page.locator('button:has-text("Login")').click();
-
-    // Wait for authenticated dashboard — element-based check is more reliable
-    // than waitForURL in Firefox where hash changes fire late
+    // Wait for the main dashboard to render
     await page.waitForFunction(
         () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
-        { timeout: 20000 }
+        { timeout: 30000 }
     );
 }
 

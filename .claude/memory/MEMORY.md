@@ -12,12 +12,15 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 
 
 ## feedback
+- `feedback-booktype-projection-delete` -- PbBookUtil.bookRequest() missing bookType field causes ChapBook delete 403
+- `feedback-breadcrumb-olio-parent-fetch` -- breadcrumb.js hardcodes auth.group fetch for all list routes — fails for olio.world and other parent-type navigation
 - `feedback-bytestore-access` -- Never read/write a byte_store field with raw .get()/.set() — use ByteModelUtil, since data may be compressed and/or encrypted
 - `feedback-cb-poem-text-projection` -- olio.cb.poem query defaults omit text; any poem read needing text MUST project it — the analyze endpoint silently no-oped (returned success:true) without it
 - `feedback-chapbook-authorize-scene-gotcha` -- authorizeSceneAccess queries data.note not olio.pb.scene — generateSceneImage cannot be used for ChapBook scenes
 - `feedback-deflection-patterns` -- Stephen's repeated correction — stop shirking responsibility; \"pre-existing\" never discharges ownership of a test or bug I authored
 - `feedback-likeInherits-noop` -- likeInherits in ModelSchema is metadata-only — no DDL or field-inheritance effect
 - `feedback-llm-literal-null-strings` -- LLM-extracted JSON fields can contain the literal string \"null\"/\"n/a\"/\"unknown\" instead of being absent or blank — guard for that explicitly
+- `feedback-membercloud-not-dialog` -- memberCloud is not on page.components.dialog — import directly from workflows/memberCloud.js
 - `feedback-memory-active-use` -- Memory system requires active search+write calls, not just relying on the SessionStart hook
 - `feedback-nested-fk-cache-staleness` -- CacheDBSearch only invalidates a cached record by its own schema+identity — updating a nested foreign field elsewhere doesn't invalidate parents that embed it
 - `feedback-no-irreversibility-ceremony` -- Don't build phased ceremony (pre-flight tests, write-but-don't-register steps) around schema decisions being irreversible — the test DB is a resettable container
@@ -28,6 +31,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-patch-no-cascade` -- AccessPoint.update()/PATCH only writes fields at the model level you called it on — it does not walk down and patch foreign/nested objects, with a few named exceptions
 - `feedback-pb-duplicate-world-retry` -- PictureBook 409 retry was creating duplicate worlds — narrowed catch + check existing books before forking new slug
 - `feedback-pb2-completion-overclaimed` -- Stephen rejected PB2/ChapBook 'complete/green' claims as overclaimed; treat those status memories as unverified until re-audited with real tests + visual proof
+- `feedback-pbscene-planmost-depth` -- olio.pb.scene /full hits 12-level depth limit via sceneNode→workflow chain — use targeted search instead
 - `feedback-planmost-json-build-100args` -- planMost(true) recursive expansion hits PostgreSQL 100-arg JSON_BUILD_OBJECT limit on olio.pb.book — use targeted search with explicit request instead
 - `feedback-referenced-field-patch-no-cascade` -- common.attributeList's \"attributes\" field (referenced-table storage) never persists via a parent-record copyRecord patch — must create/update the attribute record itself directly
 - `feedback-schema-duplicate-constraints` -- DBUtil Index collision / Column does not exist errors are real schema defects from duplicate inherited constraints — never dismiss as noise
@@ -40,7 +44,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-ux752-vitest-node-mithril-raf` -- Ux752 vitest runs in node env; Mithril captures schedule=requestAnimationFrame at import (null in node) so m.request completions throw 'schedule is not a function' — fix via setupFiles RAF shim (do not import mithril there)
 - `feedback-validate-dont-workaround-bad-queries` -- When a query/input is invalid (e.g. filters on a virtual/computed field), validate and reject with a clear error — don't build resolution logic to make it \"work\
 - `feedback-visual-inspection-required` -- For generative image/content pipelines, a passing persistence/decode test is not proof the output is correct — actually look at the emitted output
-- `playwright-docker-e2e-gotchas` -- WebSocket stub + dist freshness required for Playwright tests against the Docker stack
+- `playwright-docker-e2e-gotchas` -- WebSocket stub + 127.0.0.1 + dist freshness required for Playwright tests against the Docker stack
 
 ## project
 - `issue-tracker-uat-blockers` -- Three UAT blocker issues fixed 2026-08-25: list picker nav, poem ~/Poems PBAC, text-bigint wiring
@@ -57,7 +61,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `project-pb-castgroup-q15` -- Q15 resolved: olio.pb.castGroup for collective canvas entities — model created 2026-08-21
 - `project-pb-phase1b-status` -- Phase 1b (universe/world IDs in Service7+Ux) implementation complete and verified
 - `project-pb-security-status` -- TestPbSecurity status: 10/10 green on 2026-08-21
-- `project-pb2-chapbook-remediation-complete` -- PB2+ChapBook remediation all 6 phases complete 2026-08-25 with open UAT#3 Playwright obligation
+- `project-pb2-chapbook-remediation-complete` -- PB2+ChapBook remediation all 14 issues addressed 2026-08-28; ChapBook E2E 9/9 green; issue-13 silent-fail fixed
 - `project-pb2-chapbook-remediation-plan` -- Recorded evidence-based PB2+ChapBook remediation plan (src/aiDocs/PictureBook2ChapBookRemediationPlan.md) + verified blockers, corrections (M3 fixed), stack port 9443, real poem corpus
 - `project-pb5-phase-status` -- Phase 5 workflow canvas complete — Test button, Stale recheck, DONE_UNVERIFIED color, 15 Playwright tests
 - `project-pb6-phase-status` -- Phase 6 (Migration) status: PbMigrationUtil + TestPbMigration green

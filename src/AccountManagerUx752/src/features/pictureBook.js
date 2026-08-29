@@ -47,6 +47,9 @@ function openDocumentPicker(type) {
 let existingBooks = [];
 let existingLoading = false;
 
+// Issue 9: role check warning flag
+let pbRoleWarning = false;
+
 // PB2 native books
 let pb2Books = [];
 let pb2Loading = false;
@@ -129,9 +132,21 @@ async function deletePb2BookFromList(b) {
 }
 
 var workSelectorView = {
-    oninit: function () { loadExistingBooks(); loadPb2Books(); },
+    oninit: function () {
+        // Issue 9: check for AccountUsers role
+        let roles = page.context && page.context() && page.context().roles;
+        pbRoleWarning = !(roles && roles.user);
+        loadExistingBooks();
+        loadPb2Books();
+    },
     view: function () {
         return m('div', { class: 'p-4 max-w-3xl' }, [
+            // Issue 9: role warning banner
+            pbRoleWarning ? m('div', { class: 'mb-4 p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
+                m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
+                'You need the AccountUsers role to use Picture Book features.'
+            ]) : null,
+
             m('div', { class: 'flex items-center gap-2 mb-4' }, [
                 m('span', { class: 'material-symbols-outlined text-2xl' }, 'auto_stories'),
                 m('h2', { class: 'text-xl font-semibold' }, 'Picture Book')

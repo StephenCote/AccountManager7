@@ -12,6 +12,7 @@ import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
 import { ObjectPicker } from '../components/picker.js';
 import { bookPages } from '../workflows/pictureBookWorkflow.js';
+import { SdConfigPanel } from '../components/SdConfigPanel.js';
 
 // ── REST base ─────────────────────────────────────────────────────────
 
@@ -24,7 +25,7 @@ function cbBase() {
 async function fetchPoems(themeFilter) {
     let url = cbBase() + '/poems';
     if (themeFilter) url += '?theme=' + encodeURIComponent(themeFilter);
-    let resp = await fetch(url, { credentials: 'include' });
+    let resp = await fetch(url, { credentials: 'include', cache: 'no-store' });
     if (!resp.ok) throw new Error('Failed to load poems: ' + resp.status);
     return resp.json();
 }
@@ -70,13 +71,48 @@ async function createPoem(title, author, text) {
     return resp.json();
 }
 
-async function renderChapBook(bookObjectId) {
+// Issue 7: pass chatConfigName (enables LLM-based landscape-prompt generation) and sdConfig.
+// The backend olio.pictureBookRequest model declares both fields; chatConfig triggers
+// ChapBookUtil.renderChapBook's LLM path when resolved. sdConfig is an ephemeral field
+// forwarded for future use.
+async function renderChapBook(bookObjectId, chatConfigName, sdConfig) {
+    let body = {};
+    if (chatConfigName) body.chatConfig = chatConfigName;
+    if (sdConfig && Object.keys(sdConfig).length > 0) body.sdConfig = sdConfig;
     let resp = await fetch(cbBase() + '/render/' + bookObjectId, {
         method: 'POST',
-        credentials: 'include'
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
     });
     if (!resp.ok) throw new Error('Render failed: ' + resp.status);
     return resp.json();
+}
+
+// Issue 7: fetch the first accessible olio.llm.chatConfig name so the render endpoint
+// can use LLM-based prompt generation instead of the hardcoded fallback.
+async function fetchDefaultChatConfigName() {
+    try {
+        let resp = await fetch(applicationPath + '/rest/model/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                schema: 'io.query',
+                type: 'olio.llm.chatConfig',
+                cache: false,
+                request: ['id', 'objectId', 'name', 'organizationId', 'ownerId'],
+                fields: page?.user?.organizationId
+                    ? [{ name: 'organizationId', comparator: 'equals', value: page.user.organizationId }]
+                    : []
+            })
+        });
+        if (!resp.ok) return null;
+        let arr = await resp.json();
+        return (Array.isArray(arr) && arr.length && arr[0].name) ? arr[0].name : null;
+    } catch (e) {
+        return null;
+    }
 }
 
 async function importPoemsFromSources(sources) {
@@ -160,6 +196,16 @@ let addPoemText = '';
 let renderingBook = false;
 let lastRenderResult = null;
 let lastCreatedBook = null;
+
+// Pre-render dialog state (Issue 8 — SD config form before render)
+let showRenderDialog = false;
+let pendingRenderBookId = null;
+let pendingRenderCallback = null;
+let renderSdCfg = {};        // plain SD config object mutated by SdConfigPanel
+let renderSdModels = [];     // SD model list — empty = SdConfigPanel uses text inputs
+
+// Role-check warning (Issue 9)
+let roleWarning = false;
 
 // My ChapBooks list state
 let myBooks = [];
@@ -308,6 +354,8 @@ async function doImportNotes() {
             page.toast('success', 'Imported ' + imported + ' of ' + toImport + ' poem(s)');
             await loadPoems();
             // Auto-select the newly imported poems so "Create ChapBook" button appears immediately.
+            // Reset first so prior selections don't accumulate on top of the new batch.
+            selectedIds = new Set();
             let newIds = (result.poems || []).map(function (p) { return p.objectId; }).filter(Boolean);
             newIds.forEach(function (id) { selectedIds.add(id); });
         } else if (!result.errors || !result.errors.length) {
@@ -349,12 +397,81 @@ async function doAddPoem() {
     m.redraw();
 }
 
-async function renderBook(bookObjectId) {
+// Issue 8: open the pre-render SD config dialog; callback is invoked on confirm.
+function openRenderConfigDialog(bookObjectId, callback) {
+    pendingRenderBookId = bookObjectId;
+    pendingRenderCallback = callback || null;
+    renderSdCfg = {};
+    showRenderDialog = true;
+    m.redraw();
+}
+
+// Issue 7+8: confirm handler — fetch default chatConfig name then call the pending callback.
+async function doRenderFromDialog() {
+    if (!pendingRenderBookId) return;
+    showRenderDialog = false;
+    let bookId = pendingRenderBookId;
+    let sdCfg = Object.assign({}, renderSdCfg);
+    let cb = pendingRenderCallback;
+    pendingRenderBookId = null;
+    pendingRenderCallback = null;
+    m.redraw();
+    let chatConfigName = await fetchDefaultChatConfigName();
+    if (!chatConfigName) {
+        page.toast('warn', 'No chat config found — landscape prompts will use stored values');
+    }
+    if (cb) await cb(bookId, chatConfigName, sdCfg);
+}
+
+// Issue 8: pre-render SD config dialog rendered in both PoemLibrary and ChapBookReader views.
+function renderRenderDialog() {
+    if (!showRenderDialog) return null;
+    return m('div', {
+        class: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50',
+        onclick: function (e) { if (e.target === e.currentTarget) { showRenderDialog = false; m.redraw(); } }
+    },
+        m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto' }, [
+            m('div', { class: 'flex items-center justify-between mb-4' }, [
+                m('h3', { class: 'text-lg font-semibold dark:text-white flex items-center gap-2' }, [
+                    m('span', { class: 'material-symbols-outlined text-orange-500' }, 'image'),
+                    'Render Settings'
+                ]),
+                m('button', {
+                    class: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200',
+                    onclick: function () { showRenderDialog = false; m.redraw(); }
+                }, m('span', { class: 'material-symbols-outlined' }, 'close'))
+            ]),
+            m('p', { class: 'text-xs text-gray-500 dark:text-gray-400 mb-4' },
+                'Adjust SD settings before rendering. A chat config will be resolved automatically if available.'),
+            m(SdConfigPanel, {
+                config: renderSdCfg,
+                models: renderSdModels,
+                loras: [],
+                onChange: function () { m.redraw(); }
+            }),
+            m('div', { class: 'flex justify-end gap-2 mt-4' }, [
+                m('button', {
+                    class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
+                    onclick: function () { showRenderDialog = false; m.redraw(); }
+                }, 'Cancel'),
+                m('button', {
+                    class: 'px-4 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1',
+                    onclick: doRenderFromDialog
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'image'),
+                    ' Render'
+                ])
+            ])
+        ])
+    );
+}
+
+async function renderBook(bookObjectId, chatConfigName, sdConfig) {
     renderingBook = true;
     lastRenderResult = null;
     m.redraw();
     try {
-        let result = await renderChapBook(bookObjectId);
+        let result = await renderChapBook(bookObjectId, chatConfigName, sdConfig);
         lastRenderResult = result;
         page.toast('success', 'Render complete: ' + (result.rendered || 0) + ' scene(s) generated');
     } catch (e) {
@@ -513,6 +630,14 @@ const PoemLibrary = {
         myBooks = [];
         myBooksLoading = false;
         myBooksError = null;
+        // Issue 8: reset render dialog state
+        showRenderDialog = false;
+        pendingRenderBookId = null;
+        pendingRenderCallback = null;
+        renderSdCfg = {};
+        // Issue 9: check for AccountUsers role
+        let roles = page.context && page.context() && page.context().roles;
+        roleWarning = !(roles && roles.user);
         loadPoems();
         loadMyBooks();
     },
@@ -521,6 +646,12 @@ const PoemLibrary = {
         let allSelected = list.length > 0 && list.every(function (p) { return selectedIds.has(p.objectId); });
 
         return m('div', { class: 'p-4 max-w-5xl' }, [
+            // Issue 9: role warning banner
+            roleWarning ? m('div', { class: 'mb-4 p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
+                m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
+                'You need the AccountUsers role to use ChapBook features.'
+            ]) : null,
+
             // Header
             m('div', { class: 'flex items-center gap-2 mb-4' }, [
                 m('span', { class: 'material-symbols-outlined text-2xl text-purple-500' }, 'menu_book'),
@@ -671,14 +802,22 @@ const PoemLibrary = {
 
             // ObjectPicker renders itself as a portal — no inline dialog needed here.
 
-            // Last created book — render button available when a book was just created
+            // Last created book — render + review buttons available when a book was just created
             lastCreatedBook ? m('div', { class: 'mt-4 p-3 rounded bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 flex items-center gap-3' }, [
                 m('span', { class: 'material-symbols-outlined text-purple-500' }, 'auto_stories'),
                 m('span', { class: 'flex-1 text-sm dark:text-white' }, 'ChapBook created: ' + (lastCreatedBook.slug || lastCreatedBook.objectId || '')),
                 m('button', {
+                    class: 'px-3 py-1 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 flex items-center gap-1',
+                    onclick: function () { m.route.set('/chap-book/review/' + (lastCreatedBook.objectId || lastCreatedBook.bookObjectId)); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'edit_note'),
+                    ' Review'
+                ]),
+                m('button', {
                     class: 'px-3 py-1 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1 disabled:opacity-50',
                     disabled: renderingBook,
-                    onclick: function () { renderBook(lastCreatedBook.objectId || lastCreatedBook.bookObjectId); }
+                    // Issue 8: open SD config dialog before rendering
+                    onclick: function () { openRenderConfigDialog(lastCreatedBook.objectId || lastCreatedBook.bookObjectId, renderBook); }
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, renderingBook ? 'hourglass_empty' : 'image'),
                     renderingBook ? ' Rendering...' : ' Render'
@@ -711,7 +850,12 @@ const PoemLibrary = {
                             }, b.name || b.slug || b.objectId),
                             m('span', { class: 'text-xs text-gray-400' }, b.bookStatus ? b.bookStatus.toLowerCase() : ''),
                             m('button', {
-                                class: 'ml-auto px-2 py-1 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs hover:bg-purple-200',
+                                class: 'ml-auto px-2 py-1 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs hover:bg-indigo-200 flex items-center gap-1',
+                                title: 'Review and edit pages',
+                                onclick: function() { m.route.set('/chap-book/review/' + b.objectId); }
+                            }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'edit_note'), ' Review']),
+                            m('button', {
+                                class: 'px-2 py-1 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs hover:bg-purple-200',
                                 onclick: function() { m.route.set('/chap-book/read/' + b.objectId); }
                             }, 'Open'),
                             m('button', {
@@ -836,7 +980,10 @@ const PoemLibrary = {
                         }, addingPoem ? 'Adding...' : 'Add Poem')
                     ])
                 ])
-            ) : null
+            ) : null,
+
+            // Issue 8: pre-render SD config dialog
+            renderRenderDialog()
         ]);
     }
 };
@@ -912,20 +1059,23 @@ async function analyzeReaderPoems() {
     m.redraw();
 }
 
-async function renderReaderBook() {
+// Issue 8: open the SD config dialog then run the reader-specific render flow.
+function renderReaderBook() {
     if (!readerBookObjectId) return;
-    readerRendering = true;
-    m.redraw();
-    try {
-        let result = await renderChapBook(readerBookObjectId);
-        page.toast('success', 'Render complete: ' + (result.rendered || 0) + ' scene(s) generated');
-        // Reload so the freshly-generated images (dataObjectId) appear (6C).
-        await loadReaderBook(readerBookObjectId);
-    } catch (e) {
-        page.toast('error', 'Render failed: ' + (e.message || ''));
-    }
-    readerRendering = false;
-    m.redraw();
+    openRenderConfigDialog(readerBookObjectId, async function (bookId, chatConfigName, sdConfig) {
+        readerRendering = true;
+        m.redraw();
+        try {
+            let result = await renderChapBook(bookId, chatConfigName, sdConfig);
+            page.toast('success', 'Render complete: ' + (result.rendered || 0) + ' scene(s) generated');
+            // Reload so the freshly-generated images (dataObjectId) appear (6C).
+            await loadReaderBook(readerBookObjectId);
+        } catch (e) {
+            page.toast('error', 'Render failed: ' + (e.message || ''));
+        }
+        readerRendering = false;
+        m.redraw();
+    });
 }
 
 // ── ChapBookReader component — dedicated poem-book reader (6B/6C/6D) ──
@@ -938,12 +1088,26 @@ const ChapBookReader = {
         readerError = null;
         readerAnalyzing = false;
         readerRendering = false;
+        // Issue 8: reset render dialog state
+        showRenderDialog = false;
+        pendingRenderBookId = null;
+        pendingRenderCallback = null;
+        renderSdCfg = {};
+        // Issue 9: check for AccountUsers role
+        let roles = page.context && page.context() && page.context().roles;
+        roleWarning = !(roles && roles.user);
         if (readerBookObjectId) loadReaderBook(readerBookObjectId);
     },
     view: function () {
         let title = (readerBook && (readerBook.name || readerBook.slug)) || 'ChapBook';
         let busy = readerAnalyzing || readerRendering;
         return m('div', { class: 'p-4 max-w-4xl mx-auto' }, [
+            // Issue 9: role warning banner
+            roleWarning ? m('div', { class: 'mb-4 p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
+                m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
+                'You need the AccountUsers role to use ChapBook features.'
+            ]) : null,
+
             // Header — back, title, Analyze + Render controls
             m('div', { class: 'flex flex-wrap items-center gap-3 mb-6' }, [
                 m('button', {
@@ -953,6 +1117,13 @@ const ChapBookReader = {
                 }, m('span', { class: 'material-symbols-outlined' }, 'arrow_back')),
                 m('span', { class: 'material-symbols-outlined text-2xl text-purple-500' }, 'menu_book'),
                 m('h2', { class: 'flex-1 text-xl font-semibold dark:text-white truncate', title: title }, title),
+                m('button', {
+                    class: 'px-3 py-1.5 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 flex items-center gap-1',
+                    onclick: function () { m.route.set('/chap-book/review/' + readerBookObjectId); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'edit_note'),
+                    ' Review'
+                ]),
                 m('button', {
                     class: 'px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50',
                     disabled: busy,
@@ -987,7 +1158,436 @@ const ChapBookReader = {
                             'Page ' + (idx + 1) + ' of ' + readerPages.length)
                     ]);
                 })
-            )
+            ),
+
+            // Issue 8: pre-render SD config dialog
+            renderRenderDialog()
+        ]);
+    }
+};
+
+// ── ChapBookReview — pre-render editing panel ─────────────────────────
+
+const FONT_OPTIONS = [
+    { value: '', label: 'Default' },
+    { value: 'system-ui, sans-serif', label: 'System UI' },
+    { value: 'Georgia, serif', label: 'Serif' },
+    { value: '"Courier New", monospace', label: 'Monospace' },
+    { value: 'cursive', label: 'Cursive' },
+    { value: 'Impact, fantasy', label: 'Display' }
+];
+
+let reviewBookObjectId = null;
+let reviewBook = null;
+let reviewScenes = [];
+let reviewLoading = false;
+let reviewError = null;
+let reviewRendering = false;
+let reviewGroupId = null;
+
+async function patchScene(sceneObjectId, changes) {
+    let body = Object.assign({ schema: 'olio.pb.scene', objectId: sceneObjectId }, changes);
+    let resp = await fetch(applicationPath + '/rest/model', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) throw new Error('Patch scene failed: ' + resp.status);
+    return resp.json();
+}
+
+async function deleteScene(sceneObjectId) {
+    let resp = await fetch(applicationPath + '/rest/model/olio.pb.scene/' + sceneObjectId, {
+        method: 'DELETE',
+        credentials: 'include'
+    });
+    if (!resp.ok) throw new Error('Delete scene failed: ' + resp.status);
+    return resp.json();
+}
+
+async function createSceneRecord(sceneData) {
+    let resp = await fetch(applicationPath + '/rest/model/olio.pb.scene', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(sceneData)
+    });
+    if (!resp.ok) throw new Error('Create scene failed: ' + resp.status);
+    return resp.json();
+}
+
+// Fetch only the fields needed by the review panel — avoids /full's planMost(true)
+// which chains olio.pb.scene → sceneNode → workflow → run → chatConfig → charPerson → ...
+// and exceeds BaseRecord's max depth.
+async function loadSceneFields(sceneObjectId) {
+    let resp = await fetch(applicationPath + '/rest/model/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+            schema: 'io.query',
+            type: 'olio.pb.scene',
+            cache: false,
+            request: ['id', 'objectId', 'groupId', 'pageFont', 'pageBgColor', 'pageTextAlign', 'sceneIndex'],
+            fields: [{ name: 'objectId', comparator: 'EQUALS', value: sceneObjectId }],
+            recordCount: 1
+        })
+    });
+    if (!resp.ok) throw new Error('Load scene failed: ' + resp.status);
+    let body = await resp.json();
+    if (Array.isArray(body)) return body[0] || null;
+    if (body && body.results) return body.results[0] || null;
+    return null;
+}
+
+async function loadReviewBook(bookObjectId) {
+    reviewLoading = true;
+    reviewError = null;
+    reviewScenes = [];
+    reviewGroupId = null;
+    m.redraw();
+    try {
+        try {
+            let resp = await fetch(applicationPath + '/rest/model/search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    schema: 'io.query',
+                    type: 'olio.pb.book',
+                    cache: false,
+                    request: ['id', 'objectId', 'name', 'slug', 'bookStatus'],
+                    fields: [{ name: 'objectId', comparator: 'EQUALS', value: bookObjectId }]
+                })
+            });
+            let arr = resp.ok ? await resp.json() : [];
+            reviewBook = Array.isArray(arr) && arr.length ? arr[0] : null;
+        } catch (_) {
+            reviewBook = null;
+        }
+        // bookPages returns ordered scenes with poemStanza + title already populated (6D verified).
+        let pages = await bookPages(bookObjectId);
+        reviewScenes = (Array.isArray(pages) ? pages : []).map(function (pg) {
+            return {
+                objectId: pg.objectId,
+                id: pg.id,
+                sceneIndex: pg.sceneIndex,
+                title: pg.title || '',
+                poemStanza: pg.poemStanza || pg.blurb || '',
+                pageFont: pg.pageFont || '',
+                pageBgColor: pg.pageBgColor || '',
+                pageTextAlign: pg.pageTextAlign || '',
+                _saving: false
+            };
+        });
+        // Load first scene fully to get groupId (needed for split / new scene creation)
+        // and to backfill style fields that bookPages may not project.
+        if (reviewScenes.length > 0 && reviewScenes[0].objectId) {
+            try {
+                let fields = await loadSceneFields(reviewScenes[0].objectId);
+                if (fields) {
+                    reviewGroupId = fields.groupId || null;
+                    if (fields.pageFont || fields.pageBgColor || fields.pageTextAlign) {
+                        reviewScenes[0].pageFont = fields.pageFont || '';
+                        reviewScenes[0].pageBgColor = fields.pageBgColor || '';
+                        reviewScenes[0].pageTextAlign = fields.pageTextAlign || '';
+                    }
+                }
+            } catch (_) {}
+        }
+    } catch (e) {
+        reviewError = e.message || 'Failed to load book';
+    }
+    reviewLoading = false;
+    m.redraw();
+}
+
+async function doPatchSceneField(idx, field, value) {
+    let scene = reviewScenes[idx];
+    if (!scene) return;
+    scene[field] = value;
+    scene._saving = true;
+    m.redraw();
+    try {
+        let changes = {};
+        changes[field] = value;
+        await patchScene(scene.objectId, changes);
+    } catch (e) {
+        page.toast('error', 'Save failed: ' + (e.message || ''));
+    }
+    scene._saving = false;
+    m.redraw();
+}
+
+async function doSplitScene(idx) {
+    let scene = reviewScenes[idx];
+    if (!scene) return;
+    let text = scene.poemStanza || '';
+    let lines = text.split('\n');
+    let mid = Math.ceil(lines.length / 2);
+    let firstHalf = lines.slice(0, mid).join('\n');
+    let secondHalf = lines.slice(mid).join('\n');
+    if (!secondHalf.trim()) {
+        page.toast('warn', 'Not enough text to split');
+        return;
+    }
+    scene._saving = true;
+    m.redraw();
+    try {
+        await patchScene(scene.objectId, { poemStanza: firstHalf });
+        scene.poemStanza = firstHalf;
+        let newScene = {
+            schema: 'olio.pb.scene',
+            name: 'scene-split-' + Date.now(),
+            sceneIndex: scene.sceneIndex + 0.5,
+            poemStanza: secondHalf,
+            title: (scene.title ? scene.title + ' (cont.)' : '')
+        };
+        if (reviewGroupId) newScene.groupId = reviewGroupId;
+        await createSceneRecord(newScene);
+        page.toast('success', 'Scene split');
+        await loadReviewBook(reviewBookObjectId);
+    } catch (e) {
+        page.toast('error', 'Split failed: ' + (e.message || ''));
+        scene._saving = false;
+        m.redraw();
+    }
+}
+
+async function doMergeScene(idx) {
+    let scene = reviewScenes[idx];
+    let next = reviewScenes[idx + 1];
+    if (!scene || !next) return;
+    scene._saving = true;
+    m.redraw();
+    try {
+        let merged = (scene.poemStanza || '') + '\n' + (next.poemStanza || '');
+        await patchScene(scene.objectId, { poemStanza: merged });
+        scene.poemStanza = merged;
+        await deleteScene(next.objectId);
+        page.toast('success', 'Scenes merged');
+        await loadReviewBook(reviewBookObjectId);
+    } catch (e) {
+        page.toast('error', 'Merge failed: ' + (e.message || ''));
+        scene._saving = false;
+        m.redraw();
+    }
+}
+
+async function doDeleteScene(idx) {
+    let scene = reviewScenes[idx];
+    if (!scene) return;
+    if (!window.confirm('Remove page ' + (idx + 1) + '? This cannot be undone.')) return;
+    scene._saving = true;
+    m.redraw();
+    try {
+        await deleteScene(scene.objectId);
+        reviewScenes.splice(idx, 1);
+        page.toast('success', 'Page removed');
+    } catch (e) {
+        page.toast('error', 'Delete failed: ' + (e.message || ''));
+        scene._saving = false;
+    }
+    m.redraw();
+}
+
+async function renderReviewBook() {
+    if (!reviewBookObjectId) return;
+    reviewRendering = true;
+    m.redraw();
+    try {
+        let result = await renderChapBook(reviewBookObjectId);
+        page.toast('success', 'Render complete: ' + (result.rendered || 0) + ' scene(s) generated');
+    } catch (e) {
+        page.toast('error', 'Render failed: ' + (e.message || ''));
+    }
+    reviewRendering = false;
+    m.redraw();
+}
+
+function renderSceneCard(scene, idx) {
+    let isLast = idx === reviewScenes.length - 1;
+    let alignOptions = ['left', 'center', 'right'];
+    let alignIcons = { left: 'format_align_left', center: 'format_align_center', right: 'format_align_right' };
+    return m('div', {
+        key: scene.objectId || idx,
+        class: 'rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 space-y-3'
+    }, [
+        // Scene header row
+        m('div', { class: 'flex items-center gap-2' }, [
+            m('span', { class: 'text-xs text-gray-400 dark:text-gray-500 font-mono flex-shrink-0' },
+                'Page ' + (idx + 1) + ' of ' + reviewScenes.length),
+            scene._saving ? m('span', { class: 'ml-2 text-xs text-blue-500' }, 'Saving...') : null
+        ]),
+        // Title
+        m('div', [
+            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Title'),
+            m('input', {
+                type: 'text',
+                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
+                value: scene.title,
+                oninput: function (e) { scene.title = e.target.value; m.redraw(); },
+                onblur: function (e) { doPatchSceneField(idx, 'title', e.target.value); }
+            })
+        ]),
+        // Stanza
+        m('div', [
+            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Stanza text'),
+            m('textarea', {
+                rows: 6,
+                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white font-mono resize-y',
+                value: scene.poemStanza,
+                oninput: function (e) { scene.poemStanza = e.target.value; m.redraw(); },
+                onblur: function (e) { doPatchSceneField(idx, 'poemStanza', e.target.value); }
+            })
+        ]),
+        // Style controls + actions
+        m('div', { class: 'flex flex-wrap items-center gap-3' }, [
+            // Font
+            m('div', { class: 'flex items-center gap-1.5' }, [
+                m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, 'Font'),
+                m('select', {
+                    class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-xs dark:text-white',
+                    value: scene.pageFont,
+                    onchange: function (e) {
+                        let v = e.target.value;
+                        scene.pageFont = v;
+                        doPatchSceneField(idx, 'pageFont', v);
+                    }
+                }, FONT_OPTIONS.map(function (opt) {
+                    return m('option', { value: opt.value }, opt.label);
+                }))
+            ]),
+            // Background color
+            m('div', { class: 'flex items-center gap-1.5' }, [
+                m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, 'Bg color'),
+                m('input', {
+                    type: 'color',
+                    class: 'w-8 h-7 rounded border border-gray-300 dark:border-gray-600 cursor-pointer',
+                    value: scene.pageBgColor || '#000000',
+                    onchange: function (e) {
+                        let v = e.target.value;
+                        scene.pageBgColor = v;
+                        doPatchSceneField(idx, 'pageBgColor', v);
+                    }
+                })
+            ]),
+            // Text alignment
+            m('div', { class: 'flex items-center gap-1' }, [
+                m('span', { class: 'text-xs text-gray-500 dark:text-gray-400 mr-1' }, 'Align'),
+                alignOptions.map(function (align) {
+                    let active = scene.pageTextAlign === align;
+                    return m('button', {
+                        key: align,
+                        class: 'px-1.5 py-1 rounded text-xs ' + (active
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'),
+                        title: align.charAt(0).toUpperCase() + align.slice(1),
+                        onclick: function () {
+                            let newVal = active ? '' : align;
+                            scene.pageTextAlign = newVal;
+                            doPatchSceneField(idx, 'pageTextAlign', newVal);
+                        }
+                    }, m('span', {
+                        class: 'material-symbols-outlined',
+                        style: 'font-size:14px;vertical-align:middle'
+                    }, alignIcons[align]));
+                })
+            ]),
+            // Split / Merge buttons
+            m('div', { class: 'ml-auto flex items-center gap-2' }, [
+                m('button', {
+                    class: 'px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs hover:bg-blue-200 disabled:opacity-40 flex items-center gap-1',
+                    title: 'Split stanza at midpoint into two pages',
+                    disabled: scene._saving || (scene.poemStanza || '').split('\n').filter(function (l) { return l.trim(); }).length < 2,
+                    onclick: function () { doSplitScene(idx); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'call_split'),
+                    ' Split'
+                ]),
+                m('button', {
+                    class: 'px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs hover:bg-amber-200 disabled:opacity-40 flex items-center gap-1',
+                    title: 'Merge this page with the next',
+                    disabled: scene._saving || isLast,
+                    onclick: function () { doMergeScene(idx); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'merge'),
+                    ' Merge'
+                ]),
+                m('button', {
+                    class: 'px-2 py-1 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs hover:bg-red-200 disabled:opacity-40 flex items-center gap-1',
+                    title: 'Remove this page',
+                    disabled: scene._saving,
+                    onclick: function () { doDeleteScene(idx); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'delete'),
+                    ' Remove'
+                ])
+            ])
+        ])
+    ]);
+}
+
+const ChapBookReview = {
+    oninit: function (vnode) {
+        reviewBookObjectId = vnode.attrs.bookObjectId || null;
+        reviewBook = null;
+        reviewScenes = [];
+        reviewLoading = false;
+        reviewError = null;
+        reviewRendering = false;
+        reviewGroupId = null;
+        if (reviewBookObjectId) loadReviewBook(reviewBookObjectId);
+    },
+    view: function () {
+        let title = (reviewBook && (reviewBook.name || reviewBook.slug)) || 'ChapBook';
+        return m('div', { class: 'p-4 max-w-3xl mx-auto' }, [
+            // Header
+            m('div', { class: 'flex flex-wrap items-center gap-3 mb-4' }, [
+                m('button', {
+                    class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
+                    title: 'Back to Poem Library',
+                    onclick: function () { m.route.set('/chap-book'); }
+                }, m('span', { class: 'material-symbols-outlined' }, 'arrow_back')),
+                m('span', { class: 'material-symbols-outlined text-2xl text-purple-500' }, 'edit_note'),
+                m('h2', { class: 'flex-1 text-xl font-semibold dark:text-white truncate', title: title },
+                    title + ' — Review'),
+                m('button', {
+                    class: 'px-3 py-1.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-sm hover:bg-purple-200 flex items-center gap-1',
+                    onclick: function () { m.route.set('/chap-book/read/' + reviewBookObjectId); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'auto_stories'),
+                    ' Read'
+                ]),
+                m('button', {
+                    class: 'px-3 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1 disabled:opacity-50',
+                    disabled: reviewRendering || reviewLoading,
+                    onclick: renderReviewBook
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' },
+                        reviewRendering ? 'hourglass_empty' : 'image'),
+                    reviewRendering ? ' Rendering...' : ' Render'
+                ])
+            ]),
+            m('p', { class: 'text-xs text-gray-400 dark:text-gray-500 mb-4' },
+                'Changes auto-save when you leave a field (blur). Use Render to generate images. Remove deletes a page permanently.'),
+            // Body
+            reviewLoading
+                ? m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-12 text-center' }, 'Loading scenes...')
+                : reviewError
+                    ? m('div', { class: 'text-sm text-red-500 py-12 text-center' }, 'Error: ' + reviewError)
+                    : reviewScenes.length === 0
+                        ? m('div', { class: 'text-center py-12' }, [
+                            m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 block mb-2' }, 'auto_stories'),
+                            m('div', { class: 'text-sm text-gray-500 dark:text-gray-400' },
+                                'No pages yet. Create a ChapBook from the Poem Library first.')
+                          ])
+                        : m('div', { class: 'space-y-4' },
+                            reviewScenes.map(function (scene, idx) {
+                                return renderSceneCard(scene, idx);
+                            })
+                          )
         ]);
     }
 };
@@ -1012,8 +1612,13 @@ export const routes = {
         view: function (vnode) {
             return layout(pageLayout(m(ChapBookReader, { bookObjectId: vnode.attrs.bookObjectId })));
         }
+    },
+    '/chap-book/review/:bookObjectId': {
+        view: function (vnode) {
+            return layout(pageLayout(m(ChapBookReview, { bookObjectId: vnode.attrs.bookObjectId })));
+        }
     }
 };
 
-export { renderChapBookPage, ChapBookFeature, ChapBookReader, PoemLibrary };
+export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary };
 export default ChapBookFeature;

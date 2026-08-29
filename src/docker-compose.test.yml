@@ -74,8 +74,12 @@ services:
       VOICE_TTS_SERVER: ${VOICE_TTS_SERVER:-http://192.168.1.42:8001}
       VOICE_STT_SERVER: ${VOICE_STT_SERVER:-http://192.168.1.42:8002}
       EMBEDDING_SERVER: ${EMBEDDING_SERVER:-http://192.168.1.42:8123}
-      # Same-origin (UI + REST both behind nginx on :9443), so add the 9443 origin.
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://localhost:9443,http://localhost:9443,http://localhost:8899,https://localhost:8899}
+      # Same-origin (UI + REST both behind nginx on :9443). Include 127.0.0.1:9443
+      # because Playwright on Windows must use 127.0.0.1 (localhost resolves to IPv6
+      # ::1 and the TLS handshake fails). Chrome 103+ sends Origin on same-origin
+      # POST requests, so 127.0.0.1:9443 must be in the allowed list or CorsFilter
+      # returns 403 for all POST /rest/model/search calls.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://localhost:9443,http://localhost:9443,https://127.0.0.1:9443,http://127.0.0.1:9443,http://localhost:8899,https://localhost:8899}
     volumes:
       # Persistent host location (see AM7_DATA_DIR above): app keystores/vault/datagen/streams
       # (/data/am7) + the self-signed TLS pair nginx and Tomcat share (/etc/am7/certs). Losing

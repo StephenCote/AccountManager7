@@ -59,7 +59,11 @@ async function createFromScenes(workObjectId, chatConfigName, genre, bookName, s
         headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(body)
     });
-    if (!resp.ok) throw new Error('Create from scenes failed: ' + resp.status);
+    if (!resp.ok) {
+        let body = null;
+        try { body = await resp.json(); } catch (_) { try { body = { message: await resp.text() }; } catch (_2) {} }
+        throw new Error('Create from scenes failed: ' + ((body && (body.error || body.message)) || resp.status));
+    }
     return resp.json();
 }
 
@@ -115,7 +119,11 @@ async function generateSceneImage(sceneObjectId, opts, signal) {
         headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(body), signal
     });
-    if (!resp.ok) throw new Error('Scene image generation failed: ' + resp.status);
+    if (!resp.ok) {
+        let body = null;
+        try { body = await resp.json(); } catch (_) { try { body = { message: await resp.text() }; } catch (_2) {} }
+        throw new Error('Scene image generation failed: ' + ((body && (body.error || body.message)) || resp.status));
+    }
     return resp.json();
 }
 
@@ -163,7 +171,11 @@ async function cancelPictureBook(key) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }, credentials: 'include'
     });
-    if (!resp.ok) throw new Error('Cancel failed: ' + resp.status);
+    if (!resp.ok) {
+        let body = null;
+        try { body = await resp.json(); } catch (_) { try { body = { message: await resp.text() }; } catch (_2) {} }
+        throw new Error('Cancel failed: ' + ((body && (body.error || body.message)) || resp.status));
+    }
     return resp.json();
 }
 

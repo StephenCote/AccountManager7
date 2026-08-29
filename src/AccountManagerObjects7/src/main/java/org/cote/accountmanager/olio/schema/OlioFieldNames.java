@@ -398,6 +398,10 @@ public class OlioFieldNames {
 	public static final String FIELD_CB_SD_PROMPT = "sdPrompt";
 	/// olio.pb.scene — imageObjectId: objectId of the data.data image produced by ChapBook render
 	public static final String FIELD_PB_IMAGE_OBJECT_ID = "imageObjectId";
+	/// olio.pb.scene — per-page style controls (Issue 6)
+	public static final String FIELD_PB_PAGE_FONT = "pageFont";
+	public static final String FIELD_PB_PAGE_BG_COLOR = "pageBgColor";
+	public static final String FIELD_PB_PAGE_TEXT_ALIGN = "pageTextAlign";
 	/// olio.cb.book fields
 	public static final String FIELD_CB_MAX_LINES = "maxLinesPerPage";
 	public static final String FIELD_CB_OVERLAY_OPACITY = "overlayOpacity";

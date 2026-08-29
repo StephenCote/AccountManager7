@@ -14,6 +14,7 @@ import { FullCanvasViewer, GridPreview, renderContent, injectCSS as ivCSS } from
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { ChatSetupWizard } from '../chat/ChatSetupWizard.js';
 import { exportGroup, checkGroupExport, downloadGroupExport } from '../workflows/groupExport.js';
+import { memberCloud } from '../workflows/memberCloud.js';
 // breadcrumb is now a component in navigation.js (Ux7 pattern), not inline
 
 // ---------------------------------------------------------------------------
@@ -57,9 +58,25 @@ function newListControl() {
     let pickerType = null;
     let pickerContainerId = null;
     let pickerUserContainerId = null;
+    let pickerHomeContainerId = null;
     let pickerLibraryContainerId = null;
     let pickerFavoritesContainerId = null;
     let pickerActiveSource = 'home';
+    // When true, picker is browsing auth.group folders so user can navigate into a sibling
+    // group; reverts to pickerType when the user clicks into a folder.
+    let pickerGroupNavMode = false;
+
+    // Issue 12 — type picker popover state
+    let showTypePicker = false;
+    let typePickerClickHandler = null;
+    const olioTypePickerItems = [
+        { type: 'olio.world',      icon: 'globe',        label: 'World' },
+        { type: 'olio.charPerson', icon: 'face',         label: 'Character' },
+        { type: 'olio.event',      icon: 'event',        label: 'Event' },
+        { type: 'olio.realm',      icon: 'map',          label: 'Realm' },
+        { type: 'data.note',       icon: 'note',         label: 'Note' },
+        { type: 'data.data',       icon: 'data_object',  label: 'Data' }
+    ];
 
     // Breadcrumb is in navigation.js (Ux7 pattern)
 
@@ -359,8 +376,17 @@ function newListControl() {
             let byParent = am7model.isParent(modType) && listType !== 'auth.group';
             navContainerId = grp.objectId;
             if (byParent) navigateByParent = true;
-            pagination.new();
-            m.redraw();
+            if (pickerMode) {
+                // Entering a group via path navigation → pickerType items in new container
+                pickerGroupNavMode = false;
+                listContainerId = grp.objectId;
+                let fakeVnode = { attrs: { type: pickerType, objectId: grp.objectId } };
+                initParams(fakeVnode);
+                update(fakeVnode);
+            } else {
+                pagination.new();
+                m.redraw();
+            }
         } else {
             m.route.set('/list/' + (containerMode ? baseListType : ltype) + '/' + grp.objectId, { key: Date.now() });
         }
@@ -372,8 +398,19 @@ function newListControl() {
         if (resetParent) navigateByParent = false;
         pagination.pages().container = null;
         pagination.new();
-        // breadcrumb updates via navigation component
-        m.redraw();
+        if (pickerMode) {
+            // Picker lifecycle hooks don't fire automatically — call update() explicitly.
+            // In group-browse mode (pickerGroupNavMode) show auth.group so user can pick a folder;
+            // otherwise show the original picker type items.
+            listContainerId = objectId;
+            let useType = pickerGroupNavMode ? 'auth.group' : pickerType;
+            let fakeVnode = { attrs: { type: useType, objectId: objectId } };
+            initParams(fakeVnode);
+            update(fakeVnode);
+        } else {
+            // breadcrumb updates via navigation component
+            m.redraw();
+        }
     }
 
     // Route-based nav for normal mode (Ux7 pattern)
@@ -449,6 +486,8 @@ function newListControl() {
             if (!parentPath) return;
             page.navigateToPath('auth.group', am7model.getModel('auth.group'), parentPath).then(function (id) {
                 if (!id) return;
+                // In picker mode, switch to auth.group view so user can see sibling folders
+                if (pickerMode) pickerGroupNavMode = true;
                 navInPlace(id);
             });
         } else {
@@ -478,7 +517,17 @@ function newListControl() {
                 if (byParent) navigateByParent = true;
                 pagination.pages().container = null;
                 pagination.new();
-                m.redraw();
+                if (pickerMode) {
+                    // Clicking a folder in group-browse mode → enter it with pickerType items.
+                    // Clicking a folder in normal picker mode → also enter with pickerType.
+                    pickerGroupNavMode = false;
+                    listContainerId = obj.objectId;
+                    let fakeVnode = { attrs: { type: pickerType, objectId: obj.objectId } };
+                    initParams(fakeVnode);
+                    update(fakeVnode);
+                } else {
+                    m.redraw();
+                }
             } else {
                 navByRoute(obj.objectId, byParent);
             }
@@ -567,11 +616,59 @@ function newListControl() {
     function openCloud() {
         let pg = pagination.pages();
         let containerId = pg.container ? pg.container.id : 0;
-        page.components.dialog.memberCloud(baseListType, containerId);
+        memberCloud(baseListType, containerId);
     }
 
     // Breadcrumb is now a component in navigation.js (Ux7 pattern)
     // No inline breadcrumb code needed in list.js
+
+    // ------------------------------------------------------------------
+    //  Issue 12 — type picker popover
+    // ------------------------------------------------------------------
+
+    function toggleTypePicker() {
+        showTypePicker = !showTypePicker;
+        if (showTypePicker) {
+            typePickerClickHandler = function(e) {
+                let popover = document.querySelector('.am7-type-picker-popover');
+                if (!popover || !popover.contains(e.target)) {
+                    showTypePicker = false;
+                    document.removeEventListener('click', typePickerClickHandler);
+                    typePickerClickHandler = null;
+                    m.redraw();
+                }
+            };
+            setTimeout(function() {
+                document.addEventListener('click', typePickerClickHandler);
+            }, 0);
+        } else {
+            if (typePickerClickHandler) {
+                document.removeEventListener('click', typePickerClickHandler);
+                typePickerClickHandler = null;
+            }
+        }
+        m.redraw();
+    }
+
+    async function switchListType(newType) {
+        showTypePicker = false;
+        if (typePickerClickHandler) {
+            document.removeEventListener('click', typePickerClickHandler);
+            typePickerClickHandler = null;
+        }
+        let typePath = am7view.pathForType(newType);
+        if (typePath) {
+            try {
+                let grp = await page.makePath('auth.group', 'DATA', typePath);
+                if (grp) {
+                    m.route.set('/list/' + newType + '/' + (grp.objectId || grp.id), { key: Date.now() });
+                    return;
+                }
+            } catch(e) { /* fall through to plain route */ }
+        }
+        m.route.set('/list/' + newType, { key: Date.now() });
+        m.redraw();
+    }
 
     // ------------------------------------------------------------------
     //  Toggles
@@ -721,7 +818,8 @@ function newListControl() {
             toggleCarousel,
             toggleCarouselFull,
             toggleCarouselMax,
-            toggleInfo
+            toggleInfo,
+            toggleTypePicker: toggleTypePicker
         };
     }
 
@@ -736,7 +834,16 @@ function newListControl() {
             if (pickerCancel) {
                 buttons.push(pagination.button('button', 'close', '', function () { pickerCancel(); }));
             }
-            // Source navigation: Home, System/Library, Favorites
+            // Source navigation: Home root (~/ directory), type Home, System/Library, Favorites
+            if (pickerHomeContainerId) {
+                buttons.push(pagination.button(
+                    'button' + (pickerActiveSource === 'root' ? ' active bg-green-100 dark:bg-green-900' : ''),
+                    'cottage', '', function () {
+                        pickerActiveSource = 'root';
+                        pickerNavigateTo(pickerHomeContainerId);
+                    }
+                ));
+            }
             if (pickerUserContainerId) {
                 buttons.push(pagination.button(
                     'button' + (pickerActiveSource === 'home' ? ' active bg-blue-100 dark:bg-blue-900' : ''),
@@ -1012,7 +1119,7 @@ function newListControl() {
             content = am7decorator.tabularView(ctl, rset);
         }
 
-        return m('div', { ondragover: fdoh, ondrop: fdrh, class: 'list-results-container' }, [
+        return m('div', { ondragover: fdoh, ondrop: fdrh, class: 'list-results-container', style: 'position:relative' }, [
             m('div', { class: 'list-results flex flex-col h-full' }, [
                 m('div', { class: 'result-nav-outer shrink-0' }, [
                     m('div', { class: 'result-nav-inner' }, [
@@ -1024,7 +1131,24 @@ function newListControl() {
                 // overflow-auto so the list body scrolls when content exceeds the pane height
                 // (flex-1 + min-h-0 lets this child shrink; without overflow it clipped instead of scrolling).
                 m('div', { class: 'flex-1 min-h-0 overflow-auto' }, content)
-            ])
+            ]),
+            // Issue 12 — type picker popover (normal/non-picker mode only)
+            showTypePicker && !pickerMode ? m('div', {
+                class: 'am7-type-picker-popover',
+                style: 'position:absolute;top:2.5rem;left:0;z-index:50;background:white;border:1px solid #e5e7eb;border-radius:0.375rem;box-shadow:0 4px 6px rgba(0,0,0,.1);padding:0.25rem;min-width:10rem',
+                onclick: function(e) { e.stopPropagation(); }
+            }, olioTypePickerItems.map(function(item) {
+                return m('button', {
+                    key: item.type,
+                    style: 'display:flex;align-items:center;gap:0.5rem;width:100%;border:none;background:none;cursor:pointer;padding:0.4rem 0.75rem;border-radius:0.25rem;text-align:left',
+                    onmouseenter: function(e) { e.currentTarget.style.background = '#f3f4f6'; },
+                    onmouseleave: function(e) { e.currentTarget.style.background = ''; },
+                    onclick: function() { switchListType(item.type); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:1.1rem;line-height:1' }, item.icon),
+                    m('span', { style: 'font-size:0.875rem' }, item.label)
+                ]);
+            })) : null
         ]);
     }
 
@@ -1100,6 +1224,7 @@ function newListControl() {
     listPage.view = {
         oninit: function (vnode) {
             dnd = page.components.dnd;
+            pagination.new();
             initParams(vnode);
             document.documentElement.addEventListener('keydown', navListKey);
         },
@@ -1129,6 +1254,11 @@ function newListControl() {
             carousel = false;
             gridFullView = false;
             gridMode = 0;
+            showTypePicker = false;
+            if (typePickerClickHandler) {
+                document.removeEventListener('click', typePickerClickHandler);
+                typePickerClickHandler = null;
+            }
             // breadcrumb clears via navigation component
             document.documentElement.removeEventListener('keydown', navListKey);
             pagination.stop();
@@ -1190,6 +1320,7 @@ function newListControl() {
     // ------------------------------------------------------------------
 
     function pickerNavigateTo(containerId) {
+        pickerGroupNavMode = false; // Source button nav always returns to pickerType view
         pickerContainerId = containerId;
         listContainerId = containerId;
         // breadcrumb clears via navigation component
@@ -1206,9 +1337,11 @@ function newListControl() {
         pickerType = opts.type;
         pickerContainerId = opts.containerId;
         pickerUserContainerId = opts.userContainerId || null;
+        pickerHomeContainerId = opts.homeContainerId || null;
         pickerLibraryContainerId = opts.libraryContainerId || null;
         pickerFavoritesContainerId = opts.favoritesContainerId || null;
-        if (opts.containerId === opts.libraryContainerId) pickerActiveSource = 'library';
+        if (opts.containerId === opts.homeContainerId) pickerActiveSource = 'root';
+        else if (opts.containerId === opts.libraryContainerId) pickerActiveSource = 'library';
         else if (opts.containerId === opts.favoritesContainerId) pickerActiveSource = 'favorites';
         else pickerActiveSource = 'home';
 
@@ -1229,11 +1362,13 @@ function newListControl() {
 
     listPage.closePickerMode = function () {
         pickerMode = false;
+        pickerGroupNavMode = false;
         pickerHandler = null;
         pickerCancel = null;
         pickerType = null;
         pickerContainerId = null;
         pickerUserContainerId = null;
+        pickerHomeContainerId = null;
         pickerLibraryContainerId = null;
         pickerFavoritesContainerId = null;
         pickerActiveSource = 'home';
