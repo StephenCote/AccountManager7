@@ -258,8 +258,14 @@ public class RestServiceEventListener implements ApplicationEventListener {
 
 		/// Deployment's fallback SD checkpoint. Checkpoint names differ per Swarm install and a wrong
 		/// one returns an empty image list rather than an error, so this is worth setting explicitly.
-		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(
-			context.getInitParameter(org.cote.accountmanager.olio.sd.SDUtil.DEFAULT_MODEL_CONFIG_KEY));
+		/// sd.default.model is the canonical key; sd.model is the legacy per-service override used
+		/// by OlioService/ChatService. When sd.default.model is blank, fall back to sd.model so that
+		/// ChapBook renders (which call randomSDConfig) pick up the deployment-configured checkpoint.
+		String sdDefaultModel = context.getInitParameter(org.cote.accountmanager.olio.sd.SDUtil.DEFAULT_MODEL_CONFIG_KEY);
+		if (sdDefaultModel == null || sdDefaultModel.isBlank()) {
+			sdDefaultModel = context.getInitParameter("sd.model");
+		}
+		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(sdDefaultModel);
 
 		/// Must run before any HTTP call - the shared Client caches the timeout at first use. Sized by
 		/// the slowest legitimate SD generation, which is GPU-dependent (see ClientUtil).

@@ -70,8 +70,8 @@
 		{
 			"name": "model",
 			"type": "string",
-			"default": "OfficialStableDiffusion/sd_xl_base_1.0",
-			"description": "SDXL checkpoint. This default is only a last resort - checkpoint names are per-deployment, so set the 'sd.default.model' config (Service7 init-param / Console7 resource.properties) rather than relying on it. Was 'sdXL_v10VAEFix.safetensors', which does not exist on the local Swarm server; this value is verified present there and matches test.swarm.model."
+			"default": "OfficialStableDiffusion/sd_xl_base_1.0.safetensors",
+			"description": "SDXL checkpoint. This default is only a last resort - checkpoint names are per-deployment, so set the 'sd.default.model' config (Service7 init-param / Console7 resource.properties) rather than relying on it. Swarm requires the full filename including .safetensors extension — the model is verified present on the local server as OfficialStableDiffusion/sd_xl_base_1.0.safetensors (matches Objects7 test.swarm.model)."
 		},
 		{
 			"name": "scheduler",

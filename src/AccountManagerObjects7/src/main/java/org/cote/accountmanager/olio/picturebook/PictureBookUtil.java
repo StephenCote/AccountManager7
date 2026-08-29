@@ -2727,7 +2727,10 @@ public class PictureBookUtil {
 
             BaseRecord narrativePatch = narrative.copyRecord(
                     new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "sdPrompt", "physicalDescription" });
-            BaseRecord narrativeFieldsPersisted = IOSystem.getActiveContext().getAccessPoint().update(user, narrativePatch);
+            // Narrative was created by the olio principal when octx is available — use that principal
+            // for the update to avoid PBAC denial (request user doesn't own world-group narratives).
+            BaseRecord narrativeActor = (octx != null && octx.getOlioUser() != null) ? octx.getOlioUser() : user;
+            BaseRecord narrativeFieldsPersisted = IOSystem.getActiveContext().getAccessPoint().update(narrativeActor, narrativePatch);
             if (narrativeFieldsPersisted == null) {
                 logger.error("Failed to persist narrative.sdPrompt/physicalDescription for charPerson " + name + " — AccessPoint.update denied or failed (PBAC/persist)");
                 return false;

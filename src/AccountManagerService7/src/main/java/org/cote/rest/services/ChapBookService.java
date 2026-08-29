@@ -240,6 +240,7 @@ public class ChapBookService {
         }
 
         BaseRecord chatConfig = null;
+        BaseRecord sdConfig = null;
         BaseRecord params = parseParams(json);
         if (params != null) {
             String chatConfigName = params.get("chatConfig");
@@ -249,13 +250,15 @@ public class ChapBookService {
                     logger.warn("renderChapBook: chatConfig '{}' not found — landscape prompts will use stored sdPrompt", chatConfigName);
                 }
             }
+            Object sdc = params.get("sdConfig");
+            if (sdc instanceof BaseRecord) sdConfig = (BaseRecord) sdc;
         }
 
         try {
             // TODO(ChapBook async): This render is synchronous and will gateway-timeout for books
             // with many scenes (~10s per scene × 20 scenes = 200s exceeds typical 60-120s gateway
             // limit). When PB2 adopts an async render pattern, ChapBook should follow it.
-            int rendered = ChapBookUtil.renderChapBook(user, bookObjectId, sdApiType, sdServer, chatConfig);
+            int rendered = ChapBookUtil.renderChapBook(user, bookObjectId, sdApiType, sdServer, chatConfig, sdConfig);
             return Response.status(200).entity("{\"rendered\":" + rendered + "}").build();
         } catch (PictureBookException e) {
             return errorResponse(e.getStatus(), e.getMessage());

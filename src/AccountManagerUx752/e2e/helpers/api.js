@@ -703,6 +703,29 @@ export async function addUserToRole(request, userObjectId, roleName, opts = {}) 
 }
 
 /**
+ * Remove a user from a named system role using an admin context. Idempotent —
+ * member-remove is a no-op if the user is not a member.
+ * @returns {boolean} true if the role was found and the member-remove call was made.
+ */
+export async function removeUserFromRole(request, userObjectId, roleName, opts = {}) {
+    const org = opts.org || '/Development';
+    let ctx = await newApiContext();
+    try {
+        await loginCtx(ctx, { org });
+        let role = await searchCtx(ctx, 'auth.role', 'name', roleName, ['objectId', 'name']);
+        let ok = false;
+        if (role && role.objectId && userObjectId) {
+            await memberCtx(ctx, 'auth.role', role.objectId, 'system.user', userObjectId, false);
+            ok = true;
+        }
+        await logoutCtx(ctx);
+        return ok;
+    } finally {
+        await ctx.dispose();
+    }
+}
+
+/**
  * Setup workflow test data: create test user + charPerson + data.data objects.
  * Uses its own isolated APIRequestContext.
  * Returns { user, testUserName, testPassword, charPerson, dataObject, note }.

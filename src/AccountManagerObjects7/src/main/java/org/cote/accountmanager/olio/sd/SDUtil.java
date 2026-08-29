@@ -728,6 +728,16 @@ public class SDUtil {
 		sd.setValue("style", randomSDConfigValue(cfg, "styles"));
 		fillStyleDefaults(sd);
 
+		/// The schema default for 'model' is a last-resort placeholder; the authoritative
+		/// runtime default comes from sd.default.model (Service7 init-param / Console7
+		/// resource.properties) via SDUtil.setDefaultModel(). Apply it here so that
+		/// randomSDConfig() always uses the deployment-configured checkpoint rather than
+		/// the schema placeholder, which may not exist on the configured SD server.
+		String runtimeDefault = getDefaultModel();
+		if (runtimeDefault != null && !runtimeDefault.isBlank()) {
+			sd.setValue(OlioFieldNames.FIELD_SD_MODEL, runtimeDefault);
+		}
+
 		return sd;
 	}
 

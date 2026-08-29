@@ -612,11 +612,11 @@ public class ChapBookUtil {
 
 	/**
 	 * Generate SD images for all scenes of a CHAPBOOK-typed {@code olio.pb.book}.
-	 * Delegates to {@link #renderChapBook(BaseRecord, String, String, String, BaseRecord)} with no chatConfig.
+	 * Delegates to {@link #renderChapBook(BaseRecord, String, String, String, BaseRecord, BaseRecord)} with no chatConfig or sdConfig.
 	 */
 	public static int renderChapBook(BaseRecord user, String bookObjectId,
 			String sdApiType, String sdServer) {
-		return renderChapBook(user, bookObjectId, sdApiType, sdServer, null);
+		return renderChapBook(user, bookObjectId, sdApiType, sdServer, null, null);
 	}
 
 	/**
@@ -640,7 +640,7 @@ public class ChapBookUtil {
 	 * @throws PictureBookException if the book is not found or is not a CHAPBOOK
 	 */
 	public static int renderChapBook(BaseRecord user, String bookObjectId,
-			String sdApiType, String sdServer, BaseRecord chatConfig) {
+			String sdApiType, String sdServer, BaseRecord chatConfig, BaseRecord clientSdConfig) {
 		if (user == null || bookObjectId == null || bookObjectId.isBlank()) {
 			throw new PictureBookException(400, "user and bookObjectId are required");
 		}
@@ -704,7 +704,10 @@ public class ChapBookUtil {
 				sdPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
 			}
 			if (sdPrompt == null || sdPrompt.isBlank()) {
-				logger.warn("renderChapBook: scene " + sceneOid + " has no sdPrompt — skipping");
+				sdPrompt = stanza; // poemStanza fallback for freshly-created ChapBooks
+			}
+			if (sdPrompt == null || sdPrompt.isBlank()) {
+				logger.warn("renderChapBook: scene {} has no sdPrompt or stanza — skipping", sceneOid);
 				continue;
 			}
 			String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
@@ -712,6 +715,9 @@ public class ChapBookUtil {
 
 			try {
 				BaseRecord sdConfig = SDUtil.randomSDConfig();
+				if (clientSdConfig != null) {
+					SDUtil.applyOverrides(sdConfig, clientSdConfig);
+				}
 				SDUtil.fillStyleDefaults(sdConfig);
 				sdConfig.set("description", sdPrompt);
 

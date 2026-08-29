@@ -127,6 +127,7 @@ function renderDialog(cfg, index) {
             else btnClass += 'am7-dialog-btn-secondary';
             return m('button', {
                 class: btnClass,
+                disabled: !!act.disabled,
                 onclick: act.onclick
             }, [
                 act.icon ? m('span', { class: 'material-symbols-outlined md-18' }, act.icon) : null,

@@ -175,11 +175,26 @@ public class PbSubRecordUtil {
 			logger.error("No destination group could be resolved for " + modelName);
 			return null;
 		}
+		// World group paths are owned by the olio principal — using AccessPoint.create(requestUser)
+		// is always denied there. Mirror NarrativeUtil.getCreateNarrative: use the olio principal
+		// for factory instantiation and RecordUtil.createRecord (PBAC bypass) for persistence.
+		boolean useOlioPath = octx != null && octx.getOlioUser() != null && !path.startsWith("~/");
+		BaseRecord actor = useOlioPath ? octx.getOlioUser() : user;
 		try {
 			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, path);
-			BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(modelName, user, null, plist);
+			BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(modelName, actor, null, plist);
 			if(baselineSource != null) {
 				copyBaselineFieldValues(baselineSource, inst);
+			}
+			if(useOlioPath) {
+				boolean ok = IOSystem.getActiveContext().getRecordUtil().createRecord(inst);
+				Long newId = inst.get(FieldNames.FIELD_ID);
+				if(!ok || newId == null || newId <= 0L) {
+					logger.error("Failed to persist a new " + modelName + " in " + path
+						+ " via olio principal - RecordUtil.createRecord returned " + ok + ", id=" + newId);
+					return null;
+				}
+				return inst;
 			}
 			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, inst);
 			if(created == null) {

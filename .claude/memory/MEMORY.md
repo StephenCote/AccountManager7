@@ -21,6 +21,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-cors-127-post-403` -- Chrome 103+ sends Origin on same-origin POST; CorsFilter blocks 127.0.0.1:9443 if not in allowed origins — fixed in docker-compose.test.yml 2026-08-29
 - `feedback-create-test-users-for-roles` -- For role-check tests, create test users with needed role config rather than claiming untestable
 - `feedback-deflection-patterns` -- Stephen's repeated correction — stop shirking responsibility; \"pre-existing\" never discharges ownership of a test or bug I authored
+- `feedback-docker-no-lan-access` -- Docker Desktop bridge network cannot reach LAN hosts (192.168.1.x) -- SD/LLM server testing requires local Tomcat, not Docker
 - `feedback-likeInherits-noop` -- likeInherits in ModelSchema is metadata-only — no DDL or field-inheritance effect
 - `feedback-list-cache-bust-pattern` -- pagination.new() alone doesn't bust server /rest/model/search cache — need cache:false + sort by id on return from /new/
 - `feedback-llm-always-live` -- LLM at 192.168.1.42 is live during sessions -- never claim LLM paths cannot be tested
@@ -42,13 +43,16 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-schema-duplicate-constraints` -- DBUtil Index collision / Column does not exist errors are real schema defects from duplicate inherited constraints — never dismiss as noise
 - `feedback-scope-discipline` -- Don't drive-by-fix issues spotted outside the current task's scope — note them, don't touch them, unless asked
 - `feedback-sd-config-consistency` -- Stephen has raised SD-config inconsistency across reimage/pictureBook workflows multiple times; treat as unresolved until values (not just slider markup) are verified consistent
+- `feedback-sd-default-model-init-param` -- sd.default.model init-param can be empty in web.xml — randomSDConfig() must fall back to sd.model or images silently fail
 - `feedback-search-existing-olio-utils-first` -- Before writing any custom record-persistence/patching logic in Olio, search for an existing utility that already does it — don't hand-roll
 - `feedback-swarm-model-names-need-extension` -- Swarm .39 model names include .safetensors extension - omitting it causes silent failures
+- `feedback-swarm-never-claim-down` -- Never claim Swarm SD server is down — it's live; failures are malformed requests (missing .safetensors on model name)
 - `feedback-test-only-instrumentation` -- Debug/inspection hooks (e.g. emit-to-disk) belong in the test itself, never wired into production code
 - `feedback-use-real-test-content` -- use the user's actual provided documents/characters for PictureBook (and similar) test content instead of inventing synthetic stand-ins
 - `feedback-ux752-vitest-node-mithril-raf` -- Ux752 vitest runs in node env; Mithril captures schedule=requestAnimationFrame at import (null in node) so m.request completions throw 'schedule is not a function' — fix via setupFiles RAF shim (do not import mithril there)
 - `feedback-validate-dont-workaround-bad-queries` -- When a query/input is invalid (e.g. filters on a virtual/computed field), validate and reject with a clear error — don't build resolution logic to make it \"work\
 - `feedback-visual-inspection-required` -- For generative image/content pipelines, a passing persistence/decode test is not proof the output is correct — actually look at the emitted output
+- `ki-issue13-pb-subrec-olio-principal` -- Issue 13 root cause: PbSubRecordUtil.createSubRecord used request user via AccessPoint for world group paths — always PBAC denied, charPerson silently failed
 - `playwright-docker-e2e-gotchas` -- READ FIRST before any Playwright/Docker work: IPv6 localhost fix, WS stub, dist freshness, docker-compose in src/
 
 ## project

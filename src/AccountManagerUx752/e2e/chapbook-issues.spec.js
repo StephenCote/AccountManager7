@@ -9,7 +9,7 @@
  * Never uses admin: shared test user (ensureSharedTestUser) throughout.
  */
 import { test, expect } from '@playwright/test';
-import { ensureSharedTestUser, setupTestUser, cleanupTestUser, addUserToRole } from './helpers/api.js';
+import { ensureSharedTestUser, setupTestUser, cleanupTestUser, addUserToRole, removeUserFromRole } from './helpers/api.js';
 
 const REST = '/AccountManagerService7/rest';
 const CB_REST = REST + '/olio/chap-book';
@@ -321,70 +321,112 @@ test.describe('ChapBook/PictureBook — Issues 1, 3, 4, 8, 9, 12', () => {
         await expect(dialog).toBeHidden({ timeout: 3000 });
     });
 
-    // ── Issue 9 — Role warning banner for user without AccountUsers role ───────
+    // ── Issue 9 — Role warning banner + disabled Extract for user without AccountUsers ─
     //
-    // Fix: PoemLibrary and ChapBookReader oninit check page.context().roles.user;
-    // when absent, roleWarning=true renders a yellow warning banner.
-    // NOTE: The buttons (Add from Note, Add from Data) are NOT disabled — only the banner
-    // is shown. Any test assertion that those buttons are disabled would fail because
-    // the implementation does not disable them.
+    // Previously skipped because fresh users are auto-enrolled in AccountUsers on first login.
+    // Fix: use removeUserFromRole (admin context, admin action only) to explicitly remove the
+    // user AFTER their home directory is initialized, then re-login and verify the banner and
+    // the disabled Extract button in the PictureBook wizard.
     //
-    // Strategy: create a fresh user via setupTestUser() (admin context confined to helper
-    // provisioning only — never login as admin in the test body). A fresh user is NOT
-    // explicitly added to AccountUsers; if the system auto-enrolls them we document it and skip.
-    test('Issue 9 — ChapBook shows role warning banner for user without AccountUsers', async ({ page, request }) => {
-        // setupTestUser uses admin internally for provisioning only; test body never touches admin.
+    // Two assertions:
+    //   1. Work selector at #!/picture-book shows "You need the AccountUsers role to use
+    //      Picture Book features."
+    //   2. The PictureBook wizard dialog (opened by picking a note) shows "You need the
+    //      AccountUsers role to use PictureBook features." AND the Extract button is disabled.
+    //      (dialogCore.js fix required: act.disabled must be passed through to the button.)
+    test('Issue 9 — PictureBook role warning banner visible and Extract disabled for user without AccountUsers', async ({ page, request }) => {
+        // Create test user with 1 note (the note is created while AccountUsers is still active,
+        // so ~/Notes path resolves and the note is owned by the user).
         const { testUserName, testPassword, user } = await setupTestUser(request, {
             suffix: 'noau' + Date.now().toString(36),
-            noteCount: 0
+            noteCount: 1
         });
 
-        // Log in as the fresh user — no explicit AccountUsers membership was granted
-        await addWsStub(page);
-        const loginResp = await page.request.post(REST + '/login', {
-            data: {
-                schema: 'auth.credential', organizationPath: '/Development',
-                name: testUserName, credential: b64(testPassword), type: 'hashed_password'
-            }
-        });
-        if (!loginResp.ok() && loginResp.status() !== 204) {
-            await cleanupTestUser(request, user && user.objectId, { userName: testUserName });
-            test.skip('Login as fresh user failed: ' + loginResp.status());
-            return;
-        }
+        try {
+            expect(user && user.objectId, 'setupTestUser must return a user with objectId').toBeTruthy();
 
-        await page.goto('/', { timeout: 30000 });
-        await page.waitForFunction(
-            () => (window.location.hash.includes('/main') || window.location.hash.includes('/chap-book') ||
-                   document.querySelector('[role="main"]')),
-            { timeout: 30000 }
-        );
+            // Admin removes the user from AccountUsers — previously impossible without this export.
+            const removed = await removeUserFromRole(request, user.objectId, 'AccountUsers');
+            expect(removed, 'AccountUsers role not found or removal call failed').toBe(true);
+            console.log('[Issue 9] Removed ' + testUserName + ' from AccountUsers.');
 
-        // Navigate to ChapBook
-        await page.evaluate(() => { window.location.hash = '!/chap-book'; });
-        await page.waitForTimeout(3000);
+            // Log in as the user (fresh session — AccountUsers removal takes effect at login time).
+            await addWsStub(page);
+            const loginResp = await page.request.post(REST + '/login', {
+                data: {
+                    schema: 'auth.credential', organizationPath: '/Development',
+                    name: testUserName, credential: b64(testPassword), type: 'hashed_password'
+                }
+            });
+            expect(
+                loginResp.ok() || loginResp.status() === 204,
+                'Login as user-without-AccountUsers failed: HTTP ' + loginResp.status()
+            ).toBe(true);
 
-        // Assert: the role warning banner is visible
-        // (text from chapBook.js: "You need the AccountUsers role to use ChapBook features.")
-        const warningBanner = page.locator('text=You need the AccountUsers role to use ChapBook features.');
-        const visible = await warningBanner.isVisible({ timeout: 8000 }).catch(() => false);
+            await page.goto('/', { timeout: 30000 });
+            await page.waitForFunction(
+                () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
+                { timeout: 30000 }
+            );
 
-        await cleanupTestUser(request, user && user.objectId, { userName: testUserName });
+            // Navigate to PictureBook work selector
+            await page.evaluate(() => { window.location.hash = '!/picture-book'; });
+            await page.waitForTimeout(3000);
 
-        if (!visible) {
-            // The user may have been auto-enrolled in AccountUsers by the system (org default).
-            // This is a real infrastructure finding: the role warning code IS present in chapBook.js
-            // (roleWarning = !(roles && roles.user)) but cannot be exercised when every new user is
-            // automatically granted AccountUsers on first login.
-            console.log('[Issue 9] Warning banner not visible — fresh user has AccountUsers (auto-enrolled by system).');
-            console.log('[Issue 9] The feature code IS correct (chapBook.js) but cannot be exercised via fresh-user approach alone.');
-            test.skip('Cannot verify Issue 9 banner: fresh user was auto-enrolled in AccountUsers by org startup. Role removal would require the admin helper pattern which is unavailable here without a removeUserFromRole export.');
-        } else {
-            await expect(warningBanner).toBeVisible();
+            // Assert 1: work selector warning banner visible
+            const workSelectorBanner = page.locator('text=You need the AccountUsers role to use Picture Book features.');
+            await expect(workSelectorBanner).toBeVisible({ timeout: 10000 });
             await expect(
                 page.locator('.border-yellow-300, .border-yellow-700').first()
             ).toBeVisible({ timeout: 3000 });
-            console.log('[Issue 9] Role warning banner visible — user correctly lacks AccountUsers.');
+            console.log('[Issue 9] Work selector warning banner confirmed.');
+
+            // Open the PictureBook wizard by picking a note from ~/Notes
+            await page.getByRole('button', { name: /Browse Notes/ }).click();
+            const picker = page.locator('.am7-picker-overlay');
+            await expect(picker).toBeVisible({ timeout: 10000 });
+
+            // Wait for note rows (the user owns 1 note created in setup, so count must be >= 1)
+            const rows = picker.locator('tr.tabular-row');
+            await expect.poll(async () => rows.count(), { timeout: 15000 }).toBeGreaterThan(0);
+            console.log('[Issue 9] Picker shows ' + await rows.count() + ' note(s).');
+
+            // Single-click the first note to select it (toggles checked=true).
+            // Do NOT double-click: browser fires two onclick events before ondblclick, toggling
+            // the selection back to false so getSelected() returns [] and handler is never called.
+            await rows.first().click();
+            await page.waitForTimeout(300);
+
+            // Click the confirm button — rendered by pagination.button('button','check','',...) via
+            // page.iconButton which assigns class='button'. It is the first button.button in the picker.
+            // (The picker's close button uses Tailwind classes, not class='button'.)
+            const confirmBtn = picker.locator('button.button').first();
+            await expect(confirmBtn).toBeVisible({ timeout: 5000 });
+            await confirmBtn.click();
+            await page.waitForTimeout(3000);
+
+            // Assert 2a: wizard dialog opened
+            const dialog = page.locator('.am7-dialog-backdrop');
+            await expect(dialog).toBeVisible({ timeout: 10000 });
+
+            // Assert 2b: wizard role warning banner visible
+            const wizardBanner = dialog.locator('text=You need the AccountUsers role to use PictureBook features.');
+            await expect(wizardBanner).toBeVisible({ timeout: 8000 });
+            console.log('[Issue 9] Wizard dialog warning banner confirmed.');
+
+            // Assert 2c: Extract button is disabled (requires dialogCore.js fix: disabled: !!act.disabled)
+            const extractBtn = dialog.locator('.am7-dialog-footer button:has-text("Extract")');
+            await expect(extractBtn).toBeDisabled({ timeout: 5000 });
+            console.log('[Issue 9] Extract button is disabled — PASS.');
+
+            // Close the wizard
+            const cancelBtn = dialog.locator('.am7-dialog-footer button:has-text("Cancel")');
+            if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                await cancelBtn.click();
+                await page.waitForTimeout(500);
+            }
+        } finally {
+            await cleanupTestUser(request, user && user.objectId, { userName: testUserName });
         }
     });
 
