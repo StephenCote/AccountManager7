@@ -17,6 +17,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-bytestore-access` -- Never read/write a byte_store field with raw .get()/.set() — use ByteModelUtil, since data may be compressed and/or encrypted
 - `feedback-cb-poem-text-projection` -- olio.cb.poem query defaults omit text; any poem read needing text MUST project it — the analyze endpoint silently no-oped (returned success:true) without it
 - `feedback-chapbook-authorize-scene-gotcha` -- authorizeSceneAccess queries data.note not olio.pb.scene — generateSceneImage cannot be used for ChapBook scenes
+- `feedback-cors-127-post-403` -- Chrome 103+ sends Origin on same-origin POST; CorsFilter blocks 127.0.0.1:9443 if not in allowed origins — fixed in docker-compose.test.yml 2026-08-29
 - `feedback-deflection-patterns` -- Stephen's repeated correction — stop shirking responsibility; \"pre-existing\" never discharges ownership of a test or bug I authored
 - `feedback-likeInherits-noop` -- likeInherits in ModelSchema is metadata-only — no DDL or field-inheritance effect
 - `feedback-llm-literal-null-strings` -- LLM-extracted JSON fields can contain the literal string \"null\"/\"n/a\"/\"unknown\" instead of being absent or blank — guard for that explicitly

@@ -317,7 +317,7 @@ cd src/AccountManagerUx752
 PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test --workers=1 --project=chromium
 ```
 
-**`127.0.0.1` not `localhost`:** Docker publishes IPv4-only. Chromium resolves `localhost` to `::1` first, which fails with `ERR_CONNECTION_ABORTED`. Always use `127.0.0.1` and ensure `CORS_ALLOWED_ORIGINS` includes `https://127.0.0.1:9443`.
+**`127.0.0.1` not `localhost`:** Docker publishes IPv4-only. Chromium resolves `localhost` to `::1` first, which fails with `ERR_CONNECTION_ABORTED`. Always use `127.0.0.1`. Chrome 103+ sends `Origin: https://127.0.0.1:9443` on same-origin POST requests; Tomcat's `CorsFilter` returns 403 if that origin is not allowed — which blocks `POST /rest/model/search` and `POST /rest/model/search/count` while GET requests work fine. **`docker-compose.test.yml` now includes `https://127.0.0.1:9443` in `CORS_ALLOWED_ORIGINS` (fixed 2026-08-29).**
 
 **Port matters for `applicationPath`:** `config.js` maps port 8899 → absolute `https://localhost:8443`; any other port (including 9443) → relative `/AccountManagerService7`. With PLAYWRIGHT_BASE_URL at 9443, all REST calls become `/AccountManagerService7/...` relative to origin — correct for nginx.
 
@@ -349,7 +349,7 @@ await page.addInitScript(() => {
 ```bash
 cd src/AccountManagerUx752
 npx vite build
-docker cp ./dist/. am7test-am7-1:/opt/ux752/dist/
+docker cp ./dist/. src-am7-1:/opt/ux752/dist/
 ```
 `vite preview` serves static files from disk — the new files are picked up immediately without restarting the container. To fully rebuild the image (e.g. after backend changes):
 ```bash
