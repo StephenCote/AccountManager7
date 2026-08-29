@@ -18,6 +18,33 @@ import { memberCloud } from '../workflows/memberCloud.js';
 // breadcrumb is now a component in navigation.js (Ux7 pattern), not inline
 
 // ---------------------------------------------------------------------------
+//  Module-level: track the route that was active BEFORE a hash navigation so
+//  list.js can detect when the list remounts after a /new/ or /pnew/ route and
+//  bust the am7client search cache (Issue 4).
+//
+//  NOTE: use event.oldURL (the full URL before the hash change) rather than
+//  m.route.get(), because the router's hashchange listener fires first and
+//  calls m.route.set() which synchronously updates m.route.get() to the NEW
+//  route before our listener runs.
+// ---------------------------------------------------------------------------
+let _preNavRoute = null;
+if (typeof window !== 'undefined') {
+    window.addEventListener('hashchange', function (e) {
+        if (e && e.oldURL) {
+            let idx = e.oldURL.indexOf('#!');
+            if (idx > -1) {
+                // Strip '#!' prefix: e.oldURL.slice(idx+2) gives '/new/data.note/OID'
+                // which matches the format returned by m.route.get()
+                _preNavRoute = e.oldURL.slice(idx + 2);
+            }
+        } else {
+            // Fallback: m.route.get() may already be the new route at this point
+            _preNavRoute = m.route.get();
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
 //  newListControl  --  factory that returns a list-page controller + view
 //  Pure controller: state, navigation, selection, toolbar, keyboard.
 //  ALL rendering delegated to decorator.js via getListController().
@@ -69,6 +96,13 @@ function newListControl() {
     // Issue 12 — type picker popover state
     let showTypePicker = false;
     let typePickerClickHandler = null;
+    let typePickerAnchorRect = null;
+
+    // Issue 4 — track previous route to detect return from /new/ or /pnew/
+    let prevRoute = null;
+
+    // Issue 1 — guard against re-entrant navigateUp calls in picker mode
+    let navigatingUp = false;
     const olioTypePickerItems = [
         { type: 'olio.world',      icon: 'globe',        label: 'World' },
         { type: 'olio.charPerson', icon: 'face',         label: 'Character' },
@@ -428,8 +462,25 @@ function newListControl() {
         // The container is populated by pagination's async fetch; a back-click that
         // races that fetch (or a not-yet-resolved route) leaves it null. Rather than
         // no-op (which blanks the list/breadcrumb), resolve the container from the
-        // current route objectId, then re-run the navigation in the callback.
+        // current route objectId (normal mode) or from listContainerId (picker mode),
+        // then re-run the navigation in the callback.
         if (!pg.container) {
+            if (pickerMode) {
+                // Issue 1: in picker mode, m.route.param('objectId') is the HOST object's id,
+                // not the picker's container. Use listContainerId (set by openForPicker) instead.
+                if (navigatingUp) return;
+                let oid = listContainerId;
+                if (!oid) return;
+                navigatingUp = true;
+                am7client.getFull('auth.group', oid, function (c) {
+                    navigatingUp = false;
+                    if (c != null) {
+                        pagination.pages().container = c;
+                        navigateUp();
+                    }
+                });
+                return;
+            }
             let objectId = m.route.param('objectId');
             if (!objectId || objectId === 'null' || objectId === 'undefined') return;
             let contType = (type === 'auth.group') ? 'auth.group' : type;
@@ -626,13 +677,24 @@ function newListControl() {
     //  Issue 12 — type picker popover
     // ------------------------------------------------------------------
 
-    function toggleTypePicker() {
+    // Issue 12: accept optional event to capture anchor position for fixed-positioned popover.
+    function toggleTypePicker(e) {
         showTypePicker = !showTypePicker;
         if (showTypePicker) {
+            // Capture the click target's bounding rect so the popover can appear near it,
+            // even if the trigger is inside a container with overflow:hidden.
+            if (e && e.currentTarget) {
+                typePickerAnchorRect = e.currentTarget.getBoundingClientRect();
+            } else if (e && e.target) {
+                typePickerAnchorRect = e.target.getBoundingClientRect();
+            } else {
+                typePickerAnchorRect = null;
+            }
             typePickerClickHandler = function(e) {
                 let popover = document.querySelector('.am7-type-picker-popover');
                 if (!popover || !popover.contains(e.target)) {
                     showTypePicker = false;
+                    typePickerAnchorRect = null;
                     document.removeEventListener('click', typePickerClickHandler);
                     typePickerClickHandler = null;
                     m.redraw();
@@ -642,6 +704,7 @@ function newListControl() {
                 document.addEventListener('click', typePickerClickHandler);
             }, 0);
         } else {
+            typePickerAnchorRect = null;
             if (typePickerClickHandler) {
                 document.removeEventListener('click', typePickerClickHandler);
                 typePickerClickHandler = null;
@@ -1132,10 +1195,16 @@ function newListControl() {
                 // (flex-1 + min-h-0 lets this child shrink; without overflow it clipped instead of scrolling).
                 m('div', { class: 'flex-1 min-h-0 overflow-auto' }, content)
             ]),
-            // Issue 12 — type picker popover (normal/non-picker mode only)
+            // Issue 12 — type picker popover (normal/non-picker mode only).
+            // Uses position:fixed + anchor coords captured by toggleTypePicker(e) so the popover
+            // is never clipped by an ancestor overflow:hidden container.
             showTypePicker && !pickerMode ? m('div', {
                 class: 'am7-type-picker-popover',
-                style: 'position:absolute;top:2.5rem;left:0;z-index:50;background:white;border:1px solid #e5e7eb;border-radius:0.375rem;box-shadow:0 4px 6px rgba(0,0,0,.1);padding:0.25rem;min-width:10rem',
+                style: (function() {
+                    let top = typePickerAnchorRect ? (typePickerAnchorRect.bottom + 4) : 48;
+                    let left = typePickerAnchorRect ? typePickerAnchorRect.left : 0;
+                    return 'position:fixed;top:' + top + 'px;left:' + left + 'px;z-index:9999;background:white;border:1px solid #e5e7eb;border-radius:0.375rem;box-shadow:0 4px 6px rgba(0,0,0,.1);padding:0.25rem;min-width:10rem';
+                })(),
                 onclick: function(e) { e.stopPropagation(); }
             }, olioTypePickerItems.map(function(item) {
                 return m('button', {
@@ -1223,8 +1292,24 @@ function newListControl() {
 
     listPage.view = {
         oninit: function (vnode) {
+            // Issue 4: seed prevRoute so onupdate's "returning from new" detection has a baseline.
+            prevRoute = m.route.get();
             dnd = page.components.dnd;
             pagination.new();
+            // Issue 4: always bust the client+server cache on remount so newly-created records
+            // are not hidden behind a stale am7client or server-side cached result set.
+            pagination.pages().noCache = true;
+            // Issue 4: when returning from a /new/ or /pnew/ create route, switch to id-descending
+            // sort so the most recently-created record (highest numeric id) lands on page 1,
+            // regardless of how many existing records sort before it alphabetically.
+            // _preNavRoute is captured by the module-level hashchange listener using e.oldURL
+            // (the URL before the navigation), so it reliably reflects the route being left.
+            if (_preNavRoute && /\/(pnew|new)\//.test(_preNavRoute)) {
+                pagination.pages().sort = "id";
+                pagination.pages().order = "descending";
+                pagination.entity.sort = "id";
+                pagination.entity.order = "descending";
+            }
             initParams(vnode);
             document.documentElement.addEventListener('keydown', navListKey);
         },
@@ -1242,8 +1327,23 @@ function newListControl() {
             if (mod && panel && panel.trackRecent) {
                 panel.trackRecent(mod.label || listType, m.route.get(), mod.icon || 'list');
             }
+            // Issue 12: register toggleTypePicker on page.components so the breadcrumb icon can call it.
+            // Only the standalone (non-picker, non-embedded) list registers — the picker's embedded list
+            // should not overwrite the main list's handler.
+            if (!pickerMode && !embeddedMode) {
+                page.components.toggleTypePicker = toggleTypePicker;
+            }
         },
         onupdate: function (vnode) {
+            // Issue 4: when returning to a list route from a /new/ or /pnew/ route,
+            // force a cache-busting re-fetch so newly-created objects appear immediately.
+            let currentRoute = m.route.get();
+            let comingFromNew = prevRoute && /\/(pnew|new)\//.test(prevRoute);
+            let goingToList = currentRoute && /\/(plist|list)\//.test(currentRoute);
+            if (comingFromNew && goingToList) {
+                pagination.new();
+            }
+            prevRoute = currentRoute;
             update(vnode);
             // Reload breadcrumb when container changes (fixes stale path)
             // breadcrumb reloads via navigation component on route change
@@ -1255,9 +1355,15 @@ function newListControl() {
             gridFullView = false;
             gridMode = 0;
             showTypePicker = false;
+            typePickerAnchorRect = null;
             if (typePickerClickHandler) {
                 document.removeEventListener('click', typePickerClickHandler);
                 typePickerClickHandler = null;
+            }
+            // Issue 12: un-register our toggleTypePicker (identity check prevents removing
+            // a handler registered by a different list instance).
+            if (page.components.toggleTypePicker === toggleTypePicker) {
+                delete page.components.toggleTypePicker;
             }
             // breadcrumb clears via navigation component
             document.documentElement.removeEventListener('keydown', navListKey);

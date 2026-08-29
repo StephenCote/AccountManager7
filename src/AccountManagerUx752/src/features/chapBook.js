@@ -749,7 +749,10 @@ const PoemLibrary = {
                             let sel = selectedIds.has(p.objectId);
                             let analyzing = analyzingIds.has(p.objectId);
                             return m('tr', {
-                                key: p.objectId,
+                                // Issue 3: key includes selection state so Mithril recreates the row
+                                // (and its checkbox) when Clear is clicked — avoids stale checked state
+                                // on reused DOM nodes.
+                                key: p.objectId + '-' + (sel ? '1' : '0'),
                                 class: 'border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer ' + (sel ? 'bg-purple-50 dark:bg-purple-900/20' : ''),
                                 onclick: function () {
                                     if (sel) selectedIds.delete(p.objectId);
@@ -1392,18 +1395,21 @@ async function doDeleteScene(idx) {
     m.redraw();
 }
 
-async function renderReviewBook() {
+// Issue 8: open the SD config dialog before rendering, then execute render with chatConfig + sdConfig.
+function renderReviewBook() {
     if (!reviewBookObjectId) return;
-    reviewRendering = true;
-    m.redraw();
-    try {
-        let result = await renderChapBook(reviewBookObjectId);
-        page.toast('success', 'Render complete: ' + (result.rendered || 0) + ' scene(s) generated');
-    } catch (e) {
-        page.toast('error', 'Render failed: ' + (e.message || ''));
-    }
-    reviewRendering = false;
-    m.redraw();
+    openRenderConfigDialog(reviewBookObjectId, async function (bookId, chatConfigName, sdConfig) {
+        reviewRendering = true;
+        m.redraw();
+        try {
+            let result = await renderChapBook(bookId, chatConfigName, sdConfig);
+            page.toast('success', 'Render complete: ' + (result.rendered || 0) + ' scene(s) generated');
+        } catch (e) {
+            page.toast('error', 'Render failed: ' + (e.message || ''));
+        }
+        reviewRendering = false;
+        m.redraw();
+    });
 }
 
 function renderSceneCard(scene, idx) {
@@ -1538,6 +1544,11 @@ const ChapBookReview = {
         reviewError = null;
         reviewRendering = false;
         reviewGroupId = null;
+        // Issue 8: reset render dialog state so the SD config modal starts fresh
+        showRenderDialog = false;
+        pendingRenderBookId = null;
+        pendingRenderCallback = null;
+        renderSdCfg = {};
         if (reviewBookObjectId) loadReviewBook(reviewBookObjectId);
     },
     view: function () {
@@ -1587,7 +1598,9 @@ const ChapBookReview = {
                             reviewScenes.map(function (scene, idx) {
                                 return renderSceneCard(scene, idx);
                             })
-                          )
+                          ),
+            // Issue 8: pre-render SD config dialog (same as PoemLibrary and ChapBookReader)
+            renderRenderDialog()
         ]);
     }
 };
@@ -1620,5 +1633,5 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary };
+export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog };
 export default ChapBookFeature;

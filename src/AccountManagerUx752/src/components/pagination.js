@@ -28,6 +28,9 @@ function newPaginationControl() {
       currentPage: -1,
       currentItem: 0,
       pageCount: 0,
+      // Issue 4: when true, the next search bypasses the am7client cache (one-shot).
+      // Set by list.js when mounting after a /new/ route so stale cached results are not served.
+      noCache: false,
       pageResults: [],
       pageState: {},
       resultType: null,
@@ -78,6 +81,14 @@ function newPaginationControl() {
       return null;
     }
     let q = am7client.newQuery(pages.resultType);
+    // Issue 4: bypass cache on fresh mounts (returning from /new/ etc.) so stale results are not served.
+    // Explicitly clear the client-side in-memory + SQLite cache for this type so getFromCache()
+    // returns a miss, forcing a fresh POST to the server.  Also send cache:false in the request
+    // body so the server bypasses its own result cache.
+    if (pages.noCache) {
+      am7client.clearCache(pages.resultType, true);  // bLocalOnly=true — no server round-trip
+      q.entity.cache = false;
+    }
     q.entity.request = getRequestFields(pages.resultType);
 
     if (pages.filter != null) {
@@ -143,6 +154,8 @@ function newPaginationControl() {
     if (v && v[am7model.jsonModelKey] == "io.queryResult") {
       v = v.results;
     }
+    // Issue 4: clear the one-shot noCache flag after the first successful list load.
+    pages.noCache = false;
     pages.pageResults[pages.currentPage] = v;
     am7model.updateListModel(v);
     requesting = false;

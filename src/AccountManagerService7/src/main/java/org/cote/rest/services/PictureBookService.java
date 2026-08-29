@@ -162,7 +162,15 @@ public class PictureBookService {
     }
 
     private Response errorResponse(int status, String message) {
-        return Response.status(status).entity("{\"error\":\"" + message + "\"}").build();
+        return Response.status(status).entity("{\"error\":" + escapeJson(message) + "}").build();
+    }
+
+    /** Serialize a Java String as a JSON string literal, escaping backslash, double-quote,
+     *  newline, and carriage-return so the result is safe to embed in a hand-built JSON body. */
+    private static String escapeJson(String s) {
+        if (s == null) return "null";
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"")
+                       .replace("\n", "\\n").replace("\r", "\\r") + "\"";
     }
 
     private Response handlePictureBookException(PictureBookException e) {
@@ -367,6 +375,20 @@ public class PictureBookService {
             return Response.status(200).entity(toJson(meta)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            // Catch unchecked exceptions (e.g. from OlioContext init or createCharPerson) so Jersey
+            // returns a parseable JSON body instead of a 500 HTML page. The UX reads body.error.
+            logger.error("createFromScenes failed unexpectedly: " + e.getMessage(), e);
+            Throwable root = e;
+            while (root.getCause() != null) root = root.getCause();
+            String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            String causeMsg = (root != e && root.getMessage() != null) ? root.getMessage() : null;
+            if (causeMsg != null) {
+                return Response.status(500).entity(
+                    "{\"error\":" + escapeJson(errMsg) + ",\"cause\":" + escapeJson(causeMsg) + "}"
+                ).build();
+            }
+            return errorResponse(500, errMsg);
         }
     }
 

@@ -12,14 +12,18 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 
 
 ## feedback
+- `feedback-accountusers-auto-enroll` -- org startup auto-enrolls every new user in AccountUsers — role-gate tests cannot use fresh-user approach alone
 - `feedback-booktype-projection-delete` -- PbBookUtil.bookRequest() missing bookType field causes ChapBook delete 403
 - `feedback-breadcrumb-olio-parent-fetch` -- breadcrumb.js hardcodes auth.group fetch for all list routes — fails for olio.world and other parent-type navigation
 - `feedback-bytestore-access` -- Never read/write a byte_store field with raw .get()/.set() — use ByteModelUtil, since data may be compressed and/or encrypted
 - `feedback-cb-poem-text-projection` -- olio.cb.poem query defaults omit text; any poem read needing text MUST project it — the analyze endpoint silently no-oped (returned success:true) without it
 - `feedback-chapbook-authorize-scene-gotcha` -- authorizeSceneAccess queries data.note not olio.pb.scene — generateSceneImage cannot be used for ChapBook scenes
 - `feedback-cors-127-post-403` -- Chrome 103+ sends Origin on same-origin POST; CorsFilter blocks 127.0.0.1:9443 if not in allowed origins — fixed in docker-compose.test.yml 2026-08-29
+- `feedback-create-test-users-for-roles` -- For role-check tests, create test users with needed role config rather than claiming untestable
 - `feedback-deflection-patterns` -- Stephen's repeated correction — stop shirking responsibility; \"pre-existing\" never discharges ownership of a test or bug I authored
 - `feedback-likeInherits-noop` -- likeInherits in ModelSchema is metadata-only — no DDL or field-inheritance effect
+- `feedback-list-cache-bust-pattern` -- pagination.new() alone doesn't bust server /rest/model/search cache — need cache:false + sort by id on return from /new/
+- `feedback-llm-always-live` -- LLM at 192.168.1.42 is live during sessions -- never claim LLM paths cannot be tested
 - `feedback-llm-literal-null-strings` -- LLM-extracted JSON fields can contain the literal string \"null\"/\"n/a\"/\"unknown\" instead of being absent or blank — guard for that explicitly
 - `feedback-membercloud-not-dialog` -- memberCloud is not on page.components.dialog — import directly from workflows/memberCloud.js
 - `feedback-memory-active-use` -- Memory system requires active search+write calls, not just relying on the SessionStart hook
@@ -45,7 +49,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-ux752-vitest-node-mithril-raf` -- Ux752 vitest runs in node env; Mithril captures schedule=requestAnimationFrame at import (null in node) so m.request completions throw 'schedule is not a function' — fix via setupFiles RAF shim (do not import mithril there)
 - `feedback-validate-dont-workaround-bad-queries` -- When a query/input is invalid (e.g. filters on a virtual/computed field), validate and reject with a clear error — don't build resolution logic to make it \"work\
 - `feedback-visual-inspection-required` -- For generative image/content pipelines, a passing persistence/decode test is not proof the output is correct — actually look at the emitted output
-- `playwright-docker-e2e-gotchas` -- WebSocket stub + 127.0.0.1 + dist freshness required for Playwright tests against the Docker stack
+- `playwright-docker-e2e-gotchas` -- READ FIRST before any Playwright/Docker work: IPv6 localhost fix, WS stub, dist freshness, docker-compose in src/
 
 ## project
 - `issue-tracker-uat-blockers` -- Three UAT blocker issues fixed 2026-08-25: list picker nav, poem ~/Poems PBAC, text-bigint wiring
@@ -64,12 +68,13 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `project-pb-security-status` -- TestPbSecurity status: 10/10 green on 2026-08-21
 - `project-pb2-chapbook-remediation-complete` -- PB2+ChapBook remediation all 14 issues addressed 2026-08-28; ChapBook E2E 9/9 green; issue-13 silent-fail fixed
 - `project-pb2-chapbook-remediation-plan` -- Recorded evidence-based PB2+ChapBook remediation plan (src/aiDocs/PictureBook2ChapBookRemediationPlan.md) + verified blockers, corrections (M3 fixed), stack port 9443, real poem corpus
+- `project-pb2-new-issues-2026-08-29` -- 8 PB2/ChapBook issues addressed 2026-08-29: picker nav, clear, cache, LLM prompt, SD config, roles, type-picker, error surfacing
 - `project-pb5-phase-status` -- Phase 5 workflow canvas complete — Test button, Stale recheck, DONE_UNVERIFIED color, 15 Playwright tests
 - `project-pb6-phase-status` -- Phase 6 (Migration) status: PbMigrationUtil + TestPbMigration green
 - `project-pb6b-phase-status` -- Phase 6b (Interactive Canvas Backend) complete: PbNodeExecutor + TestPbCanvas green
 - `project-pb6c-phase-status` -- Phase 6c (SD config persistability) complete: S1-S6 all done, all tests green
 - `project-picturebook-backend-redo` -- PictureBook feature backend persistence redo — charPerson/portrait/landscape not saved, reference images unused
-- `project-service-testing-docker` -- Service7/Tomcat testing via Docker — database mapping, clean-env procedure, hot-deploy steps, Playwright command
+- `project-service-testing-docker` -- READ FIRST for any Docker/Playwright work: docker-compose in src/, am72db vs am7test ports, clean-env, hot-deploy
 - `project-world-delete-endpoint` -- DELETE /rest/olio/world/{worldObjectId} — full world wipe; uses olio principal; PB2 book cleanup falls back to direct delete if no PB1 group
 - `testing-db-reset` -- Database reset rules: am7db and am7test resettable; am72db NEVER touched at all — no DDL, no migrations, no SQL
 - `testing-olio-org-seed` -- Olio seed data loads per-organization and takes minutes on first use; reuse a single stable test org rather than random or multiple org names

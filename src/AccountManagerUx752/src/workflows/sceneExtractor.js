@@ -62,7 +62,9 @@ async function createFromScenes(workObjectId, chatConfigName, genre, bookName, s
     if (!resp.ok) {
         let body = null;
         try { body = await resp.json(); } catch (_) { try { body = { message: await resp.text() }; } catch (_2) {} }
-        throw new Error('Create from scenes failed: ' + ((body && (body.error || body.message)) || resp.status));
+        let errMsg = (body && (body.error || body.message)) || resp.status;
+        if (body && body.cause && body.cause !== errMsg) errMsg = errMsg + ' (cause: ' + body.cause + ')';
+        throw new Error('Create from scenes failed: ' + errMsg);
     }
     return resp.json();
 }

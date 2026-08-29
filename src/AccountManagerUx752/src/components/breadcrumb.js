@@ -215,7 +215,15 @@ function buildBreadCrumb() {
         m("div", { class: "breadcrumb-container" }, [
             m("nav", { class: "breadcrumb" }, [
                 m("ol", { id: "listBreadcrumb", class: "breadcrumb-list" }, [
-                    m("li", m("span", { class: "material-symbols-outlined material-icons-24" }, rp.modType.icon)),
+                    // Issue 12: clicking the type icon opens the type-picker popover (registered by
+                    // list.js on page.components.toggleTypePicker when a standalone list is mounted).
+                    m("li", rp.modType ? m("span", {
+                        class: "material-symbols-outlined material-icons-24 cursor-pointer",
+                        title: "Switch list type",
+                        onclick: function (e) {
+                            if (page.components.toggleTypePicker) page.components.toggleTypePicker(e);
+                        }
+                    }, rp.modType.icon) : null),
                     crumbs
                 ])
             ])

@@ -1,5 +1,6 @@
 package org.cote.accountmanager.objects.tests;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
@@ -12,6 +13,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.picturebook.ChapBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
@@ -233,6 +235,109 @@ public class TestChapBook extends BaseTest {
 
 		logger.info("testChapBookWorkflow: book={} workflow={} nodes={}",
 			bookObjectId, workflow.get(FieldNames.FIELD_OBJECT_ID), nodes.size());
+	}
+
+	/**
+	 * Exercises the LLM landscape-prompt path in {@link ChapBookUtil#createChapBookScene}.
+	 * <p>
+	 * When {@code chatConfig} is non-null, {@code createChapBookScene} calls
+	 * {@link org.cote.accountmanager.olio.picturebook.PictureBookUtil#callLlmForChapBook} with the
+	 * {@code chapBook.landscape-prompt} template and the stanza text as {@code stanzaText}, expecting
+	 * the LLM to return a Stable Diffusion landscape prompt beginning with "masterpiece, best quality,".
+	 * <p>
+	 * The test asserts that the stored {@code sdPrompt} on each scene:
+	 * <ol>
+	 *   <li>Is non-null and non-blank.</li>
+	 *   <li>Does not equal the raw stanza text verbatim.</li>
+	 *   <li>Does NOT start with {@code "landscape, "} (that prefix is the no-LLM fallback).</li>
+	 * </ol>
+	 * Gated on {@code test.llm.ollama.server} — skipped when the property is absent.
+	 */
+	@Test
+	public void testChapBookLlmLandscapePrompt() throws Exception {
+		String llmServer = testProperties.getProperty("test.llm.ollama.server");
+		assumeTrue("test.llm.ollama.server not configured — skipping LLM landscape-prompt test",
+			llmServer != null && !llmServer.isBlank());
+
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be set", dataPath);
+
+		// Create chatConfig via OlioTestUtil (idempotent: reuses existing if present)
+		BaseRecord chatConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "chapbookLlmTestConfig", testProperties);
+		assertNotNull("chatConfig must be created for LLM test", chatConfig);
+
+		long ts = System.currentTimeMillis();
+		String slug = "cb-llm-" + ts;
+		String title = "ChapBook LLM Test " + ts;
+
+		// A well-described stanza so the LLM can generate meaningful landscape imagery
+		String stanzaText =
+			"The golden dawn spills across the ancient hills,\n" +
+			"Where frost-tipped grass still trembles in the cold,\n" +
+			"And morning breaks its light on window sills,\n" +
+			"While chimney smoke curls slow through pale and gold.";
+
+		String poemPath = "~/Data/ChapBookLlmTest-" + ts;
+		BaseRecord poem = createPoem(testUser, poemPath, "Poem LLM " + ts, stanzaText);
+		assertNotNull("Poem should be created", poem);
+		String poemOid = poem.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Poem must have objectId", poemOid);
+
+		List<String> poemOids = new ArrayList<>();
+		poemOids.add(poemOid);
+
+		// createChapBook with chatConfig != null — exercises the LLM path in createChapBookScene.
+		// chapBook.landscape-prompt.json classpath resource provides system+user prompts with
+		// {stanzaText}, {mood}, {compositionContext} variables.
+		long start = System.currentTimeMillis();
+		BaseRecord book = ChapBookUtil.createChapBook(testUser, dataPath, slug, title, poemOids, 4, chatConfig);
+		logger.info("createChapBook with chatConfig took {}ms", System.currentTimeMillis() - start);
+		assertNotNull("createChapBook must return a book", book);
+		String bookOid = book.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Book must have objectId", bookOid);
+
+		// Re-query to get the fields needed for listScenes (organizationId, groupId, etc.)
+		Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookOid);
+		bq.field(FieldNames.FIELD_ORGANIZATION_ID,
+			((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
+		bq.setRequest(new String[]{
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID
+		});
+		bq.setCache(false);
+		BaseRecord bookCheck = IOSystem.getActiveContext().getAccessPoint().find(testUser, bq);
+		assertNotNull("Book must be findable after creation", bookCheck);
+
+		List<BaseRecord> scenes = PbBookUtil.listScenes(testUser, bookCheck);
+		assertFalse("At least one scene must be created", scenes.isEmpty());
+		logger.info("Scenes created: {}", scenes.size());
+
+		// Verify the LLM path produced a non-trivial SD prompt on at least one scene.
+		// The chapBook.landscape-prompt system prompt instructs the LLM to begin with
+		// "masterpiece, best quality," — so any prompt NOT starting with "landscape, "
+		// (the fallback prefix) counts as LLM-generated.
+		boolean foundLlmGeneratedPrompt = false;
+		for (BaseRecord scene : scenes) {
+			String sdPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+			logger.info("Scene sdPrompt (first 120 chars): {}",
+				sdPrompt != null && sdPrompt.length() > 120 ? sdPrompt.substring(0, 120) + "…" : sdPrompt);
+			assertNotNull("sdPrompt must not be null on scene", sdPrompt);
+			assertFalse("sdPrompt must not be blank", sdPrompt.isBlank());
+			// The raw stanza text must not have been copied verbatim
+			assertFalse("sdPrompt must not equal raw stanza text verbatim",
+				stanzaText.trim().equals(sdPrompt.trim()));
+			if (!sdPrompt.startsWith("landscape, ")) {
+				// Does not carry the fallback "landscape, " prefix → LLM actually ran
+				foundLlmGeneratedPrompt = true;
+				logger.info("LLM-generated sdPrompt confirmed (no fallback prefix) — first 120: {}",
+					sdPrompt.length() > 120 ? sdPrompt.substring(0, 120) + "…" : sdPrompt);
+			}
+		}
+		assertTrue(
+			"At least one scene must have an LLM-generated sdPrompt (not the 'landscape, ...' fallback). "
+			+ "LLM server: " + llmServer + ". If the LLM is unreachable or the prompt template is "
+			+ "missing, all scenes will carry the fallback prefix.",
+			foundLlmGeneratedPrompt);
 	}
 
 	// ── helpers ──────────────────────────────────────────────────────────────

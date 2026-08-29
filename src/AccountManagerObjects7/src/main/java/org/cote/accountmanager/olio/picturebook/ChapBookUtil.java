@@ -454,7 +454,7 @@ public class ChapBookUtil {
 			List<String> chunks = chunkPoem(poemText, effectiveMax);
 			for (String chunk : chunks) {
 				try {
-					createChapBookScene(user, book, sceneIndex, chunk, poemTitle, mood, bookGroupPath);
+					createChapBookScene(user, book, sceneIndex, chunk, poemTitle, mood, bookGroupPath, chatConfig);
 					sceneIndex++;
 				} catch (Exception e) {
 					logger.warn("createChapBook: failed to create scene " + sceneIndex + " from poem " + poemObjectId + ": " + e.getMessage());
@@ -489,9 +489,15 @@ public class ChapBookUtil {
 	 * <p>
 	 * Uses {@link PbBookUtil#createScene} for the base record, then patches {@code poemStanza},
 	 * {@code mood}, and {@code title} onto the returned scene.
+	 * <p>
+	 * When {@code chatConfig} is non-null the {@code chapBook.landscape-prompt} template is
+	 * called with the stanza text, mood, and poem title as variables, exactly as
+	 * {@link #renderChapBook} does at render time. This stores an LLM-generated landscape
+	 * prompt on the scene at creation, so the render step has a meaningful starting point even
+	 * without a live LLM. Falls back to a stanza-excerpt placeholder when the LLM returns blank.
 	 */
 	static BaseRecord createChapBookScene(BaseRecord user, BaseRecord book, int sceneIndex,
-			String stanzaText, String poemTitle, String mood, String bookGroupPath) {
+			String stanzaText, String poemTitle, String mood, String bookGroupPath, BaseRecord chatConfig) {
 		// Create the base scene record
 		BaseRecord scene = PbBookUtil.createScene(user, book, sceneIndex, poemTitle, bookGroupPath);
 		if (scene == null) {
@@ -500,14 +506,35 @@ public class ChapBookUtil {
 		// Patch poemStanza, mood, title, and sdPrompt onto the scene.
 		// Use RecordUtil.updateRecord (bypass PBAC) — consistent with how createChapBook patches bookType.
 		try {
-			// Build an initial sdPrompt from stanza text so the SD fallback (no-LLM) is meaningful.
-			// If stanza text is available, use the first ~150 chars instead of just the poem title.
-			String stanzaExcerpt = (stanzaText != null && !stanzaText.isBlank())
-				? stanzaText.substring(0, Math.min(150, stanzaText.length())).replaceAll("\\s+", " ").trim()
-				: null;
-			String sdPromptVal = "landscape, "
-				+ (stanzaExcerpt != null ? stanzaExcerpt + ", " : (poemTitle != null ? poemTitle + ", " : "poetic scene, "))
-				+ (mood != null ? mood : "poetic") + " atmosphere, painterly, soft light";
+			// Use LLM to generate a landscape SD prompt from the stanza when chatConfig is available.
+			// This mirrors the pattern renderChapBook uses at render time (chapBook.landscape-prompt
+			// template with stanzaText/mood/compositionContext vars), so the stored sdPrompt is an
+			// LLM-generated landscape description rather than a raw stanza excerpt.
+			// Falls back to the stanza-excerpt placeholder when the LLM is not configured or returns blank.
+			String sdPromptVal = null;
+			if (chatConfig != null && stanzaText != null && !stanzaText.isBlank()) {
+				Map<String, String> vars = new LinkedHashMap<>();
+				vars.put("stanzaText", stanzaText);
+				vars.put("mood", mood != null ? mood : "poetic");
+				vars.put("compositionContext", poemTitle != null ? poemTitle : "poetic scene");
+				String llmResult = PictureBookUtil.callLlmForChapBook(user, chatConfig, "chapBook.landscape-prompt", vars);
+				if (llmResult != null && !llmResult.isBlank()) {
+					sdPromptVal = llmResult.trim();
+					logger.info("createChapBookScene: LLM landscape prompt for scene {}: {}", sceneIndex,
+						sdPromptVal.length() > 80 ? sdPromptVal.substring(0, 80) + "…" : sdPromptVal);
+				} else {
+					logger.warn("createChapBookScene: LLM returned no landscape prompt for scene {} — using stanza-excerpt fallback", sceneIndex);
+				}
+			}
+			if (sdPromptVal == null || sdPromptVal.isBlank()) {
+				// No-LLM fallback: use the first ~150 chars of stanza text for a meaningful placeholder
+				String stanzaExcerpt = (stanzaText != null && !stanzaText.isBlank())
+					? stanzaText.substring(0, Math.min(150, stanzaText.length())).replaceAll("\\s+", " ").trim()
+					: null;
+				sdPromptVal = "landscape, "
+					+ (stanzaExcerpt != null ? stanzaExcerpt + ", " : (poemTitle != null ? poemTitle + ", " : "poetic scene, "))
+					+ (mood != null ? mood : "poetic") + " atmosphere, painterly, soft light";
+			}
 			BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
 				OlioFieldNames.FIELD_CB_POEM_STANZA, OlioFieldNames.FIELD_PB_MOOD, OlioFieldNames.FIELD_PB_TITLE,
 				OlioFieldNames.FIELD_CB_SD_PROMPT);

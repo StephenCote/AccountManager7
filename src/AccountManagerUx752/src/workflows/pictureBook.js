@@ -119,6 +119,9 @@ const SD_CONFIG_IDENTITY = ['id', 'objectId', 'urn', 'ownerId', 'groupId', 'orga
 let metaScenes = [];
 let step5ImageUrls = {};  // imageObjectId → resolved media URL
 
+// Issue 9: role warning
+let roleWarning = false;
+
 function resetState() {
     step = 1;
     bookObjectId = null;
@@ -159,6 +162,7 @@ function resetState() {
     lastPrompt = '';
     metaScenes = [];
     step5ImageUrls = {};
+    roleWarning = false;
 }
 
 // ── SD common config (real olio.sd.config) ────────────────────────────
@@ -1240,13 +1244,16 @@ function buildActions() {
                 label: extracting ? 'Extracting...' : 'Extract',
                 icon: 'auto_awesome',
                 primary: true,
-                disabled: extracting,
+                // Issue 9: disable when the AccountUsers role is missing
+                disabled: extracting || roleWarning,
                 onclick: doExtract
             });
         } else {
             // Manual mode — go to Step 2 (scene editor) to add scenes
             actions.push({
                 label: 'Continue', icon: 'arrow_forward', primary: true,
+                // Issue 9: disable when the AccountUsers role is missing
+                disabled: roleWarning,
                 onclick: function () { step = 2; m.redraw(); }
             });
         }
@@ -1310,7 +1317,15 @@ function buildActions() {
                 } catch (e) {
                     const msg = e?.message || (typeof e === 'string' ? e : null) || 'Unknown error';
                     console.error('[PictureBook] book creation failed:', e);
-                    page.toast('error', 'Failed to create book: ' + msg);
+                    // Fatal error: open a dismissible dialog so the full message is visible
+                    // rather than a transient toast that may auto-dismiss before the user reads it.
+                    Dialog.open({
+                        title: 'Book Creation Failed',
+                        size: 'sm',
+                        content: m('p', { class: 'text-red-600 dark:text-red-400' }, 'Failed to create book: ' + msg),
+                        closable: true,
+                        actions: [{ label: 'Close', icon: 'close', primary: true, onclick: function() { Dialog.close(); } }]
+                    });
                 }
                 // Non-fatal: initialize character list after the main try so a
                 // fetch failure doesn't mask a successful book creation.
@@ -1563,6 +1578,10 @@ async function pictureBook(entity, inst) {
     // than a fresh source document — see tryResumeExistingBook().
     await tryResumeExistingBook(workObjectId);
 
+    // Issue 9: check for AccountUsers role — same pattern as ChapBook.
+    let pbRoles = page.context && page.context() && page.context().roles;
+    roleWarning = !(pbRoles && pbRoles.user);
+
     Dialog.open({
         title: 'Picture Book — ' + workName,
         size: 'xl',
@@ -1570,6 +1589,11 @@ async function pictureBook(entity, inst) {
         content: {
             view: function () {
                 return m('div', [
+                    // Issue 9: role warning banner
+                    roleWarning ? m('div', { class: 'mx-4 mt-3 p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
+                        m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
+                        'You need the AccountUsers role to use PictureBook features.'
+                    ]) : null,
                     renderProgressBar(),
                     renderBgActivity(),
                     renderStepContent()

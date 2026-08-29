@@ -18,6 +18,9 @@ let pickerState = {
     handler: null
 };
 
+// Issue 1: document-level Escape handler — registered when the picker opens, removed when it closes.
+let _escHandler = null;
+
 let pickerListControl = newListControl();
 
 // ── Container resolution ────────────────────────────────────────────
@@ -215,6 +218,19 @@ const ObjectPicker = {
             }
         });
 
+        // Issue 1: register Escape key handler so pressing Escape closes the picker overlay.
+        if (!_escHandler) {
+            _escHandler = function(e) {
+                if (e.key === 'Escape' || e.keyCode === 27) {
+                    if (pickerState.enabled) {
+                        e.stopPropagation();
+                        ObjectPicker.close();
+                    }
+                }
+            };
+            document.addEventListener('keydown', _escHandler, true);
+        }
+
         pickerState.enabled = true;
         m.redraw();
     },
@@ -281,6 +297,11 @@ const ObjectPicker = {
     },
 
     close: function() {
+        // Issue 1: remove the Escape key handler when closing the picker.
+        if (_escHandler) {
+            document.removeEventListener('keydown', _escHandler, true);
+            _escHandler = null;
+        }
         pickerState.enabled = false;
         pickerState.handler = null;
         pickerState.title = null;
@@ -329,9 +350,17 @@ ObjectPicker.PickerView = {
             }, [
                 // Header — title and close button
                 m("div", { class: "flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0" }, [
-                    m("h3", { class: "text-lg font-semibold text-gray-800 dark:text-white" }, pickerState.title),
+                    m("div", { class: "flex-1 min-w-0" }, [
+                        m("h3", { class: "text-lg font-semibold text-gray-800 dark:text-white" }, pickerState.title),
+                        // Issue 1: show current container path so user can orient themselves while navigating.
+                        (function() {
+                            let cont = pickerListControl.pagination().pages().container;
+                            let path = cont ? (cont.path || cont.groupPath || '') : '';
+                            return path ? m("p", { class: "text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate", title: path }, path) : null;
+                        })()
+                    ]),
                     m("button", {
-                        class: "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300",
+                        class: "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-3 shrink-0",
                         onclick: function() { ObjectPicker.close(); }
                     }, m("span", { class: "material-symbols-outlined" }, "close"))
                 ]),
