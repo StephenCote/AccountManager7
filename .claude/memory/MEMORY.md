@@ -52,7 +52,7 @@ powershell -NoProfile -File "C:\Projects\GitHub\AccountManager7\.claude\memory\m
 - `feedback-ux752-vitest-node-mithril-raf` -- Ux752 vitest runs in node env; Mithril captures schedule=requestAnimationFrame at import (null in node) so m.request completions throw 'schedule is not a function' — fix via setupFiles RAF shim (do not import mithril there)
 - `feedback-validate-dont-workaround-bad-queries` -- When a query/input is invalid (e.g. filters on a virtual/computed field), validate and reject with a clear error — don't build resolution logic to make it \"work\
 - `feedback-visual-inspection-required` -- For generative image/content pipelines, a passing persistence/decode test is not proof the output is correct — actually look at the emitted output
-- `ki-issue13-pb-subrec-olio-principal` -- Issue 13 root cause: PbSubRecordUtil.createSubRecord used request user via AccessPoint for world group paths — always PBAC denied, charPerson silently failed
+- `ki-issue13-pb-subrec-olio-principal` -- Issue 13 fully fixed: PBAC world-group olio-principal + normalizeGender uppercase — TestPictureBookUtilE2E 1/1 PASS with live LLM+SD 2026-08-29
 - `playwright-docker-e2e-gotchas` -- READ FIRST before any Playwright/Docker work: IPv6 localhost fix, WS stub, dist freshness, docker-compose in src/
 
 ## project

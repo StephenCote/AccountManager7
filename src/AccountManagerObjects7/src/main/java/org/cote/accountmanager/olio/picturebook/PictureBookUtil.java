@@ -2350,9 +2350,9 @@ public class PictureBookUtil {
     private static String normalizeGender(String raw) {
         if (raw == null) return "";
         String g = raw.trim().toLowerCase();
-        if (g.equals("male") || g.equals("m")) return "male";
-        if (g.equals("female") || g.equals("f")) return "female";
-        return "";  // undetermined — lowercase to match randomPerson/rollHeight; caller falls back to baseline
+        if (g.equals("male") || g.equals("m")) return "MALE";
+        if (g.equals("female") || g.equals("f")) return "FEMALE";
+        return "";  // undetermined — caller falls back to baseline
     }
 
     // C2: comma-separated human-readable RaceEnumType / EthnicityEnumType values, used to CONSTRAIN the
@@ -2870,12 +2870,13 @@ public class PictureBookUtil {
             // LLM value (see normalizeGender()). Must happen before create() so a bad LLM
             // value never aborts character creation.
             String gender = normalizeGender((String) charData.get("gender"));
-            // Undetermined LLM gender must NOT persist as an invalid value — the old "UNKNOWN" (7 chars)
-            // exceeded the apparel gender field's maxLength and crashed apparel creation. Fall back to
-            // the random baseline's valid lowercase gender (KI-30: override only when the LLM determined one).
+            // Undetermined LLM gender: fall back to the random baseline's gender, uppercased to match
+            // the MALE/FEMALE/UNKNOWN canonical form. "UNKNOWN" (7 chars) still cannot go into
+            // apparel.gender (maxLength:6), so we only reach UNKNOWN when baseline is also absent.
             if ((gender == null || gender.isEmpty()) && baseline != null) {
                 Object baseGender = baseline.get(FieldNames.FIELD_GENDER);
-                if (baseGender != null && !baseGender.toString().isBlank()) gender = baseGender.toString();
+                if (baseGender != null && !baseGender.toString().isBlank())
+                    gender = baseGender.toString().toUpperCase();
             }
             charPerson.set("gender", gender);
 
