@@ -13,6 +13,8 @@ import { Dialog } from '../components/dialogCore.js';
 import { ObjectPicker } from '../components/picker.js';
 import { bookPages } from '../workflows/pictureBookWorkflow.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
+import { am7sd } from '../components/sdConfig.js';
+import { am7model } from '../core/model.js';
 
 // ── REST base ─────────────────────────────────────────────────────────
 
@@ -127,6 +129,14 @@ async function importPoemsFromSources(sources) {
     return resp.json();
 }
 
+async function deletePoem(poemObjectId) {
+    let resp = await fetch(applicationPath + '/rest/model/olio.cb.poem/' + poemObjectId, {
+        method: 'DELETE',
+        credentials: 'include'
+    });
+    if (!resp.ok) throw new Error('Delete poem failed: ' + resp.status);
+}
+
 // ── renderChapBookPage — landscape page with text overlay ─────────────
 
 /**
@@ -201,8 +211,14 @@ let lastCreatedBook = null;
 let showRenderDialog = false;
 let pendingRenderBookId = null;
 let pendingRenderCallback = null;
-let renderSdCfg = {};        // plain SD config object mutated by SdConfigPanel
-let renderSdModels = [];     // SD model list — empty = SdConfigPanel uses text inputs
+// SD config — mirrors pictureBook.js: uses am7sd to load saved defaults and model list
+let renderSdCfg = {};
+let renderSdConfigInst = null;
+let renderSdModelList = [];
+let renderSdLoraList = [];
+let _renderSdModelsLoaded = false;
+let _renderSdLorasFetched = false;
+let _renderSdConfigPromise = null;
 
 // Role-check warning (Issue 9)
 let roleWarning = false;
@@ -397,12 +413,60 @@ async function doAddPoem() {
     m.redraw();
 }
 
+function loadRenderSdModels() {
+    if (_renderSdModelsLoaded) return;
+    _renderSdModelsLoaded = true;
+    am7sd.fetchModels().then(function (list) {
+        renderSdModelList = Array.isArray(list) ? list : [];
+        m.redraw();
+    }).catch(function () { renderSdModelList = []; });
+}
+
+function loadRenderSdLoras() {
+    if (_renderSdLorasFetched) return;
+    _renderSdLorasFetched = true;
+    am7sd.fetchLoras().then(function (list) {
+        renderSdLoraList = Array.isArray(list) ? list : [];
+        m.redraw();
+    }).catch(function () { renderSdLoraList = []; });
+}
+
+function ensureRenderSdConfig() {
+    if (renderSdConfigInst) return Promise.resolve(renderSdConfigInst);
+    if (_renderSdConfigPromise) return _renderSdConfigPromise;
+    _renderSdConfigPromise = (async function () {
+        try {
+            let savedConfig = null;
+            try {
+                savedConfig = await am7sd.loadConfig('sdcfg-default', '~/Data/.preferences');
+            } catch (e) { /* non-fatal */ }
+            let entity;
+            if (savedConfig) {
+                entity = Object.assign({}, savedConfig);
+                ['id', 'objectId', 'urn', 'groupId', 'ownerId'].forEach(function (k) { delete entity[k]; });
+            } else {
+                entity = await am7sd.buildEntity();
+                if (!entity) entity = { schema: 'olio.sd.config' };
+            }
+            if (!entity.schema) entity.schema = 'olio.sd.config';
+            renderSdConfigInst = am7model.prepareInstance(entity, am7model.forms.sdConfig);
+        } catch (e) {
+            console.warn('[ChapBook] Failed to build SD config:', e);
+        }
+        m.redraw();
+        return renderSdConfigInst;
+    })();
+    return _renderSdConfigPromise;
+}
+
 // Issue 8: open the pre-render SD config dialog; callback is invoked on confirm.
 function openRenderConfigDialog(bookObjectId, callback) {
     pendingRenderBookId = bookObjectId;
     pendingRenderCallback = callback || null;
-    renderSdCfg = {};
     showRenderDialog = true;
+    loadRenderSdModels();
+    loadRenderSdLoras();
+    ensureRenderSdConfig();
     m.redraw();
 }
 
@@ -411,7 +475,7 @@ async function doRenderFromDialog() {
     if (!pendingRenderBookId) return;
     showRenderDialog = false;
     let bookId = pendingRenderBookId;
-    let sdCfg = Object.assign({}, renderSdCfg);
+    let sdCfg = renderSdConfigInst ? Object.assign({}, renderSdConfigInst.entity) : Object.assign({}, renderSdCfg);
     let cb = pendingRenderCallback;
     pendingRenderBookId = null;
     pendingRenderCallback = null;
@@ -443,12 +507,17 @@ function renderRenderDialog() {
             ]),
             m('p', { class: 'text-xs text-gray-500 dark:text-gray-400 mb-4' },
                 'Adjust SD settings before rendering. A chat config will be resolved automatically if available.'),
-            m(SdConfigPanel, {
-                config: renderSdCfg,
-                models: renderSdModels,
-                loras: [],
-                onChange: function () { m.redraw(); }
-            }),
+            renderSdConfigInst
+                ? m(SdConfigPanel, {
+                    inst: renderSdConfigInst,
+                    models: renderSdModelList,
+                    loras: renderSdLoraList,
+                    onChange: function () { m.redraw(); }
+                })
+                : m('div', { class: 'flex items-center gap-2 text-sm text-gray-500 py-4' }, [
+                    m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
+                    'Loading SD configuration…'
+                ]),
             m('div', { class: 'flex justify-end gap-2 mt-4' }, [
                 m('button', {
                     class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
@@ -601,14 +670,47 @@ async function loadMyBooks() {
 }
 
 async function doDeleteBook(book) {
-    if (!confirm('Delete "' + (book.name || book.slug) + '"? This cannot be undone.')) return;
-    try {
-        await deleteBook(book.objectId);
-        page.toast('success', 'Deleted: ' + (book.name || book.slug));
-        await loadMyBooks();
-    } catch (e) {
-        page.toast('error', 'Delete failed: ' + (e.message || ''));
-    }
+    await Dialog.confirm({
+        title: 'Delete ChapBook',
+        message: 'Delete "' + (book.name || book.slug) + '"? This cannot be undone.',
+        confirmLabel: 'Delete',
+        confirmIcon: 'delete'
+    }, async function () {
+        try {
+            await deleteBook(book.objectId);
+            page.toast('success', 'Deleted: ' + (book.name || book.slug));
+            await loadMyBooks();
+        } catch (e) {
+            page.toast('error', 'Delete failed: ' + (e.message || ''));
+        }
+    });
+}
+
+async function doDeleteSelected() {
+    let ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    await Dialog.confirm({
+        title: 'Remove from queue',
+        message: 'Remove ' + ids.length + ' poem(s) from the queue? The source notes and documents are not affected.',
+        confirmLabel: 'Remove',
+        confirmIcon: 'playlist_remove'
+    }, async function () {
+        let failed = 0;
+        for (let id of ids) {
+            try {
+                await deletePoem(id);
+            } catch (e) {
+                failed++;
+            }
+        }
+        selectedIds = new Set();
+        if (failed) {
+            page.toast('error', 'Failed to remove ' + failed + ' poem(s) from queue');
+        } else {
+            page.toast('success', 'Removed ' + ids.length + ' poem(s) from queue');
+        }
+        await loadPoems();
+    });
 }
 
 // ── PoemLibrary component ─────────────────────────────────────────────
@@ -703,11 +805,11 @@ const PoemLibrary = {
                 ]) : null,
                 selectedIds.size > 0 ? m('button', {
                     class: 'px-3 py-1 rounded bg-gray-400 text-white text-sm hover:bg-gray-500 flex items-center gap-1',
-                    title: 'Clear all selections',
-                    onclick: function() { selectedIds = new Set(); m.redraw(); }
+                    title: 'Remove selected poems from queue',
+                    onclick: function() { doDeleteSelected(); }
                 }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'deselect'),
-                    ' Clear (' + selectedIds.size + ')'
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'playlist_remove'),
+                    ' Remove from Queue (' + selectedIds.size + ')'
                 ]) : null
             ]),
 
@@ -1127,14 +1229,14 @@ const ChapBookReader = {
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'edit_note'),
                     ' Review'
                 ]),
-                m('button', {
+                readerPoemIds.length > 0 ? m('button', {
                     class: 'px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50',
                     disabled: busy,
                     onclick: analyzeReaderPoems
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, readerAnalyzing ? 'hourglass_empty' : 'psychology'),
                     readerAnalyzing ? ' Analyzing...' : ' Analyze'
-                ]),
+                ]) : null,
                 m('button', {
                     class: 'px-3 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1 disabled:opacity-50',
                     disabled: busy,
@@ -1381,18 +1483,24 @@ async function doMergeScene(idx) {
 async function doDeleteScene(idx) {
     let scene = reviewScenes[idx];
     if (!scene) return;
-    if (!window.confirm('Remove page ' + (idx + 1) + '? This cannot be undone.')) return;
-    scene._saving = true;
-    m.redraw();
-    try {
-        await deleteScene(scene.objectId);
-        reviewScenes.splice(idx, 1);
-        page.toast('success', 'Page removed');
-    } catch (e) {
-        page.toast('error', 'Delete failed: ' + (e.message || ''));
-        scene._saving = false;
-    }
-    m.redraw();
+    await Dialog.confirm({
+        title: 'Remove page',
+        message: 'Remove page ' + (idx + 1) + '? This cannot be undone.',
+        confirmLabel: 'Remove',
+        confirmIcon: 'delete'
+    }, async function () {
+        scene._saving = true;
+        m.redraw();
+        try {
+            await deleteScene(scene.objectId);
+            reviewScenes.splice(idx, 1);
+            page.toast('success', 'Page removed');
+        } catch (e) {
+            page.toast('error', 'Delete failed: ' + (e.message || ''));
+            scene._saving = false;
+        }
+        m.redraw();
+    });
 }
 
 // Issue 8: open the SD config dialog before rendering, then execute render with chatConfig + sdConfig.

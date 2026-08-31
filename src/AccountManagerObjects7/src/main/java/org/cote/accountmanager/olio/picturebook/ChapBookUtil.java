@@ -5,8 +5,6 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -50,18 +48,6 @@ public class ChapBookUtil {
 	// ─────────────────────────────── poem text extraction ───────────────────────────────
 
 	/**
-	 * Binary office document content types whose text must be extracted via Apache Tika
-	 * rather than read as raw UTF-8 bytes. A raw {@code new String(bytes, UTF_8)} on any of
-	 * these yields garbled binary, not readable prose.
-	 */
-	private static final Set<String> OFFICE_CONTENT_TYPES = Set.of(
-			"application/msword",                                                          // .doc
-			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",     // .docx
-			"application/rtf",                                                             // .rtf
-			"text/rtf"                                                                     // .rtf (alt)
-	);
-
-	/**
 	 * Upper bound on the number of characters extracted from an uploaded document. A finite cap
 	 * prevents a crafted/oversized upload from exhausting heap during Tika extraction (Tika's own
 	 * default is unbounded); 16M characters is generous for any reasonable poem/chapbook.
@@ -91,11 +77,13 @@ public class ChapBookUtil {
 			if (ct == null || ct.isEmpty() || ct.startsWith("text/")) {
 				return sanitizeText(ByteModelUtil.getValueString(data));
 			}
-			if (OFFICE_CONTENT_TYPES.contains(ct)) {
+			if (DocumentUtil.OFFICE_CONTENT_TYPES.contains(ct)) {
 				byte[] bytes = ByteModelUtil.getValue(data);
 				if (bytes == null || bytes.length == 0) return null;
+				// Pass the known content type so the 3-arg overload routes .doc to POI
+				// and provides a Tika content-type hint for .docx and WordPerfect.
 				// Bounded extraction (MAX_EXTRACT_CHARS) — do not let Tika accumulate unbounded output.
-				String extracted = DocumentUtil.readDocument(bytes, MAX_EXTRACT_CHARS);
+				String extracted = DocumentUtil.readDocument(bytes, MAX_EXTRACT_CHARS, ct);
 				if (extracted == null) {
 					throw new PictureBookException(400,
 						"Failed to extract text from document (" + contentType + ")");

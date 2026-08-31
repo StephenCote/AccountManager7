@@ -8,11 +8,15 @@ import java.io.InputStream;
 
 import javax.swing.text.BadLocationException;
 
+import java.util.Set;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.poi.hwpf.HWPFDocument;
+import org.apache.poi.hwpf.extractor.WordExtractor;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.sax.BodyContentHandler;
@@ -35,6 +39,17 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 
 public class DocumentUtil {
 	public static final Logger logger = LogManager.getLogger(DocumentUtil.class);
+
+	/** MIME types that require binary extraction (Tika or POI) rather than raw UTF-8 read. */
+	public static final Set<String> OFFICE_CONTENT_TYPES = Set.of(
+		"application/msword",                                                         // .doc  (POI HWPF)
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",    // .docx (Tika OOXML)
+		"application/rtf",                                                            // .rtf  (Tika)
+		"text/rtf",                                                                   // .rtf  (alt MIME)
+		"application/wordperfect",                                                    // .wpd  WP6+ (Tika WPDParser)
+		"application/x-wordperfect",                                                  // .wpd  WP5 and earlier
+		"application/vnd.wordperfect"                                                 // .wpd  IANA-registered
+	);
 
 	public static BaseRecord getRecord(BaseRecord owner, String modelName, String name, String path) {
 		return getRecord(owner, modelName, name, path, true);
@@ -191,11 +206,8 @@ public class DocumentUtil {
 					else if(contentType.equals("application/pdf")) {
 						content = readPDF(ByteModelUtil.getValue(model));
 					}
-					else if(
-						contentType.equals("application/msword") ||
-						contentType.equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-					) {
-						content = readDocument(ByteModelUtil.getValue(model));
+					else if(OFFICE_CONTENT_TYPES.contains(contentType)) {
+						content = readDocument(ByteModelUtil.getValue(model), Integer.MAX_VALUE, contentType);
 					}
 					else {
 						logger.warn("Unhandled content type: " + contentType);
@@ -244,13 +256,33 @@ public class DocumentUtil {
 	    	// , parseContext
 	    	parser.parse(fileStream, handler, metadata);
 			out = replaceSmartQuotes(handler.toString());
-			
+
     	}
     	catch(Exception e) {
     		logger.error(e);
     		e.printStackTrace();
     	}
     	return out;
+    }
+
+    /**
+     * Extract text from a legacy Word 97-2003 .doc binary using Apache POI HWPF.
+     * <p>
+     * Tika's {@link AutoDetectParser} without a content-type hint may fall back to
+     * a generic OLE2 stream dump for these files, producing upper-ASCII binary garbage
+     * instead of readable prose. Direct POI extraction is unambiguous.
+     *
+     * @param data raw bytes of the .doc (OLE2/HWPF) file
+     * @return extracted plain text, or {@code null} on failure
+     */
+    static String readDocFile(byte[] data) {
+    	try (HWPFDocument doc = new HWPFDocument(new ByteArrayInputStream(data));
+    	     WordExtractor extractor = new WordExtractor(doc)) {
+    		return replaceSmartQuotes(extractor.getText());
+    	} catch (Exception e) {
+    		logger.error("POI HWPF .doc extraction failed: {}", e.getMessage(), e);
+    		return null;
+    	}
     }
     
     public static String readDocument(byte[] data) {
@@ -283,6 +315,51 @@ public class DocumentUtil {
 	    	ByteArrayInputStream bais = new ByteArrayInputStream(data);
 	    	AutoDetectParser parser = new AutoDetectParser();
 	    	Metadata metadata = new Metadata();
+	    	BodyContentHandler handler = new BodyContentHandler(maxChars);
+	    	parser.parse(bais, handler, metadata);
+			out = replaceSmartQuotes(handler.toString());
+
+    	}
+    	catch(Exception e) {
+    		logger.error(e);
+    		e.printStackTrace();
+    	}
+    	return out;
+    }
+
+    /**
+     * Bounded extraction with an explicit content-type hint.
+     * <p>
+     * Routes {@code application/msword} (.doc) to {@link #readDocFile(byte[])} (Apache POI
+     * HWPF) to avoid the OLE2-stream-dump fallback that Tika's {@code AutoDetectParser}
+     * may produce when the HWPF-specific parser is not preferred by detection alone.
+     * WordPerfect MIME types ({@code application/wordperfect},
+     * {@code application/x-wordperfect}, {@code application/vnd.wordperfect}) and all other
+     * content types go through {@code AutoDetectParser} with the hint set in
+     * {@link Metadata} so Tika can select the correct parser without relying solely on
+     * magic-byte detection.
+     *
+     * @param data        raw bytes of the document
+     * @param maxChars    maximum characters to extract; bounds heap against oversized uploads
+     * @param contentType MIME type of the document, or {@code null} for pure auto-detection
+     * @return extracted plain text, or {@code null} on failure
+     */
+    public static String readDocument(byte[] data, int maxChars, String contentType) {
+    	if ("application/msword".equalsIgnoreCase(contentType)) {
+    		String text = readDocFile(data);
+    		if (text != null && maxChars > 0 && text.length() > maxChars) {
+    			text = text.substring(0, maxChars);
+    		}
+    		return text;
+    	}
+    	String out = null;
+    	try {
+	    	ByteArrayInputStream bais = new ByteArrayInputStream(data);
+	    	AutoDetectParser parser = new AutoDetectParser();
+	    	Metadata metadata = new Metadata();
+	    	if (contentType != null && !contentType.isEmpty()) {
+	    		metadata.set("Content-Type", contentType);
+	    	}
 	    	BodyContentHandler handler = new BodyContentHandler(maxChars);
 	    	parser.parse(bais, handler, metadata);
 			out = replaceSmartQuotes(handler.toString());

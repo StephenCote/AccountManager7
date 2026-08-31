@@ -5247,7 +5247,26 @@ public class PictureBookUtil {
             }
         }
 
-        if (bookGroup == null) throw new PictureBookException(404, "Book not found");
+        if (bookGroup == null) {
+            // Orphaned record — no data.group found (creation likely failed mid-flight).
+            // Delete whatever olio.pb.book record we found so the user can clear it from the list.
+            if (pb2BookToDelete != null) {
+                try {
+                    long orgId4 = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+                    Query pbDelQ2 = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, pb2BookToDelete);
+                    pbDelQ2.field(FieldNames.FIELD_ORGANIZATION_ID, orgId4);
+                    BaseRecord orphan = IOSystem.getActiveContext().getAccessPoint().find(user, pbDelQ2);
+                    if (orphan != null) {
+                        IOSystem.getActiveContext().getAccessPoint().delete(user, orphan);
+                        logger.info("Deleted orphaned olio.pb.book record: " + pb2BookToDelete);
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to delete orphaned olio.pb.book: " + e.getMessage());
+                }
+                return true;
+            }
+            throw new PictureBookException(404, "Book not found");
+        }
 
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
         boolean ok = true;
