@@ -287,11 +287,51 @@
       "WebFetch(domain:dlcdn.apache.org)",
       "mcp__claude_ai_Microsoft_365__outlook_email_search"
     ],
-    "deny": [],
-    "ask": []
+    "deny": [
+      "mcp__memory-db__create_record",
+      "mcp__memory-db__update_records",
+      "mcp__memory-db__delete_records"
+    ],
+    "ask": [
+      "mcp__memory-db__query"
+    ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/.claude/memory/hook-session-start.ps1\"",
+            "timeout": 30,
+            "statusMessage": "Loading project memory..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/.claude/memory/hook-user-prompt.ps1\"",
+            "timeout": 20,
+            "statusMessage": "Searching project memory..."
+          }
+        ]
+      }
+    ],
     "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PROJECT_DIR}/.claude/memory/hook-stop-memory.ps1\"",
+            "timeout": 30,
+            "statusMessage": "Checking project memory was updated..."
+          }
+        ]
+      },
       {
         "hooks": [
           {
