@@ -10,7 +10,7 @@ import { test as base, expect } from '@playwright/test';
 import { login } from './helpers/auth.js';
 import {
     setupWorkflowTestData, apiLogin, apiLogout,
-    ensurePath, createNote
+    ensurePath, createNote, createObject
 } from './helpers/api.js';
 import fs from 'fs';
 import path from 'path';
@@ -56,6 +56,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
     test.describe.configure({ timeout: 600000 });
 
     test.beforeAll(async ({ request }) => {
+        test.setTimeout(1800000); // LLM extraction + Olio seed can take 10+ minutes
         testInfo = await setupWorkflowTestData(request, { suffix: 'pb' + Date.now().toString(36) });
         console.log('=== Setup: user=' + testInfo.testUserName + ' ===');
 
@@ -77,34 +78,44 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             console.log('=== Setup: FAILED to create AIME note ===');
         }
 
-        // Create chatConfig pointing to Ollama
-        let cfgName = 'PB-cfg-' + ts;
-        let chatDir = await ensurePath(request, 'auth.group', 'data', '~/Chat');
-        if (chatDir && chatDir.id) {
-            let cfgResp = await request.post(REST + '/model', {
-                data: {
-                    schema: 'olio.llm.chatConfig',
-                    name: cfgName,
+        // Create chatConfig as test user (must be owned by requesting user for PBAC).
+        // olio.llm.chatConfig.serverUrl doesn't exist — URL goes on a system.connection FK.
+        {
+            let connName = 'PB-conn-' + ts;
+            let chatDir = await ensurePath(request, 'auth.group', 'data', '~/Chat');
+            if (chatDir && chatDir.id) {
+                let conn = await createObject(request, 'system.connection', {
+                    name: connName,
                     groupId: chatDir.id,
                     groupPath: chatDir.path,
-                    model: 'qwen3-vl:8b-instruct',
-                    analyzeModel: 'qwen3-vl:8b-instruct',
                     serverUrl: 'http://192.168.1.42:11434',
-                    serviceType: 'ollama',
-                    stream: false
+                    requestTimeout: 300
+                });
+                if (conn && conn.id) {
+                    let cfgName = 'PB-cfg-' + ts;
+                    let cfg = await createObject(request, 'olio.llm.chatConfig', {
+                        name: cfgName,
+                        groupId: chatDir.id,
+                        groupPath: chatDir.path,
+                        serviceType: 'ollama',
+                        model: 'qwen3-vl:8b-instruct',
+                        analyzeModel: 'qwen3-vl:8b-instruct',
+                        connection: { schema: 'system.connection', id: conn.id, objectId: conn.objectId }
+                    });
+                    if (cfg && cfg.objectId) {
+                        chatConfigName = cfgName;
+                        console.log('=== Setup: chatConfig created: ' + cfgName + ' ===');
+                    } else {
+                        console.log('=== Setup: FAILED to create chatConfig ===');
+                    }
+                } else {
+                    console.log('=== Setup: FAILED to create system.connection ===');
                 }
-            });
-            let cfg;
-            try { cfg = await cfgResp.json(); } catch (e) { cfg = null; }
-            if (cfg && cfg.objectId) {
-                chatConfigName = cfgName;
-                console.log('=== Setup: chatConfig created: ' + cfgName + ' ===');
-            } else {
-                console.log('=== Setup: FAILED to create chatConfig ===');
             }
         }
 
         // Run full extraction in beforeAll so all tests have scene data
+        await apiLogout(request);
         if (workObjectId && chatConfigName) {
             await apiLogin(request, { user: testInfo.testUserName, password: testInfo.testPassword });
 
@@ -156,8 +167,9 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
         if (!extractedScenes.length) {
             throw new Error(
                 'beforeAll: LLM extraction returned no scenes. ' +
-                'Verify LLM at 192.168.1.42:11434 is reachable from THIS host ' +
-                '(not Docker — Docker cannot reach LAN). chatConfigName=' + chatConfigName
+                'Verify the LLM at 192.168.1.42:11434 is reachable from the stack under test ' +
+                '(the am7test Docker container CAN reach it — verified 2026-08-31) and that the ' +
+                'model on chatConfig=' + chatConfigName + ' is loaded.'
             );
         }
     });
@@ -288,13 +300,11 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             // Capture bookObjectId from extract response
             if (result.bookObjectId) bookObjectId = result.bookObjectId;
 
-            // Save for later tests — use extract response if GET /scenes is still empty
+            // Save for later tests. GET /scenes MUST agree with the extract response — a 0 here
+            // while the extract reported scenes is the exact silent-tolerance defect the gap
+            // analysis flags, so assert it rather than logging a WARNING and moving on.
             extractedScenes = result.scenes.length ? result.scenes : (result.meta.scenes || []);
-            if (result.scenesFromGet > 0) {
-                expect(result.scenesFromGet).toBe(result.meta.scenes.length);
-            } else {
-                console.log('  WARNING: GET /scenes returned 0');
-            }
+            expect(result.scenesFromGet, 'GET /scenes must return the scenes the extract created').toBe(result.meta.scenes.length);
             console.log('VERIFIED: ' + sc + ' scenes extracted, ' + extractedScenes.length + ' available, bookObjectId=' + bookObjectId);
         });
 

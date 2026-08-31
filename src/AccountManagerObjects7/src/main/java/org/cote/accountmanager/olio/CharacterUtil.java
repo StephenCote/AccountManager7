@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -37,7 +38,15 @@ import org.cote.accountmanager.util.AttributeUtil;
 public class CharacterUtil {
 	public static final Logger logger = LogManager.getLogger(CharacterUtil.class);
 	private static SecureRandom rand = new SecureRandom();
-	
+	/**
+	 * Upper bound on attempts to draw a unique random person name before falling back to a
+	 * synthesized unique name. Guards {@link #randomPerson} against an unbounded spin when the
+	 * world's name word list is empty or degenerate (too small a distinct-name pool to ever satisfy
+	 * the population directory's name-uniqueness constraint) -- the failure mode that hung the
+	 * PictureBook /extract endpoint on "Name null null &lt;token&gt; exists .... trying again".
+	 */
+	private static final int MAX_RANDOM_NAME_ATTEMPTS = 100;
+
 	//// TODO: Deprecate in favor of state.alive
 	public static boolean isDeceased(BaseRecord person) throws ModelException{
 		
@@ -117,17 +126,49 @@ public class CharacterUtil {
 			String firstName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
 			String middleName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
 			String lastName = (preferredLastName != null ? preferredLastName : (snames != null ? snames[rand.nextInt(snames.length)] : OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)))));			
-			String name = firstName + " " + middleName + " " + lastName;
+			String name = assemblePersonName(firstName, middleName, lastName);
+			int nameAttempts = 0;
 	
-			while(OlioUtil.nameInDirExists(user, OlioModelNames.MODEL_CHAR_PERSON, (long)popDir.get(FieldNames.FIELD_ID), name)) {
+			while(!name.isEmpty() && OlioUtil.nameInDirExists(user, OlioModelNames.MODEL_CHAR_PERSON, (long)popDir.get(FieldNames.FIELD_ID), name)) {
+				if(++nameAttempts >= MAX_RANDOM_NAME_ATTEMPTS) {
+					logger.warn("randomPerson: no unique name after " + MAX_RANDOM_NAME_ATTEMPTS
+							+ " attempts in population group #" + popDir.get(FieldNames.FIELD_ID)
+							+ " (name word list empty/degenerate) -- synthesizing a unique fallback name");
+					name = "";
+					break;
+				}
 				logger.info("Name " + name + " exists .... trying again");
 				firstName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
 				middleName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
 				lastName = (preferredLastName != null ? preferredLastName : (snames != null ? snames[rand.nextInt(snames.length)] : OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)))));
 
-				name = firstName + " " + middleName + " " + lastName;
+				name = assemblePersonName(firstName, middleName, lastName);
 			}
-	
+
+			if(name.isEmpty()) {
+				// No usable name could be drawn (empty/degenerate name word list) or the unique-retry
+				// budget above was exhausted. Synthesize a valid, unique, non-"null" placeholder from
+				// whatever last-name token exists (or a neutral default). In the PictureBook extract
+				// flow the story-extracted character name overrides this baseline name anyway.
+				String baseLast = (lastName != null && !lastName.isBlank()) ? lastName.trim()
+						: (preferredLastName != null && !preferredLastName.isBlank()) ? preferredLastName.trim()
+						: "Person";
+				final long popId = popDir.get(FieldNames.FIELD_ID);
+				firstName = null;
+				middleName = null;
+				lastName = baseLast;
+				name = synthesizeUniquePersonName(baseLast, candidate -> {
+					try {
+						return OlioUtil.nameInDirExists(user, OlioModelNames.MODEL_CHAR_PERSON, popId, candidate);
+					}
+					catch(IndexException | ReaderException e) {
+						/// Favor termination: an existence-check failure must not keep the loop spinning.
+						logger.warn("Name uniqueness check failed for '" + candidate + "'; accepting candidate: " + e.getMessage());
+						return false;
+					}
+				});
+			}
+
 			person.set(FieldNames.FIELD_FIRST_NAME, firstName);
 			person.set(FieldNames.FIELD_MIDDLE_NAME, middleName);
 			person.set(FieldNames.FIELD_LAST_NAME, lastName);
@@ -157,7 +198,56 @@ public class CharacterUtil {
 		}
 		return person;
 	}
-	
+
+	/**
+	 * Join the (possibly null/blank) first, middle and last name components into a single display
+	 * name, skipping any component that is null or blank. This prevents an empty name word list from
+	 * producing a name that contains the literal string "null" (e.g. "null null Smith") -- a
+	 * degenerate name that both looks wrong and collapses the distinct-name space onto the surname
+	 * pool alone, which is what let {@link #randomPerson}'s uniqueness loop spin forever.
+	 *
+	 * @return the space-joined name, or "" when no component is usable (the caller then synthesizes a
+	 *         guaranteed-unique fallback name).
+	 */
+	private static String assemblePersonName(String first, String middle, String last) {
+		StringBuilder sb = new StringBuilder();
+		for(String part : new String[] {first, middle, last}) {
+			if(part != null && !part.isBlank()) {
+				if(sb.length() > 0) {
+					sb.append(" ");
+				}
+				sb.append(part.trim());
+			}
+		}
+		return sb.toString();
+	}
+
+	/**
+	 * Synthesize a guaranteed-unique, non-"null" person name for the case where no usable name could be
+	 * drawn from the world's name word lists (an empty/degenerate pool) or {@link #randomPerson}'s
+	 * primary unique-retry budget was exhausted. A random base-36 token is appended to {@code baseLast}
+	 * and re-checked for uniqueness via {@code exists}, but the method is itself hard-bounded by
+	 * {@link #MAX_RANDOM_NAME_ATTEMPTS} so it can never spin: after that many collisions it returns the
+	 * last candidate regardless. This backstop is what makes the PictureBook /extract character build
+	 * terminate even against a completely empty NAME directory (the original infinite-loop defect).
+	 *
+	 * @param baseLast a base token for the name (typically the surname, or a neutral default); a null or
+	 *                 blank value falls back to "Person" so the result is never blank or "null ..."
+	 * @param exists   predicate returning true when a candidate name already exists in the target
+	 *                 population group; may be null (treated as "nothing exists")
+	 * @return a non-blank, non-"null" name -- unique unless {@code exists} rejected every bounded attempt
+	 */
+	protected static String synthesizeUniquePersonName(String baseLast, Predicate<String> exists) {
+		String safeBase = (baseLast != null && !baseLast.isBlank()) ? baseLast.trim() : "Person";
+		String name = safeBase + " " + Long.toUnsignedString(rand.nextLong(), 36);
+		int attempts = 1;
+		while(attempts < MAX_RANDOM_NAME_ATTEMPTS && exists != null && exists.test(name)) {
+			name = safeBase + " " + Long.toUnsignedString(rand.nextLong(), 36);
+			attempts++;
+		}
+		return name;
+	}
+
 	public static void generateOrganizationHierarchy(BaseRecord[] persons){
 
 		/// limits the top n depth to these positional values

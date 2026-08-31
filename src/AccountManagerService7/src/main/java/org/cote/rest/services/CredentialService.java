@@ -105,7 +105,7 @@ public class CredentialService {
 				}
 				if(verify) {
 					if(cred != null) {
-						cred.set(FieldNames.FIELD_PRIMARY_KEY, false);
+						cred.set("primary", false);
 						IOSystem.getActiveContext().getRecordUtil().updateRecord(cred);
 					}
 					outBool = IOSystem.getActiveContext().getRecordUtil().createRecord(newCred);
