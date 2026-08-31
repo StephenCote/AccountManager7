@@ -76,6 +76,24 @@ Models are defined as JSON files in `src/main/resources/models/` organized by do
 
 **Model inheritance resolution:** Depth-first traversal with last-wins for field conflicts. When a model inherits from multiple parents, each parent tree is resolved depth-first, and later field definitions override earlier ones.
 
+**`likeInherits` is metadata only — it inherits nothing and creates no table.** It is a
+`ModelSchema.java` getter/setter that **no code in `RecordFactory` or `DBUtil` ever reads**: no DDL
+effect, no field-inheritance effect. A model declaring `likeInherits: [data.directory]` instead of
+`inherits: [...]` gets no table and resolves no parent fields, so every field access (`name`,
+`groupId`, …) fails with `Invalid field`. Hit on `olio.sd.config` — `a7_olio_sd_config_0_1` was never
+created, and two Docker builds **exited 0** while failing at the curl step, so nothing surfaced the
+cause. Always use real `inherits: [...]`; if you find `likeInherits` in a model definition, treat it
+as a design annotation, then fix it to `inherits` and rebuild the WAR.
+
+**Never re-declare an inherited field or constraint.** `DBUtil Index collision` and
+`Column does not exist` ERROR lines at startup or in test output are **real schema defects**, not
+noise: they mean a model added a constraint or column already inherited from a parent
+(`data.directory`, `common.nameId`, `common.parent`, …), and the duplicate produces DDL errors on
+every single startup. This was introduced during ChapBook model work and then written off as
+"pre-existing schema-init noise" — that was deflection, not diagnosis (see `llm-conduct.md`). Before
+adding a field or constraint to a model JSON, walk the `inherits` chain and confirm it isn't already
+declared upstream.
+
 ### Field Schema Properties
 
 Fields support several modifiers that control persistence and behavior:
@@ -962,6 +980,24 @@ if (field.getValueType() == FieldEnumType.ENUM) {
 
 ## Common Patterns
 
+### Reading and writing `byteStore` — always via `ByteModelUtil`
+
+Read a `byteStore` field with `ByteModelUtil.getValue(record)` /
+`ByteModelUtil.getValue(record, fieldName)` and write it with
+`ByteModelUtil.setValue(record, bytes)`. **Never** `record.get(FieldNames.FIELD_BYTE_STORE)` or
+`record.set(...)` directly.
+
+`byte_store` data may be transparently compressed (`ByteModelUtil.tryCompress`) and/or encrypted
+(`EncryptFieldProvider`/`VaultService`) depending on model config. A raw `.get()` returns the stored
+bytes as-is — compressed and/or ciphertext — not the logical value, and hands silent garbage to any
+downstream consumer expecting real bytes. Found 2026-07-15 in `PictureBookService.java`, which had
+4+ raw `FIELD_BYTE_STORE` reads feeding portrait bytes into the SD pipeline; the likely root cause of
+"reference images obviously aren't used."
+
+Grep for `FIELD_BYTE_STORE` as a review step on any code touching binary blobs. But **fixing** is
+scoped to the feature in hand: when this surfaced raw access elsewhere (e.g. Vault), Stephen's
+instruction was to note those and leave them, not fix them as a drive-by.
+
 ### Creating Records
 ```java
 BaseRecord record = RecordFactory.newInstance("auth.group");
@@ -1358,3 +1394,23 @@ This module owns the runtime LLM prompt templates under `src/main/resources/olio
 (`prompt.config.json`, `prompts/compliance.json`, `prompts/chatOperations.json`,
 `prompts/ageGuidance.json`, `templates/chatConfig.rpg.json`). Their content is maintained in code and
 by the ISO 42001 subsystem — not documented here.
+
+### Consuming LLM-extracted fields: guard for the literal string `"null"`
+
+A null-or-blank check (`x != null && !x.isBlank()`) is **not sufficient** for any field an LLM
+extracted into a JSON/Map structure. LLMs routinely emit the literal four-character string `"null"` —
+or `"n/a"`, `"none"`, `"unknown"`, `"unspecified"` — as the *value* when they can't determine an
+attribute, rather than omitting the key or using a real JSON null. That text sails through a blank
+check and straight into anything that concatenates it, producing output like
+"a null null null woman with … null eyes."
+
+Caught 2026-07-16 by Stephen reading an actual generated SD prompt:
+`NarrativeUtil.buildPortraitPromptFromExtractedData()` guarded with `Map.getOrDefault(key, "")` +
+`!isBlank()`, which catches a missing key or an empty string but not a present key whose value is the
+text `"null"`. Confirmed again 2026-07-20 — `PictureBookUtil.createCharPerson`'s ethnicity mapping hit
+it live against `catatone.docx`, where the LLM returned `"null"` for `ethnicity` far more often than a
+real absence.
+
+⇒ Use **`NarrativeUtil.isMeaningful(String)`** (made public for exactly this reason) for any new
+LLM-field consumption in Objects7 rather than writing a fresh blank/null check. Treat this as a
+standing risk for all LLM-extraction-consuming code, not a PictureBook quirk.

@@ -26,7 +26,12 @@ Claude has a pattern of:
 ## Mandatory Rules (violations = lying)
 
 1. **"Tested" means a Playwright, Vitest, or JUnit test was written, executed, and the ACTUAL FUNCTIONALITY was exercised against the live backend.** Looking at code is not testing. Checking `.parse()` is not testing the pipeline.
-2. **If you cannot test something, say "I cannot test this."** Do NOT write a fake test.
+2. **If you cannot test something, say "I cannot test this."** Do NOT write a fake test. But first
+   check that it's true: **the Ollama LLM at `192.168.1.42` is live during work sessions**, so "this
+   path can't be tested without a live LLM" is not an available excuse. Stephen has said so repeatedly.
+   The Issue 7 landscape-prompt path was reported untestable; when actually run it called `qwen3:8b` and
+   returned a real prompt in ~9 seconds. If an Objects7 test needs Ollama, check the
+   `test.llm.ollama.server` property in `resource.properties`, gate the test on it if needed, and run it.
 3. **NEVER use admin user for testing.** Use `ensureSharedTestUser()` / `ensureIso42001TestUser()` from `e2e/helpers/api.js`.
 4. **ALWAYS read the reference UI implementation BEFORE writing ANY UI code.** `AccountManagerUx752/` is the primary/canonical UI reference. `deprecated/AccountManagerUx7/client/` is the deprecated legacy reference, still consultable when you need to understand a pattern's origin. If you don't know how something works, LOOK.
 5. **NEVER claim an issue is fixed without a passing test** that exercises the fix end-to-end.

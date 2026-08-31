@@ -71,7 +71,10 @@ cd src
 mvn -o -q -pl AccountManagerISO42001 install -DskipTests   # rebuild+install a jar so dependents pick it up
 mvn -o -pl AccountManagerService7 compile                   # compile the WAR against installed jars
 ```
-Editing an ISO model JSON or facade means: `install` the ISO jar, then **rebuild+redeploy the Service7 WAR to Tomcat**. Run a single backend test with `mvn -o -pl <module> -Dtest=ClassName#method test` — but backend tests are integration tests that hit the live DB/LLM; **never reset the DB schema** (no `-Dreset`/drop — Stephen does that himself). Pure Objects7 JUnit tests (talk to DB/Ollama directly via `IOSystem`) do **not** need Service7/Tomcat running at all.
+Editing an ISO model JSON or facade means: `install` the ISO jar, then **rebuild+redeploy the Service7 WAR to Tomcat**. Run a single backend test with `mvn -o -pl <module> -Dtest=ClassName#method -DskipTests=false test`
+— **the `-DskipTests=false` is mandatory for Objects7**, whose POM skips tests by default: without it
+the run prints "Tests are skipped" and `BUILD SUCCESS` in ~2s having executed nothing, which reads
+exactly like a passing test run — but backend tests are integration tests that hit the live DB/LLM; **never reset the DB schema** (no `-Dreset`/drop — Stephen does that himself). Pure Objects7 JUnit tests (talk to DB/Ollama directly via `IOSystem`) do **not** need Service7/Tomcat running at all.
 
 **Service7/Tomcat for testing: use the Docker setup, not a manually-run local Tomcat.** A verified
 working `src/docker-compose.yml` + `src/Dockerfile` packages Service7 (Tomcat) + Ux752

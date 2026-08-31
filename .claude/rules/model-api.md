@@ -64,6 +64,21 @@ instinctPlan.planForCommonFields(true);
 Default GET returns minimal fields (`id, objectId, name, urn, organizationId, ownerId`); everything
 else is opt-in via `request` or `/full`.
 
+### `planMost(true)` can exceed PostgreSQL's 100-argument function limit
+
+Recursive `planMost(true)` on a model whose nested foreign `MODEL` fields are themselves wide
+generates a `JSON_BUILD_OBJECT` sub-query per model field (`StatementUtil
+.getParticipationSelectTemplate`, `modelMode=true`). Recursion expands the nested model's own
+foreign fields transitively, and past 100 arguments PostgreSQL throws
+`PSQLException: cannot pass more than 100 arguments to a function`. `DBSearch` catches it and
+returns null, so the only surface is `AUDIT INVALID … No results` — it reads exactly like an
+authorization denial or an empty table.
+
+Measured on `olio.pb.book` → `olio.world`. So **do not use `GET /rest/model/{type}/{objectId}/full`
+(`ModelService.getFullModelByObjectId`, which calls `planMost(true)`) for `olio.pb.book`, or any
+model whose nested foreign models are field-heavy.** Use `POST /rest/model/search` with an explicit
+`request` projection instead; the `findBookBySlug` path does this and works.
+
 ## Serialization: `toFullString()` vs `toString()`
 
 | Method | Behavior |
@@ -182,6 +197,38 @@ callers discard, so the code path reports success while nothing was written. Two
 - **Never discard the update result.** `getAccessPoint().update(...)` returning false/null is the only
   signal you get; swallowing it converts a persistent failure into a silent no-op.
 
+### PATCH does not cascade — it writes only the model you called it on
+
+`AccessPoint.update()` persists fields on **the exact model instance you pass in**. Set a field on a
+nested foreign record (`charPerson.narrative.sdPrompt`), attach that object to a parent-level patch
+(`charPerson`), and the parent's FK pointer is updated while the nested record's own field change is
+silently dropped. Confirmed live: `narrative.sdPrompt` read back null after `createCharPerson()` set
+it post-creation and patched only the parent's `narrative` FK. It broke the same feature twice.
+
+⇒ **Issue a second, separate patch against the nested record itself** (identity + changed fields, via
+the explicit field-name `newInstance` idiom above so validation doesn't reject it).
+
+**The named exceptions** (Stephen, 2026-07-16): cascading *does* happen automatically for
+memberships/participation writes and for reverse-reference attachment during a **`create`**. Do not
+generalize those exceptions to plain nested-model-field PATCHes.
+
+**`referenced` fields never persist through a parent patch at all.** `common.attributeList`'s
+`attributes` is `referenced` storage (separate reference table keyed by `referenceModel`/`referenceId`),
+not a column. Two distinct failures, found 2026-07-19:
+
+1. A `copyRecord([...])` patch containing only `id`/`objectId`/`attributes` produces an **empty SQL
+   `SET` clause** — `UPDATE A7_x SET  WHERE id = ?`, a real syntax error — because none of the three
+   are columns. Adding a real column (e.g. `organizationId`, as `EpochUtil` does) clears the syntax
+   error but not the actual problem, because:
+2. Even with a valid `SET`, **the attribute row is still never written.** Re-querying with
+   `setCache(false)` showed `attributes: []`.
+
+⇒ Don't fold an attribute into a parent patch. Call `AttributeUtil.addAttribute(rec, name, val)` (new)
+or mutate the existing attribute's value with `existingAttr.setFlex(FieldNames.FIELD_VALUE, val)`, then
+persist **that attribute record directly** — `getRecordUtil().createRecord(newAttr)` or
+`.updateRecord(existingAttr)`. This is already the pattern in `LibraryUtil.java:45` and `EpochUtil`
+(neither routes attributes through `AccessPoint.update()`); see `PictureBookUtil.tagApparelSceneIndex`.
+
 ## Working with Olio objects (full records)
 
 Olio code expects fully, deeply populated objects (`state.currentLocation`, `profile.portrait`,
@@ -223,6 +270,31 @@ that field; a mismatch is caught and logged inside `FieldUtil` and the call site
 
 `/rest/model/search` is cached by query key — set `cache:false` for views that must see
 just-created/edited/deleted records.
+
+### Cache invalidation does not follow nested references
+
+The same staleness bites at the Java `Query` layer, and it is worse there because it applies to fields
+you did not query directly. `CacheDBSearch.clearCache(BaseRecord)` only invalidates entries whose
+cached **top-level** result matches the updated record's own schema + identity. So if parent A
+(`olio.charPerson`) was fetched and cached with a nested field populated (`profile`), and you then
+update that nested record directly (patch `identity.profile.portrait`), **A's cache entry is not
+invalidated** — re-fetching A with the same `Query` shape returns the stale nested value.
+`RecordReader.populate()`'s per-instance memoization compounds it by skipping re-fetch on an
+already-populated instance.
+
+Found 2026-07-16: a test verification step reported a portrait as unlinked while the DB and the
+writing code's own logs both proved it persisted. The cause was the *test's* earlier query having
+cached the pre-update parent.
+
+Two further confirmations (2026-07-19):
+- It also hits **participation-backed list fields** (`olio.store.apparel`, linked via `MemberUtil.member()`).
+- `RecordReader.populate(rec, fields)` is a **no-op when the field already holds BaseRecord's
+  default-instantiated empty list** — it never issues the read at all, cache or no cache.
+
+⇒ Any code or test that updates a nested/foreign/participation field and then verifies it by re-fetching
+a **different parent** record must re-fetch with an explicit fresh `Query` and `setCache(false)`. Do not
+substitute `reader.populate(x, [field])`, and do not assume re-querying is inherently fresh. See
+`PictureBookUtil.selectSceneApparel`.
 
 ## `AccessPoint.list` is NOT a per-record authorization boundary
 
