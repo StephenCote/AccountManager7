@@ -946,6 +946,11 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
 
         // 3. Open the dedicated reader route.
         await loginAsSharedUser(page);
+        // Seed sessionStorage as doCreateChapBook would have — the test bypasses the UI
+        // creation flow, so the reader's oninit sessionStorage restore needs this.
+        await page.evaluate(({ bookObjectId, poemObjectIds }) => {
+            sessionStorage.setItem('cb-poemids-' + bookObjectId, JSON.stringify(poemObjectIds));
+        }, { bookObjectId, poemObjectIds });
         await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookObjectId);
 
         // 4. Stanza text visible WITHOUT clicking Render. Regex derived from the real

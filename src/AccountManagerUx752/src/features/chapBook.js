@@ -628,6 +628,8 @@ async function doCreateChapBook() {
         showCreateDialog = false;
         let navObjectId = result.objectId || result.bookObjectId;
         if (navObjectId) {
+            // Persist so Analyze button survives same-tab page reload (no backend book↔poem FK yet)
+            try { sessionStorage.setItem('cb-poemids-' + navObjectId, JSON.stringify(readerPoemIds)); } catch (_) {}
             m.route.set('/chap-book/read/' + navObjectId);
         }
     } catch (e) {
@@ -776,7 +778,7 @@ const PoemLibrary = {
                 m('button', {
                     class: 'px-3 py-1 rounded bg-green-600 text-white text-sm hover:bg-green-700 flex items-center gap-1 disabled:opacity-50',
                     onclick: function () { openSourcePicker('data.note'); },
-                    disabled: addingPoem
+                    disabled: addingPoem || roleWarning
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, addingPoem ? 'hourglass_empty' : 'note_add'),
                     addingPoem ? ' Importing...' : ' Add from Note'
@@ -784,21 +786,23 @@ const PoemLibrary = {
                 m('button', {
                     class: 'px-3 py-1 rounded bg-teal-600 text-white text-sm hover:bg-teal-700 flex items-center gap-1 disabled:opacity-50',
                     onclick: function () { openSourcePicker('data.data'); },
-                    disabled: addingPoem
+                    disabled: addingPoem || roleWarning
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'description'),
                     ' Add from Data'
                 ]),
                 m('button', {
-                    class: 'px-3 py-1 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 flex items-center gap-1',
-                    onclick: function () { showAddPoemDialog = true; addPoemTitle = ''; addPoemAuthor = ''; addPoemText = ''; m.redraw(); }
+                    class: 'px-3 py-1 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 flex items-center gap-1 disabled:opacity-50',
+                    onclick: function () { showAddPoemDialog = true; addPoemTitle = ''; addPoemAuthor = ''; addPoemText = ''; m.redraw(); },
+                    disabled: roleWarning
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'add'),
                     ' New Poem'
                 ]),
                 selectedIds.size > 0 ? m('button', {
-                    class: 'px-3 py-1 rounded bg-purple-600 text-white text-sm hover:bg-purple-700',
-                    onclick: openCreateDialog
+                    class: 'px-3 py-1 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-50',
+                    onclick: openCreateDialog,
+                    disabled: roleWarning
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'auto_stories'),
                     ' Create ChapBook (' + selectedIds.size + ')'
@@ -920,7 +924,7 @@ const PoemLibrary = {
                 ]),
                 m('button', {
                     class: 'px-3 py-1 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1 disabled:opacity-50',
-                    disabled: renderingBook,
+                    disabled: renderingBook || roleWarning,
                     // Issue 8: open SD config dialog before rendering
                     onclick: function () { openRenderConfigDialog(lastCreatedBook.objectId || lastCreatedBook.bookObjectId, renderBook); }
                 }, [
@@ -1188,6 +1192,13 @@ function renderReaderBook() {
 const ChapBookReader = {
     oninit: function (vnode) {
         readerBookObjectId = vnode.attrs.bookObjectId || null;
+        // Restore poemIds from sessionStorage (set at create time — survives same-tab reload)
+        if (!readerPoemIds.length && readerBookObjectId) {
+            try {
+                let stored = sessionStorage.getItem('cb-poemids-' + readerBookObjectId);
+                if (stored) readerPoemIds = JSON.parse(stored);
+            } catch (_) {}
+        }
         readerBook = null;
         readerPages = [];
         readerError = null;
@@ -1231,7 +1242,7 @@ const ChapBookReader = {
                 ]),
                 readerPoemIds.length > 0 ? m('button', {
                     class: 'px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50',
-                    disabled: busy,
+                    disabled: busy || roleWarning,
                     onclick: analyzeReaderPoems
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, readerAnalyzing ? 'hourglass_empty' : 'psychology'),
@@ -1239,7 +1250,7 @@ const ChapBookReader = {
                 ]) : null,
                 m('button', {
                     class: 'px-3 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1 disabled:opacity-50',
-                    disabled: busy,
+                    disabled: busy || roleWarning,
                     onclick: renderReaderBook
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, readerRendering ? 'hourglass_empty' : 'image'),

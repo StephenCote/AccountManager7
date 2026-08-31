@@ -5019,6 +5019,23 @@ public class PictureBookUtil {
     @SuppressWarnings("unchecked")
     public static List<Map<String, Object>> listCharacters(BaseRecord user, String bookObjectId) {
         BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        // Dual-lookup: if not found as a data.group objectId, try treating it as an olio.pb.book objectId
+        // (mirrors the same pattern in reset()). The UI may pass either ID depending on the code path.
+        if (bookGroup == null) {
+            long orgId2 = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+            Query pbQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
+            pbQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId2);
+            pbQ.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_SLUG });
+            BaseRecord pb2Book = IOSystem.getActiveContext().getAccessPoint().find(user, pbQ);
+            if (pb2Book != null) {
+                String slug = pb2Book.get(OlioFieldNames.FIELD_PB_SLUG);
+                if (slug != null && !slug.isBlank()) {
+                    String bookPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + slug;
+                    bookGroup = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                        ModelNames.MODEL_GROUP, bookPath, GroupEnumType.DATA.toString(), orgId2);
+                }
+            }
+        }
         if (bookGroup == null) throw new PictureBookException(404, "Book not found");
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
         String charsGroupPath = bookGroupPath + "/Characters";

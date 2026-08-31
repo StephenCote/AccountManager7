@@ -146,6 +146,20 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
         } else {
             await apiLogout(request);
         }
+
+        if (!workObjectId) {
+            throw new Error(
+                'beforeAll: AIME note creation failed — all pipeline tests will ' +
+                'silently skip without this guard. Check login session and /rest/model POST.'
+            );
+        }
+        if (!extractedScenes.length) {
+            throw new Error(
+                'beforeAll: LLM extraction returned no scenes. ' +
+                'Verify LLM at 192.168.1.42:11434 is reachable from THIS host ' +
+                '(not Docker — Docker cannot reach LAN). chatConfigName=' + chatConfigName
+            );
+        }
     });
 
     // ══════════════════════════════════════════════════════════════════════
@@ -317,17 +331,12 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             });
 
             expect(result.status).toBe(200);
-            // KNOWN ISSUE: Backend .pictureBookMeta save fails (AccessPoint.create denies data.data in user home)
-            // GET /scenes returns 0 even after successful extraction. Scenes are loaded via fallback.
-            if (result.scenes.length === 0) {
-                console.log('KNOWN ISSUE: GET /scenes returns 0 — .pictureBookMeta save bug');
-            } else {
-                for (let s of result.scenes) {
-                    expect(s.objectId).toBeTruthy();
-                    expect(s.title).toBeTruthy();
-                }
-                if (!extractedScenes.length) extractedScenes = result.scenes;
+            expect(result.scenes.length).toBeGreaterThan(0);
+            for (let s of result.scenes) {
+                expect(s.objectId).toBeTruthy();
+                expect(s.title).toBeTruthy();
             }
+            if (!extractedScenes.length) extractedScenes = result.scenes;
         });
 
         test('B.4 Generate scene image', async ({ page }) => {

@@ -66,7 +66,7 @@ loop_cmds_for() {
 
   if [ -f "$dir/pom.xml" ]; then
     BUILD_CMD="mvn -q -B -DskipTests test-compile"
-    TEST_CMD="mvn -q -B test"
+    TEST_CMD="mvn -q -B -DskipTests=false test"
   fi
 
   if [ -f "$dir/package.json" ]; then

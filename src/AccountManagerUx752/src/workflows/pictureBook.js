@@ -35,6 +35,7 @@ import { am7sd } from '../components/sdConfig.js';
 let step = 1;
 let workObjectId = null;  // Source document objectId (for extract API)
 let bookObjectId = null;  // Book group objectId (for scenes/viewer/reset APIs)
+let pb2WizardBookOid = null;  // olio.pb.book objectId — PB2 viewer/workflow navigation only
 let workName = '';
 
 // Step 1
@@ -125,6 +126,7 @@ let roleWarning = false;
 function resetState() {
     step = 1;
     bookObjectId = null;
+    pb2WizardBookOid = null;
     method = 'auto';
     bookName = '';
     chatConfigRef = null;
@@ -1305,7 +1307,10 @@ function buildActions() {
                         workObjectId, chatConfigName(), genre || null,
                         bookName || workName, extractedScenes, buildCharacterStubs(), pb2BookObjectId
                     );
-                    bookObjectId = (meta.pb2BookObjectId || meta.bookObjectId) || null;
+                    // bookObjectId MUST be the data.group objectId — /characters, /scenes, reset all need it.
+                    // pb2WizardBookOid carries the olio.pb.book objectId for viewer/workflow navigation.
+                    bookObjectId = meta.bookObjectId || null;
+                    pb2WizardBookOid = meta.pb2BookObjectId || null;
                     metaScenes = meta.scenes || [];
                     scenes = metaScenes;
                     if (meta.failedCharacters && meta.failedCharacters.length) {
@@ -1453,15 +1458,19 @@ function buildActions() {
             label: 'Open in Viewer', icon: 'open_in_new',
             onclick: function () {
                 Dialog.close();
-                m.route.set('/picture-book/' + (bookObjectId || workObjectId));
+                if (pb2WizardBookOid) {
+                    m.route.set('/picture-book/v2/' + pb2WizardBookOid);
+                } else {
+                    m.route.set('/picture-book/' + (bookObjectId || workObjectId));
+                }
             }
         });
-        if (bookObjectId) {
+        if (pb2WizardBookOid || bookObjectId) {
             actions.push({
                 label: 'Workflow', icon: 'account_tree',
                 onclick: function () {
                     Dialog.close();
-                    m.route.set('/picture-book/' + bookObjectId + '/workflow');
+                    m.route.set('/picture-book/' + (pb2WizardBookOid || bookObjectId) + '/workflow');
                 }
             });
         }
