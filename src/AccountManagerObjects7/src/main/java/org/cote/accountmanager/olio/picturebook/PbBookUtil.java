@@ -395,6 +395,60 @@ public class PbBookUtil {
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
 	}
 
+	/**
+	 * Persist a per-scene sparse {@code configOverride}.
+	 * <p>
+	 * The override is a SPARSE JSON STRING carrying schema {@code olio.sd.config} and only the fields the
+	 * caller explicitly set — it is NOT a {@code RecordFactory.newInstance(olio.sd.config)} record, which
+	 * would materialize every defaulted field and make "override" indistinguishable from "default" (see
+	 * {@link PbConfigUtil} and the {@code configOverride} field description on {@code olio.pb.scene}). A
+	 * ChapBook scene has no {@code sceneNode}, so this field is the ONLY way such a scene can feed the top
+	 * tier of the config-precedence merge {@link PbConfigUtil#resolveEffectiveConfig} performs at render.
+	 * <p>
+	 * PATCH-shaped and authorized: identity + the model's validated {@code name} + the changed field only
+	 * (via {@link PbGraphUtil#patchOf}, so the writer's validation of the patch record does not reject a
+	 * null {@code name}), through {@code AccessPoint.update}. The update result is asserted, never
+	 * discarded — a swallowed null there converts a persistent failure into a silent no-op.
+	 *
+	 * @param user           the acting user (must have WRITE access to the scene)
+	 * @param sceneObjectId  objectId of the {@code olio.pb.scene}
+	 * @param configOverride the sparse override JSON, or null/blank to clear the field
+	 * @return true when the scene was updated
+	 * @throws PictureBookException 400 when args are missing or a non-blank override is not valid sparse
+	 *         {@code olio.sd.config} JSON; 404 when the scene is not readable by {@code user}
+	 */
+	public static boolean setSceneConfigOverride(BaseRecord user, String sceneObjectId, String configOverride) {
+		if(user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
+			throw new PictureBookException(400, "user and sceneObjectId are required");
+		}
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		BaseRecord scene = readScene(user, sceneObjectId, orgId);
+		if(scene == null) {
+			throw new PictureBookException(404, "Scene not found: " + sceneObjectId);
+		}
+		String sparse = (configOverride != null && !configOverride.isBlank()) ? configOverride.trim() : null;
+		/// Validate a non-blank override before persisting: parseOverride returns null when the JSON is
+		/// unparseable or does not carry schema olio.sd.config, and such a string would be silently dropped
+		/// by resolveEffectiveConfig at render time. Reject it loudly here instead of storing dead data.
+		if(sparse != null && PbConfigUtil.parseOverride(sparse) == null) {
+			throw new PictureBookException(400,
+				"configOverride must be sparse " + OlioModelNames.MODEL_SD_CONFIG + " JSON carrying its schema");
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
+			OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE);
+		try {
+			patch.set(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, sparse);
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble a configOverride patch: " + e.getMessage());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			logger.error("Failed to persist configOverride on scene " + sceneObjectId);
+			return false;
+		}
+		return true;
+	}
+
 	// ─────────────────────────────── status ───────────────────────────────
 
 	/** Persist a book status. Explicit, authorized, PATCH-shaped, result asserted. */
@@ -482,7 +536,11 @@ public class PbBookUtil {
 			OlioFieldNames.FIELD_PB_SCENE_NODE,
 			OlioFieldNames.FIELD_CB_POEM_STANZA,
 			OlioFieldNames.FIELD_CB_SD_PROMPT,
-			OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID
+			OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID,
+			OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE,
+			OlioFieldNames.FIELD_PB_PAGE_FONT,
+			OlioFieldNames.FIELD_PB_PAGE_BG_COLOR,
+			OlioFieldNames.FIELD_PB_PAGE_TEXT_ALIGN
 		};
 	}
 }

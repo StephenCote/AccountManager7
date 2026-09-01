@@ -510,6 +510,60 @@ public class TestPbGraph extends BaseTest {
 		assertNotEquals("seed IS an input and must change configHash", h1, PbConfigUtil.configHash(effective));
 	}
 
+	/**
+	 * The exact contract ChapBook render (§C2) leans on: an {@code olio.pb.scene} — which has NO
+	 * {@code sceneNode} — is a valid override carrier for {@link PbConfigUtil#resolveEffectiveConfig}.
+	 * {@code resolveEffectiveConfig} duck-types the carrier via {@code hasField(configOverride)} /
+	 * {@code get(configOverride)}, and {@code olio.pb.scene} declares {@code configOverride} exactly so a
+	 * ChapBook scene can feed the top tier of the precedence merge. Pure in-memory: no DB, no LLM, no SD —
+	 * the same fixture style as {@code case07}, with a scene substituted for the node.
+	 */
+	@Test
+	public void case07c_sceneIsAValidOverrideCarrierForChapBook() {
+		BaseRecord book = null;
+		BaseRecord scene = null;
+		try {
+			book = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK);
+			BaseRecord bookCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+			bookCfg.set("style", "bookStyle");
+			bookCfg.set("flux2Steps", Integer.valueOf(11));
+			book.set(OlioFieldNames.FIELD_PB_SD_CONFIG, bookCfg);
+
+			/// A SCENE, deliberately — not a node. It has no sceneNode; configOverride is the only tier it
+			/// can contribute, and that is the whole point of the field existing on olio.pb.scene.
+			scene = RecordFactory.newInstance(OlioModelNames.MODEL_PB_SCENE);
+			BaseRecord sceneCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+			sceneCfg.set("flux2Steps", Integer.valueOf(3));
+			scene.set(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE,
+				PbConfigUtil.sparseOverride(sceneCfg, Arrays.asList("flux2Steps")));
+			assertNull("A ChapBook scene must have no sceneNode for this to be the operative path",
+				scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE));
+		}
+		catch(Exception e) {
+			fail("Failed to build the scene-carrier fixture: " + e.getMessage());
+		}
+
+		BaseRecord effective = PbConfigUtil.resolveEffectiveConfig(book, scene, false);
+		assertEquals("The scene override must beat the book tier", Integer.valueOf(3), effective.get("flux2Steps"));
+		assertEquals("The book tier must survive where the scene says nothing", "bookStyle", effective.get("style"));
+		assertNotNull("The FLUX.2 resource tier must still fill what neither tier set", effective.get("flux2Cfg"));
+		assertEquals("A schema default must survive where nothing overrides it", Integer.valueOf(20),
+			effective.get("steps"));
+
+		/// A scene with no override at all must fall straight through to the book tier + resource defaults —
+		/// the case for a freshly-created ChapBook scene before anyone edits its per-page config.
+		BaseRecord plainScene = null;
+		try {
+			plainScene = RecordFactory.newInstance(OlioModelNames.MODEL_PB_SCENE);
+		}
+		catch(Exception e) {
+			fail(e.getMessage());
+		}
+		BaseRecord fromBook = PbConfigUtil.resolveEffectiveConfig(book, plainScene, false);
+		assertEquals("With no scene override the book tier governs", Integer.valueOf(11), fromBook.get("flux2Steps"));
+		assertEquals("bookStyle", fromBook.get("style"));
+	}
+
 	// ───────── 8: the hash primitives, pinned ─────────
 
 	/**

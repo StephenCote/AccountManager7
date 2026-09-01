@@ -2,17 +2,13 @@
 	"name": "olio.cb.set",
 	"likeInherits": ["data.directory"],
 	"inherits": [
-		"data.directory",
-		"common.baseLight",
-		"common.urn",
-		"common.nameId"
+		"data.directory"
 	],
 	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
 	"icon": "collections_bookmark",
 	"label": "Poem Set",
 	"group": "ChapBook",
-	"constraints": ["name, groupId, organizationId"],
-	"description": "A named collection of olio.cb.poem records for organizing ChapBook source material.",
+	"description": "A named collection of olio.cb.poem records for organizing ChapBook source material. Constraint (name, groupId, organizationId) is inherited from data.directory.",
 	"fields": [
 		{
 			"name": "description",

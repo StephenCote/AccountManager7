@@ -8,18 +8,7 @@
 	"icon": "auto_stories",
 	"label": "ChapBook",
 	"group": "ChapBook",
-	"constraints": ["slug, organizationId", "name, groupId, organizationId"],
-	"description": "A poetry ChapBook: a PictureBook 2 variant where each scene page shows a stanza of poetry overlaid on a landscape image. Inherits all olio.pb.book fields plus ChapBook-specific layout controls.",
+	"description": "A poetry ChapBook: a PictureBook 2 variant where each scene page shows a stanza of poetry overlaid on a landscape image. Inherits all olio.pb.book fields (including maxLinesPerPage, overlayOpacity) and its constraints (slug/organizationId; name/groupId/organizationId) plus ChapBook-specific layout controls.",
 	"fields": [
-		{
-			"name": "maxLinesPerPage",
-			"type": "int",
-			"description": "Maximum lines per stanza chunk. No schema default — ChapBookUtil uses 8 when null."
-		},
-		{
-			"name": "overlayOpacity",
-			"type": "double",
-			"description": "Opacity of the background landscape image behind the poem text overlay. No schema default — renderer uses 0.4 when null."
-		}
 	]
 }

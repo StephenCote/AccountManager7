@@ -1,22 +1,19 @@
 {
 	"name": "olio.cb.poem",
-	"likeInherits": ["data.note"],
 	"inherits": [
-		"data.directory",
-		"common.baseLight",
-		"common.urn"
+		"data.directory"
 	],
 	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
 	"icon": "menu_book",
 	"label": "Poem",
 	"group": "ChapBook",
 
-	"description": "A poem for ChapBook: stores the poem text (via data.directory's content/text field from data.note likeInherits), plus LLM-extracted theme/mood/keywords.",
+	"description": "A poem for ChapBook: stores the poem text plus LLM-extracted theme/mood/keywords.",
 	"fields": [
 		{
 			"name": "text",
 			"type": "string",
-			"description": "The full poem text. likeInherits from data.note is metadata-only, so this field is declared explicitly."
+			"description": "The full poem text."
 		},
 		{
 			"name": "title",
@@ -44,6 +41,13 @@
 			"name": "keywords",
 			"type": "string",
 			"description": "Comma-separated imagery keywords extracted by LLM. Optionally enriches the SD prompt."
+		},
+		{
+			"name": "book",
+			"baseModel": "olio.pb.book",
+			"type": "model",
+			"foreign": true,
+			"description": "Optional per-chapbook scope: the olio.pb.book (bookType=CHAPBOOK) this poem belongs to. Null = global poem library (backward compatible). Additive bigint FK column; poems can be imported scoped to a chapbook and listed filtered by it. Mirrors olio.pb.scene.book."
 		}
 	]
 }

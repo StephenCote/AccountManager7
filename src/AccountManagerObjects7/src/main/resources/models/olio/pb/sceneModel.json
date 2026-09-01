@@ -88,6 +88,11 @@
 			"description": "For ChapBook scenes: landscape SD prompt derived from poemStanza + mood."
 		},
 		{
+			"name": "configOverride",
+			"type": "string",
+			"description": "JSON of ONLY the explicitly-set config fields, produced with cfg.copyRecord(changedFieldNames).toString(). Mirrors olio.pb.node.configOverride so ChapBook scenes (which have no sceneNode) can feed the config-precedence merge. Deliberately not a persisted olio.sd.config: a record instantiated from that schema materializes every defaulted field, which makes 'override' indistinguishable from 'default'. No schema default - a default would defeat sparseness."
+		},
+		{
 			"name": "imageObjectId",
 			"type": "string",
 			"description": "For ChapBook scenes: objectId of the data.data image produced by ChapBook render. Used by bookPageView as the dataObjectId fallback when sceneNode is null."

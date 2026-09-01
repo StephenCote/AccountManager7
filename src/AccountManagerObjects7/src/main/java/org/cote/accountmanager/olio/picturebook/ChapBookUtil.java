@@ -13,6 +13,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -23,6 +24,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 
@@ -317,6 +319,21 @@ public class ChapBookUtil {
 	 * @throws PictureBookException 400 if required fields are absent, 500 on persistence failure
 	 */
 	public static BaseRecord createPoem(BaseRecord user, String title, String author, String text, String groupPath) {
+		return createPoem(user, title, author, text, groupPath, null);
+	}
+
+	/**
+	 * Create an {@code olio.cb.poem} record, optionally scoped to a chapbook.
+	 * <p>
+	 * When {@code book} is non-null the poem's {@code book} FK is stamped so the poem belongs to that
+	 * chapbook (see {@link #listPoems}); when null the poem lands in the global poem library, which is
+	 * the backward-compatible behavior of the 5-arg overload. A {@code foreign} {@code model} field
+	 * takes the RECORD, not its id (see {@code model-api.md}); the caller resolves the book first via
+	 * {@link #resolveScopeBook}.
+	 *
+	 * @param book optional {@code olio.pb.book} record to scope this poem to; null = global library
+	 */
+	public static BaseRecord createPoem(BaseRecord user, String title, String author, String text, String groupPath, BaseRecord book) {
 		if (title == null || title.isBlank()) throw new PictureBookException(400, "title is required");
 		if (text == null || text.isBlank()) throw new PictureBookException(400, "text is required");
 		String effectivePath = (groupPath != null && !groupPath.isBlank()) ? groupPath : "~/Poems";
@@ -329,6 +346,9 @@ public class ChapBookUtil {
 			poem.set(OlioFieldNames.FIELD_PB_TITLE, title);
 			if (author != null && !author.isBlank()) poem.set("author", author);
 			poem.set("text", text);
+			// A foreign model field takes the RECORD, not its id (model-api.md). Stamp the chapbook
+			// scope so listPoems(book) can filter to it; null leaves the poem in the global library.
+			if (book != null) poem.set(OlioFieldNames.FIELD_PB_BOOK, book);
 			// Use a direct write to bypass PBAC — the ~/Poems group was just created by
 			// factory.newInstance → PathUtil.makePath → writer.write(group) and carries no
 			// entitlements yet, so AccessPoint.create would fail PBAC (no DATA-Create grant).
@@ -539,6 +559,78 @@ public class ChapBookUtil {
 		return scene;
 	}
 
+	// ─────────────────────────────── poem scoping / listing ───────────────────────────────
+
+	/**
+	 * Resolve a chapbook {@code olio.pb.book} record by objectId for per-chapbook poem scoping.
+	 * <p>
+	 * A null/blank {@code bookObjectId} returns null (the caller keeps the global, unscoped behavior).
+	 * A non-blank objectId that does not resolve throws {@link PictureBookException} (404) so the
+	 * transport layer surfaces a bad scope reference rather than silently importing/listing globally.
+	 * <p>
+	 * <b>Scope policy (intentional):</b> resolution goes through {@link PbBookUtil#readBook} →
+	 * {@code AccessPoint.find}, so scoping requires only <i>read</i> access to the target chapbook, not
+	 * write. Tagging a poem to a book the caller can read (but not write) is allowed by design — the
+	 * poem library is an org-shared collection and the {@code book} FK is an organizational label, not a
+	 * grant of authority over the book. Confirmed as intended 2026-08-31.
+	 *
+	 * @param user         the acting user
+	 * @param bookObjectId optional {@code olio.pb.book} objectId to scope to; null/blank = unscoped
+	 * @return the resolved book record, or null when {@code bookObjectId} is null/blank
+	 * @throws PictureBookException 404 when a non-blank objectId does not resolve to a book
+	 */
+	public static BaseRecord resolveScopeBook(BaseRecord user, String bookObjectId) {
+		if (bookObjectId == null || bookObjectId.isBlank()) return null;
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		BaseRecord book = PbBookUtil.readBook(user, bookObjectId, orgId);
+		if (book == null) throw new PictureBookException(404, "ChapBook not found: " + bookObjectId);
+		return book;
+	}
+
+	/**
+	 * List {@code olio.cb.poem} records accessible to the user, ordered by name.
+	 * <p>
+	 * When {@code bookObjectId} is provided the list is filtered to poems whose {@code book} FK
+	 * points at that chapbook (a {@code foreign} {@code model} query condition takes the RECORD, not
+	 * its id — see {@code model-api.md}); when null/blank the full org-wide poem library is returned
+	 * (backward compatible). Serialization is left to the transport layer.
+	 *
+	 * @param user         the acting user
+	 * @param bookObjectId optional chapbook objectId to filter by; null/blank = unscoped
+	 * @param startRecord  pagination offset
+	 * @param recordCount  page size; 25 when 0 or negative
+	 * @return matching poem records (never null)
+	 * @throws PictureBookException 404 when a non-blank {@code bookObjectId} does not resolve
+	 */
+	public static List<BaseRecord> listPoems(BaseRecord user, String bookObjectId, long startRecord, int recordCount) {
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		int count = (recordCount > 0) ? recordCount : 25;
+
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CB_POEM);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		BaseRecord scopeBook = resolveScopeBook(user, bookObjectId);
+		if (scopeBook != null) {
+			// Foreign model condition takes the RECORD; a Long would silently become "book = null".
+			q.field(OlioFieldNames.FIELD_PB_BOOK, scopeBook);
+		}
+		q.setRequestRange(startRecord, count);
+		q.setRequest(new String[]{
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
+			OlioFieldNames.FIELD_PB_TITLE, "author",
+			OlioFieldNames.FIELD_CB_THEME, OlioFieldNames.FIELD_CB_MOOD, OlioFieldNames.FIELD_CB_KEYWORDS,
+			OlioFieldNames.FIELD_PB_BOOK
+		});
+		try {
+			q.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+			q.set(FieldNames.FIELD_ORDER, "ASCENDING");
+		} catch (Exception ignored) {}
+
+		org.cote.accountmanager.io.QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, q);
+		BaseRecord[] results = (qr != null) ? qr.getResults() : null;
+		return results != null ? Arrays.asList(results) : new ArrayList<>();
+	}
+
 	// ─────────────────────────────── ChapBook list / delete ───────────────────────────────
 
 	/**
@@ -576,22 +668,39 @@ public class ChapBookUtil {
 	/**
 	 * Delete an {@code olio.pb.book} by objectId.
 	 * <p>
-	 * Verifies the book has {@code bookType=CHAPBOOK} before deleting — returns {@code false}
-	 * if the book is not found or is not a ChapBook (callers should 404/403 accordingly).
+	 * Verifies the book exists and has {@code bookType=CHAPBOOK} before deleting. This method owns
+	 * the 404-vs-403 distinction so the transport layer does not have to re-implement the readBook +
+	 * bookType check (which would violate the Service7 transport-only rule): it throws
+	 * {@link PictureBookException} <b>404</b> when the book is not found, <b>403</b> when it exists but
+	 * is not a CHAPBOOK, and <b>403</b> when PBAC denies the delete (canDelete is checked explicitly so
+	 * a denial surfaces as 403 rather than a bare {@code AccessPoint.delete} {@code false}, which the
+	 * transport layer would otherwise map to 500) — mirroring {@link #renderChapBook}. The boolean
+	 * return distinguishes only a successful delete (true) from a genuine persistence failure (false)
+	 * on a valid, authorized CHAPBOOK.
 	 *
 	 * @param user         the acting user
 	 * @param bookObjectId objectId of the book to delete
-	 * @return true if deleted, false if not found or not a CHAPBOOK
+	 * @return true if deleted, false if the delete itself failed on a valid, authorized CHAPBOOK
+	 * @throws PictureBookException 400 for missing args, 404 if not found, 403 if not a CHAPBOOK or the delete is not authorized
 	 */
 	public static boolean deleteChapBook(BaseRecord user, String bookObjectId) {
-		if (user == null || bookObjectId == null || bookObjectId.isBlank()) return false;
+		if (user == null || bookObjectId == null || bookObjectId.isBlank()) {
+			throw new PictureBookException(400, "user and bookObjectId are required");
+		}
 		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 		BaseRecord book = PbBookUtil.readBook(user, bookObjectId, orgId);
-		if (book == null) return false;
+		if (book == null) {
+			throw new PictureBookException(404, "ChapBook not found: " + bookObjectId);
+		}
 		String bookType = book.get(OlioFieldNames.FIELD_PB_BOOK_TYPE);
 		if (bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
-			logger.warn("deleteChapBook: book {} is not a CHAPBOOK (type={})", bookObjectId, bookType);
-			return false;
+			throw new PictureBookException(403, "Book " + bookObjectId + " is not a CHAPBOOK");
+		}
+		// Explicit PBAC check so a delete denial maps to 403, not a false-return the transport reads as 500.
+		// AccessPoint.delete re-checks canDelete; the double check is intentional (correctness over a saved eval).
+		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canDelete(user, user, book);
+		if (prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+			throw new PictureBookException(403, "Not authorized to delete ChapBook: " + bookObjectId);
 		}
 		return IOSystem.getActiveContext().getAccessPoint().delete(user, book);
 	}
@@ -639,11 +748,18 @@ public class ChapBookUtil {
 		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 		Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
 		bq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-		bq.setRequest(new String[] {
+		/// The book tier of the config-precedence merge (PbConfigUtil.resolveEffectiveConfig) is invisible
+		/// unless sdConfig/compositeSdConfig are projected — a missing tier fails SILENTLY to resource
+		/// defaults. Union the render-specific fields (groupPath/ownerId/bookType/world) with
+		/// PbConfigUtil.requestFields() so the book always carries its config columns, and stays correct
+		/// if requestFields() grows.
+		java.util.LinkedHashSet<String> bookReq = new java.util.LinkedHashSet<>(Arrays.asList(
 			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID,
 			FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
 			OlioFieldNames.FIELD_PB_BOOK_TYPE, OlioFieldNames.FIELD_PB_WORLD
-		});
+		));
+		bookReq.addAll(Arrays.asList(PbConfigUtil.requestFields()));
+		bq.setRequest(bookReq.toArray(new String[0]));
 		bq.setCache(false);
 		BaseRecord book = IOSystem.getActiveContext().getAccessPoint().find(user, bq);
 		if (book == null) {
@@ -702,7 +818,13 @@ public class ChapBookUtil {
 			if (sceneGroupPath == null) sceneGroupPath = (bookGroupPath != null ? bookGroupPath + "/Scenes" : "~/Scenes");
 
 			try {
-				BaseRecord sdConfig = SDUtil.randomSDConfig();
+				/// PB2 config precedence (§2.4): scene configOverride → book sdConfig → flux2Defaults →
+				/// Flux2Defaults constants. A ChapBook scene has no sceneNode, so the SCENE itself is the
+				/// override carrier — resolveEffectiveConfig duck-types the carrier via
+				/// node.hasField(configOverride)/node.get(configOverride), and listScenes() projects that
+				/// field (PbBookUtil.sceneRequest). The scene's configOverride stays a sparse JSON string;
+				/// it is never materialized from RecordFactory.newInstance(olio.sd.config).
+				BaseRecord sdConfig = PbConfigUtil.resolveEffectiveConfig(book, scene, false);
 				if (clientSdConfig != null) {
 					SDUtil.applyOverrides(sdConfig, clientSdConfig);
 				}

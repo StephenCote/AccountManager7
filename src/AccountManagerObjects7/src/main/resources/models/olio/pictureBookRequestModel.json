@@ -171,6 +171,11 @@
 			"type": "string",
 			"maxLength": 64,
 			"description": "STORY→PB2 linkage: POST /{workObjectId}/create-from-scenes — the target olio.pb.book objectId whose universe/world the STORY-created characters should be placed into (PictureBookUtil.createFromScenes reads it via PbBookUtil.readBook and routes characters into that book's world population group). Sent by the Ux (sceneExtractor.js), so it must be declared or RecordDeserializer drops it (KI-24 pattern). Distinct from fromBookObjectId (POST /chapter source book) and sourceNodeObjectId (bind source node)."
+		},
+		{
+			"name": "configOverride",
+			"type": "string",
+			"description": "PUT /scene/{sceneObjectId}/config-override — the SPARSE olio.sd.config JSON STRING to persist onto the scene's configOverride column (PbBookUtil.setSceneConfigOverride). Deliberately a STRING, not a nested olio.sd.config model field: a model field would materialize every defaulted config field and make 'override' indistinguishable from 'default' (see PbConfigUtil and the olio.pb.scene.configOverride field description). The string passes through verbatim; blank/absent clears the field. Must be declared or RecordDeserializer drops it (KI-24 pattern)."
 		}
 	]
 }

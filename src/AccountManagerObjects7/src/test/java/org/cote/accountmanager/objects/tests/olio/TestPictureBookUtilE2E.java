@@ -27,6 +27,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.BaseTest;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
@@ -779,5 +780,156 @@ public class TestPictureBookUtilE2E extends BaseTest {
 		logger.info("Captured character narrative.sdPrompt values: " + narrativeSdPromptByCharOid);
 
 		logger.info("=== TestPictureBookUtilPersistenceE2E PASSED ===");
+	}
+
+	// A deliberately-controlled THREE-character story (mirrors the class's existing STORY approach —
+	// the existing E2E test uses a synthetic controlled story, not a real provided document, so this
+	// follows the same established pattern rather than inventing a new content source). Each of the
+	// three named characters (Captain Rosa Vance, Doctor Ilan Mercer, Pilot Tess Okoro) is given a
+	// distinct, unambiguous physical/role description and appears in EVERY chapter, so extract() and
+	// its per-scene character extraction reliably yield N >= 3 unique charPersons — the whole point of
+	// the "N, not N-1" regression below.
+	private static final String STORY_THREE_CHARS =
+		"Chapter One: Launch\n" +
+		"Captain Rosa Vance, a tall woman with dark braided hair, gripped the command rail as the " +
+		"shuttle cleared the tower. Beside her, Doctor Ilan Mercer, an older man with a close grey " +
+		"beard and round spectacles, studied the diagnostic slate, muttering figures under his breath. " +
+		"At the forward console, Pilot Tess Okoro, a young woman with close-cropped black hair, called " +
+		"out the ascent numbers in a steady voice. All three had trained two years for this single climb.\n\n" +
+		"Chapter Two: The Drift\n" +
+		"By the second day Rosa, Ilan, and Tess had settled into the rhythm of the long drift. Rosa " +
+		"walked the ring corridor checking seals, Ilan ran the same blood panels twice to be certain, " +
+		"and Tess coaxed a stubborn attitude thruster back to life. When the proximity alarm sounded, " +
+		"all three were already moving before the light finished its first red pulse.\n\n" +
+		"Chapter Three: Contact\n" +
+		"The derelict filled the forward port, silent and ancient. Rosa held the approach steady while " +
+		"Ilan read the hull's faint thermal ghost and Tess mapped a path through the debris. None of the " +
+		"three spoke until the docking clamps found their grip and the old hatch, impossibly, began to open.";
+
+	/**
+	 * B1 / "N-not-N-1" regression (gap-analysis Phase B). PB2's {@code extract()} creates N
+	 * {@code olio.charPerson} records; Issue-13 let exactly ONE of the N end up with a NULL
+	 * {@code narrative.sdPrompt} because {@code AccessPoint.update()}/PATCH does not cascade into a
+	 * nested foreign record — the fix issues a SEPARATE patch against the {@code olio.narrative} record
+	 * after creating the charPerson (see {@code PictureBookUtil.setPortraitPromptAndNarrative}, and
+	 * {@code model-api.md} "PATCH does not cascade"). This test proves ALL N (not N-1) persist a
+	 * MEANINGFUL {@code narrative.sdPrompt}.
+	 *
+	 * <p>Every one of the N charPersons is RE-FETCHED FRESH from the DB with an explicit {@code Query}
+	 * and {@code setCache(false)} (the cache is NOT invalidated on nested-foreign updates — see the
+	 * {@link #fetchPortraitObjectId(String)} javadoc), the persisted {@code narrative.sdPrompt} is read
+	 * from the re-fetched narrative sub-record, and asserted non-null AND
+	 * {@code NarrativeUtil.isMeaningful(...)} (LLMs emit the literal string {@code "null"}/{@code "n/a"}/
+	 * etc. — {@code isMeaningful} is the exact guard the production fix relies on).
+	 *
+	 * <p>This method exercises ONLY the {@code extract()} -> {@code createCharPerson()} path (where
+	 * {@code narrative.sdPrompt} is created and persisted); it does NOT run the SD image pipeline, since
+	 * the prompt persistence under test is complete before any image is generated. It still hits the
+	 * live Ollama LLM at 192.168.1.42, so it is gated behind the same {@code PICTUREBOOK_E2E} env flag
+	 * and must run single-threaded.
+	 */
+	@Test
+	public void TestAllCharPersonsPersistMeaningfulSdPromptE2E() throws Exception {
+		assumeTrue("PICTUREBOOK_E2E not set — skipping live LLM PictureBook charPerson sdPrompt regression",
+			llmEnabled());
+		logger.info("=== TestAllCharPersonsPersistMeaningfulSdPromptE2E (B1 / N-not-N-1) ===");
+		assertNotNull("test.llm.ollama.server must be set", testProperties.getProperty("test.llm.ollama.server"));
+
+		// ---- Setup: reuse the SAME stable org (Olio seed load is per-org and slow on first use —
+		// reusing avoids re-seeding), and a non-admin acting user (admin only provisions it). ----
+		testOrgCtx = getTestOrganization(ORG_SUBPATH);
+		orgId = testOrgCtx.getOrganizationId();
+		Factory mf = IOSystem.getActiveContext().getFactory();
+		testUser = mf.getCreateUser(testOrgCtx.getAdminUser(), "pbUtilE2EUser", orgId);
+		assertNotNull("Test user should be created", testUser);
+		assertFalse("Actor must not be the admin user", "admin".equals(testUser.get(FieldNames.FIELD_NAME)));
+
+		BaseRecord chatConfig = getOrCreateChatConfig(testUser, "pbUtilE2ETestConfig");
+		assertNotNull("Chat config should be created", chatConfig);
+		String chatConfigName = chatConfig.get(FieldNames.FIELD_NAME);
+
+		String bookName = "PBUtilE2E-NnotN1-" + System.currentTimeMillis();
+		BaseRecord work = createWork(testUser, "pbUtilE2EThreeChar-" + System.currentTimeMillis() + ".txt", STORY_THREE_CHARS);
+		assertNotNull("Work record should be created", work);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Work objectId should not be null", workObjectId);
+
+		// ---- Real production entry point: extract() -> createCharPerson() per unique character. ----
+		BaseRecord meta;
+		try {
+			meta = PictureBookUtil.extract(testUser, workObjectId, 3, chatConfigName, "sci-fi", bookName,
+				testProperties.getProperty("test.datagen.path"));
+		} catch (PictureBookException pbe) {
+			fail("PictureBookUtil.extract() threw PictureBookException(status=" + pbe.getStatus()
+				+ ", message=" + pbe.getMessage() + ")");
+			return;
+		}
+		assertNotNull("extract() must return a non-null pictureBookMeta", meta);
+
+		List<String> failedCharacters = meta.get("failedCharacters");
+		logger.info("failedCharacters after extract(): " + failedCharacters);
+		assertTrue("createCharPerson() must not silently fail for any extracted character (failedCharacters="
+			+ failedCharacters + ")", failedCharacters == null || failedCharacters.isEmpty());
+
+		List<BaseRecord> scenes = meta.get("scenes");
+		assertNotNull("meta.scenes should not be null", scenes);
+
+		// Collect EVERY unique character objectId across all scenes (per buildSceneEntry(), scene
+		// "characters" carry objectIds).
+		Set<String> allCharOids = new LinkedHashSet<>();
+		for (BaseRecord sc : scenes) {
+			List<String> cs = sc.get("characters");
+			if (cs != null) allCharOids.addAll(cs);
+		}
+		logger.info("All unique character objectIds across scenes: " + allCharOids + " (N=" + allCharOids.size() + ")");
+		int n = allCharOids.size();
+		assertTrue("The three-character story must produce N >= 3 charPersons to make the 'N, not N-1' "
+			+ "regression meaningful (got N=" + n + ": " + allCharOids + ")", n >= 3);
+
+		// ---- THE regression: for EACH of the N, a FRESH cache:false re-fetch of the persisted
+		// charPerson, read narrative.sdPrompt off the re-fetched narrative sub-record, and assert it is
+		// non-null AND NarrativeUtil.isMeaningful(). If Issue-13 regressed, exactly one of the N would
+		// come back with a null/"null" narrative.sdPrompt and this loop would fail on it. ----
+		int meaningfulCount = 0;
+		Map<String, String> reportByOid = new LinkedHashMap<>();
+		for (String charOid : allCharOids) {
+			Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charOid);
+			cq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			cq.planMost(false);
+			cq.setCache(false); // nested-foreign updates do NOT invalidate a cached parent — force a genuinely fresh read
+			BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(testUser, cq);
+			assertNotNull("charPerson " + charOid + " must exist in a FRESH query", cp);
+			String name = cp.get(FieldNames.FIELD_NAME);
+
+			IOSystem.getActiveContext().getReader().populate(cp, new String[] { "narrative" });
+			BaseRecord narrative = cp.get("narrative");
+			assertNotNull("narrative must be persisted (not an in-memory placeholder) for '" + name + "' (" + charOid + ")", narrative);
+			Long narrId = narrative.get(FieldNames.FIELD_ID);
+			assertNotNull("narrative.id must be populated for '" + name + "' (" + charOid + ")", narrId);
+			assertTrue("narrative.id must be a real positive persisted id for '" + name + "' (was " + narrId + ")", narrId > 0L);
+
+			// The narrative model's default query fields are just [id, groupId]; sdPrompt is not among
+			// them, so re-populate it explicitly off the freshly-read narrative record.
+			IOSystem.getActiveContext().getReader().populate(narrative,
+				new String[] { "sdPrompt", "physicalDescription" });
+			String sdPrompt = narrative.get("sdPrompt");
+			logger.info("charPerson '" + name + "' (" + charOid + ") narrative.id=" + narrId
+				+ " sdPrompt=" + sdPrompt);
+			reportByOid.put(charOid, name + " -> " + (sdPrompt == null ? "<NULL>" : ("\"" + sdPrompt + "\"")));
+
+			// THE core assertions — non-null AND meaningful (guards the literal "null"/"n/a"/... strings).
+			assertNotNull("REGRESSION (Issue-13): narrative.sdPrompt is NULL for charPerson '" + name + "' ("
+				+ charOid + ") — a nested-foreign patch was dropped; this is the exact N-not-N-1 defect.", sdPrompt);
+			assertTrue("REGRESSION (Issue-13): narrative.sdPrompt for charPerson '" + name + "' (" + charOid
+				+ ") is not meaningful (NarrativeUtil.isMeaningful==false) — value was: \"" + sdPrompt + "\"",
+				NarrativeUtil.isMeaningful(sdPrompt));
+			meaningfulCount++;
+		}
+
+		// Explicit "all N, not N-1": every one of the N must have persisted a meaningful sdPrompt.
+		assertEquals("ALL " + n + " charPersons must persist a meaningful narrative.sdPrompt (not " + (n - 1)
+			+ ") — per-character results: " + reportByOid, n, meaningfulCount);
+		logger.info("All " + n + " charPersons persisted a meaningful narrative.sdPrompt: " + reportByOid);
+		logger.info("=== TestAllCharPersonsPersistMeaningfulSdPromptE2E PASSED (N=" + n + ") ===");
 	}
 }

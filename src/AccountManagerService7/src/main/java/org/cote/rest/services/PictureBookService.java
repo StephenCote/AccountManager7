@@ -9,6 +9,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.IPictureBookProgressHandler;
+import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbMigrationUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookCancelRegistry;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
@@ -63,6 +64,7 @@ import jakarta.ws.rs.core.Response;
  *   POST /{bookObjectId}/prepare-images        — Batch-resolve landscape prompts for a set of scenes, then flush idle Ollama models once
  *   PUT  /{bookObjectId}/scenes/order         — Reorder scenes
  *   PUT  /scene/{sceneObjectId}/status        — Persist a client-driven scene status (accepted/skipped/pending/...)
+ *   PUT  /scene/{sceneObjectId}/config-override — Persist a per-scene sparse olio.sd.config override (ChapBook scenes feed the config-precedence merge through this)
  *   POST /{key}/cancel                        — KI-10: cancel an in-flight extraction/prepare-images call (key = the same workObjectId/bookObjectId passed to the call being cancelled)
  *   DELETE /{bookObjectId}/reset              — Delete entire book group
  *
@@ -747,6 +749,38 @@ public class PictureBookService {
             PictureBookUtil.setSceneStatus(user, sceneObjectId, status);
             BaseRecord result = PictureBookUtil.buildResult();
             return Response.status(200).entity(toJson(result)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * PUT /scene/{sceneObjectId}/config-override
+     * Persist a per-scene SPARSE image-config override — the top tier of the PB2 config-precedence
+     * merge (PbConfigUtil.resolveEffectiveConfig) for a ChapBook scene, which has no sceneNode of its
+     * own. Body: { configOverride: "<sparse olio.sd.config JSON>" }; an absent/blank value clears it.
+     *
+     * <p>Transport only: the override is read as a STRING and handed to Objects7 verbatim. It is
+     * deliberately NOT deserialized into an olio.sd.config record here — a materialized record carries
+     * every defaulted field, which would make "overridden" indistinguishable from "default" and defeat
+     * the sparse design (see PbConfigUtil and the olio.pb.scene.configOverride field description). All
+     * validation (that the string is well-formed sparse olio.sd.config JSON) and the authorized,
+     * PATCH-shaped persistence live in PbBookUtil.setSceneConfigOverride.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/config-override")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response setSceneConfigOverride(@PathParam("sceneObjectId") String sceneObjectId,
+            String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+        BaseRecord params = parseParams(json);
+        String configOverride = (params != null ? params.get("configOverride") : null);
+        try {
+            boolean ok = PbBookUtil.setSceneConfigOverride(user, sceneObjectId, configOverride);
+            return Response.status(200).entity("{\"updated\":" + ok + "}").build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }

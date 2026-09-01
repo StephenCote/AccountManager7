@@ -237,6 +237,38 @@ function slugify(name) {
         .substring(0, 64) || 'chapbook-' + Date.now().toString(36);
 }
 
+// ── D6 role gate (mirrors pictureBook.js buildActions(): roleWarning = !(pbRoles && pbRoles.user)) ──
+// The AccountUsers ("user") role is required to create/analyze/render ChapBook content. Without it
+// the feature's mutating actions are BLOCKED (button `disabled`), not merely warned — matching the
+// PB2 wizard, which disables Extract/Continue on the same predicate. Pure + exported for unit tests.
+function lacksUserRole(ctx) {
+    return !(ctx && ctx.roles && ctx.roles.user);
+}
+
+// ── D5 Analyze-button persistence (mirrors pictureBook.js "re-derive persisted state on oninit") ──
+// The backend keeps no book↔poem link (poems become olio.pb.scene stanza chunks) and the book is
+// owned by the olio principal — the client cannot PATCH an attribute onto it — so, like the PB2
+// reader which re-loads all state from the persisted record by objectId, the reader re-derives the
+// source poem ids on every init from durable localStorage rather than carrying them in module memory.
+// `store` is injectable so this stays testable without a DOM.
+function cbPoemIdsKey(bookObjectId) { return 'cb-poemids-' + bookObjectId; }
+
+function persistReaderPoemIds(bookObjectId, ids, store) {
+    store = store || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (!store || !bookObjectId || !Array.isArray(ids)) return;
+    try { store.setItem(cbPoemIdsKey(bookObjectId), JSON.stringify(ids)); } catch (_) {}
+}
+
+function loadPersistedReaderPoemIds(bookObjectId, store) {
+    store = store || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (!store || !bookObjectId) return [];
+    try {
+        let raw = store.getItem(cbPoemIdsKey(bookObjectId));
+        let parsed = raw ? JSON.parse(raw) : null;
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (_) { return []; }
+}
+
 async function loadPoems() {
     loading = true;
     loadError = null;
@@ -628,8 +660,9 @@ async function doCreateChapBook() {
         showCreateDialog = false;
         let navObjectId = result.objectId || result.bookObjectId;
         if (navObjectId) {
-            // Persist so Analyze button survives same-tab page reload (no backend book↔poem FK yet)
-            try { sessionStorage.setItem('cb-poemids-' + navObjectId, JSON.stringify(readerPoemIds)); } catch (_) {}
+            // D5: persist durably (localStorage) so the reader's Analyze button survives a reload —
+            // the book keeps no poem references, so the reader re-derives these ids on oninit.
+            persistReaderPoemIds(navObjectId, readerPoemIds);
             m.route.set('/chap-book/read/' + navObjectId);
         }
     } catch (e) {
@@ -739,9 +772,8 @@ const PoemLibrary = {
         pendingRenderBookId = null;
         pendingRenderCallback = null;
         renderSdCfg = {};
-        // Issue 9: check for AccountUsers role
-        let roles = page.context && page.context() && page.context().roles;
-        roleWarning = !(roles && roles.user);
+        // Issue 9 / D6: block ChapBook actions when the AccountUsers role is absent
+        roleWarning = lacksUserRole(page.context && page.context());
         loadPoems();
         loadMyBooks();
     },
@@ -1192,13 +1224,10 @@ function renderReaderBook() {
 const ChapBookReader = {
     oninit: function (vnode) {
         readerBookObjectId = vnode.attrs.bookObjectId || null;
-        // Restore poemIds from sessionStorage (set at create time — survives same-tab reload)
-        if (!readerPoemIds.length && readerBookObjectId) {
-            try {
-                let stored = sessionStorage.getItem('cb-poemids-' + readerBookObjectId);
-                if (stored) readerPoemIds = JSON.parse(stored);
-            } catch (_) {}
-        }
+        // D5: re-derive the source poem ids fresh on every init from durable storage keyed by this
+        // book (not module memory), so a reload restores the Analyze button and navigating between
+        // books never leaks the previous book's poem ids into this one.
+        readerPoemIds = loadPersistedReaderPoemIds(readerBookObjectId);
         readerBook = null;
         readerPages = [];
         readerError = null;
@@ -1209,9 +1238,8 @@ const ChapBookReader = {
         pendingRenderBookId = null;
         pendingRenderCallback = null;
         renderSdCfg = {};
-        // Issue 9: check for AccountUsers role
-        let roles = page.context && page.context() && page.context().roles;
-        roleWarning = !(roles && roles.user);
+        // Issue 9 / D6: block ChapBook actions when the AccountUsers role is absent
+        roleWarning = lacksUserRole(page.context && page.context());
         if (readerBookObjectId) loadReaderBook(readerBookObjectId);
     },
     view: function () {
@@ -1301,6 +1329,20 @@ let reviewError = null;
 let reviewRendering = false;
 let reviewGroupId = null;
 
+// ── Per-scene SD-config overrides (Gap 8) ─────────────────────────────
+// Mirrors PB2's sceneOverrides (workflows/pictureBook.js): each is a real olio.sd.config edited
+// through the standard form system (forms.sdConfigOverrides via the generic object view). Only the
+// SPARSE delta (persisted override + fields the user just edited) is sent — never a materialized
+// full record, which would make "overridden" indistinguishable from "default". Unlike PB2, which
+// sends the delta inline at generate time, a ChapBook scene has no sceneNode, so the override is
+// PERSISTED on the scene via PUT /rest/olio/picture-book/scene/{oid}/config-override.
+let sceneOverrideInsts = {};    // objectId → am7model instance (forms.sdConfigOverrides)
+let sceneOverrideViews = {};    // objectId → generic object-view component
+let sceneOverrideExpanded = {}; // objectId → bool (mount the heavy override form only when open)
+
+// Identity/transient fields never diffed into a per-scene delta nor sent as part of the override.
+const SD_CONFIG_IDENTITY = ['id', 'objectId', 'urn', 'ownerId', 'groupId', 'organizationId', 'groupPath', 'organizationPath', 'narration'];
+
 async function patchScene(sceneObjectId, changes) {
     let body = Object.assign({ schema: 'olio.pb.scene', objectId: sceneObjectId }, changes);
     let resp = await fetch(applicationPath + '/rest/model', {
@@ -1357,11 +1399,59 @@ async function loadSceneFields(sceneObjectId) {
     return null;
 }
 
+// Gap 8: batch-read every scene's persisted configOverride in one query. bookPages()/pages does NOT
+// project configOverride, so it is fetched here scoped by groupId + organizationId (both NUMBERS —
+// a data.directory-derived list query needs an explicit organizationId or PBAC denies), cache:false
+// for a fresh read. Returns a map { objectId → configOverride string | null }.
+async function loadSceneOverrides(groupId) {
+    let orgId = page && page.user ? page.user.organizationId : null;
+    if (groupId == null || orgId == null) return {};
+    let resp = await fetch(applicationPath + '/rest/model/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+            schema: 'io.query',
+            type: 'olio.pb.scene',
+            cache: false,
+            request: ['id', 'objectId', 'configOverride'],
+            fields: [
+                { name: 'groupId', comparator: 'EQUALS', value: Number(groupId) },
+                { name: 'organizationId', comparator: 'EQUALS', value: Number(orgId) }
+            ],
+            recordCount: 500
+        })
+    });
+    if (!resp.ok) throw new Error('Load overrides failed: ' + resp.status);
+    let body = await resp.json();
+    let rows = Array.isArray(body) ? body : (body && body.results) ? body.results : [];
+    let map = {};
+    rows.forEach(function (r) { if (r && r.objectId) map[r.objectId] = r.configOverride || null; });
+    return map;
+}
+
+// Gap 8: persist (or clear) a scene's sparse override. A null/blank body clears the field; a
+// non-blank body must be sparse olio.sd.config JSON carrying its schema, or the backend returns 400.
+async function putSceneConfigOverride(sceneObjectId, configOverrideString) {
+    let resp = await fetch(applicationPath + '/rest/olio/picture-book/scene/' + sceneObjectId + '/config-override', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ configOverride: configOverrideString == null ? null : configOverrideString })
+    });
+    if (!resp.ok) throw new Error('Save override failed: ' + resp.status);
+    return resp.json();
+}
+
 async function loadReviewBook(bookObjectId) {
     reviewLoading = true;
     reviewError = null;
     reviewScenes = [];
     reviewGroupId = null;
+    // Gap 8: drop cached override forms/views from any prior book so they rebuild from fresh data.
+    sceneOverrideInsts = {};
+    sceneOverrideViews = {};
+    sceneOverrideExpanded = {};
     m.redraw();
     try {
         try {
@@ -1394,6 +1484,7 @@ async function loadReviewBook(bookObjectId) {
                 pageFont: pg.pageFont || '',
                 pageBgColor: pg.pageBgColor || '',
                 pageTextAlign: pg.pageTextAlign || '',
+                configOverride: null,
                 _saving: false
             };
         });
@@ -1410,6 +1501,15 @@ async function loadReviewBook(bookObjectId) {
                         reviewScenes[0].pageTextAlign = fields.pageTextAlign || '';
                     }
                 }
+            } catch (_) {}
+        }
+        // Gap 8: batch-read persisted per-scene overrides (bookPages does not project configOverride).
+        if (reviewGroupId != null) {
+            try {
+                let ovMap = await loadSceneOverrides(reviewGroupId);
+                reviewScenes.forEach(function (s) {
+                    if (s.objectId && ovMap[s.objectId] !== undefined) s.configOverride = ovMap[s.objectId];
+                });
             } catch (_) {}
         }
     } catch (e) {
@@ -1531,10 +1631,116 @@ function renderReviewBook() {
     });
 }
 
+// ── Per-scene SD-config override helpers (Gap 8) ──────────────────────
+
+function parseConfigOverride(s) {
+    if (!s || typeof s !== 'string' || !s.trim()) return null;
+    try {
+        let o = JSON.parse(s);
+        return (o && typeof o === 'object') ? o : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+// Build (once) the override entity + instance + view for a scene. Pre-fills from any persisted
+// configOverride so the form shows the current override values; the generic object view renders
+// forms.sdConfigOverrides (the SAME form PB2 and CardGame use — no new field set is defined here).
+function getSceneOverrideInst(scene) {
+    let oid = scene.objectId;
+    if (!sceneOverrideInsts[oid]) {
+        let base = parseConfigOverride(scene.configOverride);
+        if (!base) base = am7model.newPrimitive('olio.sd.config');
+        base[am7model.jsonModelKey] = 'olio.sd.config';
+        SD_CONFIG_IDENTITY.forEach(function (k) { delete base[k]; });
+        let entity = am7model.prepareEntity(base, 'olio.sd.config');
+        sceneOverrideInsts[oid] = am7model.prepareInstance(entity, am7model.forms.sdConfigOverrides);
+        sceneOverrideViews[oid] = page.views.object();
+    }
+    return sceneOverrideInsts[oid];
+}
+
+function resetSceneOverride(oid) {
+    delete sceneOverrideInsts[oid];
+    delete sceneOverrideViews[oid];
+}
+
+// The SPARSE override to persist: previously-saved override fields overlaid with the fields the user
+// just edited (inst.changes). Never serializes the whole entity — that would materialize every
+// defaulted field and defeat the sparse design the backend enforces. Carries schema olio.sd.config
+// (jsonModelKey === 'schema') so the backend's parseOverride accepts it. Returns null when empty.
+function computeSceneOverrideDelta(scene) {
+    let delta = {};
+    let prev = parseConfigOverride(scene.configOverride);
+    if (prev) {
+        Object.keys(prev).forEach(function (k) {
+            if (k === am7model.jsonModelKey || SD_CONFIG_IDENTITY.includes(k)) return;
+            delta[k] = prev[k];
+        });
+    }
+    let inst = sceneOverrideInsts[scene.objectId];
+    if (inst && inst.changes) {
+        inst.changes.forEach(function (k) {
+            if (k === am7model.jsonModelKey || SD_CONFIG_IDENTITY.includes(k)) return;
+            let v = inst.entity[k];
+            if (v !== undefined) delta[k] = v;
+        });
+    }
+    if (!Object.keys(delta).length) return null;
+    delta[am7model.jsonModelKey] = 'olio.sd.config';
+    return delta;
+}
+
+function sceneHasOverride(scene) {
+    if (parseConfigOverride(scene.configOverride)) return true;
+    let inst = sceneOverrideInsts[scene.objectId];
+    return !!(inst && inst.changes && inst.changes.length > 0);
+}
+
+async function doSaveSceneOverride(idx) {
+    let scene = reviewScenes[idx];
+    if (!scene) return;
+    let delta = computeSceneOverrideDelta(scene);
+    if (!delta) { page.toast('info', 'No overrides set to save'); return; }
+    scene._saving = true;
+    m.redraw();
+    try {
+        let payload = JSON.stringify(delta);
+        await putSceneConfigOverride(scene.objectId, payload);
+        scene.configOverride = payload;
+        resetSceneOverride(scene.objectId);   // rebuild the form from the persisted override
+        page.toast('success', 'Overrides saved');
+    } catch (e) {
+        page.toast('error', 'Save failed: ' + (e.message || ''));
+    }
+    scene._saving = false;
+    m.redraw();
+}
+
+async function doClearSceneOverride(idx) {
+    let scene = reviewScenes[idx];
+    if (!scene) return;
+    scene._saving = true;
+    m.redraw();
+    try {
+        await putSceneConfigOverride(scene.objectId, null);
+        scene.configOverride = null;
+        resetSceneOverride(scene.objectId);
+        page.toast('success', 'Overrides cleared');
+    } catch (e) {
+        page.toast('error', 'Clear failed: ' + (e.message || ''));
+    }
+    scene._saving = false;
+    m.redraw();
+}
+
 function renderSceneCard(scene, idx) {
     let isLast = idx === reviewScenes.length - 1;
     let alignOptions = ['left', 'center', 'right'];
     let alignIcons = { left: 'format_align_left', center: 'format_align_center', right: 'format_align_right' };
+    let oid = scene.objectId;
+    let overrideOpen = !!sceneOverrideExpanded[oid];
+    let overridden = sceneHasOverride(scene);
     return m('div', {
         key: scene.objectId || idx,
         class: 'rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 space-y-3'
@@ -1625,7 +1831,7 @@ function renderSceneCard(scene, idx) {
                 m('button', {
                     class: 'px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs hover:bg-blue-200 disabled:opacity-40 flex items-center gap-1',
                     title: 'Split stanza at midpoint into two pages',
-                    disabled: scene._saving || (scene.poemStanza || '').split('\n').filter(function (l) { return l.trim(); }).length < 2,
+                    disabled: scene._saving || roleWarning || (scene.poemStanza || '').split('\n').filter(function (l) { return l.trim(); }).length < 2,
                     onclick: function () { doSplitScene(idx); }
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'call_split'),
@@ -1634,7 +1840,7 @@ function renderSceneCard(scene, idx) {
                 m('button', {
                     class: 'px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs hover:bg-amber-200 disabled:opacity-40 flex items-center gap-1',
                     title: 'Merge this page with the next',
-                    disabled: scene._saving || isLast,
+                    disabled: scene._saving || roleWarning || isLast,
                     onclick: function () { doMergeScene(idx); }
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'merge'),
@@ -1643,13 +1849,60 @@ function renderSceneCard(scene, idx) {
                 m('button', {
                     class: 'px-2 py-1 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs hover:bg-red-200 disabled:opacity-40 flex items-center gap-1',
                     title: 'Remove this page',
-                    disabled: scene._saving,
+                    disabled: scene._saving || roleWarning,
                     onclick: function () { doDeleteScene(idx); }
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'delete'),
                     ' Remove'
                 ])
             ])
+        ]),
+        // Per-scene SD-config overrides (Gap 8) — reuses forms.sdConfigOverrides via the generic
+        // object view, exactly like PB2 and CardGame. Collapsed by default; the heavy form is mounted
+        // lazily only while expanded. Save persists the sparse delta; Clear removes the override.
+        m('div', { class: 'text-xs border-t border-gray-100 dark:border-gray-800 pt-2' }, [
+            m('div', { class: 'flex items-center justify-between' }, [
+                m('button', {
+                    class: 'flex items-center gap-1 cursor-pointer text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
+                    onclick: function () { sceneOverrideExpanded[oid] = !overrideOpen; m.redraw(); }
+                }, [
+                    m('span', {
+                        class: 'material-symbols-outlined',
+                        style: 'font-size:16px;transition:transform 0.15s;' + (overrideOpen ? 'transform:rotate(90deg);' : '')
+                    }, 'chevron_right'),
+                    m('span', 'Image config overrides'),
+                    overridden ? m('span', {
+                        class: 'ml-1 px-1.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300'
+                    }, 'set') : null
+                ]),
+                m('div', { class: 'flex items-center gap-2' }, [
+                    m('button', {
+                        class: 'px-2 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40',
+                        title: 'Save this page\'s image-config overrides',
+                        disabled: scene._saving || roleWarning,
+                        onclick: function () { doSaveSceneOverride(idx); }
+                    }, 'Save'),
+                    overridden ? m('button', {
+                        class: 'px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40',
+                        title: 'Clear this page\'s overrides (revert to the book config)',
+                        disabled: scene._saving || roleWarning,
+                        onclick: function () { doClearSceneOverride(idx); }
+                    }, 'Clear') : null
+                ])
+            ]),
+            overrideOpen ? (function () {
+                let ovInst = getSceneOverrideInst(scene);
+                let ovView = sceneOverrideViews[oid];
+                if (!ovView || !ovView.view) {
+                    return m('div', { class: 'mt-1 text-gray-400' }, 'Config editor unavailable.');
+                }
+                return m('div', { class: 'mt-2' }, m(ovView.view, {
+                    freeForm: true,
+                    freeFormType: 'olio.sd.config',
+                    freeFormEntity: ovInst.entity,
+                    freeFormInstance: ovInst
+                }));
+            })() : null
         ])
     ]);
 }
@@ -1663,16 +1916,27 @@ const ChapBookReview = {
         reviewError = null;
         reviewRendering = false;
         reviewGroupId = null;
+        // Gap 8: reset per-scene override caches so a re-entered review starts fresh
+        sceneOverrideInsts = {};
+        sceneOverrideViews = {};
+        sceneOverrideExpanded = {};
         // Issue 8: reset render dialog state so the SD config modal starts fresh
         showRenderDialog = false;
         pendingRenderBookId = null;
         pendingRenderCallback = null;
         renderSdCfg = {};
+        // Issue 9 / D6: block scene edits + render when the AccountUsers role is absent
+        roleWarning = lacksUserRole(page.context && page.context());
         if (reviewBookObjectId) loadReviewBook(reviewBookObjectId);
     },
     view: function () {
         let title = (reviewBook && (reviewBook.name || reviewBook.slug)) || 'ChapBook';
         return m('div', { class: 'p-4 max-w-3xl mx-auto' }, [
+            // Issue 9 / D6: role warning banner (mirrors PoemLibrary / ChapBookReader)
+            roleWarning ? m('div', { class: 'mb-4 p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
+                m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
+                'You need the AccountUsers role to use ChapBook features.'
+            ]) : null,
             // Header
             m('div', { class: 'flex flex-wrap items-center gap-3 mb-4' }, [
                 m('button', {
@@ -1692,7 +1956,7 @@ const ChapBookReview = {
                 ]),
                 m('button', {
                     class: 'px-3 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1 disabled:opacity-50',
-                    disabled: reviewRendering || reviewLoading,
+                    disabled: reviewRendering || reviewLoading || roleWarning,
                     onclick: renderReviewBook
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' },
@@ -1752,5 +2016,5 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog };
+export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds };
 export default ChapBookFeature;

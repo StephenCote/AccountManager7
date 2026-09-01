@@ -15,7 +15,6 @@ import org.cote.accountmanager.util.ServerConfigUtil;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.picturebook.ChapBookUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
@@ -273,6 +272,10 @@ public class ChapBookService {
     /**
      * GET /poems
      * List {@code olio.cb.poem} records accessible to the user, ordered by name.
+     * <p>
+     * Optional {@code bookObjectId} query param scopes the list to poems whose {@code book} FK
+     * points at that chapbook; when absent the full org-wide poem library is returned (backward
+     * compatible). Business logic (book resolution + filtered query) lives in {@link ChapBookUtil}.
      */
     @RolesAllowed({"admin", "user"})
     @GET
@@ -280,31 +283,22 @@ public class ChapBookService {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listPoems(@QueryParam("startRecord") long startRecord,
             @QueryParam("recordCount") int recordCount,
+            @QueryParam("bookObjectId") String bookObjectId,
             @Context HttpServletRequest request) {
         OlioModelNames.use();
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
         if (user == null) return errorResponse(401, "Unauthorized");
 
-        int count = (recordCount > 0) ? recordCount : 25;
-        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-
-        Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CB_POEM);
-        q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-        q.setRequestRange(startRecord, count);
-        q.setRequest(new String[]{
-            FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
-            FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
-            "title", "author", "theme", "mood", "keywords"
-        });
         try {
-            q.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
-            q.set(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
-        } catch (Exception ignored) {}
-
-        QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, q);
-        BaseRecord[] results = (qr != null) ? qr.getResults() : new BaseRecord[0];
-        return Response.status(200).entity(
-            JSONUtil.exportObject(results, RecordSerializerConfig.getForeignUnfilteredModule())).build();
+            List<BaseRecord> poems = ChapBookUtil.listPoems(user, bookObjectId, startRecord, recordCount);
+            return Response.status(200).entity(
+                JSONUtil.exportObject(poems.toArray(new BaseRecord[0]), RecordSerializerConfig.getForeignUnfilteredModule())).build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
+        } catch (Exception e) {
+            logger.error("listPoems failed: " + e.getMessage(), e);
+            return errorResponse(500, "Failed to list poems: " + e.getMessage());
+        }
     }
 
     /**
@@ -422,12 +416,15 @@ public class ChapBookService {
 
         // Parse sources directly from the raw JSON — the "sources" field is not defined in the
         // olio.pictureBookRequest schema, so schema-driven deserialization drops it. Use Jackson.
+        // The optional "bookObjectId" scopes imported poems to a chapbook (parsed the same way).
         List<String> srcTypes = new ArrayList<>();
         List<String> srcObjectIds = new ArrayList<>();
         List<String> srcTitles = new ArrayList<>();
+        String bookObjectId = null;
         try {
             ObjectMapper mapper = new ObjectMapper();
             JsonNode root = mapper.readTree(json);
+            bookObjectId = root.path("bookObjectId").asText(null);
             JsonNode srcArr = root.path("sources");
             if (srcArr.isArray()) {
                 for (JsonNode n : srcArr) {
@@ -445,6 +442,15 @@ public class ChapBookService {
             logger.warn("Failed to parse sources from request body: " + e.getMessage());
         }
         if (srcObjectIds.isEmpty()) return errorResponse(400, "sources must contain at least one entry");
+
+        // Resolve the optional chapbook scope once, before the import loop. A non-blank objectId that
+        // does not resolve is a 404 (ChapBookUtil owns the readBook business logic); absent = global.
+        BaseRecord scopeBook;
+        try {
+            scopeBook = ChapBookUtil.resolveScopeBook(user, bookObjectId);
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
+        }
 
         List<String> poemJsonList = new ArrayList<>();
         List<String> errors = new ArrayList<>();
@@ -489,7 +495,7 @@ public class ChapBookService {
             if (title == null || title.isBlank()) title = "Untitled";
             if (text == null || text.isBlank()) { errors.add("no text in " + objectId); continue; }
             try {
-                BaseRecord created = ChapBookUtil.createPoem(user, title, null, text, null);
+                BaseRecord created = ChapBookUtil.createPoem(user, title, null, text, null, scopeBook);
                 if (created == null) { errors.add("poem creation returned null for " + objectId); continue; }
                 String oid = created.get(FieldNames.FIELD_OBJECT_ID);
                 String tl = created.get("title");
@@ -565,17 +571,14 @@ public class ChapBookService {
         if (user == null) return errorResponse(401, "Not authenticated");
         if (bookObjectId == null || bookObjectId.isBlank()) return errorResponse(400, "bookObjectId is required");
         try {
-            // readBook is used internally by deleteChapBook; a null return means not found
-            long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-            BaseRecord book = org.cote.accountmanager.olio.picturebook.PbBookUtil.readBook(user, bookObjectId, orgId);
-            if (book == null) return errorResponse(404, "ChapBook not found: " + bookObjectId);
-            String bookType = book.get(org.cote.accountmanager.olio.schema.OlioFieldNames.FIELD_PB_BOOK_TYPE);
-            if (bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
-                return errorResponse(403, "Book " + bookObjectId + " is not a CHAPBOOK");
-            }
+            // ChapBookUtil.deleteChapBook owns the readBook + bookType check and throws
+            // PictureBookException 404 (not found) / 403 (not a CHAPBOOK); the service maps status
+            // the same way renderChapBook/analyzePoemTheme do — no business logic re-implemented here.
             boolean deleted = ChapBookUtil.deleteChapBook(user, bookObjectId);
             if (!deleted) return errorResponse(500, "Failed to delete chapbook: " + bookObjectId);
             return Response.status(200).entity("{\"deleted\":true}").build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
         } catch (Exception e) {
             logger.error("deleteChapBook failed for " + bookObjectId + ": " + e.getMessage(), e);
             return errorResponse(500, "Failed to delete chapbook: " + e.getMessage());
