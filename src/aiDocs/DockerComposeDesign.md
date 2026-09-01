@@ -1,11 +1,51 @@
 # Single-container Docker Compose (Service7 + Ux752) — Design & Status
 
-**Status: verified working end-to-end.** Last updated 2026-07-15.
+**Status: verified working end-to-end** (core stack). Config/doc **accuracy audit 2026-09-01** found
+discrepancies — see "Accuracy audit" immediately below. Design body last substantively updated 2026-08-29.
 
 The image builds, the container boots all three processes (Tomcat + nginx + vite preview),
 Tomcat deploys the webapp, the schema is created on a fresh Postgres, and nginx `:8443`
 reverse-proxies both the REST API and the Ux752 UI. Verified against a disposable
 `pgvector/pgvector:pg17` container (see "Verification 2026-07-15" below).
+
+## Accuracy audit (2026-09-01) — discrepancies to fix
+
+Source review of `docker-compose.yml`, `docker-compose.test.yml`, `Dockerfile`, `docker/entrypoint.sh`,
+`nginx.conf`, this doc, and the root `CLAUDE.md` / `troubleshooting.md`. Documentation only — **nothing
+changed yet.** Ordered by severity.
+
+1. **BUG — `SD_SERVER` points at the wrong host in the canonical compose.** `docker-compose.yml:21`
+   defaults `SD_SERVER=http://192.168.1.42:7801`, but `.42` is the **Ollama LLM** host (`:11434`); the
+   SD/Swarm host is `.39:7801` (used by `entrypoint.sh:20` and `docker-compose.test.yml:71`). Wrong on
+   both host and port meaning.
+2. **LATENT — nginx REST timeout below the app default.** `nginx.conf:58` caps `/AccountManagerService7/`
+   at `900s`, but `HTTP_READ_TIMEOUT` defaults to `1200s` and a FLUX.2 render (~638s, can exceed 900s)
+   can be aborted mid-flight by nginx. Raise the nginx cap to ≥ app default, or document the ceiling.
+3. **Stale Tomcat version in this doc:** says 11.0.24 (below); `Dockerfile:71` is `11.0.25`.
+4. **Doc setup `curl` examples omit the context path and 404** (`:54,129` use
+   `https://localhost:9443/rest/setup/`; nginx only routes `/AccountManagerService7/...` to Tomcat, so
+   those hit vite). The tokenless "Verification 2026-07-15" narrative also predates setup-token
+   hardening (`entrypoint.sh:73-157`).
+5. **`docker cp` container name inconsistent:** `:352` uses `src-am7-1` inside the 9443/test-stack
+   section; `troubleshooting.md` and `:52` use `am7test-am7-1`. Each is right only for its own `-p`
+   project name.
+6. **Stale top-line status date** vs. later 08-05/08-29 content in the same file.
+7. **Guidance contradiction (3-way):** root `CLAUDE.md` ("use Docker, not local Tomcat") vs.
+   `troubleshooting.md` ("Docker can't reach LAN → use Eclipse Tomcat for SD/LLM") vs. memory
+   ("always Docker"). Reconcile to one statement: **Docker for UI/REST/E2E; host Tomcat for anything
+   hitting LAN SD/LLM (`192.168.1.x`).**
+8. **Minor:** compose comment implies pg on `15432` (`docker-compose.yml:12-13`) while this doc's
+   Option B uses `15433`.
+
+## Extension note — optional LiteLLM / Langfuse sidecars
+
+The **test stack is the clean template** for adding optional services: `am7-pg` already demonstrates a
+sidecar on `am7-test-net` with service-name DNS (`docker-compose.test.yml:24-48,90-96`). LiteLLM (an
+OpenAI-compatible LLM proxy) and Langfuse (its own web + Postgres) can be added the same way behind
+compose **profiles**; the app reaches them by service name. **Constraint:** Docker on this Windows host
+cannot reach LAN `192.168.1.x`, so an in-compose LiteLLM that merely forwards to `.42:11434`/`.39:7801`
+fails identically — it must run the model, forward to a cloud endpoint, or reach the host via
+`host.docker.internal`. Langfuse needs no LAN. Full design: `LiteLLMLangfuseIntegrationDesign.md`.
 
 ## Build & run
 

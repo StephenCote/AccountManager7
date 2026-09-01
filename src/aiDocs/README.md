@@ -23,7 +23,7 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 | `PageIndexDesign.md` | PageIndex hierarchical TOC index for Objects7 — core engine design (implemented & verified, 2026-07-07) | active |
 | `PageIndexIntegrationPlan.md` | PageIndex REST/chat/MCP/Ux752 integration — phased plan mirroring the vector pattern (not started, 2026-07-08) | active |
 | `SCIM.md` | SCIM 2.0 → AccountManager model mapping reference | reference |
-| `DockerComposeDesign.md` | Single-container Docker Compose (Service7 + Ux752 + nginx) — design & implementation status (2026-07-14, in progress) | active |
+| `DockerComposeDesign.md` | Single-container Docker Compose (Service7 + Ux752 + nginx) — design & status; **config/doc accuracy audit 2026-09-01** (8 discrepancies logged, incl. SD_SERVER host bug) | active |
 
 ## Games / RPG
 
@@ -41,6 +41,7 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 | `chatRefactor.md` | Chat & prompt template system — primary design reference (incl. NO-CENSORSHIP directive) | reference |
 | `ConversationQualityPlan.md` | Conversation-quality backend plan (Phases 0-6 shipped; 5.1 deferred) | reference |
 | `ConversationQualityBaseline.md` | Conversation-quality metric baseline (regression reference) | reference |
+| `LiteLLMLangfuseIntegrationDesign.md` | Optional LiteLLM (OpenAI-compatible proxy) chat dialect + Langfuse observability — design & phased plan; architecture-review APPROVED, not started (2026-09-01) | active |
 
 ## Memory subsystem
 

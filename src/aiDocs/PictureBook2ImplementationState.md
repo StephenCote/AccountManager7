@@ -1,5 +1,10 @@
 # PictureBook 2.0 — Implementation State
 
+> **Latest session handoff (2026-09-01):** see `PictureBook2ChapBook-Handoff-2026-09-01.md` for the
+> gap-analysis closure (C1–C5, D5/D6, B1, X-DELETE), the four hardening items (A/B/C/D), the tests
+> run, review verdicts, deferrals (X-async, B5), and the corrected commit state (all in HEAD
+> `89414d85`, tree clean).
+
 **As of:** 2026-08-20 · **Pause point:** KI-69 closed (age-blind portrait fix + 5 tests green); phase 4 fully
 verified over HTTP (all 8 endpoints, pb2testuser JWT); flag-off gate re-run and clean. **Read §3's "Phase 3
 gap closure + Phase 4" entry first**, then §3's "Phase 4 HTTP verification" entry, then Phase 3's, then Phase 2c's.
