@@ -266,17 +266,30 @@ public class ChapBookUtil {
 	// ─────────────────────────────── chatConfig resolution ───────────────────────────────
 
 	/**
-	 * Return the first {@code olio.llm.chatConfig} record accessible to the user in their
-	 * organization, or {@code null} when none is configured.
+	 * Return the default {@code olio.llm.chatConfig} record for the acting user, preferring a
+	 * shared/system (library) config over a user-owned one.
 	 * <p>
-	 * Uses {@code AccessPoint.find} (not {@code list}) to enforce per-record PBAC authorization.
-	 * The query is scoped to the user's organization and owner to avoid returning configs that
-	 * belong to other users in the same org.
+	 * Resolution order:
+	 * <ol>
+	 *   <li>The first config in the shared <b>ChatConfigs</b> library dir (SYSTEM/shared, owned by the
+	 *       admin user, no owner filter) via {@link ChatUtil#getLibraryConfig(BaseRecord, String)}.</li>
+	 *   <li>Only if no library config exists, the first config OWNED BY the acting user in their org.</li>
+	 * </ol>
+	 * Both steps go through {@code AccessPoint.find} (not {@code list}) so per-record PBAC authorization
+	 * is enforced. The prior implementation filtered by {@code ownerId == user.id}, so it would never
+	 * return a shared/system config and instead returned one of the acting user's OWN configs at random;
+	 * this now prefers the intended shared default.
 	 *
 	 * @param user the acting user (must be non-null and have a valid organizationId)
-	 * @return first accessible chatConfig record, or null
+	 * @return the shared-library chatConfig if one exists, else the user's own, else null
 	 */
 	public static BaseRecord resolveDefaultChatConfig(BaseRecord user) {
+		// 1. Prefer the SYSTEM/shared-library config (no owner filter; PBAC-gated via AccessPoint.find).
+		BaseRecord libraryConfig = ChatUtil.getLibraryConfig(user, OlioModelNames.MODEL_CHAT_CONFIG);
+		if (libraryConfig != null) {
+			return libraryConfig;
+		}
+		// 2. Fall back to a user-owned config only when no shared-library config exists.
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		q.field(FieldNames.FIELD_OWNER_ID, user.get(FieldNames.FIELD_ID));
@@ -867,6 +880,21 @@ public class ChapBookUtil {
 		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 		BaseRecord book = PbBookUtil.readBook(user, bookObjectId, orgId);
 		if (book == null) {
+			// The acting user cannot READ the row through AccessPoint. Every olio.pb.book is owned by the
+			// OLIO PRINCIPAL, and a book whose world creation FAILED mid-flight never had the creator's
+			// grants applied - so readBook returns null and the book is otherwise permanently undeletable
+			// (yet still appears in the org-wide /books list, which uses AccessPoint.list not find). This is
+			// the reported "incomplete/failed ChapBook is undeletable" regression. Re-resolve AS THE OLIO
+			// PRINCIPAL (the sanctioned pattern for olio-owned rows - see troubleshooting.md /
+			// WorldUtil.deleteWorld, NOT a PBAC bypass since the olio principal is the row's legitimate
+			// owner) under a creator/orphan+incomplete guard so this can never remove another user's book.
+			// This mirrors PictureBookUtil.reset()'s handling of the same defect. The helper reuses the same
+			// no-bookType-check guard reset() relies on: authorization comes from the creator/orphan guard,
+			// not from the bookType, so the 403 for a stranger's book is preserved even without a CHAPBOOK
+			// filter. The helper returns false for a genuinely-absent row, preserving the 404 below.
+			if (PictureBookUtil.deleteIncompleteBookAsOlio(user, bookObjectId, orgId)) {
+				return true;
+			}
 			throw new PictureBookException(404, "ChapBook not found: " + bookObjectId);
 		}
 		String bookType = book.get(OlioFieldNames.FIELD_PB_BOOK_TYPE);

@@ -109,9 +109,11 @@ async function loadConfig(name, groupPath) {
         if (qr && qr.results && qr.results.length) {
             am7model.updateListModel(qr.results);
             let hit = qr.results[0];
-            // newQuery only projects the query fields (id, objectId, name, etc.) — fetch full record
+            // newQuery only projects the query fields (id, objectId, name, etc.) — fetch full record.
+            // The public am7client accessor is getFull (getFullByObjectId is internal-only, not exported);
+            // calling the wrong name threw and was swallowed, so loadConfig always returned null.
             if (hit.objectId) {
-                let full = await am7client.getFullByObjectId("olio.sd.config", hit.objectId);
+                let full = await am7client.getFull("olio.sd.config", hit.objectId);
                 if (full) return full;
             }
             return hit;

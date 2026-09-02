@@ -33,6 +33,22 @@ public class TestDocumentExtraction {
 	}
 
 	/**
+	 * Assert the extracted text actually contains distinctive prose from the document body — the
+	 * real proof of correct extraction. Printable-char ratio alone can pass on structurally-valid
+	 * but wrong/garbled content; asserting on known body phrases proves the words themselves came
+	 * through. Every phrase below was confirmed present by reading the real extracted output.
+	 */
+	private static void assertBodyContains(String label, String text, String... phrases) {
+		for (String phrase : phrases) {
+			assertTrue(label + ": extracted text must contain the confirmed body phrase \"" + phrase
+					+ "\" — its absence means the words did not extract correctly (garbled/wrong content). "
+					+ "First 200 chars were: \"" + text.substring(0, Math.min(200, text.length())) + "\"",
+					text.contains(phrase));
+		}
+		logger.info("{}: confirmed {} distinctive body phrase(s) present in extracted text", label, phrases.length);
+	}
+
+	/**
 	 * .doc (OLE2/HWPF) extraction via POI.
 	 * <p>
 	 * Before the fix, {@code AutoDetectParser} without a content-type hint could
@@ -52,6 +68,10 @@ public class TestDocumentExtraction {
 
 		assertNotNull("Extracted text must not be null for .doc file", text);
 		assertFalse("Extracted text must not be blank for .doc file", text.isBlank());
+		// Distinctive prose confirmed present in the real body of "The Big Way Out.doc" (legacy binary):
+		// characters Darby & Veronique, the "Nexon" car, and the "studying AI law" line. This proves the
+		// POI HWPF path extracted the actual words, not just a printable-looking OLE2 stream dump.
+		assertBodyContains(".doc body", text, "Darby", "Veronique", "Nexon", "studying AI law");
 
 		double ratio = printableRatio(text);
 		logger.info("testDocExtraction: {} chars extracted from .doc, printable-char ratio={}",
@@ -78,6 +98,9 @@ public class TestDocumentExtraction {
 
 		assertNotNull("Extracted text must not be null for .docx file", text);
 		assertFalse("Extracted text must not be blank for .docx file", text.isBlank());
+		// Distinctive prose confirmed present in the real body of "HarlotsEight_Vol1_SM.docx".
+		assertBodyContains(".docx body (Harlot's Eight)", text,
+				"Simon Stewart walked to the comptroller's desk", "Braevarn", "pieces of eight");
 
 		double ratio = printableRatio(text);
 		logger.info("testDocxExtraction: {} chars extracted from .docx, printable-char ratio={}",
@@ -103,6 +126,9 @@ public class TestDocumentExtraction {
 
 		assertNotNull("Extracted text must not be null for .docx file", text);
 		assertFalse("Extracted text must not be blank for .docx file", text.isBlank());
+		// Distinctive prose confirmed present in the real body of "The Verse.docx".
+		assertBodyContains(".docx body (The Verse)", text,
+				"Mark Lucean stumbled through the bar's dilapidated back door", "fried mozzarella");
 
 		double ratio = printableRatio(text);
 		logger.info("testDocxExtractionVerse: {} chars extracted from .docx, printable-char ratio={}",

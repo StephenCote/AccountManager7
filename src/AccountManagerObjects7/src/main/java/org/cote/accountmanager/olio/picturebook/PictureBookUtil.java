@@ -5506,7 +5506,7 @@ public class PictureBookUtil {
      *         caller then proceeds to its normal 404). Throws {@link PictureBookException} 403 if the
      *         row exists, is {@code COMPLETE}, and was created by a different user.
      */
-    private static boolean deleteIncompleteBookAsOlio(BaseRecord user, String bookObjectId, long orgId) {
+    static boolean deleteIncompleteBookAsOlio(BaseRecord user, String bookObjectId, long orgId) {
         BaseRecord olioUser = IOSystem.getActiveContext().getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
         if (olioUser == null) {
             return false;

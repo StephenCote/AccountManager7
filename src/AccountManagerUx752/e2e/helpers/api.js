@@ -351,6 +351,55 @@ export async function ensureSharedTestUser(request, opts = {}) {
     return { user, testUserName: SHARED_USER, testPassword: SHARED_PASSWORD };
 }
 
+/**
+ * Ensure a persistent test user that is NOT a member of AccountUsers, so the D6 "no ChapBook role"
+ * branch is actually reachable. Org init auto-enrols every new system.user into AccountUsers at
+ * creation (see .claude memory feedback-accountusers-auto-enroll), so a fresh user CANNOT exhibit the
+ * no-role state — the role must be removed at admin level after creation. Provisioning (create user,
+ * set credential, init home dir, remove role) uses admin/isolated contexts; the actual UI test still
+ * runs as this non-admin, role-less user. Idempotent. Returns { user, testUserName, testPassword }.
+ */
+const NOROLE_USER = 'e2etest_norole';
+const NOROLE_PASSWORD = 'password';
+
+export async function ensureUserWithoutUserRole(request, opts = {}) {
+    const org = opts.org || '/Development';
+    const name = opts.name || NOROLE_USER;
+    const password = opts.password || NOROLE_PASSWORD;
+
+    let ctx = await newApiContext();
+    let user;
+    try {
+        await loginCtx(ctx, { org });
+        user = await searchCtx(ctx, 'system.user', 'name', name);
+        if (!user || !user.objectId) {
+            user = await createUserCtx(ctx, name);
+            if (user && user.objectId) {
+                await setCredentialCtx(ctx, user.objectId, password);
+            }
+        }
+        await logoutCtx(ctx);
+    } finally {
+        await ctx.dispose();
+    }
+
+    // Initialize the home directory with a one-off login as the user.
+    let userCtx = await newApiContext();
+    try {
+        await loginCtx(userCtx, { org, user: name, password });
+        await logoutCtx(userCtx);
+    } finally {
+        await userCtx.dispose();
+    }
+
+    // Remove AccountUsers so lacksUserRole()/ctx.roles.user resolves false on next app load.
+    if (user && user.objectId) {
+        await removeUserFromRole(request, user.objectId, 'AccountUsers', { org });
+    }
+
+    return { user, testUserName: name, testPassword: password };
+}
+
 // ── ChapBook / LLM chatConfig provisioning ─────────────────────────────
 //
 // The ChapBook analyze (6B) and render (6C) endpoints resolve a default

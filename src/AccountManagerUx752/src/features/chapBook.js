@@ -16,6 +16,7 @@ import { resolveImageUrl } from '../workflows/sceneExtractor.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
 import { am7model } from '../core/model.js';
+import { LLMConnector } from '../chat/LLMConnector.js';
 
 // ── REST base ─────────────────────────────────────────────────────────
 
@@ -124,9 +125,33 @@ async function renderChapBookScene(sceneObjectId, chatConfigName, sdConfig) {
     };
 }
 
-// Issue 7: fetch the first accessible olio.llm.chatConfig name so the render endpoint
-// can use LLM-based prompt generation instead of the hardcoded fallback.
+// Issue 7 / FIX A: resolve the DEFAULT chat config name for LLM-based landscape prompt
+// generation. The old behavior blindly returned results[0].name from an org-wide search — a
+// random USER-owned config with no owner filter and no user choice. Instead, prefer a SYSTEM
+// library config (contentAnalysis, then generalChat) via LLMConnector — the same system-library
+// resolution PB2's wizard uses — and only fall back to an org-wide search that prefers a
+// /Library/ config over an arbitrary user one. The user can always override via the picker
+// (renderChatConfigRef); this function only supplies the auto-default when they have not.
+const CB_DEFAULT_CHAT_CONFIG_NAMES = ['contentAnalysis', 'generalChat'];
+
+async function resolveSystemChatConfig() {
+    try { await LLMConnector.ensureLibrary(); } catch (_) {}
+    try { await LLMConnector.initPromptLibrary(); } catch (_) {}
+    for (let name of CB_DEFAULT_CHAT_CONFIG_NAMES) {
+        try {
+            let rec = await LLMConnector.resolveConfig(name);
+            if (rec && rec.name) return rec;
+        } catch (_) {}
+    }
+    return null;
+}
+
 async function fetchDefaultChatConfigName() {
+    // 1) Prefer a system library config (contentAnalysis → generalChat).
+    let sys = await resolveSystemChatConfig();
+    if (sys && sys.name) return sys.name;
+    // 2) Fall back to an org-wide search, preferring a /Library/-scoped config over an
+    //    arbitrary user-owned one rather than taking results[0] blindly.
     try {
         let resp = await fetch(applicationPath + '/rest/model/search', {
             method: 'POST',
@@ -136,7 +161,7 @@ async function fetchDefaultChatConfigName() {
                 schema: 'io.query',
                 type: 'olio.llm.chatConfig',
                 cache: false,
-                request: ['id', 'objectId', 'name', 'organizationId', 'ownerId'],
+                request: ['id', 'objectId', 'name', 'groupPath', 'organizationId', 'ownerId'],
                 fields: page?.user?.organizationId
                     ? [{ name: 'organizationId', comparator: 'equals', value: page.user.organizationId }]
                     : []
@@ -144,7 +169,10 @@ async function fetchDefaultChatConfigName() {
         });
         if (!resp.ok) return null;
         let arr = await resp.json();
-        return (Array.isArray(arr) && arr.length && arr[0].name) ? arr[0].name : null;
+        if (!Array.isArray(arr) || !arr.length) return null;
+        let lib = arr.find(function (c) { return c && typeof c.groupPath === 'string' && c.groupPath.indexOf('/Library') === 0; });
+        let pick = lib || arr[0];
+        return pick && pick.name ? pick.name : null;
     } catch (e) {
         return null;
     }
@@ -267,6 +295,10 @@ let renderSdLoraList = [];
 let _renderSdModelsLoaded = false;
 let _renderSdLorasFetched = false;
 let _renderSdConfigPromise = null;
+// FIX A: user-selected (or auto-resolved) chat config for LLM landscape-prompt generation.
+// { name, objectId } once chosen/resolved; null until the auto-default resolves or the user picks.
+let renderChatConfigRef = null;
+let _renderChatConfigResolving = false;
 
 // Role-check warning (Issue 9)
 let roleWarning = false;
@@ -494,23 +526,36 @@ async function doAddPoem() {
 }
 
 function loadRenderSdModels() {
-    if (_renderSdModelsLoaded) return;
+    if (_renderSdModelsLoaded && renderSdModelList.length) return;
     _renderSdModelsLoaded = true;
     am7sd.fetchModels().then(function (list) {
         renderSdModelList = Array.isArray(list) ? list : [];
+        // A failed/empty first fetch must not lock the panel into the text fallback forever:
+        // clear the guard so the next dialog open re-attempts the catalog load.
+        if (!renderSdModelList.length) _renderSdModelsLoaded = false;
         m.redraw();
-    }).catch(function () { renderSdModelList = []; });
+    }).catch(function () { renderSdModelList = []; _renderSdModelsLoaded = false; m.redraw(); });
 }
 
 function loadRenderSdLoras() {
-    if (_renderSdLorasFetched) return;
+    if (_renderSdLorasFetched && renderSdLoraList.length) return;
     _renderSdLorasFetched = true;
     am7sd.fetchLoras().then(function (list) {
         renderSdLoraList = Array.isArray(list) ? list : [];
+        if (!renderSdLoraList.length) _renderSdLorasFetched = false;
         m.redraw();
-    }).catch(function () { renderSdLoraList = []; });
+    }).catch(function () { renderSdLoraList = []; _renderSdLorasFetched = false; m.redraw(); });
 }
 
+// FIX B: seed the render dialog's SD config EXACTLY like PB2's ensureSdConfig (pictureBook.js).
+// Two prior defects addressed here:
+//   1) Wrong Model value in the <select>: the old strip removed only a partial identity set and
+//      set entity.schema literally; mirroring PB2 (strip the full SD_CONFIG_IDENTITY, use
+//      am7model.newPrimitive fallback, key on am7model.jsonModelKey) makes the selected option ===
+//      the saved default (sdcfg-default.model) when the dialog opens.
+//   2) Stuck "Loading SD configuration…" on retry: _renderSdConfigPromise cached a resolved-null
+//      promise on any failure, so a second open returned that null forever. Reset it to null when
+//      the attempt did not yield an instance, so the next open re-attempts.
 function ensureRenderSdConfig() {
     if (renderSdConfigInst) return Promise.resolve(renderSdConfigInst);
     if (_renderSdConfigPromise) return _renderSdConfigPromise;
@@ -519,24 +564,43 @@ function ensureRenderSdConfig() {
             let savedConfig = null;
             try {
                 savedConfig = await am7sd.loadConfig('sdcfg-default', '~/Data/.preferences');
-            } catch (e) { /* non-fatal */ }
+            } catch (e) { /* non-fatal — fall through to buildEntity */ }
             let entity;
             if (savedConfig) {
                 entity = Object.assign({}, savedConfig);
-                ['id', 'objectId', 'urn', 'groupId', 'ownerId'].forEach(function (k) { delete entity[k]; });
+                SD_CONFIG_IDENTITY.forEach(function (k) { delete entity[k]; });
             } else {
                 entity = await am7sd.buildEntity();
-                if (!entity) entity = { schema: 'olio.sd.config' };
+                if (!entity) entity = am7model.newPrimitive('olio.sd.config');
             }
-            if (!entity.schema) entity.schema = 'olio.sd.config';
+            if (!entity[am7model.jsonModelKey]) entity[am7model.jsonModelKey] = 'olio.sd.config';
+            SD_CONFIG_IDENTITY.forEach(function (k) { delete entity[k]; });
             renderSdConfigInst = am7model.prepareInstance(entity, am7model.forms.sdConfig);
         } catch (e) {
             console.warn('[ChapBook] Failed to build SD config:', e);
         }
+        // Stuck-spinner fix: if we did not end up with an instance, clear the cached promise so a
+        // subsequent open re-attempts instead of returning this resolved-null promise forever.
+        if (!renderSdConfigInst) _renderSdConfigPromise = null;
         m.redraw();
         return renderSdConfigInst;
     })();
     return _renderSdConfigPromise;
+}
+
+// FIX A: resolve the auto-default chat config for the render dialog, unless the user already
+// picked one. Prefers a SYSTEM library config (contentAnalysis → generalChat); does NOT overwrite
+// a user pick. Purely advisory — the confirm handler re-resolves if this hasn't finished yet.
+function ensureRenderChatConfigDefault() {
+    if (renderChatConfigRef || _renderChatConfigResolving) return;
+    _renderChatConfigResolving = true;
+    resolveSystemChatConfig().then(function (rec) {
+        _renderChatConfigResolving = false;
+        if (rec && rec.name && !renderChatConfigRef) {
+            renderChatConfigRef = { name: rec.name, objectId: rec.objectId };
+            m.redraw();
+        }
+    }).catch(function () { _renderChatConfigResolving = false; });
 }
 
 // Issue 8: open the pre-render SD config dialog; callback is invoked on confirm.
@@ -544,9 +608,13 @@ function openRenderConfigDialog(bookObjectId, callback) {
     pendingRenderBookId = bookObjectId;
     pendingRenderCallback = callback || null;
     showRenderDialog = true;
+    // FIX A: fresh chat-config resolution per open (auto-default; user can override via picker).
+    renderChatConfigRef = null;
+    _renderChatConfigResolving = false;
     loadRenderSdModels();
     loadRenderSdLoras();
     ensureRenderSdConfig();
+    ensureRenderChatConfigDefault();
     m.redraw();
 }
 
@@ -560,7 +628,11 @@ async function doRenderFromDialog() {
     pendingRenderBookId = null;
     pendingRenderCallback = null;
     m.redraw();
-    let chatConfigName = await fetchDefaultChatConfigName();
+    // FIX A: use the user's chosen config if any; otherwise the resolved system default; otherwise
+    // resolve one now (the auto-default kickoff may not have finished when the user clicked Render).
+    let chatConfigName = (renderChatConfigRef && renderChatConfigRef.name)
+        ? renderChatConfigRef.name
+        : await fetchDefaultChatConfigName();
     if (!chatConfigName) {
         page.toast('warn', 'No chat config found — landscape prompts will use stored values');
     }
@@ -586,7 +658,33 @@ function renderRenderDialog() {
                 }, m('span', { class: 'material-symbols-outlined' }, 'close'))
             ]),
             m('p', { class: 'text-xs text-gray-500 dark:text-gray-400 mb-4' },
-                'Adjust SD settings before rendering. A chat config will be resolved automatically if available.'),
+                'Adjust SD settings before rendering. The chat config drives LLM landscape-prompt generation.'),
+            // FIX A: visible Chat Config control — opens the library picker (system + accessible
+            // chat configs), shows the chosen/auto-resolved name, and the chosen name is sent as the
+            // chatConfig field on the render POSTs (via doRenderFromDialog → renderChapBookScenes).
+            m('div', { class: 'mb-4' }, [
+                m('label', { class: 'field-label' }, 'Chat Config'),
+                m('div', {
+                    class: 'text-field-full text-sm cursor-pointer flex items-center justify-between',
+                    onclick: function () {
+                        ObjectPicker.openLibrary({
+                            libraryType: 'chatConfig',
+                            title: 'Select Chat Config',
+                            onSelect: function (item) {
+                                if (item && item.name) {
+                                    renderChatConfigRef = { name: item.name, objectId: item.objectId };
+                                    m.redraw();
+                                }
+                            }
+                        });
+                    }
+                }, [
+                    m('span', { class: renderChatConfigRef ? '' : 'text-gray-400' },
+                        renderChatConfigRef ? renderChatConfigRef.name
+                            : (_renderChatConfigResolving ? 'Resolving default…' : '(click to select)')),
+                    m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
+                ])
+            ]),
             renderSdConfigInst
                 ? m(SdConfigPanel, {
                     inst: renderSdConfigInst,
@@ -1303,10 +1401,29 @@ let readerLoading = false;
 let readerError = null;
 let readerAnalyzing = false;
 let readerRendering = false;
-// Poem objectIds carried from the create flow. Analyze is a PER-POEM endpoint and the
-// olio.pb.book does not retain references to its source poems (they become olio.pb.scene
-// stanza chunks), so the only way to iterate "the book's poems" is to remember them here.
+// Poem objectIds for the book's Analyze pass (a PER-POEM endpoint). Two sources, unioned:
+//   1) SERVER-derived (FIX C): GET /poems?bookObjectId — poems that carry this book's `book` FK.
+//      This is the durable source and works for a book opened in a different browser, after
+//      localStorage was cleared, or created by another user.
+//   2) localStorage (cb-poemids-<bookObjectId>) — poems carried from the create flow that the
+//      backend does not (yet) stamp with the book FK. Kept as a best-effort fallback.
 let readerPoemIds = [];
+
+// FIX C: server-derived, localStorage-independent poem ids scoped to this book via the `book` FK.
+async function fetchBookScopedPoemIds(bookObjectId) {
+    if (!bookObjectId) return [];
+    try {
+        let resp = await fetch(cbBase() + '/poems?bookObjectId=' + encodeURIComponent(bookObjectId), {
+            credentials: 'include', cache: 'no-store'
+        });
+        if (!resp.ok) return [];
+        let arr = await resp.json();
+        if (!Array.isArray(arr)) return [];
+        return arr.map(function (p) { return p && p.objectId; }).filter(Boolean);
+    } catch (_) {
+        return [];
+    }
+}
 
 async function loadReaderBook(bookObjectId) {
     readerLoading = true;
@@ -1335,6 +1452,12 @@ async function loadReaderBook(bookObjectId) {
         // — poemStanza is visible immediately (6D) and dataObjectId is the render fallback image.
         let pages = await bookPages(bookObjectId);
         readerPages = Array.isArray(pages) ? pages : [];
+        // FIX C: union server-derived (durable, book-FK-scoped) poem ids with any carried in
+        // localStorage, so Analyze is available for books opened without local create-flow state.
+        let serverIds = await fetchBookScopedPoemIds(bookObjectId);
+        let union = readerPoemIds.slice();
+        serverIds.forEach(function (id) { if (union.indexOf(id) === -1) union.push(id); });
+        readerPoemIds = union;
     } catch (e) {
         readerError = e.message || 'Failed to load book';
         readerPages = [];

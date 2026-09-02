@@ -1595,6 +1595,31 @@ public class ChatUtil {
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
 	}
 
+	/// The FIRST shared-library config of the given model, with NO name filter — the shared/system
+	/// default. Like getLibraryConfig(user, modelName, name), it does NOT filter by OWNER_ID (library
+	/// objects are owned by the admin user) and PBAC is still enforced via AccessPoint.find(). Returns
+	/// null when the library dir does not exist or holds no accessible config.
+	public static BaseRecord getLibraryConfig(BaseRecord user, String modelName) {
+		String libraryName;
+		if (OlioModelNames.MODEL_CHAT_CONFIG.equals(modelName)) {
+			libraryName = ChatLibraryUtil.LIBRARY_CHAT_CONFIGS;
+		} else if (OlioModelNames.MODEL_PROMPT_TEMPLATE.equals(modelName)) {
+			libraryName = ChatLibraryUtil.LIBRARY_PROMPT_TEMPLATES;
+		} else {
+			libraryName = ChatLibraryUtil.LIBRARY_PROMPT_CONFIGS;
+		}
+		BaseRecord libDir = ChatLibraryUtil.findLibraryDir(user, libraryName);
+		if (libDir == null) {
+			return null;
+		}
+		Query q = QueryUtil.createQuery(modelName);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.field(FieldNames.FIELD_GROUP_ID, libDir.get(FieldNames.FIELD_ID));
+		q.setContextUser(user);
+		q.planMost(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
 	/// Resolve a config using a fallback chain:
 	/// 1. User's specified group (if groupPath provided)
 	/// 2. User's ~/Chat

@@ -1,6 +1,7 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -21,8 +22,11 @@ import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.junit.Before;
 import org.junit.Test;
@@ -216,5 +220,113 @@ public class TestChapBookDeleteAuthz extends BaseTest {
 		// ── 5. And the DENY must be non-destructive: the book still exists after the failed delete ──
 		BaseRecord stillThere = PbBookUtil.readBook(denied, bookOid, orgId);
 		assertNotNull("The ChapBook must survive the denied delete (the delete must not have run)", stillThere);
+	}
+
+	/** Owner of the incomplete/failed ChapBook (a non-admin, distinct from OWNER_NAME). */
+	private static final String INCOMPLETE_OWNER_NAME = "cbDelIncompleteOwner";
+	/** A same-org non-creator who must be DENIED the incomplete-book delete. */
+	private static final String INCOMPLETE_STRANGER_NAME = "cbDelIncompleteStranger";
+
+	/**
+	 * Write an {@code olio.pb.book} row directly AS THE OLIO PRINCIPAL, with a {@code createdByObjectId}
+	 * creator link but WITHOUT applying any AccessPoint grants to the creator — reproducing the exact
+	 * state a mid-flight world-creation failure leaves behind: the row exists, owned uniformly by the
+	 * olio principal (see {@code PbBookUtil.writeBookRow}), the creator holds no grant on it (so
+	 * {@code readBook} returns null for them), and it carries no world (incomplete). No world is created,
+	 * so this contacts neither the LLM nor SD.
+	 *
+	 * @return the created book's objectId
+	 */
+	private String writeGrantlessIncompleteBook(BaseRecord olioUser, BaseRecord creator, String slug,
+			String title, long orgId) throws Exception {
+		String bookGroupPath = PbBookUtil.bookGroupPath(slug);
+		BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(olioUser, ModelNames.MODEL_GROUP,
+			bookGroupPath, GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("Failed to resolve the olio-owned book group " + bookGroupPath, group);
+		String name = PbBookUtil.bookName(slug, title);
+		BaseRecord book = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK);
+		IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(olioUser, book, name, bookGroupPath, orgId);
+		book.set(FieldNames.FIELD_NAME, name);
+		book.set(OlioFieldNames.FIELD_PB_SLUG, slug);
+		book.set(OlioFieldNames.FIELD_PB_BOOK_STATUS, PbBookStatusEnumType.DRAFT.toString());
+		book.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, "CHAPBOOK");
+		book.set(OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID, creator.get(FieldNames.FIELD_OBJECT_ID));
+		if (title != null) {
+			book.set(FieldNames.FIELD_DESCRIPTION, title);
+		}
+		// createRecord (no AccessPoint) = olio-owned row with NO creator grant — the grant-less state.
+		assertTrue("Failed to write the grant-less incomplete book row",
+			IOSystem.getActiveContext().getRecordUtil().createRecord(book));
+		String oid = book.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Written book must have an objectId", oid);
+		return oid;
+	}
+
+	/**
+	 * FIX 1 — the regression: an incomplete/failed ChapBook (olio-owned row, no creator grant, no world)
+	 * is undeletable through {@code AccessPoint.find} yet still lists via {@code AccessPoint.list}.
+	 * {@code deleteChapBook} must now fall back to the olio-principal delete under the creator/orphan
+	 * guard, so:
+	 * <ul>
+	 *   <li>the CREATOR can delete it (guard: {@code isCreator}), and a fresh {@code setCache(false)}
+	 *       query as the olio principal proves the row is gone;</li>
+	 *   <li>a same-org NON-creator is still DENIED with 403 (the guard is intact — this must never let a
+	 *       stranger delete another user's book).</li>
+	 * </ul>
+	 * No LLM/SD: the row is written directly, no world is generated.
+	 */
+	@Test
+	public void deleteChapBook_incompleteOlioOwned_creatorDeletes_strangerDenied() throws Exception {
+		BaseRecord owner = user(INCOMPLETE_OWNER_NAME);
+		BaseRecord stranger = user(INCOMPLETE_STRANGER_NAME);
+		long orgId = ((Number) owner.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		assertTrue("Both test users must share the organization",
+			((Number) stranger.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue() == orgId);
+
+		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		assertNotNull("Olio principal must resolve", olioUser);
+
+		long ts = System.currentTimeMillis();
+		String slug = "cb-incomplete-" + ts;
+		String bookOid = writeGrantlessIncompleteBook(olioUser, owner, slug, "Incomplete " + ts, orgId);
+		logger.info("Wrote grant-less incomplete CHAPBOOK slug={} objectId={}", slug, bookOid);
+		CacheUtil.clearCache();
+
+		// ── Precondition: the CREATOR cannot READ its own book through AccessPoint (grant-less state) ──
+		// This is what makes the book undeletable via the normal readBook path and forces the fallback.
+		BaseRecord readByOwner = PbBookUtil.readBook(owner, bookOid, orgId);
+		assertNull("Precondition: the creator must NOT be able to readBook the grant-less olio-owned book "
+			+ "(that is the reported undeletable state); if this is non-null the fixture is not reproducing it",
+			readByOwner);
+
+		// ── 1. GUARD INTACT: a same-org NON-creator is DENIED (403) — must run BEFORE the creator delete ──
+		try {
+			boolean deleted = ChapBookUtil.deleteChapBook(stranger, bookOid);
+			fail("A non-creator must NOT be able to delete another user's incomplete ChapBook; "
+				+ "deleteChapBook returned deleted=" + deleted);
+		} catch (PictureBookException e) {
+			logger.info("Stranger delete denied as expected: status={} message={}", e.getStatus(), e.getMessage());
+			assertTrue("Non-creator delete of another user's book must map to 403, got status=" + e.getStatus(),
+				e.getStatus() == 403);
+		}
+		// The denied delete must be non-destructive: the row survives (still found as the olio principal).
+		Query survQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookOid);
+		survQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		survQ.setCache(false);
+		assertNotNull("The incomplete ChapBook must survive the denied stranger delete",
+			IOSystem.getActiveContext().getAccessPoint().find(olioUser, survQ));
+
+		// ── 2. THE FIX: the CREATOR can now delete the otherwise-undeletable incomplete ChapBook ─────────
+		boolean deleted = ChapBookUtil.deleteChapBook(owner, bookOid);
+		assertTrue("The creator must be able to delete its own incomplete/failed ChapBook via the "
+			+ "olio-principal fallback", deleted);
+
+		// ── 3. Prove it is actually gone: a FRESH (setCache(false)) query as the olio principal (the row's
+		//        legitimate owner) returns null. ────────────────────────────────────────────────────────
+		Query goneQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookOid);
+		goneQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		goneQ.setCache(false);
+		BaseRecord gone = IOSystem.getActiveContext().getAccessPoint().find(olioUser, goneQ);
+		assertNull("After the creator delete, a fresh uncached query must show the ChapBook row gone", gone);
 	}
 }
