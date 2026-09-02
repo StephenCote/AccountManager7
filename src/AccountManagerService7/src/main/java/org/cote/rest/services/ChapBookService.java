@@ -197,6 +197,16 @@ public class ChapBookService {
         if (chatConfigName != null && !chatConfigName.isBlank()) {
             chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
+        // The Ux create wizard does not send a chatConfig, so fall back to the org default (mirrors the
+        // analyzePoem endpoint precedent). Without a chatConfig, createChapBookScene stores only the
+        // stanza-excerpt fallback landscape prompt — the reported regression. Do NOT hard-fail creation
+        // when none exists; log a warning and proceed (scenes then keep the stanza-excerpt fallback).
+        if (chatConfig == null) {
+            chatConfig = ChapBookUtil.resolveDefaultChatConfig(user);
+            if (chatConfig == null) {
+                logger.warn("createChapBook: no chatConfig supplied and no org default found — scenes will store stanza-excerpt fallback prompts for slug={}", slug);
+            }
+        }
 
         // KI-30: same datagen.path init param used by GameService and PictureBookService
         String dataPath = context.getInitParameter("datagen.path");
@@ -246,17 +256,27 @@ public class ChapBookService {
             if (chatConfigName != null && !chatConfigName.isBlank()) {
                 chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
                 if (chatConfig == null) {
-                    logger.warn("renderChapBook: chatConfig '{}' not found — landscape prompts will use stored sdPrompt", chatConfigName);
+                    logger.warn("renderChapBook: chatConfig '{}' not found — will try org default", chatConfigName);
                 }
             }
             Object sdc = params.get("sdConfig");
             if (sdc instanceof BaseRecord) sdConfig = (BaseRecord) sdc;
         }
+        // Fall back to the org default chatConfig so the render can regenerate a real landscape prompt
+        // (mirrors the analyzePoem endpoint precedent). If none exists, proceed — renderResolvedScene
+        // then uses the scene's stored sdPrompt.
+        if (chatConfig == null) {
+            chatConfig = ChapBookUtil.resolveDefaultChatConfig(user);
+            if (chatConfig == null) {
+                logger.warn("renderChapBook: no chatConfig supplied and no org default found — landscape prompts will use stored sdPrompt");
+            }
+        }
 
         try {
-            // TODO(ChapBook async): This render is synchronous and will gateway-timeout for books
-            // with many scenes (~10s per scene × 20 scenes = 200s exceeds typical 60-120s gateway
-            // limit). When PB2 adopts an async render pattern, ChapBook should follow it.
+            // A per-scene, client-driven render (POST /scene/{sceneObjectId}/generate) is now
+            // available and preferred for multi-scene books (mirrors PB2's per-scene pattern so no
+            // single HTTP request runs long); this bulk /render/{bookObjectId} remains for small
+            // books / backward compatibility.
             int rendered = ChapBookUtil.renderChapBook(user, bookObjectId, sdApiType, sdServer, chatConfig, sdConfig);
             return Response.status(200).entity("{\"rendered\":" + rendered + "}").build();
         } catch (PictureBookException e) {
@@ -264,6 +284,71 @@ public class ChapBookService {
         } catch (Exception e) {
             logger.error("renderChapBook failed: " + e.getMessage(), e);
             return errorResponse(500, "Render failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * POST /scene/{sceneObjectId}/generate
+     * Generate the SD image for ONE ChapBook scene — the per-scene, client-driven render that mirrors
+     * PB2's {@code /scene/{id}/generate} pattern so no single HTTP request runs long. The client calls
+     * this once per scene; the server resolves the scene's parent book, config tier and prompt inside
+     * {@link ChapBookUtil#renderChapBookScene} (all business logic stays in Objects7). {@code sdApiType}
+     * and {@code sdServer} are read per-request from Servlet init-params, never cached on the service
+     * class per architecture.md "Per-org config must never be written to process-global state".
+     * Body: { chatConfig: "configName", sdConfig: { ...overrides } }
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/generate")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response renderChapBookScene(@PathParam("sceneObjectId") String sceneObjectId,
+            String json, @Context HttpServletRequest request,
+            @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+
+        String sdApiType = context.getInitParameter("sd.server.apiType");
+        String sdServer  = ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server"));
+        if (sdApiType == null || sdServer == null) {
+            return errorResponse(500, "SD server not configured (sd.server.apiType / sd.server init-params)");
+        }
+
+        BaseRecord chatConfig = null;
+        BaseRecord sdConfig = null;
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            String chatConfigName = params.get("chatConfig");
+            if (chatConfigName != null && !chatConfigName.isBlank()) {
+                chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
+                if (chatConfig == null) {
+                    logger.warn("renderChapBookScene: chatConfig '{}' not found — will try org default", chatConfigName);
+                }
+            }
+            Object sdc = params.get("sdConfig");
+            if (sdc instanceof BaseRecord) sdConfig = (BaseRecord) sdc;
+        }
+        // Fall back to the org default chatConfig so the render can regenerate a real landscape prompt
+        // (mirrors the analyzePoem endpoint precedent). If none exists, proceed — renderResolvedScene
+        // then uses the scene's stored sdPrompt.
+        if (chatConfig == null) {
+            chatConfig = ChapBookUtil.resolveDefaultChatConfig(user);
+            if (chatConfig == null) {
+                logger.warn("renderChapBookScene: no chatConfig supplied and no org default found — landscape prompt will use stored sdPrompt");
+            }
+        }
+
+        try {
+            ChapBookUtil.SceneRenderResult result = ChapBookUtil.renderChapBookScene(user, sceneObjectId, sdApiType, sdServer, chatConfig, sdConfig);
+            boolean rendered = result.status == ChapBookUtil.SceneRenderStatus.RENDERED;
+            boolean skipped = result.status == ChapBookUtil.SceneRenderStatus.SKIPPED_NO_PROMPT;
+            String oid = result.imageObjectId;
+            return Response.status(200).entity("{\"imageObjectId\":" + (oid == null ? "null" : "\"" + oid + "\"") + ",\"rendered\":" + rendered + ",\"skipped\":" + skipped + "}").build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
+        } catch (Exception e) {
+            logger.error("renderChapBookScene failed: " + e.getMessage(), e);
+            return errorResponse(500, "Scene render failed: " + e.getMessage());
         }
     }
 

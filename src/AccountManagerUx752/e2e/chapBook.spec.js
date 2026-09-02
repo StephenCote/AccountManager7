@@ -265,8 +265,19 @@ test.describe('ChapBook — UI', () => {
         await page.evaluate(() => { window.location.hash = '!/chap-book'; });
         await page.waitForTimeout(2000);
 
-        // Both poems should appear in the table (use .first() since multiple runs may create duplicates)
+        // The shared test DB accumulates poems from prior runs (e.g. the scoping-override
+        // spec's C3/C5 rows), which alphabetically crowd page 1. Mirror real user behavior:
+        // type each title into the "Filter by theme or title..." input so the seeded poem is
+        // found regardless of default first-page ordering. The library filters client-side by
+        // title/theme substring (filteredPoems in chapBook.js).
+        const filter = page.getByPlaceholder('Filter by theme or title...');
+        await expect(filter).toBeVisible({ timeout: 10000 });
+
+        // Both poems should appear once filtered (use .first() since multiple runs may create duplicates)
+        await filter.fill('Falling Leaves');
         await expect(page.locator('text=Falling Leaves').first()).toBeVisible({ timeout: 10000 });
+
+        await filter.fill('Winter (part 1)');
         await expect(page.locator('text=Winter (part 1)').first()).toBeVisible({ timeout: 5000 });
     });
 
@@ -530,10 +541,27 @@ test.describe('ChapBook — UI', () => {
         });
         expect(analyzeResp.ok(), 'analyze failed: ' + analyzeResp.status() + ' ' + await analyzeResp.text()).toBe(true);
 
-        // Verify the poem record now has theme/mood/keywords populated
-        let poemResp = await request.get(REST + '/model/olio.cb.poem/' + poem1ObjectId + '/full');
-        expect(poemResp.ok()).toBe(true);
-        let poem = await poemResp.json();
+        // Verify the poem record now has theme/mood/keywords populated.
+        // Use a targeted search projection rather than GET .../full: planMost(true) on
+        // olio.cb.poem exceeds PostgreSQL's 100-argument JSON_BUILD_OBJECT limit and 404s
+        // (same guidance as the 6A test). This is the working retrieval pattern beforeAll uses.
+        let poemResp = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query',
+                type: 'olio.cb.poem',
+                fields: [
+                    { name: 'objectId', comparator: 'equals', value: poem1ObjectId },
+                    { name: 'organizationId', comparator: 'equals', value: orgId }
+                ],
+                request: ['objectId', 'theme', 'mood', 'keywords'],
+                recordCount: 1,
+                cache: false
+            }
+        });
+        expect(poemResp.ok(), 'poem fetch failed: ' + poemResp.status()).toBe(true);
+        let poemResult = await poemResp.json();
+        let poem = poemResult && poemResult.results && poemResult.results[0];
+        expect(poem, 'poem record not found in search results').toBeTruthy();
         expect(poem.theme, 'theme not populated after analyze').toBeTruthy();
         expect(poem.mood, 'mood not populated after analyze').toBeTruthy();
 
@@ -946,10 +974,11 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
 
         // 3. Open the dedicated reader route.
         await loginAsSharedUser(page);
-        // Seed sessionStorage as doCreateChapBook would have — the test bypasses the UI
-        // creation flow, so the reader's oninit sessionStorage restore needs this.
+        // Seed localStorage as doCreateChapBook / persistReaderPoemIds would have — the test
+        // bypasses the UI creation flow, so the reader's oninit restore (loadPersistedReaderPoemIds,
+        // chapBook.js:263, reads localStorage) needs this to render the per-poem Analyze button.
         await page.evaluate(({ bookObjectId, poemObjectIds }) => {
-            sessionStorage.setItem('cb-poemids-' + bookObjectId, JSON.stringify(poemObjectIds));
+            localStorage.setItem('cb-poemids-' + bookObjectId, JSON.stringify(poemObjectIds));
         }, { bookObjectId, poemObjectIds });
         await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookObjectId);
 
@@ -972,6 +1001,179 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
         fs.mkdirSync(path.dirname(shot6d), { recursive: true });
         await page.screenshot({ path: shot6d, fullPage: true });
         console.log('[6D] screenshot: ' + shot6d);
+    });
+
+    // ── Gap 6 — per-scene client render loop (the final evidence gate) ───────────
+    // Proves the ChapBook Reader's Render button drives the NEW per-scene endpoint
+    //   POST /rest/olio/chap-book/scene/{sceneObjectId}/generate
+    // ONE CALL PER SCENE from the client (renderChapBookScenes → renderScenesSerially),
+    // and that the OLD bulk POST /chap-book/render/{bookObjectId} — which renders every
+    // scene on one server thread and times out at the gateway for multi-page books — is
+    // NEVER called. Then it proves each rendered reader page carries a real, browser-
+    // DECODED image (naturalWidth/Height > 0), not a broken <img>.
+    //
+    // Unlike Task 4 above (which POSTs the bulk /render endpoint directly via `request`
+    // and never exercises the client loop), this test drives the actual UI: header Render
+    // button → SD-config dialog → dialog Render → the per-scene fetch loop in the browser.
+    //
+    // Gate: CHAPBOOK_SD_TESTS=1 (SD at 192.168.1.39) + a live LLM (192.168.1.42) for the
+    // per-scene landscape prompt. Kept SMALL (one 2-stanza poem = 2 scenes) because each
+    // scene is a real ~45–60s SD render and the shared LLM host crashes under sustained load.
+    test('gap6: reader Render drives the per-scene endpoint (bulk never called) and decodes one real image per scene', async ({ page, request }) => {
+        if (!process.env.CHAPBOOK_SD_TESTS) {
+            test.skip('set CHAPBOOK_SD_TESTS=1 to run SD-dependent ChapBook tests');
+            return;
+        }
+        test.setTimeout(360000); // ~6 min so a slow-but-real render isn't killed
+
+        // 0. Provision a real olio.llm.chatConfig in the org so the client's
+        //    fetchDefaultChatConfigName() resolves and the per-scene endpoint gets a live
+        //    LLM landscape prompt. ensureChatConfig uses its OWN api context — it neither
+        //    needs nor disturbs the `request` fixture's session.
+        const chatConfigName = await ensureChatConfig(request, readerOrgId);
+        expect(chatConfigName, 'ensureChatConfig did not provision a chatConfig').toBeTruthy();
+        console.log('[gap6] chatConfig=' + chatConfigName);
+
+        await restLoginShared(request);
+
+        // 1. Seed ONE real poem — POEM_1 (Falling Leaves), two natural stanzas. Idempotent by name.
+        const recName = 'chapbook-gap6-fallingleaves';
+        const search = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query', type: 'olio.cb.poem',
+                fields: [
+                    { name: 'name', comparator: 'equals', value: recName },
+                    { name: 'organizationId', comparator: 'equals', value: readerOrgId }
+                ],
+                request: ['id', 'objectId', 'name'], recordCount: 1, cache: false
+            }
+        });
+        const sBody = await search.json().catch(() => null);
+        let poemOid = (sBody && sBody.results && sBody.results[0]) ? sBody.results[0].objectId : null;
+        if (!poemOid) {
+            const cResp = await request.post(REST + '/model', {
+                data: {
+                    schema: 'olio.cb.poem', name: recName, title: 'Falling Leaves',
+                    author: 'Stephen W. Cote', groupId: poemsGroupId, text: POEM_1
+                }
+            });
+            const created = await cResp.json().catch(() => null);
+            poemOid = created && created.objectId;
+        }
+        expect(poemOid, 'failed to seed gap6 poem').toBeTruthy();
+
+        // 2. Create a SMALL ChapBook. maxLinesPerPage=20 keeps each ≤9-line stanza whole →
+        //    POEM_1's two stanzas = two scenes.
+        const slug = 'gap6-perscene-' + Date.now().toString(36);
+        const createResp = await request.post(CB_REST + '/create', {
+            data: { slug, title: 'Gap6 Per-Scene ChapBook', poemObjectIds: [poemOid], maxLinesPerPage: 20 }
+        });
+        expect(createResp.ok(), 'create ChapBook failed: ' + createResp.status() + ' ' + await createResp.text()).toBe(true);
+        const created = await createResp.json();
+        const bookOid = created && (created.objectId || created.bookObjectId);
+        expect(bookOid, 'no bookObjectId for gap6 book').toBeTruthy();
+
+        // 3. Read the ACTUAL scene count from the pages endpoint — the same source the client's
+        //    renderChapBookScenes iterates — so the per-scene-call assertion is derived from real
+        //    data, not a guess.
+        const pagesResp = await request.get(REST + '/olio/picture-book/' + bookOid + '/pages');
+        expect(pagesResp.ok(), 'pages fetch failed: ' + pagesResp.status()).toBe(true);
+        const pages = await pagesResp.json();
+        const sceneCount = Array.isArray(pages) ? pages.length : 0;
+        expect(sceneCount, 'book has no scenes').toBeGreaterThan(0);
+        console.log('[gap6] book has ' + sceneCount + ' scene(s)');
+        await request.get(REST + '/logout');
+
+        // 4. Open the reader in the browser (stanzas render immediately — 6D). Wait for the
+        //    "Page N of M" footer so the book has loaded before we touch Render.
+        await loginAsSharedUser(page);
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookOid);
+        await expect(page.locator('text=/Page \\d+ of \\d+/').first(),
+            'reader did not load book pages').toBeVisible({ timeout: 30000 });
+
+        // 5. Attach the network observer BEFORE triggering render — capture per-scene generate
+        //    POSTs and any bulk render POST (which must NOT happen).
+        const sceneGenCalls = [];
+        const bulkRenderCalls = [];
+        page.on('request', (req) => {
+            if (req.method() !== 'POST') return;
+            const u = req.url();
+            if (u.includes('/chap-book/scene/') && u.includes('/generate')) sceneGenCalls.push(u);
+            if (u.includes('/chap-book/render/')) bulkRenderCalls.push(u);
+        });
+
+        // 6. Click the reader header Render button → opens the SD-config dialog. (The header's
+        //    only orange button is Render; Review is indigo, Analyze is blue. The dialog is not
+        //    open yet, so .first() is unambiguous.)
+        const headerRender = page.locator('button.bg-orange-600').filter({ hasText: 'Render' }).first();
+        await expect(headerRender, 'reader Render button not visible/enabled').toBeVisible({ timeout: 10000 });
+        await headerRender.click();
+
+        // 7. In the Render Settings dialog, click its (orange) Render to start the per-scene loop.
+        const renderDialog = page.locator('div.fixed.inset-0.z-50').filter({ hasText: 'Render Settings' });
+        await expect(renderDialog, 'Render Settings dialog did not open').toBeVisible({ timeout: 10000 });
+        // Give the SD config a moment to load so a real sdConfig is sent (the dialog Render button
+        // works regardless — doRenderFromDialog falls back to defaults if config is still loading).
+        await page.waitForTimeout(3000);
+        const dialogRender = renderDialog.locator('button.bg-orange-600');
+        await expect(dialogRender, 'dialog Render button not visible').toBeVisible({ timeout: 10000 });
+        await dialogRender.click();
+
+        // 8. Wait for the ENTIRE serial per-scene loop to finish. The loop renders scenes ONE AT
+        //    A TIME (live LLM prompt + SD image, then a 5s cooldown), so the FIRST image appears
+        //    long before the LAST scene's request fires — asserting on "first image visible" would
+        //    race the loop. Poll the observed request count until every scene has been requested,
+        //    then wait for the reader to leave the "Rendering N/M..." state (loadReaderBook reload
+        //    complete, persisted images resolved to /media/... MediaServlet URLs).
+        await expect.poll(() => sceneGenCalls.length, {
+            message: 'per-scene /generate calls never reached the scene count',
+            timeout: 330000,
+            intervals: [2000]
+        }).toBeGreaterThanOrEqual(sceneCount);
+        // Wide window (180s, not 90s): after ALL scenes have dispatched, the FINAL scene's real
+        // ~45–60s SD render + reader reload can legitimately exceed 90s on a load-saturated host.
+        await expect(
+            page.locator('button.bg-orange-600').filter({ hasText: /Rendering/ }),
+            'render loop did not finish (button still shows "Rendering N/M...")'
+        ).toHaveCount(0, { timeout: 180000 });
+        // One decoded MediaServlet image per scene must be present after the reload.
+        // Wide window (180s): the reload resolving the final scene's /media/ image can lag on a saturated host.
+        await expect(
+            page.locator('img[src*="/media/"][src*="data.data"]'),
+            'reader did not show one rendered image per scene after the per-scene render'
+        ).toHaveCount(sceneCount, { timeout: 180000 });
+        await page.waitForTimeout(2000); // let images finish decoding
+
+        // 9. PROOF #1 — the client drove the per-scene endpoint once per scene, and NEVER the bulk one.
+        console.log('[gap6] per-scene /generate calls=' + sceneGenCalls.length +
+            '  bulk /render calls=' + bulkRenderCalls.length + '  scenes=' + sceneCount);
+        expect(sceneGenCalls.length,
+            'per-scene /chap-book/scene/{id}/generate should fire once per scene (>=' + sceneCount + ')')
+            .toBeGreaterThanOrEqual(sceneCount);
+        expect(bulkRenderCalls.length,
+            'bulk /chap-book/render/{bookObjectId} must NEVER be called by the new client loop').toBe(0);
+
+        // 10. PROOF #2 — each rendered reader page carries a real, browser-DECODED image.
+        const imgs = page.locator('img[src*="/media/"][src*="data.data"]');
+        const imgCount = await imgs.count();
+        expect(imgCount, 'no decoded MediaServlet images in reader').toBeGreaterThan(0);
+        for (let i = 0; i < imgCount; i++) {
+            const img = imgs.nth(i);
+            await img.scrollIntoViewIfNeeded();
+            await page.waitForTimeout(300);
+            const dims = await img.evaluate(el => ({ w: el.naturalWidth, h: el.naturalHeight }));
+            console.log('[gap6] image ' + (i + 1) + ' decoded ' + dims.w + 'x' + dims.h);
+            expect(dims.w, 'image ' + (i + 1) + ' did not decode (naturalWidth=0)').toBeGreaterThan(0);
+            expect(dims.h, 'image ' + (i + 1) + ' did not decode (naturalHeight=0)').toBeGreaterThan(0);
+        }
+
+        // 11. Full-page visual proof.
+        const outDir = path.resolve(SPEC_DIR, '../test-results');
+        fs.mkdirSync(outDir, { recursive: true });
+        const shot = path.join(outDir, 'gap6-chapbook-perscene-reader.png');
+        await page.screenshot({ path: shot, fullPage: true });
+        console.log('[gap6] scenes=' + sceneCount + ' perSceneCalls=' + sceneGenCalls.length +
+            ' bulkCalls=' + bulkRenderCalls.length + ' images=' + imgCount + ' screenshot=' + shot);
     });
 
     // ── Task 4 — Issue 4: screenshot every ChapBook page (image + stanza) ────────

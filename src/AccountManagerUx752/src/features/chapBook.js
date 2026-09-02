@@ -12,6 +12,7 @@ import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
 import { ObjectPicker } from '../components/picker.js';
 import { bookPages } from '../workflows/pictureBookWorkflow.js';
+import { resolveImageUrl } from '../workflows/sceneExtractor.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
 import { am7model } from '../core/model.js';
@@ -89,6 +90,38 @@ async function renderChapBook(bookObjectId, chatConfigName, sdConfig) {
     });
     if (!resp.ok) throw new Error('Render failed: ' + resp.status);
     return resp.json();
+}
+
+// Gap 6: render ONE ChapBook scene via the new per-scene async endpoint. Mirrors PB2's
+// generateSceneImage (workflows/sceneExtractor.js): one HTTP call per scene, same
+// olio.pictureBookRequest body shape (chatConfig + sdConfig) the bulk /render path sent, so no
+// single request runs long enough to time out at the gateway on a multi-page book.
+// Returns { imageObjectId: string|null, rendered: boolean, skipped: boolean }.
+//   rendered:true            → an image was produced (imageObjectId is the new image objectId).
+//   skipped:true             → the scene was un-prompted (LLM double-blank), so the backend produced
+//                              NO image and left it for explicit regeneration (imageObjectId null).
+//   rendered:false&&skipped:false → a genuine failure (SD error, patch failure, exception).
+async function renderChapBookScene(sceneObjectId, chatConfigName, sdConfig) {
+    let body = { schema: 'olio.pictureBookRequest' };
+    if (chatConfigName) body.chatConfig = chatConfigName;
+    if (sdConfig && Object.keys(sdConfig).length > 0) body.sdConfig = sdConfig;
+    let resp = await fetch(cbBase() + '/scene/' + sceneObjectId + '/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) {
+        let err = null;
+        try { err = await resp.json(); } catch (_) {}
+        throw new Error('Scene render failed: ' + ((err && err.error) || resp.status));
+    }
+    let result = (await resp.json()) || {};
+    return {
+        imageObjectId: result.imageObjectId != null ? result.imageObjectId : null,
+        rendered: !!result.rendered,
+        skipped: !!result.skipped
+    };
 }
 
 // Issue 7: fetch the first accessible olio.llm.chatConfig name so the render endpoint
@@ -206,6 +239,21 @@ let addPoemText = '';
 let renderingBook = false;
 let lastRenderResult = null;
 let lastCreatedBook = null;
+
+// Gap 6: per-scene render progress (mirrors PB2's genProgress/sceneImageUrls maps in
+// workflows/pictureBook.js). renderTotal/renderDone drive the "Rendering N/M..." button label.
+let renderProgress = {};    // sceneObjectId → 'generating' | 'done' | 'error'
+let renderSceneUrls = {};   // sceneObjectId → resolved media URL (page image refreshed as each completes)
+let renderTotal = 0;
+let renderDone = 0;
+
+// Let the SD GPU recover between generations — same rationale as PB2's SCENE_COOLDOWN_MS: the
+// shared hardware has hit thermal-critical under sustained back-to-back load with no cooldown.
+const SCENE_COOLDOWN_MS = 5000;
+
+function sleep(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
 
 // Pre-render dialog state (Issue 8 — SD config form before render)
 let showRenderDialog = false;
@@ -567,14 +615,127 @@ function renderRenderDialog() {
     );
 }
 
+// Gap 6: the serial per-scene render core — pure and dependency-injected so it is unit-testable
+// without a DOM, fetch, or the 5s SD cooldown. This is the exact loop shape as PB2's doGenerateAll
+// (workflows/pictureBook.js): iterate scenes ONE AT A TIME (never parallel — avoids hammering the
+// shared SD server), record per-scene progress, surface each image as its call returns, and
+// aggregate rendered/failed counts.
+//   sceneOids     — ordered scene objectIds
+//   generateOne   — async (oid) → { imageObjectId, rendered }  (one HTTP call per scene)
+//   hooks.sleep   — async (ms) → cooldown between scenes (injected so tests run instantly)
+//   hooks.onProgress(oid, status, done, total)
+//   hooks.onImage(oid, imageObjectId)
+async function renderScenesSerially(sceneOids, generateOne, hooks) {
+    hooks = hooks || {};
+    let sleepFn = hooks.sleep || function () { return Promise.resolve(); };
+    let total = sceneOids.length;
+    let rendered = 0, skipped = 0, failed = 0, done = 0;
+    let firstGeneration = true;
+    for (let i = 0; i < sceneOids.length; i++) {
+        let oid = sceneOids[i];
+        if (!firstGeneration) await sleepFn(SCENE_COOLDOWN_MS);
+        firstGeneration = false;
+        if (hooks.onProgress) hooks.onProgress(oid, 'generating', done, total);
+        try {
+            let result = await generateOne(oid);
+            // A skipped scene (un-prompted LLM double-blank) produced NO image but is NOT a failure —
+            // tally it separately so it neither vanishes from the count nor is reported as an error.
+            if (result && result.rendered) rendered++;
+            else if (result && result.skipped) skipped++;
+            if (hooks.onProgress) hooks.onProgress(oid, 'done', done + 1, total);
+            if (result && result.imageObjectId && hooks.onImage) hooks.onImage(oid, result.imageObjectId);
+        } catch (e) {
+            failed++;
+            if (hooks.onProgress) hooks.onProgress(oid, 'error', done + 1, total);
+        }
+        done++;
+    }
+    return { rendered: rendered, failed: failed, skipped: skipped, total: total };
+}
+
+// Gap 6: fetch the book's scenes then drive the per-scene endpoint serially. Replaces the single
+// bulk /render/{bookObjectId} call (which renders every scene on one server thread and times out at
+// the gateway for multi-page books). onSceneImage(oid, url) lets a view refresh a page's image in
+// place as each scene completes.
+async function renderChapBookScenes(bookObjectId, chatConfigName, sdConfig, onSceneImage) {
+    let pages = await bookPages(bookObjectId);
+    pages = Array.isArray(pages) ? pages : [];
+    let sceneOids = pages.map(function (p) { return p.objectId; }).filter(Boolean);
+    renderProgress = {};
+    renderSceneUrls = {};
+    renderTotal = sceneOids.length;
+    renderDone = 0;
+    m.redraw();
+    return renderScenesSerially(sceneOids, function (oid) {
+        return renderChapBookScene(oid, chatConfigName, sdConfig);
+    }, {
+        sleep: sleep,
+        onProgress: function (oid, status, done, total) {
+            renderProgress[oid] = status;
+            renderDone = done;
+            renderTotal = total;
+            m.redraw();
+        },
+        onImage: function (oid, imageObjectId) {
+            resolveImageUrl(imageObjectId).then(function (url) {
+                if (url) {
+                    renderSceneUrls[oid] = url;
+                    if (onSceneImage) onSceneImage(oid, url);
+                    m.redraw();
+                }
+            });
+        }
+    });
+}
+
+// "Rendering N/M..." while a per-scene render is in flight; plain "Rendering..." before scenes load.
+function renderProgressLabel() {
+    if (renderTotal > 0) return 'Rendering ' + Math.min(renderDone + 1, renderTotal) + '/' + renderTotal + '...';
+    return 'Rendering...';
+}
+
+function resetRenderProgress() {
+    renderProgress = {};
+    renderSceneUrls = {};
+    renderTotal = 0;
+    renderDone = 0;
+}
+
+// Compose the render-complete toast text. Skipped scenes (the backend's un-prompted LLM
+// double-blank outcome — no image produced, left for regeneration) are surfaced separately from
+// genuine failures so the user knows some pages still need prompts. The skipped/failed clauses only
+// appear when their count is > 0, preserving the original success wording when everything rendered.
+// Pure — unit-tested.
+function renderResultMessage(result) {
+    let r = result || {};
+    let rendered = r.rendered || 0;
+    let skipped = r.skipped || 0;
+    let failed = r.failed || 0;
+    if (!skipped && !failed) {
+        return 'Render complete: ' + rendered + ' scene(s) generated';
+    }
+    let msg = 'Render complete: ' + rendered + ' generated';
+    if (skipped > 0) msg += ', ' + skipped + ' skipped (need prompts)';
+    if (failed > 0) msg += ', ' + failed + ' failed';
+    return msg;
+}
+
+// Emit the render-complete toast at the right severity: warn when anything was skipped or failed
+// (the user has follow-up to do), otherwise success. Uses the file's existing page.toast helper.
+function toastRenderResult(result) {
+    let r = result || {};
+    let level = ((r.failed || 0) > 0 || (r.skipped || 0) > 0) ? 'warn' : 'success';
+    page.toast(level, renderResultMessage(result));
+}
+
 async function renderBook(bookObjectId, chatConfigName, sdConfig) {
     renderingBook = true;
     lastRenderResult = null;
     m.redraw();
     try {
-        let result = await renderChapBook(bookObjectId, chatConfigName, sdConfig);
+        let result = await renderChapBookScenes(bookObjectId, chatConfigName, sdConfig);
         lastRenderResult = result;
-        page.toast('success', 'Render complete: ' + (result.rendered || 0) + ' scene(s) generated');
+        toastRenderResult(result);
     } catch (e) {
         page.toast('error', 'Render failed: ' + (e.message || ''));
     }
@@ -772,6 +933,8 @@ const PoemLibrary = {
         pendingRenderBookId = null;
         pendingRenderCallback = null;
         renderSdCfg = {};
+        // Gap 6: clear any per-scene render progress from a prior book/session
+        resetRenderProgress();
         // Issue 9 / D6: block ChapBook actions when the AccountUsers role is absent
         roleWarning = lacksUserRole(page.context && page.context());
         loadPoems();
@@ -961,7 +1124,7 @@ const PoemLibrary = {
                     onclick: function () { openRenderConfigDialog(lastCreatedBook.objectId || lastCreatedBook.bookObjectId, renderBook); }
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, renderingBook ? 'hourglass_empty' : 'image'),
-                    renderingBook ? ' Rendering...' : ' Render'
+                    renderingBook ? (' ' + renderProgressLabel()) : ' Render'
                 ])
             ]) : null,
 
@@ -1207,9 +1370,15 @@ function renderReaderBook() {
         readerRendering = true;
         m.redraw();
         try {
-            let result = await renderChapBook(bookId, chatConfigName, sdConfig);
-            page.toast('success', 'Render complete: ' + (result.rendered || 0) + ' scene(s) generated');
-            // Reload so the freshly-generated images (dataObjectId) appear (6C).
+            // Gap 6: per-scene serial render. Each page's image is refreshed in place the moment its
+            // scene call returns (onSceneImage), so the reader shows progress page-by-page rather than
+            // waiting for one long bulk request.
+            let result = await renderChapBookScenes(bookId, chatConfigName, sdConfig, function (oid, url) {
+                let pg = readerPages.find(function (p) { return p.objectId === oid; });
+                if (pg) pg.imageUrl = url;
+            });
+            toastRenderResult(result);
+            // Reload so the persisted images (dataObjectId path) reconcile with the inline refresh (6C).
             await loadReaderBook(readerBookObjectId);
         } catch (e) {
             page.toast('error', 'Render failed: ' + (e.message || ''));
@@ -1238,6 +1407,8 @@ const ChapBookReader = {
         pendingRenderBookId = null;
         pendingRenderCallback = null;
         renderSdCfg = {};
+        // Gap 6: clear any per-scene render progress from a prior book/session
+        resetRenderProgress();
         // Issue 9 / D6: block ChapBook actions when the AccountUsers role is absent
         roleWarning = lacksUserRole(page.context && page.context());
         if (readerBookObjectId) loadReaderBook(readerBookObjectId);
@@ -1282,7 +1453,7 @@ const ChapBookReader = {
                     onclick: renderReaderBook
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, readerRendering ? 'hourglass_empty' : 'image'),
-                    readerRendering ? ' Rendering...' : ' Render'
+                    readerRendering ? (' ' + renderProgressLabel()) : ' Render'
                 ])
             ]),
 
@@ -1399,10 +1570,12 @@ async function loadSceneFields(sceneObjectId) {
     return null;
 }
 
-// Gap 8: batch-read every scene's persisted configOverride in one query. bookPages()/pages does NOT
-// project configOverride, so it is fetched here scoped by groupId + organizationId (both NUMBERS —
-// a data.directory-derived list query needs an explicit organizationId or PBAC denies), cache:false
-// for a fresh read. Returns a map { objectId → configOverride string | null }.
+// Gap 8 + skip-render: batch-read every scene's persisted configOverride, sdPrompt and imageObjectId
+// in one query. bookPages()/pages projects none of these, so they are fetched here scoped by
+// groupId + organizationId (both NUMBERS — a data.directory-derived list query needs an explicit
+// organizationId or PBAC denies), cache:false for a fresh read. sdPrompt + imageObjectId let the
+// review card flag un-prompted scenes (see isSceneUnprompted). Returns a map
+// { objectId → { configOverride: string|null, sdPrompt: string, imageObjectId: string|null } }.
 async function loadSceneOverrides(groupId) {
     let orgId = page && page.user ? page.user.organizationId : null;
     if (groupId == null || orgId == null) return {};
@@ -1414,7 +1587,7 @@ async function loadSceneOverrides(groupId) {
             schema: 'io.query',
             type: 'olio.pb.scene',
             cache: false,
-            request: ['id', 'objectId', 'configOverride'],
+            request: ['id', 'objectId', 'configOverride', 'sdPrompt', 'imageObjectId'],
             fields: [
                 { name: 'groupId', comparator: 'EQUALS', value: Number(groupId) },
                 { name: 'organizationId', comparator: 'EQUALS', value: Number(orgId) }
@@ -1426,7 +1599,15 @@ async function loadSceneOverrides(groupId) {
     let body = await resp.json();
     let rows = Array.isArray(body) ? body : (body && body.results) ? body.results : [];
     let map = {};
-    rows.forEach(function (r) { if (r && r.objectId) map[r.objectId] = r.configOverride || null; });
+    rows.forEach(function (r) {
+        if (r && r.objectId) {
+            map[r.objectId] = {
+                configOverride: r.configOverride || null,
+                sdPrompt: r.sdPrompt || '',
+                imageObjectId: r.imageObjectId || null
+            };
+        }
+    });
     return map;
 }
 
@@ -1485,6 +1666,8 @@ async function loadReviewBook(bookObjectId) {
                 pageBgColor: pg.pageBgColor || '',
                 pageTextAlign: pg.pageTextAlign || '',
                 configOverride: null,
+                sdPrompt: pg.sdPrompt || '',
+                imageObjectId: pg.imageObjectId || pg.dataObjectId || null,
                 _saving: false
             };
         });
@@ -1503,12 +1686,18 @@ async function loadReviewBook(bookObjectId) {
                 }
             } catch (_) {}
         }
-        // Gap 8: batch-read persisted per-scene overrides (bookPages does not project configOverride).
+        // Gap 8 + skip-render: batch-read persisted per-scene overrides, sdPrompt and imageObjectId
+        // (bookPages projects none of these) so the review card can flag un-prompted scenes.
         if (reviewGroupId != null) {
             try {
                 let ovMap = await loadSceneOverrides(reviewGroupId);
                 reviewScenes.forEach(function (s) {
-                    if (s.objectId && ovMap[s.objectId] !== undefined) s.configOverride = ovMap[s.objectId];
+                    let row = s.objectId ? ovMap[s.objectId] : null;
+                    if (row) {
+                        s.configOverride = row.configOverride;
+                        s.sdPrompt = row.sdPrompt || s.sdPrompt;
+                        s.imageObjectId = row.imageObjectId || s.imageObjectId;
+                    }
                 });
             } catch (_) {}
         }
@@ -1621,8 +1810,10 @@ function renderReviewBook() {
         reviewRendering = true;
         m.redraw();
         try {
-            let result = await renderChapBook(bookId, chatConfigName, sdConfig);
-            page.toast('success', 'Render complete: ' + (result.rendered || 0) + ' scene(s) generated');
+            // Gap 6: per-scene serial render (one /scene/{oid}/generate call at a time) — replaces the
+            // single bulk /render call that timed out at the gateway for multi-page books.
+            let result = await renderChapBookScenes(bookId, chatConfigName, sdConfig);
+            toastRenderResult(result);
         } catch (e) {
             page.toast('error', 'Render failed: ' + (e.message || ''));
         }
@@ -1734,6 +1925,47 @@ async function doClearSceneOverride(idx) {
     m.redraw();
 }
 
+// A ChapBook scene is "un-prompted" when the render pipeline produced NO image (imageObjectId
+// blank) AND its stored sdPrompt is blank or the "landscape, " no-LLM fallback shape. This mirrors
+// the backend's own test for a usable prompt (ChapBookUtil: isMeaningful(prompt) &&
+// !prompt.startsWith("landscape, ")). Such a scene was SKIPPED on the last render and needs the
+// user to explicitly regenerate it. Pure — unit-tested.
+function isSceneUnprompted(scene) {
+    if (!scene) return false;
+    if (scene.imageObjectId) return false;
+    let p = (scene.sdPrompt || '').trim();
+    if (!p) return true;
+    return p.indexOf('landscape, ') === 0;
+}
+
+// Regenerate a single un-prompted scene through the per-scene generate path (the same endpoint the
+// book-level render drives). A chatConfig is resolved first so the LLM can produce a real landscape
+// prompt — the whole point of regenerating a scene that was skipped for want of one. On success the
+// scene gains an imageObjectId, which clears the "needs prompt" affordance on the next redraw; a
+// repeat skip is surfaced so the user knows the LLM still couldn't produce a usable prompt.
+async function doRegenerateScene(idx) {
+    let scene = reviewScenes[idx];
+    if (!scene || !scene.objectId) return;
+    scene._saving = true;
+    m.redraw();
+    try {
+        let chatConfigName = await fetchDefaultChatConfigName();
+        let result = await renderChapBookScene(scene.objectId, chatConfigName, {});
+        if (result && result.rendered) {
+            scene.imageObjectId = result.imageObjectId;
+            page.toast('success', 'Scene regenerated');
+        } else if (result && result.skipped) {
+            page.toast('warn', 'Still no usable prompt — Analyze the poem or edit the stanza, then regenerate');
+        } else {
+            page.toast('error', 'Regenerate failed');
+        }
+    } catch (e) {
+        page.toast('error', 'Regenerate failed: ' + (e.message || ''));
+    }
+    scene._saving = false;
+    m.redraw();
+}
+
 function renderSceneCard(scene, idx) {
     let isLast = idx === reviewScenes.length - 1;
     let alignOptions = ['left', 'center', 'right'];
@@ -1749,7 +1981,24 @@ function renderSceneCard(scene, idx) {
         m('div', { class: 'flex items-center gap-2' }, [
             m('span', { class: 'text-xs text-gray-400 dark:text-gray-500 font-mono flex-shrink-0' },
                 'Page ' + (idx + 1) + ' of ' + reviewScenes.length),
-            scene._saving ? m('span', { class: 'ml-2 text-xs text-blue-500' }, 'Saving...') : null
+            scene._saving ? m('span', { class: 'ml-2 text-xs text-blue-500' }, 'Saving...') : null,
+            // Skip-render: an un-prompted scene produced no image on the last render because there was
+            // no usable landscape prompt (LLM double-blank). Offer an explicit per-scene regenerate.
+            isSceneUnprompted(scene) ? m('div', { class: 'ml-auto flex items-center gap-2' }, [
+                m('span', { class: 'text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1' }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'warning'),
+                    'Needs prompt'
+                ]),
+                m('button', {
+                    class: 'px-2 py-1 rounded bg-orange-600 text-white text-xs hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1',
+                    title: 'Regenerate this page — resolves a landscape prompt via the LLM, then renders an image',
+                    disabled: scene._saving || roleWarning,
+                    onclick: function () { doRegenerateScene(idx); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'refresh'),
+                    ' Regenerate'
+                ])
+            ]) : null
         ]),
         // Title
         m('div', [
@@ -1925,6 +2174,8 @@ const ChapBookReview = {
         pendingRenderBookId = null;
         pendingRenderCallback = null;
         renderSdCfg = {};
+        // Gap 6: clear any per-scene render progress from a prior book/session
+        resetRenderProgress();
         // Issue 9 / D6: block scene edits + render when the AccountUsers role is absent
         roleWarning = lacksUserRole(page.context && page.context());
         if (reviewBookObjectId) loadReviewBook(reviewBookObjectId);
@@ -1961,7 +2212,7 @@ const ChapBookReview = {
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' },
                         reviewRendering ? 'hourglass_empty' : 'image'),
-                    reviewRendering ? ' Rendering...' : ' Render'
+                    reviewRendering ? (' ' + renderProgressLabel()) : ' Render'
                 ])
             ]),
             m('p', { class: 'text-xs text-gray-400 dark:text-gray-500 mb-4' },
@@ -2016,5 +2267,5 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds };
+export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScenes, renderResultMessage, isSceneUnprompted };
 export default ChapBookFeature;

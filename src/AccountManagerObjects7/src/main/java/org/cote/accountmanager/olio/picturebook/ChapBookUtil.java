@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -14,6 +15,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -45,6 +47,38 @@ public class ChapBookUtil {
 
 	private ChapBookUtil() {
 		/// static utility
+	}
+
+	// ─────────────────────────────── render result types ───────────────────────────────
+
+	/**
+	 * Outcome of a single ChapBook scene render.
+	 * <ul>
+	 *   <li>{@code RENDERED} — an image was generated and its objectId persisted onto the scene.</li>
+	 *   <li>{@code SKIPPED_NO_PROMPT} — the scene was <b>un-prompted</b> (no genuine LLM landscape prompt
+	 *       could be resolved), so no image was produced; the scene is deliberately left for explicit
+	 *       regeneration later. This is NOT a failure — a fallback/stanza image is never rendered.</li>
+	 *   <li>{@code FAILED} — a genuine prompt existed but SD returned no image, the persist patch failed,
+	 *       or an exception was thrown.</li>
+	 * </ul>
+	 */
+	public enum SceneRenderStatus { RENDERED, SKIPPED_NO_PROMPT, FAILED }
+
+	/**
+	 * Immutable result of a single scene render. {@link #imageObjectId} is non-null only when
+	 * {@link #status} is {@link SceneRenderStatus#RENDERED}; it is null for both {@code SKIPPED_NO_PROMPT}
+	 * and {@code FAILED}.
+	 */
+	public static final class SceneRenderResult {
+		/** The generated image {@code objectId}; non-null only when {@link #status} is {@code RENDERED}. */
+		public final String imageObjectId;
+		/** The render outcome. */
+		public final SceneRenderStatus status;
+
+		public SceneRenderResult(String imageObjectId, SceneRenderStatus status) {
+			this.imageObjectId = imageObjectId;
+			this.status = status;
+		}
 	}
 
 	// ─────────────────────────────── poem text extraction ───────────────────────────────
@@ -444,6 +478,10 @@ public class ChapBookUtil {
 
 		String bookGroupPath = PbBookUtil.bookGroupPath(slug);
 		int sceneIndex = 0;
+		// Running thread of prior scene landscape prompts, in book order, so scene N's LLM prompt is
+		// generated with awareness of the poem's overall theme and the imagery already used earlier in
+		// the book (the "prior mcp entries"). Only genuinely LLM-generated prompts are threaded forward.
+		List<String> priorScenePrompts = new ArrayList<>();
 		for (String poemObjectId : poemObjectIds) {
 			BaseRecord poem = loadPoem(user, poemObjectId, orgId);
 			if (poem == null) {
@@ -458,11 +496,20 @@ public class ChapBookUtil {
 			String poemTitle = poem.get(OlioFieldNames.FIELD_PB_TITLE);
 			if (poemTitle == null) poemTitle = poem.get(FieldNames.FIELD_NAME);
 			String mood = poem.get(OlioFieldNames.FIELD_CB_MOOD);
+			String theme = poem.get(OlioFieldNames.FIELD_CB_THEME);
+			String keywords = poem.get(OlioFieldNames.FIELD_CB_KEYWORDS);
 
 			List<String> chunks = chunkPoem(poemText, effectiveMax);
 			for (String chunk : chunks) {
 				try {
-					createChapBookScene(user, book, sceneIndex, chunk, poemTitle, mood, bookGroupPath, chatConfig);
+					// Assemble the prior context (poem theme/mood/keywords + recent scene imagery) and
+					// thread it into the landscape-prompt LLM call so scenes stay visually continuous.
+					String priorContext = assemblePriorContext(theme, keywords, mood, priorScenePrompts);
+					String generatedPrompt = createChapBookScene(user, book, sceneIndex, chunk, poemTitle, mood, bookGroupPath, chatConfig, priorContext);
+					// Only feed real LLM-generated prompts forward — never the stanza-excerpt fallback.
+					if (NarrativeUtil.isMeaningful(generatedPrompt)) {
+						priorScenePrompts.add(generatedPrompt);
+					}
 					sceneIndex++;
 				} catch (Exception e) {
 					logger.warn("createChapBook: failed to create scene " + sceneIndex + " from poem " + poemObjectId + ": " + e.getMessage());
@@ -499,25 +546,37 @@ public class ChapBookUtil {
 	 * {@code mood}, and {@code title} onto the returned scene.
 	 * <p>
 	 * When {@code chatConfig} is non-null the {@code chapBook.landscape-prompt} template is
-	 * called with the stanza text, mood, and poem title as variables, exactly as
-	 * {@link #renderChapBook} does at render time. This stores an LLM-generated landscape
-	 * prompt on the scene at creation, so the render step has a meaningful starting point even
-	 * without a live LLM. Falls back to a stanza-excerpt placeholder when the LLM returns blank.
+	 * called with the stanza text, mood, poem title, and the {@code priorContext} continuity
+	 * string as variables, exactly as {@link #renderChapBook} does at render time. This stores an
+	 * LLM-generated landscape prompt on the scene at creation, so the render step has a meaningful
+	 * starting point even without a live LLM. Falls back to a stanza-excerpt placeholder when the
+	 * LLM returns blank.
+	 *
+	 * @param priorContext continuity context assembled by {@link #assemblePriorContext} — the poem's
+	 *                     theme/mood/keywords plus the imagery of earlier scenes; never blank (the
+	 *                     sentinel {@code "none"} is used when there is nothing to carry) so the
+	 *                     {@code {priorContext}} template placeholder is always substituted.
+	 * @return the LLM-generated landscape prompt that was stored, or {@code null} when the LLM was
+	 *         unavailable/blank and the stanza-excerpt fallback was stored instead. Only a non-null
+	 *         return should be threaded forward as prior context for later scenes.
 	 */
-	static BaseRecord createChapBookScene(BaseRecord user, BaseRecord book, int sceneIndex,
-			String stanzaText, String poemTitle, String mood, String bookGroupPath, BaseRecord chatConfig) {
+	static String createChapBookScene(BaseRecord user, BaseRecord book, int sceneIndex,
+			String stanzaText, String poemTitle, String mood, String bookGroupPath, BaseRecord chatConfig,
+			String priorContext) {
 		// Create the base scene record
 		BaseRecord scene = PbBookUtil.createScene(user, book, sceneIndex, poemTitle, bookGroupPath);
 		if (scene == null) {
 			throw new PictureBookException(500, "Failed to create ChapBook scene at index " + sceneIndex);
 		}
+		// The LLM-generated landscape prompt (null when the LLM was unavailable and the fallback ran).
+		String llmPrompt = null;
 		// Patch poemStanza, mood, title, and sdPrompt onto the scene.
 		// Use RecordUtil.updateRecord (bypass PBAC) — consistent with how createChapBook patches bookType.
 		try {
 			// Use LLM to generate a landscape SD prompt from the stanza when chatConfig is available.
 			// This mirrors the pattern renderChapBook uses at render time (chapBook.landscape-prompt
-			// template with stanzaText/mood/compositionContext vars), so the stored sdPrompt is an
-			// LLM-generated landscape description rather than a raw stanza excerpt.
+			// template with stanzaText/mood/compositionContext/priorContext vars), so the stored sdPrompt
+			// is an LLM-generated landscape description rather than a raw stanza excerpt.
 			// Falls back to the stanza-excerpt placeholder when the LLM is not configured or returns blank.
 			String sdPromptVal = null;
 			if (chatConfig != null && stanzaText != null && !stanzaText.isBlank()) {
@@ -525,9 +584,13 @@ public class ChapBookUtil {
 				vars.put("stanzaText", stanzaText);
 				vars.put("mood", mood != null ? mood : "poetic");
 				vars.put("compositionContext", poemTitle != null ? poemTitle : "poetic scene");
-				String llmResult = PictureBookUtil.callLlmForChapBook(user, chatConfig, "chapBook.landscape-prompt", vars);
+				// priorContext must always be non-blank or the UNSUBSTITUTED_PLACEHOLDER guard in
+				// callLlmInternal would refuse the call; assemblePriorContext returns "none" when empty.
+				vars.put("priorContext", NarrativeUtil.isMeaningful(priorContext) ? priorContext.trim() : "none");
+				String llmResult = callLandscapePrompt(user, chatConfig, vars);
 				if (llmResult != null && !llmResult.isBlank()) {
 					sdPromptVal = llmResult.trim();
+					llmPrompt = sdPromptVal;
 					logger.info("createChapBookScene: LLM landscape prompt for scene {}: {}", sceneIndex,
 						sdPromptVal.length() > 80 ? sdPromptVal.substring(0, 80) + "…" : sdPromptVal);
 				} else {
@@ -535,13 +598,15 @@ public class ChapBookUtil {
 				}
 			}
 			if (sdPromptVal == null || sdPromptVal.isBlank()) {
-				// No-LLM fallback: use the first ~150 chars of stanza text for a meaningful placeholder
-				String stanzaExcerpt = (stanzaText != null && !stanzaText.isBlank())
-					? stanzaText.substring(0, Math.min(150, stanzaText.length())).replaceAll("\\s+", " ").trim()
-					: null;
+				// No-LLM fallback. NEVER embed raw stanza text: the old excerpt form produced the exact
+				// reported bad prompt "landscape, <poem text>, poetic atmosphere, painterly, soft light",
+				// which handed the poem body straight to SD. Use only the poem TITLE (a title, not stanza
+				// body) + mood + generic landscape tags. The "landscape, " prefix is retained deliberately
+				// — it is the discriminator renderResolvedScene/renderChapBook key their recovery on
+				// (isMeaningful && !startsWith("landscape, ")) to tell a real LLM prompt from this fallback.
 				sdPromptVal = "landscape, "
-					+ (stanzaExcerpt != null ? stanzaExcerpt + ", " : (poemTitle != null ? poemTitle + ", " : "poetic scene, "))
-					+ (mood != null ? mood : "poetic") + " atmosphere, painterly, soft light";
+					+ (poemTitle != null ? poemTitle + ", " : "")
+					+ (mood != null ? mood : "poetic") + " atmosphere, painterly, soft light, wide natural vista";
 			}
 			BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
 				OlioFieldNames.FIELD_CB_POEM_STANZA, OlioFieldNames.FIELD_PB_MOOD, OlioFieldNames.FIELD_PB_TITLE,
@@ -556,7 +621,79 @@ public class ChapBookUtil {
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.warn("createChapBookScene: patch field error at index " + sceneIndex + ": " + e.getMessage());
 		}
-		return scene;
+		return llmPrompt;
+	}
+
+	/**
+	 * Assemble the "prior context" continuity string threaded into the {@code chapBook.landscape-prompt}
+	 * LLM call. It combines the poem-level analysis (theme, mood, imagery keywords) with the imagery of
+	 * the most recent prior scenes so scene N is generated with awareness of the poem and the imagery
+	 * already used earlier in the book.
+	 * <p>
+	 * Every fragment is guarded with {@link NarrativeUtil#isMeaningful(String)} so an LLM-emitted literal
+	 * {@code "null"}/{@code "n/a"}/{@code "unknown"} never leaks into the assembled prompt. The method
+	 * <b>never returns blank</b>: when there is nothing meaningful to carry it returns the sentinel
+	 * {@code "none"}, which keeps the {@code {priorContext}} placeholder substituted (so the
+	 * UNSUBSTITUTED_PLACEHOLDER guard does not refuse the LLM call) and tells the template to base the
+	 * prompt on the stanza alone.
+	 * <p>
+	 * Public so the continuity string threaded into scene generation is directly unit-testable.
+	 *
+	 * @param theme             poem theme (may be null/blank/"null")
+	 * @param keywords          poem imagery keywords (may be null/blank/"null")
+	 * @param mood              poem overall mood (may be null/blank/"null")
+	 * @param priorScenePrompts LLM prompts of earlier scenes, in book order (may be null/empty)
+	 * @return a non-blank continuity string, or the sentinel {@code "none"}
+	 */
+	public static String assemblePriorContext(String theme, String keywords, String mood, List<String> priorScenePrompts) {
+		StringBuilder sb = new StringBuilder();
+		if (NarrativeUtil.isMeaningful(theme)) sb.append("Poem theme: ").append(theme.trim()).append(". ");
+		if (NarrativeUtil.isMeaningful(mood)) sb.append("Overall mood: ").append(mood.trim()).append(". ");
+		if (NarrativeUtil.isMeaningful(keywords)) sb.append("Imagery keywords: ").append(keywords.trim()).append(". ");
+		if (priorScenePrompts != null && !priorScenePrompts.isEmpty()) {
+			// Only the two most recent prior scenes — enough for continuity without an unbounded prompt.
+			int from = Math.max(0, priorScenePrompts.size() - 2);
+			List<String> recent = new ArrayList<>();
+			for (int i = from; i < priorScenePrompts.size(); i++) {
+				String p = priorScenePrompts.get(i);
+				if (NarrativeUtil.isMeaningful(p)) {
+					String t = p.trim();
+					recent.add(t.length() > 200 ? t.substring(0, 200).trim() : t);
+				}
+			}
+			if (!recent.isEmpty()) {
+				sb.append("Earlier scene imagery (keep visual continuity, do not copy verbatim): ")
+					.append(String.join(" || ", recent)).append(".");
+			}
+		}
+		String s = sb.toString().trim();
+		return s.isEmpty() ? "none" : s;
+	}
+
+	/**
+	 * Call the {@code chapBook.landscape-prompt} LLM template with a bounded single retry, returning
+	 * the first non-blank result (already trimmed) or {@code null} if every attempt was blank.
+	 * <p>
+	 * qwen3-class reasoning models intermittently emit a think-only response even under {@code /no_think}
+	 * (confirmed live 2026-09-01: an otherwise-identical two-scene book had scene 0 come back blank while
+	 * scene 1 succeeded). {@code callLlmInternal} strips the think block and returns an empty string, so
+	 * the scene silently stored the {@code "landscape, <stanza> … painterly, soft light"} fallback — the
+	 * exact reported regression. A one-shot retry (the same bounded pattern
+	 * {@code extractChunkedInternal} uses for unparseable JSON, PictureBookUtil.java attempt&nbsp;loop)
+	 * recovers the common single-blank case before the fallback ever fires. It does NOT guarantee a
+	 * non-blank result — a double blank still falls back — so callers must keep their fallback path.
+	 */
+	private static String callLandscapePrompt(BaseRecord user, BaseRecord chatConfig, Map<String, String> vars) {
+		for (int attempt = 1; attempt <= 2; attempt++) {
+			String llmResult = PictureBookUtil.callLlmForChapBook(user, chatConfig, "chapBook.landscape-prompt", vars);
+			if (llmResult != null && !llmResult.isBlank()) {
+				return llmResult.trim();
+			}
+			if (attempt < 2) {
+				logger.warn("chapBook.landscape-prompt returned blank — retrying once (qwen3 think-only response)");
+			}
+		}
+		return null;
 	}
 
 	// ─────────────────────────────── poem scoping / listing ───────────────────────────────
@@ -746,22 +883,7 @@ public class ChapBookUtil {
 		}
 
 		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-		Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
-		bq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-		/// The book tier of the config-precedence merge (PbConfigUtil.resolveEffectiveConfig) is invisible
-		/// unless sdConfig/compositeSdConfig are projected — a missing tier fails SILENTLY to resource
-		/// defaults. Union the render-specific fields (groupPath/ownerId/bookType/world) with
-		/// PbConfigUtil.requestFields() so the book always carries its config columns, and stays correct
-		/// if requestFields() grows.
-		java.util.LinkedHashSet<String> bookReq = new java.util.LinkedHashSet<>(Arrays.asList(
-			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID,
-			FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
-			OlioFieldNames.FIELD_PB_BOOK_TYPE, OlioFieldNames.FIELD_PB_WORLD
-		));
-		bookReq.addAll(Arrays.asList(PbConfigUtil.requestFields()));
-		bq.setRequest(bookReq.toArray(new String[0]));
-		bq.setCache(false);
-		BaseRecord book = IOSystem.getActiveContext().getAccessPoint().find(user, bq);
+		BaseRecord book = loadRenderBook(user, bookObjectId, orgId);
 		if (book == null) {
 			throw new PictureBookException(404, "Book not found: " + bookObjectId);
 		}
@@ -778,86 +900,348 @@ public class ChapBookUtil {
 		}
 		PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_stories", "ChapBook render: " + scenes.size() + " scene(s)…");
 
-		String bookGroupPath = book.get(FieldNames.FIELD_GROUP_PATH);
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType.toUpperCase()), sdServer);
 
 		int rendered = 0;
+		int skipped = 0;
+		// Running thread of the scenes' stored landscape prompts, in book order, so a re-generated
+		// render-time prompt for scene N stays visually continuous with the imagery of earlier scenes.
+		List<String> priorScenePrompts = new ArrayList<>();
 		for (BaseRecord scene : scenes) {
-			String sceneOid = (String) scene.get(FieldNames.FIELD_OBJECT_ID);
-			String stanza = scene.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
-			String mood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
-			String sceneTitle = scene.get(OlioFieldNames.FIELD_PB_TITLE);
+			String sceneMood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
+			String priorContext = assemblePriorContext(null, null, sceneMood, priorScenePrompts);
+			SceneRenderResult result = renderResolvedScene(user, book, scene, sdu, chatConfig, clientSdConfig, priorContext);
+			// Thread the scene's stored landscape prompt forward for continuity — but skip the
+			// stanza-excerpt fallback shape ("landscape, …") so only real imagery accumulates.
+			String storedPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+			if (NarrativeUtil.isMeaningful(storedPrompt) && !storedPrompt.startsWith("landscape, ")) {
+				priorScenePrompts.add(storedPrompt);
+			}
+			if (result.status == SceneRenderStatus.RENDERED) {
+				rendered++;
+				PictureBookProgressNotifier.getInstance().notifyProgress(user, "image", "Scene " + rendered + "/" + scenes.size() + " rendered");
+			} else if (result.status == SceneRenderStatus.SKIPPED_NO_PROMPT) {
+				skipped++;
+			}
+		}
+		PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
+		logger.info("renderChapBook: rendered {}/{} scenes for book {} ({} un-prompted, skipped)", rendered, scenes.size(), bookObjectId, skipped);
+		return rendered;
+	}
 
-			// Use LLM to generate a landscape prompt from the stanza when chatConfig is available.
-			// Falls back to the stored sdPrompt template when the LLM is not configured or returns blank.
-			String sdPrompt = null;
-			if (chatConfig != null && stanza != null && !stanza.isBlank()) {
+	/**
+	 * Render the SD image for a SINGLE ChapBook scene, resolving the scene's parent book itself.
+	 * <p>
+	 * This is the per-scene, client-driven analogue of {@link #renderChapBook}: PB2 solved the
+	 * gateway-timeout problem of the whole-book synchronous render by having the client call one
+	 * per-scene endpoint per scene, so no single HTTP request runs long. ChapBook mirrors that shape
+	 * here. The render body is identical to the bulk loop — both funnel through
+	 * {@link #renderResolvedScene(BaseRecord, BaseRecord, BaseRecord, SDUtil, BaseRecord, BaseRecord, String)}
+	 * so there is exactly one code path.
+	 *
+	 * @param user           the acting user (must have WRITE access to the scene/book)
+	 * @param sceneObjectId  objectId of the {@code olio.pb.scene} to render
+	 * @param sdApiType      SD API type string (e.g. "SWARM"); must match a {@link SDAPIEnumType} name
+	 * @param sdServer       SD server URL
+	 * @param chatConfig     optional LLM config for landscape prompt generation; null = use stored sdPrompt
+	 * @param clientSdConfig optional client SD-config overrides applied over the resolved config
+	 * @return a {@link SceneRenderResult}: {@link SceneRenderStatus#RENDERED} (with the generated image
+	 *         {@code objectId}) on success; {@link SceneRenderStatus#SKIPPED_NO_PROMPT} (imageObjectId null)
+	 *         when the scene is un-prompted (no genuine LLM prompt available — no image produced, left for
+	 *         explicit regeneration); {@link SceneRenderStatus#FAILED} (imageObjectId null) when SD returned
+	 *         nothing, the patch failed, or an exception was caught
+	 * @throws PictureBookException 400 for missing args / non-CHAPBOOK book, 404 if the scene or its
+	 *         book is not found, 500 if the SD server is not configured
+	 */
+	public static SceneRenderResult renderChapBookScene(BaseRecord user, String sceneObjectId,
+			String sdApiType, String sdServer, BaseRecord chatConfig, BaseRecord clientSdConfig) {
+		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
+			throw new PictureBookException(400, "user and sceneObjectId are required");
+		}
+		if (sdApiType == null || sdServer == null) {
+			throw new PictureBookException(500, "SD server not configured");
+		}
+
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+
+		/// Load the scene org-scoped with the SAME projection listScenes() uses — it carries poemStanza,
+		/// sdPrompt (FIELD_CB_SD_PROMPT), mood, title, configOverride and the book FK (FIELD_PB_BOOK).
+		Query sq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_SCENE, FieldNames.FIELD_OBJECT_ID, sceneObjectId);
+		sq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		sq.setRequest(PbBookUtil.sceneRequest());
+		sq.setCache(false);
+		BaseRecord scene = IOSystem.getActiveContext().getAccessPoint().find(user, sq);
+		if (scene == null) {
+			throw new PictureBookException(404, "Scene not found: " + sceneObjectId);
+		}
+
+		/// Resolve the parent book from the scene's book FK, loaded with the render projection so the
+		/// config tier is populated (identical projection to renderChapBook's book load). A bare-projected
+		/// FK reliably carries its numeric id (the stored FK column) but may NOT carry objectId (see
+		/// model-api.md). Prefer objectId when present, otherwise resolve by the FK's id so this path
+		/// cannot throw a spurious 404 for a book that exists.
+		BaseRecord bookFk = scene.get(OlioFieldNames.FIELD_PB_BOOK);
+		if (bookFk == null) {
+			throw new PictureBookException(404, "Book not found for scene: " + sceneObjectId);
+		}
+		String bookObjectId = bookFk.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord book;
+		if (bookObjectId != null && !bookObjectId.isBlank()) {
+			book = loadRenderBook(user, bookObjectId, orgId);
+		} else {
+			Object bookIdVal = bookFk.get(FieldNames.FIELD_ID);
+			long bookId = (bookIdVal instanceof Number ? ((Number) bookIdVal).longValue() : 0L);
+			if (bookId <= 0) {
+				throw new PictureBookException(404, "Book not found for scene: " + sceneObjectId);
+			}
+			book = loadRenderBookById(user, bookId, orgId);
+		}
+		if (book == null) {
+			throw new PictureBookException(404, "Book not found for scene: " + sceneObjectId);
+		}
+		if (bookObjectId == null || bookObjectId.isBlank()) {
+			bookObjectId = book.get(FieldNames.FIELD_OBJECT_ID);
+		}
+
+		String bookType = book.get(OlioFieldNames.FIELD_PB_BOOK_TYPE);
+		if (bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
+			throw new PictureBookException(400, "Book " + bookObjectId + " is not a CHAPBOOK");
+		}
+
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType.toUpperCase()), sdServer);
+		// Single-scene render: the client drives one scene at a time, so the full running thread of
+		// sibling scenes is not reconstructed here (that would require loading and ordering every scene
+		// of the book on each per-scene call). The continuity context is derived from THIS scene's mood.
+		// DESIGN FORK: cross-scene continuity for the per-scene path would need an ordered scene load;
+		// left minimal by design — the bulk renderChapBook path carries the full running thread.
+		String sceneMood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
+		String priorContext = assemblePriorContext(null, null, sceneMood, null);
+		return renderResolvedScene(user, book, scene, sdu, chatConfig, clientSdConfig, priorContext);
+	}
+
+	/**
+	 * Load an {@code olio.pb.book} by objectId with the render projection shared by both
+	 * {@link #renderChapBook} and {@link #renderChapBookScene}.
+	 * <p>
+	 * The book tier of the config-precedence merge ({@code PbConfigUtil.resolveEffectiveConfig}) is
+	 * invisible unless sdConfig/compositeSdConfig are projected — a missing tier fails SILENTLY to
+	 * resource defaults. Union the render-specific fields (groupPath/ownerId/bookType/world) with
+	 * {@code PbConfigUtil.requestFields()} so the book always carries its config columns, and stays
+	 * correct if requestFields() grows.
+	 */
+	private static BaseRecord loadRenderBook(BaseRecord user, String bookObjectId, long orgId) {
+		Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
+		bq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		java.util.LinkedHashSet<String> bookReq = new java.util.LinkedHashSet<>(Arrays.asList(
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID,
+			FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
+			OlioFieldNames.FIELD_PB_BOOK_TYPE, OlioFieldNames.FIELD_PB_WORLD
+		));
+		bookReq.addAll(Arrays.asList(PbConfigUtil.requestFields()));
+		bq.setRequest(bookReq.toArray(new String[0]));
+		bq.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, bq);
+	}
+
+	/**
+	 * Load an {@code olio.pb.book} by numeric {@code id} with the render projection — identical to
+	 * {@link #loadRenderBook(BaseRecord, String, long)} except it queries {@code FIELD_ID} instead of
+	 * {@code FIELD_OBJECT_ID}. Used as the fallback in {@link #renderChapBookScene} when the scene's
+	 * bare-projected book FK carries only its numeric id and not objectId, so the render path resolves
+	 * the book regardless of which identity field the FK projection populated. The projection (and
+	 * {@code setCache(false)}) is kept identical so the config-precedence tier stays populated.
+	 */
+	private static BaseRecord loadRenderBookById(BaseRecord user, long bookId, long orgId) {
+		Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_ID, bookId);
+		bq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		java.util.LinkedHashSet<String> bookReq = new java.util.LinkedHashSet<>(Arrays.asList(
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID,
+			FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
+			OlioFieldNames.FIELD_PB_BOOK_TYPE, OlioFieldNames.FIELD_PB_WORLD
+		));
+		bookReq.addAll(Arrays.asList(PbConfigUtil.requestFields()));
+		bq.setRequest(bookReq.toArray(new String[0]));
+		bq.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, bq);
+	}
+
+	/**
+	 * Shared render core for a single ChapBook scene, given already-resolved {@code book} and
+	 * {@code scene} records and a live {@link SDUtil}. Both the bulk {@link #renderChapBook} loop and
+	 * the per-scene {@link #renderChapBookScene} path funnel through this so the render behaviour is a
+	 * single code path.
+	 *
+	 * @return a {@link SceneRenderResult}: {@link SceneRenderStatus#RENDERED} (with the generated image
+	 *         {@code objectId}) on success; {@link SceneRenderStatus#SKIPPED_NO_PROMPT} (imageObjectId
+	 *         null) when the scene is un-prompted — no genuine LLM prompt is available, so no image is
+	 *         produced and the scene is left for explicit regeneration; {@link SceneRenderStatus#FAILED}
+	 *         (imageObjectId null) when SD returned no image, the imageObjectId patch failed, or an
+	 *         exception was caught.
+	 */
+	private static SceneRenderResult renderResolvedScene(BaseRecord user, BaseRecord book, BaseRecord scene,
+			SDUtil sdu, BaseRecord chatConfig, BaseRecord clientSdConfig, String priorContext) {
+		String sceneOid = (String) scene.get(FieldNames.FIELD_OBJECT_ID);
+		String stanza = scene.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
+		String mood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
+		String sceneTitle = scene.get(OlioFieldNames.FIELD_PB_TITLE);
+
+		// PREFER the continuity-aware landscape prompt built at scene CREATE time (createChapBookScene),
+		// which already carries full cross-scene continuity from assemblePriorContext. Only RE-generate
+		// (recovery) when that stored prompt is absent or is the "landscape, " no-LLM fallback shape.
+		// resolveScenePrompt is the pure decision; the recovery supplier below is the ONLY place the LLM
+		// is called, and resolveScenePrompt invokes it solely in the recovery branch — never when a
+		// genuine stored prompt exists. This is the whole point of the fix: the create-time continuity
+		// prompt is authoritative on the per-scene render path the Ux client actually hits.
+		final String[] recoveredHolder = new String[1];
+		Supplier<String> recovery = null;
+		if (chatConfig != null && stanza != null && !stanza.isBlank()) {
+			recovery = () -> {
 				Map<String, String> vars = new LinkedHashMap<>();
 				vars.put("stanzaText", stanza);
 				vars.put("mood", mood != null ? mood : "poetic");
 				vars.put("compositionContext", sceneTitle != null ? sceneTitle : "poetic scene");
-				String llmResult = PictureBookUtil.callLlmForChapBook(user, chatConfig, "chapBook.landscape-prompt", vars);
-				if (llmResult != null && !llmResult.isBlank()) {
-					sdPrompt = llmResult.trim();
-					logger.info("renderChapBook: LLM landscape prompt for scene {}: {}", sceneOid, sdPrompt.length() > 80 ? sdPrompt.substring(0, 80) + "…" : sdPrompt);
+				// priorContext must always be non-blank or the UNSUBSTITUTED_PLACEHOLDER guard would refuse
+				// the call; assemblePriorContext already returns the "none" sentinel when empty.
+				vars.put("priorContext", NarrativeUtil.isMeaningful(priorContext) ? priorContext.trim() : "none");
+				String r = callLandscapePrompt(user, chatConfig, vars);
+				if (r != null && !r.isBlank()) {
+					recoveredHolder[0] = r.trim();
+					logger.info("renderChapBook: RECOVERED landscape prompt for scene {} (stored was absent/fallback): {}",
+						sceneOid, recoveredHolder[0].length() > 80 ? recoveredHolder[0].substring(0, 80) + "…" : recoveredHolder[0]);
 				} else {
-					logger.warn("renderChapBook: LLM returned no landscape prompt for scene {} — falling back to stored sdPrompt", sceneOid);
+					logger.warn("renderChapBook: LLM returned no landscape prompt for scene {} during recovery — falling back to stored/stanza", sceneOid);
 				}
-			}
-			if (sdPrompt == null || sdPrompt.isBlank()) {
-				sdPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
-			}
-			if (sdPrompt == null || sdPrompt.isBlank()) {
-				sdPrompt = stanza; // poemStanza fallback for freshly-created ChapBooks
-			}
-			if (sdPrompt == null || sdPrompt.isBlank()) {
-				logger.warn("renderChapBook: scene {} has no sdPrompt or stanza — skipping", sceneOid);
-				continue;
-			}
-			String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
-			if (sceneGroupPath == null) sceneGroupPath = (bookGroupPath != null ? bookGroupPath + "/Scenes" : "~/Scenes");
+				return r;
+			};
+		}
+		String sdPrompt = resolveScenePrompt(scene, stanza, recovery);
+		if (sdPrompt == null || sdPrompt.isBlank()) {
+			logger.info("renderChapBook: scene {} un-prompted (no genuine LLM prompt) — skipping, leaving for regeneration", sceneOid);
+			return new SceneRenderResult(null, SceneRenderStatus.SKIPPED_NO_PROMPT);
+		}
 
+		// If we RECOVERED a fresh LLM prompt (the stored one was absent/fallback-shaped), persist it back
+		// onto the scene AND set it on the in-memory record so the bulk renderChapBook loop's
+		// forward-threading (which reads scene.get(FIELD_CB_SD_PROMPT) after this returns, lines ~880-883)
+		// carries the recovered imagery forward. recoveredHolder[0] is set only when the recovery supplier
+		// actually ran and returned non-blank — i.e. exactly the recovery branch of resolveScenePrompt.
+		boolean recovered = recoveredHolder[0] != null && recoveredHolder[0].equals(sdPrompt);
+		if (recovered) {
 			try {
-				/// PB2 config precedence (§2.4): scene configOverride → book sdConfig → flux2Defaults →
-				/// Flux2Defaults constants. A ChapBook scene has no sceneNode, so the SCENE itself is the
-				/// override carrier — resolveEffectiveConfig duck-types the carrier via
-				/// node.hasField(configOverride)/node.get(configOverride), and listScenes() projects that
-				/// field (PbBookUtil.sceneRequest). The scene's configOverride stays a sparse JSON string;
-				/// it is never materialized from RecordFactory.newInstance(olio.sd.config).
-				BaseRecord sdConfig = PbConfigUtil.resolveEffectiveConfig(book, scene, false);
-				if (clientSdConfig != null) {
-					SDUtil.applyOverrides(sdConfig, clientSdConfig);
+				scene.set(OlioFieldNames.FIELD_CB_SD_PROMPT, sdPrompt);
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.warn("renderChapBook: could not set recovered sdPrompt on in-memory scene " + sceneOid + ": " + e.getMessage());
+			}
+			try {
+				BaseRecord promptPatch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
+					OlioFieldNames.FIELD_CB_SD_PROMPT);
+				promptPatch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, sdPrompt);
+				// Do not swallow the result — a null is the only signal the persist failed. Non-fatal to the
+				// render (the prompt is already resolved), so log and continue rather than abort the image.
+				if (IOSystem.getActiveContext().getAccessPoint().update(user, promptPatch) == null) {
+					logger.warn("renderChapBook: failed to persist recovered sdPrompt on scene " + sceneOid);
 				}
-				SDUtil.fillStyleDefaults(sdConfig);
-				sdConfig.set("description", sdPrompt);
-
-				String imageName = "chapbook_" + sceneOid + "_" + System.currentTimeMillis();
-				List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, sdConfig, imageName, 1, false, -1);
-				if (images == null || images.isEmpty()) {
-					logger.warn("renderChapBook: SD generation returned no images for scene " + sceneOid);
-					continue;
-				}
-				BaseRecord image = images.get(0);
-				String imageOid = image.get(FieldNames.FIELD_OBJECT_ID);
-
-				// Patch imageObjectId onto the scene record using patchOf pattern
-				BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
-					OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID);
-				patch.set(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID, imageOid);
-				if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
-					logger.warn("renderChapBook: failed to patch imageObjectId on scene " + sceneOid);
-				} else {
-					rendered++;
-					PictureBookProgressNotifier.getInstance().notifyProgress(user, "image", "Scene " + rendered + "/" + scenes.size() + " rendered");
-					logger.info("renderChapBook: rendered scene " + sceneOid);
-				}
-			} catch (Exception e) {
-				logger.warn("renderChapBook: error rendering scene " + sceneOid + ": " + e.getMessage());
+			} catch (FieldException | ValueException | ModelNotFoundException | PictureBookException e) {
+				// patchOf throws the unchecked PictureBookException if name is unprojected; keep this
+				// persist-back non-fatal so a failed save never aborts the batch render.
+				logger.warn("renderChapBook: could not assemble/persist recovered sdPrompt patch for scene " + sceneOid + ": " + e.getMessage());
 			}
 		}
-		PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
-		logger.info("renderChapBook: rendered {}/{} scenes for book {}", rendered, scenes.size(), bookObjectId);
-		return rendered;
+		String bookGroupPath = book.get(FieldNames.FIELD_GROUP_PATH);
+		String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
+		if (sceneGroupPath == null) sceneGroupPath = (bookGroupPath != null ? bookGroupPath + "/Scenes" : "~/Scenes");
+
+		try {
+			/// PB2 config precedence (§2.4): scene configOverride → book sdConfig → flux2Defaults →
+			/// Flux2Defaults constants. A ChapBook scene has no sceneNode, so the SCENE itself is the
+			/// override carrier — resolveEffectiveConfig duck-types the carrier via
+			/// node.hasField(configOverride)/node.get(configOverride), and listScenes() projects that
+			/// field (PbBookUtil.sceneRequest). The scene's configOverride stays a sparse JSON string;
+			/// it is never materialized from RecordFactory.newInstance(olio.sd.config).
+			BaseRecord sdConfig = PbConfigUtil.resolveEffectiveConfig(book, scene, false);
+			if (clientSdConfig != null) {
+				SDUtil.applyOverrides(sdConfig, clientSdConfig);
+			}
+			SDUtil.fillStyleDefaults(sdConfig);
+			sdConfig.set("description", sdPrompt);
+
+			String imageName = "chapbook_" + sceneOid + "_" + System.currentTimeMillis();
+			List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, sdConfig, imageName, 1, false, -1);
+			if (images == null || images.isEmpty()) {
+				logger.warn("renderChapBook: SD generation returned no images for scene " + sceneOid);
+				return new SceneRenderResult(null, SceneRenderStatus.FAILED);
+			}
+			BaseRecord image = images.get(0);
+			String imageOid = image.get(FieldNames.FIELD_OBJECT_ID);
+
+			// Patch imageObjectId onto the scene record using patchOf pattern
+			BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
+				OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID);
+			patch.set(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID, imageOid);
+			if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+				logger.warn("renderChapBook: failed to patch imageObjectId on scene " + sceneOid);
+				return new SceneRenderResult(null, SceneRenderStatus.FAILED);
+			}
+			logger.info("renderChapBook: rendered scene " + sceneOid);
+			return new SceneRenderResult(imageOid, SceneRenderStatus.RENDERED);
+		} catch (Exception e) {
+			logger.warn("renderChapBook: error rendering scene " + sceneOid + ": " + e.getMessage());
+			return new SceneRenderResult(null, SceneRenderStatus.FAILED);
+		}
+	}
+
+	/**
+	 * Decide which SD prompt a ChapBook scene render should use, WITHOUT performing the SD call — the
+	 * pure resolution seam extracted from {@link #renderResolvedScene} so the prefer-stored-vs-recover
+	 * decision is deterministically unit-testable (no live LLM/SD required to prove which branch fires).
+	 * <p>
+	 * Resolution order:
+	 * <ol>
+	 *   <li><b>Prefer the stored continuity prompt.</b> When the scene's stored {@code sdPrompt}
+	 *       ({@link OlioFieldNames#FIELD_CB_SD_PROMPT}) is a genuine LLM prompt —
+	 *       {@code NarrativeUtil.isMeaningful(stored) && !stored.trim().startsWith("landscape, ")} — it is
+	 *       authoritative (it already carries the full create-time cross-scene continuity built by
+	 *       {@link #assemblePriorContext}) and is returned verbatim. {@code recovery} is NOT invoked.</li>
+	 *   <li><b>Recovery.</b> Otherwise, if {@code recovery} is non-null and {@code stanza} is present, call
+	 *       it (the LLM landscape-prompt supplier) and, when it returns non-blank, use that.</li>
+	 * </ol>
+	 * When both steps fail this method returns {@code null} — the scene is <b>un-prompted</b>. A null return
+	 * means the render MUST skip and produce no image: never the {@code "landscape, "} fallback-shaped stored
+	 * string, and never the raw {@code stanza}. The un-prompted scene is deliberately left for explicit
+	 * regeneration later (heavier fallback behaviour: an un-prompted scene stays image-less rather than
+	 * getting a low-quality stand-in image).
+	 * <p>
+	 * The {@code "landscape, "} discriminator is exactly the one the bulk {@link #renderChapBook}
+	 * forward-thread uses (line ~881) to skip fallback-shaped prompts — this method stays consistent with it.
+	 * <p>
+	 * Public so the decision is directly unit-testable from the test package (mirrors
+	 * {@link #assemblePriorContext}); it performs no SD/network work of its own.
+	 *
+	 * @param scene    the scene record (must carry {@link OlioFieldNames#FIELD_CB_SD_PROMPT} in its projection)
+	 * @param stanza   the scene's poem stanza (used only to decide whether recovery can run; never used as a
+	 *                 render prompt itself)
+	 * @param recovery a supplier that regenerates the landscape prompt via the LLM; may be null. Invoked at
+	 *                 most once and ONLY in the recovery branch (never when a genuine stored prompt exists).
+	 * @return the chosen genuine prompt string, or {@code null} when the scene is un-prompted (render must
+	 *         skip and produce no image)
+	 */
+	public static String resolveScenePrompt(BaseRecord scene, String stanza, Supplier<String> recovery) {
+		String stored = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		// 1. Prefer the authoritative create-time continuity prompt — no LLM call.
+		if (NarrativeUtil.isMeaningful(stored) && !stored.trim().startsWith("landscape, ")) {
+			return stored.trim();
+		}
+		// 2. RECOVERY: stored is absent or fallback-shaped — regenerate via the LLM if we can.
+		if (recovery != null && stanza != null && !stanza.isBlank()) {
+			String recovered = recovery.get();
+			if (recovered != null && !recovered.isBlank()) {
+				return recovered.trim();
+			}
+		}
+		// 3. No genuine LLM prompt is available → un-prompted. Return null so the render SKIPS and produces
+		//    NO image (never the "landscape, " fallback-shaped stored string, never the raw stanza). The
+		//    scene is left for explicit regeneration later.
+		return null;
 	}
 
 	/**
