@@ -51,6 +51,47 @@ public class DocumentUtil {
 		"application/vnd.wordperfect"                                                 // .wpd  IANA-registered
 	);
 
+	/** OLE2 Compound File Binary Format header (legacy .doc/.xls/.ppt). */
+	private static final byte[] OLE2_MAGIC = { (byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0, (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1 };
+	/** ZIP local-file-header magic ("PK\003\004"), the container for OOXML .docx. */
+	private static final byte[] ZIP_MAGIC = { 0x50, 0x4B, 0x03, 0x04 };
+
+	/**
+	 * Recover a document's true office content type from its container magic bytes when the
+	 * declared content type is missing, empty, or a generic {@code text/*} label.
+	 * <p>
+	 * A legacy {@code .doc} uploaded through a generic data/note path frequently arrives with no
+	 * content type (or {@code text/plain}); trusting that label reads the OLE2 binary container as
+	 * raw UTF-8 and produces garbage. Sniffing the first bytes lets extraction route the record to
+	 * the correct parser regardless of the (wrong) declared type.
+	 *
+	 * @param data raw document bytes
+	 * @return {@code application/msword} for an OLE2 compound file, the OOXML wordprocessing type
+	 *         for a ZIP container, or {@code null} when the bytes are not a recognised office
+	 *         container (caller should treat as plain text)
+	 */
+	public static String sniffOfficeContentType(byte[] data) {
+		if (startsWith(data, OLE2_MAGIC)) {
+			return "application/msword";
+		}
+		if (startsWith(data, ZIP_MAGIC)) {
+			return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+		}
+		return null;
+	}
+
+	private static boolean startsWith(byte[] data, byte[] prefix) {
+		if (data == null || data.length < prefix.length) {
+			return false;
+		}
+		for (int i = 0; i < prefix.length; i++) {
+			if (data[i] != prefix[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	public static BaseRecord getRecord(BaseRecord owner, String modelName, String name, String path) {
 		return getRecord(owner, modelName, name, path, true);
 	}

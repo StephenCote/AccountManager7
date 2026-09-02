@@ -866,47 +866,49 @@ async function loadMyBooks() {
 }
 
 async function doDeleteBook(book) {
-    await Dialog.confirm({
+    let ok = await Dialog.confirm({
         title: 'Delete ChapBook',
         message: 'Delete "' + (book.name || book.slug) + '"? This cannot be undone.',
         confirmLabel: 'Delete',
-        confirmIcon: 'delete'
-    }, async function () {
-        try {
-            await deleteBook(book.objectId);
-            page.toast('success', 'Deleted: ' + (book.name || book.slug));
-            await loadMyBooks();
-        } catch (e) {
-            page.toast('error', 'Delete failed: ' + (e.message || ''));
-        }
+        confirmIcon: 'delete',
+        destructive: true
     });
+    if (!ok) return;
+    try {
+        await deleteBook(book.objectId);
+        page.toast('success', 'Deleted: ' + (book.name || book.slug));
+        await loadMyBooks();
+    } catch (e) {
+        page.toast('error', 'Delete failed: ' + (e.message || ''));
+    }
 }
 
 async function doDeleteSelected() {
     let ids = Array.from(selectedIds);
     if (!ids.length) return;
-    await Dialog.confirm({
+    let ok = await Dialog.confirm({
         title: 'Remove from queue',
         message: 'Remove ' + ids.length + ' poem(s) from the queue? The source notes and documents are not affected.',
         confirmLabel: 'Remove',
-        confirmIcon: 'playlist_remove'
-    }, async function () {
-        let failed = 0;
-        for (let id of ids) {
-            try {
-                await deletePoem(id);
-            } catch (e) {
-                failed++;
-            }
-        }
-        selectedIds = new Set();
-        if (failed) {
-            page.toast('error', 'Failed to remove ' + failed + ' poem(s) from queue');
-        } else {
-            page.toast('success', 'Removed ' + ids.length + ' poem(s) from queue');
-        }
-        await loadPoems();
+        confirmIcon: 'playlist_remove',
+        destructive: true
     });
+    if (!ok) return;
+    let failed = 0;
+    for (let id of ids) {
+        try {
+            await deletePoem(id);
+        } catch (e) {
+            failed++;
+        }
+    }
+    selectedIds = new Set();
+    if (failed) {
+        page.toast('error', 'Failed to remove ' + failed + ' poem(s) from queue');
+    } else {
+        page.toast('success', 'Removed ' + ids.length + ' poem(s) from queue');
+    }
+    await loadPoems();
 }
 
 // ── PoemLibrary component ─────────────────────────────────────────────
@@ -1783,24 +1785,25 @@ async function doMergeScene(idx) {
 async function doDeleteScene(idx) {
     let scene = reviewScenes[idx];
     if (!scene) return;
-    await Dialog.confirm({
+    let ok = await Dialog.confirm({
         title: 'Remove page',
         message: 'Remove page ' + (idx + 1) + '? This cannot be undone.',
         confirmLabel: 'Remove',
-        confirmIcon: 'delete'
-    }, async function () {
-        scene._saving = true;
-        m.redraw();
-        try {
-            await deleteScene(scene.objectId);
-            reviewScenes.splice(idx, 1);
-            page.toast('success', 'Page removed');
-        } catch (e) {
-            page.toast('error', 'Delete failed: ' + (e.message || ''));
-            scene._saving = false;
-        }
-        m.redraw();
+        confirmIcon: 'delete',
+        destructive: true
     });
+    if (!ok) return;
+    scene._saving = true;
+    m.redraw();
+    try {
+        await deleteScene(scene.objectId);
+        reviewScenes.splice(idx, 1);
+        page.toast('success', 'Page removed');
+    } catch (e) {
+        page.toast('error', 'Delete failed: ' + (e.message || ''));
+        scene._saving = false;
+    }
+    m.redraw();
 }
 
 // Issue 8: open the SD config dialog before rendering, then execute render with chatConfig + sdConfig.
@@ -2267,5 +2270,5 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScenes, renderResultMessage, isSceneUnprompted };
+export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScenes, renderResultMessage, isSceneUnprompted, doDeleteBook };
 export default ChapBookFeature;

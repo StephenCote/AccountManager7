@@ -81,6 +81,23 @@ public class ChapBookUtil {
 		}
 	}
 
+	/**
+	 * The single discriminator for "is this stored {@code sdPrompt} a GENUINE LLM landscape prompt?"
+	 * used by the create path, the per-scene render path, and the bulk forward-threading alike. A
+	 * stored prompt is genuine only when it is {@link NarrativeUtil#isMeaningful(String) meaningful}
+	 * (so an LLM-emitted literal {@code "null"}/{@code "none"}/{@code "n/a"}/{@code "unknown"} is
+	 * rejected) AND is not the {@code "landscape, "} no-LLM fallback shape.
+	 * <p>
+	 * Single-sourcing this matters for cross-layer consistency: the create path stores a genuine
+	 * prompt only when this returns true and otherwise stores the {@code "landscape, "} fallback, so
+	 * the ONLY "un-prompted" markers ever persisted are blank or {@code "landscape, "}-shaped. That is
+	 * exactly what the Ux client's {@code isSceneUnprompted} keys on, so the two layers cannot drift
+	 * (e.g. the backend skipping a scene the client would never flag for regeneration).
+	 */
+	public static boolean isGenuineStoredPrompt(String p) {
+		return NarrativeUtil.isMeaningful(p) && !p.trim().startsWith("landscape, ");
+	}
+
 	// ─────────────────────────────── poem text extraction ───────────────────────────────
 
 	/**
@@ -110,16 +127,29 @@ public class ChapBookUtil {
 		String ct = (contentType == null) ? null : contentType.trim().toLowerCase();
 
 		try {
-			if (ct == null || ct.isEmpty() || ct.startsWith("text/")) {
+			byte[] bytes = ByteModelUtil.getValue(data);
+			if (bytes == null || bytes.length == 0) return null;
+
+			// A legacy .doc (or .docx) uploaded through a generic data/note path often arrives with
+			// a missing or plain-text content type. Trusting that label reads the OLE2/ZIP binary
+			// container as raw UTF-8 and yields binary garbage, so sniff the container magic and
+			// override the declared type before deciding how to extract.
+			String effectiveCt = ct;
+			if (effectiveCt == null || effectiveCt.isEmpty() || effectiveCt.startsWith("text/")) {
+				String sniffed = DocumentUtil.sniffOfficeContentType(bytes);
+				if (sniffed != null) {
+					effectiveCt = sniffed;
+				}
+			}
+
+			if (effectiveCt == null || effectiveCt.isEmpty() || effectiveCt.startsWith("text/")) {
 				return sanitizeText(ByteModelUtil.getValueString(data));
 			}
-			if (DocumentUtil.OFFICE_CONTENT_TYPES.contains(ct)) {
-				byte[] bytes = ByteModelUtil.getValue(data);
-				if (bytes == null || bytes.length == 0) return null;
-				// Pass the known content type so the 3-arg overload routes .doc to POI
+			if (DocumentUtil.OFFICE_CONTENT_TYPES.contains(effectiveCt)) {
+				// Pass the resolved content type so the 3-arg overload routes .doc to POI
 				// and provides a Tika content-type hint for .docx and WordPerfect.
 				// Bounded extraction (MAX_EXTRACT_CHARS) — do not let Tika accumulate unbounded output.
-				String extracted = DocumentUtil.readDocument(bytes, MAX_EXTRACT_CHARS, ct);
+				String extracted = DocumentUtil.readDocument(bytes, MAX_EXTRACT_CHARS, effectiveCt);
 				if (extracted == null) {
 					throw new PictureBookException(400,
 						"Failed to extract text from document (" + contentType + ")");
@@ -588,13 +618,19 @@ public class ChapBookUtil {
 				// callLlmInternal would refuse the call; assemblePriorContext returns "none" when empty.
 				vars.put("priorContext", NarrativeUtil.isMeaningful(priorContext) ? priorContext.trim() : "none");
 				String llmResult = callLandscapePrompt(user, chatConfig, vars);
-				if (llmResult != null && !llmResult.isBlank()) {
+				// Store the LLM result only when it is a GENUINE prompt (isGenuineStoredPrompt): a bare
+				// LLM sentinel like "none"/"null" or an accidentally "landscape, "-shaped reply must NOT be
+				// persisted as a real prompt, or the render path would skip the scene while the client's
+				// isSceneUnprompted (which only recognises blank / "landscape, ") would fail to flag it for
+				// regeneration. Falling through to the fallback stores the "landscape, " discriminator both
+				// layers agree on.
+				if (isGenuineStoredPrompt(llmResult)) {
 					sdPromptVal = llmResult.trim();
 					llmPrompt = sdPromptVal;
 					logger.info("createChapBookScene: LLM landscape prompt for scene {}: {}", sceneIndex,
 						sdPromptVal.length() > 80 ? sdPromptVal.substring(0, 80) + "…" : sdPromptVal);
 				} else {
-					logger.warn("createChapBookScene: LLM returned no landscape prompt for scene {} — using stanza-excerpt fallback", sceneIndex);
+					logger.warn("createChapBookScene: LLM returned no usable landscape prompt for scene {} — using landscape fallback", sceneIndex);
 				}
 			}
 			if (sdPromptVal == null || sdPromptVal.isBlank()) {
@@ -751,6 +787,10 @@ public class ChapBookUtil {
 			q.field(OlioFieldNames.FIELD_PB_BOOK, scopeBook);
 		}
 		q.setRequestRange(startRecord, count);
+		// Fresh read: the poem queue re-fetches immediately after a delete, and the server search
+		// cache is keyed by query shape — a deleted poem's own identity invalidation does not clear
+		// this book-filtered list entry, so without this the removed poem lingers. Mirrors listChapBooks.
+		q.setCache(false);
 		q.setRequest(new String[]{
 			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
 			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
@@ -914,7 +954,7 @@ public class ChapBookUtil {
 			// Thread the scene's stored landscape prompt forward for continuity — but skip the
 			// stanza-excerpt fallback shape ("landscape, …") so only real imagery accumulates.
 			String storedPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
-			if (NarrativeUtil.isMeaningful(storedPrompt) && !storedPrompt.startsWith("landscape, ")) {
+			if (isGenuineStoredPrompt(storedPrompt)) {
 				priorScenePrompts.add(storedPrompt);
 			}
 			if (result.status == SceneRenderStatus.RENDERED) {
@@ -1228,7 +1268,7 @@ public class ChapBookUtil {
 	public static String resolveScenePrompt(BaseRecord scene, String stanza, Supplier<String> recovery) {
 		String stored = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
 		// 1. Prefer the authoritative create-time continuity prompt — no LLM call.
-		if (NarrativeUtil.isMeaningful(stored) && !stored.trim().startsWith("landscape, ")) {
+		if (isGenuineStoredPrompt(stored)) {
 			return stored.trim();
 		}
 		// 2. RECOVERY: stored is absent or fallback-shaped — regenerate via the LLM if we can.

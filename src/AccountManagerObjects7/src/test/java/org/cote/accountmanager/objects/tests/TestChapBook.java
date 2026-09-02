@@ -35,6 +35,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.ByteModelUtil;
+import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.junit.Before;
 import org.junit.Test;
@@ -81,6 +82,59 @@ public class TestChapBook extends BaseTest {
 		testUser = IOSystem.getActiveContext().getFactory()
 			.getCreateUser(ctx.getAdminUser(), "chapbookTestUser", ctx.getOrganizationId());
 		assertNotNull("chapbookTestUser must be created", testUser);
+	}
+
+	/**
+	 * Issue 4 regression: a legacy Word 97-2003 {@code .doc} uploaded as a ChapBook poem source
+	 * used to display OLE2 binary ASCII instead of extracted prose, because the record arrived with
+	 * a missing (or generic {@code text/plain}) content type and the byteStore was read as raw UTF-8.
+	 * <p>
+	 * This exercises the applied fix end-to-end against the REAL fixture
+	 * {@code media/The Big Way Out.doc} — no synthetic poem text, no LLM/SD, no network:
+	 * <ol>
+	 *   <li>{@link DocumentUtil#sniffOfficeContentType(byte[])} must recognise the OLE2 container as
+	 *       {@code application/msword}, and {@link DocumentUtil#readDocument(byte[], int, String)} with
+	 *       that hint must return real readable prose (POI HWPF path), not OLE2 garbage.</li>
+	 *   <li>{@link ChapBookUtil#extractPoemText(BaseRecord)} must return that same readable prose when
+	 *       the record's byteStore holds the {@code .doc} bytes and the declared content type is
+	 *       {@code null}, AND when it is mislabeled {@code text/plain} — never OLE2 binary garbage.</li>
+	 * </ol>
+	 */
+	@Test
+	public void testExtractPoemTextFromLegacyDocFile() throws Exception {
+		File docFile = locateFixture("The Big Way Out.doc");
+		assertNotNull("Real legacy .doc fixture must be locatable on disk (media/The Big Way Out.doc)", docFile);
+		assertTrue("Fixture .doc must exist: " + docFile.getAbsolutePath(), docFile.exists());
+		byte[] docBytes = java.nio.file.Files.readAllBytes(docFile.toPath());
+		assertTrue("Fixture .doc must be non-empty", docBytes.length > 0);
+
+		// ── (1a) Container magic sniff overrides the (missing/wrong) declared type ──
+		String sniffed = DocumentUtil.sniffOfficeContentType(docBytes);
+		assertEquals("OLE2 legacy .doc must sniff as application/msword", "application/msword", sniffed);
+
+		// ── (1b) Bounded POI extraction with the resolved hint yields readable prose ──
+		String extracted = DocumentUtil.readDocument(docBytes, 16 * 1024 * 1024, "application/msword");
+		assertNotNull("readDocument(bytes, max, application/msword) must return non-null text", extracted);
+		assertReadableProse("DocumentUtil.readDocument(application/msword)", extracted);
+
+		// ── (2a) extractPoemText with a NULL content type sniffs the container and routes to POI ──
+		BaseRecord dataNull = newDocDataRecord("bigwayout-null-" + System.currentTimeMillis(), null, docBytes);
+		String poemFromNull = ChapBookUtil.extractPoemText(dataNull);
+		assertNotNull("extractPoemText must return text when contentType is null", poemFromNull);
+		assertReadableProse("extractPoemText(null contentType)", poemFromNull);
+
+		// ── (2b) extractPoemText with a MISLABELED text/plain content type still sniffs and routes to POI ──
+		BaseRecord dataText = newDocDataRecord("bigwayout-text-" + System.currentTimeMillis(), "text/plain", docBytes);
+		String poemFromText = ChapBookUtil.extractPoemText(dataText);
+		assertNotNull("extractPoemText must return text when contentType is mislabeled text/plain", poemFromText);
+		assertReadableProse("extractPoemText(text/plain contentType)", poemFromText);
+
+		// Both record paths must agree with the direct POI extraction (same underlying bytes/parser).
+		assertEquals("extractPoemText(null) and extractPoemText(text/plain) must produce identical prose",
+			poemFromNull, poemFromText);
+
+		logger.info("testExtractPoemTextFromLegacyDocFile: extracted {} chars of readable prose from {}",
+			poemFromNull.length(), docFile.getName());
 	}
 
 	/**
@@ -1023,6 +1077,46 @@ public class TestChapBook extends BaseTest {
 	}
 
 	/**
+	 * The single stored-prompt discriminator {@link ChapBookUtil#isGenuineStoredPrompt(String)} — the
+	 * source of truth the create path, render path, and forward-threading all key on, and which the Ux
+	 * client's {@code isSceneUnprompted} mirrors. This is the exact drift the discriminator prevents: a
+	 * bare LLM sentinel ("none"/"null"/…) must be rejected as NON-genuine so the create path stores the
+	 * {@code "landscape, "} fallback instead — never persisting a sentinel that the backend would skip
+	 * but the client would fail to flag for regeneration.
+	 * <p>
+	 * Pure — runs without the LLM or SD server.
+	 */
+	@Test
+	public void testIsGenuineStoredPromptDiscriminator() throws Exception {
+		// Genuine LLM prompts → true.
+		assertTrue("A real landscape description is a genuine prompt",
+			ChapBookUtil.isGenuineStoredPrompt("a misty valley at dawn, rolling fog over pine ridges, muted light"));
+		assertTrue("A genuine prompt with leading whitespace is still genuine (trimmed)",
+			ChapBookUtil.isGenuineStoredPrompt("   a storm-lit coastline, jagged cliffs, heavy surf"));
+
+		// The "landscape, " no-LLM fallback shape → NOT genuine (both layers treat it as un-prompted).
+		assertFalse("The 'landscape, ' fallback shape is not a genuine prompt",
+			ChapBookUtil.isGenuineStoredPrompt("landscape, Winter Poem, melancholy atmosphere, painterly, soft light"));
+		assertFalse("A leading-whitespace 'landscape, ' fallback is still the fallback shape (trimmed)",
+			ChapBookUtil.isGenuineStoredPrompt("  landscape, Spring Poem, hopeful atmosphere"));
+
+		// Literal LLM sentinels → NOT genuine. THIS is the drift the fix closes: without isMeaningful,
+		// a bare "none"/"null" would have been stored and the client would not flag the skipped scene.
+		assertFalse("Literal 'null' is not a genuine prompt", ChapBookUtil.isGenuineStoredPrompt("null"));
+		assertFalse("Literal 'none' is not a genuine prompt", ChapBookUtil.isGenuineStoredPrompt("none"));
+		assertFalse("Literal 'n/a' is not a genuine prompt", ChapBookUtil.isGenuineStoredPrompt("n/a"));
+		assertFalse("Literal 'unknown' is not a genuine prompt", ChapBookUtil.isGenuineStoredPrompt("unknown"));
+		assertFalse("Literal 'unspecified' is not a genuine prompt", ChapBookUtil.isGenuineStoredPrompt("unspecified"));
+
+		// Blank / null → NOT genuine.
+		assertFalse("null is not a genuine prompt", ChapBookUtil.isGenuineStoredPrompt(null));
+		assertFalse("empty is not a genuine prompt", ChapBookUtil.isGenuineStoredPrompt(""));
+		assertFalse("whitespace is not a genuine prompt", ChapBookUtil.isGenuineStoredPrompt("   "));
+
+		logger.info("testIsGenuineStoredPromptDiscriminator: sentinel/fallback/blank rejected, real prompts accepted");
+	}
+
+	/**
 	 * Fix (deterministic, no LLM/SD): proves the hardened create-time fallback (chatConfig == null) stores
 	 * a landscape prompt that keeps the {@code "landscape, "} discriminator prefix but does NOT embed the
 	 * raw poem stanza body — the exact regression being fixed (the old form produced
@@ -1217,5 +1311,98 @@ public class TestChapBook extends BaseTest {
 			logger.error("createPoem failed: {}", e.getMessage(), e);
 			return null;
 		}
+	}
+
+	/**
+	 * Locate a real test fixture under the module's {@code media/} directory. The Maven Surefire
+	 * working directory is the module dir when run via {@code mvn -pl AccountManagerObjects7 test},
+	 * but fall back to the git-root-relative path so the test is robust to being launched from the
+	 * aggregator or the repo root.
+	 */
+	private File locateFixture(String fileName) {
+		File[] candidates = new File[] {
+			new File("media", fileName),
+			new File("AccountManagerObjects7/media", fileName),
+			new File("src/AccountManagerObjects7/media", fileName)
+		};
+		for (File f : candidates) {
+			if (f.exists()) {
+				return f;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Build an in-memory {@code data.data} record carrying the given bytes in its byteStore.
+	 * Written via {@link ByteModelUtil#setValue} (never a raw {@code byteStore .set()}), so the
+	 * optional compression the model applies to a {@code text/plain} label round-trips on read —
+	 * exactly the path {@code extractPoemText} exercises. No persistence is required: the fix reads
+	 * the byteStore straight off the record.
+	 */
+	private BaseRecord newDocDataRecord(String name, String contentType, byte[] bytes) throws Exception {
+		BaseRecord rec = RecordFactory.model(ModelNames.MODEL_DATA).newInstance();
+		rec.set(FieldNames.FIELD_NAME, name);
+		if (contentType != null) {
+			// Set the (deliberately wrong/generic) content type BEFORE writing, so the writer's
+			// compression decision matches what a real mislabeled upload would produce.
+			rec.set(FieldNames.FIELD_CONTENT_TYPE, contentType);
+		}
+		ByteModelUtil.setValue(rec, bytes);
+		return rec;
+	}
+
+	/**
+	 * Assert that extracted text is genuine, readable prose — not OLE2/ZIP binary read as UTF-8.
+	 * <p>
+	 * The pre-fix failure returned the raw OLE2 container as a string: dominated by non-printable
+	 * control bytes and the U+FFFD replacement character, with none of the extremely common English
+	 * function words. This checks the discriminators directly rather than asserting any specific
+	 * sentence from the (creative-writing) fixture:
+	 * <ul>
+	 *   <li>a substantial amount of text was produced;</li>
+	 *   <li>the vast majority of characters are ordinary printable prose (letters/digits/space/punct),
+	 *       with very few C0 control or replacement characters;</li>
+	 *   <li>at least a couple of the most common English words appear as whole words.</li>
+	 * </ul>
+	 */
+	private void assertReadableProse(String label, String text) {
+		assertNotNull(label + ": text must not be null", text);
+		assertTrue(label + ": expected a substantial amount of extracted text, got " + text.length() + " chars",
+			text.length() >= 100);
+
+		int printable = 0;
+		int controlOrReplacement = 0;
+		for (int i = 0; i < text.length(); i++) {
+			char c = text.charAt(i);
+			if (c == '\t' || c == '\n' || c == '\r') {
+				printable++;
+			} else if (c == '�') {
+				controlOrReplacement++;
+			} else if (c < 0x20 || c == 0x7F) {
+				controlOrReplacement++;
+			} else {
+				printable++;
+			}
+		}
+		double printableRatio = (double) printable / text.length();
+		double garbageRatio = (double) controlOrReplacement / text.length();
+		assertTrue(label + ": extracted text must be dominated by printable characters (ratio="
+			+ printableRatio + ")", printableRatio >= 0.90);
+		assertTrue(label + ": extracted text must NOT be dominated by control/replacement bytes (ratio="
+			+ garbageRatio + ") — that is the OLE2-garbage failure mode", garbageRatio <= 0.05);
+
+		// Extremely common English function words — any English prose contains several of these.
+		// Word-boundary, case-insensitive; safe for any content without inventing fixture text.
+		String[] common = { "the", "and", "to", "of", "a", "in", "is", "that", "it", "was", "with", "he", "she" };
+		int hits = 0;
+		String lower = text.toLowerCase();
+		for (String w : common) {
+			if (lower.matches("(?s).*\\b" + w + "\\b.*")) {
+				hits++;
+			}
+		}
+		assertTrue(label + ": extracted text must read as English prose (matched " + hits
+			+ " common words) — OLE2 garbage matches none", hits >= 3);
 	}
 }

@@ -1294,3 +1294,270 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
         console.log('[4] saved ' + toShot + ' page screenshot(s) to ' + outDir);
     });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// ChapBook delete-bug regressions (Bug A / Bug B / Issue-3).
+//
+// THE BUG (features/chapBook.js): three handlers called
+//   Dialog.confirm({title:'…', destructive:true}, async (ok) => { …DELETE… })
+// but Dialog.confirm honors the 2nd callback ONLY for the string form; for an object cfg it returns a
+// Promise and IGNORES the callback — so "Remove from Queue", "Delete ChapBook" and "Remove page" all
+// no-oped silently. The fix awaits the Promise: `let ok = await Dialog.confirm({…}); if(!ok) return;`.
+//
+// Each case drives the REAL UI button, confirms in the REAL dialog, and asserts the record is actually
+// gone both in the UI and via a fresh REST re-fetch (cache:false / server default). Against the old
+// callback-ignoring code the DELETE never fires, so each assertion fails; against the fix it passes.
+//
+// Self-contained (own beforeAll seeding + orgId) so it runs correctly under `-g "delete|queue"`, which
+// selects only this block. Uses ensureSharedTestUser (e2etest_shared) — never admin.
+// ════════════════════════════════════════════════════════════════════════════
+test.describe('ChapBook — delete regressions', () => {
+    test.describe.configure({ timeout: 120000 });
+
+    let delOrgId = null;
+    let delPoemsGroupId = null;
+    let delPoem1 = null;   // stable source poems for book-creation (Bug B / Issue 3)
+    let delPoem2 = null;
+
+    async function restLogin(request) {
+        const resp = await request.post(REST + '/login', {
+            data: {
+                schema: 'auth.credential',
+                organizationPath: '/Development',
+                name: 'e2etest_shared',
+                credential: Buffer.from('password').toString('base64'),
+                type: 'hashed_password'
+            }
+        });
+        expect(resp.ok() || resp.status() === 204, 'REST login failed: ' + resp.status()).toBe(true);
+    }
+
+    // Create an olio.cb.poem via the generic model route. `name` drives the /poems sort (ASC by name);
+    // an "AAA…" prefix guarantees the poem lands in the server's first page of 25 so it renders in the
+    // library table. `title` is what the UI shows and what we locate by.
+    async function createPoem(request, groupId, name, title, text) {
+        const resp = await request.post(REST + '/model', {
+            data: { schema: 'olio.cb.poem', name: name, title: title, author: 'E2E Del', groupId: groupId, text: text }
+        });
+        expect(resp.ok(), 'create poem failed: ' + resp.status() + ' ' + await resp.text()).toBe(true);
+        const created = await resp.json();
+        expect(created && created.objectId, 'poem create returned no objectId').toBeTruthy();
+        return created.objectId;
+    }
+
+    async function searchPoemCount(request, poemObjectId) {
+        const resp = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query', type: 'olio.cb.poem',
+                fields: [
+                    { name: 'objectId', comparator: 'equals', value: poemObjectId },
+                    { name: 'organizationId', comparator: 'equals', value: delOrgId }
+                ],
+                request: ['id', 'objectId'], recordCount: 2, cache: false
+            }
+        });
+        const body = await resp.json().catch(() => null);
+        return body && body.results ? body.results.length : 0;
+    }
+
+    async function clickDialogConfirm(page) {
+        // Every one of these handlers uses destructive:true → the confirm button is .am7-dialog-btn-destructive.
+        await expect(page.locator('.am7-dialog-backdrop')).toBeVisible({ timeout: 5000 });
+        const confirmBtn = page.locator('.am7-dialog-btn-destructive');
+        await expect(confirmBtn).toBeVisible({ timeout: 5000 });
+        await confirmBtn.click();
+    }
+
+    // Idempotent: return an existing poem's objectId by name, else create it.
+    async function ensurePoem(request, name, title, text) {
+        const s = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query', type: 'olio.cb.poem',
+                fields: [
+                    { name: 'name', comparator: 'equals', value: name },
+                    { name: 'organizationId', comparator: 'equals', value: delOrgId }
+                ],
+                request: ['id', 'objectId', 'name'], recordCount: 1, cache: false
+            }
+        });
+        const b = await s.json().catch(() => null);
+        if (b && b.results && b.results.length > 0) return b.results[0].objectId;
+        return createPoem(request, delPoemsGroupId, name, title, text);
+    }
+
+    test.beforeAll(async ({ request }) => {
+        await ensureSharedTestUser(request);
+        await restLogin(request);
+        const poemsDir = await request.get(REST + '/path/make/auth.group/data/B64-' + Buffer.from('~/Poems').toString('base64').replace(/=/g, '%3D'));
+        const poemsDirBody = await poemsDir.json();
+        expect(poemsDirBody && poemsDirBody.id, 'Could not ensure ~/Poems group').toBeTruthy();
+        delPoemsGroupId = poemsDirBody.id;
+        delOrgId = poemsDirBody.organizationId;
+
+        // Self-contained source poems so book creation works even when only this block runs (-g).
+        delPoem1 = await ensurePoem(request, 'chapbook-delreg-src-1', 'DelReg Falling Leaves', POEM_1);
+        delPoem2 = await ensurePoem(request, 'chapbook-delreg-src-2', 'DelReg Winter', POEM_2);
+        expect(delPoem1 && delPoem2, 'source poems not seeded').toBeTruthy();
+        await request.get(REST + '/logout');
+    });
+
+    // ── Bug B: deleting a ChapBook from "My ChapBooks" actually removes it ──────
+    test('Bug B: delete ChapBook removes the book (UI + backend)', async ({ page, request }) => {
+        const uniq = Date.now().toString(36);
+        const bookTitle = 'E2E DELBOOK ' + uniq;   // passed as `title`; the server stores it in `description`
+        const slug = 'e2e-delbook-' + uniq;
+
+        // Seed a chapbook via REST (single poem — no LLM/SD needed).
+        await restLogin(request);
+        const createResp = await request.post(CB_REST + '/create', {
+            data: { slug: slug, title: bookTitle, poemObjectIds: [delPoem1], maxLinesPerPage: 40 }
+        });
+        expect(createResp.ok(), 'create ChapBook failed: ' + createResp.status() + ' ' + await createResp.text()).toBe(true);
+        const created = await createResp.json();
+        const bookOid = created && (created.bookObjectId || created.objectId);
+        expect(bookOid, 'no bookObjectId from create').toBeTruthy();
+        // The "My ChapBooks" row shows `b.name || b.slug || b.objectId` (chapBook.js:1156). ChapBookUtil
+        // sets the book's `name` to "Book <slug>" (the title we passed lands in `description`), so we must
+        // locate by the actual persisted name, not the title.
+        const bookName = (created && created.name) || ('Book ' + slug);
+        await request.get(REST + '/logout');
+
+        // Drive the UI: open ChapBook, find the book row, click its red delete button, confirm.
+        await loginAsSharedUser(page);
+        await page.evaluate(() => { window.location.hash = '!/chap-book'; });
+
+        const nameEl = page.getByText(bookName, { exact: true });
+        await expect(nameEl, 'seeded book not visible in My ChapBooks').toBeVisible({ timeout: 20000 });
+        const row = nameEl.locator('xpath=ancestor::div[contains(@class,"border")][1]');
+        const delBtn = row.locator('button.bg-red-100');
+        await expect(delBtn, 'red delete button not found in book row').toBeVisible({ timeout: 5000 });
+        await delBtn.click();
+        await clickDialogConfirm(page);
+
+        // UI: the row disappears (loadMyBooks re-fetch after delete).
+        await expect(nameEl, 'book row still visible after delete').toHaveCount(0, { timeout: 15000 });
+
+        // Backend: the book is gone from /books AND from a fresh org-scoped search.
+        await restLogin(request);
+        const booksResp = await request.get(CB_REST + '/books');
+        const books = await booksResp.json();
+        const stillListed = (Array.isArray(books) ? books : []).some(b => b.objectId === bookOid);
+        expect(stillListed, 'deleted book still returned by /books').toBe(false);
+
+        const srch = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query', type: 'olio.pb.book',
+                fields: [
+                    { name: 'objectId', comparator: 'equals', value: bookOid },
+                    { name: 'organizationId', comparator: 'equals', value: delOrgId }
+                ],
+                request: ['id', 'objectId'], recordCount: 2, cache: false
+            }
+        });
+        const srchBody = await srch.json().catch(() => null);
+        const remaining = srchBody && srchBody.results ? srchBody.results.length : 0;
+        expect(remaining, 'olio.pb.book record still present after delete').toBe(0);
+        await request.get(REST + '/logout');
+    });
+
+    // ── Bug A: "Remove from Queue" actually clears the selected poems ───────────
+    test('Bug A: Remove from Queue clears selected poems (UI + backend)', async ({ page, request }) => {
+        const uniq = Date.now().toString(36);
+        // "AAA…" names sort to the top of /poems (ASC by name) → guaranteed on the server's first page of 25.
+        const nameA = 'AAAQDEL-a-' + uniq, titleA = 'AAA QueueDel A ' + uniq;
+        const nameB = 'AAAQDEL-b-' + uniq, titleB = 'AAA QueueDel B ' + uniq;
+
+        await restLogin(request);
+        // Clean any leftover AAAQDEL poems from prior runs so the two we create stay on page 1.
+        const stale = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query', type: 'olio.cb.poem',
+                fields: [
+                    { name: 'name', comparator: 'like', value: 'AAAQDEL-%' },
+                    { name: 'organizationId', comparator: 'equals', value: delOrgId }
+                ],
+                request: ['id', 'objectId'], recordCount: 200, cache: false
+            }
+        });
+        const staleBody = await stale.json().catch(() => null);
+        for (const r of (staleBody && staleBody.results ? staleBody.results : [])) {
+            await request.delete(REST + '/model/olio.cb.poem/' + r.objectId);
+        }
+        const pA = await createPoem(request, delPoemsGroupId, nameA, titleA, POEM_1);
+        const pB = await createPoem(request, delPoemsGroupId, nameB, titleB, POEM_2);
+        await request.get(REST + '/logout');
+
+        await loginAsSharedUser(page);
+        await page.evaluate(() => { window.location.hash = '!/chap-book'; });
+
+        // Both poems must be visible in the library table (do NOT type in the filter box — that would
+        // set themeFilter, which loadPoems() passes to the server on the post-delete re-fetch).
+        const rowA = page.getByText(titleA, { exact: true });
+        const rowB = page.getByText(titleB, { exact: true });
+        await expect(rowA, 'poem A not in library').toBeVisible({ timeout: 20000 });
+        await expect(rowB, 'poem B not in library').toBeVisible({ timeout: 10000 });
+
+        // Select ONLY poem A (clicking the title cell bubbles to the row's toggle handler).
+        await rowA.click();
+        const removeBtn = page.getByRole('button', { name: /Remove from Queue/ });
+        await expect(removeBtn, '"Remove from Queue" button did not appear after selection').toBeVisible({ timeout: 5000 });
+        await removeBtn.click();
+        await clickDialogConfirm(page);
+
+        // UI after doDeleteSelected → loadPoems() re-fetch: A gone, B still present. If the backend
+        // server-search cache were stale (no setCache(false)), the deleted A would linger here.
+        await expect(rowA, 'removed poem A still visible after re-fetch').toHaveCount(0, { timeout: 15000 });
+        await expect(rowB, 'poem B wrongly removed').toBeVisible({ timeout: 5000 });
+
+        // Backend: A truly deleted, B untouched.
+        await restLogin(request);
+        expect(await searchPoemCount(request, pA), 'poem A still exists in DB after remove').toBe(0);
+        expect(await searchPoemCount(request, pB), 'poem B should still exist').toBe(1);
+        await request.get(REST + '/logout');
+    });
+
+    // ── Issue 3: "Remove page" in the review view actually deletes the scene ────
+    test('Issue 3: Remove page deletes a scene from the review view (UI + backend)', async ({ page, request }) => {
+        const uniq = Date.now().toString(36);
+        const slug = 'e2e-scene-' + uniq;
+
+        // Book with >=2 scenes: both poems, small page size so each poem yields multiple stanza pages.
+        await restLogin(request);
+        const createResp = await request.post(CB_REST + '/create', {
+            data: { slug: slug, title: 'E2E SCENEDEL ' + uniq, poemObjectIds: [delPoem1, delPoem2], maxLinesPerPage: 4 }
+        });
+        expect(createResp.ok(), 'create ChapBook failed: ' + createResp.status() + ' ' + await createResp.text()).toBe(true);
+        const created = await createResp.json();
+        const bookOid = created && (created.bookObjectId || created.objectId);
+        expect(bookOid, 'no bookObjectId from create').toBeTruthy();
+
+        const pagesResp = await request.get(REST + '/olio/picture-book/' + bookOid + '/pages');
+        const pages = await pagesResp.json();
+        const initialCount = Array.isArray(pages) ? pages.length : 0;
+        expect(initialCount, 'expected >=2 scenes to test page removal').toBeGreaterThanOrEqual(2);
+        await request.get(REST + '/logout');
+
+        // Drive the review view.
+        await loginAsSharedUser(page);
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/review/' + oid; }, bookOid);
+
+        const removeButtons = page.locator('button[title="Remove this page"]');
+        await expect(removeButtons.first(), 'no Remove-page buttons rendered').toBeVisible({ timeout: 20000 });
+        await expect(removeButtons).toHaveCount(initialCount, { timeout: 10000 });
+
+        // Remove the first page.
+        await removeButtons.first().click();
+        await clickDialogConfirm(page);
+
+        // UI: one fewer scene card (doDeleteScene splices reviewScenes after the DELETE succeeds).
+        await expect(removeButtons, 'scene count did not decrease in UI').toHaveCount(initialCount - 1, { timeout: 15000 });
+
+        // Backend: a fresh /pages re-fetch confirms the scene is really gone and stays gone.
+        await restLogin(request);
+        const pagesResp2 = await request.get(REST + '/olio/picture-book/' + bookOid + '/pages');
+        const pages2 = await pagesResp2.json();
+        const finalCount = Array.isArray(pages2) ? pages2.length : -1;
+        expect(finalCount, 'scene count not reduced by 1 in backend after delete').toBe(initialCount - 1);
+        await request.get(REST + '/logout');
+    });
+});

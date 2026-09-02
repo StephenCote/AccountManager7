@@ -14,6 +14,7 @@ import { am7client } from '../core/am7client.js';
 import { applicationPath } from '../core/config.js';
 import { layout, pageLayout } from '../router.js';
 import { ObjectPicker } from '../components/picker.js';
+import { Dialog } from '../components/dialogCore.js';
 import {
     loadPictureBook, reorderScenes, resetPictureBook,
     resolveImageUrl, resolveAllImageUrls, clearImageCache
@@ -106,7 +107,8 @@ async function loadExistingBooks() {
 
 async function deleteBookFromList(book) {
     if (!book || !book.bookObjectId) return;
-    if (!confirm('Delete "' + book.workName + '"? Scenes, characters, and images will be removed.')) return;
+    let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete "' + book.workName + '"? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
+    if (!ok) return;
     try {
         await resetPictureBook(book.bookObjectId);
         page.toast('success', 'Picture book deleted');
@@ -119,7 +121,8 @@ async function deleteBookFromList(book) {
 
 async function deletePb2BookFromList(b) {
     if (!b || !b.objectId) return;
-    if (!confirm('Delete "' + (b.name || 'this book') + '"? Scenes, characters, and images will be removed.')) return;
+    let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete "' + (b.name || 'this book') + '"? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
+    if (!ok) return;
     try {
         // Backend reset() accepts either data.group objectId or olio.pb.book objectId
         await resetPictureBook(b.objectId);
@@ -590,8 +593,9 @@ function renderHeader() {
         !fullscreen && viewerScenes.length ? m('button', {
             class: 'text-red-400 hover:text-red-600',
             title: 'Delete picture book',
-            onclick: function () {
-                if (!confirm('Delete this picture book? Scenes, characters, and images will be removed.')) return;
+            onclick: async function () {
+                let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
+                if (!ok) return;
                 resetPictureBook(viewerBookId).then(function () {
                     page.toast('success', 'Picture book deleted');
                     viewerScenes = [];
@@ -668,8 +672,9 @@ var pictureBookView = {
                 m('div', { class: 'text-red-500 text-sm mb-6' }, viewerError),
                 m('button', {
                     class: 'btn px-6 py-2 text-red-500 border border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20',
-                    onclick: function () {
-                        if (!confirm('Delete this picture book?')) return;
+                    onclick: async function () {
+                        let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book?', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
+                        if (!ok) return;
                         resetPictureBook(viewerBookId).then(function () {
                             page.toast('success', 'Picture book deleted');
                             am7client.clearCache(0, true);
@@ -701,8 +706,9 @@ var pictureBookView = {
                         m('button', {
                             class: 'btn px-6 py-2 text-red-500 border border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20',
                             title: 'Delete this incomplete book',
-                            onclick: function () {
-                                if (!confirm('Delete this incomplete picture book?')) return;
+                            onclick: async function () {
+                                let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this incomplete picture book?', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
+                                if (!ok) return;
                                 resetPictureBook(viewerBookId).then(function () {
                                     page.toast('success', 'Picture book deleted');
                                     am7client.clearCache(0, true);
@@ -904,8 +910,9 @@ function renderPb2Header() {
         pb2BookObjectId ? m('button', {
             class: 'text-red-400 hover:text-red-600',
             title: 'Delete picture book',
-            onclick: function () {
-                if (!confirm('Delete this picture book? Scenes, characters, and images will be removed.')) return;
+            onclick: async function () {
+                let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
+                if (!ok) return;
                 resetPictureBook(pb2BookObjectId).then(function () {
                     page.toast('success', 'Picture book deleted');
                     am7client.clearCache(0, true);

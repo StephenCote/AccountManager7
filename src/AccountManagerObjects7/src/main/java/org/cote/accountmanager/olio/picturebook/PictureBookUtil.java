@@ -20,6 +20,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.ApparelUtil;
@@ -3728,6 +3729,9 @@ public class PictureBookUtil {
         try {
             meta.set("compositionContext", "");
         } catch (Exception e) { logger.warn("Failed to default compositionContext on meta: " + e.getMessage()); }
+        // Record the ACTUAL group the charPerson records were written into so listCharacters reads
+        // from the same place the write path used (legacy path: the {bookGroupPath}/Characters group).
+        try { meta.set("charsGroupPath", charsGroup.get(FieldNames.FIELD_PATH)); } catch (Exception e) { logger.warn("Failed to record charsGroupPath on meta: " + e.getMessage()); }
         saveMeta(user, bookGroupPath, meta);
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         // One LLM call per character needing detail extraction above — flush once at the end.
@@ -3941,6 +3945,10 @@ public class PictureBookUtil {
         try { meta.set("compositionContext", ""); } catch (Exception e) { logger.warn("Failed to default compositionContext: " + e.getMessage()); }
         // Store PB2 book objectId separately — bookObjectId remains the book GROUP objectId (needed for delete/reset)
         try { meta.set("pb2BookObjectId", pb2BookObjectId); } catch (Exception e) { logger.warn("Failed to set pb2BookObjectId on meta: " + e.getMessage()); }
+        // Record the ACTUAL group the charPerson records were written into. For PB2 this is the world
+        // population group (charsGroup was re-routed above), NOT the empty legacy {bookGroupPath}/Characters
+        // group. listCharacters reads from this stored path so the read path matches the write path.
+        try { meta.set("charsGroupPath", charsGroup.get(FieldNames.FIELD_PATH)); } catch (Exception e) { logger.warn("Failed to record charsGroupPath on meta: " + e.getMessage()); }
         saveMeta(user, bookGroupPath, meta);
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         OllamaModelUtil.unloadAll();
@@ -5011,6 +5019,61 @@ public class PictureBookUtil {
     }
 
     /**
+     * Re-derive the group that holds a PB2 book's charPerson records from a TRUSTED server-side anchor —
+     * the book record's own world — never from a user-writable group path in the {@code .pictureBookMeta}
+     * note.
+     *
+     * <p><b>Why this exists (security, horizontal-IDOR fix).</b> The meta note lives in a
+     * {@code data.note} owned by the requesting user, so its {@code text} is rewritable by that user
+     * through the generic {@code PATCH /rest/model} route. The previous implementation read a
+     * {@code charsGroupPath} string straight out of that note and fed it to {@code PathUtil.findPath}
+     * (which does NO read-authorization on the {@code doCreate=false} branch) and then to the
+     * PBAC-BYPASSING {@code Search.findRecords}. A user could therefore rewrite their own book's meta to
+     * point at another same-org user's world/population group and read that victim's characters
+     * (name/gender/portrait/apparel). Cross-tenant was blocked by the org scope; same-org horizontal was
+     * not. The group id fed to the charPerson search must instead be derived server-side from the book.
+     *
+     * <p><b>Why the {@code pb2BookObjectId} hint is safe even though it comes from the note.</b> Unlike a
+     * raw group PATH, an object-id reference is resolved here through {@link PbBookUtil#readBook} →
+     * {@code AccessPoint.find}, which runs per-record {@code canRead} on the result. A hint pointing at
+     * ANOTHER user's book is denied at that read and yields {@code null} → the legacy fallback, never the
+     * victim's world. Only a book THIS user is authorized to read resolves, and the group id is then
+     * taken from that book's own world population group via the sanctioned read-only assembly
+     * {@link PbBookUtil#openBookContext} → {@code BookContext.getGroupPath("population")} (the same
+     * primitive {@code PbPipelineUtil} uses for the gallery group). {@code assembleBookContext} performs
+     * the olio-principal world find internally and does not expose it, so no principal leaks here. This is
+     * the SAME group {@code createFromScenes} wrote into, so a legitimate PB2 book resolves to its real
+     * characters unchanged.
+     *
+     * @param pb2BookObjectId the {@code olio.pb.book} objectId (from the meta hint, or the request id
+     *        itself); may be attacker-controlled — it is authorization-checked here, not trusted.
+     * @return the PB2 world population group path for a book this user may read; {@code null} when the
+     *         id is blank, names no readable pb2 book, or the book carries no resolvable world — in which
+     *         case the caller falls back to the book's own {@code {bookGroupPath}/Characters} subgroup.
+     */
+    private static String deriveTrustedCharsGroupPath(BaseRecord user, String pb2BookObjectId, long orgId) {
+        if (pb2BookObjectId == null || pb2BookObjectId.isBlank()) return null;
+        // Authorization boundary: readBook -> AccessPoint.find runs canRead on the result, so a hint
+        // naming another user's book returns null here (no disclosure), not the victim's world.
+        BaseRecord book = PbBookUtil.readBook(user, pb2BookObjectId, orgId);
+        if (book == null) return null;
+        // Assemble the AUTHORIZED book's OWN world through the sanctioned read-only entry (openBookContext
+        // -> assembleBookContext), then resolve the population group path via BookContext.getGroupPath.
+        // This is the same primitive PbPipelineUtil uses for the gallery group. The population.path must
+        // be read as an IN-MEMORY nested get off a fully-assembled/populated world (which getGroupPath
+        // does: it populate()s the group and reads its virtual path). It CANNOT be read as a flat
+        // setRequest({"population.path"}) projection — "population" is a foreign auth.group field on
+        // olio.world, so Query rejects the dotted string as "Field 'population.path' was not found on
+        // model olio.world" and the read returns null. (The createFromScenes write path has the same
+        // broken flat-projection fallback at ~line 3850, but never reaches it because its in-memory
+        // ctx.getWorld().get("population.path") succeeds first; that dead fallback is out of scope here.)
+        BookContext bc = PbBookUtil.openBookContext(user, book);
+        if (bc == null) return null;
+        String populationPath = bc.getGroupPath(OlioFieldNames.FIELD_POPULATION);
+        return (populationPath != null && !populationPath.isBlank()) ? populationPath : null;
+    }
+
+    /**
      * List a book's extracted characters (for the "Manage Characters" review/edit screen) —
      * objectId/name/gender/hasPortrait/apparelCount/per-apparel scene tags, plus failedApparel/
      * failedStatistics flags cross-referenced from the book's own meta (set during
@@ -5038,34 +5101,92 @@ public class PictureBookUtil {
         }
         if (bookGroup == null) throw new PictureBookException(404, "Book not found");
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
-        String charsGroupPath = bookGroupPath + "/Characters";
-        BaseRecord charsGroup = IOSystem.getActiveContext().getPathUtil().findPath(user,
-                ModelNames.MODEL_GROUP, charsGroupPath, GroupEnumType.DATA.toString(),
-                (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        if (charsGroup == null) return new ArrayList<>();
 
-        Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, charsGroup.get(FieldNames.FIELD_ID));
-        q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-        q.planMost(true);
-        BaseRecord[] chars = IOSystem.getActiveContext().getSearch().findRecords(q);
-
+        // Parse the book's meta ONCE — but ONLY for the failedApparel/failedStatistics DISPLAY flags.
+        // The characters GROUP is NOT taken from the meta: that note is owned by (and PATCH-writable by)
+        // the requesting user, so any charsGroupPath inside it is attacker-controlled and must never
+        // drive the PBAC-bypassing charPerson search (that was a horizontal IDOR — a user could rewrite
+        // the note to another same-org user's population group and read their characters). We still read
+        // the stored charsGroupPath, but solely to compare it against the trusted server-derived path and
+        // warn on a mismatch; it is never fed to the query.
         Set<String> failedApparel = new HashSet<>();
         Set<String> failedStatistics = new HashSet<>();
+        String storedCharsGroupPath = null;
+        String metaPb2BookObjectId = null;
         BaseRecord metaRec = loadMeta(user, bookGroupPath);
         if (metaRec != null) {
             try {
                 String metaJson = metaRec.get("text");
                 if (metaJson != null && !metaJson.isEmpty()) {
                     Map<String, Object> meta = JSONUtil.getMap(metaJson.getBytes(), String.class, Object.class);
+                    // Read ONLY as an authorization-checked object-id hint (never as a group path). It is
+                    // resolved below through AccessPoint (readBook), so a tampered value cannot disclose
+                    // another user's book.
+                    Object pb2 = meta.get("pb2BookObjectId");
+                    if (pb2 instanceof String && !((String) pb2).isBlank()) metaPb2BookObjectId = ((String) pb2).trim();
+                    Object cgp = meta.get("charsGroupPath");
+                    if (cgp instanceof String && !((String) cgp).isBlank()) storedCharsGroupPath = ((String) cgp).trim();
                     Object fa = meta.get("failedApparel");
                     if (fa instanceof List) for (Object o : (List<Object>) fa) failedApparel.add(String.valueOf(o));
                     Object fs = meta.get("failedStatistics");
                     if (fs instanceof List) for (Object o : (List<Object>) fs) failedStatistics.add(String.valueOf(o));
                 }
             } catch (Exception e) {
-                logger.warn("Failed to read failedApparel/failedStatistics from meta: " + e.getMessage());
+                logger.warn("Failed to read pb2BookObjectId/charsGroupPath/failedApparel/failedStatistics from meta: " + e.getMessage());
             }
         }
+
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        // Derive the characters group SERVER-SIDE from the book's own world (trusted), never from a
+        // user-writable group path in the meta note. The pb2 book objectId hint is authorization-checked
+        // by deriveTrustedCharsGroupPath (readBook -> AccessPoint canRead), so a tampered hint yields the
+        // legacy fallback, not a victim's group. PB2 books resolve to their world population group (the
+        // same group createFromScenes wrote into); legacy PB1 books fall back to their own
+        // {bookGroupPath}/Characters subgroup, structurally confined to the caller's book. Prefer the meta
+        // hint; otherwise the request id itself may be a pb2 book objectId (dual-lookup path above).
+        String pb2Hint = (metaPb2BookObjectId != null) ? metaPb2BookObjectId : bookObjectId;
+        String trustedPopulationPath = deriveTrustedCharsGroupPath(user, pb2Hint, orgId);
+        String charsGroupPath = (trustedPopulationPath != null) ? trustedPopulationPath : (bookGroupPath + "/Characters");
+        if (storedCharsGroupPath != null && !storedCharsGroupPath.equals(charsGroupPath)) {
+            logger.warn("listCharacters: stored charsGroupPath '" + storedCharsGroupPath + "' does not match the "
+                + "server-derived characters group '" + charsGroupPath + "' — ignoring the stored value (possible meta tampering).");
+        }
+        BaseRecord charsGroup = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                ModelNames.MODEL_GROUP, charsGroupPath, GroupEnumType.DATA.toString(), orgId);
+        if (charsGroup == null) return new ArrayList<>();
+
+        Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, charsGroup.get(FieldNames.FIELD_ID));
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        // Targeted projection of ONLY the fields this DTO consumes, via the canonical planField idiom
+        // (see ChatUtil.getCharacterExportQuery). Two prior traps this avoids:
+        //   1. planMost(true) recursively expands olio.charPerson's wide nested foreign models and can
+        //      exceed PostgreSQL's 100-argument JSON_BUILD_OBJECT limit — DBSearch swallows that
+        //      PSQLException and returns null/empty, which reads exactly like "no characters extracted".
+        //   2. A DOTTED string in setRequest ("profile.portrait") is NOT a nested-path projection — Query
+        //      treats it as a single literal field name, throws "Field 'profile.portrait' was not found on
+        //      model olio.charPerson", and DBSearch again swallows it into a null result (same zero-character
+        //      symptom). Nested foreign fields must be planned with planField(field, subFields, includeCommon).
+        // Each apparel's inuse/attributes (not in apparel's default query set) are populated per-record below.
+        q.plan(false);
+        q.planField(FieldNames.FIELD_ID);
+        q.planField(FieldNames.FIELD_OBJECT_ID);
+        q.planField(FieldNames.FIELD_NAME);
+        q.planField(FieldNames.FIELD_GROUP_ID);
+        q.planField(FieldNames.FIELD_ORGANIZATION_ID);
+        q.planField("gender");
+        q.planField(FieldNames.FIELD_PROFILE, new String[] { "portrait" }, false);
+        q.planField(FieldNames.FIELD_STORE, new String[] { OlioFieldNames.FIELD_APPAREL }, false);
+        q.setCache(false);
+        // Route the final character read through AccessClient/PBAC (AccessPoint.list -> authorizeQuery)
+        // instead of the raw Search reader. The raw getSearch().findRecords(q) bypasses authorization
+        // entirely and is bounded ONLY by the groupId+organizationId conditions on q; AccessPoint.list
+        // adds a deterministic group-level read check — because common.groupExt.groupId is recursive,
+        // PBAC resolves the auth.group named by this groupId and evaluates POLICY_SYSTEM_READ_OBJECT for
+        // the CALLER against it, returning a failed QueryResult ("Query not authorized") if the caller
+        // lacks read on that group. This is a defense-in-depth layer on top of the trusted server-side
+        // group-path derivation above (deriveTrustedCharsGroupPath), not a replacement for it.
+        QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, q);
+        BaseRecord[] chars = (qr != null && qr.getResults() != null) ? qr.getResults() : new BaseRecord[0];
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (BaseRecord cp : chars) {
@@ -5083,7 +5204,7 @@ public class PictureBookUtil {
             if (appl != null) {
                 for (BaseRecord a : appl) {
                     try {
-                        IOSystem.getActiveContext().getReader().populate(a, new String[] { FieldNames.FIELD_ATTRIBUTES });
+                        IOSystem.getActiveContext().getReader().populate(a, new String[] { FieldNames.FIELD_ATTRIBUTES, OlioFieldNames.FIELD_IN_USE });
                         Integer si = AttributeUtil.getAttributeValue(a, "sceneIndex", null);
                         Map<String, Object> tag = new LinkedHashMap<>();
                         tag.put("apparelObjectId", a.get(FieldNames.FIELD_OBJECT_ID));
@@ -5253,6 +5374,18 @@ public class PictureBookUtil {
             pbQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId2);
             pbQ.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_SLUG });
             BaseRecord pb2Book = IOSystem.getActiveContext().getAccessPoint().find(user, pbQ);
+            if (pb2Book == null) {
+                // The acting user cannot READ the row through AccessPoint. Every olio.pb.book is owned
+                // uniformly by the OLIO PRINCIPAL, and a book whose world creation FAILED mid-flight
+                // never had the acting user's grants applied - so it is invisible and undeletable to
+                // them through AccessPoint. That is exactly the reported "incomplete/failed book is
+                // impossible to delete" defect. Re-resolve AS THE OLIO PRINCIPAL (the sanctioned pattern
+                // for olio-owned rows) to tell "does not exist" apart from "exists but ungranted", then
+                // delete it under a creator/orphan guard so this can never remove another user's book.
+                if (deleteIncompleteBookAsOlio(user, bookObjectId, orgId2)) {
+                    return true;
+                }
+            }
             if (pb2Book != null) {
                 pb2BookToDelete = bookObjectId;
                 String slug = pb2Book.get(OlioFieldNames.FIELD_PB_SLUG);
@@ -5357,6 +5490,76 @@ public class PictureBookUtil {
         }
 
         return ok;
+    }
+
+    /**
+     * Delete an incomplete/failed {@code olio.pb.book} that the acting user cannot reach through
+     * {@code AccessPoint} because the row is still owned solely by the olio principal - the state
+     * {@code PbBookUtil.createBook} leaves behind when world creation throws after {@code writeBookRow}
+     * but before the acting user's grants are applied. Resolving and deleting AS THE OLIO PRINCIPAL is
+     * the sanctioned pattern for olio-principal-owned rows (see troubleshooting.md /
+     * {@code WorldUtil.deleteWorld}); it is not a PBAC bypass, because the olio principal is the record's
+     * legitimate owner. The creator/orphan guard below is the authorization decision for whether the
+     * acting user may trigger that cleanup - a stranger can never remove another user's complete book.
+     *
+     * @return {@code true} if a row was found and deleted; {@code false} if no such row exists (the
+     *         caller then proceeds to its normal 404). Throws {@link PictureBookException} 403 if the
+     *         row exists, is {@code COMPLETE}, and was created by a different user.
+     */
+    private static boolean deleteIncompleteBookAsOlio(BaseRecord user, String bookObjectId, long orgId) {
+        BaseRecord olioUser = IOSystem.getActiveContext().getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+        if (olioUser == null) {
+            return false;
+        }
+        Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        q.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_SLUG,
+            OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID, OlioFieldNames.FIELD_PB_BOOK_STATUS,
+            OlioFieldNames.FIELD_PB_WORLD });
+        q.setCache(false);
+        BaseRecord asOlio = IOSystem.getActiveContext().getAccessPoint().find(olioUser, q);
+        if (asOlio == null) {
+            // Genuinely no such row (even the owner cannot find it) - let the caller raise its 404.
+            return false;
+        }
+        String createdBy = asOlio.get(OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID);
+        String actorOid = user.get(FieldNames.FIELD_OBJECT_ID);
+        boolean noCreator = (createdBy == null || createdBy.isBlank());
+        // "Orphaned" (deletable-by-anyone cleanup) is strictly a book with NO creator link AND NO world:
+        // the failed-mid-creation state createBook leaves behind (row written, world creation threw). A
+        // book that HAS a world is a real book, never orphaned — so a null-createdBy edge case on a real
+        // book can no longer be captured and deleted by a non-creator. isCreator remains the primary path.
+        boolean hasWorld = (asOlio.get(OlioFieldNames.FIELD_PB_WORLD) != null);
+        boolean orphaned = noCreator && !hasWorld;
+        boolean isCreator = (!noCreator && createdBy.equals(actorOid));
+        // Enums read back UPPERCASE in Java but a projected list value can be the raw lowercase -
+        // compare case-insensitively (see CLAUDE.md).
+        String statusStr = asOlio.get(OlioFieldNames.FIELD_PB_BOOK_STATUS);
+        boolean complete = "COMPLETE".equalsIgnoreCase(statusStr);
+        if (!isCreator && !(orphaned && !complete)) {
+            // The row belongs to another user (or is a complete book with no creator link) and this
+            // user holds no grant on it - deny rather than silently escalate to an olio-principal delete.
+            throw new PictureBookException(403, "Not authorized to delete this book");
+        }
+        // Best-effort: clear the book's own group too (writeBookRow created it, olio-owned) so a failed
+        // partial world does not linger and produce PathProvider "parent not found" log spam (KI-32).
+        try {
+            String slug = asOlio.get(OlioFieldNames.FIELD_PB_SLUG);
+            if (slug != null && !slug.isBlank()) {
+                String bookGroupPath = PbBookUtil.bookGroupPath(slug);
+                BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(olioUser,
+                    ModelNames.MODEL_GROUP, bookGroupPath, GroupEnumType.DATA.toString(), orgId);
+                if (grp != null) {
+                    deleteGroupRecursive(olioUser, grp);
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to clean incomplete book group for " + bookObjectId + ": " + e.getMessage());
+        }
+        IOSystem.getActiveContext().getAccessPoint().delete(olioUser, asOlio);
+        logger.info("Deleted incomplete/failed olio.pb.book as olio principal: " + bookObjectId
+            + " (orphaned=" + orphaned + ", isCreator=" + isCreator + ", status=" + statusStr + ")");
+        return true;
     }
 
     /**

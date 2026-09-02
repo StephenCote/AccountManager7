@@ -5,6 +5,7 @@
 		{ "name": "sourceObjectId", "type": "string", "maxLength": 64 },
 		{ "name": "bookObjectId", "type": "string", "maxLength": 64 },
 		{ "name": "pb2BookObjectId", "type": "string", "maxLength": 64 },
+		{ "name": "charsGroupPath", "type": "string", "maxLength": 512, "description": "Record of the group path createFromScenes persisted the book's charPerson records into (for PB2 books, the world population group olio.world population.path, NOT the legacy {bookGroupPath}/Characters sub-group which is created but left empty). SECURITY: this note lives in a user-owned data.note and is therefore attacker-writable, so listCharacters MUST NOT feed it to any query. listCharacters re-derives the group server-side from the book's own world anchor and uses this stored value ONLY for a tamper-warning log comparison. Do not re-wire read paths to trust this field — doing so reintroduces a same-org horizontal IDOR (see TestPictureBookListCharactersIdor)." },
 		{ "name": "workName", "type": "string", "maxLength": 256 },
 		{ "name": "sceneCount", "type": "int" },
 		{
