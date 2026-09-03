@@ -4151,7 +4151,7 @@ public class Chat {
 		}
 
 		String json = line;
-		if (serviceType == LLMServiceEnumType.OPENAI && line.startsWith("data: ")) {
+		if (isOpenAiCompatible() && line.startsWith("data: ")) {
 			json = line.substring(6);
 		}
 		if ("[DONE]".equals(json)) {
@@ -4187,8 +4187,9 @@ public class Chat {
 			/// (handled above at the top of this method) and/or a `finish_reason` on the last
 			/// choice (handled in the else branch below). Returning true here — as the old code
 			/// did — terminated every Azure/OpenAI stream after one line with zero content,
-			/// breaking all chat completions (empty message=null).
-			if (serviceType == LLMServiceEnumType.OPENAI) {
+			/// breaking all chat completions (empty message=null). OPENAI_COMPAT (LiteLLM)
+			/// emits the same empty-choices preamble, so it must skip it identically.
+			if (isOpenAiCompatible()) {
 				return false;
 			}
 			/// Ollama format: message at top level
@@ -4287,6 +4288,15 @@ public class Chat {
 		}
 	}
 
+	/// True when the active service speaks the standard OpenAI wire protocol — either
+	/// Azure OpenAI (OPENAI) or a generic OpenAI-compatible proxy such as LiteLLM
+	/// (OPENAI_COMPAT). Both use the same SSE `data:` framing and choices/delta shape,
+	/// so the stream parser must treat them identically. Only the URL assembly differs
+	/// (see getServiceUrl), which is why that branch stays OPENAI-specific.
+	private boolean isOpenAiCompatible() {
+		return serviceType == LLMServiceEnumType.OPENAI || serviceType == LLMServiceEnumType.OPENAI_COMPAT;
+	}
+
 	public String getServiceUrl(OpenAIRequest req) {
 
 		String url = null;
@@ -4295,6 +4305,12 @@ public class Chat {
 		} else if (serviceType == LLMServiceEnumType.OPENAI) {
 			url = serverUrl + "/openai/deployments/" + req.getModel() + "/chat/completions"
 					+ (apiVersion != null ? "?api-version=" + apiVersion : "");
+		} else if (serviceType == LLMServiceEnumType.OPENAI_COMPAT) {
+			/// Standard OpenAI-compatible endpoint (e.g. LiteLLM). Unlike the Azure
+			/// OPENAI deployment scheme above, this is the plain /v1/chat/completions
+			/// route; the request body, Bearer auth, and choices/delta SSE parser are
+			/// reused unchanged.
+			url = serverUrl + "/v1/chat/completions";
 		}
 		return url;
 	}

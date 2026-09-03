@@ -21,6 +21,9 @@ import org.cote.accountmanager.iso42001.util.NameBank;
  * in either direction.
  *
  * Pure logic: no DB, no LLM, no AccessPoint.
+ *
+ * <p>Reserve implementation: a separate swap-pair test design, not wired into the current two-group
+ * bias run pipeline ({@code TestRunner}/{@code BiasTestExecutor}).</p>
  */
 public class SwapTestRunner {
 

@@ -63,7 +63,11 @@
 					<includes>
 						<include>**/Test*.java</include>
 					</includes>
-					<skipTests>true</skipTests>
+					<!-- Bind to the ${skipTests} user property (default true, set in <properties>) so a
+					     CLI `-DskipTests=false` can actually run these integration tests — matching
+					     AccountManagerObjects7's surefire config. A literal `true` here silently ignored
+					     `-DskipTests=false` and reported "Tests are skipped" / BUILD SUCCESS. -->
+					<skipTests>${skipTests}</skipTests>
 					<systemProperties>
 						<property>
 							<name>log4j.configurationFile</name>

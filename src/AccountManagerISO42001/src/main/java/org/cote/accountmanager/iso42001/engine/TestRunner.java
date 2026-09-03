@@ -2,7 +2,10 @@ package org.cote.accountmanager.iso42001.engine;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
@@ -27,8 +30,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * resolves the effective {@link ScoringConfig}, builds the seeded {@link TrialPlan}, creates
  * the {@code iso42001.testRun} and walks its lifecycle (PENDING → RUNNING → COMPLETED/FAILED),
  * records {@code randomSeedUsed}, captures the verbatim raw log to a {@code data.data} object
- * referenced by {@code rawLogRef}, embeds the verdicted {@code testResult}, and rolls up
+ * referenced by {@code rawLogRef}, embeds the verdicted {@code testResult}(s), and rolls up
  * {@code passCount}/{@code flagCount}/{@code failCount}/{@code totalTrials}.
+ *
+ * <p>The config's {@code tier} field selects which tier(s) run: {@code 1} or {@code 2} runs that
+ * single tier, while {@code 0} ("both") runs Tier 1 <b>and</b> Tier 2 — embedding one
+ * {@code testResult} per tier and aggregating the rollup (pass/flag/fail counts and
+ * {@code totalTrials}) and the raw log across both executions.</p>
  *
  * <p>A run targets one endpoint (the {@code chatConfig} handed to the constructor). Running a
  * mix of models = multiple runs/configs; cross-model aggregation is Phase 5.</p>
@@ -61,11 +69,20 @@ public class TestRunner {
 
 		int perGroup = intField(testConfig, "samplesPerGroup", 30);
 		int tierField = intField(testConfig, "tier", 0);
-		int tier = (tierField == 2) ? 2 : 1;     // 0 (both) currently executes Tier 1
 		long seedField = longField(testConfig, "randomSeed", 0L);
 		long seed = (seedField != 0L) ? seedField : System.nanoTime();
 
-		TrialPlan plan = TrialPlan.build(module, bank, perGroup, tier, seed);
+		/// tier == 0 means "both": execute Tier 1 AND Tier 2, embedding two testResults and
+		/// aggregating the rollup. tier == 1 / tier == 2 execute exactly that single tier
+		/// (unchanged); any other value defaults to Tier 1, matching prior behavior.
+		List<Integer> tiers;
+		if (tierField == 0) {
+			tiers = Arrays.asList(1, 2);
+		} else if (tierField == 2) {
+			tiers = Collections.singletonList(2);
+		} else {
+			tiers = Collections.singletonList(1);
+		}
 
 		long groupId = longField(testConfig, FieldNames.FIELD_GROUP_ID, 0L);
 		long orgId = longField(testConfig, FieldNames.FIELD_ORGANIZATION_ID, 0L);
@@ -96,37 +113,48 @@ public class TestRunner {
 		}
 		String runOid = created.get(FieldNames.FIELD_OBJECT_ID);
 
-		/// --- Execute trials against the live endpoint ---
-		BiasTestExecutor exec = new BiasTestExecutor(user, chatConfig);
-		BaseRecord result;
-		String terminalStatus;
-		try {
-			result = exec.execute(module, plan, cfg);
-			terminalStatus = "COMPLETED";
-		} catch (Exception e) {
-			logger.error("Bias execution failed for " + module.testId(), e);
-			result = null;
-			terminalStatus = "FAILED";
+		/// --- Execute each tier against the live endpoint ---
+		/// One executor PER tier so each tier's reachable/attempted counts and ERROR detection
+		/// (BiasTestExecutor keys ERROR off {@code reachableCalls == 0}) stay independent; the raw
+		/// logs and attempted-call counts are then concatenated/summed across tiers below.
+		List<BaseRecord> tierResults = new ArrayList<>();
+		List<Map<String, Object>> combinedRawLog = new ArrayList<>();
+		int totalTrials = 0;
+		String terminalStatus = "COMPLETED";
+		for (int tier : tiers) {
+			TrialPlan plan = TrialPlan.build(module, bank, perGroup, tier, seed);
+			BiasTestExecutor exec = new BiasTestExecutor(user, chatConfig);
+			try {
+				BaseRecord result = exec.execute(module, plan, cfg);
+				if (result != null) {
+					tierResults.add(result);
+				}
+			} catch (Exception e) {
+				logger.error("Bias execution failed for " + module.testId() + " (tier " + tier + ")", e);
+				terminalStatus = "FAILED";
+			}
+			combinedRawLog.addAll(exec.getRawLog());
+			totalTrials += exec.getAttemptedCalls();
 		}
 		// This run just made many LLM calls, one per trial — flush idle Ollama models once here
 		// rather than per-trial (per-trial would just force an immediate reload for the next one).
 		OllamaModelUtil.unloadAll();
 
-		/// --- Capture verbatim raw log to a data.data; reference via rawLogRef ---
-		String rawLogRef = persistRawLog(ap, module, runOid, ownerId, orgId, exec.getRawLog());
+		/// --- Capture verbatim raw log (all tiers concatenated) to a data.data; ref via rawLogRef ---
+		String rawLogRef = persistRawLog(ap, module, runOid, ownerId, orgId, combinedRawLog);
 
-		/// --- Roll up + finalize: re-read, set terminal fields + embedded result, update ---
+		/// --- Roll up across ALL tier results + finalize: re-read, set terminal fields + results ---
 		int pass = 0;
 		int flag = 0;
 		int fail = 0;
-		if (result != null) {
+		for (BaseRecord result : tierResults) {
 			String v = result.get("verdict");
 			if ("PASS".equals(v)) {
-				pass = 1;
+				pass++;
 			} else if ("FLAG".equals(v)) {
-				flag = 1;
+				flag++;
 			} else if ("FAIL".equals(v)) {
-				fail = 1;
+				fail++;
 			}
 		}
 
@@ -143,17 +171,17 @@ public class TestRunner {
 			terminal.set("passCount", pass);
 			terminal.set("flagCount", flag);
 			terminal.set("failCount", fail);
-			terminal.set("totalTrials", exec.getAttemptedCalls());
+			terminal.set("totalTrials", totalTrials);
 			if (rawLogRef != null) {
 				terminal.set("rawLogRef", rawLogRef);
 			}
 			setTimestampQuiet(terminal, "endTime");
-			if (result != null) {
+			if (!tierResults.isEmpty()) {
 				List<BaseRecord> results = terminal.get("results");
 				if (results == null) {
 					results = new ArrayList<>();
 				}
-				results.add(result);
+				results.addAll(tierResults);
 				terminal.set("results", results);
 			}
 			BaseRecord updated = ap.update(user, terminal);

@@ -3,6 +3,9 @@ package org.cote.accountmanager.iso42001.scoring;
 /**
  * An unordered pair of demographic groups along a {@link SwapDimension}, used to
  * generate the two prompt variants A/B of a swap test (design §5.2).
+ *
+ * <p>Reserve implementation: part of the separate swap-pair design, not wired into the current
+ * two-group bias run pipeline.</p>
  */
 public class SwapPair {
 

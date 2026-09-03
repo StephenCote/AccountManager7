@@ -7,6 +7,9 @@ import org.cote.accountmanager.iso42001.engine.Verdict;
  * {@code biasDetected} is true when the verdict is not PASS — i.e. the swap
  * produced a statistically significant, non-trivial difference in either
  * direction (iso42001.md §5 directional/swap rule).
+ *
+ * <p>Reserve implementation: part of the separate swap-pair design, not wired into the current
+ * two-group bias run pipeline.</p>
  */
 public class SwapComparison {
 

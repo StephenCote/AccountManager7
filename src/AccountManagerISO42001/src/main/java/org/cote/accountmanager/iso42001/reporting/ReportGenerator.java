@@ -2,8 +2,13 @@ package org.cote.accountmanager.iso42001.reporting;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -37,15 +42,30 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  *       supplied user (the {@code ISO42001Reporters} create role).</li>
  * </ol>
  *
- * <p><b>Control areas</b> are set to {@code A.5.4} (AI impact assessment) and {@code A.5.5} (the bias
- * suite's mapped controls) per the Phase-5 task scope. The report status starts at {@code DRAFT} and
- * the certification block is left unset (rendered "NOT CERTIFIED" until Phase 6).</p>
+ * <p><b>Control areas</b> are derived from the test modules actually under report (each result's
+ * {@code testModule} and each run's {@code testConfig.moduleId}), mapped to Annex-A controls per the
+ * ISO 42001 control catalog ({@code iso42001-bias.md}, {@code iso42001.md} §2.2): the {@code BIAS}
+ * suite covers {@code A.5.4} (impact on individuals/groups) and {@code A.5.5} (societal impacts). When
+ * no module is derivable, the bias-suite default is used. The report status starts at {@code DRAFT}
+ * and the certification block is left unset (rendered "NOT CERTIFIED" until Phase 6).</p>
  */
 public class ReportGenerator {
 
 	private static final Logger logger = LogManager.getLogger(ReportGenerator.class);
 	private static final ObjectMapper MAPPER = new ObjectMapper();
 	private static final String HASH_ALGORITHM = "SHA-256";
+
+	/** Annex-A controls satisfied by the BIAS suite (iso42001-bias.md; iso42001.md §2.2). */
+	private static final List<String> BIAS_CONTROL_AREAS =
+		Collections.unmodifiableList(Arrays.asList("A.5.4", "A.5.5"));
+
+	/** {@code moduleId} → Annex-A control areas, per the ISO 42001 control catalog (iso42001.md §2.2). */
+	private static final Map<String, List<String>> MODULE_CONTROL_AREAS;
+	static {
+		Map<String, List<String>> m = new LinkedHashMap<>();
+		m.put("BIAS", BIAS_CONTROL_AREAS);
+		MODULE_CONTROL_AREAS = Collections.unmodifiableMap(m);
+	}
 
 	private final BaseRecord user;
 
@@ -125,7 +145,7 @@ public class ReportGenerator {
 			report.set("flagCount", data.getFlagCount());
 			report.set("failCount", data.getFailCount());
 			report.set("modelsEvaluated", data.getModels());
-			report.set("controlAreas", new ArrayList<>(Arrays.asList("A.5.4", "A.5.5")));
+			report.set("controlAreas", deriveControlAreas(data, testRuns));
 			report.set("mitigationActions", ReportTemplates.mitigationActionsJson(data));
 			if (testRuns != null && !testRuns.isEmpty()) {
 				report.set("testRuns", new ArrayList<>(testRuns));
@@ -156,6 +176,59 @@ public class ReportGenerator {
 			return created;
 		}
 		return report;
+	}
+
+	/**
+	 * Derive the ISO 42001 Annex-A control areas covered by this report from the test modules
+	 * actually under report — never hardcoded. Distinct module ids are collected from each
+	 * aggregated result's {@code testModule} and each input run's {@code testConfig.moduleId}, then
+	 * mapped to Annex-A controls via {@link #MODULE_CONTROL_AREAS} (ISO 42001 control catalog,
+	 * {@code iso42001-bias.md} / {@code iso42001.md} §2.2). Falls back to the bias-suite default
+	 * ({@link #BIAS_CONTROL_AREAS}) when no module is derivable. Order-preserving, de-duplicated.
+	 */
+	private static List<String> deriveControlAreas(ReportData data, List<BaseRecord> testRuns) {
+		Set<String> modules = new LinkedHashSet<>();
+		if (data != null) {
+			for (ReportData.Row row : data.getRows()) {
+				if (row != null && row.testModule != null && !row.testModule.isEmpty()) {
+					modules.add(row.testModule.trim().toUpperCase());
+				}
+			}
+		}
+		if (testRuns != null) {
+			for (BaseRecord run : testRuns) {
+				String moduleId = configModuleId(run);
+				if (moduleId != null && !moduleId.isEmpty()) {
+					modules.add(moduleId.trim().toUpperCase());
+				}
+			}
+		}
+
+		Set<String> controls = new LinkedHashSet<>();
+		for (String moduleId : modules) {
+			List<String> mapped = MODULE_CONTROL_AREAS.get(moduleId);
+			if (mapped != null) {
+				controls.addAll(mapped);
+			}
+		}
+		/// Fall back to the documented bias-suite controls when nothing is derivable.
+		if (controls.isEmpty()) {
+			controls.addAll(BIAS_CONTROL_AREAS);
+		}
+		return new ArrayList<>(controls);
+	}
+
+	/** Safely read {@code testConfig.moduleId} off a run (the testConfig may be absent/unplanned). */
+	private static String configModuleId(BaseRecord run) {
+		if (run == null) {
+			return null;
+		}
+		try {
+			BaseRecord tc = run.get("testConfig");
+			return tc == null ? null : tc.get("moduleId");
+		} catch (Exception e) {
+			return null;
+		}
 	}
 
 	/** Build the four ordered report sections; the RESULTS section carries the chartData JSON. */

@@ -1,0 +1,32 @@
+# LiteLLM proxy config for the AM7 test stack (compose profile `llmproxy`).
+#
+# This file is COMMITTED and MUST stay secret-free. Every credential is pulled
+# from the container environment via `os.environ/<VAR>` — the actual values are
+# supplied at runtime (docker-compose `environment:` / an --env-file), never here.
+#
+# Upstream = the Azure "GPT 5.6 Terra" deployment. Azure is a public cloud
+# endpoint, so the Docker network can reach it directly (unlike the LAN SD/LLM
+# hosts at 192.168.1.x). The AM7 app talks to THIS proxy by service name
+# (http://litellm:4000/v1/chat/completions) using the OPENAI_COMPAT dialect.
+#
+# Tier A observability: Langfuse callbacks are enabled below, so every proxied
+# request is traced inside the proxy with ZERO AM7 tracing code.
+
+model_list:
+  - model_name: gpt-5.6-terra
+    litellm_params:
+      model: azure/gpt-5.6-terra
+      api_base: os.environ/AZURE_API_BASE
+      api_key: os.environ/AZURE_API_KEY
+      api_version: os.environ/AZURE_API_VERSION
+
+litellm_settings:
+  # Tier A: proxy-side tracing to Langfuse (no AM7 code involved).
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
+  drop_params: true
+
+general_settings:
+  # Clients (AM7) authenticate to the proxy with this key as their Bearer token.
+  # It is the proxy's OWN key, distinct from the upstream Azure api_key.
+  master_key: os.environ/LITELLM_MASTER_KEY

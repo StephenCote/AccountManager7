@@ -91,5 +91,106 @@ services:
       - am7-test-net
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # OPTIONAL LLM-proxy sidecars (compose profile `llmproxy`).
+  #
+  #   docker compose -p am7test -f docker-compose.test.yml --profile llmproxy up --build
+  #
+  # None of these start in the default stack. They implement the LiteLLM /
+  # Langfuse "Tier A" path from src/aiDocs/LiteLLMLangfuseIntegrationDesign.md:
+  #   AM7  --(OPENAI_COMPAT, http://litellm:4000/v1/chat/completions)-->  litellm
+  #   litellm  --(azure/gpt-5.6-terra)-->  Azure   (+ Langfuse trace callback)
+  #
+  # WHY this is reachable from Docker: the upstream is AZURE, a public cloud
+  # endpoint, so the compose network routes to it fine. The "Docker can't reach
+  # the LAN" rule (.claude/rules/troubleshooting.md) only bites LAN hosts like
+  # the SD server at 192.168.1.39 — it does NOT apply to Azure.
+  #
+  # SECRETS: the upstream Azure key is NEVER committed. Provide it at runtime,
+  # e.g. an --env-file pointing at a git-ignored volatile path:
+  #   docker compose -p am7test -f docker-compose.test.yml \
+  #     --env-file ./volatile/llmproxy.env --profile llmproxy up
+  # where volatile/llmproxy.env sets AZURE_API_KEY=... (volatile* is gitignored).
+  # The Langfuse key defaults below are throwaway test-only placeholders and are
+  # seeded into Langfuse headlessly via LANGFUSE_INIT_* so LiteLLM can wire up
+  # front with no manual UI bootstrap.
+  # ---------------------------------------------------------------------------
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    profiles: ["llmproxy"]
+    depends_on:
+      langfuse:
+        condition: service_started
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      # Inspect-only from the host. The app reaches litellm by service name.
+      - "4000:4000"
+    environment:
+      # Upstream Azure — key MUST come from the environment/secret, never committed.
+      AZURE_API_KEY: ${AZURE_API_KEY:-}
+      AZURE_API_BASE: ${AZURE_API_BASE:-https://ai-serv-ccok-edw-dev-001.openai.azure.com}
+      AZURE_API_VERSION: ${AZURE_API_VERSION:-2025-04-01-preview}
+      # Proxy's own client-facing key (AM7 sends this as its Bearer token).
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-am7-litellm-test}
+      # Tier A callback target.
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-am7-test}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-am7-test}
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    networks:
+      - am7-test-net
+    restart: unless-stopped
+
+  langfuse:
+    # v2 needs only Postgres (v3 pulls in Clickhouse/Redis/S3 — too heavy for a
+    # test sidecar). Receives traces over the compose network; needs no LAN.
+    image: langfuse/langfuse:2
+    profiles: ["llmproxy"]
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    ports:
+      # Langfuse UI on the host (avoids app ports). Login via LANGFUSE_INIT_USER_*.
+      - "3001:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-am7-langfuse-nextauth-test}
+      SALT: ${LANGFUSE_SALT:-am7-langfuse-salt-test}
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_INIT_ORG_ID: am7
+      LANGFUSE_INIT_ORG_NAME: AM7
+      LANGFUSE_INIT_PROJECT_ID: am7-test
+      LANGFUSE_INIT_PROJECT_NAME: AM7 Test
+      # Deterministic keys so LiteLLM (above) is wired up front — test-only, safe to commit.
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-am7-test}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-am7-test}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-am7@example.com}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-AM7 Admin}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-am7-langfuse-pw-test}
+    networks:
+      - am7-test-net
+    restart: unless-stopped
+
+  langfuse-db:
+    # Dedicated Postgres for Langfuse — separate from am7-pg (different app DB).
+    image: postgres:17
+    profiles: ["llmproxy"]
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - ${AM7_DATA_DIR:-./docker-data}/langfuse-pg:/var/lib/postgresql/data
+    networks:
+      - am7-test-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
 networks:
   am7-test-net:

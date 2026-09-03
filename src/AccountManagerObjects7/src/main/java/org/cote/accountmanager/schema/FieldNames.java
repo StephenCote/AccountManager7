@@ -24,6 +24,7 @@ public class FieldNames {
 		public static final String FIELD_POPULATED_FIELDS = "populatedFields";
 		public static final String FIELD_STATUS = "status";
 		public static final String FIELD_DESCRIPTION = "description";
+		public static final String FIELD_DIALECT = "dialect";
 		public static final String FIELD_DEBUG = "debug";
 		public static final String FIELD_TEXT = "text";
 		/// Journal

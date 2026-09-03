@@ -17,8 +17,9 @@
 			"name": "serviceType",
 			"baseClass": "org.cote.accountmanager.olio.llm.LLMServiceEnumType",
 			"type": "enum",
-			"maxLength": 10,
-			"default": "OPENAI"
+			"maxLength": 16,
+			"default": "OPENAI",
+			"description": "DEPRECATED — prefer system.connection.dialect going forward. Retained for back-compat: Chat.configureChat still reads it and it currently drives protocol resolution. maxLength bumped from 10 to 16 to hold the new OPENAI_COMPAT value ('openai_compat', 13 chars) without silent truncation."
 		},
 		{
 			"name": "systemCharacter",

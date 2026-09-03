@@ -64,6 +64,9 @@ public class StatisticalAnalyzer {
 	 *
 	 * H = (12 / (N(N+1))) * Σ(R_i² / n_i) - 3(N+1), divided by the tie-correction
 	 * factor 1 - Σ(t³-t)/(N³-N).
+	 *
+	 * <p>Reserve implementation: not wired into the current two-group run pipeline (which uses
+	 * Mann-Whitney / Chi-square); applies when a run compares k&gt;2 groups.</p>
 	 */
 	public KruskalWallisResult kruskalWallis(double[]... groups) {
 		if (groups.length < 2) {
@@ -160,6 +163,9 @@ public class StatisticalAnalyzer {
 	 * </pre>
 	 * Computed as the sum of hypergeometric probabilities of all tables (holding
 	 * the margins fixed) whose probability is ≤ that of the observed table.
+	 *
+	 * <p>Reserve implementation: not wired into the current two-group run pipeline (which uses the
+	 * chi-square approximation); applies to small-N 2x2 tables where that approximation is unreliable.</p>
 	 */
 	public double fisherExactTwoSided(int a, int b, int c, int d) {
 		if (a < 0 || b < 0 || c < 0 || d < 0) {

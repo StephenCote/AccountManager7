@@ -24,6 +24,14 @@
 			"type": "int",
 			"default": 120,
 			"description": "Hard timeout in seconds for connections. Used with CompletableFuture.orTimeout() to abort hung requests. 0 = no timeout."
+		},
+		{
+			"name": "dialect",
+			"type": "enum",
+			"baseClass": "org.cote.accountmanager.schema.type.ConnectionDialectEnumType",
+			"maxLength": 16,
+			"default": "UNKNOWN",
+			"description": "Wire dialect (protocol) of this endpoint: OLLAMA (/api/chat), OPENAI (Azure /openai/deployments/...), or OPENAI_COMPAT (/v1/chat/completions, e.g. LiteLLM). ADDITIVE (Phase B2) and NOT yet authoritative for protocol selection — olio.llm.chatConfig.serviceType still drives resolution this phase. Not named 'provider' because that is a reserved field-schema keyword already bound to EncryptFieldProvider on apiKey."
 		}
 	]
 }

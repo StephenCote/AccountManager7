@@ -6,7 +6,9 @@ import static org.junit.Assert.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
@@ -162,6 +164,77 @@ public abstract class BiasModuleTestBase extends ISO42001BaseTest {
 				result.get("pValue"), result.get("effectSize"), result.get("effectSizeType"));
 			assertEquals("effectSizeType mismatch", module.effectType().name(), result.get("effectSizeType"));
 			assertTrue("Reachable run must record at least one trial", totalTrials > 0);
+		}
+		return testRun;
+	}
+
+	/**
+	 * tier=0 ("both") variant of {@link #runAndAssert}: run the module end-to-end as isoTester and
+	 * assert the run embeds TWO testResults — one for Tier 1 and one for Tier 2 — with the same
+	 * seed/persistence/logging/verdict invariants applied to each. The raw log carries both tiers'
+	 * capture and {@code totalTrials} is the sum across tiers. LLM-dependent assertions degrade to
+	 * "not-run" when the endpoint is unreachable (verdict ERROR). Returns the persisted testRun.
+	 */
+	protected BaseRecord runAndAssertBothTiers(BiasModule module, BaseRecord testConfig, long seed,
+			String expectedRawLogSubstring) {
+		TestRunner runner = new TestRunner(isoTester, chatConfig());
+		BaseRecord testRun = runner.run(testConfig, module, bank());
+		assertNotNull("TestRunner.run returned null for " + module.testId(), testRun);
+
+		/// Re-readable as isoTester.
+		String runOid = testRun.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord reread = findByObjectId(isoTester, ISO42001ModelNames.MODEL_TEST_RUN, runOid);
+		assertNotNull("testRun not re-readable for " + module.testId(), reread);
+
+		/// randomSeedUsed recorded.
+		long seedUsed = (long) reread.get("randomSeedUsed");
+		assertEquals("randomSeedUsed mismatch", seed, seedUsed);
+
+		/// Two embedded results: one per tier (tier 0 config = both tiers).
+		List<BaseRecord> results = reread.get("results");
+		assertNotNull("testRun.results is null for " + module.testId(), results);
+		assertEquals("Expected 2 embedded testResults (tier 0 = both tiers), got " + results.size(),
+			2, results.size());
+
+		Set<Integer> tiersSeen = new LinkedHashSet<>();
+		for (BaseRecord result : results) {
+			assertEquals("testResult.testId mismatch", module.testId(), result.get("testId"));
+			Object tierObj = result.get("tier");
+			if (tierObj instanceof Number) {
+				tiersSeen.add(((Number) tierObj).intValue());
+			}
+			String verdict = result.get("verdict");
+			assertNotNull("verdict is null", verdict);
+			assertTrue("verdict must be a known value, got " + verdict,
+				Arrays.asList("PASS", "FLAG", "FAIL", "ERROR").contains(verdict));
+			if (!"ERROR".equals(verdict)) {
+				assertEquals("effectSizeType mismatch", module.effectType().name(), result.get("effectSizeType"));
+			}
+		}
+		assertTrue("Expected both Tier 1 and Tier 2 results, saw tiers=" + tiersSeen,
+			tiersSeen.contains(1) && tiersSeen.contains(2));
+
+		/// rawLogRef → data.data with verbatim capture (both tiers concatenated).
+		String rawLogRef = reread.get("rawLogRef");
+		assertNotNull("rawLogRef is null for " + module.testId(), rawLogRef);
+		String rawLog = readRawLog(rawLogRef);
+		assertNotNull("rawLog data.data not re-readable", rawLog);
+		assertTrue("rawLog must contain verbatim prompt text '" + expectedRawLogSubstring + "'",
+			rawLog.contains(expectedRawLogSubstring));
+
+		/// totalTrials is summed across both tiers; positive whenever at least one tier reached the endpoint.
+		int totalTrials = (int) reread.get("totalTrials");
+		boolean anyReachable = false;
+		for (BaseRecord result : results) {
+			if (!"ERROR".equals(result.get("verdict"))) {
+				anyReachable = true;
+			}
+		}
+		if (anyReachable) {
+			assertTrue("Reachable run must record at least one trial", totalTrials > 0);
+		} else {
+			log.warn("[{}] LLM endpoint UNREACHABLE for both tiers — verdict=ERROR. Seeded/persistence/"
+				+ "logging/RBAC paths exercised; statistical verdict assertions marked NOT-RUN.", module.testId());
 		}
 		return testRun;
 	}
