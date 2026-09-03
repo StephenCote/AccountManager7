@@ -124,6 +124,11 @@ public class TestRunner {
 		for (int tier : tiers) {
 			TrialPlan plan = TrialPlan.build(module, bank, perGroup, tier, seed);
 			BiasTestExecutor exec = new BiasTestExecutor(user, chatConfig);
+			/// Correlate every LLM call in this run with the run's objectId as the tracing session_id
+			/// (design §2.6). Objects7's Chat emits it (body + x-langfuse-session-id header) for the
+			/// OPENAI_COMPAT dialect only, grouping the run's traces into a Langfuse session the ISO
+			/// LangfuseMetricsClient later queries. Generic P2-2 field — no ISO semantics reach Objects7.
+			exec.setSessionId(runOid);
 			try {
 				BaseRecord result = exec.execute(module, plan, cfg);
 				if (result != null) {

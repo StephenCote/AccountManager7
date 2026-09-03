@@ -14,6 +14,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.client.AccessPoint;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.iso42001.metrics.LangfuseMetrics;
+import org.cote.accountmanager.iso42001.metrics.LangfuseMetricsClient;
 import org.cote.accountmanager.iso42001.schema.ISO42001ModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -58,6 +60,14 @@ public class ReportGenerator {
 	/** Annex-A controls satisfied by the BIAS suite (iso42001-bias.md; iso42001.md §2.2). */
 	private static final List<String> BIAS_CONTROL_AREAS =
 		Collections.unmodifiableList(Arrays.asList("A.5.4", "A.5.5"));
+
+	/**
+	 * Prefix marking a module id that has NO Annex-A control mapping in {@link #MODULE_CONTROL_AREAS}.
+	 * A present-but-unknown module is recorded honestly as {@code UNMAPPED:<moduleId>} rather than
+	 * silently defaulting to the bias controls (A.5.4/A.5.5) — a non-BIAS module must never be labeled
+	 * a bias control. Public so a unit test can assert the non-default behavior.
+	 */
+	public static final String UNMAPPED_PREFIX = "UNMAPPED:";
 
 	/** {@code moduleId} → Annex-A control areas, per the ISO 42001 control catalog (iso42001.md §2.2). */
 	private static final Map<String, List<String>> MODULE_CONTROL_AREAS;
@@ -151,7 +161,12 @@ public class ReportGenerator {
 				report.set("testRuns", new ArrayList<>(testRuns));
 			}
 
-			List<BaseRecord> sections = buildSections(data, name);
+			/// Pull LLM operational metrics (Langfuse) for the run sessions BEFORE building sections so the
+			/// optional metrics section can be appended. Wrapped so report generation NEVER fails on
+			/// Langfuse being down/unconfigured — an unavailable result simply omits the section, which
+			/// keeps a metrics-free report byte-identical (same 4 sections, same hash) to before.
+			LangfuseMetrics metrics = fetchRunMetrics(testRuns);
+			List<BaseRecord> sections = buildSections(data, name, metrics);
 			report.set("sections", sections);
 
 			byte[] hash = computeReportHash(report);
@@ -183,10 +198,18 @@ public class ReportGenerator {
 	 * actually under report — never hardcoded. Distinct module ids are collected from each
 	 * aggregated result's {@code testModule} and each input run's {@code testConfig.moduleId}, then
 	 * mapped to Annex-A controls via {@link #MODULE_CONTROL_AREAS} (ISO 42001 control catalog,
-	 * {@code iso42001-bias.md} / {@code iso42001.md} §2.2). Falls back to the bias-suite default
-	 * ({@link #BIAS_CONTROL_AREAS}) when no module is derivable. Order-preserving, de-duplicated.
+	 * {@code iso42001-bias.md} / {@code iso42001.md} §2.2). Order-preserving, de-duplicated.
+	 *
+	 * <p><b>Fallback rule (P2-4c).</b> The bias-suite default ({@link #BIAS_CONTROL_AREAS}, i.e.
+	 * A.5.4/A.5.5) is used <b>only</b> when <em>no module is derivable at all</em> (the module set is
+	 * empty). A present-but-unknown module id ({@code TRANS}, a future non-BIAS suite, …) is never
+	 * defaulted to the bias controls: it yields its mapped controls, or — when unmapped — an explicit
+	 * {@code UNMAPPED:<moduleId>} marker ({@link #UNMAPPED_PREFIX}). This keeps the {@code BIAS} behavior
+	 * identical ({@code BIAS} maps to A.5.4/A.5.5 via {@link #MODULE_CONTROL_AREAS}) while fixing the
+	 * old {@code controls.isEmpty()} fallthrough that mislabeled every non-BIAS module as a bias
+	 * control.</p>
 	 */
-	private static List<String> deriveControlAreas(ReportData data, List<BaseRecord> testRuns) {
+	public static List<String> deriveControlAreas(ReportData data, List<BaseRecord> testRuns) {
 		Set<String> modules = new LinkedHashSet<>();
 		if (data != null) {
 			for (ReportData.Row row : data.getRows()) {
@@ -204,16 +227,21 @@ public class ReportGenerator {
 			}
 		}
 
+		/// No module derivable at all → fall back to the documented bias-suite default (unchanged).
+		if (modules.isEmpty()) {
+			return new ArrayList<>(BIAS_CONTROL_AREAS);
+		}
+
 		Set<String> controls = new LinkedHashSet<>();
 		for (String moduleId : modules) {
 			List<String> mapped = MODULE_CONTROL_AREAS.get(moduleId);
 			if (mapped != null) {
 				controls.addAll(mapped);
+			} else {
+				/// Present but unmapped module: record it explicitly rather than defaulting to the
+				/// bias controls (A.5.4/A.5.5). NEVER bias by default for a non-BIAS module.
+				controls.add(UNMAPPED_PREFIX + moduleId);
 			}
-		}
-		/// Fall back to the documented bias-suite controls when nothing is derivable.
-		if (controls.isEmpty()) {
-			controls.addAll(BIAS_CONTROL_AREAS);
 		}
 		return new ArrayList<>(controls);
 	}
@@ -231,8 +259,15 @@ public class ReportGenerator {
 		}
 	}
 
-	/** Build the four ordered report sections; the RESULTS section carries the chartData JSON. */
-	private List<BaseRecord> buildSections(ReportData data, String reportName) throws Exception {
+	/**
+	 * Build the ordered report sections; the RESULTS section carries the chartData JSON. The optional
+	 * LLM_METRICS section (order 4) is appended <b>only</b> when {@code metrics.hasData()} — i.e. Langfuse
+	 * was configured, reachable, AND returned traces for the run sessions. When metrics are unavailable
+	 * (no Langfuse config, unreachable, or no traces yet) the four base sections are produced unchanged,
+	 * so a metrics-free report is identical (section count and content hash) to before this feature.
+	 */
+	private List<BaseRecord> buildSections(ReportData data, String reportName, LangfuseMetrics metrics)
+			throws Exception {
 		ChartGenerator charts = new ChartGenerator();
 		String chartData = charts.buildChartData(data);
 
@@ -245,7 +280,44 @@ public class ReportGenerator {
 			ReportTemplates.results(data), chartData));
 		sections.add(section(ReportTemplates.MITIGATION, 3,
 			ReportTemplates.mitigation(data), null));
+		if (metrics != null && metrics.hasData()) {
+			sections.add(section(ReportTemplates.LLM_METRICS, 4,
+				ReportTemplates.llmMetrics(metrics), ReportTemplates.llmMetricsChartJson(metrics)));
+		}
 		return sections;
+	}
+
+	/**
+	 * Aggregate LLM operational metrics across every run session in the report, via
+	 * {@link LangfuseMetricsClient} (the ONLY place Langfuse HTTP/parsing lives — never Objects7/Service7).
+	 * Each run's {@code objectId} is the tracing {@code session_id} the ISO engine stamped onto its LLM
+	 * calls. Best-effort and total-failure-safe: any exception, or Langfuse being unconfigured/unreachable,
+	 * yields {@link LangfuseMetrics#unavailable()} so report generation proceeds without the metrics section.
+	 */
+	private LangfuseMetrics fetchRunMetrics(List<BaseRecord> testRuns) {
+		if (testRuns == null || testRuns.isEmpty()) {
+			return LangfuseMetrics.unavailable();
+		}
+		try {
+			LangfuseMetricsClient client = new LangfuseMetricsClient();
+			LangfuseMetrics agg = LangfuseMetrics.empty();
+			boolean any = false;
+			for (BaseRecord run : testRuns) {
+				if (run == null) {
+					continue;
+				}
+				String sessionId = run.get(FieldNames.FIELD_OBJECT_ID);
+				LangfuseMetrics m = client.fetchSessionMetrics(sessionId);
+				if (m != null && m.isAvailable()) {
+					agg.merge(m);
+					any = true;
+				}
+			}
+			return any ? agg.finish() : LangfuseMetrics.unavailable();
+		} catch (Exception e) {
+			logger.warn("LLM operational metrics unavailable; omitting metrics section: " + e.getMessage());
+			return LangfuseMetrics.unavailable();
+		}
 	}
 
 	private BaseRecord section(String type, int order, String content, String chartData) throws Exception {

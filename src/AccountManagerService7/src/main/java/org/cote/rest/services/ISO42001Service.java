@@ -119,6 +119,51 @@ public class ISO42001Service {
 		return findResponse(request, ISO42001ModelNames.MODEL_TEST_CONFIG, id, "Test config not found");
 	}
 
+	// ── Analysis Profiles (A5 — scoring-profile transport surface) ────────────
+
+	@RolesAllowed({ "user", "admin" })
+	@GET
+	@Path("/profiles")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response listProfiles(@Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		if (user == null) {
+			return unauthorized();
+		}
+		List<BaseRecord> profiles = ISO42001ServiceFacade.listAnalysisProfiles(user);
+		return ok(JSONUtil.exportObject(profiles, RecordSerializerConfig.getForeignUnfilteredModule()));
+	}
+
+	@RolesAllowed({ "user", "admin" })
+	@GET
+	@Path("/profile/{id}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getProfile(@PathParam("id") String id, @Context HttpServletRequest request) {
+		return findResponse(request, ISO42001ModelNames.MODEL_ANALYSIS_PROFILE, id, "Analysis profile not found");
+	}
+
+	@RolesAllowed({ "user", "admin" })
+	@POST
+	@Path("/profile")
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response createProfile(String json, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		if (user == null) {
+			return unauthorized();
+		}
+		BaseRecord imp = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		if (imp == null) {
+			return badRequest("Invalid analysisProfile payload");
+		}
+		BaseRecord created = ISO42001ServiceFacade.createAnalysisProfile(user, imp);
+		if (created == null) {
+			return Response.status(403).entity("{\"error\":true,\"message\":\"Create denied\"}")
+				.type(MediaType.APPLICATION_JSON).build();
+		}
+		return ok(created.toFullString());
+	}
+
 	@RolesAllowed({ "user", "admin" })
 	@POST
 	@Path("/run")

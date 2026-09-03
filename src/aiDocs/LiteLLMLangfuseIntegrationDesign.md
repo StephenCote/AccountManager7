@@ -139,9 +139,29 @@ then decide on B4/B5.
 ## 5. Open decisions (need Stephen's call)
 1. **Langfuse depth:** Tier A only (proxy-side, zero AM7 code) or also Tier B (native tracing)?
    Recommendation: **Tier A first.**
-2. **`serviceType` fate:** keep on `chatConfig` for back-compat, or derive from `connection.dialect`
-   and deprecate?
+2. **`serviceType` fate:** **Decided (2026-09-03) — see §5.1:** derive from `connection.dialect` and
+   deprecate `chatConfig.serviceType`; interim resolver now, full removal deferred.
 3. **B5 in scope?** Whether Langfuse-metrics-into-ISO-reports is part of this initiative or a later one.
+
+### 5.1 Decision (2026-09-03): converge on `dialect`, deprecate `chatConfig.serviceType`
+
+Resolves open decision #2. Today both `dialect` (`ConnectionDialectEnumType` on `system.connection`:
+`UNKNOWN`/`OLLAMA`/`OPENAI`/`OPENAI_COMPAT`) and the deprecated `chatConfig.serviceType`
+(`LLMServiceEnumType`) encode the same thing — the transport protocol. **`dialect` is the
+authoritative-going-forward field** (Phase 1/2); `serviceType` is annotated deprecated on the server
+model.
+
+- **Convergence target:** `Chat.configureChat()` should prefer `connection.dialect` when set
+  (non-`UNKNOWN`) and **derive `serviceType` from it**, falling back to `chatConfig.serviceType` only
+  when `dialect` is `UNKNOWN`. This interim resolver + a deprecation timeline is the plan.
+- **Not this pass:** full removal of `serviceType` touches **every `chatConfig` consumer** and is
+  deferred. Do not retire `serviceType` yet — land the resolver first.
+- **Operational prerequisite (found live this phase; NOT a code task):** the live `am7db` column
+  `A7_olio_llm_chatConfig_0_1."serviceType"` is a stale `varchar(10)` that **cannot hold
+  `"OPENAI_COMPAT"` (13 chars)**. The model is correctly `maxLength:16`, but the column predates the
+  bump and `BaseTest` runs with `repairColumnTypes=false`. A **non-destructive widen** (`ALTER … TYPE
+  varchar(16)`, or a `repairColumnTypes` pass) is required before `OPENAI_COMPAT` chatConfigs can
+  persist on that DB. Flag as an operational prerequisite for B1/B2, not code work.
 
 ---
 

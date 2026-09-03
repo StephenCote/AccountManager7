@@ -1,6 +1,7 @@
 package org.cote.accountmanager.iso42001.service;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
@@ -211,6 +212,51 @@ public class ISO42001ServiceFacade {
 			return null;
 		}
 		return new ISO42001CertificationFactory().verifyCertification(user, cert);
+	}
+
+	// ── Analysis profiles (A5 — scoring-profile transport surface) ───────────────
+
+	/**
+	 * List the {@code iso42001.analysisProfile} (scoring-profile) records visible to the acting user
+	 * in their organization.
+	 *
+	 * <p><b>Scope decision — org-level configuration, NOT group-scoped.</b> An {@code analysisProfile}
+	 * is a named, reusable bundle of scoring thresholds; a campaign ({@code testConfig}) references one
+	 * profile that applies to every rule, and the UI needs a picker that can see every profile in the
+	 * org regardless of the group a given campaign lives in — the same org-wide listing the sibling ISO
+	 * models already use. Within-org access is governed by the model's {@code access.roles}
+	 * (Readers/Auditors/Reporters/Certifiers read; Testers create/update), enforced by {@link AccessPoint}
+	 * when it authorizes the query. Cross-org isolation comes from the explicit {@code organizationId}
+	 * condition below. This does <b>not</b> lean on {@code list} for per-record filtering — {@code list}
+	 * does none; it is not a tenancy/compartment boundary.</p>
+	 *
+	 * <p>The explicit numeric {@code organizationId} condition is mandatory: {@code analysisProfile}
+	 * inherits {@code data.directory}, so a directory-derived list query without it is denied by PBAC
+	 * ("Group could not be found").</p>
+	 */
+	public static List<BaseRecord> listAnalysisProfiles(BaseRecord user) {
+		Query q = QueryUtil.createQuery(ISO42001ModelNames.MODEL_ANALYSIS_PROFILE);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId(user));
+		q.planMost(true);
+		var qr = ap().list(user, q);
+		BaseRecord[] results = (qr != null) ? qr.getResults() : new BaseRecord[0];
+		return new ArrayList<>(Arrays.asList(results));
+	}
+
+	/** Find one analysis profile by objectId in the acting user's org, fully planned (RBAC-gated). */
+	public static BaseRecord getAnalysisProfile(BaseRecord user, String objectId) {
+		return findByObjectId(user, ISO42001ModelNames.MODEL_ANALYSIS_PROFILE, objectId);
+	}
+
+	/**
+	 * Create an analysis profile as the acting user. The model's {@code create} role
+	 * ({@code ISO42001Testers}) gates it via {@link AccessPoint}; a denied create returns {@code null}.
+	 */
+	public static BaseRecord createAnalysisProfile(BaseRecord user, BaseRecord record) {
+		if (record == null) {
+			return null;
+		}
+		return ap().create(user, record);
 	}
 
 	private static long nz(Object v) {

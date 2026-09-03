@@ -22,6 +22,7 @@ let current = null;
 let runs = [];
 let modules = [];
 let endpoints = [];
+let profiles = [];
 let loading = false;
 let busy = false;
 let loadedKey = null;
@@ -48,7 +49,9 @@ function blankForm() {
         name: '', description: '', moduleId: 'BIAS', testIds: '',
         endpointName: '', endpointType: 'ollama', tier: 1,
         samplesPerGroup: 30, temperature: 1.0, alpha: 0.05, randomSeed: 0,
-        chatConfigName: '', promptConfigName: ''
+        chatConfigName: '', promptConfigName: '',
+        // A5: selected iso42001.analysisProfile objectId ('' = None → engine falls back to spec defaults).
+        analysisProfile: ''
     };
 }
 
@@ -87,6 +90,11 @@ async function ensureLookups() {
     if (!endpoints.length) {
         try { let ep = await iso42001Client.endpoints(); endpoints = Array.isArray(ep) ? ep : []; } catch (e) { endpoints = []; }
     }
+    // Analysis profiles for the scoring picker (org-level config). Re-fetch while empty so a profile
+    // created elsewhere shows up; the empty case is legitimate (picker shows "None" and saves fine).
+    if (!profiles.length) {
+        try { let pr = await iso42001Client.listAnalysisProfiles(); profiles = Array.isArray(pr) ? pr : []; } catch (e) { profiles = []; }
+    }
 }
 
 function fillForm(cfg) {
@@ -103,7 +111,10 @@ function fillForm(cfg) {
         alpha: cfg.alpha != null ? cfg.alpha : 0.05,
         randomSeed: cfg.randomSeed != null ? cfg.randomSeed : 0,
         chatConfigName: cfg.chatConfigName || '',
-        promptConfigName: cfg.promptConfigName || ''
+        promptConfigName: cfg.promptConfigName || '',
+        // Foreign field — getConfig() plans the record fully (planMost(true)) so a saved profile comes
+        // back as a nested record; read its objectId as the picker value. Absent → '' (None).
+        analysisProfile: (cfg.analysisProfile && cfg.analysisProfile.objectId) ? cfg.analysisProfile.objectId : ''
     };
 }
 
@@ -137,23 +148,38 @@ function parseTestIds(s) {
     return s.split(',').map(x => x.trim()).filter(x => x.length);
 }
 
-/** Build the value fields common to create + patch (no schema/identity). */
-function formValues() {
-    return {
-        name: form.name.trim(),
-        description: form.description || '',
-        moduleId: form.moduleId,
-        testIds: parseTestIds(form.testIds),
-        endpointName: form.endpointName.trim(),
-        endpointType: form.endpointType,
-        tier: Number(form.tier) || 0,
-        samplesPerGroup: Number(form.samplesPerGroup) || 30,
-        temperature: Number(form.temperature),
-        alpha: Number(form.alpha),
-        randomSeed: Number(form.randomSeed) || 0,
-        chatConfigName: form.chatConfigName.trim(),
-        promptConfigName: form.promptConfigName.trim()
+/**
+ * Build the value fields common to create + patch (no schema/identity). Takes the form explicitly so it
+ * is a pure, unit-testable function.
+ *
+ * `analysisProfile` is a FOREIGN model field. When a profile is selected it is attached BY ID REFERENCE
+ * — `{ schema:'iso42001.analysisProfile', objectId:<selected> }` — per model-api.md (foreign fields patch
+ * by ID; never send a full profile graph). When "None" it is OMITTED entirely, so a create/patch leaves
+ * scoring at the spec defaults the engine resolves (ScoringConfigMapper.resolve in TestRunner). Because
+ * this object is spread into BOTH the create body and the PATCH body (which additionally carry schema +
+ * identity via identityFrom), the patch always carries `name` (the validated field) + identity + the
+ * FK-by-id — satisfying the "identity + name or the write is silently discarded" rule.
+ */
+function formValues(f) {
+    let out = {
+        name: f.name.trim(),
+        description: f.description || '',
+        moduleId: f.moduleId,
+        testIds: parseTestIds(f.testIds),
+        endpointName: f.endpointName.trim(),
+        endpointType: f.endpointType,
+        tier: Number(f.tier) || 0,
+        samplesPerGroup: Number(f.samplesPerGroup) || 30,
+        temperature: Number(f.temperature),
+        alpha: Number(f.alpha),
+        randomSeed: Number(f.randomSeed) || 0,
+        chatConfigName: f.chatConfigName.trim(),
+        promptConfigName: f.promptConfigName.trim()
     };
+    if (f.analysisProfile) {
+        out.analysisProfile = { schema: 'iso42001.analysisProfile', objectId: f.analysisProfile };
+    }
+    return out;
 }
 
 async function save() {
@@ -165,7 +191,7 @@ async function save() {
         if (editing) {
             // PATCH via the shared page client. Carry the record's identity + group (id/objectId/urn/groupId/
             // organizationId) so the server can resolve the record and its group for policy — see model.js patch.
-            let patch = Object.assign({ schema: 'iso42001.testConfig' }, identityFrom(editingRecord), formValues());
+            let patch = Object.assign({ schema: 'iso42001.testConfig' }, identityFrom(editingRecord), formValues(form));
             let ok = await page.patchObject(patch);
             if (ok) {
                 page.toast && page.toast('success', 'Campaign updated.');
@@ -186,7 +212,7 @@ async function save() {
                 schema: 'iso42001.testConfig',
                 groupId: group.id,
                 organizationId: group.organizationId
-            }, formValues());
+            }, formValues(form));
             let created = await iso42001Client.createConfig(cfg);
             if (created && created.objectId) {
                 page.toast && page.toast('success', 'Campaign created.');
@@ -325,6 +351,20 @@ function editorModal() {
                 textField('Chat Config Name (optional)', 'chatConfigName'),
                 textField('Prompt Config Name (optional)', 'promptConfigName')
             ]),
+            // A5: analysisProfile picker — a named scoring/statistics profile applied to every rule in
+            // the run. "None" keeps the spec defaults. Value = profile objectId (FK attached by ID on save).
+            m('label', { class: 'flex flex-col gap-1 text-sm' }, [
+                m('span', { class: 'text-gray-600 dark:text-gray-300' }, 'Analysis Profile (scoring)'),
+                m('select', {
+                    name: 'campaign_analysisProfile',
+                    class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800',
+                    value: form.analysisProfile,
+                    onchange: e => { form.analysisProfile = e.target.value; }
+                }, [
+                    m('option', { value: '' },
+                        profiles.length ? 'None (spec defaults)' : 'None (no profiles defined — spec defaults)')
+                ].concat(profiles.map(p => m('option', { value: p.objectId }, p.name || p.objectId))))
+            ]),
             m('div', { class: 'flex justify-end gap-2 pt-2' }, [
                 btn('Cancel', null, () => { showEditor = false; }),
                 btn(busy ? 'Saving…' : (editing ? 'Save Changes' : 'Create Campaign'), 'save', save,
@@ -428,7 +468,9 @@ function detailView() {
             field('Significance α', current.alpha),
             field('Random Seed', current.randomSeed || 'auto'),
             field('Chat Config', current.chatConfigName),
-            field('Prompt Config', current.promptConfigName)
+            field('Prompt Config', current.promptConfigName),
+            field('Analysis Profile', (current.analysisProfile && current.analysisProfile.name)
+                ? current.analysisProfile.name : 'spec defaults')
         ]),
         m('div', { class: 'space-y-2' }, [
             sectionHeader('Runs'),
@@ -447,6 +489,9 @@ function detailView() {
         showEditor ? editorModal() : null
     ]);
 }
+
+// Exported for unit tests (pure form helpers — no DOM / no network).
+export { blankForm, formValues };
 
 export const campaignsView = {
     oninit: function () {

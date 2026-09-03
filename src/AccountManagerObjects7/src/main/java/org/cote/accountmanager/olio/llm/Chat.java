@@ -3915,6 +3915,27 @@ public class Chat {
 			ignoreFields.add("think");
 		}
 
+		/// Tier B (LiteLLM/Langfuse) tracing — leakage gate (Guardrail 2).
+		/// The three tracing fields have two different wire destinations, proven by live AM7 ->
+		/// LiteLLM -> Azure round-trip:
+		///  - `session_id` and `metadata` are NOT valid OpenAI/Azure chat-completion parameters.
+		///    LiteLLM forwards the request body verbatim to Azure, which rejects any unknown parameter
+		///    with HTTP 400 ("Unknown parameter: 'session_id'") and returns a null completion. They are
+		///    carried out-of-band as x-langfuse-* HEADERS instead (see buildTracingHeaders), so prune
+		///    them from the wire BODY for EVERY dialect, including OPENAI_COMPAT. Pruning operates on the
+		///    wireReq COPY that getPrunedRequest returns and does NOT clear the value on `req`, so the
+		///    header hook still reads req.get("session_id")/req.get("user").
+		///  - `user` IS a standard OpenAI chat parameter: Azure accepts it and LiteLLM maps it to the
+		///    Langfuse trace.userId. Keep it in the body, but ONLY for the OPENAI_COMPAT dialect
+		///    (LiteLLM); for OLLAMA (native) and Azure OPENAI prune it. The negative case is the
+		///    guardrail — these fields have no default, so an unset field is already absent, but a caller
+		///    that set one still must not leak it into a body that would reject it.
+		/// Mirrors the `think` gate above.
+		ignoreFields.addAll(Arrays.asList("session_id", "metadata"));
+		if (serviceType != LLMServiceEnumType.OPENAI_COMPAT) {
+			ignoreFields.add("user");
+		}
+
 		boolean forwardToClient = (boolean) req.get("stream");
 		logger.info("[DIAG] chatInternal() entered: streamMode=" + streamMode + " forwardToClient=" + forwardToClient
 			+ " model=" + req.getModel() + " msgCount=" + (req.getMessages() != null ? req.getMessages().size() : 0));
@@ -3954,7 +3975,16 @@ public class Chat {
 		final String[] bufferError = new String[] { null };
 		final boolean[] errorHandled = new boolean[] { false };
 		logger.info(ser);
-		CompletableFuture<HttpResponse<Stream<String>>> streamFuture = ClientUtil.postToRecordAndStream(serviceUrl, authorizationToken, ser);
+		/// Tier B (LiteLLM/Langfuse) tracing — per-call header-injection hook (Guardrail 1).
+		/// Build the x-langfuse-* header map ONLY for the OPENAI_COMPAT dialect, here at the call
+		/// site, and pass it together with the url in the one postToRecordAndStream call — url and
+		/// headers move as arguments of the same call so there is no torn url/header pair. The map is
+		/// a local (per-call) value, never a field on Chat or ClientUtil. For every other dialect the
+		/// headers argument is null and the transport is byte-identical to today's behavior.
+		/// Objects7 stays ISO-agnostic: the values are generic tracing strings a caller placed on the
+		/// request (session_id/user); this layer neither invents nor interprets them.
+		Map<String,String> traceHeaders = buildTracingHeaders(req);
+		CompletableFuture<HttpResponse<Stream<String>>> streamFuture = ClientUtil.postToRecordAndStream(serviceUrl, authorizationToken, ser, traceHeaders);
 
 		/// Apply effective timeout: thread-local override (background analyze/extract) or requestTimeout (normal calls)
 		final int effectiveTimeout = analyzeTimeoutOverride.get() != null ? analyzeTimeoutOverride.get() : requestTimeout;
@@ -4313,6 +4343,30 @@ public class Chat {
 			url = serverUrl + "/v1/chat/completions";
 		}
 		return url;
+	}
+
+	/// Tier B (LiteLLM/Langfuse) tracing — per-call x-langfuse-* header builder (Guardrail 1).
+	/// Returns null for every dialect except OPENAI_COMPAT, so the transport for OLLAMA/Azure OPENAI
+	/// is byte-identical to the pre-Tier-B 3-arg path (postToRecordAndStream delegates null -> no
+	/// extra headers). For OPENAI_COMPAT it derives headers from generic tracing strings the caller
+	/// placed on the request (`user`, `session_id`); Objects7 stays ISO-agnostic and neither invents
+	/// nor interprets the values. Returns null (not an empty map) when nothing is set, so the request
+	/// builder path is unchanged when there is nothing to inject. The returned map is a fresh, local
+	/// per-call value — never stored on this instance or on ClientUtil.
+	private Map<String,String> buildTracingHeaders(OpenAIRequest req) {
+		if (serviceType != LLMServiceEnumType.OPENAI_COMPAT || req == null) {
+			return null;
+		}
+		Map<String,String> headers = new java.util.HashMap<>();
+		String userVal = req.hasField("user") ? (String) req.get("user") : null;
+		if (userVal != null && !userVal.isBlank()) {
+			headers.put("x-langfuse-user-id", userVal);
+		}
+		String sessionVal = req.hasField("session_id") ? (String) req.get("session_id") : null;
+		if (sessionVal != null && !sessionVal.isBlank()) {
+			headers.put("x-langfuse-session-id", sessionVal);
+		}
+		return headers.isEmpty() ? null : headers;
 	}
 
 	/// Phase 14c: Enhanced memory reconstitution with budget-allocated type-prioritized

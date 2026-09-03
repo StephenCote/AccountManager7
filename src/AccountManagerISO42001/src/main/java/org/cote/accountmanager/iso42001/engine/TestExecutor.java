@@ -46,6 +46,17 @@ public abstract class TestExecutor {
 	/** Count of LLM calls attempted. */
 	protected int attemptedCalls = 0;
 
+	/**
+	 * Optional tracing correlation id set on every request as the generic {@code session_id} field
+	 * (design §2.6). Wired by {@code TestRunner} to the {@code iso42001.testRun.objectId}, so every LLM
+	 * call this executor makes carries the run's id. Objects7's {@code Chat} emits it as the request-body
+	 * {@code session_id} field AND the {@code x-langfuse-session-id} header for the OPENAI_COMPAT dialect
+	 * ONLY (it is pruned for every other dialect), which is what groups the run's traces into a Langfuse
+	 * session the ISO {@code LangfuseMetricsClient} later queries. Setting a plain string here adds NO ISO
+	 * semantics to Objects7 — it is the generic P2-2 tracing field.
+	 */
+	protected String sessionId;
+
 	protected TestExecutor(BaseRecord user, BaseRecord chatConfig) {
 		this.user = user;
 		this.chatConfig = chatConfig;
@@ -67,6 +78,28 @@ public abstract class TestExecutor {
 
 	public String getModel() {
 		return model;
+	}
+
+	/** Correlate every LLM call this executor makes with a tracing session (typically the run objectId). */
+	public void setSessionId(String sessionId) {
+		this.sessionId = sessionId;
+	}
+
+	/**
+	 * Apply the tracing {@code session_id} to a freshly-built request. Guarded on a non-blank id, and
+	 * best-effort: the field is defined on {@code openai.openaiRequest} (P2-2), but a config/model that
+	 * somehow lacks it must not break a trial. This is the ONE place the correlation value is written
+	 * onto the request; {@code Chat} decides (by dialect) whether to emit it.
+	 */
+	private void applySession(OpenAIRequest req) {
+		if (sessionId == null || sessionId.isBlank()) {
+			return;
+		}
+		try {
+			req.set("session_id", sessionId);
+		} catch (Exception e) {
+			/// request model without the tracing field — skip silently, tracing is optional.
+		}
 	}
 
 	/**
@@ -106,6 +139,7 @@ public abstract class TestExecutor {
 		Chat chat = newChat(systemPrompt);
 		OpenAIRequest req = chat.newRequest(model);
 		req.setStream(false);
+		applySession(req);
 		addMessage(req, Chat.userRole, userMessage);
 
 		List<Map<String, String>> reqLog = snapshotRequest(req);
@@ -123,6 +157,7 @@ public abstract class TestExecutor {
 		Chat chat = newChat(null);
 		OpenAIRequest req = chat.newRequest(model);
 		req.setStream(false);
+		applySession(req);
 		String last = null;
 		for (int i = 0; i < userTurns.size(); i++) {
 			addMessage(req, Chat.userRole, userTurns.get(i));

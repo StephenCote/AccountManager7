@@ -84,9 +84,14 @@ These sit behind the UX gaps or are correctness issues found in the engine:
 2. **`tier=0` ("both") silently runs Tier 1 only** (`TestRunner.java:64`). Correctness gap — implement
    "both" or reject `tier=0` with a clear error.
 3. **`controlAreas` hardcoded** to A.5.4/A.5.5 (`ReportGenerator.java:128`). Report/Annex-A completeness.
-4. **Dead statistics/scoring code:** `StatisticalAnalyzer.kruskalWallis`/`fisherExactTwoSided`
-   (`:68,164`) and `SwapTestRunner`/`SwapPair`/`SwapDimension` are implemented and unit-tested but never
-   wired into the run pipeline — decide: wire or document as intentional.
+4. **Reserved (unwired) statistics/scoring code — tracked so it stays discoverable.**
+   `StatisticalAnalyzer.kruskalWallis` / `fisherExactTwoSided` (`:68,164`) and the swap-test A3 path
+   `SwapTestRunner` / `SwapPair` / `SwapDimension` are implemented and unit-tested but have **no
+   caller** — reserved-but-unwired, marked only by javadoc in the source today. **Intended future
+   use:** `kruskalWallis` / `fisherExactTwoSided` provide **non-parametric significance testing** for
+   scoring; the `Swap*` classes provide a **swap-based bias A3 path**. Decide when picking this up: wire
+   into the run pipeline or keep as an intentional reserve. Do **not** delete the code or its javadoc
+   meanwhile — this entry exists so a future implementer can find them.
 5. **Cross-model aggregation** (multi-model heat-map) documented-but-missing ("Phase 5",
    `TestExecutor.java:22-23`).
 6. **Revocation is a status flag only** (no CRL) — acceptable for internal use; note it.

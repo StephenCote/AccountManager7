@@ -1013,6 +1013,12 @@
       "OLLAMA",
       "OPENAI"
     ],
+    "connectionDialectEnumType": [
+      "UNKNOWN",
+      "OLLAMA",
+      "OPENAI",
+      "OPENAI_COMPAT"
+    ],
     "memoryTypeEnumType": [
       "UNKNOWN",
       "DISCOVERY",
@@ -8853,6 +8859,14 @@
           "type": "int",
           "default": 120,
           "description": "Hard timeout in seconds for connections. 0 = no timeout."
+        },
+        {
+          "name": "dialect",
+          "baseClass": "org.cote.accountmanager.schema.type.ConnectionDialectEnumType",
+          "type": "enum",
+          "maxLength": 16,
+          "default": "UNKNOWN",
+          "description": "Wire dialect (protocol) of this endpoint: OLLAMA (/api/chat), OPENAI (Azure /openai/deployments/...), or OPENAI_COMPAT (/v1/chat/completions, e.g. LiteLLM). Additive (Phase B2) and NOT yet authoritative for protocol selection — olio.llm.chatConfig.serviceType still drives resolution this phase."
         }
       ]
     },
@@ -8880,8 +8894,9 @@
           "name": "serviceType",
           "baseClass": "org.cote.accountmanager.olio.llm.LLMServiceEnumType",
           "type": "enum",
-          "maxLength": 10,
-          "default": "OPENAI"
+          "maxLength": 16,
+          "default": "OPENAI",
+          "description": "DEPRECATED — prefer system.connection.dialect going forward. Retained for back-compat: it currently drives protocol resolution. maxLength bumped 10 -> 16 to match the server model and hold OPENAI_COMPAT-length values without silent truncation."
         },
         {
           "name": "systemCharacter",

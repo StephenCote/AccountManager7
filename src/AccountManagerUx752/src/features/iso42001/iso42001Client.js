@@ -31,6 +31,14 @@ export const iso42001Client = {
     createConfig: (config) => req('POST', ISO + '/config', config),
     getConfig: (objectId) => req('GET', ISO + '/config/' + objectId),
     startRun: (testConfigId) => req('POST', ISO + '/run', { testConfigId: testConfigId }),
+
+    // ── Analysis profiles (A5 — scoring-profile picker for campaigns) ──
+    // Org-level configuration, NOT group-scoped: these go through the dedicated /iso42001 endpoints
+    // (the facade adds the mandatory numeric organizationId condition and plans the records fully), NOT
+    // /rest/model/search. The list returns fully-planned records carrying objectId + name for the picker.
+    listAnalysisProfiles: () => req('GET', ISO + '/profiles'),
+    getAnalysisProfile: (objectId) => req('GET', ISO + '/profile/' + objectId),
+    createAnalysisProfile: (record) => req('POST', ISO + '/profile', record),
     getRun: (objectId) => req('GET', ISO + '/run/' + objectId),
     getRunResults: (objectId) => req('GET', ISO + '/run/' + objectId + '/results'),
 

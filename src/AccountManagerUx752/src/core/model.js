@@ -1063,6 +1063,14 @@ import Base64 from './base64.js';
 						inst.changes.includes(f.name)
 						||
 						f.provider
+						||
+						/// Always carry `name` when the record has one, even if unchanged. The server writer
+						/// validates the PATCH RECORD ITSELF (not the merged result): anything inheriting
+						/// common.nameId has a $notEmpty (`\S`) rule on `name`, so a patch that omits it fails
+						/// validation and the update result is silently discarded. See model-api.md and the
+						/// KI-35 precedent (dressApparelPatch). Single-field edits (e.g. only changing
+						/// system.connection.dialect) would otherwise never persist.
+						(f.name === "name" && inst.entity[f.name])
 					)
 					&&
 					/// Foreign entities can patch their own fields - except the initial foreign ref, which can only be set by updating this field

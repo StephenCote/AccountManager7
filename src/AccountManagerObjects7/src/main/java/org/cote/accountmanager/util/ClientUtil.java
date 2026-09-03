@@ -292,6 +292,17 @@ public class ClientUtil {
 	}
 	
 	public static CompletableFuture<HttpResponse<Stream<String>>> postToRecordAndStream(String url, String authorizationToken, String json) {
+		return postToRecordAndStream(url, authorizationToken, json, null);
+	}
+
+	/// Tier B (LiteLLM/Langfuse) header-injection overload. extraHeaders is a PER-CALL method
+	/// parameter — deliberately NOT a field (instance or static) on ClientUtil — so no request can
+	/// mutate header state that a concurrent request on another thread observes. The url and its
+	/// headers travel together as arguments of this single call, so there is no torn url/header pair.
+	/// The 3-arg overload delegates here with null, preserving byte-identical behavior for every
+	/// non-OPENAI_COMPAT caller. extraHeaders is applied AFTER the fixed headers (Accept,
+	/// Content-Type, Authorization).
+	public static CompletableFuture<HttpResponse<Stream<String>>> postToRecordAndStream(String url, String authorizationToken, String json, Map<String,String> extraHeaders) {
 
 	    HttpClient streamClient = HttpClient.newBuilder()
 	            .version(HttpClient.Version.HTTP_1_1)  // Important for SSE
@@ -310,6 +321,13 @@ public class ClientUtil {
 				.POST(HttpRequest.BodyPublishers.ofString(json));
 		if (authorizationToken != null && !authorizationToken.isEmpty()) {
 			reqBuilder.header("Authorization", "Bearer " + authorizationToken);
+		}
+		if (extraHeaders != null) {
+			for (Map.Entry<String,String> h : extraHeaders.entrySet()) {
+				if (h.getKey() != null && h.getValue() != null) {
+					reqBuilder.header(h.getKey(), h.getValue());
+				}
+			}
 		}
 		HttpRequest request = reqBuilder.build();
 

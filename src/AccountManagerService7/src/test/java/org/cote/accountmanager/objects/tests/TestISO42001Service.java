@@ -172,4 +172,56 @@ public class TestISO42001Service extends BaseTest {
 		Response r = service.createConfig(configJson(isoReader), requestAs("isoReader"));
 		assertEquals("isoReader create MUST be denied (403), got " + r.getStatus(), 403, r.getStatus());
 	}
+
+	// ── A5: Analysis-profile endpoints (createProfile / listProfiles / getProfile) ────────────
+
+	private String profileJson(BaseRecord owner) {
+		long ownerId = owner.get(FieldNames.FIELD_ID);
+		return "{\"schema\":\"" + ISO42001ModelNames.MODEL_ANALYSIS_PROFILE + "\","
+			+ "\"name\":\"svc-ap-" + UUID.randomUUID() + "\","
+			+ "\"groupId\":" + sharedGroupId + ","
+			+ "\"organizationId\":" + orgId + ","
+			+ "\"ownerId\":" + ownerId + ","
+			+ "\"alpha\":0.05,\"effectSmall\":0.2,\"effectMedium\":0.5}";
+	}
+
+	/** 401 on every A5 endpoint when there is no principal (the shim's own unauthorized() branch). */
+	@Test
+	public void testProfileEndpointsNoPrincipalReturn401() {
+		assertEquals("listProfiles without principal must be 401", 401,
+			service.listProfiles(new HttpServletRequestMock()).getStatus());
+		assertEquals("getProfile without principal must be 401", 401,
+			service.getProfile("anything", new HttpServletRequestMock()).getStatus());
+		assertEquals("createProfile without principal must be 401", 401,
+			service.createProfile(profileJson(isoTester), new HttpServletRequestMock()).getStatus());
+	}
+
+	/** Authenticated create -> list -> get round-trip of an analysisProfile as an ISO42001Testers member. */
+	@Test
+	public void testCreateListGetProfileAsTester() throws Exception {
+		Response created = service.createProfile(profileJson(isoTester), requestAs("isoTester"));
+		assertEquals("isoTester create profile should succeed (200), got " + created.getStatus(),
+			200, created.getStatus());
+		JsonNode node = MAPPER.readTree(created.getEntity().toString());
+		String objectId = node.path(FieldNames.FIELD_OBJECT_ID).asText(null);
+		assertNotNull("Created analysisProfile must carry an objectId", objectId);
+
+		/// list is org-wide; assert it contains the just-created profile. A reader-role user exercises the
+		/// model read gate (read = ISO42001Readers/...); isoReader is a member of ISO42001Readers.
+		Response list = service.listProfiles(requestAs("isoReader"));
+		assertEquals("listProfiles should be 200", 200, list.getStatus());
+		assertTrue("listProfiles body must include the created objectId " + objectId,
+			list.getEntity().toString().contains(objectId));
+
+		Response got = service.getProfile(objectId, requestAs("isoReader"));
+		assertEquals("getProfile should be 200", 200, got.getStatus());
+		assertTrue("getProfile body should carry the objectId", got.getEntity().toString().contains(objectId));
+	}
+
+	/** Negative RBAC: a user WITHOUT ISO42001Testers (isoReader) is denied create (model create=ISO42001Testers). */
+	@Test
+	public void testReaderCannotCreateProfile() {
+		Response r = service.createProfile(profileJson(isoReader), requestAs("isoReader"));
+		assertEquals("isoReader create profile MUST be denied (403), got " + r.getStatus(), 403, r.getStatus());
+	}
 }

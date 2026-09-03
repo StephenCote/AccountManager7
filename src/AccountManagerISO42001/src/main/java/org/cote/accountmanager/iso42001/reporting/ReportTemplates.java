@@ -3,6 +3,8 @@ package org.cote.accountmanager.iso42001.reporting;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.cote.accountmanager.iso42001.metrics.LangfuseMetrics;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -25,6 +27,8 @@ public class ReportTemplates {
 	public static final String METHODOLOGY = "METHODOLOGY";
 	public static final String RESULTS = "RESULTS";
 	public static final String MITIGATION = "MITIGATION";
+	/** Optional operational-metrics section (design §2.6) — only present when Langfuse metrics are available. */
+	public static final String LLM_METRICS = "LLM_METRICS";
 
 	private ReportTemplates() {
 	}
@@ -117,6 +121,54 @@ public class ReportTemplates {
 				.append("\n");
 		}
 		return sb.toString();
+	}
+
+	/**
+	 * LLM operational-metrics section (design §2.6): cost / latency / token totals pulled from Langfuse
+	 * for the report's test-run sessions. Pure function of the already-fetched {@link LangfuseMetrics}
+	 * aggregate — this method issues no HTTP itself (all Langfuse I/O happens in {@code LangfuseMetricsClient}
+	 * before generation). The caller only invokes this when {@code metrics.hasData()} is true, so the
+	 * section never appears for a metrics-free report.
+	 */
+	public static String llmMetrics(LangfuseMetrics metrics) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("# LLM Operational Metrics\n\n");
+		sb.append("Cost, latency, and token usage for the LLM calls made during this report's test "
+			+ "run(s), aggregated from operational tracing (Langfuse) by run session.\n\n");
+		if (metrics == null || !metrics.hasData()) {
+			sb.append("No operational metrics were available for the sessions in this report.\n");
+			return sb.toString();
+		}
+		sb.append("| Metric | Value |\n");
+		sb.append("|---|---|\n");
+		sb.append("| Traces | ").append(metrics.traceCount).append(" |\n");
+		sb.append("| LLM calls (observations) | ").append(metrics.observationCount).append(" |\n");
+		sb.append("| Prompt tokens | ").append(metrics.promptTokens).append(" |\n");
+		sb.append("| Completion tokens | ").append(metrics.completionTokens).append(" |\n");
+		sb.append("| Total tokens | ").append(metrics.totalTokens).append(" |\n");
+		sb.append("| Total cost (USD) | ").append(String.format("%.4f", metrics.totalCostUsd)).append(" |\n");
+		sb.append("| Mean trace latency (ms) | ").append(String.format("%.1f", metrics.averageLatencyMs))
+			.append(" |\n");
+		return sb.toString();
+	}
+
+	/** JSON chart payload for the operational-metrics section ({@code reportSection.chartData}). */
+	public static String llmMetricsChartJson(LangfuseMetrics metrics) {
+		ObjectNode o = MAPPER.createObjectNode();
+		if (metrics != null && metrics.hasData()) {
+			o.put("traceCount", metrics.traceCount);
+			o.put("observationCount", metrics.observationCount);
+			o.put("promptTokens", metrics.promptTokens);
+			o.put("completionTokens", metrics.completionTokens);
+			o.put("totalTokens", metrics.totalTokens);
+			o.put("totalCostUsd", metrics.totalCostUsd);
+			o.put("averageLatencyMs", metrics.averageLatencyMs);
+		}
+		try {
+			return MAPPER.writeValueAsString(o);
+		} catch (Exception e) {
+			return "{}";
+		}
 	}
 
 	/** JSON-encoded mitigation actions for the {@code report.mitigationActions} field. */
