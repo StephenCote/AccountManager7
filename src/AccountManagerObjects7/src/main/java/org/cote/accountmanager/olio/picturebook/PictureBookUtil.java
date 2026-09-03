@@ -1998,6 +1998,14 @@ public class PictureBookUtil {
         return callLlmInternal(user, chatConfig, promptName, vars);
     }
 
+    /// Package-private bridge for ChapBookUtil — variant that reports whether the LLM step HARD-failed
+    /// (config/infra error, i.e. the LLM genuinely could not be used) vs. merely SOFT-declined (the
+    /// LLM ran but produced no usable content for this input). hardFailureOut[0] is set true only on
+    /// hard branches; a return value of null with hardFailureOut[0] still false is a soft decline.
+    static String callLlmForChapBook(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars, boolean[] hardFailureOut) {
+        return callLlmInternal(user, chatConfig, promptName, vars, hardFailureOut);
+    }
+
     /// Package-private bridge for ChapBookUtil — exposes parseLlmJsonObject for non-PB callers
     /// in the same package that need structured LLM output parsed the same way.
     static Map<String, Object> parseLlmJsonObjectForChapBook(String response, String context, List<String> failedExtractions) {
@@ -2005,6 +2013,27 @@ public class PictureBookUtil {
     }
 
     private static String callLlmInternal(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars) {
+        return callLlmInternal(user, chatConfig, promptName, vars, new boolean[1]);
+    }
+
+    /// 5-arg variant that reports HARD failure separately from the String return value.
+    ///
+    /// Motivation (ChapBook "issue #3"): the 4-arg method collapses SIX distinct outcomes into a
+    /// single `null` return — three of them SOFT (the LLM ran but declined/blanked for THIS input,
+    /// a normal per-content result) and three of them HARD (missing template, no chat config, or an
+    /// infrastructure exception — the LLM genuinely could not be used at all). Callers that render on
+    /// a fallback prompt cannot tell "the LLM had nothing to add here" from "the LLM is down", so the
+    /// render silently degrades and the UI never learns.
+    ///
+    /// hardFailureOut[0] is set true ONLY on the hard branches:
+    ///   - "Prompt template not found"        (config)
+    ///   - unsubstituted-placeholder guard    (malformed construction — refuse to call)
+    ///   - "No chat config available"         (config)
+    ///   - "Null LLM response"                (infra)
+    ///   - exception thrown by chat.chat(...) (infra)
+    /// It is left FALSE for the SOFT outcomes (conversational refusal; blank/think-only stripped-empty
+    /// content) and on success. It is caller-initialized; this method only ever sets it to true.
+    private static String callLlmInternal(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars, boolean[] hardFailureOut) {
         String system = null;
         String userTpl = null;
 
@@ -2056,6 +2085,7 @@ public class PictureBookUtil {
         }
         if (system == null || userTpl == null) {
             logger.warn("Prompt template not found: " + promptName);
+            hardFailureOut[0] = true; // HARD: misconfiguration — the LLM step cannot run at all.
             return null;
         }
         if (vars != null) {
@@ -2086,6 +2116,7 @@ public class PictureBookUtil {
                 + "placeholder(s) (first: '" + unresolved.group() + "'), most likely because a "
                 + "promptTemplateOverride belonging to a different operation was applied here. Vars supplied: "
                 + (vars != null ? vars.keySet() : "none"));
+            hardFailureOut[0] = true; // HARD: malformed construction — refuse the call, don't degrade silently.
             return null;
         }
         // These prompt templates put /no_think at the end of the SYSTEM prompt, but Qwen's own
@@ -2104,6 +2135,7 @@ public class PictureBookUtil {
             }
             if (chatConfig == null) {
                 logger.error("No chat config available — cannot call LLM for " + promptName);
+                hardFailureOut[0] = true; // HARD: no config resolvable — the LLM step cannot run.
                 return null;
             }
             
@@ -2149,9 +2181,11 @@ public class PictureBookUtil {
             }
             else {
             	logger.error("Null LLM response");
+            	hardFailureOut[0] = true; // HARD: infra — a request was made but the service returned nothing.
             }
         } catch (Exception e) {
             logger.error("LLM call failed for " + promptName + ": " + e.getMessage());
+            hardFailureOut[0] = true; // HARD: infra — the call threw (unreachable host, timeout, etc.).
         }
         return null;
     }

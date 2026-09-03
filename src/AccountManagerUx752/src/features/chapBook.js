@@ -97,11 +97,19 @@ async function renderChapBook(bookObjectId, chatConfigName, sdConfig) {
 // generateSceneImage (workflows/sceneExtractor.js): one HTTP call per scene, same
 // olio.pictureBookRequest body shape (chatConfig + sdConfig) the bulk /render path sent, so no
 // single request runs long enough to time out at the gateway on a multi-page book.
-// Returns { imageObjectId: string|null, rendered: boolean, skipped: boolean }.
+// Returns { imageObjectId, rendered, skipped, llmUnavailable, llmDegraded }.
 //   rendered:true            → an image was produced (imageObjectId is the new image objectId).
 //   skipped:true             → the scene was un-prompted (LLM double-blank), so the backend produced
 //                              NO image and left it for explicit regeneration (imageObjectId null).
 //   rendered:false&&skipped:false → a genuine failure (SD error, patch failure, exception).
+//   llmUnavailable:true      → the LLM landscape-prompt STEP could not run at all (no usable chat
+//                              config, or the LLM was unreachable / hard-failed). This is a HARD
+//                              config/infra fault, NOT a normal per-stanza soft refusal or blank.
+//                              It accompanies EITHER a degraded render (llmDegraded) OR a hard skip
+//                              (skipped:true) — see below.
+//   llmDegraded:true         → the scene DID render (rendered:true) but on the STORED prompt because
+//                              the LLM prompt step was unavailable (implies llmUnavailable:true).
+// A benign un-prompted skip is skipped:true && llmUnavailable:false (poem just needs Analyze).
 async function renderChapBookScene(sceneObjectId, chatConfigName, sdConfig) {
     let body = { schema: 'olio.pictureBookRequest' };
     if (chatConfigName) body.chatConfig = chatConfigName;
@@ -121,7 +129,9 @@ async function renderChapBookScene(sceneObjectId, chatConfigName, sdConfig) {
     return {
         imageObjectId: result.imageObjectId != null ? result.imageObjectId : null,
         rendered: !!result.rendered,
-        skipped: !!result.skipped
+        skipped: !!result.skipped,
+        llmUnavailable: !!result.llmUnavailable,
+        llmDegraded: !!result.llmDegraded
     };
 }
 
@@ -727,7 +737,7 @@ async function renderScenesSerially(sceneOids, generateOne, hooks) {
     hooks = hooks || {};
     let sleepFn = hooks.sleep || function () { return Promise.resolve(); };
     let total = sceneOids.length;
-    let rendered = 0, skipped = 0, failed = 0, done = 0;
+    let rendered = 0, skipped = 0, failed = 0, llmUnavailable = 0, llmDegraded = 0, done = 0;
     let firstGeneration = true;
     for (let i = 0; i < sceneOids.length; i++) {
         let oid = sceneOids[i];
@@ -738,8 +748,14 @@ async function renderScenesSerially(sceneOids, generateOne, hooks) {
             let result = await generateOne(oid);
             // A skipped scene (un-prompted LLM double-blank) produced NO image but is NOT a failure —
             // tally it separately so it neither vanishes from the count nor is reported as an error.
+            // A HARD LLM/config fault (llmUnavailable) is tallied on its OWN counter — distinct from a
+            // benign "need prompts" skip — so the bulk summary can flag it separately. Only a BENIGN
+            // skip (skipped && !llmUnavailable) counts toward `skipped`; a hard skip counts only under
+            // llmUnavailable, and a degraded render counts under BOTH rendered and llmUnavailable.
             if (result && result.rendered) rendered++;
-            else if (result && result.skipped) skipped++;
+            else if (result && result.skipped && !result.llmUnavailable) skipped++;
+            if (result && result.llmUnavailable) llmUnavailable++;
+            if (result && result.llmDegraded) llmDegraded++;
             if (hooks.onProgress) hooks.onProgress(oid, 'done', done + 1, total);
             if (result && result.imageObjectId && hooks.onImage) hooks.onImage(oid, result.imageObjectId);
         } catch (e) {
@@ -748,7 +764,7 @@ async function renderScenesSerially(sceneOids, generateOne, hooks) {
         }
         done++;
     }
-    return { rendered: rendered, failed: failed, skipped: skipped, total: total };
+    return { rendered: rendered, failed: failed, skipped: skipped, llmUnavailable: llmUnavailable, llmDegraded: llmDegraded, total: total };
 }
 
 // Gap 6: fetch the book's scenes then drive the per-scene endpoint serially. Replaces the single
@@ -799,31 +815,64 @@ function resetRenderProgress() {
     renderDone = 0;
 }
 
+// The two DISTINCT hard-fault messages, kept as constants so the per-scene handler and the unit
+// tests reference the exact same text. They must read plainly differently from the benign
+// "un-prompted / run Analyze" skip and from success — the whole point of this signal is that the
+// user can tell an unreachable LLM / missing chat config apart from a poem that just needs Analyze.
+const CB_LLM_DEGRADED_MSG = 'Rendered using the stored prompt — the LLM prompt step was unavailable (no usable chat config or the LLM is unreachable).';
+const CB_LLM_UNAVAILABLE_SKIP_MSG = 'LLM prompt step unavailable (no usable chat config or the LLM is unreachable) — scene not rendered.';
+
+// Map a per-scene render result to the DISTINCT hard-fault signal it should raise, or null when the
+// scene's outcome keeps its existing (benign-skip / plain-success / plain-failure) messaging. This is
+// the per-scene branch the task calls for, factored out pure so it is unit-testable without a DOM or
+// page.toast:
+//   llmDegraded            → { level:'warn',  ... } rendered on the STORED prompt (LLM step down)
+//   llmUnavailable&&skipped→ { level:'error', ... } LLM step down AND no usable prompt → not rendered
+//   otherwise              → null (caller keeps existing behavior; a benign skip is NOT this signal)
+// Pure — unit-tested.
+function sceneLlmSignal(result) {
+    let r = result || {};
+    if (r.llmDegraded) return { level: 'warn', message: CB_LLM_DEGRADED_MSG };
+    if (r.llmUnavailable && r.skipped) return { level: 'error', message: CB_LLM_UNAVAILABLE_SKIP_MSG };
+    return null;
+}
+
 // Compose the render-complete toast text. Skipped scenes (the backend's un-prompted LLM
 // double-blank outcome — no image produced, left for regeneration) are surfaced separately from
-// genuine failures so the user knows some pages still need prompts. The skipped/failed clauses only
-// appear when their count is > 0, preserving the original success wording when everything rendered.
-// Pure — unit-tested.
+// genuine failures so the user knows some pages still need prompts. Scenes affected by a HARD
+// LLM/chat-config fault (llmUnavailable) get their OWN distinct clause — plainly different from the
+// benign "need prompts" skip — so the user can tell an unreachable LLM / missing config apart from a
+// poem that just needs Analyze. Each clause only appears when its count is > 0, preserving the
+// original success wording when everything rendered. Pure — unit-tested.
 function renderResultMessage(result) {
     let r = result || {};
     let rendered = r.rendered || 0;
     let skipped = r.skipped || 0;
     let failed = r.failed || 0;
-    if (!skipped && !failed) {
+    let llmUnavailable = r.llmUnavailable || 0;
+    if (!skipped && !failed && !llmUnavailable) {
         return 'Render complete: ' + rendered + ' scene(s) generated';
     }
     let msg = 'Render complete: ' + rendered + ' generated';
     if (skipped > 0) msg += ', ' + skipped + ' skipped (need prompts)';
     if (failed > 0) msg += ', ' + failed + ' failed';
+    if (llmUnavailable > 0) msg += ' — ' + llmUnavailable + ' scene(s) affected by an unavailable LLM/chat config';
     return msg;
 }
 
-// Emit the render-complete toast at the right severity: warn when anything was skipped or failed
-// (the user has follow-up to do), otherwise success. Uses the file's existing page.toast helper.
-function toastRenderResult(result) {
+// Severity for the render-complete toast. Escalate to 'error' when any scene hit a hard LLM/chat-config
+// fault (llmUnavailable) — that is an infra/config problem the user must act on, not a benign skip.
+// Otherwise warn when anything was skipped or failed, else success. Pure — unit-tested.
+function renderResultLevel(result) {
     let r = result || {};
-    let level = ((r.failed || 0) > 0 || (r.skipped || 0) > 0) ? 'warn' : 'success';
-    page.toast(level, renderResultMessage(result));
+    if ((r.llmUnavailable || 0) > 0) return 'error';
+    if ((r.failed || 0) > 0 || (r.skipped || 0) > 0) return 'warn';
+    return 'success';
+}
+
+// Emit the render-complete toast at the right severity. Uses the file's existing page.toast helper.
+function toastRenderResult(result) {
+    page.toast(renderResultLevel(result), renderResultMessage(result));
 }
 
 async function renderBook(bookObjectId, chatConfigName, sdConfig) {
@@ -2077,9 +2126,17 @@ async function doRegenerateScene(idx) {
     try {
         let chatConfigName = await fetchDefaultChatConfigName();
         let result = await renderChapBookScene(scene.objectId, chatConfigName, {});
+        let signal = sceneLlmSignal(result);
         if (result && result.rendered) {
             scene.imageObjectId = result.imageObjectId;
-            page.toast('success', 'Scene regenerated');
+            // A degraded render (rendered on the STORED prompt because the LLM step was down) still
+            // produced an image, but the user must know it did NOT use a fresh prompt — warn distinctly.
+            if (signal) page.toast(signal.level, signal.message);
+            else page.toast('success', 'Scene regenerated');
+        } else if (signal) {
+            // llmUnavailable && skipped: the LLM step could not run AND there was no usable stored
+            // prompt, so nothing was rendered — a distinct hard error, NOT the benign "run Analyze".
+            page.toast(signal.level, signal.message);
         } else if (result && result.skipped) {
             page.toast('warn', 'Still no usable prompt — Analyze the poem or edit the stanza, then regenerate');
         } else {
@@ -2393,5 +2450,5 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScenes, renderResultMessage, isSceneUnprompted, doDeleteBook };
+export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook };
 export default ChapBookFeature;

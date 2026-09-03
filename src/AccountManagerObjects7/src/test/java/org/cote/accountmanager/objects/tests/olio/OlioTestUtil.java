@@ -531,6 +531,31 @@ public class OlioTestUtil {
 		return ocfg;
 	}
 
+	/// Build (idempotent) an OLLAMA chatConfig whose connection points at an UNREACHABLE host so any LLM
+	/// call through it genuinely fails at the network layer (connection refused / short-timeout) — used to
+	/// exercise the HARD-failure path with a REAL failing network call, never a mock. requestTimeout is kept
+	/// short so the failure returns fast. Returns a fully-resolved record (connection FK populated) so a
+	/// Chat can read the (unreachable) serverUrl off it.
+	public static BaseRecord getUnreachableOllamaConfig(BaseRecord user, String name, String unreachableUrl, String model, int requestTimeout) {
+		BaseRecord cfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, name, "~/Chat");
+		if (cfg != null) {
+			return OlioUtil.getFullRecord(cfg);
+		}
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		try {
+			cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
+			cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
+			cfg.set("connection", getCreateConnection(user, name + " Connection", unreachableUrl, null, requestTimeout));
+			cfg.set("model", model);
+			IOSystem.getActiveContext().getAccessPoint().create(user, cfg);
+		} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
+			logger.error(e);
+		}
+		BaseRecord created = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, name, "~/Chat");
+		return created != null ? OlioUtil.getFullRecord(created) : null;
+	}
+
 	public static BaseRecord getOpenAIConfig(BaseRecord user, String name, Properties testProperties) {
 		BaseRecord ocfg = null;
 		BaseRecord cfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, name, "~/Chat");

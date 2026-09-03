@@ -74,10 +74,53 @@ public class ChapBookUtil {
 		public final String imageObjectId;
 		/** The render outcome. */
 		public final SceneRenderStatus status;
+		/**
+		 * True when a HARD LLM/config failure occurred during THIS scene's landscape-prompt step —
+		 * i.e. the LLM genuinely could not be used (missing template/config, unreachable host, null
+		 * response), as distinct from a SOFT decline (the LLM ran but produced no usable content for
+		 * this stanza — a normal per-content outcome). This is the truthful "the LLM was unavailable"
+		 * signal the render path previously swallowed. Deliberately NOT set for a soft decline, nor
+		 * for the deliberate no-LLM ({@code chatConfig == null}) path where no call was attempted.
+		 */
+		public final boolean llmUnavailable;
+		/**
+		 * True when the scene STILL rendered, but on the STORED prompt because the LLM recovery
+		 * hard-failed — i.e. rendered WITHOUT a fresh LLM prompt. Lets the client offer a re-render
+		 * once the LLM recovers, rather than treating the degraded image as final.
+		 */
+		public final boolean llmDegraded;
 
 		public SceneRenderResult(String imageObjectId, SceneRenderStatus status) {
+			this(imageObjectId, status, false, false);
+		}
+
+		public SceneRenderResult(String imageObjectId, SceneRenderStatus status, boolean llmUnavailable, boolean llmDegraded) {
 			this.imageObjectId = imageObjectId;
 			this.status = status;
+			this.llmUnavailable = llmUnavailable;
+			this.llmDegraded = llmDegraded;
+		}
+	}
+
+	/**
+	 * Aggregate outcome of a bulk {@link #renderChapBookSummary} over every scene of a ChapBook.
+	 * <ul>
+	 *   <li>{@link #rendered} — scenes for which an image was produced (includes degrade-renders).</li>
+	 *   <li>{@link #skipped} — scenes left un-prompted (no image).</li>
+	 *   <li>{@link #llmUnavailable} — scenes whose landscape-prompt step HARD-failed (config/infra),
+	 *       i.e. the count of scenes where the LLM was genuinely unavailable. This is the truthful
+	 *       "the LLM was down for N scenes" signal the bulk render previously swallowed.</li>
+	 * </ul>
+	 */
+	public static final class ChapBookRenderSummary {
+		public final int rendered;
+		public final int skipped;
+		public final int llmUnavailable;
+
+		public ChapBookRenderSummary(int rendered, int skipped, int llmUnavailable) {
+			this.rendered = rendered;
+			this.skipped = skipped;
+			this.llmUnavailable = llmUnavailable;
 		}
 	}
 
@@ -733,8 +776,25 @@ public class ChapBookUtil {
 	 * non-blank result — a double blank still falls back — so callers must keep their fallback path.
 	 */
 	private static String callLandscapePrompt(BaseRecord user, BaseRecord chatConfig, Map<String, String> vars) {
+		return callLandscapePrompt(user, chatConfig, vars, new boolean[1]);
+	}
+
+	/**
+	 * {@code boolean[]} out-param variant of {@link #callLandscapePrompt(BaseRecord, BaseRecord, Map)}
+	 * that reports whether the landscape-prompt LLM step HARD-failed (config/infra — the LLM genuinely
+	 * could not be used) vs. merely produced a blank/soft result. Because the retry loop makes two
+	 * attempts, a hard failure on EITHER attempt marks the whole call hard: an infrastructure fault
+	 * (unreachable host, null response) is not made soft by a second identical attempt also failing.
+	 * {@code hardFailureOut[0]} is left false when both attempts merely came back blank (the qwen3
+	 * think-only soft-decline case), which must not raise the "LLM unavailable" alarm.
+	 */
+	private static String callLandscapePrompt(BaseRecord user, BaseRecord chatConfig, Map<String, String> vars, boolean[] hardFailureOut) {
 		for (int attempt = 1; attempt <= 2; attempt++) {
-			String llmResult = PictureBookUtil.callLlmForChapBook(user, chatConfig, "chapBook.landscape-prompt", vars);
+			boolean[] attemptHard = new boolean[1];
+			String llmResult = PictureBookUtil.callLlmForChapBook(user, chatConfig, "chapBook.landscape-prompt", vars, attemptHard);
+			if (attemptHard[0]) {
+				hardFailureOut[0] = true;
+			}
 			if (llmResult != null && !llmResult.isBlank()) {
 				return llmResult.trim();
 			}
@@ -943,6 +1003,21 @@ public class ChapBookUtil {
 	 */
 	public static int renderChapBook(BaseRecord user, String bookObjectId,
 			String sdApiType, String sdServer, BaseRecord chatConfig, BaseRecord clientSdConfig) {
+		return renderChapBookSummary(user, bookObjectId, sdApiType, sdServer, chatConfig, clientSdConfig).rendered;
+	}
+
+	/**
+	 * Bulk-render variant of {@link #renderChapBook(BaseRecord, String, String, String, BaseRecord, BaseRecord)}
+	 * that returns the full {@link ChapBookRenderSummary} (rendered / skipped / llmUnavailable counts)
+	 * instead of only the rendered count. The transport layer uses this to report to the client how many
+	 * scenes rendered, how many were left un-prompted, and — critically — for how many the LLM landscape
+	 * step was genuinely unavailable, rather than silently degrading the whole render.
+	 *
+	 * @return a {@link ChapBookRenderSummary}; {@code rendered} matches the legacy {@code renderChapBook} return.
+	 * @throws PictureBookException if the book is not found or is not a CHAPBOOK
+	 */
+	public static ChapBookRenderSummary renderChapBookSummary(BaseRecord user, String bookObjectId,
+			String sdApiType, String sdServer, BaseRecord chatConfig, BaseRecord clientSdConfig) {
 		if (user == null || bookObjectId == null || bookObjectId.isBlank()) {
 			throw new PictureBookException(400, "user and bookObjectId are required");
 		}
@@ -964,7 +1039,7 @@ public class ChapBookUtil {
 		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
 		if (scenes.isEmpty()) {
 			logger.info("renderChapBook: no scenes for book {}", bookObjectId);
-			return 0;
+			return new ChapBookRenderSummary(0, 0, 0);
 		}
 		PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_stories", "ChapBook render: " + scenes.size() + " scene(s)…");
 
@@ -972,6 +1047,7 @@ public class ChapBookUtil {
 
 		int rendered = 0;
 		int skipped = 0;
+		int llmUnavailable = 0;
 		// Running thread of the scenes' stored landscape prompts, in book order, so a re-generated
 		// render-time prompt for scene N stays visually continuous with the imagery of earlier scenes.
 		List<String> priorScenePrompts = new ArrayList<>();
@@ -985,6 +1061,11 @@ public class ChapBookUtil {
 			if (isGenuineStoredPrompt(storedPrompt)) {
 				priorScenePrompts.add(storedPrompt);
 			}
+			// Count every scene whose landscape LLM step genuinely could not run — whether it went on to
+			// degrade-render or was skipped — so the caller can surface "the LLM was down for N scenes".
+			if (result.llmUnavailable) {
+				llmUnavailable++;
+			}
 			if (result.status == SceneRenderStatus.RENDERED) {
 				rendered++;
 				PictureBookProgressNotifier.getInstance().notifyProgress(user, "image", "Scene " + rendered + "/" + scenes.size() + " rendered");
@@ -993,8 +1074,9 @@ public class ChapBookUtil {
 			}
 		}
 		PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
-		logger.info("renderChapBook: rendered {}/{} scenes for book {} ({} un-prompted, skipped)", rendered, scenes.size(), bookObjectId, skipped);
-		return rendered;
+		logger.info("renderChapBook: rendered {}/{} scenes for book {} ({} un-prompted, skipped; {} llm-unavailable)",
+			rendered, scenes.size(), bookObjectId, skipped, llmUnavailable);
+		return new ChapBookRenderSummary(rendered, skipped, llmUnavailable);
 	}
 
 	/**
@@ -1161,6 +1243,10 @@ public class ChapBookUtil {
 		// genuine stored prompt exists. This is the whole point of the fix: the create-time continuity
 		// prompt is authoritative on the per-scene render path the Ux client actually hits.
 		final String[] recoveredHolder = new String[1];
+		// Captures whether the landscape-prompt LLM step HARD-failed (config/infra) during recovery —
+		// distinct from a soft blank. The recovery supplier writes into it; we read it after
+		// resolveScenePrompt to decide degrade-render vs. honest skip vs. normal un-prompted skip.
+		final boolean[] llmHard = new boolean[1];
 		Supplier<String> recovery = null;
 		if (chatConfig != null && stanza != null && !stanza.isBlank()) {
 			recovery = () -> {
@@ -1171,7 +1257,7 @@ public class ChapBookUtil {
 				// priorContext must always be non-blank or the UNSUBSTITUTED_PLACEHOLDER guard would refuse
 				// the call; assemblePriorContext already returns the "none" sentinel when empty.
 				vars.put("priorContext", NarrativeUtil.isMeaningful(priorContext) ? priorContext.trim() : "none");
-				String r = callLandscapePrompt(user, chatConfig, vars);
+				String r = callLandscapePrompt(user, chatConfig, vars, llmHard);
 				if (r != null && !r.isBlank()) {
 					recoveredHolder[0] = r.trim();
 					logger.info("renderChapBook: RECOVERED landscape prompt for scene {} (stored was absent/fallback): {}",
@@ -1183,9 +1269,54 @@ public class ChapBookUtil {
 			};
 		}
 		String sdPrompt = resolveScenePrompt(scene, stanza, recovery);
+		// hardFail is true only when the recovery LLM call was ATTEMPTED and hard-failed (unreachable
+		// host, missing config/template, null response). It stays false for a soft blank/decline and for
+		// the deliberate no-LLM path (chatConfig == null → recovery never built → never invoked).
+		// The landscape-prompt LLM step is "unavailable" for this scene when it HARD-failed during recovery
+		// (unreachable host, missing config/template, null response) OR when there was no chat config at all
+		// so the recovery supplier was never built — either way the LLM could not produce a prompt for this
+		// scene. This is a DOMAIN determination and it belongs HERE in Objects7, not in the REST transport
+		// layer: Service7 must be able to emit the resulting llmUnavailable signal as a pure pass-through
+		// (architecture.md — no business logic in Service7). hardFail alone is insufficient, because
+		// chatConfig == null leaves llmHard[0] false while the LLM step is every bit as unavailable.
+		boolean hardFail = llmHard[0];
+		boolean llmStepUnavailable = hardFail || (chatConfig == null);
+		// llmUnavailable / llmDegraded travel with whatever this render ultimately returns. They are set
+		// non-false ONLY on the LLM-unavailable degrade/skip path below; the normal render — a genuine
+		// stored prompt, or a soft blank/decline while the LLM WAS reachable — leaves both false.
+		boolean llmUnavailable = false;
+		boolean llmDegraded = false;
 		if (sdPrompt == null || sdPrompt.isBlank()) {
-			logger.info("renderChapBook: scene {} un-prompted (no genuine LLM prompt) — skipping, leaving for regeneration", sceneOid);
-			return new SceneRenderResult(null, SceneRenderStatus.SKIPPED_NO_PROMPT);
+			// A blank sdPrompt means: no genuine stored prompt AND recovery produced nothing. Had a genuine
+			// stored prompt existed, resolveScenePrompt would have returned it and we would never reach here
+			// — so the PRESERVE invariant (a scene rendering on a genuine stored prompt stays
+			// llmUnavailable=false / llmDegraded=false even when chatConfig == null) holds structurally.
+			if (llmStepUnavailable) {
+				// The landscape LLM genuinely could not run for this scene (hard failure, OR no chat config
+				// at all). A silent skip here is indistinguishable from "nothing to render", which is exactly
+				// the swallowed-failure the fix targets. If the scene has ANY stored prompt (even the
+				// "landscape, " fallback shape), degrade-render on it so the client still gets an image AND a
+				// truthful llmDegraded signal to offer a re-render once the LLM is available. With no stored
+				// prompt at all, skip but report llmUnavailable so the outcome is never mistaken for a normal
+				// un-prompted skip.
+				String storedRaw = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+				if (storedRaw != null && !storedRaw.isBlank()) {
+					logger.warn("renderChapBook: scene {} — landscape LLM unavailable; degrade-rendering on stored prompt (llmDegraded)", sceneOid);
+					sdPrompt = storedRaw.trim();
+					llmUnavailable = true;
+					llmDegraded = true;
+					// fall through to the SD render block below with the degraded prompt
+				} else {
+					logger.warn("renderChapBook: scene {} — landscape LLM unavailable and no stored prompt to render on; skipping (llmUnavailable)", sceneOid);
+					return new SceneRenderResult(null, SceneRenderStatus.SKIPPED_NO_PROMPT, true, false);
+				}
+			} else {
+				// The LLM WAS reachable (chatConfig != null) but recovery returned a soft blank/decline — a
+				// normal per-stanza conversational refusal, or simply nothing to generate from. This must
+				// stay benign: no false alarm.
+				logger.info("renderChapBook: scene {} un-prompted (LLM reachable but returned no prompt) — skipping, leaving for regeneration", sceneOid);
+				return new SceneRenderResult(null, SceneRenderStatus.SKIPPED_NO_PROMPT, false, false);
+			}
 		}
 
 		// If we RECOVERED a fresh LLM prompt (the stored one was absent/fallback-shaped), persist it back
@@ -1237,7 +1368,9 @@ public class ChapBookUtil {
 			List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, sdConfig, imageName, 1, false, -1);
 			if (images == null || images.isEmpty()) {
 				logger.warn("renderChapBook: SD generation returned no images for scene " + sceneOid);
-				return new SceneRenderResult(null, SceneRenderStatus.FAILED);
+				// SD failed, not the LLM: carry llmUnavailable if the LLM was in fact down, but never
+				// llmDegraded (nothing rendered).
+				return new SceneRenderResult(null, SceneRenderStatus.FAILED, llmUnavailable, false);
 			}
 			BaseRecord image = images.get(0);
 			String imageOid = image.get(FieldNames.FIELD_OBJECT_ID);
@@ -1248,13 +1381,13 @@ public class ChapBookUtil {
 			patch.set(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID, imageOid);
 			if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 				logger.warn("renderChapBook: failed to patch imageObjectId on scene " + sceneOid);
-				return new SceneRenderResult(null, SceneRenderStatus.FAILED);
+				return new SceneRenderResult(null, SceneRenderStatus.FAILED, llmUnavailable, false);
 			}
 			logger.info("renderChapBook: rendered scene " + sceneOid);
-			return new SceneRenderResult(imageOid, SceneRenderStatus.RENDERED);
+			return new SceneRenderResult(imageOid, SceneRenderStatus.RENDERED, llmUnavailable, llmDegraded);
 		} catch (Exception e) {
 			logger.warn("renderChapBook: error rendering scene " + sceneOid + ": " + e.getMessage());
-			return new SceneRenderResult(null, SceneRenderStatus.FAILED);
+			return new SceneRenderResult(null, SceneRenderStatus.FAILED, llmUnavailable, false);
 		}
 	}
 

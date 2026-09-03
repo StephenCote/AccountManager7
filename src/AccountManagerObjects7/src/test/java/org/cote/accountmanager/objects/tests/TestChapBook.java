@@ -1185,21 +1185,26 @@ public class TestChapBook extends BaseTest {
 	}
 
 	/**
-	 * Heavier-fallback end-to-end (deterministic, no LLM/SD network): proves that when a ChapBook scene is
+	 * Deterministic, no live SD/LLM: proves the CORRECTED no-config semantics. When a ChapBook scene is
 	 * un-prompted — only the {@code "landscape, "} fallback-shaped stored prompt and NO chatConfig to
-	 * recover a genuine one — {@link ChapBookUtil#renderChapBookScene} SKIPS the scene and produces NO
-	 * image, rather than rendering the fallback/stanza string.
+	 * recover a genuine one — the landscape-prompt LLM step is UNAVAILABLE for that scene. As of the
+	 * llmUnavailable-signal fix that unavailability is a DOMAIN determination made inside
+	 * {@link ChapBookUtil#renderChapBookScene} ({@code chatConfig == null} is folded into
+	 * {@code renderResolvedScene}'s {@code llmStepUnavailable}); it is NO LONGER a silent benign skip.
 	 * <p>
-	 * <b>Why this needs no live SD server:</b> the skip decision happens in {@code resolveScenePrompt}
-	 * BEFORE any SD call. {@code createChapBook(chatConfig=null)} stores a {@code "landscape, "}
-	 * fallback-shaped prompt (see {@link #testCreateTimeFallbackDoesNotEmbedRawStanza}); calling
-	 * {@code renderChapBookScene} with {@code chatConfig=null} means no recovery supplier, so
-	 * {@code resolveScenePrompt} returns null and the render returns {@code SKIPPED_NO_PROMPT} without
-	 * ever contacting the (dummy) SD server. It hits the DB (createChapBook) but needs no LAN/LLM/SD, so
-	 * it is NOT gated on {@code test.swarm.server}.
+	 * With a stored (fallback) prompt present, the render degrade-ATTEMPTS on it rather than skipping, so
+	 * it DOES reach the SD server. Here the SD URL is a deliberate <i>unreachable</i> dummy
+	 * ({@code 127.0.0.1:1}), so the degrade attempt fails fast (connection refused) and the result is
+	 * {@code FAILED} carrying a truthful {@code llmUnavailable=true} — and, because nothing rendered,
+	 * {@code llmDegraded=false} and no image is produced or persisted.
+	 * <p>
+	 * <b>Why this needs no live infrastructure:</b> it requires the SD server to be UNREACHABLE (the dummy
+	 * guarantees that) and needs no LLM at all, so it is NOT gated on {@code test.swarm.server}. It guards
+	 * the key regression: a no-config render of a fallback-only scene must surface {@code llmUnavailable=true},
+	 * never a silent {@code SKIPPED_NO_PROMPT / llmUnavailable=false}.
 	 */
 	@Test
-	public void testRenderChapBookSceneSkipsWhenUnprompted() throws Exception {
+	public void testRenderChapBookSceneNoConfigDegradeAttemptReportsUnavailable() throws Exception {
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);
 
@@ -1250,28 +1255,34 @@ public class TestChapBook extends BaseTest {
 		assertTrue("Target scene must start with NO imageObjectId (got: " + preImage + ")",
 			preImage == null || preImage.isBlank());
 
-		// Render with chatConfig == null → no recovery supplier → resolveScenePrompt returns null →
-		// renderResolvedScene returns SKIPPED_NO_PROMPT BEFORE any SD call. The SD server URL below is a
-		// deliberate dummy that must never be contacted; if it were, the test would fail (not silently pass).
+		// Render with chatConfig == null → the landscape LLM step is UNAVAILABLE for this scene. Because a
+		// stored (fallback) prompt exists, renderResolvedScene degrade-ATTEMPTS on it and DOES reach the SD
+		// server. The SD URL below is a deliberate UNREACHABLE dummy: the attempt fails fast (connection
+		// refused) so the result is FAILED with a truthful llmUnavailable=true — never a silent skip.
 		ChapBookUtil.SceneRenderResult result = ChapBookUtil.renderChapBookScene(
-			testUser, sceneObjectId, "SWARM", "http://127.0.0.1:1/dummy-sd-never-called", null, null);
+			testUser, sceneObjectId, "SWARM", "http://127.0.0.1:1/dummy-sd-unreachable", null, null);
 
 		assertNotNull("renderChapBookScene must return a SceneRenderResult", result);
-		assertEquals("An un-prompted scene (fallback-shaped prompt, no chatConfig to recover) must be "
-			+ "SKIPPED_NO_PROMPT — never rendered from the fallback/stanza",
-			ChapBookUtil.SceneRenderStatus.SKIPPED_NO_PROMPT, result.status);
-		assertNull("A SKIPPED_NO_PROMPT result must carry a null imageObjectId (no image produced)",
+		assertTrue("A no-config render of a fallback-only scene must report the landscape LLM step as "
+			+ "UNAVAILABLE (chatConfig == null is folded into llmUnavailable in Objects7), never a silent "
+			+ "benign skip", result.llmUnavailable);
+		assertEquals("The degrade attempt against the unreachable dummy SD must FAIL — not a silent "
+			+ "SKIPPED_NO_PROMPT and not a RENDERED",
+			ChapBookUtil.SceneRenderStatus.FAILED, result.status);
+		assertFalse("Nothing rendered against the unreachable SD, so llmDegraded must be false (it is only "
+			+ "true on a SUCCESSFUL degraded render)", result.llmDegraded);
+		assertNull("A FAILED render must carry a null imageObjectId (no image produced)",
 			result.imageObjectId);
 
-		// Prove the skip left the scene image-less in the DB (nothing was drawn / persisted).
+		// Prove the failed degrade attempt left the scene image-less in the DB (nothing was drawn / persisted).
 		BaseRecord sceneAfter = PbBookUtil.readScene(testUser, sceneObjectId, orgId);
-		assertNotNull("Scene must be re-readable after the skipped render", sceneAfter);
+		assertNotNull("Scene must be re-readable after the failed render", sceneAfter);
 		String postImage = sceneAfter.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID);
-		assertTrue("A skipped scene must remain image-less in the DB (imageObjectId must stay unset), got: "
+		assertTrue("A failed render must leave the scene image-less in the DB (imageObjectId must stay unset), got: "
 			+ postImage, postImage == null || postImage.isBlank());
 
-		logger.info("testRenderChapBookSceneSkipsWhenUnprompted: scene {} un-prompted → SKIPPED_NO_PROMPT, "
-			+ "no image produced or persisted", sceneObjectId);
+		logger.info("testRenderChapBookSceneNoConfigDegradeAttemptReportsUnavailable: scene {} → no chatConfig "
+			+ "⇒ llmUnavailable=true, degrade-attempt FAILED against unreachable SD, no image persisted", sceneObjectId);
 	}
 
 	// ── helpers ──────────────────────────────────────────────────────────────

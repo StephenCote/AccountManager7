@@ -272,13 +272,21 @@ public class ChapBookService {
             }
         }
 
+        // If the endpoint could not resolve ANY chatConfig, the render still proceeds (degraded, on each
+        // scene's stored sdPrompt) — never a 503. The "landscape LLM unavailable" determination now lives
+        // entirely in Objects7 (ChapBookUtil.renderResolvedScene folds chatConfig == null into its
+        // per-scene llmUnavailable signal, aggregated in summary.llmUnavailable), so this transport layer
+        // is a pure pass-through — no signal is computed here (architecture.md — no business logic in
+        // Service7).
         try {
             // A per-scene, client-driven render (POST /scene/{sceneObjectId}/generate) is now
             // available and preferred for multi-scene books (mirrors PB2's per-scene pattern so no
             // single HTTP request runs long); this bulk /render/{bookObjectId} remains for small
             // books / backward compatibility.
-            int rendered = ChapBookUtil.renderChapBook(user, bookObjectId, sdApiType, sdServer, chatConfig, sdConfig);
-            return Response.status(200).entity("{\"rendered\":" + rendered + "}").build();
+            ChapBookUtil.ChapBookRenderSummary summary = ChapBookUtil.renderChapBookSummary(user, bookObjectId, sdApiType, sdServer, chatConfig, sdConfig);
+            return Response.status(200).entity("{\"rendered\":" + summary.rendered
+                + ",\"skipped\":" + summary.skipped
+                + ",\"llmUnavailable\":" + summary.llmUnavailable + "}").build();
         } catch (PictureBookException e) {
             return errorResponse(e.getStatus(), e.getMessage());
         } catch (Exception e) {
@@ -338,12 +346,24 @@ public class ChapBookService {
             }
         }
 
+        // If the endpoint could not resolve ANY chatConfig, the render still proceeds (degraded, on the
+        // scene's stored sdPrompt) — never a 503. The "landscape LLM unavailable" determination now lives
+        // entirely in Objects7 (renderResolvedScene folds chatConfig == null into result.llmUnavailable),
+        // so this transport layer passes the signal straight through — no signal is computed here
+        // (architecture.md — no business logic in Service7).
         try {
             ChapBookUtil.SceneRenderResult result = ChapBookUtil.renderChapBookScene(user, sceneObjectId, sdApiType, sdServer, chatConfig, sdConfig);
             boolean rendered = result.status == ChapBookUtil.SceneRenderStatus.RENDERED;
             boolean skipped = result.status == ChapBookUtil.SceneRenderStatus.SKIPPED_NO_PROMPT;
+            // Pure pass-through of the render's own signals (both computed in Objects7).
+            boolean llmUnavailable = result.llmUnavailable;
+            boolean llmDegraded = result.llmDegraded;
             String oid = result.imageObjectId;
-            return Response.status(200).entity("{\"imageObjectId\":" + (oid == null ? "null" : "\"" + oid + "\"") + ",\"rendered\":" + rendered + ",\"skipped\":" + skipped + "}").build();
+            return Response.status(200).entity("{\"imageObjectId\":" + (oid == null ? "null" : "\"" + oid + "\"")
+                + ",\"rendered\":" + rendered
+                + ",\"skipped\":" + skipped
+                + ",\"llmUnavailable\":" + llmUnavailable
+                + ",\"llmDegraded\":" + llmDegraded + "}").build();
         } catch (PictureBookException e) {
             return errorResponse(e.getStatus(), e.getMessage());
         } catch (Exception e) {
