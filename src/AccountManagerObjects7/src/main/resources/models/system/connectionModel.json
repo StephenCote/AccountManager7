@@ -31,7 +31,7 @@
 			"baseClass": "org.cote.accountmanager.schema.type.ConnectionDialectEnumType",
 			"maxLength": 16,
 			"default": "UNKNOWN",
-			"description": "Wire dialect (protocol) of this endpoint: OLLAMA (/api/chat), OPENAI (Azure /openai/deployments/...), or OPENAI_COMPAT (/v1/chat/completions, e.g. LiteLLM). ADDITIVE (Phase B2) and NOT yet authoritative for protocol selection — olio.llm.chatConfig.serviceType still drives resolution this phase. Not named 'provider' because that is a reserved field-schema keyword already bound to EncryptFieldProvider on apiKey."
+			"description": "Wire dialect (protocol) of this endpoint: OLLAMA (/api/chat), OPENAI (Azure /openai/deployments/...), or OPENAI_COMPAT (/v1/chat/completions, e.g. LiteLLM). AUTHORITATIVE (Phase 3, P3-1) — the single source of truth for LLM transport-protocol selection. Chat.configureChat resolves it once: when non-UNKNOWN, dialect is mapped by name onto LLMServiceEnumType and wins; the deprecated olio.llm.chatConfig.serviceType is only the derived fallback consulted when dialect is UNKNOWN (or the connection is absent). Not named 'provider' because that is a reserved field-schema keyword already bound to EncryptFieldProvider on apiKey."
 		}
 	]
 }

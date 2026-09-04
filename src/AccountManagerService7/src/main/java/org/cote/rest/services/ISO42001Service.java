@@ -103,7 +103,7 @@ public class ISO42001Service {
 		if (imp == null) {
 			return badRequest("Invalid testConfig payload");
 		}
-		BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, imp);
+		BaseRecord created = ISO42001ServiceFacade.createConfig(user, imp);
 		if (created == null) {
 			return Response.status(403).entity("{\"error\":true,\"message\":\"Create denied\"}")
 				.type(MediaType.APPLICATION_JSON).build();

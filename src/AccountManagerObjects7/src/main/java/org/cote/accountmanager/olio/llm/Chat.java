@@ -373,10 +373,15 @@ public class Chat {
 			/// for authZ; apiKey is requested so EncryptFieldProvider looks up vault metadata and decrypts).
 			BaseRecord conn = chatConfig.get("connection");
 			long connId = (conn != null ? conn.get(FieldNames.FIELD_ID) : 0L);
+			/// Kept in scope past the load block so it (with its projected "dialect") can feed the
+			/// single P3-1 protocol-resolution convergence point below.
+			BaseRecord fullConn = null;
 			if (connId > 0L) {
 				Query cq = QueryUtil.createQuery(ModelNames.MODEL_CONNECTION, FieldNames.FIELD_ID, connId);
-				cq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "serverUrl", "requestTimeout", "apiKey" });
-				BaseRecord fullConn = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+				/// "dialect" is projected here (P3-1) so fullConn carries the authoritative transport
+				/// protocol; without this it would be FK-only and the resolver would silently read null.
+				cq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "serverUrl", "requestTimeout", "apiKey", "dialect" });
+				fullConn = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
 				if (fullConn != null) {
 					setServerUrl(fullConn.get("serverUrl"));
 					int connTimeout = fullConn.get("requestTimeout");
@@ -392,7 +397,15 @@ public class Chat {
 			}
 			setApiVersion(chatConfig.get("apiVersion"));
 			setModel(chatConfig.get("model"));
-			setServiceType(chatConfig.getEnum("serviceType"));
+			/// P3-1 (LiteLLM/Langfuse convergence) — the SINGLE authoritative resolution of the LLM
+			/// transport protocol. system.connection.dialect wins when non-UNKNOWN (mapped by name onto
+			/// LLMServiceEnumType); the deprecated chatConfig.serviceType is only the derived fallback
+			/// when dialect is UNKNOWN or the connection is absent (also preserving LOCAL, which has no
+			/// dialect peer). Everything downstream reads this resolved instance field (getServiceType()):
+			/// getServiceUrl, isOpenAiCompatible, buildTracingHeaders, the wire-body leakage gate, the
+			/// OLLAMA token floor, and the ChatUtil.getMaxTokenField/supportsSamplingParams/applyChatOptions
+			/// two-arg overloads — so there is exactly one resolution, done here, and never a second authority.
+			setServiceType(ChatUtil.resolveServiceType(fullConn, chatConfig));
 			remind = chatConfig.get("remindEvery");
 			keyFrameEvery = chatConfig.get("keyframeEvery");
 			messageTrim = chatConfig.get("messageTrim");
@@ -1012,7 +1025,7 @@ public class Chat {
 		applyChatOptions(titleReq);
 		try {
 			titleReq.set("temperature", 0.3);
-			String tokField = ChatUtil.getMaxTokenField(chatConfig);
+			String tokField = ChatUtil.getMaxTokenField(chatConfig, serviceType);
 			if (tokField != null && tokField.length() > 0) {
 				titleReq.set(tokField, 200);
 			}
@@ -1668,7 +1681,7 @@ public class Chat {
 			areq.set("top_p", top_p);
 			areq.set("frequency_penalty", frequency_penalty);
 			areq.set("presence_penalty", presence_penalty);
-			String tokField = ChatUtil.getMaxTokenField(chatConfig);
+			String tokField = ChatUtil.getMaxTokenField(chatConfig, serviceType);
 			if(tokField != null && tokField.length() > 0) {
 				areq.set(tokField, num_ctx);
 			}
@@ -1933,7 +1946,7 @@ public class Chat {
 		sceneReq.setStream(false);
 		applyAnalyzeOptions(req, sceneReq);
 		try { sceneReq.set("temperature", 0.4); } catch (Exception e) { /* ignore */ }
-		String tokField = ChatUtil.getMaxTokenField(chatConfig);
+		String tokField = ChatUtil.getMaxTokenField(chatConfig, serviceType);
 		try { sceneReq.set(tokField, 256); } catch (Exception e) { /* ignore */ }
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
@@ -2388,7 +2401,7 @@ public class Chat {
 
 		/// Override max tokens to keyframe cap
 		try {
-			String tokField = ChatUtil.getMaxTokenField(chatConfig);
+			String tokField = ChatUtil.getMaxTokenField(chatConfig, serviceType);
 			if (tokField != null && !tokField.isEmpty()) {
 				kfReq.set(tokField, KEYFRAME_MAX_TOKENS);
 			}
@@ -2652,7 +2665,7 @@ public class Chat {
 		/// The default num_ctx/max_tokens from chatOptions may be too small, causing truncated output.
 		/// Set floor on ALL token fields to cover model differences (o-series uses
 		/// max_completion_tokens, Ollama uses num_ctx, others use max_tokens).
-		int minTokens = (chatConfig.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) ? 16384 : 8192;
+		int minTokens = (serviceType == LLMServiceEnumType.OLLAMA) ? 16384 : 8192;
 		String[] tokenFields = {"max_tokens", "max_completion_tokens", "num_ctx"};
 		for (String tf : tokenFields) {
 			try {
@@ -3887,7 +3900,7 @@ public class Chat {
 		thinkBlockOpen = false;
 
 		List<String> ignoreFields = new ArrayList<>(ChatUtil.IGNORE_FIELDS);
-		String tokField = ChatUtil.getMaxTokenField(chatConfig);
+		String tokField = ChatUtil.getMaxTokenField(chatConfig, serviceType);
 		ignoreFields.addAll(Arrays.asList(new String[] {"num_ctx", "max_tokens", "max_completion_tokens"}).stream().filter(f -> !f.equals(tokField)).collect(Collectors.toList()));
 
 		String penField = ChatUtil.getPresencePenaltyField(chatConfig);
@@ -3898,7 +3911,7 @@ public class Chat {
 		/// Strip them from the wire request only — the persisted request/chatOptions
 		/// are left intact. Mirrors the gpt-5 handling in getMaxTokenField /
 		/// getPresencePenaltyField.
-		if (!ChatUtil.supportsSamplingParams(chatConfig)) {
+		if (!ChatUtil.supportsSamplingParams(chatConfig, serviceType)) {
 			ignoreFields.addAll(Arrays.asList("temperature", "top_p", "frequency_penalty"));
 		}
 
@@ -3916,22 +3929,35 @@ public class Chat {
 		}
 
 		/// Tier B (LiteLLM/Langfuse) tracing — leakage gate (Guardrail 2).
-		/// The three tracing fields have two different wire destinations, proven by live AM7 ->
+		/// The tracing fields have two different wire destinations, proven by live AM7 ->
 		/// LiteLLM -> Azure round-trip:
-		///  - `session_id` and `metadata` are NOT valid OpenAI/Azure chat-completion parameters.
-		///    LiteLLM forwards the request body verbatim to Azure, which rejects any unknown parameter
-		///    with HTTP 400 ("Unknown parameter: 'session_id'") and returns a null completion. They are
-		///    carried out-of-band as x-langfuse-* HEADERS instead (see buildTracingHeaders), so prune
-		///    them from the wire BODY for EVERY dialect, including OPENAI_COMPAT. Pruning operates on the
-		///    wireReq COPY that getPrunedRequest returns and does NOT clear the value on `req`, so the
-		///    header hook still reads req.get("session_id")/req.get("user").
+		///  - `session_id` is NOT a valid OpenAI/Azure chat-completion parameter. LiteLLM forwards the
+		///    request body verbatim to Azure (or drops it, depending on drop_params) — either way it is
+		///    never consumed as Langfuse metadata from the body, and an un-dropped one makes Azure 400
+		///    ("Unknown parameter: 'session_id'"). Correlation rides the x-langfuse-session-id HEADER
+		///    instead (see buildTracingHeaders), which THIS LiteLLM promotes to the Langfuse
+		///    trace.sessionId. So prune session_id from the wire BODY for EVERY dialect, including
+		///    OPENAI_COMPAT. Pruning operates on the wireReq COPY that getPrunedRequest returns and does
+		///    NOT clear the value on `req`, so the header hook still reads
+		///    req.get("session_id")/req.get("user").
 		///  - `user` IS a standard OpenAI chat parameter: Azure accepts it and LiteLLM maps it to the
 		///    Langfuse trace.userId. Keep it in the body, but ONLY for the OPENAI_COMPAT dialect
 		///    (LiteLLM); for OLLAMA (native) and Azure OPENAI prune it. The negative case is the
 		///    guardrail — these fields have no default, so an unset field is already absent, but a caller
 		///    that set one still must not leak it into a body that would reject it.
+		///
+		/// P3-2 (empirically settled 2026-09-03 against the live LiteLLM+Langfuse stack): a `metadata`
+		/// request field was REMOVED here, not emitted. The ONLY form Langfuse consumes as real
+		/// metadata is a structured JSON OBJECT in the request body (recognized keys — trace_name,
+		/// session_id, tags — are promoted to first-class trace fields and arbitrary custom keys are
+		/// preserved in the metadata blob; drop_params keeps Azure from 400ing). A plain STRING body
+		/// value (what a string-typed field would emit) is silently dropped and lands nowhere; an
+		/// x-langfuse-metadata HEADER is not honored as structured metadata (only an incidental
+		/// raw-header echo). The former field was string-typed and structured-object typing is a
+		/// deferred follow-up, so shipping it would have been dead schema — hence removed from the model
+		/// and from this prune.
 		/// Mirrors the `think` gate above.
-		ignoreFields.addAll(Arrays.asList("session_id", "metadata"));
+		ignoreFields.add("session_id");
 		if (serviceType != LLMServiceEnumType.OPENAI_COMPAT) {
 			ignoreFields.add("user");
 		}
@@ -5030,7 +5056,7 @@ public class Chat {
 	}
 
 	public void applyChatOptions(OpenAIRequest req) {
-		ChatUtil.applyChatOptions(req, chatConfig);
+		ChatUtil.applyChatOptions(req, chatConfig, serviceType);
 	}
 
 }

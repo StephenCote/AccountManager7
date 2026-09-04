@@ -8866,7 +8866,7 @@
           "type": "enum",
           "maxLength": 16,
           "default": "UNKNOWN",
-          "description": "Wire dialect (protocol) of this endpoint: OLLAMA (/api/chat), OPENAI (Azure /openai/deployments/...), or OPENAI_COMPAT (/v1/chat/completions, e.g. LiteLLM). Additive (Phase B2) and NOT yet authoritative for protocol selection — olio.llm.chatConfig.serviceType still drives resolution this phase."
+          "description": "Wire dialect (protocol) of this endpoint: OLLAMA (/api/chat), OPENAI (Azure /openai/deployments/...), or OPENAI_COMPAT (/v1/chat/completions, e.g. LiteLLM). AUTHORITATIVE source for protocol selection (Phase 3 / P3-1). olio.llm.chatConfig.serviceType is only a derived fallback, used when dialect == UNKNOWN."
         }
       ]
     },
@@ -8896,7 +8896,7 @@
           "type": "enum",
           "maxLength": 16,
           "default": "OPENAI",
-          "description": "DEPRECATED — prefer system.connection.dialect going forward. Retained for back-compat: it currently drives protocol resolution. maxLength bumped 10 -> 16 to match the server model and hold OPENAI_COMPAT-length values without silent truncation."
+          "description": "DEPRECATED — system.connection.dialect is now the authoritative protocol source. Used only as a derived fallback when the connection's dialect == UNKNOWN. maxLength 16 (was 10) holds OPENAI_COMPAT-length values without silent truncation."
         },
         {
           "name": "systemCharacter",

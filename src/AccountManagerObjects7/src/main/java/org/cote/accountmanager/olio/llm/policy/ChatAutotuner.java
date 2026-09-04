@@ -158,7 +158,7 @@ public class ChatAutotuner {
 			try {
 				areq.set("temperature", 0.4);
 				areq.set("top_p", 0.5);
-				String tokField = ChatUtil.getMaxTokenField(chatConfig);
+				String tokField = ChatUtil.getMaxTokenField(chatConfig, chat.getServiceType());
 				if (tokField != null && !tokField.isEmpty()) {
 					areq.set(tokField, 4096);
 				}

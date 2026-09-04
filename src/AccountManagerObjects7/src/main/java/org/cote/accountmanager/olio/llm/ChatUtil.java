@@ -49,6 +49,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.schema.type.ConnectionDialectEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.tools.EmbeddingUtil;
 import org.cote.accountmanager.util.DocumentUtil;
@@ -1792,6 +1793,11 @@ public class ChatUtil {
 				OpenAIRequest oreq = new OpenAIRequest(vreq);
 				req = oreq;
 				if (alwaysApplyChatOptions) {
+					/// P3-1: single-arg (serviceType-fallback) on purpose — here chatConfig's connection is
+					/// FK-only (getFullRecord does not follow it) and there is no Chat instance, so the
+					/// authoritative dialect is not readable at this point. The token field chosen here is
+					/// re-pruned against the resolved dialect downstream in Chat.chatInternal (getMaxTokenField
+					/// two-arg with the resolved instance serviceType), so the wire body is corrected there.
 					applyChatOptions(req, chatConfig);
 				}
 				/// Propagate stream from chatConfig — stored sessions may have been
@@ -1880,9 +1886,51 @@ public class ChatUtil {
 		return rec;
 	}
 	
+	/// P3-1 (LiteLLM/Langfuse convergence): resolve the effective LLM transport protocol from the
+	/// SINGLE authoritative source — system.connection.dialect — falling back to the deprecated
+	/// olio.llm.chatConfig.serviceType only when dialect is UNKNOWN or the connection is absent.
+	///
+	/// MUST be called with a connection record on which the `dialect` field is PROVABLY populated
+	/// (explicitly projected / planned). The only production caller is Chat.configureChat, which
+	/// loads the connection with an explicit projection that INCLUDES "dialect" immediately before
+	/// calling this. Do NOT call it with an FK-only connection: dialect would silently read null and
+	/// the resolver would collapse to the serviceType fallback — cosmetic, not correct. Downstream
+	/// code that needs the resolved value where the connection is FK-only reads it back off the Chat
+	/// instance (getServiceType()) and threads it in as the LLMServiceEnumType parameter of the
+	/// method overloads below.
+	///
+	/// LLMServiceEnumType.LOCAL has no ConnectionDialectEnumType peer, so it survives only via the
+	/// serviceType fallback path (dialect == UNKNOWN).
+	static LLMServiceEnumType resolveServiceType(BaseRecord connection, BaseRecord chatConfig) {
+		if(connection != null) {
+			ConnectionDialectEnumType dialect = connection.getEnum("dialect");
+			if(dialect != null && dialect != ConnectionDialectEnumType.UNKNOWN) {
+				try {
+					/// Both enums share the value names UNKNOWN/OLLAMA/OPENAI/OPENAI_COMPAT; map by name.
+					/// This is an enum-to-enum name mapping, not a wire-string parse — the value was
+					/// already read typed via getEnum().
+					return LLMServiceEnumType.valueOf(dialect.name());
+				} catch(IllegalArgumentException e) {
+					/// Future dialect value with no LLMServiceEnumType peer — fall through to serviceType.
+					logger.warn("No LLMServiceEnumType peer for connection dialect '" + dialect.name() + "'; falling back to chatConfig.serviceType");
+				}
+			}
+		}
+		return chatConfig != null ? chatConfig.getEnum("serviceType") : null;
+	}
+
 	/// TEMPORARY - this should be a chat configuration option to indicate API nuances like this
 	///
+	/// Single-arg form: uses the deprecated chatConfig.serviceType directly (the P3-1 derived
+	/// fallback), because at a bare chatConfig the connection sub-record is FK-only and its dialect
+	/// is not readable here. Callers that hold a resolved dialect — a Chat instance's
+	/// getServiceType() — MUST use the two-arg overload so system.connection.dialect stays the
+	/// single authority.
 	public static String getMaxTokenField(BaseRecord cfg) {
+		return getMaxTokenField(cfg, cfg != null ? cfg.getEnum("serviceType") : null);
+	}
+
+	public static String getMaxTokenField(BaseRecord cfg, LLMServiceEnumType service) {
 		String maxTokenField = "max_tokens";
 		if(cfg == null) {
 			return maxTokenField;
@@ -1897,7 +1945,7 @@ public class ChatUtil {
 		else if(modelName.startsWith("gpt-5")) {
 			maxTokenField = "";
 		}
-		else if(cfg.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) {
+		else if(service == LLMServiceEnumType.OLLAMA) {
 			maxTokenField = "num_ctx";
 		}
 		else {
@@ -1929,6 +1977,10 @@ public class ChatUtil {
 	/// Ollama and other OpenAI-compatible models accept them. Mirrors the model
 	/// nuance handling in getMaxTokenField / getPresencePenaltyField.
 	public static boolean supportsSamplingParams(BaseRecord cfg) {
+		return supportsSamplingParams(cfg, cfg != null ? cfg.getEnum("serviceType") : null);
+	}
+
+	public static boolean supportsSamplingParams(BaseRecord cfg, LLMServiceEnumType service) {
 		if(cfg == null) {
 			return true;
 		}
@@ -1936,7 +1988,7 @@ public class ChatUtil {
 		if(modelName == null) {
 			return true;
 		}
-		if(cfg.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) {
+		if(service == LLMServiceEnumType.OLLAMA) {
 			return true;
 		}
 		return !(modelName.startsWith("gpt-5") || modelName.startsWith("o"));
@@ -1984,17 +2036,22 @@ public class ChatUtil {
 	}
 
 	public static void applyChatOptions(OpenAIRequest req, BaseRecord cfg) {
+		applyChatOptions(req, cfg, cfg != null ? cfg.getEnum("serviceType") : null);
+	}
+
+	/// Two-arg form (P3-1): the effective transport protocol is passed in, resolved from
+	/// system.connection.dialect at the single convergence point (Chat.configureChat) and threaded
+	/// here via the Chat instance's getServiceType(). Prefer this over the single-arg form wherever a
+	/// resolved dialect is available, so dialect stays the single authority instead of the deprecated
+	/// chatConfig.serviceType.
+	public static void applyChatOptions(OpenAIRequest req, BaseRecord cfg, LLMServiceEnumType resolvedService) {
 		String modelName = null;
 		BaseRecord opts = null;
-		LLMServiceEnumType serviceType = LLMServiceEnumType.OPENAI;
+		LLMServiceEnumType serviceType = (resolvedService != null) ? resolvedService : LLMServiceEnumType.OPENAI;
 
 		if(cfg != null) {
 			modelName = cfg.get("model");
 			opts = cfg.get("chatOptions");
-			serviceType = cfg.getEnum("serviceType");
-			if(serviceType == null) {
-				serviceType = LLMServiceEnumType.OPENAI;
-			}
 		}
 		try {
 			req.setModel(modelName);
@@ -2029,8 +2086,8 @@ public class ChatUtil {
 				req.set("seed", seed);
 			}
 
-			/// Use service-type-aware max token field
-			String tokField = getMaxTokenField(cfg);
+			/// Use service-type-aware max token field (resolved dialect threaded in)
+			String tokField = getMaxTokenField(cfg, serviceType);
 			if(tokField != null && tokField.length() > 0) {
 				int tokValue = (serviceType == LLMServiceEnumType.OLLAMA) ? num_ctx : max_tokens;
 				req.set(tokField, tokValue);

@@ -34,24 +34,31 @@ import com.sun.net.httpserver.HttpServer;
 /// drives the REAL production code (ChatUtil.getPrunedRequest, the production serializer config, and
 /// Chat.buildTracingHeaders) rather than a hand-rolled stand-in.
 ///
-/// The shipped leakage gate (Chat.java:3889, 3934-3937) is:
-///   - `session_id` and `metadata` are added to the prune list UNCONDITIONALLY, for EVERY dialect,
-///     so they are ALWAYS absent from the wire body. (They are neither valid OpenAI/Azure chat
-///     parameters — Azure returns HTTP 400 "Unknown parameter: 'session_id'" — nor forwarded by
-///     LiteLLM as body fields; the working correlation path is the x-langfuse-* HEADERS.)
+/// The shipped leakage gate (Chat.java:3889, 3931-3950) is:
+///   - `session_id` is added to the prune list UNCONDITIONALLY, for EVERY dialect, so it is ALWAYS
+///     absent from the wire body. (It is not a valid OpenAI/Azure chat parameter and LiteLLM does not
+///     consume a body `session_id` as Langfuse metadata; the working correlation path is the
+///     x-langfuse-session-id HEADER, which LiteLLM promotes to the Langfuse trace.sessionId.)
 ///   - `user` IS a standard OpenAI chat parameter, so it is KEPT in the body ONLY for the
 ///     OPENAI_COMPAT dialect and PRUNED for every other dialect (OPENAI/OLLAMA/UNKNOWN).
-/// Separately, buildTracingHeaders (Chat.java:4356) emits the x-langfuse-session-id / x-langfuse-user-id
+/// Separately, buildTracingHeaders (Chat.java:4361) emits the x-langfuse-session-id / x-langfuse-user-id
 /// HEADERS ONLY for OPENAI_COMPAT, reading the UN-pruned req.
+///
+/// P3-2 (empirically settled 2026-09-03 against the live LiteLLM+Langfuse stack): the former
+/// string-typed `metadata` request field was REMOVED, not emitted, so there is nothing to assert about
+/// it here. Live probe: the ONLY form Langfuse consumes as real metadata is a structured JSON OBJECT in
+/// the body; a plain STRING body value (what the string field emitted) is silently dropped and lands
+/// nowhere, and an x-langfuse-metadata HEADER is not honored as structured metadata. Structured-object
+/// typing is a deferred follow-up, so the string field was dead schema and was deleted.
 ///
 /// Coverage:
 ///   0. CONTROL — with only the base ChatUtil.IGNORE_FIELDS (i.e. WITHOUT the tracing prune),
-///      all three fields serialize onto the wire. This proves the negative assertions below are not
+///      session_id + user serialize onto the wire. This proves the negative assertions below are not
 ///      vacuous: the fields DO serialize by default, so their absence is caused by the tracing gate.
-///   1. OPENAI_COMPAT — wire body OMITS session_id + metadata but KEEPS user; buildTracingHeaders
-///      emits both x-langfuse-* headers.
-///   2. OPENAI / OLLAMA — wire body OMITS session_id + metadata AND user; buildTracingHeaders emits
-///      no headers (returns null).
+///   1. OPENAI_COMPAT — wire body OMITS session_id but KEEPS user; buildTracingHeaders emits both
+///      x-langfuse-* headers.
+///   2. OPENAI / OLLAMA — wire body OMITS session_id AND user; buildTracingHeaders emits no headers
+///      (returns null).
 ///   3. Header overload — ClientUtil.postToRecordAndStream 3-arg injects NO extra headers, while the
 ///      4-arg overload applies the fixed headers AND the extra (x-langfuse-*) headers. Verified by a
 ///      REAL request captured by a local com.sun.net.httpserver echo server (no typeof/reflection).
@@ -62,7 +69,6 @@ public class TestTierBTracingUnit extends BaseTest {
 
 	private static final String U_VAL = "trace-user-42";
 	private static final String S_VAL = "trace-sess-42";
-	private static final String M_VAL = "trace-meta-42";
 
 	private OpenAIRequest baseReq() {
 		OpenAIRequest req = new OpenAIRequest();
@@ -74,20 +80,19 @@ public class TestTierBTracingUnit extends BaseTest {
 		req.addMessage(m);
 		req.setValue("user", U_VAL);
 		req.setValue("session_id", S_VAL);
-		req.setValue("metadata", M_VAL);
 		return req;
 	}
 
 	/// Assembles the wire-body prune ignore list EXACTLY as Chat.chatInternal does for the Tier B
-	/// tracing gate: Chat.java:3889 seeds from ChatUtil.IGNORE_FIELDS, :3934 adds session_id + metadata
-	/// for EVERY dialect, and :3935-3937 adds `user` only when the dialect is NOT OPENAI_COMPAT. The
-	/// token/penalty/sampling/`think` additions that sit between those lines (3890-3916) add unrelated
-	/// field names and require a chatConfig; none of them touch user/session_id/metadata, so they are
-	/// omitted here. The pruned request is then produced by the REAL ChatUtil.getPrunedRequest.
+	/// tracing gate: Chat.java:3889 seeds from ChatUtil.IGNORE_FIELDS, the gate adds `session_id`
+	/// for EVERY dialect, and adds `user` only when the dialect is NOT OPENAI_COMPAT. The
+	/// token/penalty/sampling/`think` additions that sit between those lines add unrelated field names
+	/// and require a chatConfig; none of them touch user/session_id, so they are omitted here. The
+	/// pruned request is then produced by the REAL ChatUtil.getPrunedRequest.
 	private List<String> tracingIgnoreFields(LLMServiceEnumType dialect) {
 		List<String> ignoreFields = new ArrayList<>(ChatUtil.IGNORE_FIELDS);     // Chat.java:3889
-		ignoreFields.addAll(Arrays.asList("session_id", "metadata"));           // Chat.java:3934 (unconditional)
-		if (dialect != LLMServiceEnumType.OPENAI_COMPAT) {                      // Chat.java:3935-3937
+		ignoreFields.add("session_id");                                        // unconditional
+		if (dialect != LLMServiceEnumType.OPENAI_COMPAT) {                      // OPENAI_COMPAT keeps user
 			ignoreFields.add("user");
 		}
 		return ignoreFields;
@@ -111,13 +116,11 @@ public class TestTierBTracingUnit extends BaseTest {
 		return (Map<String, String>) m.invoke(chat, req);
 	}
 
-	/// (0) CONTROL: with ONLY the base ChatUtil.IGNORE_FIELDS (no tracing prune), the three tracing
-	/// fields DO serialize onto the wire body. Without this control the "absent" assertions below
-	/// could pass vacuously (a field that never serialized would also appear absent). This is the
-	/// corrected reframing of the previously-misleading test, which wrongly claimed this base-list
-	/// behavior was the OPENAI_COMPAT wire behavior.
+	/// (0) CONTROL: with ONLY the base ChatUtil.IGNORE_FIELDS (no tracing prune), the tracing fields
+	/// (session_id + user) DO serialize onto the wire body. Without this control the "absent"
+	/// assertions below could pass vacuously (a field that never serialized would also appear absent).
 	@Test
-	public void control_baseIgnoreList_serializesAllThreeTracingFields() {
+	public void control_baseIgnoreList_serializesTracingFields() {
 		OpenAIRequest req = baseReq();
 		OpenAIRequest pruned = ChatUtil.getPrunedRequest(req, new ArrayList<>(ChatUtil.IGNORE_FIELDS));
 		String ser = wireBody(pruned);
@@ -126,27 +129,23 @@ public class TestTierBTracingUnit extends BaseTest {
 		assertNotNull("serialization returned null", ser);
 		assertTrue("CONTROL: `session_id` key must serialize when not pruned", ser.contains("\"session_id\""));
 		assertTrue("CONTROL: `session_id` value must serialize when not pruned", ser.contains(S_VAL));
-		assertTrue("CONTROL: `metadata` key must serialize when not pruned", ser.contains("\"metadata\""));
-		assertTrue("CONTROL: `metadata` value must serialize when not pruned", ser.contains(M_VAL));
 		/// `user` value is a unique sentinel; the bare `"user"` key would collide with the message role.
 		assertTrue("CONTROL: `user` value must serialize when not pruned", ser.contains(U_VAL));
 	}
 
-	/// (1) OPENAI_COMPAT: session_id + metadata are pruned (Chat.java:3934) but `user` is KEPT
-	/// (Chat.java:3935-3937), and buildTracingHeaders emits the x-langfuse-* headers.
+	/// (1) OPENAI_COMPAT: session_id is pruned but `user` is KEPT, and buildTracingHeaders emits the
+	/// x-langfuse-* headers.
 	@Test
-	public void openaiCompat_prunesSessionAndMetadata_keepsUser_emitsTraceHeaders() throws Exception {
+	public void openaiCompat_prunesSession_keepsUser_emitsTraceHeaders() throws Exception {
 		OpenAIRequest req = baseReq();
 		OpenAIRequest pruned = ChatUtil.getPrunedRequest(req, tracingIgnoreFields(LLMServiceEnumType.OPENAI_COMPAT));
 		String ser = wireBody(pruned);
 		logger.info("[TierB-unit][COMPAT] wire body = " + ser);
 
 		assertNotNull("serialization returned null", ser);
-		/// session_id + metadata are pruned for EVERY dialect, including OPENAI_COMPAT.
+		/// session_id is pruned for EVERY dialect, including OPENAI_COMPAT.
 		assertFalse("OPENAI_COMPAT wire body must NOT contain the `session_id` key", ser.contains("\"session_id\""));
 		assertFalse("OPENAI_COMPAT wire body must NOT contain the `session_id` value", ser.contains(S_VAL));
-		assertFalse("OPENAI_COMPAT wire body must NOT contain the `metadata` key", ser.contains("\"metadata\""));
-		assertFalse("OPENAI_COMPAT wire body must NOT contain the `metadata` value", ser.contains(M_VAL));
 		/// `user` is a standard OpenAI param — KEPT only for OPENAI_COMPAT. The unique sentinel value
 		/// appears only as the `user` field value (the bare `"user"` key collides with the message role).
 		assertTrue("OPENAI_COMPAT wire body must KEEP the `user` value", ser.contains(U_VAL));
@@ -159,10 +158,10 @@ public class TestTierBTracingUnit extends BaseTest {
 		assertEquals("x-langfuse-user-id must come from user", U_VAL, headers.get("x-langfuse-user-id"));
 	}
 
-	/// (2) OPENAI (Azure) and OLLAMA: session_id + metadata AND user are all pruned, and
-	/// buildTracingHeaders emits NO x-langfuse-* headers (returns null).
+	/// (2) OPENAI (Azure) and OLLAMA: session_id AND user are both pruned, and buildTracingHeaders
+	/// emits NO x-langfuse-* headers (returns null).
 	@Test
-	public void openaiAndOllama_pruneAllThreeTracingFields_emitNoTraceHeaders() throws Exception {
+	public void openaiAndOllama_pruneSessionAndUser_emitNoTraceHeaders() throws Exception {
 		for (LLMServiceEnumType dialect : new LLMServiceEnumType[] { LLMServiceEnumType.OPENAI, LLMServiceEnumType.OLLAMA }) {
 			OpenAIRequest req = baseReq();
 			OpenAIRequest pruned = ChatUtil.getPrunedRequest(req, tracingIgnoreFields(dialect));
@@ -172,8 +171,6 @@ public class TestTierBTracingUnit extends BaseTest {
 			assertNotNull(dialect + ": serialization returned null", ser);
 			assertFalse(dialect + " wire body must NOT contain the `session_id` key", ser.contains("\"session_id\""));
 			assertFalse(dialect + " wire body must NOT contain the `session_id` value", ser.contains(S_VAL));
-			assertFalse(dialect + " wire body must NOT contain the `metadata` key", ser.contains("\"metadata\""));
-			assertFalse(dialect + " wire body must NOT contain the `metadata` value", ser.contains(M_VAL));
 			/// `user` is PRUNED for every non-OPENAI_COMPAT dialect. Assert on the unique sentinel value,
 			/// not the `"user"` key, since the message role "user" would otherwise be a false positive.
 			assertFalse(dialect + " wire body must NOT contain the `user` value", ser.contains(U_VAL));

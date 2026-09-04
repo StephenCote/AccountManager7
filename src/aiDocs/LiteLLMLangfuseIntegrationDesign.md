@@ -91,6 +91,14 @@ derive it from the connection.
     `toFullString()`, so newly-added `metadata/user/session_id` would emit to **Ollama and Azure**
     bodies too. These fields must be **gated to the `OPENAI_COMPAT` dialect** (conditional
     serialization or a dialect-specific request build) — not merely added to the model.
+  - **Guardrail 3 (PII):** the `user` value flows to Langfuse as the trace **user id** (body field
+    for OPENAI_COMPAT, and the `x-langfuse-user-id` header). It **MUST be an opaque identifier** — an
+    `objectId`/URN or a generated nonce — and **NEVER a username, email, or any human-identifying
+    string**, or Langfuse (a third-party observability store) accumulates PII. Likewise `session_id`
+    is a correlation key (in practice the run `objectId`), not domain data. As shipped, the only
+    production writer is the ISO engine (`TestExecutor.applySession` sets `session_id` = run
+    `objectId`; it never sets `user`); nothing passes a human identifier. The constraint is also
+    recorded on the model field (`openaiRequestModel.json` `user`).
 
 ### 2.4 Embeddings via LiteLLM — OUT OF SCOPE (phase 1)
 Bound by the **boot-pinned `embedding.dimensions`** (the vector column is one fixed width; stored
@@ -162,6 +170,7 @@ model.
   bump and `BaseTest` runs with `repairColumnTypes=false`. A **non-destructive widen** (`ALTER … TYPE
   varchar(16)`, or a `repairColumnTypes` pass) is required before `OPENAI_COMPAT` chatConfigs can
   persist on that DB. Flag as an operational prerequisite for B1/B2, not code work.
+- **DONE (P3-1, 2026-09-03):** interim resolver landed — `ChatUtil.resolveServiceType(connection, chatConfig)` is called once at the `Chat.configureChat()` convergence point (connection projected with `dialect`), and the three `ChatUtil` model-nuance methods (`getMaxTokenField`/`supportsSamplingParams`/`applyChatOptions`) grew a two-arg overload threaded with the resolved value; `serviceType` is now the derived fallback (and the only carrier of `LOCAL`). **TRACKED FOLLOW-UP:** full removal of `chatConfig.serviceType` (retire the field + single-arg fallback overloads once every `chatConfig` consumer reads `dialect`) remains deferred per the "Not this pass" note above.
 
 ---
 

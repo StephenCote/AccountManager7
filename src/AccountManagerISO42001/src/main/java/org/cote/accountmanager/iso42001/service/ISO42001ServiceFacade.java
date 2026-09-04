@@ -251,12 +251,73 @@ public class ISO42001ServiceFacade {
 	/**
 	 * Create an analysis profile as the acting user. The model's {@code create} role
 	 * ({@code ISO42001Testers}) gates it via {@link AccessPoint}; a denied create returns {@code null}.
+	 *
+	 * <p>Tenancy binding is applied server-side before the create (see {@link #bindOwnership}): the
+	 * persisted {@code organizationId}/{@code ownerId} are taken from the acting user, never the client
+	 * payload, and a {@code groupId} that resolves to another org (or not at all) is rejected. Without
+	 * this, a client could POST a forged {@code organizationId}/{@code ownerId} that AccessPoint writes
+	 * verbatim — those fields are not authorization-bound and are not re-derived at persist time.</p>
 	 */
 	public static BaseRecord createAnalysisProfile(BaseRecord user, BaseRecord record) {
 		if (record == null) {
 			return null;
 		}
+		if (!bindOwnership(user, record)) {
+			return null;
+		}
 		return ap().create(user, record);
+	}
+
+	/**
+	 * Create an {@code iso42001.testConfig} as the acting user, applying the same server-side tenancy
+	 * binding as {@link #createAnalysisProfile}. The model's {@code create} role ({@code ISO42001Testers})
+	 * gates it via {@link AccessPoint}; a denied create returns {@code null}.
+	 */
+	public static BaseRecord createConfig(BaseRecord user, BaseRecord record) {
+		if (record == null) {
+			return null;
+		}
+		if (!bindOwnership(user, record)) {
+			return null;
+		}
+		return ap().create(user, record);
+	}
+
+	/**
+	 * Bind tenancy/ownership from the acting user context onto a to-be-created record, closing the
+	 * forged-org create vector (P3-3b). {@code organizationId} and {@code ownerId} are stamped from the
+	 * acting user — never honored from the client payload, which the write path (AccessPoint →
+	 * RecordUtil → DBWriter) persists verbatim without re-deriving from context.
+	 *
+	 * <p>{@code groupId} is authorization-bound by PBAC (the create policy resolves the group from the
+	 * client-supplied {@code groupId} and requires create-entitlement on <i>that</i> group), so a
+	 * cross-org group would normally be denied there. This adds defense-in-depth and fails closed: a
+	 * {@code groupId} that does not resolve, or resolves to a different org, is rejected here (returns
+	 * {@code false}) rather than left for PBAC — which avoids any groupless-record fallback to org-level
+	 * role authorization. A record with no {@code groupId} is left untouched for PBAC to decide.</p>
+	 *
+	 * @return {@code true} if binding succeeded and the create may proceed; {@code false} to reject.
+	 */
+	private static boolean bindOwnership(BaseRecord user, BaseRecord record) {
+		try {
+			long userOrg = orgId(user);
+			long gid = nz(record.get(FieldNames.FIELD_GROUP_ID));
+			if (gid > 0L) {
+				BaseRecord grp = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_GROUP, gid);
+				if (grp == null || nz(grp.get(FieldNames.FIELD_ORGANIZATION_ID)) != userOrg) {
+					logger.warn("Rejecting create: groupId " + gid + " does not resolve to the acting user's org "
+						+ userOrg);
+					return false;
+				}
+			}
+			record.set(FieldNames.FIELD_ORGANIZATION_ID, userOrg);
+			record.set(FieldNames.FIELD_OWNER_ID, user.get(FieldNames.FIELD_ID));
+			return true;
+		}
+		catch (Exception e) {
+			logger.error("Failed to bind ownership for create", e);
+			return false;
+		}
 	}
 
 	private static long nz(Object v) {

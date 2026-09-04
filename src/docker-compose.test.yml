@@ -126,9 +126,10 @@ services:
       # Inspect-only from the host. The app reaches litellm by service name.
       - "4000:4000"
     environment:
-      # Upstream Azure — key MUST come from the environment/secret, never committed.
+      # Upstream Azure — key AND base host MUST come from the environment/secret, never committed
+      # (supply via --env-file ./volatile/llmproxy.env). No default host in-repo.
       AZURE_API_KEY: ${AZURE_API_KEY:-}
-      AZURE_API_BASE: ${AZURE_API_BASE:-https://ai-serv-ccok-edw-dev-001.openai.azure.com}
+      AZURE_API_BASE: ${AZURE_API_BASE:-}
       AZURE_API_VERSION: ${AZURE_API_VERSION:-2025-04-01-preview}
       # Proxy's own client-facing key (AM7 sends this as its Bearer token).
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-am7-litellm-test}

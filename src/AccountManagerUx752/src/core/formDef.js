@@ -5306,7 +5306,8 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
             },
             serviceType: {
                 layout: "one",
-                label: "Service Type",
+                label: "Service Type (legacy)",
+                hint: "Deprecated. Protocol is now set by the Connection's Dialect field; this is only a derived fallback used when the connection's dialect is UNKNOWN.",
                 field:{
                     type: "list",
                     limit: ["OPENAI", "OLLAMA"]

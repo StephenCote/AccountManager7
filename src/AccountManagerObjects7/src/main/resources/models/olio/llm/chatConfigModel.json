@@ -19,7 +19,7 @@
 			"type": "enum",
 			"maxLength": 16,
 			"default": "OPENAI",
-			"description": "DEPRECATED — prefer system.connection.dialect going forward. Retained for back-compat: Chat.configureChat still reads it and it currently drives protocol resolution. maxLength bumped from 10 to 16 to hold the new OPENAI_COMPAT value ('openai_compat', 13 chars) without silent truncation."
+			"description": "DEPRECATED, DERIVED FALLBACK (Phase 3, P3-1). system.connection.dialect (ConnectionDialectEnumType) is now the authoritative source for LLM transport-protocol selection. Chat.configureChat resolves once via ChatUtil.resolveServiceType(connection, chatConfig): dialect wins when non-UNKNOWN, and this serviceType is consulted ONLY when dialect is UNKNOWN (or the connection is absent). Also preserves LOCAL, which has no dialect peer. Retained as a thin fallback shim; full removal is a tracked follow-up (see LiteLLMLangfuseIntegrationDesign.md §5.1) because it touches every chatConfig consumer. maxLength bumped from 10 to 16 to hold the new OPENAI_COMPAT value ('openai_compat', 13 chars) without silent truncation."
 		},
 		{
 			"name": "systemCharacter",

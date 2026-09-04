@@ -128,19 +128,13 @@
 			"name": "user",
 			"type": "string",
 			"allowNull": true,
-			"description": "Tier B tracing (LiteLLM/Langfuse): OpenAI/LiteLLM 'user' request field. Wire-only tracing value, not domain data. Emitted ONLY for the OPENAI_COMPAT dialect; pruned from OLLAMA/Azure OPENAI request bodies (see Chat.chatInternal leakage gate). Persisted column is quoted by DBUtil.getColumnName (USER is a reserved word). No default: unset means the field is absent and never serialized."
+			"description": "Tier B tracing (LiteLLM/Langfuse): OpenAI/LiteLLM 'user' request field. Wire-only tracing value, not domain data. MUST be an OPAQUE identifier (e.g. an objectId/URN or generated nonce) — NEVER a username, email, or any human-identifying string, because it flows to Langfuse as the trace user id and would leak PII. Emitted ONLY for the OPENAI_COMPAT dialect; pruned from OLLAMA/Azure OPENAI request bodies (see Chat.chatInternal leakage gate). Persisted column is quoted by DBUtil.getColumnName (USER is a reserved word). No default: unset means the field is absent and never serialized."
 		},
 		{
 			"name": "session_id",
 			"type": "string",
 			"allowNull": true,
 			"description": "Tier B tracing (LiteLLM/Langfuse): 'session_id' value used to group requests into a Langfuse session. Set on the request, but PRUNED from the wire body for EVERY dialect (Chat.chatInternal leakage gate, Chat.java:3934) — Azure rejects a body 'session_id' with HTTP 400 'Unknown parameter'. Correlation instead rides the x-langfuse-session-id HEADER, emitted only for the OPENAI_COMPAT dialect (Chat.buildTracingHeaders); other dialects send it nowhere. No default: unset means absent."
-		},
-		{
-			"name": "metadata",
-			"type": "string",
-			"allowNull": true,
-			"description": "Tier B tracing (LiteLLM/Langfuse): 'metadata' value. Set on the request, but PRUNED from the wire body for EVERY dialect (Chat.chatInternal leakage gate, Chat.java:3934) and having no header path, it is currently never emitted on the wire — retained for potential future tracing use. Serialized (when carried) as a JSON string value, not a nested object; if Langfuse requires a structured object this becomes a follow-up (map/model typing). No default: unset means absent."
 		}
 	]
 }
