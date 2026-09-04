@@ -1362,10 +1362,13 @@ const PoemLibrary = {
                 )
             ]),
 
-            // Create ChapBook dialog — inline overlay following the Dialog pattern
+            // Create ChapBook dialog — inline overlay following the Dialog pattern.
+            // Thread 3: NON-dismissible by backdrop/background click or mouse-out (a click that
+            // begins inside a field and ends on the backdrop must not discard an in-progress create).
+            // Mirrors the PictureBook wizard's `closable:false` intent — closes only via the explicit
+            // X / Cancel buttons or a successful create; no backdrop onclick dismissal.
             showCreateDialog ? m('div', {
-                class: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50',
-                onclick: function (e) { if (e.target === e.currentTarget) closeCreateDialog(); }
+                class: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50'
             },
                 m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-md mx-4' }, [
                     m('div', { class: 'flex items-center justify-between mb-4' }, [

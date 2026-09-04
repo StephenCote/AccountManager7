@@ -579,11 +579,21 @@ public class ChapBookUtil {
 
 		String bookGroupPath = PbBookUtil.bookGroupPath(slug);
 		int sceneIndex = 0;
-		// Running thread of prior scene landscape prompts, in book order, so scene N's LLM prompt is
-		// generated with awareness of the poem's overall theme and the imagery already used earlier in
-		// the book (the "prior mcp entries"). Only genuinely LLM-generated prompts are threaded forward.
-		List<String> priorScenePrompts = new ArrayList<>();
+		// Fail-loudly accounting: how many scenes we EXPECTED to create (sum of stanza chunks across all
+		// readable poems) and the first concrete scene-creation failure. If every scene fails we must NOT
+		// return a silently-blank book — that is exactly the reported symptom when residual artifacts from a
+		// prior same-slug book collide on the unique (name, groupId, organizationId) scene index.
+		int expectedScenes = 0;
+		String firstSceneFailure = null;
 		for (String poemObjectId : poemObjectIds) {
+			// Running thread of prior scene landscape prompts WITHIN this poem, in scene order, so scene
+			// N's LLM prompt is generated with awareness of the imagery already used earlier in the SAME
+			// poem. Declared INSIDE the poem loop so it RESETS at the start of each poem: continuity must
+			// stay within a poem and must NOT bleed across poems — otherwise poem 1's imagery (e.g. a
+			// volcano) themes every later poem's landscapes (the reported cross-poem leak). The per-poem
+			// theme/mood/keywords below are already read fresh per poem. Only genuinely LLM-generated
+			// prompts are threaded forward.
+			List<String> priorScenePrompts = new ArrayList<>();
 			BaseRecord poem = loadPoem(user, poemObjectId, orgId);
 			if (poem == null) {
 				logger.warn("createChapBook: poem not found: " + poemObjectId);
@@ -601,6 +611,7 @@ public class ChapBookUtil {
 			String keywords = poem.get(OlioFieldNames.FIELD_CB_KEYWORDS);
 
 			List<String> chunks = chunkPoem(poemText, effectiveMax);
+			expectedScenes += chunks.size();
 			for (String chunk : chunks) {
 				try {
 					// Assemble the prior context (poem theme/mood/keywords + recent scene imagery) and
@@ -613,11 +624,25 @@ public class ChapBookUtil {
 					}
 					sceneIndex++;
 				} catch (Exception e) {
+					if (firstSceneFailure == null) firstSceneFailure = e.getMessage();
 					logger.warn("createChapBook: failed to create scene " + sceneIndex + " from poem " + poemObjectId + ": " + e.getMessage());
 				}
 			}
 		}
 		logger.info("createChapBook: created {} scenes for slug={}", sceneIndex, slug);
+
+		// Fail LOUDLY rather than returning a blank book. If we expected at least one scene but created
+		// none, every createChapBookScene threw — the dominant cause is a leftover scene from a prior
+		// same-slug book tripping the unique (name, groupId, organizationId) index. Surface the concrete
+		// reason (and the hint) instead of silently returning an empty book the caller would persist.
+		if (sceneIndex == 0 && expectedScenes > 0) {
+			throw new PictureBookException(500, "createChapBook produced a BLANK book for slug=" + slug
+				+ ": expected " + expectedScenes + " scene(s) but created 0"
+				+ (firstSceneFailure != null ? "; first failure: " + firstSceneFailure : "")
+				+ ". This usually means residual artifacts from a previously-deleted same-slug book collided "
+				+ "on the unique (name, groupId, organizationId) scene index — the existing book world must be "
+				+ "fully torn down (deleteChapBook/teardownBookWorld) before a same-slug book is recreated.");
+		}
 
 		// Book and scenes are already committed. Workflow creation is non-fatal.
 		String workflowPath = PbBookUtil.workflowGroupPath(slug);
@@ -979,11 +1004,14 @@ public class ChapBookUtil {
 		if (bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
 			throw new PictureBookException(403, "Book " + bookObjectId + " is not a CHAPBOOK");
 		}
-		// Delegate to the shared helper, which owns the explicit canDelete → delete sequence and returns a
-		// concrete, logged reason instead of a bare boolean (Issue 1). Map a PBAC denial to 403 and a
-		// genuine persistence failure to 500 via the helper's authorized flag (no reason string-sniffing),
-		// so the transport layer surfaces the real reason rather than a generic "Failed to delete".
-		PictureBookUtil.DeleteResult result = PictureBookUtil.deleteRecordExplained(user, book);
+		// COMPLETE teardown, not just the book row: delete every artifact the book world left behind — the
+		// olio.pb.scene rows, the workflow graph, the /Book|/Workflow|/Artifacts groups, the olio.world and
+		// its event/population records, and the cached OlioContext. Deleting only the book row (the old
+		// behaviour) orphaned the scenes, whose unique (name, groupId, organizationId) index then collided
+		// on a same-slug recreate and produced a BLANK book (the reported defect). teardownBookWorld decides
+		// authorization as the acting user (canDelete → 403 on denial) and performs the physical deletes as
+		// the olio principal, returning the same DeleteResult contract so the 403-vs-500 mapping is unchanged.
+		PictureBookUtil.DeleteResult result = PictureBookUtil.teardownBookWorld(user, book, orgId);
 		if (!result.deleted) {
 			throw new PictureBookException(result.authorized ? 500 : 403, result.reason);
 		}
@@ -1068,10 +1096,21 @@ public class ChapBookUtil {
 		int rendered = 0;
 		int skipped = 0;
 		int llmUnavailable = 0;
-		// Running thread of the scenes' stored landscape prompts, in book order, so a re-generated
-		// render-time prompt for scene N stays visually continuous with the imagery of earlier scenes.
+		// Running thread of the scenes' stored landscape prompts, in scene order WITHIN a poem, so a
+		// re-generated render-time prompt for scene N stays visually continuous with the imagery of
+		// earlier scenes of the SAME poem. RESET at each poem boundary (mirrors createChapBook's
+		// per-poem scoping) so poem 1's imagery does not bleed into poem 2's landscapes — the reported
+		// cross-poem leak. listScenes() returns scenes ordered by sceneIndex, and every ChapBook scene
+		// carries its source poem's title (FIELD_PB_TITLE), so consecutive same-poem scenes share a
+		// title and a change of title marks the start of a new poem.
 		List<String> priorScenePrompts = new ArrayList<>();
+		String priorSceneTitle = null;
 		for (BaseRecord scene : scenes) {
+			String sceneTitle = scene.get(OlioFieldNames.FIELD_PB_TITLE);
+			if (priorSceneTitle != null && !java.util.Objects.equals(priorSceneTitle, sceneTitle)) {
+				priorScenePrompts.clear();
+			}
+			priorSceneTitle = sceneTitle;
 			String sceneMood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
 			String priorContext = assemblePriorContext(null, null, sceneMood, priorScenePrompts);
 			SceneRenderResult result = renderResolvedScene(user, book, scene, sdu, chatConfig, clientSdConfig, priorContext);

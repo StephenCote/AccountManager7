@@ -294,14 +294,16 @@ async function resetPictureBook(bookObjectId) {
     // is { error:'…' } with a non-2xx status. Parse the body even on a non-ok response so callers can
     // surface the concrete reason instead of a bare "Failed to delete". Only synthesize a
     // status-derived reason when there is no parseable body at all (e.g. a true network error).
+    // Expose the HTTP status so callers can treat an already-gone book (404 {"error":"Book not
+    // found"}) as an idempotent success rather than a hard failure.
     let body = null;
     try { body = await resp.json(); } catch (_) { /* no body / non-JSON */ }
     if (body && typeof body === 'object') {
         let reset = body.reset === true;
         let reason = reset ? null : (body.reason || body.error || body.message || ('Reset failed: ' + resp.status));
-        return { reset: reset, reason: reason };
+        return { reset: reset, reason: reason, status: resp.status };
     }
-    return { reset: resp.ok, reason: resp.ok ? null : ('Reset failed: ' + resp.status) };
+    return { reset: resp.ok, reason: resp.ok ? null : ('Reset failed: ' + resp.status), status: resp.status };
 }
 
 /**

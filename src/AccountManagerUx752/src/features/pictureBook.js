@@ -105,41 +105,68 @@ async function loadExistingBooks() {
     m.redraw();
 }
 
+// Issue 1 (idempotent delete): a book can be gone server-side while a stale row still shows in the
+// list — a lingering .pictureBookMeta note outlives a deleted book group, or a double-click races
+// the list refresh. Deleting an already-gone book is idempotent server-side (HTTP 404 with body
+// {"error":"Book not found"}), so treat "already gone" as a benign success, ALWAYS reload the
+// list(s) afterward (even on a hard error) so a stale row can never persist, and only raise a real
+// red error for a genuine failure (403 auth denial, 500 with a concrete reason).
+// resetPictureBook returns {reset, reason, status}; be defensive and also tolerate a throw-on-404
+// shape, hence both branches feed pbDeleteIsGone().
+function pbDeleteIsGone(resultOrError) {
+    if (!resultOrError) return false;
+    if (resultOrError.status === 404) return true;
+    let text = ((resultOrError.reason || resultOrError.message) || '') + '';
+    return /not\s*found/i.test(text) || /\b404\b/.test(text);
+}
+
+/**
+ * Perform an idempotent picture-book delete against every delete surface.
+ * @param {string} objectId  book group objectId OR olio.pb.book objectId (backend reset() accepts either)
+ * @param {Function|null} reloadFn  optional async reload; ALWAYS invoked after the attempt
+ * @returns {Promise<boolean>} true when the book is gone (deleted now, or already absent)
+ */
+async function performPbDelete(objectId, reloadFn) {
+    let outcome = null;         // 'deleted' | 'gone'
+    let hardError = null;
+    try {
+        let result = await resetPictureBook(objectId);
+        if (result && result.reset) outcome = 'deleted';
+        else if (pbDeleteIsGone(result)) outcome = 'gone';
+        else hardError = (result && result.reason) || 'Failed to delete book';
+    } catch (e) {
+        if (pbDeleteIsGone(e)) outcome = 'gone';
+        else hardError = (e && e.message) || 'Failed to delete book';
+    }
+    if (outcome === 'deleted') page.toast('success', 'Picture book deleted');
+    else if (outcome === 'gone') page.toast('info', 'Already removed');
+    else page.toast('error', hardError);
+    // Always clear the server search cache and reload — even on a hard error — so a stale row for a
+    // book that is already gone can never survive the attempt.
+    am7client.clearCache(0, true);
+    if (reloadFn) { try { await reloadFn(); } catch (_) {} }
+    return !!outcome;
+}
+
+// Reload BOTH selector lists — a stale entry may be in either (PB1 meta notes or PB2 books).
+async function reloadSelectorLists() {
+    await loadPb2Books();
+    await loadExistingBooks();
+}
+
 async function deleteBookFromList(book) {
     if (!book || !book.bookObjectId) return;
     let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete "' + book.workName + '"? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
     if (!ok) return;
-    try {
-        let result = await resetPictureBook(book.bookObjectId);
-        if (result && result.reset) {
-            page.toast('success', 'Picture book deleted');
-            am7client.clearCache(0, true);
-            await loadExistingBooks();
-        } else {
-            page.toast('error', (result && result.reason) || 'Failed to delete book');
-        }
-    } catch (e) {
-        page.toast('error', 'Failed to delete book');
-    }
+    await performPbDelete(book.bookObjectId, reloadSelectorLists);
 }
 
 async function deletePb2BookFromList(b) {
     if (!b || !b.objectId) return;
     let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete "' + (b.name || 'this book') + '"? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
     if (!ok) return;
-    try {
-        // Backend reset() accepts either data.group objectId or olio.pb.book objectId
-        let result = await resetPictureBook(b.objectId);
-        if (result && result.reset) {
-            page.toast('success', 'Picture book deleted');
-            am7client.clearCache(0, true);
-            await loadPb2Books();
-        } else {
-            page.toast('error', (result && result.reason) || 'Failed to delete book');
-        }
-    } catch (e) {
-        page.toast('error', 'Failed to delete book');
-    }
+    // Backend reset() accepts either data.group objectId or olio.pb.book objectId.
+    await performPbDelete(b.objectId, reloadSelectorLists);
 }
 
 var workSelectorView = {
@@ -604,20 +631,13 @@ function renderHeader() {
             onclick: async function () {
                 let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
                 if (!ok) return;
-                resetPictureBook(viewerBookId).then(function (result) {
-                    if (result && result.reset) {
-                        page.toast('success', 'Picture book deleted');
-                        viewerScenes = [];
-                        imageUrls = {};
-                        currentPage = 0;
-                        am7client.clearCache(0, true);
-                        m.route.set('/picture-book');
-                    } else {
-                        page.toast('error', (result && result.reason) || 'Failed to delete book');
-                    }
-                }).catch(function () {
-                    page.toast('error', 'Failed to delete book');
-                });
+                let gone = await performPbDelete(viewerBookId, null);
+                if (gone) {
+                    viewerScenes = [];
+                    imageUrls = {};
+                    currentPage = 0;
+                    m.route.set('/picture-book');
+                }
             }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')) : null,
 
@@ -687,17 +707,8 @@ var pictureBookView = {
                     onclick: async function () {
                         let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book?', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
                         if (!ok) return;
-                        resetPictureBook(viewerBookId).then(function (result) {
-                            if (result && result.reset) {
-                                page.toast('success', 'Picture book deleted');
-                                am7client.clearCache(0, true);
-                                m.route.set('/picture-book');
-                            } else {
-                                page.toast('error', (result && result.reason) || 'Failed to delete book');
-                            }
-                        }).catch(function () {
-                            page.toast('error', 'Failed to delete book');
-                        });
+                        let gone = await performPbDelete(viewerBookId, null);
+                        if (gone) m.route.set('/picture-book');
                     }
                 }, [
                     m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'delete'),
@@ -725,17 +736,8 @@ var pictureBookView = {
                             onclick: async function () {
                                 let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this incomplete picture book?', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
                                 if (!ok) return;
-                                resetPictureBook(viewerBookId).then(function (result) {
-                                    if (result && result.reset) {
-                                        page.toast('success', 'Picture book deleted');
-                                        am7client.clearCache(0, true);
-                                        m.route.set('/picture-book');
-                                    } else {
-                                        page.toast('error', (result && result.reason) || 'Failed to delete book');
-                                    }
-                                }).catch(function () {
-                                    page.toast('error', 'Failed to delete book');
-                                });
+                                let gone = await performPbDelete(viewerBookId, null);
+                                if (gone) m.route.set('/picture-book');
                             }
                         }, [
                             m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'delete'),
@@ -933,17 +935,8 @@ function renderPb2Header() {
             onclick: async function () {
                 let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
                 if (!ok) return;
-                resetPictureBook(pb2BookObjectId).then(function (result) {
-                    if (result && result.reset) {
-                        page.toast('success', 'Picture book deleted');
-                        am7client.clearCache(0, true);
-                        m.route.set('/picture-book');
-                    } else {
-                        page.toast('error', (result && result.reason) || 'Failed to delete book');
-                    }
-                }).catch(function () {
-                    page.toast('error', 'Failed to delete book');
-                });
+                let gone = await performPbDelete(pb2BookObjectId, null);
+                if (gone) m.route.set('/picture-book');
             }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')) : null
     ]);
