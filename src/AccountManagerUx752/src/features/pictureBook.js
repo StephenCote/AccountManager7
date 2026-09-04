@@ -110,12 +110,16 @@ async function deleteBookFromList(book) {
     let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete "' + book.workName + '"? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
     if (!ok) return;
     try {
-        await resetPictureBook(book.bookObjectId);
-        page.toast('success', 'Picture book deleted');
-        am7client.clearCache(0, true);
-        await loadExistingBooks();
+        let result = await resetPictureBook(book.bookObjectId);
+        if (result && result.reset) {
+            page.toast('success', 'Picture book deleted');
+            am7client.clearCache(0, true);
+            await loadExistingBooks();
+        } else {
+            page.toast('error', (result && result.reason) || 'Failed to delete book');
+        }
     } catch (e) {
-        page.toast('error', 'Failed to delete');
+        page.toast('error', 'Failed to delete book');
     }
 }
 
@@ -125,12 +129,16 @@ async function deletePb2BookFromList(b) {
     if (!ok) return;
     try {
         // Backend reset() accepts either data.group objectId or olio.pb.book objectId
-        await resetPictureBook(b.objectId);
-        page.toast('success', 'Picture book deleted');
-        am7client.clearCache(0, true);
-        await loadPb2Books();
+        let result = await resetPictureBook(b.objectId);
+        if (result && result.reset) {
+            page.toast('success', 'Picture book deleted');
+            am7client.clearCache(0, true);
+            await loadPb2Books();
+        } else {
+            page.toast('error', (result && result.reason) || 'Failed to delete book');
+        }
     } catch (e) {
-        page.toast('error', 'Failed to delete');
+        page.toast('error', 'Failed to delete book');
     }
 }
 
@@ -596,15 +604,19 @@ function renderHeader() {
             onclick: async function () {
                 let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
                 if (!ok) return;
-                resetPictureBook(viewerBookId).then(function () {
-                    page.toast('success', 'Picture book deleted');
-                    viewerScenes = [];
-                    imageUrls = {};
-                    currentPage = 0;
-                    am7client.clearCache(0, true);
-                    m.route.set('/picture-book');
+                resetPictureBook(viewerBookId).then(function (result) {
+                    if (result && result.reset) {
+                        page.toast('success', 'Picture book deleted');
+                        viewerScenes = [];
+                        imageUrls = {};
+                        currentPage = 0;
+                        am7client.clearCache(0, true);
+                        m.route.set('/picture-book');
+                    } else {
+                        page.toast('error', (result && result.reason) || 'Failed to delete book');
+                    }
                 }).catch(function () {
-                    page.toast('error', 'Failed to delete');
+                    page.toast('error', 'Failed to delete book');
                 });
             }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')) : null,
@@ -675,12 +687,16 @@ var pictureBookView = {
                     onclick: async function () {
                         let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book?', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
                         if (!ok) return;
-                        resetPictureBook(viewerBookId).then(function () {
-                            page.toast('success', 'Picture book deleted');
-                            am7client.clearCache(0, true);
-                            m.route.set('/picture-book');
+                        resetPictureBook(viewerBookId).then(function (result) {
+                            if (result && result.reset) {
+                                page.toast('success', 'Picture book deleted');
+                                am7client.clearCache(0, true);
+                                m.route.set('/picture-book');
+                            } else {
+                                page.toast('error', (result && result.reason) || 'Failed to delete book');
+                            }
                         }).catch(function () {
-                            page.toast('error', 'Failed to delete');
+                            page.toast('error', 'Failed to delete book');
                         });
                     }
                 }, [
@@ -709,12 +725,16 @@ var pictureBookView = {
                             onclick: async function () {
                                 let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this incomplete picture book?', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
                                 if (!ok) return;
-                                resetPictureBook(viewerBookId).then(function () {
-                                    page.toast('success', 'Picture book deleted');
-                                    am7client.clearCache(0, true);
-                                    m.route.set('/picture-book');
+                                resetPictureBook(viewerBookId).then(function (result) {
+                                    if (result && result.reset) {
+                                        page.toast('success', 'Picture book deleted');
+                                        am7client.clearCache(0, true);
+                                        m.route.set('/picture-book');
+                                    } else {
+                                        page.toast('error', (result && result.reason) || 'Failed to delete book');
+                                    }
                                 }).catch(function () {
-                                    page.toast('error', 'Failed to delete');
+                                    page.toast('error', 'Failed to delete book');
                                 });
                             }
                         }, [
@@ -913,12 +933,16 @@ function renderPb2Header() {
             onclick: async function () {
                 let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
                 if (!ok) return;
-                resetPictureBook(pb2BookObjectId).then(function () {
-                    page.toast('success', 'Picture book deleted');
-                    am7client.clearCache(0, true);
-                    m.route.set('/picture-book');
+                resetPictureBook(pb2BookObjectId).then(function (result) {
+                    if (result && result.reset) {
+                        page.toast('success', 'Picture book deleted');
+                        am7client.clearCache(0, true);
+                        m.route.set('/picture-book');
+                    } else {
+                        page.toast('error', (result && result.reason) || 'Failed to delete book');
+                    }
                 }).catch(function () {
-                    page.toast('error', 'Failed to delete');
+                    page.toast('error', 'Failed to delete book');
                 });
             }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')) : null

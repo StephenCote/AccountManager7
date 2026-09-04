@@ -1283,18 +1283,25 @@ public class PictureBookService {
     public Response reset(@PathParam("bookObjectId") String bookObjectId,
             @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        boolean ok;
+        // Transport-only: PictureBookUtil.reset owns the delete logic and returns a concrete reason on a
+        // partial/persistence failure (Issue 1). Copy that reason through unchanged — do not fabricate one.
+        PictureBookUtil.DeleteResult rr;
         try {
-            ok = PictureBookUtil.reset(user, bookObjectId);
+            rr = PictureBookUtil.reset(user, bookObjectId);
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }
         try {
             BaseRecord resetResult = PictureBookUtil.buildResult();
-            resetResult.set("reset", ok);
+            resetResult.set("reset", rr.deleted);
+            if (!rr.deleted && rr.reason != null) {
+                resetResult.set("reason", rr.reason);
+            }
             return Response.status(200).entity(toJson(resetResult)).build();
         } catch (Exception ex) {
-            return Response.status(200).entity("{\"reset\":" + ok + "}").build();
+            return Response.status(200).entity("{\"reset\":" + rr.deleted
+                + (!rr.deleted && rr.reason != null ? ",\"reason\":" + escapeJson(rr.reason) : "")
+                + "}").build();
         }
     }
 }

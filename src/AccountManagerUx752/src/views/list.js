@@ -15,6 +15,11 @@ import { LLMConnector } from '../chat/LLMConnector.js';
 import { ChatSetupWizard } from '../chat/ChatSetupWizard.js';
 import { exportGroup, checkGroupExport, downloadGroupExport } from '../workflows/groupExport.js';
 import { memberCloud } from '../workflows/memberCloud.js';
+// Issue 1: PictureBook/ChapBook books (olio.pb.book) can be invalid/orphaned and are not
+// deletable through the generic delete path — route them through the dedicated reset endpoint,
+// which handles complete + incomplete books (including olio-principal-owned rows) and returns a
+// concrete { reset, reason } outcome so the list can surface the real reason on failure.
+import { resetPictureBook } from '../workflows/sceneExtractor.js';
 // breadcrumb is now a component in navigation.js (Ux7 pattern), not inline
 
 // ---------------------------------------------------------------------------
@@ -240,6 +245,16 @@ function newListControl() {
                         aP.push(am7client.deleteWorld(obj.objectId).then(function (r) {
                             if (r && r.deleted !== false) page.toast('success', 'World deleted');
                             else page.toast('error', 'Failed to delete world');
+                        }));
+                    } else if (getType(obj) === 'olio.pb.book') {
+                        // Issue 1: PictureBook/ChapBook delete via the reset endpoint — the only path
+                        // that removes invalid/orphaned books. Reads the concrete reason on failure
+                        // instead of the generic "Failed to delete object".
+                        aP.push(resetPictureBook(obj.objectId).then(function (r) {
+                            if (r && r.reset) page.toast('success', 'Deleted book');
+                            else page.toast('error', (r && r.reason) || 'Failed to delete book');
+                        }).catch(function () {
+                            page.toast('error', 'Failed to delete book');
                         }));
                     } else {
                         aP.push(page.deleteObject(getType(obj), obj.objectId).then(function (r) {

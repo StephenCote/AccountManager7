@@ -67,6 +67,9 @@ public class TestChapBookDefaultChatConfig extends BaseTest {
 		assertEquals("Personal config must be owned by the acting user", userId, personalOwnerId);
 
 		// Populate the shared ChatConfigs library (idempotent; builds records from templates, no LLM).
+		// populateDefaults seeds MANY named configs from templates (contentAnalysis, generalChat, coding,
+		// ...) plus the "Open Chat" alias — so the library is deliberately crowded here, which is exactly
+		// the condition under which determinism must hold.
 		String server = testProperties.getProperty("test.llm.ollama.server");
 		String model = testProperties.getProperty("test.llm.ollama.model");
 		ChatLibraryUtil.populateDefaults(user, server, model, "ollama");
@@ -78,6 +81,22 @@ public class TestChapBookDefaultChatConfig extends BaseTest {
 		assertNotNull("Precondition: a shared-library chatConfig must exist", libraryConfig);
 		long libGroupId = ((Number) libDir.get(FieldNames.FIELD_ID)).longValue();
 
+		// Precondition (determinism proof): the library is crowded — the named contentAnalysis config
+		// AND at least one OTHER distinctly-named library config (generalChat) both exist, and the two
+		// are different records. If resolveDefaultChatConfig returned merely "the first library config"
+		// it could return either; asserting it returns contentAnalysis specifically is the fix's contract.
+		BaseRecord analysisCfg = ChatUtil.getLibraryConfig(user, OlioModelNames.MODEL_CHAT_CONFIG,
+			ChatUtil.DEFAULT_ANALYSIS_CHAT_CONFIG_NAME);
+		assertNotNull("Precondition: the named '" + ChatUtil.DEFAULT_ANALYSIS_CHAT_CONFIG_NAME
+			+ "' library config must exist", analysisCfg);
+		BaseRecord generalCfg = ChatUtil.getLibraryConfig(user, OlioModelNames.MODEL_CHAT_CONFIG,
+			ChatUtil.DEFAULT_GENERAL_CHAT_CONFIG_NAME);
+		assertNotNull("Precondition: the named '" + ChatUtil.DEFAULT_GENERAL_CHAT_CONFIG_NAME
+			+ "' library config must ALSO exist (so the library is genuinely crowded)", generalCfg);
+		assertFalse("The two named library configs must be distinct records (crowded library)",
+			((String) analysisCfg.get(FieldNames.FIELD_OBJECT_ID))
+				.equals((String) generalCfg.get(FieldNames.FIELD_OBJECT_ID)));
+
 		// The fix: the default must be the LIBRARY config, not the personal one.
 		BaseRecord resolved = ChapBookUtil.resolveDefaultChatConfig(user);
 		assertNotNull("resolveDefaultChatConfig must return a config", resolved);
@@ -86,11 +105,17 @@ public class TestChapBookDefaultChatConfig extends BaseTest {
 		assertEquals("Resolved default must be the SYSTEM/shared-library config (its groupId is the "
 			+ "ChatConfigs library dir)", libGroupId, resolvedGroupId);
 		assertFalse("Resolved default must NOT be one of the acting user's own configs", resolvedOwnerId == userId);
-		assertEquals("Resolved default must match the shared-library config getLibraryConfig returns",
-			(String) libraryConfig.get(FieldNames.FIELD_OBJECT_ID), (String) resolved.get(FieldNames.FIELD_OBJECT_ID));
 
-		logger.info("resolveDefaultChatConfig_prefersSharedLibraryOverPersonal PASSED: libGroupId={} resolvedGroupId={} resolvedOwnerId={} userId={}",
-			libGroupId, resolvedGroupId, resolvedOwnerId, userId);
+		// DETERMINISM: even with other named library configs present (generalChat, coding, Open Chat, ...),
+		// the resolved default must be the one NAMED contentAnalysis — not merely "a" library config.
+		assertEquals("Resolved default must be the config NAMED '" + ChatUtil.DEFAULT_ANALYSIS_CHAT_CONFIG_NAME
+			+ "' (deterministic contentAnalysis-first order)", ChatUtil.DEFAULT_ANALYSIS_CHAT_CONFIG_NAME,
+			(String) resolved.get(FieldNames.FIELD_NAME));
+		assertEquals("Resolved default must be exactly the contentAnalysis library record",
+			(String) analysisCfg.get(FieldNames.FIELD_OBJECT_ID), (String) resolved.get(FieldNames.FIELD_OBJECT_ID));
+
+		logger.info("resolveDefaultChatConfig_prefersSharedLibraryOverPersonal PASSED: name={} libGroupId={} resolvedGroupId={} resolvedOwnerId={} userId={}",
+			(String) resolved.get(FieldNames.FIELD_NAME), libGroupId, resolvedGroupId, resolvedOwnerId, userId);
 	}
 
 	/**
@@ -100,7 +125,12 @@ public class TestChapBookDefaultChatConfig extends BaseTest {
 	@Test
 	public void resolveDefaultChatConfig_fallsBackToPersonalWhenNoLibrary() throws Exception {
 		OrganizationContext o = getTestOrganization("/Development/CbChatCfgNoLib");
-		BaseRecord user = getCreateUser("cbCfgNoLibUser", o);
+		// A UNIQUE user per run: getCreateUser reuses a same-named user across runs, and each run of this
+		// test creates one personal chatConfig for it — so a reused user accumulates several, and step-4's
+		// find (no sort) returns the OLDEST, not the one this run created, making the exact-objectId check
+		// below flap. A fresh user has exactly one personal config, so "the fallback returns a user-owned
+		// config" and "it is the one just created" coincide — keeping the strong, deterministic assertion.
+		BaseRecord user = getCreateUser("cbCfgNoLibUser-" + System.currentTimeMillis(), o);
 		assertNotNull("Test user must resolve", user);
 		long userId = ((Number) user.get(FieldNames.FIELD_ID)).longValue();
 

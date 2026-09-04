@@ -265,6 +265,28 @@ public class PictureBookUtil {
         }
     }
 
+    /**
+     * Issue 4: stamp the BOOK world's Gallery path ({@link SDUtil#ATTR_IMAGE_GALLERY_PATH}) on a PB2
+     * charPerson so a later (re)image call — which frequently arrives with the DEFAULT grid
+     * OlioContext (My Grid World) rather than the book's — stores this character's images under THIS
+     * book's world gallery. That gallery tree is olio-owned and RUCD-granted to the olio role
+     * ({@code getCreateBookContext} sets {@code scanNestedWorldGroups(true)}), so the olio user CAN
+     * makePath/write there. Read back by {@link SDUtil#resolveCharacterImagePath}. Persisted via the
+     * referenced-attribute mechanism (the only pattern that actually persists an attribute — see
+     * {@link #persistCharacterSceneAttributes}). Best-effort: a failure must not fail the book build;
+     * SDUtil then simply falls back to the passed context's world gallery.
+     */
+    private static void persistCharacterImageGalleryPath(BaseRecord charPerson, String bookGalleryPath) {
+        if (charPerson == null || bookGalleryPath == null || bookGalleryPath.isBlank()) return;
+        try {
+            IOSystem.getActiveContext().getRecordUtil().createRecord(
+                    AttributeUtil.addAttribute(charPerson, SDUtil.ATTR_IMAGE_GALLERY_PATH, bookGalleryPath));
+        } catch (Exception e) {
+            logger.warn("Failed to persist " + SDUtil.ATTR_IMAGE_GALLERY_PATH + " for "
+                    + charPerson.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+        }
+    }
+
     // ----- Public parameter/result holders --------------------------------
 
     /** Result of {@link #extractScenesOnly}: either a raw scene list, or a chunked extraction summary. */
@@ -1703,9 +1725,19 @@ public class PictureBookUtil {
             landVars.put("setting", setting);
             landVars.put("mood", mood);
             landVars.put("time", "");
-            // Style is NOT sent to the LLM — it's a discrete, code-owned fact appended via
-            // appendConfigStyleOnce(sdConfig) below. Feeding {style} here made the LLM emit its own
-            // "cinematic photograph style" on top of the config style (double/conflicting style).
+            // Style is deliberately NOT given a REAL value to the LLM — it's a discrete, code-owned
+            // fact appended via appendConfigStyleOnce(sdConfig) below; feeding a real {style} made the
+            // LLM emit its own competing "cinematic photograph style" on top of the config style
+            // (double/conflicting style). BUT callLlmInternal's UNSUBSTITUTED_PLACEHOLDER guard HARD-
+            // refuses any call whose composed template still contains an unfilled "{name}", and the
+            // landscape template's user section carries a "STYLE: {style}" line — so omitting the var
+            // entirely hard-failed EVERY landscape prompt ("Refusing to call LLM for prompt
+            // 'pictureBook.landscape-prompt' — ... first: '{style}'"). Supply an EMPTY style so the
+            // placeholder resolves (no style signal reaches the LLM, so no competing style) while the
+            // real style stays owned by appendConfigStyleOnce. Passing it here — rather than relying on
+            // the template no longer having the line — makes the fix robust whether the template
+            // resolves from a user/system DB promptTemplate record or the classpath fallback.
+            landVars.put("style", "");
             landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars, promptTemplateOverride);
             if (isErrorOrEmptyPayload(landscapePrompt)) {
                 logger.warn("Landscape prompt failed — falling back to setting text");
@@ -2376,17 +2408,22 @@ public class PictureBookUtil {
     }
 
     /**
-     * Clamp free-text LLM-extracted gender to exactly one of MALE/FEMALE/UNKNOWN
-     * (Stephen's explicit decision — no other values). identity.person.gender is a plain
-     * string with maxLength 10, so all three values always fit; this is a logic fix, not a
-     * schema change. Never throws — any unrecognized/blank input maps to UNKNOWN so a bad LLM
-     * value can never abort character creation.
+     * Clamp free-text LLM-extracted gender to exactly one of the ecosystem-canonical
+     * LOWERCASE forms "male"/"female", or "" when undetermined (Stephen's explicit decision —
+     * no other values). identity.person.gender is a plain string (NOT an enum), so it is
+     * persisted verbatim with no case normalization — the value returned here is exactly what
+     * lands in the DB and what every consumer reads back. The rest of Olio stores lowercase
+     * (CharacterUtil.randomPerson) and compares with case-sensitive "male".equals(gender)
+     * (NarrativeUtil pronouns/labels, BodyStatsProvider, StatisticsUtil, Chat, PromptUtil,
+     * VectorProvider, …), so any other case silently falls through to the female branch.
+     * Never throws — any unrecognized/blank input maps to "" so a bad LLM value can never
+     * abort character creation.
      */
     private static String normalizeGender(String raw) {
         if (raw == null) return "";
         String g = raw.trim().toLowerCase();
-        if (g.equals("male") || g.equals("m")) return "MALE";
-        if (g.equals("female") || g.equals("f")) return "FEMALE";
+        if (g.equals("male") || g.equals("m")) return "male";
+        if (g.equals("female") || g.equals("f")) return "female";
         return "";  // undetermined — caller falls back to baseline
     }
 
@@ -2901,17 +2938,18 @@ public class PictureBookUtil {
             if (!firstName.isEmpty()) charPerson.set("firstName", firstName);
             if (!lastName.isEmpty()) charPerson.set("lastName", lastName);
 
-            // Apply gender — clamped to MALE/FEMALE/UNKNOWN only, never a raw/unrecognized
-            // LLM value (see normalizeGender()). Must happen before create() so a bad LLM
-            // value never aborts character creation.
+            // Apply gender — clamped to the ecosystem-canonical LOWERCASE "male"/"female" only,
+            // never a raw/unrecognized LLM value (see normalizeGender()). Must happen before
+            // create() so a bad LLM value never aborts character creation.
             String gender = normalizeGender((String) charData.get("gender"));
-            // Undetermined LLM gender: fall back to the random baseline's gender, uppercased to match
-            // the MALE/FEMALE/UNKNOWN canonical form. "UNKNOWN" (7 chars) still cannot go into
-            // apparel.gender (maxLength:6), so we only reach UNKNOWN when baseline is also absent.
+            // Undetermined LLM gender: fall back to the random baseline's gender. CharacterUtil
+            // .randomPerson already stores lowercase "male"/"female", but lowercase() here keeps
+            // the value canonical regardless of the baseline's source so case-sensitive consumers
+            // (NarrativeUtil/BodyStatsProvider/StatisticsUtil) don't silently render female.
             if ((gender == null || gender.isEmpty()) && baseline != null) {
                 Object baseGender = baseline.get(FieldNames.FIELD_GENDER);
                 if (baseGender != null && !baseGender.toString().isBlank())
-                    gender = baseGender.toString().toUpperCase();
+                    gender = baseGender.toString().trim().toLowerCase();
             }
             charPerson.set("gender", gender);
 
@@ -3902,6 +3940,32 @@ public class PictureBookUtil {
             }
         }
 
+        // Issue 4: resolve the BOOK world's Gallery path ONCE (a re-query per character would be
+        // wasteful) so each charPerson can be stamped with SDUtil.ATTR_IMAGE_GALLERY_PATH. A later
+        // (re)image call resolves the DEFAULT grid OlioContext when the request carries no
+        // universe/world ids, so without this stamp SDUtil.resolveCharacterImagePath would store the
+        // images under My Grid World's gallery instead of this book's world gallery. Mirrors the B4
+        // population.path re-query above for the case where the world was loaded shallow.
+        String bookGalleryPath = null;
+        if (pb2OlioCtx != null && pb2OlioCtx.getWorld() != null) {
+            bookGalleryPath = pb2OlioCtx.getWorld().get("gallery.path");
+            if (bookGalleryPath == null || bookGalleryPath.isBlank()) {
+                String worldObjId = pb2OlioCtx.getWorld().get(FieldNames.FIELD_OBJECT_ID);
+                if (worldObjId != null) {
+                    long orgIdG = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+                    Query gq = QueryUtil.createQuery(OlioModelNames.MODEL_WORLD, FieldNames.FIELD_OBJECT_ID, worldObjId);
+                    gq.field(FieldNames.FIELD_ORGANIZATION_ID, orgIdG);
+                    gq.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "gallery.path"});
+                    gq.setCache(false);
+                    BaseRecord fullWorld = IOSystem.getActiveContext().getAccessPoint().find(user, gq);
+                    if (fullWorld != null) bookGalleryPath = fullWorld.get("gallery.path");
+                }
+            }
+            if (bookGalleryPath == null || bookGalleryPath.isBlank()) {
+                logger.warn("createFromScenes(pb2): could not resolve book world gallery.path — character images will fall back to the (re)image context's world gallery");
+            }
+        }
+
         Map<String, String> charObjectIds = new LinkedHashMap<>();
         List<String> failedCharacters = new ArrayList<>();
         List<String> failedApparel = new ArrayList<>();
@@ -3945,6 +4009,7 @@ public class PictureBookUtil {
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
                 persistCharacterSceneAttributes(user, cp, charSceneIndices.get(cname), reducedDescription);
+                persistCharacterImageGalleryPath(cp, bookGalleryPath);
             } else {
                 logger.error("createCharPerson failed for '" + cname + "' during /create-from-scenes (pb2) — character will be absent from the book");
                 failedCharacters.add(cname);
@@ -5381,6 +5446,103 @@ public class PictureBookUtil {
     }
 
     /**
+     * Result of a single {@link #deleteRecordExplained(BaseRecord, BaseRecord)} attempt. Carries the
+     * concrete, human-readable reason a delete did not happen so the transport layer can surface it
+     * verbatim (Issue 1: no more bare "Failed to delete"). {@code authorized} lets a caller map an
+     * authorization failure to HTTP 403 versus a persistence failure to HTTP 500 without string-sniffing
+     * the reason. On success {@code deleted=true}, {@code authorized=true}, {@code reason=null}.
+     */
+    public static class DeleteResult {
+        public boolean deleted;
+        public boolean authorized;
+        public String reason;
+
+        public DeleteResult() {}
+
+        public DeleteResult(boolean deleted, boolean authorized, String reason) {
+            this.deleted = deleted;
+            this.authorized = authorized;
+            this.reason = reason;
+        }
+
+        /** A successful delete: deleted + authorized, no reason. */
+        public static DeleteResult ok() {
+            return new DeleteResult(true, true, null);
+        }
+
+        /** A PBAC-denied delete: not deleted, not authorized, with a reason. */
+        public static DeleteResult denied(String reason) {
+            return new DeleteResult(false, false, reason);
+        }
+
+        /** An authorized delete that failed at persistence: not deleted but authorized, with a reason. */
+        public static DeleteResult failed(String reason) {
+            return new DeleteResult(false, true, reason);
+        }
+    }
+
+    /**
+     * Delete a single record and return a concrete, logged reason on failure instead of a bare boolean.
+     * <p>
+     * This is the Objects7 root of Issue 1 ("no more bare 'Failed to delete'"): it explicitly evaluates
+     * {@code canDelete} first (so a PBAC denial is distinguishable from a persistence failure and carries
+     * the actual policy messages), then performs the delete under a tightly-bracketed policy trace so the
+     * server log holds the authorization reasoning for a persistence failure. The concrete reason is
+     * logged here and returned to the caller so the transport layer can copy it through unchanged.
+     *
+     * @param actor  the acting user (also used as contextUser for the authorization evaluation)
+     * @param target the record to delete
+     * @return a {@link DeleteResult} — {@code deleted=true} on success; otherwise {@code deleted=false}
+     *         with {@code authorized} distinguishing a PBAC denial (false) from a persistence failure
+     *         (true), and a non-null {@code reason}
+     */
+    public static DeleteResult deleteRecordExplained(BaseRecord actor, BaseRecord target) {
+        String schema = (target != null) ? target.getSchema() : "null";
+        Object oid = (target != null) ? target.get(FieldNames.FIELD_OBJECT_ID) : null;
+        PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canDelete(actor, actor, target);
+        if (prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+            String detail = joinPolicyMessages(prr);
+            String reason = "PBAC denied delete of " + schema + " " + oid
+                + (detail.isEmpty() ? "" : ": " + detail);
+            logger.warn(reason);
+            return DeleteResult.denied(reason);
+        }
+        // canDelete already PERMITted above, so the delete is authorized; do NOT enable PolicyUtil.setTrace
+        // here — it mutates a process-global singleton with no synchronization, so on a concurrent delete
+        // one thread's finally-setTrace(false) races another thread's enable. The surfaced reason comes
+        // from joinPolicyMessages / the persistence-failure string below, not from trace output.
+        boolean ok = IOSystem.getActiveContext().getAccessPoint().delete(actor, target);
+        if (!ok) {
+            String reason = "Delete of " + schema + " " + oid
+                + " failed at persistence (child/FK/writer); see server log.";
+            logger.warn(reason);
+            return DeleteResult.failed(reason);
+        }
+        return DeleteResult.ok();
+    }
+
+    /** Join the non-null policy-response messages (PolicyResponseType.getMessages) for a failure detail. */
+    private static String joinPolicyMessages(PolicyResponseType prr) {
+        if (prr == null) {
+            return "";
+        }
+        List<String> messages = prr.getMessages();
+        if (messages == null || messages.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String m : messages) {
+            if (m != null && !m.isBlank()) {
+                if (sb.length() > 0) {
+                    sb.append("; ");
+                }
+                sb.append(m);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
      * Delete the book group contents (Scenes/, Characters/, meta) then the group itself.
      * Explicit child deletion — AccessPoint.delete on a group does NOT cascade — so
      * {@link #deleteGroupRecursive(BaseRecord, BaseRecord)} walks and deletes every record nested
@@ -5396,8 +5558,20 @@ public class PictureBookUtil {
      * which are persisted under the acting user's own shared {@code ~/Profiles}/{@code ~/Narratives}
      * /etc. buckets rather than grouped under the book's Characters subtree — this group-subtree
      * walk would otherwise never reach them (closed 2026-07-23, previously a documented gap here).
+     *
+     * <p>Returns a {@link DeleteResult} rather than a bare boolean (Issue 1): a partial/persistence
+     * failure surfaces {@code deleted=false} together with the concrete, logged {@code reason} of the
+     * first failing terminal delete, so the transport layer can put that reason in the {@code reset:false}
+     * response body instead of a generic literal. The incomplete/orphan and PB2 cleanup branches still
+     * return a success result, and a genuinely-absent book still throws {@link PictureBookException} 404.
+     *
+     * @param user         the acting user
+     * @param bookObjectId a data.group objectId or an olio.pb.book objectId
+     * @return a {@link DeleteResult}: {@code deleted=true} on full success, else {@code deleted=false}
+     *         with the concrete failure reason
+     * @throws PictureBookException 404 when no such book/group exists, 403 from the incomplete/orphan guard
      */
-    public static boolean reset(BaseRecord user, String bookObjectId) {
+    public static DeleteResult reset(BaseRecord user, String bookObjectId) {
         BaseRecord bookGroup = findBookGroup(user, bookObjectId);
 
         // If not found as a data.group objectId, try treating it as an olio.pb.book objectId
@@ -5417,7 +5591,7 @@ public class PictureBookUtil {
                 // for olio-owned rows) to tell "does not exist" apart from "exists but ungranted", then
                 // delete it under a creator/orphan guard so this can never remove another user's book.
                 if (deleteIncompleteBookAsOlio(user, bookObjectId, orgId2)) {
-                    return true;
+                    return DeleteResult.ok();
                 }
             }
             if (pb2Book != null) {
@@ -5447,13 +5621,16 @@ public class PictureBookUtil {
                 } catch (Exception e) {
                     logger.warn("Failed to delete orphaned olio.pb.book: " + e.getMessage());
                 }
-                return true;
+                return DeleteResult.ok();
             }
             throw new PictureBookException(404, "Book not found");
         }
 
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
         boolean ok = true;
+        // Capture the concrete reason of the first terminal-delete failure so the transport layer can
+        // surface it in the reset:false response body (Issue 1) instead of a generic literal.
+        String failReason = null;
 
         // Read meta before deleting to capture pb2BookObjectId for olio.pb.book cleanup
         if (pb2BookToDelete == null) {
@@ -5482,10 +5659,18 @@ public class PictureBookUtil {
                     (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
             if (grp != null) {
                 try {
-                    if (!deleteGroupRecursive(user, grp)) ok = false;
+                    if (!deleteGroupRecursive(user, grp)) {
+                        ok = false;
+                        if (failReason == null) {
+                            failReason = "Recursive delete of the " + sub + " group failed; see server log.";
+                        }
+                    }
                 } catch (Exception e) {
                     logger.warn("Failed to recursively delete " + sub + " group: " + e.getMessage());
                     ok = false;
+                    if (failReason == null) {
+                        failReason = "Recursive delete of the " + sub + " group threw: " + e.getMessage();
+                    }
                 }
             }
         }
@@ -5494,7 +5679,9 @@ public class PictureBookUtil {
         BaseRecord metaRec = loadMeta(user, bookGroupPath);
         if (metaRec != null) {
             try {
-                IOSystem.getActiveContext().getAccessPoint().delete(user, metaRec);
+                // Best-effort: a meta delete failure does not fail the whole reset (unchanged semantics).
+                // deleteRecordExplained logs the concrete reason on failure.
+                deleteRecordExplained(user, metaRec);
             } catch (Exception e) {
                 logger.warn("Failed to delete meta: " + e.getMessage());
             }
@@ -5502,10 +5689,19 @@ public class PictureBookUtil {
 
         // Delete the book group itself
         try {
-            IOSystem.getActiveContext().getAccessPoint().delete(user, bookGroup);
+            DeleteResult groupDel = deleteRecordExplained(user, bookGroup);
+            if (!groupDel.deleted) {
+                ok = false;
+                if (failReason == null) {
+                    failReason = groupDel.reason;
+                }
+            }
         } catch (Exception e) {
             logger.warn("Failed to delete book group: " + e.getMessage());
             ok = false;
+            if (failReason == null) {
+                failReason = "Delete of the book group threw: " + e.getMessage();
+            }
         }
 
         // Delete the olio.pb.book record when this is (or was) a PB2 book
@@ -5516,14 +5712,16 @@ public class PictureBookUtil {
                 pbDelQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId3);
                 BaseRecord pb2BookRec = IOSystem.getActiveContext().getAccessPoint().find(user, pbDelQ);
                 if (pb2BookRec != null) {
-                    IOSystem.getActiveContext().getAccessPoint().delete(user, pb2BookRec);
+                    // Best-effort: deleteRecordExplained logs the concrete reason on failure; a failure
+                    // here does not fail the whole reset (unchanged semantics).
+                    deleteRecordExplained(user, pb2BookRec);
                 }
             } catch (Exception e) {
                 logger.warn("Failed to delete olio.pb.book record: " + e.getMessage());
             }
         }
 
-        return ok;
+        return ok ? DeleteResult.ok() : DeleteResult.failed(failReason);
     }
 
     /**
@@ -5590,7 +5788,21 @@ public class PictureBookUtil {
         } catch (Exception e) {
             logger.warn("Failed to clean incomplete book group for " + bookObjectId + ": " + e.getMessage());
         }
-        IOSystem.getActiveContext().getAccessPoint().delete(olioUser, asOlio);
+        // The olio principal owns the row, so canDelete normally PERMITs and a non-deleted result is a
+        // genuine persistence failure (FK/writer). Surface its concrete reason instead of returning false:
+        // false falls through to the caller's generic 404 "Book not found"/"ChapBook not found", which is
+        // exactly the "general failure to delete with no reason" Issue 1 set out to kill (and which
+        // deleteChapBook's own javadoc already promises to map to 500). Map on the DeleteResult's authorized
+        // flag exactly as deleteChapBook does — a persistence failure is 500, an (unexpected) PBAC denial is
+        // 403 — rather than assuming PERMIT. The distinct "genuinely absent" cases above still return
+        // false → 404; deleteRecordExplained has already logged the detail, and this puts it in the response.
+        DeleteResult delRes = deleteRecordExplained(olioUser, asOlio);
+        if (!delRes.deleted) {
+            String reason = (delRes.reason != null && !delRes.reason.isBlank())
+                ? delRes.reason
+                : "Failed to delete incomplete book " + bookObjectId + "; see server log.";
+            throw new PictureBookException(delRes.authorized ? 500 : 403, reason);
+        }
         logger.info("Deleted incomplete/failed olio.pb.book as olio principal: " + bookObjectId
             + " (orphaned=" + orphaned + ", isCreator=" + isCreator + ", status=" + statusStr + ")");
         return true;

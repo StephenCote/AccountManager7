@@ -289,8 +289,19 @@ async function resetPictureBook(bookObjectId) {
         method: 'DELETE',
         credentials: 'include'
     });
-    if (!resp.ok) throw new Error('Reset failed: ' + resp.status);
-    return resp.json();
+    // Issue 1: the backend always describes the outcome in the body. A success is { reset:true };
+    // an EXPLAINED failure is { reset:false, reason:'…' } returned with HTTP 200; an exception path
+    // is { error:'…' } with a non-2xx status. Parse the body even on a non-ok response so callers can
+    // surface the concrete reason instead of a bare "Failed to delete". Only synthesize a
+    // status-derived reason when there is no parseable body at all (e.g. a true network error).
+    let body = null;
+    try { body = await resp.json(); } catch (_) { /* no body / non-JSON */ }
+    if (body && typeof body === 'object') {
+        let reset = body.reset === true;
+        let reason = reset ? null : (body.reason || body.error || body.message || ('Reset failed: ' + resp.status));
+        return { reset: reset, reason: reason };
+    }
+    return { reset: resp.ok, reason: resp.ok ? null : ('Reset failed: ' + resp.status) };
 }
 
 /**

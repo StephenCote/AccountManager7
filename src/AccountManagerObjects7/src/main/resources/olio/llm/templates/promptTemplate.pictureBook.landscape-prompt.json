@@ -23,7 +23,6 @@
 				"SETTING: {setting}",
 				"MOOD: {mood}",
 				"TIME: {time}",
-				"STYLE: {style}",
 				"",
 				"Return only the SD prompt text."
 			]

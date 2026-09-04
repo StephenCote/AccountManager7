@@ -548,15 +548,30 @@ public class TestPictureBookUtilE2E extends BaseTest {
 			BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(testUser, cq);
 			assertNotNull("charPerson " + charOid + " must exist in a FRESH query", cp);
 
-			// Gender-clamp re-confirmation (incidental to this test's persistence focus, but this
-			// story deliberately includes a clearly-female character (Mira) and a gender-ambiguous
-			// one (Ash) to exercise normalizeGender()'s clamp to MALE/FEMALE/UNKNOWN for both a
-			// normal and an off-nominal LLM answer).
+			// Issue-5 gender-canonicalization re-confirmation. normalizeGender() clamps the raw LLM
+			// value to the ecosystem-canonical LOWERCASE "male"/"female" (never uppercase, never a raw
+			// LLM string): every case-sensitive consumer — NarrativeUtil.getGenderLabel()/pronouns,
+			// BodyStatsProvider, StatisticsUtil — tests "male".equals(gender), so an uppercase "MALE"
+			// silently fell through to the female branch and rendered males as "woman"/"girl" (the exact
+			// Issue-5 defect). This story deliberately includes a clearly-female character (Mira) and a
+			// gender-ambiguous one (Ash) so both a normal and an off-nominal LLM answer are exercised;
+			// both must still resolve to a canonical lowercase value (undetermined falls back to the
+			// random baseline's lowercase gender, so a real generated character is never blank here).
 			String gender = cp.get("gender");
 			assertNotNull("gender must not be null for " + charOid, gender);
-			assertTrue("gender must be clamped to MALE/FEMALE/UNKNOWN (was: '" + gender + "') for " + charOid,
-				gender.equals("MALE") || gender.equals("FEMALE") || gender.equals("UNKNOWN"));
+			assertTrue("gender must be canonicalized to LOWERCASE 'male'/'female' — never uppercase or a "
+				+ "raw LLM string (Issue 5) (was: '" + gender + "') for " + charOid,
+				gender.equals("male") || gender.equals("female"));
 			assertTrue("gender must fit the maxLength:10 field (was: '" + gender + "')", gender.length() <= 10);
+			// Issue-5 END-TO-END proof (the check the pre-fix test lacked): the STORED gender must
+			// actually drive the CORRECT narrative label through the real consumer. A male character
+			// must render "man", a female "woman" — never flipped. Uppercase "MALE" storage passed the
+			// clamp check above in the old test yet produced "woman" here, which is why males read as
+			// female in the Ux; asserting the label directly closes that gap.
+			String genderLabel = NarrativeUtil.getGenderLabel(gender, 30);
+			assertEquals("Issue 5: adult stored gender '" + gender + "' must render a matching adult label "
+				+ "via NarrativeUtil.getGenderLabel (male->man, female->woman), not a flipped one, for " + charOid,
+				gender.equals("male") ? "man" : "woman", genderLabel);
 
 			IOSystem.getActiveContext().getReader().populate(cp, new String[] { "narrative" });
 			BaseRecord narrative = cp.get("narrative");
@@ -900,6 +915,24 @@ public class TestPictureBookUtilE2E extends BaseTest {
 			BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(testUser, cq);
 			assertNotNull("charPerson " + charOid + " must exist in a FRESH query", cp);
 			String name = cp.get(FieldNames.FIELD_NAME);
+
+			// Issue-5 END-TO-END gender proof (LLM extract -> createCharPerson -> persisted gender). The
+			// stored gender MUST be the ecosystem-canonical LOWERCASE "male"/"female", and — the check the
+			// pre-fix test lacked — must drive the CORRECT narrative label through the real consumer
+			// (NarrativeUtil.getGenderLabel does the case-SENSITIVE "male".equals(gender), so uppercase
+			// "MALE" silently rendered males as "woman"). STORY_THREE_CHARS mixes a male (Ilan) and two
+			// females (Rosa, Tess), so this loop covers both branches over the live LLM.
+			String personGender = cp.get("gender");
+			assertNotNull("gender must be persisted (not null) for '" + name + "' (" + charOid + ")", personGender);
+			assertTrue("Issue 5: gender must be canonicalized to LOWERCASE 'male'/'female' — never uppercase "
+				+ "or a raw LLM string (was: '" + personGender + "') for '" + name + "' (" + charOid + ")",
+				personGender.equals("male") || personGender.equals("female"));
+			String personGenderLabel = NarrativeUtil.getGenderLabel(personGender, 30);
+			assertEquals("Issue 5: stored gender '" + personGender + "' for '" + name + "' (" + charOid
+				+ ") must render a matching adult label (male->man, female->woman), not a flipped one",
+				personGender.equals("male") ? "man" : "woman", personGenderLabel);
+			logger.info("charPerson '" + name + "' (" + charOid + ") gender='" + personGender
+				+ "' -> label='" + personGenderLabel + "'");
 
 			IOSystem.getActiveContext().getReader().populate(cp, new String[] { "narrative" });
 			BaseRecord narrative = cp.get("narrative");

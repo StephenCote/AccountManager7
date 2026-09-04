@@ -2085,7 +2085,7 @@ public class TestPictureBookFull extends BaseTest {
 		assertNotNull("Characters group should resolve before reset()", findGroupByPath(bookPath + "/Characters"));
 
 		// Act
-		boolean ok = PictureBookUtil.reset(testUser, bookObjectId);
+		boolean ok = PictureBookUtil.reset(testUser, bookObjectId).deleted;
 		assertTrue("reset() should report success", ok);
 
 		// Assert — the nested scene note and character are ACTUALLY gone (this is the KI-32
@@ -2190,7 +2190,7 @@ public class TestPictureBookFull extends BaseTest {
 		assertNotNull("state must resolve before reset()", findByModelAndObjectId(OlioModelNames.MODEL_CHAR_STATE, stateObjectId));
 
 		// Act
-		boolean ok = PictureBookUtil.reset(testUser, bookObjectId);
+		boolean ok = PictureBookUtil.reset(testUser, bookObjectId).deleted;
 		assertTrue("reset() should report success", ok);
 
 		// Assert — the character itself is gone (already covered elsewhere, sanity check here too)

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── sceneExtractor module exports ─────────────────────────────────────
 
@@ -63,6 +63,60 @@ describe('sceneExtractor module exports', () => {
     it('should export buildMeta as a function', async () => {
         let mod = await import('../workflows/sceneExtractor.js');
         expect(typeof mod.buildMeta).toBe('function');
+    });
+});
+
+// ── resetPictureBook — Issue 1: { reset, reason } contract ────────────
+// The reset endpoint always describes the outcome in the body: a success is { reset:true };
+// an EXPLAINED failure is { reset:false, reason:'…' } at HTTP 200; an exception path is
+// { error:'…' } at a non-2xx status. resetPictureBook must never throw for a well-formed
+// response — it returns { reset:<boolean>, reason:<string|null> } so callers can surface
+// the concrete reason instead of a bare "Failed to delete".
+
+describe('resetPictureBook { reset, reason } contract', () => {
+    let origFetch;
+    beforeEach(() => { origFetch = global.fetch; });
+    afterEach(() => { global.fetch = origFetch; });
+
+    it('returns { reset:true, reason:null } on a success body', async () => {
+        let { resetPictureBook } = await import('../workflows/sceneExtractor.js');
+        global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ reset: true }) });
+        let r = await resetPictureBook('book-1');
+        expect(r.reset).toBe(true);
+        expect(r.reason).toBeNull();
+    });
+
+    it('returns { reset:false, reason } from an explained-failure body at HTTP 200', async () => {
+        let { resetPictureBook } = await import('../workflows/sceneExtractor.js');
+        global.fetch = async () => ({
+            ok: true, status: 200,
+            json: async () => ({ reset: false, reason: 'Book is referenced by an active workflow' })
+        });
+        let r = await resetPictureBook('book-2');
+        expect(r.reset).toBe(false);
+        expect(r.reason).toBe('Book is referenced by an active workflow');
+    });
+
+    it('reads { error } from a non-2xx exception body as the reason', async () => {
+        let { resetPictureBook } = await import('../workflows/sceneExtractor.js');
+        global.fetch = async () => ({
+            ok: false, status: 403,
+            json: async () => ({ error: 'Not authorized to delete this book' })
+        });
+        let r = await resetPictureBook('book-3');
+        expect(r.reset).toBe(false);
+        expect(r.reason).toBe('Not authorized to delete this book');
+    });
+
+    it('falls back to a status-derived reason when the body is not JSON', async () => {
+        let { resetPictureBook } = await import('../workflows/sceneExtractor.js');
+        global.fetch = async () => ({
+            ok: false, status: 500,
+            json: async () => { throw new Error('not json'); }
+        });
+        let r = await resetPictureBook('book-4');
+        expect(r.reset).toBe(false);
+        expect(r.reason).toContain('500');
     });
 });
 

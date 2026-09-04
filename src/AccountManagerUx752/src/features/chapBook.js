@@ -34,17 +34,27 @@ async function fetchPoems(themeFilter) {
     return resp.json();
 }
 
-async function analyzePoem(poemObjectId) {
+async function analyzePoem(poemObjectId, chatConfigName) {
+    // Issue 2c: send the chosen chat config NAME so a re-analysis re-runs theme extraction against the
+    // user's selected LLM config. Omitted → backend falls back to its deterministic default.
+    let body = {};
+    if (chatConfigName) body.chatConfig = chatConfigName;
     let resp = await fetch(cbBase() + '/analyze/' + poemObjectId, {
         method: 'POST',
-        credentials: 'include'
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
     });
     if (!resp.ok) throw new Error('Analysis failed: ' + resp.status);
     return resp.json();
 }
 
-async function createChapBook(slug, title, poemObjectIds, maxLinesPerPage) {
+async function createChapBook(slug, title, poemObjectIds, maxLinesPerPage, chatConfigName) {
     let body = { slug: slug, title: title, poemObjectIds: poemObjectIds, maxLinesPerPage: maxLinesPerPage || 8 };
+    // Issue 2b: include the chosen chat config NAME (a chatConfig record name) so the backend contacts
+    // the user's selected LLM config for theme analysis. Omitted → backend applies its deterministic
+    // default (contentAnalysis → generalChat → library → user config).
+    if (chatConfigName) body.chatConfig = chatConfigName;
     let resp = await fetch(cbBase() + '/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -261,6 +271,11 @@ let createSlug = '';
 let createTitle = '';
 let createMaxLines = 8;
 let creating = false;
+// Issue 2b: chat config chosen (or auto-resolved) BEFORE the create request is sent, so the LLM the
+// backend contacts for theme/landscape work is the user's choice rather than a deterministic default.
+// { name, objectId } once chosen/resolved; null until the auto-default resolves or the user picks.
+let createChatConfigRef = null;
+let _createChatConfigResolving = false;
 
 // Add Poems from Notes — multi-select + order before import
 let addingPoem = false;
@@ -421,12 +436,32 @@ function sortIndicator(field) {
 
 // ── Create dialog ─────────────────────────────────────────────────────
 
+// Issue 2b: resolve the auto-default chat config for the create dialog, unless the user already
+// picked one. Prefers a SYSTEM library config (contentAnalysis → generalChat) via a library lookup
+// only — NO LLM call. Does NOT overwrite a user pick. Purely advisory: if it hasn't finished and the
+// user picked nothing, the backend still applies its deterministic default at create time.
+function ensureCreateChatConfigDefault() {
+    if (createChatConfigRef || _createChatConfigResolving) return;
+    _createChatConfigResolving = true;
+    resolveSystemChatConfig().then(function (rec) {
+        _createChatConfigResolving = false;
+        if (rec && rec.name && !createChatConfigRef) {
+            createChatConfigRef = { name: rec.name, objectId: rec.objectId };
+            m.redraw();
+        }
+    }).catch(function () { _createChatConfigResolving = false; });
+}
+
 function openCreateDialog() {
     // Pre-fill title from first selected poem
     let first = poems.find(function (p) { return selectedIds.has(p.objectId); });
     createTitle = first ? (first.title || '') : '';
     createSlug = slugify(createTitle);
     createMaxLines = 8;
+    // Issue 2b: fresh chat-config resolution per open (auto-default; user can override via picker).
+    createChatConfigRef = null;
+    _createChatConfigResolving = false;
+    ensureCreateChatConfigDefault();
     showCreateDialog = true;
     m.redraw();
 }
@@ -958,7 +993,7 @@ async function doCreateChapBook() {
     creating = true;
     m.redraw();
     try {
-        let result = await createChapBook(createSlug, createTitle, ids, createMaxLines);
+        let result = await createChapBook(createSlug, createTitle, ids, createMaxLines, createChatConfigRef && createChatConfigRef.name);
         lastCreatedBook = result;
         page.toast('success', 'ChapBook created: ' + (result.slug || createSlug));
         // Carry the source poem objectIds forward: analyze is per-poem and the book does not
@@ -993,7 +1028,14 @@ async function deleteBook(bookObjectId) {
         method: 'DELETE',
         credentials: 'include'
     });
-    if (!resp.ok) throw new Error('Delete failed: ' + resp.status);
+    if (!resp.ok) {
+        // Issue 1: the backend returns { error:'…' } with a concrete, status-appropriate message
+        // (404 not found, 403 PBAC / not a CHAPBOOK, 500 persistence). Surface that message so the
+        // toast tells the user why the delete failed instead of a bare status code.
+        let msg = null;
+        try { let body = await resp.json(); msg = body && (body.error || body.message || body.reason); } catch (_) {}
+        throw new Error(msg || ('Delete failed: ' + resp.status));
+    }
     return resp.json();
 }
 
@@ -1364,6 +1406,33 @@ const PoemLibrary = {
                                 oninput: function (e) { createMaxLines = parseInt(e.target.value) || 8; }
                             })
                         ]),
+                        // Issue 2b: choose the chat config BEFORE the create request is sent — the
+                        // backend contacts the LLM server-side only after the POST, so this is the
+                        // user's chance to pick the config that will drive theme analysis. Same library
+                        // picker the render dialog uses. Auto-resolved to a system default; overridable.
+                        m('div', [
+                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Chat Config'),
+                            m('div', {
+                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white cursor-pointer flex items-center justify-between',
+                                onclick: function () {
+                                    ObjectPicker.openLibrary({
+                                        libraryType: 'chatConfig',
+                                        title: 'Select Chat Config',
+                                        onSelect: function (item) {
+                                            if (item && item.name) {
+                                                createChatConfigRef = { name: item.name, objectId: item.objectId };
+                                                m.redraw();
+                                            }
+                                        }
+                                    });
+                                }
+                            }, [
+                                m('span', { class: createChatConfigRef ? '' : 'text-gray-400' },
+                                    createChatConfigRef ? createChatConfigRef.name
+                                        : (_createChatConfigResolving ? 'Resolving default…' : '(default — click to select)')),
+                                m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
+                            ])
+                        ]),
                         m('div', { class: 'text-xs text-gray-500 dark:text-gray-400' },
                             selectedIds.size + ' poem(s) selected')
                     ]),
@@ -1450,6 +1519,11 @@ let readerLoading = false;
 let readerError = null;
 let readerAnalyzing = false;
 let readerRendering = false;
+// Issue 2c: chat config selected (or auto-resolved) for the reader's Re-analyze pass — lets the user
+// re-run theme analysis against a chosen LLM config during EDIT rather than the deterministic default.
+// { name, objectId } once chosen/resolved; null until the auto-default resolves or the user picks.
+let reanalyzeChatConfigRef = null;
+let _reanalyzeChatConfigResolving = false;
 // Poem objectIds for the book's Analyze pass (a PER-POEM endpoint). Two sources, unioned:
 //   1) SERVER-derived (FIX C): GET /poems?bookObjectId — poems that carry this book's `book` FK.
 //      This is the durable source and works for a book opened in a different browser, after
@@ -1515,6 +1589,21 @@ async function loadReaderBook(bookObjectId) {
     m.redraw();
 }
 
+// Issue 2c: resolve the auto-default chat config for the reader's Re-analyze control, unless the user
+// already picked one. Prefers a SYSTEM library config (contentAnalysis → generalChat) via a library
+// lookup only — NO LLM call. Does NOT overwrite a user pick.
+function ensureReanalyzeChatConfigDefault() {
+    if (reanalyzeChatConfigRef || _reanalyzeChatConfigResolving) return;
+    _reanalyzeChatConfigResolving = true;
+    resolveSystemChatConfig().then(function (rec) {
+        _reanalyzeChatConfigResolving = false;
+        if (rec && rec.name && !reanalyzeChatConfigRef) {
+            reanalyzeChatConfigRef = { name: rec.name, objectId: rec.objectId };
+            m.redraw();
+        }
+    }).catch(function () { _reanalyzeChatConfigResolving = false; });
+}
+
 async function analyzeReaderPoems() {
     if (!readerPoemIds.length) {
         page.toast('warn', 'No poems are associated with this session — analyze poems from the Poem Library, then create the ChapBook.');
@@ -1523,9 +1612,11 @@ async function analyzeReaderPoems() {
     readerAnalyzing = true;
     m.redraw();
     let ok = 0, fail = 0;
+    // Issue 2c: re-run theme analysis against the user's chosen (or auto-resolved) chat config.
+    let chatConfigName = reanalyzeChatConfigRef && reanalyzeChatConfigRef.name;
     for (let pid of readerPoemIds) {
         try {
-            await analyzePoem(pid);
+            await analyzePoem(pid, chatConfigName);
             ok++;
         } catch (e) {
             fail++;
@@ -1576,6 +1667,11 @@ const ChapBookReader = {
         readerError = null;
         readerAnalyzing = false;
         readerRendering = false;
+        // Issue 2c: fresh chat-config resolution per book open (auto-default; user can override via the
+        // Re-analyze picker in the header).
+        reanalyzeChatConfigRef = null;
+        _reanalyzeChatConfigResolving = false;
+        ensureReanalyzeChatConfigDefault();
         // Issue 8: reset render dialog state
         showRenderDialog = false;
         pendingRenderBookId = null;
@@ -1613,8 +1709,33 @@ const ChapBookReader = {
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'edit_note'),
                     ' Review'
                 ]),
+                // Issue 2c: pick the chat config used for the Re-analyze pass. Opens the same library
+                // picker as create/render; auto-resolved to a system default, overridable per book.
+                readerPoemIds.length > 0 ? m('button', {
+                    class: 'px-3 py-1.5 rounded border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-1 disabled:opacity-50',
+                    title: 'Choose the chat config used to re-analyze poem themes',
+                    disabled: busy || roleWarning,
+                    onclick: function () {
+                        ObjectPicker.openLibrary({
+                            libraryType: 'chatConfig',
+                            title: 'Select Chat Config for Re-analysis',
+                            onSelect: function (item) {
+                                if (item && item.name) {
+                                    reanalyzeChatConfigRef = { name: item.name, objectId: item.objectId };
+                                    m.redraw();
+                                }
+                            }
+                        });
+                    }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'tune'),
+                    m('span', { class: 'max-w-[10rem] truncate' },
+                        reanalyzeChatConfigRef ? reanalyzeChatConfigRef.name
+                            : (_reanalyzeChatConfigResolving ? 'Resolving…' : 'Config'))
+                ]) : null,
                 readerPoemIds.length > 0 ? m('button', {
                     class: 'px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50',
+                    title: 'Re-analyze poem themes with the selected chat config',
                     disabled: busy || roleWarning,
                     onclick: analyzeReaderPoems
                 }, [
@@ -2450,5 +2571,5 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook };
+export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, analyzePoem };
 export default ChapBookFeature;

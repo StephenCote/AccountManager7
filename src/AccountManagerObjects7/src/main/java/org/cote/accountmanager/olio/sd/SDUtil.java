@@ -356,27 +356,112 @@ public class SDUtil {
 	 * ({@code generateMannequinImages}, {@code OlioService.reimageApparel}) is a separate concern
 	 * and is deliberately untouched.
 	 */
+	/**
+	 * Issue 4 (2026-09-04). Attribute stamped on a PictureBook (PB2) {@code charPerson} at creation
+	 * time (see {@code PictureBookUtil.createFromScenes}), recording the ABSOLUTE group path of the
+	 * BOOK world's Gallery — the olio-owned, olio-granted location where THAT book's character images
+	 * belong. {@link #resolveCharacterImagePath} prefers it over {@code octx.getWorld().gallery.path}.
+	 *
+	 * <p>This is Stephen's second option (an attribute pointing at the alt image-save location, read
+	 * in SDUtil). His first option — reuse the character's OWN saved group path — is not viable here:
+	 * a PB2 character is saved in the book world's <em>Population</em> group, but character images
+	 * belong in the world <em>Gallery</em> sibling; deriving Gallery from Population would require
+	 * fragile path-string surgery, and a blanket "use the character's own group" switch re-breaks
+	 * legacy PB1 characters that live in the acting user's home tree where the olio user cannot create
+	 * (the KI-34/KI-61 regression). The attribute names the correct, olio-authorized gallery path
+	 * explicitly, captured where the book's OlioContext is in hand.
+	 */
+	public static final String ATTR_IMAGE_GALLERY_PATH = "pbImageGalleryPath";
+
 	public static String resolveCharacterImagePath(OlioContext octx, BaseRecord per) {
-		/// REVERTED 2026-08-10 to the original world-gallery path. See KI-34/KI-61.
+		/// Issue 4 (2026-09-04): character images were landing in the DEFAULT grid world's gallery
+		/// (My Grid Universe/My Grid World/Gallery) because the reimage REST flow
+		/// (OlioService.reimageWithConfig) resolves the DEFAULT OlioContext when a request carries no
+		/// universe/world ids (or they fail to resolve and it degrades), and this method used
+		/// octx.getWorld().gallery.path — i.e. whatever world the PASSED octx pointed at, not the
+		/// book's world.
 		///
-		/// The KI-34 change returned the character's OWN scope — groupPath + "/" + name + "/Gallery" —
-		/// to stop two same-named characters sharing storage. It broke character reimage outright:
+		/// Fix: a PB2 charPerson carries ATTR_IMAGE_GALLERY_PATH, stamped at creation where the book's
+		/// OlioContext (and thus its world gallery.path) is in hand. When present it is the book-world
+		/// gallery the character was saved under — olio-owned and granted (getCreateBookContext sets
+		/// scanNestedWorldGroups(true), so the world Gallery tree is RUCD-granted to the olio role) —
+		/// so the olio user CAN makePath/write there. It is authoritative over the passed octx.
 		///
-		///   PathUtil - Not authorized to create auth.group of type (DATA) node François Touvier
-		///     with parent #3535 in path /home/steve/Data/PictureBooks/catatone 3/Characters/François Touvier/Gallery
-		///
-		/// Both call sites below run as the OLIO USER (createPersonImage/createPersonFigurine are
-		/// passed octx.getOlioUser()), and a PictureBook character's groupPath is inside the ACTING
-		/// user's home. So the change moved the write target out of the Olio world — where the Olio
-		/// user has create rights — and into a tree where it has none. I changed the location without
-		/// changing the principal.
-		///
-		/// A real fix for the name collision has to solve BOTH: pick a collision-free location AND
-		/// ensure the principal doing the makePath is authorized to create there (either create as the
-		/// character's owner, or scope the path somewhere the Olio user owns). Until then the
-		/// collision described in KI-34 stands.
-		String basePath = (octx != null && octx.getWorld() != null) ? octx.getWorld().get("gallery.path") : null;
+		/// KI-34/KI-61 note: the earlier attempt reused the character's OWN groupPath as the image
+		/// root, which for a PB1 book is inside the ACTING user's home tree where the olio user has no
+		/// create rights (reimage 500 "Not authorized to create auth.group"). The attribute avoids
+		/// that: it names the olio-owned book-world gallery explicitly. Characters WITHOUT it
+		/// (legacy/non-book) fall back to the original world-gallery scheme below — behavior unchanged.
+		/// The character NAME stays the leaf so two characters never share a folder (KI-34's goal).
+		String basePath = resolveImageGalleryAttribute(octx, per);
+		if(basePath == null) {
+			basePath = (octx != null && octx.getWorld() != null) ? octx.getWorld().get("gallery.path") : null;
+		}
 		return basePath + "/Characters/" + per.get(FieldNames.FIELD_NAME);
+	}
+
+	/**
+	 * Read {@link #ATTR_IMAGE_GALLERY_PATH} off a charPerson, tolerating the two ways it may arrive.
+	 *
+	 * <p><b>Why this is not a one-liner:</b> {@code Query.planMost(true)} — which the reimage REST flow
+	 * ({@code OlioService.reimageWithConfig}) uses to load the charPerson — deliberately EXCLUDES the
+	 * referenced {@code attributes} field ({@code RecordUtil.getMostRequestFields} filters out
+	 * {@code FIELD_ATTRIBUTES}). So a planMost-loaded record carries an EMPTY attributes list, and
+	 * {@code reader.populate(rec, [attributes])} is a documented no-op once the field already holds
+	 * BaseRecord's default empty list. The value is therefore re-read with an explicit targeted query
+	 * (the established pattern — see {@code PictureBookUtil}'s sceneIndex re-read). Read as the olio
+	 * user because that is the principal the images are written as and the PB2 charPerson lives in the
+	 * olio-owned world tree it is granted on. Returns null (⇒ caller falls back to the world gallery)
+	 * on any absence or failure — this must never break the image write.
+	 */
+	private static String resolveImageGalleryAttribute(OlioContext octx, BaseRecord per) {
+		if(per == null) {
+			return null;
+		}
+		/// 1) In-memory: works when the caller planned FIELD_ATTRIBUTES (e.g. the create-time path).
+		try {
+			String v = AttributeUtil.getAttributeValue(per, ATTR_IMAGE_GALLERY_PATH, (String) null);
+			if(v != null && !v.isBlank()) {
+				return v;
+			}
+		}
+		catch(ModelException e) {
+			/// Record type carries no attributes at all — nothing to read.
+			return null;
+		}
+		/// 2) Targeted re-read for the planMost case (attributes not projected).
+		try {
+			BaseRecord reader = (octx != null) ? octx.getOlioUser() : null;
+			if(reader == null) {
+				return null;
+			}
+			String objectId = per.get(FieldNames.FIELD_OBJECT_ID);
+			Long recId = per.get(FieldNames.FIELD_ID);
+			Query aq = null;
+			if(objectId != null && !objectId.isBlank()) {
+				aq = QueryUtil.createQuery(per.getSchema(), FieldNames.FIELD_OBJECT_ID, objectId);
+			}
+			else if(recId != null && recId > 0L) {
+				aq = QueryUtil.createQuery(per.getSchema(), FieldNames.FIELD_ID, recId);
+			}
+			if(aq == null) {
+				return null;
+			}
+			aq.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_ATTRIBUTES});
+			aq.setCache(false);
+			BaseRecord fresh = IOSystem.getActiveContext().getAccessPoint().find(reader, aq);
+			if(fresh != null) {
+				String v = AttributeUtil.getAttributeValue(fresh, ATTR_IMAGE_GALLERY_PATH, (String) null);
+				if(v != null && !v.isBlank()) {
+					return v;
+				}
+			}
+		}
+		catch(Exception e) {
+			logger.warn("resolveCharacterImagePath: " + ATTR_IMAGE_GALLERY_PATH + " re-read failed for "
+				+ per.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+		}
+		return null;
 	}
 
 	public void generateSDFigurines(OlioContext octx, List<BaseRecord> pop, int batchSize, boolean export, boolean hires, int seed) {

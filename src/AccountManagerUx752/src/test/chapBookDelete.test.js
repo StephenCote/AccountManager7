@@ -108,4 +108,22 @@ describe('doDeleteBook — fires DELETE only when the confirm resolves true', ()
         let deleteCalls = fetchMock.mock.calls.filter(c => c[1] && c[1].method === 'DELETE');
         expect(deleteCalls.length, 'no DELETE should fire when cancelled').toBe(0);
     });
+
+    it('confirm → true but DELETE fails: surfaces the concrete backend { error } message (Issue 1)', async () => {
+        let { doDeleteBook } = await import('../features/chapBook.js');
+        vi.spyOn(Dialog, 'confirm').mockResolvedValue(true);
+        // The DELETE returns a non-2xx with a concrete { error } body; any later fetch (loadMyBooks) is 200 [].
+        fetchMock.mockImplementation(async (url, opts) => {
+            if (opts && opts.method === 'DELETE') {
+                return { ok: false, status: 403, json: async () => ({ error: 'ChapBook cannot be deleted: not a CHAPBOOK' }) };
+            }
+            return { ok: true, status: 200, json: async () => [] };
+        });
+
+        await doDeleteBook({ objectId: 'book-err', name: 'My ChapBook' });
+
+        let errToasts = page.toast.mock.calls.filter(c => c[0] === 'error');
+        expect(errToasts.length, 'exactly one error toast on a failed delete').toBe(1);
+        expect(errToasts[0][1]).toContain('not a CHAPBOOK');
+    });
 });

@@ -676,11 +676,16 @@ public class ChapBookService {
         if (user == null) return errorResponse(401, "Not authenticated");
         if (bookObjectId == null || bookObjectId.isBlank()) return errorResponse(400, "bookObjectId is required");
         try {
-            // ChapBookUtil.deleteChapBook owns the readBook + bookType check and throws
-            // PictureBookException 404 (not found) / 403 (not a CHAPBOOK); the service maps status
-            // the same way renderChapBook/analyzePoemTheme do — no business logic re-implemented here.
+            // ChapBookUtil.deleteChapBook owns the readBook + bookType check and, via
+            // PictureBookUtil.deleteRecordExplained, throws PictureBookException with a concrete, logged
+            // reason on any failure — 404 (not found), 403 (not a CHAPBOOK or PBAC-denied), 500
+            // (persistence). The catch below copies that status+reason through unchanged (Issue 1): no
+            // business logic and no generic literal re-implemented here.
             boolean deleted = ChapBookUtil.deleteChapBook(user, bookObjectId);
-            if (!deleted) return errorResponse(500, "Failed to delete chapbook: " + bookObjectId);
+            if (!deleted) {
+                // Unreachable in practice (the util throws on failure); defensive only.
+                return errorResponse(500, "ChapBook delete returned no confirmation: " + bookObjectId);
+            }
             return Response.status(200).entity("{\"deleted\":true}").build();
         } catch (PictureBookException e) {
             return errorResponse(e.getStatus(), e.getMessage());

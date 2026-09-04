@@ -8,6 +8,7 @@
 		{ "name": "blurb", "type": "string" },
 		{ "name": "reordered", "type": "boolean" },
 		{ "name": "reset", "type": "boolean" },
+		{ "name": "reason", "type": "string", "description": "Concrete, human-readable reason a reset/delete did not complete — surfaced so a reset:false response is not a bare 'Failed to delete'." },
 		{ "name": "tagged", "type": "boolean" },
 		{ "name": "chunked", "type": "boolean" },
 		{ "name": "extractionComplete", "type": "boolean" },

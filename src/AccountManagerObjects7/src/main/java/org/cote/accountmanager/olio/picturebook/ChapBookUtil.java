@@ -14,7 +14,6 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -26,7 +25,6 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
-import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 
@@ -309,30 +307,47 @@ public class ChapBookUtil {
 	// ─────────────────────────────── chatConfig resolution ───────────────────────────────
 
 	/**
-	 * Return the default {@code olio.llm.chatConfig} record for the acting user, preferring a
-	 * shared/system (library) config over a user-owned one.
+	 * Return the default {@code olio.llm.chatConfig} record for the acting user, preferring a specific
+	 * <b>named</b> shared/system (library) config over an arbitrary one.
 	 * <p>
-	 * Resolution order:
+	 * Resolution order (first non-null wins):
 	 * <ol>
-	 *   <li>The first config in the shared <b>ChatConfigs</b> library dir (SYSTEM/shared, owned by the
-	 *       admin user, no owner filter) via {@link ChatUtil#getLibraryConfig(BaseRecord, String)}.</li>
-	 *   <li>Only if no library config exists, the first config OWNED BY the acting user in their org.</li>
+	 *   <li>The named shared-library config {@link ChatUtil#DEFAULT_ANALYSIS_CHAT_CONFIG_NAME}
+	 *       ({@code "contentAnalysis"}) — the deterministic first-choice default for content analysis.</li>
+	 *   <li>The named shared-library config {@link ChatUtil#DEFAULT_GENERAL_CHAT_CONFIG_NAME}
+	 *       ({@code "generalChat"}) — a general-purpose second choice.</li>
+	 *   <li>The FIRST config in the shared <b>ChatConfigs</b> library dir with no name filter
+	 *       ({@link ChatUtil#getLibraryConfig(BaseRecord, String)}) — a last-resort shared default.</li>
+	 *   <li>Only if no library config exists at all, the first config OWNED BY the acting user in their org.</li>
 	 * </ol>
-	 * Both steps go through {@code AccessPoint.find} (not {@code list}) so per-record PBAC authorization
-	 * is enforced. The prior implementation filtered by {@code ownerId == user.id}, so it would never
-	 * return a shared/system config and instead returned one of the acting user's OWN configs at random;
-	 * this now prefers the intended shared default.
+	 * Every step goes through {@code AccessPoint.find} (not {@code list}) so per-record PBAC authorization
+	 * is enforced. The prior implementation asked for the no-name library overload first, which returns
+	 * the FIRST library config non-deterministically (whatever the query happened to order first) — so
+	 * two organizations with the same library could resolve to different configs. Resolving the named
+	 * {@code contentAnalysis} then {@code generalChat} configs first makes the default deterministic.
 	 *
 	 * @param user the acting user (must be non-null and have a valid organizationId)
-	 * @return the shared-library chatConfig if one exists, else the user's own, else null
+	 * @return the named/shared-library chatConfig if one exists, else the user's own, else null
 	 */
 	public static BaseRecord resolveDefaultChatConfig(BaseRecord user) {
-		// 1. Prefer the SYSTEM/shared-library config (no owner filter; PBAC-gated via AccessPoint.find).
+		// 1. Prefer the named "contentAnalysis" shared-library config (deterministic first choice).
+		BaseRecord named = ChatUtil.getLibraryConfig(user, OlioModelNames.MODEL_CHAT_CONFIG,
+			ChatUtil.DEFAULT_ANALYSIS_CHAT_CONFIG_NAME);
+		if (named != null) {
+			return named;
+		}
+		// 2. Then the named "generalChat" shared-library config (deterministic second choice).
+		named = ChatUtil.getLibraryConfig(user, OlioModelNames.MODEL_CHAT_CONFIG,
+			ChatUtil.DEFAULT_GENERAL_CHAT_CONFIG_NAME);
+		if (named != null) {
+			return named;
+		}
+		// 3. Last-resort shared default: the first library config with no name filter (PBAC-gated).
 		BaseRecord libraryConfig = ChatUtil.getLibraryConfig(user, OlioModelNames.MODEL_CHAT_CONFIG);
 		if (libraryConfig != null) {
 			return libraryConfig;
 		}
-		// 2. Fall back to a user-owned config only when no shared-library config exists.
+		// 4. Fall back to a user-owned config only when no shared-library config exists.
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		q.field(FieldNames.FIELD_OWNER_ID, user.get(FieldNames.FIELD_ID));
@@ -922,16 +937,19 @@ public class ChapBookUtil {
 	 * the 404-vs-403 distinction so the transport layer does not have to re-implement the readBook +
 	 * bookType check (which would violate the Service7 transport-only rule): it throws
 	 * {@link PictureBookException} <b>404</b> when the book is not found, <b>403</b> when it exists but
-	 * is not a CHAPBOOK, and <b>403</b> when PBAC denies the delete (canDelete is checked explicitly so
-	 * a denial surfaces as 403 rather than a bare {@code AccessPoint.delete} {@code false}, which the
-	 * transport layer would otherwise map to 500) — mirroring {@link #renderChapBook}. The boolean
-	 * return distinguishes only a successful delete (true) from a genuine persistence failure (false)
-	 * on a valid, authorized CHAPBOOK.
+	 * is not a CHAPBOOK. The terminal delete is delegated to
+	 * {@link PictureBookUtil#deleteRecordExplained(BaseRecord, BaseRecord)}, which runs the explicit
+	 * {@code canDelete} check and returns a concrete, logged reason: a PBAC denial surfaces as <b>403</b>
+	 * and a genuine persistence failure as <b>500</b> (both carrying that reason, via
+	 * {@link PictureBookException}), rather than a bare {@code AccessPoint.delete} {@code false} the
+	 * transport layer would map to a generic 500 (Issue 1). The method returns true only on a successful
+	 * delete of a valid, authorized CHAPBOOK; any failure throws.
 	 *
 	 * @param user         the acting user
 	 * @param bookObjectId objectId of the book to delete
-	 * @return true if deleted, false if the delete itself failed on a valid, authorized CHAPBOOK
-	 * @throws PictureBookException 400 for missing args, 404 if not found, 403 if not a CHAPBOOK or the delete is not authorized
+	 * @return true if deleted (any failure throws {@link PictureBookException})
+	 * @throws PictureBookException 400 for missing args, 404 if not found, 403 if not a CHAPBOOK or the
+	 *         delete is PBAC-denied, 500 if the delete fails at persistence
 	 */
 	public static boolean deleteChapBook(BaseRecord user, String bookObjectId) {
 		if (user == null || bookObjectId == null || bookObjectId.isBlank()) {
@@ -961,13 +979,15 @@ public class ChapBookUtil {
 		if (bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
 			throw new PictureBookException(403, "Book " + bookObjectId + " is not a CHAPBOOK");
 		}
-		// Explicit PBAC check so a delete denial maps to 403, not a false-return the transport reads as 500.
-		// AccessPoint.delete re-checks canDelete; the double check is intentional (correctness over a saved eval).
-		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canDelete(user, user, book);
-		if (prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
-			throw new PictureBookException(403, "Not authorized to delete ChapBook: " + bookObjectId);
+		// Delegate to the shared helper, which owns the explicit canDelete → delete sequence and returns a
+		// concrete, logged reason instead of a bare boolean (Issue 1). Map a PBAC denial to 403 and a
+		// genuine persistence failure to 500 via the helper's authorized flag (no reason string-sniffing),
+		// so the transport layer surfaces the real reason rather than a generic "Failed to delete".
+		PictureBookUtil.DeleteResult result = PictureBookUtil.deleteRecordExplained(user, book);
+		if (!result.deleted) {
+			throw new PictureBookException(result.authorized ? 500 : 403, result.reason);
 		}
-		return IOSystem.getActiveContext().getAccessPoint().delete(user, book);
+		return true;
 	}
 
 	// ─────────────────────────────── ChapBook rendering ───────────────────────────────

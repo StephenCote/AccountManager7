@@ -383,6 +383,13 @@ public class ChatUtil {
 		return JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 	}
 
+	/// Name of the shared-library chatConfig used as the default for content analysis / summarization.
+	/// This is the single source of truth for the deterministic first-choice named default — referenced
+	/// by ChapBookUtil.resolveDefaultChatConfig and the summarization path (SUMMARY_CHAT_CONFIG_NAME).
+	public static final String DEFAULT_ANALYSIS_CHAT_CONFIG_NAME = "contentAnalysis";
+	/// Name of the shared-library general-purpose chatConfig, used as the second-choice named default.
+	public static final String DEFAULT_GENERAL_CHAT_CONFIG_NAME = "generalChat";
+
 	private static final String TEMPLATE_RESOURCE_PREFIX = "olio/llm/templates/chatConfig.";
 	private static final String TEMPLATE_RESOURCE_SUFFIX = ".json";
 	private static final String[] CHAT_CONFIG_TEMPLATE_NAMES = {
@@ -929,7 +936,7 @@ public class ChatUtil {
 	/// Resolved summarization config — holds prompts and chatConfig for map and reduce phases.
 	/// Resolved once at the start of composeSummary, then passed to map/reduce.
 	/// Name of the library chatConfig used for summarization LLM parameters.
-	private static final String SUMMARY_CHAT_CONFIG_NAME = "contentAnalysis";
+	private static final String SUMMARY_CHAT_CONFIG_NAME = DEFAULT_ANALYSIS_CHAT_CONFIG_NAME;
 
 	static class SummarizePrompts {
 		String mapSystem;

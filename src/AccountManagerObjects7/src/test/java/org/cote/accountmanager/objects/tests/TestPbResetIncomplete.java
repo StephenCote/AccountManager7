@@ -164,7 +164,7 @@ public class TestPbResetIncomplete extends BaseTest {
 		// ── THE REQUIREMENT: an incomplete/failed book must ALWAYS be deletable by its owner-user ──
 		boolean deleted;
 		try {
-			deleted = PictureBookUtil.reset(actor, bookOid);
+			deleted = PictureBookUtil.reset(actor, bookOid).deleted;
 		} catch (PictureBookException e) {
 			fail("reset must not fail for an incomplete/failed PICTUREBOOK; it threw status="
 				+ e.getStatus() + " message=" + e.getMessage()
@@ -204,7 +204,7 @@ public class TestPbResetIncomplete extends BaseTest {
 		assertNotNull("The complete book row must exist before reset", probeRow(bookOid, orgId));
 
 		try {
-			boolean deleted = PictureBookUtil.reset(stranger, bookOid);
+			boolean deleted = PictureBookUtil.reset(stranger, bookOid).deleted;
 			fail("reset must deny a stranger deleting another user's COMPLETE book; it returned deleted="
 				+ deleted + " (the olio-principal fallback escalated privileges)");
 		} catch (PictureBookException e) {

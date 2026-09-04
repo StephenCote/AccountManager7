@@ -17,6 +17,12 @@
 		{ "name": "sceneIndex", "type": "int" },
 		{ "name": "userEdited", "type": "boolean" },
 		{
+			"name": "sourceText",
+			"type": "string",
+			"ephemeral": true,
+			"description": "Transient carrier for the raw text block a scene was extracted from — the passage where its characters actually appear. Set on the in-memory scene map by extractChunkedInternal/extractScenesOnly and read by createFromScenes to REDUCE per-character detail from the RIGHT text. Declared (ephemeral) so it is a KNOWN field: without it RecordDeserializer logs 'Invalid field: olio.pictureBookScene.sourceText' and DROPS it on the Step-2 create-from-scenes round-trip (KI-24 pattern), silently starving the per-character reduce of its source passages. ephemeral => never persisted (the model is ioConstraints:['unknown'] anyway, so no DDL/storage). It must never reach an LLM (scenesForPrompt whitelists PROMPT_SCENE_FIELDS, which excludes it) and is stripped from the scene note JSON before persistence (createSceneNote)."
+		},
+		{
 			"name": "characters",
 			"type": "list",
 			"baseType": "string"
