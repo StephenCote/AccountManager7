@@ -536,6 +536,7 @@ public class PbBookUtil {
 			OlioFieldNames.FIELD_PB_SCENE_NODE,
 			OlioFieldNames.FIELD_CB_POEM_STANZA,
 			OlioFieldNames.FIELD_CB_SD_PROMPT,
+			OlioFieldNames.FIELD_PB_PROMPT_LOCKED,
 			OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID,
 			OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE,
 			OlioFieldNames.FIELD_PB_PAGE_FONT,

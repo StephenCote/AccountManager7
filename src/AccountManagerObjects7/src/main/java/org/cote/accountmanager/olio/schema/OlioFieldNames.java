@@ -396,6 +396,8 @@ public class OlioFieldNames {
 	public static final String FIELD_CB_POEM_STANZA = "poemStanza";
 	/// olio.pb.scene — sdPrompt for ChapBook: landscape SD prompt derived from poemStanza + mood
 	public static final String FIELD_CB_SD_PROMPT = "sdPrompt";
+	/// olio.pb.scene — explicit provenance marker: true when a human authored/edited sdPrompt (honor verbatim, never regenerate)
+	public static final String FIELD_PB_PROMPT_LOCKED = "promptLocked";
 	/// olio.pb.scene — imageObjectId: objectId of the data.data image produced by ChapBook render
 	public static final String FIELD_PB_IMAGE_OBJECT_ID = "imageObjectId";
 	/// olio.pb.scene — per-page style controls (Issue 6)

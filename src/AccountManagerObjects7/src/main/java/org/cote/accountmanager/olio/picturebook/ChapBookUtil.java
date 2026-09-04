@@ -123,17 +123,20 @@ public class ChapBookUtil {
 	}
 
 	/**
-	 * The single discriminator for "is this stored {@code sdPrompt} a GENUINE LLM landscape prompt?"
-	 * used by the create path, the per-scene render path, and the bulk forward-threading alike. A
-	 * stored prompt is genuine only when it is {@link NarrativeUtil#isMeaningful(String) meaningful}
-	 * (so an LLM-emitted literal {@code "null"}/{@code "none"}/{@code "n/a"}/{@code "unknown"} is
-	 * rejected) AND is not the {@code "landscape, "} no-LLM fallback shape.
+	 * Discriminator for "is this stored {@code sdPrompt} a GENUINE LLM landscape prompt vs. the create-time
+	 * no-LLM fallback?" — used by the create path (whether the LLM's OWN output is stored), the render
+	 * path's fallback branch, and the bulk forward-threading. A stored prompt is genuine only when it is
+	 * {@link NarrativeUtil#isMeaningful(String) meaningful} (so an LLM-emitted literal
+	 * {@code "null"}/{@code "none"}/{@code "n/a"}/{@code "unknown"} is rejected) AND is not the
+	 * {@code "landscape, "} no-LLM fallback shape.
 	 * <p>
-	 * Single-sourcing this matters for cross-layer consistency: the create path stores a genuine
-	 * prompt only when this returns true and otherwise stores the {@code "landscape, "} fallback, so
-	 * the ONLY "un-prompted" markers ever persisted are blank or {@code "landscape, "}-shaped. That is
-	 * exactly what the Ux client's {@code isSceneUnprompted} keys on, so the two layers cannot drift
-	 * (e.g. the backend skipping a scene the client would never flag for regeneration).
+	 * <b>Scope note:</b> this is a heuristic about the create-time fallback ONLY. It no longer decides a
+	 * human edit's provenance — that is now carried EXPLICITLY by the persisted
+	 * {@link OlioFieldNames#FIELD_PB_PROMPT_LOCKED promptLocked} marker
+	 * ({@link #setSceneLandscapePrompt}). A human edit shaped like the {@code "landscape, "} fallback is
+	 * honored verbatim by {@link #resolveScenePrompt}'s promptLocked branch and never reaches this
+	 * text-shape check, so a deliberate edit can no longer be misclassified as the fallback and
+	 * regenerated (the bug this fix removes).
 	 */
 	public static boolean isGenuineStoredPrompt(String p) {
 		return NarrativeUtil.isMeaningful(p) && !p.trim().startsWith("landscape, ");
@@ -1113,11 +1116,14 @@ public class ChapBookUtil {
 			priorSceneTitle = sceneTitle;
 			String sceneMood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
 			String priorContext = assemblePriorContext(null, null, sceneMood, priorScenePrompts);
-			SceneRenderResult result = renderResolvedScene(user, book, scene, sdu, chatConfig, clientSdConfig, priorContext);
-			// Thread the scene's stored landscape prompt forward for continuity — but skip the
-			// stanza-excerpt fallback shape ("landscape, …") so only real imagery accumulates.
+			SceneRenderResult result = renderResolvedScene(user, book, scene, sdu, chatConfig, clientSdConfig, priorContext, null);
+			// Thread the scene's stored landscape prompt forward for continuity — skip the stanza-excerpt
+			// fallback shape ("landscape, …") so only real imagery accumulates, BUT always thread a locked
+			// human edit (any shape) so a deliberate edit still contributes to later scenes' prior context.
 			String storedPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
-			if (isGenuineStoredPrompt(storedPrompt)) {
+			Boolean sceneLockedFlag = scene.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
+			boolean sceneLocked = (sceneLockedFlag != null && sceneLockedFlag.booleanValue());
+			if (isGenuineStoredPrompt(storedPrompt) || (sceneLocked && NarrativeUtil.isMeaningful(storedPrompt))) {
 				priorScenePrompts.add(storedPrompt);
 			}
 			// Count every scene whose landscape LLM step genuinely could not run — whether it went on to
@@ -1154,6 +1160,10 @@ public class ChapBookUtil {
 	 * @param sdServer       SD server URL
 	 * @param chatConfig     optional LLM config for landscape prompt generation; null = use stored sdPrompt
 	 * @param clientSdConfig optional client SD-config overrides applied over the resolved config
+	 * @param promptOverride optional human-edited landscape prompt; when non-blank it is PERSISTED to the
+	 *                       scene first (via {@link #setSceneLandscapePrompt}) and then used VERBATIM for
+	 *                       this render, short-circuiting the stored-vs-recover resolution so even an edit
+	 *                       shaped like {@code "landscape, ..."} is honored. Null/blank = normal behaviour.
 	 * @return a {@link SceneRenderResult}: {@link SceneRenderStatus#RENDERED} (with the generated image
 	 *         {@code objectId}) on success; {@link SceneRenderStatus#SKIPPED_NO_PROMPT} (imageObjectId null)
 	 *         when the scene is un-prompted (no genuine LLM prompt available — no image produced, left for
@@ -1163,7 +1173,8 @@ public class ChapBookUtil {
 	 *         book is not found, 500 if the SD server is not configured
 	 */
 	public static SceneRenderResult renderChapBookScene(BaseRecord user, String sceneObjectId,
-			String sdApiType, String sdServer, BaseRecord chatConfig, BaseRecord clientSdConfig) {
+			String sdApiType, String sdServer, BaseRecord chatConfig, BaseRecord clientSdConfig,
+			String promptOverride) {
 		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
 			throw new PictureBookException(400, "user and sceneObjectId are required");
 		}
@@ -1225,7 +1236,32 @@ public class ChapBookUtil {
 		// left minimal by design — the bulk renderChapBook path carries the full running thread.
 		String sceneMood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
 		String priorContext = assemblePriorContext(null, null, sceneMood, null);
-		return renderResolvedScene(user, book, scene, sdu, chatConfig, clientSdConfig, priorContext);
+
+		// A human-edited prompt override is authoritative: PERSIST it first (single persist path,
+		// verbatim — setSceneLandscapePrompt does NOT run it through the "landscape, " discriminator),
+		// then mirror it onto the in-memory scene so the render funnel and any forward-threading see the
+		// same value, and hand it to renderResolvedScene as the EXPLICIT verbatim override.
+		String effectiveOverride = (promptOverride != null && !promptOverride.isBlank()) ? promptOverride.trim() : null;
+		if (effectiveOverride != null) {
+			setSceneLandscapePrompt(user, sceneObjectId, effectiveOverride);
+			try {
+				scene.set(OlioFieldNames.FIELD_CB_SD_PROMPT, effectiveOverride);
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.warn("renderChapBookScene: could not set override sdPrompt on in-memory scene {}: {}", sceneObjectId, e.getMessage());
+			}
+		}
+		return renderResolvedScene(user, book, scene, sdu, chatConfig, clientSdConfig, priorContext, effectiveOverride);
+	}
+
+	/**
+	 * Backward-compatible 6-arg overload — renders a scene with NO human-edited prompt override, so the
+	 * stored-continuity-prompt-vs-LLM-recovery resolution runs exactly as before. Existing callers (the
+	 * bulk render loop, tests, and the Service7 transport) are untouched; delegates to the 7-arg overload
+	 * with {@code promptOverride == null}.
+	 */
+	public static SceneRenderResult renderChapBookScene(BaseRecord user, String sceneObjectId,
+			String sdApiType, String sdServer, BaseRecord chatConfig, BaseRecord clientSdConfig) {
+		return renderChapBookScene(user, sceneObjectId, sdApiType, sdServer, chatConfig, clientSdConfig, null);
 	}
 
 	/**
@@ -1288,7 +1324,7 @@ public class ChapBookUtil {
 	 *         exception was caught.
 	 */
 	private static SceneRenderResult renderResolvedScene(BaseRecord user, BaseRecord book, BaseRecord scene,
-			SDUtil sdu, BaseRecord chatConfig, BaseRecord clientSdConfig, String priorContext) {
+			SDUtil sdu, BaseRecord chatConfig, BaseRecord clientSdConfig, String priorContext, String promptOverride) {
 		String sceneOid = (String) scene.get(FieldNames.FIELD_OBJECT_ID);
 		String stanza = scene.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
 		String mood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
@@ -1327,7 +1363,16 @@ public class ChapBookUtil {
 				return r;
 			};
 		}
-		String sdPrompt = resolveScenePrompt(scene, stanza, recovery);
+		// An EXPLICIT human-edited prompt override is authoritative and used VERBATIM — short-circuit
+		// resolveScenePrompt (and therefore the "landscape, " discriminator) so an edit shaped like
+		// "landscape, ..." is honored, never misclassified as the no-LLM fallback and regenerated. When
+		// no override is supplied, fall through to the normal prefer-stored-vs-recover resolution.
+		String sdPrompt;
+		if (promptOverride != null && !promptOverride.isBlank()) {
+			sdPrompt = promptOverride.trim();
+		} else {
+			sdPrompt = resolveScenePrompt(scene, stanza, recovery);
+		}
 		// hardFail is true only when the recovery LLM call was ATTEMPTED and hard-failed (unreachable
 		// host, missing config/template, null response). It stays false for a soft blank/decline and for
 		// the deliberate no-LLM path (chatConfig == null → recovery never built → never invoked).
@@ -1457,6 +1502,12 @@ public class ChapBookUtil {
 	 * <p>
 	 * Resolution order:
 	 * <ol>
+	 *   <li><b>Honor an explicit human-edit lock.</b> When the scene's
+	 *       {@link OlioFieldNames#FIELD_PB_PROMPT_LOCKED promptLocked} marker is true and the stored
+	 *       {@code sdPrompt} is {@link NarrativeUtil#isMeaningful(String) meaningful}, the stored value is
+	 *       authoritative and returned VERBATIM regardless of text shape — a human edit shaped like the
+	 *       {@code "landscape, "} fallback is NOT regenerated. {@code recovery} is NOT invoked. This
+	 *       replaces the old string-shape provenance inference (which discarded such edits).</li>
 	 *   <li><b>Prefer the stored continuity prompt.</b> When the scene's stored {@code sdPrompt}
 	 *       ({@link OlioFieldNames#FIELD_CB_SD_PROMPT}) is a genuine LLM prompt —
 	 *       {@code NarrativeUtil.isMeaningful(stored) && !stored.trim().startsWith("landscape, ")} — it is
@@ -1487,6 +1538,15 @@ public class ChapBookUtil {
 	 */
 	public static String resolveScenePrompt(BaseRecord scene, String stanza, Supplier<String> recovery) {
 		String stored = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		// 0. EXPLICIT human-edit lock is authoritative — honor it VERBATIM regardless of text shape. A
+		//    human edit shaped like the "landscape, " fallback must NOT be regenerated: the promptLocked
+		//    marker (set by setSceneLandscapePrompt) records provenance explicitly, so string shape no
+		//    longer decides it. recovery is NOT invoked.
+		Boolean lockedFlag = scene.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
+		boolean promptLocked = (lockedFlag != null && lockedFlag.booleanValue());
+		if (promptLocked && NarrativeUtil.isMeaningful(stored)) {
+			return stored.trim();
+		}
 		// 1. Prefer the authoritative create-time continuity prompt — no LLM call.
 		if (isGenuineStoredPrompt(stored)) {
 			return stored.trim();
@@ -1502,6 +1562,67 @@ public class ChapBookUtil {
 		//    NO image (never the "landscape, " fallback-shaped stored string, never the raw stanza). The
 		//    scene is left for explicit regeneration later.
 		return null;
+	}
+
+	/**
+	 * Persist a human-edited landscape SD prompt onto a ChapBook scene, VERBATIM.
+	 * <p>
+	 * A human edit is authoritative: unlike the create/render paths, the value is NOT run through
+	 * {@link #isGenuineStoredPrompt} / the {@code "landscape, "} discriminator (that discriminator only
+	 * distinguishes the auto no-LLM fallback from genuine LLM output — it must not veto a deliberate
+	 * human edit). The value is trimmed; a null/blank value CLEARS the field (persists null).
+	 * <p>
+	 * Authorized and PATCH-shaped as the REQUEST USER (scene writes as the request user are correct and
+	 * already in use on the render path): identity + the model's validated {@code name} + the changed
+	 * field only, via {@link PbGraphUtil#patchOf} (so the writer's validation of the patch record itself
+	 * does not reject a null {@code name}), through {@code AccessPoint.update}. The update result is
+	 * asserted, never discarded — a swallowed null there would turn a persistent failure into a silent
+	 * no-op (mirrors {@link PbBookUtil#setSceneConfigOverride}).
+	 *
+	 * @param user          the acting user (must have WRITE access to the scene)
+	 * @param sceneObjectId objectId of the {@code olio.pb.scene}
+	 * @param sdPrompt      the human-edited landscape prompt; null/blank clears the field
+	 * @return true when the scene was updated; false when the authorized update returned null (logged)
+	 * @throws PictureBookException 400 when args are missing, 404 when the scene is not readable by
+	 *         {@code user}, 500 when the patch could not be assembled
+	 */
+	public static boolean setSceneLandscapePrompt(BaseRecord user, String sceneObjectId, String sdPrompt)
+			throws PictureBookException {
+		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
+			throw new PictureBookException(400, "user and sceneObjectId are required");
+		}
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		BaseRecord scene = PbBookUtil.readScene(user, sceneObjectId, orgId);
+		if (scene == null) {
+			throw new PictureBookException(404, "Scene not found: " + sceneObjectId);
+		}
+		// Sanitize (strip null/C0 control bytes PostgreSQL rejects, normalize CRLF), then trim; treat
+		// null/blank/control-only as CLEAR. Persist VERBATIM otherwise — no isGenuineStoredPrompt
+		// discriminator. sanitizeText mirrors the poem-import path so a prompt pasted from a document does
+		// not fail the write with a quiet invalid-byte-sequence rejection.
+		String value = sanitizeText(sdPrompt);
+		if (value != null) {
+			value = value.trim();
+			if (value.isEmpty()) value = null;
+		}
+		// Explicit provenance: a real (non-blank) human edit LOCKS the prompt so the render path honors it
+		// verbatim regardless of text shape; a CLEAR (null/blank) unlocks it so the fallback/LLM prompt is
+		// free to be regenerated again. This replaces the old "landscape, " string-shape inference.
+		boolean locked = (value != null);
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
+			OlioFieldNames.FIELD_CB_SD_PROMPT, OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
+		try {
+			patch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, value);
+			patch.set(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, locked);
+		}
+		catch (FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble a landscape prompt patch: " + e.getMessage());
+		}
+		if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			logger.warn("Failed to persist landscape sdPrompt on scene " + sceneObjectId);
+			return false;
+		}
+		return true;
 	}
 
 	/**

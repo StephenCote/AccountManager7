@@ -88,6 +88,11 @@
 			"description": "For ChapBook scenes: landscape SD prompt derived from poemStanza + mood."
 		},
 		{
+			"name": "promptLocked",
+			"type": "boolean",
+			"description": "For ChapBook scenes: explicit provenance marker for sdPrompt. True means a human authored/edited the landscape prompt (setSceneLandscapePrompt), so the render path must honor it VERBATIM and never regenerate it via the LLM regardless of its text shape. False (the default) applies to the create-time LLM/no-LLM fallback prompt, which the render path may still regenerate. Replaces the old string-shape ('landscape, ') provenance inference. Distinct from userEdited, which is owned by the PB2 wizard."
+		},
+		{
 			"name": "configOverride",
 			"type": "string",
 			"description": "JSON of ONLY the explicitly-set config fields, produced with cfg.copyRecord(changedFieldNames).toString(). Mirrors olio.pb.node.configOverride so ChapBook scenes (which have no sceneNode) can feed the config-precedence merge. Deliberately not a persisted olio.sd.config: a record instantiated from that schema materializes every defaulted field, which makes 'override' indistinguishable from 'default'. No schema default - a default would defeat sparseness."

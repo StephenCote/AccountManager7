@@ -35,6 +35,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -346,13 +347,27 @@ public class ChapBookService {
             }
         }
 
+        // Read the OPTIONAL human-edited landscape prompt override from the RAW JSON body. It is NOT a
+        // field on olio.pictureBookRequest, so parseParams (schema-driven) would silently DROP it (KI-24);
+        // use ObjectMapper directly, the same raw-parse precedent used for "sources"/"bookObjectId" on
+        // /poems. Absent/null => promptOverride null => the render behaves exactly as before.
+        String promptOverride = null;
+        if (json != null && !json.trim().isEmpty()) {
+            try {
+                JsonNode pNode = new ObjectMapper().readTree(json).path("sdPrompt");
+                if (!pNode.isMissingNode() && !pNode.isNull()) promptOverride = pNode.asText(null);
+            } catch (Exception e) {
+                logger.warn("renderChapBookScene: could not parse sdPrompt override from body: " + e.getMessage());
+            }
+        }
+
         // If the endpoint could not resolve ANY chatConfig, the render still proceeds (degraded, on the
         // scene's stored sdPrompt) — never a 503. The "landscape LLM unavailable" determination now lives
         // entirely in Objects7 (renderResolvedScene folds chatConfig == null into result.llmUnavailable),
         // so this transport layer passes the signal straight through — no signal is computed here
         // (architecture.md — no business logic in Service7).
         try {
-            ChapBookUtil.SceneRenderResult result = ChapBookUtil.renderChapBookScene(user, sceneObjectId, sdApiType, sdServer, chatConfig, sdConfig);
+            ChapBookUtil.SceneRenderResult result = ChapBookUtil.renderChapBookScene(user, sceneObjectId, sdApiType, sdServer, chatConfig, sdConfig, promptOverride);
             boolean rendered = result.status == ChapBookUtil.SceneRenderStatus.RENDERED;
             boolean skipped = result.status == ChapBookUtil.SceneRenderStatus.SKIPPED_NO_PROMPT;
             // Pure pass-through of the render's own signals (both computed in Objects7).
@@ -369,6 +384,44 @@ public class ChapBookService {
         } catch (Exception e) {
             logger.error("renderChapBookScene failed: " + e.getMessage(), e);
             return errorResponse(500, "Scene render failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * PUT /scene/{sceneObjectId}/prompt
+     * Persist a human-edited landscape SD prompt onto a ChapBook scene, VERBATIM (so a user can edit
+     * the LLM-generated landscape prompt BEFORE rendering). Body: { sdPrompt: "..." }; an absent, JSON
+     * null, or blank value CLEARS the field.
+     *
+     * <p>Transport only: the prompt string is read from the RAW JSON body and handed to Objects7
+     * verbatim. It is read via ObjectMapper — NOT parseParams — because {@code sdPrompt} is not a field
+     * on {@code olio.pictureBookRequest}, so schema-driven deserialization would silently drop it
+     * (KI-24). All authoritative-edit semantics (persist verbatim, no "landscape, " discriminator),
+     * authorization, and PATCH-shaped persistence live in {@link ChapBookUtil#setSceneLandscapePrompt}.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/prompt")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response setSceneLandscapePrompt(@PathParam("sceneObjectId") String sceneObjectId,
+            String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+        String sdPrompt = null;
+        if (json != null && !json.trim().isEmpty()) {
+            try {
+                JsonNode node = new ObjectMapper().readTree(json).path("sdPrompt");
+                if (!node.isMissingNode() && !node.isNull()) sdPrompt = node.asText(null);
+            } catch (Exception e) {
+                return errorResponse(400, "Invalid request body: " + e.getMessage());
+            }
+        }
+        try {
+            boolean updated = ChapBookUtil.setSceneLandscapePrompt(user, sceneObjectId, sdPrompt);
+            return Response.status(200).entity("{\"updated\":" + updated + "}").build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
         }
     }
 

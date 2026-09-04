@@ -120,10 +120,15 @@ async function renderChapBook(bookObjectId, chatConfigName, sdConfig) {
 //   llmDegraded:true         → the scene DID render (rendered:true) but on the STORED prompt because
 //                              the LLM prompt step was unavailable (implies llmUnavailable:true).
 // A benign un-prompted skip is skipped:true && llmUnavailable:false (poem just needs Analyze).
-async function renderChapBookScene(sceneObjectId, chatConfigName, sdConfig) {
+async function renderChapBookScene(sceneObjectId, chatConfigName, sdConfig, sdPrompt) {
     let body = { schema: 'olio.pictureBookRequest' };
     if (chatConfigName) body.chatConfig = chatConfigName;
     if (sdConfig && Object.keys(sdConfig).length > 0) body.sdConfig = sdConfig;
+    // Per-scene landscape-prompt override: when a non-blank prompt is supplied the backend persists it
+    // AND renders it verbatim (no LLM regeneration). Omitted / blank → the body carries no sdPrompt and
+    // the call behaves exactly as before (backend resolves a landscape prompt itself). Sent verbatim
+    // (never trimmed) so what the user typed is exactly what is persisted and rendered.
+    if (sdPrompt != null && String(sdPrompt).trim()) body.sdPrompt = sdPrompt;
     let resp = await fetch(cbBase() + '/scene/' + sceneObjectId + '/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -299,6 +304,12 @@ let renderProgress = {};    // sceneObjectId → 'generating' | 'done' | 'error'
 let renderSceneUrls = {};   // sceneObjectId → resolved media URL (page image refreshed as each completes)
 let renderTotal = 0;
 let renderDone = 0;
+
+// Landscape-prompt review: resolved preview-image URL per scene for the review card. Populated on load
+// from each scene's existing imageObjectId and refreshed after a single-page re-render. Edited prompt
+// text is tracked directly on scene.sdPrompt (same convention as scene.title / scene.poemStanza), so no
+// separate edit map is needed — reviewScenes entries are already keyed by scene objectId.
+let reviewSceneImageUrls = {};   // sceneObjectId → resolved media URL for the review card preview
 
 // Let the SD GPU recover between generations — same rationale as PB2's SCENE_COOLDOWN_MS: the
 // shared hardware has hit thermal-critical under sustained back-to-back load with no cooldown.
@@ -1872,8 +1883,9 @@ async function loadSceneFields(sceneObjectId) {
 // in one query. bookPages()/pages projects none of these, so they are fetched here scoped by
 // groupId + organizationId (both NUMBERS — a data.directory-derived list query needs an explicit
 // organizationId or PBAC denies), cache:false for a fresh read. sdPrompt + imageObjectId let the
-// review card flag un-prompted scenes (see isSceneUnprompted). Returns a map
-// { objectId → { configOverride: string|null, sdPrompt: string, imageObjectId: string|null } }.
+// review card flag un-prompted scenes (see isSceneUnprompted); promptLocked marks a user-authoritative
+// prompt so a saved edit is never flagged for regeneration. Returns a map
+// { objectId → { configOverride: string|null, sdPrompt: string, imageObjectId: string|null, promptLocked: bool } }.
 async function loadSceneOverrides(groupId) {
     let orgId = page && page.user ? page.user.organizationId : null;
     if (groupId == null || orgId == null) return {};
@@ -1885,7 +1897,7 @@ async function loadSceneOverrides(groupId) {
             schema: 'io.query',
             type: 'olio.pb.scene',
             cache: false,
-            request: ['id', 'objectId', 'configOverride', 'sdPrompt', 'imageObjectId'],
+            request: ['id', 'objectId', 'configOverride', 'sdPrompt', 'imageObjectId', 'promptLocked'],
             fields: [
                 { name: 'groupId', comparator: 'EQUALS', value: Number(groupId) },
                 { name: 'organizationId', comparator: 'EQUALS', value: Number(orgId) }
@@ -1902,7 +1914,8 @@ async function loadSceneOverrides(groupId) {
             map[r.objectId] = {
                 configOverride: r.configOverride || null,
                 sdPrompt: r.sdPrompt || '',
-                imageObjectId: r.imageObjectId || null
+                imageObjectId: r.imageObjectId || null,
+                promptLocked: !!r.promptLocked
             };
         }
     });
@@ -1922,6 +1935,37 @@ async function putSceneConfigOverride(sceneObjectId, configOverrideString) {
     return resp.json();
 }
 
+// Landscape prompt: persist (or clear) a scene's LLM landscape prompt verbatim. Modeled on
+// putSceneConfigOverride — same fetch idiom, PUT to the fixed backend contract at
+// /rest/olio/chap-book/scene/{oid}/prompt with body { sdPrompt }. A null / blank value CLEARS the
+// stored prompt (the backend treats absent / JSON-null / blank as a clear); a non-blank value is stored
+// exactly as given. Returns the { updated: bool } contract body.
+async function putSceneLandscapePrompt(sceneObjectId, sdPrompt) {
+    let value = (sdPrompt == null || !String(sdPrompt).trim()) ? null : sdPrompt;
+    let resp = await fetch(cbBase() + '/scene/' + sceneObjectId + '/prompt', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ sdPrompt: value })
+    });
+    if (!resp.ok) throw new Error('Save prompt failed: ' + resp.status);
+    return resp.json();
+}
+
+// Resolve (and cache-bust) a scene's current image into the review-card preview map. Each render
+// produces a NEW data.data objectId, so re-reading scene.imageObjectId through resolveImageUrl (keyed
+// by objectId) yields the fresh URL — the same refresh the book-render flow does via renderSceneUrls.
+async function refreshSceneImage(scene) {
+    if (!scene || !scene.objectId || !scene.imageObjectId) return;
+    try {
+        let url = await resolveImageUrl(scene.imageObjectId);
+        if (url) {
+            reviewSceneImageUrls[scene.objectId] = url;
+            m.redraw();
+        }
+    } catch (_) {}
+}
+
 async function loadReviewBook(bookObjectId) {
     reviewLoading = true;
     reviewError = null;
@@ -1931,6 +1975,8 @@ async function loadReviewBook(bookObjectId) {
     sceneOverrideInsts = {};
     sceneOverrideViews = {};
     sceneOverrideExpanded = {};
+    // Landscape-prompt review: drop any prior book's resolved preview URLs.
+    reviewSceneImageUrls = {};
     m.redraw();
     try {
         try {
@@ -1995,10 +2041,15 @@ async function loadReviewBook(bookObjectId) {
                         s.configOverride = row.configOverride;
                         s.sdPrompt = row.sdPrompt || s.sdPrompt;
                         s.imageObjectId = row.imageObjectId || s.imageObjectId;
+                        s.promptLocked = row.promptLocked;
                     }
                 });
             } catch (_) {}
         }
+        // Landscape-prompt review: prefill each card's preview with its already-rendered image (if any)
+        // so the user reviews prompts and current images together. Resolved lazily; scenes with no image
+        // simply show no preview.
+        reviewScenes.forEach(function (s) { if (s.imageObjectId) refreshSceneImage(s); });
     } catch (e) {
         reviewError = e.message || 'Failed to load book';
     }
@@ -2225,12 +2276,16 @@ async function doClearSceneOverride(idx) {
 }
 
 // A ChapBook scene is "un-prompted" when the render pipeline produced NO image (imageObjectId
-// blank) AND its stored sdPrompt is blank or the "landscape, " no-LLM fallback shape. This mirrors
-// the backend's own test for a usable prompt (ChapBookUtil: isMeaningful(prompt) &&
+// blank) AND its stored sdPrompt is blank or the "landscape, " no-LLM fallback shape. A user-locked
+// prompt (promptLocked, set when the user saves/edits the landscape prompt) is authoritative and is
+// NEVER treated as un-prompted regardless of shape — it mirrors the backend's explicit provenance in
+// resolveScenePrompt, so a saved edit that happens to start "landscape, " is not flagged for
+// regeneration. Otherwise this mirrors the backend fallback test (isMeaningful(prompt) &&
 // !prompt.startsWith("landscape, ")). Such a scene was SKIPPED on the last render and needs the
 // user to explicitly regenerate it. Pure — unit-tested.
 function isSceneUnprompted(scene) {
     if (!scene) return false;
+    if (scene.promptLocked) return false;
     if (scene.imageObjectId) return false;
     let p = (scene.sdPrompt || '').trim();
     if (!p) return true;
@@ -2268,6 +2323,68 @@ async function doRegenerateScene(idx) {
         }
     } catch (e) {
         page.toast('error', 'Regenerate failed: ' + (e.message || ''));
+    }
+    scene._saving = false;
+    m.redraw();
+}
+
+// Landscape prompt: persist the prompt currently shown/edited in this scene's textarea (tracked on
+// scene.sdPrompt). A blank value clears the stored prompt — the backend contract handles that. This is
+// a save-only action; it does NOT render (the user re-renders separately once prompts look right).
+async function doSaveSceneLandscapePrompt(idx) {
+    let scene = reviewScenes[idx];
+    if (!scene || !scene.objectId) return;
+    scene._saving = true;
+    m.redraw();
+    try {
+        let val = scene.sdPrompt || '';
+        await putSceneLandscapePrompt(scene.objectId, val);
+        // Reflect the persisted state locally: a blank save clears the field. A real edit LOCKS the
+        // prompt (mirrors the backend), so isSceneUnprompted stops flagging this card as "needs prompt"
+        // immediately, without waiting for a view reload to re-read promptLocked from the backend.
+        scene.sdPrompt = val.trim() ? val : '';
+        scene.promptLocked = !!val.trim();
+        page.toast('success', val.trim() ? 'Landscape prompt saved' : 'Landscape prompt cleared');
+    } catch (e) {
+        page.toast('error', 'Save prompt failed: ' + (e.message || ''));
+    }
+    scene._saving = false;
+    m.redraw();
+}
+
+// Landscape prompt: re-render a SINGLE page using the prompt currently shown/edited in its textarea —
+// no need to re-render the whole book. A non-blank prompt is sent as the verbatim sdPrompt (persisted +
+// rendered, no LLM regeneration), so the edit is used for this render even if it was not separately
+// saved first. A blank prompt omits it, so the backend resolves a landscape prompt via the LLM exactly
+// as the book render does — hence a chat config is resolved only in that case. On success the card's
+// preview image is refreshed from the new imageObjectId.
+async function doRerenderScene(idx) {
+    let scene = reviewScenes[idx];
+    if (!scene || !scene.objectId) return;
+    scene._saving = true;
+    m.redraw();
+    try {
+        let prompt = (scene.sdPrompt || '').trim();
+        let chatConfigName = prompt ? null : await fetchDefaultChatConfigName();
+        let result = await renderChapBookScene(scene.objectId, chatConfigName, {}, scene.sdPrompt);
+        let signal = sceneLlmSignal(result);
+        if (result && result.rendered) {
+            scene.imageObjectId = result.imageObjectId;
+            await refreshSceneImage(scene);
+            // A degraded render (rendered on the stored prompt because the LLM step was down) still
+            // produced an image, but the user must know it did NOT use a fresh prompt — warn distinctly.
+            if (signal) page.toast(signal.level, signal.message);
+            else page.toast('success', 'Page re-rendered');
+        } else if (signal) {
+            // llmUnavailable && skipped: the LLM step could not run AND there was no usable prompt.
+            page.toast(signal.level, signal.message);
+        } else if (result && result.skipped) {
+            page.toast('warn', 'Still no usable prompt — edit the landscape prompt above, then re-render');
+        } else {
+            page.toast('error', 'Re-render failed');
+        }
+    } catch (e) {
+        page.toast('error', 'Re-render failed: ' + (e.message || ''));
     }
     scene._saving = false;
     m.redraw();
@@ -2413,6 +2530,51 @@ function renderSceneCard(scene, idx) {
                 ])
             ])
         ]),
+        // Editable landscape prompt — the LLM-generated SD prompt for this page, stored on the scene at
+        // book-create time. Surfaced here (pre-filled from scene.sdPrompt) so every landscape prompt can
+        // be reviewed / edited / overridden BEFORE rendering, instead of having to render first to find
+        // out what it was. "Save prompt" persists it verbatim (blank clears it); "Re-render this page"
+        // renders JUST this page using the current text — no need to re-render the whole book.
+        m('div', { class: 'text-xs border-t border-gray-100 dark:border-gray-800 pt-2', 'data-scene-oid': oid }, [
+            m('div', { class: 'flex items-center justify-between mb-1' }, [
+                m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400' }, 'Landscape prompt'),
+                reviewSceneImageUrls[oid] ? m('span', { class: 'text-xs text-green-600 dark:text-green-400' }, 'image ready') : null
+            ]),
+            m('textarea', {
+                class: 'cb-scene-prompt w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-xs dark:text-white font-mono resize-y',
+                'data-scene-oid': oid,
+                rows: 3,
+                placeholder: 'Landscape image prompt — edit to override before rendering. Leave blank to let the LLM generate one.',
+                value: scene.sdPrompt || '',
+                disabled: scene._saving || roleWarning,
+                oninput: function (e) { scene.sdPrompt = e.target.value; m.redraw(); }
+            }),
+            reviewSceneImageUrls[oid] ? m('img', {
+                class: 'cb-scene-image mt-2 rounded border border-gray-200 dark:border-gray-700 max-h-40 object-cover',
+                'data-scene-oid': oid,
+                src: reviewSceneImageUrls[oid],
+                alt: 'Page ' + (idx + 1) + ' image'
+            }) : null,
+            m('div', { class: 'flex items-center gap-2 mt-1' }, [
+                m('button', {
+                    class: 'cb-save-prompt px-2 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40',
+                    'data-scene-oid': oid,
+                    title: 'Save this page\'s landscape prompt (blank clears it)',
+                    disabled: scene._saving || roleWarning,
+                    onclick: function () { doSaveSceneLandscapePrompt(idx); }
+                }, 'Save prompt'),
+                m('button', {
+                    class: 'cb-rerender-page px-2 py-0.5 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1',
+                    'data-scene-oid': oid,
+                    title: 'Re-render just this page using the prompt above — no need to re-render the whole book',
+                    disabled: scene._saving || roleWarning,
+                    onclick: function () { doRerenderScene(idx); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'refresh'),
+                    ' Re-render this page'
+                ])
+            ])
+        ]),
         // Per-scene SD-config overrides (Gap 8) — reuses forms.sdConfigOverrides via the generic
         // object view, exactly like PB2 and CardGame. Collapsed by default; the heavy form is mounted
         // lazily only while expanded. Save persists the sparse delta; Clear removes the override.
@@ -2476,6 +2638,8 @@ const ChapBookReview = {
         sceneOverrideInsts = {};
         sceneOverrideViews = {};
         sceneOverrideExpanded = {};
+        // Landscape-prompt review: reset per-scene preview URLs so a re-entered review starts fresh
+        reviewSceneImageUrls = {};
         // Issue 8: reset render dialog state so the SD config modal starts fresh
         showRenderDialog = false;
         pendingRenderBookId = null;
@@ -2574,5 +2738,5 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, analyzePoem };
+export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, analyzePoem };
 export default ChapBookFeature;
