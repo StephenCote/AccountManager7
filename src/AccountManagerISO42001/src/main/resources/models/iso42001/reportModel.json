@@ -1,6 +1,6 @@
 {
 	"name": "iso42001.report",
-	"inherits": ["data.directory", "common.nameId", "common.description", "common.dateTime", "crypto.hashExt"],
+	"inherits": ["data.directory", "common.description", "common.dateTime", "crypto.hashExt"],
 	"icon": "summarize",
 	"label": "ISO 42001 Compliance Report",
 	"description": "Generated compliance report aggregating test results with analysis and recommendations.",

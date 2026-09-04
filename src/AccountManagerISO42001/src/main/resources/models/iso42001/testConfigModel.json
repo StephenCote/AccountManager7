@@ -1,6 +1,6 @@
 {
 	"name": "iso42001.testConfig",
-	"inherits": ["data.directory", "common.nameId", "common.description"],
+	"inherits": ["data.directory", "common.description"],
 	"icon": "science",
 	"label": "ISO 42001 Test Configuration",
 	"description": "Defines an ISO 42001 test configuration including endpoints, parameters, and test selection.",

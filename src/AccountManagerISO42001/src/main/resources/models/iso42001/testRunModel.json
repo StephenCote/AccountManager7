@@ -1,6 +1,6 @@
 {
 	"name": "iso42001.testRun",
-	"inherits": ["data.directory", "common.nameId", "common.description", "common.dateTime"],
+	"inherits": ["data.directory", "common.description", "common.dateTime"],
 	"icon": "play_circle",
 	"label": "ISO 42001 Test Run",
 	"description": "Represents a single execution of an ISO 42001 test suite run.",

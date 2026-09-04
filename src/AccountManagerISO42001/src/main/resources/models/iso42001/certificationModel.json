@@ -1,6 +1,6 @@
 {
 	"name": "iso42001.certification",
-	"inherits": ["data.directory", "common.nameId", "common.dateTime", "crypto.signature"],
+	"inherits": ["data.directory", "common.dateTime", "crypto.signature"],
 	"icon": "verified",
 	"label": "ISO 42001 Certification",
 	"description": "Digital certification of an ISO 42001 compliance report. Contains the signer's signature over the report hash.",
