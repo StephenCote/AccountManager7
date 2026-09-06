@@ -344,8 +344,8 @@ ObjectPicker.PickerView = {
         }, [
             m("div", { class: "absolute inset-0 bg-black/50", onclick: function() { ObjectPicker.close(); } }),
             m("div", {
-                class: "relative bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-4xl mx-4 flex flex-col",
-                style: "height:85vh;max-height:85vh",
+                class: "relative bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full mx-4 flex flex-col",
+                style: "width:80vw;max-width:80vw;height:85vh;max-height:85vh",
                 onclick: function(e) { e.stopPropagation(); }
             }, [
                 // Header — title and close button

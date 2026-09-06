@@ -478,7 +478,11 @@ public class ChatUtil {
 		/// promptTemplate.pictureBook.reduce-character.json ships in the library but was missing from
 		/// this list, so the per-character enrichment call createFromScenes makes
 		/// (callLlm(..., "pictureBook.reduce-character", ...)) had no seedable DB template.
-		"pictureBook.reduce-character"
+		"pictureBook.reduce-character",
+		/// ChapBook uses its own poetry-oriented templates (landscape-only imagery, poem analysis).
+		/// Without these entries the chapBook.* calls in ChapBookUtil have no seedable DB template and
+		/// hard-fail "Prompt template not found" the same way pictureBook.reduce-character once did.
+		"chapBook.landscape-prompt", "chapBook.poem-analysis"
 	};
 
 	public static String[] getPromptTemplateTemplateNames() {

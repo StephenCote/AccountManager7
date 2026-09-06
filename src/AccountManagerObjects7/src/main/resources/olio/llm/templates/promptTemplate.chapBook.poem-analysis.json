@@ -1,0 +1,31 @@
+{
+	"schema": "olio.llm.promptTemplate",
+	"name": "chapBook.poem-analysis",
+	"description": "ChapBook poem analysis — extracts theme, mood, and keywords from a poem for illustration planning",
+	"role": "system",
+	"sections": [
+		{
+			"schema": "olio.llm.promptSection",
+			"sectionName": "system",
+			"role": "system",
+			"priority": 10,
+			"lines": [
+				"You are a literary analyst specializing in poetry. Read a poem and distill its central theme, its emotional mood, and the concrete visual keywords that could guide an illustration. Return only valid JSON — no prose, no commentary, no markdown code fences. /no_think"
+			]
+		},
+		{
+			"schema": "olio.llm.promptSection",
+			"sectionName": "user",
+			"role": "user",
+			"priority": 10,
+			"lines": [
+				"Analyze this poem. Return a single JSON object only, no prose:",
+				"{\"theme\":\"one concise phrase naming the central theme\",\"mood\":\"one or two words for the emotional atmosphere\",\"keywords\":\"comma-separated concrete visual keywords for illustration\"}",
+				"",
+				"POEM:",
+				"{poemText}"
+			]
+		}
+	],
+	"sectionOrder": ["system"]
+}

@@ -479,23 +479,46 @@ function newListControl() {
         // no-op (which blanks the list/breadcrumb), resolve the container from the
         // current route objectId (normal mode) or from listContainerId (picker mode),
         // then re-run the navigation in the callback.
+        //
+        // Picker recovery: in picker mode the container may be absent (pagination's async
+        // load hasn't settled yet, or it FAILED and pagination set pg.container = false at
+        // pagination.js:375), or present-but-pathless (defensive: a container type whose
+        // minimal by-id GET does not project `path`). In either case the group-contained
+        // picker branch below (gated on pg.container.path) can't run. Re-fetch the container
+        // by its picker id via getFull (planMost, always includes `path`) once, then re-run.
+        //
+        // NOTE: this is NOT the cause of the ChapBook "Add Poems" data.note/data.data picker
+        // flow. There the container is an auth.group, whose model declares `path` in its
+        // default query fields (auth/groupModel.json: "query":["type","path","organizationId"]),
+        // so the ordinary am7client.get returns a path-bearing container and the group-contained
+        // branch below already handles UP/DOWN nav — verified live against the test backend.
+        // This block matters only for the container-absent/load-failure race and any picker
+        // type whose minimal GET omits `path`. It also fixes a real latent bug in the prior
+        // form of this branch: it called am7client.getFull(type, oid, callback) with a 3rd
+        // callback arg, but getFull is 2-arg/promise-only (am7client.js:492) and silently drops
+        // it, so the recovery callback never fired. Use .then() like every other getFull caller.
+        if (pickerMode && (!pg.container || !pg.container.path)) {
+            // In picker mode, m.route.param('objectId') is the HOST object's id, not the
+            // picker's container. Use listContainerId (set by openForPicker) instead.
+            if (navigatingUp) return;
+            let oid = listContainerId;
+            if (!oid) return;
+            navigatingUp = true;
+            am7client.getFull('auth.group', oid).then(function (c) {
+                navigatingUp = false;
+                if (c != null && c.path) {
+                    pagination.pages().container = c;
+                    // Re-run: pg.container now has `path`, so the group-contained picker branch
+                    // takes over (navInPlace → update → pagination.update, which repaints the picker).
+                    navigateUp();
+                } else {
+                    // getFull returned no path — stop rather than loop (re-entry would re-fetch forever).
+                    console.error('navigateUp: picker container ' + oid + ' has no path even via getFull');
+                }
+            });
+            return;
+        }
         if (!pg.container) {
-            if (pickerMode) {
-                // Issue 1: in picker mode, m.route.param('objectId') is the HOST object's id,
-                // not the picker's container. Use listContainerId (set by openForPicker) instead.
-                if (navigatingUp) return;
-                let oid = listContainerId;
-                if (!oid) return;
-                navigatingUp = true;
-                am7client.getFull('auth.group', oid, function (c) {
-                    navigatingUp = false;
-                    if (c != null) {
-                        pagination.pages().container = c;
-                        navigateUp();
-                    }
-                });
-                return;
-            }
             let objectId = m.route.param('objectId');
             if (!objectId || objectId === 'null' || objectId === 'undefined') return;
             let contType = (type === 'auth.group') ? 'auth.group' : type;

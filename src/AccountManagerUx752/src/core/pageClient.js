@@ -622,6 +622,33 @@ function navigateToPath(type, modType, path) {
     return Promise.resolve(null);
 }
 
+// Resolve a user-typed path fragment (absolute, ~-relative, ./ or ../ relative, or a bare
+// child name) against the current container into an absolute path. Ported from Ux7
+// (client/pageClient.js normalizePath) — list.js:doFilter() calls page.normalizePath and
+// threw "normalizePath is not a function" without it. `grp` is the current container record.
+function normalizePath(path, grp) {
+    let opath;
+    let cnt = grp || (page.user ? page.user.homeDirectory : null);
+    if (cnt && cnt.path) {
+        if (path.startsWith('./')) {
+            opath = cnt.path + path.substring(1);
+        } else if (path.startsWith('../')) {
+            let p = cnt.path.split('/');
+            p.pop();
+            opath = p.join('/') + path.substring(2);
+        } else if (path.startsWith('/') || path.startsWith('~')) {
+            opath = path;
+        } else {
+            opath = cnt.path + '/' + path;
+        }
+    } else if (path.startsWith('/') || path.startsWith('~')) {
+        // No container path available (e.g. container fetched without the virtual path field):
+        // an absolute/home-relative path is still resolvable on its own.
+        opath = path;
+    }
+    return opath;
+}
+
 async function systemLibrary(model) {
     let libPath = am7model.system && am7model.system.library && am7model.system.library[model];
     if (!libPath) return null;
@@ -772,6 +799,7 @@ const page = {
     makePath: makePath,
     listByType: listByType,
     navigateToPath: navigateToPath,
+    normalizePath: normalizePath,
     systemLibrary: systemLibrary,
     favorites: favorites,
     isFavorite: isFavorite,

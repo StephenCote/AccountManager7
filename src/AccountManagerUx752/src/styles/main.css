@@ -483,7 +483,7 @@
         dark:border-gray-700 dark:bg-black
     }
     .result-nav-inner {
-        @apply sm:flex-1 sm:flex sm:items-center sm:justify-between p-0
+        @apply sm:flex-1 sm:flex sm:flex-wrap sm:items-center sm:justify-between gap-y-1 p-0
     }
     .result-nav-inner .count-label {
         @apply text-sm text-gray-700 dark:text-gray-200
