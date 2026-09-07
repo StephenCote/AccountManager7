@@ -104,6 +104,7 @@
 		},
 		{ "name": "pageFont",      "type": "string", "maxLength": 128 },
 		{ "name": "pageBgColor",   "type": "string", "maxLength": 32  },
+		{ "name": "pageBgOpacity", "type": "int", "minValue": 0, "maxValue": 100, "description": "For ChapBook scenes: opacity (0-100 percent) of the poem panel background over the landscape image. Additive; unset renders as the historical default of 40 so a chosen pageBgColor keeps its translucency instead of going fully opaque." },
 		{ "name": "pageTextAlign", "type": "string", "maxLength": 16  },
 		{ "name": "pageTextColor", "type": "string", "maxLength": 32  },
 		{

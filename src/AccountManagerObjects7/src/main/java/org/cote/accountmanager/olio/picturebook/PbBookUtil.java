@@ -541,6 +541,7 @@ public class PbBookUtil {
 			OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE,
 			OlioFieldNames.FIELD_PB_PAGE_FONT,
 			OlioFieldNames.FIELD_PB_PAGE_BG_COLOR,
+			OlioFieldNames.FIELD_PB_PAGE_BG_OPACITY,
 			OlioFieldNames.FIELD_PB_PAGE_TEXT_ALIGN,
 			OlioFieldNames.FIELD_PB_PAGE_TEXT_COLOR,
 			OlioFieldNames.FIELD_PB_IMAGE_STALE

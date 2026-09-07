@@ -641,6 +641,7 @@ public class PbServiceFacade {
 			// never render. listScenes already projects them via PbBookUtil.sceneRequest(); just surface them.
 			p.put("pageFont", scene.get(OlioFieldNames.FIELD_PB_PAGE_FONT));
 			p.put("pageBgColor", scene.get(OlioFieldNames.FIELD_PB_PAGE_BG_COLOR));
+			p.put("pageBgOpacity", scene.get(OlioFieldNames.FIELD_PB_PAGE_BG_OPACITY));
 			p.put("pageTextAlign", scene.get(OlioFieldNames.FIELD_PB_PAGE_TEXT_ALIGN));
 			p.put("pageTextColor", scene.get(OlioFieldNames.FIELD_PB_PAGE_TEXT_COLOR));
 			p.put("imageStale", scene.get(OlioFieldNames.FIELD_PB_IMAGE_STALE));

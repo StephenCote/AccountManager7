@@ -426,9 +426,17 @@ function newListControl() {
             navContainerId = grp.objectId;
             if (byParent) navigateByParent = true;
             if (pickerMode) {
-                // Entering a group via path navigation → pickerType items in new container
+                // Entering a group via path navigation → show pickerType items in the new container.
+                // Reset pagination FIRST: update() early-returns for an already-counted picker list
+                // (it guards against re-query on every redraw at the top of update()), so without a
+                // pagination.new() here the new container's items never load and the previous
+                // container's list stays on screen. This is the path-search ("~/Data/Poems" + Enter)
+                // sub-group bug — doFilter → openPath → navigateToPathId did not re-query.
                 pickerGroupNavMode = false;
+                containerMode = false;
                 listContainerId = grp.objectId;
+                pagination.pages().container = null;
+                pagination.new();
                 let fakeVnode = { attrs: { type: pickerType, objectId: grp.objectId } };
                 initParams(fakeVnode);
                 update(fakeVnode);
@@ -782,6 +790,25 @@ function newListControl() {
     }
 
     function toggleContainer() {
+        // Picker/embedded lists are NOT route-driven, so the m.route.set()/m.redraw() path below does
+        // not work for them: the lifecycle onupdate that would call update() never fires, and a bare
+        // m.redraw() re-renders against the just-reset (empty) pagination without ever re-querying — the
+        // folder list goes blank. Toggle folder-browse mode and re-run update() in place instead.
+        // initParams() promotes listType to 'auth.group' when containerMode is on (browse sibling folders)
+        // and back to the picker item type when off. This is the 'group_work' sub-group nav bug.
+        if (pickerMode || embeddedMode) {
+            containerMode = !containerMode;
+            pickerGroupNavMode = containerMode;
+            let cid = listContainerId || navContainerId || pickerContainerId || pagination.pages().containerId;
+            navContainerId = cid;
+            pagination.pages().container = null;
+            pagination.new();
+            let fakeVnode = { attrs: { type: baseListType, objectId: cid } };
+            initParams(fakeVnode);
+            update(fakeVnode);
+            m.redraw();
+            return;
+        }
         if (containerMode && pagination.pages().containerId) {
             let currentId = navContainerId || pagination.pages().containerId;
             containerMode = false;
@@ -833,7 +860,17 @@ function newListControl() {
 
         if (navFilter && (navFilter.indexOf('..') > -1 || navFilter.indexOf('~') > -1 || navFilter.indexOf('/') > -1)) {
             let npath = page.normalizePath(navFilter, pagination.pages().container);
-            if (npath) { openPath(npath); return; }
+            if (npath) {
+                // The path text was a NAVIGATION command, not a name filter. Clear navFilter and the
+                // input box before navigating, otherwise navigateToPathId → update() picks up navFilter
+                // (update() line: listFilter = navFilter || ...) and re-queries the new container's items
+                // filtered by the literal path string, matching nothing — the picker list comes up empty.
+                // This is the path-search ("~/Data/Poems" + Enter) sub-group bug.
+                navFilter = null;
+                if (el) el.value = '';
+                openPath(npath);
+                return;
+            }
         }
 
         if (embeddedMode || pickerMode) {
@@ -1116,7 +1153,15 @@ function newListControl() {
     function getPageToggleButtons(type) {
         let buttons = [];
         buttons.push(pagination.button('button' + (gridMode > 0 ? ' active' : ''), 'apps', '', toggleGrid));
-        if (!embeddedMode && (!containerMode || !type.match(/^auth\.group$/gi)) && modType && modType.group) {
+        // group_work toggles folder-browse ↔ item view. Decide "is this a group-contained type?" from
+        // baseListType, NOT the live listType: in container mode listType is promoted to 'auth.group'
+        // (whose model has no `.group`), which used to hide the toggle and strand the user in
+        // folder-browse with no way back to the items. In picker mode the toggle must ALSO stay visible
+        // while browsing folders (type === 'auth.group') so the user can flip back to items after
+        // navigating down into a sub-group — the 'group_work' sub-group picker nav bug.
+        let baseMod = am7model.getModel(baseListType);
+        let groupContained = baseMod && baseMod.group;
+        if (!embeddedMode && groupContained && (pickerMode || !containerMode || !type.match(/^auth\.group$/gi))) {
             buttons.push(pagination.button('button' + (navigateByParent ? ' inactive' : (containerMode ? ' active' : '')), 'group_work', '', toggleContainer));
         }
         buttons.push(pagination.button('button' + (info ? ' active' : ''), 'info', '', toggleInfo));

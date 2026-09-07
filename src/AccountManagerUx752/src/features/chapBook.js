@@ -226,6 +226,23 @@ async function deletePoem(poemObjectId) {
 
 // ── renderChapBookPage — landscape page with text overlay ─────────────
 
+// Convert a #RRGGBB (or #RGB) hex color to an rgba() string at the given 0-1 alpha. Non-hex input
+// (already-rgba, named colors) is returned as-is. Used so a chosen panel bg color keeps its
+// configured translucency instead of rendering fully opaque.
+function hexToRgba(color, alpha) {
+    if (!color || typeof color !== 'string') return 'rgba(0,0,0,' + alpha + ')';
+    let h = color.trim();
+    if (h[0] !== '#') return color;
+    h = h.slice(1);
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    if (h.length !== 6) return color;
+    let r = parseInt(h.slice(0, 2), 16);
+    let g = parseInt(h.slice(2, 4), 16);
+    let b = parseInt(h.slice(4, 6), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return color;
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+
 /**
  * Render a single ChapBook page: full-bleed landscape image with a poem stanza
  * overlaid on a semi-transparent panel. Follows the same pattern as the PB viewer
@@ -253,11 +270,18 @@ function renderChapBookPage(scene, overlayOpacity) {
     let textColor = scene.pageTextColor || 'white';
     let textAlign = scene.pageTextAlign || 'center';
     let bgColor = scene.pageBgColor || '';
+    // pageBgOpacity is 0-100 percent. Unset (null/undefined) → the historical default of 40, which
+    // preserves the old bg-black/bg-opacity-40 translucency. Choosing a bg color no longer forces a
+    // fully-opaque panel: the color is rendered as rgba with this opacity so translucency persists.
+    let bgOpacityPct = (scene.pageBgOpacity != null && scene.pageBgOpacity !== '') ? Number(scene.pageBgOpacity) : 40;
+    if (isNaN(bgOpacityPct)) bgOpacityPct = 40;
+    bgOpacityPct = Math.max(0, Math.min(100, bgOpacityPct));
     let stanzaStyle = 'font-family: ' + fontFamily + '; line-height: 1.9; color: ' + textColor + '; white-space: pre-wrap;';
-    // A chosen pageBgColor becomes a solid panel background; otherwise keep the historical
-    // translucent-black overlay class so the default look is byte-for-byte unchanged.
-    let panelClass = 'rounded p-6 max-w-xl' + (bgColor ? '' : ' bg-black bg-opacity-40');
-    let panelStyle = 'text-align: ' + textAlign + ';' + (bgColor ? (' background-color: ' + bgColor + ';') : '');
+    // Default (no chosen color) keeps black at the configured opacity; a chosen pageBgColor is
+    // rendered at the same opacity via rgba so its translucency is never lost.
+    let panelBg = hexToRgba(bgColor || '#000000', bgOpacityPct / 100);
+    let panelClass = 'rounded p-6 max-w-xl';
+    let panelStyle = 'text-align: ' + textAlign + '; background-color: ' + panelBg + ';';
     return m('div.relative.overflow-hidden', { style: 'min-height: 70vh' }, [
         imageUrl ? m('img.absolute.inset-0.w-full.h-full.object-cover', {
             src: imageUrl,
@@ -1955,7 +1979,7 @@ async function exportReviewBook() {
 // Book-level shared style defaults (D2): the toolbar edits these and fans them out to every scene as
 // the book default; a scene can still override any of them locally afterward. Initialised from the
 // first scene on load so the toolbar reflects the current book style.
-let bookStyle = { pageFont: '', pageTextColor: '', pageBgColor: '', pageTextAlign: '' };
+let bookStyle = { pageFont: '', pageTextColor: '', pageBgColor: '', pageBgOpacity: null, pageTextAlign: '' };
 let bookSdExpanded = false;   // toolbar "Book image settings" collapsible (shared SD config panel)
 
 // ── Per-scene SD-config overrides (Gap 8) ─────────────────────────────
@@ -2034,7 +2058,7 @@ async function loadSceneFields(sceneObjectId) {
             schema: 'io.query',
             type: 'olio.pb.scene',
             cache: false,
-            request: ['id', 'objectId', 'groupId', 'name', 'pageFont', 'pageBgColor', 'pageTextAlign', 'pageTextColor', 'sceneIndex', 'imageStale'],
+            request: ['id', 'objectId', 'groupId', 'name', 'pageFont', 'pageBgColor', 'pageBgOpacity', 'pageTextAlign', 'pageTextColor', 'sceneIndex', 'imageStale'],
             fields: [{ name: 'objectId', comparator: 'EQUALS', value: sceneObjectId }],
             recordCount: 1
         })
@@ -2067,7 +2091,7 @@ async function loadSceneOverrides(groupId) {
             type: 'olio.pb.scene',
             cache: false,
             request: ['id', 'objectId', 'name', 'configOverride', 'sdPrompt', 'imageObjectId', 'promptLocked',
-                'pageFont', 'pageBgColor', 'pageTextAlign', 'pageTextColor', 'imageStale'],
+                'pageFont', 'pageBgColor', 'pageBgOpacity', 'pageTextAlign', 'pageTextColor', 'imageStale'],
             fields: [
                 { name: 'groupId', comparator: 'EQUALS', value: Number(groupId) },
                 { name: 'organizationId', comparator: 'EQUALS', value: Number(orgId) }
@@ -2089,6 +2113,7 @@ async function loadSceneOverrides(groupId) {
                 promptLocked: !!r.promptLocked,
                 pageFont: r.pageFont || '',
                 pageBgColor: r.pageBgColor || '',
+                pageBgOpacity: (r.pageBgOpacity != null ? r.pageBgOpacity : null),
                 pageTextAlign: r.pageTextAlign || '',
                 pageTextColor: r.pageTextColor || '',
                 imageStale: !!r.imageStale
@@ -2184,6 +2209,7 @@ async function loadReviewBook(bookObjectId) {
                 poemStanza: pg.poemStanza || pg.blurb || '',
                 pageFont: pg.pageFont || '',
                 pageBgColor: pg.pageBgColor || '',
+                pageBgOpacity: (pg.pageBgOpacity != null ? pg.pageBgOpacity : null),
                 pageTextAlign: pg.pageTextAlign || '',
                 pageTextColor: pg.pageTextColor || '',
                 configOverride: null,
@@ -2206,6 +2232,7 @@ async function loadReviewBook(bookObjectId) {
                     if (fields.name) reviewScenes[0].name = fields.name;
                     reviewScenes[0].pageFont = fields.pageFont || reviewScenes[0].pageFont;
                     reviewScenes[0].pageBgColor = fields.pageBgColor || reviewScenes[0].pageBgColor;
+                    if (fields.pageBgOpacity != null) reviewScenes[0].pageBgOpacity = fields.pageBgOpacity;
                     reviewScenes[0].pageTextAlign = fields.pageTextAlign || reviewScenes[0].pageTextAlign;
                     reviewScenes[0].pageTextColor = fields.pageTextColor || reviewScenes[0].pageTextColor;
                     if (fields.imageStale != null) reviewScenes[0].imageStale = !!fields.imageStale;
@@ -2228,6 +2255,7 @@ async function loadReviewBook(bookObjectId) {
                         s.promptLocked = row.promptLocked;
                         s.pageFont = row.pageFont || s.pageFont;
                         s.pageBgColor = row.pageBgColor || s.pageBgColor;
+                        if (row.pageBgOpacity != null) s.pageBgOpacity = row.pageBgOpacity;
                         s.pageTextAlign = row.pageTextAlign || s.pageTextAlign;
                         s.pageTextColor = row.pageTextColor || s.pageTextColor;
                         s.imageStale = row.imageStale;
@@ -2241,6 +2269,7 @@ async function loadReviewBook(bookObjectId) {
                 pageFont: reviewScenes[0].pageFont || '',
                 pageTextColor: reviewScenes[0].pageTextColor || '',
                 pageBgColor: reviewScenes[0].pageBgColor || '',
+                pageBgOpacity: (reviewScenes[0].pageBgOpacity != null ? reviewScenes[0].pageBgOpacity : null),
                 pageTextAlign: reviewScenes[0].pageTextAlign || ''
             };
         }
@@ -2290,7 +2319,7 @@ async function saveSceneRecord(scene, silent) {
     m.redraw();
     let failed = [];
     // 1) Scene columns in one PATCH (incl. the validated name field).
-    let colKeys = ['title', 'poemStanza', 'pageFont', 'pageBgColor', 'pageTextAlign', 'pageTextColor'];
+    let colKeys = ['title', 'poemStanza', 'pageFont', 'pageBgColor', 'pageBgOpacity', 'pageTextAlign', 'pageTextColor'];
     let changed = {};
     colKeys.forEach(function (k) { if (dirty.has(k)) changed[k] = scene[k]; });
     if (Object.keys(changed).length) {
@@ -2779,6 +2808,24 @@ function renderSceneCard(scene, idx) {
                     }
                 })
             ]),
+            // Background opacity (0-100%). Unset renders at the historical default of 40 so choosing a
+            // bg color keeps its translucency instead of going fully opaque.
+            m('div', { class: 'flex items-center gap-1.5' }, [
+                m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, 'Bg opacity'),
+                m('input', {
+                    type: 'range',
+                    min: 0, max: 100, step: 5,
+                    class: 'w-24 cursor-pointer',
+                    value: (scene.pageBgOpacity != null ? scene.pageBgOpacity : 40),
+                    oninput: function (e) {
+                        scene.pageBgOpacity = Number(e.target.value);
+                        markSceneDirty(scene, 'pageBgOpacity');
+                        m.redraw();
+                    }
+                }),
+                m('span', { class: 'text-xs text-gray-500 dark:text-gray-400 w-8 text-right' },
+                    (scene.pageBgOpacity != null ? scene.pageBgOpacity : 40) + '%')
+            ]),
             // Text alignment
             m('div', { class: 'flex items-center gap-1' }, [
                 m('span', { class: 'text-xs text-gray-500 dark:text-gray-400 mr-1' }, 'Align'),
@@ -2919,7 +2966,7 @@ const ChapBookReview = {
         sceneOverrideInsts = {};
         sceneOverrideExpanded = {};
         // D2: reset shared book-style + toolbar SD-panel state
-        bookStyle = { pageFont: '', pageTextColor: '', pageBgColor: '', pageTextAlign: '' };
+        bookStyle = { pageFont: '', pageTextColor: '', pageBgColor: '', pageBgOpacity: null, pageTextAlign: '' };
         bookSdExpanded = false;
         // Landscape-prompt review: reset per-scene preview URLs so a re-entered review starts fresh
         reviewSceneImageUrls = {};
@@ -3029,6 +3076,20 @@ const ChapBookReview = {
                             disabled: roleWarning,
                             onchange: function (e) { applyBookStyle('pageBgColor', e.target.value); }
                         })
+                    ]),
+                    // Background opacity (0-100%). Unset renders at the historical default of 40.
+                    m('div', { class: 'flex items-center gap-1.5' }, [
+                        m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, 'Bg opacity'),
+                        m('input', {
+                            type: 'range',
+                            min: 0, max: 100, step: 5,
+                            class: 'w-24 cursor-pointer',
+                            value: (bookStyle.pageBgOpacity != null ? bookStyle.pageBgOpacity : 40),
+                            disabled: roleWarning,
+                            oninput: function (e) { applyBookStyle('pageBgOpacity', Number(e.target.value)); }
+                        }),
+                        m('span', { class: 'text-xs text-gray-500 dark:text-gray-400 w-8 text-right' },
+                            (bookStyle.pageBgOpacity != null ? bookStyle.pageBgOpacity : 40) + '%')
                     ]),
                     // Text alignment
                     m('div', { class: 'flex items-center gap-1' }, [
