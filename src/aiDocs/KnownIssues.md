@@ -3314,3 +3314,126 @@ prior, not a result. Re-run when the SD server is available.
 
 Related: KI-59 (honest verification of an image pipeline), KI-66 (include/exclude landscape as a Ux
 option), `PictureBook2Plan.md` §2.4 (the deliberate `steps:4` vs `FALLBACK_STEPS=24` split).
+
+---
+
+## Objects7 / ISO42001 — schema index collision (2026-09-07, found while verifying a Docker recreate)
+
+### KI-69. `iso42001.certificationRequest` logs three `DBUtil Index collision` ERRORs on EVERY boot — diagnosed, NOT fixed (deliberately); recommended fix is a 2-line dedup in `RecordUtil` — OPEN
+
+**Symptom.** Every Tomcat/container start logs exactly three lines at ERROR:
+
+```
+[ERROR] DBUtil - iso42001.certificationRequest Index collision: (objectId)
+[ERROR] DBUtil - iso42001.certificationRequest Index collision: (id)
+[ERROR] DBUtil - iso42001.certificationRequest Index collision: (urn)
+```
+
+Confirmed on the `am7test` Docker stack. **It is exactly one model out of 230** — a static replay of
+the collector across every model resource in Objects7 + ISO42001 predicted these three and nothing
+else, matching the runtime log 1:1.
+
+**This is NOT the "model re-declares an inherited field/constraint" case** that
+`.claude/rules/objects7-reference.md` describes. `certificationRequestModel.json` declares **no**
+`hints` and **no** `constraints` at all. The cause is **diamond inheritance plus a collector that
+does not de-duplicate**:
+
+- `iso42001.certificationRequest` inherits `["data.directory", "access.accessRequest"]`.
+- `data.directory` → `common.nameId` → `common.base` → {`common.objectId`, `system.primaryKey`,
+  `common.urn`}, which is where the `objectId` / `id` / `urn` **hints** are declared.
+- `access.accessRequest` → `access.baseAccess` → `common.nameId` → … reaches the same three again.
+- `RecordUtil.getHints` (`RecordUtil.java:459-465`) does `hints.addAll(ms.getHints())` and then
+  recurses every entry in `inherits` with **no `contains` check**, so each of the three is collected
+  twice.
+- `DBUtil.getSchemaIndexes` (`DBUtil.java:628-639`) walks the hints list into an `idxSet` and, on the
+  second occurrence, logs `Index collision` at ERROR and `continue`s.
+
+**Functionally harmless today.** `DBUtil` *skips* the duplicate, which is the correct DDL outcome — no
+duplicate index is emitted and no DDL error occurs. Note this differs from the `Column does not exist`
+/ genuine-duplicate-constraint case, which does produce real DDL errors; do not conflate the two.
+Both duplicates here are **within the hints list** (the constraints list holds only the single
+composite `name, groupId, organizationId`, inherited from `data.directory`).
+
+Also note `useFieldIndexGuidance = false` (`DBUtil.java:95`), so the field-level `index` loop never
+runs and `idxSet` starts empty — the collision cannot come from field index guidance.
+
+**Why this was NOT fixed in the model JSON.** The obvious `.json` fix — break the diamond by swapping
+`data.directory` for `common.groupExt` — is **not safe**. `inherits("data.directory")` is load-bearing
+at seven sites, so dropping it would silently change this model's authorization, SQL and URN behavior:
+
+| Site | Branches on `MODEL_DIRECTORY` for |
+|---|---|
+| `AccessPoint.java:200` | the group-only PBAC access shortcut |
+| `AuthorizationSchema.java:134` | authorization schema generation |
+| `StatementUtil.java:167` | SQL generation |
+| `QueryUtil.java:397` | `isGroup` query construction |
+| `PolicyUtil.java:762` | policy resource resolution |
+| `UrnProvider.java:85` | URN computation |
+| `ThumbnailUtil.java:34` | thumbnail eligibility |
+
+It would also drop the inherited `name, groupId, organizationId` uniqueness constraint unless
+re-declared. The other JSON route — removing `common.nameId` from `access.baseAccess` — means editing
+a core Objects7 model to accommodate an ISO one, and `access.baseAccess`'s own field set would lose
+`name`/identity. **Stephen's call (2026-09-07): document, do not fix.**
+
+**RECOMMENDED FIX (when this is scheduled).** De-duplicate in the collector, not in any model JSON:
+
+```java
+// RecordUtil.java:449-465 — add a contains check in BOTH collectors
+public static List<String> getConstraints(ModelSchema ms, List<String> constraints) {
+    for(String c : ms.getConstraints()) {
+        if(!constraints.contains(c)) constraints.add(c);
+    }
+    for(String i : ms.getInherits()) getConstraints(RecordFactory.getSchema(i), constraints);
+    return constraints;
+}
+// ...and the identical change in getHints(ModelSchema, List<String>)
+```
+
+Why this is the right layer:
+1. **It makes the code do what `DBUtil` already does** — `DBUtil` discards the duplicate anyway, so
+   generated DDL is unchanged for all 230 models. The only behavior change is that a legitimate
+   diamond stops being reported as an error.
+2. **It preserves the genuine defect check.** The dedup is per-list, so `DBUtil`'s cross-list test (a
+   name appearing in `constraints` *and* in `hints`) still fires — that case is a real modelling
+   error and must keep erroring.
+3. **It fixes the whole class**, not this one model, so the next model that legitimately inherits two
+   branches to `common.base` does not reintroduce it.
+4. **It is verifiable without touching the DB** — see below.
+
+Also worth considering as part of the same change: `getConstraints(Query)` / `isConstrained(Query)`
+consume `getConstraints(ModelSchema)` and would see a deduped list; duplicates there are currently
+harmless (the loop breaks on first full match), so dedup is safe but should be re-read before landing.
+
+**VERIFICATION IS TRICKY — read this before attempting a fix (Stephen, 2026-09-07).** Model schemas are
+**persisted in the database and the DB copy WINS over the resource**:
+`RecordFactory.getSchema()` (`:388-399`) calls `getIOSchema(name)` first and only falls back to
+`importSchemaFromResource(name)` when the DB returns null. `getIOSchema` (`:299-316`) reads the
+serialized `ModelSchema` out of `a7_system_modelschema_0_1` (`schemadata` column, keyed by name +
+`/System` organizationId).
+
+Confirmed on the live `am7test` DB: 176 model schemas are persisted, including all eight `iso42001.*`
+models and `iso42001.certificationRequest` itself. **So on any already-set-up deployment, editing a
+model `.json` has NO runtime effect** — which is the second, independent reason the JSON route was
+rejected here. To make a schema edit take effect you must either call
+`RecordFactory.updateSchemaDefinition(ModelSchema)` (`:475-507` — rewrites `schemadata`, then
+`unloadSchema` + `CacheUtil.clearCache`), release the persisted schema record so the resource is
+re-imported, or start against a fresh database.
+
+**The recommended `RecordUtil` dedup sidesteps all of that**: it de-duplicates at collection time on
+whatever `ModelSchema` instance was loaded, from either source, so no schema refresh, no
+`updateSchemaDefinition` call and no fresh DB is required to verify it.
+
+**How to verify the fix.** Objects7 change ⇒ needs a unit test (`-DskipTests=false` is mandatory for
+Objects7 or the run executes nothing and still prints `BUILD SUCCESS`). Assert that
+`RecordUtil.getHints(RecordFactory.getSchema("iso42001.certificationRequest"))` contains `objectId`,
+`id` and `urn` exactly **once each** — a negative control before the fix should show two each. Then
+rebuild the ISO jar + WAR, restart, and confirm the three ERROR lines are gone from a full boot log:
+
+```
+docker compose -p am7test -f docker-compose.test.yml logs am7 | Select-String "Index collision"
+```
+
+Related: `.claude/rules/objects7-reference.md` ("Never re-declare an inherited field or constraint" —
+correct as a rule, but this instance is a different mechanism and the note there should eventually
+cross-reference this entry), `aiDocs/dockerDevSetup.md` (the stack this was found on).

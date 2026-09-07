@@ -94,6 +94,35 @@ every single startup. This was introduced during ChapBook model work and then wr
 adding a field or constraint to a model JSON, walk the `inherits` chain and confirm it isn't already
 declared upstream.
 
+**…but `Index collision` has a second, distinct cause — diamond inheritance — so establish which one
+you have before hunting for a duplicate declaration.** `RecordUtil.getHints`/`getConstraints`
+(`RecordUtil.java:449-465`) `addAll` down **every** `inherits` branch with no `contains` check, so a
+model that reaches one ancestor by two paths collects that ancestor's hints twice and
+`DBUtil.getSchemaIndexes` (`DBUtil.java:628-639`) reports the second as `Index collision`. The model
+JSON declares nothing wrong in that case, and unlike the re-declaration case above it produces **no
+DDL error** — `DBUtil` skips the duplicate, which is the correct outcome.
+
+Distinguishing test: open the model JSON. If it declares the colliding name in its own `hints` /
+`constraints` (or a field it also inherits), it is the re-declaration defect — fix the JSON. If it
+declares no `hints`/`constraints` at all, walk `inherits` for two paths to the same ancestor; that is
+the collector, not the model, and editing the JSON to break the diamond can silently change behavior
+(`inherits("data.directory")` alone is load-bearing at seven sites, including the group-only PBAC
+shortcut in `AccessPoint.java:200`).
+
+Live example, diagnosed and deliberately left unfixed: **`iso42001.certificationRequest`** logs
+`(objectId)`, `(id)`, `(urn)` on every boot — one model out of 230. Full diagnosis, the seven-site
+impact table, and the recommended collector-level fix are in **`aiDocs/KnownIssues.md` KI-69**. Read
+that before touching either the model or the collector.
+
+**Related trap when fixing any of this: the persisted schema wins over the resource.**
+`RecordFactory.getSchema()` (`:388-399`) calls `getIOSchema()` first and only falls back to
+`importSchemaFromResource()` when the DB has no row, and `getIOSchema` (`:299-316`) reads the
+serialized `ModelSchema` from `a7_system_modelschema_0_1`. On any already-provisioned deployment,
+**editing a model `.json` therefore has no runtime effect** — verified 2026-09-07 with 176 schemas
+persisted. To make a schema edit take effect, call `RecordFactory.updateSchemaDefinition(ModelSchema)`
+(`:475-507`), release the persisted record so the resource is re-imported, or start against a fresh
+database. A model-JSON change that appears to do nothing is usually this, not a bad edit.
+
 ### Field Schema Properties
 
 Fields support several modifiers that control persistence and behavior:
