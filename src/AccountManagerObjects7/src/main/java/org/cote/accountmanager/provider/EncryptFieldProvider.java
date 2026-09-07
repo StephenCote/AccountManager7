@@ -62,7 +62,7 @@ public class EncryptFieldProvider implements IProvider {
 			throw new ValueException("Failed to retrieve organization vault for " + org.getOrganizationPath());
 		}
 		if((RecordOperation.READ.equals(operation) || RecordOperation.UPDATE.equals(operation)) && (!model.hasField(FieldNames.FIELD_KEY_ID) || !model.hasField(FieldNames.FIELD_VAULT_ID))) {
-			logger.info("Inject key and vault id");
+			// logger.info("Inject key and vault id");
 			BaseRecord urec = IOSystem.getActiveContext().getRecordUtil().findByRecord(contextUser, model, new String[] {FieldNames.FIELD_VAULTED, FieldNames.FIELD_KEY_ID, FieldNames.FIELD_VAULT_ID, FieldNames.FIELD_ORGANIZATION_ID});
 			if(urec != null) {
 				model.set(FieldNames.FIELD_KEY_ID, urec.get(FieldNames.FIELD_KEY_ID));
