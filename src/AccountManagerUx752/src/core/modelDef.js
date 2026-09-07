@@ -10020,7 +10020,7 @@
         {
           "name": "scheduler",
           "type": "string",
-          "default": "Karras"
+          "default": "karras"
         },
         {
           "name": "sampler",
@@ -10030,7 +10030,7 @@
         {
           "name": "refinerScheduler",
           "type": "string",
-          "default": "Karras"
+          "default": "karras"
         },
         {
           "name": "refinerSampler",

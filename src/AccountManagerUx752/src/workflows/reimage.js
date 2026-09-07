@@ -125,14 +125,16 @@ async function reimage(entity, inst) {
     }
     let cinst = lastReimage || am7model.prepareInstance(sdEntity, am7model.forms.sdConfig);
 
-    // Preferred defaults — applied before config load, overridden by saved config
+    // Preferred defaults — applied before config load, overridden by saved config.
+    // The scheduler/refinerScheduler override that used to live here was a band-aid for the schema
+    // default being "Karras" (capital K) vs the lowercase 'karras' option list. That is now fixed at
+    // the source (configModel.json / modelDef.js) and hardened in SdConfigPanel.selectInput, so there
+    // is one behavior everywhere — the template default of 'karras' flows through unchanged.
     function tempApplyDefaults() {
         cinst.api.steps(40);
         cinst.api.refinerSteps(40);
         cinst.api.cfg(5);
         cinst.api.refinerCfg(5);
-        cinst.entity.scheduler = 'karras';
-        cinst.entity.refinerScheduler = 'karras';
         cinst.entity.denoisingStrength = 0.75;
     }
 

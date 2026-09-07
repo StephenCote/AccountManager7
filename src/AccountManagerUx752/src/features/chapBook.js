@@ -17,6 +17,7 @@ import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
 import { am7model } from '../core/model.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
+import { ReaderShell, exportBook, escHtml } from '../components/readerShell.js';
 
 // ── REST base ─────────────────────────────────────────────────────────
 
@@ -245,14 +246,26 @@ function renderChapBookPage(scene, overlayOpacity) {
     let stanzaText = scene.poemStanza || scene.blurb || '';
     let poemTitle = scene.title || '';
     let opacity = overlayOpacity != null ? overlayOpacity : 0.4;
+    // Style-aware: read the persisted per-scene style fields, falling back to the historical
+    // hardcoded values (Georgia serif / white text / center / translucent-black panel) only when a
+    // field is unset. This is what makes the toolbar font/color/bg/align choices actually render.
+    let fontFamily = scene.pageFont || 'Georgia, serif';
+    let textColor = scene.pageTextColor || 'white';
+    let textAlign = scene.pageTextAlign || 'center';
+    let bgColor = scene.pageBgColor || '';
+    let stanzaStyle = 'font-family: ' + fontFamily + '; line-height: 1.9; color: ' + textColor + '; white-space: pre-wrap;';
+    // A chosen pageBgColor becomes a solid panel background; otherwise keep the historical
+    // translucent-black overlay class so the default look is byte-for-byte unchanged.
+    let panelClass = 'rounded p-6 max-w-xl' + (bgColor ? '' : ' bg-black bg-opacity-40');
+    let panelStyle = 'text-align: ' + textAlign + ';' + (bgColor ? (' background-color: ' + bgColor + ';') : '');
     return m('div.relative.overflow-hidden', { style: 'min-height: 70vh' }, [
         imageUrl ? m('img.absolute.inset-0.w-full.h-full.object-cover', {
             src: imageUrl,
             style: 'opacity: ' + opacity
         }) : null,
         m('div.relative.z-10.flex.items-center.justify-center', { style: 'min-height: 70vh' },
-            m('div.bg-black.bg-opacity-40.rounded.p-6.max-w-xl.text-center', [
-                m('p', { style: 'font-family: Georgia, serif; line-height: 1.9; color: white; white-space: pre-wrap;' }, stanzaText),
+            m('div', { class: panelClass, style: panelStyle }, [
+                m('p', { style: stanzaStyle }, stanzaText),
                 poemTitle ? m('p.text-xs.text-gray-300.mt-4', poemTitle) : null
             ])
         )
@@ -1533,6 +1546,10 @@ let readerLoading = false;
 let readerError = null;
 let readerAnalyzing = false;
 let readerRendering = false;
+// D5: page-flip reader nav state (cover = page 0, poem pages 1..N; fullscreen). Owned here and passed
+// to the shared ReaderShell (components/readerShell.js), the same reader PictureBook uses — the shell
+// mutates this object and provides keyboard nav, chevrons, page dots, fullscreen and HTML export.
+let cbReader = { currentPage: 0, fullscreen: false };
 // Issue 2c: chat config selected (or auto-resolved) for the reader's Re-analyze pass — lets the user
 // re-run theme analysis against a chosen LLM config during EDIT rather than the deterministic default.
 // { name, objectId } once chosen/resolved; null until the auto-default resolves or the user picks.
@@ -1669,6 +1686,149 @@ function renderReaderBook() {
 
 // ── ChapBookReader component — dedicated poem-book reader (6B/6C/6D) ──
 
+// Resolve a ChapBook scene's landscape image URL, matching renderChapBookPage's own resolution
+// (direct imageUrl, else the MediaServlet path built from imageGroupPath + imageName).
+function chapImageUrl(scene) {
+    if (!scene) return null;
+    return scene.imageUrl
+        || ((scene.imageGroupPath && scene.imageName)
+            ? applicationPath + '/media/' + am7client.dotPath(am7client.currentOrganization)
+                + '/data.data' + scene.imageGroupPath + '/' + scene.imageName
+            : null);
+}
+
+// Book title for the reader header/cover/export.
+function readerTitle() {
+    return (readerBook && (readerBook.name || readerBook.slug)) || 'ChapBook';
+}
+
+// ReaderShell cover slot (page 0) — mirrors PictureBook's cover but with ChapBook poem-book styling.
+function renderReaderCover(nav) {
+    let coverImg = chapImageUrl(readerPages[0]);
+    return m('div', {
+        class: 'flex flex-col items-center justify-center min-h-[60vh] relative overflow-hidden rounded-lg',
+        style: 'background: linear-gradient(135deg, #2a1a3e 0%, #1e163e 50%, #34104a 100%);'
+    }, [
+        coverImg ? m('img', {
+            src: coverImg,
+            class: 'absolute inset-0 w-full h-full object-cover opacity-50'
+        }) : null,
+        m('div', { class: 'relative z-10 text-center p-8' }, [
+            m('h1', {
+                class: 'text-4xl font-bold text-white mb-3',
+                style: 'text-shadow: 0 2px 8px rgba(0,0,0,0.7); font-family: Georgia, serif;'
+            }, readerTitle()),
+            m('p', { class: 'text-lg text-gray-300 opacity-70' },
+                readerPages.length + ' Page' + (readerPages.length !== 1 ? 's' : '')),
+            m('button', {
+                class: 'mt-8 px-6 py-2 bg-white/20 hover:bg-white/30 text-white rounded-full backdrop-blur-sm transition-colors',
+                onclick: function () { nav.goToPage(1); }
+            }, [
+                m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'arrow_forward'),
+                'Begin'
+            ])
+        ])
+    ]);
+}
+
+// ReaderShell page slot (pageNumber is 1-based) — the existing landscape page + a page label.
+function renderReaderPage(scene, pageNumber) {
+    return m('div', { class: 'rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700' }, [
+        renderChapBookPage(scene),
+        m('div', { class: 'px-3 py-1.5 text-xs text-gray-400 text-center bg-gray-50 dark:bg-gray-800/50' },
+            'Page ' + pageNumber + ' of ' + readerPages.length)
+    ]);
+}
+
+function renderReaderLoading() {
+    return m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-12 text-center' }, 'Loading book...');
+}
+
+function renderReaderError() {
+    return m('div', { class: 'text-sm text-red-500 py-12 text-center' }, 'Error: ' + readerError);
+}
+
+function renderReaderEmpty() {
+    return m('div', { class: 'text-center py-12' }, [
+        m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 mb-4' }, 'auto_stories'),
+        m('div', { class: 'text-sm text-gray-500 dark:text-gray-400' }, 'No pages in this book yet.')
+    ]);
+}
+
+// Header action slots. actionsLeft = Review + Re-analyze config picker + Analyze; actionsRight = Render.
+// All hidden in fullscreen (matching PictureBook, which hides its editing buttons in fullscreen).
+function renderReaderActionsLeft(nav) {
+    if (nav.fullscreen) return null;
+    let busy = readerAnalyzing || readerRendering;
+    return [
+        m('button', {
+            class: 'px-3 py-1.5 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 flex items-center gap-1',
+            onclick: function () { m.route.set('/chap-book/review/' + readerBookObjectId); }
+        }, [
+            m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'edit_note'),
+            ' Review'
+        ]),
+        // Issue 2c: pick the chat config used for the Re-analyze pass.
+        readerPoemIds.length > 0 ? m('button', {
+            class: 'px-3 py-1.5 rounded border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-1 disabled:opacity-50',
+            title: 'Choose the chat config used to re-analyze poem themes',
+            disabled: busy || roleWarning,
+            onclick: function () {
+                ObjectPicker.openLibrary({
+                    libraryType: 'chatConfig',
+                    title: 'Select Chat Config for Re-analysis',
+                    onSelect: function (item) {
+                        if (item && item.name) {
+                            reanalyzeChatConfigRef = { name: item.name, objectId: item.objectId };
+                            m.redraw();
+                        }
+                    }
+                });
+            }
+        }, [
+            m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'tune'),
+            m('span', { class: 'max-w-[10rem] truncate' },
+                reanalyzeChatConfigRef ? reanalyzeChatConfigRef.name
+                    : (_reanalyzeChatConfigResolving ? 'Resolving…' : 'Config'))
+        ]) : null,
+        readerPoemIds.length > 0 ? m('button', {
+            class: 'px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50',
+            title: 'Re-analyze poem themes with the selected chat config',
+            disabled: busy || roleWarning,
+            onclick: analyzeReaderPoems
+        }, [
+            m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, readerAnalyzing ? 'hourglass_empty' : 'psychology'),
+            readerAnalyzing ? ' Analyzing...' : ' Analyze'
+        ]) : null
+    ];
+}
+
+function renderReaderActionsRight(nav) {
+    if (nav.fullscreen) return null;
+    let busy = readerAnalyzing || readerRendering;
+    return m('button', {
+        class: 'px-3 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1 disabled:opacity-50',
+        disabled: busy || roleWarning,
+        onclick: renderReaderBook
+    }, [
+        m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, readerRendering ? 'hourglass_empty' : 'image'),
+        readerRendering ? (' ' + renderProgressLabel()) : ' Render'
+    ]);
+}
+
+// Self-contained-HTML export page section for ChapBook: poem stanza over the landscape image.
+function chapExportPageHtml(scene, i, imgB64, total) {
+    let stanza = scene.poemStanza || scene.blurb || '';
+    let title = scene.title || '';
+    let out = '\n    <div class="scene">\n';
+    if (imgB64) out += '      <img src="' + imgB64 + '" alt="' + escHtml(title) + '" />\n';
+    out += '      <p class="blurb" style="white-space:pre-wrap;">' + escHtml(stanza) + '</p>\n';
+    if (title) out += '      <div class="characters">' + escHtml(title) + '</div>\n';
+    out += '      <div class="page-num">Page ' + (i + 1) + ' of ' + total + '</div>\n';
+    out += '    </div>\n';
+    return out;
+}
+
 const ChapBookReader = {
     oninit: function (vnode) {
         readerBookObjectId = vnode.attrs.bookObjectId || null;
@@ -1681,6 +1841,9 @@ const ChapBookReader = {
         readerError = null;
         readerAnalyzing = false;
         readerRendering = false;
+        // D5: reset page-flip nav to the cover on every open.
+        cbReader.currentPage = 0;
+        cbReader.fullscreen = false;
         // Issue 2c: fresh chat-config resolution per book open (auto-default; user can override via the
         // Re-analyze picker in the header).
         reanalyzeChatConfigRef = null;
@@ -1698,93 +1861,44 @@ const ChapBookReader = {
         if (readerBookObjectId) loadReaderBook(readerBookObjectId);
     },
     view: function () {
-        let title = (readerBook && (readerBook.name || readerBook.slug)) || 'ChapBook';
-        let busy = readerAnalyzing || readerRendering;
-        return m('div', { class: 'p-4 max-w-4xl mx-auto' }, [
-            // Issue 9: role warning banner
-            roleWarning ? m('div', { class: 'mb-4 p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
-                m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
-                'You need the AccountUsers role to use ChapBook features.'
-            ]) : null,
+        return m('div', [
+            // Issue 9: role warning banner (rendered above the shared reader; the shell's fullscreen
+            // overlay covers it when active).
+            roleWarning ? m('div', { class: 'px-4 pt-4 max-w-3xl mx-auto' },
+                m('div', { class: 'p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
+                    m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
+                    'You need the AccountUsers role to use ChapBook features.'
+                ])) : null,
 
-            // Header — back, title, Analyze + Render controls
-            m('div', { class: 'flex flex-wrap items-center gap-3 mb-6' }, [
-                m('button', {
-                    class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
-                    title: 'Back to Poem Library',
-                    onclick: function () { m.route.set('/chap-book'); }
-                }, m('span', { class: 'material-symbols-outlined' }, 'arrow_back')),
-                m('span', { class: 'material-symbols-outlined text-2xl text-purple-500' }, 'menu_book'),
-                m('h2', { class: 'flex-1 text-xl font-semibold dark:text-white truncate', title: title }, title),
-                m('button', {
-                    class: 'px-3 py-1.5 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 flex items-center gap-1',
-                    onclick: function () { m.route.set('/chap-book/review/' + readerBookObjectId); }
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'edit_note'),
-                    ' Review'
-                ]),
-                // Issue 2c: pick the chat config used for the Re-analyze pass. Opens the same library
-                // picker as create/render; auto-resolved to a system default, overridable per book.
-                readerPoemIds.length > 0 ? m('button', {
-                    class: 'px-3 py-1.5 rounded border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-1 disabled:opacity-50',
-                    title: 'Choose the chat config used to re-analyze poem themes',
-                    disabled: busy || roleWarning,
-                    onclick: function () {
-                        ObjectPicker.openLibrary({
-                            libraryType: 'chatConfig',
-                            title: 'Select Chat Config for Re-analysis',
-                            onSelect: function (item) {
-                                if (item && item.name) {
-                                    reanalyzeChatConfigRef = { name: item.name, objectId: item.objectId };
-                                    m.redraw();
-                                }
-                            }
-                        });
-                    }
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'tune'),
-                    m('span', { class: 'max-w-[10rem] truncate' },
-                        reanalyzeChatConfigRef ? reanalyzeChatConfigRef.name
-                            : (_reanalyzeChatConfigResolving ? 'Resolving…' : 'Config'))
-                ]) : null,
-                readerPoemIds.length > 0 ? m('button', {
-                    class: 'px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50',
-                    title: 'Re-analyze poem themes with the selected chat config',
-                    disabled: busy || roleWarning,
-                    onclick: analyzeReaderPoems
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, readerAnalyzing ? 'hourglass_empty' : 'psychology'),
-                    readerAnalyzing ? ' Analyzing...' : ' Analyze'
-                ]) : null,
-                m('button', {
-                    class: 'px-3 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1 disabled:opacity-50',
-                    disabled: busy || roleWarning,
-                    onclick: renderReaderBook
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, readerRendering ? 'hourglass_empty' : 'image'),
-                    readerRendering ? (' ' + renderProgressLabel()) : ' Render'
-                ])
-            ]),
+            // Shared page-flip reader (same component PictureBook uses).
+            m(ReaderShell, {
+                state: cbReader,
+                pages: readerPages,
+                title: readerTitle(),
+                pageNoun: 'Page',
+                loading: readerLoading,
+                error: readerError,
+                renderLoading: renderReaderLoading,
+                renderError: renderReaderError,
+                renderEmpty: renderReaderEmpty,
+                renderCover: renderReaderCover,
+                renderPage: renderReaderPage,
+                imageUrlFor: chapImageUrl,
+                onBack: function () { m.route.set('/chap-book'); },
+                backTitle: 'Back to Poem Library',
+                actionsLeft: renderReaderActionsLeft,
+                actionsRight: renderReaderActionsRight,
+                // Export params — self-contained ChapBook HTML with poem text over each landscape image.
+                coverImageUrl: function () { return chapImageUrl(readerPages[0]); },
+                exportPageHtml: chapExportPageHtml,
+                exportCountNoun: 'Page',
+                exportTitleSuffix: 'ChapBook',
+                exportNameFallback: 'chapbook',
+                exportNameSuffix: '-chapbook.html',
+                exportToast: 'ChapBook exported'
+            }),
 
-            // Body — status or pages
-            readerLoading ? m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-12 text-center' }, 'Loading book...') :
-            readerError ? m('div', { class: 'text-sm text-red-500 py-12 text-center' }, 'Error: ' + readerError) :
-            readerPages.length === 0 ? m('div', { class: 'text-center py-12' }, [
-                m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 mb-4' }, 'auto_stories'),
-                m('div', { class: 'text-sm text-gray-500 dark:text-gray-400' }, 'No pages in this book yet.')
-            ]) :
-
-            m('div', { class: 'space-y-6' },
-                readerPages.map(function (pg, idx) {
-                    return m('div', { key: pg.objectId || idx, class: 'rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700' }, [
-                        renderChapBookPage(pg),
-                        m('div', { class: 'px-3 py-1.5 text-xs text-gray-400 text-center bg-gray-50 dark:bg-gray-800/50' },
-                            'Page ' + (idx + 1) + ' of ' + readerPages.length)
-                    ]);
-                })
-            ),
-
-            // Issue 8: pre-render SD config dialog
+            // Issue 8: pre-render SD config dialog (fixed-position modal — placement is irrelevant)
             renderRenderDialog()
         ]);
     }
@@ -1808,17 +1922,53 @@ let reviewLoading = false;
 let reviewError = null;
 let reviewRendering = false;
 let reviewGroupId = null;
+let reviewExporting = false;   // toolbar Export-as-HTML in-flight flag
+
+// Deferred Stage-1 item: export the reviewed book as a self-contained HTML file (same engine the
+// reader uses). Images come from the already-resolved review previews (reviewSceneImageUrls), so the
+// export reflects exactly what the reviewer sees.
+async function exportReviewBook() {
+    if (reviewExporting || !reviewScenes.length) return;
+    reviewExporting = true;
+    m.redraw();
+    try {
+        await exportBook({
+            pages: reviewScenes,
+            title: (reviewBook && (reviewBook.name || reviewBook.slug)) || 'ChapBook',
+            imageUrlFor: function (s) { return reviewSceneImageUrls[s.objectId] || null; },
+            coverImageUrl: function () {
+                return reviewScenes.length ? (reviewSceneImageUrls[reviewScenes[0].objectId] || null) : null;
+            },
+            buildPageHtml: chapExportPageHtml,
+            countNoun: 'Page',
+            titleSuffix: 'ChapBook',
+            nameFallback: 'chapbook',
+            nameSuffix: '-chapbook.html',
+            toast: 'ChapBook exported'
+        });
+    } finally {
+        reviewExporting = false;
+        m.redraw();
+    }
+}
+
+// Book-level shared style defaults (D2): the toolbar edits these and fans them out to every scene as
+// the book default; a scene can still override any of them locally afterward. Initialised from the
+// first scene on load so the toolbar reflects the current book style.
+let bookStyle = { pageFont: '', pageTextColor: '', pageBgColor: '', pageTextAlign: '' };
+let bookSdExpanded = false;   // toolbar "Book image settings" collapsible (shared SD config panel)
 
 // ── Per-scene SD-config overrides (Gap 8) ─────────────────────────────
-// Mirrors PB2's sceneOverrides (workflows/pictureBook.js): each is a real olio.sd.config edited
-// through the standard form system (forms.sdConfigOverrides via the generic object view). Only the
-// SPARSE delta (persisted override + fields the user just edited) is sent — never a materialized
-// full record, which would make "overridden" indistinguishable from "default". Unlike PB2, which
-// sends the delta inline at generate time, a ChapBook scene has no sceneNode, so the override is
-// PERSISTED on the scene via PUT /rest/olio/picture-book/scene/{oid}/config-override.
+// Mirrors PB2's sceneOverrides (workflows/pictureBook.js): each is a real olio.sd.config whose SPARSE
+// delta (persisted override + fields the user just edited) is sent — never a materialized full record,
+// which would make "overridden" indistinguishable from "default". The override editor is now the shared
+// SdConfigPanel (attrs.inst) instead of the generic object view, so the same field set/options appear
+// as everywhere else; the instance is still prepared with forms.sdConfigOverrides and delta semantics
+// (computeSceneOverrideDelta) are unchanged. Unlike PB2, which sends the delta inline at generate time,
+// a ChapBook scene has no sceneNode, so the override is PERSISTED on the scene via
+// PUT /rest/olio/picture-book/scene/{oid}/config-override.
 let sceneOverrideInsts = {};    // objectId → am7model instance (forms.sdConfigOverrides)
-let sceneOverrideViews = {};    // objectId → generic object-view component
-let sceneOverrideExpanded = {}; // objectId → bool (mount the heavy override form only when open)
+let sceneOverrideExpanded = {}; // objectId → bool (mount the override panel only when open)
 
 // Identity/transient fields never diffed into a per-scene delta nor sent as part of the override.
 const SD_CONFIG_IDENTITY = ['id', 'objectId', 'urn', 'ownerId', 'groupId', 'organizationId', 'groupPath', 'organizationPath', 'narration'];
@@ -1835,12 +1985,29 @@ async function patchScene(sceneObjectId, changes) {
     return resp.json();
 }
 
-async function deleteScene(sceneObjectId) {
-    let resp = await fetch(applicationPath + '/rest/model/olio.pb.scene/' + sceneObjectId, {
+// Delete a ChapBook scene through the dedicated endpoint, which deletes the scene AND reindexes the
+// remaining scenes server-side (so sceneIndex stays contiguous). Replaces the old generic
+// DELETE /rest/model/olio.pb.scene/{oid}, which left holes in the index for the client to patch.
+async function deleteChapBookScene(sceneObjectId) {
+    let resp = await fetch(cbBase() + '/scene/' + sceneObjectId, {
         method: 'DELETE',
         credentials: 'include'
     });
     if (!resp.ok) throw new Error('Delete scene failed: ' + resp.status);
+    return resp.json();
+}
+
+// Merge the NEXT scene up into this one: the backend sets poemStanza = this + "\n" + next, marks
+// imageStale=true (the existing image no longer matches the combined stanza), clears this scene's
+// sdPrompt/promptLocked, deletes the next scene, and reindexes — all server-side and atomic. Replaces
+// the old client-side patch-then-delete, which could leave a half-merged book if the delete failed.
+async function mergeChapBookSceneUp(sceneObjectId) {
+    let resp = await fetch(cbBase() + '/scene/' + sceneObjectId + '/merge-up', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+    });
+    if (!resp.ok) throw new Error('Merge scene failed: ' + resp.status);
     return resp.json();
 }
 
@@ -1867,7 +2034,7 @@ async function loadSceneFields(sceneObjectId) {
             schema: 'io.query',
             type: 'olio.pb.scene',
             cache: false,
-            request: ['id', 'objectId', 'groupId', 'pageFont', 'pageBgColor', 'pageTextAlign', 'sceneIndex'],
+            request: ['id', 'objectId', 'groupId', 'name', 'pageFont', 'pageBgColor', 'pageTextAlign', 'pageTextColor', 'sceneIndex', 'imageStale'],
             fields: [{ name: 'objectId', comparator: 'EQUALS', value: sceneObjectId }],
             recordCount: 1
         })
@@ -1879,13 +2046,15 @@ async function loadSceneFields(sceneObjectId) {
     return null;
 }
 
-// Gap 8 + skip-render: batch-read every scene's persisted configOverride, sdPrompt and imageObjectId
-// in one query. bookPages()/pages projects none of these, so they are fetched here scoped by
-// groupId + organizationId (both NUMBERS — a data.directory-derived list query needs an explicit
-// organizationId or PBAC denies), cache:false for a fresh read. sdPrompt + imageObjectId let the
-// review card flag un-prompted scenes (see isSceneUnprompted); promptLocked marks a user-authoritative
-// prompt so a saved edit is never flagged for regeneration. Returns a map
-// { objectId → { configOverride: string|null, sdPrompt: string, imageObjectId: string|null, promptLocked: bool } }.
+// Gap 8 + skip-render + toolbar: batch-read every scene's persisted per-page fields in one query.
+// bookPages()/pages projects none of these, so they are fetched here scoped by groupId + organizationId
+// (both NUMBERS — a data.directory-derived list query needs an explicit organizationId or PBAC denies),
+// cache:false for a fresh read. configOverride/sdPrompt/imageObjectId/promptLocked drive the un-prompted
+// affordance and per-scene override editor; name is required so the fan-out PATCH carries the validated
+// name field; pageFont/pageBgColor/pageTextAlign/pageTextColor let the toolbar reflect and edit each
+// scene's style; imageStale flags a scene whose image no longer matches an edited stanza. Returns a map
+// { objectId → { name, configOverride, sdPrompt, imageObjectId, promptLocked, pageFont, pageBgColor,
+//                pageTextAlign, pageTextColor, imageStale } }.
 async function loadSceneOverrides(groupId) {
     let orgId = page && page.user ? page.user.organizationId : null;
     if (groupId == null || orgId == null) return {};
@@ -1897,7 +2066,8 @@ async function loadSceneOverrides(groupId) {
             schema: 'io.query',
             type: 'olio.pb.scene',
             cache: false,
-            request: ['id', 'objectId', 'configOverride', 'sdPrompt', 'imageObjectId', 'promptLocked'],
+            request: ['id', 'objectId', 'name', 'configOverride', 'sdPrompt', 'imageObjectId', 'promptLocked',
+                'pageFont', 'pageBgColor', 'pageTextAlign', 'pageTextColor', 'imageStale'],
             fields: [
                 { name: 'groupId', comparator: 'EQUALS', value: Number(groupId) },
                 { name: 'organizationId', comparator: 'EQUALS', value: Number(orgId) }
@@ -1912,10 +2082,16 @@ async function loadSceneOverrides(groupId) {
     rows.forEach(function (r) {
         if (r && r.objectId) {
             map[r.objectId] = {
+                name: r.name || '',
                 configOverride: r.configOverride || null,
                 sdPrompt: r.sdPrompt || '',
                 imageObjectId: r.imageObjectId || null,
-                promptLocked: !!r.promptLocked
+                promptLocked: !!r.promptLocked,
+                pageFont: r.pageFont || '',
+                pageBgColor: r.pageBgColor || '',
+                pageTextAlign: r.pageTextAlign || '',
+                pageTextColor: r.pageTextColor || '',
+                imageStale: !!r.imageStale
             };
         }
     });
@@ -1971,9 +2147,8 @@ async function loadReviewBook(bookObjectId) {
     reviewError = null;
     reviewScenes = [];
     reviewGroupId = null;
-    // Gap 8: drop cached override forms/views from any prior book so they rebuild from fresh data.
+    // Gap 8: drop cached override instances from any prior book so they rebuild from fresh data.
     sceneOverrideInsts = {};
-    sceneOverrideViews = {};
     sceneOverrideExpanded = {};
     // Landscape-prompt review: drop any prior book's resolved preview URLs.
     reviewSceneImageUrls = {};
@@ -2003,48 +2178,71 @@ async function loadReviewBook(bookObjectId) {
             return {
                 objectId: pg.objectId,
                 id: pg.id,
+                name: pg.name || '',
                 sceneIndex: pg.sceneIndex,
                 title: pg.title || '',
                 poemStanza: pg.poemStanza || pg.blurb || '',
                 pageFont: pg.pageFont || '',
                 pageBgColor: pg.pageBgColor || '',
                 pageTextAlign: pg.pageTextAlign || '',
+                pageTextColor: pg.pageTextColor || '',
                 configOverride: null,
                 sdPrompt: pg.sdPrompt || '',
                 imageObjectId: pg.imageObjectId || pg.dataObjectId || null,
+                imageStale: !!pg.imageStale,
+                // Per-card dirty set: field names the user has edited since the last save. The single
+                // per-card Save button (and book-level Save all) act on this; empty ⇒ nothing to save.
+                _dirty: new Set(),
                 _saving: false
             };
         });
         // Load first scene fully to get groupId (needed for split / new scene creation)
-        // and to backfill style fields that bookPages may not project.
+        // and to backfill fields that bookPages may not project (name + style + imageStale).
         if (reviewScenes.length > 0 && reviewScenes[0].objectId) {
             try {
                 let fields = await loadSceneFields(reviewScenes[0].objectId);
                 if (fields) {
                     reviewGroupId = fields.groupId || null;
-                    if (fields.pageFont || fields.pageBgColor || fields.pageTextAlign) {
-                        reviewScenes[0].pageFont = fields.pageFont || '';
-                        reviewScenes[0].pageBgColor = fields.pageBgColor || '';
-                        reviewScenes[0].pageTextAlign = fields.pageTextAlign || '';
-                    }
+                    if (fields.name) reviewScenes[0].name = fields.name;
+                    reviewScenes[0].pageFont = fields.pageFont || reviewScenes[0].pageFont;
+                    reviewScenes[0].pageBgColor = fields.pageBgColor || reviewScenes[0].pageBgColor;
+                    reviewScenes[0].pageTextAlign = fields.pageTextAlign || reviewScenes[0].pageTextAlign;
+                    reviewScenes[0].pageTextColor = fields.pageTextColor || reviewScenes[0].pageTextColor;
+                    if (fields.imageStale != null) reviewScenes[0].imageStale = !!fields.imageStale;
                 }
             } catch (_) {}
         }
-        // Gap 8 + skip-render: batch-read persisted per-scene overrides, sdPrompt and imageObjectId
-        // (bookPages projects none of these) so the review card can flag un-prompted scenes.
+        // Gap 8 + skip-render + toolbar: batch-read persisted per-scene fields (bookPages projects none
+        // of these) so the review card can flag un-prompted / stale scenes, carry each scene's name for
+        // the fan-out PATCH's validated name field, and reflect per-scene style in the toolbar.
         if (reviewGroupId != null) {
             try {
                 let ovMap = await loadSceneOverrides(reviewGroupId);
                 reviewScenes.forEach(function (s) {
                     let row = s.objectId ? ovMap[s.objectId] : null;
                     if (row) {
+                        if (row.name) s.name = row.name;
                         s.configOverride = row.configOverride;
                         s.sdPrompt = row.sdPrompt || s.sdPrompt;
                         s.imageObjectId = row.imageObjectId || s.imageObjectId;
                         s.promptLocked = row.promptLocked;
+                        s.pageFont = row.pageFont || s.pageFont;
+                        s.pageBgColor = row.pageBgColor || s.pageBgColor;
+                        s.pageTextAlign = row.pageTextAlign || s.pageTextAlign;
+                        s.pageTextColor = row.pageTextColor || s.pageTextColor;
+                        s.imageStale = row.imageStale;
                     }
                 });
             } catch (_) {}
+        }
+        // Initialise the toolbar's book-level style from the first scene so it reflects current state.
+        if (reviewScenes.length > 0) {
+            bookStyle = {
+                pageFont: reviewScenes[0].pageFont || '',
+                pageTextColor: reviewScenes[0].pageTextColor || '',
+                pageBgColor: reviewScenes[0].pageBgColor || '',
+                pageTextAlign: reviewScenes[0].pageTextAlign || ''
+            };
         }
         // Landscape-prompt review: prefill each card's preview with its already-rendered image (if any)
         // so the user reviews prompts and current images together. Resolved lazily; scenes with no image
@@ -2057,23 +2255,126 @@ async function loadReviewBook(bookObjectId) {
     m.redraw();
 }
 
-async function doPatchSceneField(idx, field, value) {
-    let scene = reviewScenes[idx];
+// ── Per-card dirty tracking & explicit save (D1) ──────────────────────
+// The old on-blur auto-save (a PATCH per field on every blur) is gone. Instead each edit marks its
+// field dirty on the scene, and a single per-card Save button (plus a book-level Save all) commits the
+// minimal set of calls for whatever changed. Fields tracked: title, poemStanza, pageFont, pageBgColor,
+// pageTextAlign, pageTextColor (one scene-field PATCH), sdPrompt (landscape-prompt PUT), and 'override'
+// (config-override PUT).
+function markSceneDirty(scene, field) {
     if (!scene) return;
-    scene[field] = value;
+    if (!scene._dirty) scene._dirty = new Set();
+    scene._dirty.add(field);
+}
+
+function sceneIsDirty(scene) {
+    return !!(scene && scene._dirty && scene._dirty.size);
+}
+
+// One PATCH /rest/model carrying identity (objectId) + the model's validated name field + only the
+// changed scene columns. The name is mandatory: olio.pb.scene patches without it fail validation and
+// the write silently no-ops (model-api.md) — the same reason reorderScenes carries name.
+async function patchSceneFields(scene, changed) {
+    if (!changed || !Object.keys(changed).length) return;
+    await patchScene(scene.objectId, Object.assign({ name: scene.name || '' }, changed));
+}
+
+// Commit ONE card: issue the minimal set of calls for whatever is dirty — a single scene-field PATCH,
+// a landscape-prompt PUT, and/or a config-override PUT — then clear the dirty set. Emits one
+// success/failure toast unless `silent` (used by Save all, which emits its own aggregate toast).
+// Returns true on full success.
+async function saveSceneRecord(scene, silent) {
+    if (!sceneIsDirty(scene)) return true;
+    let dirty = scene._dirty;
     scene._saving = true;
     m.redraw();
-    try {
-        let changes = {};
-        changes[field] = value;
-        await patchScene(scene.objectId, changes);
-    } catch (e) {
-        page.toast('error', 'Save failed: ' + (e.message || ''));
+    let failed = [];
+    // 1) Scene columns in one PATCH (incl. the validated name field).
+    let colKeys = ['title', 'poemStanza', 'pageFont', 'pageBgColor', 'pageTextAlign', 'pageTextColor'];
+    let changed = {};
+    colKeys.forEach(function (k) { if (dirty.has(k)) changed[k] = scene[k]; });
+    if (Object.keys(changed).length) {
+        try { await patchSceneFields(scene, changed); }
+        catch (e) { failed.push('fields'); }
+    }
+    // 2) Landscape prompt (verbatim; blank clears + unlocks — mirrors doSaveSceneLandscapePrompt).
+    if (dirty.has('sdPrompt')) {
+        try {
+            let val = scene.sdPrompt || '';
+            await putSceneLandscapePrompt(scene.objectId, val);
+            scene.sdPrompt = val.trim() ? val : '';
+            scene.promptLocked = !!val.trim();
+        } catch (e) { failed.push('prompt'); }
+    }
+    // 3) Sparse SD config override (delta semantics unchanged).
+    if (dirty.has('override')) {
+        try {
+            let delta = computeSceneOverrideDelta(scene);
+            let payload = delta ? JSON.stringify(delta) : null;
+            await putSceneConfigOverride(scene.objectId, payload);
+            scene.configOverride = payload;
+            resetSceneOverride(scene.objectId);   // rebuild the panel from the persisted override
+        } catch (e) { failed.push('override'); }
     }
     scene._saving = false;
+    if (failed.length) {
+        if (!silent) page.toast('error', 'Save failed: ' + failed.join(', '));
+        m.redraw();
+        return false;
+    }
+    scene._dirty = new Set();
+    if (!silent) page.toast('success', 'Page saved');
+    m.redraw();
+    return true;
+}
+
+function doSaveScene(idx) {
+    let scene = reviewScenes[idx];
+    if (!scene) return;
+    saveSceneRecord(scene, false);
+}
+
+// Book-level Save all (D1): commit every dirty card in order, then one aggregate toast.
+async function doSaveAllScenes() {
+    let dirtyScenes = reviewScenes.filter(sceneIsDirty);
+    if (!dirtyScenes.length) { page.toast('info', 'No unsaved changes'); return; }
+    let ok = 0, bad = 0;
+    for (let scene of dirtyScenes) {
+        let success = await saveSceneRecord(scene, true);
+        if (success) ok++; else bad++;
+    }
+    if (bad) page.toast('error', 'Saved ' + ok + ' page(s); ' + bad + ' failed');
+    else page.toast('success', 'Saved ' + ok + ' page(s)');
     m.redraw();
 }
 
+// Toolbar book-level style change (D2): set the value on every scene as the book default and persist it
+// per scene via one PATCH each (identity + name + the changed style field). Deliberately N patches, not
+// a batch update — PATCH validates the record it is handed, so each must carry its own name (the dirty
+// sets are also heterogeneous). Modeled on reorderScenes' per-scene multi-patch.
+async function applyBookStyle(field, value) {
+    bookStyle[field] = value;
+    reviewScenes.forEach(function (s) {
+        s[field] = value;
+        if (s._dirty) s._dirty.delete(field);   // now the saved value — drop from the card dirty set
+    });
+    m.redraw();
+    let bad = 0;
+    for (let s of reviewScenes) {
+        try {
+            let changes = {};
+            changes[field] = value;
+            await patchSceneFields(s, changes);
+        } catch (e) { bad++; }
+    }
+    if (bad) page.toast('error', 'Applied to book; ' + bad + ' page(s) failed');
+    else page.toast('success', 'Applied to all pages');
+    m.redraw();
+}
+
+// NOTE: out of scope for this redesign — split still uses the client-side create path (no dedicated
+// endpoint yet) and carries a latent float-into-int sceneIndex bug (`scene.sceneIndex + 0.5` below).
+// Left as-is deliberately; do not "fix" here.
 async function doSplitScene(idx) {
     let scene = reviewScenes[idx];
     if (!scene) return;
@@ -2109,6 +2410,10 @@ async function doSplitScene(idx) {
     }
 }
 
+// D3: merge folds the NEXT scene's stanza into this one server-side (atomic: concatenates poemStanza,
+// sets imageStale=true, clears this scene's sdPrompt/promptLocked, deletes next, reindexes). No
+// client-side stanza concat or delete — one POST, then reload so sceneIndex/imageStale reflect the
+// server's reindex. The merged image is NOT auto-regenerated; the card surfaces imageStale instead.
 async function doMergeScene(idx) {
     let scene = reviewScenes[idx];
     let next = reviewScenes[idx + 1];
@@ -2116,10 +2421,7 @@ async function doMergeScene(idx) {
     scene._saving = true;
     m.redraw();
     try {
-        let merged = (scene.poemStanza || '') + '\n' + (next.poemStanza || '');
-        await patchScene(scene.objectId, { poemStanza: merged });
-        scene.poemStanza = merged;
-        await deleteScene(next.objectId);
+        await mergeChapBookSceneUp(scene.objectId);
         page.toast('success', 'Scenes merged');
         await loadReviewBook(reviewBookObjectId);
     } catch (e) {
@@ -2129,6 +2431,8 @@ async function doMergeScene(idx) {
     }
 }
 
+// Delete via the dedicated endpoint (server deletes + reindexes remaining scenes), then reload so the
+// list and every sceneIndex reflect the server-side reindex rather than a local splice.
 async function doDeleteScene(idx) {
     let scene = reviewScenes[idx];
     if (!scene) return;
@@ -2143,14 +2447,14 @@ async function doDeleteScene(idx) {
     scene._saving = true;
     m.redraw();
     try {
-        await deleteScene(scene.objectId);
-        reviewScenes.splice(idx, 1);
+        await deleteChapBookScene(scene.objectId);
         page.toast('success', 'Page removed');
+        await loadReviewBook(reviewBookObjectId);
     } catch (e) {
         page.toast('error', 'Delete failed: ' + (e.message || ''));
         scene._saving = false;
+        m.redraw();
     }
-    m.redraw();
 }
 
 // Issue 8: open the SD config dialog before rendering, then execute render with chatConfig + sdConfig.
@@ -2184,9 +2488,10 @@ function parseConfigOverride(s) {
     }
 }
 
-// Build (once) the override entity + instance + view for a scene. Pre-fills from any persisted
-// configOverride so the form shows the current override values; the generic object view renders
-// forms.sdConfigOverrides (the SAME form PB2 and CardGame use — no new field set is defined here).
+// Build (once) the override instance for a scene. Pre-fills from any persisted configOverride so the
+// shared SdConfigPanel shows the current override values. The bespoke page.views.object() form is gone
+// (D2/§3): the same SdConfigPanel used at book level and in the pre-render dialog now renders the
+// override in override mode, so no per-scene view object is created here.
 function getSceneOverrideInst(scene) {
     let oid = scene.objectId;
     if (!sceneOverrideInsts[oid]) {
@@ -2196,14 +2501,12 @@ function getSceneOverrideInst(scene) {
         SD_CONFIG_IDENTITY.forEach(function (k) { delete base[k]; });
         let entity = am7model.prepareEntity(base, 'olio.sd.config');
         sceneOverrideInsts[oid] = am7model.prepareInstance(entity, am7model.forms.sdConfigOverrides);
-        sceneOverrideViews[oid] = page.views.object();
     }
     return sceneOverrideInsts[oid];
 }
 
 function resetSceneOverride(oid) {
     delete sceneOverrideInsts[oid];
-    delete sceneOverrideViews[oid];
 }
 
 // The SPARSE override to persist: previously-saved override fields overlaid with the fields the user
@@ -2238,26 +2541,8 @@ function sceneHasOverride(scene) {
     return !!(inst && inst.changes && inst.changes.length > 0);
 }
 
-async function doSaveSceneOverride(idx) {
-    let scene = reviewScenes[idx];
-    if (!scene) return;
-    let delta = computeSceneOverrideDelta(scene);
-    if (!delta) { page.toast('info', 'No overrides set to save'); return; }
-    scene._saving = true;
-    m.redraw();
-    try {
-        let payload = JSON.stringify(delta);
-        await putSceneConfigOverride(scene.objectId, payload);
-        scene.configOverride = payload;
-        resetSceneOverride(scene.objectId);   // rebuild the form from the persisted override
-        page.toast('success', 'Overrides saved');
-    } catch (e) {
-        page.toast('error', 'Save failed: ' + (e.message || ''));
-    }
-    scene._saving = false;
-    m.redraw();
-}
-
+// Override save is folded into the per-card Save (saveSceneRecord handles the 'override' dirty flag via
+// computeSceneOverrideDelta + putSceneConfigOverride). Clear stays a distinct explicit action.
 async function doClearSceneOverride(idx) {
     let scene = reviewScenes[idx];
     if (!scene) return;
@@ -2267,6 +2552,7 @@ async function doClearSceneOverride(idx) {
         await putSceneConfigOverride(scene.objectId, null);
         scene.configOverride = null;
         resetSceneOverride(scene.objectId);
+        if (scene._dirty) scene._dirty.delete('override');   // nothing left to save for the override
         page.toast('success', 'Overrides cleared');
     } catch (e) {
         page.toast('error', 'Clear failed: ' + (e.message || ''));
@@ -2328,29 +2614,8 @@ async function doRegenerateScene(idx) {
     m.redraw();
 }
 
-// Landscape prompt: persist the prompt currently shown/edited in this scene's textarea (tracked on
-// scene.sdPrompt). A blank value clears the stored prompt — the backend contract handles that. This is
-// a save-only action; it does NOT render (the user re-renders separately once prompts look right).
-async function doSaveSceneLandscapePrompt(idx) {
-    let scene = reviewScenes[idx];
-    if (!scene || !scene.objectId) return;
-    scene._saving = true;
-    m.redraw();
-    try {
-        let val = scene.sdPrompt || '';
-        await putSceneLandscapePrompt(scene.objectId, val);
-        // Reflect the persisted state locally: a blank save clears the field. A real edit LOCKS the
-        // prompt (mirrors the backend), so isSceneUnprompted stops flagging this card as "needs prompt"
-        // immediately, without waiting for a view reload to re-read promptLocked from the backend.
-        scene.sdPrompt = val.trim() ? val : '';
-        scene.promptLocked = !!val.trim();
-        page.toast('success', val.trim() ? 'Landscape prompt saved' : 'Landscape prompt cleared');
-    } catch (e) {
-        page.toast('error', 'Save prompt failed: ' + (e.message || ''));
-    }
-    scene._saving = false;
-    m.redraw();
-}
+// Landscape-prompt save is folded into the per-card Save (saveSceneRecord PUTs .../scene/{oid}/prompt
+// when 'sdPrompt' is dirty, mirroring the blank-clears / edit-locks behavior). Re-render is separate.
 
 // Landscape prompt: re-render a SINGLE page using the prompt currently shown/edited in its textarea —
 // no need to re-render the whole book. A non-blank prompt is sent as the verbatim sdPrompt (persisted +
@@ -2406,23 +2671,48 @@ function renderSceneCard(scene, idx) {
             m('span', { class: 'text-xs text-gray-400 dark:text-gray-500 font-mono flex-shrink-0' },
                 'Page ' + (idx + 1) + ' of ' + reviewScenes.length),
             scene._saving ? m('span', { class: 'ml-2 text-xs text-blue-500' }, 'Saving...') : null,
-            // Skip-render: an un-prompted scene produced no image on the last render because there was
-            // no usable landscape prompt (LLM double-blank). Offer an explicit per-scene regenerate.
-            isSceneUnprompted(scene) ? m('div', { class: 'ml-auto flex items-center gap-2' }, [
-                m('span', { class: 'text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1' }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'warning'),
-                    'Needs prompt'
-                ]),
-                m('button', {
-                    class: 'px-2 py-1 rounded bg-orange-600 text-white text-xs hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1',
-                    title: 'Regenerate this page — resolves a landscape prompt via the LLM, then renders an image',
-                    disabled: scene._saving || roleWarning,
-                    onclick: function () { doRegenerateScene(idx); }
+            m('div', { class: 'ml-auto flex items-center gap-2' }, [
+                // D3: after a merge-up the backend flags imageStale — the existing image no longer
+                // matches the (now longer) stanza. Informational badge only; the user re-renders via the
+                // per-page button below (no auto-regen).
+                (scene.imageStale && scene.imageObjectId) ? m('span', {
+                    class: 'text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1',
+                    title: 'The stanza changed since this image was rendered — re-render this page to refresh it'
                 }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'refresh'),
-                    ' Regenerate'
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'sync_problem'),
+                    'Image outdated'
+                ]) : null,
+                // Skip-render: an un-prompted scene produced no image on the last render because there was
+                // no usable landscape prompt (LLM double-blank). Offer an explicit per-scene regenerate.
+                isSceneUnprompted(scene) ? [
+                    m('span', { class: 'text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1' }, [
+                        m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'warning'),
+                        'Needs prompt'
+                    ]),
+                    m('button', {
+                        class: 'px-2 py-1 rounded bg-orange-600 text-white text-xs hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1',
+                        title: 'Regenerate this page — resolves a landscape prompt via the LLM, then renders an image',
+                        disabled: scene._saving || roleWarning,
+                        onclick: function () { doRegenerateScene(idx); }
+                    }, [
+                        m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'refresh'),
+                        ' Regenerate'
+                    ])
+                ] : null,
+                // D1: the ONE explicit per-card Save. Disabled when the card is clean; commits only the
+                // dirty fields (a scene-field PATCH, a landscape-prompt PUT, and/or a config-override PUT).
+                m('button', {
+                    class: 'px-3 py-1 rounded text-xs flex items-center gap-1 disabled:opacity-40 ' + (sceneIsDirty(scene)
+                        ? 'bg-purple-600 text-white hover:bg-purple-700'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'),
+                    title: sceneIsDirty(scene) ? 'Save unsaved changes on this page' : 'No unsaved changes',
+                    disabled: scene._saving || roleWarning || !sceneIsDirty(scene),
+                    onclick: function () { doSaveScene(idx); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'save'),
+                    sceneIsDirty(scene) ? ' Save' : ' Saved'
                 ])
-            ]) : null
+            ])
         ]),
         // Title
         m('div', [
@@ -2431,19 +2721,17 @@ function renderSceneCard(scene, idx) {
                 type: 'text',
                 class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
                 value: scene.title,
-                oninput: function (e) { scene.title = e.target.value; m.redraw(); },
-                onblur: function (e) { doPatchSceneField(idx, 'title', e.target.value); }
+                oninput: function (e) { scene.title = e.target.value; markSceneDirty(scene, 'title'); m.redraw(); }
             })
         ]),
-        // Stanza
+        // Stanza — one larger textarea (D1); edits mark the card dirty, no on-blur auto-save.
         m('div', [
             m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Stanza text'),
             m('textarea', {
-                rows: 6,
+                rows: 12,
                 class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white font-mono resize-y',
                 value: scene.poemStanza,
-                oninput: function (e) { scene.poemStanza = e.target.value; m.redraw(); },
-                onblur: function (e) { doPatchSceneField(idx, 'poemStanza', e.target.value); }
+                oninput: function (e) { scene.poemStanza = e.target.value; markSceneDirty(scene, 'poemStanza'); m.redraw(); }
             })
         ]),
         // Style controls + actions
@@ -2455,13 +2743,27 @@ function renderSceneCard(scene, idx) {
                     class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-xs dark:text-white',
                     value: scene.pageFont,
                     onchange: function (e) {
-                        let v = e.target.value;
-                        scene.pageFont = v;
-                        doPatchSceneField(idx, 'pageFont', v);
+                        scene.pageFont = e.target.value;
+                        markSceneDirty(scene, 'pageFont');
+                        m.redraw();
                     }
                 }, FONT_OPTIONS.map(function (opt) {
                     return m('option', { value: opt.value }, opt.label);
                 }))
+            ]),
+            // Text color (new pageTextColor field)
+            m('div', { class: 'flex items-center gap-1.5' }, [
+                m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, 'Text color'),
+                m('input', {
+                    type: 'color',
+                    class: 'w-8 h-7 rounded border border-gray-300 dark:border-gray-600 cursor-pointer',
+                    value: scene.pageTextColor || '#ffffff',
+                    onchange: function (e) {
+                        scene.pageTextColor = e.target.value;
+                        markSceneDirty(scene, 'pageTextColor');
+                        m.redraw();
+                    }
+                })
             ]),
             // Background color
             m('div', { class: 'flex items-center gap-1.5' }, [
@@ -2471,9 +2773,9 @@ function renderSceneCard(scene, idx) {
                     class: 'w-8 h-7 rounded border border-gray-300 dark:border-gray-600 cursor-pointer',
                     value: scene.pageBgColor || '#000000',
                     onchange: function (e) {
-                        let v = e.target.value;
-                        scene.pageBgColor = v;
-                        doPatchSceneField(idx, 'pageBgColor', v);
+                        scene.pageBgColor = e.target.value;
+                        markSceneDirty(scene, 'pageBgColor');
+                        m.redraw();
                     }
                 })
             ]),
@@ -2489,9 +2791,9 @@ function renderSceneCard(scene, idx) {
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'),
                         title: align.charAt(0).toUpperCase() + align.slice(1),
                         onclick: function () {
-                            let newVal = active ? '' : align;
-                            scene.pageTextAlign = newVal;
-                            doPatchSceneField(idx, 'pageTextAlign', newVal);
+                            scene.pageTextAlign = active ? '' : align;
+                            markSceneDirty(scene, 'pageTextAlign');
+                            m.redraw();
                         }
                     }, m('span', {
                         class: 'material-symbols-outlined',
@@ -2532,9 +2834,9 @@ function renderSceneCard(scene, idx) {
         ]),
         // Editable landscape prompt — the LLM-generated SD prompt for this page, stored on the scene at
         // book-create time. Surfaced here (pre-filled from scene.sdPrompt) so every landscape prompt can
-        // be reviewed / edited / overridden BEFORE rendering, instead of having to render first to find
-        // out what it was. "Save prompt" persists it verbatim (blank clears it); "Re-render this page"
-        // renders JUST this page using the current text — no need to re-render the whole book.
+        // be reviewed / edited / overridden BEFORE rendering. Editing marks the card dirty; the card's
+        // single Save persists it verbatim via PUT .../scene/{oid}/prompt (blank clears it). "Re-render
+        // this page" renders JUST this page using the current text — no need to re-render the whole book.
         m('div', { class: 'text-xs border-t border-gray-100 dark:border-gray-800 pt-2', 'data-scene-oid': oid }, [
             m('div', { class: 'flex items-center justify-between mb-1' }, [
                 m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400' }, 'Landscape prompt'),
@@ -2547,7 +2849,7 @@ function renderSceneCard(scene, idx) {
                 placeholder: 'Landscape image prompt — edit to override before rendering. Leave blank to let the LLM generate one.',
                 value: scene.sdPrompt || '',
                 disabled: scene._saving || roleWarning,
-                oninput: function (e) { scene.sdPrompt = e.target.value; m.redraw(); }
+                oninput: function (e) { scene.sdPrompt = e.target.value; markSceneDirty(scene, 'sdPrompt'); m.redraw(); }
             }),
             reviewSceneImageUrls[oid] ? m('img', {
                 class: 'cb-scene-image mt-2 rounded border border-gray-200 dark:border-gray-700 max-h-40 object-cover',
@@ -2556,13 +2858,6 @@ function renderSceneCard(scene, idx) {
                 alt: 'Page ' + (idx + 1) + ' image'
             }) : null,
             m('div', { class: 'flex items-center gap-2 mt-1' }, [
-                m('button', {
-                    class: 'cb-save-prompt px-2 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40',
-                    'data-scene-oid': oid,
-                    title: 'Save this page\'s landscape prompt (blank clears it)',
-                    disabled: scene._saving || roleWarning,
-                    onclick: function () { doSaveSceneLandscapePrompt(idx); }
-                }, 'Save prompt'),
                 m('button', {
                     class: 'cb-rerender-page px-2 py-0.5 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1',
                     'data-scene-oid': oid,
@@ -2575,9 +2870,10 @@ function renderSceneCard(scene, idx) {
                 ])
             ])
         ]),
-        // Per-scene SD-config overrides (Gap 8) — reuses forms.sdConfigOverrides via the generic
-        // object view, exactly like PB2 and CardGame. Collapsed by default; the heavy form is mounted
-        // lazily only while expanded. Save persists the sparse delta; Clear removes the override.
+        // Per-scene SD-config overrides (Gap 8) — now rendered with the shared SdConfigPanel in override
+        // mode (same field set/options as the book toolbar and the pre-render dialog). Collapsed by
+        // default; mounted only while expanded. Editing marks the card dirty ('override'); the card's
+        // single Save persists the SPARSE delta (computeSceneOverrideDelta). Clear removes the override.
         m('div', { class: 'text-xs border-t border-gray-100 dark:border-gray-800 pt-2' }, [
             m('div', { class: 'flex items-center justify-between' }, [
                 m('button', {
@@ -2593,34 +2889,19 @@ function renderSceneCard(scene, idx) {
                         class: 'ml-1 px-1.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300'
                     }, 'set') : null
                 ]),
-                m('div', { class: 'flex items-center gap-2' }, [
-                    m('button', {
-                        class: 'px-2 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40',
-                        title: 'Save this page\'s image-config overrides',
-                        disabled: scene._saving || roleWarning,
-                        onclick: function () { doSaveSceneOverride(idx); }
-                    }, 'Save'),
-                    overridden ? m('button', {
-                        class: 'px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40',
-                        title: 'Clear this page\'s overrides (revert to the book config)',
-                        disabled: scene._saving || roleWarning,
-                        onclick: function () { doClearSceneOverride(idx); }
-                    }, 'Clear') : null
-                ])
+                overridden ? m('button', {
+                    class: 'px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40',
+                    title: 'Clear this page\'s overrides (revert to the book config)',
+                    disabled: scene._saving || roleWarning,
+                    onclick: function () { doClearSceneOverride(idx); }
+                }, 'Clear') : null
             ]),
-            overrideOpen ? (function () {
-                let ovInst = getSceneOverrideInst(scene);
-                let ovView = sceneOverrideViews[oid];
-                if (!ovView || !ovView.view) {
-                    return m('div', { class: 'mt-1 text-gray-400' }, 'Config editor unavailable.');
-                }
-                return m('div', { class: 'mt-2' }, m(ovView.view, {
-                    freeForm: true,
-                    freeFormType: 'olio.sd.config',
-                    freeFormEntity: ovInst.entity,
-                    freeFormInstance: ovInst
-                }));
-            })() : null
+            overrideOpen ? m('div', { class: 'mt-2' }, m(SdConfigPanel, {
+                inst: getSceneOverrideInst(scene),
+                models: renderSdModelList,
+                loras: renderSdLoraList,
+                onChange: function () { markSceneDirty(scene, 'override'); m.redraw(); }
+            })) : null
         ])
     ]);
 }
@@ -2636,8 +2917,10 @@ const ChapBookReview = {
         reviewGroupId = null;
         // Gap 8: reset per-scene override caches so a re-entered review starts fresh
         sceneOverrideInsts = {};
-        sceneOverrideViews = {};
         sceneOverrideExpanded = {};
+        // D2: reset shared book-style + toolbar SD-panel state
+        bookStyle = { pageFont: '', pageTextColor: '', pageBgColor: '', pageTextAlign: '' };
+        bookSdExpanded = false;
         // Landscape-prompt review: reset per-scene preview URLs so a re-entered review starts fresh
         reviewSceneImageUrls = {};
         // Issue 8: reset render dialog state so the SD config modal starts fresh
@@ -2649,6 +2932,12 @@ const ChapBookReview = {
         resetRenderProgress();
         // Issue 9 / D6: block scene edits + render when the AccountUsers role is absent
         roleWarning = lacksUserRole(page.context && page.context());
+        // D2: prime the shared toolbar SD panel (models/loras catalog + the book-level SD config
+        // instance). The same instance backs the pre-render dialog, so priming it here means the
+        // toolbar's "Book image settings" panel and the Render dialog show one consistent config.
+        loadRenderSdModels();
+        loadRenderSdLoras();
+        ensureRenderSdConfig();
         if (reviewBookObjectId) loadReviewBook(reviewBookObjectId);
     },
     view: function () {
@@ -2684,10 +2973,116 @@ const ChapBookReview = {
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' },
                         reviewRendering ? 'hourglass_empty' : 'image'),
                     reviewRendering ? (' ' + renderProgressLabel()) : ' Render'
+                ]),
+                // Export the book as a self-contained HTML file (deferred Stage-1 item).
+                m('button', {
+                    class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-1 disabled:opacity-50',
+                    title: 'Export as self-contained HTML',
+                    disabled: reviewExporting || reviewLoading || !reviewScenes.length,
+                    onclick: exportReviewBook
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' },
+                        reviewExporting ? 'hourglass_empty' : 'download'),
+                    reviewExporting ? ' Exporting...' : ' Export'
                 ])
             ]),
             m('p', { class: 'text-xs text-gray-400 dark:text-gray-500 mb-4' },
-                'Changes auto-save when you leave a field (blur). Use Render to generate images. Remove deletes a page permanently.'),
+                'Edit a page, then Save it — or use Save all. Book-style controls below apply to every page. ' +
+                'Use Render to generate images. Merge folds the next page in and flags its image outdated. ' +
+                'Remove deletes a page permanently.'),
+            // D1/D2: sticky book-level toolbar — shared style defaults (each control fans out to every
+            // page and persists on change), a collapsible book-level SD config (same instance as the
+            // pre-render dialog), and the book "Save all" action. Only shown when there are pages.
+            reviewScenes.length ? m('div', {
+                class: 'sticky top-0 z-20 mb-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-900/95 backdrop-blur p-3 space-y-2'
+            }, [
+                m('div', { class: 'flex flex-wrap items-center gap-3' }, [
+                    m('span', { class: 'text-xs font-medium text-gray-500 dark:text-gray-400' }, 'Book style'),
+                    // Font
+                    m('div', { class: 'flex items-center gap-1.5' }, [
+                        m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, 'Font'),
+                        m('select', {
+                            class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-xs dark:text-white',
+                            value: bookStyle.pageFont,
+                            disabled: roleWarning,
+                            onchange: function (e) { applyBookStyle('pageFont', e.target.value); }
+                        }, FONT_OPTIONS.map(function (opt) { return m('option', { value: opt.value }, opt.label); }))
+                    ]),
+                    // Text color
+                    m('div', { class: 'flex items-center gap-1.5' }, [
+                        m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, 'Text color'),
+                        m('input', {
+                            type: 'color',
+                            class: 'w-8 h-7 rounded border border-gray-300 dark:border-gray-600 cursor-pointer',
+                            value: bookStyle.pageTextColor || '#ffffff',
+                            disabled: roleWarning,
+                            onchange: function (e) { applyBookStyle('pageTextColor', e.target.value); }
+                        })
+                    ]),
+                    // Background color
+                    m('div', { class: 'flex items-center gap-1.5' }, [
+                        m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, 'Bg color'),
+                        m('input', {
+                            type: 'color',
+                            class: 'w-8 h-7 rounded border border-gray-300 dark:border-gray-600 cursor-pointer',
+                            value: bookStyle.pageBgColor || '#000000',
+                            disabled: roleWarning,
+                            onchange: function (e) { applyBookStyle('pageBgColor', e.target.value); }
+                        })
+                    ]),
+                    // Text alignment
+                    m('div', { class: 'flex items-center gap-1' }, [
+                        m('span', { class: 'text-xs text-gray-500 dark:text-gray-400 mr-1' }, 'Align'),
+                        ['left', 'center', 'right'].map(function (align) {
+                            let active = bookStyle.pageTextAlign === align;
+                            let alignIcons = { left: 'format_align_left', center: 'format_align_center', right: 'format_align_right' };
+                            return m('button', {
+                                key: align,
+                                class: 'px-1.5 py-1 rounded text-xs ' + (active
+                                    ? 'bg-purple-600 text-white'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'),
+                                title: align.charAt(0).toUpperCase() + align.slice(1),
+                                disabled: roleWarning,
+                                onclick: function () { applyBookStyle('pageTextAlign', active ? '' : align); }
+                            }, m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, alignIcons[align]));
+                        })
+                    ]),
+                    // Save all (book action)
+                    m('button', {
+                        class: 'ml-auto px-3 py-1.5 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-40 flex items-center gap-1',
+                        title: 'Save every page that has unsaved changes',
+                        disabled: roleWarning || reviewRendering || !reviewScenes.some(sceneIsDirty),
+                        onclick: doSaveAllScenes
+                    }, [
+                        m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'save'),
+                        ' Save all'
+                    ])
+                ]),
+                // Collapsible book-level SD config (shared SdConfigPanel; same instance as the Render dialog)
+                m('div', [
+                    m('button', {
+                        class: 'flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
+                        onclick: function () { bookSdExpanded = !bookSdExpanded; m.redraw(); }
+                    }, [
+                        m('span', {
+                            class: 'material-symbols-outlined',
+                            style: 'font-size:16px;transition:transform 0.15s;' + (bookSdExpanded ? 'transform:rotate(90deg);' : '')
+                        }, 'chevron_right'),
+                        m('span', 'Book image settings')
+                    ]),
+                    bookSdExpanded ? (renderSdConfigInst
+                        ? m('div', { class: 'mt-2' }, m(SdConfigPanel, {
+                            inst: renderSdConfigInst,
+                            models: renderSdModelList,
+                            loras: renderSdLoraList,
+                            onChange: function () { m.redraw(); }
+                        }))
+                        : m('div', { class: 'flex items-center gap-2 text-xs text-gray-500 py-2' }, [
+                            m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
+                            'Loading SD configuration…'
+                        ])) : null
+                ])
+            ]) : null,
             // Body
             reviewLoading
                 ? m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-12 text-center' }, 'Loading scenes...')

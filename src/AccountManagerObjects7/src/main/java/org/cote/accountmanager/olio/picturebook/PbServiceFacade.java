@@ -635,6 +635,15 @@ public class PbServiceFacade {
 			p.put("blurb", scene.get(OlioFieldNames.FIELD_PB_BLURB));
 			p.put("summary", scene.get(OlioFieldNames.FIELD_PB_SUMMARY));
 			p.put("poemStanza", scene.get(OlioFieldNames.FIELD_CB_POEM_STANZA));
+			// Per-page style + staleness — the reader (loadReaderBook → /pages → renderChapBookPage) has no
+			// other source for these, so without them the reader falls back to the historical hardcoded look
+			// (white text / Georgia serif / center) and the author's chosen Text color / Font / Bg / Align
+			// never render. listScenes already projects them via PbBookUtil.sceneRequest(); just surface them.
+			p.put("pageFont", scene.get(OlioFieldNames.FIELD_PB_PAGE_FONT));
+			p.put("pageBgColor", scene.get(OlioFieldNames.FIELD_PB_PAGE_BG_COLOR));
+			p.put("pageTextAlign", scene.get(OlioFieldNames.FIELD_PB_PAGE_TEXT_ALIGN));
+			p.put("pageTextColor", scene.get(OlioFieldNames.FIELD_PB_PAGE_TEXT_COLOR));
+			p.put("imageStale", scene.get(OlioFieldNames.FIELD_PB_IMAGE_STALE));
 
 			String dataObjectId = null;
 			if(!nodeMap.isEmpty()) {

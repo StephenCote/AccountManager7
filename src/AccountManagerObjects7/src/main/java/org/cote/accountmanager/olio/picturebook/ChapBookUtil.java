@@ -1021,6 +1021,186 @@ public class ChapBookUtil {
 		return true;
 	}
 
+	// ─────────────────────────────── scene review edits ───────────────────────────────
+
+	/**
+	 * Resolve the parent {@code olio.pb.book} of a scene from the scene's {@code book} FK, projected with
+	 * {@link PbBookUtil#bookRequest()} so the resolved book carries {@code bookType} (for the CHAPBOOK
+	 * guard) plus the {@code id}/{@code organizationId} that {@link PbBookUtil#listScenes} and
+	 * {@link PbBookUtil#reorderScenes} require.
+	 * <p>
+	 * A bare-projected FK reliably carries its numeric {@code id} (the stored FK column) but may NOT carry
+	 * {@code objectId} (see model-api.md): prefer {@code objectId} when present, otherwise resolve by the
+	 * FK's {@code id}, so this cannot throw a spurious 404 for a book that exists. Mirrors the resolution
+	 * in {@link #renderChapBookScene}. All reads are performed AS THE ACTING USER through AccessPoint.
+	 *
+	 * @throws PictureBookException 404 when the scene has no book FK or the book is not readable by {@code user}
+	 */
+	private static BaseRecord resolveSceneBook(BaseRecord user, BaseRecord scene, long orgId) {
+		BaseRecord bookFk = scene.get(OlioFieldNames.FIELD_PB_BOOK);
+		if (bookFk == null) {
+			throw new PictureBookException(404, "Book not found for scene: " + scene.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		String bookObjectId = bookFk.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord book;
+		if (bookObjectId != null && !bookObjectId.isBlank()) {
+			book = PbBookUtil.readBook(user, bookObjectId, orgId);
+		} else {
+			Object bookIdVal = bookFk.get(FieldNames.FIELD_ID);
+			long bookId = (bookIdVal instanceof Number ? ((Number) bookIdVal).longValue() : 0L);
+			if (bookId <= 0) {
+				throw new PictureBookException(404, "Book not found for scene: " + scene.get(FieldNames.FIELD_OBJECT_ID));
+			}
+			Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_ID, bookId);
+			bq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			bq.setRequest(PbBookUtil.bookRequest());
+			bq.setCache(false);
+			book = IOSystem.getActiveContext().getAccessPoint().find(user, bq);
+		}
+		if (book == null) {
+			throw new PictureBookException(404, "Book not found for scene: " + scene.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		return book;
+	}
+
+	/**
+	 * Guard: the resolved book must be a CHAPBOOK. Mirrors {@link #deleteChapBook}'s 403.
+	 */
+	private static void requireChapBook(BaseRecord book) {
+		String bookType = book.get(OlioFieldNames.FIELD_PB_BOOK_TYPE);
+		if (bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
+			throw new PictureBookException(403, "Book " + book.get(FieldNames.FIELD_OBJECT_ID) + " is not a CHAPBOOK");
+		}
+	}
+
+	/**
+	 * Fold the NEXT scene (by {@code sceneIndex} within the same book) into scene {@code sceneObjectId},
+	 * then delete the next scene and reindex the survivors so {@code sceneIndex} is a clean {@code 0..n-1}.
+	 * <p>
+	 * The absorbing scene's {@code poemStanza} becomes {@code thisStanza + "\n" + nextStanza}, its
+	 * {@code imageStale} is set true (the rendered image no longer matches the merged text), and its
+	 * {@code sdPrompt}/{@code promptLocked} are cleared (the human/LLM prompt for the old, shorter stanza
+	 * is no longer valid and must be regenerated). All of that lands in ONE authorized PATCH carrying
+	 * identity + the validated {@code name} + exactly those four changed fields.
+	 * <p>
+	 * <b>Every write is performed AS THE ACTING USER through {@code AccessPoint}</b> — scenes are
+	 * user-owned + group-scoped (created via {@code AccessPoint.create(user, ...)} and reordered via
+	 * {@code AccessPoint.update(user, ...)}), so the olio principal is not involved. Every AccessPoint
+	 * result is asserted: a null update or a false delete fails loudly with a {@link PictureBookException}
+	 * rather than being swallowed into a silent no-op.
+	 *
+	 * @param user          the acting user (must have WRITE access to the scenes)
+	 * @param sceneObjectId objectId of the scene that ABSORBS its successor
+	 * @return the objectId of the surviving (absorbing) scene
+	 * @throws PictureBookException 400 for missing args or when {@code sceneObjectId} is the last scene
+	 *         (no following scene to fold in); 403 when the parent book is not a CHAPBOOK; 404 when the
+	 *         scene or its book is not readable; 500 when a patch/delete/reindex fails
+	 */
+	public static String mergeSceneUp(BaseRecord user, String sceneObjectId) {
+		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
+			throw new PictureBookException(400, "user and sceneObjectId are required");
+		}
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+
+		BaseRecord scene = PbBookUtil.readScene(user, sceneObjectId, orgId);
+		if (scene == null) {
+			throw new PictureBookException(404, "Scene not found: " + sceneObjectId);
+		}
+		BaseRecord book = resolveSceneBook(user, scene, orgId);
+		requireChapBook(book);
+
+		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
+		int pos = -1;
+		for (int i = 0; i < scenes.size(); i++) {
+			if (sceneObjectId.equals(scenes.get(i).get(FieldNames.FIELD_OBJECT_ID))) {
+				pos = i;
+				break;
+			}
+		}
+		if (pos < 0) {
+			throw new PictureBookException(404, "Scene not found in its book: " + sceneObjectId);
+		}
+		if (pos >= scenes.size() - 1) {
+			throw new PictureBookException(400,
+				"Cannot merge up the last scene: there is no following scene to fold into " + sceneObjectId);
+		}
+		BaseRecord absorbing = scenes.get(pos);
+		BaseRecord next = scenes.get(pos + 1);
+
+		String thisStanza = absorbing.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
+		String nextStanza = next.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
+		String merged = (thisStanza != null ? thisStanza : "") + "\n" + (nextStanza != null ? nextStanza : "");
+
+		BaseRecord patch = PbGraphUtil.patchOf(absorbing, OlioModelNames.MODEL_PB_SCENE,
+			OlioFieldNames.FIELD_CB_POEM_STANZA, OlioFieldNames.FIELD_PB_IMAGE_STALE,
+			OlioFieldNames.FIELD_CB_SD_PROMPT, OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
+		try {
+			patch.set(OlioFieldNames.FIELD_CB_POEM_STANZA, merged);
+			patch.set(OlioFieldNames.FIELD_PB_IMAGE_STALE, Boolean.TRUE);
+			patch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, null);          // stanza changed → old prompt invalid
+			patch.set(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.FALSE);
+		}
+		catch (FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble a merge patch: " + e.getMessage());
+		}
+		if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to persist merged stanza on scene " + sceneObjectId);
+		}
+
+		if (!IOSystem.getActiveContext().getAccessPoint().delete(user, next)) {
+			throw new PictureBookException(500,
+				"Merged stanza was persisted but the folded scene " + next.get(FieldNames.FIELD_OBJECT_ID)
+				+ " could not be deleted");
+		}
+
+		reindexSurvivors(user, book);
+		return sceneObjectId;
+	}
+
+	/**
+	 * Delete a single scene and reindex the survivors so {@code sceneIndex} is a clean {@code 0..n-1}.
+	 * <p>
+	 * As with {@link #mergeSceneUp}, all writes are performed AS THE ACTING USER through {@code AccessPoint}
+	 * and every result is asserted. The parent book must be a CHAPBOOK.
+	 *
+	 * @param user          the acting user (must have DELETE access to the scene)
+	 * @param sceneObjectId objectId of the scene to delete
+	 * @throws PictureBookException 400 for missing args; 403 when the parent book is not a CHAPBOOK; 404
+	 *         when the scene or its book is not readable; 500 when the delete or reindex fails
+	 */
+	public static void deleteSceneAndReindex(BaseRecord user, String sceneObjectId) {
+		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
+			throw new PictureBookException(400, "user and sceneObjectId are required");
+		}
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+
+		BaseRecord scene = PbBookUtil.readScene(user, sceneObjectId, orgId);
+		if (scene == null) {
+			throw new PictureBookException(404, "Scene not found: " + sceneObjectId);
+		}
+		BaseRecord book = resolveSceneBook(user, scene, orgId);
+		requireChapBook(book);
+
+		if (!IOSystem.getActiveContext().getAccessPoint().delete(user, scene)) {
+			throw new PictureBookException(500, "Failed to delete scene " + sceneObjectId);
+		}
+
+		reindexSurvivors(user, book);
+	}
+
+	/**
+	 * Re-list a book's scenes (uncached, ascending by {@code sceneIndex}) and reassign {@code sceneIndex}
+	 * to a gap-free {@code 0..n-1} via {@link PbBookUtil#reorderScenes}. Called after a scene delete/merge.
+	 */
+	private static void reindexSurvivors(BaseRecord user, BaseRecord book) {
+		List<BaseRecord> survivors = PbBookUtil.listScenes(user, book);
+		List<String> orderedIds = new ArrayList<>(survivors.size());
+		for (BaseRecord s : survivors) {
+			orderedIds.add(s.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		PbBookUtil.reorderScenes(user, book, orderedIds);
+	}
+
 	// ─────────────────────────────── ChapBook rendering ───────────────────────────────
 
 	/**

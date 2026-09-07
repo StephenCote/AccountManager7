@@ -404,6 +404,9 @@ public class OlioFieldNames {
 	public static final String FIELD_PB_PAGE_FONT = "pageFont";
 	public static final String FIELD_PB_PAGE_BG_COLOR = "pageBgColor";
 	public static final String FIELD_PB_PAGE_TEXT_ALIGN = "pageTextAlign";
+	public static final String FIELD_PB_PAGE_TEXT_COLOR = "pageTextColor";
+	/// olio.pb.scene — imageStale: true when the generated image no longer matches the edited stanza (e.g. after a merge-up)
+	public static final String FIELD_PB_IMAGE_STALE = "imageStale";
 	/// olio.cb.book fields
 	public static final String FIELD_CB_MAX_LINES = "maxLinesPerPage";
 	public static final String FIELD_CB_OVERLAY_OPACITY = "overlayOpacity";

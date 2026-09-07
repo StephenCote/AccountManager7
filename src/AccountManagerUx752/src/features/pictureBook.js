@@ -23,6 +23,7 @@ import { pictureBookFromId } from '../workflows/pictureBook.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
 import { listPb2Books, bookPages } from '../workflows/pictureBookWorkflow.js';
 import { am7olio } from '../components/olio.js';
+import { ReaderShell } from '../components/readerShell.js';
 
 // ── Work Selector View ────────────────────────────────────────────────
 
@@ -300,32 +301,16 @@ let viewerBookId = null;
 let viewerWorkName = '';
 let viewerScenes = [];
 let imageUrls = {};      // imageObjectId → resolved media URL
-let currentPage = 0;     // 0 = cover, 1..N = scene pages
 let viewerLoading = false;
 let viewerError = null;
-let fullscreen = false;
+
+// Reader nav state (currentPage: 0 = cover, 1..N = scene pages; fullscreen). Held in one object owned
+// here and passed to the shared ReaderShell (components/readerShell.js): the shell mutates it, and the
+// route wrapper below reads `pbReader.fullscreen` to decide whether to render layout chrome. Keeping
+// nav + keyboard + page-dots + export in the shell is what gives ChapBook the same reader for free.
+let pbReader = { currentPage: 0, fullscreen: false };
 
 // Blurb editing removed — viewer is read-only; editing done via wizard
-
-// Export
-let exporting = false;
-
-function totalPages() { return viewerScenes.length + 1; } // cover + scenes
-function currentScene() { return currentPage > 0 ? viewerScenes[currentPage - 1] : null; }
-
-function goToPage(n) {
-    let max = totalPages() - 1;
-    currentPage = Math.max(0, Math.min(n, max));
-    m.redraw();
-}
-
-function onKeyDown(e) {
-    if (e.key === 'ArrowRight' || e.key === 'Right') { e.preventDefault(); goToPage(currentPage + 1); }
-    else if (e.key === 'ArrowLeft' || e.key === 'Left') { e.preventDefault(); goToPage(currentPage - 1); }
-    else if (e.key === 'Home') { e.preventDefault(); goToPage(0); }
-    else if (e.key === 'End') { e.preventDefault(); goToPage(totalPages() - 1); }
-    else if (e.key === 'Escape' && fullscreen) { e.preventDefault(); fullscreen = false; m.redraw(); }
-}
 
 async function loadViewer(bookObjectId) {
     if (!bookObjectId || bookObjectId === 'undefined') return;
@@ -333,8 +318,8 @@ async function loadViewer(bookObjectId) {
     viewerError = null;
     viewerScenes = [];
     imageUrls = {};
-    currentPage = 0;
-    fullscreen = false;
+    pbReader.currentPage = 0;
+    pbReader.fullscreen = false;
     clearImageCache();
     m.redraw();
     try {
@@ -376,112 +361,13 @@ function getCoverImageUrl() {
 
 // Blurb editing removed — viewer is read-only; use "Edit Book" to reopen wizard
 
-// ── Export as self-contained HTML ──────────────────────────────────────
+// Export as self-contained HTML is handled by ReaderShell (see components/readerShell.js).
+// PictureBook passes its export params (title suffix, scene noun, etc.) as attrs so the exported
+// file is byte-for-byte identical to the legacy exportPictureBook() implementation.
 
-async function fetchImageAsBase64(url) {
-    try {
-        let resp = await fetch(url, {
-            credentials: 'include'
-        });
-        if (!resp.ok) return null;
-        let blob = await resp.blob();
-        return new Promise(function (resolve) {
-            let reader = new FileReader();
-            reader.onloadend = function () { resolve(reader.result); };
-            reader.readAsDataURL(blob);
-        });
-    } catch (e) {
-        return null;
-    }
-}
+// ── Render: Cover Page (ReaderShell renderCover slot) ─────────────────
 
-async function exportPictureBook() {
-    if (exporting || !viewerScenes.length) return;
-    exporting = true;
-    m.redraw();
-
-    let coverUrl = getCoverImageUrl();
-    let coverB64 = coverUrl ? await fetchImageAsBase64(coverUrl) : null;
-
-    let sceneSections = '';
-    for (let i = 0; i < viewerScenes.length; i++) {
-        let s = viewerScenes[i];
-        let imgUrl = getImageUrl(s.imageObjectId);
-        let imgB64 = imgUrl ? await fetchImageAsBase64(imgUrl) : null;
-        let chars = Array.isArray(s.characters) ? s.characters.join(', ') : '';
-        sceneSections += '\n    <div class="scene">\n';
-        if (imgB64) {
-            sceneSections += '      <img src="' + imgB64 + '" alt="' + escHtml(s.title || '') + '" />\n';
-        }
-        sceneSections += '      <h2>' + escHtml(s.title || 'Scene ' + (i + 1)) + '</h2>\n';
-        sceneSections += '      <p class="blurb">' + escHtml(s.description || s.summary || '') + '</p>\n';
-        if (chars) {
-            sceneSections += '      <div class="characters">' + escHtml(chars) + '</div>\n';
-        }
-        sceneSections += '      <div class="page-num">Page ' + (i + 1) + ' of ' + viewerScenes.length + '</div>\n';
-        sceneSections += '    </div>\n';
-    }
-
-    let html = '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n'
-        + '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
-        + '<title>' + escHtml(viewerWorkName) + ' — Picture Book</title>\n'
-        + '<style>\n' + exportCss() + '\n</style>\n</head>\n<body>\n'
-        + '  <div class="book">\n'
-        + '    <div class="cover">\n'
-        + (coverB64 ? '      <img src="' + coverB64 + '" alt="Cover" />\n' : '')
-        + '      <div class="cover-overlay">\n'
-        + '        <h1>' + escHtml(viewerWorkName) + '</h1>\n'
-        + '        <p>' + viewerScenes.length + ' Scene' + (viewerScenes.length !== 1 ? 's' : '') + '</p>\n'
-        + '      </div>\n'
-        + '    </div>\n'
-        + sceneSections
-        + '  </div>\n</body>\n</html>';
-
-    let blob = new Blob([html], { type: 'text/html' });
-    let url = URL.createObjectURL(blob);
-    let a = document.createElement('a');
-    a.href = url;
-    a.download = (viewerWorkName || 'picturebook').replace(/[^a-zA-Z0-9_-]/g, '_') + '-picturebook.html';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    exporting = false;
-    m.redraw();
-    page.toast('success', 'Picture book exported');
-}
-
-function escHtml(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function exportCss() {
-    return `
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: Georgia, 'Times New Roman', serif; background: #1a1a2e; color: #e0e0e0; }
-.book { max-width: 900px; margin: 0 auto; }
-.cover { position: relative; min-height: 80vh; display: flex; align-items: flex-end; justify-content: center;
-         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); overflow: hidden; }
-.cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.6; }
-.cover-overlay { position: relative; z-index: 1; text-align: center; padding: 3rem 2rem;
-                  background: linear-gradient(transparent, rgba(0,0,0,0.8)); width: 100%; }
-.cover h1 { font-size: 3rem; font-weight: 700; text-shadow: 0 2px 8px rgba(0,0,0,0.7); margin-bottom: 0.5rem; }
-.cover p { font-size: 1.1rem; opacity: 0.7; }
-.scene { padding: 3rem 2rem; border-bottom: 1px solid #2a2a3e; }
-.scene img { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 4px; margin-bottom: 1.5rem; display: block; }
-.scene h2 { font-size: 1.6rem; margin-bottom: 0.75rem; color: #e8d5b7; }
-.scene .blurb { font-size: 1.1rem; line-height: 1.8; max-width: 700px; color: #c8c8d0; }
-.scene .characters { margin-top: 1rem; font-size: 0.85rem; color: #8888aa; }
-.scene .page-num { margin-top: 1.5rem; font-size: 0.75rem; color: #555; text-align: center; }
-@media print { .cover { min-height: auto; page-break-after: always; }
-               .scene { page-break-inside: avoid; } }
-`;
-}
-
-// ── Render: Cover Page ────────────────────────────────────────────────
-
-function renderCover() {
+function renderCover(nav) {
     let coverImg = getCoverImageUrl();
     return m('div', {
         class: 'flex flex-col items-center justify-center min-h-[60vh] relative overflow-hidden rounded-lg',
@@ -500,7 +386,7 @@ function renderCover() {
                 viewerScenes.length + ' Scene' + (viewerScenes.length !== 1 ? 's' : '')),
             m('button', {
                 class: 'mt-8 px-6 py-2 bg-white/20 hover:bg-white/30 text-white rounded-full backdrop-blur-sm transition-colors',
-                onclick: function () { goToPage(1); }
+                onclick: function () { nav.goToPage(1); }
             }, [
                 m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'arrow_forward'),
                 'Begin'
@@ -509,10 +395,9 @@ function renderCover() {
     ]);
 }
 
-// ── Render: Scene Page ────────────────────────────────────────────────
+// ── Render: Scene Page (ReaderShell renderPage slot) ──────────────────
 
-function renderScenePage() {
-    let scene = currentScene();
+function renderScenePage(scene, pageNumber, nav) {
     if (!scene) return m('div', { class: 'text-sm text-gray-500 italic p-4' }, 'No scene data.');
 
     let imgUrl = getImageUrl(scene.imageObjectId);
@@ -559,73 +444,96 @@ function renderScenePage() {
 
         // Page number
         m('div', { class: 'mt-6 text-xs text-gray-400 text-center' },
-            'Page ' + currentPage + ' of ' + viewerScenes.length)
+            'Page ' + pageNumber + ' of ' + viewerScenes.length)
     ]);
 }
 
 // renderBlurbDisplay and renderBlurbEditor removed — viewer is read-only
 
-// ── Render: Navigation ────────────────────────────────────────────────
+// ── Reader body slots (loading / error / empty) ───────────────────────
 
-function renderHeader() {
-    let total = totalPages();
-    let pageLabel = currentPage === 0
-        ? 'Cover'
-        : 'Page ' + currentPage + ' of ' + viewerScenes.length;
+function renderViewerLoading() {
+    return m('div', { class: 'text-sm text-gray-500 text-center py-12' }, 'Loading picture book...');
+}
 
-    return m('div', { class: 'flex items-center gap-3 mb-4' }, [
-        // Back to selector
-        !fullscreen ? m('button', {
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
-            title: 'Back to documents',
-            onclick: function () { m.route.set('/picture-book'); }
-        }, m('span', { class: 'material-symbols-outlined' }, 'arrow_back')) : null,
-
-        // Prev arrow
+function renderViewerError() {
+    return m('div', { class: 'text-center py-12' }, [
+        m('div', { class: 'text-red-500 text-sm mb-6' }, viewerError),
         m('button', {
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30',
-            disabled: currentPage === 0,
-            onclick: function () { goToPage(currentPage - 1); }
-        }, m('span', { class: 'material-symbols-outlined' }, 'chevron_left')),
+            class: 'btn px-6 py-2 text-red-500 border border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20',
+            onclick: async function () {
+                let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book?', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
+                if (!ok) return;
+                let gone = await performPbDelete(viewerBookId, null);
+                if (gone) m.route.set('/picture-book');
+            }
+        }, [
+            m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'delete'),
+            'Delete Book'
+        ])
+    ]);
+}
 
-        // Title + page label
-        m('div', { class: 'flex-1 text-center' }, [
-            m('span', { class: 'font-semibold text-sm' }, viewerWorkName),
-            m('span', { class: 'text-gray-400 text-xs ml-2' }, pageLabel)
+function renderViewerEmpty() {
+    return m('div', { class: 'text-center py-12' }, [
+        m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 mb-4' }, 'auto_stories'),
+        m('div', { class: 'text-sm text-gray-500 mb-6' },
+            'No picture book has been generated for this document yet.'),
+        m('div', { class: 'flex gap-2 justify-center' }, [
+            m('button', {
+                class: 'btn btn-primary px-6 py-2',
+                onclick: function () {
+                    pictureBookFromId(viewerBookId, viewerWorkName);
+                }
+            }, [
+                m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'auto_awesome'),
+                'Generate Picture Book'
+            ]),
+            m('button', {
+                class: 'btn px-6 py-2 text-red-500 border border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20',
+                title: 'Delete this incomplete book',
+                onclick: async function () {
+                    let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this incomplete picture book?', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
+                    if (!ok) return;
+                    let gone = await performPbDelete(viewerBookId, null);
+                    if (gone) m.route.set('/picture-book');
+                }
+            }, [
+                m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'delete'),
+                'Delete'
+            ])
         ]),
+        m('div', { class: 'mt-4' }, [
+            m('a', {
+                class: 'text-blue-500 underline cursor-pointer text-xs',
+                onclick: function () { m.route.set('/picture-book'); }
+            }, 'or select a different document')
+        ])
+    ]);
+}
 
-        // Next arrow
-        m('button', {
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30',
-            disabled: currentPage >= total - 1,
-            onclick: function () { goToPage(currentPage + 1); }
-        }, m('span', { class: 'material-symbols-outlined' }, 'chevron_right')),
+// ── Header action slots (between chevrons/export/fullscreen) ───────────
 
-        // Edit Book — reopen wizard
-        !fullscreen && viewerScenes.length ? m('button', {
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
-            title: 'Edit Book',
-            onclick: function () { pictureBookFromId(viewerBookId, viewerWorkName); }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'edit')) : null,
+function renderViewerActionsLeft(nav) {
+    // Edit Book — reopen wizard
+    return (!nav.fullscreen && viewerScenes.length) ? m('button', {
+        class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
+        title: 'Edit Book',
+        onclick: function () { pictureBookFromId(viewerBookId, viewerWorkName); }
+    }, m('span', { class: 'material-symbols-outlined text-lg' }, 'edit')) : null;
+}
 
-        // Export
-        m('button', {
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
-            title: 'Export as HTML',
-            disabled: exporting || !viewerScenes.length,
-            onclick: exportPictureBook
-        }, m('span', { class: 'material-symbols-outlined text-lg' },
-            exporting ? 'hourglass_empty' : 'download')),
-
+function renderViewerActionsRight(nav) {
+    return [
         // Workflow graph
-        !fullscreen && viewerBookId ? m('button', {
+        (!nav.fullscreen && viewerBookId) ? m('button', {
             class: 'text-gray-500 hover:text-blue-600',
             title: 'View Workflow Graph',
             onclick: function () { m.route.set('/picture-book/' + viewerBookId + '/workflow'); }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'account_tree')) : null,
 
         // Delete picture book
-        !fullscreen && viewerScenes.length ? m('button', {
+        (!nav.fullscreen && viewerScenes.length) ? m('button', {
             class: 'text-red-400 hover:text-red-600',
             title: 'Delete picture book',
             onclick: async function () {
@@ -635,39 +543,12 @@ function renderHeader() {
                 if (gone) {
                     viewerScenes = [];
                     imageUrls = {};
-                    currentPage = 0;
+                    pbReader.currentPage = 0;
                     m.route.set('/picture-book');
                 }
             }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')) : null,
-
-        // Fullscreen toggle
-        m('button', {
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
-            title: fullscreen ? 'Exit fullscreen' : 'Fullscreen',
-            onclick: function () { fullscreen = !fullscreen; m.redraw(); }
-        }, m('span', { class: 'material-symbols-outlined text-lg' },
-            fullscreen ? 'fullscreen_exit' : 'fullscreen'))
-    ]);
-}
-
-function renderPageDots() {
-    let total = totalPages();
-    if (total <= 1) return null;
-    return m('div', { class: 'flex justify-center gap-2 mt-4 py-2' },
-        Array.from({ length: total }, function (_, i) {
-            let active = i === currentPage;
-            return m('button', {
-                key: i,
-                class: 'w-2.5 h-2.5 rounded-full transition-colors ' +
-                    (active
-                        ? 'bg-blue-500'
-                        : 'bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500'),
-                title: i === 0 ? 'Cover' : 'Page ' + i,
-                onclick: function () { goToPage(i); }
-            });
-        })
-    );
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')) : null
+    ];
 }
 
 // ── Main Viewer Component ─────────────────────────────────────────────
@@ -685,77 +566,33 @@ var pictureBookView = {
             });
         }
     },
-    oncreate: function () {
-        document.addEventListener('keydown', onKeyDown);
-    },
-    onremove: function () {
-        document.removeEventListener('keydown', onKeyDown);
-    },
+    // Keyboard nav + fullscreen state are owned by ReaderShell (pbReader is the caller-owned state).
     view: function () {
-        let containerClass = fullscreen
-            ? 'fixed inset-0 z-50 bg-gray-900 text-white overflow-y-auto p-6'
-            : 'p-4 flex flex-col h-full';
-
-        return m('div', { class: containerClass }, [
-            renderHeader(),
-
-            viewerLoading ? m('div', { class: 'text-sm text-gray-500 text-center py-12' }, 'Loading picture book...') :
-            viewerError ? m('div', { class: 'text-center py-12' }, [
-                m('div', { class: 'text-red-500 text-sm mb-6' }, viewerError),
-                m('button', {
-                    class: 'btn px-6 py-2 text-red-500 border border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20',
-                    onclick: async function () {
-                        let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book?', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
-                        if (!ok) return;
-                        let gone = await performPbDelete(viewerBookId, null);
-                        if (gone) m.route.set('/picture-book');
-                    }
-                }, [
-                    m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'delete'),
-                    'Delete Book'
-                ])
-            ]) :
-            viewerScenes.length === 0
-                ? m('div', { class: 'text-center py-12' }, [
-                    m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 mb-4' }, 'auto_stories'),
-                    m('div', { class: 'text-sm text-gray-500 mb-6' },
-                        'No picture book has been generated for this document yet.'),
-                    m('div', { class: 'flex gap-2 justify-center' }, [
-                        m('button', {
-                            class: 'btn btn-primary px-6 py-2',
-                            onclick: function () {
-                                pictureBookFromId(viewerBookId, viewerWorkName);
-                            }
-                        }, [
-                            m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'auto_awesome'),
-                            'Generate Picture Book'
-                        ]),
-                        m('button', {
-                            class: 'btn px-6 py-2 text-red-500 border border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20',
-                            title: 'Delete this incomplete book',
-                            onclick: async function () {
-                                let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this incomplete picture book?', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
-                                if (!ok) return;
-                                let gone = await performPbDelete(viewerBookId, null);
-                                if (gone) m.route.set('/picture-book');
-                            }
-                        }, [
-                            m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'delete'),
-                            'Delete'
-                        ])
-                    ]),
-                    m('div', { class: 'mt-4' }, [
-                        m('a', {
-                            class: 'text-blue-500 underline cursor-pointer text-xs',
-                            onclick: function () { m.route.set('/picture-book'); }
-                        }, 'or select a different document')
-                    ])
-                ])
-                : m('div', { class: 'flex-1 overflow-y-auto max-w-3xl mx-auto w-full' }, [
-                    currentPage === 0 ? renderCover() : renderScenePage(),
-                    renderPageDots()
-                ])
-        ]);
+        return m(ReaderShell, {
+            state: pbReader,
+            pages: viewerScenes,
+            title: viewerWorkName,
+            pageNoun: 'Page',
+            loading: viewerLoading,
+            error: viewerError,
+            renderLoading: renderViewerLoading,
+            renderError: renderViewerError,
+            renderEmpty: renderViewerEmpty,
+            renderCover: renderCover,
+            renderPage: renderScenePage,
+            imageUrlFor: function (s) { return getImageUrl(s.imageObjectId); },
+            onBack: function () { m.route.set('/picture-book'); },
+            backTitle: 'Back to documents',
+            actionsLeft: renderViewerActionsLeft,
+            actionsRight: renderViewerActionsRight,
+            // Export params — reproduce the legacy exportPictureBook() output byte-for-byte.
+            coverImageUrl: getCoverImageUrl,
+            exportCountNoun: 'Scene',
+            exportTitleSuffix: 'Picture Book',
+            exportNameFallback: 'picturebook',
+            exportNameSuffix: '-picturebook.html',
+            exportToast: 'Picture book exported'
+        });
     }
 };
 
@@ -1014,10 +851,10 @@ export const routes = {
     },
     '/picture-book/:bookObjectId': {
         oninit: function (vnode) { pictureBookView.oninit(vnode); },
-        oncreate: function () { pictureBookView.oncreate(); },
-        onremove: function () { pictureBookView.onremove(); },
         view: function () {
-            if (fullscreen) {
+            // ReaderShell renders its own fullscreen overlay; when active, skip the layout chrome
+            // so the overlay covers it (reads the shell-mutated pbReader.fullscreen).
+            if (pbReader.fullscreen) {
                 return m(pictureBookView);
             }
             return layout(pageLayout(m(pictureBookView)));

@@ -425,6 +425,63 @@ public class ChapBookService {
         }
     }
 
+    // ─────────────────────────────── ChapBook scene review edits ───────────────────────────────
+
+    /**
+     * POST /scene/{sceneObjectId}/merge-up
+     * Fold the NEXT scene (by {@code sceneIndex}) into this one, delete the folded scene, and reindex the
+     * survivors so {@code sceneIndex} is a clean {@code 0..n-1}. All edit/merge/delete/reindex business
+     * logic — including the CHAPBOOK book-type guard and the per-write AccessPoint result assertions —
+     * lives in {@link ChapBookUtil#mergeSceneUp} (architecture.md: no business logic in Service7).
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/merge-up")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response mergeSceneUp(@PathParam("sceneObjectId") String sceneObjectId,
+            @Context HttpServletRequest request) {
+        OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+        if (sceneObjectId == null || sceneObjectId.isBlank()) return errorResponse(400, "sceneObjectId is required");
+        try {
+            String survivingObjectId = ChapBookUtil.mergeSceneUp(user, sceneObjectId);
+            return Response.status(200).entity("{\"merged\":true,\"sceneObjectId\":\"" + survivingObjectId + "\"}").build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
+        } catch (Exception e) {
+            logger.error("mergeSceneUp failed for " + sceneObjectId + ": " + e.getMessage(), e);
+            return errorResponse(500, "Failed to merge scene: " + e.getMessage());
+        }
+    }
+
+    /**
+     * DELETE /scene/{sceneObjectId}
+     * Delete a single ChapBook scene and reindex the survivors so {@code sceneIndex} is a clean
+     * {@code 0..n-1}. The CHAPBOOK book-type guard, AccessPoint delete and reindex all live in
+     * {@link ChapBookUtil#deleteSceneAndReindex} (architecture.md: no business logic in Service7).
+     */
+    @RolesAllowed({"admin", "user"})
+    @DELETE
+    @Path("/scene/{sceneObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response deleteScene(@PathParam("sceneObjectId") String sceneObjectId,
+            @Context HttpServletRequest request) {
+        OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+        if (sceneObjectId == null || sceneObjectId.isBlank()) return errorResponse(400, "sceneObjectId is required");
+        try {
+            ChapBookUtil.deleteSceneAndReindex(user, sceneObjectId);
+            return Response.status(200).entity("{\"deleted\":true}").build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
+        } catch (Exception e) {
+            logger.error("deleteScene failed for " + sceneObjectId + ": " + e.getMessage(), e);
+            return errorResponse(500, "Failed to delete scene: " + e.getMessage());
+        }
+    }
+
     // ─────────────────────────────── Poem library ───────────────────────────────
 
     /**

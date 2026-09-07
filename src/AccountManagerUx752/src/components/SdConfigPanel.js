@@ -75,14 +75,32 @@ function modelSelectInput(config, key, modelNames, onChange) {
 }
 
 function selectInput(config, key, options, onChange) {
-    let val = config[key] != null ? config[key] : "";
+    let raw = config[key] != null ? config[key] : "";
+    let lowerVal = String(raw).toLowerCase();
+    // Find the correctly-cased option the stored value matches case-insensitively (or null). Driving
+    // the <select>'s own `value` to this is required: Mithril sets select.value from the `value` attr
+    // AFTER the options render, so a non-matching value (e.g. legacy scheduler:"Karras" vs option
+    // 'karras') would otherwise blank the selection regardless of any per-option `selected` flag.
+    let matched = null;
+    for (let i = 0; i < options.length; i++) {
+        if (String(options[i]).toLowerCase() === lowerVal) { matched = options[i]; break; }
+    }
+    let hasEmptyOption = options.some(function(opt) { return String(opt) === ""; });
+    let optionNodes = options.map(function(opt) {
+        // Case-insensitive selection so a stored "Karras" highlights the 'karras' option.
+        return m("option", { value: opt, selected: String(opt).toLowerCase() === lowerVal }, opt);
+    });
+    if (!hasEmptyOption) {
+        // Disabled placeholder shown when the stored value case-matches no option — prevents the old
+        // bug where a non-matching value silently rendered the FIRST option (scheduler showed 'normal').
+        // The Style field already supplies its own empty option, so we skip prepending there.
+        optionNodes.unshift(m("option", { value: "", disabled: true, selected: matched == null }, "-- Select --"));
+    }
     return m("select", {
         class: inputClass(),
-        value: val,
+        value: matched != null ? matched : "",
         onchange: function(e) { config[key] = e.target.value; if (onChange) onChange(); }
-    }, options.map(function(opt) {
-        return m("option", { value: opt, selected: String(val) === String(opt) }, opt);
-    }));
+    }, optionNodes);
 }
 
 function numberInput(config, key, min, max, step, onChange) {

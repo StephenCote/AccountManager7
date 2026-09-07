@@ -104,6 +104,12 @@
 		},
 		{ "name": "pageFont",      "type": "string", "maxLength": 128 },
 		{ "name": "pageBgColor",   "type": "string", "maxLength": 32  },
-		{ "name": "pageTextAlign", "type": "string", "maxLength": 16  }
+		{ "name": "pageTextAlign", "type": "string", "maxLength": 16  },
+		{ "name": "pageTextColor", "type": "string", "maxLength": 32  },
+		{
+			"name": "imageStale",
+			"type": "boolean",
+			"description": "For ChapBook scenes: true when the generated image no longer matches the edited stanza (e.g. after a merge-up folds the next stanza in). Signals the render path / UI that a re-render is needed. Additive, defaults to unset (false)."
+		}
 	]
 }

@@ -18,6 +18,46 @@ let _modelListPromise = null;
 let _loraListCache = null;
 let _loraListPromise = null;
 
+// Once-per-session guard so a poisoned 'sdcfg-default' record is re-saved at most once (see loadConfig).
+let _defaultRepairSaved = false;
+
+// Canonical scheduler option casing (lowercase) — mirrors SdConfigPanel.SCHEDULER_OPTIONS, kept local
+// to avoid an import cycle. The schema default was historically "Karras" (capital K) while every option
+// list is lowercase 'karras', so read-repair coerces a value that differs from a known option ONLY by
+// case back to lowercase.
+const KNOWN_SCHEDULERS = ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'ddim_uniform', 'beta', 'linear_quadratic', 'kl_optimal'];
+
+// Coerce scheduler/refinerScheduler to canonical lowercase when they differ from a known option only by
+// case (e.g. "Karras" -> "karras"). Mutates cfg in place; returns true if anything changed.
+function normalizeSchedulerFields(cfg) {
+    if (!cfg) return false;
+    let changed = false;
+    ['scheduler', 'refinerScheduler'].forEach(function (key) {
+        let v = cfg[key];
+        if (typeof v === 'string' && v.length) {
+            let lower = v.toLowerCase();
+            if (KNOWN_SCHEDULERS.indexOf(v) < 0 && KNOWN_SCHEDULERS.indexOf(lower) >= 0) {
+                cfg[key] = lower;
+                changed = true;
+            }
+        }
+    });
+    return changed;
+}
+
+// Read-repair a just-loaded config: coerce scheduler case in place, and if the poisoned record is the
+// shared 'sdcfg-default', re-save the normalized record ONCE so the fix persists across reloads instead
+// of re-poisoning on every visit.
+function repairLoadedConfig(name, cfg, groupPath) {
+    let changed = normalizeSchedulerFields(cfg);
+    if (changed && name === 'sdcfg-default' && !_defaultRepairSaved) {
+        _defaultRepairSaved = true;
+        saveConfig(name, cfg, groupPath).catch(function (e) {
+            console.warn("[am7sd] scheduler read-repair re-save failed:", e);
+        });
+    }
+}
+
 // ── Style-specific field names ────────────────────────────────────
 const STYLE_FIELDS = [
     "artStyle",
@@ -82,6 +122,8 @@ async function fetchTemplate(forceRefresh) {
                 url: am7client.base() + "/olio/randomImageConfig",
                 withCredentials: true
             });
+            // Read-repair: normalize a poisoned scheduler case in the session template before use.
+            if (_templateCache) normalizeSchedulerFields(_templateCache);
         } catch (e) {
             console.warn("[am7sd] Could not fetch randomImageConfig:", e);
             _templateCache = null;
@@ -114,8 +156,12 @@ async function loadConfig(name, groupPath) {
             // calling the wrong name threw and was swallowed, so loadConfig always returned null.
             if (hit.objectId) {
                 let full = await am7client.getFull("olio.sd.config", hit.objectId);
-                if (full) return full;
+                if (full) {
+                    repairLoadedConfig(name, full, gp);
+                    return full;
+                }
             }
+            repairLoadedConfig(name, hit, gp);
             return hit;
         }
     } catch (e) {
@@ -133,7 +179,9 @@ async function loadConfig(name, groupPath) {
             am7model.updateListModel(qr.results);
             let obj = qr.results[0];
             if (obj.dataBytesStore && obj.dataBytesStore.length) {
-                return JSON.parse(atob(obj.dataBytesStore));
+                let blob = JSON.parse(atob(obj.dataBytesStore));
+                normalizeSchedulerFields(blob);
+                return blob;
             }
         }
     } catch (e) {
