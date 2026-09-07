@@ -77,9 +77,9 @@ const SessionConfigEditor = {
                     description: 'ethereal dreamlike portrait, soft lighting, mystical atmosphere',
                     imageAction: 'posing in a surreal setting',
                     negativePrompt: 'Washed out colors, illogical, disgusting, bad anatomy, errors, glitches, mistakes, low resolution, pixilated, blurry, out of focus, low res, mutated, distorted, melting, cropped, disproportionate, wonky, low quality, compressed, muddy colors, overexposed, mosaic, rotten, fake, low poly, lacking detail, watermark, malformed, failed, failure, extra fingers, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face',
-                    denoisingStrength: 0.65, steps: 30, cfg: 7, sampler: 'dpmpp_2m', scheduler: 'Karras',
+                    denoisingStrength: 0.65, steps: 30, cfg: 7, sampler: 'dpmpp_2m', scheduler: 'karras',
                     seed: -1, width: 512, height: 512, hires: false, bodyStyle: 'full body',
-                    imageSetting: 'random', refinerSteps: 20, refinerScheduler: 'Karras',
+                    imageSetting: 'random', refinerSteps: 20, refinerScheduler: 'karras',
                     refinerSampler: 'dpmpp_2m', refinerCfg: 7, refinerMethod: 'PostApply',
                     refinerUpscale: 2, refinerUpscaleMethod: 'pixel-lanczos', refinerControlPercentage: 0.2
                 }

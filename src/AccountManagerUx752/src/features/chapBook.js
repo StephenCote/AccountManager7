@@ -27,12 +27,42 @@ function cbBase() {
 
 // ── API helpers ───────────────────────────────────────────────────────
 
+// The server default page size for GET /olio/chap-book/poems is 25 when no recordCount is sent
+// (ChapBookUtil.listPoems: `count = recordCount > 0 ? recordCount : 25`). The poem "queue" is a
+// load-all, client-side-sorted/filtered table with NO pagination UI, so a single unpaged request
+// silently hides EVERY poem past the 25th — they persist fine server-side but never reach the Ux
+// (the reported bug). Page through startRecord/recordCount and accumulate until a short page is
+// returned, rather than swapping the 25-cap for a new hardcoded ceiling.
+const POEM_PAGE_SIZE = 200;
+
+// Pure, dependency-injected paging accumulator (unit-tested). Calls fetchPage(startRecord, pageSize)
+// repeatedly, concatenating each returned array, until a page comes back shorter than pageSize (or
+// empty / non-array). The guard bounds the loop at 1000 iterations so a misbehaving endpoint can
+// never hang the UI.
+async function fetchAllPoemPages(fetchPage, pageSize) {
+    pageSize = pageSize || POEM_PAGE_SIZE;
+    let all = [];
+    let start = 0;
+    for (let guard = 0; guard < 1000; guard++) {
+        let pageRows = await fetchPage(start, pageSize);
+        if (!Array.isArray(pageRows) || pageRows.length === 0) break;
+        all = all.concat(pageRows);
+        if (pageRows.length < pageSize) break;
+        start += pageSize;
+    }
+    return all;
+}
+
 async function fetchPoems(themeFilter) {
-    let url = cbBase() + '/poems';
-    if (themeFilter) url += '?theme=' + encodeURIComponent(themeFilter);
-    let resp = await fetch(url, { credentials: 'include', cache: 'no-store' });
-    if (!resp.ok) throw new Error('Failed to load poems: ' + resp.status);
-    return resp.json();
+    // Fetch EVERY poem by paging. The endpoint ignores ?theme (theme/title filtering is client-side
+    // in filteredPoems()); it is preserved here only for backward-compatible URL shape.
+    return fetchAllPoemPages(async function (startRecord, pageSize) {
+        let url = cbBase() + '/poems?startRecord=' + startRecord + '&recordCount=' + pageSize;
+        if (themeFilter) url += '&theme=' + encodeURIComponent(themeFilter);
+        let resp = await fetch(url, { credentials: 'include', cache: 'no-store' });
+        if (!resp.ok) throw new Error('Failed to load poems: ' + resp.status);
+        return resp.json();
+    }, POEM_PAGE_SIZE);
 }
 
 async function analyzePoem(poemObjectId, chatConfigName) {
@@ -250,8 +280,12 @@ function hexToRgba(color, alpha) {
  *
  * @param {object} scene  — {imageUrl, poemStanza, blurb, title}
  * @param {number} overlayOpacity — 0–1, default 0.4 (background image dimming)
+ * @param {boolean} fixPageHeight — book-level clamp flag. When true, the page is clamped to a FIXED
+ *        height with overflow hidden (an overflowing poem is visually truncated, keeping print pages
+ *        uniform). When false/absent (DEFAULT), the historical grow behavior (min-height:70vh) is kept
+ *        exactly. Reuses the existing 70vh page-height basis rather than a new magic number.
  */
-function renderChapBookPage(scene, overlayOpacity) {
+function renderChapBookPage(scene, overlayOpacity, fixPageHeight) {
     // Images are served by MediaServlet at /media/{orgDotPath}/data.data{groupPath}/{name}
     // (the canonical path-based route — there is no objectId-based /rest/resource route).
     // bookPageView supplies imageGroupPath + imageName for exactly this.
@@ -282,12 +316,15 @@ function renderChapBookPage(scene, overlayOpacity) {
     let panelBg = hexToRgba(bgColor || '#000000', bgOpacityPct / 100);
     let panelClass = 'rounded p-6 max-w-xl';
     let panelStyle = 'text-align: ' + textAlign + '; background-color: ' + panelBg + ';';
-    return m('div.relative.overflow-hidden', { style: 'min-height: 70vh' }, [
+    // fixPageHeight ON → clamp (fixed height + hidden overflow) so an overflowing poem is truncated;
+    // OFF/absent → grow (min-height), the exact prior behavior.
+    let pageSizeStyle = fixPageHeight ? 'height: 70vh; overflow: hidden' : 'min-height: 70vh';
+    return m('div.relative.overflow-hidden', { style: pageSizeStyle }, [
         imageUrl ? m('img.absolute.inset-0.w-full.h-full.object-cover', {
             src: imageUrl,
             style: 'opacity: ' + opacity
         }) : null,
-        m('div.relative.z-10.flex.items-center.justify-center', { style: 'min-height: 70vh' },
+        m('div.relative.z-10.flex.items-center.justify-center', { style: pageSizeStyle },
             m('div', { class: panelClass, style: panelStyle }, [
                 m('p', { style: stanzaStyle }, stanzaText),
                 poemTitle ? m('p.text-xs.text-gray-300.mt-4', poemTitle) : null
@@ -1617,12 +1654,13 @@ async function loadReaderBook(bookObjectId) {
                     schema: 'io.query',
                     type: 'olio.pb.book',
                     cache: false,
-                    request: ['id','objectId','name','urn','groupId','organizationId','ownerId','description','slug','bookStatus','createdByObjectId'],
+                    request: ['id','objectId','name','urn','groupId','organizationId','ownerId','description','slug','bookStatus','createdByObjectId','fixPageHeight'],
                     fields: [{ name: 'objectId', comparator: 'EQUALS', value: bookObjectId }]
                 })
             });
-            let arr = resp.ok ? await resp.json() : [];
-            readerBook = Array.isArray(arr) && arr.length ? arr[0] : null;
+            let body = resp.ok ? await resp.json() : null;
+            let arr = Array.isArray(body) ? body : (body && body.results) ? body.results : [];
+            readerBook = arr.length ? arr[0] : null;
         } catch (_) {
             readerBook = null;
         }
@@ -1757,8 +1795,10 @@ function renderReaderCover(nav) {
 
 // ReaderShell page slot (pageNumber is 1-based) — the existing landscape page + a page label.
 function renderReaderPage(scene, pageNumber) {
+    // Honor the book-level fixPageHeight clamp so the reader view matches the editor/print view.
+    let fixPageHeight = !!(readerBook && readerBook.fixPageHeight);
     return m('div', { class: 'rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700' }, [
-        renderChapBookPage(scene),
+        renderChapBookPage(scene, undefined, fixPageHeight),
         m('div', { class: 'px-3 py-1.5 text-xs text-gray-400 text-center bg-gray-50 dark:bg-gray-800/50' },
             'Page ' + pageNumber + ' of ' + readerPages.length)
     ]);
@@ -1792,6 +1832,23 @@ function renderReaderActionsLeft(nav) {
             m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'edit_note'),
             ' Review'
         ]),
+        // Fixed page height (book-level print clamp) — surfaced here too because the reader is where
+        // renderChapBookPage actually applies the clamp, so toggling gives immediate visual feedback.
+        // Same PATCH-and-apply path as the review toolbar (operates on readerBook).
+        readerBook ? m('label', {
+            class: 'flex items-center gap-1.5 px-2 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none',
+            title: 'Clamp each page to a fixed height (overflowing poems are truncated) for consistent print pages'
+        }, [
+            m('input', {
+                type: 'checkbox',
+                'data-testid': 'cb-fix-page-height',
+                class: 'cursor-pointer',
+                checked: !!readerBook.fixPageHeight,
+                disabled: busy || roleWarning,
+                onchange: function (e) { setBookFixPageHeight(readerBook, e.target.checked); }
+            }),
+            'Fixed page height'
+        ]) : null,
         // Issue 2c: pick the chat config used for the Re-analyze pass.
         readerPoemIds.length > 0 ? m('button', {
             class: 'px-3 py-1.5 rounded border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-1 disabled:opacity-50',
@@ -1841,10 +1898,16 @@ function renderReaderActionsRight(nav) {
 }
 
 // Self-contained-HTML export page section for ChapBook: poem stanza over the landscape image.
-function chapExportPageHtml(scene, i, imgB64, total) {
+// fixPageHeight (book-level flag) governs printing: when true, clamp the page to a FIXED height with
+// hidden overflow so printed pages stay uniform (an overflowing poem is truncated), matching the
+// on-screen clamp and reusing the same 70vh basis. Off/absent → grow behavior unchanged. The book is
+// NOT a param here (the shared export engine calls this (page,i,imgB64,total)); each call site resolves
+// the correct book's flag (readerBook vs reviewBook) and passes it in.
+function chapExportPageHtml(scene, i, imgB64, total, fixPageHeight) {
     let stanza = scene.poemStanza || scene.blurb || '';
     let title = scene.title || '';
-    let out = '\n    <div class="scene">\n';
+    let sceneStyle = fixPageHeight ? ' style="height:70vh; overflow:hidden;"' : '';
+    let out = '\n    <div class="scene"' + sceneStyle + '>\n';
     if (imgB64) out += '      <img src="' + imgB64 + '" alt="' + escHtml(title) + '" />\n';
     out += '      <p class="blurb" style="white-space:pre-wrap;">' + escHtml(stanza) + '</p>\n';
     if (title) out += '      <div class="characters">' + escHtml(title) + '</div>\n';
@@ -1914,7 +1977,10 @@ const ChapBookReader = {
                 actionsRight: renderReaderActionsRight,
                 // Export params — self-contained ChapBook HTML with poem text over each landscape image.
                 coverImageUrl: function () { return chapImageUrl(readerPages[0]); },
-                exportPageHtml: chapExportPageHtml,
+                // Thread the reader book's fixPageHeight clamp into the shared export engine.
+                exportPageHtml: function (p, i, imgB64, total) {
+                    return chapExportPageHtml(p, i, imgB64, total, !!(readerBook && readerBook.fixPageHeight));
+                },
                 exportCountNoun: 'Page',
                 exportTitleSuffix: 'ChapBook',
                 exportNameFallback: 'chapbook',
@@ -1963,7 +2029,10 @@ async function exportReviewBook() {
             coverImageUrl: function () {
                 return reviewScenes.length ? (reviewSceneImageUrls[reviewScenes[0].objectId] || null) : null;
             },
-            buildPageHtml: chapExportPageHtml,
+            // Thread the review book's fixPageHeight clamp into the shared export engine.
+            buildPageHtml: function (p, i, imgB64, total) {
+                return chapExportPageHtml(p, i, imgB64, total, !!(reviewBook && reviewBook.fixPageHeight));
+            },
             countNoun: 'Page',
             titleSuffix: 'ChapBook',
             nameFallback: 'chapbook',
@@ -2007,6 +2076,63 @@ async function patchScene(sceneObjectId, changes) {
     });
     if (!resp.ok) throw new Error('Patch scene failed: ' + resp.status);
     return resp.json();
+}
+
+// Book-level fixPageHeight PATCH body (pure, unit-tested). olio.pb.book inherits common.nameId's `\S`
+// rule on `name`, so a PATCH that omits `name` fails validation and the write silently no-ops
+// (model-api.md — the same trap patchSceneFields guards). The body therefore carries schema +
+// identity (id + objectId) + the validated name (taken from the ALREADY-LOADED book, NOT a
+// freshly-created record whose name would be null) + the changed fixPageHeight field.
+function buildBookPatchBody(book, fixPageHeight) {
+    return {
+        schema: 'olio.pb.book',
+        id: book.id,
+        objectId: book.objectId,
+        name: book.name || '',
+        fixPageHeight: !!fixPageHeight
+    };
+}
+
+// PATCH the book's fixPageHeight via /rest/model (same raw-fetch idiom as patchScene). ModelService
+// returns HTTP 200 with a bare boolean body: `true` when AccessPoint.update persisted, `false` when
+// the write no-oped (e.g. a validation failure). So success is result === true — the caller MUST NOT
+// treat a 200 alone as success.
+async function patchBookFixPageHeight(book, value) {
+    let resp = await fetch(applicationPath + '/rest/model', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(buildBookPatchBody(book, value))
+    });
+    if (!resp.ok) return false;
+    let result = await resp.json();
+    return result === true;
+}
+
+// Toggle the book-level print clamp. Follows the PATCH rules exactly: sends the validated-name body
+// above and does NOT assume success — it checks the returned boolean and only mutates the in-memory
+// book + redraws (so the reader/export re-renders clamped/unclamped immediately) when the write
+// actually took. On a false/failed result the local flag is left unchanged (the checkbox reverts on
+// redraw) and an error toast is shown. Operates on whichever book the current view loaded (reviewBook
+// or readerBook), passed in by the caller.
+async function setBookFixPageHeight(book, value) {
+    if (!book || !book.objectId) return;
+    let ok = false;
+    try {
+        ok = await patchBookFixPageHeight(book, value);
+    } catch (e) {
+        page.toast('error', 'Failed to update fixed page height: ' + (e.message || ''));
+        m.redraw();
+        return;
+    }
+    if (!ok) {
+        page.toast('error', 'Failed to update fixed page height');
+        m.redraw();
+        return;
+    }
+    book.fixPageHeight = !!value;
+    page.toast('success', value ? 'Fixed page height: on' : 'Fixed page height: off');
+    m.redraw();
 }
 
 // Delete a ChapBook scene through the dedicated endpoint, which deletes the scene AND reindexes the
@@ -2188,12 +2314,13 @@ async function loadReviewBook(bookObjectId) {
                     schema: 'io.query',
                     type: 'olio.pb.book',
                     cache: false,
-                    request: ['id', 'objectId', 'name', 'slug', 'bookStatus'],
+                    request: ['id', 'objectId', 'name', 'slug', 'bookStatus', 'fixPageHeight'],
                     fields: [{ name: 'objectId', comparator: 'EQUALS', value: bookObjectId }]
                 })
             });
-            let arr = resp.ok ? await resp.json() : [];
-            reviewBook = Array.isArray(arr) && arr.length ? arr[0] : null;
+            let body = resp.ok ? await resp.json() : null;
+            let arr = Array.isArray(body) ? body : (body && body.results) ? body.results : [];
+            reviewBook = arr.length ? arr[0] : null;
         } catch (_) {
             reviewBook = null;
         }
@@ -3108,6 +3235,25 @@ const ChapBookReview = {
                             }, m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, alignIcons[align]));
                         })
                     ]),
+                    // Fixed page height (book-level print clamp). When ON, each rendered page is
+                    // clamped to a fixed height with overflow hidden — an overflowing poem is visually
+                    // truncated so the author can split it — keeping print pages uniform. PATCHed to
+                    // olio.pb.book and applied to the in-memory book so the Reader/Export re-render
+                    // clamped immediately. (The review cards are editors, not the clamped preview.)
+                    m('label', {
+                        class: 'flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none',
+                        title: 'Clamp each rendered page to a fixed height (overflowing poems are truncated) for consistent print pages'
+                    }, [
+                        m('input', {
+                            type: 'checkbox',
+                            'data-testid': 'cb-fix-page-height',
+                            class: 'cursor-pointer',
+                            checked: !!(reviewBook && reviewBook.fixPageHeight),
+                            disabled: roleWarning || !reviewBook,
+                            onchange: function (e) { setBookFixPageHeight(reviewBook, e.target.checked); }
+                        }),
+                        'Fixed page height (clamp for print)'
+                    ]),
                     // Save all (book action)
                     m('button', {
                         class: 'ml-auto px-3 py-1.5 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-40 flex items-center gap-1',
@@ -3194,5 +3340,5 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, analyzePoem };
+export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody };
 export default ChapBookFeature;

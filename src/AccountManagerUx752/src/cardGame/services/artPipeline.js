@@ -286,10 +286,64 @@ async function loadVoiceProfiles() {
     return voiceProfiles;
 }
 
+// ── Game Config (from the game-definition record, NOT the deck) ──────
+// The play-time game config now lives on a separate `game.json` record, resolved
+// through Storage.gameDefStorage. Because getDeckGameConfig is called synchronously
+// during render (and the UI binds checkbox/select handlers to the returned object),
+// we hold a hydrated working copy per deck and return a stable mutable reference.
+// loadDeckGameConfig() populates it asynchronously when the panel expands.
+let deckGameConfig = null;      // hydrated working copy of the game-def gameConfig
+let deckGameConfigKey = null;   // safe deck name the working copy belongs to
+
+function deckSafeName(deck) {
+    if (!deck) return null;
+    if (deck.storageName) return deck.storageName;
+    return deck.deckName ? deck.deckName.replace(/[^a-zA-Z0-9_\-]/g, "_") : null;
+}
+
 function getDeckGameConfig(deck) {
     if (!deck) return {};
+    let key = deckSafeName(deck);
+    // Hydrated working copy for THIS deck — the object the UI mutates and saves.
+    if (deckGameConfig && deckGameConfigKey === key) return deckGameConfig;
+    // Fallback before hydration completes: the legacy inline config kept on the deck
+    // during migration (a one-release compatibility path), or a fresh empty object.
     if (!deck.gameConfig) deck.gameConfig = {};
     return deck.gameConfig;
+}
+
+// Asynchronously load the game definition and hydrate the working copy. Guarded so a
+// repeated panel-expand doesn't clobber in-flight edits; pass force=true to reload.
+async function loadDeckGameConfig(deck, force) {
+    if (!deck) return {};
+    let key = deckSafeName(deck);
+    if (!force && deckGameConfig && deckGameConfigKey === key) return deckGameConfig;
+    let gameDef = null;
+    try {
+        if (key && Storage && Storage.gameDefStorage) {
+            gameDef = await Storage.gameDefStorage.load(key);
+        }
+    } catch (e) {
+        console.warn("[CardGame ArtPipeline] Failed to load game def:", key, e);
+    }
+    let resolved = (Storage && Storage.resolveGameConfig)
+        ? Storage.resolveGameConfig(gameDef, deck)
+        : ((gameDef && gameDef.gameConfig) || deck.gameConfig || {});
+    // Copy so the UI mutates our working buffer, not the persisted record.
+    deckGameConfig = Object.assign({}, resolved);
+    deckGameConfigKey = key;
+    m.redraw();
+    return deckGameConfig;
+}
+
+// Persist the working copy to the game-definition record (game.json), NOT the deck.
+async function saveDeckGameConfig(deck, gc) {
+    let key = deckSafeName(deck);
+    if (!key || !Storage || !Storage.gameDefStorage) return null;
+    let saved = await Storage.gameDefStorage.save(key, { gameConfig: gc });
+    deckGameConfig = gc;
+    deckGameConfigKey = key;
+    return saved;
 }
 
 // Return only fields where the card-type override differs from _default.
@@ -1473,6 +1527,8 @@ export const artPipeline = {
     // Game config
     loadVoiceProfiles,
     getDeckGameConfig,
+    loadDeckGameConfig,
+    saveDeckGameConfig,
     currentDeckSafeName,
     // UI Component
     ArtQueueProgress

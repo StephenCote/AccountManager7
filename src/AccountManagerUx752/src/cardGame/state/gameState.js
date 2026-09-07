@@ -98,6 +98,28 @@ function startInitiativeAnimation() {
     }, 1000);
 }
 
+// ── Game config resolution (from the separate game-definition record) ─
+// The play-time game config now lives on a standalone `game.json` record keyed by
+// the deck's safe name; resolveGameConfig falls back to the legacy inline
+// deck.gameConfig for one release during migration.
+function deckSafeName(deck) {
+    if (!deck) return null;
+    if (deck.storageName) return deck.storageName;
+    return deck.deckName ? deck.deckName.replace(/[^a-zA-Z0-9_\-]/g, "_") : null;
+}
+
+async function resolveDeckGameConfig(deck) {
+    if (!deck) return {};
+    let key = deckSafeName(deck);
+    let gameDef = null;
+    try {
+        if (key && St().gameDefStorage) gameDef = await St().gameDefStorage.load(key);
+    } catch (e) {
+        console.warn("[CardGame] Failed to load game def for game state:", key, e);
+    }
+    return St().resolveGameConfig(gameDef, deck);
+}
+
 // ── Game State Creation ─────────────────────────────────────────────
 async function createGameState(deck, selectedCharacter) {
     const shuffle = Ch().shuffle;
@@ -107,6 +129,8 @@ async function createGameState(deck, selectedCharacter) {
 
     if (C().loadActionDefinitions) await C().loadActionDefinitions();
     if (E().loadEncounterData) await E().loadEncounterData();
+
+    let gameCfg = await resolveDeckGameConfig(deck);
 
     let cards = deck.cards || [];
     let allCharacters = cards.filter(c => c.type === "character");
@@ -217,8 +241,8 @@ async function createGameState(deck, selectedCharacter) {
         narrationReady: false,
         chat: { active: false, unlocked: false, messages: [], npcName: null, inputText: "", pending: false, talkCard: null, talkPosition: null },
         pokerFace: {
-            enabled: (deck?.gameConfig?.pokerFaceEnabled === true) && !!page?.components?.moodRing?.enabled?.(),
-            banterLevel: deck?.gameConfig?.banterLevel || "moderate",
+            enabled: (gameCfg?.pokerFaceEnabled === true) && !!page?.components?.moodRing?.enabled?.(),
+            banterLevel: gameCfg?.banterLevel || "moderate",
             currentEmotion: "neutral", emotionHistory: [], dominantTrend: "neutral",
             lastTransition: null, commentary: null
         }
@@ -292,7 +316,7 @@ async function initializeLLMComponents(state, deck, options) {
     const activeTheme = Th()?.getActiveTheme?.() || { themeId: "high-fantasy" };
     const themeId = deck?.themeId || activeTheme?.themeId || "high-fantasy";
     const opponentChar = state?.opponent?.character;
-    const gc = deck?.gameConfig || {};
+    const gc = await resolveDeckGameConfig(deck);
     const narrationEnabled = gc.narrationEnabled !== false;
     const opponentVoiceEnabled = gc.opponentVoiceEnabled === true;
     const opponentVoiceProfileId = gc.opponentVoiceProfileId || null;

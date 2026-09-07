@@ -7,10 +7,14 @@
  * Exports: CardGameLLM
  */
 import { am7model } from '../../core/model.js';
+import { LLMConnector } from '../../chat/LLMConnector.js';
 
 function getPage() { return am7model._page; }
 function getClient() { return am7model._client; }
-function getLLMConnector() { return getPage()?.components?.llmConnector; }
+// Canonical resolution: use the directly-imported LLMConnector (matches magic8/SessionDirector
+// and chat feature). The former `getPage()?.components?.llmConnector` slot is never registered
+// in Ux752, which silently disabled all CardGame LLM features.
+function getLLMConnector() { return LLMConnector; }
 
 // ── CardGameLLM Base Class ────────────────────────────────────────
 // Shared LLM infrastructure for Director, Narrator, and Chat

@@ -320,6 +320,74 @@ describe('renderScenesSerially — LLM-unavailable tally (bulk aggregation)', ()
     });
 });
 
+// ---------------------------------------------------------------------------------------------
+// fixPageHeight render clamp. When the book's fixPageHeight flag is ON, each rendered page must be
+// clamped to a FIXED height with overflow hidden (an overflowing poem is truncated, keeping print
+// pages uniform); when OFF/absent (the default) the historical grow behavior (min-height:70vh) is
+// preserved byte-for-byte. Asserted on the REAL exported renderers' output — the on-screen vnode
+// (renderChapBookPage) and the export-to-HTML string (chapExportPageHtml).
+// ---------------------------------------------------------------------------------------------
+describe('fixPageHeight clamp — renderChapBookPage (on-screen page)', () => {
+    // Recursively collect every attrs.style string on a Mithril vnode tree.
+    function collectStyles(vnode, acc) {
+        acc = acc || [];
+        if (!vnode || typeof vnode !== 'object') return acc;
+        if (vnode.attrs && typeof vnode.attrs.style === 'string') acc.push(vnode.attrs.style);
+        let kids = vnode.children;
+        if (Array.isArray(kids)) kids.forEach((k) => collectStyles(k, acc));
+        else if (kids && typeof kids === 'object') collectStyles(kids, acc);
+        return acc;
+    }
+    // A scene with NO resolvable image, so the only styled wrappers are the two page-size divs + panel.
+    let scene = { poemStanza: 'a stanza', title: 'A Poem' };
+
+    it('clamps BOTH page wrappers to a fixed height + overflow hidden when fixPageHeight is true', async () => {
+        let { renderChapBookPage } = await import('../features/chapBook.js');
+        let styles = collectStyles(renderChapBookPage(scene, undefined, true));
+        let clamped = styles.filter((s) => s === 'height: 70vh; overflow: hidden');
+        expect(clamped.length).toBe(2);                                   // outer + inner flex wrapper
+        expect(styles.some((s) => s.indexOf('min-height') >= 0)).toBe(false);
+    });
+
+    it('preserves the min-height grow behavior when fixPageHeight is false', async () => {
+        let { renderChapBookPage } = await import('../features/chapBook.js');
+        let styles = collectStyles(renderChapBookPage(scene, undefined, false));
+        expect(styles.filter((s) => s === 'min-height: 70vh').length).toBe(2);
+        expect(styles.some((s) => s === 'height: 70vh; overflow: hidden')).toBe(false);
+    });
+
+    it('preserves the min-height grow behavior when fixPageHeight is absent (default)', async () => {
+        let { renderChapBookPage } = await import('../features/chapBook.js');
+        let styles = collectStyles(renderChapBookPage(scene));
+        expect(styles.filter((s) => s === 'min-height: 70vh').length).toBe(2);
+        expect(styles.some((s) => s === 'height: 70vh; overflow: hidden')).toBe(false);
+    });
+});
+
+describe('fixPageHeight clamp — chapExportPageHtml (export-to-HTML / print)', () => {
+    let scene = { poemStanza: 'a stanza', title: 'A Poem' };
+
+    it('emits a fixed-height + overflow:hidden inline style on the .scene div when fixPageHeight is true', async () => {
+        let { chapExportPageHtml } = await import('../features/chapBook.js');
+        let html = chapExportPageHtml(scene, 0, null, 1, true);
+        expect(html).toContain('<div class="scene" style="height:70vh; overflow:hidden;">');
+    });
+
+    it('emits the plain .scene div (no fixed height) when fixPageHeight is false', async () => {
+        let { chapExportPageHtml } = await import('../features/chapBook.js');
+        let html = chapExportPageHtml(scene, 0, null, 1, false);
+        expect(html).toContain('<div class="scene">');
+        expect(html).not.toContain('height:70vh');
+    });
+
+    it('emits the plain .scene div (no fixed height) when fixPageHeight is absent (default)', async () => {
+        let { chapExportPageHtml } = await import('../features/chapBook.js');
+        let html = chapExportPageHtml(scene, 0, null, 1);
+        expect(html).toContain('<div class="scene">');
+        expect(html).not.toContain('height:70vh');
+    });
+});
+
 describe('renderResultMessage / renderResultLevel — bulk LLM-unavailable summary', () => {
     it('adds a distinct llm-unavailable clause when scenes were affected', async () => {
         let { renderResultMessage } = await import('../features/chapBook.js');

@@ -6,6 +6,7 @@
  */
 import { am7model } from '../../core/model.js';
 import { am7view } from '../../core/view.js';
+import { splitGameDef, resolveGameConfig } from './gameDefTransform.js';
 
 function getPage() { return am7model._page; }
 function getClient() { return am7model._client; }
@@ -90,11 +91,83 @@ async function listDataRecords(groupPath) {
     return qr?.results || [];
 }
 
+// ── Game Definition Storage ───────────────────────────────────────
+// A card GAME definition (play-time knobs: narration/voice/announcer/poker-face/
+// banter) persisted as `game.json` under the SAME deck group as `deck.json`, so a
+// deck and its game config share one directory. The game record references its deck
+// by a STABLE id — the deck group's `objectId` (deckRef) — never the mutable
+// deckName, so a rename can't orphan the link.
+const gameDefStorage = {
+    async save(deckName, data) {
+        try {
+            let toSave = Object.assign({ version: 1 }, data || {});
+            // Stamp the stable deckRef (deck group objectId) when the caller didn't
+            // supply one. makePath is create-or-get, so this is safe on save.
+            if (!toSave.deckRef) {
+                let grp = await getPage().makePath("auth.group", "DATA", DECK_BASE_PATH + "/" + deckName);
+                if (grp && grp.objectId) toSave.deckRef = grp.objectId;
+            }
+            let saved = await upsertDataRecord(DECK_BASE_PATH + "/" + deckName, "game.json", toSave);
+            console.log("[CardGame] Game def saved:", deckName);
+            return saved;
+        } catch (e) {
+            console.error("[CardGame] Failed to save game def:", deckName, e);
+            return null;
+        }
+    },
+
+    async load(deckName) {
+        try {
+            return await loadDataRecord(DECK_BASE_PATH + "/" + deckName, "game.json", false);
+        } catch (e) {
+            console.error("[CardGame] Failed to load game def:", deckName, e);
+            return null;
+        }
+    }
+};
+
+// Non-destructive, read-time migration (modeled on migrateCampaign): when a legacy
+// deck still carries inline `gameConfig` and no `game.json` exists yet, write
+// `game.json` once (extracting gameConfig + a stable deckRef). NEVER delete
+// `deck.json`; `deck.gameConfig` is left intact for this session as a one-release
+// fallback, and stripped from the deck blob on the next deckStorage.save.
+async function migrateInlineGameConfig(deckName, deck) {
+    if (!deck || !deck.gameConfig || Object.keys(deck.gameConfig).length === 0) return;
+    try {
+        let existing = await gameDefStorage.load(deckName);
+        if (existing && existing.gameConfig && Object.keys(existing.gameConfig).length > 0) return;
+        let grp = await getPage().findObject("auth.group", "DATA", DECK_BASE_PATH + "/" + deckName);
+        let deckRef = grp && grp.objectId ? grp.objectId : null;
+        let split = splitGameDef(deck, deckRef);
+        await gameDefStorage.save(deckName, split.gameDef);
+        console.log("[CardGame] Migrated inline gameConfig -> game.json for deck:", deckName);
+    } catch (e) {
+        console.warn("[CardGame] gameConfig migration failed for deck:", deckName, e);
+    }
+}
+
 // ── Deck Storage ──────────────────────────────────────────────────
 const deckStorage = {
     async save(deckName, data) {
         try {
-            let saved = await upsertDataRecord(DECK_BASE_PATH + "/" + deckName, "deck.json", data);
+            let toSave = data;
+            // Strip game concerns out of the persisted deck blob. Seed game.json from
+            // the inline config only if it isn't already present (never clobber newer
+            // edits saved via the Game Config panel). The caller's object is NOT
+            // mutated, so an in-memory deck keeps gameConfig as a session fallback.
+            if (data && data.gameConfig && Object.keys(data.gameConfig).length > 0) {
+                try {
+                    let existing = await gameDefStorage.load(deckName);
+                    if (!existing || !existing.gameConfig || Object.keys(existing.gameConfig).length === 0) {
+                        await gameDefStorage.save(deckName, { gameConfig: data.gameConfig });
+                    }
+                } catch (e) {
+                    console.warn("[CardGame] game def seed during deck save failed:", deckName, e);
+                }
+                toSave = Object.assign({}, data);
+                delete toSave.gameConfig;
+            }
+            let saved = await upsertDataRecord(DECK_BASE_PATH + "/" + deckName, "deck.json", toSave);
             console.log("[CardGame] Deck saved:", deckName);
             return saved;
         } catch (e) {
@@ -105,7 +178,9 @@ const deckStorage = {
 
     async load(deckName) {
         try {
-            return await loadDataRecord(DECK_BASE_PATH + "/" + deckName, "deck.json", false);
+            let deck = await loadDataRecord(DECK_BASE_PATH + "/" + deckName, "deck.json", false);
+            if (deck) await migrateInlineGameConfig(deckName, deck);
+            return deck;
         } catch (e) {
             console.error("[CardGame] Failed to load deck:", deckName, e);
             return null;
@@ -337,13 +412,15 @@ const storage = {
     DECK_BASE_PATH,
     encodeJson, decodeJson,
     upsertDataRecord, loadDataRecord, listDataRecords,
-    deckStorage, gameStorage, campaignStorage,
+    deckStorage, gameStorage, gameDefStorage, campaignStorage,
     createCampaignData, migrateCampaign, saveCampaignProgress,
+    migrateInlineGameConfig, splitGameDef, resolveGameConfig,
     serializeGameState, deserializeGameState
 };
 
-export { storage, DECK_BASE_PATH, deckStorage, gameStorage, campaignStorage,
+export { storage, DECK_BASE_PATH, deckStorage, gameStorage, gameDefStorage, campaignStorage,
     encodeJson, decodeJson, upsertDataRecord, loadDataRecord, listDataRecords,
     createCampaignData, migrateCampaign, saveCampaignProgress,
+    migrateInlineGameConfig, splitGameDef, resolveGameConfig,
     serializeGameState, deserializeGameState };
 export default storage;

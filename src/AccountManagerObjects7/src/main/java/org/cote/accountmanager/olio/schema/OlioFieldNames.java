@@ -392,6 +392,8 @@ public class OlioFieldNames {
 	/// olio.pb.book — CHAPBOOK-only fields (promoted from olio.cb.book)
 	public static final String FIELD_PB_MAX_LINES_PER_PAGE = "maxLinesPerPage";
 	public static final String FIELD_PB_OVERLAY_OPACITY = "overlayOpacity";
+	/// olio.pb.book — CHAPBOOK-only: clamp each rendered page to a fixed height (overflow hidden) instead of growing vertically
+	public static final String FIELD_PB_FIX_PAGE_HEIGHT = "fixPageHeight";
 	/// olio.pb.scene — poemStanza holds the stanza text for ChapBook scenes
 	public static final String FIELD_CB_POEM_STANZA = "poemStanza";
 	/// olio.pb.scene — sdPrompt for ChapBook: landscape SD prompt derived from poemStanza + mood

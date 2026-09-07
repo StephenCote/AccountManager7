@@ -613,3 +613,199 @@ test.describe('Card Game — Keyboard & Interactions', () => {
         }
     });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Workstream A — deck.json / game.json split (state/storage.js + gameDefTransform.js)
+//
+// A card DECK (art + content) and its GAME definition (play-time knobs) used to be
+// fused on one deck.json blob. The split persists the game concern to a separate
+// game.json record under the SAME deck group, keyed by a STABLE deckRef (the deck
+// group's objectId), and resolves the effective config back out preferring game.json
+// with a one-release fallback to legacy inline deck.gameConfig.
+//
+// This exercises the REAL storage.js code against the live backend (no mock): the
+// CardGameApp exposes the loaded storage module at window.__cardGameNS.Storage, so we
+// navigate to #!/cardGame to trigger the lazy load and then round-trip data.data
+// records through deckStorage/gameDefStorage. This is pure data.data persistence — no
+// LLM/SD, so it runs entirely on the Docker stack. Uses ensureSharedTestUser.
+// ══════════════════════════════════════════════════════════════════════════════
+test.describe('Card Game — deck/game.json split (workstream A)', () => {
+    test.describe.configure({ timeout: 120000 });
+
+    let testInfo = {};
+
+    test.beforeAll(async ({ request }) => {
+        testInfo = await ensureSharedTestUser(request);
+    });
+
+    test.beforeEach(async ({ page }) => {
+        await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
+    });
+
+    async function loadStorageNS(page) {
+        await page.goto('/#!/cardGame');
+        await page.waitForFunction(() => window.location.hash.includes('/cardGame'), { timeout: 15000 });
+        // Wait for the lazy CardGameApp module to load and expose its real storage module.
+        await page.waitForFunction(
+            () => !!(window.__cardGameNS && window.__cardGameNS.Storage && window.__cardGameNS.Storage.deckStorage),
+            { timeout: 25000 }
+        );
+        // The storage functions resolve am7model._page / _client lazily; make sure they're bound.
+        await page.waitForFunction(
+            () => {
+                try {
+                    const m = window.am7model;
+                    return !!(m && m._page && m._client);
+                } catch (e) { return false; }
+            },
+            { timeout: 15000 }
+        );
+    }
+
+    test('saving a composite deck strips gameConfig into a separate game.json and reload resolves it', async ({ page }) => {
+        await loadStorageNS(page);
+
+        const out = await page.evaluate(async () => {
+            const S = window.__cardGameNS && window.__cardGameNS.Storage;
+            if (!S || !S.deckStorage) return { fatal: 'no Storage namespace' };
+
+            const deckName = 'e2e-split-' + Date.now().toString(36);
+            const gameConfig = {
+                narration: true,
+                voice: 'en-US-Wavenet-D',
+                announcer: 'ringmaster',
+                pokerFace: 0.5,
+                banter: ['nice move']
+            };
+            const composite = {
+                name: deckName,
+                theme: 'High Fantasy',
+                cards: [{ id: 'c1', name: 'Knight' }, { id: 'c2', name: 'Mage' }],
+                gameConfig: gameConfig
+            };
+
+            try {
+                // Save the composite deck — deckStorage.save must strip gameConfig into game.json.
+                const saved = await S.deckStorage.save(deckName, composite);
+
+                // Read deck.json RAW (no migration) — it must NOT carry gameConfig anymore.
+                const rawDeck = await S.loadDataRecord(S.DECK_BASE_PATH + '/' + deckName, 'deck.json', false);
+
+                // Read game.json — must carry the extracted gameConfig + version + a stable deckRef.
+                const gameDef = await S.gameDefStorage.load(deckName);
+
+                // resolveGameConfig prefers the persisted game.json.
+                const resolvedFromGame = S.resolveGameConfig(gameDef, rawDeck);
+                // Legacy fallback: no gameDef → inline deck.gameConfig.
+                const resolvedFallback = S.resolveGameConfig(null, { gameConfig: { legacy: true } });
+                // Neither → empty object (never null).
+                const resolvedEmpty = S.resolveGameConfig(null, {});
+
+                // Cleanup the composite deck group.
+                const removed = await S.deckStorage.remove(deckName);
+
+                return {
+                    savedOk: !!saved,
+                    rawDeckPresent: !!rawDeck,
+                    rawDeckHasGameConfig: !!(rawDeck && rawDeck.gameConfig),
+                    rawDeckName: rawDeck && rawDeck.name,
+                    rawDeckCardCount: rawDeck && Array.isArray(rawDeck.cards) ? rawDeck.cards.length : -1,
+                    gameDefPresent: !!gameDef,
+                    gameDefVersion: gameDef && gameDef.version,
+                    gameDefHasVoice: !!(gameDef && gameDef.gameConfig && gameDef.gameConfig.voice === 'en-US-Wavenet-D'),
+                    gameDefDeckRef: gameDef && gameDef.deckRef,
+                    resolvedFromGameVoice: resolvedFromGame && resolvedFromGame.voice,
+                    resolvedFallbackLegacy: !!(resolvedFallback && resolvedFallback.legacy),
+                    resolvedEmptyIsEmptyObj: !!(resolvedEmpty && typeof resolvedEmpty === 'object' && Object.keys(resolvedEmpty).length === 0),
+                    inputStillHasGameConfig: !!(composite.gameConfig && composite.gameConfig.narration),
+                    removed: !!removed
+                };
+            } catch (e) {
+                return { fatal: String(e && e.message || e) };
+            }
+        });
+
+        expect(out.fatal, 'storage round-trip threw: ' + out.fatal).toBeFalsy();
+        expect(out.savedOk, 'deckStorage.save returned falsy (page client not bound?)').toBe(true);
+
+        // deck.json must be persisted WITHOUT gameConfig, but still carry the deck art/content.
+        expect(out.rawDeckPresent, 'deck.json not found after save').toBe(true);
+        expect(out.rawDeckHasGameConfig, 'deck.json still carries gameConfig — split did not strip it').toBe(false);
+        expect(out.rawDeckName, 'deck.json lost its name').toBeTruthy();
+        expect(out.rawDeckCardCount, 'deck.json lost its cards').toBe(2);
+
+        // game.json must exist with the extracted config, a version, and a stable deckRef.
+        expect(out.gameDefPresent, 'game.json was not created by the split').toBe(true);
+        expect(out.gameDefVersion, 'game.json missing version stamp').toBe(1);
+        expect(out.gameDefHasVoice, 'game.json did not carry the extracted gameConfig').toBe(true);
+        expect(out.gameDefDeckRef, 'game.json missing stable deckRef (deck group objectId)').toBeTruthy();
+
+        // resolveGameConfig behavior.
+        expect(out.resolvedFromGameVoice, 'resolveGameConfig did not prefer game.json').toBe('en-US-Wavenet-D');
+        expect(out.resolvedFallbackLegacy, 'resolveGameConfig did not fall back to legacy inline deck.gameConfig').toBe(true);
+        expect(out.resolvedEmptyIsEmptyObj, 'resolveGameConfig should return {} when nothing available').toBe(true);
+
+        // The caller's in-memory deck must be untouched (session fallback preserved).
+        expect(out.inputStillHasGameConfig, 'deckStorage.save mutated the caller deck object').toBe(true);
+        expect(out.removed, 'cleanup remove failed').toBe(true);
+    });
+
+    test('legacy un-migrated deck (inline gameConfig, no game.json) migrates on load, non-destructively', async ({ page }) => {
+        await loadStorageNS(page);
+
+        const out = await page.evaluate(async () => {
+            const S = window.__cardGameNS && window.__cardGameNS.Storage;
+            if (!S || !S.deckStorage) return { fatal: 'no Storage namespace' };
+
+            const legacyName = 'e2e-legacy-' + Date.now().toString(36);
+            const legacyGameConfig = { narration: false, voice: 'legacy-voice', pokerFace: 0.1 };
+
+            try {
+                // Write a LEGACY deck.json directly (bypass deckStorage.save's stripping) so it still
+                // carries inline gameConfig and there is NO game.json yet — the un-migrated shape.
+                await S.upsertDataRecord(
+                    S.DECK_BASE_PATH + '/' + legacyName, 'deck.json',
+                    { name: legacyName, cards: [{ id: 'x1', name: 'Relic' }], gameConfig: legacyGameConfig }
+                );
+
+                // Precondition: no game.json exists yet.
+                const gameJsonBefore = await S.gameDefStorage.load(legacyName);
+
+                // deckStorage.load triggers migrateInlineGameConfig — should write game.json once.
+                const loadedDeck = await S.deckStorage.load(legacyName);
+
+                // game.json now exists with the migrated config.
+                const gameJsonAfter = await S.gameDefStorage.load(legacyName);
+
+                const removed = await S.deckStorage.remove(legacyName);
+
+                return {
+                    gameJsonBeforeEmpty: !(gameJsonBefore && gameJsonBefore.gameConfig && Object.keys(gameJsonBefore.gameConfig).length),
+                    loadedDeckPresent: !!loadedDeck,
+                    loadedDeckStillHasInline: !!(loadedDeck && loadedDeck.gameConfig && loadedDeck.gameConfig.voice === 'legacy-voice'),
+                    gameJsonAfterPresent: !!gameJsonAfter,
+                    gameJsonAfterVoice: gameJsonAfter && gameJsonAfter.gameConfig && gameJsonAfter.gameConfig.voice,
+                    gameJsonAfterDeckRef: gameJsonAfter && gameJsonAfter.deckRef,
+                    removed: !!removed
+                };
+            } catch (e) {
+                return { fatal: String(e && e.message || e) };
+            }
+        });
+
+        expect(out.fatal, 'legacy-migration round-trip threw: ' + out.fatal).toBeFalsy();
+
+        // Precondition held: nothing migrated before the load.
+        expect(out.gameJsonBeforeEmpty, 'game.json already existed before migration — test precondition failed').toBe(true);
+
+        // Migration produced game.json with the inline config.
+        expect(out.gameJsonAfterPresent, 'migrateInlineGameConfig did not create game.json on load').toBe(true);
+        expect(out.gameJsonAfterVoice, 'migrated game.json has wrong/absent config').toBe('legacy-voice');
+        expect(out.gameJsonAfterDeckRef, 'migrated game.json missing stable deckRef').toBeTruthy();
+
+        // Migration is NON-destructive: deck.json still carries inline gameConfig for this session.
+        expect(out.loadedDeckPresent, 'legacy deck.json not loaded').toBe(true);
+        expect(out.loadedDeckStillHasInline, 'migration destroyed the legacy inline gameConfig (should be non-destructive)').toBe(true);
+        expect(out.removed, 'cleanup remove failed').toBe(true);
+    });
+});

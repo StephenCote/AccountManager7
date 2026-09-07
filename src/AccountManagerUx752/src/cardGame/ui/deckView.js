@@ -6,6 +6,7 @@
  */
 import m from 'mithril';
 import { am7model } from '../../core/model.js';
+import { am7sd } from '../../components/sdConfig.js';
 
 function getPage() { return am7model._page; }
 function getClient() { return am7model._client; }
@@ -79,10 +80,16 @@ function DeckView() {
             if (viewingDeck && viewingDeck.sdOverrides) {
                 let saved = viewingDeck.sdOverrides;
                 ctxObj.sdOverrides = { _default: NS.ArtPipeline.newSdOverride() };
-                if (saved._default) Object.assign(ctxObj.sdOverrides._default, saved._default);
+                // Never restore a persisted model/refinerModel — the checkpoint may be from a different SD
+                // node/session and, applied via am7sd.applyOverrides, would poison a fresh generation. Strip
+                // a COPY so the fresh newSdOverride()'s node-valid schema default survives (see am7sd.NEVER_RESTORE).
+                if (saved._default) {
+                    Object.assign(ctxObj.sdOverrides._default,
+                        am7sd.stripNeverRestore(JSON.parse(JSON.stringify(saved._default))));
+                }
                 Object.keys(saved).forEach(k => {
                     if (k !== "_default" && saved[k]) {
-                        let copy = JSON.parse(JSON.stringify(saved[k]));
+                        let copy = am7sd.stripNeverRestore(JSON.parse(JSON.stringify(saved[k])));
                         copy[am7model.jsonModelKey] = "olio.sd.config";
                         ctxObj.sdOverrides[k] = copy;
                     }
@@ -355,7 +362,12 @@ function DeckView() {
                                                     overrides[k][am7model.jsonModelKey] = "olio.sd.config";
                                                 }
                                             });
-                                            viewingDeck.sdOverrides = JSON.parse(JSON.stringify(overrides));
+                                            // Never persist a node-specific model/refinerModel into the deck
+                                            // record — mirrors chat/SceneGenerator.saveConfig so a config saved
+                                            // on one SD node cannot poison generation on another (am7sd.NEVER_RESTORE).
+                                            let toSave = JSON.parse(JSON.stringify(overrides));
+                                            Object.keys(toSave).forEach(k => { if (toSave[k]) am7sd.stripNeverRestore(toSave[k]); });
+                                            viewingDeck.sdOverrides = toSave;
                                             let safeName = (viewingDeck.deckName || "deck").replace(/[^a-zA-Z0-9_\-]/g, "_");
                                             await NS.Storage.deckStorage.save(safeName, viewingDeck);
                                             getPage().toast("success", "SD config saved to deck");
@@ -372,7 +384,12 @@ function DeckView() {
                         class: "cg2-sd-panel-header",
                         onclick() {
                             ctxObj.gameConfigExpanded = !ctxObj.gameConfigExpanded;
-                            if (ctxObj.gameConfigExpanded && !ctxObj.voiceProfilesLoaded) NS.ArtPipeline.loadVoiceProfiles();
+                            if (ctxObj.gameConfigExpanded) {
+                                if (!ctxObj.voiceProfilesLoaded) NS.ArtPipeline.loadVoiceProfiles();
+                                // Hydrate the game config from the separate game-definition
+                                // record (game.json) rather than the deck blob.
+                                NS.ArtPipeline.loadDeckGameConfig(viewingDeck);
+                            }
                             m.redraw();
                         }
                     }, [
@@ -559,11 +576,13 @@ function DeckView() {
                                     class: "cg2-btn cg2-btn-primary",
                                     style: { fontSize: "11px" },
                                     async onclick() {
-                                        viewingDeck.gameConfig = gc;
-                                        let safeName = NS.ArtPipeline.currentDeckSafeName();
-                                        if (safeName) {
-                                            await NS.Storage.deckStorage.save(safeName, viewingDeck);
+                                        // Persist to the game-definition record (game.json),
+                                        // NOT onto the deck blob — decks stay reusable across games.
+                                        let saved = await NS.ArtPipeline.saveDeckGameConfig(viewingDeck, gc);
+                                        if (saved) {
                                             getPage().toast("success", "Game config saved");
+                                        } else {
+                                            getPage().toast("error", "Could not save game config");
                                         }
                                     }
                                 }, [

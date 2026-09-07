@@ -99,6 +99,11 @@
 			"name": "overlayOpacity",
 			"type": "double",
 			"description": "CHAPBOOK only: opacity of the background landscape image behind poem text overlay. Ignored for STORY books. Renderer uses 0.4 when null."
+		},
+		{
+			"name": "fixPageHeight",
+			"type": "boolean",
+			"description": "CHAPBOOK only: clamp each rendered page to a fixed height with overflow hidden instead of growing vertically. Default false preserves existing grow behavior."
 		}
 	]
 }

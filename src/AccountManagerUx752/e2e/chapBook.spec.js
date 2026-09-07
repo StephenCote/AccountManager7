@@ -1561,3 +1561,153 @@ test.describe('ChapBook — delete regressions', () => {
         await request.get(REST + '/logout');
     });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// Workstream C — ChapBook fixed page-height clamp (olio.pb.book.fixPageHeight)
+//
+// The book carries a boolean `fixPageHeight`. When FALSE (default) each reader page
+// GROWS (renderChapBookPage sets inline `min-height: 70vh`). When TRUE it is CLAMPED
+// to a fixed height with clipped overflow (inline `height: 70vh; overflow: hidden`).
+// The reader toolbar checkbox [data-testid="cb-fix-page-height"] toggles it via
+// PATCH /rest/model, and the mutation only takes when the PATCH returns bare `true`.
+//
+// This test drives the REAL reader DOM: it asserts the page wrapper's INLINE STYLE
+// flips when the checkbox is clicked, that the change PERSISTS (fresh REST search of
+// fixPageHeight), that a fresh reader load renders the persisted clamp, and that
+// toggling back off restores growth + persists false. No LLM/SD — ChapBook create
+// chunks poem stanzas into scenes with no image pipeline (proven by the 6D test).
+// Self-contained (own seeding + orgId) so it runs under `-g "fixed page height"`.
+// Uses ensureSharedTestUser (e2etest_shared) — never admin.
+// ════════════════════════════════════════════════════════════════════════════
+test.describe('ChapBook — fixed page height clamp (workstream C)', () => {
+    test.describe.configure({ timeout: 120000 });
+
+    let fphOrgId = null;
+    let fphPoemsGroupId = null;
+
+    test.beforeAll(async ({ request }) => {
+        await ensureSharedTestUser(request);
+        await restLoginShared(request);
+        const poemsDir = await request.get(REST + '/path/make/auth.group/data/B64-' + Buffer.from('~/Poems').toString('base64').replace(/=/g, '%3D'));
+        const poemsBody = await poemsDir.json();
+        expect(poemsBody && poemsBody.id, 'could not ensure ~/Poems group').toBeTruthy();
+        fphPoemsGroupId = poemsBody.id;
+        fphOrgId = poemsBody.organizationId;
+        await request.get(REST + '/logout');
+    });
+
+    async function seedPoem(request, name, title, text) {
+        const s = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query', type: 'olio.cb.poem',
+                fields: [
+                    { name: 'name', comparator: 'equals', value: name },
+                    { name: 'organizationId', comparator: 'equals', value: fphOrgId }
+                ],
+                request: ['id', 'objectId'], recordCount: 1, cache: false
+            }
+        });
+        const b = await s.json().catch(() => null);
+        if (b && b.results && b.results.length) return b.results[0].objectId;
+        const c = await request.post(REST + '/model', {
+            data: { schema: 'olio.cb.poem', name, title, author: 'E2E FPH', groupId: fphPoemsGroupId, text }
+        });
+        const cb = await c.json().catch(() => null);
+        return cb && cb.objectId;
+    }
+
+    async function fetchFixPageHeight(request, bookObjectId) {
+        const resp = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query', type: 'olio.pb.book',
+                fields: [
+                    { name: 'objectId', comparator: 'equals', value: bookObjectId },
+                    { name: 'organizationId', comparator: 'equals', value: fphOrgId }
+                ],
+                request: ['id', 'objectId', 'fixPageHeight'], recordCount: 1, cache: false
+            }
+        });
+        const body = await resp.json().catch(() => null);
+        expect(body && Array.isArray(body.results) && body.results.length === 1,
+            'book not found on fixPageHeight verify: ' + JSON.stringify(body)).toBe(true);
+        return body.results[0].fixPageHeight;
+    }
+
+    test('reader fixPageHeight checkbox flips page inline style and PATCH persists', async ({ page, request }) => {
+        await restLoginShared(request);
+
+        // 1. Seed two real poems and build a fresh ChapBook (new slug each run → starts unclamped).
+        const p1 = await seedPoem(request, 'chapbook-fph-1', 'Falling Leaves', POEM_1);
+        const p2 = await seedPoem(request, 'chapbook-fph-2', 'Winter', POEM_2);
+        expect(p1 && p2, 'failed to seed fph poems').toBeTruthy();
+
+        const slug = 'fph-' + Date.now().toString(36);
+        const createResp = await request.post(CB_REST + '/create', {
+            data: { slug, title: 'Fixed Page Height ChapBook', poemObjectIds: [p1, p2], maxLinesPerPage: 8 }
+        });
+        expect(createResp.ok(), 'create ChapBook failed: ' + createResp.status() + ' ' + await createResp.text()).toBe(true);
+        const created = await createResp.json();
+        const bookObjectId = created && (created.objectId || created.bookObjectId);
+        expect(bookObjectId, 'no bookObjectId in create response').toBeTruthy();
+
+        // A brand-new book must start unclamped at the record level.
+        expect(await fetchFixPageHeight(request, bookObjectId), 'new book should start fixPageHeight=false/unset').toBeFalsy();
+        await request.get(REST + '/logout');
+
+        // 2. Open the dedicated reader route.
+        await loginAsSharedUser(page);
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookObjectId);
+
+        // Stanza is visible immediately (no Render). Distinctive words from the two seeded poems.
+        const stanzaRe = /Memory|pristine|cobalt|sorcery|leaves/i;
+        await expect(page.locator('p').filter({ hasText: stanzaRe }).first(),
+            'reader stanza not visible').toBeVisible({ timeout: 20000 });
+
+        // The page wrapper is the div.relative.overflow-hidden that CONTAINS the inner
+        // z-10 flex layer renderChapBookPage emits — uniquely the ChapBook page, not app chrome.
+        const pageWrapper = () => page.locator('div.relative.overflow-hidden', { has: page.locator('div.relative.z-10') }).first();
+        const checkbox = () => page.locator('[data-testid="cb-fix-page-height"]');
+
+        // 3. Default OFF → grow: inline style carries min-height (and no inline overflow).
+        await expect(pageWrapper(), 'page wrapper not present').toBeVisible({ timeout: 10000 });
+        const style0 = await pageWrapper().getAttribute('style');
+        expect(style0, 'default page style should be min-height (grow): ' + style0).toContain('min-height');
+
+        await expect(checkbox(), 'fixPageHeight checkbox not visible').toBeVisible({ timeout: 10000 });
+        expect(await checkbox().isChecked(), 'checkbox should start unchecked').toBe(false);
+        expect(await checkbox().isEnabled(), 'checkbox should be enabled (user has AccountUsers role)').toBe(true);
+
+        // 4. Toggle ON (single click → one onchange → PATCH). Style flips to clamped on success.
+        await checkbox().click();
+        await expect(pageWrapper(), 'clamp did not apply after enabling fixPageHeight')
+            .toHaveAttribute('style', /overflow:\s*hidden/, { timeout: 15000 });
+        const styleOn = await pageWrapper().getAttribute('style');
+        expect(styleOn, 'clamped style must not carry min-height: ' + styleOn).not.toContain('min-height');
+        expect(styleOn, 'clamped style should set a fixed height: ' + styleOn).toContain('height: 70vh');
+        expect(await checkbox().isChecked(), 'checkbox should be checked after PATCH success').toBe(true);
+
+        // 5. Persistence at the record level.
+        await restLoginShared(request);
+        expect(await fetchFixPageHeight(request, bookObjectId), 'fixPageHeight not persisted true').toBe(true);
+        await request.get(REST + '/logout');
+
+        // 6. Fresh reader load must render the persisted clamp (proves it drives render, not just memory).
+        await page.evaluate(() => { window.location.hash = '!/main'; });
+        await page.waitForFunction(() => window.location.hash.includes('/main'), { timeout: 15000 });
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookObjectId);
+        await expect(page.locator('p').filter({ hasText: stanzaRe }).first(),
+            'reader stanza not visible after reload').toBeVisible({ timeout: 20000 });
+        await expect(pageWrapper(), 'persisted clamp not rendered on fresh load')
+            .toHaveAttribute('style', /overflow:\s*hidden/, { timeout: 15000 });
+        expect(await checkbox().isChecked(), 'checkbox should be checked after reload').toBe(true);
+
+        // 7. Toggle OFF → grow again + persists false.
+        await checkbox().click();
+        await expect(pageWrapper(), 'growth did not restore after disabling fixPageHeight')
+            .toHaveAttribute('style', /min-height/, { timeout: 15000 });
+        expect(await checkbox().isChecked(), 'checkbox should be unchecked after toggling off').toBe(false);
+        await restLoginShared(request);
+        expect(await fetchFixPageHeight(request, bookObjectId), 'fixPageHeight not persisted false').toBeFalsy();
+        await request.get(REST + '/logout');
+    });
+});

@@ -94,7 +94,11 @@ class ImageGenerationManager {
             cfg: 7,
             seed: -1,
             sampler: "dpmpp_2m",
-            scheduler: "Karras",
+            // Canonical scheduler casing is lowercase 'karras' (matches SdConfigPanel.SCHEDULER_OPTIONS /
+            // am7sd KNOWN_SCHEDULERS and the olio.sd.config schema default). A capital "Karras" matches no
+            // option and, because am7sd.buildEntity overlays the request AFTER normalizing the template,
+            // survives onto the entity and reaches the SD server verbatim.
+            scheduler: "karras",
             width: 512,
             height: 512,
             captureInterval: 30000,
@@ -399,9 +403,15 @@ class ImageGenerationManager {
      * @private
      */
     async _buildSdConfigEntity(request, referenceImageId) {
-        let entity = await am7sd.buildEntity(request, {
-            skipFields: ['init_image', 'captureInterval', 'emotionPromptMapping']
-        });
+        // A blank model/refinerModel from a saved or inline config must NOT override the node-valid model
+        // that buildEntity fetches from /olio/randomImageConfig. buildEntity's overlay only skips values
+        // that are `!= null`, so a literal "" would be written verbatim and the server would fall through
+        // to a node-specific default (the exact failure documented in chat/SceneGenerator.js). Skip the
+        // model pair only when blank; a real in-session pick still passes through.
+        let skipFields = ['init_image', 'captureInterval', 'emotionPromptMapping'];
+        if (!request.model) skipFields.push('model');
+        if (!request.refinerModel) skipFields.push('refinerModel');
+        let entity = await am7sd.buildEntity(request, { skipFields });
 
         // If a refiner model is configured, force hires mode
         if (entity.refinerModel) {

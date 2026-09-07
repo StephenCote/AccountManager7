@@ -25,8 +25,10 @@ import { gameState as _gs } from '../state/gameState.js';
 
 function getPage() { return am7model._page; }
 function getClient() { return am7model._client; }
-function getLLMConnector() { return getPage()?.components?.llmConnector; }
-function getChat() { return getPage()?.components?.chat; }
+// LLM I/O goes through the base class (this.chat / CardGameLLM statics), which resolve the
+// directly-imported LLMConnector in llmBase.js. The former getLLMConnector()/getChat() helpers
+// reached `page.components.llmConnector` / `page.components.chat` — slots never registered in
+// Ux752 — so they are removed to match the narrator/chatManager siblings.
 
 // ── Lazy accessors for cross-module dependencies ─────────────────
 function getGameState()      { return _gs.getGameState(); }
@@ -132,8 +134,7 @@ Reply with ONLY the JSON object, no markdown or text.`;
         const prompt = this._buildPlacementPrompt(gameState);
 
         try {
-            const chat = getChat();
-            const response = await chat.chat(this.chatRequest, prompt);
+            const response = await this.chat(prompt);
             const content = CardGameLLM.extractContent(response);
             const directive = this._parseDirective(content);
 
@@ -146,7 +147,7 @@ Reply with ONLY the JSON object, no markdown or text.`;
 
             // Retry once on parse failure
             console.warn("[CardGameDirector] Parse failed, retrying...");
-            const retryResponse = await chat.chat(this.chatRequest, prompt + "\n\nIMPORTANT: Output ONLY valid JSON, no markdown.");
+            const retryResponse = await this.chat(prompt + "\n\nIMPORTANT: Output ONLY valid JSON, no markdown.");
             const retryContent = CardGameLLM.extractContent(retryResponse);
             const retryDirective = this._parseDirective(retryContent);
 

@@ -11,10 +11,14 @@
 import m from 'mithril';
 import { am7model } from '../../core/model.js';
 import { CardGameLLM } from './llmBase.js';
+import { LLMConnector } from '../../chat/LLMConnector.js';
 
 function getPage() { return am7model._page; }
 function getClient() { return am7model._client; }
-function getLLMConnector() { return getPage()?.components?.llmConnector; }
+// Canonical resolution: directly-imported LLMConnector (matches llmBase/magic8). The former
+// `getPage()?.components?.llmConnector` slot is never registered in Ux752, so getHistory() was
+// silently skipped.
+function getLLMConnector() { return LLMConnector; }
 
 // ── Load external prompts (optional) ─────────────────────────────
 let chatPrompts = null;

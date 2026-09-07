@@ -316,6 +316,21 @@ function fillStyleDefaults(entity) {
     }
 }
 
+// ── NEVER_RESTORE guard ───────────────────────────────────────────
+// Fields that must never be carried from a PERSISTED SD config (localStorage blob, a saved deck record,
+// etc.) onto a freshly-fetched template: a checkpoint name is valid only on the SD node it was saved
+// from, so restoring model/refinerModel from one node/session and overlaying it onto a template that
+// already carries a node-valid model reintroduces the "Invalid model value" failure. Shared here so every
+// SD caller (chat/SceneGenerator, cardGame decks, ...) uses one definition; mirrors SD_CONFIG_NEVER_RESTORE
+// in chat/SceneGenerator.js. In-session picks are unaffected — this only strips PERSISTED restores.
+const NEVER_RESTORE = ['model', 'refinerModel'];
+function stripNeverRestore(obj) {
+    if (obj && typeof obj === 'object') {
+        NEVER_RESTORE.forEach(function (k) { delete obj[k]; });
+    }
+    return obj;
+}
+
 // ── applyOverrides ────────────────────────────────────────────────
 function _set(entity, ov, key) {
     if (ov[key] !== null && ov[key] !== undefined) entity[key] = ov[key];
@@ -435,6 +450,8 @@ const am7sd = {
     fillStyleDefaults,
     applyOverrides,
     buildEntity,
+    stripNeverRestore,
+    NEVER_RESTORE,
     STYLE_FIELDS,
     SD_FALLBACKS
 };
