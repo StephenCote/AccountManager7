@@ -1,5 +1,11 @@
 # Single-container Docker Compose (Service7 + Ux752) — Design & Status
 
+> **Looking for the step-by-step procedure?** See **[`dockerDevSetup.md`](dockerDevSetup.md)** — the
+> operational runbook for building and starting a fresh install (build → first boot → setup token →
+> initial setup → verify), written directly off current source. **This** file holds the design
+> rationale and history. Where the two disagree, prefer the runbook: several curl examples below omit
+> the `/AccountManagerService7` context path and 404 (audit item 4, unfixed here).
+
 **Status: verified working end-to-end** (core stack). Config/doc **accuracy audit 2026-09-01** found
 discrepancies — see "Accuracy audit" immediately below. Design body last substantively updated 2026-08-29.
 

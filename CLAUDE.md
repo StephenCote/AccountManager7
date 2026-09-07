@@ -78,7 +78,9 @@ exactly like a passing test run — but backend tests are integration tests that
 
 **Service7/Tomcat for testing: use the Docker setup, not a manually-run local Tomcat.** A verified
 working `src/docker-compose.yml` + `src/Dockerfile` packages Service7 (Tomcat) + Ux752
-behind nginx on `:8443` — see `src/aiDocs/DockerComposeDesign.md` for what's verified, the storage map
+behind nginx on `:8443` — see `src/aiDocs/dockerDevSetup.md` for the **step-by-step runbook** (build,
+first boot, setup token, initial setup, verify, reset, troubleshooting) and
+`src/aiDocs/DockerComposeDesign.md` for the design rationale, what's verified, the storage map
 (`am7-data`/`am7-certs` volumes), and known follow-ups. Any task that needs a live Service7/Ux752
 stack for testing (Playwright E2E, manual REST checks, etc.) should bring this up via
 `docker-compose up` rather than assuming/depending on an ad hoc locally-managed Tomcat instance.

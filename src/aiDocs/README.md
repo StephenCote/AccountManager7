@@ -24,6 +24,7 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 | `PageIndexIntegrationPlan.md` | PageIndex REST/chat/MCP/Ux752 integration — phased plan mirroring the vector pattern (not started, 2026-07-08) | active |
 | `SCIM.md` | SCIM 2.0 → AccountManager model mapping reference | reference |
 | `DockerComposeDesign.md` | Single-container Docker Compose (Service7 + Ux752 + nginx) — design & status; **config/doc accuracy audit 2026-09-01** (8 discrepancies logged, incl. SD_SERVER host bug) | active |
+| `dockerDevSetup.md` | **Runbook:** build & start a fresh Docker AM7 install end-to-end (build → first boot → setup token → initial setup → verify), plus day-2 ops, config map, storage map, E2E and troubleshooting. Companion to `DockerComposeDesign.md` (which holds the *why*) | active |
 
 ## Games / RPG
 

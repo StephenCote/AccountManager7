@@ -67,6 +67,20 @@ services:
       DB_USER: am7user
       DB_PASSWORD: password
 
+      # Tomcat JVM options. CATALINA_OPTS rather than JAVA_OPTS on purpose: stock
+      # catalina.sh applies CATALINA_OPTS only to start/run/debug, while JAVA_OPTS is also
+      # handed to the `stop` command, so memory/GC flags belong here (catalina.sh's own
+      # header says so). docker/setenv.sh APPENDS to JAVA_OPTS to add
+      # -Djava.security.auth.login.config, so neither variable clobbers the other -- but
+      # leave the JAAS setting to setenv.sh and keep this to runtime tuning.
+      #
+      # Without an explicit -Xmx the JVM uses ergonomics: max heap = 1/4 of the memory the
+      # CONTAINER can see, measured at ~7.8 GiB on this host. That is invisible until a
+      # large run hits it, so it is pinned here instead. Override per-invocation by setting
+      # CATALINA_OPTS in the environment (docker/entrypoint.sh does not need to export it --
+      # compose env reaches Tomcat via supervisord, verified 2026-09-07).
+      CATALINA_OPTS: ${CATALINA_OPTS:--Xms1g -Xmx8g}
+
       TASK_SERVER: ${TASK_SERVER:-https://localhost:9443/AccountManagerService7}
       SD_SERVER: ${SD_SERVER:-http://192.168.1.39:7801}
       FACE_SERVER: ${FACE_SERVER:-http://192.168.1.42:8003}
@@ -79,7 +93,19 @@ services:
       # ::1 and the TLS handshake fails). Chrome 103+ sends Origin on same-origin
       # POST requests, so 127.0.0.1:9443 must be in the allowed list or CorsFilter
       # returns 403 for all POST /rest/model/search calls.
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://localhost:9443,http://localhost:9443,https://127.0.0.1:9443,http://127.0.0.1:9443,http://localhost:8899,https://localhost:8899}
+      # The LAN-IP origins matter as much as the loopback ones: reaching the UI by IP from
+      # another machine (or from this host by IP) makes the browser send that exact Origin on
+      # every POST, and CorsFilter 403s anything unlisted BEFORE the request reaches Jersey.
+      # The symptom is login returning a null/empty response with NOTHING in the app log,
+      # while the UI and all GETs work fine -- browsers omit Origin on same-origin navigation
+      # and GET fetches, so only POSTs break. Diagnosed live 2026-09-07.
+      #
+      # This list REPLACES rather than extends when CORS_ALLOWED_ORIGINS is set in the
+      # environment, so an env override must repeat every origin it still wants. Keeping the
+      # LAN IP in the file default (not only in am7-docker-up.bat) means a plain
+      # `docker compose up -d` cannot silently drop it -- which is exactly what happened
+      # while adding CATALINA_OPTS above.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://localhost:9443,http://localhost:9443,https://127.0.0.1:9443,http://127.0.0.1:9443,http://localhost:8899,https://localhost:8899,https://192.168.1.39:9443,http://192.168.1.39:9443}
     volumes:
       # Persistent host location (see AM7_DATA_DIR above): app keystores/vault/datagen/streams
       # (/data/am7) + the self-signed TLS pair nginx and Tomcat share (/etc/am7/certs). Losing
