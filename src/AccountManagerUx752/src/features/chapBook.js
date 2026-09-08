@@ -181,6 +181,59 @@ async function renderChapBookScene(sceneObjectId, chatConfigName, sdConfig, sdPr
     };
 }
 
+// ── Per-scene prompt / analysis (prompt & analysis ONLY — neither renders an SD image) ─────────
+// The review/edit view exposes two per-page buttons that operate on a SCENE (not its source poem):
+//   1) Regenerate landscape prompt — re-derives the page's SD prompt via the LLM.
+//   2) Analyze — re-derives the page's mood from its own stanza.
+// Both deliberately avoid the poem-level POST /analyze/{poemObjectId} endpoint: a ChapBook scene keeps
+// no link back to the poem it was chunked from. Both accept an optional chatConfig NAME and both can
+// 503 when the org has no usable chat config — the thrown Error carries `e.status` so the caller can
+// surface that distinctly instead of silently no-oping.
+
+// Regenerate ONE scene's landscape (SD) prompt via the LLM — prompt ONLY, no image is produced.
+// Contract: POST /rest/olio/chap-book/scene/{sceneObjectId}/prompt/regenerate, body { chatConfig? },
+// 200 → { sdPrompt: "<new prompt>", promptLocked: false }.
+async function regenerateScenePrompt(sceneObjectId, chatConfigName) {
+    let body = {};
+    if (chatConfigName) body.chatConfig = chatConfigName;
+    let resp = await fetch(cbBase() + '/scene/' + sceneObjectId + '/prompt/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) {
+        let err = null;
+        try { err = await resp.json(); } catch (_) {}
+        let e = new Error('Regenerate prompt failed: ' + ((err && err.error) || resp.status));
+        e.status = resp.status;
+        throw e;
+    }
+    return (await resp.json()) || {};
+}
+
+// Analyze ONE scene's stanza to (re)derive its mood — analysis ONLY, no image is produced.
+// Contract: POST /rest/olio/chap-book/scene/{sceneObjectId}/analyze, body { chatConfig? },
+// 200 → { success: true, mood: "<mood>" }.
+async function analyzeScene(sceneObjectId, chatConfigName) {
+    let body = {};
+    if (chatConfigName) body.chatConfig = chatConfigName;
+    let resp = await fetch(cbBase() + '/scene/' + sceneObjectId + '/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) {
+        let err = null;
+        try { err = await resp.json(); } catch (_) {}
+        let e = new Error('Analyze scene failed: ' + ((err && err.error) || resp.status));
+        e.status = resp.status;
+        throw e;
+    }
+    return (await resp.json()) || {};
+}
+
 // Issue 7 / FIX A: resolve the DEFAULT chat config name for LLM-based landscape prompt
 // generation. The old behavior blindly returned results[0].name from an org-wide search — a
 // random USER-owned config with no owner filter and no user choice. Instead, prefer a SYSTEM
@@ -409,6 +462,19 @@ let _renderSdConfigPromise = null;
 // { name, objectId } once chosen/resolved; null until the auto-default resolves or the user picks.
 let renderChatConfigRef = null;
 let _renderChatConfigResolving = false;
+
+// ── Shared ChapBookConfig panel state ─────────────────────────────────
+// One collapsible panel is rendered at the TOP of all three views (create / review / read). It holds
+// the design-time settings (theme filter, max lines per page, fixed-page-height toggle, default chat &
+// SD config), the poem queue (moved out of the library body), and the primary actions. Expanded by
+// default so the queue and settings are immediately visible.
+let configPanelExpanded = true;
+let configSdExpanded = false;
+// The panel's DEFAULT chat config — seeds per-page Analyze / Regenerate-prompt and render. Distinct
+// from createChatConfigRef (create-dialog scoped) and renderChatConfigRef (render-dialog scoped).
+// { name, objectId } once chosen/resolved; null until the auto-default resolves or the user picks.
+let configChatConfigRef = null;
+let _configChatConfigResolving = false;
 
 // Role-check warning (Issue 9)
 let roleWarning = false;
@@ -731,6 +797,31 @@ function ensureRenderChatConfigDefault() {
             m.redraw();
         }
     }).catch(function () { _renderChatConfigResolving = false; });
+}
+
+// Resolve the shared config panel's DEFAULT chat config (contentAnalysis → generalChat), unless the
+// user already picked one. Same advisory, library-only (NO LLM call) resolution the create/render
+// dialogs use; the per-page Analyze / Regenerate-prompt buttons fall back to it.
+function ensureConfigChatConfigDefault() {
+    if (configChatConfigRef || _configChatConfigResolving) return;
+    _configChatConfigResolving = true;
+    resolveSystemChatConfig().then(function (rec) {
+        _configChatConfigResolving = false;
+        if (rec && rec.name && !configChatConfigRef) {
+            configChatConfigRef = { name: rec.name, objectId: rec.objectId };
+            m.redraw();
+        }
+    }).catch(function () { _configChatConfigResolving = false; });
+}
+
+// The chat-config NAME to send with per-page Analyze / Regenerate-prompt requests. Prefer the panel's
+// explicit/resolved default, then any render-dialog or create-dialog pick, else null (backend then
+// applies its own deterministic default). Exported for unit tests. Pure.
+function effectiveChatConfigName() {
+    return (configChatConfigRef && configChatConfigRef.name)
+        || (renderChatConfigRef && renderChatConfigRef.name)
+        || (createChatConfigRef && createChatConfigRef.name)
+        || null;
 }
 
 // Issue 8: open the pre-render SD config dialog; callback is invoked on confirm.
@@ -1185,6 +1276,452 @@ async function doDeleteSelected() {
     await loadPoems();
 }
 
+// ── Shared ChapBookConfig panel ───────────────────────────────────────
+// ONE collapsible panel (data-testid cb-config-panel; toggle cb-config-toggle) rendered at the TOP of
+// all three views (create / review / read). It carries: (1) design-time settings — theme filter, max
+// lines per page, the SINGLE fixed-page-height toggle, default chat & SD config; (2) the poem queue —
+// full table + add/import/new/remove controls moved out of the library body; (3) the primary actions —
+// Create ChapBook / Render / Export. It also hosts the create / add-poem / note-order / render dialogs
+// (fixed overlays) so those triggers work from every view. Attrs:
+//   { mode, book, onRender, rendering, onExport, exporting, canExport }
+
+// (1) design-time settings. `book` is the current review/reader book (null on the create/landing view);
+// the single working fixed-page-height toggle only renders when there is a book to bind it to.
+function renderConfigDesignSettings(book) {
+    return m('div', { class: 'space-y-3' }, [
+        m('div', { class: 'flex flex-wrap items-end gap-4' }, [
+            m('div', [
+                m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Filter poems'),
+                m('input', {
+                    type: 'text',
+                    placeholder: 'Filter by theme or title...',
+                    class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white w-56',
+                    value: themeFilter,
+                    oninput: function (e) { themeFilter = e.target.value; m.redraw(); }
+                })
+            ]),
+            m('div', [
+                m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Max lines / page'),
+                m('input', {
+                    type: 'number', min: 1, max: 32,
+                    class: 'w-24 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
+                    value: createMaxLines,
+                    oninput: function (e) { createMaxLines = parseInt(e.target.value) || 8; }
+                })
+            ]),
+            // The SINGLE fixed-page-height toggle (data-testid cb-fix-page-height). Bound to the current
+            // book via buildBookPatchBody/patchBookFixPageHeight/setBookFixPageHeight; only rendered when
+            // a book exists, so review and read each show exactly one working toggle.
+            book ? m('label', { class: 'flex items-center gap-2 text-sm dark:text-white cursor-pointer select-none pb-1' }, [
+                m('input', {
+                    type: 'checkbox',
+                    'data-testid': 'cb-fix-page-height',
+                    checked: !!book.fixPageHeight,
+                    disabled: roleWarning,
+                    onchange: function (e) { setBookFixPageHeight(book, e.target.checked); }
+                }),
+                'Fixed page height'
+            ]) : null,
+            m('div', [
+                m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Default chat config'),
+                m('div', {
+                    class: 'w-56 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white cursor-pointer flex items-center justify-between',
+                    onclick: function () {
+                        ObjectPicker.openLibrary({
+                            libraryType: 'chatConfig',
+                            title: 'Select Chat Config',
+                            onSelect: function (item) {
+                                if (item && item.name) { configChatConfigRef = { name: item.name, objectId: item.objectId }; m.redraw(); }
+                            }
+                        });
+                    }
+                }, [
+                    m('span', { class: configChatConfigRef ? '' : 'text-gray-400' },
+                        configChatConfigRef ? configChatConfigRef.name
+                            : (_configChatConfigResolving ? 'Resolving default…' : '(default — click to select)')),
+                    m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
+                ])
+            ])
+        ]),
+        m('div', { class: 'border-t border-gray-200 dark:border-gray-700 pt-2' }, [
+            m('button', {
+                class: 'flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white',
+                onclick: function () {
+                    configSdExpanded = !configSdExpanded;
+                    if (configSdExpanded) { loadRenderSdModels(); loadRenderSdLoras(); ensureRenderSdConfig(); }
+                    m.redraw();
+                }
+            }, [
+                m('span', { class: 'material-symbols-outlined', style: 'font-size:16px' }, configSdExpanded ? 'expand_less' : 'expand_more'),
+                'Default image (SD) settings'
+            ]),
+            configSdExpanded ? (renderSdConfigInst
+                ? m(SdConfigPanel, { inst: renderSdConfigInst, models: renderSdModelList, loras: renderSdLoraList, onChange: function () { m.redraw(); } })
+                : m('div', { class: 'flex items-center gap-2 text-sm text-gray-500 py-4' }, [
+                    m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
+                    'Loading SD configuration…'
+                ])) : null
+        ])
+    ]);
+}
+
+// (2) the poem queue — toolbar (add/import/new/remove) + status + selectable, sortable table with
+// per-row Analyze. Moved verbatim out of the old PoemLibrary body; the theme filter now lives in the
+// design settings above and Create ChapBook now lives in the primary actions below.
+function renderConfigPoemQueue() {
+    let list = filteredPoems();
+    let allSelected = list.length > 0 && list.every(function (p) { return selectedIds.has(p.objectId); });
+    return m('div', { class: 'border-t border-gray-200 dark:border-gray-700 pt-3' }, [
+        m('div', { class: 'flex items-center gap-2 mb-2' }, [
+            m('span', { class: 'material-symbols-outlined text-purple-400', style: 'font-size:18px' }, 'format_list_bulleted'),
+            m('h4', { class: 'text-sm font-semibold dark:text-white' }, 'Poem queue')
+        ]),
+        m('div', { class: 'flex flex-wrap items-center gap-2 mb-3' }, [
+            m('button', {
+                class: 'px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 text-sm dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600',
+                onclick: loadPoems
+            }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'refresh'), ' Refresh']),
+            m('button', {
+                class: 'px-3 py-1 rounded bg-green-600 text-white text-sm hover:bg-green-700 flex items-center gap-1 disabled:opacity-50',
+                onclick: function () { openSourcePicker('data.note'); },
+                disabled: addingPoem || roleWarning
+            }, [
+                m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, addingPoem ? 'hourglass_empty' : 'note_add'),
+                addingPoem ? ' Importing...' : ' Add from Note'
+            ]),
+            m('button', {
+                class: 'px-3 py-1 rounded bg-teal-600 text-white text-sm hover:bg-teal-700 flex items-center gap-1 disabled:opacity-50',
+                onclick: function () { openSourcePicker('data.data'); },
+                disabled: addingPoem || roleWarning
+            }, [
+                m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'description'),
+                ' Add from Data'
+            ]),
+            m('button', {
+                class: 'px-3 py-1 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 flex items-center gap-1 disabled:opacity-50',
+                onclick: function () { showAddPoemDialog = true; addPoemTitle = ''; addPoemAuthor = ''; addPoemText = ''; m.redraw(); },
+                disabled: roleWarning
+            }, [
+                m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'add'),
+                ' New Poem'
+            ]),
+            selectedIds.size > 0 ? m('button', {
+                class: 'px-3 py-1 rounded bg-gray-400 text-white text-sm hover:bg-gray-500 flex items-center gap-1',
+                title: 'Remove selected poems from queue',
+                onclick: function() { doDeleteSelected(); }
+            }, [
+                m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'playlist_remove'),
+                ' Remove from Queue (' + selectedIds.size + ')'
+            ]) : null
+        ]),
+        loading ? m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-4' }, 'Loading poems...') :
+        loadError ? m('div', { class: 'text-sm text-red-500 py-4' }, 'Error: ' + loadError) :
+        poems.length === 0 ? m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-4' }, 'No poems found.') :
+        m('div', { class: 'overflow-x-auto' },
+            m('table', { class: 'w-full text-sm' }, [
+                m('thead', m('tr', { class: 'border-b border-gray-200 dark:border-gray-700' }, [
+                    m('th', { class: 'px-3 py-2 w-8' },
+                        m('input', {
+                            type: 'checkbox',
+                            checked: allSelected,
+                            onchange: function (e) {
+                                if (e.target.checked) {
+                                    list.forEach(function (p) { selectedIds.add(p.objectId); });
+                                } else {
+                                    selectedIds = new Set();
+                                }
+                                m.redraw();
+                            }
+                        })
+                    ),
+                    m('th', { class: thClass('title'), onclick: function () { thSort('title'); m.redraw(); } },
+                        ['Title', sortIndicator('title')]),
+                    m('th', { class: thClass('author'), onclick: function () { thSort('author'); m.redraw(); } },
+                        ['Author', sortIndicator('author')]),
+                    m('th', { class: thClass('theme'), onclick: function () { thSort('theme'); m.redraw(); } },
+                        ['Theme', sortIndicator('theme')]),
+                    m('th', { class: thClass('mood'), onclick: function () { thSort('mood'); m.redraw(); } },
+                        ['Mood', sortIndicator('mood')]),
+                    m('th', { class: 'px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide' }, 'Actions')
+                ])),
+                m('tbody',
+                    list.map(function (p) {
+                        let sel = selectedIds.has(p.objectId);
+                        let analyzing = analyzingIds.has(p.objectId);
+                        return m('tr', {
+                            key: p.objectId + '-' + (sel ? '1' : '0'),
+                            class: 'border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer ' + (sel ? 'bg-purple-50 dark:bg-purple-900/20' : ''),
+                            onclick: function () {
+                                if (sel) selectedIds.delete(p.objectId);
+                                else selectedIds.add(p.objectId);
+                                m.redraw();
+                            }
+                        }, [
+                            m('td', { class: 'px-3 py-2', onclick: function (e) { e.stopPropagation(); } },
+                                m('input', {
+                                    type: 'checkbox',
+                                    checked: sel,
+                                    onchange: function () {
+                                        if (sel) selectedIds.delete(p.objectId);
+                                        else selectedIds.add(p.objectId);
+                                        m.redraw();
+                                    }
+                                })
+                            ),
+                            m('td', { class: 'px-3 py-2 font-medium dark:text-white' }, p.title || '—'),
+                            m('td', { class: 'px-3 py-2 text-gray-600 dark:text-gray-400' }, p.author || '—'),
+                            m('td', { class: 'px-3 py-2 text-gray-600 dark:text-gray-400' }, p.theme || '—'),
+                            m('td', { class: 'px-3 py-2 text-gray-600 dark:text-gray-400' }, p.mood || '—'),
+                            m('td', { class: 'px-3 py-2', onclick: function (e) { e.stopPropagation(); } },
+                                m('button', {
+                                    class: 'px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50',
+                                    disabled: analyzing,
+                                    onclick: async function () {
+                                        analyzingIds.add(p.objectId);
+                                        m.redraw();
+                                        try {
+                                            await analyzePoem(p.objectId);
+                                            page.toast('success', 'Analysis complete: ' + (p.title || p.objectId));
+                                            await loadPoems();
+                                        } catch (e) {
+                                            page.toast('error', 'Analyze failed: ' + (e.message || ''));
+                                        }
+                                        analyzingIds.delete(p.objectId);
+                                        m.redraw();
+                                    }
+                                }, analyzing ? 'Analyzing...' : 'Analyze')
+                            )
+                        ]);
+                    })
+                )
+            ])
+        )
+    ]);
+}
+
+// (3) primary actions — Create ChapBook (when a selection exists) / Render / Export. The Render button
+// keeps its bg-orange-600 class (an E2E hook) and moves off the per-view toolbars into the panel.
+function renderConfigActions(attrs) {
+    let btns = [];
+    if (selectedIds.size > 0) {
+        btns.push(m('button', {
+            class: 'px-3 py-1.5 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-50 flex items-center gap-1',
+            disabled: roleWarning,
+            onclick: openCreateDialog
+        }, [
+            m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'auto_stories'),
+            ' Create ChapBook (' + selectedIds.size + ')'
+        ]));
+    }
+    if (attrs.onRender) {
+        btns.push(m('button', {
+            class: 'px-3 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 disabled:opacity-50 flex items-center gap-1',
+            disabled: attrs.rendering || roleWarning,
+            onclick: attrs.onRender
+        }, [
+            m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, attrs.rendering ? 'hourglass_empty' : 'image'),
+            attrs.rendering ? (' ' + renderProgressLabel()) : ' Render'
+        ]));
+    }
+    if (attrs.onExport) {
+        btns.push(m('button', {
+            class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 flex items-center gap-1',
+            disabled: attrs.exporting || !attrs.canExport,
+            onclick: attrs.onExport
+        }, [
+            m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'download'),
+            attrs.exporting ? ' Exporting…' : ' Export'
+        ]));
+    }
+    if (!btns.length) return null;
+    return m('div', { class: 'flex flex-wrap items-center gap-2 border-t border-gray-200 dark:border-gray-700 pt-3' }, btns);
+}
+
+// Create ChapBook dialog (extracted so the panel can host it in every view). NON-dismissible by
+// backdrop click — closes only via X / Cancel or a successful create.
+function renderCreateDialog() {
+    if (!showCreateDialog) return null;
+    return m('div', {
+        class: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50'
+    },
+        m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-md mx-4' }, [
+            m('div', { class: 'flex items-center justify-between mb-4' }, [
+                m('h3', { class: 'text-lg font-semibold dark:text-white' }, 'Create ChapBook'),
+                m('button', { class: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200', onclick: closeCreateDialog },
+                    m('span', { class: 'material-symbols-outlined' }, 'close'))
+            ]),
+            m('div', { class: 'space-y-3' }, [
+                m('div', [
+                    m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Title'),
+                    m('input', {
+                        type: 'text',
+                        class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
+                        value: createTitle,
+                        oninput: function (e) {
+                            createTitle = e.target.value;
+                            createSlug = slugify(createTitle);
+                        }
+                    })
+                ]),
+                m('div', [
+                    m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Slug (URL-safe ID)'),
+                    m('input', {
+                        type: 'text',
+                        class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
+                        value: createSlug,
+                        oninput: function (e) { createSlug = e.target.value; }
+                    })
+                ]),
+                m('div', [
+                    m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' },
+                        'Max Lines per Page'),
+                    m('input', {
+                        type: 'number',
+                        min: 1, max: 32,
+                        class: 'w-24 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
+                        value: createMaxLines,
+                        oninput: function (e) { createMaxLines = parseInt(e.target.value) || 8; }
+                    })
+                ]),
+                m('div', [
+                    m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Chat Config'),
+                    m('div', {
+                        class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white cursor-pointer flex items-center justify-between',
+                        onclick: function () {
+                            ObjectPicker.openLibrary({
+                                libraryType: 'chatConfig',
+                                title: 'Select Chat Config',
+                                onSelect: function (item) {
+                                    if (item && item.name) {
+                                        createChatConfigRef = { name: item.name, objectId: item.objectId };
+                                        m.redraw();
+                                    }
+                                }
+                            });
+                        }
+                    }, [
+                        m('span', { class: createChatConfigRef ? '' : 'text-gray-400' },
+                            createChatConfigRef ? createChatConfigRef.name
+                                : (_createChatConfigResolving ? 'Resolving default…' : '(default — click to select)')),
+                        m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
+                    ])
+                ]),
+                m('div', { class: 'text-xs text-gray-500 dark:text-gray-400' },
+                    selectedIds.size + ' poem(s) selected')
+            ]),
+            m('div', { class: 'flex justify-end gap-2 mt-4' }, [
+                m('button', {
+                    class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
+                    onclick: closeCreateDialog
+                }, 'Cancel'),
+                m('button', {
+                    class: 'px-4 py-1.5 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-50',
+                    disabled: creating || !createSlug || !createTitle,
+                    onclick: doCreateChapBook
+                }, creating ? 'Creating...' : 'Create')
+            ])
+        ])
+    );
+}
+
+// Add Poem (direct text entry) dialog (extracted so the panel can host it in every view).
+function renderAddPoemDialog() {
+    if (!showAddPoemDialog) return null;
+    return m('div', {
+        class: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50',
+        onclick: function (e) { if (e.target === e.currentTarget) { showAddPoemDialog = false; m.redraw(); } }
+    },
+        m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-lg mx-4' }, [
+            m('div', { class: 'flex items-center justify-between mb-4' }, [
+                m('h3', { class: 'text-lg font-semibold dark:text-white' }, 'New Poem'),
+                m('button', { class: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200', onclick: function () { showAddPoemDialog = false; m.redraw(); } },
+                    m('span', { class: 'material-symbols-outlined' }, 'close'))
+            ]),
+            m('div', { class: 'space-y-3' }, [
+                m('div', [
+                    m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Title'),
+                    m('input', {
+                        type: 'text',
+                        class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
+                        value: addPoemTitle,
+                        oninput: function (e) { addPoemTitle = e.target.value; }
+                    })
+                ]),
+                m('div', [
+                    m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Author (optional)'),
+                    m('input', {
+                        type: 'text',
+                        class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
+                        value: addPoemAuthor,
+                        oninput: function (e) { addPoemAuthor = e.target.value; }
+                    })
+                ]),
+                m('div', [
+                    m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Poem text'),
+                    m('textarea', {
+                        rows: 10,
+                        class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white font-mono',
+                        value: addPoemText,
+                        oninput: function (e) { addPoemText = e.target.value; }
+                    })
+                ])
+            ]),
+            m('div', { class: 'flex justify-end gap-2 mt-4' }, [
+                m('button', {
+                    class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
+                    onclick: function () { showAddPoemDialog = false; m.redraw(); }
+                }, 'Cancel'),
+                m('button', {
+                    class: 'px-4 py-1.5 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 disabled:opacity-50',
+                    disabled: addingPoem || !addPoemTitle.trim() || !addPoemText.trim(),
+                    onclick: doAddPoem
+                }, addingPoem ? 'Adding...' : 'Add Poem')
+            ])
+        ])
+    );
+}
+
+const ChapBookConfig = {
+    oninit: function () {
+        // Ensure the queue + SD catalog/config + default chat config are loaded regardless of which
+        // view mounted the panel. Guard loadPoems so a review/read remount doesn't clobber a fresh list.
+        if (!poems.length && !loading) loadPoems();
+        loadRenderSdModels();
+        loadRenderSdLoras();
+        ensureRenderSdConfig();
+        ensureConfigChatConfigDefault();
+    },
+    view: function (vnode) {
+        let attrs = vnode.attrs || {};
+        let book = attrs.book || null;
+        return m('div', {
+            'data-testid': 'cb-config-panel',
+            class: 'mb-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40'
+        }, [
+            m('button', {
+                'data-testid': 'cb-config-toggle',
+                class: 'w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-semibold dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800/50 rounded-t-lg',
+                onclick: function () { configPanelExpanded = !configPanelExpanded; m.redraw(); }
+            }, [
+                m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, configPanelExpanded ? 'expand_more' : 'chevron_right'),
+                m('span', { class: 'material-symbols-outlined text-purple-500', style: 'font-size:18px' }, 'tune'),
+                'ChapBook configuration',
+                selectedIds.size > 0 ? m('span', { class: 'ml-2 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs' }, selectedIds.size + ' selected') : null
+            ]),
+            configPanelExpanded ? m('div', { class: 'p-3 space-y-4' }, [
+                renderConfigDesignSettings(book),
+                renderConfigPoemQueue(),
+                renderConfigActions(attrs)
+            ]) : null,
+            // Dialogs (fixed overlays) — hosted here so their triggers work from every view.
+            renderNoteOrderDialog(),
+            renderCreateDialog(),
+            renderAddPoemDialog(),
+            renderRenderDialog()
+        ]);
+    }
+};
+
 // ── PoemLibrary component ─────────────────────────────────────────────
 
 const PoemLibrary = {
@@ -1217,9 +1754,6 @@ const PoemLibrary = {
         loadMyBooks();
     },
     view: function () {
-        let list = filteredPoems();
-        let allSelected = list.length > 0 && list.every(function (p) { return selectedIds.has(p.objectId); });
-
         return m('div', { class: 'p-4 max-w-5xl' }, [
             // Issue 9: role warning banner
             roleWarning ? m('div', { class: 'mb-4 p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
@@ -1233,154 +1767,9 @@ const PoemLibrary = {
                 m('h2', { class: 'text-xl font-semibold dark:text-white' }, 'ChapBook — Poem Library')
             ]),
 
-            // Filter row
-            m('div', { class: 'flex flex-wrap items-center gap-3 mb-4' }, [
-                m('input', {
-                    type: 'text',
-                    placeholder: 'Filter by theme or title...',
-                    class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white w-56',
-                    value: themeFilter,
-                    oninput: function (e) { themeFilter = e.target.value; m.redraw(); }
-                }),
-                m('button', {
-                    class: 'px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 text-sm dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600',
-                    onclick: loadPoems
-                }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'refresh'), ' Refresh']),
-                m('button', {
-                    class: 'px-3 py-1 rounded bg-green-600 text-white text-sm hover:bg-green-700 flex items-center gap-1 disabled:opacity-50',
-                    onclick: function () { openSourcePicker('data.note'); },
-                    disabled: addingPoem || roleWarning
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, addingPoem ? 'hourglass_empty' : 'note_add'),
-                    addingPoem ? ' Importing...' : ' Add from Note'
-                ]),
-                m('button', {
-                    class: 'px-3 py-1 rounded bg-teal-600 text-white text-sm hover:bg-teal-700 flex items-center gap-1 disabled:opacity-50',
-                    onclick: function () { openSourcePicker('data.data'); },
-                    disabled: addingPoem || roleWarning
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'description'),
-                    ' Add from Data'
-                ]),
-                m('button', {
-                    class: 'px-3 py-1 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 flex items-center gap-1 disabled:opacity-50',
-                    onclick: function () { showAddPoemDialog = true; addPoemTitle = ''; addPoemAuthor = ''; addPoemText = ''; m.redraw(); },
-                    disabled: roleWarning
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'add'),
-                    ' New Poem'
-                ]),
-                selectedIds.size > 0 ? m('button', {
-                    class: 'px-3 py-1 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-50',
-                    onclick: openCreateDialog,
-                    disabled: roleWarning
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'auto_stories'),
-                    ' Create ChapBook (' + selectedIds.size + ')'
-                ]) : null,
-                selectedIds.size > 0 ? m('button', {
-                    class: 'px-3 py-1 rounded bg-gray-400 text-white text-sm hover:bg-gray-500 flex items-center gap-1',
-                    title: 'Remove selected poems from queue',
-                    onclick: function() { doDeleteSelected(); }
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'playlist_remove'),
-                    ' Remove from Queue (' + selectedIds.size + ')'
-                ]) : null
-            ]),
-
-            // Status
-            loading ? m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-4' }, 'Loading poems...') :
-            loadError ? m('div', { class: 'text-sm text-red-500 py-4' }, 'Error: ' + loadError) :
-            poems.length === 0 ? m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-4' }, 'No poems found.') :
-
-            // Table
-            m('div', { class: 'overflow-x-auto' },
-                m('table', { class: 'w-full text-sm' }, [
-                    m('thead', m('tr', { class: 'border-b border-gray-200 dark:border-gray-700' }, [
-                        m('th', { class: 'px-3 py-2 w-8' },
-                            m('input', {
-                                type: 'checkbox',
-                                checked: allSelected,
-                                onchange: function (e) {
-                                    if (e.target.checked) {
-                                        list.forEach(function (p) { selectedIds.add(p.objectId); });
-                                    } else {
-                                        selectedIds = new Set();
-                                    }
-                                    m.redraw();
-                                }
-                            })
-                        ),
-                        m('th', { class: thClass('title'), onclick: function () { thSort('title'); m.redraw(); } },
-                            ['Title', sortIndicator('title')]),
-                        m('th', { class: thClass('author'), onclick: function () { thSort('author'); m.redraw(); } },
-                            ['Author', sortIndicator('author')]),
-                        m('th', { class: thClass('theme'), onclick: function () { thSort('theme'); m.redraw(); } },
-                            ['Theme', sortIndicator('theme')]),
-                        m('th', { class: thClass('mood'), onclick: function () { thSort('mood'); m.redraw(); } },
-                            ['Mood', sortIndicator('mood')]),
-                        m('th', { class: 'px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide' }, 'Actions')
-                    ])),
-                    m('tbody',
-                        list.map(function (p) {
-                            let sel = selectedIds.has(p.objectId);
-                            let analyzing = analyzingIds.has(p.objectId);
-                            return m('tr', {
-                                // Issue 3: key includes selection state so Mithril recreates the row
-                                // (and its checkbox) when Clear is clicked — avoids stale checked state
-                                // on reused DOM nodes.
-                                key: p.objectId + '-' + (sel ? '1' : '0'),
-                                class: 'border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer ' + (sel ? 'bg-purple-50 dark:bg-purple-900/20' : ''),
-                                onclick: function () {
-                                    if (sel) selectedIds.delete(p.objectId);
-                                    else selectedIds.add(p.objectId);
-                                    m.redraw();
-                                }
-                            }, [
-                                m('td', { class: 'px-3 py-2', onclick: function (e) { e.stopPropagation(); } },
-                                    m('input', {
-                                        type: 'checkbox',
-                                        checked: sel,
-                                        onchange: function () {
-                                            if (sel) selectedIds.delete(p.objectId);
-                                            else selectedIds.add(p.objectId);
-                                            m.redraw();
-                                        }
-                                    })
-                                ),
-                                m('td', { class: 'px-3 py-2 font-medium dark:text-white' }, p.title || '—'),
-                                m('td', { class: 'px-3 py-2 text-gray-600 dark:text-gray-400' }, p.author || '—'),
-                                m('td', { class: 'px-3 py-2 text-gray-600 dark:text-gray-400' }, p.theme || '—'),
-                                m('td', { class: 'px-3 py-2 text-gray-600 dark:text-gray-400' }, p.mood || '—'),
-                                m('td', { class: 'px-3 py-2', onclick: function (e) { e.stopPropagation(); } },
-                                    m('button', {
-                                        class: 'px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50',
-                                        disabled: analyzing,
-                                        onclick: async function () {
-                                            analyzingIds.add(p.objectId);
-                                            m.redraw();
-                                            try {
-                                                await analyzePoem(p.objectId);
-                                                page.toast('success', 'Analysis complete: ' + (p.title || p.objectId));
-                                                await loadPoems();
-                                            } catch (e) {
-                                                page.toast('error', 'Analyze failed: ' + (e.message || ''));
-                                            }
-                                            analyzingIds.delete(p.objectId);
-                                            m.redraw();
-                                        }
-                                    }, analyzing ? 'Analyzing...' : 'Analyze')
-                                )
-                            ]);
-                        })
-                    )
-                ])
-            ),
-
-            // Note order dialog — shown after multi-select pick, before import.
-            renderNoteOrderDialog(),
-
-            // ObjectPicker renders itself as a portal — no inline dialog needed here.
+            // Shared config panel — design settings, poem queue, primary actions, and dialogs
+            // (create / add-poem / note-order / render) all live here now, at the top of every view.
+            m(ChapBookConfig, { mode: 'create', book: null }),
 
             // Last created book — render + review buttons available when a book was just created
             lastCreatedBook ? m('div', { class: 'mt-4 p-3 rounded bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 flex items-center gap-3' }, [
@@ -1445,155 +1834,8 @@ const PoemLibrary = {
                         ]);
                     })
                 )
-            ]),
-
-            // Create ChapBook dialog — inline overlay following the Dialog pattern.
-            // Thread 3: NON-dismissible by backdrop/background click or mouse-out (a click that
-            // begins inside a field and ends on the backdrop must not discard an in-progress create).
-            // Mirrors the PictureBook wizard's `closable:false` intent — closes only via the explicit
-            // X / Cancel buttons or a successful create; no backdrop onclick dismissal.
-            showCreateDialog ? m('div', {
-                class: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50'
-            },
-                m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-md mx-4' }, [
-                    m('div', { class: 'flex items-center justify-between mb-4' }, [
-                        m('h3', { class: 'text-lg font-semibold dark:text-white' }, 'Create ChapBook'),
-                        m('button', { class: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200', onclick: closeCreateDialog },
-                            m('span', { class: 'material-symbols-outlined' }, 'close'))
-                    ]),
-                    m('div', { class: 'space-y-3' }, [
-                        m('div', [
-                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Title'),
-                            m('input', {
-                                type: 'text',
-                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
-                                value: createTitle,
-                                oninput: function (e) {
-                                    createTitle = e.target.value;
-                                    createSlug = slugify(createTitle);
-                                }
-                            })
-                        ]),
-                        m('div', [
-                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Slug (URL-safe ID)'),
-                            m('input', {
-                                type: 'text',
-                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
-                                value: createSlug,
-                                oninput: function (e) { createSlug = e.target.value; }
-                            })
-                        ]),
-                        m('div', [
-                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' },
-                                'Max Lines per Page'),
-                            m('input', {
-                                type: 'number',
-                                min: 1, max: 32,
-                                class: 'w-24 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
-                                value: createMaxLines,
-                                oninput: function (e) { createMaxLines = parseInt(e.target.value) || 8; }
-                            })
-                        ]),
-                        // Issue 2b: choose the chat config BEFORE the create request is sent — the
-                        // backend contacts the LLM server-side only after the POST, so this is the
-                        // user's chance to pick the config that will drive theme analysis. Same library
-                        // picker the render dialog uses. Auto-resolved to a system default; overridable.
-                        m('div', [
-                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Chat Config'),
-                            m('div', {
-                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white cursor-pointer flex items-center justify-between',
-                                onclick: function () {
-                                    ObjectPicker.openLibrary({
-                                        libraryType: 'chatConfig',
-                                        title: 'Select Chat Config',
-                                        onSelect: function (item) {
-                                            if (item && item.name) {
-                                                createChatConfigRef = { name: item.name, objectId: item.objectId };
-                                                m.redraw();
-                                            }
-                                        }
-                                    });
-                                }
-                            }, [
-                                m('span', { class: createChatConfigRef ? '' : 'text-gray-400' },
-                                    createChatConfigRef ? createChatConfigRef.name
-                                        : (_createChatConfigResolving ? 'Resolving default…' : '(default — click to select)')),
-                                m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
-                            ])
-                        ]),
-                        m('div', { class: 'text-xs text-gray-500 dark:text-gray-400' },
-                            selectedIds.size + ' poem(s) selected')
-                    ]),
-                    m('div', { class: 'flex justify-end gap-2 mt-4' }, [
-                        m('button', {
-                            class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
-                            onclick: closeCreateDialog
-                        }, 'Cancel'),
-                        m('button', {
-                            class: 'px-4 py-1.5 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-50',
-                            disabled: creating || !createSlug || !createTitle,
-                            onclick: doCreateChapBook
-                        }, creating ? 'Creating...' : 'Create')
-                    ])
-                ])
-            ) : null,
-
-            // Add Poem (direct text entry) dialog
-            showAddPoemDialog ? m('div', {
-                class: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50',
-                onclick: function (e) { if (e.target === e.currentTarget) { showAddPoemDialog = false; m.redraw(); } }
-            },
-                m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-lg mx-4' }, [
-                    m('div', { class: 'flex items-center justify-between mb-4' }, [
-                        m('h3', { class: 'text-lg font-semibold dark:text-white' }, 'New Poem'),
-                        m('button', { class: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200', onclick: function () { showAddPoemDialog = false; m.redraw(); } },
-                            m('span', { class: 'material-symbols-outlined' }, 'close'))
-                    ]),
-                    m('div', { class: 'space-y-3' }, [
-                        m('div', [
-                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Title'),
-                            m('input', {
-                                type: 'text',
-                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
-                                value: addPoemTitle,
-                                oninput: function (e) { addPoemTitle = e.target.value; }
-                            })
-                        ]),
-                        m('div', [
-                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Author (optional)'),
-                            m('input', {
-                                type: 'text',
-                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
-                                value: addPoemAuthor,
-                                oninput: function (e) { addPoemAuthor = e.target.value; }
-                            })
-                        ]),
-                        m('div', [
-                            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Poem text'),
-                            m('textarea', {
-                                rows: 10,
-                                class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white font-mono',
-                                value: addPoemText,
-                                oninput: function (e) { addPoemText = e.target.value; }
-                            })
-                        ])
-                    ]),
-                    m('div', { class: 'flex justify-end gap-2 mt-4' }, [
-                        m('button', {
-                            class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
-                            onclick: function () { showAddPoemDialog = false; m.redraw(); }
-                        }, 'Cancel'),
-                        m('button', {
-                            class: 'px-4 py-1.5 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 disabled:opacity-50',
-                            disabled: addingPoem || !addPoemTitle.trim() || !addPoemText.trim(),
-                            onclick: doAddPoem
-                        }, addingPoem ? 'Adding...' : 'Add Poem')
-                    ])
-                ])
-            ) : null,
-
-            // Issue 8: pre-render SD config dialog
-            renderRenderDialog()
+            ])
+            // Create/add-poem/note-order/render dialogs are hosted by ChapBookConfig above.
         ]);
     }
 };
@@ -1832,23 +2074,8 @@ function renderReaderActionsLeft(nav) {
             m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'edit_note'),
             ' Review'
         ]),
-        // Fixed page height (book-level print clamp) — surfaced here too because the reader is where
-        // renderChapBookPage actually applies the clamp, so toggling gives immediate visual feedback.
-        // Same PATCH-and-apply path as the review toolbar (operates on readerBook).
-        readerBook ? m('label', {
-            class: 'flex items-center gap-1.5 px-2 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none',
-            title: 'Clamp each page to a fixed height (overflowing poems are truncated) for consistent print pages'
-        }, [
-            m('input', {
-                type: 'checkbox',
-                'data-testid': 'cb-fix-page-height',
-                class: 'cursor-pointer',
-                checked: !!readerBook.fixPageHeight,
-                disabled: busy || roleWarning,
-                onchange: function (e) { setBookFixPageHeight(readerBook, e.target.checked); }
-            }),
-            'Fixed page height'
-        ]) : null,
+        // Fixed page height now lives (once) in the shared ChapBookConfig panel above the reader,
+        // bound to readerBook — renderReaderPage still re-clamps immediately when it's toggled there.
         // Issue 2c: pick the chat config used for the Re-analyze pass.
         readerPoemIds.length > 0 ? m('button', {
             class: 'px-3 py-1.5 rounded border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-1 disabled:opacity-50',
@@ -1885,16 +2112,9 @@ function renderReaderActionsLeft(nav) {
 }
 
 function renderReaderActionsRight(nav) {
-    if (nav.fullscreen) return null;
-    let busy = readerAnalyzing || readerRendering;
-    return m('button', {
-        class: 'px-3 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1 disabled:opacity-50',
-        disabled: busy || roleWarning,
-        onclick: renderReaderBook
-    }, [
-        m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, readerRendering ? 'hourglass_empty' : 'image'),
-        readerRendering ? (' ' + renderProgressLabel()) : ' Render'
-    ]);
+    // The Render action now lives (once) in the shared ChapBookConfig panel above the reader; the
+    // shell's right actions slot is intentionally empty here so there is exactly one Render button.
+    return null;
 }
 
 // Self-contained-HTML export page section for ChapBook: poem stanza over the landscape image.
@@ -1957,6 +2177,16 @@ const ChapBookReader = {
                     'You need the AccountUsers role to use ChapBook features.'
                 ])) : null,
 
+            // Shared collapsible config panel (same one shown on create/review) — hosts the single
+            // fixPageHeight toggle, design defaults, the poem queue, and the primary actions including
+            // Render. Bound to readerBook so its fixPageHeight clamp gives immediate visual feedback.
+            m(ChapBookConfig, {
+                mode: 'read',
+                book: readerBook,
+                onRender: renderReaderBook,
+                rendering: readerRendering
+            }),
+
             // Shared page-flip reader (same component PictureBook uses).
             m(ReaderShell, {
                 state: cbReader,
@@ -1986,10 +2216,8 @@ const ChapBookReader = {
                 exportNameFallback: 'chapbook',
                 exportNameSuffix: '-chapbook.html',
                 exportToast: 'ChapBook exported'
-            }),
-
-            // Issue 8: pre-render SD config dialog (fixed-position modal — placement is irrelevant)
-            renderRenderDialog()
+            })
+            // Issue 8: the pre-render SD config dialog is rendered by the ChapBookConfig panel above.
         ]);
     }
 };
@@ -2148,9 +2376,11 @@ async function deleteChapBookScene(sceneObjectId) {
 }
 
 // Merge the NEXT scene up into this one: the backend sets poemStanza = this + "\n" + next, marks
-// imageStale=true (the existing image no longer matches the combined stanza), clears this scene's
-// sdPrompt/promptLocked, deletes the next scene, and reindexes — all server-side and atomic. Replaces
-// the old client-side patch-then-delete, which could leave a half-merged book if the delete failed.
+// imageStale=true (the existing image no longer matches the combined stanza), and deletes the next
+// scene then reindexes — all server-side and atomic. The absorbing scene's sdPrompt/promptLocked are
+// PRESERVED (only imageStale is flagged), so a reviewed prompt survives a merge and the user re-renders
+// when ready. Replaces the old client-side patch-then-delete, which could leave a half-merged book if
+// the delete failed.
 async function mergeChapBookSceneUp(sceneObjectId) {
     let resp = await fetch(cbBase() + '/scene/' + sceneObjectId + '/merge-up', {
         method: 'POST',
@@ -2217,7 +2447,7 @@ async function loadSceneOverrides(groupId) {
             type: 'olio.pb.scene',
             cache: false,
             request: ['id', 'objectId', 'name', 'configOverride', 'sdPrompt', 'imageObjectId', 'promptLocked',
-                'pageFont', 'pageBgColor', 'pageBgOpacity', 'pageTextAlign', 'pageTextColor', 'imageStale'],
+                'pageFont', 'pageBgColor', 'pageBgOpacity', 'pageTextAlign', 'pageTextColor', 'imageStale', 'mood'],
             fields: [
                 { name: 'groupId', comparator: 'EQUALS', value: Number(groupId) },
                 { name: 'organizationId', comparator: 'EQUALS', value: Number(orgId) }
@@ -2242,7 +2472,8 @@ async function loadSceneOverrides(groupId) {
                 pageBgOpacity: (r.pageBgOpacity != null ? r.pageBgOpacity : null),
                 pageTextAlign: r.pageTextAlign || '',
                 pageTextColor: r.pageTextColor || '',
-                imageStale: !!r.imageStale
+                imageStale: !!r.imageStale,
+                mood: r.mood || ''
             };
         }
     });
@@ -2343,6 +2574,9 @@ async function loadReviewBook(bookObjectId) {
                 sdPrompt: pg.sdPrompt || '',
                 imageObjectId: pg.imageObjectId || pg.dataObjectId || null,
                 imageStale: !!pg.imageStale,
+                // Per-page mood (bookPages does not project it; backfilled from the override batch-read
+                // below and refreshed by the per-page Analyze button).
+                mood: pg.mood || '',
                 // Per-card dirty set: field names the user has edited since the last save. The single
                 // per-card Save button (and book-level Save all) act on this; empty ⇒ nothing to save.
                 _dirty: new Set(),
@@ -2386,6 +2620,7 @@ async function loadReviewBook(bookObjectId) {
                         s.pageTextAlign = row.pageTextAlign || s.pageTextAlign;
                         s.pageTextColor = row.pageTextColor || s.pageTextColor;
                         s.imageStale = row.imageStale;
+                        s.mood = row.mood || s.mood;
                     }
                 });
             } catch (_) {}
@@ -2490,6 +2725,80 @@ function doSaveScene(idx) {
     saveSceneRecord(scene, false);
 }
 
+// Per-page "Save prompt" (cb-save-prompt) — persist JUST this card's landscape prompt via the same
+// verbatim PUT the card's single Save uses for sdPrompt, without committing the card's other dirty
+// fields. Blank clears + unlocks (mirrors saveSceneRecord's prompt branch). Clears only the 'sdPrompt'
+// dirty flag so any other pending edits still show as unsaved.
+async function doSavePagePrompt(idx) {
+    let scene = reviewScenes[idx];
+    if (!scene) return;
+    scene._saving = true;
+    m.redraw();
+    try {
+        let val = scene.sdPrompt || '';
+        await putSceneLandscapePrompt(scene.objectId, val);
+        scene.sdPrompt = val.trim() ? val : '';
+        scene.promptLocked = !!val.trim();
+        if (scene._dirty) scene._dirty.delete('sdPrompt');
+        page.toast('success', 'Prompt saved');
+    } catch (e) {
+        page.toast('error', 'Save prompt failed: ' + (e.message || ''));
+    }
+    scene._saving = false;
+    m.redraw();
+}
+
+// Per-page "Regen prompt" (cb-page-regen-prompt) — re-derive THIS scene's landscape (SD) prompt via
+// the LLM. Prompt-only: no SD image is produced. Uses the shared per-item spinner set (analyzingIds,
+// keyed by scene objectId — scene UUIDs never collide with poem UUIDs). On success replaces the card's
+// in-memory sdPrompt from the response (and clears any pending sdPrompt dirty flag, since the persisted
+// value is now authoritative). A 503 (no org chat config) is surfaced as a warning toast, not a silent
+// no-op. Deliberately NOT the poem-level /analyze — a scene keeps no link to its source poem.
+async function doRegeneratePagePrompt(idx) {
+    let scene = reviewScenes[idx];
+    if (!scene || !scene.objectId) return;
+    let oid = scene.objectId;
+    if (analyzingIds.has(oid)) return;
+    analyzingIds.add(oid);
+    m.redraw();
+    try {
+        let res = await regenerateScenePrompt(oid, effectiveChatConfigName());
+        if (res && typeof res.sdPrompt === 'string') {
+            scene.sdPrompt = res.sdPrompt;
+            scene.promptLocked = !!res.promptLocked;
+            if (scene._dirty) scene._dirty.delete('sdPrompt');
+        }
+        page.toast('success', 'Prompt regenerated');
+    } catch (e) {
+        if (e && e.status === 503) page.toast('warning', 'Regenerate prompt unavailable: no chat config for this organization');
+        else page.toast('error', 'Regenerate prompt failed: ' + ((e && e.message) || ''));
+    }
+    analyzingIds.delete(oid);
+    m.redraw();
+}
+
+// Per-page "Analyze" (cb-page-analyze) — re-derive THIS scene's mood from its own stanza via the LLM.
+// Analysis-only: no SD image is produced. Same per-item spinner set + 503 handling as the regen-prompt
+// button above; on success refreshes the card's in-memory mood from the response.
+async function doAnalyzePage(idx) {
+    let scene = reviewScenes[idx];
+    if (!scene || !scene.objectId) return;
+    let oid = scene.objectId;
+    if (analyzingIds.has(oid)) return;
+    analyzingIds.add(oid);
+    m.redraw();
+    try {
+        let res = await analyzeScene(oid, effectiveChatConfigName());
+        if (res && typeof res.mood === 'string') scene.mood = res.mood;
+        page.toast('success', 'Page analyzed');
+    } catch (e) {
+        if (e && e.status === 503) page.toast('warning', 'Analyze unavailable: no chat config for this organization');
+        else page.toast('error', 'Analyze failed: ' + ((e && e.message) || ''));
+    }
+    analyzingIds.delete(oid);
+    m.redraw();
+}
+
 // Book-level Save all (D1): commit every dirty card in order, then one aggregate toast.
 async function doSaveAllScenes() {
     let dirtyScenes = reviewScenes.filter(sceneIsDirty);
@@ -2567,9 +2876,10 @@ async function doSplitScene(idx) {
 }
 
 // D3: merge folds the NEXT scene's stanza into this one server-side (atomic: concatenates poemStanza,
-// sets imageStale=true, clears this scene's sdPrompt/promptLocked, deletes next, reindexes). No
-// client-side stanza concat or delete — one POST, then reload so sceneIndex/imageStale reflect the
-// server's reindex. The merged image is NOT auto-regenerated; the card surfaces imageStale instead.
+// sets imageStale=true, deletes next, reindexes). The absorbing scene's sdPrompt/promptLocked are
+// PRESERVED — only imageStale is flagged. No client-side stanza concat or delete — one POST, then
+// reload so sceneIndex/imageStale reflect the server's reindex. The merged image is NOT
+// auto-regenerated; the card surfaces imageStale instead.
 async function doMergeScene(idx) {
     let scene = reviewScenes[idx];
     let next = reviewScenes[idx + 1];
@@ -2828,6 +3138,38 @@ function renderSceneCard(scene, idx) {
                 'Page ' + (idx + 1) + ' of ' + reviewScenes.length),
             scene._saving ? m('span', { class: 'ml-2 text-xs text-blue-500' }, 'Saving...') : null,
             m('div', { class: 'ml-auto flex items-center gap-2' }, [
+                // Current mood (re-derived by the per-page Analyze button). Informational badge only.
+                scene.mood ? m('span', {
+                    class: 'text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1',
+                    title: 'Mood derived from this page\'s stanza'
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'mood'),
+                    scene.mood
+                ]) : null,
+                // Per-page LLM actions — prompt & analysis ONLY (neither renders an SD image). Both key
+                // the shared analyzingIds spinner set by SCENE objectId, so clicking one disables both.
+                m('button', {
+                    class: 'cb-page-regen-prompt px-2 py-1 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs hover:bg-indigo-200 disabled:opacity-40 flex items-center gap-1',
+                    'data-testid': 'cb-page-regen-prompt',
+                    title: 'Re-derive this page\'s landscape prompt via the LLM (prompt only — no image is rendered)',
+                    disabled: scene._saving || roleWarning || analyzingIds.has(oid),
+                    onclick: function () { doRegeneratePagePrompt(idx); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' },
+                        analyzingIds.has(oid) ? 'hourglass_empty' : 'auto_fix_high'),
+                    ' Regen prompt'
+                ]),
+                m('button', {
+                    class: 'cb-page-analyze px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs hover:bg-blue-200 disabled:opacity-40 flex items-center gap-1',
+                    'data-testid': 'cb-page-analyze',
+                    title: 'Re-derive this page\'s mood from its own stanza via the LLM (analysis only — no image)',
+                    disabled: scene._saving || roleWarning || analyzingIds.has(oid),
+                    onclick: function () { doAnalyzePage(idx); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' },
+                        analyzingIds.has(oid) ? 'hourglass_empty' : 'psychology'),
+                    analyzingIds.has(oid) ? ' Analyzing...' : ' Analyze'
+                ]),
                 // D3: after a merge-up the backend flags imageStale — the existing image no longer
                 // matches the (now longer) stanza. Informational badge only; the user re-renders via the
                 // per-page button below (no auto-regen).
@@ -3032,6 +3374,18 @@ function renderSceneCard(scene, idx) {
                 alt: 'Page ' + (idx + 1) + ' image'
             }) : null,
             m('div', { class: 'flex items-center gap-2 mt-1' }, [
+                // Save JUST this page's landscape prompt (verbatim PUT; blank clears). Separate from the
+                // card's single Save so the prompt can be committed on its own after editing/regenerating.
+                m('button', {
+                    class: 'cb-save-prompt px-2 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 flex items-center gap-1',
+                    'data-scene-oid': oid,
+                    title: 'Save this page\'s landscape prompt (blank clears it)',
+                    disabled: scene._saving || roleWarning,
+                    onclick: function () { doSavePagePrompt(idx); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'save'),
+                    ' Save prompt'
+                ]),
                 m('button', {
                     class: 'cb-rerender-page px-2 py-0.5 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1',
                     'data-scene-oid': oid,
@@ -3138,28 +3492,21 @@ const ChapBookReview = {
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'auto_stories'),
                     ' Read'
-                ]),
-                m('button', {
-                    class: 'px-3 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1 disabled:opacity-50',
-                    disabled: reviewRendering || reviewLoading || roleWarning,
-                    onclick: renderReviewBook
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' },
-                        reviewRendering ? 'hourglass_empty' : 'image'),
-                    reviewRendering ? (' ' + renderProgressLabel()) : ' Render'
-                ]),
-                // Export the book as a self-contained HTML file (deferred Stage-1 item).
-                m('button', {
-                    class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-1 disabled:opacity-50',
-                    title: 'Export as self-contained HTML',
-                    disabled: reviewExporting || reviewLoading || !reviewScenes.length,
-                    onclick: exportReviewBook
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' },
-                        reviewExporting ? 'hourglass_empty' : 'download'),
-                    reviewExporting ? ' Exporting...' : ' Export'
                 ])
+                // Render and Export now live (once) in the shared ChapBookConfig panel below.
             ]),
+            // Shared collapsible config panel (same one shown on create/read) — hosts the single
+            // fixPageHeight toggle, design defaults, the poem queue, and the primary actions (Render,
+            // Export). Bound to reviewBook so its fixPageHeight toggle patches the book being reviewed.
+            m(ChapBookConfig, {
+                mode: 'review',
+                book: reviewBook,
+                onRender: renderReviewBook,
+                rendering: reviewRendering,
+                onExport: exportReviewBook,
+                exporting: reviewExporting,
+                canExport: reviewScenes.length > 0
+            }),
             m('p', { class: 'text-xs text-gray-400 dark:text-gray-500 mb-4' },
                 'Edit a page, then Save it — or use Save all. Book-style controls below apply to every page. ' +
                 'Use Render to generate images. Merge folds the next page in and flags its image outdated. ' +
@@ -3235,25 +3582,8 @@ const ChapBookReview = {
                             }, m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, alignIcons[align]));
                         })
                     ]),
-                    // Fixed page height (book-level print clamp). When ON, each rendered page is
-                    // clamped to a fixed height with overflow hidden — an overflowing poem is visually
-                    // truncated so the author can split it — keeping print pages uniform. PATCHed to
-                    // olio.pb.book and applied to the in-memory book so the Reader/Export re-render
-                    // clamped immediately. (The review cards are editors, not the clamped preview.)
-                    m('label', {
-                        class: 'flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none',
-                        title: 'Clamp each rendered page to a fixed height (overflowing poems are truncated) for consistent print pages'
-                    }, [
-                        m('input', {
-                            type: 'checkbox',
-                            'data-testid': 'cb-fix-page-height',
-                            class: 'cursor-pointer',
-                            checked: !!(reviewBook && reviewBook.fixPageHeight),
-                            disabled: roleWarning || !reviewBook,
-                            onchange: function (e) { setBookFixPageHeight(reviewBook, e.target.checked); }
-                        }),
-                        'Fixed page height (clamp for print)'
-                    ]),
+                    // Fixed page height (book-level print clamp) now lives (once) in the shared
+                    // ChapBookConfig panel above, bound to reviewBook — same setBookFixPageHeight path.
                     // Save all (book action)
                     m('button', {
                         class: 'ml-auto px-3 py-1.5 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-40 flex items-center gap-1',
@@ -3305,9 +3635,8 @@ const ChapBookReview = {
                             reviewScenes.map(function (scene, idx) {
                                 return renderSceneCard(scene, idx);
                             })
-                          ),
-            // Issue 8: pre-render SD config dialog (same as PoemLibrary and ChapBookReader)
-            renderRenderDialog()
+                          )
+            // Issue 8: the pre-render SD config dialog is rendered by the ChapBookConfig panel above.
         ]);
     }
 };
@@ -3340,5 +3669,5 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody };
+export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, effectiveChatConfigName };
 export default ChapBookFeature;

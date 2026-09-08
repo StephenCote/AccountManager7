@@ -22,6 +22,11 @@ import {
     POEM_1, POEM_2
 } from './helpers/chapbook.js';
 
+// sceneByObjectId already projects sdPrompt + promptLocked (helpers/chapbook.js). ChapBook create
+// (no org chatConfig) stores a non-empty "landscape, <title>, <mood> atmosphere..." create-time
+// prompt on every scene (ChapBookUtil.createChapBookScene), so the survivor has a real prompt to
+// preserve across a merge — the whole point of the preserve-prompt fix.
+
 // Count of scene cards in the review UI == number of "Remove this page" buttons (every card has one).
 async function cardCount(page) {
     return await page.locator('button[title="Remove this page"]').count();
@@ -53,6 +58,15 @@ test.describe('ChapBook Review — merge & delete', () => {
         expect(oldStanza0, 'scene0 has stanza text').toBeTruthy();
         expect(oldStanza1, 'scene1 has stanza text').toBeTruthy();
 
+        // Capture the survivor's landscape prompt BEFORE the merge. The preserve-prompt fix
+        // (ChapBookUtil.mergeSceneUp) must leave sdPrompt + promptLocked untouched; only poemStanza
+        // and imageStale change. A create-time prompt is non-empty, so this is a real preservation test.
+        const survivorBefore = await sceneByObjectId(request, survivorOid);
+        expect(survivorBefore, 'survivor scene readable before merge').toBeTruthy();
+        const oldSdPrompt = survivorBefore.sdPrompt;
+        const oldPromptLocked = !!survivorBefore.promptLocked;
+        expect(oldSdPrompt, 'survivor has a non-empty landscape prompt to preserve').toBeTruthy();
+
         // --- drive the real review UI ---
         await loginAsSharedUser(page);
         await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
@@ -70,6 +84,11 @@ test.describe('ChapBook Review — merge & delete', () => {
         expect(survivor, 'survivor scene still exists').toBeTruthy();
         expect(survivor.poemStanza).toBe(oldStanza0 + '\n' + oldStanza1);
         expect(survivor.imageStale, 'merge flags the survivor imageStale').toBe(true);
+
+        // Preserve-prompt fix: the survivor's landscape prompt + lock flag must be UNCHANGED by the
+        // merge (previously merge cleared them). Only stanza + imageStale should have moved.
+        expect(survivor.sdPrompt, 'merge PRESERVES the survivor sdPrompt (not cleared/blanked)').toBe(oldSdPrompt);
+        expect(!!survivor.promptLocked, 'merge PRESERVES the survivor promptLocked flag').toBe(oldPromptLocked);
 
         // Folded scene is gone
         const folded = await sceneByObjectId(request, foldedOid);

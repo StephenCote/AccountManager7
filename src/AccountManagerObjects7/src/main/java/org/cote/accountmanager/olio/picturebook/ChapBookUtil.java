@@ -384,17 +384,14 @@ public class ChapBookUtil {
 			return;
 		}
 		try {
-			Map<String, String> vars = new LinkedHashMap<>();
-			vars.put("poemText", poemText);
-			String llmResult = PictureBookUtil.callLlmForChapBook(user, chatConfig, "chapBook.poem-analysis", vars);
-			if (llmResult == null || llmResult.isBlank()) {
+			Map<String, String> analysis = analyzeThemeMoodKeywords(user, chatConfig, poemText);
+			if (analysis == null) {
 				logger.warn("analyzePoemTheme: LLM returned no result");
 				return;
 			}
-			Map<String, Object> parsed = PictureBookUtil.parseLlmJsonObjectForChapBook(llmResult, "poem-analysis", new ArrayList<>());
-			String theme = guardNull(parsed.get("theme"));
-			String mood = guardNull(parsed.get("mood"));
-			String keywords = guardNull(parsed.get("keywords"));
+			String theme = analysis.get("theme");
+			String mood = analysis.get("mood");
+			String keywords = analysis.get("keywords");
 
 			String poemObjectId = poem.get(FieldNames.FIELD_OBJECT_ID);
 			long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
@@ -439,6 +436,97 @@ public class ChapBookUtil {
 		String s = val.toString().trim();
 		if (s.isEmpty() || "null".equalsIgnoreCase(s) || "n/a".equalsIgnoreCase(s) || "unknown".equalsIgnoreCase(s)) return null;
 		return s;
+	}
+
+	/**
+	 * Shared LLM theme/mood/keywords analysis step used by BOTH {@link #analyzePoemTheme} (whole poem) and
+	 * {@link #analyzeSceneTheme} (one scene's stanza): run the {@code chapBook.poem-analysis} template on a
+	 * block of text and return the parsed {@code {theme, mood, keywords}} map.
+	 * <p>
+	 * Each value is passed through {@link #guardNull} so a literal LLM {@code "null"}/{@code "n/a"}/
+	 * {@code "unknown"} becomes a real Java null rather than leaking downstream. An individual key may be
+	 * null when the LLM omitted/declined it. Returns {@code null} (the whole map) only when the LLM
+	 * produced no result at all — callers treat that as "no analysis available".
+	 *
+	 * @param user       the acting user
+	 * @param chatConfig the resolved {@code olio.llm.chatConfig} (must be non-null)
+	 * @param text       the text to analyze (poem body or a single stanza)
+	 * @return a map with keys {@code theme}, {@code mood}, {@code keywords} (values possibly null), or
+	 *         null when the LLM returned nothing usable
+	 */
+	private static Map<String, String> analyzeThemeMoodKeywords(BaseRecord user, BaseRecord chatConfig, String text) {
+		Map<String, String> vars = new LinkedHashMap<>();
+		vars.put("poemText", text);
+		String llmResult = PictureBookUtil.callLlmForChapBook(user, chatConfig, "chapBook.poem-analysis", vars);
+		if (llmResult == null || llmResult.isBlank()) {
+			return null;
+		}
+		Map<String, Object> parsed = PictureBookUtil.parseLlmJsonObjectForChapBook(llmResult, "poem-analysis", new ArrayList<>());
+		Map<String, String> out = new LinkedHashMap<>();
+		out.put("theme", guardNull(parsed.get("theme")));
+		out.put("mood", guardNull(parsed.get("mood")));
+		out.put("keywords", guardNull(parsed.get("keywords")));
+		return out;
+	}
+
+	/**
+	 * Analyze ONE ChapBook scene's {@code poemStanza} via the same LLM theme/mood analysis
+	 * {@link #analyzePoemTheme} runs, then PATCH the result onto the {@code olio.pb.scene} record.
+	 * <p>
+	 * The scene model has a {@code mood} field but no {@code theme}/{@code keywords} fields, so only the
+	 * analyzed {@code mood} is persisted (per the endpoint contract — no new scene fields are added). The
+	 * scene is read with {@code poemStanza} + {@code mood} + identity + group projected (via
+	 * {@link PbBookUtil#readScene}, whose {@code sceneRequest} already includes {@code poemStanza} — the
+	 * default {@code olio.pb.scene} query fields omit it, the same lesson as the poem {@code text}
+	 * projection in {@link #analyzePoemTheme}).
+	 * <p>
+	 * Persistence is PATCH-shaped and authorized AS THE ACTING USER: identity + the validated {@code name}
+	 * + the changed {@code mood} field only (via {@link PbGraphUtil#patchOf}), through {@code AccessPoint
+	 * .update}. The update result is asserted, never discarded.
+	 *
+	 * @param user          the acting user (must have WRITE access to the scene)
+	 * @param sceneObjectId objectId of the {@code olio.pb.scene} to analyze
+	 * @param chatConfig    the resolved {@code olio.llm.chatConfig} (the transport layer resolves the org
+	 *                      default and returns 503 when none exists, mirroring {@link #analyzePoemTheme})
+	 * @return the persisted mood string
+	 * @throws PictureBookException 400 for missing args or a scene with no stanza; 404 when the scene is
+	 *         not readable; 503 when {@code chatConfig} is null; 500 when the LLM produced no usable mood
+	 *         or the patch failed
+	 */
+	public static String analyzeSceneTheme(BaseRecord user, String sceneObjectId, BaseRecord chatConfig) {
+		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
+			throw new PictureBookException(400, "user and sceneObjectId are required");
+		}
+		if (chatConfig == null) {
+			throw new PictureBookException(503, "No chatConfig is configured for this organization");
+		}
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		BaseRecord scene = PbBookUtil.readScene(user, sceneObjectId, orgId);
+		if (scene == null) {
+			throw new PictureBookException(404, "Scene not found: " + sceneObjectId);
+		}
+		String stanza = scene.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
+		if (stanza == null || stanza.isBlank()) {
+			throw new PictureBookException(400, "Scene has no poemStanza to analyze: " + sceneObjectId);
+		}
+		Map<String, String> analysis = analyzeThemeMoodKeywords(user, chatConfig, stanza);
+		String mood = (analysis != null) ? analysis.get("mood") : null;
+		if (mood == null || mood.isBlank()) {
+			throw new PictureBookException(500,
+				"The analysis LLM did not produce a usable mood for scene " + sceneObjectId);
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
+			OlioFieldNames.FIELD_PB_MOOD);
+		try {
+			patch.set(OlioFieldNames.FIELD_PB_MOOD, mood);
+		}
+		catch (FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble an analyze patch: " + e.getMessage());
+		}
+		if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to persist analyzed mood on scene " + sceneObjectId);
+		}
+		return mood;
 	}
 
 	// ─────────────────────────────── poem creation ───────────────────────────────
@@ -698,40 +786,16 @@ public class ChapBookUtil {
 			throw new PictureBookException(500, "Failed to create ChapBook scene at index " + sceneIndex);
 		}
 		// The LLM-generated landscape prompt (null when the LLM was unavailable and the fallback ran).
-		String llmPrompt = null;
+		// The stanza+mood → landscape-prompt LLM step is factored into generateLandscapePrompt, shared
+		// verbatim with regenerateSceneLandscapePrompt so both paths produce identical LLM prompts.
+		String llmPrompt = generateLandscapePrompt(user, chatConfig, stanzaText, mood, poemTitle, priorContext);
 		// Patch poemStanza, mood, title, and sdPrompt onto the scene.
 		// Use RecordUtil.updateRecord (bypass PBAC) — consistent with how createChapBook patches bookType.
 		try {
-			// Use LLM to generate a landscape SD prompt from the stanza when chatConfig is available.
-			// This mirrors the pattern renderChapBook uses at render time (chapBook.landscape-prompt
-			// template with stanzaText/mood/compositionContext/priorContext vars), so the stored sdPrompt
-			// is an LLM-generated landscape description rather than a raw stanza excerpt.
-			// Falls back to the stanza-excerpt placeholder when the LLM is not configured or returns blank.
-			String sdPromptVal = null;
-			if (chatConfig != null && stanzaText != null && !stanzaText.isBlank()) {
-				Map<String, String> vars = new LinkedHashMap<>();
-				vars.put("stanzaText", stanzaText);
-				vars.put("mood", mood != null ? mood : "poetic");
-				vars.put("compositionContext", poemTitle != null ? poemTitle : "poetic scene");
-				// priorContext must always be non-blank or the UNSUBSTITUTED_PLACEHOLDER guard in
-				// callLlmInternal would refuse the call; assemblePriorContext returns "none" when empty.
-				vars.put("priorContext", NarrativeUtil.isMeaningful(priorContext) ? priorContext.trim() : "none");
-				String llmResult = callLandscapePrompt(user, chatConfig, vars);
-				// Store the LLM result only when it is a GENUINE prompt (isGenuineStoredPrompt): a bare
-				// LLM sentinel like "none"/"null" or an accidentally "landscape, "-shaped reply must NOT be
-				// persisted as a real prompt, or the render path would skip the scene while the client's
-				// isSceneUnprompted (which only recognises blank / "landscape, ") would fail to flag it for
-				// regeneration. Falling through to the fallback stores the "landscape, " discriminator both
-				// layers agree on.
-				if (isGenuineStoredPrompt(llmResult)) {
-					sdPromptVal = llmResult.trim();
-					llmPrompt = sdPromptVal;
-					logger.info("createChapBookScene: LLM landscape prompt for scene {}: {}", sceneIndex,
-						sdPromptVal.length() > 80 ? sdPromptVal.substring(0, 80) + "…" : sdPromptVal);
-				} else {
-					logger.warn("createChapBookScene: LLM returned no usable landscape prompt for scene {} — using landscape fallback", sceneIndex);
-				}
-			}
+			// generateLandscapePrompt returns the GENUINE LLM prompt, or null when the LLM was
+			// unavailable/blank or produced a non-genuine ("landscape, " fallback shape / sentinel) reply.
+			// A null keeps this scene on the stanza-excerpt-free fallback below.
+			String sdPromptVal = llmPrompt;
 			if (sdPromptVal == null || sdPromptVal.isBlank()) {
 				// No-LLM fallback. NEVER embed raw stanza text: the old excerpt form produced the exact
 				// reported bad prompt "landscape, <poem text>, poetic atmosphere, painterly, soft light",
@@ -818,6 +882,53 @@ public class ChapBookUtil {
 	 * recovers the common single-blank case before the fallback ever fires. It does NOT guarantee a
 	 * non-blank result — a double blank still falls back — so callers must keep their fallback path.
 	 */
+	/**
+	 * Shared landscape-prompt LLM step used by BOTH {@link #createChapBookScene} (at book creation) and
+	 * {@link #regenerateSceneLandscapePrompt} (on explicit user request): assemble the
+	 * {@code chapBook.landscape-prompt} template variables from a stanza + mood (+ optional composition and
+	 * prior-scene context) and return the GENUINE LLM landscape prompt.
+	 * <p>
+	 * Returns {@code null} when the LLM was not usable — no {@code chatConfig}, a blank/missing stanza, an
+	 * unavailable/blank LLM response, or a non-genuine reply (a bare sentinel like {@code "none"}/{@code "null"}
+	 * or the {@code "landscape, "} no-LLM fallback shape, per {@link #isGenuineStoredPrompt}). Callers decide
+	 * what a null means: {@code createChapBookScene} substitutes its stanza-title fallback;
+	 * {@code regenerateSceneLandscapePrompt} treats it as a hard failure (nothing to persist).
+	 *
+	 * @param user               the acting user
+	 * @param chatConfig         the resolved chatConfig; null returns null (no LLM step)
+	 * @param stanzaText         the stanza to base the landscape imagery on; blank/null returns null
+	 * @param mood               the scene mood; defaulted to {@code "poetic"} when null
+	 * @param compositionContext composition hint (typically the poem/scene title); defaulted when null
+	 * @param priorContext       earlier-scene continuity; the {@code "none"} sentinel is used when blank
+	 * @return the genuine LLM landscape prompt, or null
+	 */
+	private static String generateLandscapePrompt(BaseRecord user, BaseRecord chatConfig,
+			String stanzaText, String mood, String compositionContext, String priorContext) {
+		if (chatConfig == null || stanzaText == null || stanzaText.isBlank()) {
+			return null;
+		}
+		Map<String, String> vars = new LinkedHashMap<>();
+		vars.put("stanzaText", stanzaText);
+		vars.put("mood", mood != null ? mood : "poetic");
+		vars.put("compositionContext", compositionContext != null ? compositionContext : "poetic scene");
+		// priorContext must always be non-blank or the UNSUBSTITUTED_PLACEHOLDER guard in callLlmInternal
+		// would refuse the call; substitute the "none" sentinel when there is nothing to carry.
+		vars.put("priorContext", NarrativeUtil.isMeaningful(priorContext) ? priorContext.trim() : "none");
+		String llmResult = callLandscapePrompt(user, chatConfig, vars);
+		// Accept only a GENUINE prompt: a bare LLM sentinel like "none"/"null" or an accidentally
+		// "landscape, "-shaped reply must NOT be treated as a real prompt (see isGenuineStoredPrompt), or
+		// the render path would skip the scene while the client's isSceneUnprompted (which only recognises
+		// blank / "landscape, ") would fail to flag it for regeneration.
+		if (isGenuineStoredPrompt(llmResult)) {
+			String prompt = llmResult.trim();
+			logger.info("generateLandscapePrompt: LLM landscape prompt: {}",
+				prompt.length() > 80 ? prompt.substring(0, 80) + "…" : prompt);
+			return prompt;
+		}
+		logger.warn("generateLandscapePrompt: LLM returned no usable landscape prompt — caller will fall back");
+		return null;
+	}
+
 	private static String callLandscapePrompt(BaseRecord user, BaseRecord chatConfig, Map<String, String> vars) {
 		return callLandscapePrompt(user, chatConfig, vars, new boolean[1]);
 	}
@@ -1077,11 +1188,12 @@ public class ChapBookUtil {
 	 * Fold the NEXT scene (by {@code sceneIndex} within the same book) into scene {@code sceneObjectId},
 	 * then delete the next scene and reindex the survivors so {@code sceneIndex} is a clean {@code 0..n-1}.
 	 * <p>
-	 * The absorbing scene's {@code poemStanza} becomes {@code thisStanza + "\n" + nextStanza}, its
-	 * {@code imageStale} is set true (the rendered image no longer matches the merged text), and its
-	 * {@code sdPrompt}/{@code promptLocked} are cleared (the human/LLM prompt for the old, shorter stanza
-	 * is no longer valid and must be regenerated). All of that lands in ONE authorized PATCH carrying
-	 * identity + the validated {@code name} + exactly those four changed fields.
+	 * The absorbing scene's {@code poemStanza} becomes {@code thisStanza + "\n" + nextStanza} and its
+	 * {@code imageStale} is set true (the rendered image no longer matches the longer merged text). The
+	 * absorbing scene's {@code sdPrompt} and {@code promptLocked} are deliberately PRESERVED: a
+	 * hand-edited or LOCKED prompt must survive a merge, so the user can re-render with their own prompt,
+	 * or the LLM regenerates from the merged stanza when the prompt is unlocked. All of that lands in ONE
+	 * authorized PATCH carrying identity + the validated {@code name} + exactly those two changed fields.
 	 * <p>
 	 * <b>Every write is performed AS THE ACTING USER through {@code AccessPoint}</b> — scenes are
 	 * user-owned + group-scoped (created via {@code AccessPoint.create(user, ...)} and reordered via
@@ -1131,14 +1243,15 @@ public class ChapBookUtil {
 		String nextStanza = next.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
 		String merged = (thisStanza != null ? thisStanza : "") + "\n" + (nextStanza != null ? nextStanza : "");
 
+		// PRESERVE the absorbing scene's sdPrompt/promptLocked — a hand-edited or LOCKED prompt must
+		// survive a merge. Only poemStanza and imageStale change: the merged text is longer, so the
+		// rendered image is stale, but the prompt stays so the user can re-render with their own prompt
+		// (or the LLM regenerates from the merged stanza when the prompt is unlocked).
 		BaseRecord patch = PbGraphUtil.patchOf(absorbing, OlioModelNames.MODEL_PB_SCENE,
-			OlioFieldNames.FIELD_CB_POEM_STANZA, OlioFieldNames.FIELD_PB_IMAGE_STALE,
-			OlioFieldNames.FIELD_CB_SD_PROMPT, OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
+			OlioFieldNames.FIELD_CB_POEM_STANZA, OlioFieldNames.FIELD_PB_IMAGE_STALE);
 		try {
 			patch.set(OlioFieldNames.FIELD_CB_POEM_STANZA, merged);
 			patch.set(OlioFieldNames.FIELD_PB_IMAGE_STALE, Boolean.TRUE);
-			patch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, null);          // stanza changed → old prompt invalid
-			patch.set(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.FALSE);
 		}
 		catch (FieldException | ValueException | ModelNotFoundException e) {
 			throw new PictureBookException(500, "Failed to assemble a merge patch: " + e.getMessage());
@@ -1803,6 +1916,76 @@ public class ChapBookUtil {
 			return false;
 		}
 		return true;
+	}
+
+	/**
+	 * Regenerate ONE ChapBook scene's landscape SD prompt from its own {@code poemStanza} + {@code mood}
+	 * via the {@code chapBook.landscape-prompt} LLM (prompt-only — NO SD image is rendered), persist the
+	 * fresh prompt, and set {@code promptLocked=false}.
+	 * <p>
+	 * This is an EXPLICIT user request, so it deliberately OVERRIDES any existing prompt — including a
+	 * previously LOCKED (human-edited) one: the user asked for a regeneration. The freshly generated value
+	 * is LLM-authored, not a human edit, so {@code promptLocked} is left {@code false} (the render path is
+	 * then free to regenerate it again, and a later human edit re-locks it via
+	 * {@link #setSceneLandscapePrompt}).
+	 * <p>
+	 * Uses the shared {@link #generateLandscapePrompt} LLM step (the same one {@link #createChapBookScene}
+	 * uses), so a regenerated prompt is identical in shape to a create-time prompt. There is no create-time
+	 * stanza-title fallback here: an explicit regenerate that cannot produce a GENUINE LLM prompt is a hard
+	 * failure (500) rather than silently downgrading to the fallback shape.
+	 * <p>
+	 * Persistence is PATCH-shaped and authorized AS THE ACTING USER: identity + the validated {@code name}
+	 * + the changed {@code sdPrompt}/{@code promptLocked} fields only (via {@link PbGraphUtil#patchOf}),
+	 * through {@code AccessPoint.update}. The update result is asserted, never discarded.
+	 *
+	 * @param user          the acting user (must have WRITE access to the scene)
+	 * @param sceneObjectId objectId of the {@code olio.pb.scene} to regenerate a prompt for
+	 * @param chatConfig    the resolved {@code olio.llm.chatConfig} (the transport layer resolves the org
+	 *                      default and returns 503 when none exists, mirroring {@link #analyzePoemTheme})
+	 * @return the new landscape prompt that was persisted
+	 * @throws PictureBookException 400 for missing args or a scene with no stanza; 404 when the scene is
+	 *         not readable; 503 when {@code chatConfig} is null; 500 when the LLM produced no usable prompt
+	 *         or the patch failed
+	 */
+	public static String regenerateSceneLandscapePrompt(BaseRecord user, String sceneObjectId, BaseRecord chatConfig) {
+		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
+			throw new PictureBookException(400, "user and sceneObjectId are required");
+		}
+		if (chatConfig == null) {
+			throw new PictureBookException(503, "No chatConfig is configured for this organization");
+		}
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		BaseRecord scene = PbBookUtil.readScene(user, sceneObjectId, orgId);
+		if (scene == null) {
+			throw new PictureBookException(404, "Scene not found: " + sceneObjectId);
+		}
+		String stanza = scene.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
+		if (stanza == null || stanza.isBlank()) {
+			throw new PictureBookException(400, "Scene has no poemStanza to regenerate a prompt from: " + sceneObjectId);
+		}
+		String mood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
+		String title = scene.get(OlioFieldNames.FIELD_PB_TITLE);
+		// priorContext is not threaded on an explicit single-scene regenerate — the "none" sentinel keeps
+		// the template's {priorContext} placeholder substituted.
+		String newPrompt = generateLandscapePrompt(user, chatConfig, stanza, mood, title, "none");
+		if (newPrompt == null || newPrompt.isBlank()) {
+			throw new PictureBookException(500,
+				"The landscape-prompt LLM did not produce a usable prompt for scene " + sceneObjectId);
+		}
+		// Persist the fresh LLM prompt and UNLOCK it (LLM-authored, overrides any prior locked human prompt).
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
+			OlioFieldNames.FIELD_CB_SD_PROMPT, OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
+		try {
+			patch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, newPrompt);
+			patch.set(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.FALSE);
+		}
+		catch (FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble a regenerate patch: " + e.getMessage());
+		}
+		if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to persist regenerated sdPrompt on scene " + sceneObjectId);
+		}
+		return newPrompt;
 	}
 
 	/**

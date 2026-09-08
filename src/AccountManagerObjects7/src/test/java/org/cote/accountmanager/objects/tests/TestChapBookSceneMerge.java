@@ -1,7 +1,6 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -39,9 +38,9 @@ import org.junit.Test;
  * owner and checks the persisted result. This test adds the coverage the E2E cannot reach:
  * <ol>
  *   <li><b>The full merge contract at the Objects7 layer</b>, including two fields the E2E does NOT
- *       assert — that the survivor's {@code sdPrompt} is actually CLEARED and its {@code promptLocked}
- *       reset to false (the merged, longer stanza invalidates the old prompt, so it must be
- *       regenerated). The E2E only checks {@code poemStanza} and {@code imageStale}.</li>
+ *       assert — that the survivor's {@code sdPrompt} and {@code promptLocked} are PRESERVED unchanged
+ *       (a hand-edited or LOCKED prompt must survive a merge; only the longer stanza and the resulting
+ *       {@code imageStale} flag change). The E2E only checks {@code poemStanza} and {@code imageStale}.</li>
  *   <li><b>Scene-level AUTHORIZATION.</b> A same-org non-owner who can READ a ChapBook (a targeted
  *       Read grant, no Write/Delete) must be DENIED both {@code mergeSceneUp} and
  *       {@code deleteSceneAndReindex}, and the denial must be NON-DESTRUCTIVE (no scene folded, none
@@ -158,11 +157,12 @@ public class TestChapBookSceneMerge extends BaseTest {
 	}
 
 	/**
-	 * Happy path — merge folds the next stanza into this one, flags the survivor imageStale, CLEARS the
-	 * survivor's sdPrompt and promptLocked, deletes the folded scene, and reindexes the survivors 0..n-2.
+	 * Happy path — merge folds the next stanza into this one, flags the survivor imageStale, PRESERVES the
+	 * survivor's sdPrompt and promptLocked unchanged, deletes the folded scene, and reindexes the
+	 * survivors 0..n-2.
 	 */
 	@Test
-	public void mergeSceneUp_foldsNext_clearsPrompt_reindexes() throws Exception {
+	public void mergeSceneUp_foldsNext_preservesPrompt_reindexes() throws Exception {
 		BaseRecord owner = user(OWNER_NAME);
 		long orgId = ((Number) owner.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 		BaseRecord book = seedBook(owner, "merge");
@@ -179,16 +179,18 @@ public class TestChapBookSceneMerge extends BaseTest {
 		String stanza1 = folded.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
 		assertNotNull("scene0 has stanza text", stanza0);
 		assertNotNull("scene1 has stanza text", stanza1);
-		// chatConfig was null → createChapBookScene stores a non-blank stanza-excerpt fallback sdPrompt,
-		// so "cleared after merge" is a real, observable transition (not vacuously null to begin with).
+		// chatConfig was null → createChapBookScene stores a non-blank landscape fallback sdPrompt,
+		// so "preserved after merge" is a real, observable assertion (the prompt is non-blank to begin
+		// with, and must remain exactly that value after the merge).
 		String prePrompt = absorbing.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		Boolean preLocked = absorbing.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
 		logger.info("scene0 pre-merge sdPrompt present={} ", (prePrompt != null && !prePrompt.isBlank()));
 
 		String survivorOid = ChapBookUtil.mergeSceneUp(owner, scene0Oid);
 		assertEquals("mergeSceneUp returns the surviving (absorbing) scene objectId", scene0Oid, survivorOid);
 		CacheUtil.clearCache();
 
-		// Survivor: merged stanza, imageStale=true, sdPrompt cleared, promptLocked reset to false.
+		// Survivor: merged stanza, imageStale=true, sdPrompt PRESERVED, promptLocked PRESERVED.
 		BaseRecord survivor = PbBookUtil.readScene(owner, scene0Oid, orgId);
 		assertNotNull("survivor scene still exists", survivor);
 		assertEquals("survivor stanza is thisStanza + \\n + nextStanza",
@@ -196,11 +198,11 @@ public class TestChapBookSceneMerge extends BaseTest {
 		assertEquals("merge flags the survivor imageStale=true",
 			Boolean.TRUE, survivor.get(OlioFieldNames.FIELD_PB_IMAGE_STALE));
 		String postPrompt = survivor.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
-		assertTrue("merge must CLEAR the survivor's sdPrompt (old prompt no longer matches the merged "
-			+ "stanza); got sdPrompt=" + postPrompt, postPrompt == null || postPrompt.isBlank());
+		assertEquals("merge must PRESERVE the survivor's sdPrompt unchanged (a hand-edited or LOCKED "
+			+ "prompt must survive the merge); got sdPrompt=" + postPrompt, prePrompt, postPrompt);
 		Boolean postLocked = survivor.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
-		assertFalse("merge must reset the survivor's promptLocked to false; got " + postLocked,
-			Boolean.TRUE.equals(postLocked));
+		assertEquals("merge must PRESERVE the survivor's promptLocked unchanged; got " + postLocked,
+			preLocked, postLocked);
 
 		// Folded scene is gone.
 		assertNull("folded scene[1] was deleted", PbBookUtil.readScene(owner, scene1Oid, orgId));

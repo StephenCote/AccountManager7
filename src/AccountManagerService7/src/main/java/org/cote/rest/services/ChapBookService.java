@@ -425,6 +425,110 @@ public class ChapBookService {
         }
     }
 
+    /**
+     * POST /scene/{sceneObjectId}/prompt/regenerate
+     * Regenerate the landscape SD prompt for ONE ChapBook scene from its own {@code poemStanza} +
+     * {@code mood} via the {@code chapBook.landscape-prompt} LLM (prompt-only — NO SD image is rendered).
+     * The new prompt is persisted and {@code promptLocked} is set false; an explicit regenerate OVERRIDES
+     * an existing locked (human-edited) prompt because the user asked for it.
+     * Body: { chatConfig: "configName" } — chatConfig is OPTIONAL; when absent/unresolvable the org
+     * default is used ({@link ChapBookUtil#resolveDefaultChatConfig}), and a 503 is returned if none.
+     * <p>
+     * Transport only: parse the optional chatConfig, resolve it (named → org default), and delegate to
+     * {@link ChapBookUtil#regenerateSceneLandscapePrompt}. All LLM/persistence logic lives in Objects7.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/prompt/regenerate")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response regenerateScenePrompt(@PathParam("sceneObjectId") String sceneObjectId,
+            String json, @Context HttpServletRequest request) {
+        OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+        if (sceneObjectId == null || sceneObjectId.isBlank()) return errorResponse(400, "sceneObjectId is required");
+
+        String chatConfigName = null;
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            chatConfigName = params.get("chatConfig");
+        }
+        BaseRecord chatConfig = null;
+        if (chatConfigName != null && !chatConfigName.isBlank()) {
+            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
+        }
+        if (chatConfig == null) {
+            chatConfig = ChapBookUtil.resolveDefaultChatConfig(user);
+        }
+        if (chatConfig == null) {
+            return errorResponse(503, "No chatConfig is configured for this organization");
+        }
+
+        try {
+            String sdPrompt = ChapBookUtil.regenerateSceneLandscapePrompt(user, sceneObjectId, chatConfig);
+            // JSON-encode the prompt string (may contain quotes/newlines) via Jackson; promptLocked is
+            // always false on a regenerate (the value is LLM-authored, not a locked human edit).
+            String sdPromptJson = new ObjectMapper().writeValueAsString(sdPrompt);
+            return Response.status(200).entity("{\"sdPrompt\":" + sdPromptJson + ",\"promptLocked\":false}").build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
+        } catch (Exception e) {
+            logger.error("regenerateScenePrompt failed for " + sceneObjectId + ": " + e.getMessage(), e);
+            return errorResponse(500, "Failed to regenerate scene prompt: " + e.getMessage());
+        }
+    }
+
+    /**
+     * POST /scene/{sceneObjectId}/analyze
+     * Run the same LLM theme/mood analysis {@code /analyze/{poemObjectId}} runs, but on THIS scene's
+     * {@code poemStanza}, and persist the analyzed {@code mood} onto the scene (the scene model has a
+     * {@code mood} field but no theme/keywords fields, so only mood is persisted — no new scene fields).
+     * Body: { chatConfig: "configName" } — chatConfig OPTIONAL, org-default fallback, 503 if none.
+     * <p>
+     * Transport only: parse the optional chatConfig, resolve it (named → org default), and delegate to
+     * {@link ChapBookUtil#analyzeSceneTheme}. All LLM/analysis/persistence logic lives in Objects7.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/analyze")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response analyzeSceneTheme(@PathParam("sceneObjectId") String sceneObjectId,
+            String json, @Context HttpServletRequest request) {
+        OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+        if (sceneObjectId == null || sceneObjectId.isBlank()) return errorResponse(400, "sceneObjectId is required");
+
+        String chatConfigName = null;
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            chatConfigName = params.get("chatConfig");
+        }
+        BaseRecord chatConfig = null;
+        if (chatConfigName != null && !chatConfigName.isBlank()) {
+            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
+        }
+        if (chatConfig == null) {
+            chatConfig = ChapBookUtil.resolveDefaultChatConfig(user);
+        }
+        if (chatConfig == null) {
+            return errorResponse(503, "No chatConfig is configured for this organization");
+        }
+
+        try {
+            String mood = ChapBookUtil.analyzeSceneTheme(user, sceneObjectId, chatConfig);
+            String moodJson = new ObjectMapper().writeValueAsString(mood);
+            return Response.status(200).entity("{\"success\":true,\"mood\":" + moodJson + "}").build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
+        } catch (Exception e) {
+            logger.error("analyzeSceneTheme failed for " + sceneObjectId + ": " + e.getMessage(), e);
+            return errorResponse(500, "Scene analysis failed: " + e.getMessage());
+        }
+    }
+
     // ─────────────────────────────── ChapBook scene review edits ───────────────────────────────
 
     /**
