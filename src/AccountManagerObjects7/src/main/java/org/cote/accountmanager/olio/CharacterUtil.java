@@ -123,9 +123,9 @@ public class CharacterUtil {
 			if(gen.equals("female")) {
 				names = fnames;
 			}
-			String firstName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
-			String middleName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
-			String lastName = (preferredLastName != null ? preferredLastName : (snames != null ? snames[rand.nextInt(snames.length)] : OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)))));			
+			String firstName = (names != null && names.length > 0 ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
+			String middleName = (names != null && names.length > 0 ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
+			String lastName = (preferredLastName != null ? preferredLastName : (snames != null && snames.length > 0 ? snames[rand.nextInt(snames.length)] : OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)))));
 			String name = assemblePersonName(firstName, middleName, lastName);
 			int nameAttempts = 0;
 	
@@ -138,9 +138,9 @@ public class CharacterUtil {
 					break;
 				}
 				logger.info("Name " + name + " exists .... trying again");
-				firstName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
-				middleName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
-				lastName = (preferredLastName != null ? preferredLastName : (snames != null ? snames[rand.nextInt(snames.length)] : OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)))));
+				firstName = (names != null && names.length > 0 ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
+				middleName = (names != null && names.length > 0 ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
+				lastName = (preferredLastName != null ? preferredLastName : (snames != null && snames.length > 0 ? snames[rand.nextInt(snames.length)] : OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)))));
 
 				name = assemblePersonName(firstName, middleName, lastName);
 			}

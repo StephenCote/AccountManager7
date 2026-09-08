@@ -16,6 +16,7 @@ import {
     serversToFields,
     tokenFromUrl
 } from '../core/setupSupport.js';
+import { features as featureCatalog, profiles, resolveFeatures } from '../features.js';
 
 function fakeStorage(initial) {
     let data = Object.assign({}, initial || {});
@@ -34,6 +35,7 @@ function goodValues(over) {
         setupToken: "tok-123",
         initialUserName: "",
         initialUserPassword: "",
+        initialUserPasswordConfirm: "",
         initialUserOrganization: "/Public",
         serverSd: "",
         serverFace: "",
@@ -194,11 +196,15 @@ describe('setup form validation', () => {
         expect(r1.valid).toBe(false);
         expect(r1.errors.initialUserPassword).toBeTruthy();
 
-        let r2 = validateSetupForm(goodValues({ initialUserPassword: "userPassw0rd" }));
+        let r2 = validateSetupForm(goodValues({ initialUserPassword: "userPassw0rd", initialUserPasswordConfirm: "userPassw0rd" }));
         expect(r2.valid).toBe(false);
         expect(r2.errors.initialUserName).toBeTruthy();
 
-        let r3 = validateSetupForm(goodValues({ initialUserName: "tester", initialUserPassword: "userPassw0rd" }));
+        let r3 = validateSetupForm(goodValues({
+            initialUserName: "tester",
+            initialUserPassword: "userPassw0rd",
+            initialUserPasswordConfirm: "userPassw0rd"
+        }));
         expect(r3.valid).toBe(true);
     });
 
@@ -206,10 +212,55 @@ describe('setup form validation', () => {
         let r = validateSetupForm(goodValues({
             initialUserName: "tester",
             initialUserPassword: "userPassw0rd",
+            initialUserPasswordConfirm: "userPassw0rd",
             initialUserOrganization: "/System"
         }));
         expect(r.valid).toBe(false);
         expect(r.errors.initialUserOrganization).toBeTruthy();
+    });
+
+    it('rejects a mismatched user password confirm ONLY when a user is being created', () => {
+        /// Mismatch while creating a user => rejected, and the error lands on the confirm field
+        /// (not the password field), mirroring the admin confirm behavior.
+        let bad = validateSetupForm(goodValues({
+            initialUserName: "tester",
+            initialUserPassword: "userPassw0rd",
+            initialUserPasswordConfirm: "different"
+        }));
+        expect(bad.valid).toBe(false);
+        expect(bad.errors.initialUserPasswordConfirm).toMatch(/do not match/);
+        expect(bad.errors.initialUserPassword).toBeUndefined();
+
+        /// Matching confirm while creating a user => valid.
+        let ok = validateSetupForm(goodValues({
+            initialUserName: "tester",
+            initialUserPassword: "userPassw0rd",
+            initialUserPasswordConfirm: "userPassw0rd"
+        }));
+        expect(ok.valid).toBe(true);
+        expect(ok.errors.initialUserPasswordConfirm).toBeUndefined();
+    });
+
+    it('requires the user password confirm to be non-empty once a user is being created', () => {
+        let r = validateSetupForm(goodValues({
+            initialUserName: "tester",
+            initialUserPassword: "userPassw0rd",
+            initialUserPasswordConfirm: ""
+        }));
+        expect(r.valid).toBe(false);
+        expect(r.errors.initialUserPasswordConfirm).toBeTruthy();
+    });
+
+    it('never requires or checks the user password confirm when NO user is being created', () => {
+        /// Both user name and password blank => no user. The confirm must not be required, and a
+        /// stray/non-matching confirm value must not block submit.
+        let blank = validateSetupForm(goodValues());
+        expect(blank.valid).toBe(true);
+        expect(blank.errors.initialUserPasswordConfirm).toBeUndefined();
+
+        let stray = validateSetupForm(goodValues({ initialUserPasswordConfirm: "anything" }));
+        expect(stray.valid).toBe(true);
+        expect(stray.errors.initialUserPasswordConfirm).toBeUndefined();
     });
 
     it('reports a bad URL against the specific server field', () => {
@@ -279,6 +330,99 @@ describe('setup payload construction', () => {
         let json = JSON.stringify(p);
         expect(json).not.toContain("adminPassw0rd");
         expect(json).not.toContain("userPassw0rd");
+    });
+
+    it('never leaks the client-only user password confirm into the payload (shape unchanged)', () => {
+        /// initialUserPasswordConfirm is a client-only field. The payload built with a confirm
+        /// value present must be byte-for-byte identical to the one built without it.
+        let withConfirm = buildSetupPayload(goodValues({
+            initialUserName: "tester",
+            initialUserPassword: "userPassw0rd",
+            initialUserPasswordConfirm: "userPassw0rd"
+        }));
+        let withoutConfirm = buildSetupPayload(goodValues({
+            initialUserName: "tester",
+            initialUserPassword: "userPassw0rd"
+        }));
+        expect(JSON.stringify(withConfirm)).toBe(JSON.stringify(withoutConfirm));
+        expect(JSON.stringify(withConfirm)).not.toMatch(/[Cc]onfirm/);
+        expect(Object.prototype.hasOwnProperty.call(withConfirm.initialUser, "initialUserPasswordConfirm")).toBe(false);
+        /// The initialUser block still carries only its expected keys.
+        expect(Object.keys(withConfirm.initialUser).sort()).toEqual(["credential", "name", "organization"]);
+    });
+});
+
+describe('setup feature selection', () => {
+
+    /// The setup wizard defaults to the bare-minimum profile and lets the admin pick a starting
+    /// UX feature set (e.g. the ISO 42001 "compliance" appliance). These assert the pure resolver
+    /// and the payload wiring — id lists are compared against the manifest module's actual profile
+    /// values (imported), never string literals invented here.
+
+    it('resolveFeatures(minimal) is the bare-minimum id list (core only)', () => {
+        let ids = resolveFeatures('minimal');
+        expect(new Set(ids)).toEqual(new Set(profiles.minimal));
+        expect(ids).toEqual(['core']);
+    });
+
+    it('resolveFeatures(compliance) is the ISO-42001-only id list', () => {
+        let ids = resolveFeatures('compliance');
+        /// Same membership as the manifest module's compliance profile (order-independent).
+        expect(new Set(ids)).toEqual(new Set(profiles.compliance));
+        expect(ids).toContain('iso42001');
+    });
+
+    it('always force-includes core (dependency-closure invariant), for every profile and a bare list', () => {
+        Object.keys(profiles).forEach(name => {
+            expect(resolveFeatures(name)).toContain('core');
+        });
+        /// A raw list missing core still gets core, plus any transitive deps closed in.
+        expect(resolveFeatures(['iso42001'])).toContain('core');
+    });
+
+    it('closes transitive dependencies from the manifest deps graph', () => {
+        /// iso42001 depends on chat (and chat on core), so resolving it alone pulls both in.
+        let ids = resolveFeatures(['iso42001']);
+        expect(ids).toContain('chat');
+        expect(ids).toContain('core');
+        /// And it never invents ids that are not in the catalogue.
+        ids.forEach(id => { expect(featureCatalog[id]).toBeDefined(); });
+    });
+
+    it('buildSetupPayload attaches the resolved ids as a top-level features array', () => {
+        let ids = resolveFeatures('compliance');
+        let p = buildSetupPayload(goodValues(), ids);
+        expect(p.features).toEqual(ids);
+        expect(p.features).toContain('iso42001');
+    });
+
+    it('buildSetupPayload omits features when none/empty is chosen (no-op, shape unchanged)', () => {
+        /// No features arg at all — the existing 1-arg callers must be unaffected.
+        expect(buildSetupPayload(goodValues()).features).toBeUndefined();
+        /// An explicit empty list is also treated as "no explicit features".
+        expect(buildSetupPayload(goodValues(), []).features).toBeUndefined();
+    });
+
+    it('does not disturb the credential / initialUser / servers shape when features are attached', () => {
+        let ids = resolveFeatures('compliance');
+        let p = buildSetupPayload(goodValues({
+            initialUserName: "tester",
+            initialUserPassword: "userPassw0rd",
+            initialUserOrganization: "/Development",
+            serverSd: "http://sd:7801"
+        }), ids);
+        expect(Base64.decode(p.credential)).toBe("adminPassw0rd");
+        expect(Object.keys(p.initialUser).sort()).toEqual(["credential", "name", "organization"]);
+        expect(p.servers).toEqual({ "sd": "http://sd:7801" });
+        expect(p.features).toEqual(ids);
+    });
+
+    it('minimal is a distinct, smaller set than compliance (the wizard default vs the ISO appliance)', () => {
+        let min = resolveFeatures('minimal');
+        let comp = resolveFeatures('compliance');
+        expect(min.length).toBeLessThan(comp.length);
+        /// compliance is a superset of minimal (both force core; compliance adds the ISO surface).
+        min.forEach(id => { expect(comp).toContain(id); });
     });
 });
 
@@ -385,7 +529,18 @@ describe('setup page model + form wiring', () => {
         expect(am7model.forms.setup.fields.adminPassword.type).toBe("password");
         expect(am7model.forms.setup.fields.adminPasswordConfirm.type).toBe("password");
         expect(am7model.forms.setup.fields.initialUserPassword.type).toBe("password");
+        expect(am7model.forms.setup.fields.initialUserPasswordConfirm.type).toBe("password");
         expect(am7model.forms.setup.fields.setupToken.type).toBe("password");
+    });
+
+    it('has a model + form field for the optional-user password confirm, with no schema rules', () => {
+        /// The confirm is client-only and conditionally required, so it must carry no schema
+        /// rules — otherwise inst.validate() would demand it even when no user is being created.
+        let model = am7model.getModel("setup");
+        let f = model.fields.filter(x => x.name === "initialUserPasswordConfirm")[0];
+        expect(f).toBeDefined();
+        expect(f.rules).toBeUndefined();
+        expect(am7model.forms.setup.fields.initialUserPasswordConfirm).toBeDefined();
     });
 
     it('schema rules reject an empty instance and accept a filled one', () => {

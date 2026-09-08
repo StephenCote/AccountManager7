@@ -103,5 +103,12 @@
 		"description": "Poem library, LLM analysis, and landscape-illustrated poetry-book creation",
 		"required": false,
 		"deps": ["core"]
+	},
+	{
+		"id": "olioAdmin",
+		"label": "Olio Admin",
+		"description": "Load Olio corpus reference data into the current organization (admin only)",
+		"required": false,
+		"deps": ["core"]
 	}
 ]

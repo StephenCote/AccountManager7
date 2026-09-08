@@ -6,6 +6,7 @@ Module orientation: `../../AccountManagerISO42001/CLAUDE.md`.
 | File | Purpose | Status |
 |---|---|---|
 | `iso42001.md` | Overview / entry point for the ISO 42001 subsystem | design |
+| `iso42001-runbook.md` | Operator runbook: enable, roles, create/run campaigns, view results, report+export, certify, customize rules | runbook |
 | `iso42001-design.md` | Full subsystem design (engine, scoring, reporting, certification factories, facade) | design |
 | `iso42001-bias.md` | Bias-testing framework and methodology | design |
 | `iso42001-implementation-plan.md` | Build plan / phased implementation | plan |

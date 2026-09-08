@@ -8,6 +8,7 @@ import { page } from '../../core/pageClient.js';
 import { LLMConnector } from '../../chat/LLMConnector.js';
 import { iso42001Client } from './iso42001Client.js';
 import { isoRoles, verdictBadge, statusPill, sectionHeader, btn } from './iso42001Common.js';
+import { campaignWizard } from './campaignWizard.js';
 
 let violations = [];
 let filterText = '';
@@ -145,6 +146,7 @@ export const dashboardView = {
             m('div', { class: 'flex items-center justify-between' }, [
                 m('h1', { class: 'text-2xl font-bold text-gray-800 dark:text-white' }, 'ISO 42001 Compliance Dashboard'),
                 m('div', { class: 'flex gap-2' }, [
+                    (roles.tester || roles.admin) ? btn('Quick Start', 'auto_awesome', () => campaignWizard.show(), { primary: true }) : null,
                     (roles.tester || roles.admin) ? btn('Test Runner', 'play_circle', () => m.route.set('/iso42001/run')) : null,
                     btn('Refresh', 'refresh', loadAll)
                 ])
@@ -192,7 +194,11 @@ export const dashboardView = {
                     })
                 ]),
                 m('div', { class: 'max-h-96 overflow-y-auto' }, renderViolations())
-            ])
+            ]),
+
+            // Guided campaign wizard (renders null unless shown). Mount, don't call — WizardView is a
+            // Mithril component like ChatSetupWizard.WizardView.
+            m(campaignWizard.WizardView)
         ]);
     }
 };

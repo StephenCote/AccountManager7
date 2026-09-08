@@ -13,6 +13,9 @@ import m from 'mithril';
 import { page } from '../../core/pageClient.js';
 import { iso42001Client } from './iso42001Client.js';
 import { isoRoles, statusPill, sectionHeader, loadingOrEmpty, btn } from './iso42001Common.js';
+// campaignWizard imports blankForm/createCampaignFromForm back from this module. The cycle is safe: all
+// cross-references are used at call time (onclick handlers / view bodies), never at module-init.
+import { campaignWizard } from './campaignWizard.js';
 
 const CONFIG_HOME = '~/ISO42001';
 const CONFIG_FIELDS = ['objectId', 'name', 'moduleId', 'endpointName', 'endpointType', 'tier', 'samplesPerGroup'];
@@ -182,6 +185,37 @@ function formValues(f) {
     return out;
 }
 
+/**
+ * Shared CREATE path — resolves/creates the ~/ISO42001 home group, builds the create body from the form
+ * (reusing formValues, which attaches the analysisProfile FK by id), creates the config, shows the success
+ * toast, and RETURNS the created record (identity fields incl. objectId) or null on failure.
+ *
+ * Deliberately CREATE-scoped: it does NOT carry the PATCH/edit path (identityFrom / editingRecord) — the
+ * edit branch of save() owns that. It also does NOT navigate (no m.route.set): navigation/launch is left to
+ * each caller so the campaign wizard's own final action doesn't fight a mid-flow route change. Shared by
+ * save()'s create branch and campaignWizard.js.
+ */
+async function createCampaignFromForm(f) {
+    // Create needs a home group for placement (the acting user owns it; the Tester role authorizes create).
+    let group = await page.makePath('auth.group', 'data', CONFIG_HOME);
+    if (!group || !group.id) {
+        page.toast && page.toast('error', 'Could not resolve the ' + CONFIG_HOME + ' group.');
+        return null;
+    }
+    let cfg = Object.assign({
+        schema: 'iso42001.testConfig',
+        groupId: group.id,
+        organizationId: group.organizationId
+    }, formValues(f));
+    let created = await iso42001Client.createConfig(cfg);
+    if (created && created.objectId) {
+        page.toast && page.toast('success', 'Campaign created.');
+        return created;
+    }
+    page.toast && page.toast('error', 'Create failed (need ISO Tester role).');
+    return null;
+}
+
 async function save() {
     if (busy) return;
     if (!form.name.trim()) { page.toast && page.toast('error', 'Name is required.'); return; }
@@ -202,25 +236,12 @@ async function save() {
                 page.toast && page.toast('error', 'Update failed (need ISO Tester role).');
             }
         } else {
-            // Create needs a home group for placement (the acting user owns it; the Tester role authorizes create).
-            let group = await page.makePath('auth.group', 'data', CONFIG_HOME);
-            if (!group || !group.id) {
-                page.toast && page.toast('error', 'Could not resolve the ' + CONFIG_HOME + ' group.');
-                busy = false; m.redraw(); return;
-            }
-            let cfg = Object.assign({
-                schema: 'iso42001.testConfig',
-                groupId: group.id,
-                organizationId: group.organizationId
-            }, formValues(form));
-            let created = await iso42001Client.createConfig(cfg);
+            // Create via the shared helper (toast + returns the record); this branch owns navigation.
+            let created = await createCampaignFromForm(form);
             if (created && created.objectId) {
-                page.toast && page.toast('success', 'Campaign created.');
                 showEditor = false;
                 await loadList();
                 m.route.set('/iso42001/campaigns/' + created.objectId);
-            } else {
-                page.toast && page.toast('error', 'Create failed (need ISO Tester role).');
             }
         }
     } catch (e) {
@@ -401,7 +422,12 @@ function listView() {
     let roles = isoRoles();
     return m('div', { class: 'max-w-5xl mx-auto p-6 space-y-4' }, [
         sectionHeader('Test Campaigns',
-            (roles.tester || roles.admin) ? btn('New Campaign', 'add', openCreate, { primary: true }) : null),
+            (roles.tester || roles.admin)
+                ? m('div', { class: 'flex gap-2' }, [
+                    btn('Quick Start', 'auto_awesome', () => campaignWizard.show(), { primary: true }),
+                    btn('New Campaign', 'add', openCreate)
+                ])
+                : null),
         m('p', { class: 'text-sm text-gray-500 dark:text-gray-400' },
             'A campaign is a reusable test configuration (module, endpoint, tier, samples, statistics). Launch runs against it and generate reports from completed runs.'),
         loadingOrEmpty(loading, campaigns.length === 0, 'No campaigns yet. Create one to get started.') ||
@@ -415,7 +441,10 @@ function listView() {
             ])),
             m('tbody', campaigns.map(campaignRow))
         ]),
-        showEditor ? editorModal() : null
+        showEditor ? editorModal() : null,
+        // Guided campaign wizard (renders null unless shown). WizardView is a Mithril component like
+        // ChatSetupWizard.WizardView — mount it, don't call it.
+        m(campaignWizard.WizardView)
     ]);
 }
 
@@ -490,8 +519,8 @@ function detailView() {
     ]);
 }
 
-// Exported for unit tests (pure form helpers — no DOM / no network).
-export { blankForm, formValues };
+// Exported for unit tests (pure form helpers — no DOM / no network) and the campaign wizard (shared CREATE).
+export { blankForm, formValues, createCampaignFromForm };
 
 export const campaignsView = {
     oninit: function () {

@@ -3437,3 +3437,140 @@ docker compose -p am7test -f docker-compose.test.yml logs am7 | Select-String "I
 Related: `.claude/rules/objects7-reference.md` ("Never re-declare an inherited field or constraint" —
 correct as a rule, but this instance is a different mechanism and the note there should eventually
 cross-reference this entry), `aiDocs/dockerDevSetup.md` (the stack this was found on).
+
+### KI-70. Character-creation wizard 500s on a fresh Docker container — empty Olio seed corpus + a missing empty-array guard crashes grid-context init — OPEN (2026-09-08, Stephen)
+
+**Symptom.** From the `olio.charPerson` list, the character-creation wizard (name/gender/age dialog →
+confirm) throws a server error. Stephen's hypothesis — "possibly if Olio data not loaded in a new
+docker container" — is **CONFIRMED**.
+
+**Live reproduction** (Docker test stack `am7test-am7-1`, port 9443, user `e2etest_shared` via
+`ensureSharedTestUser()`, bypassing the UI; admin used only to provision the user):
+- `GET /AccountManagerService7/rest/olio/roll/male` → **HTTP 500** in ~14s, repeatable on every call.
+- Container state: `/data/am7/datagen` (the deployed `web.xml` `datagen.path`) contains **0 files**.
+- App log (`accountManagerService.log`):
+  - `GenericParser - /data/am7/datagen/names/yob2022.txt (No such file or directory)` (and
+    `surnames/Names_2010Census.csv`, `occupations/noc_2021…csv`, `patterns/patterns.csv`,
+    `wn3.1.dict/dict/data.*`)
+  - `CharacterUtil - Empty names`
+  - `java.lang.RuntimeException: OlioContext.initialize() failed before authorization was configured`
+    → **`Caused by: java.lang.IllegalArgumentException: bound must be positive`**
+
+**This is a genuine backend/data issue, NOT a client query bug** (the raw REST call 500s; the wizard's
+request shape is correct), **not the olio-principal ownership confound** (a hard exception during grid
+population, not a null `find`), and **not the Docker-can't-reach-LAN LLM/SD issue** (the crash is at
+~14s during map/region generation, well before the wizard's later `narrate`/portrait steps — LLM/SD
+are never reached).
+
+**Flow (client → server, code-pinned).**
+- `views/list.js:1050-1051` wires the wizard only for `olio.charPerson` →
+  `am7model.forms.commands.characterWizard`.
+- `characterWizard()` (`core/formDef.js:3776-3806`) → on confirm `character()` (`:3653-3686`) → step one
+  `rollCharacter(...)` (`:3808-3816`) issues **`GET {base}/olio/roll/{gender}`** (or `/olio/roll` for
+  random). Create-in-`~/Characters`, portrait, and `narrate` only run *after* a successful roll.
+- Server `OlioService.rollCharacterGender`→`rollCharacter` (`OlioService.java:336-401`) first calls
+  `resolveOlioContext` → `OlioContextUtil.getOlioContext(user, dataPath)`, lazily building the default
+  "My Grid Universe"/"My Grid World" grid context.
+
+**Exact root cause.** The failure is in the *grid context initialization* that the roll triggers, not
+in the wizard's client query and not in `rollCharacter`'s own name lookup:
+1. `OlioContext.initialize()` (`OlioContext.java:823`) → `WorldUtil.loadWorldData(...)`
+   (`WorldUtil.java:266-293`) reads names/surnames/occupations/dictionary/patterns from `datagen.path`.
+   On a missing file `GenericParser.parseFile` catches `FileNotFoundException` and **returns an empty
+   list** (`GenericParser.java:105, 258-267`) — loading fails silently, the universe gets **empty word
+   lists**.
+2. Region generation (`OlioContext.java:849` → `GridSquareLocationInitializationRule.generate` →
+   `CharacterUtil.populateRegion`) builds the starter population. `populateRegion` even *detects* the
+   condition — `CharacterUtil.java:503-505` logs `"Empty names"` — but only logs and proceeds.
+3. `populateRegion` (`:510`) passes the empty `maleNames/femaleNames/surnames` arrays to `randomPerson`,
+   which at **`CharacterUtil.java:126`** does `names[rand.nextInt(names.length)]`. The guard there is
+   `names != null` only — **there is no `names.length > 0` check** — so a zero-length array makes
+   `rand.nextInt(0)` throw `IllegalArgumentException: bound must be positive`. (Same pattern repeats in
+   the uniqueness-retry block at `:141-143`, and for `snames` at `:128/143`.)
+4. `OlioContext.initialize()` catches it and, because it happened before authorization, **re-throws**
+   `RuntimeException` (`:948-953`). Nothing above catches it, so Jersey returns 500. The failed context
+   is not cached, so **every** subsequent roll re-runs init and re-fails identically.
+
+Note: the existing name-synthesis fallback (`CharacterUtil.java:130-169` — the `name.isEmpty()` →
+`synthesizeUniquePersonName` path) would have handled empty word lists gracefully, but it sits
+*downstream* of the line-126 crash, so it is never reached.
+
+**Two independent fix seams (a scoper picks between / combines them):**
+- **(a) Defensive backend (small, high value, "fix now").** Guard the array draws at
+  `CharacterUtil.java:126-128` and `:141-143` for empty (not just null) arrays so an unseeded universe
+  degrades gracefully — either fall through to `OlioUtil.randomSelectionName(...)` / the existing
+  `synthesizeUniquePersonName` synthesis path instead of indexing a zero-length array. Behavior for a
+  *populated* word list is unchanged. This turns the hard 500 into a usable (synthesized-name) character
+  and makes a fresh Docker container functional. Must be behavior-preserving when arrays are non-empty,
+  and covered by an Objects7 unit test (`-DskipTests=false` mandatory).
+- **(b) Data/config — the "admin setup option to load Olio data" Stephen asked about (larger, new
+  work).** The external datagen corpus at `datagen.path` is simply absent on a fresh image — the
+  container `mkdir -p`s an empty `/data/am7/datagen` (`entrypoint.sh:11,51`; `Dockerfile:127`) and the
+  corpus is bundled nowhere. Seeding today happens *implicitly* on the first `OlioContext.initialize()`
+  per org, via `WorldUtil.loadWorldData` reading those files as the olio system user into the default
+  "My Grid Universe/World"; **there is no existing admin/setup endpoint to load it**. The
+  character-relevant subset: `names/yob2022.txt` (~400K), `surnames/Names_2010Census.csv` (~9.1M),
+  `occupations/noc_2021_…csv` (~4.9M), `patterns/patterns.csv` (~20K), WordNet `wn3.1.dict/dict/*`
+  (~tens of MB) — on the dev host these live at `C:/Projects/data` (full tree ~6 GB; character subset
+  tens of MB). Building this needs a provisioning decision first (bake a reference subset into the
+  image / mount a volume / download-on-demand / admin upload) — flagged to Stephen as a scoped
+  follow-up, not built blindly.
+
+Relevant files: `AccountManagerUx752/src/views/list.js` (1050-1051),
+`AccountManagerUx752/src/core/formDef.js` (3653-3816),
+`AccountManagerService7/.../rest/services/OlioService.java` (82-98, 326-401),
+`AccountManagerObjects7/.../olio/OlioContext.java` (800-955),
+`AccountManagerObjects7/.../olio/WorldUtil.java` (216-293),
+`AccountManagerObjects7/.../olio/CharacterUtil.java` (crash 126; empty-names detection 503-510; synth
+fallback 130-169), `AccountManagerObjects7/.../parsers/GenericParser.java` (missing-file swallow 105,
+258-267), `src/docker/entrypoint.sh`, `src/Dockerfile`, `src/docker/web.xml.template` (`datagen.path`).
+
+### KI-71. Character wizard and apparel wizard split one character across two owners/locations (home dir vs. default world) — OPEN (2026-09-08, Stephen)
+
+**Symptom (Stephen's note).** "Apparel wizard and char wizard both default to using the default Olio
+universe, so data becomes split between user home and the universe." Confirmed: the two wizards persist
+the halves of one character to two different group hierarchies with two different owners.
+
+**This is a genuine backend/placement issue, NOT a client query bug.** Both wizards read/write correctly
+for what they ask; the defect is *where* and *as whom* each write lands. Both resolve the Olio context
+with no `universeObjectId`/`worldObjectId`, so both fall through to the hardcoded default
+"My Grid Universe"/"My Grid World" (`OlioService.resolveOlioContext` OlioService.java:82-98;
+`GameService.resolveOlioContext` GameService.java:62-76 → `OlioContextUtil.getOlioContext`
+OlioContextUtil.java:261-262, defaults at :30-31). But the two write paths place records differently:
+
+- **Character wizard → user HOME, user-owned.** `characterWizard()`→`character()`→`createCharacter()`
+  (`formDef.js:3776, 3653, 3688`): `GET /olio/roll` only builds an *in-memory* charPerson (it uses the
+  default universe merely to read name word-lists, OlioService.java:352-388; `randomApparel(null, a1)` at
+  :388 passes a `null` ctx). The client then writes it — `makePath("auth.group","data","~/Characters")`
+  (`formDef.js:3693`) + `createObject(charN)` (`:3705`) cascades charPerson/store/apparel/statistics into
+  `~/Characters`; the portrait `data.data` goes to `~/Gallery` (`:3725, 3743-3747`). Owner: the user.
+- **Apparel wizard → default WORLD group, olio-principal-owned.** `outfitBuilder`→`OutfitBuilderPanel`→
+  `generateOutfit()` `POST /game/outfit/generate` (`olio.js:378-383`) → `GameService.generateOutfit`
+  (GameService.java:809-845) → `GameUtil.generateOutfit` → `ApparelUtil.contextApparel` →
+  `constructApparel(ctx != null)`, which creates apparel/wearable/quality records under the **world's**
+  paths as the olio principal: `ctx.getWorld().get(FIELD_APPAREL_PATH)` (ApparelUtil.java:535),
+  `FIELD_WEARABLES_PATH` (:551), `FIELD_QUALITIES_PATH` (:558). `GameUtil.generateOutfit` persists there
+  (GameUtil.java:925) and links it into the character's store as the olio user (:930). Those world paths
+  live under `/Olio/Universes/My Grid Universe/Worlds/My Grid World/...`
+  (OlioContextConfiguration.java:16-18, 73; created as `olioUser` at OlioContext.java:765, 769) — absolute,
+  not `~/`. (Mannequin *images* separately go to `~/Gallery/Apparel/…`, OlioService.java:297.)
+
+**Consequences.** (1) Cross-owner: a user-owned character references olio-principal-owned apparel; the
+user's edits/deletes of that apparel work only via the Olio User role grant (cf. KI-35, olio.js:139-157).
+(2) Deleting/resetting the default world orphans or erases the user's character's apparel; deleting the
+home-dir character leaves the apparel behind in the world. (3) A "my apparel/wearables" list scoped to the
+user's home never sees the world-owned apparel. (4) First wizard use triggers a full default-world
+generation as a side effect (`OlioContext.initialize`, cached per org+user, OlioContextUtil.java:197-231).
+
+**Interaction with the per-org "Load Olio data" work (KI-70 seam b / Part 5b).** Pre-loading the corpus
+into an org's universe/world helps only the *universe/world* half (removes first-use generation, seeds the
+word/item data both wizards read). It does **not** fix the split: the char wizard still writes the
+character to the user's `~/` home client-side, and the apparel wizard still writes apparel to the world
+group. A real fix requires both wizards to target one chosen universe/world (thread
+`universeObjectId`/`worldObjectId`, or make character persistence use the same world group), not merely
+pre-populated data. Recorded here per Stephen's request to note it; scoped fix not yet designed.
+
+Relevant files: `AccountManagerUx752/src/core/formDef.js` (3653-3752),
+`AccountManagerUx752/src/components/olio.js`, `AccountManagerUx752/src/workflows/outfitBuilder.js`,
+`AccountManagerService7/.../rest/services/OlioService.java`, `.../GameService.java`,
+`AccountManagerObjects7/.../olio/{OlioContextUtil,OlioContextConfiguration,GameUtil,ApparelUtil}.java`.

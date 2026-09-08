@@ -187,6 +187,43 @@ docker compose -p am7test -f docker-compose.test.yml logs am7 | Select-String FI
 Wait for the Tomcat startup line and the `FIRST-RUN SETUP REQUIRED` banner. `am7` does not start
 until `am7-pg` passes its `pg_isready` healthcheck, so a slow database start is handled for you.
 
+### 2e. Seed the Olio corpus (before generating characters)
+
+Olio character generation reads a reference corpus — names, surnames, occupations, traits, a WordNet
+dictionary, optionally location grids — from `datagen.path` = `/data/am7/datagen`. **A fresh image
+ships this empty** (the container `mkdir -p`s the dir but bundles no corpus), so the
+character-creation wizard fails on a brand-new stack until it is populated. This is KI-70.
+
+`assemble-seed.sh` (in `src\`) populates it by mirroring **your own** staging dir into the
+`docker-data` bind mount. You build the staging dir yourself: unzip `seedData.7z` somewhere and add
+whatever extra corpus you want (location grids, the WordNet dict). The script reads only
+`SEED_STAGING` — it does **not** touch `src\seedData` or the `.7z`. Because `docker-data/am7` is a
+live bind mount, files land inside the container immediately with no rebuild, so you can run this
+before `up` or any time before the first character-generation call.
+
+**bash — run in Git Bash, from `src\`** (this script is the exception to §0's WSL rule: it takes a
+Windows drive-letter staging path like `c:/projects/data`, which resolves in Git Bash; in WSL use the
+`/mnt/c/...` form instead):
+
+```bash
+cd /c/Projects/GitHub/AccountManager7/src
+SEED_STAGING=c:/projects/data ./assemble-seed.sh                 # base corpus
+SEED_STAGING=c:/projects/data ./assemble-seed.sh --with-location # + large location grids
+SEED_STAGING=c:/projects/data ./assemble-seed.sh --dry-run       # list what would copy, write nothing
+```
+
+- `SEED_STAGING` is **required** — point it at your populated staging dir (example: `c:/projects/data`).
+  Windows backslashes are normalised; a trailing slash is stripped.
+- The target defaults to `$AM7_DATA_DIR/am7/datagen` (`.\docker-data\am7\datagen`), matching the
+  compose bind mount. If you moved persistent state with `AM7_DATA_DIR` (see §2a), export the same
+  value here so the corpus lands where the container reads it.
+- **Top-level `am7/` and `vault/` in the staging dir are pruned and never copied** — so it is safe to
+  point `SEED_STAGING` at a dir that also holds a live database (`am7/`) or secrets (`vault/`).
+- Colors are **not** seeded here: `ColorUtil` loads `olio/colors.json` from the Objects7 jar classpath.
+
+The design rationale (why volume-copy and not a Dockerfile `COPY`, why the pruning) is in
+[`DockerComposeDesign.md`](DockerComposeDesign.md) under "Seeding the Olio corpus".
+
 ---
 
 ## 3. Read the setup token
@@ -557,6 +594,9 @@ endpoints are `olio.llm.connection` records created in the app.
 
 Gotcha: the keystores live under **`STORE_PATH`**, *not* under the `VAULT_PATH` dir
 (`/data/am7/vault`, which stays empty despite its name).
+
+`datagen/` is the one entry the app does **not** create for you — it is the external Olio corpus,
+staged host-side by `assemble-seed.sh` before you generate characters (§2e).
 
 ---
 

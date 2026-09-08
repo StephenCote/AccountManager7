@@ -139,6 +139,14 @@ function validateSetupForm(values) {
         }
         let upw = validatePassword(v.initialUserPassword);
         if (!upw.valid) errors.initialUserPassword = upw.error;
+        /// Confirm mirrors the admin confirm logic above, but only when a user is being
+        /// created — when both the user name and password are blank (no user), the confirm
+        /// must not be required and must not block submit.
+        if (isBlank(v.initialUserPasswordConfirm)) {
+            errors.initialUserPasswordConfirm = "Field is required";
+        } else if (v.initialUserPassword !== v.initialUserPasswordConfirm) {
+            errors.initialUserPasswordConfirm = "Passwords do not match";
+        }
         if (isBlank(v.initialUserOrganization) || !SETUP_ORGANIZATIONS.includes(v.initialUserOrganization)) {
             errors.initialUserOrganization = "Select an organization";
         }
@@ -152,11 +160,15 @@ function validateSetupForm(values) {
     return { valid: (Object.keys(errors).length === 0), errors };
 }
 
-/// Build the POST /rest/setup/ body. `encode` is an optional base64 encoder override (the
-/// default delegates to Base64.encode — note Base64's methods use `this`, so they must not be
-/// passed unbound). The credential convention matches /rest/login: base64 is transport
-/// encoding, NOT encryption. TLS is the only protection.
-function buildSetupPayload(values, encode) {
+/// Build the POST /rest/setup/ body. `features` is the OPTIONAL resolved feature-id list the admin
+/// chose in the setup wizard (a starting UX feature set — a visibility mechanism, NOT an access
+/// control boundary). It is attached as a top-level `features` array ONLY when a non-empty list is
+/// supplied; absent or empty leaves the payload shape unchanged, which the backend treats as a
+/// no-op (current behavior). `encode` is an optional base64 encoder override (the default delegates
+/// to Base64.encode — note Base64's methods use `this`, so they must not be passed unbound). The
+/// credential convention matches /rest/login: base64 is transport encoding, NOT encryption. TLS is
+/// the only protection.
+function buildSetupPayload(values, features, encode) {
     let v = values || {};
     let enc = encode || function (s) { return Base64.encode(s); };
     let payload = { credential: enc(v.adminPassword) };
@@ -177,6 +189,10 @@ function buildSetupPayload(values, encode) {
     });
     if (Object.keys(servers).length) {
         payload.servers = servers;
+    }
+
+    if (Array.isArray(features) && features.length) {
+        payload.features = features.slice();
     }
     return payload;
 }

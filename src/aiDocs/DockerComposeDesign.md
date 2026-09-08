@@ -349,6 +349,28 @@ Because keystores, streams, and seed data all sit under `/data/am7`, the single 
 covers them. If key material needs independent backup/rotation from bulk data later, it can be split
 onto its own volume via sub-path mounts (`am7-keys:/data/am7/store/.jks`, `.../store/.vault`).
 
+### Seeding the Olio corpus (`datagen/`)
+
+`datagen/` is the one part of `/data/am7` the app does **not** create for itself. It is an external
+reference corpus — names, surnames, occupations, traits, a WordNet dictionary, optionally location
+grids — that Olio character generation reads at `datagen.path`. A fresh image ships it empty, which is
+why a brand-new stack cannot generate characters until it is populated (KI-70).
+
+It is seeded **host-side, before boot**, by `src/assemble-seed.sh`, which mirrors a user-owned staging
+dir (`SEED_STAGING`, e.g. `c:/projects/data`) into the `docker-data/am7/datagen` bind mount. The
+operational step is dockerDevSetup.md §2e; two deliberate design choices:
+
+- **Volume-copy, not a Dockerfile `COPY`.** `docker build` ships the entire `src/` build context to
+  the daemon as a tar; baking a multi-hundred-file corpus into the image would bloat every build.
+  Writing into the bind mount makes the corpus visible to the container with no rebuild and no tar.
+- **`am7/` and `vault/` are pruned.** The script never copies a top-level `am7/` (a live DB dir) or
+  `vault/` (secrets) out of the staging dir, so `SEED_STAGING` can safely point at a dir that also
+  holds those.
+
+This targets the Path A bind mount (`docker-compose.test.yml`). The canonical named-volume stack
+(`docker-compose.yml`) has no host-visible `datagen` dir, so on that stack the corpus must reach
+`/data/am7/datagen` inside the container by other means (`docker cp`, or a sub-path bind mount).
+
 **Windows host note (not a container defect):** from the Windows host, `curl https://localhost:8443`
 returns `HTTP 000` because curl's schannel TLS backend loops on renegotiation against nginx's
 self-signed cert, and because a local dev Tomcat may also be bound to `[::1]:8443` (IPv6). The

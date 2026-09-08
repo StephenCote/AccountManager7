@@ -8,8 +8,10 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -149,9 +151,14 @@ public class Setup {
 	///   "credential": "<base64 admin password>",
 	///   "initialUser": { "name": "...", "credential": "<base64>", "organization": "/Public" },
 	///   "servers": { "sd": "...", "face": "...", "tag": "...",
-	///                "voice.tts": "...", "voice.stt": "...", "embedding": "..." }
+	///                "voice.tts": "...", "voice.stt": "...", "embedding": "..." },
+	///   "features": ["core", "chat", "iso42001"]
 	/// }
-	/// Omitted `servers` keys are left unchanged. The LEGACY body — a record-shaped
+	/// `features` is the OPTIONAL initial UX feature profile: an array of OPAQUE feature-id strings
+	/// forwarded verbatim to the object layer. It is only persisted when an initial user is actually
+	/// created; an absent/empty array is a clean no-op (the organization keeps the default profile).
+	/// Unknown ids are dropped and core/dependencies are forced downstream, so it is not an auth
+	/// boundary. Omitted `servers` keys are left unchanged. The LEGACY body — a record-shaped
 	/// {"schema":"auth.credential","credential":"<base64>","type":"hashed_password"} with nothing
 	/// else — still bootstraps, because only `credential` is read from it.
 	///
@@ -256,6 +263,21 @@ public class Setup {
 					req.getServers().put(name, v.toString().trim());
 				}
 			}
+		}
+
+		/// OPTIONAL initial UX feature profile. Pure transport: collect the non-blank string entries
+		/// verbatim and hand them to SetupUtil. The ids are OPAQUE — this maps them without inspecting
+		/// or branching on any specific value, and an absent/empty array is a clean no-op. All
+		/// validation (unknown-id dropping, core/dependency forcing) happens in the object layer.
+		Object feats = body.get("features");
+		if(feats instanceof List) {
+			List<String> features = new ArrayList<>();
+			for(Object o : (List<?>) feats) {
+				if(o != null && o.toString().trim().length() > 0) {
+					features.add(o.toString().trim());
+				}
+			}
+			req.setFeatures(features);
 		}
 
 		SetupUtil.SetupResult result;

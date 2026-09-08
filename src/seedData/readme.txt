@@ -1,0 +1,1 @@
+Use 7-zip to decompress seedData.7z into a staging location.  Optionally download and include location and word data (links included in respective directories).

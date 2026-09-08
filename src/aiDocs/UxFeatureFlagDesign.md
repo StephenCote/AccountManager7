@@ -4,9 +4,15 @@ Scope: **AccountManagerUx752 only.** Service-side notes are recorded in §6 as f
 part of this design's implementation scope.
 
 Status of the premise: the task was framed as "not started." It is in fact **largely built** — a
-13-feature manifest, lazy route loading, menu gating, profiles, a REST config endpoint, an admin
+16-feature manifest, lazy route loading, menu gating, profiles, a REST config endpoint, an admin
 toggle UI, and five Vitest suites all exist. What follows is a review of that implementation and
 the changes needed to reach the stated goal ("start out neat/simple, easily tailored").
+
+> Manifest count is maintained by `TestFeatureConfigUtil#TestManifest` (Objects7). As of
+> 2026-09-08 it is **16** ids: core, media, chat, cardGame, games, testHarness, iso42001,
+> biometrics, schema, webauthn, accessRequests, featureConfig, pictureBook, pictureBookWorkflow,
+> chapBook, olioAdmin. The "13"/"12" figures in §1 and §3.2 below are the point-in-time counts
+> from the original review and are kept as historical record.
 
 ---
 
@@ -458,6 +464,13 @@ Two consequences to hold onto, so a later change doesn't quietly break them:
   keyed cache into a process-global field is the exact cross-tenant defect `architecture.md`
   §"Per-org config must never be written to process-global state" prohibits — org A's login would
   mutate what org B reads.
+- **The setup wizard's starting-profile choice is scoped to the initial user's organization only.**
+  `SetupUtil.applyInitialFeatures` runs inside `createInitialUserStep` as that user's org admin, so the
+  chosen profile (default `minimal`) is persisted to the initial user's org and to no other. Two
+  operator-visible consequences follow directly from the per-org scope above, and are expected, not
+  defects: (a) the admin's own organization, and (b) any organization created without an initial user,
+  write no `.featureConfig` record and therefore resolve to `DEFAULT_FEATURES` (the full profile) until
+  explicitly configured under Feature Configuration.
 
 The "compliance appliance" profile (`features.js:136-138`) is unaffected: it remains a *client build
 default* (`VITE_FEATURE_PROFILE` / `__FEATURE_PROFILE__`) for a single-tenant artifact, which is a

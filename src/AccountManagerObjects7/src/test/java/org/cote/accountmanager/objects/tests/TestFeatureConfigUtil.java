@@ -183,12 +183,12 @@ public class TestFeatureConfigUtil extends BaseTest {
 		List<String> ids = FeatureConfigUtil.getManifestIds();
 		assertNotNull("Manifest ids are null", ids);
 
-		/// Deliberate drift guard on the count stated in aiDocs/UxFeatureFlagDesign.md (13 features).
+		/// Deliberate drift guard on the count stated in aiDocs/UxFeatureFlagDesign.md (16 features).
 		/// The old TestFeatureConfigService asserted 11 against a list literal in its own body, so it
 		/// could not notice that either the service list (12) or the manifest (13) had moved. This
 		/// asserts against the production accessor.
-		assertEquals("Manifest feature count drifted from the 13 documented in UxFeatureFlagDesign.md",
-			13, ids.size());
+		assertEquals("Manifest feature count drifted from the 16 documented in UxFeatureFlagDesign.md",
+			16, ids.size());
 
 		/// 'media' is the id that rotted out of the server-side list unnoticed (design doc §3.2).
 		assertTrue("'media' is missing from the manifest", ids.contains("media"));

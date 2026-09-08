@@ -14,3 +14,11 @@ e2e/screenshots/
 **/.setup.token
 .setup.done
 **/.setup.done
+
+# docker-compose default env file. Auto-loaded by `docker compose` run from this
+# dir; may hold a real embedding/AI API key (e.g. Azure). NEVER commit it.
+# The committed template is .env.example (no secrets).
+.env
+**/.env
+!.env.example
+!**/.env.example

@@ -2,6 +2,7 @@ package org.cote.rest.services;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.stream.Collectors;
 
@@ -52,6 +53,7 @@ import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -743,6 +745,60 @@ public class OlioService {
 		// Full world wipe: data records + group tree + world record.
 		boolean deleted = WorldUtil.deleteWorld(deleteAs, world);
 		return Response.ok("{\"deleted\":" + deleted + "}").build();
+	}
+
+	/**
+	 * Load the base Olio corpus (dictionary, names, surnames, occupations, colors, patterns, traits;
+	 * optionally locations) into the acting admin's organization. Shared backend for the Docker
+	 * build-bake and the per-org admin "Load Olio data" panel.
+	 * <p>
+	 * Transport only: derive the org from the principal (mirrors {@code CacheService.evictOlioContext}),
+	 * read {@code datagen.path} from the servlet init-params, gate on the Objects7 corpus-present probe,
+	 * then delegate to {@link WorldUtil#loadOlioData(BaseRecord, String, boolean)}. All business logic —
+	 * including resolving/using the Olio principal for the writes — lives in Objects7.
+	 *
+	 * @param body    optional JSON body; {@code {"includeLocations": true}} additionally loads location
+	 *                data (large; default false)
+	 * @param request the HTTP request carrying the authenticated admin principal
+	 * @return 200 with per-corpus counts as JSON; 401 unauthenticated; 409 when the corpus is not present;
+	 *         500 when {@code datagen.path} is unconfigured
+	 */
+	@POST
+	@Path("/loadData")
+	@RolesAllowed({"admin"})
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response loadOlioData(String body, @Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		if (user == null) return Response.status(401).build();
+
+		String dataPath = context.getInitParameter("datagen.path");
+		if (dataPath == null || dataPath.isBlank()) {
+			return Response.status(500).entity("{\"error\":\"datagen.path is not configured\"}").build();
+		}
+
+		/// Corpus-present gate. The filesystem knowledge lives in Objects7 (WorldUtil.isOlioDataPresent),
+		/// not here — this layer only maps a missing corpus to a clear 409 instead of a 500.
+		if (!WorldUtil.isOlioDataPresent(dataPath)) {
+			return Response.status(409)
+				.entity("{\"error\":\"Olio corpus data is not present at the configured datagen.path\"}")
+				.build();
+		}
+
+		boolean includeLocations = false;
+		if (body != null && !body.isBlank()) {
+			try {
+				Map<String, Object> in = JSONUtil.getMap(body.getBytes(), String.class, Object.class);
+				if (in != null && Boolean.TRUE.equals(in.get("includeLocations"))) {
+					includeLocations = true;
+				}
+			} catch (Exception e) {
+				logger.warn("loadOlioData: could not parse request body, defaulting includeLocations=false: " + e.getMessage());
+			}
+		}
+
+		Map<String, Integer> counts = WorldUtil.loadOlioData(user, dataPath, includeLocations);
+		return Response.ok(JSONUtil.exportObject(counts)).build();
 	}
 
 }

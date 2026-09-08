@@ -13,11 +13,22 @@ import {
     tokenFromUrl,
     writeSetupCache
 } from '../core/setupSupport.js';
+/// The feature manifest module (client-only wiring + the client `profiles` catalogue). The setup
+/// wizard reuses its `profiles` table and the pure `resolveFeatures` dependency-closure resolver
+/// rather than keeping a second copy of the profile->ids mapping. Feature flags are a UX-visibility
+/// mechanism, not an authorization boundary.
+import { features as featureCatalog, profiles, resolveFeatures } from '../features.js';
 
 /// First-run setup page. Modeled on views/sig.js (the reference unauthenticated form page):
 /// am7model.models.push -> am7model.forms.<name> -> am7model.newInstance -> inst.action(...).
 /// Registered as a CORE route (/setup) in router.js, because lazy feature routes are only
 /// loaded when authenticated and would therefore be unreachable here.
+///
+/// The page is a multi-step wizard (see `wizardSteps` below). It reuses the model/form system
+/// (am7model + per-field designers + am7view.field) exactly as the single-page form did; the
+/// only difference is that the fields are rendered a step at a time instead of all at once.
+/// The step list is an ordered array of { title, fields, render, validate } definitions so that
+/// inserting another step later (a "Features" step is planned before Review) is a one-line change.
 
 const setupPage = {};
 
@@ -31,6 +42,10 @@ am7model.models.push({
         { name: "setupToken", type: "string", rules: ["$notEmpty"] },
         { name: "initialUserName", type: "string" },
         { name: "initialUserPassword", type: "string" },
+        /// Optional-user confirm: NO schema rules, mirroring initialUserPassword. The "matches"
+        /// requirement is conditional (only when a user is being created), which the schema rule
+        /// system cannot express — it is enforced in setupSupport.validateSetupForm instead.
+        { name: "initialUserPasswordConfirm", type: "string" },
         { name: "initialUserOrganization", type: "string", default: SETUP_ORGANIZATIONS[0] },
         { name: "serverSd", type: "string" },
         { name: "serverFace", type: "string" },
@@ -56,6 +71,7 @@ am7model.forms.setup = {
         setupToken: { layout: "full", label: "Setup Token", type: "password" },
         initialUserName: { layout: "full", label: "User Name" },
         initialUserPassword: { layout: "full", label: "User Password", type: "password" },
+        initialUserPasswordConfirm: { layout: "full", label: "Confirm User Password", type: "password" },
         initialUserOrganization: {
             layout: "full",
             label: "Organization",
@@ -79,7 +95,11 @@ let state = {
     submitting: false,
     prefilled: false,
     loadingValues: false,
-    message: null
+    message: null,
+    step: 0,
+    /// Default to the bare-minimum profile: setup starts from the smallest legal set (core only)
+    /// and the admin opts in to more. This is the explicit ask — previously setup enabled everything.
+    featureProfile: "minimal"
 };
 
 function values() {
@@ -89,6 +109,7 @@ function values() {
         setupToken: inst.api.setupToken(),
         initialUserName: inst.api.initialUserName(),
         initialUserPassword: inst.api.initialUserPassword(),
+        initialUserPasswordConfirm: inst.api.initialUserPasswordConfirm(),
         initialUserOrganization: inst.api.initialUserOrganization(),
         serverSd: inst.api.serverSd(),
         serverFace: inst.api.serverFace(),
@@ -103,6 +124,7 @@ function clearPasswords() {
     inst.api.adminPassword("");
     inst.api.adminPasswordConfirm("");
     inst.api.initialUserPassword("");
+    inst.api.initialUserPasswordConfirm("");
 }
 
 async function doSetup() {
@@ -115,6 +137,10 @@ async function doSetup() {
     Object.keys(v.errors).forEach(k => { inst.validationErrors[k] = v.errors[k]; });
     if (!v.valid || !schemaOk) {
         state.message = null;
+        /// In the wizard the offending field may be on a step other than Review, so land the
+        /// operator on the first step that carries a highlighted field.
+        let bad = wizardSteps.findIndex(s => (s.fields || []).some(f => inst.validationErrors[f]));
+        if (bad >= 0) state.step = bad;
         page.toast("warn", "Please correct the highlighted fields");
         m.redraw();
         return;
@@ -124,9 +150,12 @@ async function doSetup() {
     state.message = null;
     m.redraw();
 
-    /// Base64's methods rely on `this`, so let buildSetupPayload use its bound default rather
-    /// than passing Base64.encode unbound.
-    let payload = buildSetupPayload(values());
+    /// Resolve the chosen starting profile to its full feature-id list (core + transitive deps
+    /// force-included) via the manifest module's pure resolver, and hand it to buildSetupPayload so
+    /// the payload carries `features: [...ids]`. Base64's methods rely on `this`, so let
+    /// buildSetupPayload use its bound default rather than passing Base64.encode unbound.
+    let featureIds = resolveFeatures(state.featureProfile);
+    let payload = buildSetupPayload(values(), featureIds);
     let r = await am7client.runSetup(payload, inst.api.setupToken());
     state.submitting = false;
 
@@ -226,6 +255,10 @@ inst.designer("initialUserPassword", function (i) {
     return fieldBlock(i, "initialUserPassword", "At least " + SETUP_MIN_PASSWORD_LENGTH + " characters.");
 });
 
+inst.designer("initialUserPasswordConfirm", function (i) {
+    return fieldBlock(i, "initialUserPasswordConfirm");
+});
+
 inst.designer("initialUserOrganization", function (i) {
     return fieldBlock(i, "initialUserOrganization");
 });
@@ -269,9 +302,208 @@ inst.designer("serverEmbedding", function (i) {
     ]));
 });
 
-/// Submit on Enter from the confirm field, matching sig.js's password behavior.
-inst.viewProperties("adminPasswordConfirm", { onkeydown: function (e) { if (e.which == 13) doSetup(); } });
+/// Enter in a password/confirm field advances to the next step rather than submitting (this is
+/// a wizard now; submit only happens from the terminal Review step).
+inst.viewProperties("adminPasswordConfirm", { onkeydown: function (e) { if (e.which == 13) nextStep(); } });
+inst.viewProperties("initialUserPasswordConfirm", { onkeydown: function (e) { if (e.which == 13) nextStep(); } });
 inst.viewProperties("initialUserName", { autocapitalize: "off" });
+
+/// --- Wizard step machinery -------------------------------------------------------------
+
+/// Render a step's fields by reusing the registered per-field designers (falling back to the
+/// default field view). This is the same rendering am7view.form uses; the wizard just renders a
+/// subset per step.
+function renderStepFields(fields) {
+    return fields.map(f => inst.design(f) || am7view.fieldView(f, inst));
+}
+
+/// Validate ONLY the given step's fields: schema rules first (which set/clear
+/// inst.validationErrors per field), then the cross-field / conditional checks from
+/// validateSetupForm, applied only to this step's fields. Returns true when the step is clean.
+function validateStepFields(fields) {
+    let ok = true;
+    fields.forEach(f => {
+        if (inst.validateField[f] && inst.validateField[f]() === false) ok = false;
+    });
+    let v = validateSetupForm(values());
+    fields.forEach(f => {
+        if (v.errors[f]) { inst.validationErrors[f] = v.errors[f]; ok = false; }
+    });
+    return ok;
+}
+
+function summaryRow(k, val) {
+    return m("div", { class: "flex justify-between text-sm gap-4" }, [
+        m("span", { class: "text-gray-500 dark:text-gray-400" }, k),
+        m("span", { class: "text-right break-all" }, val)
+    ]);
+}
+
+/// --- Features step ---------------------------------------------------------------------
+/// Presentation-only copy for the profile selector. This is UI text, NOT a second profile->ids
+/// table — the actual id lists come from the manifest module (resolveFeatures). The bare-minimum
+/// and compliance ("ISO 42001 only") profiles are the two the operator was told to expect, so they
+/// carry the most explicit copy; any other profile the module defines still renders with a generic
+/// hint and its resolved feature list shown beneath it.
+const PROFILE_HINTS = {
+    minimal: "Bare minimum — core object management, navigation, forms and lists only. Recommended default; switch more on later under Feature Configuration.",
+    compliance: "ISO 42001 only — the compliance appliance surface (adds chat, access requests and feature config to support it).",
+    standard: "Core plus media processing and LLM chat.",
+    enterprise: "Compliance, schema tools, passkeys and access management on top of the standard set.",
+    full: "Everything available in this build.",
+    gaming: "Core plus media, chat, the card game, mini games and biometrics."
+};
+
+/// Show minimal first (the default) and compliance second (the motivating example); any profile the
+/// manifest module defines that is not listed here is appended so the module stays the source of truth.
+const PROFILE_DISPLAY_ORDER = ["minimal", "compliance", "standard", "enterprise", "full", "gaming"];
+
+function orderedProfileNames() {
+    let names = Object.keys(profiles);
+    let ordered = PROFILE_DISPLAY_ORDER.filter(n => names.includes(n));
+    names.forEach(n => { if (!ordered.includes(n)) ordered.push(n); });
+    return ordered;
+}
+
+function profileLabel(name) {
+    return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/// Map resolved feature ids to their human labels via the manifest catalogue (fall back to the id).
+function featureLabels(ids) {
+    return ids.map(id => (featureCatalog[id] && featureCatalog[id].label) ? featureCatalog[id].label : id);
+}
+
+function renderFeatures() {
+    return m("div", [
+        heading("Features",
+            "Choose the feature set this deployment starts with. This only controls which parts of the "
+            + "UI are switched on — it is not an access-control or security boundary — and every choice can "
+            + "be changed later under Feature Configuration. The bare-minimum set is selected by default."),
+        m("div", { class: "flex flex-col gap-2 mt-2" },
+            orderedProfileNames().map(function (name) {
+                let ids = resolveFeatures(name);
+                let selected = state.featureProfile === name;
+                return m("label", {
+                    key: name,
+                    class: "block rounded p-3 cursor-pointer border "
+                        + (selected
+                            ? "border-blue-500 bg-blue-50/50 dark:bg-blue-900/20"
+                            : "border-gray-200 dark:border-gray-700")
+                }, [
+                    m("div", { class: "flex items-center gap-2" }, [
+                        m("input", {
+                            type: "radio",
+                            name: "featureProfile",
+                            value: name,
+                            checked: selected,
+                            onchange: function () { state.featureProfile = name; }
+                        }),
+                        m("span", { class: "font-medium" }, profileLabel(name)),
+                        m("span", { class: "text-xs text-gray-400 dark:text-gray-500 font-mono ml-auto" },
+                            ids.length + (ids.length === 1 ? " feature" : " features"))
+                    ]),
+                    PROFILE_HINTS[name]
+                        ? m("div", { class: "text-xs text-gray-500 dark:text-gray-400 mt-1 ml-6" }, PROFILE_HINTS[name])
+                        : null,
+                    m("div", { class: "text-xs text-gray-400 dark:text-gray-500 mt-1 ml-6" },
+                        featureLabels(ids).join(", "))
+                ]);
+            }))
+    ]);
+}
+
+/// Terminal step: a read-only summary of the operator's choices plus the submit status/error
+/// blocks. The Complete Setup button itself lives in the wizard nav bar.
+function renderReview() {
+    let v = values();
+    let wantsUser = (v.initialUserName && ("" + v.initialUserName).trim().length)
+        || (v.initialUserPassword && ("" + v.initialUserPassword).length);
+    let serverRows = SETUP_SERVERS
+        .filter(s => v[s.field] && ("" + v[s.field]).trim().length)
+        .map(s => summaryRow(s.label, ("" + v[s.field]).trim()));
+    let featureIds = resolveFeatures(state.featureProfile);
+    return m("div", [
+        heading("Review & Complete Setup",
+            "Confirm the choices below, then complete setup. Go Back to change anything."),
+        m("div", { class: "rounded p-3 bg-gray-100 dark:bg-gray-800 flex flex-col gap-1" }, [
+            summaryRow("Administrator password", v.adminPassword ? "Set" : "Not set"),
+            summaryRow("Setup token", v.setupToken ? "Provided" : "Not provided"),
+            summaryRow("Initial user", wantsUser
+                ? (("" + (v.initialUserName || "")).trim() + " (" + v.initialUserOrganization + ")")
+                : "None — skipped"),
+            summaryRow("Feature set", profileLabel(state.featureProfile) + " — " + featureLabels(featureIds).join(", ")),
+            serverRows.length
+                ? m("div", { class: "mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 flex flex-col gap-1" }, [
+                    m("div", { class: "text-xs text-gray-500 dark:text-gray-400" }, "Media & AI servers"),
+                    serverRows
+                ])
+                : summaryRow("Media & AI servers", "Using deployment defaults")
+        ]),
+        state.submitting ? m("div", { class: "mt-2 text-sm" }, "Applying setup ...") : null,
+        state.message ? m("div", {
+            class: "mt-2 p-2 rounded text-sm whitespace-pre-line bg-red-200 text-black dark:bg-red-700 dark:text-white"
+        }, state.message) : null
+    ]);
+}
+
+/// Ordered step definitions. Adding a step (e.g. an upcoming "Features" step before Review) is
+/// a single entry here — the stepper below iterates this array and needs no other change.
+const wizardSteps = [
+    {
+        title: "Administrator",
+        fields: ["adminPassword", "adminPasswordConfirm", "setupToken"],
+        render: function () { return renderStepFields(this.fields); },
+        validate: function () { return validateStepFields(this.fields); }
+    },
+    {
+        title: "Initial User (optional)",
+        fields: ["initialUserName", "initialUserPassword", "initialUserPasswordConfirm", "initialUserOrganization"],
+        render: function () { return renderStepFields(this.fields); },
+        validate: function () { return validateStepFields(this.fields); }
+    },
+    {
+        title: "Media & AI Servers (optional)",
+        fields: ["serverSd", "serverFace", "serverTag", "serverVoiceTts", "serverVoiceStt", "serverEmbedding"],
+        render: function () { return renderStepFields(this.fields); },
+        validate: function () { return validateStepFields(this.fields); }
+    },
+    {
+        /// Features step: pick the starting UX feature set. It has no am7model fields (the selector
+        /// is a custom radio group over the manifest's `profiles`), so `fields` is empty and
+        /// `validate` always passes — a profile is always selected (defaults to minimal), so this
+        /// step can never block submit.
+        title: "Features",
+        fields: [],
+        render: function () { return renderFeatures(); },
+        validate: function () { return true; }
+    },
+    {
+        title: "Review & Complete Setup",
+        fields: [],
+        render: function () { return renderReview(); }
+        /// No validate: this terminal step submits via doSetup, which runs the FULL validation
+        /// (inst.validate + validateSetupForm) exactly as the single-page form did.
+    }
+];
+
+function nextStep() {
+    let step = wizardSteps[state.step];
+    if (step.validate && !step.validate()) {
+        state.message = null;
+        page.toast("warn", "Please correct the highlighted fields");
+        m.redraw();
+        return;
+    }
+    if (state.step < wizardSteps.length - 1) state.step++;
+    m.redraw();
+}
+
+function prevStep() {
+    /// Back never validates.
+    if (state.step > 0) state.step--;
+    m.redraw();
+}
 
 /// --- State probe -----------------------------------------------------------------------
 
@@ -342,6 +574,23 @@ async function loadServerValues() {
     m.redraw();
 }
 
+/// Progress indicator: "Step X of Y" plus a dot per step (filled up to the current one).
+function stepIndicator() {
+    return m("div", { class: "mt-2 flex items-center gap-2" }, [
+        m("span", { class: "text-xs text-gray-500 dark:text-gray-400" },
+            "Step " + (state.step + 1) + " of " + wizardSteps.length),
+        m("div", { class: "flex gap-1 ml-auto" },
+            wizardSteps.map((s, i) => m("span", {
+                key: i,
+                title: s.title,
+                class: "inline-block w-2.5 h-2.5 rounded-full "
+                    + (i === state.step
+                        ? "bg-blue-500"
+                        : (i < state.step ? "bg-blue-300 dark:bg-blue-700" : "bg-gray-300 dark:bg-gray-600"))
+            })))
+    ]);
+}
+
 setupPage.view = {
     oninit: function () {
         state.checked = false;
@@ -350,6 +599,8 @@ setupPage.view = {
         state.prefilled = false;
         state.loadingValues = false;
         state.submitting = false;
+        state.step = 0;
+        state.featureProfile = "minimal";
         checkState();
     },
     view: function () {
@@ -363,13 +614,41 @@ setupPage.view = {
                 m("div", { class: "box-shadow-white" }, "Setup is not available. Redirecting to sign-in ...")
             ]);
         }
+        let step = wizardSteps[state.step];
+        let isFirst = state.step === 0;
+        let isLast = state.step === wizardSteps.length - 1;
         return m("div", { class: "screen-center-gray" }, [
             m("div", { class: "box-shadow-white" }, [
-                am7view.form(inst),
-                state.submitting ? m("div", { class: "mt-2 text-sm" }, "Applying setup ...") : null,
-                state.message ? m("div", {
-                    class: "mt-2 p-2 rounded text-sm whitespace-pre-line bg-red-200 text-black dark:bg-red-700 dark:text-white"
-                }, state.message) : null,
+                m("h3", { class: "box-title" }, [
+                    m("span", { class: "material-symbols-outlined mr-4" }, "settings"),
+                    m("span", {}, "First-Run Setup")
+                ]),
+                stepIndicator(),
+                m("div", { class: "mt-4" }, step.render()),
+                m("div", {
+                    class: "mt-4 pt-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center"
+                }, [
+                    !isFirst
+                        ? m("button", {
+                            class: "btn btn-secondary text-sm",
+                            disabled: state.submitting,
+                            onclick: prevStep
+                        }, "Back")
+                        : m("span"),
+                    isLast
+                        ? m("button", {
+                            class: "btn btn-primary text-sm",
+                            disabled: state.submitting,
+                            onclick: doSetup
+                        }, [
+                            m("span", { class: "material-symbols-outlined md-18 mr-4" }, "settings"),
+                            m("span", {}, state.submitting ? "Applying ..." : "Complete Setup")
+                        ])
+                        : m("button", {
+                            class: "btn btn-primary text-sm",
+                            onclick: nextStep
+                        }, "Next")
+                ]),
                 m("div", { class: "mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-center" }, [
                     m("a", {
                         class: "text-sm underline cursor-pointer",

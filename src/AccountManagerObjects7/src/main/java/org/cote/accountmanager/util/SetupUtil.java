@@ -374,6 +374,10 @@ public class SetupUtil {
 		private String initialUserName = null;
 		private String initialUserPassword = null;
 		private String initialUserOrganization = OrganizationContext.PUBLIC_ORGANIZATION;
+		/// OPTIONAL initial UX feature profile. Forwarded VERBATIM to FeatureConfigUtil; the ids are
+		/// OPAQUE strings and nothing here branches on any specific id ("iso42001" is just a string).
+		/// Default empty, never null, so an absent field is a clean no-op.
+		private List<String> features = new ArrayList<>();
 
 		public String getAdminPassword() {
 			return adminPassword;
@@ -401,6 +405,12 @@ public class SetupUtil {
 		}
 		public void setInitialUserOrganization(String initialUserOrganization) {
 			this.initialUserOrganization = initialUserOrganization;
+		}
+		public List<String> getFeatures() {
+			return features;
+		}
+		public void setFeatures(List<String> features) {
+			this.features = (features != null ? features : new ArrayList<>());
 		}
 	}
 
@@ -708,6 +718,17 @@ public class SetupUtil {
 		}
 		res.setInitialUser(name);
 
+		/// Persist the OPTIONAL initial UX feature profile for this organization. This runs ONLY
+		/// because we just confirmed a user was created (all failure/idempotence paths above return
+		/// before this point), and it happens BEFORE the irreversible setup marker is written. The
+		/// write is authorized as the initial user's ORG admin (userOctx.getAdminUser()), never the
+		/// /System admin and never the freshly-created user. It is strictly non-fatal: a false return
+		/// only appends a warning and never blocks setup completion.
+		if(!applyInitialFeatures(userOctx.getAdminUser(), req.getFeatures())) {
+			res.getWarnings().add("The initial UX feature profile was not persisted for " + orgPath
+				+ "; the organization will resolve to the default feature profile");
+		}
+
 		/// Post-condition: the created user must carry exactly the Factory.setupUser defaults and
 		/// none of the administrative roles. Reported, and logged as an audit line.
 		List<String> granted = listSystemRoleMemberships(created, userOctx.getOrganizationId());
@@ -725,6 +746,39 @@ public class SetupUtil {
 			if(!granted.contains(role)) {
 				res.getWarnings().add("Initial user '" + name + "' is missing the expected default role '" + role + "'");
 			}
+		}
+	}
+
+	/// Persist the OPTIONAL initial UX feature profile against the supplied org admin's organization.
+	///
+	/// This is factored out of createInitialUserStep so it is directly unit-testable against a
+	/// freshly-created test org + admin, WITHOUT tripping the one-shot setup latch (which forbids a
+	/// full runSetup re-run on an initialized DB).
+	///
+	/// Contract:
+	///  - null/empty features  -> true (clean no-op; nothing is written, org keeps the default profile).
+	///  - orgAdmin == null      -> false (cannot authorize a write; logged).
+	///  - otherwise             -> the boolean from FeatureConfigUtil.setEnabledFeatures, which itself
+	///    NEVER throws and NEVER writes to /System. The ids are OPAQUE strings forwarded verbatim;
+	///    FeatureConfigUtil.resolveFeatures force-includes core, closes dependency closures, and drops
+	///    unknown ids, so even a hostile/garbage array cannot yield a routeless app.
+	///
+	/// The method is non-fatal by construction: any unexpected exception is caught, logged, and turned
+	/// into a false return so the caller can warn without aborting setup.
+	public static boolean applyInitialFeatures(BaseRecord orgAdmin, List<String> features) {
+		if(features == null || features.isEmpty()) {
+			return true;
+		}
+		if(orgAdmin == null) {
+			logger.error("Cannot persist the initial UX feature profile: no organization administrator was supplied");
+			return false;
+		}
+		try {
+			return FeatureConfigUtil.setEnabledFeatures(orgAdmin, features);
+		}
+		catch(Exception e) {
+			logger.error("Failed to persist the initial UX feature profile", e);
+			return false;
 		}
 	}
 

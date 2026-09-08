@@ -196,12 +196,15 @@
 	<context-param>
 		<description>Embedding Server Type</description>
 		<param-name>embedding.type</param-name>
+		<!--
 		<param-value>local</param-value>
+		-->
+		<param-value>openai</param-value>
 	</context-param>
 		<context-param>
 		<description>Embedding Server Authorization Token</description>
 		<param-name>embedding.authorizationToken</param-name>
-		<param-value></param-value>
+		<param-value>${EMBEDDING_AUTH_TOKEN}</param-value>
 	</context-param>
 	<context-param>
 		<description>Embedding vector dimensions requested from the embedding model (OPENAI branch). Must match the common.vectorExt.embedding column width (maxLength); a mismatch throws at startup. Leave blank to use the code default (768).</description>

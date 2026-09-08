@@ -1,8 +1,11 @@
 package org.cote.accountmanager.olio;
 
+import java.io.File;
 import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.apache.logging.log4j.LogManager;
@@ -12,7 +15,9 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
+import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
@@ -290,6 +295,155 @@ public class WorldUtil {
 		// logger.info("Colors: " + colors);
 		int patterns = loadPatterns(user, world, basePath + "/patterns/patterns.csv", (useSharedLibrary == false && reset));
 		// logger.info("Patterns: " + patterns);
+	}
+
+	/**
+	 * The base Olio corpus files that {@link #loadOlioData(BaseRecord, String, boolean)} reads from disk,
+	 * expressed relative to the {@code datagen.path} root. {@code colors} is intentionally absent: the
+	 * color corpus is loaded from the embedded {@code ColorUtil.getDefaultColors()} resource, not a CSV
+	 * (see {@code WordParser.loadColors}). Location data is also absent — it is optional and gated behind
+	 * the {@code includeLocations} flag, and for the default (unfeatured) grid universe it loads nothing.
+	 */
+	private static final String[] REQUIRED_CORPUS_FILES = new String[] {
+		"/wn3.1.dict/dict/data.noun",
+		"/names/yob2022.txt",
+		"/surnames/Names_2010Census.csv",
+		"/occupations/noc_2021_version_1.0_-_elements.csv",
+		"/patterns/patterns.csv",
+		"/traits.json"
+	};
+
+	/**
+	 * Corpus-present probe. Returns true only when every file the base corpus load reads
+	 * ({@link #REQUIRED_CORPUS_FILES}) exists under {@code dataPath}. This is the layering boundary for
+	 * the "Load Olio data" surfaces: the Service7 endpoint (and any other caller) MUST call this instead
+	 * of doing its own filesystem checks, so the knowledge of which files make up the corpus stays in
+	 * Objects7.
+	 *
+	 * @param dataPath the {@code datagen.path} corpus root
+	 * @return true if the base corpus is present and loadable, false otherwise
+	 */
+	public static boolean isOlioDataPresent(String dataPath) {
+		if(dataPath == null || dataPath.isBlank()) {
+			logger.warn("Olio corpus data path is null or blank");
+			return false;
+		}
+		for(String rel : REQUIRED_CORPUS_FILES) {
+			File f = new File(dataPath + rel);
+			if(!f.exists()) {
+				logger.warn("Olio corpus file missing: " + f.getAbsolutePath());
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Corpus-only loader for the "Olio corpus provisioning" surfaces (the Docker build-bake and the
+	 * per-org admin "Load Olio data" panel). This is deliberately NOT {@link #loadWorldData(OlioContext)}:
+	 * that method loads locations UNCONDITIONALLY (see the {@code loadLocations} call in its body), which
+	 * is the large, feature-gated corpus we want to keep optional here.
+	 * <p>
+	 * The load target is the org's default grid UNIVERSE (path/name derived exactly as
+	 * {@code OlioContextUtil.getGridContext}), which is where {@code loadWorldData} also places the base
+	 * corpus. The universe/world groups are owned by the org's Olio principal
+	 * ({@link OlioContext#OLIO_USER_NAME}), NOT the request/admin user — this mirrors
+	 * {@code OlioContext.configureEnvironment}. If the org has never initialized an Olio context, the
+	 * principal is created via the org admin (again mirroring {@code configureEnvironment}).
+	 * <p>
+	 * A subsequent real grid {@code OlioContext} init finds this same universe already corpus-loaded and
+	 * short-circuits via {@code fastDataCheck}, so this method safely pre-bakes the corpus.
+	 *
+	 * @param user             the acting user (used only to resolve the organization context; the writes
+	 *                         are performed as the Olio principal)
+	 * @param dataPath         the {@code datagen.path} corpus root
+	 * @param includeLocations when true, additionally invoke {@code loadLocations} (large; a no-op for the
+	 *                         default unfeatured grid universe)
+	 * @return per-corpus record counts (never null); empty when the org context or principal cannot be
+	 *         resolved
+	 */
+	public static Map<String, Integer> loadOlioData(BaseRecord user, String dataPath, boolean includeLocations) {
+		Map<String, Integer> counts = new LinkedHashMap<>();
+		if(user == null) {
+			logger.error("User is null");
+			return counts;
+		}
+		if(dataPath == null || dataPath.isBlank()) {
+			logger.error("Olio corpus data path is null or blank");
+			return counts;
+		}
+
+		IOContext ioContext = IOSystem.getActiveContext();
+		OrganizationContext octx = ioContext.findOrganizationContext(user);
+		if(octx == null) {
+			logger.error("Failed to find organization context for user " + user.get(FieldNames.FIELD_NAME));
+			return counts;
+		}
+		long orgId = octx.getOrganizationId();
+
+		/// The default universe/world groups are owned by the org's Olio principal, not the request/admin
+		/// user (mirror OlioContext.configureEnvironment). Resolve it; create it via the org admin if this
+		/// org has never initialized an Olio context.
+		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		if(olioUser == null) {
+			olioUser = ioContext.getFactory().getCreateUser(octx.getAdminUser(), OlioContext.OLIO_USER_NAME, orgId);
+		}
+		if(olioUser == null) {
+			logger.error("Failed to resolve the Olio principal for organization " + orgId);
+			return counts;
+		}
+
+		/// Derive the default grid universe/world paths and names exactly as OlioContextUtil.getGridContext
+		/// builds them, so this pre-baked universe is the one a later grid context init will find and reuse.
+		OlioContextConfiguration cfg = new OlioContextConfiguration(
+			olioUser,
+			dataPath,
+			OlioContextUtil.DEFAULT_UNIVERSE_NAME,
+			OlioContextUtil.DEFAULT_WORLD_NAME,
+			new String[] {},
+			1,
+			50,
+			false,
+			false
+		);
+		String universePath = cfg.getUniversePath();
+		String universeName = cfg.getUniverseName();
+		String worldPath = cfg.getWorldPath();
+		String worldName = cfg.getWorldName();
+
+		/// (a) Ensure the org's default universe/world exist, as the Olio principal.
+		BaseRecord universe = getCreateWorld(olioUser, universePath, universeName, cfg.getFeatures());
+		if(universe == null) {
+			logger.error("Failed to get/create universe " + universeName);
+			return counts;
+		}
+		BaseRecord world = getCreateWorld(olioUser, universe, worldPath, worldName, new String[0]);
+		if(world == null) {
+			logger.error("Failed to get/create world " + worldName);
+			return counts;
+		}
+		ioContext.getReader().populate(universe, 2);
+
+		/// (b) Load the base corpus into the UNIVERSE, mirroring loadWorldData minus the unconditional
+		/// location load. This is a load, not a reset, so reset=false throughout — which collapses the
+		/// (useSharedLibrary == false && reset) guard to false for the shared-library corpora, exactly as
+		/// in loadWorldData.
+		boolean reset = false;
+		counts.put("dictionary", loadDictionary(olioUser, universe, dataPath + "/wn3.1.dict/dict", (useSharedLibrary == false && reset)));
+		counts.put("occupations", loadOccupations(olioUser, universe, dataPath + "/occupations/noc_2021_version_1.0_-_elements.csv", (useSharedLibrary == false && reset)));
+		counts.put("names", loadNames(olioUser, universe, dataPath + "/names/yob2022.txt", (useSharedLibrary == false && reset)));
+		counts.put("surnames", loadSurnames(olioUser, universe, dataPath + "/surnames/Names_2010Census.csv", (useSharedLibrary == false && reset)));
+		counts.put("traits", loadTraits(olioUser, universe, dataPath, reset));
+		counts.put("colors", loadColors(olioUser, universe, dataPath + "/colors.csv", (useSharedLibrary == false && reset)));
+		counts.put("patterns", loadPatterns(olioUser, universe, dataPath + "/patterns/patterns.csv", (useSharedLibrary == false && reset)));
+
+		/// (c) Location data is large and feature-gated; only load it when explicitly requested.
+		if(includeLocations) {
+			counts.put("locations", loadLocations(olioUser, universe, dataPath + "/location", reset));
+		}
+
+		logger.info("Loaded Olio corpus for organization " + orgId + ": " + counts);
+		return counts;
 	}
 
 

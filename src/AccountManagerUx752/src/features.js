@@ -108,6 +108,13 @@ const featureWiring = {
         routes: () => import('./features/chapBook.js'),
         menuItems: [{ icon: 'menu_book', label: 'ChapBook', route: '/chap-book', section: 'aside' }],
         routePrefixes: ['/chap-book']
+    },
+    olioAdmin: {
+        routes: () => import('./features/olioAdmin/routes.js'),
+        // adminOnly hides it for non-admins; roles:['admin'] is carried too so the shared
+        // isMenuItemVisible predicate (features.js) gates it consistently (adminOnly ⇒ roles.admin).
+        menuItems: [{ icon: 'travel_explore', label: 'Olio Admin', route: '/admin/olio', section: 'aside', adminOnly: true, roles: ['admin'] }],
+        routePrefixes: ['/admin/olio']
     }
 };
 
@@ -253,6 +260,38 @@ function initFeatures(profile, manifest) {
     }
 }
 
+/**
+ * PURE dependency-closure resolver. Given a profile NAME or an explicit array of feature ids,
+ * return the full id list with `core` force-included (D1) and every feature's `deps` transitively
+ * added. Unknown ids are dropped, exactly as enableFeature() would refuse them.
+ *
+ * Unlike initFeatures(), this does NOT mutate the live enabledFeatures set, so it is safe to call
+ * from a render path (the first-run setup wizard resolves the admin's chosen profile to the id list
+ * it sends in the setup payload) or from a test, with no side effects. It reuses the same `profiles`
+ * table and `features[id].deps` graph so it can never drift from the live closure.
+ */
+function resolveFeatures(profileOrList) {
+    let ids;
+    if (typeof profileOrList === 'string') {
+        ids = profiles[profileOrList] || profiles.standard;
+    } else if (Array.isArray(profileOrList)) {
+        ids = profileOrList;
+    } else {
+        ids = profiles.standard;
+    }
+    let out = new Set();
+    let add = function (id) {
+        if (out.has(id)) return;
+        let f = features[id];
+        if (!f) return;
+        out.add(id);
+        for (let dep of (f.deps || [])) add(dep);
+    };
+    add('core');
+    for (let id of ids) add(id);
+    return Array.from(out);
+}
+
 async function loadFeatureRoutes() {
     let merged = {};
     for (let id of enabledFeatures) {
@@ -382,6 +421,7 @@ export {
     enableFeature,
     disableFeature,
     initFeatures,
+    resolveFeatures,
     applyFeatures,
     loadFeatureRoutes,
     getMenuItems,
