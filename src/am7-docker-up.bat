@@ -42,6 +42,10 @@ REM  docker-compose.test.yml forwards this via `CATALINA_OPTS: ${CATALINA_OPTS:-
 REM  so setting it here OVERRIDES that compose default. Keep the two in step, or
 REM  clear it here (set "CATALINA_OPTS=") to just take the compose default.
 set "CATALINA_OPTS=-Xms1g -Xmx8g"
+
+REM  Args passed to assemble-seed.bat in step [2/4]. --with-location also stages the
+REM  large location grids (needed for the geo/map corpus); clear this to base corpus only.
+set "SEED_ARGS=--with-location"
 REM ----------------------------------------------------------------------------
 
 set "PROJECT=am7test"
@@ -92,7 +96,7 @@ if errorlevel 1 (
 )
 
 if defined BUILD_ARG (
-    echo [1/3] Building image with PREBUILT=1 ...
+    echo [1/4] Building image with PREBUILT=1 ...
     docker compose -p %PROJECT% -f %COMPOSE_FILE% build --build-arg PREBUILT=1 am7
     if errorlevel 1 (
         echo ERROR: image build failed.
@@ -100,11 +104,31 @@ if defined BUILD_ARG (
         exit /b 1
     )
 ) else (
-    echo [1/3] Skipping explicit build step.
+    echo [1/4] Skipping explicit build step.
 )
 
 echo.
-echo [2/3] Starting containers ...
+echo [2/4] Staging Olio seed corpus ...
+REM  assemble-seed.bat mirrors your SEED_STAGING corpus into docker-data\am7\datagen
+REM  (the /data/am7 -> /data/am7/datagen bind mount) so Olio character generation has
+REM  its reference data. Without this, a fresh stack ships datagen EMPTY and character
+REM  creation fails (KI-70) - see dockerDevSetup.md section 2e. It is idempotent
+REM  (robocopy skips unchanged files, ~instant after the first run) and self-skips with
+REM  a warning when SEED_STAGING is unset, so it is safe to run on every `up`. SEED_ARGS
+REM  (set above) controls scope - defaults to --with-location so the grids are staged too.
+REM  MUST use `call`: without it, control transfers to assemble-seed.bat and never
+REM  returns here, so the containers would never start.
+call "%SRC_DIR%assemble-seed.bat" %SEED_ARGS%
+if errorlevel 1 (
+    echo.
+    echo   WARNING: seed staging did not complete ^(SEED_STAGING unset, or a robocopy error^).
+    echo            The stack will still start, but Olio character generation may fail until
+    echo            the corpus is staged. Set SEED_STAGING in src\.env and re-run, or run
+    echo            assemble-seed.bat by hand. See dockerDevSetup.md section 2e.
+)
+
+echo.
+echo [3/4] Starting containers ...
 docker compose -p %PROJECT% -f %COMPOSE_FILE% up %BUILD_FLAG% -d
 if errorlevel 1 (
     echo ERROR: `docker compose up` failed.
@@ -113,7 +137,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/3] Status:
+echo [4/4] Status:
 docker compose -p %PROJECT% -f %COMPOSE_FILE% ps
 
 REM Give the entrypoint a moment to render web.xml and mint the setup token.
