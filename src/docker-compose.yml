@@ -8,9 +8,16 @@ services:
       - "8443:8443"
     environment:
       # External Postgres/pgvector (NOT started by this compose file -- run it
-      # separately per setup/dockerNotes.txt, e.g.
-      # `docker run -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=password
-      #  --name postgres -p 15432:5432 -d pgvector/pgvector`).
+      # separately per setup/dockerNotes.txt, which now carries the PINNED image
+      # tag, the performance-tuning `-c` flags and the required --shm-size.
+      # Copy the command from there rather than re-typing it: the short form
+      # this comment used to show ran an UNPINNED `pgvector/pgvector`, which is
+      # exactly how the dev container silently drifted onto a newer PG major
+      # than the rest of the repo.
+      #
+      # The tuned, containerized equivalent is docker-compose.test.yml's am7-pg
+      # service (built from docker/postgres/Dockerfile). This file starts no
+      # Postgres of its own.
       DB_HOST: ${DB_HOST:-host.docker.internal}
       DB_PORT: ${DB_PORT:-15432}
       DB_NAME: ${DB_NAME:-am72db}

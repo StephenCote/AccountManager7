@@ -80,8 +80,11 @@ So:
 
 1. **Docker Desktop running.** Verified against Docker Engine 29.4.2 / Compose v5.1.3.
 2. **Disk:** the build pulls `maven:3.9-eclipse-temurin-26`, `node:24-alpine`,
-   `eclipse-temurin:26-jre-alpine`, `pgvector/pgvector:pg17` and downloads Tomcat 11.0.25 — budget
-   several GB and 10–20 min for a cold first build.
+   `eclipse-temurin:26-jre-alpine` and `pgvector/pgvector:0.8.6-pg18-trixie`, and downloads Tomcat
+   11.0.25 — budget several GB and 10–20 min for a cold first build. Note that the database is
+   **built, not pulled stock**: `am7-pg` has a `build:` stanza (`docker/postgres/Dockerfile`) that
+   bakes the AM7 performance tuning into a local `am7-pg:latest` image on top of that pinned
+   pgvector base, so `up --build` includes a (fast) image build for it too.
 3. **Free host ports:** `9443` and `15433` (Path A). Nothing else is published.
 4. **Line endings.** `src/.gitattributes` pins `*.sh` and `docker/**` to LF, and the Dockerfile
    defensively strips `\r` (`Dockerfile:122-126`). You do not need to do anything — but if you ever
@@ -480,7 +483,7 @@ hosts too).
 ```powershell
 docker run -d --name am7-pg-ext -p 15433:5432 `
   -e POSTGRES_DB=am72db -e POSTGRES_USER=am7user -e POSTGRES_PASSWORD=password `
-  pgvector/pgvector:pg17
+  pgvector/pgvector:0.8.6-pg18-trixie
 
 Set-Location C:\Projects\GitHub\AccountManager7\src
 $env:DB_HOST = "host.docker.internal"
@@ -494,6 +497,15 @@ Then §3–§5 with `8443` in place of `9443` and container name `src-am7-1`.
 
 Differences from Path A that will bite:
 
+- **This Postgres is stock — it has none of the AM7 tuning.** Path A *builds* `am7-pg` from
+  `docker/postgres/Dockerfile` with the tuning baked in; the `docker run` above is the plain pgvector
+  base image on server defaults (notably `max_connections=100`, below the JDBC pool's
+  `maxActive="150"`). Add `-c` flags if you need the tuning — `setup/dockerNotes.txt` §1 carries the
+  current flag list and the `--shm-size` rationale. Keep the tag pinned: an untagged
+  `pgvector/pgvector` floats across PG majors, and a data directory initialized by one major will not
+  start under another. Also note the pg18 base's own `PGDATA` is `/var/lib/postgresql/18/docker`, not
+  the pg17-era `/var/lib/postgresql/data` — irrelevant for the anonymous volume above, but it decides
+  where the data lands the moment you bind-mount it.
 - **State lives in named volumes** (`am7-data`, `am7-certs`), not a host directory. `docker compose
   down -v` destroys them. Reset is `docker volume rm`, not `rm -rf`.
 - **`8443` collides with a local Eclipse Tomcat.** Stop one or the other.

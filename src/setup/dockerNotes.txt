@@ -1,2 +1,118 @@
-docker run -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=password --name postgres -p 15432:5432 -d pgvector/pgvector
-docker run --name pgadmin -p 16543:80 -e "PGADMIN_DEFAULT_EMAIL=pgadmin@localhost.com" -e "PGADMIN_DEFAULT_PASSWORD=password" -d dpage/pgadmin4:snapshot
+DEV containers, started by hand (NOT managed by any compose file).
+=============================================================================
+RUN THESE IN cmd.exe -- they use `^` line continuations. In PowerShell the `^`
+is not a continuation character and the commands break apart confusingly; use
+backticks there, or paste each as a single line. (The PowerShell examples in
+docker/postgres/conf.d/README.md are the other convention.)
+
+The self-contained test stack is separate -- see docker-compose.test.yml and
+aiDocs/dockerDevSetup.md. These two are the long-lived dev boxes that
+docker-compose.yml points at via DB_HOST/DB_PORT (host.docker.internal:15432).
+
+-----------------------------------------------------------------------------
+1. Postgres + pgvector  (dev database, host port 15432)
+-----------------------------------------------------------------------------
+PIN THE TAG. This line previously read just `pgvector/pgvector` with no tag,
+which floats to :latest -- that is how this container silently ended up on a
+newer PG major than every compose file in the repo, and it is the drift the
+tuning work cleaned up. Bump the tag deliberately, never implicitly.
+
+CROSSING A PG MAJOR DESTROYS THE DATA DIRECTORY'S USABILITY: a cluster
+initialized by one major will not start under another. Within a major (e.g. a
+pgvector patch bump) a recreate is safe. Also note this container's data lives
+in an ANONYMOUS docker volume -- `docker rm` + a fresh `docker run` creates a
+NEW empty volume and orphans the old one. pg_dump first, or reattach the volume
+by name.
+
+  docker run -d --name postgres -p 15432:5432 ^
+    --shm-size=4g ^
+    -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=password ^
+    pgvector/pgvector:0.8.6-pg18-trixie ^
+    -c shared_buffers=4GB ^
+    -c work_mem=128MB ^
+    -c maintenance_work_mem=512MB ^
+    -c autovacuum_work_mem=256MB ^
+    -c effective_cache_size=12GB ^
+    -c random_page_cost=1.1 ^
+    -c max_parallel_workers_per_gather=4 ^
+    -c max_parallel_maintenance_workers=2 ^
+    -c max_parallel_workers=8 ^
+    -c effective_io_concurrency=200 ^
+    -c maintenance_io_concurrency=200 ^
+    -c max_connections=200 ^
+    -c max_wal_size=4GB ^
+    -c min_wal_size=1GB ^
+    -c shared_preload_libraries=pg_stat_statements
+
+WHY --shm-size=4g (this is not optional padding):
+  Parallel hash joins put their shared hash table in /dev/shm. Docker's default
+  is 64MB, and a large parallel join blows straight through it with
+      ERROR: could not resize shared memory segment ... No space left on device
+  Reproduced 2026-09-09 on a 4M-row parallel hash join: it FAILED on a 64MB
+  /dev/shm and SUCCEEDED on the same image with 2g. The demand ceiling is
+  roughly  work_mem x hash_mem_multiplier(2) x participants(leader + 4 workers).
+
+  Why 4g here when the test stack uses 2g on the same arithmetic: at the
+  work_mem=128MB below the ceiling is ~1.25 GiB and 2g would do. The extra
+  headroom is for the ad-hoc `SET work_mem='1GB'` sessions this file recommends
+  for one-off heavy queries -- that pushes the ceiling to ~10 GiB, which 4g
+  still does not fully cover. 4g is a large improvement over 64MB, not a
+  guarantee; if a `SET work_mem='1GB'` query still hits the resize error, lower
+  the per-session value rather than chasing shm upward.
+  NOTE: shared_buffers does NOT come from /dev/shm (it is anonymous shared
+  mmap), so the common "raise shm for shared_buffers" advice does not apply.
+  tmpfs allocates on demand, so this is a cap, not a reservation.
+
+WHY work_mem=128MB and not the 1GB this container ran until now:
+  work_mem is per memory NODE, per BACKEND, and both multipliers above stack on
+  it. At 1GB a single parallel query with a few hash nodes can request ~35 GiB
+  -- more than the whole 31 GiB Docker VM, which also hosts Tomcat. At 1GB the
+  4g shm above still would not cover the ~10 GiB worst case. Raise it for the
+  one query that needs it instead:  SET work_mem='1GB';  in that session.
+
+  RELATIONSHIP TO src/setup/postgresql.conf (the hand-applied config this
+  container has been running, kept only as the historical record -- it is read
+  by nothing). These flags are NOT a copy of it. Precisely:
+
+    Same as that file:
+      shared_buffers 4GB, effective_cache_size 12GB,
+      max_parallel_workers_per_gather 4, max_parallel_workers 8,
+      max_wal_size 4GB, min_wal_size 1GB
+    Deliberately CHANGED from it:
+      work_mem                         1GB  -> 128MB  (see above)
+      maintenance_work_mem             2GB  -> 512MB  (x(1+parallel maint workers))
+      max_parallel_maintenance_workers 4    -> 2      (that multiplier)
+      max_connections                  100  -> 200    (JDBC pool maxActive=150)
+    NEW -- commented out / absent in that file, so not carried over at all:
+      autovacuum_work_mem, random_page_cost, effective_io_concurrency,
+      maintenance_io_concurrency, shared_preload_libraries
+
+  These flags are now the declarative source of truth, so the tuning survives a
+  container recreate instead of living only inside the anonymous volume.
+
+  APPLYING THIS TO THE EXISTING CONTAINER IS NOT IN-PLACE. It is currently
+  running pgvector 0.8.2 with shm=64MB, and neither --shm-size nor these -c
+  flags can be changed on a running container. You must `docker rm` and re-run
+  (plain `docker run --name postgres` fails with "name already in use" until
+  you do). Its 7.5 GB lives in an ANONYMOUS volume, so a naive rm + run starts
+  an EMPTY database and orphans the old volume. Either reattach that volume
+  explicitly (find it with `docker inspect postgres --format
+  "{{range .Mounts}}{{.Name}}{{end}}"` and mount it by name), or pg_dump first.
+  After moving 0.8.2 -> 0.8.6, run `ALTER EXTENSION vector UPDATE;` per database.
+
+  pg_stat_statements needs `CREATE EXTENSION pg_stat_statements;` per database.
+
+-----------------------------------------------------------------------------
+2. pgAdmin  (host port 16543)
+-----------------------------------------------------------------------------
+INCONSISTENT WITH THE PIN-THE-TAG RULE ABOVE, on purpose but worth knowing:
+`:snapshot` is pgAdmin's NIGHTLY tag -- the least stable one they publish -- on
+a credential-holding admin console. It is left as-is only because nothing here
+depends on a specific pgAdmin version and this container holds no state worth
+protecting. If you start saving server definitions or passwords in it, pin it
+to a release tag first.
+
+  docker run -d --name pgadmin -p 16543:80 ^
+    -e "PGADMIN_DEFAULT_EMAIL=pgadmin@localhost.com" ^
+    -e "PGADMIN_DEFAULT_PASSWORD=password" ^
+    dpage/pgadmin4:snapshot

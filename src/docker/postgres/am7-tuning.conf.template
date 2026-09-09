@@ -1,0 +1,206 @@
+# ============================================================================
+#  am7-tuning.conf -- AM7 Postgres tuning, BAKED INTO THE IMAGE AT BUILD TIME.
+#
+#  Generated from this template by src/docker/postgres/Dockerfile, which sed-
+#  substitutes each at-sign-delimited placeholder from a build ARG. DO NOT edit
+#  the generated file inside a running container -- either rebuild with
+#  --build-arg, or drop a .conf into the runtime override directory referenced
+#  at the bottom.
+#
+#  (The Dockerfile fails the build if any placeholder survives substitution, so
+#  do not write a literal at-sign-delimited word in these comments.)
+#
+#  Postgres reads THIS FILE as its entire configuration, via
+#      postgres -c config_file=/etc/postgresql/am7-tuning.conf
+#  Within a config file the LAST setting wins, so the three-part order below
+#  IS the precedence order. Full precedence chain, lowest to highest:
+#
+#      1. initdb-generated $PGDATA/postgresql.conf   (included first, below)
+#      2. these baked values                          (build ARGs)
+#      3. /etc/postgresql/conf.d/*.conf               (runtime bind mount)
+#      4. $PGDATA/postgresql.auto.conf                (ALTER SYSTEM SET)
+#      5. postgres -c key=value                       (compose `command:`)
+#
+#  Tier 4 is easy to miss and matters: postgresql.auto.conf is parsed AFTER the
+#  whole main config file, include_dir entries included, so an `ALTER SYSTEM
+#  SET` from any superuser session silently outranks the conf.d drop-in below.
+#  The conf.d mount being :ro does not change that -- :ro only stops writes
+#  from INSIDE the container; it is not a control over what wins.
+#
+#  If you want the chain to stop at tier 3, this base (PG18) supports
+#  `allow_alter_system = off`. It is deliberately NOT set here: turning it on
+#  is a real behavioural restriction and should be a conscious choice, not a
+#  side effect of a tuning change.
+#
+#  Values were extracted from the hand-tuned dev container captured in
+#  src/setup/postgresql.conf, then RE-SIZED for a shared ~31 GiB Docker VM
+#  that also hosts Tomcat's 8 GiB heap (~9.5 GiB counting non-heap, which is
+#  the figure the sizing comments below use). src/setup/postgresql.conf is the
+#  historical record of the dev box; it is NOT read by this build.
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. LOWEST PRECEDENCE: everything initdb generated for this cluster --
+#    listen_addresses, the lc_* locale family, log_timezone, datestyle,
+#    default_text_search_config. Those are locale- and version-dependent, so
+#    they are deliberately NOT restated here: baking lc_messages = 'en_US.utf8'
+#    into an image whose base was built with a different locale is a startup
+#    failure, and every one of them already has the right value in $PGDATA.
+#
+#    @PGDATA@ is substituted at build time and MUST match the path the data
+#    volume is mounted at. The base images disagree on it --
+#        pgvector:pg17            -> /var/lib/postgresql/data
+#        pgvector:0.8.6-pg18-*    -> /var/lib/postgresql/18/docker
+#    -- which is exactly why the Dockerfile pins ENV PGDATA instead of
+#    trusting the base. Getting this wrong does not error: initdb writes
+#    outside the bind mount and the "persistent" data silently disappears on
+#    the next container recreate.
+# ---------------------------------------------------------------------------
+include = '@PGDATA@/postgresql.conf'
+
+
+# ---------------------------------------------------------------------------
+# 2. BAKED AM7 TUNING. Overrides section 1 because it is read later.
+# ---------------------------------------------------------------------------
+
+# --- Shared memory -----------------------------------------------------------
+# Allocated once at startup and held for the life of the postmaster; this is
+# real, non-reclaimable RAM. 16x the 128MB stock default. Deliberately NOT the
+# dev box's 4GB: two Postgres instances at 4GB each would pin 8 GiB of a
+# 31 GiB VM that also carries a 9.5 GiB Tomcat, and the containerized cluster
+# is far smaller than the dev one. Requires a RESTART to change.
+shared_buffers = @SHARED_BUFFERS@
+
+# --- Per-operation working memory --------------------------------------------
+# THE setting to understand before raising anything here. work_mem is allocated
+# per memory NODE, per BACKEND -- not per query and not per connection -- and
+# two multipliers stack on top of it:
+#     hash_mem_multiplier = 2 (default) -- every hash join / hash aggregate
+#                                          node gets work_mem x 2
+#     parallel workers    = 5           -- leader + max_parallel_workers_per_gather
+# Worked example -- one query with 2 hash joins + 1 hash agg + 1 sort, run in
+# parallel across leader + 4 workers:
+#     3 hash nodes x work_mem x 2   +   1 sort node x work_mem   = work_mem x 7
+#     x 5 participants                                           = work_mem x 35
+# At 128MB that is ~4.4 GiB for a single query, which fits the budget. At the
+# dev box's 1GB it is ~35 GiB -- larger than the entire 31 GiB VM.
+#
+# Raise it for one heavy query instead of globally -- `SET work_mem='1GB';` in
+# that session is the correct tool, and needs no rebuild or restart.
+# Reloadable (context=user): pg_reload_conf() is enough, no restart.
+work_mem = @WORK_MEM@
+
+# CREATE INDEX / VACUUM / ALTER TABLE. Multiplied by
+# (1 + max_parallel_maintenance_workers), so 512MB x 3 = ~1.5 GiB peak per
+# index build. The dev box's 2GB x 5 would be 10 GiB for a single REINDEX.
+maintenance_work_mem = @MAINTENANCE_WORK_MEM@
+
+# Decouples the 3 background autovacuum workers from the foreground value
+# above. Left at the default -1 they inherit maintenance_work_mem, so raising
+# that silently triples background memory too.
+autovacuum_work_mem = @AUTOVACUUM_WORK_MEM@
+
+# --- Planner hints (allocate nothing; they only shape plan choice) -----------
+# How much OS page cache the planner may assume. Honest number for a VM shared
+# with a second Postgres and a 9.5 GiB Tomcat -- the dev box's 12GB is not.
+effective_cache_size = @EFFECTIVE_CACHE_SIZE@
+
+# 4.0 is the SPINNING-DISK default and is the single most impactful planner
+# setting here: at 4.0 the planner systematically under-uses index scans across
+# a 147-table, join-heavy schema. Both stores are NVMe-backed and the working
+# set is cache-resident. Revert per-session with SET if a plan regresses.
+random_page_cost = @RANDOM_PAGE_COST@
+
+# --- Parallelism (the "large complex query" knobs) ---------------------------
+# Workers per Gather node. This is also the multiplier on work_mem above.
+max_parallel_workers_per_gather = @MAX_PARALLEL_WORKERS_PER_GATHER@
+
+# Kept at 2 rather than the dev box's 4: this multiplies maintenance_work_mem
+# (3x vs 5x) and parallel index build scales poorly past 2 on this storage.
+max_parallel_maintenance_workers = @MAX_PARALLEL_MAINTENANCE_WORKERS@
+
+# Global ceiling on parallel workers. Equals the current stock default, but
+# pinned ON PURPOSE: it is the hard bound on total parallel work_mem
+# multiplication, and a silent base-image default change would move it.
+max_parallel_workers = @MAX_PARALLEL_WORKERS@
+
+# --- I/O concurrency ---------------------------------------------------------
+# Pinned to remove a silent behavioural fork between environments. The pg17
+# defaults were effective_io_concurrency=1 (which effectively disables
+# bitmap-heap prefetch -- exactly wrong for large complex queries) and
+# maintenance_io_concurrency=10; pg18 changed BOTH defaults to 16.
+# NOTE: on the Windows bind mount (9p/virtiofs, not raw NVMe) the full benefit
+# is unproven, which is why it is a build ARG. Dial down if it hurts.
+effective_io_concurrency = @EFFECTIVE_IO_CONCURRENCY@
+maintenance_io_concurrency = @MAINTENANCE_IO_CONCURRENCY@
+
+# --- Connections -------------------------------------------------------------
+# Sized to exceed the JDBC pool: context.xml / context.xml.template set
+# maxActive="150". At the stock 100 the pool could open past the server limit
+# and take `FATAL: sorry, too many clients already` under load. 200 covers the
+# pool plus superuser_reserved_connections plus psql/pgAdmin sessions.
+#
+# READ THIS BEFORE RAISING IT FURTHER. The connection SLOTS themselves are
+# cheap (a small fixed amount of shared memory each), but the slot is not the
+# cost that matters: every backend is independently entitled to work_mem above,
+# per memory node, doubled again by hash_mem_multiplier. At 150 concurrent
+# backends x 128MB that is ~19 GiB for one memory node each, on a ~31 GiB VM
+# that also holds shared_buffers and Tomcat's 8 GiB heap. Postgres enforces no
+# global memory ceiling and this container sets no mem_limit, so the failure
+# mode at saturation is an OOM kill of the postmaster -- every session dies --
+# rather than the bounded, self-announcing connect rejection you got at 100.
+#
+# The genuinely safer fix is a SMALLER POOL, not a bigger server: maxActive=150
+# is well past useful concurrency here and the pool already degrades gracefully
+# via maxWait="10000" (blocks 10s, then throws). Lowering maxActive was left
+# out of this change on purpose because it touches context.xml and belongs to a
+# separate, tested change. Until then, this value is the mitigation, not the
+# resolution.
+# Requires a RESTART to change.
+max_connections = @MAX_CONNECTIONS@
+
+# --- WAL / checkpoints -------------------------------------------------------
+# Fewer, larger checkpoints under write-heavy Olio / ISO 42001 runs. This costs
+# DISK, not RAM: the data directory can grow by roughly max_wal_size.
+max_wal_size = @MAX_WAL_SIZE@
+min_wal_size = @MIN_WAL_SIZE@
+
+# --- Query statistics --------------------------------------------------------
+# How you FIND the slow complex queries instead of guessing at them. Requires
+# `CREATE EXTENSION pg_stat_statements;` once per database to expose the view.
+# Postmaster setting: requires a RESTART.
+# The quotes are supplied HERE, not by the ARG value. Docker strips quotes from
+# ARG defaults (`ARG X='a'` yields a), so a Dockerfile-quoted default and a
+# compose-quoted one render differently -- and an unquoted multi-library
+# override such as `pg_stat_statements,auto_explain` parses as
+# `FATAL: syntax error ... near token ","`. That failure is invisible at build
+# time: the at-sign guard checks for unsubstituted tokens, not for values that
+# are valid shell but invalid Postgres. Quoting at the template level makes a
+# comma-separated list work whether or not the caller quoted it.
+shared_preload_libraries = '@SHARED_PRELOAD_LIBRARIES@'
+
+# Utility statements are recorded VERBATIM, not normalized -- DML is
+# parameterized and normalizes fine ("... in ($1)"), but a hand-typed
+# `ALTER USER x PASSWORD 'secret'` from psql/pgAdmin would be stored with the
+# password in cleartext, in the view AND in $PGDATA/pg_stat_tmp/
+# pgss_query_texts.stat, which is on the HOST bind mount and survives
+# `docker rm`. Tracking utility statements buys nothing for finding slow
+# queries, so it is off.
+pg_stat_statements.track_utility = off
+
+
+# ---------------------------------------------------------------------------
+# 3. HIGHEST FILE-LEVEL PRECEDENCE: runtime escape hatch.
+#
+#    Bind-mount a host directory over /etc/postgresql/conf.d and drop in any
+#    *.conf to override the baked values above WITHOUT a rebuild. For
+#    context=user / sighup settings (work_mem, effective_cache_size,
+#    random_page_cost, both *_io_concurrency, all the parallel knobs,
+#    max_wal_size) `SELECT pg_reload_conf();` applies them with no restart.
+#    shared_buffers, max_connections and shared_preload_libraries are
+#    postmaster settings and still need a container restart.
+#
+#    The Dockerfile mkdir -p's this directory so an EMPTY or unmounted path is
+#    fine -- include_dir on a MISSING directory is a FATAL startup error.
+# ---------------------------------------------------------------------------
+include_dir = '/etc/postgresql/conf.d'

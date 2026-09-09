@@ -25,7 +25,7 @@ The framework has a **genuinely strong security/data core** (policy-based access
 | **Encryption at rest** | Per-org vault, asymmetric org keypair + rotating symmetric field key, salted KDF | `.../security/VaultService.java` |
 | **Passwordless auth** | Full WebAuthn/FIDO2 (counter anti-cloning, multi-authenticator) | `AccountManagerService7/.../WebAuthnService.java`, `auth.webauthnCredential` model |
 | **Modern crypto libs** | JJWT 0.12.6, BouncyCastle 1.80, Log4j 2.24.3 (post-Log4Shell), Jackson 2.18.3 — all current | both `pom.xml` |
-| **Data layer** | PostgreSQL 17 + pgvector (RAG-ready), tuned connection pool (max 150) | `AccountManagerService7/.../META-INF/context.xml` |
+| **Data layer** | PostgreSQL 18.6 + pgvector 0.8.6 (RAG-ready) in the containerized stack; JDBC pool `maxActive="150"`, matched by `max_connections=200` on the built `am7-pg` image. *(Until 2026-09-09 the pool faced a stock server on the default `max_connections=100` — two-thirds of the pool's ceiling — so a saturated pool could take `FATAL: sorry, too many clients already`. Server limit above pool ceiling is the ordering that has to hold; it still does not hold against an untuned external Postgres, so raise `max_connections` there too.)* | `AccountManagerService7/.../META-INF/context.xml`, `docker/postgres/Dockerfile` |
 | **Test depth** | ~144 backend JUnit classes (Objects7 especially), 107 Playwright E2E specs, 19 Vitest suites | `*/src/test/`, `AccountManagerUx752/e2e/` |
 | **Feature modularity** | The Ux752 feature manifest/profile system is the right primitive for product packaging (the ISO deployment leans on it — see `iso42001.md` §9) | `AccountManagerUx752/src/features.js` |
 
@@ -130,11 +130,23 @@ SCIM 2.0 is mostly implemented (see gap #2). This plan covers the **delta to ent
 
 | Service | Image / source | Role |
 |---|---|---|
-| `db` | `pgvector/pgvector:pg17` | PostgreSQL 17 + pgvector; named volume; healthcheck; tuned via existing [`setup/postgresql.conf`](../../setup/postgresql.conf) |
+| `db` | built from [`docker/postgres/Dockerfile`](../../docker/postgres/Dockerfile), base `pgvector/pgvector:0.8.6-pg18-trixie` | PostgreSQL 18 + pgvector; named volume; healthcheck; AM7 tuning **baked into the image** at build time (see the correction below) |
 | `init` | `AccountManagerConsole7` jar (one-shot) | Runs once after `db` healthy: create/verify schema, bootstrap org + admin, **set the feature profile to `compliance`** (or chosen profile). Exits 0; gated by `depends_on: condition: service_completed_successfully` |
 | `service` | Tomcat 11 + `AccountManagerService7.war` | REST/WebSocket API; mounts rendered `context.xml` + `/data` volume (keys, vault, certs); env-driven DB + secrets |
 | `ux` | nginx + `AccountManagerUx752` build | Serves the Vite `dist/` built with the selected feature profile; reverse-proxies `/api` and `/wss` to `service`; TLS termination |
 | `agent` *(optional)* | `AccountManagerAgent7` | Task/agent server, only if the deployment uses task delegation |
+
+> **Correction (2026-09-09):** the `db` row previously read `pgvector/pgvector:pg17` and claimed the
+> service was "tuned via existing [`setup/postgresql.conf`](../../setup/postgresql.conf)". **The second
+> half was never true** — nothing mounted, read, or referenced that file. It is a copy of the dev
+> container's hand-applied config and remains in the tree only as the historical record of those
+> values. Real, verified tuning now exists: `src/docker/postgres/Dockerfile` bakes it into a local
+> `am7-pg:latest` image from `am7-tuning.conf.template`, overridable lowest-to-highest by build ARGs,
+> a `docker/postgres/conf.d/*.conf` drop-in (reloadable via `pg_reload_conf()`, no rebuild or restart
+> for non-postmaster settings), and compose `command:` `-c` flags. That image is what
+> `docker-compose.test.yml` runs today (PostgreSQL 18.6 / pgvector 0.8.6 / pg_stat_statements 1.12,
+> confirmed live) and is the reference implementation for this planned `db` service. Details:
+> [`../DockerComposeDesign.md`](../DockerComposeDesign.md) → "Follow-up 2026-09-09".
 
 ### Template generation (the "generate template" ask)
 

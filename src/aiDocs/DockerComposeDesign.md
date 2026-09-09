@@ -7,12 +7,16 @@
 > the `/AccountManagerService7` context path and 404 (audit item 4, unfixed here).
 
 **Status: verified working end-to-end** (core stack). Config/doc **accuracy audit 2026-09-01** found
-discrepancies — see "Accuracy audit" immediately below. Design body last substantively updated 2026-08-29.
+discrepancies — see "Accuracy audit" immediately below. Design body last substantively updated 2026-09-09
+(Postgres moved to a built, tuned pg18 image — see the follow-up under "Verification 2026-07-15").
 
 The image builds, the container boots all three processes (Tomcat + nginx + vite preview),
 Tomcat deploys the webapp, the schema is created on a fresh Postgres, and nginx `:8443`
-reverse-proxies both the REST API and the Ux752 UI. Verified against a disposable
-`pgvector/pgvector:pg17` container (see "Verification 2026-07-15" below).
+reverse-proxies both the REST API and the Ux752 UI. Originally verified against a disposable
+`pgvector/pgvector:pg17` container (see "Verification 2026-07-15" below); the test stack now **builds**
+its own `am7-pg:latest` from `docker/postgres/Dockerfile` on a pinned
+`pgvector/pgvector:0.8.6-pg18-trixie` base, with the AM7 performance tuning baked in (2026-09-09
+follow-up under that same heading).
 
 ## Accuracy audit (2026-09-01) — discrepancies to fix
 
@@ -170,10 +174,15 @@ Run pgvector yourself (per `setup/dockerNotes.txt`), then bring the app up on `8
 ```bash
 docker run -d --name am7-pg -p 15433:5432 \
   -e POSTGRES_DB=am72db -e POSTGRES_USER=am7user -e POSTGRES_PASSWORD=password \
-  pgvector/pgvector:pg17
+  pgvector/pgvector:0.8.6-pg18-trixie
 DB_HOST=host.docker.internal DB_PORT=15433 docker compose up --build
 # then the same POST /rest/setup/ as above, against https://localhost:8443
 ```
+
+That image is **stock** — Option B's database gets none of the AM7 tuning that Option A bakes into its
+built `am7-pg` image (below). Add the `-c` flags from `setup/dockerNotes.txt` §1 if the workload needs
+them, and keep the tag pinned: an untagged `pgvector/pgvector` is exactly what silently floated the dev
+container across a PG major while every compose file sat on pg17.
 
 > **Verification status:** the canonical `docker-compose.yml` path was verified end-to-end 2026-07-15
 > (log below).
@@ -324,6 +333,49 @@ Rebuilt with the `server.xml` fix and ran against a disposable `pgvector/pgvecto
   `PpidChecker` failure that motivated the bump is Windows-only (`wmic` was removed in Windows 11
   build 26200), so a Linux build container was never exposed to it. Noted only so the two don't get
   conflated later.
+
+### Follow-up 2026-09-09 — the test stack's Postgres is now a **built, tuned pg18 image**
+
+The verification above (and the 2026-08-05 test-stack boot) ran against a *stock*
+`pgvector/pgvector:pg17`. Those records stand as written; this is what changed since.
+
+- **`am7-pg` is built, not pulled.** The `am7-pg` service in `docker-compose.test.yml` now carries a
+  `build:` stanza pointing at `docker/postgres/Dockerfile` (`FROM ${PG_IMAGE}`, default
+  `pgvector/pgvector:0.8.6-pg18-trixie`), producing local image `am7-pg:latest` with the AM7
+  performance tuning **baked in at build time**. The service also gained
+  `shm_size: ${PG_SHM_SIZE:-2gb}` — parallel hash joins put their shared hash table in `/dev/shm`, and
+  Docker's 64MB default fails a large parallel join with `could not resize shared memory segment` —
+  plus a read-only bind mount `./docker/postgres/conf.d:/etc/postgresql/conf.d`.
+- **Baked values:** `shared_buffers 2GB`, `work_mem 128MB`, `maintenance_work_mem 512MB`,
+  `autovacuum_work_mem 256MB`, `effective_cache_size 8GB`, `random_page_cost 1.1`,
+  `max_parallel_workers_per_gather 4`, `max_parallel_maintenance_workers 2`, `max_parallel_workers 8`,
+  `effective_io_concurrency 200`, `maintenance_io_concurrency 200`, `max_connections 200`,
+  `max_wal_size 4GB`, `min_wal_size 1GB`, `shared_preload_libraries pg_stat_statements`.
+- **Override precedence, lowest to highest** (all four verified): initdb conf → baked build ARGs →
+  `docker/postgres/conf.d/*.conf` (reloadable via `pg_reload_conf()` — no rebuild and no restart, for
+  non-postmaster settings) → compose `command:` `-c` flags.
+- **`langfuse-db` moved `postgres:17` → `postgres:18.6-trixie`** — a version pin only. That store is
+  Langfuse-owned, holds trace data, and deliberately gets **none** of the AM7 tuning.
+- **`setup/dockerNotes.txt`** — the hand-started dev container's `docker run` was **unpinned**
+  (`pgvector/pgvector`, i.e. floating `:latest`, which is how that container silently ended up on a
+  newer PG major than every compose file in the repo). It is now pinned to
+  `pgvector/pgvector:0.8.6-pg18-trixie` and carries `--shm-size=4g` plus explicit `-c` tuning flags.
+- **New files:** `docker/postgres/Dockerfile`, `docker/postgres/am7-tuning.conf.template`,
+  `docker/postgres/.dockerignore`, `docker/postgres/conf.d/{README.md,.gitignore}`.
+
+**Verified live on the running stack:** PostgreSQL 18.6, pgvector 0.8.6, pg_stat_statements 1.12,
+`config_file=/etc/postgresql/am7-tuning.conf`, `data_directory=/var/lib/postgresql/data`, all 15 tuned
+settings reporting `source=configuration file`, Service7 connected and building 147 tables, and zero
+config-rejection errors in the log.
+
+**Two coupling constraints, before anyone changes the base image.** (1) *The PG major is coupled to the
+data directory* — a cluster initialized by one major will not start under another, so crossing majors
+means deleting `${AM7_DATA_DIR}/pg`, and `${AM7_DATA_DIR}/am7` with it per the matched-pair rule in the
+storage map below, then redoing first-run setup; within a major (e.g. a pgvector patch bump) a plain
+rebuild is safe and keeps the data. (2) *The Dockerfile pins `ENV PGDATA=/var/lib/postgresql/data`* —
+the pg18 base's own default is `/var/lib/postgresql/18/docker`, which is **outside** the compose bind
+mount, so without that pin initdb would write the "persistent" database into the container's writable
+layer and lose it on the next recreate, silently.
 
 ## Storage map (what MUST persist)
 

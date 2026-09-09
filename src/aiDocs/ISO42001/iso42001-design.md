@@ -2144,6 +2144,16 @@ if(ctxRoles.iso42001Any){
 
 All components run in a single Docker container for simplified local deployment:
 
+> **Implementation note (2026-09-09).** The snippets in §10.2–§10.5 are illustrative design sketches,
+> not the shipped configuration. What actually exists today is (a) the app container —
+> `src/Dockerfile` + `src/docker/` (Tomcat + nginx + Ux752 under supervisord), documented in
+> [`../DockerComposeDesign.md`](../DockerComposeDesign.md) and [`../dockerDevSetup.md`](../dockerDevSetup.md) —
+> and (b) **Postgres as its own built image**, `src/docker/postgres/` (`Dockerfile` +
+> `am7-tuning.conf.template` + `conf.d/`), rather than an apt-installed server inside the app
+> container as sketched below. That image is `FROM pgvector/pgvector:0.8.6-pg18-trixie` with the AM7
+> tuning baked in at build time; prefer it over hand-rolling the §10.2/§10.5 Postgres pieces. Version
+> numbers below have been refreshed to PG 18 for internal consistency only.
+
 ```
 ┌───────────────────────────────────────────────┐
 │                Docker Container               │
@@ -2175,7 +2185,7 @@ All components run in a single Docker container for simplified local deployment:
 │  └─────────────────────────────────────────┘  │
 │                                               │
 │  ┌─────────────────────────────────────────┐  │
-│  │  PostgreSQL 17 + pgvector (port 5432)   │  │
+│  │  PostgreSQL 18 + pgvector (port 5432)   │  │
 │  └─────────────────────────────────────────┘  │
 │                                               │
 │  supervisord manages all processes            │
@@ -2208,9 +2218,11 @@ RUN node build.js --profile iso42001
 # Runtime
 FROM ubuntu:24.04
 
-# Install PostgreSQL 17, pgvector, nginx, Node 20, supervisord
+# Install PostgreSQL 18, pgvector, nginx, Node 20, supervisord
+# (real implementation uses the pgvector/pgvector:0.8.6-pg18-trixie base image
+#  built by src/docker/postgres/Dockerfile — see the note in 10.1)
 RUN apt-get update && apt-get install -y \
-    postgresql-17 postgresql-17-pgvector \
+    postgresql-18 postgresql-18-pgvector \
     nginx \
     nodejs npm \
     supervisor \
@@ -2236,7 +2248,7 @@ COPY docker/setup-server/ /opt/setup-server/
 COPY docker/nginx.conf /etc/nginx/sites-available/default
 COPY docker/supervisord.conf /etc/supervisor/conf.d/am7.conf
 COPY docker/tomcat-context.xml.template /opt/tomcat/conf/context-template.xml
-COPY docker/pg_hba.conf /etc/postgresql/17/main/pg_hba.conf
+COPY docker/pg_hba.conf /etc/postgresql/18/main/pg_hba.conf
 
 # Data directories
 RUN mkdir -p /data/am7/keys /data/am7/certificates /data/am7/streams /data/vault
@@ -2391,7 +2403,7 @@ setup-server/
 nodaemon=true
 
 [program:postgresql]
-command=/usr/lib/postgresql/17/bin/postgres -D /var/lib/postgresql/17/main -c config_file=/etc/postgresql/17/main/postgresql.conf
+command=/usr/lib/postgresql/18/bin/postgres -D /var/lib/postgresql/18/main -c config_file=/etc/postgresql/18/main/postgresql.conf
 user=postgres
 autostart=true
 priority=10

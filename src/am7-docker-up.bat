@@ -46,6 +46,36 @@ set "CATALINA_OPTS=-Xms1g -Xmx8g"
 REM  Args passed to assemble-seed.bat in step [2/4]. --with-location also stages the
 REM  large location grids (needed for the geo/map corpus); clear this to base corpus only.
 set "SEED_ARGS=--with-location"
+
+REM  Postgres tuning for the am7-pg container. Same pattern as CATALINA_OPTS:
+REM  docker-compose.test.yml declares each as a ${VAR:-default} build ARG, so
+REM  setting one here OVERRIDES the compose default and leaving it unset takes
+REM  the compose default.
+REM
+REM  MOST are BAKED AT BUILD TIME (docker/postgres/Dockerfile), so changing one
+REM  only takes effect on a build - i.e. NOT with --no-build. To retune a
+REM  RUNNING stack without a rebuild, drop a .conf into docker\postgres\conf.d
+REM  and run `select pg_reload_conf();` - see docker\postgres\conf.d\README.md.
+REM
+REM  EXCEPTION - PG_SHM_SIZE is NOT a build ARG. It maps to the service's
+REM  `shm_size:`, a container-CREATE setting: compose applies it by recreating
+REM  the container, with no build, and it works with --no-build. Do not rebuild
+REM  chasing an shm change.
+REM
+REM  BUDGET THESE TOGETHER WITH CATALINA_OPTS ABOVE: both draw on the same
+REM  ~31 GiB Docker VM, which also hosts the separate dev `postgres` container.
+REM  shared_buffers is pinned, non-reclaimable RAM. work_mem is charged PER
+REM  memory node PER backend, then multiplied by hash_mem_multiplier (2) and by
+REM  the parallel worker count (leader + 4) - so it is the dangerous one.
+REM  PG_SHM_SIZE must stay above work_mem x 2 x 5, or large parallel hash joins
+REM  die with "could not resize shared memory segment ... No space left".
+REM
+REM  Blank on purpose - the compose defaults (2GB / 128MB / 2gb) ARE the tuned
+REM  values. Uncomment to dial down for a smaller machine.
+REM set "PG_SHARED_BUFFERS=512MB"
+REM set "PG_WORK_MEM=16MB"
+REM set "PG_EFFECTIVE_CACHE_SIZE=2GB"
+REM set "PG_SHM_SIZE=512m"
 REM ----------------------------------------------------------------------------
 
 set "PROJECT=am7test"

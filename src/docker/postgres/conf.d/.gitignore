@@ -1,0 +1,8 @@
+# Machine-local Postgres overrides are intentionally NOT tracked -- they exist
+# to let one developer dial the baked defaults down for their hardware. A
+# change that should apply to everyone belongs in a --build-arg in
+# docker-compose.test.yml instead, where git can see it.
+#
+# README.md and this file stay tracked so the directory exists in a fresh
+# clone: `include_dir` on a MISSING directory is a FATAL startup error.
+*.conf
