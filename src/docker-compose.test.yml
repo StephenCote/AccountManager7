@@ -16,14 +16,90 @@
 # Usage (explicit project name keeps its network separate from the main compose project):
 #   docker compose -p am7test -f docker-compose.test.yml up --build
 #   docker compose -p am7test -f docker-compose.test.yml down          # stop; data kept on host
-#   # full reset: stop, then delete the host data dir (there are no named volumes to prune):
+#   # full reset: stop, then delete the host data dir (there are no NAMED volumes):
 #   docker compose -p am7test -f docker-compose.test.yml down; rm -rf ./docker-data
+#   # ...but ANONYMOUS ones do accrue since the pg18 bump: the pg18 base declares
+#   # VOLUME /var/lib/postgresql (the PARENT of our bind), where pg17 declared the
+#   # bind path itself. Each am7-pg container therefore carries one anonymous
+#   # volume holding nothing but the mountpoint stub — no data risk, but one leaks
+#   # per down/up cycle. Sweep occasionally with `docker volume prune`.
 #   # to persist elsewhere: AM7_DATA_DIR=/abs/path docker compose -p am7test -f docker-compose.test.yml up --build
+#
+# POSTGRES TUNING. am7-pg is BUILT (docker/postgres/Dockerfile), not pulled stock:
+# the memory / large-complex-query settings are baked into the image and can be
+# overridden three ways, lowest precedence first —
+#   1. build ARGs      docker compose ... build --build-arg PG_WORK_MEM=1GB am7-pg
+#   2. runtime conf.d  drop a *.conf in docker/postgres/conf.d + pg_reload_conf()
+#                      (no rebuild, no restart, for non-postmaster settings)
+#   3. ALTER SYSTEM    parsed after conf.d, so it silently OUTRANKS it
+#   4. command flags   postgres -c work_mem=32MB   (beats everything)
+# A conf.d override that "doesn't take" is usually tier 3 -- check with
+#   select name, setting, source, sourcefile from pg_settings where name = '...';
+# Every ARG is surfaced as ${VAR:-default} below, so the environment and
+# am7-docker-up.bat can set them too. Details: docker/postgres/conf.d/README.md.
+#
+# PG MAJOR VERSION IS COUPLED TO THE DATA DIRECTORY. A cluster initialized by
+# one major will NOT start under another ("database files are incompatible").
+# Changing PG_IMAGE across majors therefore requires deleting
+# ${AM7_DATA_DIR}/pg — and ${AM7_DATA_DIR}/am7 WITH it, per the matched-pair
+# rule above — then redoing first-run setup. Within a major (e.g. a pgvector
+# patch bump) a plain rebuild is safe and keeps the data.
 
 services:
   am7-pg:
-    image: pgvector/pgvector:pg17
+    # Built from docker/postgres/Dockerfile rather than consumed stock: the AM7
+    # performance tuning is BAKED INTO THE IMAGE at build time (see that file and
+    # docker/postgres/am7-tuning.conf.template for the values and the reasoning).
+    # Overridable at three levels — build ARGs below, a runtime *.conf dropped in
+    # docker/postgres/conf.d (reloadable, no rebuild), and `-c` flags on `command:`.
+    build:
+      context: ./docker/postgres
+      dockerfile: Dockerfile
+      args:
+        # FULLY pinned on purpose. An unpinned `pgvector/pgvector` in
+        # setup/dockerNotes.txt is what silently floated the dev container to a
+        # new PG major while this file sat on pg17 — the drift this replaces.
+        PG_IMAGE: ${PG_IMAGE:-pgvector/pgvector:0.8.6-pg18-trixie}
+        # Sized for the measured ~31.16 GiB Docker VM shared with the dev
+        # `postgres` container and Tomcat's -Xmx8g. Dial down for a smaller
+        # machine, e.g. PG_SHARED_BUFFERS=512MB PG_WORK_MEM=16MB docker compose ... build
+        PG_SHARED_BUFFERS: ${PG_SHARED_BUFFERS:-2GB}
+        PG_WORK_MEM: ${PG_WORK_MEM:-128MB}
+        PG_MAINTENANCE_WORK_MEM: ${PG_MAINTENANCE_WORK_MEM:-512MB}
+        PG_AUTOVACUUM_WORK_MEM: ${PG_AUTOVACUUM_WORK_MEM:-256MB}
+        PG_EFFECTIVE_CACHE_SIZE: ${PG_EFFECTIVE_CACHE_SIZE:-8GB}
+        PG_RANDOM_PAGE_COST: ${PG_RANDOM_PAGE_COST:-1.1}
+        PG_MAX_PARALLEL_WORKERS_PER_GATHER: ${PG_MAX_PARALLEL_WORKERS_PER_GATHER:-4}
+        PG_MAX_PARALLEL_MAINTENANCE_WORKERS: ${PG_MAX_PARALLEL_MAINTENANCE_WORKERS:-2}
+        PG_MAX_PARALLEL_WORKERS: ${PG_MAX_PARALLEL_WORKERS:-8}
+        PG_EFFECTIVE_IO_CONCURRENCY: ${PG_EFFECTIVE_IO_CONCURRENCY:-200}
+        PG_MAINTENANCE_IO_CONCURRENCY: ${PG_MAINTENANCE_IO_CONCURRENCY:-200}
+        # Must exceed the JDBC pool's maxActive="150" (context.xml.template),
+        # or the pool opens past the server limit under load and gets
+        # `FATAL: sorry, too many clients already`.
+        PG_MAX_CONNECTIONS: ${PG_MAX_CONNECTIONS:-200}
+        PG_MAX_WAL_SIZE: ${PG_MAX_WAL_SIZE:-4GB}
+        PG_MIN_WAL_SIZE: ${PG_MIN_WAL_SIZE:-1GB}
+        # Unquoted; the template adds the quotes. Multiple libraries are a plain
+        # comma list (pg_stat_statements,auto_explain) -- do NOT quote it here.
+        PG_SHARED_PRELOAD_LIBRARIES: ${PG_SHARED_PRELOAD_LIBRARIES:-pg_stat_statements}
+    image: am7-pg:latest
     container_name: am7-pg
+    # Parallel hash joins put their shared hash table in /dev/shm (Postgres uses
+    # dynamic_shared_memory_type=posix). The Docker default is 64MB, which a big
+    # parallel join blows through with
+    #     ERROR: could not resize shared memory segment ... No space left on device
+    # — reproduced on a 4M-row join, and fixed by raising this. Sizing: a SINGLE
+    # Parallel Hash node can reach work_mem x hash_mem_multiplier(2) x
+    # participants(leader + 4 workers) = 128MB x 2 x 5 = ~1.25 GiB. 2gb is ~1.6x
+    # that ONE node — it is not a ceiling for the container: a query with two
+    # parallel hash joins wants ~2.5 GiB and would still exceed it, and
+    # concurrent queries stack. Raise this (or lower work_mem) if the resize
+    # error reappears. tmpfs allocates on demand, so this is a cap and not a
+    # reservation.
+    # NOTE: shared_buffers does NOT come from here (it is anonymous shared mmap),
+    # so the usual "raise shm for shared_buffers" advice does not apply.
+    shm_size: ${PG_SHM_SIZE:-2gb}
     environment:
       POSTGRES_DB: am72db
       POSTGRES_USER: am7user
@@ -37,7 +113,23 @@ services:
       # initialize on a Windows bind mount (rare on Docker Desktop/WSL2, possible on older setups),
       # swap this one line for a named volume — `- am7-test-pg:/var/lib/postgresql/data` — and
       # re-add a top-level `volumes:\n  am7-test-pg:` block at the end of this file.
+      #
+      # The container path is NOT arbitrary and must not be "modernised" to match
+      # the pg18 base image's own PGDATA (/var/lib/postgresql/18/docker): our
+      # Dockerfile pins ENV PGDATA back to this pg17-era path precisely so this
+      # mount keeps working across majors. Change one without the other and
+      # initdb writes OUTSIDE the mount — the database then lives in the
+      # container layer and is destroyed on recreate, silently.
       - ${AM7_DATA_DIR:-./docker-data}/pg:/var/lib/postgresql/data
+      # Runtime tuning overrides; read after the baked defaults, so they win
+      # over them. See docker/postgres/conf.d/README.md.
+      #
+      # `:ro` is NOT a security control -- it only stops the container writing
+      # back to your working tree. The directory is host-writable, its contents
+      # are executed as full-authority server config, and `ALTER SYSTEM` still
+      # outranks anything placed here. It grants no capability the read-write
+      # data mount on the line above does not already grant.
+      - ${AM7_PG_CONF_DIR:-./docker/postgres/conf.d}:/etc/postgresql/conf.d:ro
     networks:
       - am7-test-net
     healthcheck:
@@ -206,12 +298,26 @@ services:
 
   langfuse-db:
     # Dedicated Postgres for Langfuse — separate from am7-pg (different app DB).
-    image: postgres:17
+    # Version-pinned to stay in step with am7-pg's PG major, but deliberately
+    # NOT given the AM7 tuning: this store is owned by Langfuse, holds trace
+    # data, and has none of the large-complex-query characteristics that tuning
+    # targets. Bumping 17 -> 18 is free here because the `llmproxy` profile has
+    # never been run (no ${AM7_DATA_DIR}/langfuse-pg exists to migrate).
+    image: postgres:18.6-trixie
     profiles: ["llmproxy"]
     environment:
       POSTGRES_USER: langfuse
       POSTGRES_PASSWORD: langfuse
       POSTGRES_DB: langfuse
+      # REQUIRED with the pg18 base, exactly as for am7-pg -- and easier to miss
+      # here, because this service uses the stock image and so has no Dockerfile
+      # to pin it. postgres:18.x ships PGDATA=/var/lib/postgresql/18/docker while
+      # the bind below targets the pg17-era /var/lib/postgresql/data. Without
+      # this line initdb writes OUTSIDE the bind mount, into the image's
+      # anonymous volume: ${AM7_DATA_DIR}/langfuse-pg stays empty, `down`
+      # orphans the volume, and the next `up` silently starts an empty Langfuse
+      # DB. No error at any point.
+      PGDATA: /var/lib/postgresql/data
     volumes:
       - ${AM7_DATA_DIR:-./docker-data}/langfuse-pg:/var/lib/postgresql/data
     networks:

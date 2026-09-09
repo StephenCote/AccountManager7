@@ -1,0 +1,6 @@
+# conf.d is the RUNTIME override directory, bind-mounted over
+# /etc/postgresql/conf.d by docker-compose.test.yml. It is not a build input:
+# excluding it keeps an override edit from busting the build cache (and from
+# being baked into the image, where it would shadow the ARG defaults for
+# everyone).
+conf.d/
