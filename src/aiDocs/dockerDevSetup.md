@@ -21,8 +21,11 @@ Facts below were read out of `docker-compose.test.yml`, `docker-compose.yml`, `D
 ### Shell: PowerShell, backslashes
 
 **Every command block in this file is PowerShell** (the repo's primary shell on this Windows host),
-using Windows backslash paths. Blocks that require bash are labelled `bash` and say so in prose —
-there are only two, both under §4b, and both are meant to run in **WSL**, not Git Bash.
+using Windows backslash paths. Blocks that require bash are labelled `bash` and say so in prose. On
+this Windows host you need bash for exactly two of them, both under §4b and both meant to run in
+**WSL**, not Git Bash. (The one other `bash` block, the `./assemble-seed.sh` form under §2e, is only
+for Linux/macOS Docker hosts — a Windows user runs the native `assemble-seed.bat` instead and can
+ignore it.)
 
 This matters more than it looks. Bash idioms silently break or fail confusingly here:
 
@@ -194,26 +197,58 @@ dictionary, optionally location grids — from `datagen.path` = `/data/am7/datag
 ships this empty** (the container `mkdir -p`s the dir but bundles no corpus), so the
 character-creation wizard fails on a brand-new stack until it is populated. This is KI-70.
 
-`assemble-seed.sh` (in `src\`) populates it by mirroring **your own** staging dir into the
-`docker-data` bind mount. You build the staging dir yourself: unzip `seedData.7z` somewhere and add
-whatever extra corpus you want (location grids, the WordNet dict). The script reads only
-`SEED_STAGING` — it does **not** touch `src\seedData` or the `.7z`. Because `docker-data/am7` is a
-live bind mount, files land inside the container immediately with no rebuild, so you can run this
-before `up` or any time before the first character-generation call.
+The seed script (in `src\` — **`assemble-seed.bat`** on a Windows host, **`assemble-seed.sh`** on a
+Linux/macOS Docker host) populates it by mirroring **your own** staging dir into the `docker-data`
+bind mount. You build the staging dir yourself: unzip `seedData.7z` somewhere and add whatever extra
+corpus you want (location grids, the WordNet dict). The script does **not** touch `src\seedData` or
+the `.7z`. Because `docker-data/am7` is a live bind mount, files land inside the container
+immediately with no rebuild, so you can run this before `up` or any time before the first
+character-generation call.
 
-**bash — run in Git Bash, from `src\`** (this script is the exception to §0's WSL rule: it takes a
-Windows drive-letter staging path like `c:/projects/data`, which resolves in Git Bash; in WSL use the
-`/mnt/c/...` form instead):
+Point it at the staging dir with **`SEED_STAGING`**, set (uncommented) in `src\.env`. The seeding
+script reads `SEED_STAGING` from that same `.env` file — it reads `.env` itself, since (unlike
+compose) a shell does not auto-load it. So the simplest path is to set it once in `.env` and run the
+script with no arguments; an inline/exported `SEED_STAGING` overrides the `.env` value.
 
-```bash
-cd /c/Projects/GitHub/AccountManager7/src
-SEED_STAGING=c:/projects/data ./assemble-seed.sh                 # base corpus
-SEED_STAGING=c:/projects/data ./assemble-seed.sh --with-location # + large location grids
-SEED_STAGING=c:/projects/data ./assemble-seed.sh --dry-run       # list what would copy, write nothing
+**cmd / PowerShell — run `assemble-seed.bat`, from `src\`.** The `.bat` is a **native Windows cmd
+script** — it copies with `robocopy` and has **no bash, Git Bash, or WSL dependency at all**, so no
+bash prompt is involved. It accepts a `c:/projects/data`-style forward-slash staging path (it
+converts to backslashes internally) as well as a normal `c:\projects\data` one.
+
+```bat
+cd C:\Projects\GitHub\AccountManager7\src
+
+REM Simplest: SEED_STAGING=c:/projects/data set (uncommented) in src\.env, then:
+assemble-seed.bat                  REM base corpus
+assemble-seed.bat --with-location  REM + large location grids
+assemble-seed.bat --dry-run        REM list what would copy, write nothing
+
+REM Or override .env inline for a one-off:
+set "SEED_STAGING=c:\projects\data"
+assemble-seed.bat
 ```
 
-- `SEED_STAGING` is **required** — point it at your populated staging dir (example: `c:/projects/data`).
-  Windows backslashes are normalised; a trailing slash is stripped.
+**Linux / macOS Docker hosts — run `./assemble-seed.sh`, from `src/`** (the bash equivalent; not
+needed on Windows, where the `.bat` above is the native path). It mirrors the same `SEED_STAGING` →
+`docker-data/am7/datagen` copy with the same exclusions:
+
+```bash
+cd /path/to/AccountManager7/src
+./assemble-seed.sh                 # base corpus (SEED_STAGING from src/.env)
+./assemble-seed.sh --with-location # + large location grids
+./assemble-seed.sh --dry-run       # list what would copy, write nothing
+SEED_STAGING=/data/corpus ./assemble-seed.sh       # override .env inline
+```
+
+- `SEED_STAGING` is **required** (in `src\.env`, or inline/exported) — point it at your populated
+  staging dir (example: `c:/projects/data`). Windows backslashes are normalised; a trailing slash is
+  stripped. If it is unset everywhere, the script exits with a message instead of copying nothing
+  silently.
+- The corpus files must sit at their expected sub-paths **directly under** the staging root —
+  `names/yob2022.txt`, `surnames/Names_2010Census.csv`, `occupations/noc_2021_..._elements.csv`,
+  `patterns/patterns.csv`, `traits.json`, and `wn3.1.dict/dict/data.noun` (the WordNet dict is a
+  separate download, **not** in `seedData.7z`). The copy preserves each file's path relative to the
+  staging root, so `--dry-run` is the quick way to confirm the layout before a real run.
 - The target defaults to `$AM7_DATA_DIR/am7/datagen` (`.\docker-data\am7\datagen`), matching the
   compose bind mount. If you moved persistent state with `AM7_DATA_DIR` (see §2a), export the same
   value here so the corpus lands where the container reads it.
