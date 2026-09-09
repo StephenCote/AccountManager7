@@ -1,6 +1,12 @@
 # conf.d is the RUNTIME override directory, bind-mounted over
-# /etc/postgresql/conf.d by docker-compose.test.yml. It is not a build input:
-# excluding it keeps an override edit from busting the build cache (and from
-# being baked into the image, where it would shadow the ARG defaults for
-# everyone).
+# /etc/postgresql/conf.d by docker-compose.test.yml at container start. It is
+# not a build input -- the Dockerfile never COPYs it -- so excluding it keeps
+# an override edit from busting the build cache and keeps it out of the build
+# context entirely.
+#
+# (An earlier version of this comment also claimed excluding it prevents an
+# override being "baked into the image where it would shadow the ARG defaults".
+# That was wrong: nothing COPYs conf.d, so it could never have been baked in
+# regardless of this file. The real effects are cache invalidation and context
+# size.)
 conf.d/

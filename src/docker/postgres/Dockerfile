@@ -44,6 +44,14 @@ ENV PGDATA=/var/lib/postgresql/data
 # Sized for the measured ~31.16 GiB Docker VM that concurrently hosts this
 # container, the dev `postgres` container, and Tomcat at -Xmx8g. See the
 # rationale comments in am7-tuning.conf.template before changing any of them.
+#
+# KEEP THESE IN STEP WITH docker-compose.test.yml. Every ARG below is ALSO
+# declared there as `PG_X: ${PG_X:-default}`, and compose passes all of them
+# explicitly -- so on the supported path (compose build) the compose value
+# ALWAYS wins and editing only this file is a silent no-op. The defaults here
+# are what a bare `docker build` (no compose) gets, so a drift between the two
+# shows up only in that path. Same hazard the CATALINA_OPTS comment in
+# am7-docker-up.bat calls out; change both or neither.
 # ---------------------------------------------------------------------------
 ARG PG_SHARED_BUFFERS=2GB
 ARG PG_WORK_MEM=128MB

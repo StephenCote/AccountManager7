@@ -63,6 +63,17 @@ services:
         # Sized for the measured ~31.16 GiB Docker VM shared with the dev
         # `postgres` container and Tomcat's -Xmx8g. Dial down for a smaller
         # machine, e.g. PG_SHARED_BUFFERS=512MB PG_WORK_MEM=16MB docker compose ... build
+        #
+        # These duplicate the ARG defaults in docker/postgres/Dockerfile and,
+        # because they are passed explicitly, they WIN over them on every
+        # compose build. The Dockerfile copy only applies to a bare
+        # `docker build`. Keep the two in step.
+        #
+        # THIRD drift channel to know about: compose auto-loads src/.env, so a
+        # PG_* set there silently overrides these defaults with nothing in the
+        # compose file or the image to show it. Same invisibility as a
+        # git-ignored docker/postgres/conf.d/*.conf. If a value looks wrong,
+        # check src/.env before the build args.
         PG_SHARED_BUFFERS: ${PG_SHARED_BUFFERS:-2GB}
         PG_WORK_MEM: ${PG_WORK_MEM:-128MB}
         PG_MAINTENANCE_WORK_MEM: ${PG_MAINTENANCE_WORK_MEM:-512MB}

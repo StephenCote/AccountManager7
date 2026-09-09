@@ -346,14 +346,27 @@ The verification above (and the 2026-08-05 test-stack boot) ran against a *stock
   `shm_size: ${PG_SHM_SIZE:-2gb}` — parallel hash joins put their shared hash table in `/dev/shm`, and
   Docker's 64MB default fails a large parallel join with `could not resize shared memory segment` —
   plus a read-only bind mount `./docker/postgres/conf.d:/etc/postgresql/conf.d`.
-- **Baked values:** `shared_buffers 2GB`, `work_mem 128MB`, `maintenance_work_mem 512MB`,
-  `autovacuum_work_mem 256MB`, `effective_cache_size 8GB`, `random_page_cost 1.1`,
-  `max_parallel_workers_per_gather 4`, `max_parallel_maintenance_workers 2`, `max_parallel_workers 8`,
-  `effective_io_concurrency 200`, `maintenance_io_concurrency 200`, `max_connections 200`,
-  `max_wal_size 4GB`, `min_wal_size 1GB`, `shared_preload_libraries pg_stat_statements`.
-- **Override precedence, lowest to highest** (all four verified): initdb conf → baked build ARGs →
+- **Baked values:** deliberately NOT duplicated here — they already live in three places
+  (`docker/postgres/Dockerfile` ARGs, the `args:` block in `docker-compose.test.yml`, and the
+  annotated `docker/postgres/am7-tuning.conf.template`), and a fourth copy in prose is the one
+  guaranteed to rot. Ask the running server instead:
+  ```
+  docker exec am7-pg psql -U am7user -d am72db -c "select name, setting, unit, source, sourcefile from pg_settings where sourcefile like '/etc/postgresql/%' order by name;"
+  ```
+  The template carries the per-setting rationale (why each deviates from the dev box, and what
+  multiplies it).
+- **Override precedence, lowest to highest:** initdb conf → baked build ARGs →
   `docker/postgres/conf.d/*.conf` (reloadable via `pg_reload_conf()` — no rebuild and no restart, for
-  non-postmaster settings) → compose `command:` `-c` flags.
+  non-postmaster settings) → **`$PGDATA/postgresql.auto.conf` (`ALTER SYSTEM SET`)** → compose
+  `command:` `-c` flags.
+  The `auto.conf` tier is easy to miss and is the usual reason a `conf.d` drop-in "doesn't take": it
+  is parsed after the entire main config file including every `include_dir`, it is writable by any
+  superuser session, and it lives in the bind-mounted data dir so it survives image rebuilds with no
+  trace in the repo. PG18 offers `allow_alter_system = off` to close it; the dev stack deliberately
+  does not set it (see `am7-tuning.conf.template`).
+- **Silent override channels to check before debugging a value:** a git-ignored
+  `docker/postgres/conf.d/*.conf`, an `ALTER SYSTEM` in `auto.conf`, and a `PG_*` entry in `src/.env`
+  (compose auto-loads it). None of the three appear in the compose file or `git status`.
 - **`langfuse-db` moved `postgres:17` → `postgres:18.6-trixie`** — a version pin only. That store is
   Langfuse-owned, holds trace data, and deliberately gets **none** of the AM7 tuning.
 - **`setup/dockerNotes.txt`** — the hand-started dev container's `docker run` was **unpinned**
