@@ -26,9 +26,15 @@ profiles). **This is a usage guide, not a design doc.**
 Two things must be true before any ISO menu item appears. Both are admin actions.
 
 1. **The `iso42001` UX feature must be enabled for the organization.** ISO 42001 is one of the app's
-   toggleable UX features (feature id `iso42001`). An admin enables it via the **Features** admin panel
-   (or by activating a profile that includes it — `full`, `enterprise`, or the ISO-only `compliance`
-   profile). If the feature is off, the ISO menu items are absent for everyone regardless of role.
+   toggleable UX features (feature id `iso42001`). There are two ways to turn it on:
+   - **At first-run setup:** the Setup wizard's **Features** step (core route `#!/setup`) picks the
+     starting feature set — choose a profile that includes ISO 42001: `full`, `enterprise`, or the
+     ISO-only **`compliance`** ("ISO 42001 only") profile.
+   - **After setup:** an admin toggles it any time from the **Features** admin panel at
+     `#!/admin/features` — either flip `iso42001` on directly, or click a Quick Profile such as
+     `compliance`, `enterprise`, or `full`. Changes take effect immediately (no page reload).
+
+   If the feature is off, the ISO menu items are absent for everyone regardless of role.
 2. **The user must hold an ISO role.** The menu items are gated on having *any* ISO role (see Phase 1).
    A user with the feature enabled but no ISO role sees no ISO menu items.
 
@@ -37,9 +43,9 @@ You will also need at least one **LLM endpoint** for campaigns to target. Endpoi
 `#!/list/system.connection` — **not** in the ISO views. Note the endpoint's name; you type it into the
 campaign form later.
 
-> A dedicated system-administrator feature enable/disable flow and a first-run "ISO 42001 only"
-> deployment profile are being designed separately — see [`../UxFeatureFlagDesign.md`](../UxFeatureFlagDesign.md).
-> Do not expect UI beyond what this runbook documents.
+> Both the admin feature-toggle panel (`#!/admin/features`) and the first-run "ISO 42001 only"
+> (`compliance`) deployment profile are now built. For the feature-flag system's design, dependency
+> rules, and the full profile catalogue see [`../UxFeatureFlagDesign.md`](../UxFeatureFlagDesign.md).
 
 ---
 

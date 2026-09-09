@@ -154,32 +154,34 @@ let featureConfigView = {
     },
     view: function () {
         if (loading) {
-            return m("div", { class: "p-8 text-gray-500 dark:text-gray-400" }, "Loading feature configuration...");
+            return m("div", { class: "p-4 field-label" }, "Loading feature configuration...");
         }
 
-        return m("div", { class: "p-6 max-w-4xl mx-auto" }, [
+        return m("div", { class: "p-4 max-w-4xl" }, [
             // Header
-            m("div", { class: "flex items-center justify-between mb-6" }, [
+            m("div", { class: "flex items-center justify-between mb-4" }, [
                 m("div", [
-                    m("h2", { class: "text-2xl font-bold text-gray-900 dark:text-white" }, "Feature Configuration"),
-                    m("p", { class: "text-sm text-gray-500 dark:text-gray-400 mt-1" }, "Enable or disable features for this organization. Changes take effect immediately.")
+                    m("h2", { class: "text-xl font-semibold" }, [
+                        m("span", { class: "material-symbols-outlined text-xl align-middle mr-2" }, "tune"),
+                        "Feature Configuration"
+                    ]),
+                    m("p", { class: "field-label mt-1" }, "Enable or disable features for this organization. Changes take effect immediately.")
                 ]),
                 m("div", { class: "flex gap-2 items-center" }, [
                     hasUnsavedChanges() ? m("span", { class: "text-sm text-amber-600 dark:text-amber-400 mr-2" }, "Unsaved changes") : null,
                     m("button", {
-                        class: "px-4 py-2 rounded text-white font-medium " +
-                            (saving ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"),
+                        class: "btn btn-primary px-4 py-2 text-sm",
                         disabled: saving || !hasUnsavedChanges(),
                         onclick: saveConfig
                     }, saving ? "Saving..." : "Save")
                 ])
             ]),
 
-            // Messages
-            error ? m("div", { class: "mb-4 p-3 rounded bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-sm" }, error) : null,
-            successMsg ? m("div", { class: "mb-4 p-3 rounded bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm" }, successMsg) : null,
+            // Messages (design-system message boxes, matching views/setup.js)
+            error ? m("div", { class: "mb-4 p-2 rounded text-sm bg-red-200 text-black dark:bg-red-700 dark:text-white" }, error) : null,
+            successMsg ? m("div", { class: "mb-4 p-2 rounded text-sm bg-green-200 text-black dark:bg-green-800 dark:text-white" }, successMsg) : null,
             // Manifest drift is a hard error, not a silent skip (D2)
-            manifestErrors.length ? m("div", { class: "mb-4 p-3 rounded bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-200 text-sm" }, [
+            manifestErrors.length ? m("div", { class: "mb-4 p-2 rounded text-sm bg-red-200 text-black dark:bg-red-700 dark:text-white" }, [
                 m("div", { class: "font-medium mb-1" }, "Feature manifest error"),
                 m("ul", { class: "list-disc ml-5" }, manifestErrors.map(function (msg) { return m("li", {}, msg); }))
             ]) : null,
@@ -207,25 +209,23 @@ let featureConfigView = {
                         key: f.id,
                         class: "border rounded-lg p-4 " +
                             (enabled
-                                ? "border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/20"
+                                ? "border-blue-500 bg-blue-50/50 dark:bg-blue-900/20"
                                 : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800")
                     }, [
                         m("div", { class: "flex items-center justify-between" }, [
                             m("div", { class: "flex items-center gap-3" }, [
-                                // Toggle switch
+                                // Toggle switch — shared design-system .toggle-field/.toggle-knob
+                                // (as core/view.js renders boolean fields). mt-0 aligns it in the flex
+                                // row; opacity-60/cursor-not-allowed give required features the locked look.
                                 m("button", {
-                                    class: "relative inline-flex h-6 w-11 items-center rounded-full transition-colors " +
-                                        (isRequired ? "bg-blue-400 cursor-not-allowed opacity-60" :
-                                            enabled ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"),
+                                    class: "toggle-field mt-0" + (enabled ? " active" : "") +
+                                        (isRequired ? " opacity-60 cursor-not-allowed" : ""),
                                     disabled: isRequired,
                                     onclick: function () { toggleFeature(f.id); },
                                     title: isRequired ? "Required feature — cannot be disabled" :
                                         (hasEnabledDependents ? "Has active dependents: " + dependents.join(", ") : "")
                                 }, [
-                                    m("span", {
-                                        class: "inline-block h-4 w-4 transform rounded-full bg-white transition-transform " +
-                                            (enabled ? "translate-x-6" : "translate-x-1")
-                                    })
+                                    m("span", { class: "toggle-knob" })
                                 ]),
                                 m("div", [
                                     m("span", { class: "font-medium text-gray-900 dark:text-white" }, f.label),
@@ -257,7 +257,7 @@ let featureConfigView = {
 
             // Quick profile buttons
             m("div", { class: "mt-6 border-t border-gray-200 dark:border-gray-700 pt-4" }, [
-                m("h3", { class: "text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" }, "Quick Profiles"),
+                m("h3", { class: "field-label mb-2" }, "Quick Profiles"),
                 // Rendered from features.js `profiles` — the hardcoded copies that used to live here
                 // had already drifted ("Standard" was ["core","chat"], the manifest's is
                 // ["core","media","chat"]). Importing removes that class of drift by construction.
@@ -277,7 +277,7 @@ function profileLabel(name) {
 
 function profileButton(label, featureList) {
     return m("button", {
-        class: "px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300",
+        class: "btn btn-secondary px-3 py-1.5 text-sm",
         onclick: function () {
             enabledSet = new Set(featureList);
             // Ensure core is always present

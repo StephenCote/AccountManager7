@@ -761,7 +761,8 @@ public class OlioService {
 	 *                data (large; default false)
 	 * @param request the HTTP request carrying the authenticated admin principal
 	 * @return 200 with per-corpus counts as JSON; 401 unauthenticated; 409 when the corpus is not present;
-	 *         500 when {@code datagen.path} is unconfigured
+	 *         500 when {@code datagen.path} is unconfigured, or when WorldUtil signals a load failure via
+	 *         an empty counts map
 	 */
 	@POST
 	@Path("/loadData")
@@ -798,6 +799,14 @@ public class OlioService {
 		}
 
 		Map<String, Integer> counts = WorldUtil.loadOlioData(user, dataPath, includeLocations);
+		/// WorldUtil.loadOlioData returns the corpus keys on SUCCESS (values may be 0) and an EMPTY map on
+		/// every failure/early-return path (its documented failure signal). Map that empty-map failure to a
+		/// 500 rather than delivering it as a 200 with an empty body, which would hide the failure.
+		if (counts == null || counts.isEmpty()) {
+			return Response.status(500)
+				.entity("{\"error\":true,\"message\":\"Olio corpus load failed — see server log\"}")
+				.build();
+		}
 		return Response.ok(JSONUtil.exportObject(counts)).build();
 	}
 
