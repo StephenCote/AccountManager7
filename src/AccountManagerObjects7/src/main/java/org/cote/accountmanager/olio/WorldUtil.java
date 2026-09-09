@@ -411,6 +411,19 @@ public class WorldUtil {
 		String worldPath = cfg.getWorldPath();
 		String worldName = cfg.getWorldName();
 
+		/// Establish the authorization environment before any Olio-principal makePath runs. On a fresh
+		/// org, /Olio does not exist and the Olio principal has no Create grant on the org root, so the
+		/// getCreateWorld makePath below would be DENIED (null dir -> NPE in getWorld). configureEnvironment
+		/// is the canonical reference setup: it creates /Olio as the org ADMIN and grants the Olio principal
+		/// Read/Update/Create on it, then creates /Olio/Universes and the world-path group as the Olio
+		/// principal. It is idempotent and does NOT generate population/realms (that lives in initialize()).
+		try {
+			new OlioContext(cfg).configureEnvironment();
+		} catch (OlioException e) {
+			logger.error("Failed to configure Olio environment for organization " + orgId, e);
+			return counts;
+		}
+
 		/// (a) Ensure the org's default universe/world exist, as the Olio principal.
 		BaseRecord universe = getCreateWorld(olioUser, universePath, universeName, cfg.getFeatures());
 		if(universe == null) {
