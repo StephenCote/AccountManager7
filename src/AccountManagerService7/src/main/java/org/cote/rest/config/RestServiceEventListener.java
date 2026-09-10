@@ -307,8 +307,15 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			/// Deployment server URLs are DB-backed (ServerConfigUtil) with the web.xml init-param
 			/// as the FALLBACK: docker/entrypoint.sh regenerates WEB-INF/web.xml from a template on
 			/// EVERY boot, so runtime configuration cannot live there.
+			/// embedding.type is boot-pinned config. An absent/blank value must default to LOCAL (the
+			/// bundled embedApiMini.py custom service) rather than NPE on .toUpperCase() and abort the
+			/// whole init block via the catch below (which would leave VectorUtil/VoiceUtil/threads unset).
+			String embType = context.getInitParameter("embedding.type");
+			LLMServiceEnumType embServiceType = (embType == null || embType.isBlank())
+					? LLMServiceEnumType.LOCAL
+					: LLMServiceEnumType.valueOf(embType.trim().toUpperCase());
 			VectorUtil vectorUtil = new VectorUtil(
-					LLMServiceEnumType.valueOf(context.getInitParameter("embedding.type").toUpperCase()),
+					embServiceType,
 					ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_EMBEDDING, context.getInitParameter("embedding.server")), authToken);
 			/// Configurable embedding dimensions, synced to the common.vectorExt.embedding column
 			/// (setEmbeddingDimensions enforces the match and throws on mismatch).

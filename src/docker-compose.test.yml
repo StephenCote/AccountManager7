@@ -191,6 +191,8 @@ services:
       VOICE_TTS_SERVER: ${VOICE_TTS_SERVER:-http://192.168.1.42:8001}
       VOICE_STT_SERVER: ${VOICE_STT_SERVER:-http://192.168.1.42:8002}
       EMBEDDING_SERVER: ${EMBEDDING_SERVER:-http://192.168.1.42:8123}
+      # Embedding protocol: 'local' (bundled embedApiMini.py, default) or 'openai' (Azure/OpenAI).
+      EMBEDDING_TYPE: ${EMBEDDING_TYPE:-local}
       # Embedding-server auth token (OPENAI branch). A credential -- keep it out of git: leave the
       # default empty and supply the real value via a .env file or the host environment. Empty means
       # no Authorization header is sent.
