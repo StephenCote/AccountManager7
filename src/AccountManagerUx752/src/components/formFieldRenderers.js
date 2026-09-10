@@ -388,8 +388,16 @@ renderers.textarea = function(ctx) {
 };
 
 renderers.textlist = function(ctx) {
-    // textlist: renders a list<string> as a textarea with one line per element
-    // ctx.defVal may be an array or string — normalize to string for textarea
+    // textlist: renders a list<string> as a textarea with one line per element.
+    // The array<->string conversion is owned by the instance's textListDecorator
+    // (core/model.js): the api getter joins the array on newlines for display, and
+    // the api setter (via handleChange -> decorateIn) splits the newline string back
+    // into an array. This renderer must NOT re-convert. Assigning an array to a DOM
+    // element's .value coerces it to a comma-joined string, so the decorator then
+    // splits a string with no newlines and collapses the list to one element
+    // (["trade1","trade2"] -> ["trade1,trade2"]), which also breaks string values
+    // that map to enums (race, ethnicity). Pass the raw textarea string straight to
+    // fHandler and let the decorator do the split.
     let defVal = ctx.defVal;
     if (Array.isArray(defVal)) {
         defVal = defVal.join('\n');
@@ -397,15 +405,7 @@ renderers.textlist = function(ctx) {
     let textareaAttrs = {
         class: (ctx.fieldClass || "") + " textarea-field-full w-full pr-8",
         name: ctx.useName,
-        onchange: function(e) {
-            // Convert newline-separated string back to array
-            let lines = e.target.value.split('\n');
-            if (ctx.fHandler) {
-                // Patch the event value to be the array before calling the standard handler
-                e.target.value = lines;
-                ctx.fHandler(e);
-            }
-        }
+        onchange: ctx.fHandler
     };
     return [m("div", { class: "relative w-full" },
         m("textarea", textareaAttrs, defVal)
