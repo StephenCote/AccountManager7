@@ -13,9 +13,24 @@ import { am7model } from '../core/model.js';
 // ── SD Config State ─────────────────────────────────────────────────
 //
 // The config is a REAL olio.sd.config built from the server template, not a hand-rolled object.
-// localStorage holds only the user's tweaks and is overlaid onto a fresh template each time.
+// A saved config is overlaid onto a fresh template each time.
+//
+// Persistence is SERVER-SIDE (was localStorage). The config is saved per-chat, keyed to the durable
+// olio.llm.chatConfig objectId so every session of the same chat reuses it, plus an optional
+// chat-global shared config. Both persist as olio.sd.config records via am7sd.saveConfig (with the
+// legacy data.data blob read-fallback) — the same mechanism charPerson reimage uses. The chat-global
+// name is deliberately distinct from the character-image shared 'sharedSD.json' so saving a chat's
+// shared config never overwrites the character one.
 
-const SD_CONFIG_KEY = "am7.sdConfig";
+const SHARED_CHAT_NAME = "sharedChatSD.json";
+
+/// Per-chat config record name — keyed to the durable chatConfig objectId (not the ephemeral session),
+/// so the saved config is reused across every session/conversation of the same chat. null when no
+/// chatConfig objectId is available (e.g. a session with no bound chatConfig); the shared config is
+/// used alone in that case.
+function perChatConfigName() {
+    return _chatConfigObjectId ? ("sdcfg-chat-" + _chatConfigObjectId) : null;
+}
 
 let sdConfig = null;        // olio.sd.config entity (null until ensureSdConfig resolves)
 let sdConfigInst = null;    // am7model instance wrapping sdConfig (forms.sdConfig)
@@ -23,7 +38,9 @@ let sdModels = [];
 let sdLoras = [];
 let _generating = false;
 let _sessionObjectId = null;
+let _chatConfigObjectId = null;  // durable olio.llm.chatConfig objectId — the per-chat config key
 let _onGenerated = null;
+let _saveShared = false;    // "Save as Shared Config" checkbox state
 
 // Chat-specific pins applied on top of the real olio.sd.config template. Mirrors
 // pictureBook.js's pinPictureBookDefaults so both features render through the same pipeline.
@@ -44,14 +61,39 @@ function pinChatSceneDefaults(entity) {
 // default, which is necessarily node-specific. Being hand-rolled it also missed every schema field the
 // picture book relies on (flux2Cfg / flux2Steps / flux2ReferenceSize / flux2IncludeLandscapeRef /
 // seed / ...), so none of that reached chat even though both features hit the same server code.
-// The saved blob is now overlaid onto a real server template instead - see ensureSdConfig.
-// Keys that must never be carried over from a saved blob onto a fresh template: identity fields,
-// and the model/refinerModel pair. The saved blob's model is what caused the reported failure - it
-// was "" (or a checkpoint name valid only on the node it was saved from), and overlaying either onto
-// a template that already carries a VALID model for THIS node reintroduces the bug.
+// The saved config is now overlaid onto a real server template instead - see ensureSdConfig.
+// Keys that must never be carried over from a saved config onto a fresh template: identity fields,
+// and the model/refinerModel pair. A saved model is what caused the reported failure - it was ""
+// (or a checkpoint name valid only on the node it was saved from), and overlaying either onto a
+// template that already carries a VALID model for THIS node reintroduces the bug. So the per-chat /
+// shared records are ALSO saved without model/refinerModel (stripNeverRestore before saveConfig).
 const SD_CONFIG_IDENTITY = ['id', 'objectId', 'urn', 'ownerId', 'groupId', 'organizationId',
     'groupPath', 'organizationPath', 'narration'];
 const SD_CONFIG_NEVER_RESTORE = ['model', 'refinerModel'];
+
+/// Overlay a saved config's tweaks onto a fresh template entity. Skips identity, the model pair, and
+/// any null/blank value — a blank must not overwrite a good template value, which is precisely how ""
+/// reached the server. Unknown legacy keys are dropped by virtue of only copying what the model has.
+function overlaySaved(entity, stored) {
+    if (!stored) return;
+    for (let k in stored) {
+        if (SD_CONFIG_IDENTITY.includes(k) || SD_CONFIG_NEVER_RESTORE.includes(k)) continue;
+        if (k === am7model.jsonModelKey) continue;
+        let v = stored[k];
+        if (v === undefined || v === null || v === '' || v === 0) continue;
+        if (!(k in entity)) continue;
+        entity[k] = v;
+    }
+}
+
+/// Drop the built config so the next ensureSdConfig() rebuilds from the template for a different chat.
+/// The config is a module singleton keyed to _chatConfigObjectId; without this, switching chats would
+/// return the previous chat's memoized instance and load/save the wrong record.
+function resetConfig() {
+    sdConfig = null;
+    sdConfigInst = null;
+    _sdConfigPromise = null;
+}
 
 /// Build the chat scene config as a REAL olio.sd.config, the same way the picture-book wizard does
 /// (am7sd.buildEntity -> /olio/randomImageConfig -> am7model.prepareInstance). Saved user tweaks are
@@ -68,23 +110,18 @@ async function ensureSdConfig() {
             if (!entity[am7model.jsonModelKey]) entity[am7model.jsonModelKey] = 'olio.sd.config';
             SD_CONFIG_IDENTITY.forEach(function (k) { delete entity[k]; });
 
-            /// Overlay saved tweaks. Skips identity, the model pair, and any null/blank value - a
-            /// blank must not overwrite a good template value, which is precisely how "" reached the
-            /// server. Unknown legacy keys are dropped by virtue of only copying what the model has.
+            /// Overlay the saved config server-side: prefer THIS chat's own saved config (keyed to the
+            /// chatConfig objectId), else fall back to the chat-global shared config. stripNeverRestore
+            /// drops the persisted model/refinerModel so the template's node-valid model always survives.
             let stored = null;
             try {
-                let raw = localStorage.getItem(SD_CONFIG_KEY);
-                if (raw) stored = JSON.parse(raw);
+                let name = perChatConfigName();
+                if (name) stored = await am7sd.loadConfig(name);
+                if (!stored) stored = await am7sd.loadConfig(SHARED_CHAT_NAME);
             } catch (e) { stored = null; }
             if (stored) {
-                for (let k in stored) {
-                    if (SD_CONFIG_IDENTITY.includes(k) || SD_CONFIG_NEVER_RESTORE.includes(k)) continue;
-                    if (k === am7model.jsonModelKey) continue;
-                    let v = stored[k];
-                    if (v === undefined || v === null || v === '' || v === 0) continue;
-                    if (!(k in entity)) continue;
-                    entity[k] = v;
-                }
+                am7sd.stripNeverRestore(stored);
+                overlaySaved(entity, stored);
             }
 
             pinChatSceneDefaults(entity);
@@ -100,20 +137,43 @@ async function ensureSdConfig() {
     return _sdConfigPromise;
 }
 
-function saveConfig() {
+/// Persist the current config server-side (was localStorage). Always saves the per-chat record when a
+/// chatConfig objectId is available; also saves the chat-global shared record when the "Save as Shared"
+/// checkbox is set. model/refinerModel are stripped first so a config saved on one node cannot poison
+/// another. Called on Generate, mirroring the reimage workflow (save-then-generate), not on every edit.
+async function persistConfig() {
+    if (!sdConfig) return false;
+    let out = am7sd.stripNeverRestore(Object.assign({}, sdConfig));
+    delete out[am7model.jsonModelKey];
+    let name = perChatConfigName();
+    let ok = false;
     try {
-        if (!sdConfig) return;
-        /// Persist tweaks only - never the model, so a config saved on one node cannot poison another.
-        let out = {};
-        for (let k in sdConfig) {
-            if (SD_CONFIG_IDENTITY.includes(k) || SD_CONFIG_NEVER_RESTORE.includes(k)) continue;
-            if (k === am7model.jsonModelKey) continue;
-            let v = sdConfig[k];
-            if (typeof v === 'function' || v === undefined) continue;
-            out[k] = v;
-        }
-        localStorage.setItem(SD_CONFIG_KEY, JSON.stringify(out));
-    } catch(e) {}
+        if (name) ok = await am7sd.saveConfig(name, out);
+        if (_saveShared) await am7sd.saveConfig(SHARED_CHAT_NAME, out);
+    } catch (e) {
+        console.warn("[SceneGenerator] Failed to persist SD config:", e);
+        return false;
+    }
+    return ok;
+}
+
+/// Load the chat-global shared config and overlay it onto the current in-panel config. Explicit user
+/// action from the "Load Shared" button — mirrors reimage's "Load Shared". Mutates sdConfig in place
+/// (the panel renders it directly), stripping the node-specific model pair first.
+async function loadShared() {
+    let stored = null;
+    try { stored = await am7sd.loadConfig(SHARED_CHAT_NAME); }
+    catch (e) { stored = null; }
+    if (!stored) {
+        page.toast("warn", "No shared chat SD config found");
+        return;
+    }
+    if (!sdConfig) return;
+    am7sd.stripNeverRestore(stored);
+    overlaySaved(sdConfig, stored);
+    am7sd.fillStyleDefaults(sdConfig);
+    page.toast("success", "Loaded shared chat SD config");
+    m.redraw();
 }
 
 async function loadModels() {
@@ -160,6 +220,10 @@ async function doGenerate() {
         return;
     }
     _generating = true;
+
+    /// Persist the config BEFORE closing so this chat's scene settings survive for reuse — mirrors the
+    /// reimage workflow (save-then-generate). Failure here must not block generation.
+    await persistConfig();
 
     /// Close the dialog immediately on click so the user gets clear feedback
     /// that generation started — generation takes 20-90s and silently leaving
@@ -235,9 +299,17 @@ async function findGroupByPath(path) {
 }
 
 const SceneGenerator = {
-    show: function(sessionObjectId, onGenerated) {
+    show: function(sessionObjectId, onGenerated, chatConfigObjectId) {
         _sessionObjectId = sessionObjectId;
         _onGenerated = onGenerated || null;
+        /// The config is a module singleton keyed to the chat. When the chat changes, drop the
+        /// previously-built config so ensureSdConfig() rebuilds and loads THIS chat's saved record
+        /// (not the last chat's memoized instance).
+        let newCcid = chatConfigObjectId || null;
+        if (newCcid !== _chatConfigObjectId) {
+            _chatConfigObjectId = newCcid;
+            resetConfig();
+        }
         loadModels();
         loadLoras();
         /// Kicked off, not awaited — show() is called from a click handler. The panel renders a
@@ -256,12 +328,35 @@ const SceneGenerator = {
                         return m("div", { class: "p-4" }, "Loading image configuration...");
                     }
                     return m("div", { class: "p-4", style: "max-height: 70vh; overflow-y: auto;" }, [
+                        /// Load the chat-global shared config into the panel — mirrors reimage's "Load Shared".
+                        m("div", { class: "flex flex-wrap gap-2 mb-2" }, [
+                            m("button", {
+                                class: "button",
+                                title: "Load shared chat config",
+                                onclick: loadShared
+                            }, [
+                                m("span", { class: "material-symbols-outlined md-18 mr-1" }, "open_in_new"),
+                                "Load Shared"
+                            ])
+                        ]),
                         m(SdConfigPanel, {
                             config: sdConfig,
                             models: sdModels,
                             loras: sdLoras,
-                            onChange: saveConfig
-                        })
+                            /// Persistence is now save-on-Generate (server-side), so a panel edit only
+                            /// needs to redraw — it no longer writes through on every change.
+                            onChange: function() { m.redraw(); }
+                        }),
+                        /// "Save as Shared" — when checked, Generate also writes the chat-global shared
+                        /// record (sharedChatSD.json), in addition to always saving this chat's own config.
+                        m("div", { class: "flex items-center gap-2 mt-2" }, [
+                            m("input", {
+                                type: "checkbox",
+                                checked: _saveShared,
+                                onchange: function(e) { _saveShared = e.target.checked; }
+                            }),
+                            m("label", { class: "field-label" }, "Save as Shared Config")
+                        ])
                     ]);
                 }
             },
@@ -288,11 +383,14 @@ const SceneGenerator = {
     /// chat (no data.group at the expected path), the generator is opened
     /// immediately instead of an empty gallery — there's nothing to show.
     openSceneGallery: async function(sessionObjectId, chatCfg, onGenerated) {
+        /// The per-chat config is keyed to the durable chatConfig objectId, not the ephemeral session,
+        /// so every session/conversation of the same chat reuses the same saved scene config.
+        let chatConfigObjectId = (chatCfg && chatCfg.chat && chatCfg.chat.objectId) ? chatCfg.chat.objectId : null;
         let path = sceneGalleryPathFor(chatCfg);
         if (!path) {
             /// Can't compute the path (missing characters) — fall back to
             /// the original behaviour: open the generator directly.
-            SceneGenerator.show(sessionObjectId, onGenerated);
+            SceneGenerator.show(sessionObjectId, onGenerated, chatConfigObjectId);
             return;
         }
 
@@ -301,7 +399,7 @@ const SceneGenerator = {
             /// First-run: no scenes exist for this character pair. Go
             /// straight to the generator.
             page.toast("info", "No scenes yet — opening generator");
-            SceneGenerator.show(sessionObjectId, onGenerated);
+            SceneGenerator.show(sessionObjectId, onGenerated, chatConfigObjectId);
             return;
         }
 
@@ -318,7 +416,7 @@ const SceneGenerator = {
                     primary: true,
                     onclick: function() {
                         Dialog.close();
-                        SceneGenerator.show(sessionObjectId, onGenerated);
+                        SceneGenerator.show(sessionObjectId, onGenerated, chatConfigObjectId);
                     }
                 }
             ]
@@ -329,8 +427,8 @@ const SceneGenerator = {
         Dialog.close();
     },
 
-    toggle: function(sessionObjectId, onGenerated) {
-        SceneGenerator.show(sessionObjectId, onGenerated);
+    toggle: function(sessionObjectId, onGenerated, chatConfigObjectId) {
+        SceneGenerator.show(sessionObjectId, onGenerated, chatConfigObjectId);
     },
 
     isVisible: function() { return false; },
@@ -343,5 +441,25 @@ const SceneGenerator = {
     }
 };
 
+// ── Test-only seam ──────────────────────────────────────────────────
+// ensureSdConfig / persistConfig / perChatConfigName are module-private; expose them (plus setters and
+// a reset) so a Vitest can exercise the server-side per-chat load/save path without opening a Dialog.
+// Production code never imports these — it goes through SceneGenerator.show/openSceneGallery.
+function __setChatConfigForTest(chatConfigObjectId) {
+    _chatConfigObjectId = chatConfigObjectId || null;
+    resetConfig();
+}
+function __setSaveSharedForTest(v) { _saveShared = !!v; }
+function __getSdConfigForTest() { return sdConfig; }
+function __resetSceneGeneratorForTest() {
+    _chatConfigObjectId = null;
+    _saveShared = false;
+    resetConfig();
+}
+
 export { SceneGenerator };
+export {
+    ensureSdConfig, persistConfig, loadShared, perChatConfigName,
+    __setChatConfigForTest, __setSaveSharedForTest, __getSdConfigForTest, __resetSceneGeneratorForTest
+};
 export default SceneGenerator;
