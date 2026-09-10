@@ -614,6 +614,96 @@ const LLMConnector = {
         m.redraw();
     },
 
+    // ── Evaluation / Background Progress ─────────────────────────────
+    // Handles the server's `evalProgress` chirps (phase + detail). These are progress
+    // notifications for background evaluation and memory-extraction phases — they are NOT
+    // policy violations. In-progress phases drive the subtle bgActivity indicator; results
+    // and genuine mid-stream violations produce toasts. Ported from the Ux7 reference
+    // (deprecated/AccountManagerUx7/client/pageClient.js evalProgress branch).
+
+    handleEvalProgress: function(phase, detail) {
+        phase = phase || "";
+        detail = detail || "";
+        switch (phase) {
+            case "policy":
+                page.toast("info", "Evaluating: " + detail, 3000);
+                break;
+            case "policyDone":
+                if (detail !== "passed") page.toast("warn", "Policy result: " + detail, 4000);
+                break;
+            case "compliance":
+                page.toast("info", "Evaluating: " + detail, 4000);
+                break;
+            case "complianceDone":
+                if (detail !== "passed") page.toast("info", "Compliance check: " + detail, 3000);
+                break;
+            case "interaction":
+                page.toast("info", "Evaluating: " + detail, 3000);
+                break;
+            case "interactionDone":
+                if (detail === "error") page.toast("warn", "Interaction evaluation failed", 3000);
+                break;
+            case "keyframe":
+                LLMConnector.setBgActivity("psychology", "Memorizing conversation…");
+                break;
+            case "keyframeDone":
+                LLMConnector.setBgActivity(null, null);
+                break;
+            case "memoryExtract":
+                LLMConnector.setBgActivity("neurology", "Forming memories…");
+                break;
+            case "memoryExtractDone":
+                LLMConnector.setBgActivity(null, null);
+                if (detail && detail !== "error") page.toast("info", detail, 3000);
+                else if (detail === "error") page.toast("warn", "Memory extraction failed", 3000);
+                // Dynamic import avoids a static LLMConnector <-> MemoryPanel cycle.
+                import('./MemoryPanel.js').then(mp => {
+                    if (mp && mp.MemoryPanel && mp.MemoryPanel.refresh) mp.MemoryPanel.refresh();
+                }).catch(() => {});
+                break;
+            case "midStreamViolation":
+                page.toast("warn", "Policy: " + detail, 5000);
+                break;
+            default:
+                break;
+        }
+        m.redraw();
+    },
+
+    // ── Autotune Events ──────────────────────────────────────────────
+
+    lastAutotuneEvent: null,
+
+    handleAutotuneEvent: function(type, detail) {
+        type = type || "";
+        detail = detail || "";
+        if (type === "promptSuggestion") {
+            page.toast("info", "Autotune: Prompt revision suggested after policy violation", 5000);
+        } else if (type === "optionsRebalance") {
+            page.toast("info", "Autotune: Chat options rebalanced — " + detail, 5000);
+        } else if (type === "complianceViolation") {
+            page.toast("warn", "Compliance: " + detail, 6000);
+        }
+        LLMConnector.lastAutotuneEvent = { type: type, data: detail };
+        m.redraw();
+    },
+
+    // ── Interaction Events ───────────────────────────────────────────
+
+    lastInteractionEvent: null,
+
+    handleInteractionEvent: function(dataJson) {
+        let iData = null;
+        try { iData = typeof dataJson === "string" ? JSON.parse(dataJson) : dataJson; }
+        catch (e) { iData = dataJson; }
+        if (iData && iData.interactionType) {
+            let summary = iData.summary || "";
+            page.toast("info", String(iData.interactionType).toLowerCase() + " — " + summary, 5000);
+        }
+        LLMConnector.lastInteractionEvent = iData;
+        m.redraw();
+    },
+
     // ── Background Activity ──────────────────────────────────────────
 
     bgActivity: null,

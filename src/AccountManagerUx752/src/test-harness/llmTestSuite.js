@@ -2860,125 +2860,94 @@ async function testPhase14(cats) {
         log("phase14", "166: LLMConnector not loaded — cloneConfig test skipped", "skip");
     }
 
-    // Test 167: evalProgress handler — keyframe phase produces toast
-    // Simulate the handler by calling page.toast and checking it doesn't throw
-    try {
-        let toastCalled = false;
-        let origToast = page.toast;
-        page.toast = function(level, msg, dur) {
-            toastCalled = true;
-            origToast.call(page, level, msg, dur);
-        };
+    // Test 167: evalProgress keyframe phases drive the bgActivity indicator (real handler)
+    if (LLMConnector && LLMConnector.handleEvalProgress) {
+        try {
+            LLMConnector.setBgActivity(null, null); // reset
+            LLMConnector.handleEvalProgress("keyframe", "");
+            let kfOk = !!(LLMConnector.bgActivity && LLMConnector.bgActivity.icon === "psychology");
+            log("phase14", "167a: keyframe sets bgActivity(psychology): " + kfOk, kfOk ? "pass" : "fail");
 
-        // Simulate keyframe event via the evalProgress WebSocket handler
-        // The handler checks phase === "keyframe" and calls page.toast("info", detail, 2000)
-        // We test the handler logic directly
-        let phase = "keyframe";
-        let detail = "Generating keyframe summary...";
-        if (phase === "keyframe") {
-            page.toast("info", detail, 2000);
+            LLMConnector.handleEvalProgress("keyframeDone", "");
+            let kfDoneOk = LLMConnector.bgActivity === null;
+            log("phase14", "167b: keyframeDone clears bgActivity: " + kfDoneOk, kfDoneOk ? "pass" : "fail");
+        } catch (e) {
+            log("phase14", "167: keyframe handler test error: " + e.message, "fail");
         }
-        log("phase14", "167a: keyframe phase calls toast: " + toastCalled, toastCalled ? "pass" : "fail");
-
-        // Test keyframeDone is silent (no toast)
-        toastCalled = false;
-        phase = "keyframeDone";
-        if (phase === "keyframeDone") {
-            // Handler only does console.log
-        }
-        log("phase14", "167b: keyframeDone is silent (no toast): " + !toastCalled, !toastCalled ? "pass" : "fail");
-
-        page.toast = origToast;
-    } catch (e) {
-        log("phase14", "167: evalProgress handler test error: " + e.message, "fail");
+    } else {
+        log("phase14", "167: LLMConnector.handleEvalProgress not available — skipped", "skip");
     }
 
-    // Test 168: evalProgress handler — memoryExtract phases
-    try {
+    // Test 168: evalProgress memoryExtract phases (real handler) — bgActivity + result toasts
+    if (LLMConnector && LLMConnector.handleEvalProgress) {
         let toastCalls = [];
         let origToast = page.toast;
-        page.toast = function(level, msg, dur) {
-            toastCalls.push({ level: level, msg: msg, duration: dur });
-            origToast.call(page, level, msg, dur);
-        };
+        page.toast = function(level, msg, dur) { toastCalls.push({ level: level, msg: msg, duration: dur }); };
+        try {
+            LLMConnector.setBgActivity(null, null);
+            LLMConnector.handleEvalProgress("memoryExtract", "");
+            let meOk = !!(LLMConnector.bgActivity && LLMConnector.bgActivity.icon === "neurology");
+            log("phase14", "168a: memoryExtract sets bgActivity(neurology): " + meOk, meOk ? "pass" : "fail");
 
-        // memoryExtract shows info toast
-        let phase = "memoryExtract";
-        let detail = "Extracting memories...";
-        if (phase === "memoryExtract") {
-            page.toast("info", detail, 2000);
+            toastCalls = [];
+            LLMConnector.handleEvalProgress("memoryExtractDone", "5 memories extracted");
+            let doneOk = LLMConnector.bgActivity === null &&
+                toastCalls.some(function(t) { return t.level === "info" && t.msg === "5 memories extracted"; });
+            log("phase14", "168b: memoryExtractDone clears bgActivity + info toast: " + doneOk, doneOk ? "pass" : "fail");
+
+            toastCalls = [];
+            LLMConnector.handleEvalProgress("memoryExtractDone", "error");
+            let errOk = toastCalls.some(function(t) { return t.level === "warn" && t.msg === "Memory extraction failed"; });
+            log("phase14", "168c: memoryExtractDone error → warn toast: " + errOk, errOk ? "pass" : "fail");
+        } catch (e) {
+            log("phase14", "168: memoryExtract handler test error: " + e.message, "fail");
+        } finally {
+            page.toast = origToast;
         }
-        let memExtOk = toastCalls.length === 1 && toastCalls[0].level === "info";
-        log("phase14", "168a: memoryExtract shows info toast: " + memExtOk, memExtOk ? "pass" : "fail");
-
-        // memoryExtractDone with count shows toast
-        toastCalls = [];
-        phase = "memoryExtractDone";
-        detail = "5 memories extracted";
-        if (phase === "memoryExtractDone") {
-            if (detail && detail !== "error") {
-                page.toast("info", detail, 3000);
-            }
-        }
-        let memDoneOk = toastCalls.length === 1 && toastCalls[0].msg === "5 memories extracted";
-        log("phase14", "168b: memoryExtractDone shows count: " + memDoneOk, memDoneOk ? "pass" : "fail");
-
-        // memoryExtractDone with error shows warn toast
-        toastCalls = [];
-        detail = "error";
-        if (phase === "memoryExtractDone") {
-            if (detail && detail !== "error") {
-                page.toast("info", detail, 3000);
-            } else if (detail === "error") {
-                page.toast("warn", "Memory extraction failed", 3000);
-            }
-        }
-        let memErrOk = toastCalls.length === 1 && toastCalls[0].level === "warn" && toastCalls[0].msg === "Memory extraction failed";
-        log("phase14", "168c: memoryExtractDone error shows warn: " + memErrOk, memErrOk ? "pass" : "fail");
-
-        page.toast = origToast;
-    } catch (e) {
-        log("phase14", "168: memoryExtract handler test error: " + e.message, "fail");
+    } else {
+        log("phase14", "168: LLMConnector.handleEvalProgress not available — skipped", "skip");
     }
 
-    // Test 169: memoryExtractDone refreshes MemoryPanel
-    if (MemoryPanel) {
+    // Test 169: memoryExtractDone refreshes MemoryPanel via the real handler's dynamic import
+    if (LLMConnector && LLMConnector.handleEvalProgress && MemoryPanel) {
         let refreshCalled = false;
         let origRefresh = MemoryPanel.refresh;
+        let origToast = page.toast;
         MemoryPanel.refresh = function() { refreshCalled = true; };
-
-        // Simulate memoryExtractDone handler
-        if (MemoryPanel) {
-            MemoryPanel.refresh();
+        page.toast = function() {};
+        try {
+            LLMConnector.handleEvalProgress("memoryExtractDone", "3 memories extracted");
+            // Handler refreshes via import('./MemoryPanel.js').then(...) — await the microtask chain.
+            await new Promise(function(r) { setTimeout(r, 50); });
+            log("phase14", "169: memoryExtractDone refreshes MemoryPanel: " + refreshCalled, refreshCalled ? "pass" : "fail");
+        } catch (e) {
+            log("phase14", "169: MemoryPanel refresh test error: " + e.message, "fail");
+        } finally {
+            MemoryPanel.refresh = origRefresh;
+            page.toast = origToast;
         }
-        log("phase14", "169: memoryExtractDone refreshes MemoryPanel: " + refreshCalled, refreshCalled ? "pass" : "fail");
-
-        MemoryPanel.refresh = origRefresh;
     } else {
-        log("phase14", "169: MemoryPanel not loaded — refresh test skipped", "skip");
+        log("phase14", "169: LLMConnector.handleEvalProgress / MemoryPanel not available — skipped", "skip");
     }
 
-    // Test 170: midStreamViolation phase
-    try {
+    // Test 170: midStreamViolation phase (real handler) → warn toast with 5s duration
+    if (LLMConnector && LLMConnector.handleEvalProgress) {
         let toastCalls = [];
         let origToast = page.toast;
-        page.toast = function(level, msg, dur) {
-            toastCalls.push({ level: level, msg: msg, duration: dur });
-            origToast.call(page, level, msg, dur);
-        };
-
-        let phase = "midStreamViolation";
-        let detail = "Character identity mismatch";
-        if (phase === "midStreamViolation") {
-            page.toast("warn", "Policy: " + detail, 5000);
+        page.toast = function(level, msg, dur) { toastCalls.push({ level: level, msg: msg, duration: dur }); };
+        try {
+            LLMConnector.handleEvalProgress("midStreamViolation", "Character identity mismatch");
+            let msOk = toastCalls.some(function(t) {
+                return t.level === "warn" && t.msg === "Policy: Character identity mismatch" && t.duration === 5000;
+            });
+            log("phase14", "170: midStreamViolation → warn toast (5s): " + msOk, msOk ? "pass" : "fail");
+        } catch (e) {
+            log("phase14", "170: midStreamViolation handler test error: " + e.message, "fail");
+        } finally {
+            page.toast = origToast;
         }
-        let msOk = toastCalls.length === 1 && toastCalls[0].level === "warn" &&
-            toastCalls[0].msg === "Policy: Character identity mismatch" && toastCalls[0].duration === 5000;
-        log("phase14", "170: midStreamViolation shows warn toast with 5s duration: " + msOk, msOk ? "pass" : "fail");
-
-        page.toast = origToast;
-    } catch (e) {
-        log("phase14", "170: midStreamViolation handler test error: " + e.message, "fail");
+    } else {
+        log("phase14", "170: LLMConnector.handleEvalProgress not available — skipped", "skip");
     }
 
     // Test 171: new MemoryTypeEnumType values present in schema

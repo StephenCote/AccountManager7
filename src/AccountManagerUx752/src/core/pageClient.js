@@ -370,9 +370,35 @@ function routeMessage(msg) {
         } else if (c1.match(/(audioUpdate|audioSTTUpdate|audioError)/)) {
             if (!page.audioStream) return;
             page.audioStream["on" + c1.toLowerCase()](msg.chirps[1], msg.chirps[2]);
-        } else if (c1 === "policyEvent" || c1 === "autotuneEvent" || c1 === "evalProgress" || c1 === "interactionEvent") {
+        } else if (c1 === "policyEvent") {
+            // Genuine response-policy violation — chirps: [policyEvent, kind, "{requestId,details}"].
+            // Pass chirps[2] (the JSON details) as data; chirps[1] is the violation kind. These four
+            // event families used to share one handlePolicyEvent call that dropped chirps[2], so
+            // memory-extraction/progress events surfaced as spurious "Policy violation detected" toasts.
             import('../chat/LLMConnector.js').then(mod => {
-                mod.LLMConnector.handlePolicyEvent({ type: c1, data: msg.chirps[1] });
+                mod.LLMConnector.handlePolicyEvent({ type: msg.chirps[1], data: msg.chirps[2] });
+                _scheduleWsRedraw();
+            }).catch(() => {});
+            return;
+        } else if (c1 === "evalProgress") {
+            // Background evaluation / memory-extraction progress — chirps: [evalProgress, phase, detail].
+            // NOT a policy violation; routed to its own progress handler (bg indicator + info toasts).
+            import('../chat/LLMConnector.js').then(mod => {
+                mod.LLMConnector.handleEvalProgress(msg.chirps[1] || "", msg.chirps[2] || "");
+                _scheduleWsRedraw();
+            }).catch(() => {});
+            return;
+        } else if (c1 === "autotuneEvent") {
+            // Autotune suggestion / compliance note — chirps: [autotuneEvent, type, detail].
+            import('../chat/LLMConnector.js').then(mod => {
+                mod.LLMConnector.handleAutotuneEvent(msg.chirps[1] || "", msg.chirps[2] || "");
+                _scheduleWsRedraw();
+            }).catch(() => {});
+            return;
+        } else if (c1 === "interactionEvent") {
+            // Mid-chat interaction/outcome evaluation — chirps: [interactionEvent, "{...}"].
+            import('../chat/LLMConnector.js').then(mod => {
+                mod.LLMConnector.handleInteractionEvent(msg.chirps[1]);
                 _scheduleWsRedraw();
             }).catch(() => {});
             return;
@@ -1116,5 +1142,5 @@ const page = {
     }
 };
 
-export { page };
+export { page, routeMessage };
 export default page;
