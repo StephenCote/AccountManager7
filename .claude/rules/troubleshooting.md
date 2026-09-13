@@ -59,6 +59,51 @@ tool for that, not a workaround.
   `/new/`, also set `sort="id"` / `order="descending"` so the new record (highest id) lands on page 1
   regardless of alphabetical position; (4) clear `noCache` after the first successful load.
 
+## `AUDIT DENY ... could not be authorized` can mean "no such record", not "forbidden"
+
+Measured 2026-09-13 on `am7test`. The **same query shape** against `olio.llm.chatConfig` — same
+full field projection, `organizationId + ownerId + name`, no `groupId` — produced:
+
+```
+AUDIT PERMIT ... (organizationId = 2 && ownerId = 31 && name = "e2e-chapbook-llm")   <- record exists
+AUDIT DENY   ... (organizationId = 2 && ownerId = 31 && name = "generalChat")        <- no such record
+ERROR  AccessPoint - One or more query fields were not or could not be authorized: ...
+```
+
+On a `data.directory`-derived model queried **without** a `groupId`, PBAC loses the group-only
+shortcut and falls to field/role checks, which need a concrete record to evaluate against. With no
+matching row there is nothing to authorize, so a plain **miss** surfaces as `AUDIT DENY` +
+`[unknown resource]` + an ERROR-level "could not be authorized" line.
+
+**This is the opposite of the rule of thumb in `.claude/rules/model-api.md`**, which (correctly)
+says a real authorization failure logs that ERROR while a zero-row result logs `AUDIT INVALID ...
+No results` at WARN. Both are true — which branch you get depends on whether a row matched, not
+only on whether you were entitled. So:
+
+- Do **not** conclude "this user lacks a permission" from a DENY alone. Check whether the record
+  exists first (`select ... from a7_... where name = '...'`), and compare against the same lookup
+  for a name that does exist.
+- `ChatUtil.resolveConfig`'s chain is unaffected: step 2 (`getConfig`, no groupId) denies-as-miss
+  and correctly falls through to step 3 (`getLibraryConfig`, which passes a groupId). The noise is
+  misleading, not harmful.
+- I misread exactly this during the async-jobs work and reported it as a product defect affecting
+  every LLM feature. It is not. Confirm the record's existence before escalating.
+
+## Long-running operations: a 504 with no server-side error is the proxy, not the app
+
+If a long PictureBook/ChapBook operation fails with a bare status and **nothing** in the server log,
+suspect the reverse proxy before the application. nginx's `proxy_read_timeout` synthesizes its own
+response and closes the client connection while Tomcat carries on working, so from the server's point
+of view nothing failed and nothing is logged. Measured 2026-09-13: a 17-chunk scene extraction got a
+504 at exactly 900s while the server reached chunk 11/17 four minutes later.
+
+`proxy_read_timeout` is now 3600s (`src/docker/nginx.conf`), but that only moves the wall. The real
+fix is the async job layer: pass `?async=true` to `extract-scenes-only`, `chap-book/create` or
+`chap-book/render`, get a `202 {jobId}`, and poll `GET /rest/job/{jobId}`. The result is retained for
+30 minutes after completion, so a dropped connection no longer destroys the work, and extraction also
+checkpoints partial scenes to the DB so a container restart resumes rather than starting over. See
+`aiDocs/PictureBookAsyncJobDesign.md`.
+
 ## Testing-environment gotchas (Docker, Playwright, Vitest)
 
 **Read this section before writing or running any Playwright test against the Docker stack.** Four
@@ -94,14 +139,24 @@ like a data bug. `CORS_ALLOWED_ORIGINS` in `docker-compose.test.yml` now include
 `https://127.0.0.1:9443,http://127.0.0.1:9443`. When adding an origin, re-run
 `docker-compose -f docker-compose.test.yml up -d` — **`restart` does not re-read the compose file.**
 
-**Docker cannot reach the LAN — don't use it for SD/LLM tests.** Docker Desktop on Windows bridges to
-`172.20.x.x` and cannot route to arbitrary LAN addresses: 100% packet loss to the SD server at
-`192.168.1.39` and the LLM at `192.168.1.42` from inside any container. SD image generation or LLM calls
-through Docker Tomcat fail silently — no connection, no images, no visible errors. The host's
-Eclipse-managed local Tomcat *can* reach them and is the correct target; when Stephen says "Tomcat is
-running on localhost," that is the local Eclipse Tomcat, not Docker. Build the jars
-(`mvn -o -pl AccountManagerObjects7 install -DskipTests && mvn -o -pl AccountManagerService7 compile`)
-and ask him to bounce it.
+**Docker CAN reach the LAN GPUs — the old note here saying otherwise was wrong.** Re-measured
+2026-09-13 from inside `am7test-am7-1`: Ollama `http://192.168.1.42:11434/api/tags` → **200**, SwarmUI
+`http://192.168.1.39:7801/` → **302**. Long chunked extractions and ChapBook creation have since been
+run end-to-end against the real LLM through Docker Tomcat, so LLM- and SD-touching integration tests
+can and do use the Docker stack.
+
+> The superseded claim ("Docker Desktop bridges to `172.20.x.x` and cannot route to arbitrary LAN
+> addresses; 100% packet loss to `192.168.1.39`/`192.168.1.42`; use the Eclipse Tomcat instead") is
+> recorded here only so nobody re-derives it from an old transcript. If you do hit packet loss,
+> that is a host networking problem to diagnose, **not** a standing property of the setup — check
+> from inside the container first (`docker exec am7test-am7-1 curl -s -o /dev/null -w '%{http_code}'
+> http://192.168.1.42:11434/api/tags`) before concluding anything.
+
+The host's Eclipse-managed Tomcat is still a valid target and is what Stephen means by "Tomcat is
+running on localhost". Rebuild for it with
+`mvn -o -pl AccountManagerObjects7 install -DskipTests && mvn -o -pl AccountManagerService7 compile`
+and ask him to bounce it. For the Docker stack, `docker cp` the jar/classes in and `docker restart`
+(see `aiDocs/PictureBookAsyncJobDesign.md` for the exact redeploy sequence).
 
 **Vitest: all tests pass but the gate is red.** Ux752 Vitest runs in `environment: 'node'`, which has no
 `requestAnimationFrame`. Mithril's `mount-redraw.js` captures `schedule = (typeof

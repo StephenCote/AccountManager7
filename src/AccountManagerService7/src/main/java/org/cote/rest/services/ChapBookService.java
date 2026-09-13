@@ -25,6 +25,9 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.olio.llm.SummarizeProgress;
+import org.cote.accountmanager.thread.AsyncJob;
+import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.service.util.ServiceUtil;
 
 import jakarta.annotation.security.DeclareRoles;
@@ -39,6 +42,7 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
@@ -166,7 +170,9 @@ public class ChapBookService {
     @Path("/create")
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response createChapBook(String json, @Context HttpServletRequest request,
+    public Response createChapBook(String json,
+            @QueryParam("async") @DefaultValue("false") boolean async,
+            @Context HttpServletRequest request,
             @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
         if (user == null) return errorResponse(401, "Unauthorized");
@@ -212,6 +218,35 @@ public class ChapBookService {
         // KI-30: same datagen.path init param used by GameService and PictureBookService
         String dataPath = context.getInitParameter("datagen.path");
 
+        // Async mode: hand the work to the shared background job executor and return 202 at once.
+        // This is a long LLM-bound bulk operation — one landscape-prompt call per stanza chunk — so
+        // a chapbook of any size can outlive a proxy read timeout. It had no progress reporting and
+        // no cancel at all before. Opt-in via an explicit query param, exactly as
+        // PictureBookService's extract-scenes-only does, so the synchronous shape existing callers
+        // and specs depend on is untouched. A query param rather than a body field because
+        // RecordFactory.getSchema reads the PERSISTED ModelSchema first, so adding a field to a
+        // model JSON has no runtime effect on an already-provisioned deployment.
+        if (async) {
+            final String fDataPath = dataPath;
+            final String fSlug = slug;
+            final String fTitle = title;
+            final List<String> fPoems = poemObjectIds;
+            final int fMaxLines = maxLinesPerPage;
+            final BaseRecord fChatConfig = chatConfig;
+            AsyncJob job = AsyncJobRegistry.submit(user, "cb.create", slug, j -> {
+                BaseRecord book = ChapBookUtil.createChapBook(user, fDataPath, fSlug, fTitle,
+                        fPoems, fMaxLines, fChatConfig, j.getProgress());
+                return book == null ? "{}" : book.toFullString();
+            });
+            if (job != null) {
+                return Response.status(202).entity("{\"jobId\":\"" + job.getJobId()
+                        + "\",\"status\":\"" + job.getStatus().name().toLowerCase() + "\"}").build();
+            }
+            // Could not register a job (no usable principal). Run synchronously rather than
+            // silently dropping the request.
+            logger.warn("Async ChapBook creation requested but the job could not be submitted — running synchronously");
+        }
+
         try {
             BaseRecord book = ChapBookUtil.createChapBook(user, dataPath, slug, title, poemObjectIds, maxLinesPerPage, chatConfig);
             return Response.status(200).entity(book.toFullString()).build();
@@ -238,6 +273,7 @@ public class ChapBookService {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public Response renderChapBook(@PathParam("bookObjectId") String bookObjectId,
+            @QueryParam("async") @DefaultValue("false") boolean async,
             String json, @Context HttpServletRequest request,
             @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
@@ -279,6 +315,39 @@ public class ChapBookService {
         // per-scene llmUnavailable signal, aggregated in summary.llmUnavailable), so this transport layer
         // is a pure pass-through — no signal is computed here (architecture.md — no business logic in
         // Service7).
+        // Async mode — same rationale as /create: one SD generation per scene (often preceded by an
+        // LLM landscape call) runs for many minutes on a real book. The per-scene route below is
+        // still the preferred client-driven path; this makes the BULK route survivable too, with
+        // progress and a cancel it never had.
+        if (async) {
+            final String fSdApiType = sdApiType;
+            final String fSdServer = sdServer;
+            final BaseRecord fChatConfig = chatConfig;
+            final BaseRecord fSdConfig = sdConfig;
+            AsyncJob job = AsyncJobRegistry.submit(user, "cb.render", bookObjectId, j -> {
+                ChapBookUtil.ChapBookRenderSummary s = ChapBookUtil.renderChapBookSummary(
+                        user, bookObjectId, fSdApiType, fSdServer, fChatConfig, fSdConfig,
+                        j.getProgress());
+                // Report what happened, including that it stopped early: a cancelled bulk render
+                // keeps every image it already generated, so "rendered" is real work either way.
+                // "complete" means every scene was ATTEMPTED — the loop also breaks on thread
+                // interruption (a Tomcat stop), which no cancel flag reflects. The progress token
+                // counts attempted scenes, so current >= total is exactly that condition.
+                SummarizeProgress rp = j.getProgress();
+                boolean renderComplete = !rp.isCancelled()
+                    && (rp.getTotal() <= 0 || rp.getCurrent() >= rp.getTotal());
+                return "{\"rendered\":" + s.rendered
+                    + ",\"skipped\":" + s.skipped
+                    + ",\"llmUnavailable\":" + s.llmUnavailable
+                    + ",\"complete\":" + renderComplete + "}";
+            });
+            if (job != null) {
+                return Response.status(202).entity("{\"jobId\":\"" + job.getJobId()
+                        + "\",\"status\":\"" + job.getStatus().name().toLowerCase() + "\"}").build();
+            }
+            logger.warn("Async ChapBook render requested but the job could not be submitted — running synchronously");
+        }
+
         try {
             // A per-scene, client-driven render (POST /scene/{sceneObjectId}/generate) is now
             // available and preferred for multi-scene books (mirrors PB2's per-scene pattern so no

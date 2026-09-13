@@ -20,6 +20,7 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
+import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.PictureBookProgressNotifier;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -649,6 +650,26 @@ public class ChapBookUtil {
 	 */
 	public static BaseRecord createChapBook(BaseRecord user, String dataPath, String slug, String title,
 			List<String> poemObjectIds, int maxLinesPerPage, BaseRecord chatConfig) {
+		return createChapBook(user, dataPath, slug, title, poemObjectIds, maxLinesPerPage, chatConfig, null);
+	}
+
+	/**
+	 * Same as {@link #createChapBook(BaseRecord, String, String, String, List, int, BaseRecord)} plus
+	 * an optional {@code cancelToken} for progress reporting and cooperative cancellation.
+	 *
+	 * <p>Needed because this is a long, LLM-bound bulk operation — one landscape-prompt call per
+	 * stanza chunk — that previously ran to completion inside a single HTTP request with no way to
+	 * observe it and no way to stop it. {@code ChapBookService} had no cancel or progress wiring at
+	 * all, and ChapBook never rendered the background-activity indicator, so its existing server
+	 * chirps went nowhere.
+	 *
+	 * <p>Cancelling is safe here for the same reason a 504 was survivable: each scene is persisted
+	 * as it is created, so stopping early leaves a real book with fewer scenes rather than losing
+	 * the work. The book record is returned either way.
+	 */
+	public static BaseRecord createChapBook(BaseRecord user, String dataPath, String slug, String title,
+			List<String> poemObjectIds, int maxLinesPerPage, BaseRecord chatConfig,
+			SummarizeProgress cancelToken) {
 		if (slug == null || slug.isBlank()) throw new PictureBookException(400, "slug is required for ChapBook creation");
 		if (title == null || title.isBlank()) throw new PictureBookException(400, "title is required for ChapBook creation");
 		if (poemObjectIds == null || poemObjectIds.isEmpty()) throw new PictureBookException(400, "at least one poem is required");
@@ -656,6 +677,13 @@ public class ChapBookUtil {
 		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 		int effectiveMax = (maxLinesPerPage > 0) ? maxLinesPerPage : 8;
 
+		// Report a phase BEFORE createBook. The scene total is not knowable until the poems are read
+		// (see the pre-pass below), but createBook builds the PB2 world, and on the first chapbook in
+		// an organization that alone runs for minutes while Olio seed data loads. Leaving the token at
+		// 0/0 with no phase for that whole stretch reads as a hung job.
+		if (cancelToken != null) {
+			cancelToken.setPhase("preparing book world");
+		}
 		// Create the PB2 base book (book row + world + world FK patch + grants)
 		BaseRecord book = PbBookUtil.createBook(user, dataPath, slug, title);
 		if (book == null) throw new PictureBookException(500, "createBook returned null for slug=" + slug);
@@ -696,15 +724,14 @@ public class ChapBookUtil {
 		// prior same-slug book collide on the unique (name, groupId, organizationId) scene index.
 		int expectedScenes = 0;
 		String firstSceneFailure = null;
+
+		// Pre-pass: load each poem ONCE and chunk it up front. This is what gives progress a real
+		// denominator — the unit of work here is a stanza chunk (one LLM landscape call each), not a
+		// poem, and that count is not knowable until the poems are read. Poems that are missing or
+		// empty are dropped here with the same warnings as before, so they never reach the work loop.
+		List<BaseRecord> loadedPoems = new ArrayList<>();
+		List<List<String>> loadedChunks = new ArrayList<>();
 		for (String poemObjectId : poemObjectIds) {
-			// Running thread of prior scene landscape prompts WITHIN this poem, in scene order, so scene
-			// N's LLM prompt is generated with awareness of the imagery already used earlier in the SAME
-			// poem. Declared INSIDE the poem loop so it RESETS at the start of each poem: continuity must
-			// stay within a poem and must NOT bleed across poems — otherwise poem 1's imagery (e.g. a
-			// volcano) themes every later poem's landscapes (the reported cross-poem leak). The per-poem
-			// theme/mood/keywords below are already read fresh per poem. Only genuinely LLM-generated
-			// prompts are threaded forward.
-			List<String> priorScenePrompts = new ArrayList<>();
 			BaseRecord poem = loadPoem(user, poemObjectId, orgId);
 			if (poem == null) {
 				logger.warn("createChapBook: poem not found: " + poemObjectId);
@@ -715,15 +742,48 @@ public class ChapBookUtil {
 				logger.warn("createChapBook: poem has no text content: " + poemObjectId);
 				continue;
 			}
+			List<String> poemChunks = chunkPoem(poemText, effectiveMax);
+			loadedPoems.add(poem);
+			loadedChunks.add(poemChunks);
+			expectedScenes += poemChunks.size();
+		}
+		if (cancelToken != null) {
+			cancelToken.setTotal(expectedScenes);
+			cancelToken.setCurrent(0);
+			cancelToken.setPhase("creating scenes");
+		}
+
+		/// Cooperative stop, checked at scene boundaries. Set by a cancel OR by thread interruption
+		/// (a Tomcat stop / job-pool shutdown), so a shutdown does not spend minutes of LLM time on
+		/// work nobody is waiting for.
+		boolean stopped = false;
+		for (int pi = 0; pi < loadedPoems.size() && !stopped; pi++) {
+			// Running thread of prior scene landscape prompts WITHIN this poem, in scene order, so scene
+			// N's LLM prompt is generated with awareness of the imagery already used earlier in the SAME
+			// poem. Declared INSIDE the poem loop so it RESETS at the start of each poem: continuity must
+			// stay within a poem and must NOT bleed across poems — otherwise poem 1's imagery (e.g. a
+			// volcano) themes every later poem's landscapes (the reported cross-poem leak). The per-poem
+			// theme/mood/keywords below are already read fresh per poem. Only genuinely LLM-generated
+			// prompts are threaded forward.
+			List<String> priorScenePrompts = new ArrayList<>();
+			BaseRecord poem = loadedPoems.get(pi);
+			String poemObjectId = poem.get(FieldNames.FIELD_OBJECT_ID);
 			String poemTitle = poem.get(OlioFieldNames.FIELD_PB_TITLE);
 			if (poemTitle == null) poemTitle = poem.get(FieldNames.FIELD_NAME);
 			String mood = poem.get(OlioFieldNames.FIELD_CB_MOOD);
 			String theme = poem.get(OlioFieldNames.FIELD_CB_THEME);
 			String keywords = poem.get(OlioFieldNames.FIELD_CB_KEYWORDS);
 
-			List<String> chunks = chunkPoem(poemText, effectiveMax);
-			expectedScenes += chunks.size();
+			List<String> chunks = loadedChunks.get(pi);
 			for (String chunk : chunks) {
+				if ((cancelToken != null && cancelToken.isCancelled())
+						|| Thread.currentThread().isInterrupted()) {
+					logger.info("createChapBook: stopping early after " + sceneIndex + "/"
+							+ expectedScenes + " scene(s) for slug=" + slug
+							+ " — scenes already created are persisted and kept");
+					stopped = true;
+					break;
+				}
 				try {
 					// Assemble the prior context (poem theme/mood/keywords + recent scene imagery) and
 					// thread it into the landscape-prompt LLM call so scenes stay visually continuous.
@@ -734,6 +794,9 @@ public class ChapBookUtil {
 						priorScenePrompts.add(generatedPrompt);
 					}
 					sceneIndex++;
+					if (cancelToken != null) cancelToken.incrementCurrent();
+					PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_stories",
+							"ChapBook scene " + sceneIndex + "/" + expectedScenes);
 				} catch (Exception e) {
 					if (firstSceneFailure == null) firstSceneFailure = e.getMessage();
 					logger.warn("createChapBook: failed to create scene " + sceneIndex + " from poem " + poemObjectId + ": " + e.getMessage());
@@ -746,7 +809,10 @@ public class ChapBookUtil {
 		// none, every createChapBookScene threw — the dominant cause is a leftover scene from a prior
 		// same-slug book tripping the unique (name, groupId, organizationId) index. Surface the concrete
 		// reason (and the hint) instead of silently returning an empty book the caller would persist.
-		if (sceneIndex == 0 && expectedScenes > 0) {
+		/// `!stopped` matters: a run cancelled before its first scene legitimately has zero scenes,
+		/// and throwing a 500 about "residual artifacts" would misreport the user's own cancel as a
+		/// data-collision failure.
+		if (sceneIndex == 0 && expectedScenes > 0 && !stopped) {
 			throw new PictureBookException(500, "createChapBook produced a BLANK book for slug=" + slug
 				+ ": expected " + expectedScenes + " scene(s) but created 0"
 				+ (firstSceneFailure != null ? "; first failure: " + firstSceneFailure : "")
@@ -1382,6 +1448,21 @@ public class ChapBookUtil {
 	 */
 	public static ChapBookRenderSummary renderChapBookSummary(BaseRecord user, String bookObjectId,
 			String sdApiType, String sdServer, BaseRecord chatConfig, BaseRecord clientSdConfig) {
+		return renderChapBookSummary(user, bookObjectId, sdApiType, sdServer, chatConfig, clientSdConfig, null);
+	}
+
+	/**
+	 * Same as {@link #renderChapBookSummary(BaseRecord, String, String, String, BaseRecord, BaseRecord)}
+	 * plus an optional {@code cancelToken} for progress and cooperative cancellation.
+	 *
+	 * <p>A bulk render is one SD generation per scene (often preceded by an LLM landscape call), so a
+	 * chapbook of any size runs for many minutes. Every scene's image is persisted as it is produced,
+	 * so stopping early keeps what has rendered — the counts in the returned summary describe what
+	 * actually happened rather than what was requested.
+	 */
+	public static ChapBookRenderSummary renderChapBookSummary(BaseRecord user, String bookObjectId,
+			String sdApiType, String sdServer, BaseRecord chatConfig, BaseRecord clientSdConfig,
+			SummarizeProgress cancelToken) {
 		if (user == null || bookObjectId == null || bookObjectId.isBlank()) {
 			throw new PictureBookException(400, "user and bookObjectId are required");
 		}
@@ -1406,6 +1487,11 @@ public class ChapBookUtil {
 			return new ChapBookRenderSummary(0, 0, 0);
 		}
 		PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_stories", "ChapBook render: " + scenes.size() + " scene(s)…");
+		if (cancelToken != null) {
+			cancelToken.setTotal(scenes.size());
+			cancelToken.setCurrent(0);
+			cancelToken.setPhase("rendering scenes");
+		}
 
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType.toUpperCase()), sdServer);
 
@@ -1422,6 +1508,12 @@ public class ChapBookUtil {
 		List<String> priorScenePrompts = new ArrayList<>();
 		String priorSceneTitle = null;
 		for (BaseRecord scene : scenes) {
+			if ((cancelToken != null && cancelToken.isCancelled())
+					|| Thread.currentThread().isInterrupted()) {
+				logger.info("renderChapBook: stopping early for book {} — {} rendered, {} skipped;"
+					+ " images already generated are persisted", bookObjectId, rendered, skipped);
+				break;
+			}
 			String sceneTitle = scene.get(OlioFieldNames.FIELD_PB_TITLE);
 			if (priorSceneTitle != null && !java.util.Objects.equals(priorSceneTitle, sceneTitle)) {
 				priorScenePrompts.clear();
@@ -1444,6 +1536,9 @@ public class ChapBookUtil {
 			if (result.llmUnavailable) {
 				llmUnavailable++;
 			}
+			/// Progress counts scenes ATTEMPTED. Counting only rendered ones made the bar stall on a
+			/// book with skipped scenes and never reach its total, which reads as a hung job.
+			if (cancelToken != null) cancelToken.incrementCurrent();
 			if (result.status == SceneRenderStatus.RENDERED) {
 				rendered++;
 				PictureBookProgressNotifier.getInstance().notifyProgress(user, "image", "Scene " + rendered + "/" + scenes.size() + " rendered");

@@ -718,6 +718,16 @@ const LLMConnector = {
         if (LLMConnector._bgActivityLock === token) LLMConnector._bgActivityLock = 0;
     },
 
+    /// Auto-expiry for an UNLOCKED indicator: a safety net so a caller that forgets to clear does
+    /// not wedge the strip forever.
+    _BG_EXPIRY_MS: 90000,
+    /// Backstop for a LOCKED indicator. A lock means the caller has taken responsibility for
+    /// clearing it in a finally, so the short net must not fire mid-operation — but a caller that
+    /// dies without unlocking still must not wedge the strip, so the net becomes long rather than
+    /// absent. 30 minutes matches AsyncJobRegistry.COMPLETED_TTL_MS, the longest any owner here
+    /// legitimately lives.
+    _BG_LOCKED_EXPIRY_MS: 30 * 60 * 1000,
+
     setBgActivity: function(icon, label) {
         if (LLMConnector._bgActivityLock > 0 && !(icon && label)) return;
         if (LLMConnector._bgActivityTimer) {
@@ -726,12 +736,20 @@ const LLMConnector = {
         }
         LLMConnector.bgActivity = icon && label ? { icon, label } : null;
         if (LLMConnector.bgActivity) {
+            // The 90s net was shorter than the work it was covering. A picture-book extraction
+            // chunk takes 80-110s and a ChapBook scene can take longer, so an indicator set once
+            // at the start of a held operation vanished mid-run while the job was perfectly
+            // healthy — the strip said "idle" and the user assumed it had died. Holding the lock
+            // now suppresses the short net in favour of a long backstop.
+            let expiry = LLMConnector._bgActivityLock > 0
+                ? LLMConnector._BG_LOCKED_EXPIRY_MS
+                : LLMConnector._BG_EXPIRY_MS;
             LLMConnector._bgActivityTimer = setTimeout(function() {
                 LLMConnector.bgActivity = null;
                 LLMConnector._bgActivityTimer = null;
                 LLMConnector._bgActivityLock = 0;
                 m.redraw();
-            }, 90000);
+            }, expiry);
         }
         m.redraw();
     },

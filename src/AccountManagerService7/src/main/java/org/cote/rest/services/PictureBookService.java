@@ -205,8 +205,18 @@ public class PictureBookService {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response extractScenesOnly(@PathParam("workObjectId") String workObjectId,
             @QueryParam("async") @DefaultValue("false") boolean async,
+            @QueryParam("fresh") @DefaultValue("false") boolean fresh,
             String json, @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+        // Extraction now checkpoints partial scenes to a scratch note keyed on the source
+        // document, and a run that was CANCELLED or died mid-flight keeps its checkpoint so the
+        // next attempt continues instead of re-paying for chunks already extracted. `fresh=true`
+        // is the escape hatch: discard the checkpoint and re-extract from chunk 1. Without it a
+        // user who cancelled a run because its output was wrong could never get a clean one.
+        if (fresh) {
+            PictureBookUtil.clearExtractCheckpoint(user, workObjectId);
+        }
 
         int count = PictureBookUtil.MAX_SCENES_DEFAULT;
         String chatConfigName = null;
@@ -261,7 +271,14 @@ public class PictureBookService {
                         user, workObjectId, fCount, fChatConfig, fPromptTemplate, j.getProgress());
                 BaseRecord out = PictureBookUtil.buildResult();
                 out.set("sceneList", r.scenes);
-                out.set("extractionComplete", !j.getProgress().isCancelled());
+                // "Complete" must mean the run reached the end of the text, not merely "nobody
+                // cancelled": it also stops early on thread interruption (shutdown) and on the
+                // unreachable-LLM circuit breaker. One observed run reported
+                // extractionComplete=true having extracted ZERO scenes because its chat config
+                // could not be resolved. ScenesOnlyResult.complete carries the chunk loop's own
+                // answer — deriving it here from current/total would put the determination in the
+                // transport layer, which architecture.md forbids.
+                out.set("extractionComplete", r.complete);
                 out.set("chunksProcessed", j.getProgress().getCurrent());
                 out.set("chunked", r.chunked);
                 if (r.failedExtractions != null && !r.failedExtractions.isEmpty()) {
@@ -288,7 +305,9 @@ public class PictureBookService {
                 BaseRecord out = PictureBookUtil.buildResult();
                 try {
                     out.set("sceneList", result.scenes);
-                    out.set("extractionComplete", true);
+                    /// Same correction as the async branch: this was hardcoded true, so a run that
+                    /// stopped early (cancel, interrupt, unreachable LLM) was reported as complete.
+                    out.set("extractionComplete", result.complete);
                     /// The real count, from the progress token the chunk loop already maintains
                     /// (setTotal/incrementCurrent in extractChunkedInternal). This was hardcoded
                     /// to -1, so a client had no way to tell a 17-chunk run from a 2-chunk one,

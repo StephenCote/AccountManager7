@@ -4,9 +4,10 @@ import { am7model } from '../core/model.js';
 import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import {
-    extractScenes, createFromScenes, createChapBookRecord, generateSceneImage, prepareSceneImagePrompts,
+    createFromScenes, createChapBookRecord, generateSceneImage, prepareSceneImagePrompts,
     cancelPictureBook, regenerateBlurb, loadPictureBook, getBookSdConfig, setBookSdConfig, setSceneStatus,
-    resolveImageUrl, resolveAllImageUrls
+    resolveImageUrl, resolveAllImageUrls,
+    startExtractScenes, pollJob, cancelJob, listJobs, scenesFromResult
 } from './sceneExtractor.js';
 import { openCharacterManager, initCharacterManager, renderCharacterManagerContent } from './pictureBookCharacters.js';
 import { listPb2Books } from './pictureBookWorkflow.js';
@@ -71,6 +72,15 @@ const DEFAULT_SINGLE_TEMPLATE = 'pictureBook.extract-scenes';
 let extractedScenes = [];
 let extracting = false;
 let extractError = null;
+// Async extraction job state. Extraction used to be a single fetch held open for the whole run,
+// which is why a proxy timeout destroyed ~27 minutes of work: nothing survived the connection.
+// It is now a background job we poll, so these track the run rather than the request.
+let extractJobId = null;        // the in-flight job, also what Cancel targets
+let reattaching = false;        // a reattach lookup is in flight (claimed before its first await)
+let extractProgress = null;     // { current, total } straight from the job's progress token
+let extractCancelling = false;  // cancel requested, waiting for the loop to reach a chunk boundary
+let extractPartial = false;     // the scene list is incomplete (cancelled, or stopped early)
+let extractFailedChunks = [];   // chunks whose JSON could not be parsed, surfaced not swallowed
 let blurbRegenerating = {}; // scene index → bool (U3: per-scene "Regenerate blurb" in-flight flag)
 
 // Step 3 (Manage Characters — real charPerson records created at the Step 2→3 transition;
@@ -138,6 +148,12 @@ function resetState() {
     extractedScenes = [];
     extracting = false;
     extractError = null;
+    extractJobId = null;
+    reattaching = false;
+    extractProgress = null;
+    extractCancelling = false;
+    extractPartial = false;
+    extractFailedChunks = [];
     blurbRegenerating = {};
     creatingChars = false;
     scenes = [];
@@ -340,35 +356,170 @@ function buildCharacterStubs() {
 }
 
 /**
- * Unified extract — backend auto-chunks if text > 8000 chars.
- * Handles both response formats: plain array (short text) or { sceneList, chunked } (long text).
+ * Render the job's progress into the shared background-activity indicator, every tick.
+ *
+ * This is also the fix for the indicator dying mid-run. LLMConnector.setBgActivity arms a 90s
+ * self-clearing timer and restarts it on each call, but a chunk takes 80-110s — so on a long
+ * extraction the indicator silently vanished between chunks even though the run was healthy.
+ * Refreshing it from the poller keeps it alive for exactly as long as the job is, and needs
+ * nothing from the WebSocket.
  */
-async function doExtract() {
+function onExtractProgress(job) {
+    extractProgress = { current: job.current || 0, total: job.total || 0 };
+    let label = extractProgress.total > 0
+        ? 'Extracting scenes ' + extractProgress.current + '/' + extractProgress.total
+        : 'Extracting scenes...';
+    if (extractCancelling) label = 'Cancelling extraction...';
+    LLMConnector.setBgActivity('auto_awesome', label);
+    m.redraw();
+}
+
+/**
+ * Apply a terminal job to wizard state.
+ *
+ * A cancelled job is NOT an error: the chunk loop breaks at a boundary and returns the scenes it
+ * already extracted, which is the whole reason cancelling is safe to offer. Those scenes are kept
+ * and the list is flagged partial, rather than being thrown away.
+ */
+function applyExtractJob(job) {
+    let sceneArray = scenesFromResult(job.result);
+    extractFailedChunks = (job.result && job.result.failedExtractions) || job.failedExtractions || [];
+    if (job.status === 'failed') {
+        extractError = job.error || 'Extraction failed';
+        return;
+    }
+    if (!sceneArray.length) {
+        extractError = (job.status === 'cancelled')
+            ? 'Extraction was cancelled before any scenes were extracted.'
+            : 'No scenes returned by LLM';
+        return;
+    }
+    extractPartial = job.status === 'cancelled'
+        || (job.result && job.result.extractionComplete === false);
+    extractedScenes = sceneArray;
+    step = 2;
+}
+
+/**
+ * Unified extract — starts a background job and polls it.
+ *
+ * The server auto-chunks text over 8000 chars. Both response shapes (a bare array for short text,
+ * { sceneList, chunked } once chunked) are unwrapped by scenesFromResult.
+ *
+ * @param {Object} [opts]
+ * @param {boolean} [opts.fresh] discard a resumable checkpoint and re-extract from the first
+ *        chunk. A cancelled or interrupted run keeps its checkpoint server-side so the next
+ *        attempt continues where it stopped; "Re-extract from scratch" passes this to override it.
+ */
+async function doExtract(opts) {
     extracting = true;
     extractError = null;
+    extractProgress = null;
+    extractCancelling = false;
+    extractPartial = false;
+    extractFailedChunks = [];
+    m.redraw();
+    // Hold the indicator so unrelated activity cannot clear it out from under a long run.
+    let bgToken = LLMConnector.lockBgActivity();
+    try {
+        let started = await startExtractScenes(workObjectId, chatConfigName(), null,
+            getPromptTemplate('extractScenes'), opts);
+        extractJobId = started.jobId;
+        m.redraw();
+        let job = await pollJob(extractJobId, { onProgress: onExtractProgress });
+        applyExtractJob(job);
+    } catch (e) {
+        if (e && e.name === 'AbortError') {
+            // Stopped watching, deliberately. The job keeps running and its result stays
+            // collectable — reopening the wizard reattaches to it.
+        } else {
+            extractError = e.message || 'Extraction failed';
+        }
+    } finally {
+        LLMConnector.unlockBgActivity(bgToken);
+        LLMConnector.setBgActivity(null, null);
+        extracting = false;
+        extractCancelling = false;
+        extractJobId = null;
+        extractProgress = null;
+        m.redraw();
+    }
+}
+
+/**
+ * Cancel the running extraction.
+ *
+ * There was no way to do this before: the wizard's only "Cancel" was Dialog.close(), which left
+ * the fetch running and `extracting` stuck true. Cancellation is cooperative, so the loop stops at
+ * the next chunk boundary and still returns what it extracted — the poller then applies that
+ * partial list.
+ */
+async function cancelExtract() {
+    if (!extractJobId || extractCancelling) return;
+    extractCancelling = true;
     m.redraw();
     try {
-        let result = await extractScenes(workObjectId, chatConfigName(), null, getPromptTemplate('extractScenes'));
-        // Backend returns { sceneList, chunked: true } for long text, or plain array for short
-        let sceneArray;
-        if (result && result.sceneList) {
-            sceneArray = result.sceneList;
-        } else if (Array.isArray(result)) {
-            sceneArray = result;
-        } else {
-            sceneArray = [];
-        }
-        if (!sceneArray.length) {
-            extractError = 'No scenes returned by LLM';
-        } else {
-            extractedScenes = sceneArray;
-            step = 2;
-        }
+        await cancelJob(extractJobId);
     } catch (e) {
-        extractError = e.message || 'Extraction failed';
+        console.error('[pictureBook] cancel failed:', e);
+        extractCancelling = false;
+        m.redraw();
     }
-    extracting = false;
-    m.redraw();
+}
+
+/**
+ * Reattach to an extraction already running for this document.
+ *
+ * Reopening the wizard (or reloading the page) used to start a SECOND run against the same
+ * document while the first carried on invisibly — two jobs competing for one GPU-backed LLM. The
+ * job list is ownership-scoped server-side, so this only ever sees the caller's own jobs.
+ *
+ * @returns {Promise<boolean>} true when a run was found and is now being polled
+ */
+async function reattachExtractJob() {
+    if (extracting || reattaching || !workObjectId) return false;
+    // Claim the attempt SYNCHRONOUSLY, before the listJobs() await. The `extracting` guard alone
+    // is evaluated before that round-trip, so a user who hits Extract while the listing is in
+    // flight could end up with two pollers on one job — and the first to finish nulls
+    // extractJobId, leaving Cancel a no-op.
+    reattaching = true;
+    try {
+        let jobs = await listJobs();
+        let mine = jobs.find(function (j) {
+            return j.kind === 'pb.extractScenes' && j.key === workObjectId && !j.terminal;
+        });
+        if (!mine) {
+            reattaching = false;
+            return false;
+        }
+        extracting = true;
+        reattaching = false;
+        extractJobId = mine.jobId;
+        extractError = null;
+        onExtractProgress(mine);
+        let bgToken = LLMConnector.lockBgActivity();
+        try {
+            let job = await pollJob(extractJobId, { onProgress: onExtractProgress });
+            applyExtractJob(job);
+        } finally {
+            LLMConnector.unlockBgActivity(bgToken);
+            LLMConnector.setBgActivity(null, null);
+            extracting = false;
+            extractCancelling = false;
+            extractJobId = null;
+            extractProgress = null;
+            m.redraw();
+        }
+        return true;
+    } catch (e) {
+        console.error('[pictureBook] reattach failed:', e);
+        extracting = false;
+        extractJobId = null;
+        m.redraw();
+        return false;
+    } finally {
+        reattaching = false;
+    }
 }
 
 function addManualScene() {
@@ -678,6 +829,80 @@ function skipScene(oid) {
 
 // ── Render functions ──────────────────────────────────────────────────
 
+/**
+ * Live extraction progress with a Cancel.
+ *
+ * Replaces a bare "Extracting scenes..." spinner. A chunked run over a real document is minutes
+ * long and the server has always known exactly where it is (the job's current/total), so showing
+ * an indeterminate spinner was throwing away information the user needed — and there was no way
+ * to stop a run at all: the wizard's only Cancel called Dialog.close(), which abandoned the fetch
+ * and left `extracting` stuck true.
+ */
+function renderExtractProgress() {
+    let cur = extractProgress ? extractProgress.current : 0;
+    let total = extractProgress ? extractProgress.total : 0;
+    let pct = total > 0 ? Math.round((cur / total) * 100) : 0;
+    return m('div', { class: 'px-4 py-3 text-sm bg-blue-50 dark:bg-blue-900/20 rounded space-y-2' }, [
+        m('div', { class: 'flex items-center gap-2 text-blue-600 dark:text-blue-400' }, [
+            m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
+            m('span', { class: 'flex-1' },
+                extractCancelling ? 'Cancelling — finishing the current chunk...'
+                    : (total > 0 ? 'Extracting scenes — chunk ' + cur + ' of ' + total
+                        : 'Extracting scenes...')),
+            extractJobId ? m('button', {
+                class: 'btn text-xs',
+                disabled: extractCancelling,
+                onclick: function () { cancelExtract(); }
+            }, [
+                m('span', { class: 'material-symbols-outlined text-xs mr-1' }, 'stop'),
+                extractCancelling ? 'Cancelling...' : 'Cancel'
+            ]) : null
+        ]),
+        // Only render a determinate bar once the server has told us how many chunks there are;
+        // faking 0/0 as 0% would imply progress information we do not have yet.
+        total > 0 ? m('div', { class: 'h-1.5 w-full bg-blue-100 dark:bg-blue-900/40 rounded overflow-hidden' }, [
+            m('div', { class: 'h-full bg-blue-500 transition-all', style: { width: pct + '%' } })
+        ]) : null,
+        total > 0 ? m('div', { class: 'text-xs text-gray-500 dark:text-gray-400' },
+            'Extraction continues on the server if you close this dialog — reopen it to reattach.')
+            : null
+    ]);
+}
+
+/**
+ * Banners for a scene list that is NOT a complete extraction.
+ *
+ * Both conditions were previously invisible: a cancelled run's partial list looked identical to a
+ * finished one, and per-chunk parse failures were dropped by the service before they reached the
+ * client at all. Proceeding to build a book from a partial list is legitimate — the user just has
+ * to know that is what they are doing.
+ */
+function renderExtractWarnings() {
+    let out = [];
+    if (extractPartial) {
+        out.push(m('div', { class: 'p-2 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-xs text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
+            m('span', { class: 'material-symbols-outlined text-sm' }, 'warning'),
+            m('span', { class: 'flex-1' }, 'This scene list is incomplete — the extraction stopped'
+                + ' early. "Re-extract" resumes from where it stopped.'),
+            m('button', {
+                class: 'btn text-xs',
+                disabled: extracting,
+                onclick: function () { doExtract({ fresh: true }); }
+            }, 'Start over')
+        ]));
+    }
+    if (extractFailedChunks && extractFailedChunks.length) {
+        out.push(m('div', { class: 'p-2 rounded bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 text-xs text-orange-800 dark:text-orange-200 flex items-center gap-2' }, [
+            m('span', { class: 'material-symbols-outlined text-sm' }, 'error_outline'),
+            m('span', extractFailedChunks.length + ' passage'
+                + (extractFailedChunks.length === 1 ? '' : 's')
+                + ' could not be read by the model, so any scenes in '
+                + (extractFailedChunks.length === 1 ? 'it' : 'them') + ' are missing.')
+        ]));
+    }
+    return out.length ? m('div', { class: 'space-y-2' }, out) : null;
+}
+
 function renderStep1() {
     return m('div', { class: 'p-4 space-y-4' }, [
         m('div', { class: 'text-sm text-gray-600 dark:text-gray-400 mb-2' }, 'Source: ' + workName),
@@ -832,10 +1057,7 @@ function renderStep1() {
                     )
             ]),
 
-            extracting ? m('div', { class: 'flex items-center gap-2 px-4 py-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded' }, [
-                m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
-                m('span', 'Extracting scenes...')
-            ]) : null,
+            extracting ? renderExtractProgress() : null,
 
             extractError ? m('div', { class: 'text-red-500 text-sm' }, extractError) : null
         ]) : m('div', { class: 'text-sm text-gray-500 italic' }, 'Manual scene entry — proceed to add scenes.')
@@ -858,7 +1080,8 @@ function renderStep2() {
                 }, extracting ? 'Extracting...' : 'Re-extract')
             ])
         ]),
-        extracting ? m('div', { class: 'text-sm text-gray-500' }, 'Extracting scenes...') :
+        renderExtractWarnings(),
+        extracting ? renderExtractProgress() :
         m('div', { class: 'space-y-2 max-h-[28rem] overflow-y-auto' },
             extractedScenes.map(function (s, i) {
                 return m('div', { key: 'scene-' + i, class: 'border dark:border-gray-700 rounded p-3 text-sm space-y-2' }, [
@@ -1233,11 +1456,29 @@ function buildActions() {
         });
     }
 
-    // Cancel
-    actions.push({
-        label: 'Cancel', icon: 'cancel',
-        onclick: function () { Dialog.close(); }
-    });
+    // Cancel. While an extraction is running this must STOP THE RUN, not just close the dialog —
+    // closing used to abandon the fetch with the server still working and `extracting` stuck true,
+    // so the wizard could not be used again without a reload.
+    if (extracting && extractJobId) {
+        actions.push({
+            label: extractCancelling ? 'Cancelling...' : 'Stop extraction',
+            icon: 'stop', destructive: true,
+            disabled: extractCancelling,
+            onclick: function () { cancelExtract(); }
+        });
+        actions.push({
+            label: 'Close', icon: 'close',
+            // Leaves the job running on purpose: its result is retained server-side and reopening
+            // the wizard reattaches to it. That is the difference between "stop this" and
+            // "stop watching this".
+            onclick: function () { Dialog.close(); }
+        });
+    } else {
+        actions.push({
+            label: 'Cancel', icon: 'cancel',
+            onclick: function () { Dialog.close(); }
+        });
+    }
 
     // Step-specific primary actions
     if (step === 1) {
@@ -1591,6 +1832,13 @@ async function pictureBook(entity, inst) {
     let pbRoles = page.context && page.context() && page.context().roles;
     roleWarning = !(pbRoles && pbRoles.user);
 
+    // Reattach to an extraction already running for this document, rather than offering to start a
+    // second one. Deliberately NOT awaited: it resolves only when the run finishes, and the dialog
+    // has to open now. The dialog therefore renders once WITHOUT progress and then updates — the
+    // GET /rest/job round-trip has to complete before `extracting` can be known, and
+    // onExtractProgress redraws as soon as it is.
+    reattachExtractJob();
+
     Dialog.open({
         title: 'Picture Book — ' + workName,
         size: 'xl',
@@ -1657,4 +1905,36 @@ export function __resetSdConfigForTest() {
     sdConfigLoading = false;
     _sdConfigPromise = null;
     sdConfigEntity = null;
+}
+
+// Test-only seam: the async-extraction state machine. Same rationale as the two seams above —
+// doExtract/applyExtractJob/reattachExtractJob are module-private and mounting the whole multi-step
+// wizard to reach their branches would test the dialog, not the logic.
+//
+// These branches specifically: a cancelled run whose partial scenes must be KEPT and flagged
+// partial, a failed run whose error must surface, and a reattach that must not start a second run
+// against a document already being extracted. The equivalent server-side branches shipped two real
+// defects before they had tests; this is the client half of that lesson.
+export { doExtract, applyExtractJob, reattachExtractJob, cancelExtract };
+export function __extractStateForTest() {
+    return {
+        step, workObjectId, extracting, extractError, extractJobId, extractProgress,
+        extractPartial, extractFailedChunks, extractedScenes, reattaching
+    };
+}
+export function __resetExtractStateForTest(work) {
+    step = 1;
+    workObjectId = work || null;
+    extracting = false;
+    extractError = null;
+    extractJobId = null;
+    extractProgress = null;
+    extractCancelling = false;
+    extractPartial = false;
+    extractFailedChunks = [];
+    extractedScenes = [];
+    reattaching = false;
+    chatConfigRef = null;
+    promptMode = 'single';
+    promptTemplate = null;
 }

@@ -35,6 +35,154 @@ async function extractScenes(workObjectId, chatConfigName, count, promptTemplate
 }
 
 /**
+ * Job polling shared by every long-running picture-book / chapbook operation.
+ *
+ * Bounded by a DEADLINE, not a poll count. The summarize poller this is modelled on
+ * (chat/ContextPanel.js startSummarizePoller) caps at a fixed number of ticks, which is fine for a
+ * short summarize but wrong here: a 17-chunk extraction ran 27 minutes, and at 3s per tick that is
+ * 540 polls -- a count cap would either abort a healthy run or stop meaning anything.
+ */
+const JOB_POLL_INTERVAL_MS = 3000;
+const JOB_POLL_DEADLINE_MS = 90 * 60 * 1000;
+
+function jobBase() {
+    return applicationPath + '/rest/job';
+}
+
+/**
+ * Raised when a poll is rejected for authentication. Distinguished from other failures because a
+ * long run can outlive the session, and "your login expired" needs a different message -- and a
+ * re-login -- than "the job failed".
+ */
+class JobAuthError extends Error {
+    constructor(status) {
+        super('Session expired while waiting for the job (HTTP ' + status + ')');
+        this.name = 'JobAuthError';
+        this.status = status;
+    }
+}
+
+function handleAuthFailure(status) {
+    // These workflow files talk to the server with a bare fetch rather than through am7client, so
+    // nothing here would otherwise notice a dropped session -- the run would just report an opaque
+    // status code. Hand off to the shared forceLogin when it is registered (pageClient registers
+    // it; am7client.js guards the same way before calling it).
+    if (typeof am7client.forceLogin === 'function') am7client.forceLogin();
+    throw new JobAuthError(status);
+}
+
+async function getJob(jobId) {
+    let resp = await fetch(jobBase() + '/' + jobId, {
+        method: 'GET', headers: { 'Accept': 'application/json' }, credentials: 'include'
+    });
+    if (resp.status === 401 || resp.status === 403) handleAuthFailure(resp.status);
+    if (resp.status === 404) throw new Error('Job not found or no longer retained: ' + jobId);
+    if (!resp.ok) throw new Error('Job poll failed: ' + resp.status);
+    return resp.json();
+}
+
+/** Request cooperative cancellation. Work already done is retained and still collectable. */
+async function cancelJob(jobId) {
+    let resp = await fetch(jobBase() + '/' + jobId + '/cancel', {
+        method: 'POST', headers: { 'Accept': 'application/json' }, credentials: 'include'
+    });
+    if (!resp.ok) return { jobId: jobId, cancelled: false };
+    return resp.json();
+}
+
+/** The caller's live + recently-completed jobs, newest first. Used to reattach after a reload. */
+async function listJobs() {
+    let resp = await fetch(jobBase(), {
+        method: 'GET', headers: { 'Accept': 'application/json' }, credentials: 'include'
+    });
+    if (!resp.ok) return [];
+    let j = await resp.json();
+    return Array.isArray(j) ? j : [];
+}
+
+/**
+ * Poll a job to completion.
+ *
+ * @param {string} jobId
+ * @param {Object} [opts]
+ * @param {Function} [opts.onProgress] called with the job payload every tick, so callers can
+ *        render real current/total and refresh any activity indicator
+ * @param {AbortSignal} [opts.signal] stops POLLING only -- it does not cancel the server-side job.
+ *        Use cancelJob for that; they are deliberately separate, because navigating away should
+ *        leave the run going (its result stays collectable) while an explicit Cancel should not.
+ * @param {number} [opts.deadlineMs]
+ * @returns {Promise<Object>} the terminal job payload
+ */
+async function pollJob(jobId, opts) {
+    let o = opts || {};
+    let budget = o.deadlineMs || JOB_POLL_DEADLINE_MS;
+    let deadline = Date.now() + budget;
+    let interval = o.intervalMs || JOB_POLL_INTERVAL_MS;
+    for (;;) {
+        if (o.signal && o.signal.aborted) throw new DOMException('Polling aborted', 'AbortError');
+        let job = await getJob(jobId);
+        if (o.onProgress) {
+            try { o.onProgress(job); } catch (e) { console.error('[pollJob] onProgress threw:', e); }
+        }
+        if (job.terminal) return job;
+        if (Date.now() > deadline) {
+            // Do NOT cancel the job here. It may well still be working, and its result stays
+            // retained for collection -- giving up on watching it is not a reason to destroy it.
+            throw new Error('Timed out waiting for job ' + jobId + ' after '
+                + Math.round(budget / 60000) + ' minutes');
+        }
+        await new Promise(function (r) { setTimeout(r, interval); });
+    }
+}
+
+/**
+ * Start scene extraction as a BACKGROUND JOB and return immediately.
+ *
+ * Replaces holding one HTTP request open for the whole run, which was the original defect: nginx
+ * returned 504 at exactly 900s while the server carried on, and every extracted scene was
+ * discarded because the only copy was headed for a socket that had already closed.
+ *
+ * @param {string} workObjectId
+ * @param {string|null} chatConfigName
+ * @param {number} count
+ * @param {string|null} promptTemplateOverride
+ * @param {Object} [opts]
+ * @param {boolean} [opts.fresh] discard any resumable checkpoint and re-extract from chunk 1.
+ *        A cancelled or interrupted run keeps its checkpoint so the next attempt continues; this
+ *        is the escape hatch when the user wants a clean run instead.
+ * @returns {Promise<{jobId: string, status: string}>}
+ */
+async function startExtractScenes(workObjectId, chatConfigName, count, promptTemplateOverride, opts) {
+    let body = { schema: 'olio.pictureBookRequest' };
+    if (count != null && count > 0) body.count = count;
+    if (chatConfigName) body.chatConfig = chatConfigName;
+    if (promptTemplateOverride) body.promptTemplate = promptTemplateOverride;
+    let qs = '?async=true' + (opts && opts.fresh ? '&fresh=true' : '');
+    let resp = await fetch(pbBase() + '/' + workObjectId + '/extract-scenes-only' + qs, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (resp.status === 401 || resp.status === 403) handleAuthFailure(resp.status);
+    if (resp.status !== 202) throw new Error('Start extract scenes failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
+ * Normalize an extraction result to a plain scene array.
+ *
+ * The endpoint returns two shapes -- a bare array for short text, or { sceneList, chunked } once it
+ * chunks -- and the async job wraps the latter in its result. One place to unwrap all three, so
+ * the callers stop each re-deriving it.
+ */
+function scenesFromResult(result) {
+    if (!result) return [];
+    if (Array.isArray(result)) return result;
+    if (Array.isArray(result.sceneList)) return result.sceneList;
+    return [];
+}
+
+/**
  * Create book from user-curated scenes — creates book group, scene notes, characters, meta.
  * @param {string} workObjectId - source document objectId
  * @param {string|null} chatConfigName
@@ -423,7 +571,16 @@ function buildMeta(sourceObjectId, bookObjectId, workName, scenes) {
 
 export {
     MAX_SCENES_DEFAULT,
+    JOB_POLL_INTERVAL_MS,
+    JOB_POLL_DEADLINE_MS,
+    JobAuthError,
     extractScenes,
+    startExtractScenes,
+    scenesFromResult,
+    getJob,
+    pollJob,
+    cancelJob,
+    listJobs,
     createFromScenes,
     createChapBookRecord,
     generateSceneImage,

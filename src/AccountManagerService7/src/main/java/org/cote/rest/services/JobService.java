@@ -20,7 +20,9 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -103,10 +105,24 @@ public class JobService {
 	@RolesAllowed({ "admin", "user" })
 	@GET
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response listJobs(@Context HttpServletRequest request) {
+	public Response listJobs(@QueryParam("startRecord") @DefaultValue("0") int startRecord,
+			@QueryParam("recordCount") @DefaultValue("0") int recordCount,
+			@Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		List<AsyncJob> all = AsyncJobRegistry.list(user);
+
+		// Paging, newest first (the registry already sorts that way). The list is bounded by
+		// AsyncJobRegistry.MAX_RETAINED_JOBS so it can never be huge, but "small today" is not a
+		// contract — a caller that only wants the current run should not have to receive every
+		// retained job to find it. Defaults return everything, so existing callers are unaffected.
+		int from = Math.max(0, startRecord);
+		if (from > all.size()) {
+			from = all.size();
+		}
+		int to = (recordCount > 0) ? Math.min(all.size(), from + recordCount) : all.size();
+
 		List<Map<String, Object>> out = new ArrayList<>();
-		for (AsyncJob job : AsyncJobRegistry.list(user)) {
+		for (AsyncJob job : all.subList(from, to)) {
 			out.add(describe(job, false));
 		}
 		return Response.status(200).entity(JSONUtil.exportObject(out)).build();

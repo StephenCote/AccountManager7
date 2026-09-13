@@ -67,6 +67,7 @@ import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
+import org.cote.accountmanager.util.CryptoUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -307,14 +308,36 @@ public class PictureBookUtil {
          */
         public final List<String> failedExtractions;
 
+        /**
+         * Whether the run actually reached the end of the source text.
+         *
+         * <p>This is NOT "nobody cancelled". A chunked run also stops early on thread interruption
+         * (a Tomcat stop or job-pool shutdown) and on the unreachable-LLM circuit breaker, and both
+         * of those previously reported completion — one measured run reported
+         * {@code extractionComplete: true} having extracted ZERO scenes because its chat config
+         * could not be resolved. Only the chunk loop knows which happened, so it reports the fact
+         * here rather than leaving each caller to re-derive it from the cancel flag (which cannot
+         * express it) or from a current/total comparison (which put the determination in the
+         * transport layer).
+         *
+         * <p>Always true for the single-shot path, which has exactly one step.
+         */
+        public final boolean complete;
+
         public ScenesOnlyResult(List<Map<String, Object>> scenes, boolean chunked) {
-            this(scenes, chunked, new ArrayList<>());
+            this(scenes, chunked, new ArrayList<>(), true);
         }
 
         public ScenesOnlyResult(List<Map<String, Object>> scenes, boolean chunked, List<String> failedExtractions) {
+            this(scenes, chunked, failedExtractions, true);
+        }
+
+        public ScenesOnlyResult(List<Map<String, Object>> scenes, boolean chunked,
+                List<String> failedExtractions, boolean complete) {
             this.scenes = scenes;
             this.chunked = chunked;
             this.failedExtractions = failedExtractions != null ? failedExtractions : new ArrayList<>();
+            this.complete = complete;
         }
     }
 
@@ -2511,14 +2534,425 @@ public class PictureBookUtil {
         return out;
     }
 
-    private static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
-            SummarizeProgress cancelToken) {
-        return extractChunkedInternal(user, chatConfig, text, cancelToken, null);
+    /**
+     * Merge one chunk's {@code additions} / {@code revisions} / {@code removals} into the running
+     * scene list, in that order.
+     *
+     * <p>Extracted from the chunk loop so it is directly testable. It is the part of extraction
+     * that RESUME correctness depends on: revisions and removals are matched <b>by title</b>
+     * against scenes that, after a resume, came back from a checkpoint rather than from this
+     * process's memory. A test that re-implements this matching proves only that JSON round-trips
+     * titles; it cannot catch a bug in the matching itself.
+     *
+     * @param sceneList   the running list, mutated in place
+     * @param chunkResult the parsed LLM reply for this chunk
+     * @param chunkText   the passage this chunk covers, attached to new scenes as the transient
+     *                    {@code sourceText}
+     * @param chunkIndex  0-based chunk number, stored as {@code sourceChunk}
+     */
+    @SuppressWarnings("unchecked")
+    static void mergeChunkResult(List<Map<String, Object>> sceneList, Map<String, Object> chunkResult,
+            String chunkText, int chunkIndex) {
+        if (sceneList == null || chunkResult == null) return;
+
+        Object addObj = chunkResult.get("additions");
+        if (addObj instanceof List) {
+            List<Map<String, Object>> additions = (List<Map<String, Object>>) addObj;
+            for (Map<String, Object> scene : additions) {
+                if (scene == null) continue;
+                scene.put("index", sceneList.size());
+                scene.put("userEdited", false);
+                // Track the raw content block this scene (and thus its characters) was obtained
+                // from — the passage where those characters actually appear. Transient carrier on
+                // the in-memory scene map; used by createFromScenes to REDUCE per-character detail
+                // from the right text, and stripped before the scene note is persisted
+                // (createSceneNote) so it never bloats storage.
+                scene.put("sourceText", chunkText);
+                // Durable counterpart to the transient sourceText above: the checkpoint persists
+                // this integer instead of the ~2000-char passage and rehydrates sourceText from it
+                // on resume.
+                scene.put("sourceChunk", chunkIndex);
+                sceneList.add(scene);
+            }
+        }
+
+        Object revObj = chunkResult.get("revisions");
+        if (revObj instanceof List) {
+            List<Map<String, Object>> revisions = (List<Map<String, Object>>) revObj;
+            for (Map<String, Object> rev : revisions) {
+                if (rev == null) continue;
+                String revTitle = (String) rev.get("title");
+                if (revTitle == null) continue;
+                for (int si = 0; si < sceneList.size(); si++) {
+                    String existingTitle = (String) sceneList.get(si).get("title");
+                    if (revTitle.equals(existingTitle)) {
+                        Map<String, Object> existing = sceneList.get(si);
+                        for (Map.Entry<String, Object> e : rev.entrySet()) {
+                            /// Never overwrite the title (it is the match key) and never clobber a
+                            /// good value with a null the model happened to emit.
+                            if (!"title".equals(e.getKey()) && e.getValue() != null) {
+                                existing.put(e.getKey(), e.getValue());
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        Object remObj = chunkResult.get("removals");
+        if (remObj instanceof List) {
+            List<String> removals = (List<String>) remObj;
+            sceneList.removeIf(s -> removals.contains(s.get("title")));
+        }
     }
 
+    /**
+     * The per-chunk LLM call, as a seam.
+     *
+     * <p>Exists so the chunk loop's control flow can be tested without an LLM. That flow is where
+     * the expensive defects have actually lived — an interrupted run deleting its own checkpoint
+     * and reporting COMPLETED, and a stopped run reporting {@code extractionComplete: true} — and
+     * neither was reachable by any unit test, because every path through the loop needed a live
+     * model server. Both were found only by running the real thing against Docker, which is a slow
+     * and unreliable way to discover a branch bug.
+     *
+     * <p>Production passes {@link #defaultChunkLlm}; tests pass a script of canned replies,
+     * including nulls (to exercise the circuit breaker) and truncated JSON (to exercise salvage
+     * through the real loop rather than only through {@code parseLlmJsonObject} in isolation).
+     */
+    interface ChunkLlm {
+        /**
+         * @param vars    the prompt variables for this attempt
+         * @param attempt 1-based; attempt 2 carries the corrective "your last reply was truncated"
+         *                instruction
+         * @return the raw model reply, or null when nothing came back
+         */
+        String call(Map<String, String> vars, int attempt);
+    }
+
+    // ----- Extraction checkpointing (incremental persistence + resume) ---------
+
+    /**
+     * Name of the scratch {@code data.note} that holds an in-progress chunked extraction.
+     *
+     * <p>Mirrors the existing {@code .pictureBookMeta} convention (a dot-prefixed {@code data.note}
+     * whose {@code text} field carries JSON — see {@link #saveMeta}), for the same reason: the
+     * {@code text} field has no length limit, and a dot-prefixed name keeps it out of ordinary
+     * document listings.
+     */
+    private static final String EXTRACT_PROGRESS_NOTE = ".pbExtractProgress";
+
+    /**
+     * Persist accumulated scenes every this many chunks.
+     *
+     * <p>Sized against the real cost ratio, not guessed: a chunk costs one LLM call at ~80-110s
+     * measured, while a checkpoint is a single {@code data.note} update. The write is lost in the
+     * noise even at every chunk, so this bounds how much work a crash can destroy rather than
+     * trading off write cost.
+     *
+     * <p><b>Why 1 rather than 2.</b> The interrupt-time save is best-effort and was observed
+     * LOSING ITS RACE with IO teardown during a {@code docker restart} — the process died before
+     * the write landed, so the resume fell back to the last periodic checkpoint. With a period of
+     * 2 that could discard a completed chunk; with 1, whatever the interrupt save fails to record
+     * is at most the chunk that was still in flight, which produced nothing anyway. The periodic
+     * write is the durable one; treat the early-exit saves as an optimisation, not the mechanism.
+     */
+    public static final int EXTRACT_CHECKPOINT_EVERY = 1;
+
+    /**
+     * A resumable snapshot of a chunked extraction in flight.
+     *
+     * <p><b>Why this exists.</b> Extraction accumulated every scene in memory and wrote nothing
+     * until the final chunk, so a dropped connection or a container restart destroyed the entire
+     * run. Measured 2026-09-13: a 17-chunk run reached chunk 11 and ~27 minutes of LLM output was
+     * discarded with nothing logged. The async job layer keeps a finished result alive for a TTL,
+     * which covers a lost <i>connection</i>; this covers a lost <i>process</i>.
+     *
+     * <p>{@code textHash}, {@code chunkSize} and {@code overlap} are the validity guard. A
+     * checkpoint is only resumable against byte-identical source text chunked exactly the same
+     * way — otherwise chunk index {@code n} no longer denotes the same passage and resuming would
+     * silently splice scenes from one document into another.
+     */
+    static final class ExtractCheckpoint {
+        String textHash;
+        int chunkSize;
+        int overlap;
+        int totalChunks;
+        /** Number of chunks whose results are already merged into {@link #scenes}. */
+        int chunksProcessed;
+        List<Map<String, Object>> scenes = new ArrayList<>();
+        List<String> failedExtractions = new ArrayList<>();
+    }
+
+    /** Stable digest of the source text, used to invalidate a checkpoint when the document changes. */
+    static String extractTextHash(String text) {
+        return CryptoUtil.getDigestAsString(text == null ? "" : text);
+    }
+
+    /**
+     * Locate the work's own group path, which is where its extraction checkpoint lives.
+     *
+     * <p>The checkpoint is deliberately keyed to the <b>source document</b> rather than to a book:
+     * at extraction time no book exists yet (the book is created later, by
+     * {@code createFromScenes}), so the document's group is the only stable home available.
+     */
+    static String findWorkGroupPath(BaseRecord user, String workObjectId) {
+        if (workObjectId == null) return null;
+        BaseRecord work = findWork(user, workObjectId);
+        if (work == null) return null;
+        try {
+            String gp = work.get(FieldNames.FIELD_GROUP_PATH);
+            if (gp != null && !gp.isEmpty()) return gp;
+        } catch (Exception e) { /* model may not carry groupPath */ }
+        return null;
+    }
+
+    /** Find the checkpoint note for a work document, or null. */
+    static BaseRecord loadProgressNote(BaseRecord user, String groupPath, String workObjectId) {
+        if (groupPath == null || workObjectId == null) return null;
+        BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(),
+                (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        if (grp == null) return null;
+        Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_GROUP_ID,
+                grp.get(FieldNames.FIELD_ID));
+        q.field(FieldNames.FIELD_NAME, EXTRACT_PROGRESS_NOTE + "." + workObjectId);
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        q.planMost(true);
+        /// A checkpoint is written and re-read repeatedly within one run, so a cached hit from
+        /// before the last write would resume from a stale chunk index.
+        q.setCache(false);
+        return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+    }
+
+    /**
+     * Write (or overwrite) the extraction checkpoint. Best-effort by design: losing a checkpoint
+     * costs re-extraction of a few chunks, whereas failing the run over a scratch-record write
+     * would throw away work that is otherwise complete.
+     *
+     * <p>{@code sourceText} is stripped from persisted scenes and replaced by the integer chunk
+     * index it came from ({@code sourceChunk}). It is a transient ~2000-char carrier per scene,
+     * rehydrated on resume from the identical chunk list — so this keeps the note small without
+     * losing the information {@code createFromScenes} needs for its per-character reduce.
+     */
+    static void saveExtractCheckpoint(BaseRecord user, String groupPath, String workObjectId,
+            ExtractCheckpoint cp) {
+        if (groupPath == null || workObjectId == null) return;
+        /// A checkpoint with nothing processed is unresumable by construction —
+        /// loadExtractCheckpoint rejects chunksProcessed <= 0 — so writing one leaves a scratch
+        /// note that can never be consumed and is only ever removed by some later run that happens
+        /// to reach the end. Stopping on the very first chunk (cancel, interrupt, or the circuit
+        /// breaker) hits this exactly.
+        if (cp == null || cp.chunksProcessed <= 0) {
+            return;
+        }
+        try {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("workObjectId", workObjectId);
+            out.put("textHash", cp.textHash);
+            out.put("chunkSize", cp.chunkSize);
+            out.put("overlap", cp.overlap);
+            out.put("totalChunks", cp.totalChunks);
+            out.put("chunksProcessed", cp.chunksProcessed);
+            out.put("updatedAt", ZonedDateTime.now().toString());
+            List<Map<String, Object>> slim = new ArrayList<>(cp.scenes.size());
+            for (Map<String, Object> s : cp.scenes) {
+                Map<String, Object> c = new LinkedHashMap<>(s);
+                c.remove("sourceText");
+                slim.add(c);
+            }
+            out.put("scenes", slim);
+            out.put("failedExtractions", cp.failedExtractions);
+            String json = JSONUtil.exportObject(out);
+
+            BaseRecord existing = loadProgressNote(user, groupPath, workObjectId);
+            if (existing != null) {
+                existing.set("text", json);
+                IOSystem.getActiveContext().getAccessPoint().update(user, existing);
+                return;
+            }
+            ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+            plist.parameter(FieldNames.FIELD_NAME, EXTRACT_PROGRESS_NOTE + "." + workObjectId);
+            BaseRecord rec = IOSystem.getActiveContext().getFactory().newInstance(
+                    ModelNames.MODEL_NOTE, user, null, plist);
+            rec.set("text", json);
+            IOSystem.getActiveContext().getAccessPoint().create(user, rec);
+        } catch (Exception e) {
+            logger.warn("Failed to persist extraction checkpoint for " + workObjectId + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Load a checkpoint that is valid for this exact text and chunking, or null.
+     *
+     * <p>Returns null — meaning "start over" — for a mismatched hash or chunking, a checkpoint that
+     * claims more processed chunks than exist, or unparseable JSON. Every one of those is a case
+     * where resuming would corrupt the result rather than accelerate it, so the safe answer is a
+     * fresh run.
+     */
     @SuppressWarnings("unchecked")
+    static ExtractCheckpoint loadExtractCheckpoint(BaseRecord user, String groupPath,
+            String workObjectId, String textHash, int chunkSize, int overlap, int totalChunks) {
+        BaseRecord note = loadProgressNote(user, groupPath, workObjectId);
+        if (note == null) return null;
+        String json = note.get("text");
+        if (json == null || json.isEmpty()) return null;
+        try {
+            Map<String, Object> m = JSONUtil.getMap(json.getBytes(StandardCharsets.UTF_8),
+                    String.class, Object.class);
+            if (m == null || m.isEmpty()) return null;
+            ExtractCheckpoint cp = new ExtractCheckpoint();
+            cp.textHash = (String) m.get("textHash");
+            cp.chunkSize = intOf(m.get("chunkSize"));
+            cp.overlap = intOf(m.get("overlap"));
+            cp.totalChunks = intOf(m.get("totalChunks"));
+            cp.chunksProcessed = intOf(m.get("chunksProcessed"));
+            if (textHash != null && !textHash.equals(cp.textHash)) {
+                logger.info("Discarding extraction checkpoint for " + workObjectId
+                        + " — source text changed since it was written");
+                return null;
+            }
+            if (cp.chunkSize != chunkSize || cp.overlap != overlap || cp.totalChunks != totalChunks) {
+                logger.info("Discarding extraction checkpoint for " + workObjectId
+                        + " — chunking changed (was " + cp.chunkSize + "/" + cp.overlap + "/"
+                        + cp.totalChunks + ", now " + chunkSize + "/" + overlap + "/" + totalChunks + ")");
+                return null;
+            }
+            if (cp.chunksProcessed <= 0 || cp.chunksProcessed > totalChunks) {
+                return null;
+            }
+            Object sc = m.get("scenes");
+            if (sc instanceof List) cp.scenes = (List<Map<String, Object>>) sc;
+            Object fe = m.get("failedExtractions");
+            if (fe instanceof List) cp.failedExtractions = (List<String>) fe;
+            return cp;
+        } catch (Exception e) {
+            logger.warn("Unparseable extraction checkpoint for " + workObjectId
+                    + " — starting fresh: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /** Tolerant numeric read — JSON round-trips ints as Integer, Long or Double depending on source. */
+    static int intOf(Object o) {
+        return (o instanceof Number) ? ((Number) o).intValue() : 0;
+    }
+
+    /**
+     * Delete a work's extraction checkpoint.
+     *
+     * <p>Called on <b>successful completion</b> only. A cancelled or crashed run keeps its
+     * checkpoint on purpose — that retained partial work is what makes both restart-resume and
+     * cancel-then-continue possible — while a completed run must not leave a stale checkpoint
+     * behind for the next extraction of the same document to resume from.
+     */
+    public static void clearExtractCheckpoint(BaseRecord user, String workObjectId) {
+        String groupPath = findWorkGroupPath(user, workObjectId);
+        if (groupPath != null) {
+            clearExtractCheckpointAt(user, groupPath, workObjectId);
+            return;
+        }
+        /// The work document is gone (deleted while a run was in flight, or deleted later), so the
+        /// group walk can never reach its checkpoint note and the note would survive forever. Fall
+        /// back to the org-wide name search, the same shape deleteOrphanedMetaNotes uses for the
+        /// equivalent `.pictureBookMeta` orphan.
+        deleteOrphanedExtractCheckpoints(user, workObjectId);
+    }
+
+    /**
+     * Delete a work's checkpoint note when its group can no longer be resolved.
+     *
+     * <p>The note name embeds the work objectId, so this is an exact-name lookup rather than the
+     * JSON-linkage scan {@link #deleteOrphanedMetaNotes} needs — nothing else can match, so no
+     * other user's or document's checkpoint is at risk. Best-effort and org-scoped; every failure
+     * is swallowed and logged, because this is cleanup and never a reason to fail the caller.
+     *
+     * @return the number of orphaned checkpoint notes deleted
+     */
+    static int deleteOrphanedExtractCheckpoints(BaseRecord user, String workObjectId) {
+        if (user == null || workObjectId == null || workObjectId.isBlank()) {
+            return 0;
+        }
+        int deleted = 0;
+        try {
+            long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+            /// An explicit organizationId condition is required for a data.directory-derived list
+            /// query or PBAC denies it (and the denial surfaces as an empty result, not an error).
+            Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_NAME,
+                    EXTRACT_PROGRESS_NOTE + "." + workObjectId);
+            q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            q.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID,
+                FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_NAME });
+            q.setCache(false);
+            BaseRecord[] notes = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
+            if (notes != null) {
+                for (BaseRecord note : notes) {
+                    try {
+                        if (IOSystem.getActiveContext().getAccessPoint().delete(user, note)) {
+                            deleted++;
+                            logger.info("Deleted orphaned extraction checkpoint for gone work {}",
+                                    workObjectId);
+                        }
+                    } catch (Exception e) {
+                        logger.warn("Failed to delete an orphaned extraction checkpoint: " + e.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Orphaned-checkpoint cleanup failed for " + workObjectId + ": " + e.getMessage());
+        }
+        return deleted;
+    }
+
+    /**
+     * Path-based counterpart, for callers that already hold the work's group path. The chunk loop
+     * uses this so completing a run does not re-resolve the work record it just finished reading.
+     */
+    static void clearExtractCheckpointAt(BaseRecord user, String groupPath, String workObjectId) {
+        try {
+            BaseRecord note = loadProgressNote(user, groupPath, workObjectId);
+            if (note != null) {
+                IOSystem.getActiveContext().getAccessPoint().delete(user, note);
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to clear extraction checkpoint for " + workObjectId + ": " + e.getMessage());
+        }
+    }
+
+    private static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
+            SummarizeProgress cancelToken) {
+        return extractChunkedInternal(user, chatConfig, text, cancelToken, null, null, null);
+    }
+
     private static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
             SummarizeProgress cancelToken, List<String> failedExtractions) {
+        return extractChunkedInternal(user, chatConfig, text, cancelToken, failedExtractions, null, null);
+    }
+
+    private static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
+            SummarizeProgress cancelToken, List<String> failedExtractions, String workObjectId,
+            boolean[] reachedEndOut) {
+        return extractChunkedInternal(user, chatConfig, text, cancelToken, failedExtractions, workObjectId,
+                reachedEndOut, null);
+    }
+
+    /**
+     * @param workObjectId  the source document, enabling incremental persistence and resume. When
+     *                      null, checkpointing is skipped entirely and the method behaves exactly
+     *                      as before — which is what the in-memory callers and existing tests rely on.
+     * @param reachedEndOut optional single-element sink set to whether the loop reached the end of
+     *                      the text. Callers cannot derive this themselves: a clean finish, a
+     *                      cancel, a thread interrupt and the unreachable-LLM circuit breaker all
+     *                      return normally with a scene list, and conflating them is what caused an
+     *                      interrupted run to report completion. Same out-param idiom as
+     *                      {@link #parseLlmJsonObject}'s {@code okOut}.
+     * @param llm           the per-chunk model call; null means the real one. See {@link ChunkLlm}.
+     */
+    @SuppressWarnings("unchecked")
+    static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
+            SummarizeProgress cancelToken, List<String> failedExtractions, String workObjectId,
+            boolean[] reachedEndOut, ChunkLlm llm) {
         int chunkSize = 2000;
         int overlap = 200;
         List<String> chunks = new ArrayList<>();
@@ -2551,16 +2985,121 @@ public class PictureBookUtil {
         // on every iteration: 34 template queries and 17 expected-miss WARNs for a 17-chunk
         // document. extractScenesOnly already resolves its chat config exactly once this way.
         // See ResolvedPrompt / resolvePrompt for why the lookup chain itself must stay intact.
-        ResolvedPrompt chunkPrompt = resolvePrompt(user, chatConfig, "pictureBook.extract-chunk");
+        // Only the real LLM path needs the composed prompt; a test seam supplies replies directly
+        // and must not require a resolvable chat config or a live template lookup.
+        final ChunkLlm chunkLlm;
+        if (llm != null) {
+            chunkLlm = llm;
+        } else {
+            ResolvedPrompt chunkPrompt = resolvePrompt(user, chatConfig, "pictureBook.extract-chunk");
+            chunkLlm = (vars, attempt) -> callLlmResolved(user, chatConfig, "pictureBook.extract-chunk",
+                    vars, chunkPrompt);
+        }
 
+        // Incremental persistence + resume. Nothing here used to be written until the final chunk,
+        // so a dropped connection or a container restart discarded the whole run (measured
+        // 2026-09-13: chunk 11 of 17, ~27 minutes of LLM output, nothing logged). A checkpoint is
+        // only honoured for byte-identical text chunked identically — see ExtractCheckpoint.
+        String groupPath = (workObjectId == null) ? null : findWorkGroupPath(user, workObjectId);
+        ExtractCheckpoint checkpoint = new ExtractCheckpoint();
+        checkpoint.textHash = extractTextHash(text);
+        checkpoint.chunkSize = chunkSize;
+        checkpoint.overlap = overlap;
+        checkpoint.totalChunks = chunks.size();
         List<Map<String, Object>> sceneList = new ArrayList<>();
-        for (int ci = 0; ci < chunks.size(); ci++) {
+        int startChunk = 0;
+        if (groupPath != null) {
+            ExtractCheckpoint prior = loadExtractCheckpoint(user, groupPath, workObjectId,
+                    checkpoint.textHash, chunkSize, overlap, chunks.size());
+            if (prior != null) {
+                startChunk = prior.chunksProcessed;
+                sceneList = prior.scenes;
+                // sourceText is stripped on persistence and rehydrated here from the identical
+                // chunk list, so resumed scenes carry the same passage they were extracted from
+                // and createFromScenes's per-character reduce still has the right text.
+                for (Map<String, Object> s : sceneList) {
+                    /// Require a real numeric sourceChunk. intOf maps anything missing or
+                    /// non-numeric to 0, which would silently attribute CHUNK 0's passage to the
+                    /// scene — worse than leaving sourceText unset, because createFromScenes would
+                    /// then reduce that character's detail from the wrong part of the document.
+                    Object sc = s.get("sourceChunk");
+                    if (!(sc instanceof Number)) continue;
+                    int sci = ((Number) sc).intValue();
+                    if (sci >= 0 && sci < chunks.size()) s.put("sourceText", chunks.get(sci));
+                }
+                if (failedExtractions != null && prior.failedExtractions != null) {
+                    failedExtractions.addAll(prior.failedExtractions);
+                }
+                checkpoint.scenes = sceneList;
+                checkpoint.chunksProcessed = startChunk;
+                if (failedExtractions != null) checkpoint.failedExtractions = failedExtractions;
+                logger.info("Resuming chunked extraction for " + workObjectId + " at chunk "
+                        + (startChunk + 1) + "/" + chunks.size() + " with " + sceneList.size()
+                        + " scene(s) already extracted");
+                // Report resumed progress so a client polling the job sees the real position
+                // rather than the run appearing to restart from zero.
+                if (cancelToken != null) cancelToken.setCurrent(startChunk);
+            } else {
+                checkpoint.scenes = sceneList;
+                if (failedExtractions != null) checkpoint.failedExtractions = failedExtractions;
+            }
+        }
+        if (startChunk >= chunks.size()) {
+            // Every chunk was already processed before the run died; nothing left to extract.
+            logger.info("Extraction checkpoint for " + workObjectId + " is already complete ("
+                    + sceneList.size() + " scenes)");
+        }
+        // Did the loop actually reach the end of the document? This is NOT the same as "returned
+        // without throwing", and conflating the two destroyed real work: on a container shutdown
+        // the worker is interrupted mid-LLM-call, every remaining chunk then fails instantly with
+        // no server to call, and the loop sailed to the end and reported success. Measured
+        // 2026-09-13: a 5-chunk run checkpointed at chunk 2, was interrupted, "processed" chunks
+        // 3-5 in 11 seconds, and then DELETED its own checkpoint as a completed run.
+        boolean reachedEnd = true;
+        /// Consecutive chunks whose LLM call returned nothing at all (as opposed to returning
+        /// something unparseable). Two in a row means the model server is gone, not that the model
+        /// is having an off day — see the circuit breaker below.
+        int consecutiveEmptyResponses = 0;
+        for (int ci = startChunk; ci < chunks.size(); ci++) {
             // KI-10: checkpoint at the top of the chunk loop — a mid-run cancel (POST
             // /{workObjectId}/cancel) stops further LLM calls immediately; scenes already
             // extracted from earlier chunks are still returned, not discarded.
             if (cancelToken != null && cancelToken.isCancelled()) {
                 logger.info("extractChunkedInternal: cancelled after " + ci + "/" + chunks.size()
                         + " chunks — returning " + sceneList.size() + " scenes extracted so far");
+                // Persist before breaking out. A cancelled run KEEPS its checkpoint on purpose:
+                // the partial work is real, and re-driving the same extraction should continue
+                // rather than repeat the chunks already paid for.
+                if (groupPath != null) {
+                    /// NOT `= ci`. The loop index advances past a chunk that FAILED (no
+                    /// reply, or unparseable after the retry) exactly as it does past one
+                    /// that merged, so using it would mark a failed passage as done and a
+                    /// resume would skip it for good. chunksProcessed is advanced ONLY at
+                    /// the bottom of the loop, which the failure paths `continue` past on
+                    /// purpose — persist that value unchanged.
+                    saveExtractCheckpoint(user, groupPath, workObjectId, checkpoint);
+                }
+                reachedEnd = false;
+                break;
+            }
+            /// Thread interruption is how AsyncJobRegistry.shutdown() (and therefore a Tomcat
+            /// stop/redeploy) stops a job. Treat it exactly like a cancel: stop calling the LLM,
+            /// keep what has been extracted, and leave the checkpoint in place so the next
+            /// re-drive resumes. Without this the remaining chunks "fail" instantly against an
+            /// unreachable server and the run looks complete.
+            if (Thread.currentThread().isInterrupted()) {
+                logger.warn("extractChunkedInternal: interrupted after " + ci + "/" + chunks.size()
+                        + " chunks — keeping " + sceneList.size() + " scenes and the checkpoint");
+                if (groupPath != null) {
+                    /// NOT `= ci`. The loop index advances past a chunk that FAILED (no
+                    /// reply, or unparseable after the retry) exactly as it does past one
+                    /// that merged, so using it would mark a failed passage as done and a
+                    /// resume would skip it for good. chunksProcessed is advanced ONLY at
+                    /// the bottom of the loop, which the failure paths `continue` past on
+                    /// purpose — persist that value unchanged.
+                    saveExtractCheckpoint(user, groupPath, workObjectId, checkpoint);
+                }
+                reachedEnd = false;
                 break;
             }
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_awesome",
@@ -2595,7 +3134,7 @@ public class PictureBookUtil {
                         + " truncated or malformed). Reply with ONLY a single complete, valid JSON"
                         + " object. Keep every field short so the whole object fits in one reply.");
                 }
-                llmResp = callLlmResolved(user, chatConfig, "pictureBook.extract-chunk", attemptVars, chunkPrompt);
+                llmResp = chunkLlm.call(attemptVars, attempt);
                 // KI-10: count the chunk as processed once (first attempt) — progress reflects
                 // "chunks attempted", matching ChatUtil.mapSummarize's incrementCurrent() placement.
                 if (attempt == 1 && cancelToken != null) cancelToken.incrementCurrent();
@@ -2607,6 +3146,39 @@ public class PictureBookUtil {
                 /// generation and then recorded a bogus failure.
                 if (ok[0]) { chunkResult = parsed; parseOk = true; break; }
                 if (attempt < 2) logger.warn("Chunk " + chunkCtx + " returned unparseable JSON — retrying once");
+            }
+            if (llmResp == null || llmResp.isEmpty()) {
+                consecutiveEmptyResponses++;
+            } else {
+                consecutiveEmptyResponses = 0;
+            }
+            /// Circuit breaker. An empty response on both attempts means no answer came back at
+            /// all, and two chunks in a row like that means the model server is unreachable —
+            /// during a shutdown the interrupt flag may already have been consumed by whatever
+            /// caught InterruptedException down in the HTTP stack, so this is the guard that does
+            /// not depend on it. Stopping here keeps the checkpoint and the extracted scenes;
+            /// grinding through the rest of the document would record a wall of bogus failures
+            /// and then look like a finished run.
+            if (consecutiveEmptyResponses >= 2) {
+                logger.error("extractChunkedInternal: no LLM response for " + consecutiveEmptyResponses
+                        + " consecutive chunks at " + (ci + 1) + "/" + chunks.size()
+                        + " — stopping and keeping the checkpoint (" + sceneList.size() + " scenes)");
+                /// Tell the CLIENT, not just the log. Without this the caller sees a run that
+                /// stopped early with no explanation — and if it stopped on chunk 1 it sees an
+                /// empty scene list that is indistinguishable from "the model found nothing".
+                if (failedExtractions != null) {
+                    failedExtractions.add("{\"context\":\"" + chunkCtx
+                        + "\",\"error\":\"No response from the LLM for " + consecutiveEmptyResponses
+                        + " consecutive chunks - the model server appears to be unreachable."
+                        + " Extraction stopped early; re-run to resume from the checkpoint.\"}");
+                }
+                if (groupPath != null) {
+                    /// The chunks that tripped the breaker produced nothing, so they
+                    /// must stay un-merged and be retried on the next re-drive.
+                    saveExtractCheckpoint(user, groupPath, workObjectId, checkpoint);
+                }
+                reachedEnd = false;
+                break;
             }
             if (!parseOk) {
                 // Record the final, unrecoverable failure (re-parse with the real sink so the raw text
@@ -2626,47 +3198,19 @@ public class PictureBookUtil {
                 continue;
             }
 
-            Object addObj = chunkResult.get("additions");
-            if (addObj instanceof List) {
-                List<Map<String, Object>> additions = (List<Map<String, Object>>) addObj;
-                for (Map<String, Object> scene : additions) {
-                    scene.put("index", sceneList.size());
-                    scene.put("userEdited", false);
-                    // Track the raw content block this scene (and thus its characters) was obtained
-                    // from — the passage where those characters actually appear. Transient carrier on
-                    // the in-memory scene map; used by createFromScenes to REDUCE per-character detail
-                    // from the right text, and stripped before the scene note is persisted
-                    // (createSceneNote) so it never bloats storage.
-                    scene.put("sourceText", chunks.get(ci));
-                    sceneList.add(scene);
-                }
-            }
-            Object revObj = chunkResult.get("revisions");
-            if (revObj instanceof List) {
-                List<Map<String, Object>> revisions = (List<Map<String, Object>>) revObj;
-                for (Map<String, Object> rev : revisions) {
-                    String revTitle = (String) rev.get("title");
-                    if (revTitle == null) continue;
-                    for (int si = 0; si < sceneList.size(); si++) {
-                        String existingTitle = (String) sceneList.get(si).get("title");
-                        if (revTitle.equals(existingTitle)) {
-                            Map<String, Object> existing = sceneList.get(si);
-                            for (Map.Entry<String, Object> e : rev.entrySet()) {
-                                if (!"title".equals(e.getKey()) && e.getValue() != null) {
-                                    existing.put(e.getKey(), e.getValue());
-                                }
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-            Object remObj = chunkResult.get("removals");
-            if (remObj instanceof List) {
-                List<String> removals = (List<String>) remObj;
-                sceneList.removeIf(s -> removals.contains(s.get("title")));
-            }
+            mergeChunkResult(sceneList, chunkResult, chunks.get(ci), ci);
             logger.info("Chunk " + (ci + 1) + "/" + chunks.size() + " processed: " + sceneList.size() + " scenes total");
+            // Checkpoint. `ci + 1` chunks are now fully merged into sceneList, so that is the
+            // index a resume must start from. Written every EXTRACT_CHECKPOINT_EVERY chunks and
+            // always on the final chunk, so a completed-but-undeliverable run is still recoverable.
+            if (groupPath != null) {
+                /// THE ONLY place chunksProcessed advances, reached only when this
+                /// chunk's result was actually merged.
+                checkpoint.chunksProcessed = ci + 1;
+                boolean due = ((ci + 1 - startChunk) % EXTRACT_CHECKPOINT_EVERY == 0)
+                        || (ci + 1 == chunks.size());
+                if (due) saveExtractCheckpoint(user, groupPath, workObjectId, checkpoint);
+            }
         }
         for (int i = 0; i < sceneList.size(); i++) {
             Map<String, Object> scene = sceneList.get(i);
@@ -2677,6 +3221,39 @@ public class PictureBookUtil {
             }
         }
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
+
+        // The checkpoint's fate is decided HERE, where "did this run reach the end of the
+        // document" is actually known. The callers cannot tell: a cancel, an interrupt and a clean
+        // finish all return normally with a scene list, which is precisely how an interrupted run
+        // came to delete its own checkpoint.
+        //
+        // Cleared only when the loop reached the end. Per-chunk parse failures do NOT block the
+        // clear — they are already surfaced to the client in failedExtractions, the run genuinely
+        // reached the end of the text, and chunksProcessed has advanced past them, so keeping the
+        // checkpoint would leave a record that can never be consumed or cleared.
+        /// Re-check interruption AFTER the loop. The top-of-loop guard cannot see an interrupt
+        /// that lands during the FINAL chunk: that chunk's LLM call returns null, one empty
+        /// response is not enough to trip the circuit breaker, the `!parseOk` branch continues, the
+        /// loop ends normally and reachedEnd is still true — so the checkpoint would be deleted for
+        /// a run that never processed its last chunk.
+        if (reachedEnd && Thread.currentThread().isInterrupted()) {
+            logger.warn("extractChunkedInternal: interrupted during the final chunk of "
+                    + chunks.size() + " — keeping the checkpoint rather than reporting completion");
+            reachedEnd = false;
+        }
+        if (reachedEndOut != null && reachedEndOut.length > 0) {
+            reachedEndOut[0] = reachedEnd;
+        }
+        if (groupPath != null) {
+            if (reachedEnd) {
+                clearExtractCheckpointAt(user, groupPath, workObjectId);
+            } else {
+                logger.info("Extraction for " + workObjectId + " stopped early at chunk "
+                        + checkpoint.chunksProcessed + "/" + chunks.size()
+                        + " — checkpoint kept for resume");
+            }
+        }
+
         // Chunked extraction can make many LLM calls in a row — flush once at the end rather
         // than per-chunk (per-chunk would just force an immediate reload for the next chunk).
         OllamaModelUtil.unloadAll();
@@ -3747,6 +4324,9 @@ public class PictureBookUtil {
             // Drop the transient raw content block (used only to reduce per-character detail during
             // createFromScenes) so it never persists into every scene note's text JSON.
             sceneStore.remove("sourceText");
+            // Likewise the checkpoint's chunk-index bookkeeping: it only means anything while an
+            // extraction is mid-flight, and the book's scene notes outlive that entirely.
+            sceneStore.remove("sourceChunk");
             sceneStore.put("sceneIndex", idx);
             sceneStore.put("blurb", summary);
             note.set("text", JSONUtil.exportObject(sceneStore));
@@ -3792,8 +4372,13 @@ public class PictureBookUtil {
 
         // Auto-chunk if text exceeds MAX_EXTRACTION_TEXT_CHARS
         if (text.length() > MAX_EXTRACTION_TEXT_CHARS) {
-            List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken, failedExtractions);
-            return new ScenesOnlyResult(sceneList, true, failedExtractions);
+            /// extractChunkedInternal owns the checkpoint lifecycle, including clearing it on a
+            /// genuinely complete run. Deciding that here was wrong: from out here a cancel, an
+            /// interrupt and a clean finish are indistinguishable.
+            boolean[] reachedEnd = new boolean[] { true };
+            List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken,
+                    failedExtractions, workObjectId, reachedEnd);
+            return new ScenesOnlyResult(sceneList, true, failedExtractions, reachedEnd[0]);
         }
 
         // Short text — single-shot extraction
@@ -3845,12 +4430,19 @@ public class PictureBookUtil {
         }
 
         List<String> failedExtractions = new ArrayList<>();
-        List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken, failedExtractions);
+        boolean[] reachedEnd = new boolean[] { true };
+        List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken,
+                failedExtractions, workObjectId, reachedEnd);
         BaseRecord result = buildResult();
         try {
             result.set("sceneList", sceneList);
-            result.set("extractionComplete", true);
-            result.set("chunksProcessed", -1);
+            /// Report what actually happened. Both of these were hardcoded — `true` and `-1` — so
+            /// a cancelled or partially-failed run was indistinguishable from a complete one, and
+            /// the chunk count the progress token had all along was thrown away. `reachedEnd` (not
+            /// the cancel flag) is the authority: an interrupt or the unreachable-LLM breaker also
+            /// stops early without any cancel being requested.
+            result.set("extractionComplete", reachedEnd[0]);
+            result.set("chunksProcessed", cancelToken != null ? cancelToken.getCurrent() : -1);
             if (!failedExtractions.isEmpty()) result.set("failedExtractions", failedExtractions);
         } catch (Exception e) { logger.warn("Failed to build chunked result: " + e.getMessage()); }
         return result;

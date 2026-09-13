@@ -12,7 +12,7 @@ import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
 import { ObjectPicker } from '../components/picker.js';
 import { bookPages } from '../workflows/pictureBookWorkflow.js';
-import { resolveImageUrl } from '../workflows/sceneExtractor.js';
+import { resolveImageUrl, pollJob, cancelJob, listJobs } from '../workflows/sceneExtractor.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
 import { am7model } from '../core/model.js';
@@ -80,19 +80,42 @@ async function analyzePoem(poemObjectId, chatConfigName) {
     return resp.json();
 }
 
-async function createChapBook(slug, title, poemObjectIds, maxLinesPerPage, chatConfigName) {
+function createChapBookBody(slug, title, poemObjectIds, maxLinesPerPage, chatConfigName) {
     let body = { slug: slug, title: title, poemObjectIds: poemObjectIds, maxLinesPerPage: maxLinesPerPage || 8 };
     // Issue 2b: include the chosen chat config NAME (a chatConfig record name) so the backend contacts
     // the user's selected LLM config for theme analysis. Omitted → backend applies its deterministic
     // default (contentAnalysis → generalChat → library → user config).
     if (chatConfigName) body.chatConfig = chatConfigName;
+    return body;
+}
+
+async function createChapBook(slug, title, poemObjectIds, maxLinesPerPage, chatConfigName) {
     let resp = await fetch(cbBase() + '/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(body)
+        body: JSON.stringify(createChapBookBody(slug, title, poemObjectIds, maxLinesPerPage, chatConfigName))
     });
     if (!resp.ok) throw new Error('Create ChapBook failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
+ * Start ChapBook creation as a background job and return its jobId.
+ *
+ * Creation makes one LLM landscape-prompt call per stanza chunk, so a multi-poem chapbook runs for
+ * many minutes inside what used to be a single POST — with no progress and no way to stop it. The
+ * job layer gives it both, and its result is retained server-side so a dropped connection (proxy
+ * timeout, reload, navigate-away) no longer discards the work.
+ */
+async function startCreateChapBook(slug, title, poemObjectIds, maxLinesPerPage, chatConfigName) {
+    let resp = await fetch(cbBase() + '/create?async=true', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(createChapBookBody(slug, title, poemObjectIds, maxLinesPerPage, chatConfigName))
+    });
+    if (resp.status !== 202) throw new Error('Create ChapBook failed: ' + resp.status);
     return resp.json();
 }
 
@@ -403,6 +426,10 @@ let createSlug = '';
 let createTitle = '';
 let createMaxLines = 8;
 let creating = false;
+// Async creation job state. See startCreateChapBook for why creation moved off a single request.
+let createJobId = null;
+let createProgress = null;    // { current, total } — scenes created, from the job's progress token
+let createCancelling = false;
 // Issue 2b: chat config chosen (or auto-resolved) BEFORE the create request is sent, so the LLM the
 // backend contacts for theme/landscape work is the user's choice rather than a deterministic default.
 // { name, objectId } once chosen/resolved; null until the auto-default resolves or the user picks.
@@ -614,6 +641,12 @@ function openCreateDialog() {
     _createChatConfigResolving = false;
     ensureCreateChatConfigDefault();
     showCreateDialog = true;
+    // Reattach to a creation already running for this slug rather than offering to start a second
+    // one. That matters more here than in the picture-book wizard: two runs on the SAME slug is
+    // precisely what leaves residual scenes colliding on the unique (name, groupId,
+    // organizationId) index, which surfaces as the "BLANK book" 500. Not awaited — it resolves
+    // only when the run finishes, and the dialog has to open now.
+    if (createSlug) reattachCreateChapBook(createSlug);
     m.redraw();
 }
 
@@ -1166,12 +1199,40 @@ async function doCreateChapBook() {
         page.toast('warn', 'Select at least one poem');
         return;
     }
+    // Re-check for an in-flight run against the slug AS TYPED. openCreateDialog checks the
+    // pre-filled slug, but the user can edit it before pressing Create — so the dialog-open check
+    // alone can miss a collision, and a same-slug collision is what produces the "BLANK book"
+    // failure (residual scenes trip the unique (name, groupId, organizationId) index).
+    if (await reattachCreateChapBook(createSlug)) {
+        return;
+    }
+
     creating = true;
+    createProgress = null;
+    createCancelling = false;
     m.redraw();
+    // Hold the shared background-activity indicator for the run. ChapBook never rendered it before
+    // (see renderChapBookBgActivity), so its server-side chirps had nowhere to appear.
+    let bgToken = LLMConnector.lockBgActivity();
     try {
-        let result = await createChapBook(createSlug, createTitle, ids, createMaxLines, createChatConfigRef && createChatConfigRef.name);
+        let started = await startCreateChapBook(createSlug, createTitle, ids, createMaxLines,
+            createChatConfigRef && createChatConfigRef.name);
+        createJobId = started.jobId;
+        m.redraw();
+        let job = await pollJob(createJobId, { onProgress: onCreateChapBookProgress });
+        if (job.status === 'failed') throw new Error(job.error || 'ChapBook creation failed');
+        let result = job.result || {};
+        // Scenes are persisted as they are created, so a cancelled creation leaves a real book
+        // with fewer scenes — worth keeping and navigating to, not discarding. Report it as a
+        // cancel and SUPPRESS the success toast below, rather than firing both.
+        let wasCancelled = job.status === 'cancelled';
         lastCreatedBook = result;
-        page.toast('success', 'ChapBook created: ' + (result.slug || createSlug));
+        if (wasCancelled) {
+            page.toast('warn', 'ChapBook creation was cancelled — the book was kept with the '
+                + 'scenes created so far.');
+        } else {
+            page.toast('success', 'ChapBook created: ' + (result.slug || createSlug));
+        }
         // Carry the source poem objectIds forward: analyze is per-poem and the book does not
         // retain poem references, so the reader's Analyze button needs the ids from this step.
         readerPoemIds = ids.slice();
@@ -1186,9 +1247,110 @@ async function doCreateChapBook() {
         }
     } catch (e) {
         page.toast('error', 'Failed to create: ' + (e.message || ''));
+    } finally {
+        LLMConnector.unlockBgActivity(bgToken);
+        LLMConnector.setBgActivity(null, null);
+        creating = false;
+        createCancelling = false;
+        createJobId = null;
+        createProgress = null;
+        m.redraw();
     }
-    creating = false;
+}
+
+/**
+ * Refresh progress and the activity indicator on every poll tick.
+ *
+ * The refresh is load-bearing, not cosmetic: LLMConnector.setBgActivity arms a 90s self-clearing
+ * timer and restarts it on each call, and a single scene's LLM call can take longer than that — so
+ * an indicator set once would vanish mid-run on a healthy job.
+ */
+function onCreateChapBookProgress(job) {
+    createProgress = { current: job.current || 0, total: job.total || 0 };
+    let label = createProgress.total > 0
+        ? 'Creating ChapBook scenes ' + createProgress.current + '/' + createProgress.total
+        : 'Creating ChapBook...';
+    if (createCancelling) label = 'Cancelling ChapBook creation...';
+    LLMConnector.setBgActivity('auto_stories', label);
     m.redraw();
+}
+
+/** Stop a running creation. Scenes already created are persisted and kept. */
+async function cancelCreateChapBook() {
+    if (!createJobId || createCancelling) return;
+    createCancelling = true;
+    m.redraw();
+    try {
+        await cancelJob(createJobId);
+    } catch (e) {
+        console.error('[chapBook] cancel failed:', e);
+        createCancelling = false;
+        m.redraw();
+    }
+}
+
+/**
+ * The shared background-activity strip.
+ *
+ * ChapBook rendered nothing for LLMConnector.bgActivity, so every progress chirp the server already
+ * sent for its operations was dropped on the floor. Same markup as the picture-book wizard's own
+ * strip so the two features read identically.
+ */
+function renderChapBookBgActivity() {
+    let bg = LLMConnector.bgActivity;
+    if (!bg || !bg.label) return null;
+    return m('div', { class: 'flex items-center gap-2 px-4 py-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded mb-2' }, [
+        m('span', { class: 'material-symbols-outlined text-base animate-spin' }, bg.icon || 'progress_activity'),
+        m('span', { class: 'flex-1' }, bg.label),
+        createJobId ? m('button', {
+            class: 'px-2 py-0.5 rounded border border-blue-300 dark:border-blue-700 text-xs',
+            disabled: createCancelling,
+            onclick: function () { cancelCreateChapBook(); }
+        }, createCancelling ? 'Cancelling...' : 'Cancel') : null
+    ]);
+}
+
+/**
+ * Reattach to a ChapBook creation already running for this slug.
+ *
+ * Without this, reopening the create dialog after a reload offers to start a second run against the
+ * same slug — and a same-slug collision is exactly what produces the "BLANK book" failure, because
+ * residual scenes trip the unique (name, groupId, organizationId) index.
+ *
+ * @returns {Promise<boolean>} true when a run was found and is now being polled
+ */
+async function reattachCreateChapBook(slug) {
+    if (creating || !slug) return false;
+    try {
+        let jobs = await listJobs();
+        let mine = jobs.find(function (j) {
+            return j.kind === 'cb.create' && j.key === slug && !j.terminal;
+        });
+        if (!mine) return false;
+        creating = true;
+        createJobId = mine.jobId;
+        onCreateChapBookProgress(mine);
+        let bgToken = LLMConnector.lockBgActivity();
+        try {
+            let job = await pollJob(createJobId, { onProgress: onCreateChapBookProgress });
+            if (job.status === 'completed' && job.result) lastCreatedBook = job.result;
+        } finally {
+            LLMConnector.unlockBgActivity(bgToken);
+            LLMConnector.setBgActivity(null, null);
+            creating = false;
+            createCancelling = false;
+            createJobId = null;
+            createProgress = null;
+            m.redraw();
+        }
+        return true;
+    } catch (e) {
+        console.error('[chapBook] reattach failed:', e);
+        creating = false;
+        createJobId = null;
+        m.redraw();
+        return false;
+    }
 }
 
 // ── My ChapBooks API helpers ──────────────────────────────────────────
@@ -1609,16 +1771,35 @@ function renderCreateDialog() {
                 m('div', { class: 'text-xs text-gray-500 dark:text-gray-400' },
                     selectedIds.size + ' poem(s) selected')
             ]),
+            creating ? renderChapBookBgActivity() : null,
+            creating && createProgress && createProgress.total > 0
+                ? m('div', { class: 'h-1.5 w-full bg-purple-100 dark:bg-purple-900/40 rounded overflow-hidden mb-2' }, [
+                    m('div', {
+                        class: 'h-full bg-purple-600 transition-all',
+                        style: { width: Math.round((createProgress.current / createProgress.total) * 100) + '%' }
+                    })
+                ]) : null,
             m('div', { class: 'flex justify-end gap-2 mt-4' }, [
+                // While a run is in flight this must STOP it, not just close the dialog — closing
+                // abandoned the request with the server still working and `creating` stuck true.
+                creating && createJobId ? m('button', {
+                    class: 'px-3 py-1.5 rounded border border-red-300 dark:border-red-700 text-sm text-red-600 dark:text-red-400 disabled:opacity-50',
+                    disabled: createCancelling,
+                    onclick: cancelCreateChapBook
+                }, createCancelling ? 'Cancelling...' : 'Stop creation') : null,
                 m('button', {
                     class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
                     onclick: closeCreateDialog
-                }, 'Cancel'),
+                }, creating ? 'Close' : 'Cancel'),
                 m('button', {
                     class: 'px-4 py-1.5 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-50',
                     disabled: creating || !createSlug || !createTitle,
                     onclick: doCreateChapBook
-                }, creating ? 'Creating...' : 'Create')
+                }, creating
+                    ? (createProgress && createProgress.total > 0
+                        ? 'Creating ' + createProgress.current + '/' + createProgress.total + '...'
+                        : 'Creating...')
+                    : 'Create')
             ])
         ])
     );
@@ -3669,5 +3850,5 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, effectiveChatConfigName };
+export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, startCreateChapBook, createChapBookBody, renderChapBookBgActivity, reattachCreateChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, effectiveChatConfigName };
 export default ChapBookFeature;

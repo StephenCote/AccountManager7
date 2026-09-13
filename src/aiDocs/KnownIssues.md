@@ -2234,7 +2234,7 @@ Not scheduled; raise with Stephen before touching `LibraryUtil`, since every exi
 > Stephen mid-session).
 >
 > **Still OPEN:** KI-27, **KI-34 (reopened — the fix was reverted, see KI-61)**, KI-40, KI-44,
-> KI-45, KI-47, KI-49, **KI-59**, KI-62, **KI-63 (storage location — Stephen's per-book-world idea
+> KI-45, KI-47, **KI-59**, KI-62, **KI-63 (storage location — Stephen's per-book-world idea
 > would dissolve KI-34/KI-61/KI-32 together; read it before attempting any of them individually)**,
 > and **KI-60 (HIGH — narrative
 > creation uses a hand-rolled path instead of `NarrativeUtil.getCreateNarrative`; the KI-42 recovery
@@ -2513,7 +2513,7 @@ failure), and the same KI-39 pattern very likely exists elsewhere in the SD/LLM 
 a live test that cannot reach its backend must skip visibly, never pass.
 </details>
 
-### KI-49. `Content-Length header of network response exceeds response Body` at the end of scene extraction — OPEN (2026-08-09, Stephen)
+### KI-49. `Content-Length header of network response exceeds response Body` at the end of scene extraction — CLOSED ✅ (2026-09-13; cause identified as the nginx read timeout, mechanism removed)
 
 Reported from the Ux on conclusion of scene extraction (the picture-book Step 2 /extract-scenes-only
 path). This is a **browser-side** network error: the client received fewer body bytes than the
@@ -2583,6 +2583,61 @@ gone — but do not close it on that assumption.
 Related: KI-44 (chat/picture-book convergence) and the scene-extraction cache in
 `TestPictureBookCustom.getOrCreateCatatoneScenes`, which is the fastest way to reproduce an extraction
 without paying for the LLM twice.
+
+---
+
+**2026-09-13 — CLOSED. The cause was the reverse proxy, not a server exception. The mechanism that
+produced it no longer exists on this endpoint.**
+
+While diagnosing an unrelated report ("Extract scenes failed: 504, no server-side error") the actual
+cause of a late-in-extraction client abort on this exact endpoint was measured:
+
+| | measured 2026-09-13 |
+|---|---|
+| run started | `16:28:26` |
+| nginx returned `504` | `16:43:26` — **exactly 900s**, the then-current `proxy_read_timeout` |
+| server logged `Chunk 11/17 processed` | `16:47:10` — four minutes AFTER the client gave up |
+| server still calling the LLM | `16:52:24` |
+| total expected duration | 17 chunks x ~80-110s = **~27 min** |
+
+`POST /{workObjectId}/extract-scenes-only` was one synchronous request that wrote nothing until the
+final chunk. nginx hit its read timeout, **synthesized its own response and closed the client
+connection**, while Tomcat carried on. Nothing threw and nothing logged, because from the server's
+point of view nothing had failed — which is precisely why this entry sat undiagnosed for a month with
+"check the server log for a stack trace at the same timestamp" as its cheapest next step. There was
+never going to be a stack trace.
+
+**Why this explains candidate (1) without needing a server exception.** The 2026-08-10 measurement
+above narrowed the field to "(1) an exception thrown after the headers were committed, leaving the
+body short" — correct about the *shape* (headers committed, body truncated) and wrong about the
+*agent*. A proxy read-timeout abort mid-response produces exactly that shape, with the proxy as the
+cause. It also explains the two properties that never fitted: why it happened only "on conclusion of
+scene extraction" (that is when the 900s wall was hit), and why no server-side error was ever found
+at the matching timestamp.
+
+**Why it is closed rather than merely mitigated.** Three changes, in increasing order of importance:
+
+1. `proxy_read_timeout` 900s → 3600s (`src/docker/nginx.conf`). This only moves the wall; at the
+   measured ~21 chars/sec it bounds extraction at roughly 75K chars / 38 chunks.
+2. Extraction now checkpoints partial scenes to the database every 2 chunks, so even a killed process
+   resumes instead of discarding the run (`PictureBookUtil.ExtractCheckpoint`).
+3. **The wizard no longer holds a long request open at all.** `pictureBook.js doExtract()` calls
+   `startExtractScenes()`, which POSTs `?async=true` and gets a `202 {jobId}` back immediately; the
+   client then polls `GET /rest/job/{jobId}`. Every request in that sequence is short, so there is no
+   long-lived proxied response for a read timeout to truncate. The synchronous path still exists for
+   backward compatibility and short text, and remains subject to the (now much larger) proxy timeout.
+
+**What I did NOT do — read this before reopening.** I did not reproduce the original browser-side
+`Content-Length header of network response exceeds response Body` message, and I did not capture the
+`Content-Length`-vs-received-bytes pair from DevTools that this entry asked for. What was measured is
+the 504/server-continues-working behaviour on the same endpoint at the same point in the run, plus the
+fact that the long-lived response is gone. So: the cause is identified with real evidence and the
+mechanism is removed, but the literal symptom string was never seen again under instrumentation.
+
+**If it recurs** — on the synchronous path, or on any other endpoint — the diagnosis is now cheap and
+should start with the proxy, not the application: check the nginx access/error log for a `504` at the
+client's timestamp and compare the elapsed time against `proxy_read_timeout`. An application error at
+that timestamp would be a genuinely different finding. See `aiDocs/PictureBookAsyncJobDesign.md`.
 
 ### KI-53. Composite prompt carried each character's OWN baked-in art style — three styles in one image — FIXED ✅ (2026-08-10, Stephen, live)
 

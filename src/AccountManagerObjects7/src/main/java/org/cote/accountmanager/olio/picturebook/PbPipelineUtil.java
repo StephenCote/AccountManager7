@@ -616,18 +616,34 @@ public class PbPipelineUtil {
 	}
 
 	/**
-	 * Close the run out. Synchronous by design - there is no cancel endpoint and
-	 * {@code PbRunStatusEnumType} deliberately has no {@code CANCELLED} value, because a value nothing
-	 * can set is a false affordance.
+	 * Close the run out as COMPLETED or FAILED.
+	 *
+	 * <p>Use {@link #closeRun(SceneGraph, PbRunStatusEnumType, String)} to record a cancel: a
+	 * user's own cancellation is neither of these two outcomes, and this boolean cannot express it.
 	 */
 	public static void closeRun(SceneGraph g, boolean ok, String error) {
+		closeRun(g, ok ? PbRunStatusEnumType.COMPLETED : PbRunStatusEnumType.FAILED, error);
+	}
+
+	/**
+	 * Close the run out with an explicit terminal status.
+	 *
+	 * <p>Exists so {@code CANCELLED} is actually recordable now that the ChapBook bulk operations
+	 * run on the async job layer and can genuinely be stopped mid-flight. The older comment here
+	 * asserted runs were synchronous with no cancel endpoint; that is no longer true.
+	 *
+	 * <p>Still best-effort: a failure to write the run row is logged, not thrown. That is a
+	 * deliberate carry-over — the graph row is bookkeeping alongside the authoritative PB1 records,
+	 * and losing the status stamp must not fail an operation whose real output already persisted.
+	 * It does mean a run row can be left RUNNING if the write fails, so the row is not a reliable
+	 * liveness signal; {@code GET /rest/job} is.
+	 */
+	public static void closeRun(SceneGraph g, PbRunStatusEnumType status, String error) {
 		if(g == null || g.run == null) {
 			return;
 		}
 		try {
-			PbGraphUtil.completeRun(g.user, g.run,
-				(ok ? PbRunStatusEnumType.COMPLETED : PbRunStatusEnumType.FAILED),
-				g.executed, g.failed, error);
+			PbGraphUtil.completeRun(g.user, g.run, status, g.executed, g.failed, error);
 		}
 		catch(Exception e) {
 			logger.warn("Failed to close run " + g.run.get(FieldNames.FIELD_NAME) + ": " + e.getMessage(), e);
