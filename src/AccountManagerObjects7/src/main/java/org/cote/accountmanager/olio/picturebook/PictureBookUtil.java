@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio.picturebook;
 
+import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -1958,34 +1959,219 @@ public class PictureBookUtil {
     }
 
     /** @see #parseLlmJsonArray(String, String, List) — same context/failedExtractions contract. */
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> parseLlmJsonObject(String response, String context, List<String> failedExtractions) {
-        if (response == null || response.isEmpty()) return new LinkedHashMap<>();
-        String trimmed = stripThink(response.trim());
-        if (trimmed.startsWith("```")) {
-            int nl = trimmed.indexOf('\n');
-            if (nl >= 0) trimmed = trimmed.substring(nl + 1);
-            if (trimmed.endsWith("```")) trimmed = trimmed.substring(0, trimmed.lastIndexOf("```")).trim();
+        return parseLlmJsonObject(response, context, failedExtractions, null);
+    }
+
+    /**
+     * Parse a JSON object out of an LLM response, salvaging the common ways a model mangles it.
+     * <p>
+     * <b>okOut distinguishes "parsed to nothing" from "could not parse".</b> This method returns an
+     * empty map for BOTH (callers rely on never getting null back), which conflated a legitimate
+     * {@code {}} — "this chunk contained no new scenes", a correct and common answer — with a parse
+     * failure. In the chunk loop that meant burning a second ~90s LLM round and recording a bogus
+     * failure for a response that was actually fine. When {@code okOut} is supplied, {@code okOut[0]}
+     * is set true if the text genuinely parsed (even to an empty object) and false only on real
+     * failure, so a retry is spent only when a retry could help.
+     *
+     * @param okOut optional single-element array receiving whether parsing succeeded
+     */
+    /// Package-private (not private) so the salvage logic can be unit tested directly from a
+    /// same-package test, matching the BookContextTestAccess convention. Nothing production-side
+    /// outside this package can reach it.
+    static Map<String, Object> parseLlmJsonObject(String response, String context,
+            List<String> failedExtractions, boolean[] okOut) {
+        if (okOut != null && okOut.length > 0) okOut[0] = false;
+        if (response == null || response.isEmpty()) {
+            recordFailedExtraction(failedExtractions, context, "LLM returned no content", response);
+            return new LinkedHashMap<>();
         }
-        int start = trimmed.indexOf('{');
-        int end = trimmed.lastIndexOf('}');
-        if (start < 0 || end < 0 || end <= start) {
+        String trimmed = stripCodeFences(stripThink(response.trim()));
+        String[] err = new String[1];
+        /// Try each '{' in turn rather than committing to the first one. A conversational preamble
+        /// can itself contain braces ("I will return a {json} object now:"), and the first brace is
+        /// then a decoy that parses to nothing useful; the real payload is further along.
+        int searchFrom = 0;
+        int candidates = 0;
+        boolean sawBrace = false;
+        while (candidates < MAX_JSON_OBJECT_CANDIDATES) {
+            int start = trimmed.indexOf('{', searchFrom);
+            if (start < 0) break;
+            sawBrace = true;
+            candidates++;
+            searchFrom = start + 1;
+
+            /// Prefer the BALANCED close brace over lastIndexOf('}'). On a truncated response the
+            /// last '}' in the text belongs to some inner object, so slicing to it yields a
+            /// structurally unbalanced fragment no parser can read — which is what made a
+            /// token-limit truncation look like an unparseable model.
+            int end = findBalancedEnd(trimmed, start);
+            String candidate;
+            boolean repaired = false;
+            if (end >= 0) {
+                candidate = trimmed.substring(start, end + 1);
+            } else {
+                candidate = repairTruncatedJson(trimmed.substring(start));
+                repaired = true;
+            }
+
+            Map<String, Object> parsed = JSONUtil.getLenientMap(candidate.getBytes(StandardCharsets.UTF_8),
+                String.class, Object.class, err);
+            if (parsed == null && !repaired) {
+                /// Structurally balanced but still unreadable (an unterminated string inside an
+                /// otherwise-closed object, say) — try the repair pass before giving up.
+                String second = repairTruncatedJson(candidate);
+                if (!second.equals(candidate)) {
+                    parsed = JSONUtil.getLenientMap(second.getBytes(StandardCharsets.UTF_8),
+                        String.class, Object.class, err);
+                    repaired = parsed != null;
+                }
+            }
+            if (parsed != null) {
+                if (repaired) {
+                    logger.warn("Recovered " + (context != null ? context : "LLM JSON")
+                        + " by repairing a truncated/malformed response (" + parsed.size() + " top-level keys)");
+                }
+                if (okOut != null && okOut.length > 0) okOut[0] = true;
+                return parsed;
+            }
+        }
+        if (!sawBrace) {
             recordFailedExtraction(failedExtractions, context, "No JSON object ({...}) found in LLM response", response);
             return new LinkedHashMap<>();
         }
-        trimmed = trimmed.substring(start, end + 1);
-        try {
-            // JSONUtil.getMap swallows its own IOException and returns null rather than throwing —
-            // must explicitly null-check here, or a malformed response silently returns null instead
-            // of an empty map, and every caller's `.isEmpty()` NPEs instead of degrading gracefully.
-            Map<String, Object> parsed = JSONUtil.getMap(trimmed.getBytes(), String.class, Object.class);
-            if (parsed != null) return parsed;
-            recordFailedExtraction(failedExtractions, context, "JSON object parse returned null", response);
-        } catch (Exception e) {
-            logger.warn("Failed to parse LLM JSON object: " + e.getMessage());
-            recordFailedExtraction(failedExtractions, context, e.getMessage(), response);
-        }
+        /// Report the parser's OWN message. The previous code stored "JSON object parse returned
+        /// null" because JSONUtil.getMap swallowed the IOException, which told an investigator
+        /// nothing about what was actually wrong with the response.
+        recordFailedExtraction(failedExtractions, context,
+            err[0] != null ? err[0] : "JSON object could not be parsed", response);
         return new LinkedHashMap<>();
+    }
+
+    /// Bound on how many '{' positions the salvage will try before giving up, so a long prose
+    /// reply full of braces cannot turn one failed chunk into an unbounded number of parse attempts.
+    private static final int MAX_JSON_OBJECT_CANDIDATES = 5;
+
+    /**
+     * Remove markdown code fences anywhere in the text, not only at the very start.
+     * <p>
+     * The old check was {@code trimmed.startsWith("```")}, so a reply opening with a preamble
+     * ("Here is the JSON:") kept its fences and the brace slice had to rescue it — which fails
+     * outright when the preamble itself contains a brace. JSON never legitimately contains a triple
+     * backtick, so stripping every fence marker (plus an immediately following language tag such as
+     * {@code json}) is safe.
+     */
+    static String stripCodeFences(String s) {
+        if (s == null || s.indexOf("```") < 0) return s;
+        return s.replaceAll("```[ \t]*[A-Za-z0-9_+-]*[ \t]*\r?\n?", "").replace("```", "").trim();
+    }
+
+    /**
+     * Index of the brace closing the object that opens at {@code start}, or -1 when the text ends
+     * first (i.e. the response was truncated). String contents and backslash escapes are honoured
+     * so a brace inside a quoted value does not shift the depth count.
+     */
+    static int findBalancedEnd(String s, int start) {
+        int depth = 0;
+        boolean inStr = false;
+        boolean esc = false;
+        for (int i = start; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inStr) {
+                if (esc) { esc = false; }
+                else if (c == '\\') { esc = true; }
+                else if (c == '"') { inStr = false; }
+                continue;
+            }
+            if (c == '"') { inStr = true; }
+            else if (c == '{' || c == '[') { depth++; }
+            else if (c == '}' || c == ']') {
+                depth--;
+                if (depth == 0) return i;
+                if (depth < 0) return -1;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Close the dangling structures of a truncated JSON object so it can be parsed.
+     * <p>
+     * Generation stopping at the context/token ceiling is the likeliest cause of an "unparseable"
+     * extraction chunk, and it gets likelier as a run proceeds: the chunk prompt carries every
+     * previously identified scene forward, so the reply budget shrinks chunk by chunk. (Observed
+     * live: the failure landed on chunk 10 of 17, not chunk 1.) Recovering the scenes the model DID
+     * emit is worth far more than discarding a ~90s generation.
+     * <p>
+     * Terminates an unterminated string, drops a trailing partial token or separator, then closes
+     * the open brackets in the order the tracking stack recorded them.
+     */
+    static String repairTruncatedJson(String s) {
+        if (s == null || s.isEmpty()) return s;
+        StringBuilder stack = new StringBuilder();
+        boolean inStr = false;
+        boolean esc = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inStr) {
+                if (esc) { esc = false; }
+                else if (c == '\\') { esc = true; }
+                else if (c == '"') { inStr = false; }
+                continue;
+            }
+            if (c == '"') { inStr = true; }
+            else if (c == '{') { stack.append('}'); }
+            else if (c == '[') { stack.append(']'); }
+            else if (c == '}' || c == ']') {
+                if (stack.length() > 0) stack.setLength(stack.length() - 1);
+            }
+        }
+        StringBuilder out = new StringBuilder(s);
+        /// An unterminated string: close the quote. A dangling escape would escape that very quote,
+        /// so drop the lone backslash first.
+        if (inStr) {
+            if (esc) out.setLength(out.length() - 1);
+            out.append('"');
+        }
+        /// Trim a trailing separator or partial token so the close brackets attach to valid JSON.
+        /// ALLOW_TRAILING_COMMA covers the comma case, but a dangling ":" does not parse.
+        int cut = out.length();
+        while (cut > 0) {
+            char c = out.charAt(cut - 1);
+            if (c == ',' || c == ':' || Character.isWhitespace(c)) { cut--; }
+            else { break; }
+        }
+        out.setLength(cut);
+        /// A key whose value never arrived ({@code "revisions":}) leaves an orphan key once that
+        /// colon is trimmed, and {@code {"a":[],"b"}} is invalid under every leniency flag
+        /// (ALLOW_MISSING_VALUES covers array holes, not object members). Drop the orphan back to
+        /// the preceding comma, or to the opening brace when it is the only member.
+        if (out.length() > 0 && out.charAt(out.length() - 1) == '"') {
+            int q = findStringStart(out, out.length() - 1);
+            if (q > 0) {
+                int j = q - 1;
+                while (j >= 0 && Character.isWhitespace(out.charAt(j))) { j--; }
+                /// Only a member-position string is an orphan key. One preceded by ':' is a
+                /// completed VALUE ({@code {"a":"x"}) and must be kept.
+                if (j >= 0 && out.charAt(j) == ',') { out.setLength(j); }
+                else if (j >= 0 && out.charAt(j) == '{') { out.setLength(j + 1); }
+            }
+        }
+        out.append(stack.reverse());
+        return out.toString();
+    }
+
+    /// Index of the opening quote of the string whose closing quote is at {@code closeQuote},
+    /// honouring backslash escapes, or -1 if it cannot be located.
+    private static int findStringStart(CharSequence s, int closeQuote) {
+        for (int i = closeQuote - 1; i >= 0; i--) {
+            if (s.charAt(i) != '"') { continue; }
+            int back = i - 1;
+            int slashes = 0;
+            while (back >= 0 && s.charAt(back) == '\\') { slashes++; back--; }
+            if (slashes % 2 == 0) { return i; }
+        }
+        return -1;
     }
 
     /**
@@ -2049,6 +2235,14 @@ public class PictureBookUtil {
         return callLlmInternal(user, chatConfig, promptName, vars, new boolean[1]);
     }
 
+    /// Loop-friendly variant: reuses a ResolvedPrompt obtained once via {@link #resolvePrompt}
+    /// instead of re-resolving the template on every call. See ResolvedPrompt's javadoc for why
+    /// that matters in the chunk loop.
+    private static String callLlmResolved(BaseRecord user, BaseRecord chatConfig, String promptName,
+            Map<String, String> vars, ResolvedPrompt resolved) {
+        return callLlmInternal(user, chatConfig, promptName, vars, new boolean[1], resolved);
+    }
+
     /// 5-arg variant that reports HARD failure separately from the String return value.
     ///
     /// Motivation (ChapBook "issue #3"): the 4-arg method collapses SIX distinct outcomes into a
@@ -2067,6 +2261,52 @@ public class PictureBookUtil {
     /// It is left FALSE for the SOFT outcomes (conversational refusal; blank/think-only stripped-empty
     /// content) and on success. It is caller-initialized; this method only ever sets it to true.
     private static String callLlmInternal(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars, boolean[] hardFailureOut) {
+        return callLlmInternal(user, chatConfig, promptName, vars, hardFailureOut,
+            resolvePrompt(user, chatConfig, promptName));
+    }
+
+    /**
+     * A resolved + composed prompt template pair, ready for variable substitution.
+     * <p>
+     * Resolution is stable for the life of a run: it depends only on the prompt name, the calling
+     * user and the chat config, none of which change mid-loop. Callers that make MANY LLM calls
+     * with the same prompt name should therefore {@link #resolvePrompt} once and pass the result
+     * into {@link #callLlmInternal(BaseRecord, BaseRecord, String, Map, boolean[], ResolvedPrompt)}
+     * rather than re-resolving per call.
+     */
+    static final class ResolvedPrompt {
+        final String system;
+        final String userTpl;
+        ResolvedPrompt(String system, String userTpl) {
+            this.system = system;
+            this.userTpl = userTpl;
+        }
+        boolean isUsable() {
+            return system != null && userTpl != null;
+        }
+    }
+
+    /**
+     * Resolve and compose the prompt template pair for {@code promptName}.
+     * <p>
+     * The lookup chain inside {@link ChatUtil#resolveConfig} is deliberate and must not be
+     * shortened: it checks the calling user's own group FIRST and the shared system library
+     * SECOND, so a user can override a shared prompt with their own copy, and it carries
+     * backwards compatibility for the older {@code PromptConfig} model that {@code PromptTemplate}
+     * replaced. A user who has not overridden the prompt simply has no own copy, so the first
+     * query legitimately returns zero rows — which {@code AccessPoint.find} closes as
+     * {@code AUDIT INVALID ... No results} and {@code AuditUtil.print} logs at WARN because it is
+     * not a PERMIT. That WARN is an expected miss, NOT an authorization failure (a real one logs
+     * {@code "One or more query fields were not or could not be authorized"} and prints
+     * {@code [unknown resource]} instead).
+     * <p>
+     * What WAS wrong is that this ran once per LLM call. A 17-chunk extraction re-resolved and
+     * re-composed the same template 17 times — 34 template queries and 17 of those expected-miss
+     * WARNs — for a value that cannot change during the run. Hoisting it to once per run is why
+     * this method exists; {@code extractScenesOnly} already resolves its chat config exactly once
+     * in the same way.
+     */
+    static ResolvedPrompt resolvePrompt(BaseRecord user, BaseRecord chatConfig, String promptName) {
         String system = null;
         String userTpl = null;
 
@@ -2116,11 +2356,23 @@ public class PictureBookUtil {
                 userTpl = PromptResourceUtil.getString(promptName, "user");
             }
         }
-        if (system == null || userTpl == null) {
+        return new ResolvedPrompt(system, userTpl);
+    }
+
+    /// Variant taking an already-resolved template pair, so a caller making many LLM calls with the
+    /// same prompt name resolves and composes ONCE instead of per call. Everything from variable
+    /// substitution onward is per-call and stays here. Behaviour is otherwise identical to the
+    /// resolving overload, including which branches set hardFailureOut[0].
+    private static String callLlmInternal(BaseRecord user, BaseRecord chatConfig, String promptName,
+            Map<String, String> vars, boolean[] hardFailureOut, ResolvedPrompt resolved) {
+        if (resolved == null || !resolved.isUsable()) {
             logger.warn("Prompt template not found: " + promptName);
             hardFailureOut[0] = true; // HARD: misconfiguration — the LLM step cannot run at all.
             return null;
         }
+        String system = resolved.system;
+        /// Local copy: substitution rewrites this per call, and `resolved` is shared across calls.
+        String userTpl = resolved.userTpl;
         if (vars != null) {
             for (Map.Entry<String, String> e : vars.entrySet()) {
                 if (e.getValue() != null) {
@@ -2293,6 +2545,14 @@ public class PictureBookUtil {
             cancelToken.setCurrent(0);
         }
 
+        // Resolve + compose the chunk prompt ONCE for the whole run. It depends only on the prompt
+        // name, the user and the chat config, none of which change between chunks, so resolving it
+        // per chunk re-ran the user-group→system-library lookup chain (and PromptTemplateComposer)
+        // on every iteration: 34 template queries and 17 expected-miss WARNs for a 17-chunk
+        // document. extractScenesOnly already resolves its chat config exactly once this way.
+        // See ResolvedPrompt / resolvePrompt for why the lookup chain itself must stay intact.
+        ResolvedPrompt chunkPrompt = resolvePrompt(user, chatConfig, "pictureBook.extract-chunk");
+
         List<Map<String, Object>> sceneList = new ArrayList<>();
         for (int ci = 0; ci < chunks.size(); ci++) {
             // KI-10: checkpoint at the top of the chunk loop — a mid-run cancel (POST
@@ -2321,21 +2581,48 @@ public class PictureBookUtil {
             String chunkCtx = "extract-scenes-chunk:" + (ci + 1) + "/" + chunks.size();
             Map<String, Object> chunkResult = null;
             String llmResp = null;
+            boolean parseOk = false;
             for (int attempt = 1; attempt <= 2; attempt++) {
-                llmResp = callLlm(user, chatConfig, "pictureBook.extract-chunk", vars);
+                /// On the retry, TELL the model what went wrong. The previous version re-issued a
+                /// byte-identical request — same template, same vars, same options — so its only
+                /// mechanism was sampling luck, at ~90s a try. Truncation in particular will just
+                /// recur. A corrective instruction costs nothing and addresses the actual cause.
+                Map<String, String> attemptVars = vars;
+                if (attempt > 1) {
+                    attemptVars = new LinkedHashMap<>(vars);
+                    attemptVars.put("chunk", vars.get("chunk")
+                        + "\n\nIMPORTANT: your previous reply could not be parsed as JSON (it was"
+                        + " truncated or malformed). Reply with ONLY a single complete, valid JSON"
+                        + " object. Keep every field short so the whole object fits in one reply.");
+                }
+                llmResp = callLlmResolved(user, chatConfig, "pictureBook.extract-chunk", attemptVars, chunkPrompt);
                 // KI-10: count the chunk as processed once (first attempt) — progress reflects
                 // "chunks attempted", matching ChatUtil.mapSummarize's incrementCurrent() placement.
                 if (attempt == 1 && cancelToken != null) cancelToken.incrementCurrent();
                 if (llmResp == null || llmResp.isEmpty()) continue;
-                Map<String, Object> parsed = parseLlmJsonObject(llmResp, chunkCtx, null);
-                if (parsed != null && !parsed.isEmpty()) { chunkResult = parsed; break; }
+                boolean[] ok = new boolean[1];
+                Map<String, Object> parsed = parseLlmJsonObject(llmResp, chunkCtx, null, ok);
+                /// Break on PARSE SUCCESS, not on non-emptiness. A validly-parsed empty object means
+                /// "no new scenes in this chunk" — a correct answer — and retrying it wasted a full
+                /// generation and then recorded a bogus failure.
+                if (ok[0]) { chunkResult = parsed; parseOk = true; break; }
                 if (attempt < 2) logger.warn("Chunk " + chunkCtx + " returned unparseable JSON — retrying once");
             }
-            if (chunkResult == null || chunkResult.isEmpty()) {
+            if (!parseOk) {
                 // Record the final, unrecoverable failure (re-parse with the real sink so the raw text
                 // is captured for inspection), then skip this chunk.
-                if (llmResp != null && !llmResp.isEmpty()) parseLlmJsonObject(llmResp, chunkCtx, failedExtractions);
+                //
+                // The null/empty-response case is recorded too. Previously this was guarded by
+                // `llmResp != null && !llmResp.isEmpty()`, so a chunk where BOTH attempts returned
+                // nothing (a conversational refusal, a hard infra failure) produced no
+                // failedExtractions entry at all and vanished behind a single WARN.
+                parseLlmJsonObject(llmResp, chunkCtx, failedExtractions);
                 logger.warn("Chunk " + chunkCtx + " still unparseable after retry — skipping");
+                continue;
+            }
+            if (chunkResult == null || chunkResult.isEmpty()) {
+                /// Parsed cleanly to an empty object: nothing to merge, and NOT a failure.
+                logger.info("Chunk " + chunkCtx + " reported no new scenes");
                 continue;
             }
 

@@ -21,6 +21,8 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.thread.AsyncJob;
+import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 import org.cote.sockets.WebSocketService;
@@ -37,6 +39,8 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
@@ -200,6 +204,7 @@ public class PictureBookService {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public Response extractScenesOnly(@PathParam("workObjectId") String workObjectId,
+            @QueryParam("async") @DefaultValue("false") boolean async,
             String json, @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
@@ -223,6 +228,56 @@ public class PictureBookService {
             promptTemplateOverride = params.get("promptTemplate");
         }
 
+        // Async mode: hand the work to the background job executor and return 202 immediately, so
+        // completion no longer depends on this HTTP connection surviving the whole run. Measured
+        // 2026-09-13: a 17-chunk extraction ran ~27 minutes and nginx returned 504 at exactly 900s
+        // while Tomcat carried on to chunk 11/17 — every chunk of LLM work was discarded, and
+        // nothing server-side had failed so nothing was logged. The job retains its result for a
+        // TTL, so a client that was disconnected (proxy timeout, reload, navigate-away) can still
+        // collect it from GET /rest/job/{jobId}.
+        //
+        // Opt-in via an explicit `async` flag rather than auto-switching on text length: this
+        // endpoint ALREADY returns two different shapes depending on whether the text chunked
+        // (a bare array vs. { sceneList, ... }), which the client has to special-case, and making
+        // the shape depend on a second hidden condition is how that became confusing in the first
+        // place. The synchronous path below is unchanged, so existing callers and specs keep working.
+        // A query parameter, not a body field, on purpose. Adding `async` to the
+        // olio.pictureBookRequest model would have no runtime effect on an already-provisioned
+        // deployment: RecordFactory.getSchema reads the PERSISTED ModelSchema from
+        // a7_system_modelschema_0_1 first and only falls back to the resource when the DB has no
+        // row, so a model-JSON edit silently does nothing until the schema is explicitly updated
+        // or the database is fresh (see .claude/rules/objects7-reference.md). A query param needs
+        // no schema at all and is trivially exercisable with curl.
+        if (async) {
+            final int fCount = count;
+            final String fChatConfig = chatConfigName;
+            final String fPromptTemplate = promptTemplateOverride;
+            AsyncJob job = AsyncJobRegistry.submit(user, "pb.extractScenes", workObjectId, j -> {
+                // The job's OWN progress token is the cancel signal, so POST /rest/job/{id}/cancel
+                // reaches the chunk loop's existing checkpoint. Do not reuse the
+                // PictureBookCancelRegistry token here: that one is keyed on workObjectId and is
+                // the sync path's mechanism.
+                PictureBookUtil.ScenesOnlyResult r = PictureBookUtil.extractScenesOnly(
+                        user, workObjectId, fCount, fChatConfig, fPromptTemplate, j.getProgress());
+                BaseRecord out = PictureBookUtil.buildResult();
+                out.set("sceneList", r.scenes);
+                out.set("extractionComplete", !j.getProgress().isCancelled());
+                out.set("chunksProcessed", j.getProgress().getCurrent());
+                out.set("chunked", r.chunked);
+                if (r.failedExtractions != null && !r.failedExtractions.isEmpty()) {
+                    out.set("failedExtractions", r.failedExtractions);
+                }
+                return toJson(out);
+            });
+            if (job != null) {
+                return Response.status(202).entity("{\"jobId\":\"" + job.getJobId()
+                        + "\",\"status\":\"" + job.getStatus().name().toLowerCase() + "\"}").build();
+            }
+            // Could not register a job (no usable principal). Fall through and run synchronously
+            // rather than silently dropping the request.
+            logger.warn("Async extraction requested but the job could not be submitted — running synchronously");
+        }
+
         // KI-10: registered under (principal, workObjectId) — the same id the client already holds
         // to fire a concurrent POST /{workObjectId}/cancel while this call is still in-flight.
         SummarizeProgress cancelToken = PictureBookCancelRegistry.register(user, workObjectId);
@@ -234,8 +289,23 @@ public class PictureBookService {
                 try {
                     out.set("sceneList", result.scenes);
                     out.set("extractionComplete", true);
-                    out.set("chunksProcessed", -1);
+                    /// The real count, from the progress token the chunk loop already maintains
+                    /// (setTotal/incrementCurrent in extractChunkedInternal). This was hardcoded
+                    /// to -1, so a client had no way to tell a 17-chunk run from a 2-chunk one,
+                    /// nor a complete run from one that stopped early on cancel.
+                    out.set("chunksProcessed", cancelToken != null ? cancelToken.getCurrent() : -1);
                     out.set("chunked", true);
+                    /// Surface the per-chunk parse failures. extractChunked/extractScenesOnly both
+                    /// populate ScenesOnlyResult.failedExtractions, but this hand-built chunked
+                    /// response dropped it, so on the auto-chunk path a client was never told that
+                    /// some chunks failed to parse — a partial extraction looked identical to a
+                    /// complete one. The non-chunked branch has no equivalent problem because it
+                    /// returns the raw scene array.
+                    if (result.failedExtractions != null && !result.failedExtractions.isEmpty()) {
+                        out.set("failedExtractions", result.failedExtractions);
+                        logger.warn("Chunked extraction for " + workObjectId + " completed with "
+                            + result.failedExtractions.size() + " failed chunk extraction(s)");
+                    }
                 } catch (Exception e) { logger.warn("Failed to build chunked result: " + e.getMessage()); }
                 return Response.status(200).entity(toJson(out)).build();
             }

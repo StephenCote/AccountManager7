@@ -75,6 +75,46 @@ public class JSONUtil {
 		return map;
 		
 	}
+	/**
+	 * Lenient {@link #getMap(byte[], Class, Class)} for parsing text produced by an LLM.
+	 * <p>
+	 * The strict reader above enables only {@code ALLOW_UNQUOTED_FIELD_NAMES}, which is correct for
+	 * model/schema resources we author ourselves: malformed input there is a bug we want to fail on.
+	 * LLM output is a different contract — it is generated prose-adjacent text, and every one of the
+	 * following is a routine artifact rather than a defect worth discarding a ~90s generation over:
+	 * a trailing comma before a closing brace, single-quoted strings, a raw newline inside a long
+	 * string value (very common in multi-sentence fields), a {@code //} comment, and a missing value.
+	 * <p>
+	 * Kept as a SEPARATE method on purpose. Loosening {@link #getMap} itself would silently relax
+	 * validation for every model definition and schema resource in the project.
+	 *
+	 * @param data raw LLM output bytes, ideally after structural repair by the caller
+	 * @param errorOut optional single-element array; receives the parser's own message on failure,
+	 *        because callers otherwise only see a null return and cannot report WHY it failed
+	 * @return the parsed map, or null when the text could not be parsed even leniently
+	 */
+	public static <T> Map<String,T> getLenientMap(byte[] data, Class<?> keyClass, Class<?> mapClass, String[] errorOut){
+		ObjectMapper mapper = new ObjectMapper();
+		mapper.enable(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES.mappedFeature());
+		mapper.enable(JsonReadFeature.ALLOW_TRAILING_COMMA.mappedFeature());
+		mapper.enable(JsonReadFeature.ALLOW_SINGLE_QUOTES.mappedFeature());
+		mapper.enable(JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS.mappedFeature());
+		mapper.enable(JsonReadFeature.ALLOW_JAVA_COMMENTS.mappedFeature());
+		mapper.enable(JsonReadFeature.ALLOW_MISSING_VALUES.mappedFeature());
+		try {
+			TypeFactory t = TypeFactory.defaultInstance();
+			return mapper.readValue(data, t.constructMapType(Map.class, keyClass, mapClass));
+		} catch (IOException e) {
+			/// Deliberately NOT logged at error: the caller records the failure against the
+			/// extraction context it owns, and a retry frequently succeeds.
+			if (errorOut != null && errorOut.length > 0) {
+				errorOut[0] = e.getMessage();
+			}
+			logger.debug("Lenient JSON parse failed: " + e.getMessage());
+		}
+		return null;
+	}
+
 	public static <T> Map<String,T> getMap(String path, Class<?> keyClass,Class<?> mapClass){
 		return getMap(FileUtil.getFile(path),keyClass,mapClass);
 	}

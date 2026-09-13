@@ -156,7 +156,9 @@ public class ChapBookUtil {
 	 * <ul>
 	 *   <li>{@code text/*}, null, or empty content type — read directly as UTF-8 (backwards
 	 *       compatible with existing plain-text imports).</li>
-	 *   <li>Binary office formats (.doc/.docx/.rtf) — extract plain text via Apache Tika.</li>
+	 *   <li>Binary office formats (.doc/.docx/.rtf/.wpd) — extract plain text via Apache Tika
+	 *       (legacy .doc via POI HWPF). The declared content type is corrected from the container
+	 *       magic first, so a WordPerfect file misnamed ".DOC" still routes to the right parser.</li>
 	 *   <li>Any other binary type — {@link PictureBookException} with status 400 so the transport
 	 *       layer can return HTTP 400.</li>
 	 * </ul>
@@ -178,12 +180,30 @@ public class ChapBookUtil {
 			// a missing or plain-text content type. Trusting that label reads the OLE2/ZIP binary
 			// container as raw UTF-8 and yields binary garbage, so sniff the container magic and
 			// override the declared type before deciding how to extract.
+			//
+			// The declared type is ALSO overridden when it simply disagrees with the container
+			// magic — a missing/plain-text label is not the only way to arrive here wrong. Real
+			// WordPerfect files are routinely named ".DOC", so ContentTypeUtil.getTypeFromExtension
+			// reports application/msword, readDocument hands them to POI HWPF, and HWPF cannot read
+			// a non-OLE2 container, so extraction returns null and this method throws a 400.
+			// Measured over a 196-file corpus: 113 WordPerfect files, 81 of them named ".DOC";
+			// 5NIGHTS.DOC yielded null as application/msword and 10,861 characters once corrected.
+			// Magic bytes are evidence, a file extension is a guess — so the magic wins.
+			//
+			// Safe for the previously-working cases: a correctly-labelled .doc sniffs as OLE2 and a
+			// correctly-labelled .docx as ZIP, both agreeing with the declared type, and formats
+			// with no container magic here (PDF, RTF, plain text) sniff as null and keep their
+			// declared type. Note OLE2 magic is shared by .doc/.xls/.ppt, so a mislabelled
+			// spreadsheet resolves to application/msword and fails extraction rather than being
+			// rejected as an unsupported type — both outcomes are a 400, only the message differs.
 			String effectiveCt = ct;
-			if (effectiveCt == null || effectiveCt.isEmpty() || effectiveCt.startsWith("text/")) {
-				String sniffed = DocumentUtil.sniffOfficeContentType(bytes);
-				if (sniffed != null) {
-					effectiveCt = sniffed;
+			String sniffed = DocumentUtil.sniffOfficeContentType(bytes);
+			if (sniffed != null && !sniffed.equalsIgnoreCase(effectiveCt)) {
+				if (effectiveCt != null && !effectiveCt.isEmpty() && !effectiveCt.startsWith("text/")) {
+					logger.info("Container magic (" + sniffed + ") overrides declared content type ("
+						+ effectiveCt + ") for " + data.get(FieldNames.FIELD_NAME));
 				}
+				effectiveCt = sniffed;
 			}
 
 			if (effectiveCt == null || effectiveCt.isEmpty() || effectiveCt.startsWith("text/")) {
@@ -206,7 +226,7 @@ public class ChapBookUtil {
 		}
 		throw new PictureBookException(400,
 			"Unsupported content type '" + contentType + "' — only text and common document "
-			+ "formats (.doc, .docx, .rtf) are supported");
+			+ "formats (.doc, .docx, .rtf, .wpd) are supported");
 	}
 
 	/**

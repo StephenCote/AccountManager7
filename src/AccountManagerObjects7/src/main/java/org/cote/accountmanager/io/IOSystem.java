@@ -20,6 +20,7 @@ import org.cote.accountmanager.io.file.FileReader;
 import org.cote.accountmanager.io.file.FileStore;
 import org.cote.accountmanager.io.file.FileWriter;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
@@ -263,6 +264,12 @@ public class IOSystem {
 	public static void close(IOContext context) {
 		
 		open = false;
+		
+		/// Stop the background job executor FIRST: its work makes DB and LLM calls through this
+		/// context, so letting it keep running while the reader/search/policy layers below are
+		/// closed would leave it operating against a half-torn-down context. Not guarded by the
+		/// context null-check because the registry is process-static, not context-owned.
+		AsyncJobRegistry.shutdown();
 		
 		if(context != null) {
 			try {
