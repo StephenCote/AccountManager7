@@ -936,7 +936,148 @@ public class PictureBookUtil {
      * before the LLM flush) as well as Stage 1 (portrait rendering).
      */
     @SuppressWarnings("unchecked")
+    /**
+     * The book world's {@code Population} group for a PB1 scene group path, or null.
+     *
+     * <p><b>Why this exists.</b> Since the per-book-world change, {@code createCharPerson} routes a
+     * book's charPerson records into the WORLD's population group
+     * ({@code world.population.path}), not the legacy PB1 {@code <book>/Characters} group. The
+     * read side was never updated, so {@link #resolveSceneCharacter} kept looking in the PB1 group
+     * — which for a post-change book exists but is EMPTY. Measured 2026-09-14 on
+     * "The Big Way Out.pdf": PB1 {@code Characters} (group 619) held 0 charPersons while the book
+     * world's {@code Population} (group 580) held all 6, including Darby. Every scene then logged
+     * "Could not resolve scene character" (85 times), produced
+     * "Stage 1 complete: 0 portraits generated", and the composite ran with
+     * {@code refs=0} / {@code hasPromptImages=false} — character-free images.
+     *
+     * <p>Derivation is by slug, the same link PB2 uses elsewhere: the PB1 book group name is the
+     * segment above {@code /Scenes}, {@code PbPipelineUtil.deriveSlug} maps it to the world name,
+     * and the world container sits under {@code PbOlioContextUtil.bookWorldPath()}. Read as the
+     * ACTING user, not the olio principal — the world's role pair is granted on this group
+     * (verified: Population carries the book's Writer+Admin), so a user entitled to the book can
+     * read it, and one who is not still must not.
+     */
+    /**
+     * The book-world Population path a PB1 scene group maps to, or null when the scene path is not
+     * a PB1 book scenes group or its name yields no valid slug. Separated from the group lookup so
+     * the derivation — the fragile part — is testable without a database.
+     */
+    static List<String> bookPopulationPathCandidates(String sceneGroupPath, String explicitSlug) {
+        List<String> out = new ArrayList<>();
+        String worlds = PbOlioContextUtil.bookWorldPath();
+        if (explicitSlug != null && !explicitSlug.isBlank()) {
+            out.add(worlds + "/" + explicitSlug + "/Population");
+        }
+        if (sceneGroupPath != null) {
+            int idx = sceneGroupPath.lastIndexOf("/Scenes");
+            if (idx > 0) {
+                String bookGroupPath = sceneGroupPath.substring(0, idx);
+                int slash = bookGroupPath.lastIndexOf('/');
+                String bookGroupName = (slash >= 0) ? bookGroupPath.substring(slash + 1) : bookGroupPath;
+
+                /// Server rule. Keeps '.', so "The Big Way Out.pdf" -> "the-big-way-out.pdf".
+                String serverSlug = PbPipelineUtil.deriveSlug(bookGroupName);
+                if (serverSlug != null) {
+                    String c = worlds + "/" + serverSlug + "/Population";
+                    if (!out.contains(c)) out.add(c);
+                }
+
+                /// CLIENT rule, and it DISAGREES with the server's. pictureBook.js generateSlug is
+                /// `[^a-z0-9]+ -> '-'`, which strips '.', while PbPipelineUtil.deriveSlug is
+                /// `[^a-z0-9._-]+ -> '-'`, which keeps it. The client's slug is the one that
+                /// actually created the world, so for any book named "<something>.pdf" the server
+                /// derivation misses by exactly one character: the live world for
+                /// "The Big Way Out.pdf" is "the-big-way-out-pdf", not "the-big-way-out.pdf".
+                /// Both spellings are tried rather than picking one, because a book created by
+                /// either route must resolve. See the note in PictureBookAsyncJobDesign /
+                /// KnownIssues — the two generators should be converged, which is a separate change.
+                String clientSlug = bookGroupName.toLowerCase().replaceAll("[^a-z0-9]+", "-")
+                        .replaceAll("^-+", "").replaceAll("-+$", "");
+                if (clientSlug.length() > 64) clientSlug = clientSlug.substring(0, 64);
+                if (!clientSlug.isEmpty()) {
+                    String c = worlds + "/" + clientSlug + "/Population";
+                    if (!out.contains(c)) out.add(c);
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The book world's {@code Population} group for this scene, or null.
+     *
+     * <p>{@code explicitSlug} (the caller's {@code SceneGenerationParams.bookSlug}) is
+     * AUTHORITATIVE when present — it is the slug the book was actually created with. The
+     * path-derived candidates are a fallback for callers that only know the PB1 group, and there
+     * are two of them because the client and server slug rules disagree (see above).
+     */
+    private static BaseRecord findBookPopulationGroup(BaseRecord user, String sceneGroupPath, String explicitSlug) {
+        if (user == null) return null;
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        for (String popPath : bookPopulationPathCandidates(sceneGroupPath, explicitSlug)) {
+            try {
+                BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                        ModelNames.MODEL_GROUP, popPath, GroupEnumType.DATA.toString(), orgId);
+                if (grp != null) {
+                    return grp;
+                }
+            } catch (Exception e) {
+                logger.warn("findBookPopulationGroup: " + popPath + " — " + e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Find a charPerson by name within one group: ILIKE+trim first, then a diacritic-insensitive
+     * pass in Java.
+     *
+     * <p>Extracted so the same matching runs against every candidate group. The two-step is
+     * deliberate and both steps are load-bearing: the DB ILIKE+trim catches case and whitespace
+     * drift between the LLM's scene-character name and the persisted one (an exact EQUALS silently
+     * missed "Jideon"), and the Java pass catches diacritics the DB does not fold ("Duña" vs
+     * "Duna").
+     */
+    private static BaseRecord findCharPersonByNameInGroup(BaseRecord user, String cname, BaseRecord grp) {
+        if (grp == null || cname == null) return null;
+        String[] req = new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+            "narrative", "gender", "profile", FieldNames.FIELD_STORE, FieldNames.FIELD_ATTRIBUTES};
+        Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
+        cq.field(FieldNames.FIELD_NAME, ComparatorEnumType.ILIKE, cname.trim());
+        cq.field(FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
+        cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        cq.setRequest(req);
+        BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+        if (cp != null) return cp;
+
+        Query allq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
+        allq.field(FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
+        allq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        allq.setRequest(req);
+        BaseRecord[] candidates = IOSystem.getActiveContext().getAccessPoint().list(user, allq).getResults();
+        if (candidates != null) {
+            for (BaseRecord cand : candidates) {
+                if (namesMatchAccentInsensitive(cname, cand.get(FieldNames.FIELD_NAME))) {
+                    logger.info("Resolved scene character '" + cname + "' to persisted '"
+                            + cand.get(FieldNames.FIELD_NAME) + "' via accent-insensitive fallback match");
+                    return cand;
+                }
+            }
+        }
+        return null;
+    }
+
     private static ResolvedCharacter resolveSceneCharacter(BaseRecord user, Object charItem, String sceneGroupPath) {
+        return resolveSceneCharacter(user, charItem, sceneGroupPath, null);
+    }
+
+    /**
+     * @param bookSlug the book's authoritative slug when the caller knows it
+     *                 ({@code SceneGenerationParams.bookSlug}); null falls back to deriving
+     *                 candidates from {@code sceneGroupPath}.
+     */
+    private static ResolvedCharacter resolveSceneCharacter(BaseRecord user, Object charItem, String sceneGroupPath,
+            String bookSlug) {
         String cname = null;
         String charOid = null;
         if (charItem instanceof Map) {
@@ -956,41 +1097,35 @@ public class PictureBookUtil {
                 // Case-insensitive, whitespace-tolerant (ILIKE, trimmed) — the LLM's own scene-character
                 // name and the name createCharPerson actually persisted aren't guaranteed to match on
                 // case (confirmed live: an exact-match EQUALS query silently missed "Jideon" this way).
+                // Search BOTH homes, legacy first. A pre-per-book-world book keeps its characters
+                // in the PB1 <book>/Characters group; every book created since keeps them in the
+                // book WORLD's Population group (createCharPerson B4 routes them there). Looking
+                // only in the PB1 group made new books resolve nothing: measured 2026-09-14,
+                // "The Big Way Out.pdf" had 0 charPersons in PB1 Characters and all 6 in the
+                // world's Population, so every scene logged "Could not resolve scene character",
+                // Stage 1 produced 0 portraits, and the composite ran with refs=0 — the reported
+                // "composites no longer use the portraits".
                 String charGroupPath = sceneGroupPath.replace("/Scenes", "/Characters");
                 BaseRecord charGrp = IOSystem.getActiveContext().getPathUtil().findPath(user,
                         ModelNames.MODEL_GROUP, charGroupPath, GroupEnumType.DATA.toString(),
                         (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
                 if (charGrp != null) {
-                    Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
-                    cq.field(FieldNames.FIELD_NAME, ComparatorEnumType.ILIKE, cname.trim());
-                    cq.field(FieldNames.FIELD_GROUP_ID, charGrp.get(FieldNames.FIELD_ID));
-                    cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                    cq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile", FieldNames.FIELD_STORE, FieldNames.FIELD_ATTRIBUTES});
-                    cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
-                    if (cp == null) {
-                        // B6: the DB ILIKE+trim above does not fold Unicode diacritics, so a scene name
-                        // like "Duña" silently misses a persisted "Duna" (and vice versa). On a miss,
-                        // load this Characters group's records and match diacritic- + case-insensitively
-                        // in Java (namesMatchAccentInsensitive). The ILIKE+trim primary path is kept
-                        // exactly as-is; this only runs when it already returned nothing.
-                        Query allq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
-                        allq.field(FieldNames.FIELD_GROUP_ID, charGrp.get(FieldNames.FIELD_ID));
-                        allq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                        allq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "narrative", "gender", "profile", FieldNames.FIELD_STORE, FieldNames.FIELD_ATTRIBUTES});
-                        BaseRecord[] candidates = IOSystem.getActiveContext().getAccessPoint().list(user, allq).getResults();
-                        if (candidates != null) {
-                            for (BaseRecord cand : candidates) {
-                                if (namesMatchAccentInsensitive(cname, cand.get(FieldNames.FIELD_NAME))) {
-                                    logger.info("Resolved scene character '" + cname + "' to persisted '"
-                                            + cand.get(FieldNames.FIELD_NAME) + "' via accent-insensitive fallback match");
-                                    cp = cand;
-                                    break;
-                                }
-                            }
+                    cp = findCharPersonByNameInGroup(user, cname, charGrp);
+                }
+                if (cp == null) {
+                    BaseRecord popGrp = findBookPopulationGroup(user, sceneGroupPath, bookSlug);
+                    if (popGrp != null) {
+                        cp = findCharPersonByNameInGroup(user, cname, popGrp);
+                        if (cp != null) {
+                            logger.info("Resolved scene character '" + cname
+                                    + "' from the book world's Population group");
                         }
                     }
-                } else {
-                    logger.warn("No Characters group found at " + charGroupPath + " while resolving scene character '" + cname + "'");
+                    else if (charGrp == null) {
+                        logger.warn("No Characters group at " + charGroupPath
+                                + " and no book-world Population group, while resolving scene character '"
+                                + cname + "'");
+                    }
                 }
             }
         } catch (Exception e) {
@@ -5199,7 +5334,7 @@ public class PictureBookUtil {
             if (charsObjForPrompt instanceof List) {
                 for (Object charItem : (List<Object>) charsObjForPrompt) {
                     if (charNarrationsForPrompt.size() >= 2) break;
-                    ResolvedCharacter rc = resolveSceneCharacter(user, charItem, sceneGroupPath);
+                    ResolvedCharacter rc = resolveSceneCharacter(user, charItem, sceneGroupPath, params.bookSlug);
                     if (rc != null) {
                         charNarrationsForPrompt.add(rc.name + ": " + SWUtil.stripSDXLWeighting(rc.sceneNarration));
                         if (rc.charPerson != null) {
@@ -5304,7 +5439,7 @@ public class PictureBookUtil {
                 List<Object> charItems = (List<Object>) charsObj;
                 for (Object charItem : charItems) {
                     if (portraitBytesList.size() >= 2) break;
-                    ResolvedCharacter rc = resolveSceneCharacter(user, charItem, sceneGroupPath);
+                    ResolvedCharacter rc = resolveSceneCharacter(user, charItem, sceneGroupPath, params.bookSlug);
                     if (rc == null) continue;
                     BaseRecord cp = rc.charPerson;
                     String cname = rc.name;
