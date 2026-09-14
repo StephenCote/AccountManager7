@@ -464,6 +464,77 @@ public class SDUtil {
 		return null;
 	}
 
+	/**
+	 * Grant the context's effective role pair over the gallery subtree a character's images were
+	 * ACTUALLY written to.
+	 *
+	 * <p><b>The bug this fixes.</b> Group entitlements join on an exact {@code groupId} and do not
+	 * inherit, and {@link #resolveCharacterImagePath} writes to {@code <gallery>/Characters/<name>}
+	 * — two groups {@code makePath} creates on first use, long after the book context's
+	 * {@code initialize()} ran its recursive grant over the tree that existed then. Measured
+	 * 2026-09-14 on {@code /Olio/Universes/Books/Worlds/the-big-way-out-pdf}: {@code Gallery} carried
+	 * the book's Writer+Admin pair while {@code Gallery/Characters} and
+	 * {@code Gallery/Characters/Darby} had <b>no entitlements at all</b> — so a user holding the
+	 * book's Writer role could see the gallery but not the portraits inside it.
+	 *
+	 * <p><b>Why it grants on the RESOLVED path, not {@code octx.getWorld().gallery}.</b>
+	 * {@code resolveCharacterImagePath} deliberately prefers {@link #ATTR_IMAGE_GALLERY_PATH} over
+	 * the passed context's world, because the reimage REST flow can resolve the DEFAULT context when
+	 * a request carries no universe/world ids (the Issue-4 fix). The write path was corrected for
+	 * that; the grant path was not, so a grant keyed on {@code octx.getWorld()} can land on a
+	 * different world's gallery than the one just written to. Both must resolve identically.
+	 *
+	 * <p>Idempotent ({@code MemberUtil.member(..., true)} underneath), so running it after every
+	 * generation simply re-asserts what is already there.
+	 */
+	public void grantCharacterImagePath(OlioContext octx, BaseRecord per) {
+		if(octx == null || per == null) {
+			return;
+		}
+		try {
+			/// Resolve EXACTLY as the write path does: attribute first, world gallery as fallback.
+			String basePath = resolveImageGalleryAttribute(octx, per);
+			if(basePath == null) {
+				basePath = (octx.getWorld() != null) ? octx.getWorld().get("gallery.path") : null;
+			}
+			if(basePath == null) {
+				logger.warn("grantCharacterImagePath: no gallery path for "
+					+ per.get(FieldNames.FIELD_NAME) + "; images may be unreadable to the world role");
+				return;
+			}
+			BaseRecord olioUser = octx.getOlioUser();
+			BaseRecord dir = IOSystem.getActiveContext().getPathUtil().findPath(olioUser,
+				ModelNames.MODEL_GROUP, basePath, "DATA",
+				olioUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			if(dir == null) {
+				logger.warn("grantCharacterImagePath: gallery group not found at " + basePath);
+				return;
+			}
+			/// ISOLATION GUARD. scanNestedGroups grants THIS context's effective role pair, so if the
+			/// attribute points at another world's gallery (the Issue-4 case, where the reimage flow
+			/// resolved the DEFAULT context) this would hand the default world's role CRUD over a
+			/// book's private gallery — the isolation-losing direction scanNestedWorldGroups explicitly
+			/// refuses to take. Grant only when the written path really is inside this context's own
+			/// world gallery; otherwise say so and let the owning context's initialize() repair it.
+			String ownGallery = (octx.getWorld() != null) ? octx.getWorld().get("gallery.path") : null;
+			if(ownGallery == null || !basePath.startsWith(ownGallery)) {
+				logger.warn("grantCharacterImagePath: " + basePath + " is outside this context's world"
+					+ " gallery (" + ownGallery + ") — NOT granting, because that would apply the wrong"
+					+ " world's roles. Re-open the owning book context to repair entitlements there.");
+				return;
+			}
+			/// Recursive: the leaf <name> group and the intermediate Characters group both need it,
+			/// and a later character adds another sibling that this same call picks up.
+			octx.scanNestedGroups(dir, true);
+		}
+		catch(Exception e) {
+			/// Never fail a completed generation over the grant — the image exists either way, and
+			/// re-opening the context re-runs the recursive scan.
+			logger.warn("grantCharacterImagePath failed for " + per.get(FieldNames.FIELD_NAME)
+				+ ": " + e.getMessage());
+		}
+	}
+
 	public void generateSDFigurines(OlioContext octx, List<BaseRecord> pop, int batchSize, boolean export, boolean hires, int seed) {
 
 		SecureRandom rand = new SecureRandom();
@@ -475,6 +546,9 @@ public class SDUtil {
 			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
 			String path = resolveCharacterImagePath(octx, per);
 			List<BaseRecord> bl = createPersonFigurine(octx.getOlioUser(), per, path, "Photo Op", steps, batchSize, hires, seed);
+			/// makePath just created <gallery>/Characters/<name>; entitlements do not inherit,
+			/// so grant on it now or the images are invisible to the world role.
+			grantCharacterImagePath(octx, per);
 		
 			if(bl.size() > 0) {
 				// if(prof.get("portrait") == null) {
@@ -521,6 +595,9 @@ public class SDUtil {
 			
 			String path = resolveCharacterImagePath(octx, per);
 			List<BaseRecord> bl = createPersonImage(octx.getOlioUser(), per, path, sdConfig,"Photo Op",  setting, useStyle, useBodyStyle, verb, steps, batchSize, hires, seed);
+			/// makePath just created <gallery>/Characters/<name>; entitlements do not inherit,
+			/// so grant on it now or the images are invisible to the world role.
+			grantCharacterImagePath(octx, per);
 		
 			if(bl.size() > 0) {
 				prof.setValue("portrait", bl.get(rand.nextInt(bl.size())));
