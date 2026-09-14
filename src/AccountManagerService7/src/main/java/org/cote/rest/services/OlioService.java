@@ -255,7 +255,7 @@ public class OlioService {
 			/// role, so this narrows authorization to the right book rather than widening it; a
 			/// non-book character or an unentitled caller simply keeps the resolved context.
 			OlioContext bookCtx = PbOlioContextUtil.resolveOwningBookContext(user,
-				context.getInitParameter("datagen.path"), a1);
+				context.getInitParameter("datagen.path"), a1, octx);
 			OlioContext genCtx = (bookCtx != null ? bookCtx : octx);
 			sdu.generateSDImages(genCtx, Arrays.asList(a1), imp, setting, "((DEPRECATED))", bodyStyle, (verb != null && verb.length() > 0 ? verb : null), 1, false, imp.get("hires"), imp.get("seed"));
 			genCtx.scanNestedGroups(genCtx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);

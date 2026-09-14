@@ -160,6 +160,12 @@ async function loadConfig(name, groupPath) {
                     repairLoadedConfig(name, full, gp);
                     return full;
                 }
+                // getFull failed. Returning `hit` below hands back the SEARCH projection, which
+                // carries only id/objectId/name — every real setting is absent, so applyConfig
+                // copies nothing and the caller silently keeps its own defaults. That reads to a
+                // user as "my saved value reset", with nothing logged. Say so.
+                console.warn("[am7sd] getFull returned nothing for", name, hit.objectId,
+                    "— falling back to the partial search result; saved settings will NOT be applied");
             }
             repairLoadedConfig(name, hit, gp);
             return hit;
@@ -247,6 +253,14 @@ async function saveConfig(name, config, groupPath) {
 // ── applyConfig ───────────────────────────────────────────────────
 function applyConfig(cinst, config) {
     if (!config) return;
+    // A config that has an identity but none of the core numeric settings is a PARTIAL record (the
+    // search projection), not a saved config. Applying it is a no-op that looks like a successful
+    // load, so the caller's defaults survive and the user sees their saved value "reset". Warn
+    // rather than fail: the caller's defaults are still a usable state.
+    if (config.objectId && config.cfg == null && config.steps == null && config.model == null) {
+        console.warn("[am7sd] applyConfig received a PARTIAL config (no cfg/steps/model) for",
+            config.name || config.objectId, "— saved settings cannot be restored from it");
+    }
     // Write directly to entity — saved values are already in entity format
     // (raw doubles, not decorator-scaled). Using cinst.api[k]() would
     // double-apply the decorator (e.g., 0.75 → decorateIn → 0.0075).

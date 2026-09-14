@@ -184,6 +184,30 @@ public class Chat {
 		setLastCallError(err);
 	}
 
+	/**
+	 * Abort an outbound LLM exchange we have stopped waiting for.
+	 *
+	 * <p>{@code orTimeout} completes OUR future exceptionally but leaves the HTTP exchange — and
+	 * therefore the server-side generation — running. Cancelling releases the connection and lets
+	 * the model server drop the work instead of finishing it for nobody while the next request
+	 * queues behind it.
+	 *
+	 * <p>Best-effort by design: a cancel that fails must never replace the timeout the caller is
+	 * already handling.
+	 */
+	private static void cancelOutbound(CompletableFuture<HttpResponse<Stream<String>>> f, String why) {
+		if (f == null || f.isDone()) {
+			return;
+		}
+		try {
+			boolean cancelled = f.cancel(true);
+			logger.warn("Cancelled the outbound LLM request (" + why + "): cancel returned " + cancelled);
+		}
+		catch (Exception e) {
+			logger.warn("Failed to cancel the outbound LLM request (" + why + "): " + e.getMessage());
+		}
+	}
+
 	private static void setLastCallError(String err) {
 		if (err != null) {
 			LAST_CALL_ERROR.set(err);
@@ -4213,12 +4237,22 @@ public class Chat {
 				logger.info("[DIAG] chat() buffer mode: awaiting latch (timeout=" + waitSeconds + "s)");
 				if (!latch.await(waitSeconds, TimeUnit.SECONDS)) {
 					logger.error("Buffer mode timed out waiting for stream completion");
+					/// ABORT THE OUTBOUND EXCHANGE. Giving up on the latch only abandons OUR wait —
+					/// without this the request keeps generating on the model server, and the
+					/// caller's retry queues a second one behind the first. Two clients doing that
+					/// turn a slow server into a permanently saturated one: measured 2026-09-14,
+					/// two request threads each looping timeout->retry every 305s left Ollama
+					/// unable to answer even a trivial "Say OK" within 90s while the model sat
+					/// resident in VRAM and /api/tags replied in 23ms. unregisterStream() below
+					/// only clears bookkeeping; it does not cancel anything.
+					cancelOutbound(streamFuture, "timed out after " + waitSeconds + "s");
 					setLastCallError("The model did not respond within " + waitSeconds
 						+ "s. It may be loading, overloaded, or too large for this hardware.");
 					return null;
 				}
 			} catch (InterruptedException e) {
 				logger.error("Buffer mode interrupted", e);
+				cancelOutbound(streamFuture, "interrupted");
 				setLastCallError("The call was interrupted (the server is shutting down).");
 				Thread.currentThread().interrupt();
 				return null;

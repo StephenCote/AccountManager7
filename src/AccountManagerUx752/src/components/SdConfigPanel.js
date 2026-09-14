@@ -124,9 +124,48 @@ function numberInput(config, key, min, max, step, onChange) {
 // bespoke single-input-with-no-spinner variant, the fourth near-copy of the same pattern cataloged
 // across reimage.js/reimageApparel.js/pictureBook.js, only here already deduplicated into one local
 // helper reused by its own callers below.
+/**
+ * Default shown for a range field when the config carries no value.
+ *
+ * ONE source for both the label and the slider. They used to each invent their own: the label read
+ * `config.cfg != null ? config.cfg : 7` while rangeInput, given no defaultVal, fell back to `min`.
+ * So an unset CFG displayed "CFG: 7" above a slider parked at 1, and Refiner CFG the same — the
+ * "sliders don't register the default value" report. Neither value was written to the config, so
+ * whatever the backend defaulted to was a third answer again.
+ */
+/**
+ * Slider bounds and step MUST match the model field, not look pleasant.
+ *
+ * cfg and refinerCfg are declared {@code "type":"int","minValue":1,"maxValue":20} in modelDef, but
+ * their sliders ran 1-30 with a step of 0.5. Dragging therefore produced values the model rejects
+ * — non-integers (5.5, 6.5, ...) and anything over 20 — so the write never landed and the next
+ * redraw snapped the control back to whatever the entity still held. That is the "I change it to 7
+ * and it resets to 5" report: 5 was reimage.js's tempApplyDefaults value, still in place because
+ * every intermediate drag value was invalid.
+ *
+ * denoisingStrength is the counter-example and was always right: it is a genuine double (0.0-1.0),
+ * so a 0.05 step is correct there. Fractional steps belong only on double fields.
+ */
+const RANGE_DEFAULTS = {
+    steps: 20,
+    refinerSteps: 20,
+    cfg: 7,
+    refinerCfg: 7,
+    denoisingStrength: 0.75
+};
+
+/** The value a range field should DISPLAY: the config's own, else the shared default, else min. */
+function rangeValue(config, key, min) {
+    if (config[key] != null) return config[key];
+    return (RANGE_DEFAULTS[key] != null) ? RANGE_DEFAULTS[key] : min;
+}
+
 function rangeInput(config, key, min, max, step, onChange, defaultVal) {
     return formFieldRenderers.renderRange({
-        value: (config[key] != null) ? config[key] : (defaultVal != null ? defaultVal : min),
+        /// defaultVal still wins when a caller passes one explicitly; otherwise fall to the
+        /// SHARED default so the slider and its label can never disagree.
+        value: (config[key] != null) ? config[key]
+            : (defaultVal != null ? defaultVal : rangeValue(config, key, min)),
         min: min,
         max: max,
         step: step || 1,
@@ -239,7 +278,7 @@ const SdConfigPanel = {
                 } catch (e) { /* never let a defaults refill break the picker */ }
                 if (onChange) onChange();
             })),
-            field("Denoising: " + (config.denoisingStrength != null ? config.denoisingStrength : 0.75),
+            field("Denoising: " + rangeValue(config, "denoisingStrength", 0),
                 rangeInput(config, "denoisingStrength", 0, 1, 0.05, onChange, 0.75))
         ]));
 
@@ -294,15 +333,15 @@ const SdConfigPanel = {
             field("Model", modelSelectInput(config, "model", modelNames, onChange)),
             field("Refiner Model", modelSelectInput(config, "refinerModel", modelNames, onChange)),
 
-            field("Steps: " + (config.steps != null ? config.steps : 20),
+            field("Steps: " + rangeValue(config, "steps", 1),
                 rangeInput(config, "steps", 1, 100, 1, onChange, 20)),
-            field("Refiner Steps: " + (config.refinerSteps != null ? config.refinerSteps : 20),
-                rangeInput(config, "refinerSteps", 0, 100, 1, onChange)),
+            field("Refiner Steps: " + rangeValue(config, "refinerSteps", 1),
+                rangeInput(config, "refinerSteps", 1, 100, 1, onChange, RANGE_DEFAULTS.refinerSteps)),
 
-            field("CFG: " + (config.cfg != null ? config.cfg : 7),
-                rangeInput(config, "cfg", 1, 30, 0.5, onChange)),
-            field("Refiner CFG: " + (config.refinerCfg != null ? config.refinerCfg : 7),
-                rangeInput(config, "refinerCfg", 1, 30, 0.5, onChange)),
+            field("CFG: " + rangeValue(config, "cfg", 1),
+                rangeInput(config, "cfg", 1, 20, 1, onChange, RANGE_DEFAULTS.cfg)),
+            field("Refiner CFG: " + rangeValue(config, "refinerCfg", 1),
+                rangeInput(config, "refinerCfg", 1, 20, 1, onChange, RANGE_DEFAULTS.refinerCfg)),
 
             field("Sampler", selectInput(config, "sampler", SAMPLER_OPTIONS, onChange)),
             field("Scheduler", selectInput(config, "scheduler", SCHEDULER_OPTIONS, onChange)),

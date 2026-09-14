@@ -634,16 +634,32 @@ public class PbOlioContextUtil {
 	 * hold the book's Writer or Admin role for an existing world, so this cannot be used to reach a
 	 * book the user is not entitled to. A failure returns null and the caller keeps its own context.
 	 */
-	public static OlioContext resolveOwningBookContext(BaseRecord user, String dataPath, BaseRecord per) {
+	/**
+	 * @param readCtx any live context, used ONLY to supply the olio principal for the attribute
+	 *                re-read. It does not have to be — and usually is not — the book's own context;
+	 *                that is what this method resolves. Passing null makes the lookup impossible:
+	 *                {@code resolveImageGalleryAttribute} needs a reader because the reimage flow
+	 *                loads the charPerson with {@code planMost(true)}, which excludes
+	 *                {@code attributes}, so the value is only reachable by a targeted re-read.
+	 */
+	public static OlioContext resolveOwningBookContext(BaseRecord user, String dataPath, BaseRecord per,
+			OlioContext readCtx) {
 		if(user == null || per == null) {
 			return null;
 		}
 		try {
-			String galleryPath = SDUtil.resolveImageGalleryAttribute(null, per);
-			String slug = bookSlugFromGalleryPath(galleryPath);
-			if(slug == null) {
+			String galleryPath = SDUtil.resolveImageGalleryAttribute(readCtx, per);
+			if(galleryPath == null) {
+				logger.warn("resolveOwningBookContext: no " + SDUtil.ATTR_IMAGE_GALLERY_PATH
+					+ " on " + per.get(FieldNames.FIELD_NAME) + " — treating it as a non-book character");
 				return null;
 			}
+			String slug = bookSlugFromGalleryPath(galleryPath);
+			if(slug == null) {
+				logger.warn("resolveOwningBookContext: " + galleryPath + " is not a book-world gallery");
+				return null;
+			}
+			logger.info("resolveOwningBookContext: resolving the owning book context for slug " + slug);
 			return getCreateBookContext(user, dataPath, slug);
 		}
 		catch(Exception e) {
