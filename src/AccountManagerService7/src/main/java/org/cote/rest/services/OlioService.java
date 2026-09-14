@@ -242,8 +242,23 @@ public class OlioService {
 			String verb = imp.get("imageAction");
 			String bodyStyle = imp.get("bodyStyle");
 			String setting = imp.get("imageSetting");
-			sdu.generateSDImages(octx, Arrays.asList(a1), imp, setting, "((DEPRECATED))", bodyStyle, (verb != null && verb.length() > 0 ? verb : null), 1, false, imp.get("hires"), imp.get("seed"));
-			octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
+			/// Prefer the context of the BOOK THIS CHARACTER BELONGS TO, taken from the charPerson
+			/// itself (SDUtil.ATTR_IMAGE_GALLERY_PATH). Without this the request resolves the
+			/// DEFAULT grid context whenever it carries no universe/world ids, and then the two
+			/// halves disagree: resolveCharacterImagePath writes into the BOOK's gallery (it
+			/// prefers the attribute) while the grant below applies the DEFAULT world's role pair —
+			/// so the images land somewhere the book's own Writer role cannot read. Measured
+			/// 2026-09-14: .../the-big-way-out-pdf/Gallery/Characters/Darby had no entitlements at
+			/// all while its parent Gallery carried the book pair.
+			///
+			/// getCreateBookContext requires the caller to already hold that book's Writer/Admin
+			/// role, so this narrows authorization to the right book rather than widening it; a
+			/// non-book character or an unentitled caller simply keeps the resolved context.
+			OlioContext bookCtx = PbOlioContextUtil.resolveOwningBookContext(user,
+				context.getInitParameter("datagen.path"), a1);
+			OlioContext genCtx = (bookCtx != null ? bookCtx : octx);
+			sdu.generateSDImages(genCtx, Arrays.asList(a1), imp, setting, "((DEPRECATED))", bodyStyle, (verb != null && verb.length() > 0 ? verb : null), 1, false, imp.get("hires"), imp.get("seed"));
+			genCtx.scanNestedGroups(genCtx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 		}
 		BaseRecord oi = a1.get("profile.portrait");
 		if (oi == null) {

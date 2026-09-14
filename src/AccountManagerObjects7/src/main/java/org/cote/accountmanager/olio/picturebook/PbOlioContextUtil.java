@@ -12,6 +12,7 @@ import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioException;
@@ -590,6 +591,69 @@ public class PbOlioContextUtil {
 	 * A user with no organization id is a no-op, not an NPE: this is called from a {@code finally}
 	 * block on the create path, where a throw would replace the exception already propagating.
 	 */
+	/**
+	 * The book slug embedded in a book-world gallery path, or null when the path is not one.
+	 *
+	 * <p>Book galleries are {@code /Olio/Universes/Books/Worlds/<slug>/Gallery...}, so the segment
+	 * after {@code /Worlds/} identifies the owning book.
+	 */
+	public static String bookSlugFromGalleryPath(String galleryPath) {
+		if(galleryPath == null) {
+			return null;
+		}
+		String marker = "/" + BOOKS_UNIVERSE + "/Worlds/";
+		int i = galleryPath.indexOf(marker);
+		if(i < 0) {
+			return null;
+		}
+		String rest = galleryPath.substring(i + marker.length());
+		int slash = rest.indexOf('/');
+		String slug = (slash > 0) ? rest.substring(0, slash) : rest;
+		return slug.isEmpty() ? null : slug;
+	}
+
+	/**
+	 * The OlioContext of the book a character's images belong to, or null when it is not a book
+	 * character (or the book cannot be resolved for this caller).
+	 *
+	 * <p><b>Why this exists.</b> {@code SDUtil.resolveCharacterImagePath} writes a book character's
+	 * images into the BOOK world's gallery via {@link SDUtil#ATTR_IMAGE_GALLERY_PATH}, but the
+	 * reimage REST flow resolves the DEFAULT OlioContext when its request carries no universe/world
+	 * ids. The write path was corrected for that asymmetry and the AUTHORIZATION path was not, so
+	 * images landed in the book gallery while the grant — which applies the CONTEXT's role pair —
+	 * either targeted the wrong world or was skipped. Measured 2026-09-14:
+	 * {@code .../the-big-way-out-pdf/Gallery} was granted the book's Writer+Admin pair while
+	 * {@code Gallery/Characters} and {@code Gallery/Characters/Darby}, created later by the image
+	 * write, had no entitlements at all — the book's own Writer could not read its portraits.
+	 *
+	 * <p>Resolving the owning context fixes both halves at once: generation then runs with the
+	 * book's role pair, and {@code getCreateBookContext} runs {@code initialize()}, whose
+	 * {@code scanNestedWorldGroups()} also REPAIRS any subgroup created since the last open.
+	 *
+	 * <p>Authorization is not bypassed: {@code getCreateBookContext} requires the caller to already
+	 * hold the book's Writer or Admin role for an existing world, so this cannot be used to reach a
+	 * book the user is not entitled to. A failure returns null and the caller keeps its own context.
+	 */
+	public static OlioContext resolveOwningBookContext(BaseRecord user, String dataPath, BaseRecord per) {
+		if(user == null || per == null) {
+			return null;
+		}
+		try {
+			String galleryPath = SDUtil.resolveImageGalleryAttribute(null, per);
+			String slug = bookSlugFromGalleryPath(galleryPath);
+			if(slug == null) {
+				return null;
+			}
+			return getCreateBookContext(user, dataPath, slug);
+		}
+		catch(Exception e) {
+			/// Never fail the operation over this — the caller falls back to the context it had.
+			logger.warn("resolveOwningBookContext: could not resolve the book context for "
+				+ per.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+			return null;
+		}
+	}
+
 	public static void evictBookContext(BaseRecord user, String bookSlug) {
 		if(user == null || bookSlug == null) {
 			return;

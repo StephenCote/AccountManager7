@@ -414,7 +414,7 @@ public class SDUtil {
 	 * olio-owned world tree it is granted on. Returns null (⇒ caller falls back to the world gallery)
 	 * on any absence or failure — this must never break the image write.
 	 */
-	private static String resolveImageGalleryAttribute(OlioContext octx, BaseRecord per) {
+	public static String resolveImageGalleryAttribute(OlioContext octx, BaseRecord per) {
 		if(per == null) {
 			return null;
 		}

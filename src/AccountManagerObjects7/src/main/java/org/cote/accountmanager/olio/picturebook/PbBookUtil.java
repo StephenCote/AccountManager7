@@ -27,6 +27,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
+import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
 
 /**
  * The {@code olio.pb.book} lifecycle, and the scene rows that replace PB1's per-scene {@code data.note}
@@ -200,6 +201,13 @@ public class PbBookUtil {
 			book.set(FieldNames.FIELD_NAME, name);
 			book.set(OlioFieldNames.FIELD_PB_SLUG, slug);
 			book.set(OlioFieldNames.FIELD_PB_BOOK_STATUS, PbBookStatusEnumType.DRAFT.toString());
+			/// Stamp the variant AT CREATION. Only ChapBookUtil ever set this (patching CHAPBOOK
+			/// right after calling here), so every PictureBook was left UNKNOWN — and a book that
+			/// never reaches the end of the wizard therefore has real assets (world, gallery,
+			/// character portraits) behind a row that type-filtered listings skip, which is why a
+			/// half-finished book could not be found or cleaned up. STORY is this enum's documented
+			/// "standard PictureBook 2 narrative book"; the ChapBook path overwrites it immediately.
+			book.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, PbBookTypeEnumType.STORY.toString());
 			if(title != null) {
 				book.set(FieldNames.FIELD_DESCRIPTION, title);
 			}
