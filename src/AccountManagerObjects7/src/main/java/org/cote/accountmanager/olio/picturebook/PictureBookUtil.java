@@ -2521,13 +2521,43 @@ public class PictureBookUtil {
      * only trims what is SENT to the model, which otherwise re-sent every field of every accumulated
      * scene on every chunk (O(n^2) prompt growth). sourceText in particular must never reach an LLM.
      */
+    /**
+     * How many of the most recent scenes are carried forward in FULL detail. Older ones go as
+     * title-only.
+     *
+     * <p>Measured 2026-09-13 on a 17-chunk document: by chunk 7 the request had reached ~15.8KB
+     * against a {@code num_ctx} of 8192, and the calls degraded 112s -> 259s -> two 305s timeouts,
+     * at which point the circuit breaker stopped the run a third of the way through the story. The
+     * accumulated scene list is the part that grows; the chunk itself is only ~2KB.
+     *
+     * <p>Title-only for older scenes is not an arbitrary truncation — <b>titles are the match key</b>
+     * for {@code revisions} and {@code removals} (see {@link #mergeChunkResult}), so keeping every
+     * title keeps every earlier scene addressable, while the detail the model actually needs for
+     * continuity is the recent run of scenes. Dropping older scenes entirely would silently make
+     * them un-revisable and invite duplicates.
+     */
+    static final int PROMPT_SCENE_DETAIL_WINDOW = 6;
+
     public static List<Map<String, Object>> scenesForPrompt(List<Map<String, Object>> scenes) {
         List<Map<String, Object>> out = new ArrayList<>(scenes.size());
-        for (Map<String, Object> s : scenes) {
+        /// Index of the first scene that still gets full detail.
+        int detailFrom = Math.max(0, scenes.size() - PROMPT_SCENE_DETAIL_WINDOW);
+        for (int i = 0; i < scenes.size(); i++) {
+            Map<String, Object> s = scenes.get(i);
             Map<String, Object> c = new LinkedHashMap<>();
-            for (String f : PROMPT_SCENE_FIELDS) {
-                Object v = s.get(f);
-                if (v != null) c.put(f, v);
+            if (i < detailFrom) {
+                /// Older scene: title only. Still addressable by a later revision/removal, but it
+                /// no longer costs ~1.5KB of context it is not contributing anything to.
+                Object t = s.get("title");
+                if (t != null) c.put("title", t);
+                /// Skip a titleless older scene entirely — an empty object would waste tokens and
+                /// could not be matched against anyway.
+                if (c.isEmpty()) continue;
+            } else {
+                for (String f : PROMPT_SCENE_FIELDS) {
+                    Object v = s.get(f);
+                    if (v != null) c.put(f, v);
+                }
             }
             out.add(c);
         }

@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -74,6 +75,27 @@ public class TestExtractChunkLoop extends BaseTest {
 			if (replies.isEmpty()) return null;
 			return replies.get(Math.min(i, replies.size() - 1));
 		}
+	}
+
+	/// An in-memory scene map, as the chunk loop builds them.
+	private static Map<String, Object> scene(String title, String blurb, int sourceChunk) {
+		Map<String, Object> s = new LinkedHashMap<>();
+		s.put("title", title);
+		s.put("blurb", blurb);
+		s.put("setting", "a hall");
+		s.put("action", "a");
+		s.put("mood", "m");
+		s.put("characters", new ArrayList<String>());
+		s.put("sourceChunk", sourceChunk);
+		s.put("sourceText", "PASSAGE-" + sourceChunk);
+		return s;
+	}
+
+	@SafeVarargs
+	private static <T> List<T> listOf(T... items) {
+		List<T> l = new ArrayList<>();
+		Collections.addAll(l, items);
+		return l;
 	}
 
 	private static List<String> replies(String... r) {
@@ -354,6 +376,85 @@ public class TestExtractChunkLoop extends BaseTest {
 		assertFalse(reachedEnd[0]);
 		assertNull("a checkpoint with nothing processed must not be persisted",
 				PictureBookUtil.loadProgressNote(u, groupPath, workObjectId));
+	}
+
+	// ── prompt size: the accumulated scene list is what grows ────────────────────
+
+	/// Measured cause of a real failure: by chunk 7 of 17 the request had reached ~15.8KB against
+	/// num_ctx 8192 and the model degraded 112s -> 259s -> two 305s timeouts, stopping the run a
+	/// third of the way through the document. Only the most recent scenes now carry full detail.
+	@Test
+	public void TestOlderScenesAreCarriedForwardAsTitleOnly() throws Exception {
+		List<Map<String, Object>> scenes = new ArrayList<>();
+		for (int i = 0; i < 12; i++) {
+			Map<String, Object> sc = scene("Scene " + i, "blurb " + i, i);
+			sc.put("diffusionPrompt", "a very long diffusion prompt that must never be sent");
+			scenes.add(sc);
+		}
+
+		List<Map<String, Object>> sent = PictureBookUtil.scenesForPrompt(scenes);
+
+		assertEquals("every scene stays addressable", 12, sent.size());
+		/// The oldest are title-only...
+		for (int i = 0; i < 6; i++) {
+			assertEquals("Scene " + i, sent.get(i).get("title"));
+			assertEquals("older scenes must carry ONLY their title", 1, sent.get(i).size());
+		}
+		/// ...and the most recent keep the detail the model needs for continuity.
+		for (int i = 6; i < 12; i++) {
+			assertEquals("Scene " + i, sent.get(i).get("title"));
+			assertNotNull("recent scenes keep their blurb", sent.get(i).get("blurb"));
+			assertNotNull("recent scenes keep their setting", sent.get(i).get("setting"));
+		}
+	}
+
+	/// Titles are the match key for revisions and removals, so windowing must not make an older
+	/// scene un-addressable — that would silently produce duplicates instead of revisions.
+	@Test
+	public void TestWindowedOlderScenesRemainRevisable() throws Exception {
+		List<Map<String, Object>> scenes = new ArrayList<>();
+		for (int i = 0; i < 12; i++) scenes.add(scene("Scene " + i, "blurb " + i, i));
+
+		List<Map<String, Object>> sent = PictureBookUtil.scenesForPrompt(scenes);
+		boolean oldestPresent = false;
+		for (Map<String, Object> sc : sent) {
+			if ("Scene 0".equals(sc.get("title"))) oldestPresent = true;
+		}
+		assertTrue("the oldest scene's TITLE must still be visible to the model", oldestPresent);
+
+		/// And a revision keyed on that title still lands on the real (full) scene.
+		Map<String, Object> rev = new LinkedHashMap<>();
+		rev.put("title", "Scene 0");
+		rev.put("blurb", "revised much later");
+		Map<String, Object> chunk = new LinkedHashMap<>();
+		chunk.put("revisions", listOf(rev));
+		PictureBookUtil.mergeChunkResult(scenes, chunk, "p", 12);
+		assertEquals("revised much later", scenes.get(0).get("blurb"));
+		assertEquals("no duplicate was created", 12, scenes.size());
+	}
+
+	/// A short run is unaffected — nothing is windowed until there are more scenes than the window.
+	@Test
+	public void TestShortSceneListIsNotWindowed() throws Exception {
+		List<Map<String, Object>> scenes = new ArrayList<>();
+		for (int i = 0; i < 3; i++) scenes.add(scene("S" + i, "b" + i, i));
+		List<Map<String, Object>> sent = PictureBookUtil.scenesForPrompt(scenes);
+		assertEquals(3, sent.size());
+		for (Map<String, Object> sc : sent) {
+			assertNotNull("a short list keeps full detail throughout", sc.get("blurb"));
+		}
+	}
+
+	/// sourceText must NEVER reach the model, windowed or not — it is the raw passage and would
+	/// balloon the prompt by the size of the whole document.
+	@Test
+	public void TestSourceTextNeverReachesThePrompt() throws Exception {
+		List<Map<String, Object>> scenes = new ArrayList<>();
+		for (int i = 0; i < 10; i++) scenes.add(scene("S" + i, "b" + i, i));
+		for (Map<String, Object> sc : PictureBookUtil.scenesForPrompt(scenes)) {
+			assertNull("sourceText must never be sent", sc.get("sourceText"));
+			assertNull("sourceChunk is internal bookkeeping", sc.get("sourceChunk"));
+		}
 	}
 
 	/// Checkpointing is skipped entirely when no work id is supplied — the in-memory callers and

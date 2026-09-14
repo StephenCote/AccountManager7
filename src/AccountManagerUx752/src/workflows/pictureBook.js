@@ -882,11 +882,25 @@ function renderExtractWarnings() {
     if (extractPartial) {
         out.push(m('div', { class: 'p-2 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-xs text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
             m('span', { class: 'material-symbols-outlined text-sm' }, 'warning'),
-            m('span', { class: 'flex-1' }, 'This scene list is incomplete — the extraction stopped'
-                + ' early. "Re-extract" resumes from where it stopped.'),
+            m('span', { class: 'flex-1' },
+                'This scene list is incomplete — the extraction stopped before the end of the'
+                + ' document, usually because the model server stopped responding. The '
+                + extractedScenes.length + ' scene(s) below are saved. Resume to carry on from'
+                + ' where it stopped.'),
+            // RESUME is the primary action and must come first. The server keeps a checkpoint for
+            // exactly this case, so resuming costs only the remaining chunks — whereas the
+            // previous version of this banner offered ONLY "Start over", which discards every
+            // scene already extracted and re-pays for the chunks that already succeeded. On a
+            // 17-chunk document that is most of an hour thrown away to recover from a blip.
+            m('button', {
+                class: 'btn text-xs btn-primary',
+                disabled: extracting,
+                onclick: function () { doExtract(); }
+            }, [m('span', { class: 'material-symbols-outlined text-xs mr-1' }, 'resume'), 'Resume']),
             m('button', {
                 class: 'btn text-xs',
                 disabled: extracting,
+                title: 'Discard the scenes above and re-extract the whole document from the start',
                 onclick: function () { doExtract({ fresh: true }); }
             }, 'Start over')
         ]));
