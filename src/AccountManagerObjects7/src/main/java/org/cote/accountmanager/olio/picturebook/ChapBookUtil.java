@@ -1034,6 +1034,17 @@ public class ChapBookUtil {
 			String llmResult = PictureBookUtil.callLlmForChapBook(user, chatConfig, "chapBook.landscape-prompt", vars, attemptHard);
 			if (attemptHard[0]) {
 				hardFailureOut[0] = true;
+				/// NEVER retry a HARD failure. The retry exists for the SOFT case only — a qwen3
+				/// think-only reply, where a fresh generation usually produces real content. A hard
+				/// failure is config (missing template / no chat config) or infra (timeout,
+				/// unreachable host, null response); neither is fixed by re-issuing the identical
+				/// request. For the timeout case it is actively harmful: the first exchange may still
+				/// be occupying the model server's generation slot, so attempt 2 queues a second one
+				/// behind it and doubles the load on an already-saturated server (measured
+				/// 2026-09-14). Give up now and let the caller fall back.
+				logger.warn("chapBook.landscape-prompt HARD-failed on attempt " + attempt
+						+ " (config/infra) — not retrying");
+				break;
 			}
 			if (llmResult != null && !llmResult.isBlank()) {
 				return llmResult.trim();

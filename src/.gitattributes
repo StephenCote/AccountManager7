@@ -6,3 +6,12 @@
 docker/**       text eol=lf
 *.conf          text eol=lf
 Dockerfile      text eol=lf
+
+# The compose files and the LiteLLM proxy config are consumed INSIDE Linux
+# containers, and docker-compose.test.yml now embeds a /bin/sh entrypoint
+# script (the litellm config template render). A CRLF checkout puts \r into
+# that script and it fails the same way a CRLF entrypoint.sh does -- see the
+# note above. config.yaml is bind-mounted and sed-rendered, so it needs the
+# same guarantee. Added 2026-09-14 with the llmproxy profile.
+docker-compose*.yml  text eol=lf
+litellm/**           text eol=lf

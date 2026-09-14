@@ -38,34 +38,51 @@ import org.junit.Test;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-/// LIVE Tier B round-trip: AM7 -> LiteLLM (http://127.0.0.1:4000) -> Azure (gpt-5.6-terra) -> Langfuse.
+/// LIVE Tier B round-trip: AM7 -> LiteLLM (http://127.0.0.1:4000) -> upstream model -> Langfuse.
 ///
-/// Reachability-gated: assumeStackLive() probes both the LiteLLM liveliness endpoint and the Langfuse
-/// public-health endpoint; when either is down the tests report Skipped, so the default suite NEVER
-/// fires at Azure. All records are created as a dedicated NON-admin test user (BaseTest.getCreateUser),
-/// never the admin user. The genuine Azure upstream key never appears here — only the LiteLLM master
-/// key (env LITELLM_MASTER_KEY, falling back to the committed non-secret test placeholder) is used, as
-/// the Bearer token AM7 already sends. Langfuse is verified with the committed non-secret pk/sk. The
+/// UPSTREAM IS CONFIGURABLE (and no longer Azure by default). The model alias comes from
+/// test.llm.litellm.model and defaults to `qwen3:8b`, which LiteLLM proxies to Ollama. It was
+/// hardcoded to the Azure alias `gpt-5.6-terra`, which made every test here unrunnable without Azure
+/// credentials. Set the property back to `gpt-5.6-terra` to restore the Azure path when real
+/// AZURE_API_KEY/AZURE_API_BASE values are supplied; read the per-test notes below first, because
+/// two of them are upstream-sensitive.
+///
+/// Double-gated: (1) LITELLM_LIVE=1 / -Dlitellm.live=1, because these are real GPU generations and the
+/// default suite must never fire one; (2) assumeStackLive() probes the LiteLLM liveliness endpoint and
+/// the Langfuse public-health endpoint. Either gate failing reports Skipped, never Failed. Run
+/// serially. All records are created as a dedicated NON-admin test user (BaseTest.getCreateUser),
+/// never the admin user. No genuine upstream key appears here - only the LiteLLM master key (env
+/// LITELLM_MASTER_KEY, falling back to the committed non-secret test placeholder), which is the Bearer
+/// token AM7 already sends. Langfuse is verified with the committed non-secret pk/sk. The
 /// Langfuse-verification helper lives IN THIS TEST, never in production code.
 ///
-/// Three tests:
-///   A (GREEN round-trip): drive a real chat through AM7's own Chat path with `user` set (no
-///      session_id), assert HTTP 200 + a real completion echoing a unique nonce, then poll the Langfuse
-///      public API and assert a trace landed for this run's unique userId.
-///   C (GREEN header mechanism): send the request through AM7's ClientUtil transport (the exact 4-arg
-///      method Chat.chatInternal uses) with the session grouping carried as the x-langfuse-session-id
-///      HEADER and NO session_id in the body. Assert HTTP 200 + nonce, and that the Langfuse trace's
-///      sessionId equals the header value. This proves the CORRECT correlation mechanism end-to-end.
-///   B (RED — reveals a real defect): drive AM7's Chat with `session_id` SET on the request. The desired
-///      behavior is HTTP 200 + a completion echoing the nonce (session correlation). It FAILS because the
-///      leakage gate (Chat.chatInternal, OPENAI_COMPAT branch) keeps `session_id` in the request BODY,
-///      which LiteLLM forwards to Azure and Azure rejects with HTTP 400 "Unknown parameter: 'session_id'".
-///      A control run without session_id (succeeds) and a direct body-probe (captures the 400) make the
-///      root cause unambiguous. This test is intentionally red until the gate is fixed to send session_id
-///      ONLY as the x-langfuse-session-id header (buildTracingHeaders already does exactly that).
+/// RESOLUTION PATH COVERED HERE: createOpenAICompatConfig sets chatConfig.serviceType and builds its
+/// connection through OlioTestUtil.getCreateConnection, which takes no dialect argument and never sets
+/// one - so the connection persists at dialect=UNKNOWN and ChatUtil.resolveServiceType falls through to
+/// serviceType. This class therefore exercises the DEPRECATED FALLBACK branch. The authoritative
+/// system.connection.dialect path is covered by TestLiteLLMOllamaProxy. Keep both.
+///
+/// Three tests, all GREEN as of 2026-09-14:
+///   A (round-trip): drive a real chat through AM7's own Chat path with `user` set (no session_id),
+///      assert HTTP 200 + a real completion echoing a unique nonce, then poll the Langfuse public API
+///      and assert a trace landed for this run's unique userId.
+///   C (header mechanism): send the request through AM7's ClientUtil transport (the exact 4-arg method
+///      Chat.chatInternal uses) with the session grouping carried as the x-langfuse-session-id HEADER
+///      and NO session_id in the body. Assert HTTP 200 + nonce, and that the Langfuse trace's sessionId
+///      equals the header value. This proves the CORRECT correlation mechanism end-to-end.
+///   B (was RED, now GREEN - see its own javadoc): AM7's Chat with `session_id` SET on the request.
+///
+/// GPU COST: three chat completions plus three Langfuse polls; ~45s total against a local qwen3:8b.
 public class TestLiteLLMRoundTrip extends BaseTest {
 
-	private static final String LITELLM_MODEL = "gpt-5.6-terra";
+	/// Proxied model ALIAS (as declared in src/litellm/config.yaml `model_list`), resolved from
+	/// test.llm.litellm.model. This was HARDCODED to "gpt-5.6-terra", which made the whole class
+	/// unrunnable without Azure credentials (AZURE_API_KEY/AZURE_API_BASE): every request came back
+	/// as an upstream auth/connect error, not a completion. The Azure alias is NOT removed -- it is
+	/// still in the proxy config and setting test.llm.litellm.model=gpt-5.6-terra restores that path
+	/// verbatim once real Azure credentials are supplied. The default is the Ollama-backed alias that
+	/// actually resolves in this stack.
+	private static final String DEFAULT_LITELLM_MODEL = "qwen3:8b";
 	private static final String DEFAULT_MASTER_KEY = "sk-am7-litellm-test";
 	private static final String DEFAULT_LF_PK = "pk-lf-am7-test";
 	private static final String DEFAULT_LF_SK = "sk-lf-am7-test";
@@ -73,6 +90,10 @@ public class TestLiteLLMRoundTrip extends BaseTest {
 	private static final Pattern CONTENT = Pattern.compile("\"content\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
 
 	private String litellmServer() { return testProperties.getProperty("test.llm.litellm.server"); }
+	private String litellmModel() {
+		String v = testProperties.getProperty("test.llm.litellm.model");
+		return (v != null && !v.isBlank()) ? v.trim() : DEFAULT_LITELLM_MODEL;
+	}
 	private String langfuseHost() { return testProperties.getProperty("test.langfuse.host"); }
 	private String masterKey() { return envOr("LITELLM_MASTER_KEY", DEFAULT_MASTER_KEY); }
 	private String langfusePk() { return envOr("LANGFUSE_PUBLIC_KEY", DEFAULT_LF_PK); }
@@ -83,9 +104,21 @@ public class TestLiteLLMRoundTrip extends BaseTest {
 		return (v != null && !v.isBlank()) ? v.trim() : fallback;
 	}
 
-	/// Skip (not fail) the whole test when the LiteLLM/Langfuse stack is not up. Keeps the default suite
-	/// from ever reaching Azure.
+	/// Opt-in flag for the LIVE LLM tests in this class. Reachability alone is no longer a sufficient
+	/// gate: since test.llm.litellm.model now defaults to the Ollama-backed alias, a reachable proxy
+	/// means a real GPU generation, and the default suite must never fire one (and never in parallel).
+	/// Set LITELLM_LIVE=1 (or -Dlitellm.live=1) to run. Mirrors TestFlux2Composite#liveEnabled.
+	static boolean liveEnabled() {
+		return "1".equals(System.getenv("LITELLM_LIVE")) || "1".equals(System.getProperty("litellm.live"));
+	}
+
+	/// Skip (not fail) the whole test when the opt-in flag is unset or the LiteLLM/Langfuse stack is
+	/// not up. Keeps the default suite from ever reaching an LLM.
 	private void assumeStackLive() {
+		if (!liveEnabled()) {
+			logger.warn("[LITELLM-RT] LITELLM_LIVE not set - SKIPPING live LLM test.");
+		}
+		assumeTrue("LITELLM_LIVE=1 (or -Dlitellm.live=1) not set; live LLM test skipped", liveEnabled());
 		boolean litellm = httpOk(litellmServer() + "/health/liveliness");
 		boolean langfuse = httpOk(langfuseHost() + "/api/public/health");
 		if (!litellm || !langfuse) {
@@ -126,15 +159,21 @@ public class TestLiteLLMRoundTrip extends BaseTest {
 	/// serverUrl + encrypted apiKey) IS persisted through AccessPoint as the test user, because
 	/// Chat.configureChat re-queries it by FK id to decrypt the apiKey. The chatConfig itself is built
 	/// IN-MEMORY and NOT persisted: Chat only reads its fields (serviceType/model/connection), never its
-	/// id, so persistence is unnecessary — and it lets this live test run against the current am7db even
-	/// though that DB's stale A7_olio_llm_chatConfig_0_1."serviceType" column is varchar(10) (the model
-	/// defines maxLength 16 for the 13-char 'OPENAI_COMPAT'; the live column predates the bump and was
-	/// never widened because BaseTest runs schemaCheck=false + repairColumnTypes=false). Persisting here
-	/// would abort with `value too long for type character varying(10)` — an env schema-staleness issue,
-	/// not a defect in the code under test. A unique name per run guarantees a fresh connection apiKey.
+	/// id, so persistence is unnecessary. A unique name per run guarantees a fresh connection apiKey.
+	///
+	/// HISTORICAL NOTE (resolved 2026-09-14): this javadoc used to warn that persisting the chatConfig
+	/// would abort with `value too long for type character varying(10)`, because the live
+	/// A7_olio_llm_chatConfig_0_1."serviceType" column was a stale varchar(10) too narrow for the
+	/// 13-char 'OPENAI_COMPAT'. That column has since been widened non-destructively on am7db
+	/// (ALTER ... TYPE varchar(16)); am72db was already 16. The in-memory approach is kept because it
+	/// is simpler and sufficient, NOT because the schema still blocks it.
 	private BaseRecord createOpenAICompatConfig(BaseRecord user, String cfgName) throws Exception {
+		// 300s, NOT a smaller "safety" value: it must stay ABOVE the LiteLLM per-model
+		// timeout (240s, src/litellm/config.yaml). A client disconnect does not release
+		// LiteLLM's semaphore slot; only LiteLLM's own timeout does. Giving up first would
+		// leave the slot held and wedge the N=1 queue for the rest of that generation.
 		BaseRecord conn = OlioTestUtil.getCreateConnection(user, cfgName + " Connection",
-			litellmServer(), masterKey(), 120);
+			litellmServer(), masterKey(), 300);
 		assertNotNull("connection create returned null", conn);
 
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
@@ -143,7 +182,7 @@ public class TestLiteLLMRoundTrip extends BaseTest {
 		assertNotNull("chatConfig factory newInstance returned null", cfg);
 		cfg.set("serviceType", LLMServiceEnumType.OPENAI_COMPAT);
 		cfg.set("connection", conn);
-		cfg.set("model", LITELLM_MODEL);
+		cfg.set("model", litellmModel());
 		return cfg;
 	}
 
@@ -236,7 +275,7 @@ public class TestLiteLLMRoundTrip extends BaseTest {
 		String sessionId = "am7rt-s-" + nonce;
 
 		String url = litellmServer() + "/v1/chat/completions";
-		String body = "{\"model\":\"" + LITELLM_MODEL + "\",\"stream\":true,"
+		String body = "{\"model\":\"" + litellmModel() + "\",\"stream\":true,"
 			+ "\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly this token and nothing else: "
 			+ nonce + "\"}]}";
 		Map<String, String> extraHeaders = new HashMap<>();
@@ -278,7 +317,28 @@ public class TestLiteLLMRoundTrip extends BaseTest {
 			+ "trace.sessionId end to end through AM7's ClientUtil transport.");
 	}
 
-	/// B — RED: AM7's Chat with `session_id` SET reveals the body-session_id defect (live correlation).
+	/// B - GREEN as of 2026-09-14: AM7's Chat with `session_id` SET returns a completion AND correlates
+	/// to a Langfuse trace by sessionId.
+	///
+	/// This javadoc previously declared the test "intentionally red until the gate is fixed", claiming
+	/// Chat.chatInternal's OPENAI_COMPAT branch kept `session_id` in the request BODY, which Azure
+	/// rejected with HTTP 400 "Unknown parameter: 'session_id'". That description is STALE - the gate
+	/// was fixed. Chat.chatInternal now does `ignoreFields.add("session_id")` UNCONDITIONALLY, for every
+	/// dialect (Chat.java:4023), pruning it from the wire body copy while leaving it readable on `req`
+	/// so buildTracingHeaders (Chat.java:4461-4475) can emit it as x-langfuse-session-id.
+	///
+	/// MEASURED on this run: completion "AM7RT-B-364a2874" came back, and a Langfuse trace with
+	/// sessionId=am7rt-s-AM7RT-B-364a2874 was matched on poll attempt 8. The fail() branch below is
+	/// retained as a live regression trap, not as a known-failure marker.
+	///
+	/// KNOWN LIMIT OF THIS TEST ON AN OLLAMA UPSTREAM - state it rather than overclaim. With the default
+	/// test.llm.litellm.model (qwen3:8b via Ollama), the in-test diagnostic body-probe now returns HTTP
+	/// 200, not the 400 the old javadoc describes: LiteLLM's `drop_params: true` silently discards a
+	/// body-level session_id before it reaches Ollama. So on THIS upstream the test confirms the DESIRED
+	/// behavior but would also pass if the body prune were reverted - it no longer discriminates that
+	/// specific defect. The discriminating upstream is Azure (set test.llm.litellm.model=gpt-5.6-terra
+	/// with real credentials), which 400s on the unknown parameter. Test C is the unconditional proof
+	/// that the header mechanism - not the body - is what produces trace.sessionId.
 	@Test
 	public void testB_bodySessionId_defect_liveCorrelation() throws Exception {
 		assumeStackLive();
@@ -307,7 +367,7 @@ public class TestLiteLLMRoundTrip extends BaseTest {
 		try {
 			HttpClient c = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
 				.connectTimeout(Duration.ofSeconds(10)).build();
-			String pb = "{\"model\":\"" + LITELLM_MODEL + "\",\"session_id\":\"" + sessionId + "\","
+			String pb = "{\"model\":\"" + litellmModel() + "\",\"session_id\":\"" + sessionId + "\","
 				+ "\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: pong\"}]}";
 			HttpRequest req = HttpRequest.newBuilder().uri(URI.create(litellmServer() + "/v1/chat/completions"))
 				.header("Content-Type", "application/json")
@@ -327,7 +387,11 @@ public class TestLiteLLMRoundTrip extends BaseTest {
 		Chat chat = new Chat(user, cfg, null);
 		OpenAIRequest req = chat.newRequest(chat.getModel());
 		req.setStream(false);
-		req.setValue("session_id", sessionId); /// kept in BODY by the OPENAI_COMPAT leakage gate — the bug
+		/// Set on the request object. Chat.chatInternal now prunes `session_id` from the WIRE body
+		/// unconditionally (Chat.java:4023) and re-emits it as the x-langfuse-session-id header
+		/// (buildTracingHeaders, Chat.java:4461-4475). The comment here used to read "kept in BODY
+		/// ... the bug", describing the pre-fix state; that defect is fixed.
+		req.setValue("session_id", sessionId);
 		req.setValue("user", "am7rt-u-" + nonce);
 		chat.newMessage(req, "Reply with exactly this token and nothing else: " + nonce, Chat.userRole);
 		OpenAIResponse resp = chat.chat(req);
@@ -337,7 +401,12 @@ public class TestLiteLLMRoundTrip extends BaseTest {
 			+ (completion == null ? "null" : completion.trim()) + "\"");
 
 		/// DESIRED behavior: session_id set => HTTP 200 + completion echoing the nonce, and a Langfuse
-		/// trace whose sessionId equals the value. This FAILS while the body-session_id defect stands.
+		/// trace whose sessionId equals the value. This now PASSES (the body-session_id defect is
+		/// fixed); the branch below is retained as a regression guard, not an expected outcome.
+		/// Caveat, stated in the class javadoc too: on an OLLAMA-backed upstream LiteLLM's
+		/// `drop_params: true` would discard a body-level session_id anyway, so this case no longer
+		/// DISCRIMINATES the body-vs-header defect here — Azure is the discriminating upstream, and
+		/// testC is the unconditional proof that the HEADER produces trace.sessionId.
 		if (completion == null || !completion.contains(nonce)) {
 			logger.error("[LITELLM-RT][B][FINDING] DEFECT CONFIRMED — AM7 Chat sends `session_id` in the "
 				+ "request BODY for the OPENAI_COMPAT dialect (Chat.chatInternal leakage gate does NOT prune "

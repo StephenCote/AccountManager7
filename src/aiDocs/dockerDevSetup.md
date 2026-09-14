@@ -61,18 +61,30 @@ in an interactive shell, so the blocks below assume you are already in `src\`; t
 collide with a local Tomcat on `8443` or a dev Postgres on `15432`, and its whole state is one host
 directory you can delete. Path B is documented in §6.
 
-### Hard constraint: Docker cannot reach the LAN on this host
+### Docker CAN reach the LAN on this host (the old "hard constraint" was wrong)
 
-Docker Desktop on Windows bridges to `172.20.x.x` and **cannot route to `192.168.1.x`** — 100% packet
-loss to the SD server (`192.168.1.39`) and the Ollama LLM (`192.168.1.42`) from inside any container.
-So:
+This section used to state as a hard constraint that Docker Desktop bridges to `172.20.x.x` and
+cannot route to `192.168.1.x`, so SD/LLM work had to run on the host Tomcat. **That is false and has
+been re-measured twice:**
 
-- **Docker is for UI / REST / E2E / schema work.** It works fully for those.
-- **Anything that actually calls SD or the LLM must run on the host Tomcat**, which can reach them.
-- SD/LLM features in the Docker stack fail *silently* — no connection, no images, no visible error.
-  That is the network, not a bug in the stack.
+- 2026-09-13, from inside `am7test-am7-1`: Ollama `http://192.168.1.42:11434/api/tags` → **200**,
+  SwarmUI `http://192.168.1.39:7801/` → **302** (recorded in `.claude/rules/troubleshooting.md`).
+- 2026-09-14, from a container on `am7test_am7-test-net`: `http://192.168.1.42:11434/api/tags` →
+  **HTTP 200 in 34ms**; from inside the running `litellm` container specifically → **200 in 24ms**.
 
-(This reconciles the guidance conflict logged as audit item 7 in `DockerComposeDesign.md`.)
+So: **use Docker for everything, including SD- and LLM-touching work.** Long chunked extractions and
+ChapBook creation have been run end-to-end against the real LLM through Docker Tomcat. The host
+Eclipse-managed Tomcat remains a valid target, not a required one.
+
+If you *do* hit packet loss to `192.168.1.x`, treat it as a host networking problem to diagnose —
+not a standing property of the setup. Check from inside the container first:
+
+```powershell
+docker exec am7test-am7-1 curl -s -o /dev/null -w '%{http_code}' http://192.168.1.42:11434/api/tags
+```
+
+(This retires the guidance conflict logged as audit item 7 in `DockerComposeDesign.md`, which is now
+marked resolved there.)
 
 ---
 
@@ -108,6 +120,9 @@ HTTPS, that stage fails — use the `PREBUILT=1` escape hatch in §2b.
 Set-Location C:\Projects\GitHub\AccountManager7\src
 docker compose -p am7test -f docker-compose.test.yml up --build -d
 ```
+
+`src\am7-docker-up.bat` wraps this (plus `--no-build` / `--prebuilt`, and the `--llmproxy` /
+`--llmproxy-only` / `--app-only` options for the optional LLM-proxy sidecars — see §12.2).
 
 To keep persistent state somewhere other than `.\docker-data` — note PowerShell needs the env var set
 on its own line, there is no inline `VAR=value cmd` prefix:
@@ -513,8 +528,8 @@ Differences from Path A that will bite:
   `http://192.168.1.42:7801`, but `.42` is the Ollama LLM host; the SD/Swarm host is
   `192.168.1.39:7801` (correct in `entrypoint.sh:20` and `docker-compose.test.yml:71`). Logged as
   audit item 1 in `DockerComposeDesign.md`; **not fixed here** — this file documents, it doesn't
-  change config. Override `SD_SERVER` explicitly if you use Path B for SD work (and re-read the LAN
-  constraint in §0 first).
+  change config. Override `SD_SERVER` explicitly if you use Path B for SD work — the container can
+  reach the SD host (§0), so a wrong value is the only thing in the way.
 - The comment at `docker-compose.yml:12-13` suggests Postgres on `15432`; the command above uses
   `15433` to stay clear of a dev Postgres.
 
@@ -698,8 +713,8 @@ Port matters for `applicationPath` (`core/config.js:18-21`): port `8899` maps to
 | `HTTP 000` from Windows `curl` | schannel TLS renegotiation loop vs the self-signed cert | use a browser or WSL |
 | `Blocked request. This host is not allowed.` | Vite preview rejecting a real domain name in `Host` | already handled — nginx pins upstream `Host` to `localhost:8899` |
 | `Organization already exists` + `Failed to initialize key stores` | orphan state: `/data/am7` lost, DB intact | restore the keystores or reset both together (§7) |
-| Long SD render aborts around 15 min | `nginx.conf:58` caps `/AccountManagerService7/` at **900s** while `HTTP_READ_TIMEOUT` defaults to **1200s** — a FLUX.2 composite (~638s, can exceed 900s) can be cut off by nginx | known ceiling (audit item 2); raise the nginx cap if you need it. Note §0 first — Docker can't reach the SD host here anyway |
-| SD/LLM calls silently do nothing | Docker cannot route to `192.168.1.x` | use the host Tomcat (§0) |
+| Long SD render aborts around 15 min | `nginx.conf:58` caps `/AccountManagerService7/` at **900s** while `HTTP_READ_TIMEOUT` defaults to **1200s** — a FLUX.2 composite (~638s, can exceed 900s) can be cut off by nginx | known ceiling (audit item 2); raise the nginx cap if you need it. Docker does reach the SD host (§0), so this ceiling is real, not theoretical |
+| SD/LLM calls silently do nothing | **Not** a LAN-routing problem — Docker reaches `192.168.1.x` (§0). Check the `*_SERVER` values actually configured, and `SD_SERVER` in `docker-compose.yml:21` which defaults to the wrong host | fix the config; verify reachability with the `docker exec ... curl` one-liner in §0 |
 | Tomcat download 404s during build | `dlcdn.apache.org` only serves the current patch release; `TOMCAT_VERSION=11.0.25` (`Dockerfile:71`) will eventually be superseded | bump `TOMCAT_VERSION`. Do **not** add `curl -k` — that would MITM-expose the Tomcat binary |
 | Junk `c:/projects/logs/` dir inside the container | `log4j2.xml` hardcodes a Windows `log-path` | cosmetic; app logs still reach `docker logs` via the console appender |
 | `npm ci` / `EUSAGE` if you edit the Dockerfile | committed `package-lock.json` is out of sync with `package.json` | the Dockerfile uses `npm install` on purpose; regenerating the lock file is an open follow-up |
@@ -719,3 +734,351 @@ Port matters for `applicationPath` (`core/config.js:18-21`): port `8899` maps to
 - **Not re-run for this document.** No container was built or started while writing it. The two
   shipped-config defects called out inline (`SD_SERVER` host in `docker-compose.yml`, nginx 900s vs
   the 1200s app default) are documented, **not fixed** — fixing config was outside this task.
+- **§12 (`llmproxy` profile) is different:** that profile was **actually run for the first time on
+  2026-09-14**, and §12 plus the measurements in `LiteLLMLangfuseIntegrationDesign.md` §6 come from
+  that run — including the LAN reachability numbers that retire the old §0 "hard constraint".
+  Measured in that same run and reported in §12: with `langfuse-minio` and `langfuse-redis` stopped a
+  traced call did **not** appear in Langfuse, and after restarting both the same call landed on poll
+  attempt 2 (so neither is padding); and after LiteLLM was pointed at `litellmdb`, `POST /login`
+  returned `303 → /ui?login=success` with a `proxy_admin` token while a wrong password 401'd. The
+  AM7-side configuration values in §12.4 (`dialect`, `serverUrl` forms, timeout ordering, alias
+  constraints, the `name`-in-PATCH rule) were read from current source — `ChatUtil.resolveServiceType`,
+  `Chat.getServiceUrl` (`Chat.java:4509-4522`), `connectionModel.json`, `litellm/config.yaml`, `docker-compose.test.yml`,
+  `core/model.js`.
+- **The `am7-docker-up.bat` flag behaviour in §12.2** (`--llmproxy`, `--llmproxy-only`, `--app-only`,
+  the rejected combination, the automatic `--env-file`) was implemented and **run** by the author of
+  that change, not re-tested while writing this section: `--llmproxy-only` measured 8 containers up
+  with `am7test-am7-1` **not** running and a proxied chat completion traced end-to-end; `--app-only`
+  measured all sidecars exited with `am7` + `am7-pg` still running, exit 0.
+
+---
+
+## 12. Optional LLM-proxy stack — the `llmproxy` profile (LiteLLM + Langfuse)
+
+Opt-in sidecars in the **same** `docker-compose.test.yml`, behind compose profile **`llmproxy`**:
+`litellm` (an OpenAI-compatible proxy in front of the LAN Ollama / Azure) plus **Langfuse v4**
+(tracing). Two things it buys you: a **single queue** in front of the one physical GPU, and a
+**trace of every LLM call** with prompt, completion, latency and token counts.
+
+**Nothing in this profile starts with the default stack**, and the `am7` service deliberately has no
+`depends_on` on it — so a `chatConfig` pointing at `http://litellm:4000` **fails closed** when the
+profile is down. That is intended: it never silently half-works.
+
+This section is the **how**. The **why** — why the concurrency cap is the whole point, why the image
+is digest-pinned, why the timeout ladder is ordered the way it is — lives in
+[`LiteLLMLangfuseIntegrationDesign.md`](LiteLLMLangfuseIntegrationDesign.md) §6, along with the
+measurements behind it.
+
+First time through, read in order: **12.1** what you are starting → **12.2** start it → **12.3**
+prove it works → **12.4** point AM7 at it → **12.5** read the metrics → **12.6** when it misbehaves.
+
+### 12.1 What the seven containers are for — and the eighth database
+
+`--profile llmproxy` adds **seven** containers. None replaces anything in the default stack; they all
+sit alongside it, and all are named `am7test-<service>-1`.
+
+| Service | Role | Why it is there |
+|---|---|---|
+| `litellm` | **The proxy itself.** Single ingress for chat completions; enforces the per-model concurrency cap; emits Langfuse traces. | This is the actual feature — the other six exist to support tracing. |
+| `langfuse-web` | Langfuse UI + public API (`/api/public/*`). | Where you read traces (host port 3001). |
+| `langfuse-worker` | Drains the ingestion queue into Clickhouse. | **Not optional.** Without it the API accepts events (HTTP 202) and the UI stays **permanently empty** — which looks exactly like "tracing is broken". |
+| `langfuse-clickhouse` | Columnar store holding the traces/observations themselves. | Langfuse v3+ moved trace storage off Postgres. `langfuse-web` **refuses to start** if its Clickhouse migrations fail. |
+| `langfuse-db` (Postgres) | Langfuse **metadata only** — orgs, projects, API keys, users. | Not where traces live. Separate from AM7's `am7-pg`. |
+| `langfuse-redis` | Queue between the ingestion API and the worker. | Measured required — see below. |
+| `langfuse-minio` | S3-compatible blob store for raw ingestion events and media. | Measured required — see below. Publishes no host port. |
+
+**All seven are OFF by default.** They start only when you ask for the profile — `--profile llmproxy`
+(12.2) or `am7-docker-up.bat --llmproxy`. Nothing in the default stack pulls them in. If you have
+been running with them and want the resources back, **`am7-docker-up.bat --app-only`** stops them
+while leaving the app and `am7-pg` up; because it uses `stop` rather than `down`, the containers and
+their data stay in place and a later `--llmproxy` restarts them in seconds.
+
+**Six of these are simply what Langfuse v4 *is*.** v4 is a six-service deployment; that weight is the
+direct cost of running the current supported major ("latest stable", chosen deliberately). There is
+no supported way to run v4 with fewer parts.
+
+**None of them is padding — measured 2026-09-14.** With `langfuse-minio` and `langfuse-redis`
+**stopped**, a traced call did **not** appear in Langfuse at all. After restarting both, the same
+call landed on **poll attempt 2**. The blob store and the queue are on the live ingestion path, not
+decoration.
+
+**The lighter alternative, stated honestly.** **Langfuse v2 was two containers** (web + Postgres) and
+is sufficient for the Tier-A tracing this stack actually uses; it would also let LiteLLM drop the
+`LANGFUSE_MIGRATION_V4_WRITE_MODE=dual` workaround (12.6). The trade is running a superseded major.
+This is a **standing option, not a recommendation** — raise it if the seven-container footprint
+becomes a problem on this workstation.
+
+**The eighth thing is a database, not a container.** `litellm` also uses **`litellmdb`**, created
+inside the **existing `am7-pg` container** — no new container, and deliberately its own database
+rather than a schema inside `am72db`, so LiteLLM's Prisma migrations can never touch the AM7 schema.
+It backs the **LiteLLM admin UI, virtual keys and spend tracking** only. Without `DATABASE_URL` the
+proxy path (completions, model list, the queue) still works perfectly, but **every admin-UI request
+500s with `Not connected to DB!`** — that was the state until 2026-09-14 and is the answer to "I
+can't log in to the proxy web page" (12.5).
+
+`litellmdb` is created by `docker/postgres/initdb.d/10-litellm-db.sh`, which the Postgres entrypoint
+runs **only on a fresh PGDATA**. On an already-provisioned cluster create it once by hand —
+non-destructive, and it touches nothing in `am72db`:
+
+```powershell
+docker exec am7-pg psql -U am7user -d postgres -c "CREATE DATABASE litellmdb"
+```
+
+### 12.2 Bring up and tear down
+
+```powershell
+Set-Location C:\Projects\GitHub\AccountManager7\src
+
+# Same helper as §7, plus the profile and env file. A PowerShell FUNCTION, not a string variable.
+function dcp { docker compose -p am7test -f docker-compose.test.yml --env-file .\volatile\llmproxy.env --profile llmproxy @args }
+
+dcp up -d                    # start the default stack AND the seven proxy containers
+dcp ps                       # health of all of them
+dcp logs -f litellm          # proxy log: upstream errors, Langfuse callback errors
+dcp logs -f langfuse-worker  # ingestion log: why traces are or aren't landing
+```
+
+Git Bash equivalent:
+
+```bash
+cd C:\Projects\GitHub\AccountManager7\src
+docker compose -p am7test -f docker-compose.test.yml \
+  --env-file ./volatile/llmproxy.env --profile llmproxy up -d
+```
+
+`src/volatile/llmproxy.env` is git-ignored (root `.gitignore` `volatile*`) and carries the runtime
+secrets/values. `src/litellm/config.yaml` is committed and secret-free — every credential is an
+`os.environ/<VAR>` reference.
+
+> **`--env-file` feeds docker-compose *interpolation only*.** It puts nothing inside a container. A
+> variable litellm's own process must see has to **also** appear in the service's `environment:`
+> block. That is why `OLLAMA_API_BASE` is declared there; without it litellm silently fell back to
+> `localhost:11434` on the first-ever run of this profile.
+
+> **Omitting `--env-file` does not fail.** Compose starts cleanly on the committed throwaway defaults
+> with no warning. See 12.5 for what those are and why both UI ports are loopback-bound.
+
+#### Bring-up via the dev script
+
+`src/am7-docker-up.bat` (introduced in §2a) knows about the profile, so you do not have to remember
+the compose incantation. Flags are **combinable and order-independent**; `--help` / `-h` / `/?`
+prints usage.
+
+| Command | Starts | Sidecars |
+|---|---|---|
+| `am7-docker-up.bat` | app + `am7-pg` | **not started** (default) |
+| `am7-docker-up.bat --llmproxy` | app + `am7-pg` + all seven sidecars | started |
+| `am7-docker-up.bat --llmproxy-only` | **only** the proxy/observability stack — no app, no build, no Olio seed staging | started |
+| `am7-docker-up.bat --app-only` | **only** app + `am7-pg` | **stopped** (reclaims the overhead) |
+
+- **`--llmproxy-only`** names `litellm langfuse-web langfuse-worker` explicitly and lets compose pull
+  in each one's `depends_on`, which drags along `am7-pg` (it hosts `litellmdb`), `langfuse-db`,
+  `langfuse-clickhouse`, `langfuse-minio` and `langfuse-redis`. `langfuse-worker` has to be named
+  because **nothing `depends_on` it** — the same reason it is the first thing to check in 12.6. On
+  completion it prints the two UI URLs and the health endpoint. Measured: 8 containers up,
+  `am7test-am7-1` **not** running, and a chat completion through the proxy returned correctly with
+  the trace landing in Langfuse.
+- **`--app-only`** is the reverse, and it **stops** running sidecars rather than merely not starting
+  them — that is the point of the flag. It uses `stop`, not `down`, so containers and data stay put
+  and a later `--llmproxy` brings them back in seconds. Measured: sidecars all exited, `am7` +
+  `am7-pg` running, exit code 0.
+- `--app-only` together with `--llmproxy-only` is **rejected with an error** — they are opposites.
+- Combines with the build flags: `am7-docker-up.bat --no-build --llmproxy`.
+- If `src/volatile/llmproxy.env` exists, the script passes `--env-file .\volatile\llmproxy.env`
+  automatically whenever a profile flag is used. If it is absent you silently get the committed
+  throwaway defaults (12.5).
+- The startup banner reports **`llmproxy : ON/off`**, so you can see which mode you launched.
+
+#### Tear down
+
+```powershell
+dcp down        # stop; Langfuse trace data KEPT
+dcp down -v     # stop AND wipe the Langfuse named volumes (traces gone)
+```
+
+**This profile is the one place in this compose file that uses NAMED volumes** —
+`langfuse-clickhouse-data`, `langfuse-clickhouse-logs`, `langfuse-minio-data`. So the §7 full-reset
+recipe ("stop, then delete `.\docker-data`") does **not** clear trace data; **`down -v` is required**
+for that. They are named rather than bind-mounted because Clickhouse and MinIO commit by atomic
+rename, which fails on a Docker Desktop for Windows bind mount (`filesystem error: in rename:
+Permission denied`) — surfacing as `langfuse-web` crash-looping with the misleading "Applying
+clickhouse migrations failed / the database is unavailable". Hit on the first real run, 2026-09-14.
+
+`langfuse-db` (Langfuse's Postgres) is an ordinary bind mount under `${AM7_DATA_DIR}/langfuse-pg` and
+holds only metadata. `litellmdb` lives inside `am7-pg` and survives everything short of a full
+`docker-data` reset.
+
+### 12.3 Smoke-test it before blaming AM7
+
+| Check | Command / URL | Expect |
+|---|---|---|
+| All seven up, none restart-looping | `dcp ps` | `running` / `healthy` |
+| Proxy alive | `curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:4000/health/liveliness` | `200` |
+| Proxy sees its models | `curl.exe -H "Authorization: Bearer sk-am7-litellm-test" http://127.0.0.1:4000/v1/models` | `qwen3:8b`, `gpt-5.6-terra` |
+| Upstream reachable from inside the proxy | `docker exec am7test-litellm-1 python -c "import urllib.request;print(urllib.request.urlopen('http://192.168.1.42:11434/api/tags',timeout=5).status)"` | `200` (measured 24ms, 2026-09-14) |
+| Langfuse API answering | `curl.exe -u pk-lf-am7-test:sk-lf-am7-test http://127.0.0.1:3001/api/public/traces` | JSON with a `data` array |
+
+In **PowerShell use `curl.exe`**, not bare `curl` — that is an alias for `Invoke-WebRequest` and does
+not take `-u` / `-H` / `-w`. These endpoints are plain HTTP on loopback, so the self-signed-TLS
+`HTTP 000` problem from §10 does not apply. There is **no `curl` or `wget` inside the litellm image**
+— use its bundled `python`, as the container healthcheck does.
+
+### 12.4 Point AM7 at the proxy — `system.connection` + `olio.llm.chatConfig`
+
+AM7 reaches an LLM through a **`system.connection`** record (URL, key, timeout, **dialect**) that an
+**`olio.llm.chatConfig`** references. To use the proxy you create/edit a connection and point a
+chatConfig at it. Nothing else changes.
+
+| Record | Field | Value for the proxy |
+|---|---|---|
+| `system.connection` | **`dialect`** | **`OPENAI_COMPAT`** |
+| `system.connection` | `serverUrl` | `http://litellm:4000` (caller inside the compose network) **or** `http://127.0.0.1:4000` (caller on the Windows host) |
+| `system.connection` | `apiKey` | the LiteLLM **master key** — `LITELLM_MASTER_KEY`, test default `sk-am7-litellm-test` |
+| `system.connection` | `requestTimeout` | **300** |
+| `olio.llm.chatConfig` | `connection` | picker → the connection above |
+| `olio.llm.chatConfig` | `model` | a `model_name` **alias declared in `src/litellm/config.yaml`** — `qwen3:8b` or `gpt-5.6-terra` |
+| `olio.llm.chatConfig` | `serviceType` | **leave it alone** — deprecated, fallback only |
+
+In the UI: connections live at **`#!/list/system.connection`**; the chatConfig form has a
+**Connection** picker.
+
+**The dialect lives on the connection, not on the chatConfig.** `system.connection.dialect` is
+authoritative: `ChatUtil.resolveServiceType` maps a non-`UNKNOWN` dialect by name onto the transport,
+and **only** falls back to the deprecated `chatConfig.serviceType` when `dialect` is `UNKNOWN` (or
+the connection is absent). Setting `serviceType = OPENAI_COMPAT` while leaving `dialect = UNKNOWN`
+appears to work but is exercising the legacy path.
+
+**`serverUrl` — do not mix the two forms.**
+- **`http://litellm:4000`** when the caller is inside the compose network — the Service7 container,
+  i.e. normal app use. This is the one you want for chatting in the UI.
+- **`http://127.0.0.1:4000`** when the caller is on the Windows host — Objects7 JUnit
+  (`TestLiteLLMRoundTrip`, `TestLiteLLMOllamaProxy`).
+- The compose service name does not resolve on the host, and `127.0.0.1` inside the Service7
+  container is the container itself. Either mistake looks like the proxy being down.
+- **Base URL only** — no trailing slash, no `/v1`. AM7 appends `/v1/chat/completions` itself for the
+  `OPENAI_COMPAT` dialect (`Chat.getServiceUrl`, `Chat.java:4509-4522`).
+
+**`apiKey`** is the proxy's own client-facing key, distinct from any upstream Azure key. It is stored
+**vault-encrypted** via `EncryptFieldProvider` like every other connection secret, and nothing logs
+it (`Chat.java:4058` prints `authToken=present(<length>)` only).
+
+**`requestTimeout: 300` — and it must stay ABOVE the LiteLLM per-model `timeout` (240s).** Two
+measured facts fix that ordering:
+- **A client disconnect does NOT release LiteLLM's queue slot.** When AM7's latch expires and
+  `Chat.cancelOutbound()` fires, the slot stays held for the remainder of that generation — with the
+  cap at 1, one timed-out AM7 caller blocks the whole queue, and **nothing in AM7 can free it**.
+- **LiteLLM's own timeout DOES release it, promptly.** So LiteLLM has to be the layer that gives up
+  first. If AM7 gives up first you get exactly the wedge the proxy exists to prevent.
+
+Also: with a queue in front, `requestTimeout` now has to cover **queue wait + generation**, not just
+generation — LiteLLM's `timeout` clock starts *after* the slot is acquired. With cap `N=1` and queue
+depth `D`, the last caller needs roughly `D × timeout` of AM7 budget. **Raise `requestTimeout` rather
+than lowering LiteLLM's `timeout`.** Full ladder: design doc §6.5.
+
+**`chatConfig.model` must be an alias declared in `src/litellm/config.yaml`** — currently `qwen3:8b`
+(proxied to the LAN Ollama) or `gpt-5.6-terra` (Azure; needs `AZURE_API_KEY` / `AZURE_API_BASE`,
+which are **not** supplied by default, so that route fails until you add them). **The alias name is
+load-bearing:** AM7 branches on the **model-string prefix before it looks at the dialect**, so an
+alias starting with `o` or `gpt-5` is misread as an o-series reasoning model — sampling params get
+stripped and the max-token field is swapped. `qwen3:8b` trips neither, and matching the upstream
+model name verbatim is what lets a chatConfig be repointed by swapping only its connection.
+
+**Editing an existing connection over raw REST/curl:** a `PATCH /rest/model` must include **`name`**
+plus identity, or it **fails validation silently** and the update is discarded — `system.connection`
+inherits `common.nameId`, whose `\S` rule is validated against the *patch record itself*, not the
+merged result. The Ux752 form already carries `name` on every patch for exactly this reason
+(`core/model.js`); hand-rolled scripts must do it themselves.
+
+> ⚠️ **Do NOT repoint an existing `OLLAMA` chatConfig at the proxy** until **KI-72** is fixed. AM7
+> gates its entire Ollama-extension block on `serviceType == OLLAMA`, so the `OPENAI_COMPAT` path
+> silently drops `num_ctx`, `think`, `top_k`, `repeat_penalty`, `typical_p`, `min_p`, `repeat_last_n`
+> and `num_gpu` — a config that set `think:false` gets thinking back **ON**. `num_ctx` is pinned on
+> the LiteLLM model entry as a partial mitigation; the rest cannot be fixed proxy-side. **Creating a
+> new `OPENAI_COMPAT` chatConfig is fine.** See [`KnownIssues.md`](KnownIssues.md) **KI-72** and
+> design doc §6.6.
+
+**Fail-closed, by design.** Because `am7` has no `depends_on` on the profile, a chatConfig pointing at
+`http://litellm:4000` simply fails when the profile is down — it does not silently fall back to
+talking to Ollama directly. If chats break the moment you stop the profile, that is the mechanism
+working.
+
+### 12.5 Reviewing the metrics — two separate UIs
+
+#### LiteLLM admin UI — `http://127.0.0.1:4000/ui/`
+
+**Login: `admin` / the master key** (`sk-am7-litellm-test` by default). Overridable via
+`LITELLM_UI_USERNAME` / `LITELLM_UI_PASSWORD` (seen inside the container as `UI_USERNAME` /
+`UI_PASSWORD`).
+
+**Why this used to fail, and what changed.** The admin UI is Postgres-backed. With no `DATABASE_URL`
+set, `/login` and `/get/ui_settings` returned **500 `Not connected to DB!`** while the proxy path
+itself was perfectly healthy — chats worked, the UI was unusable. Fixed 2026-09-14 by pointing
+LiteLLM at **`litellmdb`** on the existing `am7-pg` (12.1). Verified after the fix: `POST /login`
+returns **`303` → `/ui?login=success`** with a `proxy_admin` token, and a wrong password correctly
+**401s**.
+
+What it gives you: virtual keys, per-key spend, the model list and model health, and request logs.
+
+#### Langfuse UI — `http://127.0.0.1:3001`
+
+**Login: `LANGFUSE_INIT_USER_EMAIL` / `LANGFUSE_INIT_USER_PASSWORD`** — defaults `am7@example.com` /
+`am7-langfuse-pw-test`. The org (`AM7`), the project (**`AM7 Test`**) and the API key pair are seeded
+**headlessly** through the `LANGFUSE_INIT_*` variables, so there is no manual bootstrap wizard.
+
+What it gives you: **per-call traces** — full input and output text, latency, token counts and cost.
+This is the one to open when you want to see what AM7 actually sent.
+
+#### API access (scripting / CI)
+
+```bash
+curl -u pk-lf-am7-test:sk-lf-am7-test http://127.0.0.1:3001/api/public/traces
+curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4000/health/liveliness
+curl -H "Authorization: Bearer sk-am7-litellm-test" http://127.0.0.1:4000/v1/models
+```
+
+(PowerShell: `curl.exe`, and `-o NUL` instead of `-o /dev/null`.) The ISO 42001 metrics client reads
+`/api/public/observations` over this same API for `promptTokens` / `completionTokens`.
+
+#### Both UI ports are bound to `127.0.0.1` only — deliberately
+
+`litellm` (4000) and `langfuse-web` (3001) publish to loopback only; `langfuse-minio` publishes
+nothing. Two reasons, both real: the fallback credentials above are **committed and well-known**, and
+they apply silently if `--env-file` is omitted or mistyped; and **traces contain full prompt and
+completion text** — on AM7 paths that means conversation content, character/narrative material, and
+text extracted from user-uploaded documents. **These credentials are dev-workstation-only.** Never
+run this profile on a shared or LAN-reachable host without overriding every value in design doc §6.9.
+If you want metrics without the bodies, LiteLLM's `turn_off_message_logging: true` keeps token counts
+and latency while suppressing content.
+
+### 12.6 When it misbehaves
+
+**"Traces aren't appearing in Langfuse."** Work down this list — the first three are the ones that
+have actually happened:
+
+1. **Is `langfuse-worker` running?** (`dcp ps`). Without it the API returns 202 and the UI stays
+   empty forever. Not optional in v4.
+2. **Is `LANGFUSE_MIGRATION_V4_WRITE_MODE=dual` set?** A stock `langfuse:4` runs in `events_only`
+   mode and **silently rejects** the legacy `/api/public/ingestion` endpoint that LiteLLM's bundled
+   SDK v2 writes to; `GET /api/public/traces` also refuses to answer in that mode. **LiteLLM logs
+   only a generic `API errors occurred: Bad request`, and chats keep returning 200** — nothing
+   visibly fails.
+3. **Did the call actually go through the proxy?** A chatConfig still pointed at Ollama directly
+   produces no trace by definition. Check `dcp logs litellm` for the request, and re-check the
+   connection's `serverUrl` / `dialect` (12.4).
+4. Are `langfuse-redis` and `langfuse-minio` up? With both stopped, a traced call did not appear at
+   all (measured — 12.1).
+5. Re-poll: ingestion is asynchronous. In the measured run the call landed on poll attempt 2.
+
+**Other gotchas that cost time on the first run:**
+
+- **Changing `LITELLM_LOCAL_MAX_PARALLEL` needs a container RECREATE, not a `restart`.**
+  `docker-compose restart` does not re-read the compose file, and the value is `sed`-rendered into
+  the LiteLLM config by the container entrypoint at start. Use `dcp up -d --force-recreate litellm`.
+- **`ENCRYPTION_KEY` must be exactly 64 hex characters** or `langfuse-web` refuses to boot.
+- **`langfuse-web` crash-looping on "Applying clickhouse migrations failed"** is usually the named
+  volumes having been replaced by bind mounts (12.2), not a genuinely unavailable database.
+- **Proxy healthy but every admin-UI request 500s** → `Not connected to DB!` → `litellmdb` missing
+  (12.1).
+- **On any litellm image bump:** re-run the streaming concurrency-cap test before trusting the queue,
+  and re-check the bundled Langfuse SDK major. The image is **digest-pinned to 1.102.0** because the
+  cap is **inert for streaming** on `main-stable` (1.100.1) and AM7 always streams. Design doc §6.3.

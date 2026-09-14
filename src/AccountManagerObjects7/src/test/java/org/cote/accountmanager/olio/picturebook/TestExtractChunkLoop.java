@@ -227,6 +227,64 @@ public class TestExtractChunkLoop extends BaseTest {
 				String.join(" ", failed).contains("unreachable"));
 	}
 
+	/// A TIMEOUT MUST NOT BE RETRIED ON THE SAME CHUNK.
+	///
+	/// The retry in this loop exists for MALFORMED JSON — qwen3-class models occasionally emit a
+	/// stray quote or a corrupted token, and a fresh generation almost always parses (see
+	/// TestUnparseableFirstAttemptRecoversOnRetryWithoutRecordingAFailure, which must keep passing).
+	/// A timeout is not that. It did not fail through sampling luck; it failed because the server
+	/// could not finish in time, so a second identical request cannot succeed for the reason the
+	/// first failed — and it DOUBLES the load on a server that is already too slow. Measured
+	/// 2026-09-14: two threads looping timeout->retry left Ollama unable to answer a trivial
+	/// "Say OK" within 90s. Attempt 2 also appends "your previous reply could not be parsed as
+	/// JSON", which is factually wrong for a timeout and only makes the prompt bigger.
+	///
+	/// What must NOT change: the loop still moves on to the NEXT chunk. Giving up on the document
+	/// because the model had a slow spell is the regression TestSlowTimeoutsDoNotTripTheBreaker
+	/// guards, and both assertions are made here together.
+	@Test
+	public void TestSlowTimeoutIsNotRetriedOnTheSameChunk() throws Exception {
+		BaseRecord u = user();
+		SummarizeProgress token = new SummarizeProgress();
+		boolean[] reachedEnd = new boolean[] { false };
+		List<String> failed = new ArrayList<>();
+
+		/// EVERY attempt "times out": returns null only after a delay past LLM_INFRA_FAILURE_MS,
+		/// the shortest delay production still classifies as slow-rather-than-dead. Each call
+		/// records the attempt number it was invoked with, so the retry is counted directly rather
+		/// than inferred.
+		final List<Integer> attemptsSeen = Collections.synchronizedList(new ArrayList<Integer>());
+		PictureBookUtil.ChunkLlm alwaysSlow = (vars, attempt) -> {
+			attemptsSeen.add(attempt);
+			try {
+				Thread.sleep(PictureBookUtil.LLM_INFRA_FAILURE_MS + 50);
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+			}
+			return null;
+		};
+
+		/// Each simulated timeout costs a real LLM_INFRA_FAILURE_MS sleep, so keep the text short.
+		run(u, longText(40), token, failed, null, reachedEnd, alwaysSlow);
+
+		logger.info("[NO-RETRY] chunks=" + token.getTotal() + " attempted=" + token.getCurrent()
+				+ " llmCalls=" + attemptsSeen.size() + " attemptNumbers=" + attemptsSeen);
+
+		assertFalse("the scripted model must actually have been called", attemptsSeen.isEmpty());
+		assertFalse("a TIMED-OUT chunk must NOT be retried — attempt 2 was issued: " + attemptsSeen,
+				attemptsSeen.contains(2));
+		assertEquals("exactly one model call per attempted chunk", token.getCurrent(),
+				attemptsSeen.size());
+
+		/// Unchanged behaviour: a slow model is alive, so the document still runs to the end and
+		/// the timed-out chunks are recorded as failures rather than aborting the run.
+		assertTrue("a SLOW model must not abort the document — it must reach the end", reachedEnd[0]);
+		assertEquals("every chunk must still be attempted", token.getTotal(), token.getCurrent());
+		assertFalse("the timed-out chunks must still be reported as failures", failed.isEmpty());
+		assertFalse("a timeout must NOT be reported as an unreachable server",
+				String.join(" ", failed).contains("unreachable"));
+	}
+
 	/// The breaker must still fire for a genuinely DOWN server — that is what it is for, and it
 	/// is what stops a Tomcat shutdown burning 40 minutes on calls to nothing. An unreachable
 	/// server fails IMMEDIATELY.

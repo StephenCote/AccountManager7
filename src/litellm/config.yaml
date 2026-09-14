@@ -4,9 +4,18 @@
 # from the container environment via `os.environ/<VAR>` — the actual values are
 # supplied at runtime (docker-compose `environment:` / an --env-file), never here.
 #
-# Upstream = the Azure "GPT 5.6 Terra" deployment. Azure is a public cloud
-# endpoint, so the Docker network can reach it directly (unlike the LAN SD/LLM
-# hosts at 192.168.1.x). The AM7 app talks to THIS proxy by service name
+# Two upstreams:
+#   1. Azure "GPT 5.6 Terra" — a public cloud endpoint.
+#   2. The LAN Ollama at 192.168.1.42:11434 — the LOCAL model server.
+#
+# LAN reachability (MEASURED 2026-09-14, do not re-derive from the stale note):
+#   a container attached to `am7test_am7-test-net` reached
+#   http://192.168.1.42:11434/api/tags -> HTTP 200 in 34ms. The old
+#   ".claude/rules/troubleshooting.md: Docker cannot reach the LAN" claim was
+#   corrected on 2026-09-13 and does NOT apply. So proxying LOCAL Ollama through
+#   this container works, and that is the whole point of routing it here.
+#
+# The AM7 app talks to THIS proxy by service name
 # (http://litellm:4000/v1/chat/completions) using the OPENAI_COMPAT dialect.
 #
 # Tier A observability: Langfuse callbacks are enabled below, so every proxied
@@ -20,13 +29,158 @@ model_list:
       api_key: os.environ/AZURE_API_KEY
       api_version: os.environ/AZURE_API_VERSION
 
+  # --------------------------------------------------------------------------
+  # LOCAL Ollama. THE REASON THIS PROXY EXISTS: a single queue in front of the
+  # one physical model server.
+  #
+  # `max_parallel_requests` is the knob, and it is the ONLY one that QUEUES.
+  # Read against the INSTALLED source in the pinned image (litellm 1.102.0), not
+  # from docs:
+  #   * litellm/router_utils/client_initalization_utils.py (set_max_parallel_requests_client)
+  #       turns litellm_params.max_parallel_requests into an
+  #       `asyncio.Semaphore(N)` held per DEPLOYMENT.
+  #   * litellm/router.py (async completion path)
+  #       the semaphore is entered on an AsyncExitStack before the upstream call,
+  #       so request N+1 AWAITS a free slot. It blocks; it does not fail.
+  #
+  # THE VERSION TRAP -- this is why the image is digest-pinned to 1.102.0.
+  # Whether the slot survives a STREAMING response differs by version, and AM7
+  # always streams (Chat.java:4034 sets wireReq.setStream(true) unconditionally):
+  #   * 1.102.0  the slot is held in an AsyncExitStack for the life of the
+  #              stream, so a queued caller waits out the whole generation
+  #              ahead of it -- what a single GPU needs.
+  #   * 1.100.1  (`main-stable`) the slot is released when the upstream call
+  #              returns, i.e. at FIRST BYTE. The cap is then INERT for
+  #              streaming, which is all of AM7's chat traffic.
+  # Measured cap=1, K=3 concurrent, identical mock upstream, 2026-09-14:
+  #       1.100.1 streaming -> 5.05 / 5.08 / 5.08s   peak in-flight 3  INERT
+  #       1.102.0 streaming -> 5.90 / 10.92 / 15.93s peak in-flight 1  OK
+  #       either, buffered  -> 5.69 / 10.74 / 15.79s peak in-flight 1  OK
+  # An earlier revision of this comment asserted the slot-held-through-streaming
+  # behaviour while the image was pinned to 1.100.1, where it is false. Re-run
+  # the streaming test on every image bump; do not infer it from the version.
+  #
+  # DO NOT use `general_settings.max_parallel_requests` (or the per-key limit)
+  # for this: that path goes through litellm/proxy/hooks/parallel_request_limiter.py
+  # which raises HTTPException(429) "Max parallel request limit reached". That
+  # REJECTS rather than queues, which is the opposite of what we want.
+  #
+  # Likewise do NOT use rpm/tpm here — those also feed the rejecting limiter and,
+  # via calculate_max_parallel_requests(), would silently derive a different cap.
+  #
+  # N is config-driven via LITELLM_LOCAL_MAX_PARALLEL (default 1 = strict
+  # serialisation, the safe starting point for one GPU).
+  # ALIAS NAMING IS LOAD-BEARING -- do not rename casually. AM7 branches on the
+  # MODEL STRING PREFIX before it looks at the dialect: ChatUtil.getMaxTokenField
+  # (ChatUtil.java:1953,1956) and supportsSamplingParams (:2005) treat a name
+  # starting with "o" or "gpt-5" as an o-series reasoning model and strip
+  # sampling params / swap the max-token field. `qwen3:8b` trips neither, and
+  # matching the upstream model name verbatim means a chatConfig can be
+  # repointed at the proxy by swapping only its connection.
+  - model_name: qwen3:8b
+    litellm_params:
+      model: ollama_chat/qwen3:8b
+      api_base: os.environ/OLLAMA_API_BASE
+      # Innermost timeout -- see the ladder note in litellm_settings below.
+      timeout: 240
+      # Context window must be pinned HERE, and only here. On the OPENAI_COMPAT
+      # path AM7 skips its whole Ollama-extension block (ChatUtil.java:2124-2153),
+      # so `num_ctx` is never sent and the server default applies; and because
+      # `drop_params: true` is set, a num_ctx that AM7 did send would be dropped
+      # as a non-OpenAI param. See the behavioural-divergence note at the bottom
+      # of this file before repointing any existing chatConfig here.
+      # VERIFIED reaching Ollama 2026-09-14: temporarily setting this to 8192
+      # made the server report context_length=8192 on /api/ps, so it is not
+      # being silently dropped. 40960 matches qwen3:8b's full window.
+      num_ctx: 40960
+      # NOTE: this is a literal int, NOT `os.environ/...`, and that is deliberate.
+      # litellm resolves `os.environ/X` via get_secret(), which returns a STRING;
+      # calculate_max_parallel_requests() (litellm/utils.py) passes it
+      # through unchanged and the router then compares/uses it as an int, so
+      # `os.environ/` here fails at REQUEST time (not startup) with
+      # "'<' not supported between instances of 'str' and 'int'". Measured
+      # 2026-09-14 on litellm 1.102.0.
+      # It stays config-driven anyway: the compose entrypoint renders
+      # __LOCAL_MAX_PARALLEL__ from $LITELLM_LOCAL_MAX_PARALLEL before litellm
+      # starts, the same envsubst-a-template pattern docker/entrypoint.sh uses
+      # for web.xml.
+      max_parallel_requests: __LOCAL_MAX_PARALLEL__
+
 litellm_settings:
   # Tier A: proxy-side tracing to Langfuse (no AM7 code involved).
   success_callback: ["langfuse"]
   failure_callback: ["langfuse"]
   drop_params: true
 
+  # ---- Timeout ladder. Read this before changing any timeout anywhere. ----
+  #
+  # The layers, outermost first:
+  #   nginx proxy_read_timeout   3600s  (browser->Tomcat ONLY; not on this hop)
+  #   AM7 per-call latch         connection.requestTimeout + 5  (300+5 = 305s live)
+  #   AM7 future orTimeout       connection.requestTimeout      (300s live)
+  #   LiteLLM per-model timeout  <- set on the model entry above
+  #   LiteLLM default            6000s if unset (litellm/constants.py,
+  #                              DEFAULT_REQUEST_TIMEOUT_SECONDS)
+  #
+  # MEASURED 2026-09-14 against this image, and it decides the ordering:
+  #
+  #   1. A CLIENT DISCONNECT DOES NOT RELEASE THE SEMAPHORE SLOT.
+  #      Abandoning a request after 1s (what AM7 does when its latch expires and
+  #      Chat.cancelOutbound() fires) left the slot held: the next request was
+  #      not dispatched upstream until 5.01s later -- the full generation time
+  #      of the request whose caller had already gone. So with
+  #      max_parallel_requests = 1, ONE timed-out AM7 caller blocks the whole
+  #      queue for the remainder of its generation. AM7 cannot free it; nothing
+  #      in AM7 can.
+  #
+  #   2. LITELLM'S OWN TIMEOUT *DOES* RELEASE IT, PROMPTLY.
+  #      With timeout: 2 against a 5s upstream, the request 408'd at 2.47s and
+  #      the queued one was dispatched 2.05s after the first -- i.e. the instant
+  #      the timeout fired.
+  #
+  #   => The LiteLLM per-model `timeout` MUST be the INNERMOST bound (strictly
+  #      below AM7's latch). It is the only layer that can reclaim a slot
+  #      deterministically. Setting it ABOVE the AM7 latch -- which an earlier
+  #      draft of this file did -- recreates the exact wedge this proxy exists
+  #      to prevent, one layer further out.
+  #
+  #   3. `timeout` DOES NOT COVER QUEUE WAIT. Its clock starts AFTER the
+  #      semaphore is acquired (measured: a queued request's timeout fired ~2s
+  #      after ITS dispatch, not 2s after it was submitted). Queue wait is
+  #      therefore charged entirely to AM7's latch. With N=1 and queue depth D,
+  #      the last caller needs roughly D * timeout of AM7 budget -- so raise
+  #      `requestTimeout` on the system.connection row pointing at this proxy
+  #      rather than lowering the value here.
+  #
+  # 240s sits below the 305s live latch with headroom. Raise BOTH together.
+  request_timeout: 240
+
 general_settings:
   # Clients (AM7) authenticate to the proxy with this key as their Bearer token.
   # It is the proxy's OWN key, distinct from the upstream Azure api_key.
   master_key: os.environ/LITELLM_MASTER_KEY
+
+# ---------------------------------------------------------------------------
+# BEHAVIOURAL DIVERGENCE: proxied (OPENAI_COMPAT) is NOT equivalent to direct
+# (OLLAMA) for the SAME physical model. Measured/read 2026-09-14.
+#
+# AM7 gates its whole Ollama-extension block on serviceType == OLLAMA
+# (ChatUtil.java:2124-2153). Routing the same chatConfig through this proxy
+# therefore silently DROPS all of:
+#     num_ctx, top_k, repeat_penalty, typical_p, min_p, repeat_last_n, num_gpu
+# and `think` (Chat.java:3989) -- so a config that explicitly set think:false
+# gets thinking back ON. qwen3 is named in that very comment as the hybrid
+# reasoning model this affects, and it is the model aliased above. Confirmed
+# live: a max_tokens:20 request through this proxy came back as pure
+# `reasoning_content` with finish_reason "length".
+# Separately, Chat.java:2731 halves the memory-extraction token floor
+# (16384 -> 8192) when serviceType != OLLAMA.
+#
+# `num_ctx` is pinned on the model entry above. The rest cannot be fixed
+# proxy-side; the real fix is to key that AM7 block on "upstream is Ollama"
+# rather than "dialect is OLLAMA", which is a tracked Objects7 follow-up.
+#
+# => DO NOT repoint an existing OLLAMA chatConfig at this proxy until that
+#    follow-up lands. New OPENAI_COMPAT configs are fine. Exposure today is
+#    zero because every existing system.connection row is dialect=UNKNOWN.
+# ---------------------------------------------------------------------------

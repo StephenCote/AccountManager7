@@ -3209,7 +3209,8 @@ public class PictureBookUtil {
                 if (llmResp == null || llmResp.isEmpty()) {
                     /// Only a FAST empty reply suggests the server is gone; a slow one is a
                     /// timeout against a live-but-loaded model. See LLM_INFRA_FAILURE_MS.
-                    if (attemptMs >= LLM_INFRA_FAILURE_MS) {
+                    boolean slowFailure = (attemptMs >= LLM_INFRA_FAILURE_MS);
+                    if (slowFailure) {
                         sawSlowFailure = true;
                     }
                     String why = Chat.getLastCallError();
@@ -3217,6 +3218,25 @@ public class PictureBookUtil {
                     logger.error("No LLM content for " + chunkCtx + " (attempt " + attempt
                             + ", " + attemptMs + "ms)"
                             + (why != null ? " — " + why : " — no reason reported"));
+                    if (slowFailure) {
+                        /// NEVER retry a TIMEOUT. The retry above exists for MALFORMED JSON (see the
+                        /// comment at the head of this loop) — a fresh generation usually parses. A
+                        /// timeout is not that: the request did not fail because of sampling luck, it
+                        /// failed because the server could not finish in time, and re-issuing it
+                        /// cannot succeed for the reason it failed. Worse, AM7 does not (did not)
+                        /// abort the outbound exchange on give-up, so the first generation is STILL
+                        /// occupying the model server's slot; attempt 2 queues a second one behind it
+                        /// and doubles the load on an already-saturated server. Measured 2026-09-14:
+                        /// two threads looping timeout->retry left Ollama unable to answer a trivial
+                        /// "Say OK" within 90s. Note also that attempt 2 appends a "your previous
+                        /// reply could not be parsed as JSON" instruction, which is factually wrong
+                        /// for a timeout and only makes the prompt larger.
+                        /// Give up on THIS CHUNK only — the outer loop deliberately continues to the
+                        /// next chunk (see the circuit breaker below), which stays unchanged.
+                        logger.warn("Chunk " + chunkCtx + " timed out after " + attemptMs
+                                + "ms — NOT retrying (a timeout cannot be fixed by repeating the call)");
+                        break;
+                    }
                     continue;
                 }
                 boolean[] ok = new boolean[1];

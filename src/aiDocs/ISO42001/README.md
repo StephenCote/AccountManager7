@@ -17,4 +17,8 @@ Module orientation: `../../AccountManagerISO42001/CLAUDE.md`.
 
 Related, cross-linked:
 - `../../AccountManagerUx752/aiDocs/Iso42001UxGapAnalysis.md` — UX gap analysis + backend backlog for the ISO 42001 UI (**status refreshed 2026-09-01**: most original P0/P1 gaps now built; remaining backlog = analysisProfile UI, results depth, dashboard heat-map/trend, pagination, run cancel; backend correctness items: `tier=0`→Tier-1, hardcoded `controlAreas`).
-- `../LiteLLMLangfuseIntegrationDesign.md` — optional LiteLLM/Langfuse layer; §2.6 covers the future path to surface Langfuse metrics into ISO 42001 reports (logic in this module, never Objects7/Service7).
+- `../LiteLLMLangfuseIntegrationDesign.md` — optional LiteLLM/Langfuse layer. §2.6 is no longer a
+  "future path": **B5 shipped 2026-09-14** — `LangfuseMetricsClient` / `LangfuseMetrics` live in this
+  module (`iso42001/metrics/`) and are wired through `TestExecutor` / `TestRunner`. The layering rule
+  held: Langfuse token/cost parsing stays here, never in Objects7 or Service7. §6 of that doc is the
+  as-built record (stack, measured concurrency cap, timeout ladder, open follow-ups).

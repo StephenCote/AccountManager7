@@ -187,25 +187,55 @@ public class Chat {
 	/**
 	 * Abort an outbound LLM exchange we have stopped waiting for.
 	 *
-	 * <p>{@code orTimeout} completes OUR future exceptionally but leaves the HTTP exchange — and
-	 * therefore the server-side generation — running. Cancelling releases the connection and lets
-	 * the model server drop the work instead of finishing it for nobody while the next request
-	 * queues behind it.
+	 * <p>Giving up on our own wait only abandons OUR side: without this, the request keeps
+	 * generating on the model server, and the caller's retry queues a second one behind the first.
+	 * Two clients doing that turn a slow server into a permanently saturated one (measured
+	 * 2026-09-14).
 	 *
-	 * <p>Best-effort by design: a cancel that fails must never replace the timeout the caller is
-	 * already handling.
+	 * <p>There are two distinct shapes to abort and they need two different primitives, so this
+	 * does BOTH phases in the same order as {@link LLMConnectionManager#stopAllStreams()}:
+	 * <ol>
+	 *   <li><b>Headers already arrived, generation still streaming.</b> {@code BodyHandlers.ofLines()}
+	 *       completes the future as soon as the response headers are read, so the future is already
+	 *       done and {@code cancel()} is a no-op. The primitive that works here is closing the
+	 *       response body — that closes the socket. Handled by
+	 *       {@link LLMConnectionManager#closeHttpResponse(String)}.</li>
+	 *   <li><b>Request queued upstream, headers never arrived.</b> Nothing is registered to close;
+	 *       the primitive that works is cancelling the RAW {@code sendAsync} future (a future
+	 *       derived from it is "not necessarily cancelable" per the JDK's own implNote, which is why
+	 *       {@code ClientUtil.postToRecordAndStream} now returns the raw one).</li>
+	 * </ol>
+	 *
+	 * <p>Both phases are idempotent — {@code closeHttpResponse} removes the entry before closing, and
+	 * {@code cancel()} on an already-completed/cancelled future returns false and does nothing — so
+	 * calling this twice for the same exchange is safe.
+	 *
+	 * <p>Best-effort by design: an abort that fails must never replace the error the caller is
+	 * already handling, so every step is individually wrapped and nothing is rethrown.
+	 *
+	 * @param streamId  the LLMConnectionManager stream id for THIS exchange (may be null)
+	 * @param rawFuture the RAW cancelable sendAsync future for THIS exchange (may be null)
+	 * @param why       diagnostic reason, logged
 	 */
-	private static void cancelOutbound(CompletableFuture<HttpResponse<Stream<String>>> f, String why) {
-		if (f == null || f.isDone()) {
-			return;
-		}
+	private static void abortOutbound(String streamId, CompletableFuture<HttpResponse<Stream<String>>> rawFuture, String why) {
+		boolean closed = false;
 		try {
-			boolean cancelled = f.cancel(true);
-			logger.warn("Cancelled the outbound LLM request (" + why + "): cancel returned " + cancelled);
+			closed = LLMConnectionManager.closeHttpResponse(streamId);
+		}
+		catch (Exception e) {
+			logger.warn("Failed to close the outbound LLM response body (" + why + "): " + e.getMessage());
+		}
+		boolean cancelled = false;
+		try {
+			if (rawFuture != null && !rawFuture.isDone()) {
+				cancelled = rawFuture.cancel(true);
+			}
 		}
 		catch (Exception e) {
 			logger.warn("Failed to cancel the outbound LLM request (" + why + "): " + e.getMessage());
 		}
+		logger.warn("Aborted the outbound LLM exchange (" + why + "): closedResponseBody=" + closed
+			+ " cancelledFuture=" + cancelled + " streamId=" + streamId);
 	}
 
 	private static void setLastCallError(String err) {
@@ -4063,6 +4093,11 @@ public class Chat {
 		final OpenAIResponse[] bufferResult = new OpenAIResponse[] { null };
 		final String[] bufferError = new String[] { null };
 		final boolean[] errorHandled = new boolean[] { false };
+		/// Shape A give-up marker: the stage completed EXCEPTIONALLY with a timeout, so the latch is
+		/// counted down and latch.await() returns true — meaning the `if (!latch.await(...))` abort
+		/// below is skipped entirely. Set here so the bufferError branch can abort instead. Typed
+		/// detection, not a string match on errMsg.
+		final boolean[] bufferTimedOut = new boolean[] { false };
 		logger.info(ser);
 		/// Tier B (LiteLLM/Langfuse) tracing — per-call header-injection hook (Guardrail 1).
 		/// Build the x-langfuse-* header map ONLY for the OPENAI_COMPAT dialect, here at the call
@@ -4073,12 +4108,47 @@ public class Chat {
 		/// Objects7 stays ISO-agnostic: the values are generic tracing strings a caller placed on the
 		/// request (session_id/user); this layer neither invents nor interprets them.
 		Map<String,String> traceHeaders = buildTracingHeaders(req);
-		CompletableFuture<HttpResponse<Stream<String>>> streamFuture = ClientUtil.postToRecordAndStream(serviceUrl, authorizationToken, ser, traceHeaders);
 
 		/// Apply effective timeout: thread-local override (background analyze/extract) or requestTimeout (normal calls)
 		final int effectiveTimeout = analyzeTimeoutOverride.get() != null ? analyzeTimeoutOverride.get() : requestTimeout;
+
+		/// How long buffer mode is prepared to wait in total. Computed once and used for BOTH the
+		/// latch below and the transport backstop, so the transport can never outlive the caller.
+		final int bufferWaitSeconds = effectiveTimeout > 0 ? effectiveTimeout + 5 : 300;
+
+		/// TRANSPORT BACKSTOP — per-call argument, BUFFER MODE ONLY.
+		///
+		/// Until now the only bound on the exchange was ClientUtil's 10s CONNECT timeout, which says
+		/// nothing about how long the model may take to answer; everything else was orTimeout, which
+		/// abandons OUR wait and leaves the exchange — and the server-side generation — running.
+		/// HttpRequest.timeout() is enforced by the JDK, which aborts the exchange itself, so it
+		/// guarantees no exchange outlives the caller's budget even if the explicit abort below
+		/// fails. It is set to bufferWaitSeconds, NOT effectiveTimeout: AM7's own abort must be the
+		/// normal path and this only the backstop, and matching the latch keeps the give-up
+		/// wall-clock exactly what it was.
+		///
+		/// NOT set for interactive streaming (forwardToClient). MEASURED 2026-09-14
+		/// (TestLLMAbortOnTimeout#testRequestTimeoutBoundsTheWholeExchangeNotJustHeaders): the JDK
+		/// request timeout bounds the WHOLE exchange, not just the wait for response headers — a
+		/// response actively delivering a chunk every 800ms was killed at 4.1s under a 4s request
+		/// timeout, mid-stream, after 5 chunks. Applying it to interactive chat would therefore cut
+		/// off any conversation that streams for longer than requestTimeout (default 120s) even
+		/// while tokens are flowing. Interactive streaming keeps its existing bounds: the mid-stream
+		/// idle watchdog and the ChatListener cancel path.
+		final int transportTimeout = forwardToClient ? 0 : bufferWaitSeconds;
+		final CompletableFuture<HttpResponse<Stream<String>>> rawStreamFuture =
+			ClientUtil.postToRecordAndStream(serviceUrl, authorizationToken, ser, traceHeaders, transportTimeout);
+
+		CompletableFuture<HttpResponse<Stream<String>>> streamFuture = rawStreamFuture;
 		if (effectiveTimeout > 0) {
-			streamFuture = streamFuture.orTimeout(effectiveTimeout, TimeUnit.SECONDS);
+			/// .copy() FIRST — deliberately NOT rawStreamFuture.orTimeout(...).
+			/// CompletableFuture.orTimeout returns `this` and completes `this` exceptionally, so
+			/// applying it straight to the raw sendAsync future would leave that future already DONE
+			/// the moment the timeout fires — making cancel(true) on it a guaranteed no-op and the
+			/// abort path below dead on arrival. Timing out a COPY leaves the raw exchange pending
+			/// and therefore genuinely cancelable, while the stage this method consumes still fails
+			/// with the same CompletionException(TimeoutException), at the same moment, as before.
+			streamFuture = rawStreamFuture.copy().orTimeout(effectiveTimeout, TimeUnit.SECONDS);
 		}
 
 		/// Phase 9: Register stream future with listener for failover cancellation
@@ -4089,8 +4159,11 @@ public class Chat {
 			}
 		}
 
-		/// Global registry: track ALL active streams (interactive + buffer mode)
-		final String streamId = LLMConnectionManager.registerStream(streamFuture);
+		/// Global registry: track ALL active streams (interactive + buffer mode).
+		/// Register the RAW future, not the timeout copy: this registry is what stopAllStreams()
+		/// cancels, and per the JDK sendAsync implNote a future DERIVED from a cancelable future is
+		/// "not necessarily cancelable" — so registering a derived stage made that cancel a no-op.
+		final String streamId = LLMConnectionManager.registerStream(rawStreamFuture);
 
 		streamFuture.thenAccept(response -> {
 			try {
@@ -4198,7 +4271,13 @@ public class Chat {
 			if (error != null) {
 				String errMsg;
 				Throwable rootCause = error.getCause() != null ? error.getCause() : error;
-				if (rootCause instanceof TimeoutException) {
+				/// Two different timeout types now reach here and BOTH mean "we gave up waiting":
+				///  - TimeoutException     — our own orTimeout on the copy fired.
+				///  - HttpTimeoutException — the JDK request timeout fired (an IOException subtype,
+				///    NOT a java.util.concurrent.TimeoutException, so it must be named explicitly or
+				///    a real timeout would be reported as a generic transport error).
+				if (rootCause instanceof TimeoutException || rootCause instanceof java.net.http.HttpTimeoutException) {
+					bufferTimedOut[0] = true;
 					errMsg = "Request timed out after " + effectiveTimeout + " seconds";
 				} else {
 					errMsg = "Error during streaming chat response: " + error.getClass().getName() + ": " + error.getMessage();
@@ -4233,7 +4312,7 @@ public class Chat {
 		if (!forwardToClient) {
 			/// Buffer mode: block until streaming completes
 			try {
-				int waitSeconds = effectiveTimeout > 0 ? effectiveTimeout + 5 : 300;
+				int waitSeconds = bufferWaitSeconds;
 				logger.info("[DIAG] chat() buffer mode: awaiting latch (timeout=" + waitSeconds + "s)");
 				if (!latch.await(waitSeconds, TimeUnit.SECONDS)) {
 					logger.error("Buffer mode timed out waiting for stream completion");
@@ -4245,20 +4324,34 @@ public class Chat {
 					/// unable to answer even a trivial "Say OK" within 90s while the model sat
 					/// resident in VRAM and /api/tags replied in 23ms. unregisterStream() below
 					/// only clears bookkeeping; it does not cancel anything.
-					cancelOutbound(streamFuture, "timed out after " + waitSeconds + "s");
+					abortOutbound(streamId, rawStreamFuture, "latch timed out after " + waitSeconds + "s");
 					setLastCallError("The model did not respond within " + waitSeconds
 						+ "s. It may be loading, overloaded, or too large for this hardware.");
 					return null;
 				}
 			} catch (InterruptedException e) {
 				logger.error("Buffer mode interrupted", e);
-				cancelOutbound(streamFuture, "interrupted");
+				abortOutbound(streamId, rawStreamFuture, "interrupted");
 				setLastCallError("The call was interrupted (the server is shutting down).");
 				Thread.currentThread().interrupt();
 				return null;
 			}
 			if (bufferError[0] != null) {
 				logger.error("[DIAG] chat() buffer mode: stream error: " + bufferError[0]);
+				/// SHAPE A — the give-up path the old code missed entirely.
+				///
+				/// When the request is queued upstream and the response headers never arrive, the
+				/// timeout completes the stage EXCEPTIONALLY, whenComplete runs, and latch.countDown()
+				/// fires — so latch.await() above returns TRUE, the `if (!latch.await(...))` abort is
+				/// skipped, and flow lands here instead. The exchange was still live and nothing ever
+				/// aborted it: the model server kept the generation slot busy for a caller that was
+				/// already gone, and the caller's retry queued a second one behind it.
+				///
+				/// Only abort on a TIMEOUT. A provider error (HTTP 4xx/5xx, a bad model name) means
+				/// the exchange already completed on its own and there is nothing to tear down.
+				if (bufferTimedOut[0]) {
+					abortOutbound(streamId, rawStreamFuture, "buffer-mode timeout after " + effectiveTimeout + "s");
+				}
 				/// Carries the LLM's own message — e.g. "model 'x' not found" — to a caller that
 				/// otherwise only sees null.
 				setLastCallError(bufferError[0]);

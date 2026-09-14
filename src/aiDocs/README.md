@@ -24,7 +24,7 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 | `PageIndexIntegrationPlan.md` | PageIndex REST/chat/MCP/Ux752 integration — phased plan mirroring the vector pattern (not started, 2026-07-08) | active |
 | `SCIM.md` | SCIM 2.0 → AccountManager model mapping reference | reference |
 | `DockerComposeDesign.md` | Single-container Docker Compose (Service7 + Ux752 + nginx) — design & status; **config/doc accuracy audit 2026-09-01** (8 discrepancies logged, incl. SD_SERVER host bug) | active |
-| `dockerDevSetup.md` | **Runbook:** build & start a fresh Docker AM7 install end-to-end (build → first boot → setup token → initial setup → verify), plus day-2 ops, config map, storage map, E2E and troubleshooting. Companion to `DockerComposeDesign.md` (which holds the *why*) | active |
+| `dockerDevSetup.md` | **Runbook:** build & start a fresh Docker AM7 install end-to-end (build → first boot → setup token → initial setup → verify), plus day-2 ops, config map, storage map, E2E and troubleshooting. **§12 is the LiteLLM + Langfuse `llmproxy` runbook** — what the seven sidecar containers are for, how to point an AM7 `system.connection`/`chatConfig` at the proxy, and how to log in to both metrics UIs. Companion to `DockerComposeDesign.md` and `LiteLLMLangfuseIntegrationDesign.md` (which hold the *why*) | active |
 
 ## Games / RPG
 
@@ -43,7 +43,7 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 | `chatRefactor.md` | Chat & prompt template system — primary design reference (incl. NO-CENSORSHIP directive) | reference |
 | `ConversationQualityPlan.md` | Conversation-quality backend plan (Phases 0-6 shipped; 5.1 deferred) | reference |
 | `ConversationQualityBaseline.md` | Conversation-quality metric baseline (regression reference) | reference |
-| `LiteLLMLangfuseIntegrationDesign.md` | Optional LiteLLM (OpenAI-compatible proxy) chat dialect + Langfuse observability — design & phased plan; architecture-review APPROVED, not started (2026-09-01) | active |
+| `LiteLLMLangfuseIntegrationDesign.md` | LiteLLM (OpenAI-compatible proxy) chat dialect + Langfuse observability — design **and as-built record**. B1/B2/B3/B5 done, B4 partial (verified 2026-09-14); §6 "As-built" carries the measured concurrency-cap, timeout-ladder and behavioural-divergence findings, plus the tracked Objects7 follow-up that blocks repointing existing OLLAMA chatConfigs at the proxy | active |
 
 ## Memory subsystem
 

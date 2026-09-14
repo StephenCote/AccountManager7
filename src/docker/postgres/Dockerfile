@@ -111,6 +111,17 @@ RUN set -eu; \
       && { echo "ERROR: unsubstituted @TOKEN@ left in am7-tuning.conf:"; \
            grep -n '@' /etc/postgresql/am7-tuning.conf; exit 1; } || true
 
+# ---------------------------------------------------------------------------
+# First-boot database bootstrap. The base entrypoint runs everything in
+# /docker-entrypoint-initdb.d ONLY when it initializes an empty PGDATA, so this
+# affects fresh clusters only -- an existing ${AM7_DATA_DIR}/pg will not pick it
+# up. See the script's own header for the manual one-liner in that case.
+# COPY'd (not bind-mounted like conf.d) because it is a build input that must
+# travel with the image.
+# ---------------------------------------------------------------------------
+COPY initdb.d/ /docker-entrypoint-initdb.d/
+RUN chmod +x /docker-entrypoint-initdb.d/*.sh
+
 # Overriding CMD is safe with this base: its ENTRYPOINT is docker-entrypoint.sh,
 # which branches on `$1 = 'postgres'` and forwards the same args to the
 # temporary init server it runs during first-time initdb -- so a first boot and

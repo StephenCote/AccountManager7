@@ -40,22 +40,42 @@ changed yet.** Ordered by severity.
    section; `troubleshooting.md` and `:52` use `am7test-am7-1`. Each is right only for its own `-p`
    project name.
 6. **Stale top-line status date** vs. later 08-05/08-29 content in the same file.
-7. **Guidance contradiction (3-way):** root `CLAUDE.md` ("use Docker, not local Tomcat") vs.
-   `troubleshooting.md` ("Docker can't reach LAN → use Eclipse Tomcat for SD/LLM") vs. memory
-   ("always Docker"). Reconcile to one statement: **Docker for UI/REST/E2E; host Tomcat for anything
-   hitting LAN SD/LLM (`192.168.1.x`).**
+7. **RESOLVED 2026-09-13/14 — the premise was false.** This item logged a 3-way guidance
+   contradiction: root `CLAUDE.md` ("use Docker, not local Tomcat") vs. `troubleshooting.md`
+   ("Docker can't reach LAN → use Eclipse Tomcat for SD/LLM") vs. memory ("always Docker"). There is
+   nothing to reconcile, because **Docker on this host CAN reach the LAN.** Measured from a container
+   on `am7test_am7-test-net`: `http://192.168.1.42:11434/api/tags` → **HTTP 200 in 34ms**; from
+   inside the running `litellm` container specifically → **200 in 24ms** (2026-09-14).
+   `.claude/rules/troubleshooting.md` struck the old claim on 2026-09-13 (Ollama 200, SwarmUI 302
+   from inside `am7test-am7-1`); these aiDocs lagged. **One statement: Docker for everything,
+   including LAN SD/LLM work.** The host Eclipse Tomcat stays a valid target, not a required one. If
+   you ever do see packet loss to `192.168.1.x`, diagnose it as a host networking problem — it is not
+   a standing property of the setup.
 8. **Minor:** compose comment implies pg on `15432` (`docker-compose.yml:12-13`) while this doc's
    Option B uses `15433`.
 
-## Extension note — optional LiteLLM / Langfuse sidecars
+## Extension note — optional LiteLLM / Langfuse sidecars (SHIPPED)
 
-The **test stack is the clean template** for adding optional services: `am7-pg` already demonstrates a
-sidecar on `am7-test-net` with service-name DNS (`docker-compose.test.yml:24-48,90-96`). LiteLLM (an
-OpenAI-compatible LLM proxy) and Langfuse (its own web + Postgres) can be added the same way behind
-compose **profiles**; the app reaches them by service name. **Constraint:** Docker on this Windows host
-cannot reach LAN `192.168.1.x`, so an in-compose LiteLLM that merely forwards to `.42:11434`/`.39:7801`
-fails identically — it must run the model, forward to a cloud endpoint, or reach the host via
-`host.docker.internal`. Langfuse needs no LAN. Full design: `LiteLLMLangfuseIntegrationDesign.md`.
+The **test stack is the clean template** for adding optional services: `am7-pg` already demonstrates
+a sidecar on `am7-test-net` with service-name DNS (`docker-compose.test.yml:24-48,90-96`). LiteLLM
+(an OpenAI-compatible LLM proxy) and Langfuse now ship exactly that way, behind the compose profile
+**`llmproxy`** in `docker-compose.test.yml`; the app reaches them by service name
+(`http://litellm:4000`). Nothing in the profile starts with the default stack, and `am7` has no
+`depends_on` on it, so a chatConfig pointing at the proxy **fails closed** when the profile is down.
+
+Two corrections to what this note used to say:
+
+- **The "Docker cannot reach the LAN" constraint is gone** (audit item 7 above). A container on
+  `am7test_am7-test-net` reached `http://192.168.1.42:11434/api/tags` → **HTTP 200 in 34ms**, and the
+  running `litellm` container itself → **200 in 24ms** (2026-09-14). So LiteLLM does **not** need to
+  run the model, target a cloud endpoint, or go via `host.docker.internal` — it proxies the LAN
+  Ollama directly, which is the whole point: one queue in front of one physical GPU.
+- **Langfuse is not "its own web + Postgres".** It is deployed at **v4**, a six-service unit:
+  `langfuse-web`, `langfuse-worker`, `langfuse-clickhouse`, `langfuse-minio`, `langfuse-redis`,
+  `langfuse-db`. Traces live in Clickhouse; the Postgres holds only metadata. The worker is not
+  optional — without it the API accepts events and the UI shows nothing.
+
+Runbook: `dockerDevSetup.md` §12. Full design + measurements: `LiteLLMLangfuseIntegrationDesign.md` §6.
 
 ## Build & run
 
@@ -161,9 +181,12 @@ docker compose -p am7test -f docker-compose.test.yml down; rm -rf ./docker-data 
 
 The bundled `am7-pg` seeds `am72db`/`am7user`/`password` on first boot (from `POSTGRES_*`), which is
 exactly what the app connects to over the private network — no manual DB/user creation. The app waits
-on `am7-pg`'s healthcheck before starting. Because everything is a host bind mount there are **no
-named volumes** — `down` keeps the data, and a full reset is just deleting `./docker-data` (the DB and
-the keystores share one lifecycle, so they can't desync into the orphaned-org state). **Windows note:**
+on `am7-pg`'s healthcheck before starting. In the **default** stack everything is a host bind mount, so `down` keeps the
+data and a full reset is just deleting `./docker-data` (the DB and the keystores share one lifecycle,
+so they can't desync into the orphaned-org state). **The optional `llmproxy` profile is the one
+exception:** `langfuse-clickhouse` and `langfuse-minio` use **named volumes**, because both commit by
+atomic rename and that fails on a Docker Desktop Windows bind mount. `rm -rf ./docker-data` therefore
+does not clear Langfuse trace data — use `--profile llmproxy down -v`. **Windows note:**
 if Postgres fails to initialize on the host bind mount (rare on Docker Desktop/WSL2), swap the `am7-pg`
 data mount for a named volume — see the inline comment in `docker-compose.test.yml`.
 

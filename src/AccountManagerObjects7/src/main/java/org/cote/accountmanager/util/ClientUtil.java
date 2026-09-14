@@ -303,6 +303,24 @@ public class ClientUtil {
 	/// non-OPENAI_COMPAT caller. extraHeaders is applied AFTER the fixed headers (Accept,
 	/// Content-Type, Authorization).
 	public static CompletableFuture<HttpResponse<Stream<String>>> postToRecordAndStream(String url, String authorizationToken, String json, Map<String,String> extraHeaders) {
+		return postToRecordAndStream(url, authorizationToken, json, extraHeaders, 0);
+	}
+
+	/// Request-timeout overload.
+	///
+	/// requestTimeoutSeconds is a PER-CALL method parameter — deliberately NOT a field (instance or
+	/// static) on ClientUtil — so no request can mutate timeout state a concurrent request on another
+	/// thread observes. All the shorter overloads delegate here with 0, which means "no request
+	/// timeout" and preserves byte-identical behavior for every existing caller.
+	///
+	/// A value > 0 sets HttpRequest.Builder.timeout(). This is NOT the same thing as
+	/// CompletableFuture.orTimeout(): orTimeout completes OUR stage exceptionally and leaves the HTTP
+	/// exchange — and therefore the server-side generation — running, whereas the JDK request timeout
+	/// aborts the exchange itself and completes the future with an HttpTimeoutException. Note the JDK
+	/// request timeout covers the period up to the response HEADERS; a body that stalls mid-stream is
+	/// covered separately by Chat's idle watchdog and by the explicit abort on give-up.
+	/// The only other timeout here is the 10s CONNECT timeout, which does not bound the response.
+	public static CompletableFuture<HttpResponse<Stream<String>>> postToRecordAndStream(String url, String authorizationToken, String json, Map<String,String> extraHeaders, int requestTimeoutSeconds) {
 
 	    HttpClient streamClient = HttpClient.newBuilder()
 	            .version(HttpClient.Version.HTTP_1_1)  // Important for SSE
@@ -319,6 +337,9 @@ public class ClientUtil {
 				.version(HttpClient.Version.HTTP_1_1)
 				.header("Content-Type", "application/json")
 				.POST(HttpRequest.BodyPublishers.ofString(json));
+		if (requestTimeoutSeconds > 0) {
+			reqBuilder.timeout(Duration.ofSeconds(requestTimeoutSeconds));
+		}
 		if (authorizationToken != null && !authorizationToken.isEmpty()) {
 			reqBuilder.header("Authorization", "Bearer " + authorizationToken);
 		}
@@ -331,10 +352,22 @@ public class ClientUtil {
 		}
 		HttpRequest request = reqBuilder.build();
 
-		return streamClient.sendAsync(request, HttpResponse.BodyHandlers.ofLines())
+		/// Return the RAW sendAsync future, not a derived stage.
+		///
+		/// HttpClient.sendAsync's @implNote: the future it returns is cancelable, but futures
+		/// *derived* from a cancelable future are "not necessarily cancelable". This method used to
+		/// return `sendAsync(...).whenComplete(...)` — a derived stage — so every caller's handle was
+		/// a cancel() that did nothing to the underlying exchange. The unregisterClient bookkeeping
+		/// still has to happen, so keep it as a separate dependent stage held in a local that is NOT
+		/// returned: it runs exactly as before, and the caller gets back the cancelable handle.
+		CompletableFuture<HttpResponse<Stream<String>>> exchange =
+			streamClient.sendAsync(request, HttpResponse.BodyHandlers.ofLines());
+		@SuppressWarnings("unused")
+		CompletableFuture<HttpResponse<Stream<String>>> bookkeeping = exchange
 			.whenComplete((result, error) -> {
 				LLMConnectionManager.unregisterClient(clientKey);
 			});
+		return exchange;
 	}
 	
 	

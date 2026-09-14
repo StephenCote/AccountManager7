@@ -84,6 +84,35 @@ public class LLMConnectionManager {
 		}
 	}
 
+	/// Close and release the HTTP response body registered for ONE stream.
+	///
+	/// This is the per-stream form of stopAllStreams()'s Phase 1 and is the primitive that actually
+	/// aborts an outbound LLM exchange: closing the body stream closes the socket, so the model
+	/// server sees the client go away and can drop the generation instead of finishing it for
+	/// nobody while the next request queues behind it. Cancelling a future does NOT do this once the
+	/// response headers have arrived (BodyHandlers.ofLines() completes the future at headers, so the
+	/// future is already done while generation is still streaming).
+	///
+	/// Idempotent and exception-safe: removes the entry first, so a second call is a no-op, and a
+	/// close that throws is logged at debug and swallowed — an abort that fails must never replace
+	/// the error the caller is already handling. Returns true when a registered response was found
+	/// and close() was attempted.
+	public static boolean closeHttpResponse(String streamId) {
+		if (streamId == null) {
+			return false;
+		}
+		HttpResponse<Stream<String>> response = activeHttpResponses.remove(streamId);
+		if (response == null) {
+			return false;
+		}
+		try {
+			response.body().close();
+		} catch (Exception e) {
+			logger.debug("closeHttpResponse: close response body " + streamId + ": " + e.getMessage());
+		}
+		return true;
+	}
+
 	/// Remove a completed/failed stream from the registry.
 	public static void unregisterStream(String streamId) {
 		if (streamId != null) {

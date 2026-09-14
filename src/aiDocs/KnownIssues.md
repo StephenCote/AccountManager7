@@ -3629,3 +3629,59 @@ Relevant files: `AccountManagerUx752/src/core/formDef.js` (3653-3752),
 `AccountManagerUx752/src/components/olio.js`, `AccountManagerUx752/src/workflows/outfitBuilder.js`,
 `AccountManagerService7/.../rest/services/OlioService.java`, `.../GameService.java`,
 `AccountManagerObjects7/.../olio/{OlioContextUtil,OlioContextConfiguration,GameUtil,ApparelUtil}.java`.
+
+### KI-72. Routing an Ollama model through the `OPENAI_COMPAT` dialect silently drops `num_ctx`, `think` and every Ollama sampling extension — OPEN (2026-09-14, found bringing up the LiteLLM proxy)
+
+**Why it matters now.** The `llmproxy` compose profile puts LiteLLM in front of the local Ollama so
+there is a single queue on the one GPU (see `aiDocs/LiteLLMLangfuseIntegrationDesign.md` §6). To use
+it, a `system.connection` carries `dialect = OPENAI_COMPAT`. But AM7 decides whether to emit Ollama's
+extension parameters from the **dialect**, not from what the upstream actually is — and behind the
+proxy the upstream is still Ollama. So the same physical model behaves differently depending on which
+door AM7 knocks on.
+
+**The gate.** `ChatUtil.applyChatOptions` wraps the whole Ollama-extension block in a
+`serviceType == OLLAMA` check (`ChatUtil.java:2124-2153`). On the `OPENAI_COMPAT` path that block is
+skipped entirely, so **none** of these are sent:
+
+`num_ctx`, `top_k`, `repeat_penalty`, `typical_p`, `min_p`, `repeat_last_n`, `num_gpu`
+
+Two further consequences of the same "dialect, not upstream" assumption:
+
+- **`think` is pruned** — `Chat.java:3989` gates `keepThink` on `serviceType == OLLAMA`. The comment
+  immediately above it (`Chat.java:3986-3988`) names **qwen3** as the hybrid reasoning model that
+  "otherwise defaults to thinking-on", and qwen3:8b is exactly the model being proxied. So a chatConfig
+  that deliberately set `think:false` gets thinking back ON when repointed at the proxy.
+  **Confirmed live 2026-09-14:** a `max_tokens:20` request through the proxy returned *pure*
+  `reasoning_content` with `finish_reason: "length"` and an empty `content` — the entire budget went to
+  thinking and the caller got nothing.
+- **The memory-extraction token floor halves**, 16384 → 8192, at `Chat.java:2731`
+  (`minTokens = (serviceType == OLLAMA) ? 16384 : 8192`).
+
+**`num_ctx` is worked around; the rest is not.** `num_ctx` is pinned on the LiteLLM model entry in
+`src/litellm/config.yaml`, which is the only place it can live — `drop_params: true` means a `num_ctx`
+that AM7 *did* send on the OpenAI path would be dropped as a non-OpenAI param anyway. Verified reaching
+the server: temporarily setting it to 8192 made Ollama report `context_length=8192` on `/api/ps`.
+The sampling extensions and `think` cannot be pinned per-request proxy-side.
+
+**Impact today: none.** All 19 existing `system.connection` rows are `dialect = UNKNOWN`, so
+`ChatUtil.resolveServiceType` (`ChatUtil.java:1915-1931`) still falls through to `chatConfig.serviceType`
+for every one of them, and nothing has been repointed. The exposure is entirely prospective.
+
+> **Do not repoint an existing `OLLAMA` chatConfig at the proxy until this is fixed.** New
+> `OPENAI_COMPAT` configs are fine — they never had the Ollama extensions applied.
+
+**A compounding observation (noted, not fixed).** With thinking forced back on, every streamed delta
+from a reasoning model also logs
+`ERROR RecordDeserializer - Invalid field: olio.llm.openai.openaiMessage.reasoning_content <token>` —
+one line per token, hundreds per call — because `olio.llm.openai.openaiMessage` has no
+`reasoning_content` field (same for `openaiResponse.prompt_eval_cached_count` on the Ollama path). So
+the reasoning tokens are both *paid for* and *silently discarded*, and the log is flooded while it
+happens. Observed 2026-09-14 during the LiteLLM proxy tests. Pre-existing and independent of this
+issue's gating defect, but it makes the symptom much worse; worth handling together.
+
+**Recommended fix.** Key the extension block on *what the upstream is* rather than on the dialect —
+e.g. an explicit "upstream family" on `system.connection` (Ollama-behind-a-proxy is still Ollama), or a
+per-connection passthrough-options map. Do **not** simply widen the `== OLLAMA` test to include
+`OPENAI_COMPAT`: that dialect also fronts Azure and any other OpenAI-compatible endpoint, which would
+then be sent Ollama-only parameters. Touches `ChatUtil.java:2124-2153`, `Chat.java:3989`, and
+`Chat.java:2731`.

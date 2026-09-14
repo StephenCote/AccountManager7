@@ -5,9 +5,24 @@ REM  (Service7 + Ux752 + a dedicated pgvector), then report first-run setup.
 REM
 REM  Runbook this automates: src\aiDocs\dockerDevSetup.md
 REM
-REM  Usage:
+REM  Usage (flags may be combined, in any order):
 REM    am7-docker-up.bat                 build (online Maven) and start
 REM    am7-docker-up.bat --no-build      start the existing am7:latest image
+REM    am7-docker-up.bat --llmproxy      ALSO start the LiteLLM + Langfuse sidecars
+REM                                      (compose profile `llmproxy`: 7 extra
+REM                                      containers). Off by default - they are
+REM                                      real overhead and most work does not
+REM                                      need them.
+REM    am7-docker-up.bat --app-only      the reverse of --llmproxy-only: start ONLY
+REM                                      the app + its database (am7 + am7-pg), and
+REM                                      STOP any LiteLLM/Langfuse sidecars that are
+REM                                      running, so you get the overhead back.
+REM    am7-docker-up.bat --llmproxy-only start ONLY the proxy/observability stack
+REM                                      (litellm + langfuse + am7-pg, which hosts
+REM                                      litellmdb). Does NOT build, does not stage
+REM                                      the Olio seed, and does NOT start the app.
+REM                                      Use when you want the proxy without the
+REM                                      Service7/Ux752 overhead.
 REM    am7-docker-up.bat --prebuilt      build with PREBUILT=1 (host-built WAR;
 REM                                      use when a TLS proxy blocks Maven Central.
 REM                                      Run these on the host FIRST:
@@ -89,10 +104,48 @@ set "CORS_ALLOWED_ORIGINS=https://localhost:%APP_PORT%,http://localhost:%APP_POR
 
 set "BUILD_FLAG=--build"
 set "BUILD_ARG="
+set "PROFILE_ARGS="
+set "ENVFILE_ARGS="
+set "LLMPROXY_ONLY="
+set "APP_ONLY="
+
+REM  A shift loop, not a row of `if "%~1"==...` tests: flags are combinable
+REM  (e.g. --no-build --llmproxy) and the old single-arg form silently ignored
+REM  everything after the first. No `enabledelayedexpansion` here on purpose
+REM  (see the note at the top) - nothing below READS a variable inside the same
+REM  parenthesised block it is set in, so plain expansion is correct.
+:parseargs
+if "%~1"=="" goto :parsedargs
 if /i "%~1"=="--no-build" set "BUILD_FLAG="
 if /i "%~1"=="--prebuilt" (
     set "BUILD_FLAG="
     set "BUILD_ARG=1"
+)
+if /i "%~1"=="--llmproxy" set "PROFILE_ARGS=--profile llmproxy"
+if /i "%~1"=="--llmproxy-only" (
+    set "PROFILE_ARGS=--profile llmproxy"
+    set "LLMPROXY_ONLY=1"
+    set "BUILD_FLAG="
+)
+if /i "%~1"=="--app-only" set "APP_ONLY=1"
+if /i "%~1"=="--help" goto :usage
+if /i "%~1"=="-h" goto :usage
+if /i "%~1"=="/?" goto :usage
+shift
+goto :parseargs
+:parsedargs
+
+if defined APP_ONLY if defined LLMPROXY_ONLY (
+    echo ERROR: --app-only and --llmproxy-only are opposites; pick one.
+    exit /b 1
+)
+
+REM  The profile's secrets/overrides live in a git-ignored env file. --env-file
+REM  feeds docker-compose ${VAR} INTERPOLATION only; anything litellm must see in
+REM  its own process is additionally declared in the service `environment:` block.
+REM  Absent file = compose defaults, which are the throwaway test values.
+if defined PROFILE_ARGS (
+    if exist "%SRC_DIR%volatile\llmproxy.env" set "ENVFILE_ARGS=--env-file .\volatile\llmproxy.env"
 )
 
 pushd "%SRC_DIR%" || (
@@ -115,6 +168,9 @@ echo    app URL      : https://localhost:%APP_PORT%
 echo    LAN URL      : https://%LAN_IP%:%APP_PORT%
 echo    postgres     : localhost:15433 (inspect only)
 echo    CATALINA_OPTS: %CATALINA_OPTS%
+if defined PROFILE_ARGS echo    llmproxy     : ON  - litellm http://127.0.0.1:4000/ui/  langfuse http://127.0.0.1:3001
+if not defined PROFILE_ARGS if not defined APP_ONLY echo    llmproxy     : off ^(pass --llmproxy to start the LiteLLM/Langfuse sidecars^)
+if defined APP_ONLY echo    llmproxy     : off - and any running sidecars will be STOPPED ^(--app-only^)
 echo ============================================================
 echo.
 
@@ -123,6 +179,49 @@ if errorlevel 1 (
     echo ERROR: Docker is not responding. Is Docker Desktop running?
     popd
     exit /b 1
+)
+
+REM  --app-only: the reverse of --llmproxy-only. `docker compose up` would simply
+REM  leave already-running profile containers alone, so "only the app" has to stop
+REM  them explicitly - that is the whole point of the flag (reclaiming the RAM the
+REM  7 sidecars hold). `stop`, not `down`: it leaves the containers and their data
+REM  in place so a later --llmproxy restarts them in seconds.
+if defined APP_ONLY (
+    echo [0/4] --app-only: stopping any running LiteLLM/Langfuse sidecars ...
+    docker compose -p %PROJECT% -f %COMPOSE_FILE% --profile llmproxy stop litellm langfuse-web langfuse-worker langfuse-clickhouse langfuse-minio langfuse-redis langfuse-db
+    echo.
+)
+
+REM  --llmproxy-only: bring up just the proxy/observability side. Naming the three
+REM  services explicitly (rather than relying on the profile alone) keeps the `am7`
+REM  app out of it; compose still pulls in each one's depends_on, so am7-pg
+REM  (which hosts litellmdb), langfuse-db, clickhouse, minio and redis come along.
+REM  langfuse-worker is listed because nothing depends_on it, yet without it the
+REM  ingestion API accepts events and the UI stays permanently empty.
+if defined LLMPROXY_ONLY (
+    echo [1/2] Starting the LiteLLM/Langfuse stack only ^(no app, no build, no seed^) ...
+    docker compose -p %PROJECT% -f %COMPOSE_FILE% %ENVFILE_ARGS% %PROFILE_ARGS% up -d litellm langfuse-web langfuse-worker
+    if errorlevel 1 (
+        echo ERROR: `docker compose up` failed.
+        popd
+        exit /b 1
+    )
+    echo.
+    echo [2/2] Status:
+    docker compose -p %PROJECT% -f %COMPOSE_FILE% %ENVFILE_ARGS% %PROFILE_ARGS% ps
+    echo.
+    echo ============================================================
+    echo  LiteLLM admin UI : http://127.0.0.1:4000/ui/   ^(admin / your LITELLM_MASTER_KEY^)
+    echo  Langfuse UI      : http://127.0.0.1:3001       ^(LANGFUSE_INIT_USER_EMAIL / _PASSWORD^)
+    echo  Health           : http://127.0.0.1:4000/health/liveliness
+    echo.
+    echo  Point an AM7 system.connection at http://litellm:4000 with dialect=OPENAI_COMPAT
+    echo  ^(http://127.0.0.1:4000 from host-side JUnit^). Runbook: aiDocs\dockerDevSetup.md section 12.
+    echo  Stop: docker compose -p %PROJECT% -f %COMPOSE_FILE% %PROFILE_ARGS% down
+    echo ============================================================
+    popd
+    endlocal
+    exit /b 0
 )
 
 if defined BUILD_ARG (
@@ -159,7 +258,15 @@ if errorlevel 1 (
 
 echo.
 echo [3/4] Starting containers ...
-docker compose -p %PROJECT% -f %COMPOSE_FILE% up %BUILD_FLAG% -d
+REM  --app-only names the two services explicitly; the default (no flag) brings up
+REM  whatever the file defines outside a profile, which today is exactly these two
+REM  plus nothing else. Naming them keeps --app-only honest if a non-profile service
+REM  is ever added.
+if defined APP_ONLY (
+    docker compose -p %PROJECT% -f %COMPOSE_FILE% up %BUILD_FLAG% -d am7 am7-pg
+) else (
+    docker compose -p %PROJECT% -f %COMPOSE_FILE% %ENVFILE_ARGS% %PROFILE_ARGS% up %BUILD_FLAG% -d
+)
 if errorlevel 1 (
     echo ERROR: `docker compose up` failed.
     popd
@@ -168,7 +275,7 @@ if errorlevel 1 (
 
 echo.
 echo [4/4] Status:
-docker compose -p %PROJECT% -f %COMPOSE_FILE% ps
+docker compose -p %PROJECT% -f %COMPOSE_FILE% %ENVFILE_ARGS% %PROFILE_ARGS% ps
 
 REM Give the entrypoint a moment to render web.xml and mint the setup token.
 ping -n 4 127.0.0.1 >nul 2>&1
@@ -218,3 +325,23 @@ echo.
 
 popd
 endlocal
+REM  MUST exit here: without it execution falls straight through into :usage and
+REM  every successful run prints the help block.
+exit /b 0
+
+:usage
+echo.
+echo  am7-docker-up.bat [--no-build ^| --prebuilt] [--llmproxy ^| --llmproxy-only ^| --app-only]
+echo.
+echo    --no-build        start the existing am7:latest image
+echo    --prebuilt        build with PREBUILT=1 (host-built WAR)
+echo    --llmproxy        also start the LiteLLM + Langfuse sidecars (7 containers)
+echo    --llmproxy-only   start ONLY those sidecars - no app, no build, no seed
+echo    --app-only        start ONLY the app + its DB, and STOP any running sidecars
+echo.
+echo  Flags may be combined, e.g.:  am7-docker-up.bat --no-build --llmproxy
+echo  Runbook: src\aiDocs\dockerDevSetup.md section 12
+echo.
+popd 2>nul
+endlocal
+exit /b 0
