@@ -150,6 +150,45 @@ public class Chat {
 	/// Phase 14: Separate timeout for internal analyze/memory extraction LLM calls.
 	/// Default 120s. Legacy configs without the field keep this default.
 	private int analyzeTimeout = 120;
+
+	/**
+	 * Why the most recent buffer-mode call on THIS thread returned null.
+	 *
+	 * <p>Buffer mode returns a bare null for every failure — a non-200, a timeout, an interrupt —
+	 * so the caller cannot tell them apart, and the one piece of information that actually matters
+	 * is discarded. Measured 2026-09-14: a user mistyped a model name, Ollama answered
+	 * {@code HTTP 404 {"error":"model 'qweb3:8b' not found"}} in 12ms, the message was logged here
+	 * and then dropped, and the extraction reported "the model server appears to be down". The
+	 * server was fine; the name had a typo.
+	 *
+	 * <p>A ThreadLocal, NOT a shared field: the value describes the call one thread just made, and
+	 * the bounded job pool plus ordinary request threads run these concurrently. A shared field
+	 * would hand one caller another's error — the cross-tenant hazard {@code architecture.md}
+	 * warns about. Callers should clear it before a call and read it immediately after a null.
+	 */
+	private static final ThreadLocal<String> LAST_CALL_ERROR = new ThreadLocal<>();
+
+	/** The reason the last buffer-mode call on this thread returned null, or null if unknown. */
+	public static String getLastCallError() {
+		return LAST_CALL_ERROR.get();
+	}
+
+	/** Clear before issuing a call, so a stale reason from earlier work on a pooled thread is never read back. */
+	public static void clearLastCallError() {
+		LAST_CALL_ERROR.remove();
+	}
+
+	/// Test-only seam: lets a scripted LLM reproduce the exact failure shape Chat produces on a
+	/// 404, so the consumer's reporting can be tested without a live model server.
+	public static void setLastCallErrorForTest(String err) {
+		setLastCallError(err);
+	}
+
+	private static void setLastCallError(String err) {
+		if (err != null) {
+			LAST_CALL_ERROR.set(err);
+		}
+	}
 	/// Thread-local override so background analyze/extract threads don't mutate the shared requestTimeout field.
 	private ThreadLocal<Integer> analyzeTimeoutOverride = new ThreadLocal<>();
 	/// Guard against duplicate async keyframe generation when messages arrive faster than analysis completes.
@@ -4174,15 +4213,21 @@ public class Chat {
 				logger.info("[DIAG] chat() buffer mode: awaiting latch (timeout=" + waitSeconds + "s)");
 				if (!latch.await(waitSeconds, TimeUnit.SECONDS)) {
 					logger.error("Buffer mode timed out waiting for stream completion");
+					setLastCallError("The model did not respond within " + waitSeconds
+						+ "s. It may be loading, overloaded, or too large for this hardware.");
 					return null;
 				}
 			} catch (InterruptedException e) {
 				logger.error("Buffer mode interrupted", e);
+				setLastCallError("The call was interrupted (the server is shutting down).");
 				Thread.currentThread().interrupt();
 				return null;
 			}
 			if (bufferError[0] != null) {
 				logger.error("[DIAG] chat() buffer mode: stream error: " + bufferError[0]);
+				/// Carries the LLM's own message — e.g. "model 'x' not found" — to a caller that
+				/// otherwise only sees null.
+				setLastCallError(bufferError[0]);
 				if (listener != null) {
 					listener.onerror(user, req, aresp, bufferError[0]);
 				}

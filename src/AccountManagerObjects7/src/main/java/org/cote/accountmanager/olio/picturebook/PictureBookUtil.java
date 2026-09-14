@@ -2538,6 +2538,27 @@ public class PictureBookUtil {
      */
     static final int PROMPT_SCENE_DETAIL_WINDOW = 6;
 
+    /**
+     * A failed LLM call that returns in under this long is treated as INFRASTRUCTURE FAILURE —
+     * the server is gone (refused, unreachable, shutting down), because a real model does not
+     * decline in a couple of seconds. Anything slower is the model being slow, which is a
+     * completely different situation.
+     *
+     * <p>5s is deliberately far below any plausible generation time and far above any plausible
+     * connection failure: a refused or unroutable host fails in milliseconds, while the slowest
+     * observed SUCCESSFUL chunk on this hardware took 294s. There is no realistic value in
+     * between for this to get wrong.
+     *
+     * <p>This distinction is load-bearing, and getting it wrong caused a regression. The circuit
+     * breaker below exists so a Tomcat shutdown does not spend 40 minutes calling a server that
+     * has gone away. It was originally tripped by any two consecutive empty replies — which also
+     * matched a perfectly alive model that had merely timed out twice. Measured 2026-09-14: a
+     * 17-chunk run against a loaded DGX Spark hit two 300s timeouts at chunk 13 and the breaker
+     * aborted the document with 5 chunks to go, where the previous behaviour was to record the
+     * failures and carry on to the end. Slow is not dead.
+     */
+    static final long LLM_INFRA_FAILURE_MS = 5000L;
+
     public static List<Map<String, Object>> scenesForPrompt(List<Map<String, Object>> scenes) {
         List<Map<String, Object>> out = new ArrayList<>(scenes.size());
         /// Index of the first scene that still gets full detail.
@@ -2864,6 +2885,13 @@ public class PictureBookUtil {
         }
     }
 
+    /** Minimal escaping for a message embedded in a hand-built JSON string. */
+    private static String jsonEscape(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\r", " ").replace("\n", " ");
+    }
+
     /** Tolerant numeric read — JSON round-trips ints as Integer, Long or Double depending on source. */
     static int intOf(Object o) {
         return (o instanceof Number) ? ((Number) o).intValue() : 0;
@@ -3148,6 +3176,11 @@ public class PictureBookUtil {
             // almost always parses. Intermediate attempts pass a NULL failure-sink so a recovered
             // chunk leaves no spurious failedExtractions record; only the FINAL failure is recorded.
             String chunkCtx = "extract-scenes-chunk:" + (ci + 1) + "/" + chunks.size();
+            /// Set when any attempt for THIS chunk failed slowly (i.e. timed out) rather than
+            /// failing immediately. Reset per chunk.
+            boolean sawSlowFailure = false;
+            /// The model's own explanation for the last failure, when it gave one.
+            String lastLlmError = null;
             Map<String, Object> chunkResult = null;
             String llmResp = null;
             boolean parseOk = false;
@@ -3164,11 +3197,28 @@ public class PictureBookUtil {
                         + " truncated or malformed). Reply with ONLY a single complete, valid JSON"
                         + " object. Keep every field short so the whole object fits in one reply.");
                 }
+                long attemptStart = System.currentTimeMillis();
+                /// Clear first: this thread is pooled, so a reason left over from earlier work
+                /// would otherwise be misreported as this chunk's.
+                Chat.clearLastCallError();
                 llmResp = chunkLlm.call(attemptVars, attempt);
+                long attemptMs = System.currentTimeMillis() - attemptStart;
                 // KI-10: count the chunk as processed once (first attempt) — progress reflects
                 // "chunks attempted", matching ChatUtil.mapSummarize's incrementCurrent() placement.
                 if (attempt == 1 && cancelToken != null) cancelToken.incrementCurrent();
-                if (llmResp == null || llmResp.isEmpty()) continue;
+                if (llmResp == null || llmResp.isEmpty()) {
+                    /// Only a FAST empty reply suggests the server is gone; a slow one is a
+                    /// timeout against a live-but-loaded model. See LLM_INFRA_FAILURE_MS.
+                    if (attemptMs >= LLM_INFRA_FAILURE_MS) {
+                        sawSlowFailure = true;
+                    }
+                    String why = Chat.getLastCallError();
+                    if (why != null) lastLlmError = why;
+                    logger.error("No LLM content for " + chunkCtx + " (attempt " + attempt
+                            + ", " + attemptMs + "ms)"
+                            + (why != null ? " — " + why : " — no reason reported"));
+                    continue;
+                }
                 boolean[] ok = new boolean[1];
                 Map<String, Object> parsed = parseLlmJsonObject(llmResp, chunkCtx, null, ok);
                 /// Break on PARSE SUCCESS, not on non-emptiness. A validly-parsed empty object means
@@ -3178,29 +3228,49 @@ public class PictureBookUtil {
                 if (attempt < 2) logger.warn("Chunk " + chunkCtx + " returned unparseable JSON — retrying once");
             }
             if (llmResp == null || llmResp.isEmpty()) {
-                consecutiveEmptyResponses++;
+                if (sawSlowFailure) {
+                    /// Timed out against a live server. Record the chunk as failed (below) and
+                    /// keep going — aborting the rest of the document because the model is having
+                    /// a slow spell throws away every remaining passage for no reason.
+                    consecutiveEmptyResponses = 0;
+                    logger.warn("Chunk " + chunkCtx + " timed out but the model server is"
+                            + " responding — recording the failure and continuing");
+                } else {
+                    consecutiveEmptyResponses++;
+                }
             } else {
                 consecutiveEmptyResponses = 0;
             }
-            /// Circuit breaker. An empty response on both attempts means no answer came back at
-            /// all, and two chunks in a row like that means the model server is unreachable —
-            /// during a shutdown the interrupt flag may already have been consumed by whatever
-            /// caught InterruptedException down in the HTTP stack, so this is the guard that does
-            /// not depend on it. Stopping here keeps the checkpoint and the extracted scenes;
-            /// grinding through the rest of the document would record a wall of bogus failures
-            /// and then look like a finished run.
+            /// Circuit breaker, for an UNREACHABLE server only. Two chunks in a row whose
+            /// attempts all failed IMMEDIATELY means nothing is listening — during a shutdown the
+            /// interrupt flag may already have been consumed by whatever caught
+            /// InterruptedException down in the HTTP stack, so this is the guard that does not
+            /// depend on it. Timeouts explicitly do NOT count (see LLM_INFRA_FAILURE_MS): a slow
+            /// model is alive, and treating it as dead aborted a real 17-chunk document five
+            /// chunks from the end.
             if (consecutiveEmptyResponses >= 2) {
-                logger.error("extractChunkedInternal: no LLM response for " + consecutiveEmptyResponses
-                        + " consecutive chunks at " + (ci + 1) + "/" + chunks.size()
-                        + " — stopping and keeping the checkpoint (" + sceneList.size() + " scenes)");
+                /// Report the model's OWN reason. Asserting "the server is down" was wrong and
+                /// actively misleading: the same instant-failure signature is produced by a
+                /// mistyped model name (HTTP 404 "model 'x' not found" in ~12ms), and a user who
+                /// made a typo was told their hardware had failed.
+                logger.error("extractChunkedInternal: " + consecutiveEmptyResponses
+                        + " consecutive chunks failed immediately at " + (ci + 1) + "/" + chunks.size()
+                        + " — stopping and keeping the checkpoint (" + sceneList.size() + " scenes). "
+                        + (lastLlmError != null ? "Reason: " + lastLlmError
+                            : "No reason was reported by the model server."));
                 /// Tell the CLIENT, not just the log. Without this the caller sees a run that
                 /// stopped early with no explanation — and if it stopped on chunk 1 it sees an
                 /// empty scene list that is indistinguishable from "the model found nothing".
                 if (failedExtractions != null) {
+                    /// Hand the model's own words to the CLIENT too — this is what the user sees,
+                    /// and "model 'qweb3:8b' not found" is actionable where "unreachable" is not.
+                    String reason = (lastLlmError != null) ? lastLlmError
+                        : "the model server did not respond and gave no reason";
                     failedExtractions.add("{\"context\":\"" + chunkCtx
-                        + "\",\"error\":\"No response from the LLM for " + consecutiveEmptyResponses
-                        + " consecutive chunks - the model server appears to be unreachable."
-                        + " Extraction stopped early; re-run to resume from the checkpoint.\"}");
+                        + "\",\"error\":\"" + consecutiveEmptyResponses
+                        + " consecutive chunks failed immediately. " + jsonEscape(reason)
+                        + " Extraction stopped early; fix the cause and re-run to resume from the"
+                        + " checkpoint.\"}");
                 }
                 if (groupPath != null) {
                     /// The chunks that tripped the breaker produced nothing, so they

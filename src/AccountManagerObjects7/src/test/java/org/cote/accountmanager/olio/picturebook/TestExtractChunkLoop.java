@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.objects.tests.BaseTest;
+import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.ExtractCheckpoint;
 import org.cote.accountmanager.record.BaseRecord;
@@ -181,7 +182,95 @@ public class TestExtractChunkLoop extends BaseTest {
 		/// "the model found nothing".
 		assertFalse("the breaker must record a failure for the client", failed.isEmpty());
 		String joined = String.join(" ", failed);
-		assertTrue("the failure must name the unreachable model server: " + joined,
+		/// The message must describe WHAT WAS OBSERVED — consecutive immediate failures — and, when
+		/// the model gave no reason, say so. It must NOT assert a cause it cannot know: the same
+		/// signature is produced by a mistyped model name.
+		assertTrue("the failure must state that chunks failed immediately: " + joined,
+				joined.contains("failed immediately"));
+		assertTrue("and must admit no reason was reported: " + joined,
+				joined.contains("gave no reason"));
+	}
+
+	/// THE REGRESSION. A model that TIMES OUT is alive, just slow — the run must record the
+	/// failed chunks and carry on to the end of the document. Tripping the breaker on timeouts
+	/// aborted a real 17-chunk extraction five chunks from the end, where the previous behaviour
+	/// was to grind through and return everything it could get. Slow is not dead.
+	@Test
+	public void TestSlowTimeoutsDoNotTripTheBreaker() throws Exception {
+		BaseRecord u = user();
+		SummarizeProgress token = new SummarizeProgress();
+		boolean[] reachedEnd = new boolean[] { false };
+		List<String> failed = new ArrayList<>();
+
+		/// Chunks 1-2 answer; every later attempt "times out" — returns null only after a delay
+		/// past LLM_INFRA_FAILURE_MS. A real 300s timeout is simulated by the shortest delay the
+		/// production constant still classifies as slow.
+		final AtomicInteger n = new AtomicInteger(0);
+		PictureBookUtil.ChunkLlm slow = (vars, attempt) -> {
+			if (n.getAndIncrement() < 2) return sceneJson("Early " + n.get());
+			try {
+				Thread.sleep(PictureBookUtil.LLM_INFRA_FAILURE_MS + 50);
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+			}
+			return null;
+		};
+
+		/// Each simulated timeout costs a real LLM_INFRA_FAILURE_MS sleep, so this stays modest.
+		List<Map<String, Object>> scenes = run(u, longText(60), token, failed, null, reachedEnd, slow);
+
+		assertTrue("a SLOW model must not abort the document — it must reach the end", reachedEnd[0]);
+		assertEquals("every chunk must be attempted", token.getTotal(), token.getCurrent());
+		assertTrue("the scenes extracted before the slowdown are kept", scenes.size() > 0);
+		assertFalse("the timed-out chunks must be reported as failures", failed.isEmpty());
+		assertFalse("a timeout must NOT be reported as an unreachable server",
+				String.join(" ", failed).contains("unreachable"));
+	}
+
+	/// The breaker must still fire for a genuinely DOWN server — that is what it is for, and it
+	/// is what stops a Tomcat shutdown burning 40 minutes on calls to nothing. An unreachable
+	/// server fails IMMEDIATELY.
+	@Test
+	public void TestImmediateFailuresStillTripTheBreaker() throws Exception {
+		BaseRecord u = user();
+		SummarizeProgress token = new SummarizeProgress();
+		boolean[] reachedEnd = new boolean[] { true };
+		List<String> failed = new ArrayList<>();
+		/// Returns null with no delay at all, as a connection refusal does.
+		Script s = new Script(replies((String) null));
+
+		run(u, longText(80), token, failed, null, reachedEnd, s);
+
+		assertFalse("a DOWN server must still stop the run", reachedEnd[0]);
+		assertTrue("it must stop well before the end", token.getCurrent() < token.getTotal());
+		assertTrue("and record consecutive immediate failures",
+				String.join(" ", failed).contains("failed immediately"));
+	}
+
+	/// A mistyped model name fails in ~12ms with HTTP 404 "model 'x' not found" — the SAME
+	/// instant-failure signature as a dead server. The breaker cannot tell them apart, so it must
+	/// report the model's OWN reason rather than asserting the hardware is down. A user who made
+	/// a typo was told their server had failed.
+	@Test
+	public void TestBreakerReportsTheModelsOwnReasonRatherThanGuessing() throws Exception {
+		BaseRecord u = user();
+		SummarizeProgress token = new SummarizeProgress();
+		boolean[] reachedEnd = new boolean[] { true };
+		List<String> failed = new ArrayList<>();
+
+		/// Fail instantly, setting the same thread-local reason Chat sets on a 404.
+		PictureBookUtil.ChunkLlm notFound = (vars, attempt) -> {
+			Chat.setLastCallErrorForTest("LLM call failed (HTTP 404): model 'qweb3:8b' not found");
+			return null;
+		};
+
+		run(u, longText(80), token, failed, null, reachedEnd, notFound);
+
+		assertFalse("instant failures still stop the run", reachedEnd[0]);
+		String joined = String.join(" ", failed);
+		assertTrue("the client must be told the REAL reason: " + joined,
+				joined.contains("model 'qweb3:8b' not found"));
+		assertFalse("and must NOT be told the server is unreachable when it is a typo",
 				joined.contains("unreachable"));
 	}
 
