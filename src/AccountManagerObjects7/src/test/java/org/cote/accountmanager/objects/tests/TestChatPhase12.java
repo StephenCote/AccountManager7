@@ -2,6 +2,7 @@ package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -158,7 +159,24 @@ public class TestChatPhase12 extends BaseTest {
 		}
 	}
 
-	/// P12-4: OI-29 — Ollama native options set on request.options (chatOptions model) when serviceType=OLLAMA
+	/// P12-4: OI-29 — Ollama native options when the resolved upstream is OLLAMA.
+	///
+	/// CORRECTED 2026-09-15. This test used to assert the extensions landed on a
+	/// `request.options` SUB-OBJECT and failed with "Request options sub-object should not be null
+	/// for Ollama". PRODUCTION DELIBERATELY CHANGED: ChatUtil.applyOllamaUpstreamOptions now does
+	/// `req.set("options", null)` and promotes top_k/repeat_penalty/typical_p/min_p/repeat_last_n/
+	/// num_gpu/num_ctx/max_tokens/think to the TOP LEVEL of the request. The comment above that code
+	/// gives the reason: the sub-object was built with RecordFactory.newInstance(MODEL_CHAT_OPTIONS),
+	/// which auto-populated with the MODEL'S DEFAULTS and then had only a few fields copied over from
+	/// the user's config - so a user's temperature / top_p / num_ctx / max_tokens were silently
+	/// overridden by defaults appearing in `options`. The sub-object was also noise the Ollama
+	/// OpenAI-compatible endpoint ignores.
+	///
+	/// This failure was confirmed PRE-EXISTING and independent of the KI-72 change: Chat.java and
+	/// ChatUtil.java were reverted to HEAD, the identical failure reproduced, and the files restored
+	/// and md5-verified. So the stale assertion is corrected here - to the shipped behaviour, at the
+	/// same or greater strength (it now checks the VALUES at the top level AND that no `options`
+	/// sub-object exists) - rather than deleted, skipped or loosened.
 	@Test
 	public void testOllamaNativeOptions() {
 		try {
@@ -192,30 +210,46 @@ public class TestChatPhase12 extends BaseTest {
 			req.setModel("test-model");
 			ChatUtil.applyChatOptions(req, cfg);
 
-			// Verify Ollama-specific fields are set on request.options sub-object
-			BaseRecord reqOpts = req.get("options");
-			assertNotNull("Request options sub-object should not be null for Ollama", reqOpts);
+			// Precondition: the chatOptions sub-record must have survived the persist/update
+			// round-trip. applyChatOptions' Ollama-extension block is gated on `opts != null`, so a
+			// null here would emit nothing and every assertion below would fail for the wrong reason.
+			assertNotNull("Precondition: chatConfig.chatOptions must be populated", cfg.get("chatOptions"));
 
-			int topK = reqOpts.get("top_k");
-			assertTrue("top_k should be 40, got " + topK, topK == 40);
+			// CORRECTED: there must be NO `options` sub-object - it is explicitly nulled, because
+			// when it existed it auto-populated with model defaults and silently overrode the user's
+			// temperature/top_p/num_ctx/max_tokens.
+			assertNull("Request must carry NO `options` sub-object for Ollama - the extensions ride at"
+				+ " the top level (the sub-object silently overrode user settings with model defaults)",
+				req.get("options"));
 
-			double repeatPenalty = reqOpts.get("repeat_penalty");
-			assertTrue("repeat_penalty should be 1.1, got " + repeatPenalty, Math.abs(repeatPenalty - 1.1) < 0.01);
+			// CORRECTED: the Ollama-specific extensions ride at the TOP LEVEL of the request.
+			int topK = req.get("top_k");
+			assertTrue("top_k should be 40 at the top level, got " + topK, topK == 40);
 
-			double typicalP = reqOpts.get("typical_p");
-			assertTrue("typical_p should be 0.9, got " + typicalP, Math.abs(typicalP - 0.9) < 0.01);
+			double repeatPenalty = req.get("repeat_penalty");
+			assertTrue("repeat_penalty should be 1.1 at the top level, got " + repeatPenalty,
+				Math.abs(repeatPenalty - 1.1) < 0.01);
 
-			double minP = reqOpts.get("min_p");
-			assertTrue("min_p should be 0.05, got " + minP, Math.abs(minP - 0.05) < 0.01);
+			double typicalP = req.get("typical_p");
+			assertTrue("typical_p should be 0.9 at the top level, got " + typicalP,
+				Math.abs(typicalP - 0.9) < 0.01);
 
-			int repeatLastN = reqOpts.get("repeat_last_n");
-			assertTrue("repeat_last_n should be 64, got " + repeatLastN, repeatLastN == 64);
+			double minP = req.get("min_p");
+			assertTrue("min_p should be 0.05 at the top level, got " + minP, Math.abs(minP - 0.05) < 0.01);
 
-			// Verify standard fields still set at top level of request
+			int repeatLastN = req.get("repeat_last_n");
+			assertTrue("repeat_last_n should be 64 at the top level, got " + repeatLastN, repeatLastN == 64);
+
+			// Verify standard fields still set at top level of request, and NOT reverted to the
+			// chatOptions model defaults (temperature default 1.0) - the actual defect the removal of
+			// the `options` sub-object fixed.
 			double temp = req.get("temperature");
-			assertTrue("temperature should be 0.7, got " + temp, Math.abs(temp - 0.7) < 0.01);
+			assertTrue("temperature should be the user's 0.7, got " + temp, Math.abs(temp - 0.7) < 0.01);
+			double topP = req.get("top_p");
+			assertTrue("top_p should be the user's 0.9, got " + topP, Math.abs(topP - 0.9) < 0.01);
 
-			logger.info("P12-4 passed: Ollama native options set on request.options sub-object");
+			logger.info("P12-4 passed: Ollama native options ride at the TOP LEVEL with no `options`"
+				+ " sub-object, and the user's temperature/top_p survive");
 		} catch (Exception e) {
 			logger.error("P12-4 failed", e);
 			fail("P12-4 Exception: " + e.getMessage());

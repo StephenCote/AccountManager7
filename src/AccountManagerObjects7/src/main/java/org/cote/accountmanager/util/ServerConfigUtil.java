@@ -326,12 +326,41 @@ public class ServerConfigUtil {
 			/// meant apiKey was NEVER stored at all (createLibraryConnection does not set apiKey —
 			/// only this patch does), i.e. the whole apiKey feature was dead.
 			///
-			/// NOTE — DOC CONFLICT: .claude/rules/model-api.md states a PATCH is "schema + identity +
-			/// changed fields", which is exactly what this used to send. For any model with a
-			/// validated non-identity field that rule is insufficient. Flagged for a rules-file
-			/// correction; do not "simplify" this back.
-			boolean changed = false;
-			BaseRecord patch = org.cote.accountmanager.record.RecordFactory.newInstance(ModelNames.MODEL_CONNECTION);
+			/// NOTE: .claude/rules/model-api.md's PATCH rule now covers this explicitly — "identity +
+			/// changed fields" is NOT sufficient for a model carrying a validated non-identity field,
+			/// because the writer validates the patch record itself rather than the merged result.
+			/// (This comment previously flagged a DOC CONFLICT and asked for a rules correction; the
+			/// rules file has since been updated, so the conflict is gone.) Do not "simplify" this back.
+			///
+			/// THE FIELD LIST BELOW IS LOAD-BEARING, NOT DOCUMENTATION. This used to call the BARE
+			/// RecordFactory.newInstance(MODEL_CONNECTION) overload, which materialises EVERY field of
+			/// the model at its default value — and the writer persists every field present on the
+			/// record it is handed. So this "patch" silently reset every connection field the caller
+			/// did not set. Measured consequence: `dialect` was reset to its default on every URL or
+			/// apiKey edit, and `upstream` (KI-72) would have been too — meaning an operator who set
+			/// upstream = OLLAMA lost it the next time anyone touched the URL through Setup or the
+			/// admin URL editor, which is the whole DB-backed write path for these records. Fixed to
+			/// the explicit field-name overload: only these fields are materialised, so only these
+			/// are written.
+			/// Build the projection from what is ACTUALLY changing, then materialise exactly that.
+			/// A field merely PRESENT on the patch is written, so listing both serverUrl and apiKey
+			/// unconditionally would blank the key on a URL-only edit and reset the URL to the model
+			/// default on a key-only edit — the same class of damage as the bare overload, just
+			/// narrower.
+			boolean setUrl = (serverUrl != null && serverUrl.trim().length() > 0);
+			boolean setKey = (apiKey != null && apiKey.length() > 0);
+			boolean changed = (setUrl || setKey);
+			java.util.List<String> patchFields = new java.util.ArrayList<>(Arrays.asList(
+				FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID,
+				FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_NAME));
+			if(setUrl) {
+				patchFields.add("serverUrl");
+			}
+			if(setKey) {
+				patchFields.add("apiKey");
+			}
+			BaseRecord patch = org.cote.accountmanager.record.RecordFactory.newInstance(ModelNames.MODEL_CONNECTION,
+				patchFields.toArray(new String[0]));
 			patch.set(FieldNames.FIELD_ID, conn.get(FieldNames.FIELD_ID));
 			patch.set(FieldNames.FIELD_OBJECT_ID, conn.get(FieldNames.FIELD_OBJECT_ID));
 			patch.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
@@ -339,16 +368,14 @@ public class ServerConfigUtil {
 			/// Use the `name` argument, not conn.get(name): AccessPoint.create returns only identity
 			/// fields, so a freshly created record's `name` is not populated.
 			patch.set(FieldNames.FIELD_NAME, name);
-			if(serverUrl != null && serverUrl.trim().length() > 0) {
+			if(setUrl) {
 				/// Always write it rather than diffing against conn.get("serverUrl"): an existing
 				/// record comes back on the default query projection, which does not include
 				/// serverUrl, so the diff compared against null and was never trustworthy.
 				patch.set("serverUrl", serverUrl.trim());
-				changed = true;
 			}
-			if(apiKey != null && apiKey.length() > 0) {
+			if(setKey) {
 				patch.set("apiKey", apiKey);
-				changed = true;
 			}
 			boolean ok = true;
 			if(changed) {

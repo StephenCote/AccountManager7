@@ -32,6 +32,14 @@
 			"maxLength": 16,
 			"default": "UNKNOWN",
 			"description": "Wire dialect (protocol) of this endpoint: OLLAMA (/api/chat), OPENAI (Azure /openai/deployments/...), or OPENAI_COMPAT (/v1/chat/completions, e.g. LiteLLM). AUTHORITATIVE (Phase 3, P3-1) — the single source of truth for LLM transport-protocol selection. Chat.configureChat resolves it once: when non-UNKNOWN, dialect is mapped by name onto LLMServiceEnumType and wins; the deprecated olio.llm.chatConfig.serviceType is only the derived fallback consulted when dialect is UNKNOWN (or the connection is absent). Not named 'provider' because that is a reserved field-schema keyword already bound to EncryptFieldProvider on apiKey."
+		},
+		{
+			"name": "upstream",
+			"type": "enum",
+			"baseClass": "org.cote.accountmanager.schema.type.ConnectionUpstreamEnumType",
+			"maxLength": 16,
+			"default": "UNKNOWN",
+			"description": "Upstream MODEL-SERVER FAMILY behind this endpoint — what actually runs the model, as distinct from the wire dialect AM7 speaks to reach it (KI-72). Keys the Ollama extension parameters (num_ctx, top_k, repeat_penalty, typical_p, min_p, repeat_last_n, num_gpu, think) and the memory-extraction token floor, so an Ollama reached THROUGH an OpenAI-compatible proxy such as LiteLLM still gets them. *** OPENAI HERE DOES NOT MEAN THE SAME THING AS dialect's OPENAI: do not map the two enums 1:1. *** dialect OPENAI is a wire scheme (Azure's /openai/deployments/... URL layout); upstream OPENAI is a model-server family (Azure OpenAI, OpenAI proper, or an OpenAI-native endpoint behind a proxy). Values: OLLAMA — upstream is Ollama, natively or proxied; OPENAI — upstream is OpenAI-family; UNKNOWN — not asserted, Ollama extensions suppressed. UNKNOWN and OPENAI are behaviourally identical today (both suppress); OPENAI exists so an operator can assert positively rather than leave the field unset. INFERENCE WHEN UNSET: ChatUtil.resolveUpstream falls back to the dialect — OLLAMA->OLLAMA, OPENAI->OPENAI, and OPENAI_COMPAT->UNKNOWN (mandatory: that dialect also fronts Azure, so it must NEVER infer OLLAMA — the KI-72 prohibition). Set this to OLLAMA explicitly on a connection whose OPENAI_COMPAT endpoint proxies Ollama. PROPAGATION BOUND: this column and the in-process schema are both derived from THIS resource file at boot (IOSystem.open patches missing columns before the persisted schema blob is readable), so a RESTART is what makes the field live — a running JVM will not pick it up. The added column is nullable with no DDL default, so every pre-existing row reads SQL NULL, which the resolver treats as UNKNOWN."
 		}
 	]
 }

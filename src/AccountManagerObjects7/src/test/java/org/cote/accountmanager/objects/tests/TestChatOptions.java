@@ -343,10 +343,17 @@ public class TestChatOptions extends BaseTest {
 		logger.info("Request model defaults verified: frequency_penalty=0.0, presence_penalty=0.0");
 	}
 
-	/// Test: think field exists on chatOptions with default true
+	/// Test: think field exists on chatOptions, defaults FALSE, and is settable to false.
+	///
+	/// ASSERTION CORRECTED 2026-09-15 (was "think default should be true"). The assertion was stale,
+	/// not the product: chatOptionsModel.json declares "default": false, and that false is
+	/// DELIBERATE — ChatUtil.applyOllamaUpstreamOptions only emits `think` when it is truthy, because
+	/// a model that does not support thinking rejects the request outright when `think` is present in
+	/// ANY form, even false ("<model> does not support thinking"). A default of true would poison
+	/// every request to a non-thinking model. The settable-to-false half of the test is unchanged.
 	@Test
 	public void TestThinkFieldExists() {
-		logger.info("Test: think field on chatOptions - default true, settable to false");
+		logger.info("Test: think field on chatOptions - default false, settable to false");
 		BaseRecord testUser = getTestUser();
 		LLMServiceEnumType llmType = LLMServiceEnumType.valueOf(testProperties.getProperty("test.llm.type").toUpperCase());
 		String cfgName = llmType.toString() + " Think Test.chat";
@@ -356,9 +363,11 @@ public class TestChatOptions extends BaseTest {
 		BaseRecord opts = ensureChatOptions(cfg);
 		assertNotNull("chatOptions is null", opts);
 
-		// Default should be true
+		// Default should be FALSE — see the note above; chatOptionsModel.json "default": false
 		boolean thinkDefault = opts.get("think");
-		assertTrue("think default should be true", thinkDefault);
+		assertEquals("think default should be false (chatOptionsModel.json declares default:false,"
+			+ " deliberately — a default of true poisons every request to a non-thinking model)",
+			false, thinkDefault);
 
 		// Set to false
 		opts.setValue("think", false);

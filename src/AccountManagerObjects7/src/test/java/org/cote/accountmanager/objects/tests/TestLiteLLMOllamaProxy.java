@@ -1,6 +1,7 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
@@ -182,6 +183,21 @@ public class TestLiteLLMOllamaProxy extends BaseTest {
 	/// guard against exactly that class of silent miss.
 	private BaseRecord createPersistedConnection(BaseRecord user, String name, String serverUrl,
 			String apiKey, ConnectionDialectEnumType dialect) throws Exception {
+		return createPersistedConnection(user, name, serverUrl, apiKey, dialect, null);
+	}
+
+	/// KI-72 overload: additionally persists system.connection.upstream (the UPSTREAM MODEL-SERVER
+	/// FAMILY) and asserts it read back. Pass null to leave it unasserted, which is what the three
+	/// pre-existing tests above do and what every pre-existing am7db row reads as.
+	///
+	/// The read-back assertion matters for the same reason it does for `dialect`: Chat.configureChat
+	/// re-queries the connection BY FK ID with an explicit projection and resolves the upstream from
+	/// THAT row, so a value set only on an in-memory record would never be seen and the test would
+	/// silently exercise the dialect inference instead (which for OPENAI_COMPAT is UNKNOWN - i.e. the
+	/// exact pre-fix behaviour, passing for the wrong reason).
+	private BaseRecord createPersistedConnection(BaseRecord user, String name, String serverUrl,
+			String apiKey, ConnectionDialectEnumType dialect,
+			org.cote.accountmanager.schema.type.ConnectionUpstreamEnumType upstream) throws Exception {
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		BaseRecord c = IOSystem.getActiveContext().getFactory()
@@ -193,22 +209,32 @@ public class TestLiteLLMOllamaProxy extends BaseTest {
 		}
 		c.set("requestTimeout", REQUEST_TIMEOUT_SEC);
 		c.set("dialect", dialect);
+		if (upstream != null) {
+			c.set(FieldNames.FIELD_UPSTREAM, upstream);
+		}
 		BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, c);
 		assertNotNull("AccessPoint.create returned null for system.connection '" + name + "'", created);
 
-		/// Read back with dialect explicitly projected - create returns identity fields only.
+		/// Read back with dialect (and upstream) explicitly projected - create returns identity fields only.
 		long connId = created.get(FieldNames.FIELD_ID);
 		Query cq = QueryUtil.createQuery(ModelNames.MODEL_CONNECTION, FieldNames.FIELD_ID, connId);
 		cq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "serverUrl",
-			"requestTimeout", "apiKey", "dialect" });
+			"requestTimeout", "apiKey", "dialect", FieldNames.FIELD_UPSTREAM });
 		cq.setCache(false);
 		BaseRecord back = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
 		assertNotNull("persisted connection id=" + connId + " could not be read back", back);
 		assertEquals("system.connection.dialect did not persist - the connection would fall back to "
 			+ "chatConfig.serviceType and the test would prove the wrong path",
 			dialect, back.getEnum("dialect"));
+		if (upstream != null) {
+			assertEquals("system.connection.upstream did not persist - the connection would fall back"
+				+ " to the dialect inference (UNKNOWN for OPENAI_COMPAT), i.e. exactly the pre-KI-72"
+				+ " behaviour, and the test would prove the wrong path",
+				upstream, back.getEnum(FieldNames.FIELD_UPSTREAM));
+		}
 		logger.info("[LITELLM-OLLAMA] connection '" + name + "' id=" + connId
-			+ " dialect=" + back.getEnum("dialect") + " serverUrl=" + serverUrl);
+			+ " dialect=" + back.getEnum("dialect")
+			+ " upstream=" + back.getEnum(FieldNames.FIELD_UPSTREAM) + " serverUrl=" + serverUrl);
 		return back;
 	}
 
@@ -228,6 +254,206 @@ public class TestLiteLLMOllamaProxy extends BaseTest {
 		cfg.set("connection", conn);
 		cfg.set("model", model);
 		return cfg;
+	}
+
+	/// KI-72: the chatOptions sub-record is where num_ctx/max_tokens actually live, and
+	/// ChatUtil.applyChatOptions' Ollama-extension block is gated on `opts != null`, so a chatConfig
+	/// with no chatOptions would emit nothing regardless of the upstream and the test would pass or
+	/// fail for the wrong reason. Materialise it and set the two values under test.
+	private void setChatOptions(BaseRecord cfg, int numCtx, int maxTokens) throws Exception {
+		BaseRecord opts = cfg.get("chatOptions");
+		if (opts == null) {
+			opts = org.cote.accountmanager.record.RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
+			cfg.set("chatOptions", opts);
+		}
+		opts.set("num_ctx", numCtx);
+		opts.set("max_tokens", maxTokens);
+	}
+
+	/// ===================== KI-72: the live /api/ps oracle =====================
+
+	/// The context window this test asserts actually took on the real model server.
+	///
+	/// 12288 is chosen to be distinct from BOTH values that could otherwise produce a confident,
+	/// meaningless pass: the `num_ctx: 40960` pinned on the LiteLLM model entry in
+	/// src/litellm/config.yaml, and qwen3:8b's own default. So if /api/ps reports 12288 it can only
+	/// have come from the request body AM7 sent. MEASURED (not assumed): a body num_ctx always wins
+	/// over the entry pin, and `drop_params: true` does NOT drop num_ctx.
+	private static final int PS_ORACLE_NUM_CTX = 12288;
+
+	/// Small on purpose. With `think` NOT reaching the model, qwen3 spends the whole budget in
+	/// reasoning_content and returns EMPTY content; with think:false it answers immediately. A
+	/// generous budget would let a thinking model eventually produce content too, making the `think`
+	/// half of this test non-discriminating.
+	private static final int PS_ORACLE_MAX_TOKENS = 96;
+
+	/// The Ollama server LiteLLM ACTUALLY PROXIES TO - i.e. OLLAMA_API_BASE, the LAN box
+	/// (192.168.1.42), which docker-compose.test.yml defaults to and resource.properties records as
+	/// test.llm.ollama.server.
+	///
+	/// DELIBERATELY NOT test.llm.ollama.direct.server: that is localhost, the *control* server for
+	/// testD, and a SECOND local Ollama answers there holding an identical-digest qwen3:8b. Probing
+	/// /api/ps on the wrong host after a proxied generation reads a model this test never loaded (or
+	/// nothing at all) and yields a confident, meaningless result - which is the specific trap this
+	/// comment exists to prevent.
+	private String proxiedOllamaServer() {
+		String env = System.getenv("OLLAMA_API_BASE");
+		if (env != null && !env.isBlank()) {
+			return env.trim();
+		}
+		return propOr("test.llm.ollama.server", "http://192.168.1.42:11434");
+	}
+
+	private void assumeProxiedOllamaLive() {
+		boolean ok = httpOk(proxiedOllamaServer() + "/api/tags");
+		if (!ok) {
+			logger.warn("[LITELLM-OLLAMA] the Ollama LiteLLM proxies to (" + proxiedOllamaServer()
+				+ ") is not reachable - SKIPPING the /api/ps oracle. Without it there is no way to"
+				+ " observe the context window the model actually loaded with.");
+		}
+		assumeTrue("Proxied Ollama /api/tags not 200 (" + proxiedOllamaServer() + ")", ok);
+	}
+
+	private HttpClient plainClient() {
+		return HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
+			.connectTimeout(Duration.ofSeconds(8)).build();
+	}
+
+	/// POST /api/generate {"model":..,"keep_alive":0} - the documented Ollama unload. REQUIRED
+	/// BEFORE the generation: Ollama keeps a model resident with the parameters of the request that
+	/// LOADED it, so /api/ps on an already-resident model reports the PREVIOUS load's context_length
+	/// and the assertion below would be about stale state.
+	private void unloadModel(String model) throws Exception {
+		String body = "{\"model\":\"" + model + "\",\"keep_alive\":0}";
+		HttpRequest req = HttpRequest.newBuilder().uri(URI.create(proxiedOllamaServer() + "/api/generate"))
+			.header("Content-Type", "application/json")
+			.POST(HttpRequest.BodyPublishers.ofString(body))
+			.timeout(Duration.ofSeconds(30)).build();
+		HttpResponse<String> r = plainClient().send(req, HttpResponse.BodyHandlers.ofString());
+		logger.info("[LITELLM-OLLAMA][PS] unload " + model + " -> HTTP " + r.statusCode());
+	}
+
+	/// GET /api/ps on the proxied server. The field that carries the loaded context window is
+	/// `context_length` (verified against this Ollama build).
+	private JsonNode apiPs() throws Exception {
+		HttpRequest req = HttpRequest.newBuilder().uri(URI.create(proxiedOllamaServer() + "/api/ps"))
+			.GET().timeout(Duration.ofSeconds(15)).build();
+		HttpResponse<String> r = plainClient().send(req, HttpResponse.BodyHandlers.ofString());
+		logger.info("[LITELLM-OLLAMA][PS] /api/ps HTTP " + r.statusCode() + " body=" + r.body());
+		assertEquals("/api/ps did not answer 200 on " + proxiedOllamaServer(), 200, r.statusCode());
+		return new ObjectMapper().readTree(r.body());
+	}
+
+	/// (e) KI-72 LIVE ORACLE. dialect=OPENAI_COMPAT + upstream=OLLAMA through the real LiteLLM proxy
+	/// to the real LAN Ollama: the context window AM7 configured must be the one the model actually
+	/// loaded with, observed on the SERVER via /api/ps - not merely present in AM7's own request.
+	///
+	/// This is the only assertion in the suite that can distinguish "AM7 sent num_ctx" from "the
+	/// context actually took". Everything between the two (the wire prune, the proxy's parameter
+	/// handling, drop_params) is exactly where KI-72 lived.
+	///
+	/// Sequence, and every step of it is load-bearing:
+	///   1. UNLOAD qwen3:8b on the proxied server, and verify /api/ps no longer lists it. Ollama
+	///      keeps a model loaded with the parameters of the request that loaded it.
+	///   2. Dispatch ONE real generation through Chat with chatOptions.num_ctx = 12288 and think:false.
+	///   3. Read /api/ps immediately - after dispatch, well before keep-alive expiry.
+	///   4. Assert context_length == 12288 AND that the completion carries real `content` (the
+	///      think:false half).
+	@Test
+	public void testE_proxiedOllamaUpstream_contextWindowTakesOnTheRealServer() throws Exception {
+		assumeStackLive();
+		assumeProxiedOllamaLive();
+		String nonce = "AM7LP-E-" + UUID.randomUUID().toString().substring(0, 8);
+		String model = litellmModel();
+
+		BaseRecord user = getCreateUser("liteProxyUserE");
+		assertNotNull("test user is null", user);
+
+		BaseRecord conn = createPersistedConnection(user, "LiteProxy E Conn " + nonce,
+			litellmServer(), masterKey(), ConnectionDialectEnumType.OPENAI_COMPAT,
+			org.cote.accountmanager.schema.type.ConnectionUpstreamEnumType.OLLAMA);
+		BaseRecord cfg = createChatConfig(user, "LiteProxy E " + nonce, conn, model);
+		setChatOptions(cfg, PS_ORACLE_NUM_CTX, PS_ORACLE_MAX_TOKENS);
+
+		Chat chat = new Chat(user, cfg, null);
+		assertEquals("dialect resolution regressed", LLMServiceEnumType.OPENAI_COMPAT, chat.getServiceType());
+		assertEquals("KI-72: the persisted upstream must resolve to OLLAMA, or none of the Ollama"
+			+ " extension parameters are emitted and this test is about nothing",
+			org.cote.accountmanager.schema.type.ConnectionUpstreamEnumType.OLLAMA, chat.getUpstream());
+
+		/// (1) Unload, and PROVE it unloaded. Without this the next assertion is about a stale load.
+		unloadModel(model);
+		Thread.sleep(1500);
+		JsonNode before = apiPs();
+		JsonNode beforeModels = before.get("models");
+		if (beforeModels != null && beforeModels.isArray()) {
+			for (JsonNode m : beforeModels) {
+				String nm = m.get("model") == null ? "" : m.get("model").asText();
+				assertFalse("precondition FAILED: " + model + " is still resident on "
+					+ proxiedOllamaServer() + " after the unload, so /api/ps would report the"
+					+ " PREVIOUS load's context_length and this test would assert stale state",
+					nm.startsWith(model));
+			}
+		}
+
+		/// (2) One real generation through the proxy.
+		OpenAIRequest req = chat.newRequest(chat.getModel());
+		req.setStream(false);
+		/// Explicitly populated so Chat.chatInternal's keepThink gate can keep it (it requires
+		/// req.hasField("think") AND an OLLAMA upstream). Measured through this proxy: with NO think
+		/// param the whole budget goes to reasoning_content and `content` comes back empty.
+		req.set("think", false);
+		chat.newMessage(req, "Reply with exactly: OK", Chat.userRole);
+
+		long t0 = System.currentTimeMillis();
+		OpenAIResponse resp = chat.chat(req);
+		long ms = System.currentTimeMillis() - t0;
+		String completion = content(resp);
+		logger.info("[LITELLM-OLLAMA][PS] " + ms + "ms completion=\""
+			+ (completion == null ? "null" : completion.trim()) + "\"");
+
+		/// (3) Read the loaded parameters off the model server itself.
+		JsonNode ps = apiPs();
+		JsonNode models = ps.get("models");
+		assertNotNull("/api/ps returned no `models` array", models);
+		assertTrue("/api/ps lists NO loaded model on " + proxiedOllamaServer() + " immediately after"
+			+ " a proxied generation. Either the generation never reached this server (check that"
+			+ " OLLAMA_API_BASE really is " + proxiedOllamaServer() + ") or it was unloaded before"
+			+ " the probe.", models.isArray() && models.size() > 0);
+		JsonNode loaded = models.get(0);
+		assertNotNull("/api/ps entry carries no `context_length` field - the field name this test"
+			+ " reads has changed", loaded.get("context_length"));
+		int ctxLen = loaded.get("context_length").asInt();
+		logger.info("[LITELLM-OLLAMA][PS] loaded model=" + loaded.get("model")
+			+ " context_length=" + ctxLen + " (AM7 configured " + PS_ORACLE_NUM_CTX + ")");
+
+		/// (4) THE `think` HALF IS ASSERTED FIRST, DELIBERATELY. JUnit stops at the first failed
+		/// assertion, and the two halves of KI-72 do not stand or fall together: `think` reaches the
+		/// model through the proxy while `num_ctx` does not. Asserting `think` first means the run
+		/// reports the state of BOTH halves instead of going silent on this one.
+		assertNotNull("AM7 Chat returned null OpenAIResponse through the proxy", resp);
+		assertNotNull("OpenAIResponse carried no message", resp.getMessage());
+		assertTrue("completion content was EMPTY. With think:false reaching the model qwen3 answers"
+			+ " directly; an empty content with a " + PS_ORACLE_MAX_TOKENS + "-token budget means the"
+			+ " budget went into reasoning_content, i.e. `think` did NOT reach the model and the"
+			+ " KI-72 upstream gate is not emitting it on the proxied path.",
+			completion != null && !completion.trim().isEmpty());
+		logger.info("[LITELLM-OLLAMA][PS] think:false half PASS - real content came back: \""
+			+ completion.trim() + "\"");
+
+		/// (5) The num_ctx half - observed on the model server, not in AM7's own request.
+		assertEquals("KI-72 NOT MET on the real server: AM7's chatConfig set num_ctx="
+			+ PS_ORACLE_NUM_CTX + " on a connection whose upstream is asserted OLLAMA, but the model"
+			+ " loaded with context_length=" + ctxLen + ". " + ctxLen + " is the value that applies"
+			+ " when the request body carries NO num_ctx (src/litellm/config.yaml pins num_ctx:40960"
+			+ " on the qwen3:8b entry as a no-body-value fallback), so AM7's value never reached the"
+			+ " model. See TestUpstreamWireEmission#caseA2, which captures the wire body and shows"
+			+ " num_ctx absent from it: Chat.chatInternal's token-field prune is keyed on the wire"
+			+ " DIALECT, and for OPENAI_COMPAT it prunes exactly `num_ctx`.",
+			PS_ORACLE_NUM_CTX, ctxLen);
+
+		logger.info("[LITELLM-OLLAMA][PS] PASS - context_length=" + ctxLen
+			+ " took on the real server and think:false produced real content.");
 	}
 
 	/// Poll the Langfuse public traces API for a trace matching a single filter. Returns the first

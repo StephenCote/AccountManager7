@@ -23,7 +23,6 @@ import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.IChatHandler;
 import org.cote.accountmanager.olio.llm.IChatListener;
-import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -34,6 +33,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.schema.type.ConnectionUpstreamEnumType;
 import org.cote.accountmanager.schema.type.PageIndexNodeEnumType;
 import org.cote.accountmanager.tools.EmbeddingUtil;
 import org.cote.accountmanager.validator.HierarchyValidator;
@@ -888,8 +888,25 @@ public class PageIndexUtil {
 			/// to thinking-on and prefix the response with unstructured chain-of-thought prose — breaking
 			/// strict-JSON parsing (LLM-TOC) and polluting stored summaries. Explicitly populating "think"
 			/// (vs leaving it untouched) is what lets Chat.chatInternal forward false onto the wire instead
-			/// of pruning it; non-OLLAMA services ignore the field entirely.
-			if(chatConfig.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) {
+			/// of pruning it; non-OLLAMA upstreams have the field pruned entirely.
+			///
+			/// KI-72 (site 6 of the family): keyed on the UPSTREAM MODEL-SERVER FAMILY via the Chat
+			/// instance already in hand. It previously gated on the DEPRECATED chatConfig.serviceType,
+			/// which is neither axis and which defaults to OPENAI — so a chatConfig repointed at the
+			/// LiteLLM proxy exactly as dockerDevSetup.md §12.4 instructs (set the connection's dialect
+			/// and upstream, leave serviceType alone) never fired this at all. On a config whose
+			/// chatOptions turned thinking ON, ChatUtil.applyOllamaUpstreamOptions' think:true then rode
+			/// the wire for these calls too, which is the exact failure the paragraph above describes.
+			/// Measured off a socket capture, not inferred: TestUpstreamWireEmission caseI1/caseI2.
+			///
+			/// STRICTLY WIDER THAN THE OLD GATE, not a trade. ChatUtil.resolveServiceType falls back to
+			/// chatConfig.serviceType, so a config claiming OLLAMA on an absent/unreadable connection
+			/// still floors to upstream=OLLAMA (ChatUtil.applyUpstreamFloor) and still lands here. The
+			/// two shapes where the old gate fired and this one does not — serviceType=OLLAMA on a
+			/// connection whose dialect is OPENAI or OPENAI_COMPAT — are wire-inert either way, because
+			/// Chat.chatInternal's keepThink requires getUpstream()==OLLAMA before `think` may ride at
+			/// all, so setting it there never reached the wire.
+			if(chat.getUpstream() == ConnectionUpstreamEnumType.OLLAMA) {
 				req.set("think", false);
 			}
 			chat.newMessage(req, userMessage, Chat.userRole);

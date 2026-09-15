@@ -57,6 +57,7 @@ import org.cote.accountmanager.tools.ImageTagResponse;
 import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
+import org.cote.accountmanager.schema.type.ConnectionUpstreamEnumType;
 import org.cote.accountmanager.schema.type.MemoryTypeEnumType;
 import org.cote.accountmanager.olio.llm.policy.ChatAutotuner;
 import org.cote.accountmanager.olio.llm.policy.ChatAutotuner.AutotuneResult;
@@ -117,6 +118,11 @@ public class Chat {
 	private int messageTrim = 20;
 	private int keyFrameEvery = 20;
 	private LLMServiceEnumType serviceType = LLMServiceEnumType.OPENAI;
+	/// KI-72: upstream MODEL-SERVER FAMILY, resolved once in configureChat from
+	/// system.connection.upstream. Left UNKNOWN for an instance that was never configured from a
+	/// connection (every `new Chat(); setServiceType(...)` in the tests) - getUpstream() infers in
+	/// that case, which is what preserves the pre-KI-72 behaviour for those instances.
+	private ConnectionUpstreamEnumType upstream = ConnectionUpstreamEnumType.UNKNOWN;
 	private String model = null;
 	private String serverUrl = null;
 	private String apiVersion = null;
@@ -473,7 +479,12 @@ public class Chat {
 				Query cq = QueryUtil.createQuery(ModelNames.MODEL_CONNECTION, FieldNames.FIELD_ID, connId);
 				/// "dialect" is projected here (P3-1) so fullConn carries the authoritative transport
 				/// protocol; without this it would be FK-only and the resolver would silently read null.
-				cq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "serverUrl", "requestTimeout", "apiKey", "dialect" });
+				/// "upstream" is projected for exactly the same reason (KI-72) and carries exactly the
+				/// same contract: ChatUtil.resolveUpstream MUST be handed a record on which the field is
+				/// PROVABLY populated. Drop it from this projection and the resolver reads null, silently
+				/// collapses to the dialect inference, and an Ollama behind an OPENAI_COMPAT proxy loses
+				/// every extension parameter again - cosmetically fine, functionally the original defect.
+				cq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "serverUrl", "requestTimeout", "apiKey", "dialect", FieldNames.FIELD_UPSTREAM });
 				fullConn = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
 				if (fullConn != null) {
 					setServerUrl(fullConn.get("serverUrl"));
@@ -496,9 +507,31 @@ public class Chat {
 			/// when dialect is UNKNOWN or the connection is absent (also preserving LOCAL, which has no
 			/// dialect peer). Everything downstream reads this resolved instance field (getServiceType()):
 			/// getServiceUrl, isOpenAiCompatible, buildTracingHeaders, the wire-body leakage gate, the
-			/// OLLAMA token floor, and the ChatUtil.getMaxTokenField/supportsSamplingParams/applyChatOptions
-			/// two-arg overloads — so there is exactly one resolution, done here, and never a second authority.
+			/// OLLAMA token floor, and the ChatUtil.getMaxTokenField two-arg / applyChatOptions four-arg /
+			/// supportsSamplingParams three-arg overloads (the latter two take BOTH axes) — so there is
+			/// exactly one resolution, done here, and never a second authority.
 			setServiceType(ChatUtil.resolveServiceType(fullConn, chatConfig));
+			/// KI-72 — the SECOND, INDEPENDENT axis: the upstream MODEL-SERVER FAMILY. The dialect
+			/// above answers "what protocol do we speak"; this answers "what actually runs the model".
+			/// They are not the same question and conflating them was the defect: a LiteLLM proxy in
+			/// front of the LAN Ollama makes the dialect OPENAI_COMPAT while the upstream is still
+			/// Ollama. Resolved once, here, from system.connection.upstream (falling back to a
+			/// dialect-derived inference that NEVER infers OLLAMA from OPENAI_COMPAT), and read
+			/// downstream via getUpstream().
+			setUpstream(ChatUtil.resolveUpstream(fullConn));
+			/// Discoverability (C1-h): the one combination where a silently-degraded setup is likely -
+			/// an OpenAI-compatible proxy with no upstream asserted. Per Chat construction, not per
+			/// request.
+			if (fullConn != null
+					&& serviceType == LLMServiceEnumType.OPENAI_COMPAT
+					&& upstream == ConnectionUpstreamEnumType.UNKNOWN) {
+				logger.warn("chatConfig '" + chatConfig.get(FieldNames.FIELD_NAME) + "' uses an OPENAI_COMPAT connection with"
+					+ " system.connection.upstream unset (UNKNOWN): the Ollama extension parameters (num_ctx, top_k,"
+					+ " repeat_penalty, typical_p, min_p, repeat_last_n, num_gpu) and `think` are SUPPRESSED, and the"
+					+ " memory-extraction token floor is halved. If this endpoint proxies Ollama, set"
+					+ " system.connection.upstream = OLLAMA on it; if it fronts Azure/OpenAI, this is correct and"
+					+ " setting upstream = OPENAI silences this warning.");
+			}
 			remind = chatConfig.get("remindEvery");
 			keyFrameEvery = chatConfig.get("keyframeEvery");
 			messageTrim = chatConfig.get("messageTrim");
@@ -577,6 +610,27 @@ public class Chat {
 
 	public void setServiceType(LLMServiceEnumType serviceType) {
 		this.serviceType = serviceType;
+	}
+
+	/// KI-72 — INFERENCE-AWARE getter, and the inference is load-bearing, not a convenience.
+	/// configureChat() is the only thing that ever sets a real upstream, and a large amount of
+	/// existing code (and every existing test) builds a Chat with `new Chat(); setServiceType(OLLAMA)`
+	/// and never calls configureChat. Returning the bare field for those instances would report
+	/// UNKNOWN and silently strip the Ollama extension parameters from paths that have always had
+	/// them - a regression dressed as a rename. So: an explicitly asserted upstream wins; otherwise
+	/// derive it from the resolved service type, which reproduces the pre-KI-72 behaviour exactly.
+	///
+	/// THE FLOOR ITSELF LIVES IN ChatUtil.applyUpstreamFloor, NOT HERE, and must stay there. When it
+	/// was inlined in this method, the second call site that needed it (the resumed-session branch
+	/// of ChatUtil.getOpenAIRequest) re-derived the upstream without it and the two paths diverged —
+	/// 113 native-Ollama connections on am7db emitted the extensions on a new session and not on a
+	/// resumed one. Both sites now share one definition.
+	public ConnectionUpstreamEnumType getUpstream() {
+		return ChatUtil.applyUpstreamFloor(upstream, serviceType);
+	}
+
+	public void setUpstream(ConnectionUpstreamEnumType upstream) {
+		this.upstream = upstream;
 	}
 
 	public boolean isIncludeScene() {
@@ -2758,7 +2812,11 @@ public class Chat {
 		/// The default num_ctx/max_tokens from chatOptions may be too small, causing truncated output.
 		/// Set floor on ALL token fields to cover model differences (o-series uses
 		/// max_completion_tokens, Ollama uses num_ctx, others use max_tokens).
-		int minTokens = (serviceType == LLMServiceEnumType.OLLAMA) ? 16384 : 8192;
+		/// KI-72: keyed on the upstream MODEL-SERVER FAMILY, not the wire dialect. The floor exists
+		/// because Ollama's context handling truncates extraction output, which is a property of the
+		/// upstream server - so it must still apply to an Ollama reached through an OpenAI-compatible
+		/// proxy, where the dialect is OPENAI_COMPAT and the floor used to silently halve.
+		int minTokens = (getUpstream() == ConnectionUpstreamEnumType.OLLAMA) ? 16384 : 8192;
 		String[] tokenFields = {"max_tokens", "max_completion_tokens", "num_ctx"};
 		for (String tf : tokenFields) {
 			try {
@@ -3986,6 +4044,40 @@ public class Chat {
 		}
 	}
 
+	/// The Tier B tracing wire-BODY prune decision, extracted so it can be asserted directly against
+	/// PRODUCTION code instead of a copy.
+	///
+	/// WHY IT IS A METHOD: while this logic was inline in chatInternal, the only unit coverage of it
+	/// was a hand-written reimplementation in the test, which had ALREADY gone stale once — it
+	/// mirrored the old dialect-only gate and silently omitted the Guardrail 3 opaqueness half. A
+	/// copy that can drift is not coverage: deleting the TracingIdValidator call below, or widening
+	/// its dialect test, would have left the suite green. Package-visible on purpose; the test
+	/// reaches it reflectively, the same idiom it uses for buildTracingHeaders.
+	///
+	///  - `session_id` is pruned from the wire body for EVERY dialect. It is not a valid
+	///    OpenAI/Azure parameter; correlation rides the x-langfuse-session-id header instead.
+	///  - `user` IS a standard OpenAI parameter and LiteLLM maps the BODY value onto Langfuse
+	///    trace.userId, so it is kept ONLY when BOTH (a) the dialect is OPENAI_COMPAT — the
+	///    pre-existing leakage gate, so Azure and native Ollama never see it — AND (b) the value is
+	///    opaque (Guardrail 3). The header alone is not sufficient: suppressing only the header would
+	///    still let a human identifier reach the trace store through the body.
+	///
+	/// DROP + WARN, never reject: a tracing field must not be able to fail a chat, and a reject path
+	/// would hand any client that can write openai.openaiRequest.user through the generic
+	/// /rest/model routes a way to break every chat.
+	List<String> buildTracingIgnoreFields(OpenAIRequest req) {
+		List<String> out = new ArrayList<>();
+		out.add("session_id");
+		boolean keepUser = (serviceType == LLMServiceEnumType.OPENAI_COMPAT
+			&& req != null
+			&& req.hasField("user")
+			&& TracingIdValidator.opaqueOrNull("user", (String) req.get("user")) != null);
+		if (!keepUser) {
+			out.add("user");
+		}
+		return out;
+	}
+
 	private OpenAIResponse chatInternal(OpenAIRequest req) {
 		/// Reset mid-stream policy tracking for this request
 		lastMidStreamCheckLength = 0;
@@ -3994,7 +4086,43 @@ public class Chat {
 
 		List<String> ignoreFields = new ArrayList<>(ChatUtil.IGNORE_FIELDS);
 		String tokField = ChatUtil.getMaxTokenField(chatConfig, serviceType);
-		ignoreFields.addAll(Arrays.asList(new String[] {"num_ctx", "max_tokens", "max_completion_tokens"}).stream().filter(f -> !f.equals(tokField)).collect(Collectors.toList()));
+		List<String> tokenFieldPrunes = new ArrayList<>(Arrays.asList("num_ctx", "max_tokens", "max_completion_tokens"));
+		tokenFieldPrunes.remove(tokField);
+		/// KI-72 (fourth re-key site): on an OLLAMA UPSTREAM, `num_ctx` is an Ollama extension in its
+		/// own right — the context window — and NOT merely whichever field happens to carry the token
+		/// cap. `tokField` is dialect-derived and resolves to "max_tokens" on OPENAI_COMPAT, so
+		/// without this line "num_ctx" lands in the prune list and getPrunedRequest strips the value
+		/// that ChatUtil.applyOllamaUpstreamOptions just set — leaving the model to run at whatever
+		/// the proxy or server defaults to, which is the original KI-72 symptom surviving on the wire.
+		/// Measured: the captured body carried eight of the nine extensions and no num_ctx, and a live
+		/// proxied call reported /api/ps context_length=40960 (the LiteLLM pin) instead of AM7's value.
+		///
+		/// Native OLLAMA is unaffected — tokField is already "num_ctx" there, so the remove() above
+		/// has already taken it out. An Azure-fronting OPENAI_COMPAT connection keeps upstream
+		/// UNKNOWN and still prunes num_ctx, which is the KI-72 prohibition: that dialect also fronts
+		/// Azure, which rejects the parameter.
+		///
+		/// ALSO RE-KEYED ONTO THE UPSTREAM, in a later pass (site 5 of the KI-72 family):
+		///  - ChatUtil.supportsSamplingParams, whose short-circuit now tests the UPSTREAM rather than
+		///    `service == OLLAMA`. It gates the temperature/top_p/frequency_penalty prune a few lines
+		///    below, so while it was dialect-keyed a PROXIED Ollama model whose tag starts with "o"
+		///    (olmo, openchat, orca-mini) or "gpt-5" had those three parameters stripped by the
+		///    gpt-5/o-series REASONING-MODEL heuristic and ran at the server defaults. The call below
+		///    passes getUpstream(); the two-arg overload still infers from the dialect, so callers
+		///    that hold no upstream are unchanged. TestUpstreamWireEmission caseH1/caseH2.
+		///
+		/// DELIBERATELY NOT RE-KEYED (seen, considered, left — do not "complete" these):
+		///  - getMaxTokenField and the tokValue line: they genuinely decide the wire token-field NAME
+		///    from the dialect and are correct. Only this prune changes.
+		///  - The native-Ollama `max_tokens` prune: on a native OLLAMA dialect tokField IS "num_ctx",
+		///    so "max_tokens" stays in the prune list and defeats applyOllamaUpstreamOptions'
+		///    max_tokens set (and its "so generation terminates at the user-configured cap" comment).
+		///    Pre-existing, affects the main native path's generation behaviour, and is Stephen's
+		///    call — not fixed here.
+		if (getUpstream() == ConnectionUpstreamEnumType.OLLAMA) {
+			tokenFieldPrunes.remove("num_ctx");
+		}
+		ignoreFields.addAll(tokenFieldPrunes);
 
 		String penField = ChatUtil.getPresencePenaltyField(chatConfig);
 		ignoreFields.addAll(Arrays.asList(new String[] {"presence_penalty"}).stream().filter(f -> !f.equals(penField)).collect(Collectors.toList()));
@@ -4004,7 +4132,7 @@ public class Chat {
 		/// Strip them from the wire request only — the persisted request/chatOptions
 		/// are left intact. Mirrors the gpt-5 handling in getMaxTokenField /
 		/// getPresencePenaltyField.
-		if (!ChatUtil.supportsSamplingParams(chatConfig, serviceType)) {
+		if (!ChatUtil.supportsSamplingParams(chatConfig, serviceType, getUpstream())) {
 			ignoreFields.addAll(Arrays.asList("temperature", "top_p", "frequency_penalty"));
 		}
 
@@ -4016,7 +4144,26 @@ public class Chat {
 		/// default) on an OLLAMA request — true to request thinking, or false to force it off on a
 		/// hybrid reasoning model (e.g. qwen3) that otherwise defaults to thinking-on. A caller that
 		/// never touches the field gets the old safe-omit behavior.
-		boolean keepThink = (serviceType == LLMServiceEnumType.OLLAMA && req.hasField("think"));
+		///
+		/// KI-72: keyed on the upstream MODEL-SERVER FAMILY, not the wire dialect. `think` is an
+		/// Ollama extension, so what matters is whether Ollama is running the model - not which door
+		/// we knocked on. Keyed on the dialect, a chatConfig that deliberately set think:false got
+		/// thinking back ON the moment it was repointed at a LiteLLM proxy (confirmed live: a
+		/// max_tokens:20 proxied request returned pure reasoning_content with finish_reason "length"
+		/// and empty content).
+		///
+		/// CORRECTION (measured 2026-09-15, off a socket capture): the claim previously made here —
+		/// that the req.hasField() half "does the real work of not emitting a schema-default `think`"
+		/// — is FALSE for any request built by new OpenAIRequest(). openaiRequestModel.json declares
+		/// `think` with "default": false and the constructor materialises it into the fieldMap, while
+		/// BaseRecord.hasField is just fieldMap.containsKey(name) — so hasField("think") is already
+		/// true for a request nobody touched, and on an Ollama upstream `think:false` rides the wire
+		/// whether or not a caller set it. The hasField half only bites a request DESERIALIZED without
+		/// the field (e.g. a resumed session). Left as-is deliberately: the emitted value is false,
+		/// which is the safe one, and the upstream half is what keeps it away from Azure. Recorded
+		/// because a comment asserting an effect the code does not produce is what let the num_ctx
+		/// prune go unnoticed; it also made a first PageIndexUtil test pass against unfixed code.
+		boolean keepThink = (getUpstream() == ConnectionUpstreamEnumType.OLLAMA && req.hasField("think"));
 		if(!keepThink) {
 			ignoreFields.add("think");
 		}
@@ -4050,10 +4197,7 @@ public class Chat {
 		/// deferred follow-up, so shipping it would have been dead schema — hence removed from the model
 		/// and from this prune.
 		/// Mirrors the `think` gate above.
-		ignoreFields.add("session_id");
-		if (serviceType != LLMServiceEnumType.OPENAI_COMPAT) {
-			ignoreFields.add("user");
-		}
+		ignoreFields.addAll(buildTracingIgnoreFields(req));
 
 		boolean forwardToClient = (boolean) req.get("stream");
 		logger.info("[DIAG] chatInternal() entered: streamMode=" + streamMode + " forwardToClient=" + forwardToClient
@@ -4079,6 +4223,18 @@ public class Chat {
 		/// always reflect reality regardless of who loaded a given model. Record the bare server
 		/// base URL (getServerUrl()), NOT serviceUrl — serviceUrl already has "/api/chat" (or
 		/// "/api/generate") appended, and unloadAll() appends its own "/api/generate" suffix.
+		///
+		/// KI-72: THIS TEST STAYS KEYED ON THE WIRE DIALECT AND MUST NOT BE "COMPLETED" TO USE
+		/// getUpstream(). The registry this feeds is consumed by OllamaModelUtil.unloadAll(), which
+		/// appends its own "/api/generate" (OllamaModelUtil.java:114) and speaks the NATIVE Ollama
+		/// API — so re-keying it on the upstream family would make unloadAll() POST /api/generate at
+		/// LiteLLM, which does not serve that route.
+		///
+		/// ACCEPTED GAP, stated rather than hidden: with upstream=OLLAMA behind a LiteLLM proxy,
+		/// getServerUrl() is the PROXY and this native test is false, so nothing records the real
+		/// Ollama model load and unloadAll() can never free that GPU memory. That is a real hole for
+		/// the single-GPU scenario this change exists to enable. Closing it needs the proxy's
+		/// upstream base URL to be knowable here (a separate per-connection value), not a wider test.
 		if (serviceType == LLMServiceEnumType.OLLAMA) {
 			OllamaModelUtil.recordUsage(getServerUrl(), req.getModel());
 		}
@@ -4555,13 +4711,20 @@ public class Chat {
 		if (serviceType != LLMServiceEnumType.OPENAI_COMPAT || req == null) {
 			return null;
 		}
+		/// Guardrail 3 enforcement (emission point 1 of 2 — the HEADER). DROP + WARN, never reject:
+		/// TracingIdValidator.opaqueOrNull returns null for a value that is not an objectId/URN or a
+		/// generated nonce, and the header is simply omitted. A tracing field must not be able to
+		/// fail a chat, and a reject path would let any client that can write
+		/// openai.openaiRequest.user through the generic /rest/model routes break every chat.
+		/// Enforcing it here rather than at every caller is the point — both fields are persisted
+		/// and ChatService.chatHistory rebuilds the request from the DB-loaded session record.
 		Map<String,String> headers = new java.util.HashMap<>();
-		String userVal = req.hasField("user") ? (String) req.get("user") : null;
-		if (userVal != null && !userVal.isBlank()) {
+		String userVal = req.hasField("user") ? TracingIdValidator.opaqueOrNull("user", (String) req.get("user")) : null;
+		if (userVal != null) {
 			headers.put("x-langfuse-user-id", userVal);
 		}
-		String sessionVal = req.hasField("session_id") ? (String) req.get("session_id") : null;
-		if (sessionVal != null && !sessionVal.isBlank()) {
+		String sessionVal = req.hasField("session_id") ? TracingIdValidator.opaqueOrNull("session_id", (String) req.get("session_id")) : null;
+		if (sessionVal != null) {
 			headers.put("x-langfuse-session-id", sessionVal);
 		}
 		return headers.isEmpty() ? null : headers;
@@ -5228,7 +5391,10 @@ public class Chat {
 	}
 
 	public void applyChatOptions(OpenAIRequest req) {
-		ChatUtil.applyChatOptions(req, chatConfig, serviceType);
+		/// KI-72: hand over BOTH axes. serviceType keeps owning the transport-shaped decisions; the
+		/// upstream family owns the Ollama extension parameters. getUpstream() (not the bare field)
+		/// so an instance configured only via setServiceType still behaves as it always did.
+		ChatUtil.applyChatOptions(req, chatConfig, serviceType, getUpstream());
 	}
 
 }

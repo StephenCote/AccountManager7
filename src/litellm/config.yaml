@@ -60,6 +60,24 @@ model_list:
   # behaviour while the image was pinned to 1.100.1, where it is false. Re-run
   # the streaming test on every image bump; do not infer it from the version.
   #
+  # RE-MEASURED AND RE-CONFIRMED 2026-09-15 on the currently pinned digest,
+  # because docker-compose.test.yml's comment read as though the pin were
+  # 1.100.1 -- which, if true, would have made this cap INERT and the whole
+  # proxy pointless. It is not true. Settled empirically, since image labels
+  # carry no version (`pip show litellm` prints nothing; use importlib.metadata):
+  #     running container -> litellm 1.102.0, langfuse SDK 2.59.7
+  # Then the isolating experiment was re-run: throwaway litellm on THIS digest,
+  # threaded mock upstream (fast first byte, 5s to complete, counting its own
+  # peak in-flight), K=3 concurrent STREAMING requests, only the cap varied:
+  #     cap=1  ->  5.86 / 10.87 / 15.88s   mock peak in-flight 1   QUEUED
+  #     cap=3  ->  5.32 /  5.32 /  5.32s   mock peak in-flight 3   (control)
+  # The cap=3 control is the important half and was missing from the original
+  # record: it proves the harness CAN exhibit concurrency, so the cap=1
+  # serialisation is the semaphore and not an artifact of the mock or client.
+  # First-byte times under cap=1 were staggered 0.87 / 5.87 / 10.88 -- each
+  # request's FIRST byte arrived only after the previous one FINISHED, which is
+  # exactly the behaviour 1.100.1 lacks.
+  #
   # DO NOT use `general_settings.max_parallel_requests` (or the per-key limit)
   # for this: that path goes through litellm/proxy/hooks/parallel_request_limiter.py
   # which raises HTTPException(429) "Max parallel request limit reached". That
@@ -83,15 +101,35 @@ model_list:
       api_base: os.environ/OLLAMA_API_BASE
       # Innermost timeout -- see the ladder note in litellm_settings below.
       timeout: 240
-      # Context window must be pinned HERE, and only here. On the OPENAI_COMPAT
-      # path AM7 skips its whole Ollama-extension block (ChatUtil.java:2124-2153),
-      # so `num_ctx` is never sent and the server default applies; and because
-      # `drop_params: true` is set, a num_ctx that AM7 did send would be dropped
-      # as a non-OpenAI param. See the behavioural-divergence note at the bottom
-      # of this file before repointing any existing chatConfig here.
-      # VERIFIED reaching Ollama 2026-09-14: temporarily setting this to 8192
-      # made the server report context_length=8192 on /api/ps, so it is not
-      # being silently dropped. 40960 matches qwen3:8b's full window.
+      # FALLBACK ONLY -- this is NOT the authority for context window.
+      #
+      # MEASURED 2026-09-15 against this pinned image and the real LAN Ollama,
+      # unloading the model between runs so /api/ps reflects the next load:
+      #   * body num_ctx:12288 + this entry pinning 40960  -> /api/ps 12288
+      #   * body num_ctx:12288 + NO num_ctx on the entry    -> /api/ps 12288
+      # So (a) a request-body `num_ctx` ALWAYS WINS over this value, and
+      # (b) `drop_params: true` does NOT drop it -- litellm recognises num_ctx
+      # as a valid ollama_chat param whether or not the entry declares it.
+      #
+      # THIS CORRECTS the previous comment here, which asserted the opposite:
+      # "a num_ctx that AM7 did send would be dropped as a non-OpenAI param".
+      # That was never measured and is false. The 2026-09-14 note that setting
+      # this to 8192 showed up on /api/ps was true but proved only that the
+      # entry value reaches Ollama when the body carries nothing -- it did not
+      # test precedence, which is the thing that mattered.
+      #
+      # Consequence now that KI-72 is fixed and AM7 emits num_ctx again on the
+      # proxied path: AM7 is the single authority, and this value applies ONLY
+      # to callers that send none (bare curl, the LiteLLM UI, other clients).
+      # It is kept for exactly that reason and MUST NOT be treated as a floor.
+      #
+      # WATCH THIS: ChatUtil.applyChatOptions defaults num_ctx to 8192 when the
+      # chatConfig's chatOptions leaves it unset, and AM7 emits whatever it
+      # resolves. So a proxied chatConfig that never set num_ctx now runs at
+      # 8192, NOT at the 40960 it effectively got while this pin was the only
+      # source. That is a real reduction -- set num_ctx on the chatConfig
+      # rather than raising this value, which cannot override the body anyway.
+      # 40960 matches qwen3:8b's full window.
       num_ctx: 40960
       # NOTE: this is a literal int, NOT `os.environ/...`, and that is deliberate.
       # litellm resolves `os.environ/X` via get_secret(), which returns a STRING;
@@ -161,10 +199,16 @@ general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
 
 # ---------------------------------------------------------------------------
-# BEHAVIOURAL DIVERGENCE: proxied (OPENAI_COMPAT) is NOT equivalent to direct
-# (OLLAMA) for the SAME physical model. Measured/read 2026-09-14.
+# BEHAVIOURAL DIVERGENCE (KI-72) -- **FIXED 2026-09-15 in Objects7.**
+# Read the STATUS paragraph at the bottom of this block FIRST; the history
+# above it is retained only for deployments running an older Objects7.
+# TL;DR: set `upstream = OLLAMA` on the system.connection that points here.
 #
-# AM7 gates its whole Ollama-extension block on serviceType == OLLAMA
+# --- HISTORY (pre-2026-09-15 behaviour, measured/read 2026-09-14) ---
+# Proxied (OPENAI_COMPAT) was NOT equivalent to direct (OLLAMA) for the SAME
+# physical model:
+#
+# AM7 gated its whole Ollama-extension block on serviceType == OLLAMA
 # (ChatUtil.java:2124-2153). Routing the same chatConfig through this proxy
 # therefore silently DROPS all of:
 #     num_ctx, top_k, repeat_penalty, typical_p, min_p, repeat_last_n, num_gpu
@@ -176,11 +220,16 @@ general_settings:
 # Separately, Chat.java:2731 halves the memory-extraction token floor
 # (16384 -> 8192) when serviceType != OLLAMA.
 #
-# `num_ctx` is pinned on the model entry above. The rest cannot be fixed
-# proxy-side; the real fix is to key that AM7 block on "upstream is Ollama"
-# rather than "dialect is OLLAMA", which is a tracked Objects7 follow-up.
+# STATUS 2026-09-15: FIXED in Objects7 -- see KI-72 and design doc 6.6. The
+# extension block is now keyed on the UPSTREAM FAMILY, carried by the new
+# additive `system.connection.upstream` field, not on the wire dialect. Set
+# `upstream = OLLAMA` on the connection pointing at this proxy and AM7 emits
+# num_ctx, think and the sampling extensions again; an Azure-fronting
+# OPENAI_COMPAT connection leaves `upstream` UNKNOWN and is sent none of them,
+# which is the distinction KI-72 required (do NOT widen the test to the
+# dialect). `num_ctx` on the model entry above is now a FALLBACK for non-AM7
+# callers only -- the body wins; see the measurement recorded there.
 #
-# => DO NOT repoint an existing OLLAMA chatConfig at this proxy until that
-#    follow-up lands. New OPENAI_COMPAT configs are fine. Exposure today is
-#    zero because every existing system.connection row is dialect=UNKNOWN.
+# The paragraph above is retained because it describes the behaviour of any
+# deployment whose Objects7 predates that fix.
 # ---------------------------------------------------------------------------

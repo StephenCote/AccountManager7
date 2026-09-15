@@ -201,10 +201,17 @@ model.
 
 ---
 
-## 6. As-built (2026-09-14)
+## 6. As-built (2026-09-14, extended 2026-09-15)
 
 Everything below was **measured, or read from installed source in the image** — not inferred from
 vendor documentation. Dates are inline. Where this section disagrees with §§1–5, this section wins.
+
+**2026-09-15 pass.** KI-72 closed (§6.6 — the `system.connection.upstream` field; the blocker that
+made this stack unusable for its actual purpose); the image-version contradiction settled empirically
+and the streaming concurrency cap re-measured *with a control* (§6.3); the committed-credential
+silence fixed with a startup assertion (§6.9); Guardrail 3 enforced at both emission points (§6.10);
+and the "adding a model field needs a migration" premise disproven (§6.7). Two items in §6.10 are now
+closed and one new one is open.
 
 ### 6.1 The stack as shipped
 
@@ -213,8 +220,11 @@ starts with the default stack, and the `am7` service deliberately has **no `depe
 a `chatConfig` pointing at `http://litellm:4000` **fails closed** when the profile is down.
 
 - **`litellm`** — pinned **by digest** to litellm **1.102.0** (bundling langfuse Python SDK 2.59.7).
-  Deliberately NOT the `main-stable` channel (1.100.1): the concurrency cap is inert for streaming
-  there, and AM7 always streams. Full rationale and measurements in §6.3.
+  **Re-verified empirically 2026-09-15** against the running container, not read off a comment:
+  `python -c "import importlib.metadata as m; print(m.version('litellm'), m.version('langfuse'))"`
+  → `1.102.0 2.59.7`. Deliberately NOT the `main-stable` channel (1.100.1): the concurrency cap is
+  inert for streaming there, and AM7 always streams. Full rationale and measurements in §6.3;
+  procedure for the next bump in [`dockerDevSetup.md`](dockerDevSetup.md) §12.7.
 - **Langfuse v4** (latest stable) — a **six-service** deployment, upgraded this pass from the v2
   two-service form at Stephen's request: `langfuse-web`, `langfuse-worker`, `langfuse-clickhouse`,
   `langfuse-minio`, `langfuse-redis`, `langfuse-db`. Traces live in **Clickhouse**; `langfuse-db`
@@ -240,7 +250,10 @@ a `chatConfig` pointing at `http://litellm:4000` **fails closed** when the profi
 
 - **Version coupling to re-check on every image bump:** if a future litellm image ships SDK v3+,
   switch `success_callback` from `langfuse` to `langfuse_otel` and drop
-  `LANGFUSE_MIGRATION_V4_WRITE_MODE`.
+  `LANGFUSE_MIGRATION_V4_WRITE_MODE`. This is now step 3 of the written checklist,
+  [`dockerDevSetup.md`](dockerDevSetup.md) **§12.7** — which also covers the two traps that make a
+  bump dangerous rather than merely tedious (the streaming cap, and the numeric-config `os.environ/`
+  failure), and both of which fail silently.
 
 **Operational runbook — this doc is the *why*, that one is the *how*:**
 [`dockerDevSetup.md`](dockerDevSetup.md) **§12**. Specifically:
@@ -305,6 +318,40 @@ silently. It bundles langfuse SDK 2.59.7, identical to stable, so tracing is una
 > pinned to `main-stable`. The behaviour is real in 1.102.0 but **false in 1.100.1**, and the citation
 > line numbers were carried over from a different build. Hard line-number citations into litellm have
 > been removed for that reason — cite the function, and re-measure on every bump.
+
+#### Re-settled empirically 2026-09-15 — the cap is live, and there is now a control
+
+`docker-compose.test.yml` opened its `image:` comment by describing the `main-stable` **channel**
+(1.100.1), and a second comment further down asserted outright that "the main-stable image now
+pinned above (1.100.1)". Either reading made the pinned **digest** 1.100.1 — and if that had been
+true the cap would be inert for streaming, i.e. the entire proxy pointless. It was never true. Both
+statements are now corrected, and the compose comment leads with the pin, which is the single
+authoritative version statement for this stack.
+
+Settled by measurement, not by reading either comment, because image labels carry no version and
+`pip show litellm` prints **nothing** in this image:
+
+```
+docker exec am7test-litellm-1 python -c "import importlib.metadata as m; print(m.version('litellm'), m.version('langfuse'))"
+-> 1.102.0 2.59.7
+```
+
+Then the isolating experiment was re-run on that digest — throwaway litellm, threaded mock upstream
+(fast first byte, 5s to complete, counting its **own** peak in-flight), K=3 concurrent **streaming**
+requests, only the cap varied:
+
+| cap | completion times | mock peak in-flight | verdict |
+|---|---|---|---|
+| 1 | 5.86 / 10.87 / 15.88s | **1** | queued |
+| 3 | 5.32 / 5.32 / 5.32s | **3** | control |
+
+**The cap=3 control is the important half, and it was missing from the original record.** Without it,
+serialisation at cap=1 is not evidence — it could be the mock or the client serialising rather than
+the semaphore. With it, the only variable is the cap. Note also that under cap=1 the **first-byte**
+times were staggered 0.87 / 5.87 / 10.88: each request's first byte arrived only after the previous
+one *finished*, which is exactly the property 1.100.1 lacks. The procedure is now a step-by-step
+checklist in [`dockerDevSetup.md`](dockerDevSetup.md) **§12.7**, which also records that the bundled
+SDK is still v2 and `LANGFUSE_MIGRATION_V4_WRITE_MODE=dual` is therefore still required.
 
 #### End-to-end on the shipped stack
 
@@ -375,24 +422,97 @@ than lowering the LiteLLM value.
 The resulting concrete setting — `requestTimeout: 300` on the connection, above LiteLLM's 240s — and
 where to enter it are in `dockerDevSetup.md` §12.4.
 
-### 6.6 Behavioural divergence — proxied is NOT equivalent to direct (TRACKED FOLLOW-UP)
+### 6.6 Behavioural divergence — RESOLVED 2026-09-15 (was the blocker)
 
-AM7 gates its whole Ollama-extension block on `serviceType == OLLAMA` (`ChatUtil.java:2124-2153`), so
-the `OPENAI_COMPAT` path silently drops `num_ctx`, `top_k`, `repeat_penalty`, `typical_p`, `min_p`,
-`repeat_last_n`, `num_gpu`, and `think` (`Chat.java:3989`) — a config that set `think:false` gets
-thinking back **ON**. qwen3 is named in that very source comment as the affected hybrid reasoning
-model, and it is the model being proxied; confirmed live, a `max_tokens:20` request through the proxy
-returned pure `reasoning_content` with `finish_reason: length`. Separately `Chat.java:2731` halves
-the memory-extraction token floor (16384 → 8192) when `serviceType != OLLAMA`.
+**The defect.** AM7 gated its whole Ollama-extension block on `serviceType == OLLAMA`, so the
+`OPENAI_COMPAT` path silently dropped `num_ctx`, `top_k`, `repeat_penalty`, `typical_p`, `min_p`,
+`repeat_last_n`, `num_gpu`, and `think` — a config that set `think:false` got thinking back **ON** —
+and `Chat` halved the memory-extraction token floor (16384 → 8192). qwen3 is named in that very
+source comment as the affected hybrid reasoning model and it is the model being proxied. Confirmed
+live twice: a `max_tokens:20` request through the proxy returned pure `reasoning_content` with
+`finish_reason: length`, and the same shape reproduced independently on 2026-09-15 at
+`max_tokens:64` (`content:""`, all 64 tokens into `reasoning_content`).
 
-`num_ctx` is pinned on the LiteLLM model entry — the only place it can be, since `drop_params: true`
-would drop one AM7 sent. The rest needs an **Objects7 fix keying that block on "upstream is Ollama"
-rather than "dialect is OLLAMA"**; that is a **tracked follow-up**. Filed as **KI-72** in `aiDocs/KnownIssues.md`.
+**The fix — decide from the upstream family, not the dialect.** A new additive enum field
+`system.connection.upstream` (`ConnectionUpstreamEnumType {UNKNOWN, OLLAMA, OPENAI}`) records what
+the endpoint's model server actually **is**; Ollama behind a proxy is still Ollama. **Four** sites
+are re-keyed onto it, plus the resumed-session call site — the extension block (now extracted to
+`ChatUtil.applyOllamaUpstreamOptions`, and it **also emits `num_ctx`**, which it did not before),
+`Chat`'s `keepThink`, `Chat`'s memory-extraction `minTokens`, and `Chat`'s token-field **prune
+list**. The full table and why the fourth was missed are in
+[`KnownIssues.md`](KnownIssues.md) KI-72. **Count them accurately here:** an undercount in the
+record is how the next one gets missed, which is precisely what happened with the fourth.
 
-**Until it lands, no existing `OLLAMA` chatConfig may be repointed at the proxy.** New
-`OPENAI_COMPAT` configs are fine. Exposure today is **zero** — all 19 existing `system.connection`
-rows are `dialect=UNKNOWN`. This constraint is repeated as a warning at the point of use, in
-`dockerDevSetup.md` §12.4.
+`ChatUtil.resolveUpstream(connection)` reads the field and falls back to inference **from
+`dialect`** — not from the deprecated `serviceType`, so §5.1's convergence is not made harder:
+
+```
+OLLAMA        -> OLLAMA
+OPENAI        -> OPENAI
+OPENAI_COMPAT -> UNKNOWN      <- MANDATORY. Never OLLAMA.
+LOCAL/UNKNOWN -> UNKNOWN
+```
+
+**`OPENAI_COMPAT -> UNKNOWN` is the KI-72 prohibition**, and it is why widening the old `== OLLAMA`
+test was never an option: the same dialect fronts Azure. The cost is that a proxied-Ollama connection
+needs the operator to set `upstream = OLLAMA` explicitly — no inference can tell
+LiteLLM-fronting-Ollama from LiteLLM-fronting-Azure. `Chat.configureChat` therefore logs a WARN
+naming the chatConfig whenever it sees `OPENAI_COMPAT` + `UNKNOWN`. A discoverability log line was
+chosen over a more permissive default precisely because no default can be both safe and convenient
+here.
+
+**Today's behaviour is unchanged by construction.** The column is nullable with **no DDL default**
+(`DBUtil.generateSchemaLine` emits a `default` clause only for INT/DOUBLE/LONG/BOOLEAN/ZONETIME/
+TIMESTAMP), so all pre-existing rows read SQL `NULL` — 148 in `am7db`, 20 in `am72db` — and `NULL`
+routes to the dialect inference, which reproduces the old outcome exactly. `Chat.getUpstream()` is
+inference-aware, so the many `new Chat(); setServiceType(OLLAMA)` constructions in the test suite
+keep behaving natively without a persisted value.
+
+**No migration exists or was needed** — see §6.7.
+
+**A prerequisite bug fixed with it.** `ServerConfigUtil.putConnection` built its patch with the
+**bare** `RecordFactory.newInstance(MODEL_CONNECTION)`, which materialises every field at its default
+and the writer persists all of them. That silently reset `dialect` on every server-URL or apiKey edit
+already, and would have reset `upstream` — meaning an operator's `upstream = OLLAMA` would vanish on
+the next URL change, returning success. Now an explicit field projection. Found by architecture
+review, not by a test; the covering assertion is called out as the first one to add.
+
+**`num_ctx` reconciled, and the pin demoted.** Measured 2026-09-15 against the real proxy and LAN
+Ollama, unloading the model between runs so `/api/ps` reflects the next load:
+
+| request body | model entry | `/api/ps context_length` |
+|---|---|---|
+| `num_ctx: 12288` | pinned `40960` | **12288** |
+| `num_ctx: 12288` | **no pin at all** | **12288** |
+
+So a body `num_ctx` **always wins**, and `drop_params: true` does **not** drop it — litellm
+recognises it as a valid `ollama_chat` parameter whether or not the entry declares it. **This
+corrects the previous claim in this section and in `config.yaml`** that "`drop_params` would drop one
+AM7 sent"; that was never measured and is false. ⇒ AM7 is the single authority; the pin applies only
+to callers that send nothing (bare curl, the LiteLLM UI).
+
+> **Expect a smaller context after repointing, not a larger one.** While the pin was the only
+> source, proxied qwen3:8b effectively ran at 40960. Now the chatConfig governs, and
+> `ChatUtil.applyChatOptions` defaults `num_ctx` to **8192** when `chatOptions` leaves it unset — so
+> a config that never set it runs at 8192. Raising the pin cannot override the body. **Set `num_ctx`
+> on the chatConfig.**
+
+**`think` verified end to end, and the root cause corrected.** Through the proxy with no `think`
+param: `content=''`, whole budget into reasoning. With `think:false` in the body:
+`content='OK. How can I assist you?'`, no reasoning — so `think:false` passes through and works, and
+`drop_params` does not drop it either. The direct native path with `think:false` returns **identical
+content**, so proxied/direct parity holds once AM7 sends it. Note the mechanism is *not* a passive
+Ollama default: the model reports the user said `"say OK /think"`, i.e. ` /think` is appended to the
+last user message when thinking is on. That appears on the **direct native path too**, so it is
+server/template-side, not something LiteLLM does.
+
+**One gap accepted, deliberately.** `Chat`'s `OllamaModelUtil.recordUsage` call stays keyed on the
+**native** dialect, because the registry it feeds is consumed by `unloadAll()`, which appends its own
+`/api/generate` and speaks the native Ollama API — re-keying it would make `unloadAll()` POST
+`/api/generate` at LiteLLM. Consequence: with `upstream=OLLAMA` behind the proxy, nothing records the
+real Ollama load, so `unloadAll()` cannot free that GPU memory. That is a genuine hole for the
+single-GPU scenario this whole stack exists to serve, and it is recorded in §6.10 rather than left
+implicit in a comment.
 
 ### 6.7 Operational prerequisite — RESOLVED this pass
 
@@ -407,6 +527,35 @@ ALTER TABLE a7_olio_llm_chatconfig_0_1 ALTER COLUMN servicetype TYPE varchar(16)
 Docker DB `am72db` was already `varchar(16)`. `dialect` is `varchar(16)` on both. **No schema reset
 was performed.** psql gotcha: the column name is folded to lowercase in the DB, so a quoted
 `"serviceType"` fails — use unquoted `servicetype`.
+
+**Adding a field needs no migration at all — established 2026-09-15 while shipping §6.6.**
+`IOSystem.open()`'s boot loop patches missing columns for every model in `ModelNames.MODELS`
+(`generatePatchSchema` → `ALTER TABLE … ADD COLUMN`), and it patches against the **resource** schema,
+not the persisted blob: it calls `RecordFactory.getSchema()` *before* `activeContext` is assigned, so
+`getIOSchema`'s `IOSystem.isInitialized()` gate is closed and `getSchema` falls through to
+`importSchemaFromResource`. The resource-derived schema is then cached in-process for the life of the
+JVM. So: **edit the model JSON, restart. That is the whole data-model change.** The propagation bound
+is a restart; a running JVM will not pick it up.
+
+Proof, from the run that added `upstream`:
+
+```
+[INFO] IOSystem - Schema patch: ALTER TABLE A7_system_connection_0_1 ADD COLUMN upstream varchar(16);
+```
+
+and independently, `am7db`'s persisted `system.connection` blob contains **no `dialect` at all** while
+the `dialect` column exists, holds real values and its tests pass — a resource-only field working end
+to end against a stale blob. (`am72db`'s blob *does* carry `dialect`; the two databases disagree and
+both work, which is further evidence the blob is not load-bearing for this.)
+
+This matters because `objects7-reference.md` previously said flatly that "editing a model `.json` has
+no runtime effect" on a provisioned deployment. That is true only for **changing an existing field's
+shape** (a genuine runtime-read path), and false for **adding a field**. On 2026-09-15 the blanket
+claim led a planner and an architect to independently design a `RecordFactory.addFieldToSchema`
+migration plus a `PUT /rest/schema` route, neither of which was necessary — and the REST route would
+have set `system=false`, putting the new column within reach of `SchemaService.deleteField`'s ungated
+`ALTER TABLE … DROP COLUMN`. Stephen rejected the premise; the rules file now carries the Path 1 /
+Path 2 distinction.
 
 ### 6.8 First-run problems found and fixed (the profile had never been run)
 
@@ -435,12 +584,60 @@ profile carries a well-known throwaway value so the stack comes up with no manua
 | `LANGFUSE_ENCRYPTION_KEY` | 64 zeros | Langfuse at-rest encryption |
 | clickhouse / minio / redis | `clickhouse`, `minio`/`miniosecret`, `langfuse` | the backing stores |
 
-**These are not gated on anything.** Omit `--env-file`, mistype the flag, or run the profile from a
-script that forgets it, and compose starts cleanly using exactly these values — there is no warning.
-Two mitigations are in place and must stay: the published ports are bound to **`127.0.0.1` only**
-(`litellm` 4000, `langfuse-web` 3001; `langfuse-minio` publishes nothing), and the profile is opt-in
-and absent from the production `docker-compose.yml`. **Never run this profile on a shared or
-LAN-reachable host without overriding every value above.**
+**These were not gated on anything — now they are (2026-09-15).** Previously: omit `--env-file`,
+mistype the flag, or run the profile from a script that forgets it, and compose started cleanly using
+exactly these values with **no warning**. The silence was the defect; loopback binding was the only
+mitigation.
+
+`LLMPROXY_BIND_HOST` (default `127.0.0.1`) is now the **single source of truth** for both published
+binds (`litellm` 4000, `langfuse-web` 3001; `langfuse-minio` still publishes nothing), and the same
+variable is handed into the `litellm` container so the entrypoint's assertion evaluates the **real**
+exposure rather than a second copy that could drift. On every start it:
+
+- compares `LITELLM_MASTER_KEY`, `LITELLM_UI_PASSWORD`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`
+  against their committed values and prints a `[am7] WARNING:` banner naming every match;
+- **exits 1 (`[am7] FATAL`)** when any is a committed default **and** the bind host is not loopback.
+
+> **SCOPE — and an earlier revision of this section overclaimed it.** That assertion protects the
+> **LiteLLM admin surface only**: the master key (`/key/generate`, spend, model list) and use of the
+> GPU. **It does not protect Langfuse, and it cannot.** `litellm` `depends_on` `langfuse-web` with
+> `condition: service_healthy`, so `langfuse-web` is already up and serving before the assertion
+> runs; nothing `depends_on` litellm in the other direction; and `langfuse-web` carries
+> `restart: unless-stopped`, so litellm's `exit 1` is a restart loop that kills only litellm's own
+> port. An earlier revision of this file additionally pointed **both** published binds at
+> `LLMPROXY_BIND_HOST`, which made the worst case reachable by one environment variable: setting it
+> to `0.0.0.0` without `--env-file` put the Langfuse UI and `/api/public/*` on the LAN, on committed
+> well-known credentials, **while the service that "refused to start" was the less sensitive of the
+> two** — and Langfuse traces hold full prompt and completion bodies (Guardrail 4), the most
+> sensitive thing in the stack. Found by security review 2026-09-15.
+>
+> Fixed by **decoupling the binds**: `langfuse-web` now has its own `LANGFUSE_BIND_HOST`, which
+> defaults to `127.0.0.1` and is **never** widened by `LLMPROXY_BIND_HOST`. Verified — with
+> `LLMPROXY_BIND_HOST=0.0.0.0`, `docker compose config` renders litellm at `host_ip: 0.0.0.0` and
+> langfuse-web still at `host_ip: 127.0.0.1`. Overriding `LANGFUSE_BIND_HOST` remains possible and
+> is a deliberate, separate data-export decision **with no assertion behind it** — check the three
+> Langfuse credentials yourself first.
+
+**It deliberately does not fail merely because a default is in use.** Decided with Stephen
+2026-09-15: `src/volatile/llmproxy.env` on this workstation sets all five of these to the throwaway
+values, which this section sanctions for a loopback-bound dev box, so an unconditional failure would
+refuse to boot a working setup and would train everyone to set an override flag reflexively. The
+requirement was "stop being silent", and silence is what was removed.
+
+**Coverage limit, stated rather than papered over:** the assertion cannot see
+`LANGFUSE_INIT_USER_PASSWORD`, `LANGFUSE_SALT` or `LANGFUSE_ENCRYPTION_KEY`. Those are not copied
+into the litellm container merely to be asserted on — that would spread secrets into a container with
+no use for them. They are defaulted together with the other four in practice (same env file, or
+none), so catching those four catches the condition; the banner says so explicitly.
+
+Verified 2026-09-15 across all five branches: defaults+loopback → warn, start (confirmed on the live
+container); defaults+`0.0.0.0` → FATAL, exit 1; real credentials+loopback → `no committed defaults in
+use`, exit 0; real credentials+`0.0.0.0` → starts, since nothing well-known would leak; a **single**
+defaulted credential among real ones + a LAN address → FATAL naming that one variable.
+
+The profile remains opt-in and absent from the production `docker-compose.yml`. **Still never run it
+on a shared or LAN-reachable host without overriding every value above** — the assertion enforces the
+credential half, not the trace-content half (Guardrail 4, below).
 
 **Guardrail 4 (content): traces contain FULL prompt and completion bodies.** Guardrail 3 (§2.3)
 constrains only the trace *identifiers*. It does not cover the message bodies, and LiteLLM's Langfuse
@@ -456,8 +653,13 @@ bodies, LiteLLM's `turn_off_message_logging: true` suppresses prompt/completion 
 preserving token counts and latency, which is all the ISO 42001 client consumes
 (`LangfuseMetricsClient` reads only `promptTokens`/`completionTokens` from `/api/public/observations`).
 
-**Guardrail 3 is honored but not enforced.** `Chat.buildTracingHeaders` (`Chat.java:4461-4475`)
-forwards whatever string sits on `req.user` / `req.session_id` without validating it. Compliance today
+**Guardrail 3 is now ENFORCED (2026-09-15) — see §6.10.** The paragraph below describes the
+pre-fix state and is kept because it is the rationale for the fix; do not read it as current. It is
+enforced by `TracingIdValidator.isOpaque` at **two** emission points (the `x-langfuse-*` headers and
+the `OPENAI_COMPAT` wire body), by **dropping** a non-opaque value, never rejecting.
+
+*Pre-fix state:* `Chat.buildTracingHeaders`
+forwarded whatever string sat on `req.user` / `req.session_id` without validating it. Compliance today
 is real — the only production writer is `TestExecutor.applySession` (`TestExecutor.java:94-103`),
 which sets `session_id` to an `iso42001.testRun.objectId`, and nothing sets `user` at all. But both are
 persisted fields on `openai.openaiRequest`, and `ChatService.chatHistory` (`ChatService.java:141-144`)
@@ -475,22 +677,96 @@ this host. The key itself is stored in `system.connection.apiKey`, which is vaul
 
 ### 6.10 Open / tracked follow-ups
 
-- **Objects7:** key the Ollama-extension block on "upstream is Ollama", not "dialect is OLLAMA"
-  (§6.6) — filed as **KI-72**. Blocks repointing any existing `OLLAMA` chatConfig at the proxy.
+- ~~**Objects7:** key the Ollama-extension block on "upstream is Ollama", not "dialect is OLLAMA"~~
+  — **DONE 2026-09-15**, via the additive `system.connection.upstream` field. Repointing an existing
+  `OLLAMA` chatConfig at the proxy is now supported (set `upstream = OLLAMA`; restart required).
+  Full account, measurements and the accepted gap in §6.6; **KI-72** is closed.
+- **Objects7 (NEW, opened by that fix):** with `upstream = OLLAMA` behind the proxy, nothing records
+  the real Ollama model load, because `OllamaModelUtil.recordUsage` stays correctly keyed on the
+  *native* dialect (its registry feeds `unloadAll()`, which speaks native `/api/generate` and would
+  otherwise be pointed at LiteLLM). So `unloadAll()` cannot free GPU memory for a proxied load — a
+  real hole for the single-GPU scenario this stack exists to serve. Needs a way to record the
+  *upstream* server rather than `getServerUrl()`. See §6.6.
 - **Objects7:** retire `chatConfig.serviceType` (§5.1 "Not this pass") — still deferred; it remains
   the only carrier of `LOCAL`.
+- **Tests (opened by the §6.6 fix):** two parts of it are **compile-only**. The resumed-session
+  emission fix in `ChatUtil.getOpenAIRequest` (the branch that applies chat options without a `Chat`
+  instance) and the `configureChat` discoverability WARN have no executed coverage — no test builds a
+  persisted resumed session on a connection with `upstream = OLLAMA`. Everything else in that change
+  has wire-level or live coverage, so this is the one place a regression could land silently.
+- **Objects7 — THE SAME "decided from the dialect" FAMILY, three more sites (found by architecture
+  review 2026-09-15).** The §6.6 fix re-keyed four sites; these were not in scope and are not
+  regressions, but they are the same defect shape and were recorded to be settled as one decision
+  rather than discovered one at a time. **Item 2 is now DONE (2026-09-15), together with
+  `ChatUtil.supportsSamplingParams` from §6.6's residual notes — sites 5 and 6, so the family count
+  is now SIX re-keyed.** Items 1 and 3 remain open by Stephen's explicit decision. See KI-72's
+  sites 5/6 table for what changed, the `TestUpstreamWireEmission` cases that cover each, and an
+  important correction to item 2's reported blast radius (it bites only when `chatOptions.think`
+  is `true`; with the default it was a no-op, measured):
+  1. **`Chat.applyAnalyzeOptions` / `getScenePrompt` / `buildKeyframeRequest`** write their
+     deliberate reduced cap into `ChatUtil.getMaxTokenField(chatConfig, serviceType)`, which is
+     **dialect**-derived and resolves to `max_tokens` on `OPENAI_COMPAT`. So on the proxied path the
+     override sets `max_tokens` while `num_ctx` stays at the full conversational value and is now
+     *retained* by the new prune — analyze/scene/keyframe calls through a proxy assert the full
+     context instead of the reduced one. Better than pre-fix (where no `num_ctx` was sent and the
+     40960 LiteLLM pin applied), but **not** the native/proxied parity §6.6 aims at.
+     `TestUpstreamWireEmission` `caseD` proves the override only for the native dialect; a proxied
+     equivalent would fail today.
+  2. ~~**`PageIndexUtil.java:892`** gates `req.set("think", false)` on the **deprecated**
+     `chatConfig.serviceType` — neither axis.~~ **DONE 2026-09-15**: now
+     `chat.getUpstream() == OLLAMA`, off the `Chat` instance already in hand, which also retires a
+     deprecated-`serviceType` consumer (§5.1 direction). Covered by `TestUpstreamWireEmission`
+     `caseI1`/`caseI2`. **The "a proxied Ollama gets no `think` field set at all" reasoning recorded
+     here was wrong**: `req.hasField("think")` is true for the schema default, so `keepThink` already
+     put `think:false` on the wire for any Ollama upstream. The gate is load-bearing only when
+     `chatOptions.think = true`. Details and the measurement in KI-72.
+  3. The native `max_tokens` prune, immediately below.
+
+  **The structural point worth acting on** (architecture review): the code that *emits* a field and
+  the code that *decides whether that field may ride the wire* live in different classes with
+  independently derived keys. The invariant "whatever `applyOllamaUpstreamOptions` emits is exactly
+  what the prune keeps" is maintained by hand in three places and has already failed three times.
+  Recommended consolidation, no behaviour change: `ChatUtil.contextField(upstream)` (→ `num_ctx` iff
+  OLLAMA), keep `getMaxTokenField` untouched as the *cap-field name* function, and make
+  `OLLAMA_EXTENSION_FIELDS` one public constant the emitter and the prune both iterate. Then sites
+  agree with a constant rather than with each other. **Do not** fold the prune into
+  `getMaxTokenField` — that would force a dialect-shaped function to return upstream-shaped output.
+
+  The heuristic that tells the two axes apart, worth keeping: **if the decision would change when
+  you put a proxy in front of the same GPU, it is upstream-keyed; if it describes the endpoint you
+  are talking to, it is dialect-keyed.**
+- **Objects7 (pre-existing, surfaced by the §6.6 wire capture; needs a decision, not a fix):** the
+  token-field prune also strips `max_tokens` on the **native** Ollama wire, because `tokField` is
+  `num_ctx` there. That defeats `applyOllamaUpstreamOptions`' `max_tokens` set, whose comment says it
+  exists "so generation terminates at the user-configured cap instead of running unbounded" — so on
+  the native path generation is not capped by the user's setting today. Unrelated to the upstream
+  axis. Fixing it changes main-path generation behaviour (cost and latency), so it is Stephen's call;
+  `TestUpstreamWireEmission` `caseC` pins the current behaviour rather than the comment's intent.
 - **B4 is partial** (`Chat.java:4007,4068`, gated to `OPENAI_COMPAT`); no further Tier B work is
   scheduled.
-- **Objects7:** enforce Guardrail 3 opaqueness at the emission point — validate/reject a
-  non-opaque `user` in `Chat.buildTracingHeaders` rather than trusting every caller (§6.9). Not
-  exploited today (nothing production sets `user`), but the field is client-writable via the
-  generic `/rest/model` routes.
-- **Deployment:** the `llmproxy` profile's committed fallback credentials are unguarded — omitting
-  `--env-file` silently starts the stack with well-known keys (§6.9). Ports are loopback-bound as
-  mitigation; a startup assertion would be better.
-- **Every litellm image bump:** re-check the bundled langfuse SDK major AND that
-  `LANGFUSE_MIGRATION_V4_WRITE_MODE=dual` is still required (§6.1). An SDK v3+ image should switch
-  `success_callback` to `langfuse_otel` and drop that variable.
+- ~~**Objects7:** enforce Guardrail 3 opaqueness at the emission point~~ — **DONE 2026-09-15** via
+  `TracingIdValidator.isOpaque`, an allowlist shape test (UUID, or a 12–128 char
+  `^[A-Za-z0-9][A-Za-z0-9._:-]*$` token containing a digit). Two corrections to the item as it was
+  written here: it is enforced by **dropping, not rejecting** — a tracing field must not be able to
+  fail a chat, and a reject path would hand any client that can write `openai.openaiRequest.user` a
+  way to break every chat; and it is applied at **two** emission points, not one. This item named
+  only `buildTracingHeaders`, but the wire **body** keeps `user` for exactly `OPENAI_COMPAT` — the
+  one dialect where LiteLLM maps body `user` onto `trace.userId` — so gating the header alone would
+  have left the leak fully open on the only path that reaches Langfuse. The WARN logs the field name,
+  the value's length and a truncated SHA-256 prefix, never the value.
+- ~~**Deployment:** the `llmproxy` profile's committed fallback credentials are unguarded~~ —
+  **DONE 2026-09-15.** `LLMPROXY_BIND_HOST` is now the single source of truth for both published
+  binds and is handed to the `litellm` container, whose entrypoint names every committed-default
+  credential in a startup banner and **exits 1** when a default is in use *and* the bind is not
+  loopback. Deliberately does not fail on defaults alone — see §6.9 for why, the coverage limit, and
+  the five verified branches.
+- ~~**Every litellm image bump:** re-check the bundled langfuse SDK major AND that
+  `LANGFUSE_MIGRATION_V4_WRITE_MODE=dual` is still required~~ — **DONE 2026-09-15**, as a written
+  procedure rather than a reminder: [`dockerDevSetup.md`](dockerDevSetup.md) **§12.7**. It covers
+  establishing the real version via `importlib.metadata` (`pip show` prints nothing in this image),
+  re-running the streaming cap measurement **with the cap=3 control**, the SDK-major → callback
+  mapping table, the numeric-config trap, and pinning by digest. Current state recorded there and
+  re-verified 2026-09-15: litellm 1.102.0 / SDK 2.59.7 (v2), so `dual` **is still required**.
 
 ---
 

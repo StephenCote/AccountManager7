@@ -3630,7 +3630,7 @@ Relevant files: `AccountManagerUx752/src/core/formDef.js` (3653-3752),
 `AccountManagerService7/.../rest/services/OlioService.java`, `.../GameService.java`,
 `AccountManagerObjects7/.../olio/{OlioContextUtil,OlioContextConfiguration,GameUtil,ApparelUtil}.java`.
 
-### KI-72. Routing an Ollama model through the `OPENAI_COMPAT` dialect silently drops `num_ctx`, `think` and every Ollama sampling extension — OPEN (2026-09-14, found bringing up the LiteLLM proxy)
+### KI-72. Routing an Ollama model through the `OPENAI_COMPAT` dialect silently drops `num_ctx`, `think` and every Ollama sampling extension — **RESOLVED 2026-09-15** (found 2026-09-14 bringing up the LiteLLM proxy)
 
 **Why it matters now.** The `llmproxy` compose profile puts LiteLLM in front of the local Ollama so
 there is a single queue on the one GPU (see `aiDocs/LiteLLMLangfuseIntegrationDesign.md` §6). To use
@@ -3667,8 +3667,10 @@ The sampling extensions and `think` cannot be pinned per-request proxy-side.
 `ChatUtil.resolveServiceType` (`ChatUtil.java:1915-1931`) still falls through to `chatConfig.serviceType`
 for every one of them, and nothing has been repointed. The exposure is entirely prospective.
 
-> **Do not repoint an existing `OLLAMA` chatConfig at the proxy until this is fixed.** New
-> `OPENAI_COMPAT` configs are fine — they never had the Ollama extensions applied.
+> **RESOLVED — repointing an existing `OLLAMA` chatConfig at the proxy is now supported.** Set
+> `system.connection.upstream = OLLAMA` on the connection and restart. See the RESOLUTION section
+> below; the text around this note describes the pre-fix behaviour and is kept for deployments
+> running an older Objects7.
 
 **A compounding observation (noted, not fixed).** With thinking forced back on, every streamed delta
 from a reasoning model also logs
@@ -3679,9 +3681,193 @@ the reasoning tokens are both *paid for* and *silently discarded*, and the log i
 happens. Observed 2026-09-14 during the LiteLLM proxy tests. Pre-existing and independent of this
 issue's gating defect, but it makes the symptom much worse; worth handling together.
 
-**Recommended fix.** Key the extension block on *what the upstream is* rather than on the dialect —
-e.g. an explicit "upstream family" on `system.connection` (Ollama-behind-a-proxy is still Ollama), or a
-per-connection passthrough-options map. Do **not** simply widen the `== OLLAMA` test to include
-`OPENAI_COMPAT`: that dialect also fronts Azure and any other OpenAI-compatible endpoint, which would
-then be sent Ollama-only parameters. Touches `ChatUtil.java:2124-2153`, `Chat.java:3989`, and
-`Chat.java:2731`.
+---
+
+## RESOLUTION (2026-09-15)
+
+**Approach: an explicit upstream-family axis on the connection** — the first of the two options that
+were recommended. A new additive enum field `system.connection.upstream`
+(`ConnectionUpstreamEnumType {UNKNOWN, OLLAMA, OPENAI}`) records what the endpoint's model server
+actually **is**, independent of the wire dialect AM7 speaks to reach it. Ollama behind a proxy is
+still Ollama.
+
+The per-connection passthrough-options map was rejected: `BaseRecord` has no map type, so it would
+land as `common.attributeList` `attributes` — `referenced` storage that never persists through a
+parent patch; it could not express the two non-body decisions (`keepThink`, the token floor); it
+carries no type validation; and it would turn the Azure-safety decision into unvalidated per-row data
+rather than compiled, testable code.
+
+**`ChatUtil.resolveUpstream(connection)`** reads the field and, when unset, infers **from `dialect`**
+— deliberately not from the deprecated `chatConfig.serviceType`, so the standing decision to converge
+on `dialect` is not made harder:
+
+```
+OLLAMA        -> OLLAMA
+OPENAI        -> OPENAI
+OPENAI_COMPAT -> UNKNOWN      <- MANDATORY. Never OLLAMA. This is the prohibition stated above.
+LOCAL/UNKNOWN -> UNKNOWN
+```
+
+The cost is accepted rather than worked around: a proxied-Ollama connection **requires** an explicit
+`upstream = OLLAMA`, because no inference can distinguish LiteLLM-fronting-Ollama from
+LiteLLM-fronting-Azure — only the operator knows. `Chat.configureChat` therefore logs a WARN naming
+the chatConfig whenever it sees `OPENAI_COMPAT` + `UNKNOWN`.
+
+### FOUR sites were re-keyed, not three
+
+The three named above, plus one that neither the implementation plan nor the architecture review
+caught — found only by a socket-level wire capture:
+
+| Site | Change |
+|---|---|
+| `ChatUtil.applyChatOptions`' extension block | extracted to `applyOllamaUpstreamOptions`, keyed on upstream, and it now **also emits `num_ctx`** — it never did; `num_ctx` previously arrived only via the native-only `getMaxTokenField` path |
+| `Chat`'s `keepThink` | keyed on upstream |
+| `Chat`'s memory-extraction `minTokens` (16384/8192) | keyed on upstream |
+| **`Chat`'s token-field prune list (~`Chat.java:4048`)** | **the missed one.** It pruned `num_ctx` whenever `num_ctx` was not the token field, and `getMaxTokenField` resolves `max_tokens` on `OPENAI_COMPAT` — so the freshly-emitted `num_ctx` was stripped off the wire copy a few lines later. Now retains `num_ctx` when the upstream is Ollama. |
+
+**That fourth site is the lesson from this issue: fixing the emission point is not enough when a
+later prune is keyed on the same axis you just stopped trusting.** Eight of the nine parameters
+reached the wire and the ninth — the one the issue is named for — did not. Only a test asserting on
+bytes captured off a socket could tell the difference; a test that mirrored production's prune logic
+would have passed.
+
+**Deliberately NOT re-keyed** (genuine wire/transport decisions): `getServiceUrl`,
+`isOpenAiCompatible`, `buildTracingHeaders`' dialect gate, `getMaxTokenField` returning `num_ctx` for
+native OLLAMA and its partner `tokValue` line, and `OllamaModelUtil.recordUsage` — whose registry
+feeds `unloadAll()`, which appends its own `/api/generate` and speaks the native Ollama API, so
+re-keying it would make `unloadAll()` POST `/api/generate` at LiteLLM.
+
+**Two more sites re-keyed in a follow-up pass — sites 5 and 6, done 2026-09-15.** Both were recorded
+here and in `LiteLLMLangfuseIntegrationDesign.md` §6.10 as "seen and left"; Stephen approved fixing
+them. Neither was a regression (both behaved identically to pre-fix), and both now have fail-before /
+pass-after wire coverage in `TestUpstreamWireEmission`.
+
+| Site | Was | Now |
+|---|---|---|
+| **5.** `ChatUtil.supportsSamplingParams` | short-circuited on `service == OLLAMA`, so a proxied Ollama model whose **tag** begins with `o` (`olmo`, `openchat`, `orca-mini`) or `gpt-5` had `temperature`/`top_p`/`frequency_penalty` suppressed — the o-series/gpt-5 **reasoning-model** heuristic fires on the model string before the upstream is consulted. Same "alias naming is load-bearing" hazard documented on the model entry in `src/litellm/config.yaml`. | new 3-arg overload keyed on `upstream == OLLAMA`; the 2-arg overload delegates with `inferUpstream(service)` so no existing caller changes behaviour, and `Chat.chatInternal` passes `getUpstream()`. `caseH1` (proxied `openchat` keeps the three params) / `caseH2` (Azure-shaped `gpt-5` still loses them). |
+| **6.** `PageIndexUtil`'s `think` gate (`~:892`) | gated `req.set("think", false)` on the **deprecated** `chatConfig.serviceType` — neither axis, and it defaults to `OPENAI`, so a config repointed at the proxy per `dockerDevSetup.md` §12.4 never fired it. | `chat.getUpstream() == OLLAMA`, from the `Chat` instance already in hand; also retires a deprecated-`serviceType` consumer (§5.1 direction). `caseI1` / `caseI2`. |
+
+**Site 6's blast radius is narrower than it was reported to be, and the correction matters.** The
+claim was that a proxied config "runs LLM-TOC/summary with thinking ON". Measured off the socket: with
+`chatOptions.think` at its default the gate changes **nothing** — `openaiRequestModel.json` declares
+`think` with `"default": false`, `new OpenAIRequest()` materialises it into the fieldMap, and
+`BaseRecord.hasField` is `fieldMap.containsKey(name)`, so `req.hasField("think")` is already true for a
+request nobody touched, `Chat.chatInternal`'s `keepThink` is satisfied on any Ollama upstream, and
+`think:false` reaches the wire regardless. The defect is real **only** for a chatConfig whose
+`chatOptions.think = true`, where `applyOllamaUpstreamOptions` sets `think:true` and the gate was the
+only thing that forced it back off for the strict-JSON/summary calls. A first fixture built on the
+reported premise passed against unmodified production code, which is how this was found.
+
+⇒ Corollary worth knowing before trusting `keepThink`'s comment: its `req.hasField("think")` half does
+**not** distinguish "explicitly populated" from "schema default" for any request built via
+`new OpenAIRequest()`. It only bites a request deserialized without the field.
+
+### Verified — two independent oracles, not inference
+
+Socket-level wire capture, `dialect=OPENAI_COMPAT` + `upstream=OLLAMA`, chatOptions `num_ctx=12288`:
+`num_ctx`, `think:false`, `top_k`, `min_p`, `num_gpu`, `repeat_last_n`, `repeat_penalty`, `typical_p`
+and `max_tokens` all present. With `upstream` **unset** (the Azure case): **none** of them present.
+
+Be precise about what each half proves, because it is easy to overclaim here. The `upstream`-unset
+case is a **prohibition guard**: it discriminates this fix from the forbidden "widen the dialect test
+to include `OPENAI_COMPAT`" shortcut (which makes it fail), but it would **also pass with the fix
+entirely reverted**, so it is not evidence the fix works. The evidence the fix works is the
+`upstream=OLLAMA` cases, the `control_upstreamAxisIsTheOnlyDifference` test (whose negative arm
+asserts the pre-fix behaviour, so the axis is the only variable), and the live `/api/ps` oracle below.
+Both halves are required; neither substitutes for the other.
+
+Live through the real proxy to the LAN Ollama, after a verified unload (`/api/ps` -> `{"models":[]}`):
+
+```
+[PS] 2472ms completion="OK"
+[PS] loaded model="qwen3:8b" context_length=12288 (AM7 configured 12288)
+```
+
+`12288`, not the `40960` pinned on the LiteLLM model entry — so AM7's value genuinely reaches the
+server — and real `content` came back rather than pure `reasoning_content`, so `think:false` reached
+the model. Tests: **76 run / 0 failures** non-live (`TestUpstreamResolution` 8,
+`TestUpstreamWireEmission` 6, `TestTracingIdOpaqueness` 8, `TestServerConfigUtil` 13, plus the
+pre-existing suites) and live `TestLiteLLMOllamaProxy` **4 / 0**.
+
+### Today's behaviour is unchanged by construction
+
+The added column is nullable with **no DDL default** (`DBUtil.generateSchemaLine` emits a `default`
+clause only for INT/DOUBLE/LONG/BOOLEAN/ZONETIME/TIMESTAMP), so every pre-existing row reads SQL
+`NULL` — 148 in `am7db`, 20 in `am72db` — and `NULL` routes to the dialect inference, reproducing the
+old outcome exactly. Confirmed against real rows per dialect: `OLLAMA`(11)->OLLAMA,
+`OPENAI`(8)->OPENAI, `OPENAI_COMPAT`(18)->UNKNOWN, `UNKNOWN`(46)->UNKNOWN, NULL dialect(65)->UNKNOWN.
+
+### No migration was needed, and that corrected a wrong premise
+
+`IOSystem.open()`'s boot loop patches missing columns from the **resource** schema — it calls
+`RecordFactory.getSchema()` before `activeContext` is assigned, so `getIOSchema`'s `isInitialized()`
+gate is closed and it falls through to `importSchemaFromResource`. The run logged it directly:
+
+```
+[INFO] IOSystem - Schema patch: ALTER TABLE A7_system_connection_0_1 ADD COLUMN upstream varchar(16);
+```
+
+A planner and an architect had each independently designed an unnecessary
+`RecordFactory.addFieldToSchema` migration plus a `PUT /rest/schema` route, off
+`objects7-reference.md`'s blanket claim that editing a model JSON has no runtime effect — true only
+for *changing an existing field's shape*. The REST route would additionally have set `system=false`,
+exposing the new column to `SchemaService.deleteField`'s ungated `DROP COLUMN`. Stephen rejected the
+premise ("the model system should be able to add / update columns per model"); the rules file now
+carries the Path 1 / Path 2 distinction. Independent corroboration: `am7db`'s persisted
+`system.connection` blob contains **no `dialect` at all**, while the `dialect` column exists, holds
+real values, and its tests pass.
+
+### A prerequisite bug fixed alongside
+
+`ServerConfigUtil.putConnection` built its patch with the **bare**
+`RecordFactory.newInstance(MODEL_CONNECTION)`, which materialises every field at its default and the
+writer persists all of them. So it already silently reset `dialect` on every server-URL or apiKey
+edit, and would have reset `upstream` — an operator's setting would vanish on the next URL change
+while the call returned success. Now an explicit conditional projection, with a control test that
+measures the old form destroying both fields. Found by architecture review, not by a test.
+
+### `num_ctx` authority reconciled
+
+Measured 2026-09-15, unloading the model between runs so `/api/ps` reflects the next load: a
+request-body `num_ctx` **always wins** over the `num_ctx: 40960` pinned on the LiteLLM model entry —
+both with and without that pin present, so `drop_params: true` does **not** drop it. This
+**corrects** the claim made above (and formerly in `src/litellm/config.yaml`) that a `num_ctx` AM7
+sent "would be dropped as a non-OpenAI param"; that was never measured and is false. AM7 is now the
+single authority; the pin applies only to callers that send nothing.
+
+> **Expect a smaller context after repointing, not a larger one.** While the pin was the only
+> source, proxied `qwen3:8b` effectively ran at 40960. Now the chatConfig governs, and
+> `ChatUtil.applyChatOptions` defaults `num_ctx` to **8192** when `chatOptions` leaves it unset — so
+> a config that never set it runs at 8192. Raising the pin cannot override the body. **Set `num_ctx`
+> on the chatConfig.**
+
+### `/think` is server-side, not a LiteLLM behaviour
+
+With thinking on, the model reports the user said `"say OK /think"` — ` /think` is appended to the
+last user message. That appears on the **direct native path too**, so it is Ollama/template-side, not
+a proxy artifact. The original report's "qwen3 otherwise defaults to thinking-on" framing was right
+about the outcome; the mechanism is an injected token.
+
+### Known gaps, not closed by this fix
+
+- The resumed-session emission fix in `ChatUtil.getOpenAIRequest` and the `configureChat` WARN are
+  **compile-only** — no test covers a persisted resumed session with `upstream=OLLAMA`.
+- **NEW, opened by this fix:** with `upstream=OLLAMA` behind the proxy, nothing records the real
+  Ollama model load, because `recordUsage` stays correctly keyed on the *native* dialect. So
+  `OllamaModelUtil.unloadAll()` cannot free GPU memory for a proxied load — a real hole for the
+  single-GPU scenario the proxy exists to serve. Tracked in
+  `aiDocs/LiteLLMLangfuseIntegrationDesign.md` §6.10.
+- **Pre-existing, left alone deliberately:** the same prune strips `max_tokens` on the **native**
+  Ollama wire (`tokField` is `num_ctx` there), defeating `applyOllamaUpstreamOptions`' `max_tokens`
+  set and its "so generation terminates at the user-configured cap instead of running unbounded"
+  comment. Fixing it changes main-path generation behaviour and is Stephen's call.
+  `TestUpstreamWireEmission` `caseC` pins the current behaviour rather than the comment's intent.
+
+The compounding `reasoning_content` deserialization noise noted above is unchanged and still
+unfixed — but with `think:false` now reaching the model it stops being triggered for configs that set
+it. Operator guidance is in `dockerDevSetup.md` §12.4.
+
+**Touched:** `ChatUtil.java` (extension block, `resolveUpstream`/`inferUpstream`, resumed-session
+branch), `Chat.java` (`keepThink`, `minTokens`, prune list, connection projection, `getUpstream()`,
+WARN), `ConnectionUpstreamEnumType.java` (new), `connectionModel.json`, `FieldNames.java`,
+`ServerConfigUtil.java`, and `AccountManagerUx752/src/core/modelDef.js` for the operator path.

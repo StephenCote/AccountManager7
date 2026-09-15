@@ -114,14 +114,91 @@ Live example, diagnosed and deliberately left unfixed: **`iso42001.certification
 impact table, and the recommended collector-level fix are in **`aiDocs/KnownIssues.md` KI-69**. Read
 that before touching either the model or the collector.
 
-**Related trap when fixing any of this: the persisted schema wins over the resource.**
-`RecordFactory.getSchema()` (`:388-399`) calls `getIOSchema()` first and only falls back to
-`importSchemaFromResource()` when the DB has no row, and `getIOSchema` (`:299-316`) reads the
-serialized `ModelSchema` from `a7_system_modelschema_0_1`. On any already-provisioned deployment,
-**editing a model `.json` therefore has no runtime effect** — verified 2026-09-07 with 176 schemas
-persisted. To make a schema edit take effect, call `RecordFactory.updateSchemaDefinition(ModelSchema)`
-(`:475-507`), release the persisted record so the resource is re-imported, or start against a fresh
-database. A model-JSON change that appears to do nothing is usually this, not a bad edit.
+**Related trap when fixing any of this: the persisted schema wins over the resource — but ONLY after
+`IOSystem.open()` has finished. Adding a NEW FIELD to a model JSON needs no migration at all.**
+
+Two paths, and conflating them wastes a lot of effort in both directions.
+
+*Path 1 — boot DDL patch, resource-driven. This is how you add a field.* `IOSystem.open()`
+(`IOSystem.java:132-160`) loops `ModelNames.MODELS` and, for every model whose table already exists,
+executes `dbUtil.generatePatchSchema(schema)` → `addPatchColumns` → `ALTER TABLE <t> ADD COLUMN
+<coldef>;` for each column the schema declares and the table lacks (`DBUtil.java:959-983`). The
+schema it patches against comes from the **resource**, not the blob: the loop calls
+`RecordFactory.getSchema(m)` at `:133`, `getSchema` tries `getIOSchema()` first, and `getIOSchema` is
+gated on `IOSystem.isInitialized()` — which is `getActiveContext() != null`, and `activeContext` is
+not assigned until `IOSystem.java:208`, *after* the loop. So `getIOSchema` returns null there,
+`getSchema` falls through to `importSchemaFromResource()`, and the resource-derived schema is then
+cached in the in-process `schemas` map for the life of the JVM — so every later `getSchema` call also
+sees the new field and never consults the blob.
+
+⇒ **To add a COLUMN-BACKED field: edit the model JSON and restart. That is the entire data-model
+change.** No `addFieldToSchema`, no `updateSchemaDefinition`, no `PUT /rest/schema`, nothing to run
+per database. The propagation bound is a **restart** — a running JVM will not pick it up.
+
+**Four preconditions, all of which the `upstream` field happened to satisfy. Check them before
+relying on this:**
+1. **The field must be column-backed.** `getMissingColumns` (`DBUtil.java:937-940`) skips `virtual`,
+   `ephemeral` and `referenced` fields and anything with no SQL data type (e.g. an unreferenced
+   foreign list). A `referenced` or participation-backed field gets **no column and no plumbing**
+   from the boot patch — see the `common.attributeList` notes in `model-api.md`.
+2. **It must be nullable, or carry a DDL-emittable default.** `generateSchemaLine` emits `not null`
+   when the field declares `allowNull:false` (or is identity) and emits a `default` clause **only**
+   for INT/DOUBLE/LONG/BOOLEAN/ZONETIME/TIMESTAMP — never for string/enum. So
+   `ALTER TABLE … ADD COLUMN x varchar(16) not null;` is **rejected by Postgres on a populated
+   table**, and `dbUtil.execute` **swallows the `SQLException`** (logs ERROR, continues). The column
+   then simply never exists and every access fails oddly. A `"default"` in the JSON is an
+   *instantiation-time* default, not DDL — so every pre-existing row reads SQL `NULL`. Handle null
+   as the primary path.
+3. **The patch branch requires `!dbUtil.isConstrained(schema)`.**
+4. **The model must be in `ModelNames.MODELS` at `IOSystem.open()` time.** True today for the Olio
+   and ISO registrations (`RestServiceEventListener` registers them before `open`), but
+   `OlioModelNames.use()` is also called at request time in several services — so this is a
+   precondition to confirm, not a given.
+
+The stale persisted blob is then never consulted for that model **for the life of the JVM** — with
+one exception: `RecordFactory.unloadSchema`/`clearCache` evict the cached resource-derived schema,
+after which `getSchema` reads the (possibly field-less) blob until restart. `updateSchemaDefinition`
+is safe because it writes the blob first; a **bare unload is not**. `CacheService.clearCaches()` does
+not call it, so the REST cache-clear route is harmless.
+
+**Measured proof, 2026-09-15.** `dialect` was added to `system.connection` by exactly this route. In
+`am7db` the persisted blob for `system.connection` **does not contain the string `dialect` at all**
+(`convert_from(schemadata,'UTF8')`), yet the column exists, holds real values (10 `OLLAMA`,
+17 `OPENAI_COMPAT`, 6 `OPENAI` across 135 rows) and `TestConnectionDialect` passes 5/5. A
+resource-only field works end to end against a stale blob. (`am72db`'s blob *does* carry `dialect`,
+so the two databases disagree and both work — further evidence the blob is not load-bearing here.)
+
+Two consequences worth knowing: the added column is **nullable with no DDL default** for enum/string
+fields (`DBUtil.generateSchemaLine` emits a DDL `default` only for INT/DOUBLE/LONG/BOOLEAN/
+ZONETIME/TIMESTAMP), so a `"default"` in the JSON is an *instantiation-time* default and every
+pre-existing row reads SQL `NULL` — handle null as the primary path, never assume the default string
+is in the column. And because the `ALTER` is additive and nullable, it succeeds on a populated table.
+
+*Path 2 — runtime reads, blob-driven. This is the real trap.* Once `IOSystem` is initialized,
+`RecordFactory.getSchema()` (`:388-399`) → `getIOSchema()` (`:299-316`) reads the serialized
+`ModelSchema` from `a7_system_modelschema_0_1` and only falls back to the resource when there is no
+row. So **changing the shape of an EXISTING field** (type, `maxLength`, validation, `shortName`,
+access roles) on a provisioned deployment is not picked up by the boot patch — that loop only adds
+missing *columns*. For those, call `RecordFactory.updateSchemaDefinition(ModelSchema)` (`:475-507`),
+or start against a fresh database. Note `updateSchemaDefinition` ends at `unloadSchema` +
+`CacheUtil.clearCache()`, so its effect is **in-process only** — a second JVM (Console7) against the
+same DB keeps the stale schema until *it* restarts.
+
+**Never `RecordFactory.releaseCustomSchema(name)` to "refresh" a schema.** It is
+`DROP TABLE IF EXISTS <t> CASCADE` (`:594`) plus a delete of the modelschema row, and its
+system-model guard is **commented out** (`:565-568`) — it only logs a warning and proceeds. On
+`system.connection` that would destroy every connection row and cascade into `chatConfig`.
+Also note `removeFieldFromSchema` (`:534-559`) does `ALTER TABLE ... DROP COLUMN IF EXISTS` with
+**no** off-by-default property gate, contrary to the rule in `architecture.md`; `SchemaService
+.deleteField` reaches it and guards only on `FieldSchema.isSystem()`.
+
+> An earlier revision of this section said flatly that "editing a model `.json` has no runtime
+> effect" on a provisioned deployment. That is true for Path 2 and **false for Path 1**, which is the
+> common case (adding a field). On 2026-09-15 it led a planner and an architect to independently
+> design, and nearly ship, a `addFieldToSchema` migration plus a REST migration route that were both
+> unnecessary — and the REST route would have set `system=false`, putting the new field within reach
+> of the ungated `DROP COLUMN` above. Stephen caught it: "the model system should be able to add /
+> update columns per model." It can.
 
 ### Field Schema Properties
 

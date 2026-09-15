@@ -1019,6 +1019,11 @@
       "OPENAI",
       "OPENAI_COMPAT"
     ],
+    "connectionUpstreamEnumType": [
+      "UNKNOWN",
+      "OLLAMA",
+      "OPENAI"
+    ],
     "memoryTypeEnumType": [
       "UNKNOWN",
       "DISCOVERY",
@@ -8867,6 +8872,14 @@
           "maxLength": 16,
           "default": "UNKNOWN",
           "description": "Wire dialect (protocol) of this endpoint: OLLAMA (/api/chat), OPENAI (Azure /openai/deployments/...), or OPENAI_COMPAT (/v1/chat/completions, e.g. LiteLLM). AUTHORITATIVE source for protocol selection (Phase 3 / P3-1). olio.llm.chatConfig.serviceType is only a derived fallback, used when dialect == UNKNOWN."
+        },
+        {
+          "name": "upstream",
+          "baseClass": "org.cote.accountmanager.schema.type.ConnectionUpstreamEnumType",
+          "type": "enum",
+          "maxLength": 16,
+          "default": "UNKNOWN",
+          "description": "Upstream model-server FAMILY behind this endpoint - independent of the wire `dialect`. OLLAMA means the upstream is an Ollama-family server, so Ollama extension parameters (num_ctx, top_k, repeat_penalty, typical_p, min_p, repeat_last_n, num_gpu, think) are accepted EVEN when reached through an OpenAI-compatible proxy such as LiteLLM - Ollama behind a proxy is still Ollama. NOTE the naming trap: this OPENAI is NOT the same meaning as dialect's OPENAI (which denotes Azure's /openai/deployments/... URL scheme); here it means an OpenAI-family upstream. Behaviourally UNKNOWN and OPENAI are identical today - both suppress the Ollama-only extensions - and OPENAI exists only so an operator can assert the upstream positively instead of leaving it unset. UNKNOWN is inferred from dialect: OLLAMA->OLLAMA, OPENAI->OPENAI, and OPENAI_COMPAT->UNKNOWN (a proxy can front anything, including Azure, which must never be sent Ollama-only parameters)."
         }
       ]
     },

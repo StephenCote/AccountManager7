@@ -262,9 +262,22 @@ services:
   # front with no manual UI bootstrap.
   # ---------------------------------------------------------------------------
   litellm:
-    # `main-stable` is LiteLLM's released-stable channel (vs `main-latest`,
-    # which is the rolling build). At the time of writing it resolves to
-    # litellm 1.100.1 bundling langfuse PYTHON SDK 2.59.7.
+    # THE PINNED IMAGE IS litellm 1.102.0, bundling langfuse PYTHON SDK 2.59.7.
+    # That is the ONE authoritative version statement in this file; anything
+    # elsewhere that disagrees is stale. VERIFIED EMPIRICALLY 2026-09-15 against
+    # the running container rather than read off a comment, because image labels
+    # carry no version:
+    #     docker exec am7test-litellm-1 python -c "import importlib.metadata as m;
+    #       print(m.version('litellm'), m.version('langfuse'))"
+    #     -> 1.102.0 2.59.7
+    # (`pip show litellm` prints NOTHING in this image -- use importlib.metadata.)
+    #
+    # An earlier revision of this comment opened by describing the `main-stable`
+    # CHANNEL (which was 1.100.1) directly above `image:`, which read as though
+    # the DIGEST were 1.100.1 and contradicted litellm/config.yaml. It never was.
+    # For the record: `main-stable` is LiteLLM's released-stable channel (vs
+    # `main-latest`, the rolling build); it resolved to 1.100.1, we are NOT on it,
+    # and the WHY is the streaming-cap measurement below.
     #
     # WATCH THIS ON EVERY BUMP: what the image bundles decides whether tracing
     # works at all, and the failure mode is silent -- chats keep returning 200
@@ -319,10 +332,13 @@ services:
     # indirection resolves via get_secret() -> a STRING, which is fine for keys
     # and URLs but breaks any numeric setting: max_parallel_requests then blows
     # up at REQUEST time with "'<' not supported between instances of 'str' and
-    # 'int'". Measured 2026-09-14 on main-latest (1.102.0); the identical
-    # get_secret()->str path with no int coercion is present in the main-stable
-    # image now pinned above (1.100.1, verified by source inspection in the
-    # running container). So the int is substituted
+    # 'int'". Measured 2026-09-14 on 1.102.0, which is what is pinned above.
+    # (This sentence previously read "the main-stable image now pinned above
+    # (1.100.1)" -- that was stale and was THE source of the version
+    # contradiction against litellm/config.yaml; the pin has been 1.102.0 all
+    # along, re-verified empirically 2026-09-15. The identical
+    # get_secret()->str path with no int coercion is also present in 1.100.1,
+    # so the guard below is needed on either.) So the int is substituted
     # into the YAML before litellm ever parses it -- the same render-a-template
     # pattern docker/entrypoint.sh already uses for web.xml.
     # `$$` escapes compose interpolation so the CONTAINER's shell expands it.
@@ -360,6 +376,70 @@ services:
         sed "s|__LOCAL_MAX_PARALLEL__|$$N|g" \
           /app/config.template.yaml > /tmp/litellm.config.yaml
         echo "[am7] local max_parallel_requests = $$N"
+        #
+        # ---- CREDENTIAL ASSERTION (design doc 6.9 / 6.10) -------------------
+        # The problem it solves: every credential in this profile has a
+        # COMMITTED well-known $${VAR:-default}, so omitting --env-file (or
+        # mistyping it, or running from a script that forgets it) starts the
+        # whole stack on published secrets with NO warning whatsoever. That
+        # silence was the defect; loopback binding was the only mitigation.
+        #
+        # What it deliberately does NOT do: hard-fail merely because a default
+        # is in use. Chosen with Stephen 2026-09-15 -- volatile/llmproxy.env on
+        # this workstation legitimately sets these to the throwaway values (6.9
+        # sanctions exactly that for a loopback-bound dev box, and as of
+        # 2026-09-15 it does so for all five), so an unconditional failure would
+        # refuse to boot a working setup and teach everyone to set the override
+        # flag reflexively.
+        #
+        # So: ALWAYS announce (nothing is silent any more), and FAIL only for
+        # the combination that is actually dangerous -- well-known credentials
+        # in use AND the ports published somewhere other than loopback. That is
+        # 6.9's "never run this profile on a shared or LAN-reachable host
+        # without overriding every value above", enforced instead of requested.
+        #
+        # Covers the four secrets THIS container legitimately holds. The
+        # Langfuse-side LANGFUSE_INIT_USER_PASSWORD / _SALT / _ENCRYPTION_KEY
+        # are deliberately NOT copied in here just to be asserted on -- that
+        # would spread secrets into a container with no use for them. In
+        # practice they are defaulted together with these (same env file, or
+        # none at all), so catching these four catches the condition.
+        DEFAULTED=""
+        [ "$${LITELLM_MASTER_KEY:-}"  = "sk-am7-litellm-test" ] && DEFAULTED="$$DEFAULTED LITELLM_MASTER_KEY"
+        [ "$${UI_PASSWORD:-}"         = "sk-am7-litellm-test" ] && DEFAULTED="$$DEFAULTED LITELLM_UI_PASSWORD"
+        [ "$${LANGFUSE_PUBLIC_KEY:-}" = "pk-lf-am7-test"      ] && DEFAULTED="$$DEFAULTED LANGFUSE_PUBLIC_KEY"
+        [ "$${LANGFUSE_SECRET_KEY:-}" = "sk-lf-am7-test"      ] && DEFAULTED="$$DEFAULTED LANGFUSE_SECRET_KEY"
+        BIND="$${LLMPROXY_BIND_HOST:-127.0.0.1}"
+        if [ -n "$$DEFAULTED" ]; then
+          echo "[am7] ==================================================================="
+          echo "[am7] WARNING: llmproxy is running on COMMITTED, WELL-KNOWN credentials:"
+          for v in $$DEFAULTED; do echo "[am7]     $$v"; done
+          echo "[am7] Also check LANGFUSE_INIT_USER_PASSWORD / LANGFUSE_SALT /"
+          echo "[am7] LANGFUSE_ENCRYPTION_KEY -- this check cannot see those."
+          echo "[am7] These values are IN GIT. Set real ones in src/volatile/llmproxy.env"
+          echo "[am7] and pass --env-file. DEV WORKSTATION ONLY: the master key is an"
+          echo "[am7] ADMIN key (/key/generate, spend, free use of the GPU) and the"
+          echo "[am7] Langfuse keys read every captured trace, INCLUDING full prompt and"
+          echo "[am7] completion bodies."
+          echo "[am7] Publish bind host: $$BIND"
+          echo "[am7] ==================================================================="
+          case "$$BIND" in
+            127.0.0.1|localhost|::1|'[::1]')
+              echo "[am7] Loopback-bound, so not reachable off this host. Continuing."
+              ;;
+            *)
+              echo "[am7] FATAL: refusing to start. Well-known committed credentials are"
+              echo "[am7] in use AND LLMPROXY_BIND_HOST is '$$BIND', which is not loopback"
+              echo "[am7] -- so the admin key and every captured conversation would be"
+              echo "[am7] exposed beyond this host. Either bind to 127.0.0.1, or override"
+              echo "[am7] the credentials in src/volatile/llmproxy.env."
+              exit 1
+              ;;
+          esac
+        else
+          echo "[am7] credential check: no committed defaults in use (bind $$BIND)"
+        fi
+        # ---- end credential assertion --------------------------------------
         exec /app/docker/prod_entrypoint.sh --config /tmp/litellm.config.yaml --port 4000
     ports:
       # LOOPBACK-ONLY on purpose. This port fronts LiteLLM's `master_key`,
@@ -368,7 +448,19 @@ services:
       # bind would hand anyone on the LAN that key plus free use of the GPU.
       # Nothing needs it off-host: the app reaches litellm by service name and
       # the JUnit tests use http://127.0.0.1:4000.
-      - "127.0.0.1:4000:4000"
+      #
+      # LLMPROXY_BIND_HOST governs THIS port only, and the same variable is handed
+      # to the container below so the credential assertion in the entrypoint
+      # judges the ACTUAL exposure rather than a second, separately-maintained
+      # copy of it. Override it and the assertion notices; there is no way to
+      # move THIS bind without the check seeing it.
+      #
+      # SCOPE, stated precisely because an earlier revision overclaimed it: this
+      # variable and that assertion cover the LiteLLM admin surface -- the master
+      # key (/key/generate, spend, model list) and use of the GPU. They do NOT
+      # cover Langfuse. langfuse-web has its own LANGFUSE_BIND_HOST and no
+      # assertion, for the ordering reasons documented on its `ports:` entry.
+      - "${LLMPROXY_BIND_HOST:-127.0.0.1}:4000:4000"
     environment:
       # Upstream Azure — key AND base host MUST come from the environment/secret, never committed
       # (supply via --env-file ./volatile/llmproxy.env). No default host in-repo.
@@ -417,6 +509,10 @@ services:
       LANGFUSE_HOST: http://langfuse-web:3000
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-am7-test}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-am7-test}
+      # NOT consumed by litellm itself. It is the SAME variable that renders the
+      # published `ports:` binds above, handed in so the entrypoint's credential
+      # assertion evaluates the REAL exposure and cannot drift from a second copy.
+      LLMPROXY_BIND_HOST: ${LLMPROXY_BIND_HOST:-127.0.0.1}
     volumes:
       # Mounted as a TEMPLATE; the entrypoint above renders it to /tmp.
       - ./litellm/config.yaml:/app/config.template.yaml:ro
@@ -476,7 +572,29 @@ services:
       # pk/sk API keys have committed well-known fallbacks, so a 0.0.0.0 bind
       # would expose every captured conversation to the LAN.
       # Login via LANGFUSE_INIT_USER_*.
-      - "127.0.0.1:3001:3000"
+      #
+      # DELIBERATELY *NOT* LLMPROXY_BIND_HOST. This has its own variable, and
+      # widening litellm's bind must never widen this one.
+      #
+      # WHY (found by security review 2026-09-15, after an earlier revision of
+      # this file wrongly pointed BOTH ports at LLMPROXY_BIND_HOST):
+      # litellm's entrypoint credential assertion CANNOT protect this service.
+      # litellm `depends_on` langfuse-web with condition: service_healthy, so
+      # langfuse-web is already up and serving before the assertion runs; it has
+      # no depends_on in the other direction; and it carries
+      # `restart: unless-stopped`, so litellm's `exit 1` is a restart loop that
+      # kills only litellm's own port. Net effect of the earlier revision:
+      # LLMPROXY_BIND_HOST=0.0.0.0 with no --env-file put the Langfuse UI and
+      # /api/public/* on the LAN, on committed well-known credentials, while the
+      # thing that "refused to start" was the *less* sensitive of the two.
+      # Langfuse traces hold FULL prompt and completion bodies (Guardrail 4) --
+      # conversation content, character/narrative material, and text extracted
+      # from user-uploaded documents. That is the highest-value asset here.
+      #
+      # So this stays pinned to loopback unless someone deliberately overrides
+      # THIS variable, which is a separate, explicit data-exposure decision.
+      # There is no assertion behind it -- see design doc 6.9.
+      - "${LANGFUSE_BIND_HOST:-127.0.0.1}:3001:3000"
     environment: &langfuse-env
       DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
       # MEASURED 2026-09-14. A default langfuse:4 deployment runs

@@ -21,6 +21,7 @@ import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.OpenAIMessage;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
+import org.cote.accountmanager.olio.llm.TracingIdValidator;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -40,9 +41,11 @@ import com.sun.net.httpserver.HttpServer;
 ///     consume a body `session_id` as Langfuse metadata; the working correlation path is the
 ///     x-langfuse-session-id HEADER, which LiteLLM promotes to the Langfuse trace.sessionId.)
 ///   - `user` IS a standard OpenAI chat parameter, so it is KEPT in the body ONLY for the
-///     OPENAI_COMPAT dialect and PRUNED for every other dialect (OPENAI/OLLAMA/UNKNOWN).
+///     OPENAI_COMPAT dialect and PRUNED for every other dialect (OPENAI/OLLAMA/UNKNOWN) — AND, as of
+///     Guardrail 3, only when the value is OPAQUE (TracingIdValidator.isOpaque). A non-opaque value
+///     is DROPPED (never rejected) at BOTH emission points: the wire body here and the header below.
 /// Separately, buildTracingHeaders (Chat.java:4361) emits the x-langfuse-session-id / x-langfuse-user-id
-/// HEADERS ONLY for OPENAI_COMPAT, reading the UN-pruned req.
+/// HEADERS ONLY for OPENAI_COMPAT, reading the UN-pruned req, each field gated on isOpaque.
 ///
 /// P3-2 (empirically settled 2026-09-03 against the live LiteLLM+Langfuse stack): the former
 /// string-typed `metadata` request field was REMOVED, not emitted, so there is nothing to assert about
@@ -62,13 +65,21 @@ import com.sun.net.httpserver.HttpServer;
 ///   3. Header overload — ClientUtil.postToRecordAndStream 3-arg injects NO extra headers, while the
 ///      4-arg overload applies the fixed headers AND the extra (x-langfuse-*) headers. Verified by a
 ///      REAL request captured by a local com.sun.net.httpserver echo server (no typeof/reflection).
+///   4. GUARDRAIL 3 — a NON-OPAQUE `user` is pruned from the body AND omitted from the header even on
+///      OPENAI_COMPAT, the one dialect that otherwise keeps it, while an opaque `session_id` alongside
+///      it is still forwarded (the drop is per-field). Plus a fixture guard asserting U_VAL/S_VAL are
+///      opaque, so cases 1 and 2 cannot pass via the Guardrail 3 drop instead of the dialect gate.
 ///
 /// Extends BaseTest only so the Olio model schemas are registered (OlioModelNames.use()); no live LLM
 /// call is made and no records are written.
 public class TestTierBTracingUnit extends BaseTest {
 
-	private static final String U_VAL = "trace-user-42";
-	private static final String S_VAL = "trace-sess-42";
+	/// MUST satisfy TracingIdValidator.isOpaque, which is now a narrow allowlist: a dashed UUID or an
+	/// `am7`-prefixed token. The previous values ("trace-user-42" / "trace-sess-42") carried a
+	/// bespoke prefix and are rejected under the tightened predicate, which would have made the
+	/// header assertions below fail on a dropped value rather than on a gate defect.
+	private static final String U_VAL = "am7tb-u-TIERB-U-364a2874";
+	private static final String S_VAL = "am7tb-s-TIERB-S-364a2874";
 
 	private OpenAIRequest baseReq() {
 		OpenAIRequest req = new OpenAIRequest();
@@ -84,18 +95,106 @@ public class TestTierBTracingUnit extends BaseTest {
 	}
 
 	/// Assembles the wire-body prune ignore list EXACTLY as Chat.chatInternal does for the Tier B
-	/// tracing gate: Chat.java:3889 seeds from ChatUtil.IGNORE_FIELDS, the gate adds `session_id`
-	/// for EVERY dialect, and adds `user` only when the dialect is NOT OPENAI_COMPAT. The
-	/// token/penalty/sampling/`think` additions that sit between those lines add unrelated field names
-	/// and require a chatConfig; none of them touch user/session_id, so they are omitted here. The
-	/// pruned request is then produced by the REAL ChatUtil.getPrunedRequest.
-	private List<String> tracingIgnoreFields(LLMServiceEnumType dialect) {
-		List<String> ignoreFields = new ArrayList<>(ChatUtil.IGNORE_FIELDS);     // Chat.java:3889
-		ignoreFields.add("session_id");                                        // unconditional
-		if (dialect != LLMServiceEnumType.OPENAI_COMPAT) {                      // OPENAI_COMPAT keeps user
-			ignoreFields.add("user");
+	/// tracing gate: seed from ChatUtil.IGNORE_FIELDS, add `session_id` for EVERY dialect, and keep
+	/// `user` ONLY when the dialect is OPENAI_COMPAT **AND the value is present AND opaque**. The
+	/// token/penalty/sampling/`think` additions that sit between those lines add unrelated field
+	/// names and require a chatConfig; none of them touch user/session_id, so they are omitted here.
+	/// The pruned request is then produced by the REAL ChatUtil.getPrunedRequest.
+	///
+	/// CORRECTED 2026-09-15. This helper previously reimplemented only the OLD half of the gate
+	/// (`dialect != OPENAI_COMPAT -> prune user`) and omitted the Guardrail 3 opaqueness half that
+	/// production now enforces:
+	///
+	///     boolean keepUser = (serviceType == LLMServiceEnumType.OPENAI_COMPAT
+	///         && req.hasField("user")
+	///         && TracingIdValidator.opaqueOrNull("user", (String) req.get("user")) != null);
+	///
+	/// It kept PASSING only because this class's fixture value ("trace-user-42") happens to be
+	/// opaque, so it no longer reproduced the shipped condition at all - a stale reimplementation
+	/// that agreed with production by luck. It now takes the REQUEST and calls the REAL
+	/// TracingIdValidator, so the value decides the outcome the same way it does in production, and
+	/// nonOpaqueUser_isPrunedEvenOnOpenAiCompat below exercises the half that was missing.
+	/// NO LONGER A REIMPLEMENTATION (2026-09-15). It now invokes the REAL production decision,
+	/// Chat.buildTracingIgnoreFields(req) - package-visible, reached reflectively, the same idiom
+	/// callBuildTracingHeaders uses below. That is the whole point: a hand-copied gate cannot fail
+	/// when production's gate is deleted or widened, and this one had already drifted once. The only
+	/// thing assembled locally is the unrelated base ChatUtil.IGNORE_FIELDS seed.
+	@SuppressWarnings("unchecked")
+	private List<String> tracingIgnoreFields(LLMServiceEnumType dialect, OpenAIRequest req) {
+		List<String> ignoreFields = new ArrayList<>(ChatUtil.IGNORE_FIELDS);
+		try {
+			Chat chat = new Chat();
+			chat.setServiceType(dialect);
+			Method m = Chat.class.getDeclaredMethod("buildTracingIgnoreFields", OpenAIRequest.class);
+			m.setAccessible(true);
+			ignoreFields.addAll((List<String>) m.invoke(chat, req));
+		}
+		catch (Exception e) {
+			throw new RuntimeException("reflective buildTracingIgnoreFields invocation failed -"
+				+ " production's tracing gate could not be exercised, so this test proves nothing", e);
 		}
 		return ignoreFields;
+	}
+
+	/// Fixture guard: the shared U_VAL must be OPAQUE, or the two dialect tests below would be
+	/// asserting the Guardrail 3 drop instead of the dialect gate and would pass for the wrong
+	/// reason. This is the assumption that silently held the stale helper together; now it is stated.
+	@Test
+	public void fixtureGuard_sharedUserValueIsOpaque() {
+		assertTrue("fixture invariant: U_VAL (" + U_VAL + ") must be opaque, otherwise the"
+			+ " OPENAI_COMPAT test below would see `user` pruned by Guardrail 3 rather than kept by"
+			+ " the dialect gate", TracingIdValidator.isOpaque(U_VAL));
+		assertTrue("fixture invariant: S_VAL (" + S_VAL + ") must be opaque",
+			TracingIdValidator.isOpaque(S_VAL));
+	}
+
+	/// GUARDRAIL 3, the half the stale helper did not reproduce: on OPENAI_COMPAT - the ONE dialect
+	/// that keeps `user` in the body - a NON-OPAQUE value must still be pruned from the wire body,
+	/// and the x-langfuse-user-id HEADER must be omitted too. LiteLLM maps the BODY `user` onto
+	/// Langfuse trace.userId, so suppressing only the header would still let PII reach the trace
+	/// store; both emission points have to drop it.
+	@Test
+	public void nonOpaqueUser_isPrunedEvenOnOpenAiCompat() throws Exception {
+		/// An email address - the canonical Guardrail 3 case. Not a short/odd string: it is exactly
+		/// the shape of value a caller would plausibly put here by mistake.
+		/// Reserved-domain stand-in (RFC 2606). An earlier version hardcoded the maintainer's real
+		/// address; a PII guardrail's own fixtures are the worst place to commit one.
+		final String pii = "someone@example.com";
+		assertFalse("fixture check: the value under test must be non-opaque",
+			TracingIdValidator.isOpaque(pii));
+
+		OpenAIRequest req = baseReq();
+		req.setValue("user", pii);
+
+		/// CONTROL first: with only the base ignore list the value DOES serialize, so its absence
+		/// below is caused by the gate and not by the field never being written.
+		String control = wireBody(ChatUtil.getPrunedRequest(req, new ArrayList<>(ChatUtil.IGNORE_FIELDS)));
+		assertTrue("CONTROL: the non-opaque `user` value must serialize when not pruned",
+			control.contains(pii));
+
+		OpenAIRequest pruned = ChatUtil.getPrunedRequest(req,
+			tracingIgnoreFields(LLMServiceEnumType.OPENAI_COMPAT, req));
+		String ser = wireBody(pruned);
+		logger.info("[TierB-unit][G3] OPENAI_COMPAT wire body with a NON-OPAQUE user = " + ser);
+		assertFalse("GUARDRAIL 3: a non-opaque `user` must be pruned from the wire BODY even on"
+			+ " OPENAI_COMPAT - LiteLLM maps the body `user` onto Langfuse trace.userId, so keeping"
+			+ " it there sends PII to the trace store regardless of the header",
+			ser.contains(pii));
+
+		/// The header emission point must drop it as well. session_id here is still the opaque
+		/// S_VAL, so the map is non-null and this asserts the USER key specifically is missing -
+		/// not that headers were suppressed wholesale.
+		Map<String, String> headers = callBuildTracingHeaders(LLMServiceEnumType.OPENAI_COMPAT, req);
+		assertNotNull("the opaque session_id must still produce a header map", headers);
+		assertNull("GUARDRAIL 3: the x-langfuse-user-id header must be omitted for a non-opaque value",
+			headers.get("x-langfuse-user-id"));
+		assertEquals("the opaque session_id must still be forwarded - the drop is per-field, not"
+			+ " all-or-nothing", S_VAL, headers.get("x-langfuse-session-id"));
+
+		/// DROP, NOT REJECT: the request itself is untouched, so nothing can fail a chat because of
+		/// a tracing value. Pruning operates on the wireReq COPY.
+		assertEquals("the original request must be unmodified - Guardrail 3 drops at emission, it"
+			+ " does not rewrite or reject the request", pii, (String) req.get("user"));
 	}
 
 	/// EXACT production wire serialization — Chat.chatInternal:3953.
@@ -138,7 +237,7 @@ public class TestTierBTracingUnit extends BaseTest {
 	@Test
 	public void openaiCompat_prunesSession_keepsUser_emitsTraceHeaders() throws Exception {
 		OpenAIRequest req = baseReq();
-		OpenAIRequest pruned = ChatUtil.getPrunedRequest(req, tracingIgnoreFields(LLMServiceEnumType.OPENAI_COMPAT));
+		OpenAIRequest pruned = ChatUtil.getPrunedRequest(req, tracingIgnoreFields(LLMServiceEnumType.OPENAI_COMPAT, req));
 		String ser = wireBody(pruned);
 		logger.info("[TierB-unit][COMPAT] wire body = " + ser);
 
@@ -164,7 +263,7 @@ public class TestTierBTracingUnit extends BaseTest {
 	public void openaiAndOllama_pruneSessionAndUser_emitNoTraceHeaders() throws Exception {
 		for (LLMServiceEnumType dialect : new LLMServiceEnumType[] { LLMServiceEnumType.OPENAI, LLMServiceEnumType.OLLAMA }) {
 			OpenAIRequest req = baseReq();
-			OpenAIRequest pruned = ChatUtil.getPrunedRequest(req, tracingIgnoreFields(dialect));
+			OpenAIRequest pruned = ChatUtil.getPrunedRequest(req, tracingIgnoreFields(dialect, req));
 			String ser = wireBody(pruned);
 			logger.info("[TierB-unit][" + dialect + "] wire body = " + ser);
 
