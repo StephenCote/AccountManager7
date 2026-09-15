@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio.sd;
 
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
@@ -130,15 +131,44 @@ public class SceneCompositeUtil {
 				logger.info("Scene composite [flux2]: landscape reference SUPPRESSED by "
 					+ "flux2IncludeLandscapeRef=false - setting is carried by prompt text only");
 			}
-			List<String> refs = SDUtil.buildFlux2References(refSize, leftBytes, rightBytes, settingRef);
+			/// Prepare each reference INDIVIDUALLY so the prompt can be told which ones actually
+			/// exist. Going through the varargs buildFlux2References and then handing the prompt
+			/// builder only refs.size() lost that: the builder re-derived "are there two people" from
+			/// the DESCRIPTION strings, so a character whose portrait was missing or unfittable made
+			/// the ordinals slide and the LANDSCAPE get named as the second person. Same order the
+			/// varargs form appends in (left person, right person, setting).
+			List<String> refs = new ArrayList<>();
+			String leftRef = SDUtil.prepareFlux2Reference(refSize, leftBytes, "flux2Reference[left]");
+			String rightRef = SDUtil.prepareFlux2Reference(refSize, rightBytes, "flux2Reference[right]");
+			String setRef = SDUtil.prepareFlux2Reference(refSize, settingRef, "flux2Reference[setting]");
+			if (leftRef != null) refs.add(leftRef);
+			if (rightRef != null) refs.add(rightRef);
+			if (setRef != null) refs.add(setRef);
+
 			SWTxt2Img s2i = SWUtil.newFlux2SceneTxt2Img(leftDesc, rightDesc, action, setting, mood,
-					sdConfig, refs.size());
+					sdConfig, leftRef != null, rightRef != null, setRef != null);
 			if (!refs.isEmpty()) {
 				s2i.setPromptImages(refs);
 			}
+			/// Log the per-slot truth, not just a count: "refs=1" never said WHICH reference survived,
+			/// so a scene that silently lost a portrait was indistinguishable from a solo scene. This
+			/// is the line to read first when a character's likeness is not honored.
 			logger.info("Scene composite [flux2]: model=" + s2i.getModel() + " refs=" + refs.size()
+				+ " [person1=" + (leftRef != null ? "yes" : "NO")
+				+ " person2=" + (rightRef != null ? "yes" : "NO")
+				+ " setting=" + (setRef != null ? "yes" : "no") + "]"
 				+ " cfg=" + s2i.getCfgScale() + " steps=" + s2i.getSteps()
 				+ " " + s2i.getWidth() + "x" + s2i.getHeight());
+			if (leftRef == null && SWUtil.stripSDXLWeighting(leftDesc) != null
+					&& !SWUtil.stripSDXLWeighting(leftDesc).isEmpty()) {
+				logger.warn("Scene composite [flux2]: person1 is DESCRIBED but has no reference image - "
+					+ "their likeness cannot be preserved, they will be rendered from text");
+			}
+			if (rightRef == null && SWUtil.stripSDXLWeighting(rightDesc) != null
+					&& !SWUtil.stripSDXLWeighting(rightDesc).isEmpty()) {
+				logger.warn("Scene composite [flux2]: person2 is DESCRIBED but has no reference image - "
+					+ "their likeness cannot be preserved, they will be rendered from text");
+			}
 			return s2i;
 		}
 

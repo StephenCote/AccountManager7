@@ -17,7 +17,8 @@ import { ObjectPicker } from '../components/picker.js';
 import { Dialog } from '../components/dialogCore.js';
 import {
     loadPictureBook, reorderScenes, resetPictureBook,
-    resolveImageUrl, resolveAllImageUrls, clearImageCache
+    resolveImageUrl, resolveAllImageUrls, clearImageCache,
+    resolveCharacterNames, sceneCharacterLabels
 } from '../workflows/sceneExtractor.js';
 import { pictureBookFromId } from '../workflows/pictureBook.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
@@ -301,8 +302,10 @@ let viewerBookId = null;
 let viewerWorkName = '';
 let viewerScenes = [];
 let imageUrls = {};      // imageObjectId → resolved media URL
+let characterNames = {}; // charPerson objectId → display name (see resolveCharacterNames)
 let viewerLoading = false;
 let viewerError = null;
+
 
 // Reader nav state (currentPage: 0 = cover, 1..N = scene pages; fullscreen). Held in one object owned
 // here and passed to the shared ReaderShell (components/readerShell.js): the shell mutates it, and the
@@ -318,6 +321,7 @@ async function loadViewer(bookObjectId) {
     viewerError = null;
     viewerScenes = [];
     imageUrls = {};
+    characterNames = {};
     pbReader.currentPage = 0;
     pbReader.fullscreen = false;
     clearImageCache();
@@ -340,7 +344,14 @@ async function loadViewer(bookObjectId) {
         viewerScenes = Array.isArray(scenes) ? scenes : [];
 
         if (viewerScenes.length) {
-            imageUrls = await resolveAllImageUrls(viewerScenes);
+            // Both resolutions are independent lookups over the same loaded scenes — run them
+            // together rather than serially, mirroring resolveAllImageUrls' own Promise.all shape.
+            let resolved = await Promise.all([
+                resolveAllImageUrls(viewerScenes),
+                resolveCharacterNames(bookObjectId)
+            ]);
+            imageUrls = resolved[0];
+            characterNames = resolved[1];
         }
     } catch (e) {
         viewerError = 'Failed to load picture book: ' + (e.message || '');
@@ -397,6 +408,24 @@ function renderCover(nav) {
 
 // ── Render: Scene Page (ReaderShell renderPage slot) ──────────────────
 
+/**
+ * Character name badges for a scene. Returns null when nothing resolves, so the reader shows no
+ * badge strip at all rather than an empty row or a row of UUIDs.
+ * @param {Array} chars  scene `characters` entries (objectId strings and/or {name:...} maps)
+ */
+function renderCharacterBadges(chars) {
+    let labels = sceneCharacterLabels(chars, characterNames);
+    if (labels.length === 0) return null;
+    return m('div', { class: 'flex flex-wrap gap-1.5 mt-4 justify-center' },
+        labels.map(function (label) {
+            return m('span', {
+                key: label,
+                class: 'text-xs px-2.5 py-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-full'
+            }, label);
+        })
+    );
+}
+
 function renderScenePage(scene, pageNumber, nav) {
     if (!scene) return m('div', { class: 'text-sm text-gray-500 italic p-4' }, 'No scene data.');
 
@@ -429,18 +458,9 @@ function renderScenePage(scene, pageNumber, nav) {
             }, (scene.description || scene.summary || '') || m('em', { class: 'text-gray-400 not-italic' }, 'No blurb yet.'))
         ),
 
-        // Character badges
-        scene.characters && scene.characters.length > 0
-            ? m('div', { class: 'flex flex-wrap gap-1.5 mt-4 justify-center' },
-                scene.characters.map(function (c) {
-                    let name = typeof c === 'string' ? c : (c.name || c);
-                    return m('span', {
-                        key: name,
-                        class: 'text-xs px-2.5 py-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-full'
-                    }, name);
-                })
-            )
-            : null,
+        // Character badges — names, never raw objectIds. The map is filtered BEFORE the length
+        // check so a scene whose ids all fail to resolve renders no empty badge strip.
+        renderCharacterBadges(scene.characters),
 
         // Page number
         m('div', { class: 'mt-6 text-xs text-gray-400 text-center' },

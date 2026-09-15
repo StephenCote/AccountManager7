@@ -144,6 +144,13 @@ model_list:
       # for web.xml.
       max_parallel_requests: __LOCAL_MAX_PARALLEL__
 
+  - model_name: way-local
+    litellm_params:
+      model: ollama_chat/way-local
+      api_base: os.environ/OLLAMA_API_BASE
+      timeout: 240
+      max_parallel_requests: __LOCAL_MAX_PARALLEL__
+
 litellm_settings:
   # Tier A: proxy-side tracing to Langfuse (no AM7 code involved).
   success_callback: ["langfuse"]
@@ -197,7 +204,7 @@ general_settings:
   # Clients (AM7) authenticate to the proxy with this key as their Bearer token.
   # It is the proxy's OWN key, distinct from the upstream Azure api_key.
   master_key: os.environ/LITELLM_MASTER_KEY
-
+  store_prompts_in_spend_logs: true
 # ---------------------------------------------------------------------------
 # BEHAVIOURAL DIVERGENCE (KI-72) -- **FIXED 2026-09-15 in Objects7.**
 # Read the STATUS paragraph at the bottom of this block FIRST; the history

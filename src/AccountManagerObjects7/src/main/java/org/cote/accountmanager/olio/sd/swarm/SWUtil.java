@@ -175,6 +175,17 @@ public class SWUtil {
 	/// @param refCount    how many reference images will be attached; controls the positional wording
 	public static SWTxt2Img newFlux2SceneTxt2Img(String leftDesc, String rightDesc, String action,
 			String setting, String mood, BaseRecord sdConfig, int refCount) {
+		boolean twoPeople = isPresent(stripSDXLWeighting(rightDesc));
+		return newFlux2SceneTxt2Img(leftDesc, rightDesc, action, setting, mood, sdConfig,
+			refCount > 0, twoPeople && refCount > 1, refCount > (twoPeople ? 2 : 1));
+	}
+
+	/// Reference-accurate overload. Takes which references were actually attached rather than a bare
+	/// count, so the prompt's positional naming matches the promptimages list the model receives.
+	/// See buildFlux2ScenePrompt's 9-arg form for why the count alone was not enough.
+	public static SWTxt2Img newFlux2SceneTxt2Img(String leftDesc, String rightDesc, String action,
+			String setting, String mood, BaseRecord sdConfig,
+			boolean hasLeftRef, boolean hasRightRef, boolean hasSettingRef) {
 		SWTxt2Img s2i = new SWTxt2Img();
 
 		String model = null;
@@ -220,7 +231,8 @@ public class SWUtil {
 		/// installed at the appendLoras seam on the grounds that every setPrompt call passed through it;
 		/// this builder and the Kontext one did not.
 		s2i.setPrompt(org.cote.accountmanager.olio.sd.SDUtil.appendLoras(
-			buildFlux2ScenePrompt(leftDesc, rightDesc, action, setting, mood, sdConfig, refCount), sdConfig));
+			buildFlux2ScenePrompt(leftDesc, rightDesc, action, setting, mood, sdConfig,
+				hasLeftRef, hasRightRef, hasSettingRef), sdConfig));
 		return s2i;
 	}
 
@@ -228,22 +240,70 @@ public class SWUtil {
 	/// building a whole request or touching a live server.
 	public static String buildFlux2ScenePrompt(String leftDesc, String rightDesc, String action,
 			String setting, String mood, BaseRecord sdConfig, int refCount) {
+		/// Legacy arity. Infers reference presence the way this method always did: a described person
+		/// is ASSUMED to carry a reference, and the setting reference is whatever count is left over.
+		/// That inference is only safe when the caller's descriptions and reference bytes agree, which
+		/// is why the shared builder now passes the real per-reference flags instead (see the overload).
+		boolean twoPeople = isPresent(stripSDXLWeighting(rightDesc));
+		return buildFlux2ScenePrompt(leftDesc, rightDesc, action, setting, mood, sdConfig,
+			refCount > 0, twoPeople && refCount > 1, refCount > (twoPeople ? 2 : 1));
+	}
+
+	/// Compose the FLUX.2 multi-reference prompt from the reference list's REAL composition.
+	///
+	/// The three booleans say which references were actually attached, in attachment order, so the
+	/// ordinals this prompt speaks ("the second reference image") always denote the image the model
+	/// actually received. The refCount overload above could not do this: it recomputed "are there two
+	/// people" from the DESCRIPTION strings while SDUtil.buildFlux2References builds the list from the
+	/// BYTES and compacts nulls. When those disagreed — a described character whose portrait was
+	/// missing or failed to fit — the arithmetic named the LANDSCAPE as the second person and left the
+	/// real setting reference unmentioned. Deriving both from one source is the fix.
+	///
+	/// A person who is described but carries no reference is still described; the prompt simply does
+	/// not claim they came from a reference image.
+	///
+	/// @param hasLeftRef    a reference image for the first person was attached (position 1)
+	/// @param hasRightRef   a reference image for the second person was attached
+	/// @param hasSettingRef a setting/environment reference was attached (always last)
+	public static String buildFlux2ScenePrompt(String leftDesc, String rightDesc, String action,
+			String setting, String mood, BaseRecord sdConfig,
+			boolean hasLeftRef, boolean hasRightRef, boolean hasSettingRef) {
 		String cleanLeft = stripSDXLWeighting(leftDesc);
 		String cleanRight = stripSDXLWeighting(rightDesc);
-		boolean twoPeople = (cleanRight != null && !cleanRight.isEmpty());
-		boolean hasSettingRef = refCount > (twoPeople ? 2 : 1);
+		boolean twoPeople = isPresent(cleanRight);
+
+		/// Ordinals are assigned by walking the reference list in the order buildFlux2References
+		/// appends it (left person, right person, setting), skipping what was not attached. 0 means
+		/// "not in the list".
+		int slot = 0;
+		int leftRefOrdinal = hasLeftRef ? ++slot : 0;
+		int rightRefOrdinal = hasRightRef ? ++slot : 0;
+		int settingRefOrdinal = hasSettingRef ? ++slot : 0;
+		int peopleRefs = (leftRefOrdinal > 0 ? 1 : 0) + (rightRefOrdinal > 0 ? 1 : 0);
 
 		StringBuilder p = new StringBuilder();
 		/// Name the sources positionally, as the doc's example prompt does.
-		if (twoPeople) {
-			p.append("Combine the exact person and face from the first reference image with the exact "
-				+ "person and face from the second reference image. Place both people together in ");
+		if (peopleRefs == 2) {
+			p.append("Combine the exact person and face from the ").append(ordinal(leftRefOrdinal))
+				.append(" reference image with the exact person and face from the ")
+				.append(ordinal(rightRefOrdinal))
+				.append(" reference image. Place both people together in ");
+		}
+		else if (peopleRefs == 1) {
+			p.append("Take the exact person and face from the ")
+				.append(ordinal(leftRefOrdinal > 0 ? leftRefOrdinal : rightRefOrdinal))
+				.append(" reference image and place ")
+				.append(twoPeople ? "them, with the other person described below, in " : "them in ");
 		}
 		else {
-			p.append("Take the exact person and face from the first reference image and place them in ");
+			/// No portrait reference reached the model. Saying "the first reference image" here — which
+			/// this prompt used to do unconditionally — instructs an edit model to copy an identity out
+			/// of an image it was never given, or out of the SETTING reference if that is all there is.
+			p.append("Place the ").append(twoPeople ? "people" : "person")
+				.append(" described below in ");
 		}
-		if (hasSettingRef) {
-			p.append("the environment shown in the ").append(twoPeople ? "third" : "second")
+		if (settingRefOrdinal > 0) {
+			p.append("the environment shown in the ").append(ordinal(settingRefOrdinal))
 				.append(" reference image");
 			if (setting != null && !setting.isEmpty()) {
 				p.append(" (").append(setting).append(")");
@@ -257,7 +317,7 @@ public class SWUtil {
 			p.append("a coherent shared setting. ");
 		}
 
-		if (cleanLeft != null && !cleanLeft.isEmpty()) {
+		if (isPresent(cleanLeft)) {
 			p.append("The first person is ").append(cleanLeft).append(". ");
 		}
 		if (twoPeople) {
@@ -503,6 +563,24 @@ public class SWUtil {
 	/// Strip SDXL-style prompt weighting syntax from descriptions.
 	/// Removes patterns like ((word:1.5)), (word), and ((word)) leaving just the text.
 	/// FLUX Kontext ignores this syntax, so it just clutters the prompt.
+	/// Null-and-blank test used by the FLUX.2 prompt builder. A description that is present but blank
+	/// must not make the prompt announce a person.
+	private static boolean isPresent(String s) {
+		return s != null && !s.trim().isEmpty();
+	}
+
+	/// English ordinal for a reference position. FLUX.2 takes at most three references here (two
+	/// people + setting); anything beyond that falls back to a numeric form rather than inventing a
+	/// word, so a future fourth reference is visible in the prompt instead of silently mis-named.
+	private static String ordinal(int n) {
+		switch (n) {
+			case 1: return "first";
+			case 2: return "second";
+			case 3: return "third";
+			default: return "#" + n;
+		}
+	}
+
 	public static String stripSDXLWeighting(String desc) {
 		if (desc == null || desc.isEmpty()) return desc;
 		/// Remove weight numbers like :1.5)

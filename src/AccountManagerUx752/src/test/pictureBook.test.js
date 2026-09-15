@@ -319,3 +319,62 @@ describe('pictureBook feature routes shape', () => {
         expect(typeof result.then).toBe('function');
     });
 });
+
+// ── Scene character badges (reader) ───────────────────────────────────
+//
+// Reported 2026-09-15: the PB1 reader's character badges showed raw objectId UUIDs. The cause is a
+// shape mismatch, not debug code — PictureBookUtil.buildSceneEntry resolves the extraction's
+// character names to charPerson objectIds and persists `pictureBookScene.characters` as a
+// List<String> of those ids, while the badge render did `typeof c === 'string' ? c : (c.name || c)`
+// and so printed the id verbatim (and, for a map without a name, the object itself).
+
+describe('scene character badge labels', () => {
+    const DARBY = '2be22bac-1a51-4a3b-93d8-daa87b8087f7';
+    const DAD = '987c1271-dd6d-4455-bd86-b1a2f9a724ef';
+    const NAMES = { [DARBY]: 'Darby', [DAD]: "Darby's Dad" };
+
+    it('resolves an objectId entry to the character name', async () => {
+        let { sceneCharacterLabel } = await import('../workflows/sceneExtractor.js');
+        expect(sceneCharacterLabel(DARBY, NAMES)).toBe('Darby');
+    });
+
+    it('drops an unresolved UUID instead of rendering it', async () => {
+        let { sceneCharacterLabel } = await import('../workflows/sceneExtractor.js');
+        // A character deleted from the book, or a names lookup that failed.
+        expect(sceneCharacterLabel('3fa85f64-5717-4562-b3fc-2c963f66afa6', NAMES)).toBeNull();
+        expect(sceneCharacterLabel(DARBY, {})).toBeNull();
+        expect(sceneCharacterLabel(DARBY, null)).toBeNull();
+    });
+
+    it('keeps a legacy plain-name entry, which is not a UUID', async () => {
+        let { sceneCharacterLabel } = await import('../workflows/sceneExtractor.js');
+        // Older books and the {name:...} shape extractCharName still tolerates store real names.
+        expect(sceneCharacterLabel('Veronique', NAMES)).toBe('Veronique');
+    });
+
+    it('reads the name off a map entry, and never returns the object itself', async () => {
+        let { sceneCharacterLabel } = await import('../workflows/sceneExtractor.js');
+        expect(sceneCharacterLabel({ name: 'Yolanda' }, NAMES)).toBe('Yolanda');
+        expect(sceneCharacterLabel({ objectId: DAD }, NAMES)).toBe("Darby's Dad");
+        // The old `c.name || c` fallback returned the INPUT OBJECT, which Mithril renders as junk.
+        let entry = { gender: 'female' };
+        let label = sceneCharacterLabel(entry, NAMES);
+        expect(label).toBeNull();
+        expect(label).not.toBe(entry);
+    });
+
+    it('resolves a whole scene list, de-duplicating and preserving order', async () => {
+        let { sceneCharacterLabels } = await import('../workflows/sceneExtractor.js');
+        // DARBY appears twice: once as an id, once as a name map — one badge, not two.
+        let labels = sceneCharacterLabels([DARBY, DAD, { name: 'Darby' }], NAMES);
+        expect(labels).toEqual(['Darby', "Darby's Dad"]);
+    });
+
+    it('yields no labels at all when nothing resolves, so no empty badge strip renders', async () => {
+        let { sceneCharacterLabels } = await import('../workflows/sceneExtractor.js');
+        expect(sceneCharacterLabels([DARBY, DAD], {})).toEqual([]);
+        expect(sceneCharacterLabels([], NAMES)).toEqual([]);
+        expect(sceneCharacterLabels(null, NAMES)).toEqual([]);
+        expect(sceneCharacterLabels(undefined, NAMES)).toEqual([]);
+    });
+});

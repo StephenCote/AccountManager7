@@ -1956,16 +1956,34 @@ public class SDUtil {
 		int idx = 0;
 		for(byte[] src : sources) {
 			idx++;
-			if(src == null || src.length == 0) continue;
-			byte[] fitted = fitToCanvas(src, refSize, refSize, java.awt.Color.WHITE, "flux2Reference[" + idx + "]");
-			if(fitted == null) {
-				logger.warn("buildFlux2References: reference " + idx + " could not be prepared — skipping");
-				continue;
-			}
-			refs.add("data:image/png;base64," + BinaryUtil.toBase64Str(fitted));
+			String ref = prepareFlux2Reference(refSize, src, "flux2Reference[" + idx + "]");
+			if(ref != null) refs.add(ref);
 		}
 		logger.debug("buildFlux2References: prepared " + refs.size() + " reference image(s) at " + refSize + "x" + refSize);
 		return refs;
+	}
+
+	/// Prepare ONE FLUX.2 reference image, or return null when this source contributes no reference.
+	///
+	/// Split out of buildFlux2References because that method's varargs list is POSITIONALLY COMPACTED
+	/// — a null/undersized/unfittable source is silently dropped and every later reference shifts down
+	/// one slot. Callers that must name a reference by position in the prompt ("the exact person from
+	/// the SECOND reference image") therefore cannot infer the ordinals from their own inputs: they
+	/// have to know which sources actually survived preparation. Guessing that from the input bytes
+	/// alone is wrong twice over — it misses a fitToCanvas failure, and it misses the desync that
+	/// caused the real defect this method exists to close (a landscape reference being named as the
+	/// second PERSON once the first portrait was absent).
+	///
+	/// @return a base64 data URL, or null if src was empty or could not be fitted
+	public static String prepareFlux2Reference(int refSize, byte[] src, String label) {
+		if(src == null || src.length == 0) return null;
+		byte[] fitted = fitToCanvas(src, refSize, refSize, java.awt.Color.WHITE, label);
+		if(fitted == null) {
+			logger.warn(label + " could not be prepared — this reference is dropped, and every "
+				+ "later reference shifts down one position");
+			return null;
+		}
+		return "data:image/png;base64," + BinaryUtil.toBase64Str(fitted);
 	}
 
 	/// Generate mannequin images for an apparel record, one image per cumulative wear level.

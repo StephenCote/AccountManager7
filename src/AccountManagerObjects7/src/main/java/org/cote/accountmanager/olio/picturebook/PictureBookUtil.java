@@ -249,6 +249,39 @@ public class PictureBookUtil {
      * referenced-attribute mechanism (the only pattern that actually persists an attribute — see
      * {@link #tagApparelSceneIndex}). Best-effort: a failure here must not fail the whole book build.
      */
+    /**
+     * Resolve the visual description to persist as {@link #ATTR_DESCRIPTION} for a character.
+     *
+     * <p>Prefers the LLM-reduced description; falls back to the {@code appearance} the scene
+     * extraction already supplied for this character.
+     *
+     * <p><b>Why the fallback exists.</b> The reduce step that produces {@code reducedDescription}
+     * runs only when {@code charData} arrived with NO {@code appearance} — so a character the source
+     * text describes WELL got no {@code pbDescription} at all, while every character it described
+     * poorly got one. That inversion is not cosmetic: {@code resolveSceneCharacter} treats a missing
+     * {@code pbDescription} as "fall back to {@code narrative.sdPrompt}", which carries a random art
+     * style and a random era/setting baked in at creation, and that text then fights the character's
+     * own portrait reference in the composite. Measured live 2026-09-15 on "The Big Way Out": the
+     * protagonist (present in all 58 scenes) was the ONLY one of 13 characters with no
+     * {@code pbDescription}, and the only one whose likeness the composite did not preserve.
+     *
+     * <p>{@code appearance} is LLM-extracted, so it is screened with
+     * {@link NarrativeUtil#isMeaningful(String)} rather than a blank check — an LLM that cannot
+     * determine an attribute emits the literal string {@code "null"} as the value.
+     */
+    /// Public so the inversion above can be asserted directly (TestFlux2Composite
+    /// appearanceBecomesTheImagingDescription) without standing up a whole book build. Pure function,
+    /// no IO.
+    public static String imagingDescription(String reducedDescription, Map<String, Object> charData) {
+        if (reducedDescription != null && !reducedDescription.isBlank()) return reducedDescription;
+        if (charData == null) return null;
+        Object appearance = charData.get("appearance");
+        if (appearance instanceof String && NarrativeUtil.isMeaningful((String) appearance)) {
+            return ((String) appearance).trim();
+        }
+        return null;
+    }
+
     private static void persistCharacterSceneAttributes(BaseRecord user, BaseRecord charPerson,
             List<Integer> sceneIndices, String description) {
         try {
@@ -4877,7 +4910,11 @@ public class PictureBookUtil {
                 Map<String, Object> llmData = parseLlmJsonObject(llmChar, "reduce-character:" + cname, failedExtractions);
                 if (!llmData.isEmpty()) {
                     Object d = llmData.remove("description");
-                    if (d instanceof String && !((String) d).isBlank()) reducedDescription = ((String) d).trim();
+                    // isMeaningful, not !isBlank: this came out of an LLM JSON object, and an LLM that
+                    // cannot describe someone emits the literal string "null"/"n/a"/"unknown" as
+                    // the VALUE instead of omitting the key. A blank check passes that through
+                    // into pbDescription and on into the image prompt.
+                    if (d instanceof String && NarrativeUtil.isMeaningful((String) d)) reducedDescription = ((String) d).trim();
                     // Merge structured fields without overwriting user/client-provided edits
                     for (Map.Entry<String, Object> e : llmData.entrySet()) {
                         if (!charData.containsKey(e.getKey()) || charData.get(e.getKey()) == null
@@ -4893,7 +4930,8 @@ public class PictureBookUtil {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
                 // Attribute 1 (scene refs) + Attribute 2 (condensed description). Attr2 is read at
                 // imaging time (resolveSceneCharacter) as this character's visual description.
-                persistCharacterSceneAttributes(user, cp, charSceneIndices.get(cname), reducedDescription);
+                persistCharacterSceneAttributes(user, cp, charSceneIndices.get(cname),
+                        imagingDescription(reducedDescription, charData));
             } else {
                 logger.error("createCharPerson failed for '" + cname + "' during /create-from-scenes — character will be absent from the book");
                 failedCharacters.add(cname);
@@ -5131,7 +5169,11 @@ public class PictureBookUtil {
                 Map<String, Object> llmData = parseLlmJsonObject(llmChar, "reduce-character:" + cname, failedExtractions);
                 if (!llmData.isEmpty()) {
                     Object d = llmData.remove("description");
-                    if (d instanceof String && !((String) d).isBlank()) reducedDescription = ((String) d).trim();
+                    // isMeaningful, not !isBlank: this came out of an LLM JSON object, and an LLM that
+                    // cannot describe someone emits the literal string "null"/"n/a"/"unknown" as
+                    // the VALUE instead of omitting the key. A blank check passes that through
+                    // into pbDescription and on into the image prompt.
+                    if (d instanceof String && NarrativeUtil.isMeaningful((String) d)) reducedDescription = ((String) d).trim();
                     for (Map.Entry<String, Object> e : llmData.entrySet()) {
                         if (!charData.containsKey(e.getKey()) || charData.get(e.getKey()) == null
                                 || ((charData.get(e.getKey()) instanceof String) && ((String) charData.get(e.getKey())).isEmpty())) {
@@ -5143,7 +5185,8 @@ public class PictureBookUtil {
             BaseRecord cp = createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath, pb2OlioCtx);
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
-                persistCharacterSceneAttributes(user, cp, charSceneIndices.get(cname), reducedDescription);
+                persistCharacterSceneAttributes(user, cp, charSceneIndices.get(cname),
+                        imagingDescription(reducedDescription, charData));
                 persistCharacterImageGalleryPath(cp, bookGalleryPath);
             } else {
                 logger.error("createCharPerson failed for '" + cname + "' during /create-from-scenes (pb2) — character will be absent from the book");
@@ -5421,7 +5464,27 @@ public class PictureBookUtil {
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "face", "Generating portraits...");
             // Characters may be stored as [{name:...}] maps or as objectId strings
             List<byte[]> portraitBytesList = new ArrayList<>();
-            List<String> portraitPromptList = new ArrayList<>();
+            // The per-character text the COMPOSITE describes each person with — ResolvedCharacter's
+            // sceneNarration, NOT its portraitPrompt.
+            //
+            // This held portraitPrompt, which is the portrait RENDER prompt, and that was the reported
+            // "the portrait isn't used for this character" defect. For a character with a pbDescription
+            // the two barely differ (portraitPrompt is just PORTRAIT_QUALITY_PREAMBLE + that same
+            // description), so the bug was invisible on most characters. For a character WITHOUT one,
+            // portraitPrompt falls back to narrative.sdPrompt — which bakes in a RANDOM art style, a
+            // RANDOM era/setting and a random action at creation time. Measured live 2026-09-15 on
+            // "The Big Way Out": Darby was the only one of 13 characters with no pbDescription, so her
+            // composite text read "...16yo white teenaged girl... She is dressing in Renaissance-era
+            // Florence's bustling piazza, circa 1500 AD. Comic book panel in Valiant Comics style from
+            // the Golden Age 1930s-1940s with limited palette duotone." Her portrait WAS attached as a
+            // reference (refs=2), but that text instructs an edit model to a different style, era and
+            // setting than the reference photo, and at flux2 cfg 2.0 the text won — her father, whose
+            // text was a clean physical description, kept his likeness in the same image.
+            //
+            // sceneNarration is the field resolveSceneCharacter already computes FOR this purpose and
+            // sanitizes with stripTrailingConfigStyle (see its own comment on the three-styles bug).
+            // It was only ever consumed by the Stage 0 scene text; the composite never read it.
+            List<String> charSceneDescList = new ArrayList<>();
             // PB2: parallel to portraitBytesList, so the composite can bind portrait0/portrait1 to the
             // exact artifact REVISIONS it consumed. §2.5's attribution row — PB1 passes null,null for
             // systemCharacter/userCharacter on every book image, so today nothing records which
@@ -5444,6 +5507,8 @@ public class PictureBookUtil {
                     BaseRecord cp = rc.charPerson;
                     String cname = rc.name;
                     String portraitPrompt2 = rc.portraitPrompt;
+                    // Style/setting-free description for the composite — see charSceneDescList.
+                    String sceneDesc2 = rc.sceneNarration;
 
                     // Scene-tagged apparel: pick the highest sceneIndex-tagged outfit <= this
                     // scene's index, flip inuse, and fold its description into the portrait prompt.
@@ -5454,8 +5519,18 @@ public class PictureBookUtil {
                         String outfitDesc = NarrativeUtil.describeOutfit(cp, false);
                         if (outfitDesc != null && !outfitDesc.isBlank()) {
                             portraitPrompt2 = portraitPrompt2 + ", " + outfitDesc;
+                            // The composite must see the scene's outfit too, or it would describe the
+                            // character in their creation-time clothes while the reference portrait
+                            // (re-rendered just below, precisely because the outfit changed) shows the
+                            // scene-tagged one.
+                            sceneDesc2 = (sceneDesc2 == null || sceneDesc2.isBlank())
+                                    ? outfitDesc : sceneDesc2 + ", " + outfitDesc;
                         }
                     }
+                    // Never let the composite describe a person as nothing; sceneNarration is
+                    // documented as never blank, but a stored record predating that guarantee would
+                    // silently drop this character's description out of the prompt.
+                    if (sceneDesc2 == null || sceneDesc2.isBlank()) sceneDesc2 = portraitPrompt2;
 
                     // B1: Populate the character's profile + portrait (with byteStore) so we can
                     // reuse an already-persisted portrait rather than regenerating it every scene.
@@ -5489,7 +5564,7 @@ public class PictureBookUtil {
                     // would never actually change across scenes.
                     if (isBook && !hasSceneApparel && existingPortraitBytes != null && existingPortraitBytes.length > 0) {
                         portraitBytesList.add(existingPortraitBytes);
-                        portraitPromptList.add(SWUtil.stripSDXLWeighting(portraitPrompt2));
+                        charSceneDescList.add(SWUtil.stripSDXLWeighting(sceneDesc2));
                         logger.info("Reusing persisted portrait for " + cname + " (no re-render)");
                         if (pbGraph != null) {
                             // A reused portrait produced NOTHING this run, so it must not mint a new
@@ -5573,7 +5648,7 @@ public class PictureBookUtil {
                             continue;
                         }
                         portraitBytesList.add(portBytes);
-                        portraitPromptList.add(SWUtil.stripSDXLWeighting(portraitPrompt2));
+                        charSceneDescList.add(SWUtil.stripSDXLWeighting(sceneDesc2));
 
                         if (pbGraph != null) {
                             // A real render: a real new revision, with the config that produced it
@@ -5753,8 +5828,8 @@ public class PictureBookUtil {
             // Stephen + coordinator independently inspecting the emitted composites/portraits).
             // Kontext stays available as an explicit opt-in (config useKontext=true) when likeness
             // fidelity matters less.
-            String leftDesc  = !portraitPromptList.isEmpty() ? portraitPromptList.get(0) : "";
-            String rightDesc = portraitPromptList.size() > 1  ? portraitPromptList.get(1) : "";
+            String leftDesc  = !charSceneDescList.isEmpty() ? charSceneDescList.get(0) : "";
+            String rightDesc = charSceneDescList.size() > 1  ? charSceneDescList.get(1) : "";
             byte[] leftBytes   = !portraitBytesList.isEmpty() ? portraitBytesList.get(0) : null;
             byte[] centerBytes = portraitBytesList.size() > 1  ? portraitBytesList.get(1) : null;
 

@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -17,6 +18,7 @@ import java.awt.image.BufferedImage;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.Flux2Defaults;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
@@ -77,6 +79,115 @@ public class TestFlux2Composite {
 		String v = System.getenv(name);
 		if (v == null || v.isBlank()) return def;
 		try { return Integer.parseInt(v.trim()); } catch (NumberFormatException e) { return def; }
+	}
+
+	// ── Reference/prompt alignment (always run) ──────────────────────────────
+	//
+	// Regression cover for the 2026-09-15 "the portraits aren't always used" report. Two independent
+	// defects made a character's own portrait fail to inform the composite while another character in
+	// the SAME image kept their likeness; these tests pin both.
+
+	/// A missing first portrait must not promote the LANDSCAPE to "the second person".
+	///
+	/// SDUtil.buildFlux2References COMPACTS nulls, so with no left portrait the attached list is
+	/// [rightPortrait, landscape]. The old prompt builder was handed only refs.size()=2 and re-derived
+	/// "are there two people" from the DESCRIPTION strings — both of which were non-empty — so it
+	/// emitted "Combine the exact person and face from the first reference image with the exact person
+	/// and face from the second reference image" and then, because refCount(2) was not > 2, never
+	/// mentioned a setting reference at all. The model was therefore told the landscape was a person.
+	@Test
+	public void aDroppedPortraitDoesNotMakeTheLandscapeASecondPerson() {
+		String p = SWUtil.buildFlux2ScenePrompt(LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, null,
+			false, true, true);
+		logger.info("FLUX.2 prompt (no first portrait): " + p);
+
+		assertFalse("with one portrait attached the prompt must not claim to combine two people",
+			p.contains("Combine the exact person"));
+		assertTrue("the surviving portrait is reference 1", p.contains("from the first reference image"));
+		assertTrue("the setting reference is reference 2 once a portrait is dropped",
+			p.contains("environment shown in the second reference image"));
+		assertFalse("nothing is attached at position 3", p.contains("third reference image"));
+		// Both people are still described - only the identity claim is withdrawn.
+		assertTrue("the unreferenced person is still described", p.contains("grey beard"));
+		assertTrue("the referenced person is still described", p.contains("strawberry-blonde"));
+	}
+
+	/// The mirror case: a missing SECOND portrait. The setting must move to slot 2, not stay at 3.
+	@Test
+	public void referenceOrdinalsFollowTheAttachedList() {
+		String p = SWUtil.buildFlux2ScenePrompt(LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, null,
+			true, false, true);
+		logger.info("FLUX.2 prompt (no second portrait): " + p);
+		assertTrue("the surviving portrait is reference 1", p.contains("from the first reference image"));
+		assertTrue("the setting slides up to reference 2",
+			p.contains("environment shown in the second reference image"));
+		assertFalse("nothing is attached at position 3", p.contains("third reference image"));
+	}
+
+	/// With no portrait references at all, the prompt must not instruct the model to copy an identity
+	/// out of an image it never received. Previously it said "Combine the exact person and face from
+	/// the first reference image..." unconditionally — and when a landscape WAS attached, that "first
+	/// reference image" was the landscape.
+	@Test
+	public void noPortraitReferenceMeansNoIdentityClaim() {
+		String p = SWUtil.buildFlux2ScenePrompt(LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, null,
+			false, false, true);
+		logger.info("FLUX.2 prompt (no portraits at all): " + p);
+		assertFalse("must not claim a person came from a reference image",
+			p.contains("person and face from the"));
+		assertTrue("the only attached reference is the setting, at position 1",
+			p.contains("environment shown in the first reference image"));
+		assertTrue("the people are still described", p.contains("grey beard"));
+	}
+
+	/// End-to-end through the shared builder: the promptimages list and the prompt's ordinals must
+	/// agree. This is the assertion that would have caught the defect, because it compares the two
+	/// artifacts that drifted apart rather than checking either alone.
+	@Test
+	public void builderKeepsPromptOrdinalsConsistentWithAttachedReferences() throws Exception {
+		byte[] land = fixture("landscape1.png");
+		SWTxt2Img req = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_FLUX2,
+			LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, "", "",
+			null, fixture("character2.png"), land, 0.65, null);
+		assertNotNull(req);
+		assertEquals("only the surviving portrait and the landscape are attached",
+			2, req.getPromptImages().size());
+		String p = req.getPrompt();
+		logger.info("FLUX.2 built prompt (left portrait absent): " + p);
+		assertFalse("must not describe two referenced people when only one portrait was attached",
+			p.contains("Combine the exact person"));
+		assertTrue("the setting must be named at its real position (2 of 2)",
+			p.contains("environment shown in the second reference image"));
+	}
+
+	/// Fix A: a character the source text already described must still get an imaging description.
+	///
+	/// createFromScenes only ran its LLM reduce step when charData arrived with NO `appearance`, and
+	/// `pbDescription` was written only from that reduce. So the characters the text describes BEST
+	/// were the ones left with no imaging description — and resolveSceneCharacter treats that absence
+	/// as "fall back to narrative.sdPrompt", which carries a random art style and era. Measured live:
+	/// the protagonist of "The Big Way Out" was the only one of 13 characters missing it.
+	@Test
+	public void appearanceBecomesTheImagingDescriptionWhenTheReduceIsSkipped() {
+		java.util.Map<String, Object> charData = new java.util.LinkedHashMap<>();
+		charData.put("name", "Darby");
+		charData.put("appearance", "a sixteen-year-old girl with tangled red hair and blue eyes");
+
+		assertEquals("the reduced description still wins when present",
+			"reduced", PictureBookUtil.imagingDescription("reduced", charData));
+		assertEquals("appearance is used when the reduce was skipped",
+			"a sixteen-year-old girl with tangled red hair and blue eyes",
+			PictureBookUtil.imagingDescription(null, charData));
+
+		// An LLM that cannot determine an attribute emits the literal string, not an absent key.
+		for (String junk : new String[] { "null", "n/a", "none", "unknown", "unspecified", "  " }) {
+			java.util.Map<String, Object> bad = new java.util.LinkedHashMap<>();
+			bad.put("appearance", junk);
+			assertNull("the literal string '" + junk + "' must not become an imaging description",
+				PictureBookUtil.imagingDescription(null, bad));
+		}
+		assertNull("no appearance and no reduce yields nothing to persist",
+			PictureBookUtil.imagingDescription(null, new java.util.LinkedHashMap<>()));
 	}
 
 	// ── Pure request-shape tests (always run) ────────────────────────────────

@@ -467,6 +467,89 @@ async function listCharacters(bookObjectId) {
     return resp.json();
 }
 
+// ── Scene character name resolution ──────────────────────────────────
+//
+// A scene's `characters` entries are charPerson objectIds, NOT names: PictureBookUtil.buildSceneEntry
+// resolves the extraction's names to ids and persists `pictureBookScene.characters` as a
+// List<String> of those ids (buildMeta below carries the same field through unchanged). Anything
+// displaying them therefore has to resolve them first — the PB1 reader did not, and rendered raw
+// UUIDs as character badges.
+//
+// Older books, and the {name:...} map shape PictureBookUtil.extractCharName still tolerates, can
+// carry a real name instead. So a non-UUID string is treated as a name and shown as-is rather than
+// discarded, and only an unresolvable UUID is dropped.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Build the objectId → name map for a book's characters.
+ *
+ * Goes through the book's own /characters endpoint rather than querying olio.charPerson from the
+ * client. That is not a shortcut: book characters live in the book world's Population group, which
+ * is olio-principal-owned, and PictureBookUtil.listCharacters reaches them through a deliberate
+ * server-side PBAC-bypassing search AFTER authorizing the book. A client-side charPerson search by
+ * objectId would be denied or silently return nothing.
+ *
+ * Best-effort — a failure must not break the reader. Unresolved ids simply render no badge.
+ * @param {string} bookObjectId  book group objectId
+ * @returns {Promise<Object>} objectId → name
+ */
+async function resolveCharacterNames(bookObjectId) {
+    let names = {};
+    if (!bookObjectId) return names;
+    try {
+        let chars = await listCharacters(bookObjectId);
+        if (Array.isArray(chars)) {
+            chars.forEach(function (c) {
+                if (c && c.objectId && c.name) names[c.objectId] = c.name;
+            });
+        }
+    } catch (e) {
+        console.warn('Could not resolve character names for the scene badges:', e && e.message);
+    }
+    return names;
+}
+
+/**
+ * Resolve one scene `characters` entry to a display name, or null when there is nothing meaningful
+ * to show. Handles both persisted shapes (bare objectId string, {name:...} map).
+ * @param {*} c           a scene `characters` entry
+ * @param {Object} names  objectId → name
+ * @returns {?string}
+ */
+function sceneCharacterLabel(c, names) {
+    let map = names || {};
+    if (!c) return null;
+    if (typeof c === 'string') {
+        if (map[c]) return map[c];
+        // An unresolved UUID is noise, not information — drop it rather than print it.
+        return UUID_RE.test(c) ? null : c;
+    }
+    if (typeof c === 'object') {
+        if (typeof c.name === 'string' && c.name) return c.name;
+        if (c.objectId && map[c.objectId]) return map[c.objectId];
+    }
+    return null;
+}
+
+/**
+ * The de-duplicated, resolved display labels for a scene's characters, in order.
+ * Empty when nothing resolves, so a caller can skip rendering the badge strip entirely.
+ * @param {Array} chars
+ * @param {Object} names  objectId → name
+ * @returns {string[]}
+ */
+function sceneCharacterLabels(chars, names) {
+    if (!Array.isArray(chars)) return [];
+    let labels = [];
+    chars.forEach(function (c) {
+        let label = sceneCharacterLabel(c, names);
+        // De-duplicate: two entries can resolve to one character (a name in the meta plus that
+        // character's objectId), which would otherwise produce two identical badges.
+        if (label && labels.indexOf(label) === -1) labels.push(label);
+    });
+    return labels;
+}
+
 /**
  * Tag an apparel entry with the scene index it should first apply from (see
  * PictureBookUtil.selectSceneApparel) — used after generating a new outfit via the outfit
@@ -594,6 +677,9 @@ export {
     setSceneStatus,
     resetPictureBook,
     listCharacters,
+    resolveCharacterNames,
+    sceneCharacterLabel,
+    sceneCharacterLabels,
     tagApparelSceneIndex,
     buildMeta,
     resolveImageUrl,
