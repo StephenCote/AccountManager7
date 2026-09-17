@@ -72,8 +72,20 @@ ARG TOMCAT_VERSION=11.0.25
 ENV CATALINA_HOME=/opt/tomcat \
     APP_CONTEXT=AccountManagerService7
 
+# dlcdn.apache.org carries ONLY the CURRENT release of each branch. When Apache ships
+# 11.0.N+1, the pinned 11.0.N is rotated off dlcdn to archive.apache.org and this RUN
+# starts failing with `curl: (22) The requested URL returned error: 404` - a time bomb
+# armed on every pinned version, not a mirror outage. It went off 2026-09-17: measured
+# that day, v11.0.25 was 404 on dlcdn and 200 on archive, with dlcdn carrying 11.0.26.
+#
+# So: try the CDN, then fall back to the archive. This keeps the pin authoritative
+# (floating the version to whatever dlcdn happens to hold would make the image
+# non-reproducible and silently change the servlet container under you) while making
+# the build immune to the next rotation.
 RUN apk add --no-cache bash curl gettext openssl nginx supervisor nodejs npm unzip \
-    && curl -fsSL "https://dlcdn.apache.org/tomcat/tomcat-11/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz" -o /tmp/tomcat.tar.gz \
+    && ( curl -fsL "https://dlcdn.apache.org/tomcat/tomcat-11/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz" -o /tmp/tomcat.tar.gz \
+      || ( echo "NOTE: dlcdn no longer carries v${TOMCAT_VERSION}; falling back to archive.apache.org" \
+           && curl -fsSL "https://archive.apache.org/dist/tomcat/tomcat-11/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz" -o /tmp/tomcat.tar.gz ) ) \
     && mkdir -p "$CATALINA_HOME" \
     && tar xzf /tmp/tomcat.tar.gz -C "$CATALINA_HOME" --strip-components=1 \
     && rm /tmp/tomcat.tar.gz \
