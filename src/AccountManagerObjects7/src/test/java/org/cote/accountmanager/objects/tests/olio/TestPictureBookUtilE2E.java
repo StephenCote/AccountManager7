@@ -200,6 +200,21 @@ public class TestPictureBookUtilE2E extends BaseTest {
 	private BaseRecord newSdConfig(String style) throws Exception {
 		BaseRecord cfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
 		if (style != null) cfg.setValue("style", style);
+		/// EXPLICITLY opt this test into landscape generation.
+		///
+		/// It asserts that scene.landscapeObjectId is persisted and discoverable (Steps 3 and 4), so
+		/// it needs a landscape to exist — and landscape generation is now gated on
+		/// PictureBookUtil.landscapeEnabled: a landscape the composite will discard is no longer
+		/// generated, because that cost an LLM prompt call and a full SD pass per scene for nothing.
+		///
+		/// A bare schema-built config does NOT satisfy that gate. compositeMode defaults to "flux2",
+		/// and flux2IncludeLandscapeRef — which declares NO schema default — is still materialised
+		/// as the Java primitive FALSE rather than null, so the flux2Defaults.json resource is never
+		/// consulted (measured; see TestFlux2Composite#aBooleanWithNoSchemaDefaultStillReadsFalse).
+		/// So "unset" reads as "suppress the landscape reference", and the gate correctly skips
+		/// generating one. Saying so here rather than relaxing the assertions: the assertions are
+		/// right, they just now describe a configuration this test has to ask for.
+		cfg.setValue("flux2IncludeLandscapeRef", true);
 		SDUtil.fillStyleDefaults(cfg);
 		return cfg;
 	}

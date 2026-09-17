@@ -568,6 +568,37 @@ async function tagApparelSceneIndex(characterObjectId, apparelObjectId, sceneInd
     return resp.json();
 }
 
+/**
+ * Fold duplicate extracted characters into one.
+ *
+ * The chunked extractor refers to an unnamed character differently in different chunks ("Darby's
+ * dad", "the father", "Dad"). The server canonicalises the spellings that are unambiguously the
+ * same person, but a bare relation in a book with two families cannot be resolved automatically and
+ * is deliberately left separate — this is how the reader resolves those.
+ *
+ * The server repoints BOTH persisted representations of a scene's characters (the scene notes'
+ * names, which the renderer reads, and the meta's objectIds, which the badges read) BEFORE deleting
+ * the duplicates. Returns what actually moved rather than a bare success flag.
+ *
+ * @param {string} bookObjectId   book group objectId
+ * @param {string} keepObjectId   the character to keep
+ * @param {string[]} mergeObjectIds  the duplicates to fold in and delete
+ * @returns {Promise<{keptName:string, mergedNames:string[], scenesRepointed:number, metaUpdated:boolean, failedDeletes:string[]}>}
+ */
+async function mergeCharacters(bookObjectId, keepObjectId, mergeObjectIds) {
+    let resp = await fetch(pbBase() + '/' + bookObjectId + '/characters/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ keepObjectId: keepObjectId, mergeObjectIds: mergeObjectIds })
+    });
+    let body = null;
+    try { body = await resp.json(); } catch (e) { /* non-JSON error body */ }
+    if (!resp.ok) {
+        throw new Error((body && (body.message || body.error)) || ('Merge characters failed: ' + resp.status));
+    }
+    return body;
+}
+
 // ── Image URL resolution ─────────────────────────────────────────────
 // Scene meta stores imageObjectId (UUID) but media URLs require groupPath + name.
 // Fetch the image record once, cache it, build URL using am7client.currentOrganization.
@@ -681,6 +712,7 @@ export {
     sceneCharacterLabel,
     sceneCharacterLabels,
     tagApparelSceneIndex,
+    mergeCharacters,
     buildMeta,
     resolveImageUrl,
     resolveAllImageUrls,

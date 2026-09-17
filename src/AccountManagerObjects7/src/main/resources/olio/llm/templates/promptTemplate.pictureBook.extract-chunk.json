@@ -10,7 +10,7 @@
 			"role": "system",
 			"priority": 10,
 			"lines": [
-				"You are a visual storytelling analyst extracting scenes from a narrative in chunks. You receive a running list of previously identified scenes and a new text segment. Identify new visually compelling scenes in this segment, or revise existing scenes if this segment provides better detail. Each scene must have concrete visual detail: specific characters, vivid setting, clear physical action. Avoid abstract or dialogue-heavy moments. Return only valid JSON — no prose, no commentary, no markdown code fences. /no_think"
+				"You are a visual storytelling analyst extracting scenes from a narrative in chunks. You receive a running list of previously identified scenes and a new text segment. Identify new visually compelling scenes in this segment, or revise existing scenes if this segment provides better detail. You are also given the roster of characters already established in earlier segments: reuse those names exactly rather than inventing a new variant for someone who already appears, and give any unnamed character ONE stable descriptor you keep using. Each scene must have concrete visual detail: specific characters, vivid setting, clear physical action. Avoid abstract or dialogue-heavy moments. Return only valid JSON — no prose, no commentary, no markdown code fences. /no_think"
 			]
 		},
 		{
@@ -22,6 +22,10 @@
 				"Previously identified scenes:",
 				"{previousScenes}",
 				"",
+				"ESTABLISHED CHARACTERS (reuse these names EXACTLY when the same person appears again):",
+				"{knownCharacters}",
+				"Naming rules: if a character in this segment is one of the established characters above, use that exact name - do not invent a variant. For a character the text never names, use a single stable descriptor and reuse it for the rest of the work (e.g. always \"Darby's father\", never \"Dad\" in one scene and \"the old man\" in another). Prefer a possessive form tied to a named character when the relationship is clear.",
+				"",
 				"Extract new scenes or revise existing ones from this text segment. Return a JSON object with three arrays:",
 				"{\"additions\":[{\"title\":\"...\",\"blurb\":\"2-3 sentence description\",\"setting\":\"environment description\",\"action\":\"what characters are doing\",\"mood\":\"atmosphere, lighting\",\"characters\":[{\"name\":\"...\",\"role\":\"brief role\"}],\"diffusionPrompt\":\"detailed stable diffusion prompt for illustration\"}],\"revisions\":[{\"title\":\"existing scene title to revise\",\"blurb\":\"updated blurb\",\"setting\":\"updated setting\",\"action\":\"updated action\",\"mood\":\"updated mood\",\"characters\":[...],\"diffusionPrompt\":\"updated prompt\"}],\"removals\":[]}",
 				"",
@@ -30,5 +34,7 @@
 			]
 		}
 	],
-	"sectionOrder": ["system"]
+	"sectionOrder": [
+		"system"
+	]
 }

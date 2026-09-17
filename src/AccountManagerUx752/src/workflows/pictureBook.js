@@ -201,9 +201,17 @@ const PICTURE_BOOK_STYLE = 'digitalArt';
 //                                  the scene as a board propped against a wall.
 // FLUX.2 sends the references separately and letterboxed with edit-model parameters (cfg 2.5, not
 // the SDXL cfg), verified live against those same fixtures.
+//
+// skipLandscape is pinned TRUE. The landscape reference image is not currently being used by the
+// FLUX.2 composite, and the server generated it anyway: one LLM landscape-prompt call plus one full
+// SD pass per scene, discarded by SceneCompositeUtil when flux2IncludeLandscapeRef is off. Turning
+// it back on is a per-book choice now — uncheck "Skip landscape" in the SD panel and the server
+// (PictureBookUtil.landscapeEnabled) generates and uses it again.
 function pinPictureBookDefaults(entity) {
     entity.compositeMode = 'flux2';
     entity.hires = false;
+    entity.skipLandscape = true;
+    entity.flux2IncludeLandscapeRef = false;
     entity.style = PICTURE_BOOK_STYLE;
     am7sd.fillStyleDefaults(entity);
     return entity;
@@ -1908,6 +1916,12 @@ export function __setPromptStateForTest(mode, single, perPrompt) {
     if (perPrompt) Object.assign(promptTemplates, perPrompt);
 }
 export { getPromptTemplate };
+
+// Test-only seam: pinPictureBookDefaults() is a pure function over one entity, and what it pins is
+// load-bearing — skipLandscape/flux2IncludeLandscapeRef decide whether the server pays for a
+// landscape prompt (LLM) and a landscape image (SD) per scene. Exported for the same reason as the
+// seams above: the alternative is mounting the whole wizard to reach one assignment.
+export { pinPictureBookDefaults };
 
 // Test-only seam: ensureSdConfig() — UAT#3 regression (new-book must use saved sdcfg-default
 // before falling back to randomImageConfig). The function is module-private so it is exported here

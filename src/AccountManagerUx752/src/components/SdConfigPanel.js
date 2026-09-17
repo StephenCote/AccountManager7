@@ -377,6 +377,36 @@ const SdConfigPanel = {
                     checkboxInput(config, "hires", onChange),
                     m("span", "Hi-Res")
                 ])
+            ]),
+
+            /// Negative sense deliberately — skipLandscape is the field name on olio.sd.config, it is
+            /// what ChatService.generateScene has always read, and Ux7's chat panel labelled it
+            /// exactly this way ("Skip landscape"). Rendering an inverted "Generate landscape"
+            /// checkbox over it invites a binding bug for no gain.
+            ///
+            /// Writes flux2IncludeLandscapeRef ALONGSIDE it, so one control governs the whole route:
+            /// generate the landscape AND actually use it. Without that coupling, unchecking this box
+            /// would pay for the landscape and still discard it — a BOOLEAN with no schema default is
+            /// materialised as false, not null, so flux2IncludeLandscapeRef reads false on every
+            /// schema-built config and flux2Defaults.json's includeLandscapeRef is unreachable
+            /// (measured; see SceneCompositeUtil.includesLandscapeReference and
+            /// TestFlux2Composite#aBooleanWithNoSchemaDefaultStillReadsFalse).
+            m("div", { class: "flex items-end h-full pb-1" }, [
+                m("label", {
+                    class: "flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer",
+                    title: "Skip the separate landscape/setting reference image. The setting still reaches the model as prompt text either way. Leaving this on saves one LLM prompt call and one full SD pass per scene; unchecking it generates the landscape and passes it to the composite as the setting reference."
+                }, [
+                    m("input", {
+                        type: "checkbox",
+                        checked: !!config.skipLandscape,
+                        onchange: function (e) {
+                            config.skipLandscape = e.target.checked;
+                            config.flux2IncludeLandscapeRef = !e.target.checked;
+                            if (onChange) onChange();
+                        }
+                    }),
+                    m("span", "Skip landscape")
+                ])
             ])
         ];
         sections.push(m("div", { class: "grid grid-cols-2 gap-3" }, coreFields));

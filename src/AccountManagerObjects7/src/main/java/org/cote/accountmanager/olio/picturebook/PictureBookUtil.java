@@ -26,12 +26,15 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.CharacterUtil;
+import org.cote.accountmanager.olio.ColorUtil;
 import org.cote.accountmanager.olio.EthnicityEnumType;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.RaceEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.WorldUtil;
@@ -175,6 +178,9 @@ public class PictureBookUtil {
     // scene indices the character appears in; ATTR_DESCRIPTION = the LLM-reduced, style/setting-free
     // visual description condensed from those scenes' content blocks — the source used for imaging
     // (read in resolveSceneCharacter). Distinct from the per-character style-override attribute.
+    /// The book meta note's name. It lives in the same Scenes-sibling group walk as the scene notes,
+    /// so anything iterating notes has to skip it by name.
+    static final String META_NOTE_NAME = ".pictureBookMeta";
     public static final String ATTR_SCENE_REFS = "pbSceneRefs";
     public static final String ATTR_DESCRIPTION = "pbDescription";
     // Prepended to ATTR_DESCRIPTION when it drives a portrait render, matching
@@ -241,6 +247,747 @@ public class PictureBookUtil {
             if (sb.length() >= maxChars) break;
         }
         return sb.length() > maxChars ? sb.substring(0, maxChars) : sb.toString();
+    }
+
+    // ── Character name canonicalisation (issue 3: duplicate unnamed characters) ──────────
+    //
+    // createFromScenes de-duplicated scene characters on the EXACT name string
+    // (uniqueChars.containsKey(cname)), so an unnamed character the extraction refers to differently
+    // in different chunks became several charPersons: "Darby's dad", "Darby's Dad", "the father" and
+    // "Dad" are four characters, each with its own portrait, statistics and wardrobe. That is
+    // reported issue 3, and it is worse than cosmetic: scene notes pin characters BY NAME, so the
+    // scenes split across the duplicates too.
+    //
+    // Two halves, and this is the cheap mechanical one - normalise the spellings that are
+    // unambiguously the same person. The judgement calls are left to mergeCharacters().
+
+    /// Leading articles, dropped so "the guard" and "Guard" are one key.
+    /// {@code (?:\s+|$)}, not {@code \s+}: a name that is NOTHING but an article must key to empty
+    /// so callers drop it, rather than surviving as a character literally called "the".
+    private static final Pattern NAME_ARTICLES = Pattern.compile("^(?:the|a|an)(?:\\s+|$)");
+
+    /// Honorifics, dropped so "Mr. Smith" and "Smith" are one key. "Father"/"Sister" are
+    /// deliberately ABSENT: they are also kinship words, and dropping them would fold the priest
+    /// "Father Brown" into a character called "Brown".
+    private static final Pattern NAME_HONORIFICS = Pattern.compile(
+            "^(?:mr|mrs|ms|miss|dr|doctor|prof|professor|sir|madam|madame|lord|lady|"
+            + "capt|captain|sgt|sergeant|lt|lieutenant|officer|const|constable|rev|reverend)(?:\\s+|$)");
+
+    /**
+     * Kinship and role synonyms, mapped to one canonical word. An unnamed character is referred to
+     * by relation, and the relation word is exactly what varies between chunks.
+     *
+     * <p>Only unambiguous synonyms. "pop" maps to father but "popper" must not, which is why the
+     * lookup is whole-token rather than substring.
+     */
+    private static final Map<String, String> NAME_RELATION_SYNONYMS = nameRelationSynonyms();
+
+    private static Map<String, String> nameRelationSynonyms() {
+        Map<String, String> m = new LinkedHashMap<>();
+        for (String w : new String[] { "dad", "daddy", "papa", "pa", "pop", "pops", "father" })
+            m.put(w, "father");
+        for (String w : new String[] { "mom", "mommy", "mum", "mummy", "mama", "ma", "mother" })
+            m.put(w, "mother");
+        for (String w : new String[] { "bro", "brother" }) m.put(w, "brother");
+        for (String w : new String[] { "sis", "sister" }) m.put(w, "sister");
+        for (String w : new String[] { "grandpa", "granddad", "grandad", "gramps", "grandfather" })
+            m.put(w, "grandfather");
+        for (String w : new String[] { "grandma", "grandmom", "granny", "gran", "nana", "grandmother" })
+            m.put(w, "grandmother");
+        for (String w : new String[] { "auntie", "aunty", "aunt" }) m.put(w, "aunt");
+        for (String w : new String[] { "uncle" }) m.put(w, "uncle");
+        for (String w : new String[] { "hubby", "husband" }) m.put(w, "husband");
+        for (String w : new String[] { "wife" }) m.put(w, "wife");
+        for (String w : new String[] { "son", "boy" }) m.put(w, "son");
+        for (String w : new String[] { "daughter", "girl" }) m.put(w, "daughter");
+        for (String w : new String[] { "cousin" }) m.put(w, "cousin");
+        return m;
+    }
+
+    /// The canonical relation words, i.e. the VALUES above. A key consisting of nothing but one of
+    /// these is a BARE relation ("Dad", "the father") - resolvable to a possessive form only when
+    /// the book contains exactly one.
+    private static final Set<String> NAME_RELATIONS = new HashSet<>(NAME_RELATION_SYNONYMS.values());
+
+    /**
+     * The comparison key for a scene-character name: two names sharing a key are the same character.
+     *
+     * <p>Accent- and case-insensitive, punctuation- and possessive-stripped, articles and honorifics
+     * removed, kinship/role words folded to one canonical spelling. So {@code "Darby's Dad"},
+     * {@code "darbys dad"} and {@code "Darby's father"} all key to {@code "darby father"}.
+     *
+     * <p>Returns the trimmed lowercase input when nothing normalises, and an empty string for
+     * nothing usable — callers treat empty as "not a character".
+     */
+    public static String characterNameKey(String rawName) {
+        if (rawName == null) return "";
+        String t = stripAccentsLower(rawName).trim();
+        /// Possessives first: "darby's" -> "darby". Curly apostrophes included - the extraction is
+        /// LLM text, and a model will emit U+2019 as readily as an ASCII quote.
+        t = t.replaceAll("[\u2019\u02bc']s\\b", " ");
+        t = t.replaceAll("[^a-z0-9\\s]", " ").replaceAll("\\s+", " ").trim();
+        if (t.isEmpty()) return "";
+        /// Articles and honorifics can stack ("the Mr. Smith" is unlikely but "the old man" is not),
+        /// so strip repeatedly rather than once.
+        String prev;
+        do {
+            prev = t;
+            t = NAME_ARTICLES.matcher(t).replaceFirst("");
+            t = NAME_HONORIFICS.matcher(t).replaceFirst("");
+        } while (!t.equals(prev) && !t.isEmpty());
+        if (t.isEmpty()) return "";
+
+        /// Drop identity-free filler first, so "Darby's old dad" and "Darby's dad" tokenize alike
+        /// and the possessive rule below sees the relation word as the NEXT token either way.
+        List<String> toks = new ArrayList<>();
+        for (String tok : t.split("\\s+")) {
+            if (tok.isEmpty()) continue;
+            if (tok.equals("old") || tok.equals("young") || tok.equals("little")) continue;
+            toks.add(tok);
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < toks.size(); i++) {
+            String tok = toks.get(i);
+            /// An APOSTROPHE-LESS possessive: "darbys dad". The apostrophised form was already
+            /// handled above, but an LLM drops the apostrophe routinely, and without this
+            /// "darbys dad" keys separately from "Darby's dad" - two characters again.
+            ///
+            /// Scoped to "trailing s immediately before a RELATION word" rather than "any trailing
+            /// s", so an ordinary name is never truncated: "Charles" alone stays "charles". A
+            /// possessor genuinely ending in s does get over-trimmed ("Charles's dad" and
+            /// "Charles dad" both key to "charle father"), which is harmless and in fact required -
+            /// they are the same person, the key is internal, and it is never displayed.
+            boolean nextIsRelation = (i + 1 < toks.size())
+                    && NAME_RELATIONS.contains(NAME_RELATION_SYNONYMS.getOrDefault(toks.get(i + 1), ""));
+            if (nextIsRelation && tok.length() > 2 && tok.endsWith("s")
+                    && !NAME_RELATION_SYNONYMS.containsKey(tok)) {
+                tok = tok.substring(0, tok.length() - 1);
+            }
+            String rel = NAME_RELATION_SYNONYMS.get(tok);
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(rel != null ? rel : tok);
+        }
+        return sb.toString().trim();
+    }
+
+    /**
+     * Resolves each scene-character name the extraction produced to ONE canonical display name, so
+     * the character loop creates one charPerson per person and every scene pins that same name.
+     *
+     * <p>Two rules, in order:
+     * <ol>
+     * <li><b>Same key, same character.</b> {@link #characterNameKey} folds case, accents,
+     *     punctuation, possessives, articles, honorifics and kinship synonyms. Mechanical and safe.</li>
+     * <li><b>A BARE relation joins the only possessive form of that relation.</b> {@code "Dad"} joins
+     *     {@code "Darby's dad"} when Darby's is the ONLY father in the book. When there are two
+     *     fathers it stays separate — a book with two families must not have every "Dad" collapsed
+     *     into one person, and guessing which family is meant is not something this can know.</li>
+     * </ol>
+     *
+     * <p>The FIRST spelling seen wins as the display name, which is what the user asked for: "there
+     * needs to be a way to move/remove a duplicate and use just the first version".
+     *
+     * <p>Order-dependent by construction, so feed it names in scene order. Anything it cannot decide
+     * is left as a separate character for {@code mergeCharacters} to fix by hand.
+     */
+    public static final class CharacterNameResolver {
+        private final Map<String, String> canonicalByKey = new LinkedHashMap<>();
+        /// Key -> canonical display name, for keys that END in a relation word and have a possessor
+        /// ("darby father"). Only these can absorb a bare relation.
+        private final Map<String, List<String>> possessiveKeysByRelation = new LinkedHashMap<>();
+        private final Map<String, String> aliases = new LinkedHashMap<>();
+
+        /**
+         * @return the canonical display name for {@code rawName}, or null when the name is unusable.
+         */
+        public String resolve(String rawName) {
+            if (rawName == null || rawName.trim().isEmpty()) return null;
+            String key = characterNameKey(rawName);
+            if (key.isEmpty()) return null;
+
+            String known = canonicalByKey.get(key);
+            if (known != null) {
+                if (!known.equals(rawName.trim())) aliases.put(rawName.trim(), known);
+                return known;
+            }
+
+            /// Rule 2: a bare relation joins the sole possessive form of the same relation.
+            if (NAME_RELATIONS.contains(key)) {
+                List<String> candidates = possessiveKeysByRelation.get(key);
+                if (candidates != null && candidates.size() == 1) {
+                    String canonical = candidates.get(0);
+                    canonicalByKey.put(key, canonical);
+                    aliases.put(rawName.trim(), canonical);
+                    return canonical;
+                }
+            }
+
+            String display = rawName.trim();
+            canonicalByKey.put(key, display);
+            /// Record the reverse direction too: a possessive form seen AFTER a bare relation must
+            /// not retroactively steal it (the bare one already has its own entry), but it does
+            /// become the anchor for any later bare mention.
+            String[] toks = key.split("\\s+");
+            if (toks.length > 1 && NAME_RELATIONS.contains(toks[toks.length - 1])) {
+                possessiveKeysByRelation
+                    .computeIfAbsent(toks[toks.length - 1], k -> new ArrayList<>())
+                    .add(display);
+            }
+            return display;
+        }
+
+        /** Raw name -> canonical name, for every name that was folded into another. */
+        public Map<String, String> getAliases() {
+            return aliases;
+        }
+
+        /** The canonical display names, in first-seen order. */
+        public List<String> getCanonicalNames() {
+            return new ArrayList<>(new java.util.LinkedHashSet<>(canonicalByKey.values()));
+        }
+    }
+
+    /**
+     * Result of {@link #mergeCharacters}: what actually moved, so the caller can report it rather
+     * than asserting success.
+     */
+    public static final class MergeResult {
+        /** The surviving character's name. */
+        public String keptName;
+        /** Names of the characters that were folded in and deleted. */
+        public final List<String> mergedNames = new ArrayList<>();
+        /** Scene notes whose character list was rewritten. */
+        public int scenesRepointed;
+        /** Whether the book meta's scene character ids were rewritten. */
+        public boolean metaUpdated;
+        /** Characters that could not be deleted after their references moved. */
+        public final List<String> failedDeletes = new ArrayList<>();
+    }
+
+    /**
+     * Rewrite one scene note's character list, in place on the note's {@code text} JSON, replacing
+     * every reference to a dropped character with the keeper.
+     *
+     * <p>Scene characters are persisted in TWO shapes and BOTH have to be handled: the note's text
+     * JSON keeps the extraction's {@code [{name, role}]} maps (which is what
+     * {@link #resolveSceneCharacter} resolves at imaging time — scene notes pin characters BY
+     * NAME), while the book meta keeps a list of charPerson objectIds. Rewriting only one of them
+     * leaves the book internally inconsistent: the Ux badges and the renderer would disagree about
+     * who is in a scene.
+     *
+     * <p>Name matching goes through {@link #characterNameKey}, not string equality, so a scene that
+     * spells the dropped character differently again is still repointed.
+     *
+     * <p>De-duplicates as it goes: a scene listing both "Dad" and "Darby's dad" must end up with
+     * ONE entry, or the scene renders the same person twice and the two-character composite slots
+     * are wasted on one person.
+     *
+     * @return true when the scene was changed and persisted
+     */
+    @SuppressWarnings("unchecked")
+    private static boolean repointSceneCharacters(BaseRecord user, BaseRecord scene,
+            Set<String> dropKeys, Set<String> dropOids, String keepName, String keepOid) {
+        try {
+            String existingText = scene.get("text");
+            if (existingText == null || existingText.isEmpty()) return false;
+            Map<String, Object> textData;
+            try {
+                textData = JSONUtil.getMap(existingText.getBytes(StandardCharsets.UTF_8), String.class, Object.class);
+            } catch (Exception ex) {
+                logger.warn("mergeCharacters: unparseable text on scene "
+                        + scene.get(FieldNames.FIELD_OBJECT_ID) + " - left untouched");
+                return false;
+            }
+            Object charsObj = textData.get("characters");
+            if (!(charsObj instanceof List)) return false;
+
+            List<Object> chars = (List<Object>) charsObj;
+            List<Object> out = new ArrayList<>();
+            Set<String> seen = new HashSet<>();
+            boolean changed = false;
+            for (Object sc : chars) {
+                Object entry = sc;
+                if (sc instanceof Map) {
+                    Map<String, Object> cm = (Map<String, Object>) sc;
+                    Object raw = cm.get("name");
+                    if (raw instanceof String
+                            && dropKeys.contains(characterNameKey((String) raw))) {
+                        cm.put("name", keepName);
+                        changed = true;
+                    }
+                }
+                else if (sc instanceof String) {
+                    String v = (String) sc;
+                    if (dropOids.contains(v) || dropKeys.contains(characterNameKey(v))) {
+                        entry = (keepOid != null && dropOids.contains(v)) ? keepOid : keepName;
+                        changed = true;
+                    }
+                }
+                /// Identity for de-duplication: the name for a map entry, the value for a string.
+                String identity;
+                if (entry instanceof Map) {
+                    Object n = ((Map<String, Object>) entry).get("name");
+                    identity = (n instanceof String) ? characterNameKey((String) n) : String.valueOf(n);
+                }
+                else {
+                    identity = characterNameKey(String.valueOf(entry));
+                }
+                if (!identity.isEmpty() && !seen.add(identity)) {
+                    /// Already present - this entry is a duplicate created BY the merge.
+                    changed = true;
+                    continue;
+                }
+                out.add(entry);
+            }
+            if (!changed) return false;
+
+            textData.put("characters", out);
+            scene.set("text", JSONUtil.exportObject(textData));
+            /// Never discard the update result - it is the only signal that the rewrite landed, and
+            /// swallowing it turns a persistent failure into a silent no-op
+            /// (.claude/rules/model-api.md).
+            if (IOSystem.getActiveContext().getAccessPoint().update(user, scene) == null) {
+                logger.error("mergeCharacters: FAILED to persist the repointed character list on scene "
+                        + scene.get(FieldNames.FIELD_OBJECT_ID)
+                        + " - that scene still references the merged-away character");
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            logger.warn("mergeCharacters: failed to repoint scene "
+                    + scene.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Merge duplicate extracted characters into one: move every scene reference onto {@code keep},
+     * union their scene-reference attributes, then delete the duplicates.
+     *
+     * <p><b>Why an endpoint and not just better extraction.</b> Canonicalisation
+     * ({@link #canonicalizeSceneCharacterNames}) folds the spellings that are unambiguously the
+     * same person, and the {@code knownCharacters} roster reduces how many the model invents in the
+     * first place — but neither can decide whether the bare "Dad" in a book with two families is
+     * Darby's or Mia's. Those are left as separate characters ON PURPOSE, and this is how they get
+     * resolved: by the person who read the book.
+     *
+     * <p><b>Order is load-bearing.</b> References are repointed BEFORE the duplicate is deleted. The
+     * reverse order would leave scenes naming a character that no longer exists, and because scene
+     * notes pin characters by NAME those scenes would silently resolve nothing at render time — no
+     * portrait, {@code refs=0}, a character-free image. That is the same failure mode that was
+     * already diagnosed once when characters moved group.
+     *
+     * <p><b>Both representations are rewritten</b> — the scene notes' names and the book meta's
+     * objectIds. See {@link #repointSceneCharacters}.
+     *
+     * <p>The keeper's {@code ATTR_SCENE_REFS} becomes the UNION of the merged characters' scene
+     * indices, so scene-tagged apparel selection still sees every scene the person appears in.
+     *
+     * @param keepObjectId  the charPerson to keep — "use just the first version"
+     * @param dropObjectIds the duplicates to fold in and delete
+     * @throws PictureBookException 404 for an unknown book/character, 403 when the book denies the
+     *         write, 400 for a request that is not a merge (no duplicates, or keep listed as a drop)
+     */
+    @SuppressWarnings("unchecked")
+    public static MergeResult mergeCharacters(BaseRecord user, String bookObjectId,
+            String keepObjectId, List<String> dropObjectIds) {
+        if (keepObjectId == null || keepObjectId.isEmpty()) {
+            throw new PictureBookException(400, "keepObjectId is required");
+        }
+        if (dropObjectIds == null || dropObjectIds.isEmpty()) {
+            throw new PictureBookException(400, "At least one character to merge is required");
+        }
+        if (dropObjectIds.contains(keepObjectId)) {
+            throw new PictureBookException(400, "A character cannot be merged into itself");
+        }
+
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        BaseRecord bookGroup = resolveBookGroupEither(user, bookObjectId, orgId);
+        if (bookGroup == null) throw new PictureBookException(404, "Book not found");
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+
+        /// A merge deletes records and rewrites every scene in the book, so it needs UPDATE on the
+        /// book group - not merely the ability to read a character. Same PBAC evaluator
+        /// authorizeSceneRecord uses, for the same reason: the coarse @RolesAllowed on the endpoint
+        /// says "is a user", never "may act on THIS book".
+        PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil()
+                .canUpdate(user, user, bookGroup);
+        if (prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+            logger.warn("mergeCharacters: denied UPDATE on book group "
+                    + bookGroup.get(FieldNames.FIELD_NAME) + " for user " + user.get(FieldNames.FIELD_NAME));
+            throw new PictureBookException(403, "Not authorized for this book");
+        }
+
+        /// The characters group is derived SERVER-SIDE from the book's own world, never from a
+        /// user-writable path in the meta note - the same trusted derivation listCharacters uses,
+        /// and for the same reason (a tampered meta would otherwise point this at another user's
+        /// population group, and this path DELETES).
+        BaseRecord charsGroup = resolveTrustedCharsGroup(user,
+                metaPb2BookObjectId(user, bookGroupPath, bookObjectId), bookGroupPath, orgId);
+        if (charsGroup == null) throw new PictureBookException(404, "Book characters not found");
+        long charsGroupId = ((Number) charsGroup.get(FieldNames.FIELD_ID)).longValue();
+
+        BaseRecord keep = findBookCharacterById(user, keepObjectId, charsGroupId, orgId);
+        if (keep == null) throw new PictureBookException(404, "Character to keep not found in this book");
+        String keepName = keep.get(FieldNames.FIELD_NAME);
+
+        MergeResult result = new MergeResult();
+        result.keptName = keepName;
+
+        List<BaseRecord> drops = new ArrayList<>();
+        Set<String> dropKeys = new HashSet<>();
+        Set<String> dropOids = new HashSet<>();
+        for (String oid : dropObjectIds) {
+            if (oid == null || oid.isEmpty()) continue;
+            BaseRecord d = findBookCharacterById(user, oid, charsGroupId, orgId);
+            if (d == null) throw new PictureBookException(404, "Character to merge not found in this book: " + oid);
+            drops.add(d);
+            dropOids.add(oid);
+            String dn = d.get(FieldNames.FIELD_NAME);
+            String dk = characterNameKey(dn);
+            /// A duplicate whose name keys the SAME as the keeper's would make the repoint below
+            /// match the keeper too. That cannot happen through the Ux (canonicalisation would have
+            /// folded them), but a hand-built request could, and the consequence - rewriting the
+            /// keeper's own entries - is silent.
+            if (!dk.isEmpty() && !dk.equals(characterNameKey(keepName))) dropKeys.add(dk);
+            result.mergedNames.add(dn);
+        }
+
+        /// 1. Scene notes FIRST - by name, which is what the renderer reads.
+        BaseRecord scenesGroup = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                ModelNames.MODEL_GROUP, bookGroupPath + "/Scenes", GroupEnumType.DATA.toString(), orgId);
+        if (scenesGroup != null) {
+            Query nq = QueryUtil.createQuery(ModelNames.MODEL_NOTE,
+                    FieldNames.FIELD_GROUP_ID, scenesGroup.get(FieldNames.FIELD_ID));
+            nq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            nq.planMost(false);
+            nq.setCache(false);
+            BaseRecord[] notes = IOSystem.getActiveContext().getAccessPoint().list(user, nq).getResults();
+            if (notes != null) {
+                for (BaseRecord note : notes) {
+                    String nname = note.get(FieldNames.FIELD_NAME);
+                    if (META_NOTE_NAME.equals(nname)) continue;
+                    if (repointSceneCharacters(user, note, dropKeys, dropOids, keepName, keepObjectId)) {
+                        result.scenesRepointed++;
+                    }
+                }
+            }
+        }
+        else {
+            logger.warn("mergeCharacters: no Scenes group under " + bookGroupPath
+                    + " - no scene notes were repointed");
+        }
+
+        /// 2. The book meta's objectId lists - what the Ux badges read.
+        result.metaUpdated = repointMetaCharacters(user, bookGroupPath, dropOids, keepObjectId);
+
+        /// 3. Union the scene references onto the keeper, so scene-tagged apparel selection still
+        /// sees every scene this person appears in.
+        unionSceneRefs(user, keep, drops);
+
+        /// 4. Only now delete the duplicates, with their own foreign sub-records (profile,
+        /// narrative, statistics, store, instinct, personality, state), which live outside the
+        /// book's group subtree and would otherwise be orphaned - the same list and the same reason
+        /// as the book-delete walk.
+        for (BaseRecord d : drops) {
+            if (!deleteBookCharacter(user, d)) {
+                result.failedDeletes.add((String) d.get(FieldNames.FIELD_NAME));
+            }
+        }
+
+        logger.info("mergeCharacters: merged " + result.mergedNames + " into '" + keepName
+                + "' (" + result.scenesRepointed + " scene(s) repointed, meta "
+                + (result.metaUpdated ? "updated" : "unchanged")
+                + (result.failedDeletes.isEmpty() ? "" : ", FAILED to delete " + result.failedDeletes) + ")");
+        return result;
+    }
+
+    /**
+     * The {@code pb2BookObjectId} recorded in the book meta, falling back to the request id.
+     *
+     * <p>Read ONLY as an authorization-checked object-id HINT, never as a group path: it is resolved
+     * through {@code deriveTrustedCharsGroupPath} → {@code readBook} → {@code AccessPoint} canRead,
+     * so a tampered value yields the legacy fallback rather than another user's group. Same contract
+     * as {@link #listCharacters}' use of it.
+     */
+    private static String metaPb2BookObjectId(BaseRecord user, String bookGroupPath, String fallback) {
+        try {
+            BaseRecord metaRec = loadMeta(user, bookGroupPath);
+            if (metaRec != null) {
+                String metaJson = metaRec.get("text");
+                if (metaJson != null && !metaJson.isEmpty()) {
+                    Map<String, Object> meta = JSONUtil.getMap(metaJson.getBytes(StandardCharsets.UTF_8),
+                            String.class, Object.class);
+                    Object pb2 = meta.get("pb2BookObjectId");
+                    if (pb2 instanceof String && !((String) pb2).isBlank()) return ((String) pb2).trim();
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Could not read pb2BookObjectId from the book meta: " + e.getMessage());
+        }
+        return fallback;
+    }
+
+    /**
+     * Rewrite the book meta's {@code scenes[].characters} objectId lists, replacing dropped ids with
+     * the keeper and de-duplicating. Returns true when the meta was changed and persisted.
+     */
+    @SuppressWarnings("unchecked")
+    private static boolean repointMetaCharacters(BaseRecord user, String bookGroupPath,
+            Set<String> dropOids, String keepOid) {
+        try {
+            BaseRecord metaRec = loadMeta(user, bookGroupPath);
+            if (metaRec == null) return false;
+            String metaJson = metaRec.get("text");
+            if (metaJson == null || metaJson.isEmpty()) return false;
+            Map<String, Object> meta = JSONUtil.getMap(metaJson.getBytes(StandardCharsets.UTF_8),
+                    String.class, Object.class);
+            Object scenesObj = meta.get("scenes");
+            if (!(scenesObj instanceof List)) return false;
+            boolean changed = false;
+            for (Object so : (List<Object>) scenesObj) {
+                if (!(so instanceof Map)) continue;
+                Map<String, Object> sm = (Map<String, Object>) so;
+                Object cl = sm.get("characters");
+                if (!(cl instanceof List)) continue;
+                List<Object> out = new ArrayList<>();
+                Set<String> seen = new HashSet<>();
+                for (Object c : (List<Object>) cl) {
+                    Object v = c;
+                    if (c instanceof String && dropOids.contains(c)) {
+                        v = keepOid;
+                        changed = true;
+                    }
+                    String id = String.valueOf(v);
+                    if (!seen.add(id)) { changed = true; continue; }
+                    out.add(v);
+                }
+                sm.put("characters", out);
+            }
+            if (!changed) return false;
+            metaRec.set("text", JSONUtil.exportObject(meta));
+            /// A PATCH, not a full-object update. loadMeta reads the note with planMost(TRUE), and
+            /// handing that back to update() re-persists the whole populated graph - which
+            /// .claude/rules/model-api.md warns can demand extra role grants and fail silently.
+            /// `name` is in the field list deliberately: data.note inherits common.nameId, whose
+            /// name carries a \S validation rule, and the writer validates THE PATCH rather than the
+            /// merged result - so a patch without it is rejected while the update call still returns
+            /// a value most callers would discard.
+            BaseRecord metaPatch = metaRec.copyRecord(new String[] {
+                    FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "text" });
+            if (IOSystem.getActiveContext().getAccessPoint().update(user, metaPatch) == null) {
+                logger.error("mergeCharacters: FAILED to persist the repointed book meta - the Ux "
+                        + "character badges will still show the merged-away character");
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            logger.warn("mergeCharacters: failed to repoint the book meta: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Make the keeper's {@link #ATTR_SCENE_REFS} the union of its own and the merged characters'
+     * scene indices, so {@code selectSceneApparel} still resolves for every scene the person is in.
+     *
+     * <p>Mutates the EXISTING attribute record and persists THAT directly — an attribute is
+     * {@code referenced} storage, not a column, so folding it into a parent patch produces either an
+     * empty SQL {@code SET} clause or a silent no-op (.claude/rules/model-api.md).
+     */
+    private static void unionSceneRefs(BaseRecord user, BaseRecord keep, List<BaseRecord> drops) {
+        try {
+            java.util.TreeSet<Integer> refs = new java.util.TreeSet<>();
+            refs.addAll(parseSceneRefs(AttributeUtil.getAttributeValue(keep, ATTR_SCENE_REFS, (String) null)));
+            for (BaseRecord d : drops) {
+                refs.addAll(parseSceneRefs(AttributeUtil.getAttributeValue(d, ATTR_SCENE_REFS, (String) null)));
+            }
+            if (refs.isEmpty()) return;
+            String csv = refs.stream().map(String::valueOf)
+                    .collect(java.util.stream.Collectors.joining(","));
+            BaseRecord existing = AttributeUtil.getAttribute(keep, ATTR_SCENE_REFS);
+            if (existing != null) {
+                existing.setFlex(FieldNames.FIELD_VALUE, csv);
+                if (!IOSystem.getActiveContext().getRecordUtil().updateRecord(existing)) {
+                    logger.warn("mergeCharacters: failed to update " + ATTR_SCENE_REFS + " on "
+                            + keep.get(FieldNames.FIELD_NAME));
+                }
+            }
+            else {
+                IOSystem.getActiveContext().getRecordUtil().createRecord(
+                        AttributeUtil.addAttribute(keep, ATTR_SCENE_REFS, csv));
+            }
+        } catch (Exception e) {
+            logger.warn("mergeCharacters: failed to union " + ATTR_SCENE_REFS + ": " + e.getMessage());
+        }
+    }
+
+    /** Parse an {@link #ATTR_SCENE_REFS} CSV, skipping anything non-numeric. */
+    public static List<Integer> parseSceneRefs(String csv) {
+        List<Integer> out = new ArrayList<>();
+        if (csv == null || csv.isBlank()) return out;
+        for (String tok : csv.split(",")) {
+            try { out.add(Integer.valueOf(tok.trim())); } catch (NumberFormatException nfe) { /* skip */ }
+        }
+        return out;
+    }
+
+    /**
+     * Delete one book character and its own foreign sub-records. Same field list and rationale as
+     * the book-delete walk: those records live in shared {@code ~/Profiles}/{@code ~/Narratives}
+     * buckets or the world's groups, not under the book's Characters subtree, so nothing else would
+     * ever reach them. Each is created fresh per character, so this cannot orphan another
+     * character's data.
+     */
+    private static boolean deleteBookCharacter(BaseRecord user, BaseRecord charPerson) {
+        boolean ok = true;
+        /// The portrait FIRST, while the profile that points at it still exists.
+        ///
+        /// AccessPoint.delete does not cascade, and the portrait is a data.data in the book world's
+        /// Gallery group - OUTSIDE this character's own record graph. Deleting the profile without
+        /// it leaves the image orphaned in the gallery forever, with no owner to reach it from. The
+        /// book-delete walk gets these via its group sweep; a per-character delete has no sweep, so
+        /// it has to do this explicitly.
+        ///
+        /// populate() first: "portrait" is a foreign data.data field, so a projection that merely
+        /// names "profile" returns the profile's default query fields and portrait reads null - the
+        /// same two-step this class already uses at the reimage call site.
+        try {
+            BaseRecord profile = charPerson.get(FieldNames.FIELD_PROFILE);
+            if (profile != null) {
+                Long pid = profile.get(FieldNames.FIELD_ID);
+                if (pid != null && pid > 0L) {
+                    IOSystem.getActiveContext().getReader().populate(profile, new String[] { "portrait" });
+                    BaseRecord portrait = profile.get("portrait");
+                    Long portraitId = (portrait != null) ? portrait.get(FieldNames.FIELD_ID) : null;
+                    if (portraitId != null && portraitId > 0L) {
+                        IOSystem.getActiveContext().getAccessPoint().delete(user, portrait);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            /// A leaked image is not worth failing the merge over - the references have already
+            /// moved by this point, so aborting here would leave the book in a worse state than an
+            /// orphaned thumbnail.
+            logger.warn("mergeCharacters: could not delete " + charPerson.get(FieldNames.FIELD_NAME)
+                    + "'s portrait image (left in the gallery): " + e.getMessage());
+        }
+        String[] charForeignFields = new String[] {
+                "profile", "narrative", OlioFieldNames.FIELD_STATISTICS, FieldNames.FIELD_STORE,
+                OlioFieldNames.FIELD_INSTINCT, FieldNames.FIELD_PERSONALITY, FieldNames.FIELD_STATE
+        };
+        for (String f : charForeignFields) {
+            try {
+                BaseRecord fk = charPerson.get(f);
+                Long fkId = (fk != null) ? fk.get(FieldNames.FIELD_ID) : null;
+                if (fkId != null && fkId > 0L) {
+                    IOSystem.getActiveContext().getAccessPoint().delete(user, fk);
+                }
+            } catch (Exception e) {
+                logger.warn("mergeCharacters: failed to delete "
+                        + charPerson.get(FieldNames.FIELD_NAME) + "'s " + f + ": " + e.getMessage());
+                ok = false;
+            }
+        }
+        try {
+            if (!IOSystem.getActiveContext().getAccessPoint().delete(user, charPerson)) {
+                logger.error("mergeCharacters: failed to delete merged character "
+                        + charPerson.get(FieldNames.FIELD_NAME));
+                ok = false;
+            }
+        } catch (Exception e) {
+            logger.error("mergeCharacters: failed to delete merged character "
+                    + charPerson.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+            ok = false;
+        }
+        return ok;
+    }
+
+    /**
+     * One book character by objectId, CONSTRAINED to the book's own characters group.
+     *
+     * <p>The group condition is the compartment boundary, and it is not optional:
+     * {@code AccessPoint.list} authorizes the query SHAPE and returns whatever search returned with
+     * no per-record filtering, so an org-wide by-objectId lookup would happily return another user's
+     * character (.claude/rules/model-api.md). This path deletes.
+     */
+    private static BaseRecord findBookCharacterById(BaseRecord user, String objectId,
+            long charsGroupId, long orgId) {
+        Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
+        q.field(FieldNames.FIELD_GROUP_ID, charsGroupId);
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+                "profile", "narrative", OlioFieldNames.FIELD_STATISTICS, FieldNames.FIELD_STORE,
+                OlioFieldNames.FIELD_INSTINCT, FieldNames.FIELD_PERSONALITY, FieldNames.FIELD_STATE,
+                FieldNames.FIELD_ATTRIBUTES });
+        q.setCache(false);
+        BaseRecord[] found = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
+        return (found != null && found.length > 0) ? found[0] : null;
+    }
+
+    /**
+     * Rewrite every scene's {@code characters[].name} to its canonical spelling, IN PLACE, and
+     * return the alias map that was applied.
+     *
+     * <p>One pass, before anything else reads the scene list, because everything downstream keys on
+     * that name and they all benefit at once:
+     * <ul>
+     * <li>the {@code uniqueChars} map creates ONE charPerson per person instead of one per spelling;</li>
+     * <li>{@code charSceneIndices}/{@code charBlocks} aggregate every alias's scenes and passages
+     *     under one character, so the reduce step sees ALL of that character's text — previously
+     *     "Darby's dad" and "the father" each got a partial view and therefore a different
+     *     appearance;</li>
+     * <li>{@code createSceneNote} persists the canonical name, which is what
+     *     {@code resolveSceneCharacter} resolves at imaging time (scene notes pin characters BY
+     *     NAME);</li>
+     * <li>{@code buildSceneEntry} maps it to the one charPerson objectId.</li>
+     * </ul>
+     *
+     * <p>{@code seedNames} is applied to the resolver FIRST, so when Step 3 supplied a curated
+     * character list those names are authoritative and scene mentions fold onto them rather than the
+     * other way round.
+     *
+     * <p>Tolerates both persisted shapes ({@code {name:...}} map, bare string) exactly as the
+     * readers around it do, and leaves any entry it cannot resolve untouched.
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, String> canonicalizeSceneCharacterNames(List<Map<String, Object>> sceneList,
+            List<String> seedNames) {
+        CharacterNameResolver resolver = new CharacterNameResolver();
+        if (seedNames != null) {
+            for (String seed : seedNames) resolver.resolve(seed);
+        }
+        if (sceneList == null) return resolver.getAliases();
+        for (Map<String, Object> scene : sceneList) {
+            Object charsObj = (scene != null) ? scene.get("characters") : null;
+            if (!(charsObj instanceof List)) continue;
+            List<Object> chars = (List<Object>) charsObj;
+            for (int i = 0; i < chars.size(); i++) {
+                Object sc = chars.get(i);
+                if (sc instanceof Map) {
+                    Map<String, Object> cm = (Map<String, Object>) sc;
+                    Object raw = cm.get("name");
+                    if (!(raw instanceof String)) continue;
+                    String canonical = resolver.resolve((String) raw);
+                    if (canonical != null) cm.put("name", canonical);
+                }
+                else if (sc instanceof String) {
+                    /// A bare string entry is a NAME only in the pre-buildSceneEntry shape this
+                    /// method runs against; an objectId string appears only in the persisted meta,
+                    /// which this never sees. Guarded anyway - a UUID keys to itself, so resolve()
+                    /// returns it unchanged and the entry is a no-op.
+                    String canonical = resolver.resolve((String) sc);
+                    if (canonical != null) chars.set(i, canonical);
+                }
+            }
+        }
+        Map<String, String> aliases = resolver.getAliases();
+        if (!aliases.isEmpty()) {
+            logger.info("Character name canonicalisation folded " + aliases.size()
+                    + " alias(es) into an existing character: " + aliases);
+        }
+        return aliases;
     }
 
     /**
@@ -636,7 +1383,7 @@ public class PictureBookUtil {
         if (grp == null) return null;
 
         Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
-        q.field(FieldNames.FIELD_NAME, ".pictureBookMeta");
+        q.field(FieldNames.FIELD_NAME, META_NOTE_NAME);
         q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
         q.planMost(true);
         return IOSystem.getActiveContext().getAccessPoint().find(user, q);
@@ -663,7 +1410,7 @@ public class PictureBookUtil {
 
         // Create new data.note
         ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
-        plist.parameter(FieldNames.FIELD_NAME, ".pictureBookMeta");
+        plist.parameter(FieldNames.FIELD_NAME, META_NOTE_NAME);
         try {
             BaseRecord newRec = IOSystem.getActiveContext().getFactory().newInstance(
                     ModelNames.MODEL_NOTE, user, null, plist);
@@ -936,6 +1683,264 @@ public class PictureBookUtil {
         }
     }
 
+    /// Opening tokens every machine-written portrait prompt in this pipeline carries —
+    /// {@link #PORTRAIT_QUALITY_PREAMBLE}, {@code NarrativeUtil.buildPortraitPromptFromExtractedData}
+    /// and {@code NarrativeUtil.getSDPrompt} all start with exactly this. Used to tell a GENERATED
+    /// {@code narrative.sdPrompt} (safe to regenerate) from a HAND-EDITED one (must be preserved and
+    /// must win) — the Manage Characters screen deliberately offers the full generic editor so
+    /// {@code narrative.sdPrompt} can be written by hand, and silently overwriting that on every
+    /// render would delete the user's work.
+    private static final String GENERATED_PROMPT_PREFIX =
+            "8k highly detailed ((highest quality)) ((ultra realistic))";
+
+    /**
+     * Was this stored {@code narrative.sdPrompt} written by a HUMAN rather than by the pipeline?
+     *
+     * <p>Every machine-written portrait prompt here starts with {@link #GENERATED_PROMPT_PREFIX};
+     * anything else came from the generic editor, which the Manage Characters screen deliberately
+     * links to for exactly this purpose. A hand-written prompt is never regenerated and always wins
+     * for the portrait render — so the record-driven refresh cannot silently delete the user's work.
+     *
+     * <p>Blank/absent counts as NOT hand-written (there is nothing to preserve).
+     */
+    public static boolean isHandWrittenPrompt(String sdPrompt) {
+        return sdPrompt != null && !sdPrompt.isBlank()
+                && !sdPrompt.trim().startsWith(GENERATED_PROMPT_PREFIX);
+    }
+
+    /**
+     * Holder for a character's narrative descriptions rebuilt from the persisted record.
+     * {@code narration} is the composed, style- and setting-free imaging text; the three parts are
+     * kept separately because they are also what gets written back onto {@code olio.narrative}.
+     */
+    private static final class RecordNarrative {
+        final String physical;
+        final String outfit;
+        final String statistics;
+        final String narration;
+        RecordNarrative(String physical, String outfit, String statistics, String narration) {
+            this.physical = physical;
+            this.outfit = outfit;
+            this.statistics = statistics;
+            this.narration = narration;
+        }
+    }
+
+    /**
+     * Compose the imaging narration from a character's three narrative descriptions: appearance,
+     * then statistics, then outfit. Pure string work, exposed for direct assertion.
+     *
+     * <p>Order is deliberate. Appearance first (what the character looks like), statistics second
+     * (build/condition/bearing), outfit last — so the clause nearest the end of the prompt, where
+     * diffusion models weight hardest, is the clothing, which is the part a scene most often needs
+     * to override per scene via scene-tagged apparel.
+     *
+     * <p>Carries no art style and no setting: the book's ONE style is applied exactly once
+     * downstream by {@link #appendConfigStyleOnce}, and the scene supplies its own
+     * setting/action/mood. This is the whole reason the composition is here rather than reusing
+     * {@code NarrativeUtil.getSDPrompt}, which bakes a RANDOM style and a RANDOM era/setting in.
+     */
+    public static String composeRecordNarration(String physical, String statistics, String outfit) {
+        StringBuilder sb = new StringBuilder();
+        for (String part : new String[] { physical, statistics, outfit }) {
+            if (part == null) continue;
+            String t = part.trim();
+            if (t.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(sb.charAt(sb.length() - 1) == '.' ? " " : ". ");
+            sb.append(t);
+        }
+        return sb.length() > 0 ? sb.toString() : null;
+    }
+
+    /**
+     * Rebuild a character's narrative descriptions FROM THE PERSISTED RECORD, persist them back onto
+     * {@code olio.narrative}, and return the composed imaging narration.
+     *
+     * <p><b>Why this exists — issue 2.</b> Every description the imaging path used was a frozen
+     * LLM string written once at extraction: the {@code pbDescription} attribute (the reduce step's
+     * output, or the extraction's {@code appearance}), and {@code narrative.physicalDescription},
+     * which {@code ensureNarrative} overwrites with
+     * {@code NarrativeUtil.buildPortraitPromptFromExtractedData}. None of them was derived from the
+     * charPerson, so:
+     * <ul>
+     * <li>they disagreed with the record — hair/eye colour came from the random race palette until
+     *     {@code createCharPerson} started seeding them from the extraction (see
+     *     {@link #mapPersonColorOverride}), and statistics/apparel are not written until AFTER
+     *     {@code ensureNarrative} runs, so a creation-time narrative cannot describe them at all;</li>
+     * <li>every post-extraction edit in the Manage Characters screen — the statistics sliders, the
+     *     outfit builder, an apparel change, anything through the generic editor — was invisible to
+     *     image generation, which is the reported "inconsistent or wrong, sometimes wildly so".</li>
+     * </ul>
+     *
+     * <p>Three things make it correct rather than merely different:
+     * <ol>
+     * <li><b>A genuinely fresh read.</b> {@code setCache(false)} plus an explicit {@code Query} is
+     *     mandatory here, not defensive: the Ux edits statistics and apparel as NESTED records, and
+     *     {@code CacheDBSearch.clearCache} only invalidates cache entries matching the updated
+     *     record's OWN schema+identity — so a charPerson cached earlier in this same request still
+     *     carries the pre-edit statistics. See {@code .claude/rules/model-api.md}.</li>
+     * <li><b>A refreshed profile.</b> {@code ProfileUtil} memoizes {@code PersonalityProfile} by
+     *     person id in a process-wide map that nothing invalidates, so {@code getProfile} would hand
+     *     back statistics from whenever the character was first analysed. {@code updateProfile}
+     *     re-derives it from the record we just read.</li>
+     * <li><b>{@code describeOutfit} off the record, not the profile.</b> The plain-BaseRecord
+     *     overload reads {@code store.apparel} through {@code ApparelUtil.getWearing}, which is where
+     *     the outfit builder's output actually lives.</li>
+     * </ol>
+     *
+     * <p>Returns null when the record cannot be read or yields nothing describable; the caller then
+     * falls back to the legacy frozen strings rather than rendering a character with no description.
+     * Persistence is best-effort and deliberately NOT a precondition of the return value — writing
+     * the narrative back is for inspectability in the Ux, and a PBAC denial on the world-owned
+     * narrative must not stop this render.
+     */
+    private static RecordNarrative refreshNarrativeFromRecord(BaseRecord user, BaseRecord charPerson, String cname) {
+        if (charPerson == null) return null;
+        String oid = charPerson.get(FieldNames.FIELD_OBJECT_ID);
+        if (oid == null) return null;
+        try {
+            /// A fresh, fully-planned read. OlioUtil.planMost is the canonical Olio projection (it
+            /// prunes the branches that would otherwise blow past PostgreSQL's 100-argument limit);
+            /// setCache(false) is what makes a just-edited nested statistics/apparel record visible.
+            Query fq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, oid);
+            fq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+            OlioUtil.planMost(fq);
+            fq.setCache(false);
+            BaseRecord full = IOSystem.getActiveContext().getAccessPoint().find(user, fq);
+            if (full == null) {
+                logger.warn("Record-driven description for " + cname
+                        + ": could not re-read the charPerson fully - falling back to the stored description");
+                return null;
+            }
+
+            String physical = null;
+            String statistics = null;
+            /// describeOutfit's plain-BaseRecord overload needs no profile, so the outfit survives
+            /// even when personality/statistics are too sparse to analyse.
+            String outfit = NarrativeUtil.describeOutfit(full, false);
+            try {
+                /// updateProfile, not getProfile: see (2) above.
+                PersonalityProfile pp = ProfileUtil.updateProfile(null, full);
+                if (pp != null) {
+                    physical = NarrativeUtil.describePhysical(pp);
+                    statistics = NarrativeUtil.describeStatistics(pp);
+                }
+            } catch (Exception pe) {
+                /// A character with no personality/instinct (created with no OlioContext, so
+                /// buildRandomBaseline returned null) cannot be profiled - DarkTetradUtil
+                /// dereferences charPerson.personality without a null check. Degrade to the
+                /// record-only parts rather than losing the record-driven path entirely.
+                logger.warn("Record-driven description for " + cname
+                        + ": could not build a PersonalityProfile (" + pe.getMessage()
+                        + ") - using the record's outfit only");
+            }
+
+            String narration = composeRecordNarration(physical, statistics, outfit);
+            if (narration == null) {
+                logger.warn("Record-driven description for " + cname
+                        + ": the record yielded nothing describable - falling back to the stored description");
+                return null;
+            }
+            persistRefreshedNarrative(user, full, cname, physical, outfit, statistics, narration);
+            return new RecordNarrative(physical, outfit, statistics, narration);
+        } catch (Exception e) {
+            logger.warn("Record-driven description for " + cname + " failed: " + e.getMessage()
+                    + " - falling back to the stored description");
+            return null;
+        }
+    }
+
+    /**
+     * Write the refreshed descriptions back onto the character's {@code olio.narrative}, so what the
+     * image was generated from is visible (and hand-editable) in the Ux rather than existing only as
+     * a transient local.
+     *
+     * <p>{@code sdPrompt} is refreshed ONLY when it still looks machine-written (see
+     * {@link #GENERATED_PROMPT_PREFIX}). A hand-written prompt is left exactly as it is — and
+     * {@link #resolveSceneCharacter} then prefers it, so a manual override actually overrides.
+     *
+     * <p>Acts as the OLIO PRINCIPAL when it can be resolved: book narratives live in the book
+     * world's {@code Narratives} group, which is olio-owned, and the request user is not entitled to
+     * update rows there — the same reason {@code ensureNarrative} passes
+     * {@code octx.getOlioUser()}. Falls back to the acting user (correct for legacy PB1 narratives
+     * in the user's own {@code ~/Narratives}).
+     *
+     * <p>Best-effort by contract: every failure is a WARN, never a throw. But the update result is
+     * never DISCARDED — {@code AccessPoint.update} returning null is the only signal there is, and
+     * swallowing it turns a persistent failure into a silent no-op
+     * ({@code .claude/rules/model-api.md}).
+     */
+    private static void persistRefreshedNarrative(BaseRecord user, BaseRecord full, String cname,
+            String physical, String outfit, String statistics, String narration) {
+        try {
+            BaseRecord narrative = full.get("narrative");
+            Long nid = (narrative != null) ? narrative.get(FieldNames.FIELD_ID) : null;
+            if (narrative == null || nid == null || nid <= 0L) {
+                logger.warn("Record-driven description for " + cname
+                        + ": no persisted narrative to write back to (the description is still used for this render)");
+                return;
+            }
+
+            List<String> fields = new ArrayList<>();
+            fields.add(FieldNames.FIELD_ID);
+            fields.add(FieldNames.FIELD_OBJECT_ID);
+            boolean changed = false;
+            String[][] derived = new String[][] {
+                { "physicalDescription", physical },
+                { "outfitDescription", outfit },
+                { "statisticsDescription", statistics }
+            };
+            for (String[] pair : derived) {
+                if (pair[1] == null || pair[1].isBlank()) continue;
+                String current = null;
+                try { current = narrative.get(pair[0]); } catch (Exception e) { /* ignore */ }
+                if (!pair[1].equals(current)) changed = true;
+                narrative.set(pair[0], pair[1]);
+                fields.add(pair[0]);
+            }
+            String existingPrompt = narrative.get("sdPrompt");
+            if (isHandWrittenPrompt(existingPrompt)) {
+                logger.info("Character " + cname + ": narrative.sdPrompt looks hand-written - "
+                        + "preserved as-is and used for the portrait render");
+            }
+            else {
+                String refreshedPrompt = PORTRAIT_QUALITY_PREAMBLE + narration;
+                if (!refreshedPrompt.equals(existingPrompt)) changed = true;
+                narrative.set("sdPrompt", refreshedPrompt);
+                fields.add("sdPrompt");
+            }
+            if (fields.size() <= 2) return;
+            /// Nothing to write when the record already says exactly this. resolveSceneCharacter
+            /// runs twice per scene (Stage 0 builds the composite prompt, Stage 1 renders the
+            /// portrait) for every character in every scene, so on a 58-scene book an unconditional
+            /// patch here would be hundreds of writes that change nothing — and would churn the
+            /// record's modified state on every render.
+            if (!changed) return;
+
+            /// copyRecord(fields), not the bare RecordFactory.newInstance - the bare overload
+            /// materialises EVERY field at its default and the writer persists every field present,
+            /// which would blank the descriptions this patch is not carrying. Same idiom, and the
+            /// same explicit field list, as ensureNarrative's own narrative patch.
+            BaseRecord patch = narrative.copyRecord(fields.toArray(new String[0]));
+            BaseRecord actor = user;
+            try {
+                long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+                BaseRecord olioUser = IOSystem.getActiveContext().getFactory()
+                        .findUser(OlioContext.OLIO_USER_NAME, orgId);
+                if (olioUser != null) actor = olioUser;
+            } catch (Exception oe) {
+                logger.warn("Could not resolve the olio principal to write " + cname
+                        + "'s narrative; trying as the request user: " + oe.getMessage());
+            }
+            if (IOSystem.getActiveContext().getAccessPoint().update(actor, patch) == null) {
+                logger.warn("Failed to persist the refreshed narrative descriptions for " + cname
+                        + " - AccessPoint.update denied or failed (the description is still used for this render)");
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to write back the refreshed narrative for " + cname + ": " + e.getMessage());
+        }
+    }
+
     /**
      * A scene-referenced character resolved to its actual charPerson record + portrait prompt text.
      * Shared holder so Stage 0 (building the scene-image LLM prompt's charNarrations, before any
@@ -1179,6 +2184,10 @@ public class PictureBookUtil {
         String portraitPrompt = null;
         String physicalDesc = null;
         String outfitDesc = null;
+        /// The RAW stored sdPrompt, kept separately because portraitPrompt below is reassigned to
+        /// physicalDescription when it is blank - so it can no longer answer "what does the record
+        /// actually store?", which is what the hand-edit check needs.
+        String storedSdPrompt = null;
         BaseRecord cpNarrative = cp.get("narrative");
         if (cpNarrative != null) {
             portraitPrompt = cpNarrative.get("sdPrompt");
@@ -1203,6 +2212,7 @@ public class PictureBookUtil {
                     logger.warn("Failed to populate narrative prompt fields for " + cname + ": " + e.getMessage());
                 }
             }
+            storedSdPrompt = portraitPrompt;
             if (portraitPrompt == null || portraitPrompt.isBlank()) {
                 portraitPrompt = physicalDesc;
             }
@@ -1218,15 +2228,43 @@ public class PictureBookUtil {
             logger.warn("Failed to read " + ATTR_DESCRIPTION + " attribute for " + cname + ": " + e.getMessage());
         }
 
-        if ((portraitPrompt == null || portraitPrompt.isBlank()) && pbDescription == null) {
-            logger.warn("No portrait prompt or reduced description for: " + cname + " — skipping portrait");
-            return null;
+        /// Deliberately NOT a bail-out any more. Both of these are the frozen extraction-time
+        /// strings, and the record-driven path below does not need either of them: a character with
+        /// no stored description at all is still fully describable from its own record (appearance,
+        /// statistics, apparel). Returning null here skipped that character's portrait entirely —
+        /// which is how the protagonist of "The Big Way Out", the one character with no
+        /// pbDescription, ended up as the only one whose likeness the composite did not preserve.
+        boolean noStoredDescription = (portraitPrompt == null || portraitPrompt.isBlank()) && pbDescription == null;
+        if (noStoredDescription) {
+            logger.info("Character " + cname + " has no stored portrait prompt or reduced description "
+                    + "- deriving it from the record instead");
         }
 
         String sceneNarration;
-        if (pbDescription != null) {
-            // Attr2 preferred: one style/setting-free visual description drives BOTH the composite
+        // THE RECORD IS THE SOURCE OF TRUTH. Rebuild the narrative (appearance + statistics + outfit)
+        // from the persisted charPerson, write it back, and use it — so an edit made in the Manage
+        // Characters screen AFTER extraction (statistics sliders, outfit builder, apparel, or the
+        // generic editor) is actually what gets imaged. See refreshNarrativeFromRecord for the full
+        // account of why the three frozen LLM strings below could never be right.
+        //
+        // The frozen strings remain as an ordered FALLBACK for the cases the record cannot serve: a
+        // character whose full re-read fails, or one too sparse to describe (no apparel, no
+        // statistics, no personality). A book built before this change needs no migration — its
+        // records already carry everything this derives from.
+        RecordNarrative fromRecord = refreshNarrativeFromRecord(user, cp, cname);
+        if (fromRecord != null) {
+            sceneNarration = fromRecord.narration;
+            /// A hand-written sdPrompt WINS for the portrait render (persistRefreshedNarrative
+            /// leaves it untouched and says so); otherwise the render base is the record-derived
+            /// narration with the same quality preamble the Attr2 path used.
+            portraitPrompt = isHandWrittenPrompt(storedSdPrompt)
+                    ? storedSdPrompt
+                    : PORTRAIT_QUALITY_PREAMBLE + fromRecord.narration;
+        } else if (pbDescription != null) {
+            // Attr2 fallback: one style/setting-free visual description drives BOTH the composite
             // charNarration and (with a quality preamble) the portrait render base.
+            logger.warn("Character " + cname + ": using the frozen pbDescription attribute - "
+                    + "post-extraction character edits will NOT be reflected in this image");
             sceneNarration = pbDescription;
             portraitPrompt = PORTRAIT_QUALITY_PREAMBLE + pbDescription;
         } else {
@@ -1242,6 +2280,13 @@ public class PictureBookUtil {
                         : (sceneNarration.endsWith(".") ? sceneNarration + " " : sceneNarration + ". ") + o;
             }
             if (sceneNarration.isBlank()) sceneNarration = portraitPrompt; // never blank
+            if (sceneNarration == null || sceneNarration.isBlank()) {
+                /// Record-driven failed AND there is no stored description of any kind. This is the
+                /// one case where there is genuinely nothing to render this character from.
+                logger.warn("No portrait prompt, reduced description, or describable record for: "
+                        + cname + " - skipping portrait");
+                return null;
+            }
         }
         // The comment above used to assert that physicalDescription/outfitDescription are
         // "style/setting-free". They are not, and neither is a stored pbDescription: whatever wrote
@@ -1849,6 +2894,58 @@ public class PictureBookUtil {
         }
         throw new PictureBookException(400, "Apparel " + apparelObjectId + " does not belong to character "
                 + charPerson.get(FieldNames.FIELD_NAME));
+    }
+
+    /**
+     * Is a landscape reference image worth producing for this scene at all?
+     *
+     * <p>Two independent reasons it is not, and BOTH cost the same when ignored: one LLM call
+     * ({@link #resolveLandscapePrompt}) plus one full SD pass (Stage 2 of
+     * {@link #generateSceneImage}), per scene.
+     *
+     * <ol>
+     * <li><b>{@code skipLandscape} on the config</b> — the explicit switch. It already existed on
+     *     {@code olio.sd.config} and was already honored by {@code ChatService.generateScene}; the
+     *     picture-book pipeline simply never read it, so the toggle appeared to exist and did
+     *     nothing here. {@code pinPictureBookDefaults} in Ux752 now pins it TRUE for new books,
+     *     because with the FLUX.2 composite the landscape is not currently being used.</li>
+     * <li><b>The composite mode will not consume it</b> — {@code compositeMode=flux2} with
+     *     {@code flux2IncludeLandscapeRef=false}. {@code SceneCompositeUtil.buildSceneRequest}
+     *     discards the landscape bytes in that case (and logs that it did), so generating them is
+     *     pure waste. KONTEXT stitches the landscape into its panel strip and CLASSIC draws the
+     *     portraits on top of it, so neither is ever auto-skipped.</li>
+     * </ol>
+     *
+     * <p>Mode resolution goes through {@link SceneCompositeUtil#resolveMode} with
+     * {@code legacyKontextDefault=false} — the same precedence {@code generateSceneImage}'s own
+     * inline branch uses (compositeMode wins; a genuinely-cleared compositeMode falls back to the
+     * legacy {@code useKontext} boolean, default false).
+     *
+     * <p>Public rather than private so the decision can be asserted directly without standing up
+     * SD/LLM backends (same reason as {@link #imagingDescription}). Pure function, no IO.
+     */
+    public static boolean landscapeEnabled(BaseRecord sdConfig) {
+        if (sdConfig != null) {
+            Boolean skip = null;
+            try { skip = sdConfig.get("skipLandscape"); } catch (Exception e) { /* field may not exist */ }
+            if (skip != null && skip.booleanValue()) return false;
+        }
+        String mode = SceneCompositeUtil.resolveMode(sdConfig, false);
+        return SceneCompositeUtil.includesLandscapeReference(mode, sdConfig);
+    }
+
+    /**
+     * Human-readable reason {@link #landscapeEnabled} said no — logged so a scene that rendered
+     * without a setting reference is never a silent mystery.
+     */
+    public static String landscapeSkipReason(BaseRecord sdConfig) {
+        if (sdConfig != null) {
+            Boolean skip = null;
+            try { skip = sdConfig.get("skipLandscape"); } catch (Exception e) { /* field may not exist */ }
+            if (skip != null && skip.booleanValue()) return "skipLandscape=true";
+        }
+        return "compositeMode=" + SceneCompositeUtil.resolveMode(sdConfig, false)
+                + " will not consume a landscape reference (flux2IncludeLandscapeRef=false)";
     }
 
     /**
@@ -2727,6 +3824,45 @@ public class PictureBookUtil {
      */
     static final long LLM_INFRA_FAILURE_MS = 5000L;
 
+    /**
+     * The distinct character names established so far, in first-seen order — the roster threaded
+     * into the chunk-extraction prompt as {@code {knownCharacters}}.
+     *
+     * <p><b>Why a separate roster rather than relying on {@code previousScenes}.</b>
+     * {@link #scenesForPrompt} reduces every scene older than the last
+     * {@value #PROMPT_SCENE_DETAIL_WINDOW} to its TITLE ALONE, deliberately, to stop the prompt
+     * growing O(n²). Characters are part of the detail that gets dropped — so by chunk 12 the model
+     * can no longer see the name chunk 1 used for a character, and invents a fresh one. That is the
+     * mechanism behind reported issue 3: an unnamed character arrives as "Darby's dad", then "the
+     * father", then "Dad".
+     *
+     * <p>Names only, so it stays cheap where the scene detail could not: a 58-scene book with a
+     * dozen characters is a couple of hundred bytes, and it is COMPLETE rather than windowed.
+     *
+     * <p>{@link #canonicalizeSceneCharacterNames} still runs afterwards — this reduces how many
+     * duplicates the model produces, it does not guarantee zero.
+     */
+    @SuppressWarnings("unchecked")
+    public static List<String> knownCharacterNames(List<Map<String, Object>> scenes) {
+        java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+        if (scenes == null) return new ArrayList<>();
+        for (Map<String, Object> s : scenes) {
+            Object charsObj = (s != null) ? s.get("characters") : null;
+            if (!(charsObj instanceof List)) continue;
+            for (Object sc : (List<Object>) charsObj) {
+                String cn = (sc instanceof Map) ? (String) ((Map<String, Object>) sc).get("name")
+                        : (sc instanceof String ? (String) sc : null);
+                if (cn == null) continue;
+                String t = cn.trim();
+                /// isMeaningful, not !isBlank: these came out of an LLM and "null"/"unknown" turn up
+                /// as VALUES. A roster telling the model that "null" is an established character is
+                /// worse than no roster.
+                if (NarrativeUtil.isMeaningful(t)) names.add(t);
+            }
+        }
+        return new ArrayList<>(names);
+    }
+
     public static List<Map<String, Object>> scenesForPrompt(List<Map<String, Object>> scenes) {
         List<Map<String, Object>> out = new ArrayList<>(scenes.size());
         /// Index of the first scene that still gets full detail.
@@ -3338,6 +4474,12 @@ public class PictureBookUtil {
             String previousJson = sceneList.isEmpty() ? "[]" : JSONUtil.exportObject(scenesForPrompt(sceneList));
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("previousScenes", previousJson);
+            /// The COMPLETE roster, not the windowed one previousScenes carries - see
+            /// knownCharacterNames. ALWAYS supplied, even empty: an unsupplied template variable is
+            /// a HARD failure ("Refusing to call LLM for prompt ... first: '{knownCharacters}'"),
+            /// which is how every landscape prompt once broke at once.
+            List<String> roster = knownCharacterNames(sceneList);
+            vars.put("knownCharacters", roster.isEmpty() ? "(none yet)" : String.join(", ", roster));
             vars.put("chunk", chunks.get(ci));
             // Extract this chunk's scenes, with a bounded retry: qwen3-class models occasionally emit
             // malformed JSON (a stray quote, a corrupted token mid-generation) — a fresh generation
@@ -3619,6 +4761,159 @@ public class PictureBookUtil {
             if (r.name().equalsIgnoreCase(t)) return r.name();
         }
         return null;
+    }
+
+    /**
+     * Common hair/eye colour words the LLM emits, mapped to a name that actually exists in the
+     * world's shared {@code data.color} library.
+     *
+     * <p>{@link ColorUtil#getColorByName} is an exact (ILIKE) match on the library entry's name, and
+     * the library is the 864-entry web-colour set — so it has "Black", "Blond", "Auburn", "Hazel",
+     * "Amber", "Dark Brown" and "Sandy Brown", but NOT "brown", "green", "blonde" or "grey", which
+     * are exactly the words a model reaches for first. Without this table the mapping misses on the
+     * most common inputs and every character silently keeps the race-palette random colour.
+     *
+     * <p>Only colours a person's hair or eyes actually come in. This is not a general colour
+     * synonym table and must not grow into one — apparel colours have their own path
+     * ({@code ApparelUtil}, which calls {@code getColorByName} directly).
+     */
+    private static final Map<String, String> PERSON_COLOR_SYNONYMS = personColorSynonyms();
+
+    private static Map<String, String> personColorSynonyms() {
+        Map<String, String> m = new LinkedHashMap<>();
+        // Hair
+        m.put("brown", "Brown (Traditional)");
+        m.put("dark brown", "Dark Brown");
+        m.put("light brown", "Light Brown");
+        m.put("golden brown", "Golden Brown");
+        m.put("mousy brown", "Pale Brown");
+        m.put("blonde", "Blond");
+        m.put("blond", "Blond");
+        m.put("strawberry blonde", "Apricot");
+        m.put("dirty blonde", "Sandy Brown");
+        m.put("sandy", "Sandy Brown");
+        m.put("ginger", "Ginger");
+        m.put("red", "Auburn");
+        m.put("redhead", "Auburn");
+        m.put("auburn", "Auburn");
+        m.put("chestnut", "Chestnut");
+        m.put("copper", "Copper");
+        m.put("black", "Black");
+        m.put("jet black", "Black");
+        m.put("raven", "Black");
+        m.put("grey", "Gray");
+        m.put("gray", "Gray");
+        m.put("greying", "Gray");
+        m.put("graying", "Gray");
+        m.put("silver", "Silver");
+        m.put("white", "White");
+        m.put("platinum", "Platinum");
+        m.put("salt and pepper", "Dim Gray");
+        // Eyes
+        m.put("hazel", "Hazel");
+        m.put("amber", "Amber");
+        m.put("green", "Dark Green");
+        m.put("blue", "Blue");
+        m.put("pale blue", "Baby Blue");
+        m.put("light blue", "Baby Blue");
+        m.put("ice blue", "Alice Blue");
+        m.put("grey-blue", "Blue Gray");
+        m.put("gray-blue", "Blue Gray");
+        m.put("blue-grey", "Blue Gray");
+        m.put("blue-gray", "Blue Gray");
+        m.put("dark", "Dark Brown");
+        return m;
+    }
+
+    /// Hair words that describe STYLE/length rather than colour — stripped before the colour scan so
+    /// "long wavy strawberry-blonde" resolves on "strawberry blonde", and kept so the leftover can be
+    /// used as the character's hairStyle.
+    private static final Pattern HAIR_STYLE_WORDS = Pattern.compile(
+            "\\b(long|short|shoulder-length|shoulder length|cropped|close-cropped|buzzed|buzz|"
+            + "wavy|curly|straight|frizzy|coiled|kinky|braided|braids|plaited|dreadlocked|dreadlocks|"
+            + "ponytail|bun|pixie|bob|bobbed|messy|unkempt|neat|tidy|slicked|slicked-back|swept|"
+            + "thinning|balding|bald|receding|shaved|tousled|shaggy|wispy|thick|fine|coarse|"
+            + "hair|haired|locks|mane|tresses)\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Resolve a free-text person colour (LLM {@code physical.hair} / {@code physical.eyes}) to a
+     * persisted {@code data.color} in the world's shared library, or null when nothing matches.
+     *
+     * <p>Three passes, cheapest first: the whole trimmed string through the synonym table, then the
+     * library directly (so a literal library name like "Chestnut" works without a table entry), then
+     * the longest matching synonym among the string's own word n-grams (so "long wavy
+     * strawberry-blonde hair" finds "strawberry blonde").
+     *
+     * <p>Screened with {@link NarrativeUtil#isMeaningful} rather than a blank check, because this is
+     * an LLM-extracted field: a model that cannot determine hair colour emits the literal string
+     * {@code "null"} as the VALUE (see {@code .claude/rules/objects7-reference.md}).
+     *
+     * <p>Returns null rather than a raw string on a miss, so the caller KEEPS whatever race-palette
+     * colour the random baseline assigned — the same contract as {@link #mapRaceOverride} and
+     * {@link #mapEthnicityOverride}.
+     */
+    public static BaseRecord mapPersonColorOverride(OlioContext octx, String freeText) {
+        if (octx == null || !NarrativeUtil.isMeaningful(freeText)) return null;
+        String t = freeText.trim().toLowerCase();
+
+        String direct = PERSON_COLOR_SYNONYMS.get(t);
+        if (direct != null) {
+            BaseRecord c = ColorUtil.getColorByName(octx, direct);
+            if (c != null) return c;
+        }
+        BaseRecord literal = ColorUtil.getColorByName(octx, freeText.trim());
+        if (literal != null) return literal;
+
+        /// Longest n-gram first: "strawberry blonde" must beat the "blonde" inside it, and
+        /// "dark brown" must beat "dark".
+        String cleaned = HAIR_STYLE_WORDS.matcher(t).replaceAll(" ").replaceAll("[^a-z\\- ]", " ");
+        String[] words = cleaned.trim().split("\\s+");
+        for (int span = Math.min(3, words.length); span >= 1; span--) {
+            for (int i = 0; i + span <= words.length; i++) {
+                StringBuilder sb = new StringBuilder();
+                for (int j = i; j < i + span; j++) {
+                    if (sb.length() > 0) sb.append(' ');
+                    sb.append(words[j]);
+                }
+                String phrase = sb.toString().trim();
+                if (phrase.isEmpty()) continue;
+                String mapped = PERSON_COLOR_SYNONYMS.get(phrase);
+                if (mapped == null && phrase.indexOf('-') >= 0) {
+                    mapped = PERSON_COLOR_SYNONYMS.get(phrase.replace('-', ' '));
+                }
+                if (mapped != null) {
+                    BaseRecord c = ColorUtil.getColorByName(octx, mapped);
+                    if (c != null) return c;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The STYLE half of an LLM {@code physical.hair} string ("long wavy strawberry-blonde" →
+     * "long wavy"), or null when it carries no style words.
+     *
+     * <p>{@code hairStyle} is a plain string column, so unlike the colour it needs no library
+     * lookup — but the colour words have to come off or {@code describePhysical} renders
+     * "brown long wavy strawberry-blonde hair".
+     */
+    public static String extractHairStyle(String freeText) {
+        if (!NarrativeUtil.isMeaningful(freeText)) return null;
+        StringBuilder sb = new StringBuilder();
+        Matcher m = HAIR_STYLE_WORDS.matcher(freeText.trim().toLowerCase());
+        while (m.find()) {
+            String w = m.group(1);
+            /// "hair"/"haired"/"locks"/"mane"/"tresses" are the NOUN, not a style - they are in the
+            /// pattern so the colour scan strips them, but they must not become the style itself.
+            if (w.equals("hair") || w.equals("haired") || w.equals("locks")
+                    || w.equals("mane") || w.equals("tresses")) continue;
+            if (sb.indexOf(w) >= 0) continue;
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(w);
+        }
+        return sb.length() > 0 ? sb.toString() : null;
     }
 
     /**
@@ -4399,6 +5694,57 @@ public class PictureBookUtil {
                 }
             }
 
+            // The EXTRACTION's own appearance, applied ON TOP of the baseline palette.
+            //
+            // This is issue 2's root cause. The LLM's physical.hair / physical.eyes reached only the
+            // narrative's sdPrompt text (buildPortraitPromptFromExtractedData) — never the record —
+            // while hairColor/eyeColor came from CharacterUtil.setStyleByRace's RANDOM race-appropriate
+            // palette. So the persisted character and the text used to image it described two
+            // different people BY CONSTRUCTION, and editing the character in the Ux could not fix it
+            // because imaging never read the record. Seeding here makes the record the extraction,
+            // which is what lets the description be derived from the record afterwards
+            // (refreshNarrativeFromRecord) and lets a post-extraction edit actually take effect.
+            //
+            // Best-effort in both directions: an unmappable colour KEEPS the baseline (never a raw
+            // string on a foreign ref), and a failure here never aborts character creation.
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> physAppearance = (Map<String, Object>) charData.get("physical");
+                if (physAppearance != null) {
+                    Object hairV = physAppearance.get("hair");
+                    if (hairV instanceof String) {
+                        BaseRecord hairColor = mapPersonColorOverride(octx, (String) hairV);
+                        if (hairColor != null
+                                && patchCharPersonField(user, charPerson, OlioFieldNames.FIELD_HAIR_COLOR, hairColor) != null) {
+                            charPerson.set(OlioFieldNames.FIELD_HAIR_COLOR, hairColor);
+                            logger.info("Character " + name + ": hairColor from extraction '" + hairV
+                                    + "' -> " + hairColor.get(FieldNames.FIELD_NAME));
+                        }
+                        String hairStyle = extractHairStyle((String) hairV);
+                        if (hairStyle != null) {
+                            charPerson.set(OlioFieldNames.FIELD_HAIR_STYLE, hairStyle);
+                            BaseRecord stylePatch = charPerson.copyRecord(new String[] {
+                                    FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_HAIR_STYLE });
+                            if (IOSystem.getActiveContext().getAccessPoint().update(user, stylePatch) == null) {
+                                logger.warn("Failed to persist hairStyle '" + hairStyle + "' for " + name);
+                            }
+                        }
+                    }
+                    Object eyesV = physAppearance.get("eyes");
+                    if (eyesV instanceof String) {
+                        BaseRecord eyeColor = mapPersonColorOverride(octx, (String) eyesV);
+                        if (eyeColor != null
+                                && patchCharPersonField(user, charPerson, OlioFieldNames.FIELD_EYE_COLOR, eyeColor) != null) {
+                            charPerson.set(OlioFieldNames.FIELD_EYE_COLOR, eyeColor);
+                            logger.info("Character " + name + ": eyeColor from extraction '" + eyesV
+                                    + "' -> " + eyeColor.get(FieldNames.FIELD_NAME));
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to apply extracted hair/eye appearance for " + name + ": " + e.getMessage());
+            }
+
             /// LAST of the seven, and it has to be: see ensureNarrative.
             if (!ensureNarrative(user, octx, charPerson, name, portraitPrompt)) {
                 return null;
@@ -4473,6 +5819,22 @@ public class PictureBookUtil {
                 logger.warn("Failed to generate apparel for " + name + ": " + e.getMessage());
                 if (failedApparelOut != null) failedApparelOut.add(name);
             }
+
+            // Bring the narrative up to date with the record NOW, at the end of creation.
+            //
+            // ensureNarrative necessarily runs BEFORE statistics estimation and the apparel wizard
+            // (its ordering relative to personality/instinct/state is load-bearing - see its
+            // javadoc), so the narrative it writes cannot describe either. It also writes the
+            // extraction-derived SD prompt into physicalDescription, which is a weighted prompt
+            // string rather than a description. The per-render refresh in resolveSceneCharacter
+            // would fix both at first render, but not before: the Manage Characters screen and the
+            // reimage command both read these fields, so a character inspected or reimaged before
+            // any scene was generated showed the wrong thing.
+            //
+            // Same helper, so there is exactly one definition of what a character's description is.
+            // Best-effort: a failure here leaves the creation-time values, which the render-time
+            // refresh still corrects.
+            refreshNarrativeFromRecord(user, charPerson, name);
 
             return charPerson;
 
@@ -4803,6 +6165,18 @@ public class PictureBookUtil {
         // Extract text for LLM character extraction (if no pre-built character data)
         String text = extractWorkText(user, work);
 
+        // Fold duplicate spellings of the same character into ONE name before anything reads the
+        // scene list — issue 3. De-duplication below is an exact-string map, so without this an
+        // unnamed character referred to as "Darby's dad" in one chunk and "the father" in another
+        // became two charPersons with two portraits, two wardrobes and a split set of scenes.
+        // Curated Step 3 names are seeded first so they win as the canonical spelling.
+        List<String> curatedNames = new ArrayList<>();
+        for (Map<String, Object> cd : charDataList) {
+            Object cn = cd.get("name");
+            if (cn instanceof String && !((String) cn).trim().isEmpty()) curatedNames.add((String) cn);
+        }
+        Map<String, String> nameAliases = canonicalizeSceneCharacterNames(sceneList, curatedNames);
+
         // If character data was provided from Step 3, use it directly; otherwise extract from scenes
         if (charDataList.isEmpty()) {
             // Collect unique character names from scene list
@@ -4952,6 +6326,18 @@ public class PictureBookUtil {
 
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "save", "Saving book...");
         BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
+        if (!nameAliases.isEmpty()) {
+            /// Surfaced, not just logged: a fold is a judgement about who someone IS, and the user
+            /// is the only one who can tell a correct one from a wrong one. The ambiguous cases were
+            /// deliberately left unfolded for mergeCharacters, so this list is the record of what was
+            /// decided automatically.
+            List<String> merged = new ArrayList<>();
+            for (Map.Entry<String, String> e : nameAliases.entrySet()) {
+                merged.add(e.getKey() + " -> " + e.getValue());
+            }
+            try { meta.set("mergedCharacterNames", merged); }
+            catch (Exception e) { logger.warn("Failed to record mergedCharacterNames on meta: " + e.getMessage()); }
+        }
         if (!failedCharacters.isEmpty()) {
             try { meta.set("failedCharacters", failedCharacters); } catch (Exception e) { logger.warn("Failed to record failedCharacters on meta: " + e.getMessage()); }
         }
@@ -5363,9 +6749,21 @@ public class PictureBookUtil {
             // portrait/landscape/composite sequence. Scene characters are resolved here (DB-only,
             // no LLM/SD calls) purely to build charNarrations for the scene-image prompt; Stage 1
             // resolves them again (same resolveSceneCharacter helper) when it actually renders.
-            String landscapePrompt = resolveLandscapePrompt(user, scene, chatConfig, setting, mood, common, params.promptTemplateOverride);
-            
-            //logger.info("Landscape prompt: " + landscapePrompt);
+            //
+            // ... unless this scene's config says a landscape is not wanted or cannot be consumed
+            // (see landscapeEnabled). Both the LLM prompt call here and the SD pass in Stage 2 are
+            // then skipped entirely, which is the whole point: generating an image the composite
+            // throws away is one LLM call plus one full SD pass per scene for nothing.
+            boolean wantLandscape = landscapeEnabled(common);
+            String landscapePrompt = null;
+            if (wantLandscape) {
+                landscapePrompt = resolveLandscapePrompt(user, scene, chatConfig, setting, mood, common, params.promptTemplateOverride);
+            }
+            else {
+                logger.info("Scene " + sceneObjectId + ": landscape SKIPPED (" + landscapeSkipReason(common)
+                        + ") - no landscape prompt call and no landscape image; the setting reaches "
+                        + "the model as prompt text via the scene prompt");
+            }
             
             Object charsObjForPrompt = sceneData.get("characters");
             List<String> charNarrationsForPrompt = new ArrayList<>();
@@ -5431,14 +6829,18 @@ public class PictureBookUtil {
             // sdConfigSnapshot because the resolved style is part of the prompt (getSDConfigPrompt).
             if (pbGraph != null) {
                 try {
-                    BaseRecord lpNode = PbPipelineUtil.getCreateNode(pbGraph,
-                            PbPipelineUtil.landscapePromptHandle(sceneObjectId),
-                            PbNodeTypeEnumType.LANDSCAPE_PROMPT, 10,
-                            PbPipelineUtil.SCOPE_SCENE, sceneObjectId);
-                    PbGraphUtil.persistPromptText(user, lpNode, landscapePrompt);
-                    PbPipelineUtil.recordText(pbGraph, lpNode, PbPipelineUtil.ROLE_LANDSCAPE_PROMPT,
-                            PbArtifactTypeEnumType.PROMPT, landscapePrompt, common);
-                    PbPipelineUtil.completeNode(pbGraph, lpNode);
+                    /// No LANDSCAPE_PROMPT node when no landscape prompt was resolved. Recording one
+                    /// with a null payload would assert provenance for work that never happened.
+                    if (landscapePrompt != null) {
+                        BaseRecord lpNode = PbPipelineUtil.getCreateNode(pbGraph,
+                                PbPipelineUtil.landscapePromptHandle(sceneObjectId),
+                                PbNodeTypeEnumType.LANDSCAPE_PROMPT, 10,
+                                PbPipelineUtil.SCOPE_SCENE, sceneObjectId);
+                        PbGraphUtil.persistPromptText(user, lpNode, landscapePrompt);
+                        PbPipelineUtil.recordText(pbGraph, lpNode, PbPipelineUtil.ROLE_LANDSCAPE_PROMPT,
+                                PbArtifactTypeEnumType.PROMPT, landscapePrompt, common);
+                        PbPipelineUtil.completeNode(pbGraph, lpNode);
+                    }
 
                     BaseRecord spNode = PbPipelineUtil.getCreateNode(pbGraph,
                             PbPipelineUtil.scenePromptHandle(sceneObjectId),
@@ -5765,57 +7167,66 @@ public class PictureBookUtil {
 
             // Stage 2: Landscape generation — prompt was already resolved (LLM or cache) in Stage 0
             // above, before the model was unloaded, so this is pure SD work.
-            PictureBookProgressNotifier.getInstance().notifyProgress(user, "landscape", "Generating landscape...");
-            SWTxt2Img landReq = SWUtil.newSceneTxt2Img(landscapePrompt, NEG_PROMPT, common);
-            landReq.setWidth(1024);
-            landReq.setHeight(768);
-            List<BaseRecord> landImages = sdu.createSceneImage(user, sceneGroupPath,
-                    "landscape_" + sceneObjectId + "_" + System.currentTimeMillis(), landReq, null, null);
-            if (landImages == null || landImages.isEmpty())
-                throw new PictureBookException(500, "Landscape generation failed");
-            BaseRecord landscapeImage = landImages.get(0);
-            // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption.
-            byte[] landscapeBytes = ByteModelUtil.getValue(landscapeImage);
-            if (landscapeBytes == null || landscapeBytes.length == 0)
-                throw new PictureBookException(500, "Empty landscape image");
-            // Retain the persisted landscape record (previously deleted immediately after use,
-            // which meant only the final composite ever survived) and record its objectId on the
-            // scene so it is discoverable/reusable like the composite.
-            String landscapeOid = landscapeImage.get(FieldNames.FIELD_OBJECT_ID);
-            updateSceneLandscapeId(user, scene, landscapeOid);
-
-            // PB2 Stage 2: the LANDSCAPE node, bound to the landscape-prompt node's artifact so a
-            // prompt change propagates. The forced 1024x768 here is exactly what §9's level-1
-            // dimension assertion checks against — recordImage measures the DECODED bytes, not the
-            // request, so a hires/refiner pass that silently returns another size is caught.
+            //
+            // Skipped wholesale when Stage 0 resolved no landscape prompt (landscapeEnabled said no).
+            // landscapeBytes then stays null, which every composite branch below already tolerates:
+            // FLUX.2 omits the setting reference, KONTEXT ships a shorter strip and CLASSIC degrades
+            // to text-only txt2img. The stageCooldown that follows is skipped with it — there was no
+            // GPU work to recover from.
+            byte[] landscapeBytes = null;
             BaseRecord pbLandscapeNode = null;
             BaseRecord pbLandscapeArtifact = null;
-            if (pbGraph != null) {
-                try {
-                    pbLandscapeNode = PbPipelineUtil.getCreateNode(pbGraph,
-                            PbPipelineUtil.landscapeHandle(sceneObjectId),
-                            PbNodeTypeEnumType.LANDSCAPE, 30, PbPipelineUtil.SCOPE_SCENE, sceneObjectId);
-                    BaseRecord lpNode = pbGraph.node(PbPipelineUtil.landscapePromptHandle(sceneObjectId));
-                    if (lpNode != null) {
-                        PbPipelineUtil.bindNode(pbGraph, pbLandscapeNode, PbPipelineUtil.ROLE_PROMPT, 0, lpNode,
-                                PbArtifactUtil.findSelected(user, lpNode, PbPipelineUtil.ROLE_LANDSCAPE_PROMPT));
-                    }
-                    pbLandscapeArtifact = PbPipelineUtil.recordImage(pbGraph, pbLandscapeNode,
-                            PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE, landscapeImage,
-                            landscapeBytes, "image/png",
-                            Long.valueOf(extractSeedFromImage(landscapeImage)), common,
-                            JSONUtil.exportObject(landReq), null);
-                    PbPipelineUtil.completeNode(pbGraph, pbLandscapeNode);
-                } catch (Exception pbe) {
-                    logger.warn("PB2: failed to record the landscape node: " + pbe.getMessage(), pbe);
-                }
-            }
+            if (landscapePrompt != null) {
+                PictureBookProgressNotifier.getInstance().notifyProgress(user, "landscape", "Generating landscape...");
+                SWTxt2Img landReq = SWUtil.newSceneTxt2Img(landscapePrompt, NEG_PROMPT, common);
+                landReq.setWidth(1024);
+                landReq.setHeight(768);
+                List<BaseRecord> landImages = sdu.createSceneImage(user, sceneGroupPath,
+                        "landscape_" + sceneObjectId + "_" + System.currentTimeMillis(), landReq, null, null);
+                if (landImages == null || landImages.isEmpty())
+                    throw new PictureBookException(500, "Landscape generation failed");
+                BaseRecord landscapeImage = landImages.get(0);
+                // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption.
+                landscapeBytes = ByteModelUtil.getValue(landscapeImage);
+                if (landscapeBytes == null || landscapeBytes.length == 0)
+                    throw new PictureBookException(500, "Empty landscape image");
+                // Retain the persisted landscape record (previously deleted immediately after use,
+                // which meant only the final composite ever survived) and record its objectId on the
+                // scene so it is discoverable/reusable like the composite.
+                String landscapeOid = landscapeImage.get(FieldNames.FIELD_OBJECT_ID);
+                updateSceneLandscapeId(user, scene, landscapeOid);
 
-            // Landscape generation is a full hires/refiner pass when enabled — let the GPU
-            // recover before the composite stage, which is heavier still (img2img on top of its
-            // own base+refiner pass) and runs immediately after with zero gap otherwise. This is
-            // the specific back-to-back sequence implicated in a real thermal-critical event.
-            stageCooldown();
+                // PB2 Stage 2: the LANDSCAPE node, bound to the landscape-prompt node's artifact so a
+                // prompt change propagates. The forced 1024x768 here is exactly what §9's level-1
+                // dimension assertion checks against — recordImage measures the DECODED bytes, not the
+                // request, so a hires/refiner pass that silently returns another size is caught.
+                if (pbGraph != null) {
+                    try {
+                        pbLandscapeNode = PbPipelineUtil.getCreateNode(pbGraph,
+                                PbPipelineUtil.landscapeHandle(sceneObjectId),
+                                PbNodeTypeEnumType.LANDSCAPE, 30, PbPipelineUtil.SCOPE_SCENE, sceneObjectId);
+                        BaseRecord lpNode = pbGraph.node(PbPipelineUtil.landscapePromptHandle(sceneObjectId));
+                        if (lpNode != null) {
+                            PbPipelineUtil.bindNode(pbGraph, pbLandscapeNode, PbPipelineUtil.ROLE_PROMPT, 0, lpNode,
+                                    PbArtifactUtil.findSelected(user, lpNode, PbPipelineUtil.ROLE_LANDSCAPE_PROMPT));
+                        }
+                        pbLandscapeArtifact = PbPipelineUtil.recordImage(pbGraph, pbLandscapeNode,
+                                PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE, landscapeImage,
+                                landscapeBytes, "image/png",
+                                Long.valueOf(extractSeedFromImage(landscapeImage)), common,
+                                JSONUtil.exportObject(landReq), null);
+                        PbPipelineUtil.completeNode(pbGraph, pbLandscapeNode);
+                    } catch (Exception pbe) {
+                        logger.warn("PB2: failed to record the landscape node: " + pbe.getMessage(), pbe);
+                    }
+                }
+
+                // Landscape generation is a full hires/refiner pass when enabled — let the GPU
+                // recover before the composite stage, which is heavier still (img2img on top of its
+                // own base+refiner pass) and runs immediately after with zero gap otherwise. This is
+                // the specific back-to-back sequence implicated in a real thermal-critical event.
+                stageCooldown();
+            }
 
             // Stage 3/4: Composite scene — branch between Kontext (stitch-and-prompt) and classic
             // (Graphics2D composite + SDXL img2img) pipelines, driven by the common config's
@@ -5848,6 +7259,19 @@ public class PictureBookUtil {
                         + "' — expected flux2|kontext|classic; falling back to classic");
                 }
             }
+            /// KONTEXT stitches the landscape into its panel strip and CLASSIC draws the portraits
+            /// on top of it, so for those two modes a skipped landscape is a real capability loss,
+            /// not a saving. landscapeEnabled never auto-skips them — this can only be reached by an
+            /// explicit skipLandscape=true — so say so plainly rather than silently producing a
+            /// setting-free composite that reads as a broken pipeline.
+            if (landscapeBytes == null && (useKontext || !useFlux2)) {
+                logger.warn("Scene " + sceneObjectId + ": compositeMode=" + (useKontext ? "kontext" : "classic")
+                        + " CONSUMES the landscape image, but none was generated ("
+                        + landscapeSkipReason(common) + ") - "
+                        + (useKontext ? "the reference strip will carry portraits only"
+                                      : "the classic pipeline degrades to text-only txt2img"));
+            }
+
             // Kontext 2-pass needs moderate creativity — enough to restructure panels while
             // preserving faces; classic img2img needs more room to blend the drawn-on portraits.
             double sceneCreativity = useKontext ? 0.65 : 0.85;
@@ -6203,6 +7627,14 @@ public class PictureBookUtil {
         // detail fields so the style suffix baked into each cached prompt here matches what
         // generateSceneImage will produce. Null is tolerated (getSDConfigPrompt falls back).
         if (sdConfig != null) SDUtil.fillStyleDefaults(sdConfig);
+        /// Same decision generateSceneImage makes, hoisted out of the loop: it depends only on the
+        /// one config, not on the scene. Pre-resolving a landscape prompt the render will never use
+        /// is an LLM call per scene for nothing — and the batch runs over the WHOLE book.
+        boolean wantLandscape = landscapeEnabled(sdConfig);
+        if (!wantLandscape) {
+            logger.info("prepareSceneImagePrompts: landscape prompts SKIPPED for all "
+                    + sceneObjectIds.size() + " scene(s) (" + landscapeSkipReason(sdConfig) + ")");
+        }
         for (String sceneObjectId : sceneObjectIds) {
             if (cancelToken != null && cancelToken.isCancelled()) {
                 logger.info("prepareSceneImagePrompts: cancelled — stopping before scene " + sceneObjectId
@@ -6235,7 +7667,9 @@ public class PictureBookUtil {
                 String setting = (String) sceneData.getOrDefault("setting", "");
                 String action = (String) sceneData.getOrDefault("action", "");
                 String mood = (String) sceneData.getOrDefault("mood", "");
-                resolveLandscapePrompt(user, scene, chatConfig, setting, mood, sdConfig, promptTemplateOverride);
+                if (wantLandscape) {
+                    resolveLandscapePrompt(user, scene, chatConfig, setting, mood, sdConfig, promptTemplateOverride);
+                }
 
                 String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
                 if (sceneGroupPath == null) sceneGroupPath = "~/Chat";
@@ -6388,26 +7822,62 @@ public class PictureBookUtil {
      * failedStatistics flags cross-referenced from the book's own meta (set during
      * extract()/createFromScenes() when createCharPerson's best-effort steps fail).
      */
+    /**
+     * Resolve a book group from EITHER a {@code data.group} objectId or an {@code olio.pb.book}
+     * objectId — the UI passes whichever it has, depending on the code path.
+     *
+     * <p>Extracted from {@link #listCharacters} so {@link #mergeCharacters} resolves the book
+     * identically. It was already duplicated between {@code listCharacters} and {@code reset};
+     * a third hand-written copy in a path that DELETES records is not something to risk drifting.
+     *
+     * <p>Returns null for absent OR PBAC-denied — indistinguishable at the {@code AccessPoint.find}
+     * boundary, and callers turn both into 404, which is the convention throughout this class.
+     */
+    static BaseRecord resolveBookGroupEither(BaseRecord user, String bookObjectId, long orgId) {
+        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        if (bookGroup != null) return bookGroup;
+        Query pbQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
+        pbQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        pbQ.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_SLUG });
+        BaseRecord pb2Book = IOSystem.getActiveContext().getAccessPoint().find(user, pbQ);
+        if (pb2Book == null) return null;
+        String slug = pb2Book.get(OlioFieldNames.FIELD_PB_SLUG);
+        if (slug == null || slug.isBlank()) return null;
+        return IOSystem.getActiveContext().getPathUtil().findPath(user,
+                ModelNames.MODEL_GROUP, "~/Data/" + PICTURE_BOOKS_DIR + "/" + slug,
+                GroupEnumType.DATA.toString(), orgId);
+    }
+
+    /**
+     * The group a book's charPerson records actually live in, derived SERVER-SIDE from the book's
+     * own world — never from the {@code charsGroupPath} in the meta note.
+     *
+     * <p>That note is owned by, and PATCH-writable by, the requesting user, so a path taken from it
+     * is attacker-controlled. Feeding it to a charPerson search was a horizontal IDOR (rewrite the
+     * note to another same-org user's population group and read their characters), and feeding it to
+     * {@link #mergeCharacters} would be strictly worse, because that path DELETES.
+     *
+     * <p>PB2 books resolve to their world's Population group (where {@code createCharPerson} writes);
+     * legacy PB1 books fall back to {@code <book>/Characters}, which is structurally confined to the
+     * caller's own book.
+     *
+     * <p>Extracted from {@link #listCharacters} so the merge path cannot diverge from it.
+     */
+    static BaseRecord resolveTrustedCharsGroup(BaseRecord user, String pb2Hint,
+            String bookGroupPath, long orgId) {
+        String trustedPopulationPath = deriveTrustedCharsGroupPath(user, pb2Hint, orgId);
+        String charsGroupPath = (trustedPopulationPath != null)
+                ? trustedPopulationPath : (bookGroupPath + "/" + CHARACTERS_DIR);
+        return IOSystem.getActiveContext().getPathUtil().findPath(user,
+                ModelNames.MODEL_GROUP, charsGroupPath, GroupEnumType.DATA.toString(), orgId);
+    }
+
     @SuppressWarnings("unchecked")
     public static List<Map<String, Object>> listCharacters(BaseRecord user, String bookObjectId) {
-        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
-        // Dual-lookup: if not found as a data.group objectId, try treating it as an olio.pb.book objectId
-        // (mirrors the same pattern in reset()). The UI may pass either ID depending on the code path.
-        if (bookGroup == null) {
-            long orgId2 = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-            Query pbQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
-            pbQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId2);
-            pbQ.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_SLUG });
-            BaseRecord pb2Book = IOSystem.getActiveContext().getAccessPoint().find(user, pbQ);
-            if (pb2Book != null) {
-                String slug = pb2Book.get(OlioFieldNames.FIELD_PB_SLUG);
-                if (slug != null && !slug.isBlank()) {
-                    String bookPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + slug;
-                    bookGroup = IOSystem.getActiveContext().getPathUtil().findPath(user,
-                        ModelNames.MODEL_GROUP, bookPath, GroupEnumType.DATA.toString(), orgId2);
-                }
-            }
-        }
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        // Dual-lookup: a data.group objectId OR an olio.pb.book objectId — the UI passes whichever it
+        // has. Shared with mergeCharacters via resolveBookGroupEither.
+        BaseRecord bookGroup = resolveBookGroupEither(user, bookObjectId, orgId);
         if (bookGroup == null) throw new PictureBookException(404, "Book not found");
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
 
@@ -6445,7 +7915,6 @@ public class PictureBookUtil {
             }
         }
 
-        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
         // Derive the characters group SERVER-SIDE from the book's own world (trusted), never from a
         // user-writable group path in the meta note. The pb2 book objectId hint is authorization-checked
         // by deriveTrustedCharsGroupPath (readBook -> AccessPoint canRead), so a tampered hint yields the
@@ -6454,14 +7923,13 @@ public class PictureBookUtil {
         // {bookGroupPath}/Characters subgroup, structurally confined to the caller's book. Prefer the meta
         // hint; otherwise the request id itself may be a pb2 book objectId (dual-lookup path above).
         String pb2Hint = (metaPb2BookObjectId != null) ? metaPb2BookObjectId : bookObjectId;
-        String trustedPopulationPath = deriveTrustedCharsGroupPath(user, pb2Hint, orgId);
-        String charsGroupPath = (trustedPopulationPath != null) ? trustedPopulationPath : (bookGroupPath + "/Characters");
-        if (storedCharsGroupPath != null && !storedCharsGroupPath.equals(charsGroupPath)) {
+        BaseRecord charsGroup = resolveTrustedCharsGroup(user, pb2Hint, bookGroupPath, orgId);
+        if (storedCharsGroupPath != null && charsGroup != null
+                && !storedCharsGroupPath.equals(charsGroup.get(FieldNames.FIELD_PATH))) {
             logger.warn("listCharacters: stored charsGroupPath '" + storedCharsGroupPath + "' does not match the "
-                + "server-derived characters group '" + charsGroupPath + "' — ignoring the stored value (possible meta tampering).");
+                + "server-derived characters group '" + charsGroup.get(FieldNames.FIELD_PATH)
+                + "' — ignoring the stored value (possible meta tampering).");
         }
-        BaseRecord charsGroup = IOSystem.getActiveContext().getPathUtil().findPath(user,
-                ModelNames.MODEL_GROUP, charsGroupPath, GroupEnumType.DATA.toString(), orgId);
         if (charsGroup == null) return new ArrayList<>();
 
         Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, charsGroup.get(FieldNames.FIELD_ID));
@@ -6782,7 +8250,7 @@ public class PictureBookUtil {
             // Mirror loadExistingBooks: org-wide name search for .pictureBookMeta notes, projecting text
             // so the JSON linkage can be read. An explicit organizationId condition is required for a
             // data.directory-derived list query or PBAC denies it.
-            Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_NAME, ".pictureBookMeta");
+            Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_NAME, META_NOTE_NAME);
             q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
             q.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID,
                 FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TEXT });

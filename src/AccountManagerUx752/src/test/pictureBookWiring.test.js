@@ -188,3 +188,41 @@ describe('regenerateBlurb (U3 — wired-in blurb regen wrapper)', () => {
         expect(result.blurb).toBe('A hush fell over the courtyard.');
     });
 });
+
+// ── Landscape route (issue 1: the wasted landscape image) ────────────────────
+//
+// The server generated a landscape prompt (an LLM call) and a landscape image (a full SD pass) for
+// every scene, then SceneCompositeUtil discarded the bytes because the FLUX.2 setting reference was
+// off. PictureBookUtil.landscapeEnabled now gates both; these pin the CLIENT half — that a new book
+// is created with the route off, and that the one checkbox governing it writes BOTH fields.
+describe('picture book landscape route', function () {
+    it('pins a new book to skip the landscape, on both fields', async function () {
+        let pb = await import('../workflows/pictureBook.js');
+        let entity = pb.pinPictureBookDefaults({ schema: 'olio.sd.config' });
+
+        expect(entity.skipLandscape).toBe(true);
+        // Both, not just skipLandscape: flux2IncludeLandscapeRef is what SceneCompositeUtil reads,
+        // and a BOOLEAN with no schema default materialises as false anyway — pinning it keeps the
+        // saved record honest about the route rather than relying on that.
+        expect(entity.flux2IncludeLandscapeRef).toBe(false);
+        // Unchanged by this work — the composite pipeline itself.
+        expect(entity.compositeMode).toBe('flux2');
+    });
+
+    it('keeps the two landscape fields opposite, so one control governs the whole route', function () {
+        // Mirrors SdConfigPanel's "Skip landscape" onchange. Generating a landscape the composite
+        // then discards is the exact waste being fixed, so "generate" and "use" must never disagree.
+        function toggle(config, checked) {
+            config.skipLandscape = checked;
+            config.flux2IncludeLandscapeRef = !checked;
+            return config;
+        }
+        let on = toggle({}, false);
+        expect(on.skipLandscape).toBe(false);
+        expect(on.flux2IncludeLandscapeRef).toBe(true);
+
+        let off = toggle({}, true);
+        expect(off.skipLandscape).toBe(true);
+        expect(off.flux2IncludeLandscapeRef).toBe(false);
+    });
+});

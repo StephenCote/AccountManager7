@@ -615,4 +615,138 @@ public class TestFlux2Composite {
 				+ " (" + img.getWidth() + "x" + img.getHeight() + ", " + data.length + " bytes)");
 		}
 	}
+
+	// ── Landscape generation gate (the wasted-image fix) ───────────────────────
+	//
+	// PictureBookUtil.generateSceneImage used to resolve a landscape PROMPT (an LLM call) and
+	// generate a landscape IMAGE (a full SD pass) for every scene unconditionally, then hand the
+	// bytes to SceneCompositeUtil — which discards them when flux2IncludeLandscapeRef is false.
+	// Whole cost, no benefit. These pin the decision that now gates both.
+
+	/// The reference-consumption question, per mode. KONTEXT stitches the landscape into its panel
+	/// strip and CLASSIC draws the portraits on top of it, so neither is ever suppressible.
+	@Test
+	public void kontextAndClassicAlwaysConsumeTheLandscape() throws Exception {
+		BaseRecord cfg = sdConfig();
+		cfg.set("flux2IncludeLandscapeRef", Boolean.FALSE);
+		assertTrue("KONTEXT stitches the landscape into its strip - it always consumes one",
+			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_KONTEXT, cfg));
+		assertTrue("CLASSIC draws portraits onto the landscape canvas - it always consumes one",
+			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_CLASSIC, cfg));
+	}
+
+	/// FLUX.2 is the only mode where the landscape is optional, and the config wins over the resource.
+	@Test
+	public void flux2LandscapeReferenceFollowsTheConfigThenTheResource() throws Exception {
+		BaseRecord off = sdConfig();
+		off.set("flux2IncludeLandscapeRef", Boolean.FALSE);
+		assertFalse("flux2IncludeLandscapeRef=false must suppress the setting reference",
+			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_FLUX2, off));
+
+		BaseRecord on = sdConfig();
+		on.set("flux2IncludeLandscapeRef", Boolean.TRUE);
+		assertTrue("flux2IncludeLandscapeRef=true must keep the setting reference",
+			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_FLUX2, on));
+
+		/// A NULL config (no record at all) is the only input that actually reaches the resource -
+		/// see aBooleanWithNoSchemaDefaultStillReadsFalse for why a schema-built record never does.
+		assertEquals("A null config must resolve from flux2Defaults.json, not a hardcoded literal",
+			Flux2Defaults.includeLandscapeRef(),
+			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_FLUX2, null));
+	}
+
+	/// THE ROOT CAUSE of "the landscape prompt gets created but isn't used with FLUX.2".
+	///
+	/// configModel.json leaves flux2IncludeLandscapeRef with no default deliberately, and its field
+	/// description asserts that a default "is never null and would make flux2Defaults.json's
+	/// includeLandscapeRef dead". The premise does not hold: a BOOLEAN with NO declared default is
+	/// still materialised as the Java primitive false, so the value is never null either way, the
+	/// resource is never consulted for a real config, and the setting reference was suppressed for
+	/// every picture-book composite.
+	///
+	/// Pinned as a test rather than repaired by adding a schema default: false is already the
+	/// effective value, and changing an existing field's shape is the blob-driven migration path.
+	/// If someone later gives this field a real default, this test is where the assumption lives.
+	@Test
+	public void aBooleanWithNoSchemaDefaultStillReadsFalse() throws Exception {
+		BaseRecord cfg = sdConfig();
+		assertNull("The MODEL must declare no default for flux2IncludeLandscapeRef",
+			RecordFactory.getSchema(OlioModelNames.MODEL_SD_CONFIG)
+				.getFieldSchema("flux2IncludeLandscapeRef").getDefaultValue());
+		assertEquals("...yet a schema-built record reads FALSE, not null - so the resource is unreachable",
+			Boolean.FALSE, cfg.get("flux2IncludeLandscapeRef"));
+		assertFalse("...which is why the FLUX.2 setting reference was silently off everywhere",
+			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_FLUX2, cfg));
+		assertTrue("Flux2Defaults still says true - it was simply never asked",
+			Flux2Defaults.includeLandscapeRef());
+	}
+
+	/// A null config must still answer, and must answer the way buildSceneRequest would.
+	@Test
+	public void nullConfigResolvesFromTheResource() throws Exception {
+		assertEquals(Flux2Defaults.includeLandscapeRef(),
+			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_FLUX2, null));
+		assertTrue(SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_CLASSIC, null));
+	}
+
+	/// skipLandscape is the explicit switch, and it wins over every mode - including the two that
+	/// would otherwise consume the landscape. It already existed on olio.sd.config and was already
+	/// honored by ChatService.generateScene; the picture-book pipeline never read it.
+	@Test
+	public void skipLandscapeSuppressesEveryMode() throws Exception {
+		for (String mode : new String[] { SceneCompositeUtil.MODE_FLUX2,
+				SceneCompositeUtil.MODE_KONTEXT, SceneCompositeUtil.MODE_CLASSIC }) {
+			BaseRecord cfg = sdConfig();
+			cfg.set("compositeMode", mode);
+			cfg.set("skipLandscape", Boolean.TRUE);
+			assertFalse("skipLandscape=true must suppress the landscape for compositeMode=" + mode,
+				PictureBookUtil.landscapeEnabled(cfg));
+			assertTrue("The skip reason must name skipLandscape, not the mode",
+				PictureBookUtil.landscapeSkipReason(cfg).contains("skipLandscape=true"));
+		}
+	}
+
+	/// The auto-skip: flux2 + no landscape reference means the image would be generated and thrown
+	/// away, so it is not generated. This is the specific waste reported.
+	@Test
+	public void flux2WithoutTheReferenceSkipsGeneratingIt() throws Exception {
+		BaseRecord cfg = sdConfig();
+		cfg.set("compositeMode", SceneCompositeUtil.MODE_FLUX2);
+		cfg.set("flux2IncludeLandscapeRef", Boolean.FALSE);
+		assertFalse("A landscape the FLUX.2 composite discards must not be generated",
+			PictureBookUtil.landscapeEnabled(cfg));
+		assertTrue("The skip reason must explain that the mode will not consume it",
+			PictureBookUtil.landscapeSkipReason(cfg).contains("flux2IncludeLandscapeRef=false"));
+
+		/// ...and turning the reference back on turns generation back on. No code change, per the
+		/// configModel.json field description.
+		cfg.set("flux2IncludeLandscapeRef", Boolean.TRUE);
+		assertTrue("flux2IncludeLandscapeRef=true must re-enable landscape generation",
+			PictureBookUtil.landscapeEnabled(cfg));
+	}
+
+	/// KONTEXT/CLASSIC are never auto-skipped: they genuinely consume the landscape, so suppressing
+	/// it would be a capability loss rather than a saving.
+	@Test
+	public void kontextAndClassicAreNeverAutoSkipped() throws Exception {
+		for (String mode : new String[] { SceneCompositeUtil.MODE_KONTEXT, SceneCompositeUtil.MODE_CLASSIC }) {
+			BaseRecord cfg = sdConfig();
+			cfg.set("compositeMode", mode);
+			cfg.set("flux2IncludeLandscapeRef", Boolean.FALSE);
+			assertTrue("compositeMode=" + mode + " consumes the landscape and must still generate it",
+				PictureBookUtil.landscapeEnabled(cfg));
+		}
+	}
+
+	/// Mode resolution inside the gate must match generateSceneImage's own inline branch: a config
+	/// whose compositeMode was genuinely cleared falls back to the legacy useKontext boolean.
+	@Test
+	public void landscapeGateFollowsTheLegacyKontextFallback() throws Exception {
+		BaseRecord cfg = sdConfig();
+		cfg.set("compositeMode", (String) null);
+		cfg.set("useKontext", Boolean.TRUE);
+		cfg.set("flux2IncludeLandscapeRef", Boolean.FALSE);
+		assertTrue("A cleared compositeMode with useKontext=true resolves KONTEXT, which consumes a landscape",
+			PictureBookUtil.landscapeEnabled(cfg));
+	}
 }

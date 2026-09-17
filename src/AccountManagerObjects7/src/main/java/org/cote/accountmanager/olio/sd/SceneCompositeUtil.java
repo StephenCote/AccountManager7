@@ -84,6 +84,53 @@ public class SceneCompositeUtil {
 		return legacyKontextDefault ? MODE_KONTEXT : MODE_CLASSIC;
 	}
 
+	/// Will the composite built for {@code mode}/{@code sdConfig} actually CONSUME a landscape image?
+	///
+	/// KONTEXT stitches it into the panel strip and CLASSIC draws on top of it, so both always do.
+	/// FLUX.2 passes it as a third reference and that is OPTIONAL, ON by default: every reference is
+	/// encoded into FLUX.2's context, so the third one is real compute — MEASURED ~40s per reference at
+	/// 1024px/4 steps on the local Strix Halo iGPU (2 refs ~80s, 3 refs ~120s), i.e. LINEAR in
+	/// reference count at this scale. An earlier version of this comment asserted superlinear growth
+	/// from theory; the measurement disproved it. Step count dominates: the same 3-reference request
+	/// took 706s at 24 steps. Memory is NOT the constraint (96GB assigned to VRAM holds the 9B model
+	/// easily) — it is iGPU compute. The setting still reaches the model as prompt text when this is off.
+	///
+	/// Resolution for FLUX.2 is the config override, else the editable {@code flux2Defaults.json}
+	/// resource. {@code buildSceneRequest} used to inline this and ignored the resource entirely,
+	/// hardcoding true as the fallback, so the resource's {@code includeLandscapeRef} was dead.
+	///
+	/// <b>...and the resource is STILL effectively dead, for a different reason. MEASURED
+	/// 2026-09-17 (TestFlux2Composite#aBooleanWithNoSchemaDefaultStillReadsFalse).</b>
+	/// {@code configModel.json} declares NO default on {@code flux2IncludeLandscapeRef} on purpose,
+	/// and its field description says a default "is never null and would make flux2Defaults.json's
+	/// includeLandscapeRef dead". The premise is wrong: {@code RecordFactory.newInstance} materialises
+	/// a BOOLEAN field with no declared default as Java's primitive {@code false}, NOT null. So
+	/// {@code get("flux2IncludeLandscapeRef")} returns {@code Boolean.FALSE} on every schema-built
+	/// config, this method never reaches {@code Flux2Defaults.includeLandscapeRef()} (which returns
+	/// true), and the FLUX.2 setting reference has been suppressed for every picture-book composite.
+	/// That is the reported "landscape prompt gets created, but isn't used w/ flux 2".
+	///
+	/// The INT/DOUBLE knobs beside it escape this because their call sites treat 0 as unset
+	/// ({@code refSizeV != null && refSizeV > 0}); a boolean has no such spare sentinel. Nothing here
+	/// tries to invent one — an explicit {@code true} is how you turn the reference on, and Ux752's
+	/// "Skip landscape" checkbox writes it alongside {@code skipLandscape} so one control governs the
+	/// whole route. Left as a measured fact rather than "fixed" by adding a schema default, because
+	/// changing an EXISTING field's shape is the blob-driven migration path in
+	/// .claude/rules/objects7-reference.md, and {@code false} is already the effective value.
+	///
+	/// Extracted so a CALLER can ask the question BEFORE paying for the landscape. PictureBookUtil
+	/// generated the landscape prompt (an LLM call) and the landscape image (a full SD pass) for every
+	/// scene unconditionally, and then this method threw the result away when the answer here was
+	/// false — the whole cost, none of the benefit.
+	public static boolean includesLandscapeReference(String mode, BaseRecord sdConfig) {
+		if (!MODE_FLUX2.equals(mode)) return true;
+		Boolean includeLandscapeV = null;
+		if (sdConfig != null) {
+			try { includeLandscapeV = sdConfig.get("flux2IncludeLandscapeRef"); } catch (Exception e) { /* field may not exist */ }
+		}
+		return (includeLandscapeV != null) ? includeLandscapeV.booleanValue() : Flux2Defaults.includeLandscapeRef();
+	}
+
 	/// Build the fully-configured request for a composite scene, including its reference/init imagery.
 	///
 	/// Returns null only when the mode is unknown; every mode produces a usable request even with no
@@ -109,23 +156,11 @@ public class SceneCompositeUtil {
 
 		if (MODE_FLUX2.equals(mode)) {
 			Integer refSizeV = null;
-			Boolean includeLandscapeV = null;
 			if (sdConfig != null) {
 				try { refSizeV = sdConfig.get("flux2ReferenceSize"); } catch (Exception e) { /* ignore */ }
-				try { includeLandscapeV = sdConfig.get("flux2IncludeLandscapeRef"); } catch (Exception e) { /* ignore */ }
 			}
 			int refSize = (refSizeV != null && refSizeV > 0) ? refSizeV.intValue() : Flux2Defaults.referenceSize();
-			/// Optional, ON by default. Every reference is encoded into FLUX.2's context, so the third
-			/// one is real compute — MEASURED ~40s per reference at 1024px/4 steps on the local Strix
-			/// Halo iGPU (2 refs ~80s, 3 refs ~120s), i.e. LINEAR in reference count at this scale. An
-			/// earlier version of this comment asserted superlinear growth from theory; the measurement
-			/// disproved it. Step count dominates: the same 3-reference request took 706s at 24 steps.
-			/// Memory is NOT the constraint (96GB assigned to VRAM holds the 9B model easily) — it is
-			/// iGPU compute. The setting still reaches the model as prompt text when this is off.
-			/// Config override, else the editable resource. This ignored the resource entirely and
-			/// hardcoded true as the fallback, so flux2Defaults.json's includeLandscapeRef was dead.
-			boolean includeLandscape = (includeLandscapeV != null)
-				? includeLandscapeV.booleanValue() : Flux2Defaults.includeLandscapeRef();
+			boolean includeLandscape = includesLandscapeReference(mode, sdConfig);
 			byte[] settingRef = includeLandscape ? landscapeBytes : null;
 			if (!includeLandscape && landscapeBytes != null) {
 				logger.info("Scene composite [flux2]: landscape reference SUPPRESSED by "

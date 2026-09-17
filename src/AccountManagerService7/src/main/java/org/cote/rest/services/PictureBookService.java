@@ -1,6 +1,7 @@
 package org.cote.rest.services;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -687,6 +688,79 @@ public class PictureBookService {
             return Response.status(200).entity(JSONUtil.exportObject(characters)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/characters/merge
+     *
+     * <p>Fold duplicate extracted characters into one. Body:
+     * {@code { keepObjectId: "...", mergeObjectIds: ["...", "..."] }}.
+     *
+     * <p>Exists because extraction cannot always tell that two references are the same person. The
+     * chunked extractor refers to an unnamed character differently in different chunks ("Darby's
+     * dad", "the father", "Dad"); PictureBookUtil now canonicalises the spellings that are
+     * unambiguously equivalent, but a bare relation in a book with two families genuinely cannot be
+     * resolved automatically and is deliberately left as a separate character. This is how the
+     * reader resolves it.
+     *
+     * <p>Transport only: PictureBookUtil.mergeCharacters authorizes the book (UPDATE), derives the
+     * characters group server-side, repoints both persisted representations of a scene's characters,
+     * and deletes the duplicates. Nothing here decides anything.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/characters/merge")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response mergeCharacters(@PathParam("bookObjectId") String bookObjectId,
+            String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        String keepObjectId = null;
+        List<String> mergeObjectIds = new ArrayList<>();
+        try {
+            /// Read straight off the JSON rather than through olio.pictureBookRequest: the two
+            /// fields this takes are a string and a string LIST, and adding a list field to that
+            /// model for one endpoint is more surface than reading two keys.
+            Map<String, Object> body = (json != null && !json.isBlank())
+                    ? JSONUtil.getMap(json.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                            String.class, Object.class)
+                    : null;
+            if (body != null) {
+                Object k = body.get("keepObjectId");
+                if (k instanceof String) keepObjectId = ((String) k).trim();
+                Object m = body.get("mergeObjectIds");
+                if (m instanceof List) {
+                    for (Object o : (List<?>) m) {
+                        if (o instanceof String && !((String) o).isBlank()) mergeObjectIds.add(((String) o).trim());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            return Response.status(400).entity("{\"error\":true,\"message\":\"Malformed request body\"}").build();
+        }
+        if (keepObjectId == null || keepObjectId.isEmpty()) {
+            return Response.status(400).entity("{\"error\":true,\"message\":\"keepObjectId is required\"}").build();
+        }
+        if (mergeObjectIds.isEmpty()) {
+            return Response.status(400).entity("{\"error\":true,\"message\":\"mergeObjectIds is required\"}").build();
+        }
+        try {
+            PictureBookUtil.MergeResult merged = PictureBookUtil.mergeCharacters(
+                    user, bookObjectId, keepObjectId, mergeObjectIds);
+            /// Report what actually moved, not a bare success flag: a merge that repointed no scenes,
+            /// or could not delete a duplicate, is something the caller needs to see.
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("keptName", merged.keptName);
+            out.put("mergedNames", merged.mergedNames);
+            out.put("scenesRepointed", merged.scenesRepointed);
+            out.put("metaUpdated", merged.metaUpdated);
+            out.put("failedDeletes", merged.failedDeletes);
+            return Response.status(200).entity(JSONUtil.exportObject(out)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (Exception e) {
+            return Response.status(500).entity("{\"error\":true,\"message\":\"" + e.getMessage() + "\"}").build();
         }
     }
 

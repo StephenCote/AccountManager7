@@ -4,7 +4,7 @@ import { am7model } from '../core/model.js';
 import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import { renderRange } from '../components/formFieldRenderers.js';
-import { listCharacters, tagApparelSceneIndex, resolveImageUrl } from './sceneExtractor.js';
+import { listCharacters, tagApparelSceneIndex, mergeCharacters, resolveImageUrl } from './sceneExtractor.js';
 import { reimage } from './reimage.js';
 import { outfitBuilder } from './outfitBuilder.js';
 
@@ -35,6 +35,10 @@ let selectedObjectId = null;
 let selectedInst = null;
 let loading = false;
 let sceneTagInputs = {}; // apparelObjectId -> string (pending scene index input)
+// Merge mode: which duplicates are ticked to fold into the currently-selected character.
+let mergeMode = false;
+let mergeSelection = {};   // objectId -> true
+let merging = false;
 
 function resetState() {
     bookObjectId = null;
@@ -43,6 +47,9 @@ function resetState() {
     selectedInst = null;
     loading = false;
     sceneTagInputs = {};
+    mergeMode = false;
+    mergeSelection = {};
+    merging = false;
 }
 
 async function refreshList() {
@@ -90,6 +97,67 @@ async function doOutfitBuilder() {
 }
 
 /**
+ * Fold the ticked duplicates into the selected character.
+ *
+ * The selected character is the KEEPER — "use just the first version" — so this screen never asks
+ * which one survives in the abstract: you pick the good one, then tick the duplicates.
+ *
+ * Confirmed before firing, because it deletes records and rewrites every scene in the book. The
+ * confirmation names the characters rather than saying "these items": a wrong merge moves scenes
+ * onto the wrong person and is not undoable from here.
+ */
+async function doMergeSelected() {
+    if (!selectedObjectId || merging) return;
+    let dropIds = Object.keys(mergeSelection).filter(function (k) { return mergeSelection[k]; });
+    if (!dropIds.length) {
+        page.toast('error', 'Tick at least one duplicate to merge');
+        return;
+    }
+    let keepName = (characters.find(function (c) { return c.objectId === selectedObjectId; }) || {}).name
+        || selectedObjectId;
+    let dropNames = dropIds.map(function (id) {
+        let c = characters.find(function (x) { return x.objectId === id; });
+        return (c && c.name) || id;
+    });
+    let ok = window.confirm('Merge ' + dropNames.join(', ') + ' into "' + keepName + '"?\n\n'
+        + 'Every scene that references ' + (dropNames.length > 1 ? 'them' : 'it')
+        + ' will be repointed to "' + keepName + '", and '
+        + (dropNames.length > 1 ? 'those characters' : 'that character')
+        + ' will be deleted along with their portrait, statistics and wardrobe. This cannot be undone.');
+    if (!ok) return;
+
+    merging = true;
+    m.redraw();
+    try {
+        let result = await mergeCharacters(bookObjectId, selectedObjectId, dropIds);
+        // Report what the server says actually moved — a merge that repointed no scenes is worth
+        // seeing, not hiding behind a generic "done".
+        let msg = 'Merged ' + (result.mergedNames || dropNames).join(', ') + ' into "'
+            + (result.keptName || keepName) + '" (' + (result.scenesRepointed || 0) + ' scene'
+            + ((result.scenesRepointed === 1) ? '' : 's') + ' repointed)';
+        if (result.failedDeletes && result.failedDeletes.length) {
+            page.toast('error', msg + ' — but could not delete: ' + result.failedDeletes.join(', '));
+        }
+        else {
+            page.toast('success', msg);
+        }
+        mergeMode = false;
+        mergeSelection = {};
+        await refreshList();
+    } catch (e) {
+        page.toast('error', 'Merge failed: ' + (e.message || e));
+    }
+    merging = false;
+    m.redraw();
+}
+
+function toggleMergeMode() {
+    mergeMode = !mergeMode;
+    mergeSelection = {};
+    m.redraw();
+}
+
+/**
  * Open a record's full generic editor in a new tab rather than navigating the current one: this
  * screen renders inside the PictureBook wizard's Dialog (either inline at Step 3, or as the Steps
  * 4/5 stacked popup), and there's no route-based back nav that would restore the in-progress
@@ -134,12 +202,34 @@ function renderCharacterListItem(c) {
     if (!c.apparelCount) badges.push(m('span', { class: 'text-xs text-amber-600 dark:text-amber-400' }, 'no apparel'));
     if (c.failedApparel) badges.push(m('span', { class: 'text-xs text-red-600 dark:text-red-400' }, 'apparel failed'));
     if (c.failedStatistics) badges.push(m('span', { class: 'text-xs text-red-600 dark:text-red-400' }, 'stats failed'));
+
+    // In merge mode the KEEPER is whichever character is selected, so it gets no checkbox — you
+    // cannot merge someone into themselves, and offering the box would only invite the attempt.
+    let checkbox = (mergeMode && !isSelected)
+        ? m('input', {
+            type: 'checkbox',
+            class: 'mr-2',
+            checked: !!mergeSelection[c.objectId],
+            onclick: function (e) { e.stopPropagation(); },
+            onchange: function (e) {
+                mergeSelection[c.objectId] = e.target.checked;
+                m.redraw();
+            }
+        })
+        : null;
+
     return m('div', {
         class: 'px-3 py-2 rounded cursor-pointer border ' +
             (isSelected ? 'border-blue-500 bg-blue-50 dark:bg-blue-950' : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800'),
-        onclick: function () { selectCharacter(c.objectId); }
+        onclick: function () { if (!mergeMode) selectCharacter(c.objectId); }
     }, [
-        m('div', { class: 'font-medium text-sm' }, c.name || '(unnamed)'),
+        m('div', { class: 'flex items-center' }, [
+            checkbox,
+            m('div', { class: 'font-medium text-sm' }, c.name || '(unnamed)'),
+            (mergeMode && isSelected)
+                ? m('span', { class: 'ml-2 text-xs text-blue-600 dark:text-blue-400' }, '(keep)')
+                : null
+        ]),
         m('div', { class: 'flex gap-2 mt-1' }, badges)
     ]);
 }
@@ -267,11 +357,47 @@ function renderDetail() {
     ]);
 }
 
+// Merge toolbar. Sits above the character list because merging is a LIST operation — it is about
+// the relationship between two rows, not about the selected character's own fields.
+function renderMergeToolbar() {
+    if (!characters.length) return null;
+    let selectedCount = Object.keys(mergeSelection).filter(function (k) { return mergeSelection[k]; }).length;
+    if (!mergeMode) {
+        return m('div', { class: 'flex items-center justify-between pb-2 mb-1 border-b border-gray-200 dark:border-gray-700' }, [
+            m('span', { class: 'text-xs text-gray-500 uppercase tracking-wide' }, 'Characters'),
+            m('a', {
+                href: '#', class: 'text-xs text-blue-600 dark:text-blue-400 hover:underline',
+                title: 'Fold duplicate extractions of the same person into one character. Extraction can name an unnamed character differently in different parts of a long work.',
+                onclick: function (e) { e.preventDefault(); toggleMergeMode(); }
+            }, 'Merge duplicates')
+        ]);
+    }
+    return m('div', { class: 'flex flex-col gap-1 pb-2 mb-1 border-b border-gray-200 dark:border-gray-700' }, [
+        m('div', { class: 'text-xs text-gray-600 dark:text-gray-300' },
+            selectedObjectId
+                ? 'Tick the duplicates to fold into the selected character.'
+                : 'Select the character to KEEP first, then tick its duplicates.'),
+        m('div', { class: 'flex gap-2' }, [
+            m('button', {
+                class: 'button primary text-xs',
+                disabled: merging || !selectedObjectId || !selectedCount,
+                onclick: doMergeSelected
+            }, merging ? 'Merging…' : ('Merge ' + selectedCount + ' →')),
+            m('button', { class: 'button text-xs', disabled: merging, onclick: toggleMergeMode }, 'Cancel')
+        ])
+    ]);
+}
+
 function renderContent() {
     if (loading) return m('div', { class: 'p-4 text-sm text-gray-500' }, 'Loading characters…');
     return m('div', { class: 'flex gap-4', style: 'min-height: 400px;' }, [
-        m('div', { class: 'w-56 flex flex-col gap-1 border-r border-gray-200 dark:border-gray-700 pr-2 overflow-y-auto' },
-            characters.length ? characters.map(renderCharacterListItem) : m('div', { class: 'text-sm text-gray-500 p-2' }, 'No characters extracted yet.')),
+        m('div', { class: 'w-56 flex flex-col border-r border-gray-200 dark:border-gray-700 pr-2 overflow-y-auto' }, [
+            renderMergeToolbar(),
+            m('div', { class: 'flex flex-col gap-1' },
+                characters.length
+                    ? characters.map(renderCharacterListItem)
+                    : m('div', { class: 'text-sm text-gray-500 p-2' }, 'No characters extracted yet.'))
+        ]),
         m('div', { class: 'flex-1 overflow-y-auto' }, renderDetail())
     ]);
 }

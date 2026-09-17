@@ -242,11 +242,53 @@ fi
 echo "============================================================"
 echo
 
-if ! docker version >/dev/null 2>&1; then
-  echo "ERROR: Docker is not responding." >&2
-  echo "       Check the daemon:  systemctl status docker" >&2
-  echo "       If it is running, your user may not be in the 'docker' group:" >&2
-  echo '         sudo usermod -aG docker "$USER"    # then log out and back in' >&2
+# Daemon reachability. NOTE: `docker compose version` above proves nothing about
+# the daemon - it only prints the CLI plugin's own version and never connects. So
+# this is the first call that actually touches dockerd.
+#
+# Print what Docker ACTUALLY said. An earlier version of this check swallowed the
+# error into /dev/null and printed a guess ("is Docker running?"), which sent
+# someone chasing a healthy daemon and a group membership that was already
+# correct. The CLI's own message distinguishes the three real causes; a guess
+# cannot.
+docker_diag="$(docker version 2>&1)"
+if [ $? -ne 0 ]; then
+  echo "ERROR: the Docker CLI could not complete 'docker version'." >&2
+  echo "       Docker's own output:" >&2
+  printf '%s\n' "$docker_diag" \
+    | grep -iE 'error|cannot|denied|refused|timed out|no such file|not found' \
+    | sed 's/^/         /' >&2 \
+    || printf '%s\n' "$docker_diag" | tail -n 5 | sed 's/^/         /' >&2
+  echo >&2
+  echo "       Environment as this script sees it:" >&2
+  echo "         DOCKER_HOST    = ${DOCKER_HOST:-<unset>}" >&2
+  echo "         DOCKER_CONTEXT = ${DOCKER_CONTEXT:-<unset>}  (active: $(docker context show 2>/dev/null || echo '?'))" >&2
+  echo "         ALL_PROXY      = ${ALL_PROXY:-<unset>}" >&2
+  echo "         HTTPS_PROXY    = ${HTTPS_PROXY:-<unset>}" >&2
+  echo >&2
+  case "$docker_diag" in
+    *"permission denied"*|*"Permission denied"*)
+      echo "       'permission denied' on the socket = a GROUP problem, and almost always a" >&2
+      echo "       STALE SESSION rather than a missing membership. \`groups <name>\` reads the" >&2
+      echo "       group DATABASE; what matters is the credentials this shell was started" >&2
+      echo "       with. Compare the two:" >&2
+      echo "         id -nG            # THIS shell's groups - the one that counts" >&2
+      echo "         getent group docker" >&2
+      echo "       If 'docker' is in getent but not in \`id -nG\`, re-login or:  newgrp docker" >&2
+      ;;
+    *"Cannot connect"*|*"cannot connect"*|*"connection refused"*|*"no such file"*)
+      echo "       'cannot connect' = the CLI is dialling the wrong endpoint, or the daemon" >&2
+      echo "       is down. systemctl says it is up, so check the endpoint:" >&2
+      echo "         docker context ls          # a non-default context overrides the socket" >&2
+      echo "         ls -l /var/run/docker.sock" >&2
+      echo "       Also unset ALL_PROXY/HTTPS_PROXY for the CLI if either is set above." >&2
+      ;;
+    *)
+      echo "       Check the daemon and the endpoint:" >&2
+      echo "         systemctl status docker" >&2
+      echo "         docker context ls" >&2
+      ;;
+  esac
   exit 1
 fi
 

@@ -35,6 +35,12 @@
 			"description": "Names of characters whose best-effort statistics-estimation step failed during createCharPerson() — the character itself was still created with default statistics."
 		},
 		{
+			"name": "mergedCharacterNames",
+			"type": "list",
+			"baseType": "string",
+			"description": "Duplicate character spellings that were folded into another character at extraction, as \"alias -> canonical\" entries. Diagnostic only: the extraction refers to an unnamed character differently in different chunks (\"Darby's dad\", \"the father\", \"Dad\"), and de-duplication is an exact-string match, so without canonicalisation each spelling became its own charPerson with its own portrait and wardrobe and a split set of scenes. Recorded so the Manage Characters screen can show what was merged and the user can tell a correct fold from a wrong one - the ambiguous cases are deliberately NOT folded and are left for the merge endpoint."
+		},
+		{
 			"name": "failedExtractions",
 			"type": "list",
 			"baseType": "string",
