@@ -65,6 +65,29 @@
 #  192.168.1.39 Windows box.
 # ============================================================================
 #
+# ---------------------------------------------------------------------------
+# Re-exec under bash. `sh am7-docker-up.sh` bypasses the shebang, and on
+# Debian/Ubuntu /bin/sh is dash, which cannot run this script: measured in
+# debian:trixie-slim it fails three ways - `set -o pipefail` (older dash;
+# 0.5.12+ added it, so this one is version-dependent), `${BASH_SOURCE[0]}`
+# -> "Bad substitution", and the `PROFILE_ARGS=()` array literal ->
+# 'Syntax error: "(" unexpected'. Rather than emit a confusing partial
+# failure, hand the whole thing to bash.
+#
+# EVERYTHING ABOVE THIS GUARD MUST BE POSIX sh - no arrays, no BASH_SOURCE,
+# no `set -o pipefail`. `${BASH_VERSION:-}` is POSIX-valid, which is why the
+# test is written that way.
+# ---------------------------------------------------------------------------
+if [ -z "${BASH_VERSION:-}" ]; then
+  if command -v bash >/dev/null 2>&1; then
+    exec bash "$0" "$@"
+  fi
+  echo "ERROR: this script requires bash (it uses arrays and 'set -o pipefail')," >&2
+  echo "       and no bash was found on PATH. Install it, or run under bash:" >&2
+  echo "         sudo apt install bash" >&2
+  exit 1
+fi
+
 # No `set -e`: every failure below is checked explicitly so it can print a
 # useful message, and several steps (the --app-only `stop`, seed staging) are
 # allowed to fail without aborting the run.
