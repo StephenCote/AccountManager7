@@ -23,6 +23,15 @@ REM                                      litellmdb). Does NOT build, does not st
 REM                                      the Olio seed, and does NOT start the app.
 REM                                      Use when you want the proxy without the
 REM                                      Service7/Ux752 overhead.
+REM    am7-docker-up.bat --stop          STOP all 9 containers in the am7test
+REM                                      project - app AND sidecars - and exit.
+REM                                      Nothing is removed: no container, no
+REM                                      volume, no data. Build and seed skipped.
+REM                                      The `--profile llmproxy` in that call is
+REM                                      mandatory - see the note at the
+REM                                      implementation.
+REM    am7-docker-up.bat --start         start those containers back up without
+REM                                      recreating or rebuilding anything.
 REM    am7-docker-up.bat --prebuilt      build with PREBUILT=1 (host-built WAR;
 REM                                      use when a TLS proxy blocks Maven Central.
 REM                                      Run these on the host FIRST:
@@ -108,6 +117,7 @@ set "PROFILE_ARGS="
 set "ENVFILE_ARGS="
 set "LLMPROXY_ONLY="
 set "APP_ONLY="
+set "LIFECYCLE="
 
 REM  A shift loop, not a row of `if "%~1"==...` tests: flags are combinable
 REM  (e.g. --no-build --llmproxy) and the old single-arg form silently ignored
@@ -128,6 +138,8 @@ if /i "%~1"=="--llmproxy-only" (
     set "BUILD_FLAG="
 )
 if /i "%~1"=="--app-only" set "APP_ONLY=1"
+if /i "%~1"=="--stop" set "LIFECYCLE=stop"
+if /i "%~1"=="--start" set "LIFECYCLE=start"
 if /i "%~1"=="--help" goto :usage
 if /i "%~1"=="-h" goto :usage
 if /i "%~1"=="/?" goto :usage
@@ -139,6 +151,33 @@ if defined APP_ONLY if defined LLMPROXY_ONLY (
     echo ERROR: --app-only and --llmproxy-only are opposites; pick one.
     exit /b 1
 )
+
+if defined LIFECYCLE if defined APP_ONLY (
+    echo ERROR: --%LIFECYCLE% is a whole-project lifecycle action; it cannot be
+    echo        combined with --app-only, --llmproxy-only or --prebuilt.
+    exit /b 1
+)
+if defined LIFECYCLE if defined LLMPROXY_ONLY (
+    echo ERROR: --%LIFECYCLE% is a whole-project lifecycle action; it cannot be
+    echo        combined with --app-only, --llmproxy-only or --prebuilt.
+    exit /b 1
+)
+if defined LIFECYCLE if defined BUILD_ARG (
+    echo ERROR: --%LIFECYCLE% is a whole-project lifecycle action; it cannot be
+    echo        combined with --app-only, --llmproxy-only or --prebuilt.
+    exit /b 1
+)
+
+REM  STOP_GRACE - see the long note in am7-docker-up.sh. Compose's default stop
+REM  timeout is 10s, after which it SIGKILLs (an `Exited (137)` in the status
+REM  table). 20s is the cheapest setting measured at which am7 (Tomcat: DB
+REM  connections, vault) and am7-pg both reach Exited (0). Wall time is NOT one
+REM  grace period - compose stops in dependency waves, each with its own timeout,
+REM  so 20s costs about 45s in total. langfuse-web/worker ignore SIGTERM at every
+REM  grace tested and are always killed.
+REM    set "STOP_GRACE=10"  before running for a fast (~5s) but dirty stop
+REM    set "STOP_GRACE=45"  to also get litellm + clickhouse clean (~55s)
+if not defined STOP_GRACE set "STOP_GRACE=20"
 
 REM  The profile's secrets/overrides live in a git-ignored env file. --env-file
 REM  feeds docker-compose ${VAR} INTERPOLATION only; anything litellm must see in
@@ -179,6 +218,46 @@ if errorlevel 1 (
     echo ERROR: Docker is not responding. Is Docker Desktop running?
     popd
     exit /b 1
+)
+
+REM  --stop / --start: whole-project lifecycle, no build, no seed, no data touched.
+REM
+REM  THE `--profile llmproxy` HERE IS LOAD-BEARING, not decoration. Compose only
+REM  acts on services in an ACTIVE profile, and a profile is active only when
+REM  named. So the obvious `docker compose -p am7test -f docker-compose.test.yml
+REM  stop` reaches just 2 of the 9 containers and silently leaves the 7
+REM  LiteLLM/Langfuse sidecars running. Measured 2026-09-17 with `stop --dry-run`
+REM  against all 9 running: without the flag it stopped only am7test-am7-1 and
+REM  am7-pg. Passing the profile is additive - the non-profile services stay
+REM  active - so this one call covers the whole project.
+REM
+REM  `stop`/`start`, never `down`: the containers and their volumes survive, so a
+REM  --start brings the stack back in seconds with no rebuild and no re-seed.
+if defined LIFECYCLE (
+    if "%LIFECYCLE%"=="stop" (
+        echo [1/2] Stopping every container in project %PROJECT% ^(app + sidecars^) ...
+        docker compose -p %PROJECT% -f %COMPOSE_FILE% --profile llmproxy stop -t %STOP_GRACE%
+    ) else (
+        echo [1/2] Starting the stopped containers in project %PROJECT% ...
+        docker compose -p %PROJECT% -f %COMPOSE_FILE% --profile llmproxy start
+    )
+    if errorlevel 1 goto :lifecycleerr
+    echo.
+    echo [2/2] Status:
+    docker compose -p %PROJECT% -f %COMPOSE_FILE% --profile llmproxy ps -a
+    echo.
+    echo ============================================================
+    if "%LIFECYCLE%"=="stop" (
+        echo  Stopped. Nothing was removed - no container, volume or byte of data.
+        echo  Bring it back:  am7-docker-up.bat --start
+    ) else (
+        echo  Started. No container was recreated and nothing was rebuilt.
+        echo  App: https://localhost:%APP_PORT%   LAN: https://%LAN_IP%:%APP_PORT%
+    )
+    echo ============================================================
+    popd
+    endlocal
+    exit /b 0
 )
 
 REM  --app-only: the reverse of --llmproxy-only. `docker compose up` would simply
@@ -320,7 +399,13 @@ goto :done
 echo ============================================================
 echo.
 echo  Follow the log:  docker compose -p %PROJECT% -f %COMPOSE_FILE% logs -f am7
-echo  Stop (keep data): docker compose -p %PROJECT% -f %COMPOSE_FILE% down
+echo  Stop (keep all):  am7-docker-up.bat --stop     ^(containers kept; --start to resume^)
+REM  NOTE the --profile llmproxy on the `down`: without it compose removes only 2
+REM  of the 9 containers and then fails trying to delete a network the other 7 are
+REM  still attached to. The earlier advice here omitted it. Verified 2026-09-17
+REM  with `down --dry-run`.
+echo  Remove ^(keeps data volumes^):
+echo     docker compose -p %PROJECT% -f %COMPOSE_FILE% --profile llmproxy down
 echo.
 
 popd
@@ -329,15 +414,31 @@ REM  MUST exit here: without it execution falls straight through into :usage and
 REM  every successful run prints the help block.
 exit /b 0
 
+:lifecycleerr
+echo.
+echo ERROR: `docker compose %LIFECYCLE%` failed. Check the daemon and the project name.
+docker compose -p %PROJECT% -f %COMPOSE_FILE% --profile llmproxy ps -a
+popd
+endlocal
+exit /b 1
+
 :usage
 echo.
 echo  am7-docker-up.bat [--no-build ^| --prebuilt] [--llmproxy ^| --llmproxy-only ^| --app-only]
+echo  am7-docker-up.bat --stop ^| --start
 echo.
 echo    --no-build        start the existing am7:latest image
 echo    --prebuilt        build with PREBUILT=1 (host-built WAR)
 echo    --llmproxy        also start the LiteLLM + Langfuse sidecars (7 containers)
 echo    --llmproxy-only   start ONLY those sidecars - no app, no build, no seed
 echo    --app-only        start ONLY the app + its DB, and STOP any running sidecars
+echo    --stop            STOP all 9 containers in the am7test project and exit.
+echo                      Does NOT remove them or touch any data.
+echo    --start           start those stopped containers back up, without
+echo                      recreating or rebuilding anything.
+echo.
+echo  --stop and --start are exclusive - they ignore every other flag.
+echo  Set STOP_GRACE (default 20) to trade stop speed against clean shutdown.
 echo.
 echo  Flags may be combined, e.g.:  am7-docker-up.bat --no-build --llmproxy
 echo  Runbook: src\aiDocs\dockerDevSetup.md section 12

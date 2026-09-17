@@ -25,6 +25,15 @@
 #                                       the Olio seed, and does NOT start the app.
 #                                       Use when you want the proxy without the
 #                                       Service7/Ux752 overhead.
+#    ./am7-docker-up.sh --stop          STOP all 9 containers in the am7test
+#                                       project - app AND sidecars - and exit.
+#                                       Nothing is removed: no container, no
+#                                       volume, no data. Build and seed are
+#                                       skipped. See the note at the --stop
+#                                       implementation for why the compose
+#                                       profile flag is mandatory here.
+#    ./am7-docker-up.sh --start         start those containers back up without
+#                                       recreating or rebuilding anything.
 #    ./am7-docker-up.sh --prebuilt      build with PREBUILT=1 (host-built WAR;
 #                                       use when a TLS proxy blocks Maven Central.
 #                                       Run these on the host FIRST:
@@ -164,14 +173,20 @@ usage() {
   cat <<'USAGE'
 
  am7-docker-up.sh [--no-build | --prebuilt] [--llmproxy | --llmproxy-only | --app-only]
+ am7-docker-up.sh --stop | --start
 
    --no-build        start the existing am7:latest image
    --prebuilt        build with PREBUILT=1 (host-built WAR)
    --llmproxy        also start the LiteLLM + Langfuse sidecars (7 containers)
    --llmproxy-only   start ONLY those sidecars - no app, no build, no seed
    --app-only        start ONLY the app + its DB, and STOP any running sidecars
+   --stop            STOP all 9 containers in the am7test project and exit.
+                     Does NOT remove them or touch any data.
+   --start           start those stopped containers back up, without recreating
+                     or rebuilding anything. The counterpart to --stop.
 
  Flags may be combined, e.g.:  ./am7-docker-up.sh --no-build --llmproxy
+ --stop and --start are exclusive - they ignore every other flag.
 
  Settings are environment overrides, not file edits:
    LAN_IP  APP_PORT  CATALINA_OPTS  SEED_ARGS  SEED_STAGING  AM7_DATA_DIR
@@ -190,6 +205,7 @@ PROFILE_ARGS=()
 ENVFILE_ARGS=()
 LLMPROXY_ONLY=""
 APP_ONLY=""
+LIFECYCLE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -198,6 +214,8 @@ while [ $# -gt 0 ]; do
     --llmproxy)       PROFILE_ARGS=(--profile llmproxy) ;;
     --llmproxy-only)  PROFILE_ARGS=(--profile llmproxy); LLMPROXY_ONLY=1; BUILD_FLAG="" ;;
     --app-only)       APP_ONLY=1 ;;
+    --stop)           LIFECYCLE=stop ;;
+    --start)          LIFECYCLE=start ;;
     -h|--help)        usage; exit 0 ;;
     *) echo "ERROR: unknown flag '$1'" >&2; usage; exit 1 ;;
   esac
@@ -208,6 +226,16 @@ if [ -n "$APP_ONLY" ] && [ -n "$LLMPROXY_ONLY" ]; then
   echo "ERROR: --app-only and --llmproxy-only are opposites; pick one." >&2
   exit 1
 fi
+
+case "$LIFECYCLE" in
+  stop|start)
+    if [ -n "$APP_ONLY" ] || [ -n "$LLMPROXY_ONLY" ] || [ -n "$PREBUILT_BUILD" ]; then
+      echo "ERROR: --$LIFECYCLE is a whole-project lifecycle action; it cannot be combined" >&2
+      echo "       with --app-only, --llmproxy-only or --prebuilt." >&2
+      exit 1
+    fi
+    ;;
+esac
 
 cd "$SRC_DIR" || { echo "ERROR: cannot cd to \"$SRC_DIR\"" >&2; exit 1; }
 
@@ -313,6 +341,78 @@ if [ $? -ne 0 ]; then
       ;;
   esac
   exit 1
+fi
+
+# --stop / --start: whole-project lifecycle, no build, no seed, no data touched.
+#
+# THE `--profile llmproxy` HERE IS LOAD-BEARING, not decoration. Compose only acts
+# on services in an ACTIVE profile, and a profile is active only when named. So the
+# obvious `docker compose -p am7test -f docker-compose.test.yml stop` reaches just
+# 2 of the 9 containers and silently leaves the 7 LiteLLM/Langfuse sidecars running.
+# Measured 2026-09-17 with `stop --dry-run` against all 9 running: without the flag
+# it stopped only am7test-am7-1 and am7-pg. Passing the profile is additive - the
+# non-profile services stay active - so this one call covers the whole project.
+#
+# `stop`/`start`, never `down`: the containers and their volumes survive, so a
+# --start brings the stack back in seconds with no rebuild and no re-seed.
+if [ -n "$LIFECYCLE" ]; then
+  if [ "$LIFECYCLE" = "stop" ]; then
+    echo "[1/2] Stopping every container in project '$PROJECT' (app + sidecars) ..."
+  else
+    echo "[1/2] Starting the stopped containers in project '$PROJECT' ..."
+  fi
+  # STOP_GRACE: compose's default stop timeout is 10s, after which it SIGKILLs
+  # (that is what an `Exited (137)` in the status table means).
+  #
+  # Measured 2026-09-17, ONE run per setting against all 9 running - observations,
+  # not a controlled benchmark, and litellm's result was not stable across them:
+  #
+  #   grace | wall | Exited(137), i.e. SIGKILLed
+  #   ------+------+----------------------------------------------------------
+  #    10s  |   5s | am7, litellm, clickhouse, langfuse-web, langfuse-worker
+  #    20s  |  45s | litellm, langfuse-web, langfuse-worker
+  #    45s  |  55s | langfuse-web, langfuse-worker
+  #
+  # Two things to understand before retuning this:
+  #  - Wall time is NOT one grace period. Compose stops in dependency waves and
+  #    each wave gets its own timeout, so the total is roughly the sum across
+  #    waves - which is why 20s costs 45s, not 20s.
+  #  - langfuse-web and langfuse-worker ignore SIGTERM at EVERY grace tested.
+  #    They are always killed; raising the grace only makes you wait longer for
+  #    the same outcome.
+  #
+  # 20s is the default because it is the cheapest setting at which the two
+  # containers that actually hold AM7 state - am7 (Tomcat: DB connections, vault)
+  # and am7-pg - both reach Exited (0). litellm is a stateless proxy and
+  # clickhouse holds only Langfuse observability data, so their exit codes are
+  # cosmetic here.
+  #   STOP_GRACE=10 ... --stop   fast (~5s), SIGKILLs Tomcat
+  #   STOP_GRACE=45 ... --stop   ~55s, also gets litellm + clickhouse clean
+  #
+  # `start` takes no timeout, so only pass it for `stop`.
+  if [ "$LIFECYCLE" = "stop" ]; then
+    "${COMPOSE[@]}" -p "$PROJECT" -f "$COMPOSE_FILE" --profile llmproxy stop -t "${STOP_GRACE:-20}"
+  else
+    "${COMPOSE[@]}" -p "$PROJECT" -f "$COMPOSE_FILE" --profile llmproxy start
+  fi
+  lifecycle_rc=$?
+  echo
+  echo "[2/2] Status:"
+  "${COMPOSE[@]}" -p "$PROJECT" -f "$COMPOSE_FILE" --profile llmproxy ps -a
+  echo
+  echo "============================================================"
+  if [ "$lifecycle_rc" -ne 0 ]; then
+    echo " WARNING: compose $LIFECYCLE reported a non-zero exit ($lifecycle_rc)."
+    echo " Check the status table above before assuming it worked."
+  elif [ "$LIFECYCLE" = "stop" ]; then
+    echo " Stopped. Nothing was removed - no container, volume or byte of data."
+    echo " Bring it back:  ./am7-docker-up.sh --start"
+  else
+    echo " Started. No container was recreated and nothing was rebuilt."
+    echo " App: https://localhost:$APP_PORT   LAN: https://$LAN_IP:$APP_PORT"
+  fi
+  echo "============================================================"
+  exit "$lifecycle_rc"
 fi
 
 # --app-only: the reverse of --llmproxy-only. `docker compose up` would simply
@@ -477,7 +577,12 @@ fi
 echo "============================================================"
 echo
 echo " Follow the log:   ${COMPOSE[*]} -p $PROJECT -f $COMPOSE_FILE logs -f am7"
-echo " Stop (keep data): ${COMPOSE[*]} -p $PROJECT -f $COMPOSE_FILE down"
+echo " Stop (keep all):  ./am7-docker-up.sh --stop     # containers kept, restart with --start"
+# NOTE the --profile llmproxy on the `down`: without it compose removes only 2 of the
+# 9 containers and then fails trying to delete a network the other 7 are still on.
+# The earlier advice here omitted it. Verified with `down --dry-run` 2026-09-17.
+echo " Remove (keep data volumes):"
+echo "                   ${COMPOSE[*]} -p $PROJECT -f $COMPOSE_FILE --profile llmproxy down"
 echo
 
 exit 0
