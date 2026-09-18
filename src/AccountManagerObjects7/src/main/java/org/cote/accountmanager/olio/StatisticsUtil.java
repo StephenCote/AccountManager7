@@ -30,6 +30,19 @@ public class StatisticsUtil {
 		, new StatisticRule(OlioFieldNames.FIELD_PERCEPTION)
 	};
 	
+	/// The base statistics rollStatistics allocates the point budget across. These are the rolled,
+	/// column-backed statistics - not the virtual ones computed from them. Exposed so composite
+	/// providers can centre on a character's own mean base statistic rather than on a constant:
+	/// the budget (Rules.INITIAL_STATISTICS_ALLOTMENT, halved for children) fixes that mean, so a
+	/// hard-coded centre would be wrong for any character rolled on a different budget.
+	public static String[] getBaseStatisticNames() {
+		String[] names = new String[statistics.length];
+		for(int i = 0; i < statistics.length; i++) {
+			names[i] = statistics[i].getName();
+		}
+		return names;
+	}
+
 	/// Roll a random height for a character based on race and gender.
 	/// Height is stored in compound feet.inches format (e.g. 5.10 = 5ft 10in).
 	/// Uses a bell curve distribution around race/gender mean heights.

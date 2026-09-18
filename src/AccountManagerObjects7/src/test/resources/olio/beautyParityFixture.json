@@ -1,0 +1,383 @@
+{
+  "_comment": "Shared fixture for the Ux beauty selector parity tests. Authority is the server: TestUxBeautyParity runs each stat block through the real provider chain and asserts these values; uxBeautyParity.test.js asserts formDef.js computeBeautyFromStats reproduces them. Regenerate both sides together if the composite intentionally changes.",
+  "cases": [
+    {
+      "name": "diagonal-2",
+      "stats": {
+        "physicalStrength": 2,
+        "physicalEndurance": 2,
+        "manualDexterity": 2,
+        "agility": 2,
+        "speed": 2,
+        "mentalStrength": 2,
+        "mentalEndurance": 2,
+        "intelligence": 2,
+        "wisdom": 2,
+        "charisma": 2,
+        "creativity": 2,
+        "spirituality": 2,
+        "luck": 2,
+        "perception": 2
+      },
+      "beauty": 2,
+      "label": "hideous"
+    },
+    {
+      "name": "diagonal-5",
+      "stats": {
+        "physicalStrength": 5,
+        "physicalEndurance": 5,
+        "manualDexterity": 5,
+        "agility": 5,
+        "speed": 5,
+        "mentalStrength": 5,
+        "mentalEndurance": 5,
+        "intelligence": 5,
+        "wisdom": 5,
+        "charisma": 5,
+        "creativity": 5,
+        "spirituality": 5,
+        "luck": 5,
+        "perception": 5
+      },
+      "beauty": 5,
+      "label": "homely"
+    },
+    {
+      "name": "diagonal-10",
+      "stats": {
+        "physicalStrength": 10,
+        "physicalEndurance": 10,
+        "manualDexterity": 10,
+        "agility": 10,
+        "speed": 10,
+        "mentalStrength": 10,
+        "mentalEndurance": 10,
+        "intelligence": 10,
+        "wisdom": 10,
+        "charisma": 10,
+        "creativity": 10,
+        "spirituality": 10,
+        "luck": 10,
+        "perception": 10
+      },
+      "beauty": 10,
+      "label": "comely"
+    },
+    {
+      "name": "diagonal-14",
+      "stats": {
+        "physicalStrength": 14,
+        "physicalEndurance": 14,
+        "manualDexterity": 14,
+        "agility": 14,
+        "speed": 14,
+        "mentalStrength": 14,
+        "mentalEndurance": 14,
+        "intelligence": 14,
+        "wisdom": 14,
+        "charisma": 14,
+        "creativity": 14,
+        "spirituality": 14,
+        "luck": 14,
+        "perception": 14
+      },
+      "beauty": 14,
+      "label": "beautiful"
+    },
+    {
+      "name": "diagonal-18",
+      "stats": {
+        "physicalStrength": 18,
+        "physicalEndurance": 18,
+        "manualDexterity": 18,
+        "agility": 18,
+        "speed": 18,
+        "mentalStrength": 18,
+        "mentalEndurance": 18,
+        "intelligence": 18,
+        "wisdom": 18,
+        "charisma": 18,
+        "creativity": 18,
+        "spirituality": 18,
+        "luck": 18,
+        "perception": 18
+      },
+      "beauty": 18,
+      "label": "gorgeous"
+    },
+    {
+      "name": "neutral-dial-0",
+      "stats": {
+        "physicalStrength": 10,
+        "physicalEndurance": 10,
+        "manualDexterity": 0,
+        "agility": 10,
+        "speed": 10,
+        "mentalStrength": 10,
+        "mentalEndurance": 10,
+        "intelligence": 0,
+        "wisdom": 10,
+        "charisma": 0,
+        "creativity": 0,
+        "spirituality": 0,
+        "luck": 10,
+        "perception": 0
+      },
+      "beauty": 0,
+      "label": "hideous"
+    },
+    {
+      "name": "neutral-dial-3",
+      "stats": {
+        "physicalStrength": 10,
+        "physicalEndurance": 10,
+        "manualDexterity": 3,
+        "agility": 10,
+        "speed": 10,
+        "mentalStrength": 10,
+        "mentalEndurance": 10,
+        "intelligence": 3,
+        "wisdom": 10,
+        "charisma": 3,
+        "creativity": 3,
+        "spirituality": 3,
+        "luck": 10,
+        "perception": 3
+      },
+      "beauty": 1,
+      "label": "hideous"
+    },
+    {
+      "name": "neutral-dial-6",
+      "stats": {
+        "physicalStrength": 10,
+        "physicalEndurance": 10,
+        "manualDexterity": 6,
+        "agility": 10,
+        "speed": 10,
+        "mentalStrength": 10,
+        "mentalEndurance": 10,
+        "intelligence": 6,
+        "wisdom": 10,
+        "charisma": 6,
+        "creativity": 6,
+        "spirituality": 6,
+        "luck": 10,
+        "perception": 6
+      },
+      "beauty": 5,
+      "label": "homely"
+    },
+    {
+      "name": "neutral-dial-7",
+      "stats": {
+        "physicalStrength": 10,
+        "physicalEndurance": 10,
+        "manualDexterity": 7,
+        "agility": 10,
+        "speed": 10,
+        "mentalStrength": 10,
+        "mentalEndurance": 10,
+        "intelligence": 7,
+        "wisdom": 10,
+        "charisma": 7,
+        "creativity": 7,
+        "spirituality": 7,
+        "luck": 10,
+        "perception": 7
+      },
+      "beauty": 6,
+      "label": "bland"
+    },
+    {
+      "name": "neutral-dial-9",
+      "stats": {
+        "physicalStrength": 10,
+        "physicalEndurance": 10,
+        "manualDexterity": 9,
+        "agility": 10,
+        "speed": 10,
+        "mentalStrength": 10,
+        "mentalEndurance": 10,
+        "intelligence": 9,
+        "wisdom": 10,
+        "charisma": 9,
+        "creativity": 9,
+        "spirituality": 9,
+        "luck": 10,
+        "perception": 9
+      },
+      "beauty": 8,
+      "label": "comely"
+    },
+    {
+      "name": "neutral-dial-12",
+      "stats": {
+        "physicalStrength": 10,
+        "physicalEndurance": 10,
+        "manualDexterity": 12,
+        "agility": 10,
+        "speed": 10,
+        "mentalStrength": 10,
+        "mentalEndurance": 10,
+        "intelligence": 12,
+        "wisdom": 10,
+        "charisma": 12,
+        "creativity": 12,
+        "spirituality": 12,
+        "luck": 10,
+        "perception": 12
+      },
+      "beauty": 12,
+      "label": "pretty"
+    },
+    {
+      "name": "neutral-dial-13",
+      "stats": {
+        "physicalStrength": 10,
+        "physicalEndurance": 10,
+        "manualDexterity": 13,
+        "agility": 10,
+        "speed": 10,
+        "mentalStrength": 10,
+        "mentalEndurance": 10,
+        "intelligence": 13,
+        "wisdom": 10,
+        "charisma": 13,
+        "creativity": 13,
+        "spirituality": 13,
+        "luck": 10,
+        "perception": 13
+      },
+      "beauty": 14,
+      "label": "beautiful"
+    },
+    {
+      "name": "neutral-dial-17",
+      "stats": {
+        "physicalStrength": 10,
+        "physicalEndurance": 10,
+        "manualDexterity": 17,
+        "agility": 10,
+        "speed": 10,
+        "mentalStrength": 10,
+        "mentalEndurance": 10,
+        "intelligence": 17,
+        "wisdom": 10,
+        "charisma": 17,
+        "creativity": 17,
+        "spirituality": 17,
+        "luck": 10,
+        "perception": 17
+      },
+      "beauty": 19,
+      "label": "gorgeous"
+    },
+    {
+      "name": "neutral-dial-20",
+      "stats": {
+        "physicalStrength": 10,
+        "physicalEndurance": 10,
+        "manualDexterity": 20,
+        "agility": 10,
+        "speed": 10,
+        "mentalStrength": 10,
+        "mentalEndurance": 10,
+        "intelligence": 20,
+        "wisdom": 10,
+        "charisma": 20,
+        "creativity": 20,
+        "spirituality": 20,
+        "luck": 10,
+        "perception": 20
+      },
+      "beauty": 20,
+      "label": "gorgeous"
+    },
+    {
+      "name": "asym-brawn",
+      "stats": {
+        "physicalStrength": 18,
+        "physicalEndurance": 16,
+        "manualDexterity": 4,
+        "agility": 12,
+        "speed": 11,
+        "mentalStrength": 6,
+        "mentalEndurance": 5,
+        "intelligence": 3,
+        "wisdom": 4,
+        "charisma": 2,
+        "creativity": 3,
+        "spirituality": 2,
+        "luck": 8,
+        "perception": 6
+      },
+      "beauty": 2,
+      "label": "hideous"
+    },
+    {
+      "name": "asym-charmer",
+      "stats": {
+        "physicalStrength": 4,
+        "physicalEndurance": 5,
+        "manualDexterity": 14,
+        "agility": 8,
+        "speed": 7,
+        "mentalStrength": 9,
+        "mentalEndurance": 10,
+        "intelligence": 17,
+        "wisdom": 6,
+        "charisma": 19,
+        "creativity": 16,
+        "spirituality": 13,
+        "luck": 5,
+        "perception": 15
+      },
+      "beauty": 17,
+      "label": "gorgeous"
+    },
+    {
+      "name": "asym-ascetic",
+      "stats": {
+        "physicalStrength": 9,
+        "physicalEndurance": 9,
+        "manualDexterity": 9,
+        "agility": 9,
+        "speed": 9,
+        "mentalStrength": 14,
+        "mentalEndurance": 15,
+        "intelligence": 6,
+        "wisdom": 18,
+        "charisma": 5,
+        "creativity": 4,
+        "spirituality": 19,
+        "luck": 10,
+        "perception": 7
+      },
+      "beauty": 7,
+      "label": "bland"
+    },
+    {
+      "name": "child-budget-uneven",
+      "stats": {
+        "physicalStrength": 6,
+        "physicalEndurance": 5,
+        "manualDexterity": 3,
+        "agility": 7,
+        "speed": 6,
+        "mentalStrength": 4,
+        "mentalEndurance": 5,
+        "intelligence": 4,
+        "wisdom": 3,
+        "charisma": 6,
+        "creativity": 5,
+        "spirituality": 3,
+        "luck": 4,
+        "perception": 4
+      },
+      "beauty": 4,
+      "label": "homely"
+    }
+  ]
+}

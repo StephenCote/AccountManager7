@@ -1,11 +1,14 @@
 package org.cote.accountmanager.objects.tests.olio;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Random;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -341,30 +344,128 @@ public class TestBodyStats extends BaseTest {
 	public void TestNarrativeGetLooksPrettyUgly() {
 		logger.info("Test NarrativeUtil.getLooksPrettyUgly uses beauty");
 
-		/// Create a PersonalityProfile and verify beauty-based description
+		/// Every band boundary must be a level HighEnumType.valueOf(double) can actually return.
+		/// valueOf formats through DecimalFormat("#.#"), so the .x5 constants (DIMINISHED, WEAK,
+		/// MARGINAL, MODERATE, FAIR, BALANCED, SUBSTANTIAL, PROFOUND, PEAK) collapse onto a
+		/// neighbour and cannot be produced from a statistic. Asserting against those is what let
+		/// the old off-by-one banding pass its own test: it claimed FAIR -> bland, but a beauty of
+		/// 11 (raw 0.55) rounds up to ADEQUATE and came out "comely".
 		PersonalityProfile prof = new PersonalityProfile();
 
-		/// Test each beauty level
-		prof.setBeauty(HighEnumType.DIMINISHED);
-		assertEquals("DIMINISHED beauty -> hideous", "hideous", NarrativeUtil.getLooksPrettyUgly(prof));
+		prof.setBeauty(HighEnumType.NEVER);
+		assertEquals("NEVER beauty -> hideous", "hideous", NarrativeUtil.getLooksPrettyUgly(prof));
+
+		prof.setBeauty(HighEnumType.MINIMAL);
+		assertEquals("MINIMAL beauty -> hideous", "hideous", NarrativeUtil.getLooksPrettyUgly(prof));
+
+		prof.setBeauty(HighEnumType.INSIGNIFICANT);
+		assertEquals("INSIGNIFICANT beauty -> homely", "homely", NarrativeUtil.getLooksPrettyUgly(prof));
 
 		prof.setBeauty(HighEnumType.MODEST);
-		assertEquals("MODEST beauty -> homely", "homely", NarrativeUtil.getLooksPrettyUgly(prof));
+		assertEquals("MODEST beauty -> bland", "bland", NarrativeUtil.getLooksPrettyUgly(prof));
 
-		prof.setBeauty(HighEnumType.FAIR);
-		assertEquals("FAIR beauty -> bland", "bland", NarrativeUtil.getLooksPrettyUgly(prof));
+		prof.setBeauty(HighEnumType.AVERAGE);
+		assertEquals("AVERAGE beauty -> comely", "comely", NarrativeUtil.getLooksPrettyUgly(prof));
+
+		prof.setBeauty(HighEnumType.INTERMEDIATE);
+		assertEquals("INTERMEDIATE beauty -> comely", "comely", NarrativeUtil.getLooksPrettyUgly(prof));
+
+		prof.setBeauty(HighEnumType.ADEQUATE);
+		assertEquals("ADEQUATE beauty -> pretty", "pretty", NarrativeUtil.getLooksPrettyUgly(prof));
 
 		prof.setBeauty(HighEnumType.ELEVATED);
-		assertEquals("ELEVATED beauty -> comely", "comely", NarrativeUtil.getLooksPrettyUgly(prof));
+		assertEquals("ELEVATED beauty -> beautiful", "beautiful", NarrativeUtil.getLooksPrettyUgly(prof));
 
 		prof.setBeauty(HighEnumType.STRONG);
-		assertEquals("STRONG beauty -> pretty", "pretty", NarrativeUtil.getLooksPrettyUgly(prof));
+		assertEquals("STRONG beauty -> gorgeous", "gorgeous", NarrativeUtil.getLooksPrettyUgly(prof));
 
 		prof.setBeauty(HighEnumType.EXTENSIVE);
-		assertEquals("EXTENSIVE beauty -> beautiful", "beautiful", NarrativeUtil.getLooksPrettyUgly(prof));
+		assertEquals("EXTENSIVE beauty -> gorgeous", "gorgeous", NarrativeUtil.getLooksPrettyUgly(prof));
 
-		prof.setBeauty(HighEnumType.HERO);
-		assertEquals("HERO beauty -> gorgeous", "gorgeous", NarrativeUtil.getLooksPrettyUgly(prof));
+		prof.setBeauty(HighEnumType.MAXIMUM);
+		assertEquals("MAXIMUM beauty -> gorgeous", "gorgeous", NarrativeUtil.getLooksPrettyUgly(prof));
+	}
+
+	/// Every label must be reachable from a real beauty statistic, through the same conversion
+	/// ProfileUtil uses (HighEnumType.valueOf(stat * 5 / 100.0)). Four of the seven were not:
+	/// pretty, beautiful and gorgeous needed levels the composite could never produce, and the
+	/// hideous band was keyed to DIMINISHED, which valueOf cannot return at all.
+	@Test
+	public void TestBeautyLabelsAllReachableFromStat() {
+		Set<String> seen = new LinkedHashSet<>();
+		PersonalityProfile prof = new PersonalityProfile();
+		for(int stat = 0; stat <= 20; stat++) {
+			HighEnumType lvl = HighEnumType.valueOf((stat * 5) / 100.0);
+			assertNotNull("HighEnumType.valueOf returned null for beauty stat " + stat, lvl);
+			prof.setBeauty(lvl);
+			String label = NarrativeUtil.getLooksPrettyUgly(prof);
+			assertNotEquals("beauty stat " + stat + " produced the fallback label", "indescribable", label);
+			seen.add(label);
+		}
+		logger.info("Labels reachable from a beauty statistic: " + seen);
+		for(String expected : new String[] {"hideous", "homely", "bland", "comely", "pretty", "beautiful", "gorgeous"}) {
+			assertTrue("No beauty statistic in 0-20 produces \"" + expected + "\"", seen.contains(expected));
+		}
+	}
+
+	/// The Ux body shape selector writes a midpoint stat profile and relies on the server classifier
+	/// deriving the shape it wrote (formDef.js bodyShapeMidpoints / applyBodyShapeFloors), and nothing
+	/// else pinned that down.
+	///
+	/// This exists because the beauty work briefly made physicalAppearance a spread-preserving
+	/// composite. That field drives the female HOURGLASS score, and widening it made the
+	/// INVERTED_TRIANGLE profile below classify as HOURGLASS. physicalAppearance is a plain mean again,
+	/// so these pass - keep them passing before changing anything the classifier reads.
+	@Test
+	public void TestUxBodyShapeMidpointsStillClassify() {
+		/// physicalStrength, physicalEndurance, agility, speed, manualDexterity, mentalStrength,
+		/// mentalEndurance, charisma, potential - in formDef.js order.
+		int[] vTaper           = { 16, 14, 12, 10, 10, 10, 10, 10,  80 };
+		int[] hourglass        = { 14, 10, 14, 10, 10, 10, 10, 14,  80 };
+		int[] rectangle        = { 10, 10, 14, 16, 16, 10, 10, 10,  80 };
+		int[] round            = { 10, 16,  6,  6,  8,  8, 16,  8, 120 };
+		int[] invertedTriangle = { 18, 14, 10, 10, 10, 10, 10, 10,  80 };
+		int[] pear             = { 10, 10,  8,  8, 10, 16, 10, 18, 140 };
+
+		assertEquals("V_TAPER profile (male)", "V_TAPER", deriveShape("male", vTaper));
+		assertEquals("RECTANGLE profile (male)", "RECTANGLE", deriveShape("male", rectangle));
+		assertEquals("ROUND profile (male)", "ROUND", deriveShape("male", round));
+
+		assertEquals("HOURGLASS profile (female)", "HOURGLASS", deriveShape("female", hourglass));
+		assertEquals("RECTANGLE profile (female)", "RECTANGLE", deriveShape("female", rectangle));
+		assertEquals("ROUND profile (female)", "ROUND", deriveShape("female", round));
+		assertEquals("INVERTED_TRIANGLE profile (female)", "INVERTED_TRIANGLE", deriveShape("female", invertedTriangle));
+		assertEquals("PEAR profile (female)", "PEAR", deriveShape("female", pear));
+	}
+
+	private String deriveShape(String gender, int[] p) {
+		try {
+			OlioModelNames.use();
+			BaseRecord person = RecordFactory.newInstance(OlioModelNames.MODEL_CHAR_PERSON);
+			person.set(FieldNames.FIELD_GENDER, gender);
+			person.set(FieldNames.FIELD_NAME, "shape-probe");
+			person.set(FieldNames.FIELD_FIRST_NAME, "shape");
+			person.set("age", 30);
+
+			BaseRecord stats = RecordFactory.newInstance(OlioModelNames.MODEL_CHAR_STATISTICS);
+			String[] names = new String[] {OlioFieldNames.FIELD_PHYSICAL_STRENGTH, OlioFieldNames.FIELD_PHYSICAL_ENDURANCE,
+				OlioFieldNames.FIELD_AGILITY, OlioFieldNames.FIELD_SPEED, OlioFieldNames.FIELD_MANUAL_DEXTERITY,
+				OlioFieldNames.FIELD_MENTAL_STRENGTH, OlioFieldNames.FIELD_MENTAL_ENDURANCE,
+				OlioFieldNames.FIELD_CHARISMA, "potential"};
+			for(int i = 0; i < names.length; i++) {
+				stats.set(names[i], p[i]);
+			}
+			/// The classifier reads derived statistics too, so the statistics record has to be
+			/// inspected before the charPerson providers run against it.
+			new MemoryReader().inspect(stats);
+			person.set(OlioFieldNames.FIELD_STATISTICS, stats);
+			new MemoryReader().inspect(person);
+			return person.get(OlioFieldNames.FIELD_BODY_SHAPE);
+		}
+		catch(FieldException | ModelNotFoundException | ValueException | ReaderException e) {
+			logger.error(e);
+			throw new RuntimeException(e);
+		}
 	}
 
 	/// ── Narrative physical description integration ──────────────────

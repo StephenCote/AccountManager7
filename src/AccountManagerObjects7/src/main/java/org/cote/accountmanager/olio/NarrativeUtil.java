@@ -1112,6 +1112,7 @@ public class NarrativeUtil {
 			nar.set("outfitDescription", describeOutfit(pp));
 			nar.set("armamentDescription", describeArmament(pp));
 			nar.set("statisticsDescription", describeStatistics(pp));
+			nar.set("beautyDescription", getLooksPrettyUgly(pp));
 			nar.set("alignmentDescription", getActsLikeSatan(pp));
 			nar.set("darkTetradDescription", getDarkTetradDescription(pp));
 			nar.set("mbtiDescription", pp.getMbti().getDescription());
@@ -1390,28 +1391,61 @@ public class NarrativeUtil {
 		}
 		return desc;
 	}
+	/// Beauty bands, keyed to the composite 'beauty' statistic
+	/// (SAVG(physicalAppearance, charm, manualDexterity, mentalHealth, perception), 0-20).
+	///
+	/// Each boundary MUST be a HighEnumType that HighEnumType.valueOf(double) can actually return.
+	/// valueOf formats through DecimalFormat("#.#"), so every .x5 constant - DIMINISHED, WEAK,
+	/// MARGINAL, MODERATE, FAIR, BALANCED, SUBSTANTIAL, PROFOUND, PEAK - collapses onto a neighbour
+	/// and can never be produced from a stat. The previous version used DIMINISHED and FAIR as two
+	/// of its seven boundaries, so those two bands did not land where they read: FAIR (0.55) rounds
+	/// up to ADEQUATE, which pushed 'bland' one bucket short and sent a beauty of 11 straight to
+	/// 'comely'. Bands below are stated in reachable constants, with the neutral label centred on
+	/// the middle of the scale.
+	///
+	/// Bands are placed so that no single label swallows the population: measured over 3000 rolled
+	/// adults through the real provider chain, banding 'bland' all the way to INTERMEDIATE left it at
+	/// 49% while 'gorgeous' sat at 0.7%. Splitting the middle puts the two mid labels either side of
+	/// the population centre, which is where the resolution is actually needed.
+	///
+	/// beauty  0- 3  MINIMAL        hideous
+	/// beauty  4- 5  INSIGNIFICANT  homely
+	/// beauty  6- 7  MODEST         bland
+	/// beauty  8-10  INTERMEDIATE   comely     (covers AVERAGE, INTERMEDIATE)
+	/// beauty 11-12  ADEQUATE       pretty
+	/// beauty 13-14  ELEVATED       beautiful
+	/// beauty 15-20  above ELEVATED gorgeous   (covers STRONG, EXTENSIVE, MAXIMUM)
 	public static String getLooksPrettyUgly(PersonalityProfile prof) {
-		/// Uses the computed 'beauty' stat which is AVG(physicalAppearance, charm, manualDexterity, mentalHealth, perception)
-		/// This replaces the previous charisma-only calculation with a comprehensive beauty score
+		return getLooksPrettyUgly(prof.getBeauty());
+	}
 
+	/// Label a raw 0-20 beauty statistic, through the same conversion ProfileUtil uses when it builds
+	/// a PersonalityProfile. Used by BodyStatsProvider to surface the band on olio.charPerson.
+	public static String getBeautyLabel(int beautyStat) {
+		return getLooksPrettyUgly(HighEnumType.valueOf((beautyStat * 5) / 100.0));
+	}
+
+	public static String getLooksPrettyUgly(HighEnumType beautyLevel) {
 		String desc = "indescribable";
-		HighEnumType beautyLevel = prof.getBeauty();
-		if(HighEnumType.compare(beautyLevel, HighEnumType.DIMINISHED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+		if(beautyLevel == null) {
+			return desc;
+		}
+		if(HighEnumType.compare(beautyLevel, HighEnumType.MINIMAL, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
 			desc = "hideous";
 		}
-		else if(HighEnumType.compare(beautyLevel, HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+		else if(HighEnumType.compare(beautyLevel, HighEnumType.INSIGNIFICANT, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
 			desc = "homely";
 		}
-		else if(HighEnumType.compare(beautyLevel, HighEnumType.FAIR, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+		else if(HighEnumType.compare(beautyLevel, HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
 			desc = "bland";
 		}
-		else if(HighEnumType.compare(beautyLevel, HighEnumType.ELEVATED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+		else if(HighEnumType.compare(beautyLevel, HighEnumType.INTERMEDIATE, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
 			desc = "comely";
 		}
-		else if(HighEnumType.compare(beautyLevel, HighEnumType.STRONG, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+		else if(HighEnumType.compare(beautyLevel, HighEnumType.ADEQUATE, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
 			desc = "pretty";
 		}
-		else if(HighEnumType.compare(beautyLevel, HighEnumType.EXTENSIVE, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+		else if(HighEnumType.compare(beautyLevel, HighEnumType.ELEVATED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
 			desc = "beautiful";
 		}
 		else {

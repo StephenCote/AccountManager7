@@ -41,6 +41,9 @@ public class ComputeProvider  implements IProvider {
 			if(lfield.getCompute() == ComputeEnumType.AVG) {
 				ComputeUtil.computeAverage(model, lfield, lfield.getFields().toArray(new String[0]));
 			}
+			else if(lfield.getCompute() == ComputeEnumType.SAVG) {
+				ComputeUtil.computeSpreadAverage(model, lfield, lfield.getFields().toArray(new String[0]), getSpreadCenter(lmodel, model, lfield));
+			}
 			else if(lfield.getCompute() == ComputeEnumType.PERC20 && lfield.getFieldType() == FieldEnumType.DOUBLE) {
 				int avg = ComputeUtil.getAverage(model, lfield.getFields().toArray(new String[0]));
 				double val = (avg * 5)/100;
@@ -50,6 +53,14 @@ public class ComputeProvider  implements IProvider {
 			}
 		}
 	
+	}
+
+	/// The value a SAVG composite holds fixed while it restores spread. Defaults to the midpoint of
+	/// the field's declared range (NaN lets ComputeUtil resolve that), which is correct only when the
+	/// inputs are actually centred there. Subclasses that know where their inputs really sit should
+	/// override this - see org.cote.accountmanager.olio.StatCompositeProvider.
+	protected double getSpreadCenter(ModelSchema lmodel, BaseRecord model, FieldSchema lfield) {
+		return Double.NaN;
 	}
 
 	@Override

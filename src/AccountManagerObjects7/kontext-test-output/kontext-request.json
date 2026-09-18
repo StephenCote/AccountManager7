@@ -1,0 +1,13 @@
+{
+  "model" : "OfficialStableDiffusion/sd_xl_base_1.0",
+  "prompt" : "Combine the reference images into one cohesive scene. Place both people from the left and center panels into the environment shown in the right panel. The first person is a man with blue eyes. The second person is a woman with green eyes. They are sitting at a cafe. The setting is Paris street. Maintain their exact appearances, clothing, and features. Natural lighting consistent with the background. High quality photograph.",
+  "sampler" : "euler",
+  "scheduler" : "simple",
+  "images" : 1,
+  "steps" : 28,
+  "seed" : 1553903057,
+  "height" : 1024,
+  "width" : 1024,
+  "cfgscale" : 1.0,
+  "refinercontrolpercentage" : 0.0
+}

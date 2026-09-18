@@ -45,6 +45,11 @@
 			"type": "string"
 		},
 		{
+			"name": "beautyDescription",
+			"type": "string",
+			"description": "Narrative wording for the composite olio.statistics.beauty score: hideous, homely, bland, comely, pretty, beautiful, or gorgeous."
+		},
+		{
 			"name": "alignmentDescription",
 			"type": "string"
 		},

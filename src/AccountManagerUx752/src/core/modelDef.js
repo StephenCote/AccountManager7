@@ -7282,8 +7282,8 @@
           "name": "mentalHealth",
           "type": "int",
           "virtual": true,
-          "provider": "org.cote.accountmanager.provider.ComputeProvider",
-          "compute": "AVG",
+          "provider": "org.cote.accountmanager.olio.StatCompositeProvider",
+          "compute": "SAVG",
           "fields": [
             "willpower",
             "spirituality"
@@ -7297,8 +7297,8 @@
           "name": "wit",
           "type": "int",
           "virtual": true,
-          "provider": "org.cote.accountmanager.provider.ComputeProvider",
-          "compute": "AVG",
+          "provider": "org.cote.accountmanager.olio.StatCompositeProvider",
+          "compute": "SAVG",
           "fields": [
             "intelligence",
             "creativity"
@@ -7312,8 +7312,8 @@
           "name": "charm",
           "type": "int",
           "virtual": true,
-          "provider": "org.cote.accountmanager.provider.ComputeProvider",
-          "compute": "AVG",
+          "provider": "org.cote.accountmanager.olio.StatCompositeProvider",
+          "compute": "SAVG",
           "fields": [
             "charisma",
             "wit"
@@ -7327,8 +7327,8 @@
           "name": "beauty",
           "type": "int",
           "virtual": true,
-          "provider": "org.cote.accountmanager.provider.ComputeProvider",
-          "compute": "AVG",
+          "provider": "org.cote.accountmanager.olio.StatCompositeProvider",
+          "compute": "SAVG",
           "fields": [
             "physicalAppearance",
             "charm",
@@ -8799,6 +8799,11 @@
         {
           "name": "statisticsDescription",
           "type": "string"
+        },
+        {
+          "name": "beautyDescription",
+          "type": "string",
+          "description": "Narrative wording for the composite olio.statistics.beauty score"
         },
         {
           "name": "alignmentDescription",

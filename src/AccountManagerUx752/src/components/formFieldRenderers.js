@@ -1006,6 +1006,45 @@ renderers.binaryContent = function(ctx) {
     ])];
 };
 
+// ── Beauty band picker ──────────────────────────────────────────────
+//
+// Bound to no field of the form's own model, on purpose. The score is olio.statistics.beauty (an int
+// composite) and the narrative wording is olio.narrative.beautyDescription; a third field on
+// olio.charPerson would only be a duplicate name for one of those. So this reads through to the nested
+// statistics entity — the same shape as voicePicker reading through to profile.voice — shows the band
+// the server will derive from the character's current statistics, and on change rewrites those
+// statistics to land in the band. The solve and the chain it mirrors live in formDef.js.
+
+renderers.beautyPicker = function(ctx) {
+    let bands = am7model.beautyBands || [];
+    if (!bands.length || typeof am7model.applyBeautyTarget !== 'function') return null;
+
+    let current = (typeof am7model.currentBeautyBand === 'function')
+        ? am7model.currentBeautyBand(ctx.inst) : null;
+
+    let selectAttrs = {
+        class: 'select-field-full ' + (ctx.fieldClass || ''),
+        name: ctx.useName,
+        disabled: ctx.disabled || false,
+        onchange: function(e) {
+            am7model.applyBeautyTarget(ctx.inst, e.target.value);
+        }
+    };
+
+    // Statistics not loaded yet (or only partially projected) — the server will not compute the
+    // composite from a partial record either, so offer no band rather than a made-up one.
+    let options = bands.map(function(b) {
+        let optAttrs = { value: b.label };
+        if (current === b.label) optAttrs.selected = 'true';
+        return m('option', optAttrs, b.label);
+    });
+    if (!current) {
+        options.unshift(m('option', { value: '', selected: 'true', disabled: 'true' }, '(not computed)'));
+    }
+
+    return [m('select', selectAttrs, options)];
+};
+
 // ── Registry API ────────────────────────────────────────────────────
 
 function hasRenderer(format) {
