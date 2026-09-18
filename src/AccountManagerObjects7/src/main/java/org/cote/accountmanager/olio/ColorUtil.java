@@ -134,9 +134,37 @@ public class ColorUtil {
 		if (universe == null) return null;
 		BaseRecord colorsGroup = universe.get(OlioFieldNames.FIELD_COLORS);
 		if (colorsGroup == null) return null;
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_COLOR, FieldNames.FIELD_GROUP_ID, colorsGroup.get(FieldNames.FIELD_ID));
-		q.field(FieldNames.FIELD_NAME, ComparatorEnumType.ILIKE, t);
-		return IOSystem.getActiveContext().getSearch().findRecord(q);
+		long groupId = ((Number)colorsGroup.get(FieldNames.FIELD_ID)).longValue();
+
+		/// EXACT first.
+		///
+		/// This was a single ILIKE query, which is a SUBSTRING match rather than the
+		/// case-insensitive exact match this method's contract promises: StatementUtil silently
+		/// wraps a LIKE/ILIKE value in %...% when it carries no % of its own
+		/// (StatementUtil.java:1312-1314). MEASURED on am72db 2026-09-18: asking for "Gray" emitted
+		/// `name ILIKE '%Gray%'`, which matches 10+ entries in the 864-entry web-colour library
+		/// ("Blue Gray", "Dark Gray", "Dim Gray", "Gray-Asparagus", "Light Slate Gray", ...) and
+		/// findRecord returned ONE arbitrary row - "Blue Gray", the lowest id. So every caller asking
+		/// for a plain colour silently got a qualified variant of it.
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_COLOR, FieldNames.FIELD_GROUP_ID, groupId);
+		q.field(FieldNames.FIELD_NAME, t);
+		BaseRecord exact = IOSystem.getActiveContext().getSearch().findRecord(q);
+		if (exact != null) return exact;
+
+		/// Then DB-side case folding, VERIFIED in Java. The ILIKE stays because the database folding
+		/// case is the cheap way to match an LLM-supplied "navy blue" against "Navy Blue" - but every
+		/// candidate it returns is now checked for a whole-string match, so a substring collision can
+		/// no longer be accepted as the answer.
+		Query likeq = QueryUtil.createQuery(ModelNames.MODEL_COLOR, FieldNames.FIELD_GROUP_ID, groupId);
+		likeq.field(FieldNames.FIELD_NAME, ComparatorEnumType.ILIKE, t);
+		BaseRecord[] candidates = IOSystem.getActiveContext().getSearch().findRecords(likeq);
+		if (candidates != null) {
+			for (BaseRecord cand : candidates) {
+				String candName = cand.get(FieldNames.FIELD_NAME);
+				if (candName != null && candName.trim().equalsIgnoreCase(t)) return cand;
+			}
+		}
+		return null;
 	}
 	
 	protected static String getRandomDefaultColor() {

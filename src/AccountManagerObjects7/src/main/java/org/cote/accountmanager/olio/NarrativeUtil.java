@@ -1125,14 +1125,32 @@ public class NarrativeUtil {
 		return nar;
 		
 	}
+	/**
+	 * Appearance sentence for a character, built from the RECORD.
+	 *
+	 * <p>Every optional part is omitted when absent rather than interpolated.
+	 * {@code hairStyle} is a nullable column and {@link #getColor} returns null for an unset colour
+	 * reference, so the old unguarded concatenation emitted the LITERAL STRING "null" into the
+	 * sentence — and since this text now drives picture-book image prompts, straight into the
+	 * diffusion model. MEASURED on am72db 2026-09-18: the character "Veronique" (no hairStyle) was
+	 * described as "dark brown eyes and dark brown <b>null</b> hair", and that reached the SD prompt.
+	 * This is the same literal-"null" trap {@link #isMeaningful} exists for, on the record side of
+	 * the fence rather than the LLM side.
+	 *
+	 * <p>Colours are also trimmed. {@link #getColor} strips a parenthesised qualifier
+	 * ("Brown (Traditional)" &rarr; "brown ") and left the trailing space in, which is where the
+	 * doubled space in "with brown&nbsp;&nbsp;eyes" came from.
+	 *
+	 * <p>Output for a fully-populated character is unchanged apart from that whitespace.
+	 */
 	public static String describePhysical(PersonalityProfile pp) {
 		StringBuilder buff = new StringBuilder();
 
 		int age = pp.getAge();
 
-		String hairColor =  getColor(pp.getRecord(), OlioFieldNames.FIELD_HAIR_COLOR);
-		String hairStyle = pp.getRecord().get(OlioFieldNames.FIELD_HAIR_STYLE);
-		String eyeColor =  getColor(pp.getRecord(), OlioFieldNames.FIELD_EYE_COLOR);
+		String hairColor = trimToNull(getColor(pp.getRecord(), OlioFieldNames.FIELD_HAIR_COLOR));
+		String hairStyle = trimToNull(pp.getRecord().get(OlioFieldNames.FIELD_HAIR_STYLE));
+		String eyeColor =  trimToNull(getColor(pp.getRecord(), OlioFieldNames.FIELD_EYE_COLOR));
 
 		String gender = pp.getGender();
 
@@ -1141,8 +1159,34 @@ public class NarrativeUtil {
 		String buildDesc = describeBuild(pp.getRecord());
 		buff.append(buildDesc.length() > 0 ? buildDesc + ", " : "");
 		buff.append(bodyDesc.length() > 0 ? bodyDesc + " " : "");
-		buff.append(age + " year old " + raceDesc + " " + getGenderLabel(gender, age) + " with " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
+		buff.append(age + " year old ");
+		if(raceDesc != null && raceDesc.length() > 0) buff.append(raceDesc + " ");
+		buff.append(getGenderLabel(gender, age));
+
+		/// "with X eyes and Y Z hair" - assembled from whichever parts exist, so a missing hairStyle
+		/// drops one word instead of inserting "null", and a character with no colours at all simply
+		/// ends the sentence after the gender label.
+		String eyePart = (eyeColor != null) ? eyeColor + " eyes" : null;
+		StringBuilder hair = new StringBuilder();
+		if(hairColor != null) hair.append(hairColor);
+		if(hairStyle != null) {
+			if(hair.length() > 0) hair.append(' ');
+			hair.append(hairStyle);
+		}
+		String hairPart = (hair.length() > 0) ? hair + " hair" : null;
+		if(eyePart != null && hairPart != null) buff.append(" with " + eyePart + " and " + hairPart);
+		else if(eyePart != null) buff.append(" with " + eyePart);
+		else if(hairPart != null) buff.append(" with " + hairPart);
+		buff.append(".");
 		return buff.toString();
+	}
+
+	/// Trimmed, or null when there is nothing left - so a blank column reads as ABSENT rather than
+	/// being interpolated as an empty or "null" token.
+	private static String trimToNull(String s) {
+		if(s == null) return null;
+		String t = s.trim();
+		return t.isEmpty() ? null : t;
 	}
 	
 	public static String getIsPrettyMagic(PersonalityProfile prof) {

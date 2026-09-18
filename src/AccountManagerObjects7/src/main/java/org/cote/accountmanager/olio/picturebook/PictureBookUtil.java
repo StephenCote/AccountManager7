@@ -2076,33 +2076,80 @@ public class PictureBookUtil {
      * missed "Jideon"), and the Java pass catches diacritics the DB does not fold ("Duña" vs
      * "Duna").
      */
+    /**
+     * The first candidate whose name is a GENUINE match for {@code cname} — accent- and
+     * case-insensitive, but whole-string. Null when none is.
+     *
+     * <p>The point is the verification, not the search: it is what stops a DB-side {@code ILIKE}
+     * substring hit ("Darby" matching "Darby's dad") from being accepted as the answer. Logs which
+     * pass produced the match, because "resolved by exact name" and "resolved after folding
+     * accents" are different facts about the data and the second one is worth seeing.
+     */
+    private static BaseRecord firstExactNameMatch(String cname, BaseRecord[] candidates, String how) {
+        if (candidates == null) return null;
+        for (BaseRecord cand : candidates) {
+            String candName = cand.get(FieldNames.FIELD_NAME);
+            if (namesMatchAccentInsensitive(cname, candName)) {
+                if (!cname.equals(candName)) {
+                    logger.info("Resolved scene character '" + cname + "' to persisted '"
+                            + candName + "' via the " + how + " pass");
+                }
+                return cand;
+            }
+        }
+        return null;
+    }
+
     private static BaseRecord findCharPersonByNameInGroup(BaseRecord user, String cname, BaseRecord grp) {
         if (grp == null || cname == null) return null;
         String[] req = new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
             "narrative", "gender", "profile", FieldNames.FIELD_STORE, FieldNames.FIELD_ATTRIBUTES};
+
+        /// Pass 1: EXACT. Index-friendly and unambiguous.
+        ///
+        /// This used to be a single ILIKE query, and that was a SUBSTRING match, not the
+        /// case-insensitive exact match it reads as: StatementUtil silently wraps a LIKE/ILIKE value
+        /// in %...% when the value contains no % of its own (StatementUtil.java:1312-1314). So
+        /// looking up "Darby" emitted `name ILIKE '%Darby%'`, which also matches "Darby's dad" —
+        /// and AccessPoint.find takes ONE row from an unordered result.
+        ///
+        /// MEASURED on am72db 2026-09-18, book "BWO 3" (population group 727, Darby=128,
+        /// Darby's dad=129): that query returns the DAD first. Every scene referencing "Darby"
+        /// therefore rendered her father, and used his portrait as the FLUX.2 reference — 17 of 17
+        /// scene composites in that book, including scenes where Darby is the only character.
+        /// Any character whose name is a substring of another's hits this; Veronique and Yolanda in
+        /// the same book resolved correctly because nothing contains their names.
         Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
-        cq.field(FieldNames.FIELD_NAME, ComparatorEnumType.ILIKE, cname.trim());
+        cq.field(FieldNames.FIELD_NAME, cname.trim());
         cq.field(FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
         cq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
         cq.setRequest(req);
         BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
         if (cp != null) return cp;
 
+        /// Pass 2: DB-side case-insensitive narrowing, then VERIFIED in Java.
+        ///
+        /// The ILIKE stays — it is the cheap way to let the database fold case, and it is why an
+        /// exact EQUALS silently missing "Jideon" was reported in the first place — but it is now a
+        /// CANDIDATE filter whose every result is checked for a genuine exact match, and it goes
+        /// through list() rather than find() so a substring collision cannot hide the real record
+        /// behind an arbitrary first row.
+        Query likeq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
+        likeq.field(FieldNames.FIELD_NAME, ComparatorEnumType.ILIKE, cname.trim());
+        likeq.field(FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
+        likeq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        likeq.setRequest(req);
+        BaseRecord match = firstExactNameMatch(cname, IOSystem.getActiveContext()
+                .getAccessPoint().list(user, likeq).getResults(), "case-insensitive");
+        if (match != null) return match;
+
+        /// Pass 3: the whole group, for diacritics the database does not fold ("Du\u00f1a" vs "Duna").
         Query allq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
         allq.field(FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
         allq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
         allq.setRequest(req);
-        BaseRecord[] candidates = IOSystem.getActiveContext().getAccessPoint().list(user, allq).getResults();
-        if (candidates != null) {
-            for (BaseRecord cand : candidates) {
-                if (namesMatchAccentInsensitive(cname, cand.get(FieldNames.FIELD_NAME))) {
-                    logger.info("Resolved scene character '" + cname + "' to persisted '"
-                            + cand.get(FieldNames.FIELD_NAME) + "' via accent-insensitive fallback match");
-                    return cand;
-                }
-            }
-        }
-        return null;
+        return firstExactNameMatch(cname, IOSystem.getActiveContext()
+                .getAccessPoint().list(user, allq).getResults(), "accent-insensitive");
     }
 
     private static ResolvedCharacter resolveSceneCharacter(BaseRecord user, Object charItem, String sceneGroupPath) {
