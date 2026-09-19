@@ -1076,7 +1076,9 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
                 label: 'Model',
                 field: {
                     type: 'list',
-                    limit: ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors', 'lustifySDXLNSFW_endgame.safetensors', 'ponyRealism_V22.safetensors', 'sdXL_v10VAEFix']
+                    limit: []  // Populated at runtime by applySdModelLimits() - see the note at the bottom of this file.
+                    // Empty is the correct static value: the installed checkpoints are a
+                    // property of whichever SD server this deployment points at, not of the UI.
                 }
             },
             steps: {
@@ -1088,7 +1090,9 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
                 label: 'Refiner Model',
                 field: {
                     type: 'list',
-                    limit: ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors', 'lustifySDXLNSFW_endgame.safetensors', 'ponyRealism_V22.safetensors', 'sdXL_v10VAEFix']
+                    limit: []  // Populated at runtime by applySdModelLimits() - see the note at the bottom of this file.
+                    // Empty is the correct static value: the installed checkpoints are a
+                    // property of whichever SD server this deployment points at, not of the UI.
                 }
             },
             refinerSteps: {
@@ -1195,7 +1199,9 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
                 label: 'Model',
                 field: {
                     type: 'list',
-                    limit: ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors', 'lustifySDXLNSFW_endgame.safetensors', 'ponyRealism_V22.safetensors', 'sdXL_v10VAEFix.safetensors']
+                    limit: []  // Populated at runtime by applySdModelLimits() - see the note at the bottom of this file.
+                    // Empty is the correct static value: the installed checkpoints are a
+                    // property of whichever SD server this deployment points at, not of the UI.
                 }
             },
             refinerModel: {
@@ -1203,7 +1209,9 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
                 label: 'Refiner',
                 field: {
                     type: 'list',
-                    limit: ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors', 'lustifySDXLNSFW_endgame.safetensors', 'ponyRealism_V22.safetensors', 'sdXL_v10VAEFix.safetensors']
+                    limit: []  // Populated at runtime by applySdModelLimits() - see the note at the bottom of this file.
+                    // Empty is the correct static value: the installed checkpoints are a
+                    // property of whichever SD server this deployment points at, not of the UI.
                 }
             },
             style: {
@@ -1344,7 +1352,9 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
                 label: 'Model',
                 field: {
                     type: 'list',
-                    limit: ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors', 'lustifySDXLNSFW_endgame.safetensors', 'ponyRealism_V22.safetensors', 'sdXL_v10VAEFix']
+                    limit: []  // Populated at runtime by applySdModelLimits() - see the note at the bottom of this file.
+                    // Empty is the correct static value: the installed checkpoints are a
+                    // property of whichever SD server this deployment points at, not of the UI.
                 }
             },
             steps: {
@@ -1356,7 +1366,9 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
                 label: 'Refiner',
                 field: {
                     type: 'list',
-                    limit: ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors', 'lustifySDXLNSFW_endgame.safetensors', 'ponyRealism_V22.safetensors', 'sdXL_v10VAEFix']
+                    limit: []  // Populated at runtime by applySdModelLimits() - see the note at the bottom of this file.
+                    // Empty is the correct static value: the installed checkpoints are a
+                    // property of whichever SD server this deployment points at, not of the UI.
                 }
             },
             refinerSteps: {
@@ -4059,6 +4071,13 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
                     limit: ['V_TAPER', 'HOURGLASS', 'RECTANGLE', 'ROUND', 'INVERTED_TRIANGLE', 'PEAR']
                 }
             },
+            beautyDescription: {
+                layout: 'one',
+                format: 'beautyPicker',
+                field: {
+                    label: 'Beauty'
+                }
+            },
             bmi: {
                 layout: 'one',
                 readOnly: true,
@@ -6014,12 +6033,12 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         PEAR:               { physicalStrength: 10, physicalEndurance: 10, agility: 8,  speed: 8,  manualDexterity: 10, mentalStrength: 16, mentalEndurance: 10, charisma: 18, potential: 140 }
     };
 
-    function applyBodyShapeFloors(inst) {
-        // Access statistics sub-instance via the object view's pinst cache
+    /// Access the statistics sub-instance via the object view's pinst cache, creating it lazily if the
+    /// statistics tab has not been activated yet. Shared by the body shape and beauty selectors.
+    function resolveStatInstance(inst, who) {
         let pinstCache = inst._pinst ? inst._pinst() : null;
         let statInst = pinstCache ? pinstCache.statistics : null;
 
-        // Lazily create statistics sub-instance if tab hasn't been activated yet
         if (!statInst && pinstCache && inst.entity && inst.entity.statistics) {
             let statsEntity = inst.entity.statistics;
             if (!statsEntity[am7model.jsonModelKey]) statsEntity[am7model.jsonModelKey] = 'olio.statistics';
@@ -6028,9 +6047,15 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         }
 
         if (!statInst || !statInst.api) {
-            console.warn("[applyBodyShapeFloors] statistics not available on entity");
-            return;
+            console.warn("[" + who + "] statistics not available on entity");
+            return null;
         }
+        return statInst;
+    }
+
+    function applyBodyShapeFloors(inst) {
+        let statInst = resolveStatInstance(inst, 'applyBodyShapeFloors');
+        if (!statInst) return;
 
         let shape = inst.entity.bodyShape;
         let gender = inst.entity.gender;
@@ -6055,6 +6080,178 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
             }
         });
         m.redraw();
+    }
+
+    /// Beauty selector
+    ///
+    /// There is deliberately no 'beauty' field on olio.charPerson. The score is olio.statistics.beauty
+    /// (an int composite) and the narrative wording is olio.narrative.beautyDescription; a third field
+    /// on charPerson would just be a duplicate name for one of those. So this control is bound to no
+    /// field of the form's own model: it displays the band the server will derive from the character's
+    /// current statistics, and selecting a band rewrites those statistics to land in it. Rendered by
+    /// formFieldRenderers.beautyPicker, which reads through to the nested statistics entity the same
+    /// way voicePicker reads through to profile.voice.
+
+    /// The statistics the composite beauty reads, directly or through a derived term. These are the
+    /// only ones the selector moves, so it never touches a statistic beauty does not depend on.
+    ///
+    /// Two of them - charisma and manualDexterity - are ALSO read by the body shape classifier
+    /// (manualDexterity is a direct term of its RECTANGLE score; charisma reaches physicalAppearance
+    /// through maximumHealth, which is the female HOURGLASS and male V_TAPER term). So moving a
+    /// character into a beauty band can change the shape and type the server derives, and picking a
+    /// body shape afterwards will partly undo the beauty solve. That coupling is inherent - beauty's
+    /// inputs and the classifier's inputs overlap - and dropping these two would put the 'hideous' band
+    /// out of reach entirely. applyBeautyTarget reports it rather than hiding it.
+    let beautyInputStats = ['charisma', 'intelligence', 'creativity', 'spirituality', 'perception', 'manualDexterity'];
+
+    /// The base statistics rollStatistics allocates the point budget across
+    /// (StatisticsUtil.getBaseStatisticNames). The server centres the spread transform on their mean.
+    let beautyBaseStats = ['physicalStrength', 'physicalEndurance', 'manualDexterity', 'agility', 'speed',
+        'mentalStrength', 'mentalEndurance', 'intelligence', 'wisdom', 'charisma', 'creativity',
+        'spirituality', 'luck', 'perception'];
+
+    /// Mirrors NarrativeUtil.getLooksPrettyUgly. Boundaries there are expressed as HighEnumType levels;
+    /// these are the 0-20 statistic values those levels correspond to.
+    let beautyBands = [
+        { label: 'hideous',   min: 0,  max: 3  },
+        { label: 'homely',    min: 4,  max: 5  },
+        { label: 'bland',     min: 6,  max: 7  },
+        { label: 'comely',    min: 8,  max: 10 },
+        { label: 'pretty',    min: 11, max: 12 },
+        { label: 'beautiful', min: 13, max: 14 },
+        { label: 'gorgeous',  min: 15, max: 20 }
+    ];
+
+    /// ComputeUtil.getAverage - integer division, truncating, and 0 for a non-positive sum.
+    function beautyAvg(s, fields) {
+        let sum = fields.reduce(function(a, f) { return a + (s[f] || 0); }, 0);
+        return sum > 0 ? Math.floor(sum / fields.length) : 0;
+    }
+
+    /// ComputeUtil.getSpreadAverage - rounded, gain sqrt(k) about 'center', clamped to 0-20.
+    function beautySavg(s, fields, center) {
+        let sum = fields.reduce(function(a, f) { return a + (s[f] || 0); }, 0);
+        let raw = sum / fields.length;
+        return Math.max(0, Math.min(20, Math.round(center + (raw - center) * Math.sqrt(fields.length))));
+    }
+
+    /// The server composite chain, in field priority order: willpower(1), maximumHealth(10),
+    /// physicalAppearance/mentalHealth/wit(15), charm(20), beauty(25). Duplicated client-side for the
+    /// same reason bodyShapeMidpoints is - so the selector works on unsaved state with no round trip.
+    /// TestUxBeautyParity holds it to the real provider chain.
+    ///
+    /// Note physicalAppearance is a plain (truncating) mean, not SAVG: the body shape classifier reads
+    /// it for the female HOURGLASS score, and widening it made the INVERTED_TRIANGLE midpoint profile
+    /// classify as HOURGLASS. It makes no measurable difference to beauty's spread either way.
+    function computeBeautyFromStats(s) {
+        let center = beautyBaseStats.reduce(function(a, f) { return a + (s[f] || 0); }, 0) / beautyBaseStats.length;
+        let d = Object.assign({}, s);
+        d.willpower = beautyAvg(d, ['mentalEndurance', 'mentalStrength']);
+        d.maximumHealth = beautyAvg(d, ['physicalStrength', 'physicalEndurance', 'mentalStrength', 'mentalEndurance', 'charisma']);
+        d.physicalAppearance = beautyAvg(d, ['physicalStrength', 'agility', 'maximumHealth']);
+        d.mentalHealth = beautySavg(d, ['willpower', 'spirituality'], center);
+        d.wit = beautySavg(d, ['intelligence', 'creativity'], center);
+        d.charm = beautySavg(d, ['charisma', 'wit'], center);
+        return beautySavg(d, ['physicalAppearance', 'charm', 'manualDexterity', 'mentalHealth', 'perception'], center);
+    }
+
+    function beautyLabelForStat(beauty) {
+        for (let i = 0; i < beautyBands.length; i++) {
+            if (beauty >= beautyBands[i].min && beauty <= beautyBands[i].max) return beautyBands[i].label;
+        }
+        return 'indescribable';
+    }
+    /// The band the server will derive from this character's current statistics. Read straight off the
+    /// statistics rather than from any stored field, so it stays truthful as the statistics change.
+    function currentBeautyBand(inst) {
+        let statInst = resolveStatInstance(inst, 'currentBeautyBand');
+        if (!statInst) return null;
+        let stats = {};
+        let seen = 0;
+        beautyBaseStats.forEach(function(f) {
+            if (statInst.api[f]) { stats[f] = statInst.api[f]() || 0; seen++; }
+        });
+        /// The server refuses to compute the composite from a partial statistics record
+        /// (StatCompositeProvider.provide), so do not invent a band from one either.
+        if (seen < beautyBaseStats.length) return null;
+        return beautyLabelForStat(computeBeautyFromStats(stats));
+    }
+
+    am7model.beautyBands = beautyBands;
+    am7model.beautyInputStats = beautyInputStats;
+    am7model.beautyLabelForStat = beautyLabelForStat;
+    am7model.computeBeautyFromStats = computeBeautyFromStats;
+    am7model.currentBeautyBand = currentBeautyBand;
+    am7model.applyBeautyTarget = applyBeautyTarget;
+
+    /// Move the beauty inputs together until the composite lands in the requested band. Solved against
+    /// the character's actual statistics rather than read from a fixed profile table, because which
+    /// dial value lands in a band depends on the statistics the selector leaves alone - a table built
+    /// for a neutral character would miss on a rolled one.
+    ///
+    /// Returns the band actually reached, or null if nothing could be solved.
+    function applyBeautyTarget(inst, target) {
+        let statInst = resolveStatInstance(inst, 'applyBeautyTarget');
+        if (!statInst) return null;
+
+        if (!target) return null;
+        target = ('' + target).toLowerCase();
+        let band = null;
+        for (let i = 0; i < beautyBands.length; i++) {
+            if (beautyBands[i].label === target) band = beautyBands[i];
+        }
+        if (!band) return null;
+
+        let current = {};
+        beautyBaseStats.forEach(function(f) {
+            current[f] = statInst.api[f] ? (statInst.api[f]() || 0) : 0;
+        });
+
+        let shapeBefore = inst.entity ? inst.entity.bodyShape : null;
+        let mid = (band.min + band.max) / 2;
+        let best = null;
+        for (let dial = 0; dial <= 20; dial++) {
+            let probe = Object.assign({}, current);
+            beautyInputStats.forEach(function(f) { probe[f] = dial; });
+            let beauty = computeBeautyFromStats(probe);
+            let inBand = (beauty >= band.min && beauty <= band.max);
+            /// Prefer a dial inside the band, then one nearest the band centre, then the least
+            /// disturbance to the statistics being moved.
+            let score = (inBand ? 0 : 1000) + Math.abs(beauty - mid) * 10 + Math.abs(dial - 10) * 0.01;
+            if (!best || score < best.score) best = { dial: dial, beauty: beauty, score: score };
+        }
+        if (!best) return null;
+
+        beautyInputStats.forEach(function(f) {
+            if (statInst.api[f]) statInst.api[f](best.dial);
+        });
+
+        /// Keep the stored narrative wording consistent with the statistics just written, if the
+        /// character has a narrative yet. NarrativeUtil rewrites it on the next generation pass.
+        if (inst.entity && inst.entity.narrative) {
+            inst.entity.narrative.beautyDescription = beautyLabelForStat(best.beauty);
+            inst.change('narrative');
+        }
+
+        /// Report what was actually achieved rather than leaving the requested label on screen. A band
+        /// can be out of reach when the untouched statistics pull hard enough the other way.
+        let achieved = beautyLabelForStat(best.beauty);
+        let page = am7model._page;
+        if (achieved !== target) {
+            console.warn("[applyBeautyTarget] requested '" + target + "', reached '" + achieved
+                + "' (beauty " + best.beauty + ") from the beauty inputs alone");
+            if (page && page.toast) {
+                page.toast('warn', "Closest reachable band was '" + achieved + "'");
+            }
+        }
+        /// charisma and manualDexterity are classifier inputs, so Body Type / Body Shape / BMI may all
+        /// be re-derived on save. They are server-computed and this form shows the pre-change values,
+        /// so say so rather than letting them silently go stale on screen.
+        if (page && page.toast && shapeBefore) {
+            page.toast('info', 'Body type, shape and BMI are re-derived from statistics on save');
+        }
+        m.redraw();
+        return achieved;
     }
 
 
@@ -6118,36 +6315,59 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         }
     ];
 
-    // Dynamically update SD model field limits from the server (defer until authenticated)
-    // NOTE: am7model._sd replaces window.am7sd; am7model._page replaces global page
-    if (typeof am7model._sd !== "undefined" && am7model._sd && am7model._sd.fetchModels && am7model._page && am7model._page.authenticated()) {
-        am7model._sd.fetchModels().then(function(models) {
-            if (models && models.length > 0) {
-                let mf = am7model.getModelField("olio.sd.config", "model");
-                if (mf) mf.limit = models;
-                let rf = am7model.getModelField("olio.sd.config", "refinerModel");
-                if (rf) rf.limit = models;
-                if (forms.sdConfig && forms.sdConfig.fields) {
-                    if (forms.sdConfig.fields.model && forms.sdConfig.fields.model.field) {
-                        forms.sdConfig.fields.model.field.limit = models;
-                    }
-                    if (forms.sdConfig.fields.refinerModel && forms.sdConfig.fields.refinerModel.field) {
-                        forms.sdConfig.fields.refinerModel.field.limit = models;
-                    }
-                }
-                if (forms.sdConfigOverrides && forms.sdConfigOverrides.fields) {
-                    if (forms.sdConfigOverrides.fields.model && forms.sdConfigOverrides.fields.model.field) {
-                        forms.sdConfigOverrides.fields.model.field.limit = models;
-                    }
-                    if (forms.sdConfigOverrides.fields.refinerModel && forms.sdConfigOverrides.fields.refinerModel.field) {
-                        forms.sdConfigOverrides.fields.refinerModel.field.limit = models;
-                    }
-                }
+/**
+ * Point every SD model/refiner dropdown at the checkpoints the SD server actually has.
+ *
+ * <b>Why this is a function and not a module-scope side effect.</b> It used to be the latter,
+ * guarded on `am7model._sd && am7model._page && am7model._page.authenticated()` — and it never ran
+ * once. `formDef.js` is imported by main.js BEFORE main.js assigns `am7model._page`, and
+ * `am7model._sd` is only ever set lazily by a dynamic import in features/chat.js and
+ * features/media.js, so both were undefined at evaluation time and the guard short-circuited. Even
+ * with the ordering fixed it could not have worked: module scope runs at boot, and nobody is
+ * authenticated yet.
+ *
+ * The consequence was invisible because the SD panel the picture book and chat use
+ * (components/SdConfigPanel.js) fetches its own list and passes it in as a prop — it never reads
+ * `field.limit`. Only the GENERIC form path does (core/view.js getDefaultValuesForField), which is
+ * how `forms.sdConfigOverrides` renders the per-scene override editor in PictureBook, ChapBook and
+ * CardGame. Those dropdowns were showing a hardcoded SDXL-era list that no longer contained the
+ * checkpoint the books actually render with (flux2Klein_9b).
+ *
+ * Pure and synchronous on purpose: the caller owns fetching (and therefore the lazy import of the
+ * SD module), so this stays testable without a network or a bundler.
+ *
+ * @param {string[]} models checkpoint names from GET /olio/sdModels
+ * @returns {number} how many field definitions were updated - 0 means nothing matched, which is a
+ *                   sign the form or model field names moved rather than a benign no-op
+ */
+function applySdModelLimits(models) {
+    if (!Array.isArray(models) || !models.length) return 0;
+    let updated = 0;
+
+    /// The model-level field definitions, used by anything that builds a view from the schema
+    /// rather than from one of the named forms below.
+    ["model", "refinerModel"].forEach(function (fieldName) {
+        let mf = am7model.getModelField("olio.sd.config", fieldName);
+        if (mf) { mf.limit = models; updated++; }
+    });
+
+    /// Every form carrying an SD checkpoint picker. sdMannequinConfig is included deliberately —
+    /// the old block patched only sdConfig and sdConfigOverrides, so the mannequin form's list was
+    /// never dynamic even in intent.
+    ["sdConfig", "sdConfigOverrides", "sdMannequinConfig"].forEach(function (formName) {
+        let f = forms[formName];
+        if (!f || !f.fields) return;
+        ["model", "refinerModel"].forEach(function (fieldName) {
+            if (f.fields[fieldName] && f.fields[fieldName].field) {
+                f.fields[fieldName].field.limit = models;
+                updated++;
             }
         });
-    }
+    });
+    return updated;
+}
 
 // Register all forms on the model
 Object.assign(am7model.forms, forms);
 
-export { forms };
+export { forms, applySdModelLimits };
