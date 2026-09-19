@@ -13,11 +13,27 @@ import { SessionDirector } from '../ai/SessionDirector.js';
 function getPage() { return am7model._page; }
 
 let am7sd = null;
-let _sdLoaded = false;
+let _sdPromise = null;
+/**
+ * Lazily load the SD module, sharing ONE in-flight import between callers.
+ *
+ * The previous version memoized a boolean that it set BEFORE the import resolved, so the second
+ * caller took the `if (loaded) return Promise.resolve(am7sd)` path and got null while the import
+ * was still in flight. oninit calls this without awaiting and then starts _loadOptions, which is
+ * exactly that second caller — so whether the SD model list loaded came down to whether a dynamic
+ * import beat a handful of REST round-trips.
+ *
+ * Memoizing the PROMISE is the pattern already used for the same job by sdConfig.js
+ * (_modelListPromise) and pictureBook.js (_sdConfigPromise).
+ */
 function _ensureSd() {
-    if (_sdLoaded) return Promise.resolve(am7sd);
-    _sdLoaded = true;
-    return import('../../components/sdConfig.js').then(mod => { am7sd = mod.am7sd; return am7sd; }).catch(() => null);
+    if (am7sd) return Promise.resolve(am7sd);
+    if (!_sdPromise) {
+        _sdPromise = import('../../components/sdConfig.js')
+            .then(mod => { am7sd = mod.am7sd; return am7sd; })
+            .catch(() => null);
+    }
+    return _sdPromise;
 }
 
 const SessionConfigEditor = {
@@ -49,7 +65,12 @@ const SessionConfigEditor = {
         this.loadingSdDetails = false;
         this.fetchingRandomSd = false;
         this.randomSdExtras = null;
-        this.sdModelList = ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors','lustifySDXLNSFW_endgame.safetensors','ponyRealism_V22.safetensors','sdXL_v10VAEFix'];
+        // Empty until _loadOptions fetches the real list. The previous hardcoded SDXL seed was
+        // stale (it predates flux2Klein_9b, which is what the books actually render with), and a
+        // stale seed is worse than none here: both selects already render a "-- Select --" /
+        // "-- None --" option, so an empty list degrades to "nothing to pick yet" rather than
+        // offering checkpoints the server does not have.
+        this.sdModelList = [];
         this._loadOptions();
     },
 
@@ -128,8 +149,14 @@ const SessionConfigEditor = {
                 }
             }
 
-            if (am7sd?.fetchModels) {
-                let models = await am7sd.fetchModels();
+            // AWAIT the lazy SD import before reading am7sd. oninit fires _ensureSd() without
+            // awaiting it and then calls _loadOptions(), so whether am7sd was bound by the time
+            // this line ran was a race against a dynamic import resolving — usually won, silently
+            // lost when sdConfig.js was a cold chunk, and the only symptom was a model dropdown
+            // that stayed empty. _ensureSd memoizes, so this is free once it has resolved.
+            let sd = await _ensureSd();
+            if (sd?.fetchModels) {
+                let models = await sd.fetchModels();
                 if (models?.length > 0) this.sdModelList = models;
             }
 

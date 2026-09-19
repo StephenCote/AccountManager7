@@ -5,6 +5,7 @@ import { page } from './core/pageClient.js';
 import { initFeatures, loadFeatureRoutes } from './features.js';
 import { disabledFeatureRouteKey, createDisabledFeatureRoute } from './core/featureRoute.js';
 import { resolveFeatureProfile } from './core/featureProfile.js';
+import { applySdModelLimits } from './core/formDef.js';
 
 // Import views
 import sigView from './views/sig.js';
@@ -278,6 +279,7 @@ async function refreshApplication() {
             if (!rt.length || rt == "/sig") rt = "/main";
             page.wss.connect();
             startPolling();
+            refreshSdModelLimits();
         } else {
             rt = "/sig";
         }
@@ -309,6 +311,41 @@ async function refreshApplication() {
             m.route.set(path);
         }
     };
+}
+
+/**
+ * Fill the generic SD form dropdowns with the checkpoints the SD server actually has.
+ *
+ * Called from the AUTHENTICATED branch of refreshApplication, which is the earliest point both
+ * preconditions hold: there is a session (the endpoint is authenticated) and the forms are
+ * registered. formDef.js used to attempt this at module scope and it never ran once — see
+ * applySdModelLimits' own note for why.
+ *
+ * The SD module is imported dynamically so this does not pull sdConfig.js into the boot bundle;
+ * features/media.js and features/chat.js already load it the same way. fetchModels memoizes, so if
+ * one of those got there first this is free.
+ *
+ * Fire-and-forget and fully non-fatal: an unreachable SD server must not stop the application from
+ * routing. The dropdowns then fall back to the empty list, which core/view.js already tolerates.
+ */
+function refreshSdModelLimits() {
+    import('./components/sdConfig.js')
+        .then(function (mod) {
+            let sd = mod && mod.am7sd;
+            return (sd && sd.fetchModels) ? sd.fetchModels() : null;
+        })
+        .then(function (models) {
+            if (!models || !models.length) return;
+            let updated = applySdModelLimits(models);
+            if (!updated) {
+                /// Zero means no form or model field matched - the names moved. Worth a warning:
+                /// the silent version of this is exactly how the old block went unnoticed.
+                console.warn('[SD] Fetched ' + models.length + ' checkpoint(s) but matched no form field');
+            }
+        })
+        .catch(function (e) {
+            console.warn('[SD] Could not refresh model limits:', e);
+        });
 }
 
 function hasRole(roles, role) {

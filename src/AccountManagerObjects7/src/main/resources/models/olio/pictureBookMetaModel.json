@@ -35,6 +35,12 @@
 			"description": "Names of characters whose best-effort statistics-estimation step failed during createCharPerson() — the character itself was still created with default statistics."
 		},
 		{
+			"name": "unverifiedSceneCharacters",
+			"type": "list",
+			"baseType": "string",
+			"description": "Scenes whose listed character does NOT appear by name in the source passage that scene was extracted from, as \"scene N (title): name\" entries. Diagnostic only, never corrected: a character can be legitimately present without being named (pronouns, \"her mother\", an unnamed speaker), so an absent name is evidence rather than proof. It is the signal that a cast member was carried over from a different part of the work - observed on \"BWO 3\", where two scenes in the middle of one character's fourteen-scene section named a character who otherwise appears only from scene 28, and consequently rendered the wrong person."
+		},
+		{
 			"name": "mergedCharacterNames",
 			"type": "list",
 			"baseType": "string",

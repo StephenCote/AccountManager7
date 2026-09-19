@@ -3872,6 +3872,118 @@ public class PictureBookUtil {
     static final long LLM_INFRA_FAILURE_MS = 5000L;
 
     /**
+     * Scene characters whose name does NOT occur in the passage the scene was extracted from.
+     *
+     * <p><b>What this catches.</b> A scene's cast is whatever the LLM asserted; nothing ever checked
+     * it against the text the scene came from. Observed on "BWO 3": scenes 12-13 sit inside a
+     * fourteen-scene stretch belonging to Veronique but name Yolanda, who otherwise appears only
+     * from scene 28 - a name borrowed from a different part of the book. Both the cast AND the
+     * action text named her, so nothing downstream could tell it was wrong, and the scene rendered
+     * the wrong person.
+     *
+     * <p><b>Why this only REPORTS.</b> A character can be legitimately present without being named
+     * in the passage - pronouns, "her mother", an unnamed speaker - so an absent name is evidence,
+     * not proof, and dropping the character on it would silently delete correct data. The scenes it
+     * flags are exactly the ones worth a human glance, which is what the merge tooling is for.
+     *
+     * <p>Matching is accent- and case-insensitive on any name token longer than two characters, so
+     * "Darby's dad" is satisfied by a passage naming "Darby", while "Veronique" is not satisfied by
+     * "Yolanda". Short tokens and {@link #NAME_STOPWORDS} are skipped so an initial or an article
+     * cannot match everything.
+     *
+     * @return the uncorroborated names in scene order; empty when the scene carries no source
+     *         passage (nothing to check against) or every name is present
+     */
+    public static List<String> charactersNotInSourceText(Map<String, Object> scene) {
+        List<String> missing = new ArrayList<>();
+        if (scene == null) return missing;
+        Object stObj = scene.get("sourceText");
+        if (!(stObj instanceof String)) return missing;
+        String block = stripAccentsLower((String) stObj);
+        if (block.isBlank()) return missing;
+        for (String name : sceneCharacterNames(scene)) {
+            boolean found = false;
+            for (String tok : stripAccentsLower(name).split("[^a-z0-9]+")) {
+                if (tok.length() <= 2 || NAME_STOPWORDS.contains(tok)) continue;
+                if (block.contains(tok)) { found = true; break; }
+            }
+            if (!found) missing.add(name);
+        }
+        return missing;
+    }
+
+    /**
+     * Record the two extraction-quality diagnostics on a book's meta: which duplicate spellings were
+     * folded together, and which scene cast members the source passage does not corroborate.
+     *
+     * <p>Shared by both {@code createFromScenes} overloads. They are near-identical copies of one
+     * another, and that is exactly how the PB1 path ended up with name canonicalisation while the
+     * PB2 path - the one every book with a world actually takes - silently did not.
+     */
+    private static void recordExtractionDiagnostics(BaseRecord meta, Map<String, String> nameAliases,
+            List<String> unverifiedSceneCharacters) {
+        if (meta == null) return;
+        if (unverifiedSceneCharacters != null && !unverifiedSceneCharacters.isEmpty()) {
+            /// Surfaced rather than logged only: this is the signal that a scene's cast came from
+            /// somewhere other than its own passage, and the person who can judge it is the one who
+            /// read the book.
+            try { meta.set("unverifiedSceneCharacters", unverifiedSceneCharacters); }
+            catch (Exception e) { logger.warn("Failed to record unverifiedSceneCharacters on meta: " + e.getMessage()); }
+        }
+        if (nameAliases != null && !nameAliases.isEmpty()) {
+            List<String> merged = new ArrayList<>();
+            for (Map.Entry<String, String> e : nameAliases.entrySet()) merged.add(e.getKey() + " -> " + e.getValue());
+            try { meta.set("mergedCharacterNames", merged); }
+            catch (Exception e) { logger.warn("Failed to record mergedCharacterNames on meta: " + e.getMessage()); }
+        }
+    }
+
+    /**
+     * Run {@link #charactersNotInSourceText} over a whole scene list, logging each finding and
+     * returning them as {@code "scene N (title): name"} for the book meta.
+     */
+    public static List<String> collectUnverifiedSceneCharacters(List<Map<String, Object>> sceneList) {
+        List<String> out = new ArrayList<>();
+        if (sceneList == null) return out;
+        for (int si = 0; si < sceneList.size(); si++) {
+            Map<String, Object> scene = sceneList.get(si);
+            for (String miss : charactersNotInSourceText(scene)) {
+                out.add("scene " + si + " (" + (scene != null ? scene.get("title") : null) + "): " + miss);
+                logger.warn("Scene " + si + " '" + (scene != null ? scene.get("title") : null)
+                        + "' lists character '" + miss + "', but that name does not appear in the"
+                        + " passage this scene was extracted from - it may have been carried over"
+                        + " from a different part of the work");
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The character names on ONE scene, tolerating both persisted shapes ({@code {name:...}} map,
+     * bare string) and screening LLM placeholder values.
+     *
+     * <p>Shared by {@link #scenesForPrompt} and {@link #knownCharacterNames} so the reduced prompt
+     * entry and the roster cannot disagree about who is in a scene.
+     */
+    @SuppressWarnings("unchecked")
+    public static List<String> sceneCharacterNames(Map<String, Object> scene) {
+        List<String> out = new ArrayList<>();
+        Object charsObj = (scene != null) ? scene.get("characters") : null;
+        if (!(charsObj instanceof List)) return out;
+        for (Object sc : (List<Object>) charsObj) {
+            String cn = (sc instanceof Map) ? (String) ((Map<String, Object>) sc).get("name")
+                    : (sc instanceof String ? (String) sc : null);
+            if (cn == null) continue;
+            String t = cn.trim();
+            /// isMeaningful, not !isBlank: these came out of an LLM and "null"/"unknown" turn up as
+            /// VALUES, and telling the model that "null" is an established character is worse than
+            /// telling it nothing.
+            if (NarrativeUtil.isMeaningful(t) && !out.contains(t)) out.add(t);
+        }
+        return out;
+    }
+
+    /**
      * The distinct character names established so far, in first-seen order — the roster threaded
      * into the chunk-extraction prompt as {@code {knownCharacters}}.
      *
@@ -3889,24 +4001,10 @@ public class PictureBookUtil {
      * <p>{@link #canonicalizeSceneCharacterNames} still runs afterwards — this reduces how many
      * duplicates the model produces, it does not guarantee zero.
      */
-    @SuppressWarnings("unchecked")
     public static List<String> knownCharacterNames(List<Map<String, Object>> scenes) {
         java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
         if (scenes == null) return new ArrayList<>();
-        for (Map<String, Object> s : scenes) {
-            Object charsObj = (s != null) ? s.get("characters") : null;
-            if (!(charsObj instanceof List)) continue;
-            for (Object sc : (List<Object>) charsObj) {
-                String cn = (sc instanceof Map) ? (String) ((Map<String, Object>) sc).get("name")
-                        : (sc instanceof String ? (String) sc : null);
-                if (cn == null) continue;
-                String t = cn.trim();
-                /// isMeaningful, not !isBlank: these came out of an LLM and "null"/"unknown" turn up
-                /// as VALUES. A roster telling the model that "null" is an established character is
-                /// worse than no roster.
-                if (NarrativeUtil.isMeaningful(t)) names.add(t);
-            }
-        }
+        for (Map<String, Object> s : scenes) names.addAll(sceneCharacterNames(s));
         return new ArrayList<>(names);
     }
 
@@ -3918,13 +4016,27 @@ public class PictureBookUtil {
             Map<String, Object> s = scenes.get(i);
             Map<String, Object> c = new LinkedHashMap<>();
             if (i < detailFrom) {
-                /// Older scene: title only. Still addressable by a later revision/removal, but it
-                /// no longer costs ~1.5KB of context it is not contributing anything to.
+                /// Older scene: title, plus the NAMES of who is in it. Everything else is dropped -
+                /// it no longer costs ~1.5KB of context it is not contributing anything to.
+                ///
+                /// The characters used to be dropped as well, and that left the model blind in a way
+                /// that corrupted data. An older scene is still addressable by title for a
+                /// revision/removal, so the model can rewrite a scene it can no longer see the cast
+                /// of - and a revision overwrites `characters` wholesale. Observed on "BWO 3":
+                /// scenes 12-13 ("The Budget Interface"/"The Budget Explanation") sit in the middle
+                /// of a fourteen-scene stretch belonging to Veronique, but name Yolanda, who
+                /// otherwise appears only from scene 28 onward. A name from a distant part of the
+                /// book landed on two scenes in the middle of someone else's section.
+                ///
+                /// Names only, so this stays affordable: a dozen characters is a couple of hundred
+                /// bytes against the ~1.5KB per scene the reduction exists to avoid.
                 Object t = s.get("title");
                 if (t != null) c.put("title", t);
+                List<String> who = sceneCharacterNames(s);
+                if (!who.isEmpty()) c.put("characters", who);
                 /// Skip a titleless older scene entirely — an empty object would waste tokens and
                 /// could not be matched against anyway.
-                if (c.isEmpty()) continue;
+                if (!c.containsKey("title")) continue;
             } else {
                 for (String f : PROMPT_SCENE_FIELDS) {
                     Object v = s.get(f);
@@ -6259,6 +6371,10 @@ public class PictureBookUtil {
         // below to REDUCE per-character detail from the RIGHT text (not the truncated work opening,
         // which described the wrong passage for a character introduced later, e.g. 'Thug'), to persist
         // scene references (ATTR_SCENE_REFS), and to produce the condensed imaging description (ATTR_DESCRIPTION).
+        /// Scenes whose cast the source passage does not corroborate. Reported, never corrected -
+        /// see charactersNotInSourceText for why an absent name is evidence rather than proof.
+        List<String> unverifiedSceneCharacters = collectUnverifiedSceneCharacters(sceneList);
+
         Map<String, List<Integer>> charSceneIndices = new LinkedHashMap<>();
         Map<String, java.util.LinkedHashSet<String>> charBlocks = new LinkedHashMap<>();
         for (int si = 0; si < sceneList.size(); si++) {
@@ -6373,18 +6489,7 @@ public class PictureBookUtil {
 
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "save", "Saving book...");
         BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
-        if (!nameAliases.isEmpty()) {
-            /// Surfaced, not just logged: a fold is a judgement about who someone IS, and the user
-            /// is the only one who can tell a correct one from a wrong one. The ambiguous cases were
-            /// deliberately left unfolded for mergeCharacters, so this list is the record of what was
-            /// decided automatically.
-            List<String> merged = new ArrayList<>();
-            for (Map.Entry<String, String> e : nameAliases.entrySet()) {
-                merged.add(e.getKey() + " -> " + e.getValue());
-            }
-            try { meta.set("mergedCharacterNames", merged); }
-            catch (Exception e) { logger.warn("Failed to record mergedCharacterNames on meta: " + e.getMessage()); }
-        }
+        recordExtractionDiagnostics(meta, nameAliases, unverifiedSceneCharacters);
         if (!failedCharacters.isEmpty()) {
             try { meta.set("failedCharacters", failedCharacters); } catch (Exception e) { logger.warn("Failed to record failedCharacters on meta: " + e.getMessage()); }
         }
@@ -6477,6 +6582,19 @@ public class PictureBookUtil {
         }
         String text = extractWorkText(user, work);
 
+        /// Fold duplicate spellings of the same character into ONE name before anything reads the
+        /// scene list. This was added to the PB1 overload only, and PB2 is the path every book
+        /// created with a world takes - so the de-duplication the PB1 path got was not actually
+        /// reaching new books. Same call, same ordering, same reason: the de-duplication below is
+        /// an exact-string map, so "Darby's dad" and "the father" would otherwise become two
+        /// charPersons with two portraits and a split set of scenes.
+        List<String> curatedNames = new ArrayList<>();
+        for (Map<String, Object> cd : charDataList) {
+            Object cn = cd.get("name");
+            if (cn instanceof String && !((String) cn).trim().isEmpty()) curatedNames.add((String) cn);
+        }
+        Map<String, String> nameAliases = canonicalizeSceneCharacterNames(sceneList, curatedNames);
+
         if (charDataList.isEmpty()) {
             Map<String, Map<String, Object>> uniqueChars = new LinkedHashMap<>();
             for (Map<String, Object> scene : sceneList) {
@@ -6493,6 +6611,10 @@ public class PictureBookUtil {
             }
             for (Map.Entry<String, Map<String, Object>> entry : uniqueChars.entrySet()) charDataList.add(entry.getValue());
         }
+
+        /// Scenes whose cast the source passage does not corroborate. Reported, never corrected -
+        /// see charactersNotInSourceText for why an absent name is evidence rather than proof.
+        List<String> unverifiedSceneCharacters = collectUnverifiedSceneCharacters(sceneList);
 
         Map<String, List<Integer>> charSceneIndices = new LinkedHashMap<>();
         Map<String, java.util.LinkedHashSet<String>> charBlocks = new LinkedHashMap<>();
@@ -6640,6 +6762,7 @@ public class PictureBookUtil {
 
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "save", "Saving book...");
         BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
+        recordExtractionDiagnostics(meta, nameAliases, unverifiedSceneCharacters);
         if (!failedCharacters.isEmpty()) {
             try { meta.set("failedCharacters", failedCharacters); } catch (Exception e) { logger.warn("Failed to record failedCharacters: " + e.getMessage()); }
         }

@@ -1777,6 +1777,39 @@ function applySdConfig(cfg) {
     entity.compositeMode = 'flux2';
 }
 
+/**
+ * Fill BOTH thumbnail maps from an already-loaded scene list.
+ *
+ * <b>Why this exists.</b> Step 4 reads thumbnails from {@code sceneImageUrls}, keyed by SCENE
+ * objectId (so a regenerate can invalidate exactly one scene), while step 5 reads
+ * {@code step5ImageUrls}, keyed by IMAGE objectId. Two maps, two keys, one fact — and only one
+ * writer: the per-scene resolve that runs immediately after a successful generation IN THIS
+ * SESSION. Nothing populated either map when an existing book was reopened, so every previously
+ * rendered scene came back as the grey placeholder even though its status badge correctly read
+ * "done". Measured on "BWO 3": 41 scenes, 41 persisted imageObjectIds, all resolving to real
+ * data.data rows in the book's Scenes group — the images were never the problem, the client just
+ * never asked for their URLs.
+ *
+ * Fills both, so a later jump to step 5 does not re-fetch what step 4 already resolved
+ * (resolveImageUrl memoizes per objectId, but the map assignment did not survive the step change).
+ *
+ * Best-effort and non-fatal: a thumbnail is progressive enhancement, and a book must still open if
+ * the media lookups fail.
+ *
+ * @param {Array} sceneList scenes as returned by loadPictureBook (listScenes merges imageObjectId)
+ */
+async function hydrateSceneThumbnails(sceneList) {
+    if (!Array.isArray(sceneList) || !sceneList.length) return;
+    let byImageId = await resolveAllImageUrls(sceneList);
+    step5ImageUrls = Object.assign({}, step5ImageUrls, byImageId);
+    sceneList.forEach(function (s) {
+        if (!s || !s.objectId || !s.imageObjectId) return;
+        let url = byImageId[s.imageObjectId];
+        if (url) sceneImageUrls[s.objectId] = url;
+    });
+    m.redraw();
+}
+
 async function tryResumeExistingBook(id) {
     let existingScenes;
     try {
@@ -1818,10 +1851,16 @@ async function tryResumeExistingBook(id) {
     });
 
     if (allResolved) {
-        try { step5ImageUrls = await resolveAllImageUrls(existingScenes); } catch (e) { /* non-fatal */ }
+        /// Awaited: step 5 IS the images, so opening before they resolve shows an empty book.
+        try { await hydrateSceneThumbnails(existingScenes); } catch (e) { /* non-fatal */ }
         step = 5;
     } else {
         step = 4;
+        /// NOT awaited: step 4's rows are readable without their thumbnails. The lookups run in
+        /// parallel, but they are still one REST round-trip per scene (41 on this book), and
+        /// awaiting them holds the dialog shut for as long as the slowest one takes. They fill in
+        /// on the redraw hydrateSceneThumbnails issues when it finishes.
+        hydrateSceneThumbnails(existingScenes).catch(function () { /* non-fatal */ });
     }
 }
 
@@ -1922,6 +1961,19 @@ export { getPromptTemplate };
 // landscape prompt (LLM) and a landscape image (SD) per scene. Exported for the same reason as the
 // seams above: the alternative is mounting the whole wizard to reach one assignment.
 export { pinPictureBookDefaults };
+
+// Test-only seam: reopening an existing book left every previously rendered scene showing the grey
+// placeholder, because the two thumbnail maps were only ever written by the post-generation resolve.
+// Exported with a reader/reset for the same reason as the seams above — the alternative is mounting
+// the whole wizard and stubbing a book load to observe one map.
+export { hydrateSceneThumbnails };
+export function __thumbnailStateForTest() {
+    return { sceneImageUrls: sceneImageUrls, step5ImageUrls: step5ImageUrls };
+}
+export function __resetThumbnailStateForTest() {
+    sceneImageUrls = {};
+    step5ImageUrls = {};
+}
 
 // Test-only seam: ensureSdConfig() — UAT#3 regression (new-book must use saved sdcfg-default
 // before falling back to randomImageConfig). The function is module-private so it is exported here
