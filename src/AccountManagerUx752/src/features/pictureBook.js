@@ -214,6 +214,14 @@ var workSelectorView = {
                             ]),
                             m('div', { class: 'flex items-center gap-1' }, [
                                 m('button', {
+                                    class: 'text-gray-400 hover:text-purple-600 p-1',
+                                    title: 'Open workflow canvas',
+                                    onclick: function (e) {
+                                        e.stopPropagation();
+                                        m.route.set('/picture-book/' + b.objectId + '/workflow');
+                                    }
+                                }, m('span', { class: 'material-symbols-outlined text-lg' }, 'account_tree')),
+                                m('button', {
                                     class: 'text-red-400 hover:text-red-600 p-1',
                                     title: 'Delete picture book',
                                     onclick: function (e) {
@@ -250,6 +258,14 @@ var workSelectorView = {
                                 ])
                             ]),
                             m('div', { class: 'flex items-center gap-1' }, [
+                                m('button', {
+                                    class: 'text-gray-400 hover:text-blue-600 p-1',
+                                    title: 'Open workflow canvas',
+                                    onclick: function (e) {
+                                        e.stopPropagation();
+                                        m.route.set('/picture-book/' + b.bookObjectId + '/workflow');
+                                    }
+                                }, m('span', { class: 'material-symbols-outlined text-lg' }, 'account_tree')),
                                 m('button', {
                                     class: 'text-red-400 hover:text-red-600 p-1',
                                     title: 'Delete picture book',

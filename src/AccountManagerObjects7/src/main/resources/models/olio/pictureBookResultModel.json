@@ -31,6 +31,12 @@
 			"description": "Raw LLM chunk-extraction JSON that failed to parse during extractChunked, one JSON-encoded {context,error,rawResponse,failedAt} blob per failure."
 		},
 		{
+			"name": "graphWriteFailures",
+			"type": "list",
+			"baseType": "string",
+			"description": "Human-readable workflow-graph (olio.pb.*) write failures that were swallowed to keep them non-fatal to the image during scene generation — surfaced on the scene result (W2) so a lost node/binding/artifact write is not only in the log."
+		},
+		{
 			"name": "sceneList",
 			"type": "list",
 			"baseType": "model",

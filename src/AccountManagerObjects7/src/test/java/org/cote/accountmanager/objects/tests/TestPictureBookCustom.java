@@ -25,8 +25,13 @@ import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
+import org.cote.accountmanager.olio.picturebook.PbArtifactUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbConfigUtil;
+import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
+import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
+import org.cote.accountmanager.cache.CacheUtil;
+import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -38,6 +43,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
@@ -84,7 +90,7 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final String CHAT_PATH = "~/Chat";
 
 	private static final String PB_LLM_MODEL = "gpt-oss:120b";//"qwen3:8b";
-	private static int iter = 5;
+	private static int iter = 6;
 	private static final boolean REIMAGE_CHARS = false;
 	// If true, force a fresh LLM derivation of already-cached scene data: the .scenesCache note
 	// (Step 2 extraction) and the per-scene "scenePrompt"/"landscapePrompt" values (Step 4, via
@@ -351,6 +357,26 @@ public class TestPictureBookCustom extends BaseTest {
 	private String getOrCreateCatatoneBook(String workObjectId, List<Map<String, Object>> sceneList) throws Exception {
 		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
 		String bookPath = BOOK_GROUP_PATH_PREFIX + CATATONE_BOOK_NAME;
+
+		// W3 re-point: this is now a PB2 book+world. The 9-arg createFromScenes routes charPerson
+		// records into the world's Population group (not the legacy <book>/Characters, which it now
+		// creates EMPTY), and the render path (resolveSceneCharacter) is Population-ONLY. So the whole
+		// character read/write axis moves to the world Population group. The slug is the link between
+		// creation and resolution: PbPipelineUtil.deriveSlug maps the book name to the world name, and
+		// "Catatone Custom Book N" has no '.', so the client and server slug rules agree — no
+		// slug-disagreement (the two-candidate fallback in bookPopulationPathCandidates only bites
+		// books named "<x>.pdf"; the test controls both ends here).
+		String slug = PbPipelineUtil.deriveSlug(CATATONE_BOOK_NAME);
+		assertNotNull("A valid slug must derive from '" + CATATONE_BOOK_NAME + "'", slug);
+
+		// Reuse guard, PB2 edition. TRIGGER on the /Characters subgroup existing — as before, that is
+		// the "createFromScenes has run" signal (Step 2's scene caching pre-creates only the top-level
+		// group, so the top-level group is NOT a valid signal). COMPLETION now requires BOTH the
+		// .pictureBookMeta note (still the last thing createFromScenes writes) AND at least one
+		// charPerson in the world Population group (the per-character work, and the group both Step 3
+		// and the render read). createBook alone makes the book+world exist with an EMPTY Population,
+		// so book-existence is not completion. Assert on the last thing written; never auto-repair
+		// (destructive — see the pre-W3 javadoc above).
 		BaseRecord existingCharsGroup = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
 			ModelNames.MODEL_GROUP, bookPath + "/Characters", GroupEnumType.DATA.toString(), orgId);
 		if (existingCharsGroup != null) {
@@ -369,16 +395,47 @@ public class TestPictureBookCustom extends BaseTest {
 				+ "will fail with 'Book meta not found'. Fix by either bumping `iter` (leaves the broken "
 				+ "book in place under its old name) or deleting the group at " + bookPath
 				+ " so the next run rebuilds it from scratch.", existingMeta);
-			logger.info("Reusing existing catatone book: " + existingBookObjectId);
+			BaseRecord existingPop = catatonePopulationGroup(slug);
+			int existingPopChars = (existingPop != null) ? charPersonsInGroup(existingPop).length : 0;
+			assertTrue("Book '" + bookPath + "' is built (meta present) but its world Population ("
+				+ PbBookUtil.bookContainerPath(slug) + "/Population) holds " + existingPopChars
+				+ " charPerson(s). A 0 here means this book was built by the pre-W3 LEGACY path "
+				+ "(characters in <book>/Characters, empty world Population) and cannot be reused by the "
+				+ "PB2 render, which is Population-only. Fix by bumping `iter`, or deleting BOTH the book "
+				+ "group at " + bookPath + " and the world at " + PbBookUtil.bookContainerPath(slug)
+				+ " so the next run rebuilds it as a PB2 book.", existingPopChars > 0);
+			logger.info("Reusing existing PB2 catatone book: group=" + existingBookObjectId
+				+ " slug=" + slug + " (" + existingPopChars + " chars in world Population)");
 			return existingBookObjectId;
 		}
 
+		// Fresh build. Get-or-create the PB2 book+world FIRST so its objectId can be handed to the
+		// 9-arg createFromScenes, which then re-routes the charPerson writes into the world Population
+		// group. createBook is the ONE authorized creation path (a render never creates a book/world as
+		// a side effect); it is idempotent here via the findBookBySlug pre-flight.
+		BaseRecord pb2Book = PbBookUtil.findBookBySlug(testUser, slug, orgId);
+		if (pb2Book == null) {
+			pb2Book = PbBookUtil.createBook(testUser, testProperties.getProperty("test.datagen.path"), slug, CATATONE_BOOK_NAME);
+			assertNotNull("PB2 createBook should return a book readable by its creator", pb2Book);
+		}
+		String pb2BookObjectId = pb2Book.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("The PB2 book must carry an objectId", pb2BookObjectId);
+
 		BaseRecord meta = PictureBookUtil.createFromScenes(testUser, workObjectId,
 			chatConfig.get(FieldNames.FIELD_NAME), BOOK_GENRE, CATATONE_BOOK_NAME,
-			sceneList, new ArrayList<>(), testProperties.getProperty("test.datagen.path"));
+			sceneList, new ArrayList<>(), testProperties.getProperty("test.datagen.path"), pb2BookObjectId);
 		assertNotNull("createFromScenes should return book meta", meta);
 		String bookObjectId = meta.get("bookObjectId");
-		assertNotNull("Book meta should carry a bookObjectId", bookObjectId);
+		assertNotNull("Book meta should carry a bookObjectId (the PB1 book GROUP objectId)", bookObjectId);
+		// PB2 read/write contract: createFromScenes must have re-routed the character write group to the
+		// world Population and stamped pb2BookObjectId on the meta. Assert both so a regression back to
+		// legacy home-directory routing fails loudly here rather than vacuously at render time.
+		assertEquals("createFromScenes(pb2) meta should carry the pb2BookObjectId", pb2BookObjectId, meta.get("pb2BookObjectId"));
+		String metaCharsGroupPath = meta.get("charsGroupPath");
+		assertNotNull("createFromScenes(pb2) should record the actual charsGroupPath on the meta", metaCharsGroupPath);
+		assertTrue("PB2 charsGroupPath should be the world Population group, not the legacy "
+			+ "<book>/Characters (was '" + metaCharsGroupPath + "')",
+			metaCharsGroupPath.endsWith("/" + slug + "/Population"));
 		List<Object> failedCharacters = meta.get("failedCharacters");
 		if (failedCharacters != null && !failedCharacters.isEmpty()) {
 			logger.warn("createFromScenes failedCharacters: " + failedCharacters);
@@ -396,6 +453,98 @@ public class TestPictureBookCustom extends BaseTest {
 		}
 		logger.info("Created catatone book " + bookObjectId);
 		return bookObjectId;
+	}
+
+	/**
+	 * The PB2 world Population group for this book's slug — {@code /Olio/Universes/Books/Worlds/{slug}
+	 * /Population} — read AS the acting user (the world's Writer/Admin roles are granted on it), or
+	 * null if the world has not been built yet. This is the EXACT path production's
+	 * {@code resolveSceneCharacter} resolves against (see {@code bookPopulationPathCandidates}), so
+	 * reading here proves the read side matches the render's.
+	 */
+	private BaseRecord catatonePopulationGroup(String slug) {
+		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String popPath = PbBookUtil.bookContainerPath(slug) + "/Population";
+		return IOSystem.getActiveContext().getPathUtil().findPath(testUser,
+			ModelNames.MODEL_GROUP, popPath, GroupEnumType.DATA.toString(), orgId);
+	}
+
+	/** All charPerson records in {@code group}, fully planned (planMost) so sub-records are present. */
+	private BaseRecord[] charPersonsInGroup(BaseRecord group) {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON,
+			FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.planMost(true);
+		BaseRecord[] recs = IOSystem.getActiveContext().getSearch().findRecords(q);
+		return (recs != null) ? recs : new BaseRecord[0];
+	}
+
+	/**
+	 * Task 3 / W3 verification of one rendered scene: assert the workflow GRAPH actually persisted
+	 * (olio.pb.workflow / node / binding / artifact rows) AND — the non-vacuous part — that the scene
+	 * character was resolved from the world Population group. generateSceneImage returns a non-null
+	 * imageObjectId even for a character-free render, so the imageObjectId assertion in Step 5 alone
+	 * cannot distinguish "resolved the characters" from "silently missed them and composed with none".
+	 * The scene-prompt node's CHARACTER binding at ordinal 0 is the direct evidence: it exists iff
+	 * resolveSceneCharacter returned at least one character (PictureBookUtil binds
+	 * {@code promptCharObjectIds} onto the scene-prompt node). Reports row counts to the log.
+	 */
+	private void verifySceneGraphAndCharacterResolution(String slug, String sceneOid, BaseRecord result) {
+		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+
+		// W2 happy-path plumbing: a clean render must carry no swallowed graph-write failures. Assert
+		// this FIRST — if graph writes failed, the messages here are the most useful diagnostic for the
+		// structural assertions below (which would otherwise fail as bare nulls).
+		Object gwf = result.get("graphWriteFailures");
+		assertTrue("A clean render must surface NO graphWriteFailures on the scene result (W2 happy "
+			+ "path). Present failures: " + gwf,
+			gwf == null || ((List<?>) gwf).isEmpty());
+
+		BaseRecord book = PbBookUtil.findBookBySlug(testUser, slug, orgId);
+		assertNotNull("The PB2 book for slug '" + slug + "' must be readable for graph verification", book);
+
+		// olio.pb.workflow row
+		BaseRecord workflow = PbGraphUtil.findWorkflow(testUser, book);
+		assertNotNull("A render must persist an olio.pb.workflow for the book (Task 3). null here means "
+			+ "the scene graph was never opened/recorded — resolveSceneCharacter / openSceneGraph found "
+			+ "no book world.", workflow);
+
+		// olio.pb.node rows for this scene (landscapePrompt, scenePrompt, landscape, reference, composite)
+		List<BaseRecord> sceneNodes = PbPipelineUtil.listSceneNodes(testUser, workflow, sceneOid);
+		assertTrue("A rendered scene must record its core workflow nodes (olio.pb.node rows) — expected "
+			+ "the scenePrompt/landscape/reference/composite nodes at minimum, got " + sceneNodes.size(),
+			sceneNodes.size() >= 4);
+
+		// The COMPOSITE node + its selected artifact (olio.pb.artifact) — the final image's provenance.
+		BaseRecord compositeNode = PbPipelineUtil.findNodeByHandle(testUser, workflow,
+			PbPipelineUtil.compositeHandle(sceneOid));
+		assertNotNull("A COMPOSITE node must exist for the rendered scene", compositeNode);
+		BaseRecord compositeArtifact = PbArtifactUtil.findSelected(testUser, compositeNode, PbPipelineUtil.ROLE_COMPOSITE);
+		assertNotNull("The COMPOSITE node must carry a selected composite artifact (olio.pb.artifact row) "
+			+ "— the persisted final scene image", compositeArtifact);
+
+		// olio.pb.binding rows: the composite consumes references (portraits/landscape/prompt), so it
+		// must carry bindings — the edges of the graph.
+		List<BaseRecord> compositeBindings = PbGraphUtil.listBindings(testUser, compositeNode);
+		assertFalse("The COMPOSITE node must carry bindings (olio.pb.binding rows) linking it to the "
+			+ "portrait/landscape/prompt inputs it composed", compositeBindings.isEmpty());
+
+		// NON-VACUOUS proof of character resolution: the scene-prompt node binds each resolved scene
+		// character (ROLE_CHARACTER). Binding ordinal 0 exists iff >= 1 character resolved from the
+		// world Population group — a character-free render (the W3 bug) leaves ZERO such bindings.
+		BaseRecord spNode = PbPipelineUtil.findNodeByHandle(testUser, workflow,
+			PbPipelineUtil.scenePromptHandle(sceneOid));
+		assertNotNull("A scenePrompt node must exist for the rendered scene", spNode);
+		BaseRecord charBinding = PbPipelineUtil.findBinding(testUser, spNode, PbPipelineUtil.ROLE_CHARACTER, 0);
+		assertNotNull("The scenePrompt node must bind at least one CHARACTER record (ROLE_CHARACTER, "
+			+ "ordinal 0), proving resolveSceneCharacter resolved a scene character from the world "
+			+ "Population group. ZERO character bindings is exactly the vacuous character-free render "
+			+ "this PB2 re-point exists to catch.", charBinding);
+
+		logger.info("Task 3 graph rows for scene " + sceneOid + " (slug=" + slug + "): olio.pb.workflow=1"
+			+ ", olio.pb.node(scene-scoped)=" + sceneNodes.size()
+			+ ", olio.pb.binding(composite)=" + compositeBindings.size()
+			+ ", composite artifact=1, scenePrompt CHARACTER binding present=true");
 	}
 
 	/**
@@ -958,25 +1107,39 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		// PromptsAndImages. Expect two characters here: Duña and Jideon (de Rosa) — extraction
 		// sometimes drops the "ñ" (comes back as "Duna"), so match loosely if you assert on name.
 
+		// W3 re-point: charPerson records now live in the PB2 WORLD Population group (createFromScenes
+		// re-routed them there), NOT the legacy <book>/Characters subgroup — which it now creates but
+		// leaves EMPTY. resolveSceneCharacter is Population-only, so reading here from the same group
+		// the render reads is exactly what makes Step 5 non-vacuous.
+		String bookSlug = PbPipelineUtil.deriveSlug(CATATONE_BOOK_NAME);
 		BaseRecord bookGroup = PictureBookUtil.findBookGroup(testUser, bookObjectId);
-		String charsGroupPath = ((String) bookGroup.get(FieldNames.FIELD_PATH)) + "/Characters";
-		BaseRecord charsGroup = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
-			ModelNames.MODEL_GROUP, charsGroupPath, GroupEnumType.DATA.toString(),
-			(long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
-		Query charQ = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, charsGroup.get(FieldNames.FIELD_ID));
-		charQ.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
-		charQ.planMost(true);
-		BaseRecord[] chars = IOSystem.getActiveContext().getSearch().findRecords(charQ);
-		assertTrue("At least one character should have been created (check createFromScenes' "
-			+ "failedCharacters log above if this fails — individual character creation can fail "
-			+ "without failing the whole book)", chars.length > 0);
+		BaseRecord charsGroup = catatonePopulationGroup(bookSlug);
+		assertNotNull("The PB2 world Population group for slug '" + bookSlug + "' ("
+			+ PbBookUtil.bookContainerPath(bookSlug) + "/Population) must exist after "
+			+ "getOrCreateCatatoneBook", charsGroup);
+		BaseRecord[] chars = charPersonsInGroup(charsGroup);
+		assertTrue("At least one character should have been created in the world Population group "
+			+ "(check createFromScenes' failedCharacters log above if this fails — individual character "
+			+ "creation can fail without failing the whole book)", chars.length > 0);
+		// Non-regression: the legacy <book>/Characters group, if present, must NOT hold characters in
+		// PB2 mode — finding any there means the B4 population re-route regressed to legacy routing.
+		BaseRecord legacyCharsGroup = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
+			ModelNames.MODEL_GROUP, ((String) bookGroup.get(FieldNames.FIELD_PATH)) + "/Characters",
+			GroupEnumType.DATA.toString(), (long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		if (legacyCharsGroup != null) {
+			assertEquals("PB2 must NOT populate the legacy <book>/Characters group — characters belong "
+				+ "in the world Population group. Characters found here mean createFromScenes' B4 "
+				+ "population re-route regressed to legacy home-directory routing.",
+				0, charPersonsInGroup(legacyCharsGroup).length);
+		}
 		for (BaseRecord cp : chars) {
 			logger.info("Character: " + cp.get(FieldNames.FIELD_NAME)
 				+ " gender=" + cp.get(FieldNames.FIELD_GENDER)
 				+ " race=" + cp.get(OlioFieldNames.FIELD_RACE)
 				+ " alignment=" + cp.get(FieldNames.FIELD_ALIGNMENT));
 		}
-		//logger.info("Chars: " + chars.length + " total, in group " + charsGroupPath);
+		logger.info("Chars: " + chars.length + " total, in world Population group "
+			+ PbBookUtil.bookContainerPath(bookSlug) + "/Population");
 		logger.info("***** STEP 3b");
 
 		// ═══════════════════════════════════════════════════════════════════
@@ -1137,9 +1300,16 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		// at WxH" log line to localize the B2 oversized-merge issue. swarmServer is reused from Step 3B.
 		logger.info("***** STEP 5");
 		PictureBookUtil.SceneGenerationParams params = buildSdConfigTemplate();
+		// W3: bookSlug is AUTHORITATIVE for resolveSceneCharacter — it points the render at the world
+		// Population group directly (rather than deriving it from the PB1 scene group path). Without it
+		// the character resolution silently misses and the composite renders character-free while STILL
+		// returning a non-null imageObjectId — the vacuous pass this re-point exists to close.
+		params.bookSlug = PbPipelineUtil.deriveSlug(CATATONE_BOOK_NAME);
 		List<Map<String, Object>> scenesForImages = PictureBookUtil.listScenes(testUser, bookObjectId);
 		assertFalse("Book should have at least one scene to render", scenesForImages.isEmpty());
 		int sceneNum = 0;
+		String renderedSceneOid = null;
+		BaseRecord renderedResult = null;
 		logger.info(scenesForImages.size() + " scenes");
 		/*
 		if(true){
@@ -1167,7 +1337,21 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 				+ " seed=" + result.get("seed") + " (" + elapsed + "ms) prompt=[" + result.get("prompt") + "]");
 			assertNotNull("Scene " + sceneNum + " should produce a real generated image objectId", imageObjectId);
 			exportImage(imageObjectId, "scene_" + sceneNum + "_" + sceneOid);
+			renderedSceneOid = sceneOid;
+			renderedResult = result;
 		}
+
+		// ═══════════════════════════════════════════════════════════════════
+		// STEP 5c — GRAPH-WRITE VERIFICATION (Task 3 / W3) + non-vacuous character-resolution proof
+		// ═══════════════════════════════════════════════════════════════════
+		// The imageObjectId assertion above is NOT sufficient: generateSceneImage returns a non-null
+		// imageObjectId even when resolveSceneCharacter resolves NO character (the composite just runs
+		// with fewer/zero portrait references). W3's whole point is that the render found the scene's
+		// characters in the WORLD Population group — so assert the persisted workflow graph directly,
+		// which also fulfils Task 3 (row counts for olio.pb.workflow / node / binding / artifact).
+		assertNotNull("Step 5 must have rendered at least one scene", renderedSceneOid);
+		assertNotNull("Step 5 must have captured the render result", renderedResult);
+		verifySceneGraphAndCharacterResolution(bookSlug, renderedSceneOid, renderedResult);
 
 		// ═══════════════════════════════════════════════════════════════════
 		// STEP 5B — STANDALONE PORTRAIT REGENERATION (outside the picturebook pipeline)
@@ -1206,6 +1390,213 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		
 		logger.info("END TEST *****");
 		AuditUtil.setLogToConsole(true);
+	}
+
+	/**
+	 * W2 (PictureBookWorkflowOverhaul §W2) — graph-write failure-surface PLUMBING test, with a
+	 * documented, measured account of why the failure-INDUCTION path could not be exercised.
+	 *
+	 * <p><b>Intended design</b> (the anchor's "best real-induction seam"): revoke the {@code /Create}
+	 * DATA entitlement on the PB2 world's {@code Artifacts} group from every actor that holds it, then
+	 * render a scene. The theory was that each {@code PbPipelineUtil.recordText}/{@code recordImage} in
+	 * {@code PictureBookUtil.generateSceneImage} persists artifact provenance into the Artifacts group
+	 * via {@code PbArtifactUtil.persistArtifact} -> {@code AccessPoint.create(user, artifact)}, PBAC
+	 * would then deny it, {@code persistArtifact} would throw {@code PictureBookException(500)}, and each
+	 * artifact stage's catch would record it via {@code pbGraph.addGraphWriteFailure(...)} — while nodes
+	 * (Workflow group) and the final composite (the PB1 Scenes group) stay outside the revoked
+	 * compartment so {@code imageObjectId} still lands.
+	 *
+	 * <p><b>Measured finding — the seam is INERT (2026-09-19, org 23, testUser ownerId 204).</b> The
+	 * revoke genuinely takes at the permission-record level: the {@code assertTrue(checkEntitlement)}
+	 * baseline is true and, after revoking {@code /Create} DATA from BOTH holder roles (1442, 1443), the
+	 * {@code assertFalse(checkEntitlement)} probe is true — no role holds that leaf permission on the
+	 * Artifacts group anymore. YET the subsequent render's every write is {@code AUDIT PERMIT} in the
+	 * app log — including {@code ADD olio.pb.artifact} for landscapePrompt and scenePrompt and the image
+	 * {@code data.data} blobs — with no {@code AUDIT DENY} anywhere. So {@code persistArtifact} never
+	 * returned null, never threw, and {@code graphWriteFailures} came back EMPTY. Reason:
+	 * {@code persistArtifact} (line 127) sets the artifact's owner to {@code user} via
+	 * {@code applyNameGroupOwnership}, and testUser's authority to create {@code olio.pb.artifact} into
+	 * the Artifacts group is not gated by that leaf {@code /Create} DATA grant — it flows from a
+	 * cascaded parent-group grant in the world compartment (the same grant that authorizes the sibling
+	 * node/binding writes). {@code checkEntitlement} measures only "does a role hold THIS permission
+	 * record directly ON THIS group"; that is not the check PBAC applies at create time. The empty
+	 * {@code graphWriteFailures} is therefore CORRECT happy-path behavior, NOT a W2 defect.
+	 *
+	 * <p><b>Why no clean test-only induction exists</b> (all forbidden or off-scope): a parent-level
+	 * revoke would also block the node/binding writes (the anchor requires "node writes succeed") and
+	 * would mutate the shared world compartment's permission structure (a fixture change with
+	 * cross-test blast radius); a cross-compartment foreign-reference denial — {@code persistArtifact}'s
+	 * own documented "usual cause" — cannot be injected into {@code generateSceneImage} without a
+	 * production change; a unique-index (producedByNode, role, revision) collision needs concurrency or
+	 * internal revision seeding, not a clean isolated seam. AM7 PBAC is additive-grant with no
+	 * deny-participation to override the inherited grant on just the Artifacts branch.
+	 *
+	 * <p><b>What this test therefore asserts (the documented Task-2 fallback):</b> it keeps the revoke
+	 * and the two {@code checkEntitlement} probes as OBSERVABLE, re-runnable evidence that the
+	 * leaf-permission seam is inert, then asserts the W2 plumbing on the successful render —
+	 * {@code graphWriteFailures} is present, is a {@code List}, and is EMPTY — and that
+	 * {@code imageObjectId} lands. It does NOT exercise the failure-SURFACING path
+	 * ({@code addGraphWriteFailure}); that path could not be triggered without the forbidden changes
+	 * above. Do not read a green result here as proof that a real graph-write failure gets surfaced.
+	 *
+	 * <p>Live backend required (Ollama + Swarm). Never resets the DB schema. The admin user only
+	 * ADMINISTERS the grant/revoke (exactly as TestPbSecurity does); the SUBJECT — probed and calling
+	 * generateSceneImage — is the non-admin {@code testUser}. The revoke is fully restored in a finally
+	 * block and the restore is asserted after the try/finally so a primary assertion failure propagates
+	 * unmasked.
+	 */
+	@Test
+	public void TestSceneGraphWriteFailurePlumbingArtifactsRevokeInert() throws Exception {
+		logger.info("***** TEST W2 GRAPH-WRITE FAILURE PLUMBING (Artifacts /Create DATA revoke is INERT — see Javadoc)");
+		setupTestContext();
+
+		// Reuse the same catatone fixture as TestPictureBookCustomPipeline (cheap on rerun).
+		String workObjectId = getOrCreateCatatoneWork();
+		List<Map<String, Object>> sceneList = getOrCreateCatatoneScenes(workObjectId);
+		String bookObjectId = getOrCreateCatatoneBook(workObjectId, sceneList);
+		String slug = PbPipelineUtil.deriveSlug(CATATONE_BOOK_NAME);
+		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		BaseRecord admin = testOrgCtx.getAdminUser();
+
+		// The PB2 world's Artifacts group is owned by the olio principal — resolve its path AS that
+		// principal (see .claude/rules troubleshooting: olio-principal-owned world groups).
+		BaseRecord olioUser = IOSystem.getActiveContext().getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		assertNotNull("No olio principal in org " + orgId + " — the book world was never bootstrapped", olioUser);
+		BaseRecord artifactsGroup = IOSystem.getActiveContext().getPathUtil().findPath(olioUser,
+			ModelNames.MODEL_GROUP, PbBookUtil.artifactGroupPath(slug), GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("The PB2 Artifacts group must exist for slug '" + slug + "' ("
+			+ PbBookUtil.artifactGroupPath(slug) + ")", artifactsGroup);
+
+		// The "/Create" permission of type DATA — a DISTINCT record from "/Create" GROUP.
+		BaseRecord createDataPerm = IOSystem.getActiveContext().getPathUtil().findPath(admin,
+			ModelNames.MODEL_PERMISSION, "/Create", PermissionEnumType.DATA.toString(), orgId);
+		assertNotNull("/Create DATA permission must resolve", createDataPerm);
+		long createDataPermId = ((Number) createDataPerm.get(FieldNames.FIELD_ID)).longValue();
+
+		// Baseline: the test subject (a role member of the book) CAN create DATA in Artifacts.
+		CacheUtil.clearCache();
+		OlioContextUtil.clearCache();
+		assertTrue("Baseline: the book creator must hold /Create DATA on the Artifacts group before the "
+			+ "revoke, or the induction is vacuous",
+			IOSystem.getActiveContext().getAuthorizationUtil().checkEntitlement(testUser, createDataPerm, artifactsGroup));
+
+		// Pick a scene to render.
+		List<Map<String, Object>> scenes = PictureBookUtil.listScenes(testUser, bookObjectId);
+		assertFalse("Book must have at least one scene to render", scenes.isEmpty());
+		String sceneOid = null;
+		for (Map<String, Object> s : scenes) {
+			Object oid = s.get("objectId");
+			if (oid != null) { sceneOid = (String) oid; break; }
+		}
+		assertNotNull("No renderable scene objectId found", sceneOid);
+
+		String swarmServer = testProperties.getProperty("test.swarm.server");
+		PictureBookUtil.SceneGenerationParams params = buildSdConfigTemplate();
+		params.bookSlug = slug;
+
+		// Enumerate every actor holding /Create DATA on the Artifacts group and revoke each — robust to
+		// however the book world wired its Writer/Admin roles (no role-name guessing).
+		List<BaseRecord> revoked = new ArrayList<>();
+		boolean restoreOk = false;
+		try {
+			List<BaseRecord> holders = IOSystem.getActiveContext().getMemberUtil()
+				.findMembers(artifactsGroup, null, null, 0, createDataPermId);
+			assertFalse("Precondition: at least one actor must hold /Create DATA on the Artifacts group to "
+				+ "revoke — none found means the compartment is not wired as expected", holders.isEmpty());
+			for (BaseRecord part : holders) {
+				long partId;
+				String partModel;
+				if (part.inherits(ModelNames.MODEL_PARTICIPATION_ENTRY)) {
+					partId = ((Number) part.get(FieldNames.FIELD_PART_ID)).longValue();
+					partModel = part.get(FieldNames.FIELD_TYPE);
+				} else {
+					partId = ((Number) part.get(FieldNames.FIELD_PARTICIPANT_ID)).longValue();
+					partModel = part.get(FieldNames.FIELD_PARTICIPANT_MODEL);
+				}
+				BaseRecord holder = IOSystem.getActiveContext().getReader().read(partModel, partId);
+				if (holder == null) {
+					logger.warn("Could not read /Create DATA holder " + partModel + ":" + partId + " — skipping");
+					continue;
+				}
+				boolean rev = IOSystem.getActiveContext().getMemberUtil()
+					.member(admin, artifactsGroup, holder, createDataPerm, false);
+				assertTrue("Failed to revoke /Create DATA from " + partModel + ":" + partId, rev);
+				revoked.add(holder);
+				logger.info("Revoked /Create DATA on Artifacts from " + partModel + ":" + partId);
+			}
+
+			// Confirm the induction took: the subject can no longer create DATA in Artifacts.
+			CacheUtil.clearCache();
+			OlioContextUtil.clearCache();
+			assertFalse("After revoking /Create DATA from every holder, the book creator must NOT hold it "
+				+ "on the Artifacts group — else the induction did not take and a graphWriteFailures result "
+				+ "would be for the wrong reason",
+				IOSystem.getActiveContext().getAuthorizationUtil().checkEntitlement(testUser, createDataPerm, artifactsGroup));
+
+			// Render the scene with Artifacts writes denied.
+			long t0 = System.currentTimeMillis();
+			BaseRecord result = PictureBookUtil.generateSceneImage(testUser, sceneOid, params, "SWARM", swarmServer);
+			long elapsed = System.currentTimeMillis() - t0;
+			assertNotNull("generateSceneImage must still return a result under the Artifacts deny", result);
+
+			// (a) The primary output survives: the final composite lands in the PB1 Scenes group, NOT
+			//     the revoked PB2 Artifacts group.
+			String imageObjectId = result.get("imageObjectId");
+			logger.info("W2 render: scene " + sceneOid + " -> imageObjectId=" + imageObjectId
+				+ " (" + elapsed + "ms)");
+			assertNotNull("imageObjectId must be non-null even under the Artifacts deny — the final composite "
+				+ "image is written to the Scenes group, not Artifacts", imageObjectId);
+			exportImage(imageObjectId, "w2_deny_" + sceneOid);
+
+			// (b) W2 PLUMBING (see Javadoc): graphWriteFailures is present, a List, and EMPTY. It is EMPTY
+			//     — even though the leaf /Create DATA permission was revoked above — because that revoke is
+			//     INERT: the render's artifact writes were all AUDIT PERMIT (create authority cascades from
+			//     a parent-group grant, not the revoked leaf permission). So no graph write failed and
+			//     nothing was surfaced. This asserts the field/type/empty-on-success contract only; it does
+			//     NOT exercise the failure-surfacing path (addGraphWriteFailure), which could not be
+			//     induced without forbidden production/fixture changes.
+			Object gwf = result.get("graphWriteFailures");
+			assertNotNull("graphWriteFailures must be present on the scene result (W2 plumbing)", gwf);
+			assertTrue("graphWriteFailures must be a List, got " + gwf.getClass().getName(), gwf instanceof List);
+			List<?> failures = (List<?>) gwf;
+			for (Object f : failures) {
+				logger.info("Unexpected graphWriteFailure on happy-path render: " + f);
+			}
+			assertTrue("graphWriteFailures MUST be empty on a successful render: no graph write failed (the "
+				+ "leaf /Create DATA revoke is inert — every artifact write was AUDIT PERMIT). A NON-empty "
+				+ "list here would mean an artifact write unexpectedly failed on the happy path. Got: "
+				+ failures, failures.isEmpty());
+
+			logger.info("W2 PLUMBING PASS: imageObjectId present; graphWriteFailures present, List, and empty "
+				+ "(the /Create DATA revoke was INERT — failure-surfacing path NOT exercised, see Javadoc).");
+		}
+		finally {
+			// Restore every revoked grant. setEntitlement is add-only and idempotent (member(...,true)).
+			for (BaseRecord holder : revoked) {
+				try {
+					IOSystem.getActiveContext().getAuthorizationUtil().setEntitlement(admin, holder,
+						new BaseRecord[] { artifactsGroup }, new String[] { "Create" },
+						new String[] { PermissionEnumType.DATA.toString() });
+				} catch (Exception re) {
+					logger.error("RESTORE FAILED for a /Create DATA holder on the Artifacts group", re);
+				}
+			}
+			CacheUtil.clearCache();
+			OlioContextUtil.clearCache();
+			restoreOk = revoked.isEmpty()
+				|| IOSystem.getActiveContext().getAuthorizationUtil().checkEntitlement(testUser, createDataPerm, artifactsGroup);
+			if (!restoreOk) {
+				logger.error("RESTORE INCOMPLETE: the book creator does NOT hold /Create DATA on the Artifacts "
+					+ "group after restore. Manual fix: grant '/Create' (DATA) on group "
+					+ PbBookUtil.artifactGroupPath(slug) + " to the book's Writer/Admin roles.");
+			}
+		}
+
+		// Asserted AFTER the finally so a primary W2 failure above is not masked by a restore problem.
+		assertTrue("The Artifacts /Create DATA entitlement must be restored after the test (see logged "
+			+ "manual-fix steps if this fails)", restoreOk);
+
+		logger.info("END TEST *****");
 	}
 
 	/**
@@ -1314,6 +1705,28 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		return AttributeUtil.getAttributeValue(cp, attr, (String) null);
 	}
 
+	/** Resolve the PB2 book world's population group path (world → {@code population.path}), re-querying
+	 *  with a fresh, uncached search if the in-memory world was loaded shallow — same fallback shape
+	 *  {@code TestPictureBookListCharactersPb2.resolvePopulationPath} uses. */
+	private String resolvePopulationPath(BaseRecord user, OlioContext ctx, long orgId) {
+		BaseRecord world = ctx.getWorld();
+		assertNotNull("PB2 book world must exist (getCreateBookContext built it)", world);
+		String popPath = world.get("population.path");
+		if (popPath == null || popPath.isBlank()) {
+			String worldObjId = world.get(FieldNames.FIELD_OBJECT_ID);
+			Query wq = QueryUtil.createQuery(OlioModelNames.MODEL_WORLD, FieldNames.FIELD_OBJECT_ID, worldObjId);
+			wq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			wq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "population.path" });
+			wq.setCache(false);
+			BaseRecord full = IOSystem.getActiveContext().getSearch().findRecord(wq);
+			assertNotNull("World must re-resolve for population.path projection", full);
+			popPath = full.get("population.path");
+		}
+		assertNotNull("World must expose a population.path", popPath);
+		assertFalse("population.path must not be blank", popPath.isBlank());
+		return popPath;
+	}
+
 	/**
 	 * Verifies the scene-referenced, block-reduced character extraction: a character that appears ONLY
 	 * in a later scene's content block gets its details reduced from THAT block (not the opening), with
@@ -1324,6 +1737,17 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 	@Test
 	public void TestSceneReducedCharacterDescription() throws Exception {
 		setupTestContext();
+
+		long ts = System.currentTimeMillis();
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		String bookName = "Reduce Test Book " + ts;
+		// The world slug MUST be derivable from the PB1 book-group name (which createFromScenes names
+		// after bookName): prepareSceneImagePrompts resolves the world Population group at imaging time
+		// by deriving the slug FROM the scene note's group path (deriveSlug(bookGroupName)), and it is
+		// NOT given the book's slug. Production books satisfy this (the world slug and title are
+		// consistent); an arbitrary slug unrelated to bookName does not, and character resolution then
+		// silently fails so no character description ever reaches the scene prompt. See the run report.
+		String slug = PbPipelineUtil.deriveSlug(bookName);
 
 		String passageA = "Anna strode into the crowded market at dawn. She was a tall young woman with bright "
 			+ "red hair tied back and green eyes, wearing a simple blue linen dress and leather sandals.";
@@ -1343,14 +1767,26 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		sceneList.add(scene(0, "Market", "A crowded market at dawn", "Anna enters the market", "busy, hopeful", "Anna", passageA));
 		sceneList.add(scene(1, "Gate", "A fortified stone gate", "The guard blocks the gate", "tense, cold", "The Guard", passageB));
 
-		String bookName = "Reduce Test Book " + System.currentTimeMillis();
+		// Create the PB2 book + world FIRST (mirrors TestPictureBookListCharactersPb2), then pass its
+		// objectId to the 9-arg createFromScenes so characters land in the world Population group — the
+		// only path production ever reaches at imaging time (Ux/REST always have a PB2 book). The legacy
+		// 8-arg/null-pb2 path (which W3 measured as dead) is deliberately NOT exercised.
+		BaseRecord pb2Book = PbBookUtil.createBook(testUser, dataPath, slug, bookName);
+		assertNotNull("PB2 book must be created", pb2Book);
+		String pb2BookObjectId = pb2Book.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("PB2 book must have an objectId", pb2BookObjectId);
+
 		BaseRecord meta = PictureBookUtil.createFromScenes(testUser, workObjectId,
 			chatConfig.get(FieldNames.FIELD_NAME), "fantasy", bookName, sceneList, new ArrayList<>(),
-			testProperties.getProperty("test.datagen.path"));
+			dataPath, pb2BookObjectId);
 		assertNotNull("createFromScenes should return meta", meta);
 		String bookObjectId = meta.get("bookObjectId");
-		BaseRecord bookGroup = PictureBookUtil.findBookGroup(testUser, bookObjectId);
-		String charsGroupPath = ((String) bookGroup.get(FieldNames.FIELD_PATH)) + "/Characters";
+
+		// Read char attributes from the world Population group (where the PB2 write path persists them),
+		// NOT the legacy {book}/Characters sub-group W3 measured as dead.
+		long orgId = (long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		OlioContext bookCtx = PbOlioContextUtil.getCreateBookContext(testUser, dataPath, slug);
+		String charsGroupPath = resolvePopulationPath(testUser, bookCtx, orgId);
 
 		// --- Attribute 2 (condensed description) reduced from the RIGHT block ---
 		String guardDesc = readCharAttr(charsGroupPath, "The Guard", PictureBookUtil.ATTR_DESCRIPTION);
@@ -1573,10 +2009,11 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		List<Map<String, Object>> sceneList = getOrCreateCatatoneScenes(workObjectId);
 		String bookObjectId = getOrCreateCatatoneBook(workObjectId, sceneList);
 		BaseRecord bookGroup = PictureBookUtil.findBookGroup(testUser, bookObjectId);
-		String charsGroupPath = ((String) bookGroup.get(FieldNames.FIELD_PATH)) + "/Characters";
-		BaseRecord charsGroup = IOSystem.getActiveContext().getPathUtil().findPath(
-			testUser, ModelNames.MODEL_GROUP, charsGroupPath, GroupEnumType.DATA.toString(), orgId);
-		assertNotNull("Characters group must exist", charsGroup);
+		// W3 re-point: characters now live in the PB2 world Population group, not the (empty) legacy
+		// <book>/Characters subgroup. This test only needs a real book character to exercise the
+		// setCharacterStyleOverride -> SdConfigUtil sync, so read it from where createFromScenes wrote it.
+		BaseRecord charsGroup = catatonePopulationGroup(PbPipelineUtil.deriveSlug(CATATONE_BOOK_NAME));
+		assertNotNull("world Population group must exist", charsGroup);
 		Query charQ = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON,
 			FieldNames.FIELD_GROUP_ID, charsGroup.get(FieldNames.FIELD_ID));
 		charQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);

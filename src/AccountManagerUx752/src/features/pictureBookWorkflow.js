@@ -74,6 +74,9 @@ let graphData = null;     // workflowView response
 let positions = {};       // nodeObjectId → {x, y}
 let loading = false;
 let error = null;
+// Informational empty state (NOT an error). One of the three honest "no graph to draw" cases —
+// see loadGraph. Shape: {icon, title, body}. Rendered neutrally (grey), distinct from `error` (red).
+let emptyState = null;
 
 let selectedNodeId = null;
 let nodeDetails = null;
@@ -154,15 +157,16 @@ function canvasSize() {
 async function loadGraph(groupOid) {
     loading = true;
     error = null;
+    emptyState = null;
     graphData = null;
     positions = {};
     selectedNodeId = null;
     nodeDetails = null;
     m.redraw();
     try {
-        // B7: Try direct PB2 path first — ChapBook objectIds ARE pb2BookObjectIds.
+        // B7: Try direct PB2 path first — ChapBook / PB2 book objectIds ARE pb2BookObjectIds.
         // If workflowView succeeds the route ID is already the pb2BookObjectId.
-        // If it throws (e.g. 404 for a PB1 group objectId), fall back to the bridge.
+        // If it returns null (404 for a PB1 group objectId), fall back to the bridge.
         let gd = null;
         // workflowView returns null on 404 (PB1 group objectId), throws on 401/403/500
         try {
@@ -175,13 +179,22 @@ async function loadGraph(groupOid) {
             return;
         }
         if (gd !== null) {
+            // The route id was itself the pb2BookObjectId — direct hit.
             pb2BookObjectId = groupOid;
             bookName = (gd && gd.bookName) || '';
         } else {
             // null = 404: fall back to PB1 bridge: resolve group objectId → pb2BookObjectId
             let info = await getBookInfo(groupOid);
             if (!info) {
-                error = 'No PB2 workflow book found for this book. Generate some scenes to create one.';
+                // State (a): getBookInfo 404 — the book meta carries no pb2BookObjectId, so this
+                // book was created before the workflow graph existed. There is nothing to record.
+                emptyState = {
+                    icon: 'history',
+                    title: 'No workflow graph for this book',
+                    body: 'This book predates the workflow graph — it was created before workflow '
+                        + 'recording existed, so there is nothing to show here. Re-render its scenes '
+                        + 'to create a graph.'
+                };
                 loading = false;
                 m.redraw();
                 return;
@@ -189,14 +202,53 @@ async function loadGraph(groupOid) {
             pb2BookObjectId = info.pb2BookObjectId;
             bookName = info.bookName || '';
             gd = await workflowView(pb2BookObjectId);
+            if (gd === null) {
+                // State (b) — the previously SILENT case: the book resolves to a PB2 book, but no
+                // olio.pb.workflow row was ever written for it. Workflow recording was off when its
+                // scenes were rendered, so the images exist without a graph behind them.
+                emptyState = {
+                    icon: 'sync_disabled',
+                    title: 'Workflow was not recorded',
+                    body: 'Workflow recording was off when these scenes were rendered, so no graph '
+                        + 'was saved for them. Re-render a scene to start recording the graph.'
+                };
+                loading = false;
+                m.redraw();
+                return;
+            }
         }
         graphData = gd;
         positions = computePositions((gd && gd.nodes) || []);
+        if (!graphData.nodes || graphData.nodes.length === 0) {
+            // State (c): a workflow row exists but holds zero nodes — this book genuinely has
+            // never been rendered. (Toolbar still shows the book name / "0 nodes".)
+            emptyState = {
+                icon: 'draft',
+                title: 'Nothing rendered yet',
+                body: 'This book has a workflow but no scenes have been rendered yet. Render a '
+                    + 'scene to populate the graph.'
+            };
+        }
     } catch (e) {
         error = 'Failed to load workflow graph: ' + (e.message || '');
     }
     loading = false;
     m.redraw();
+}
+
+// Neutral, informational empty-state panel (states a/b/c). Deliberately NOT the red `error` style —
+// these are honest "nothing to draw" outcomes, not failures.
+function renderEmptyState() {
+    if (!emptyState) return null;
+    return m('div', {
+        style: 'flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;'
+            + 'text-align:center;padding:48px 24px;color:#64748b;',
+    }, [
+        m('span', { class: 'material-symbols-outlined', style: 'font-size:56px;color:#cbd5e1;margin-bottom:12px;' },
+            emptyState.icon || 'info'),
+        m('div', { style: 'font-size:16px;font-weight:600;color:#334155;margin-bottom:8px;' }, emptyState.title),
+        m('div', { style: 'font-size:13px;max-width:440px;line-height:1.6;' }, emptyState.body),
+    ]);
 }
 
 async function selectNode(nodeOid) {
@@ -749,9 +801,16 @@ function onCanvasWheel(e) {
 
 var pictureBookWorkflowView = {
     oninit: function (vnode) {
+        // Only init on first call (route oninit, which carries route params) — skip when re-rendered
+        // as m(pictureBookWorkflowView) with no attrs. Without this guard the child re-render calls
+        // loadGraph(undefined) → 404 → empty-state (a), clobbering the real graph loaded by the route
+        // oninit. Matches the sibling guard in pictureBook.js pictureBookView.oninit.
+        if (!vnode.attrs.bookObjectId) return;
         bookGroupObjectId = vnode.attrs.bookObjectId;
         pb2BookObjectId = null;
         bookName = '';
+        error = null;
+        emptyState = null;
         graphData = null;
         positions = {};
         selectedNodeId = null;
@@ -843,11 +902,14 @@ var pictureBookWorkflowView = {
                 }, '← Book'),
             ]),
 
-            // Error state
+            // Error state (red) — a genuine failure (auth / server / network).
             error ? m('div', { style: 'padding:32px;text-align:center;color:#dc2626;' }, error) : null,
 
+            // Empty state (grey) — one of the three honest "no graph to draw" cases (a/b/c).
+            (!error && emptyState) ? renderEmptyState() : null,
+
             // Graph canvas
-            !error ? m('div', {
+            (!error && !emptyState) ? m('div', {
                 style: 'flex:1;overflow:hidden;position:relative;background:#f8fafc;cursor:' + (dragging ? 'grabbing' : 'grab') + ';',
                 onmousedown: onCanvasMouseDown,
                 onmousemove: onCanvasMouseMove,

@@ -21,7 +21,6 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.picturebook.PbArtifactUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
-import org.cote.accountmanager.olio.picturebook.PbFeatureFlag;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
 import org.cote.accountmanager.olio.picturebook.PbSubRecordUtil;
@@ -38,14 +37,13 @@ import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.FileUtil;
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 
 /**
- * Phase 3's live verification: {@code generateSceneImage} run with {@code picturebook.v2} ON, against
- * the real Swarm and the real LLM, asserting that the workflow graph it recorded actually describes the
- * images it produced.
+ * Phase 3's live verification: {@code generateSceneImage} run against the real Swarm and the real LLM,
+ * asserting that the workflow graph it recorded actually describes the images it produced. Graph
+ * recording is now unconditional (the {@code picturebook.v2} flag was retired in W4), so this test no
+ * longer toggles anything on in setup — it simply runs the pipeline and verifies the recorded graph.
  * <p>
  * <b>Level 1 (structural) and level 2 (differential) per plan §9.</b> Level 1 is the answer to
  * existence-only assertions: bytes decode, decoded dimensions match what the config asked for, the
@@ -77,14 +75,17 @@ public class TestPictureBookWorkflow extends BaseTest {
 	/// content is visible here without re-running extraction.
 	private static final String ORG_PATH = "/Development/PictureBook Custom Tests";
 	private static final String TEST_USER = "pbCustomTestUser";
-	private static final String PB1_BOOK_NAME = "Catatone Custom Book 4";
+	/// Tracks TestPictureBookCustom's current `iter` (now 6): this class reads the catatone content
+	/// that class builds (see class javadoc + PB_ITER), so both the book name and PB_ITER must match
+	/// the iteration TestPictureBookCustom#TestPictureBookCustomPipeline was last run at.
+	private static final String PB1_BOOK_NAME = "Catatone Custom Book 6";
 	/// This test class's OWN book, rebuilt from scratch on every run of the gap-1/2 case (see its
 	/// javadoc). Deliberately not the catatone fixture, and deliberately not timestamped - a fixed name
 	/// plus a delete-if-present start means at most one of these ever exists.
 	private static final String FRESH_BOOK_NAME = "PB2 Fresh Character Book";
 	private static final String CHAT_PATH = "~/Chat";
 	private static final String PB_LLM_MODEL = "gpt-oss:120b";
-	private static final int PB_ITER = 4;
+	private static final int PB_ITER = 6;
 	private static final String PB_CHAT_CONFIG_NAME = "PictureBook " + PB_LLM_MODEL + " " + PB_ITER + ".chat";
 	private static final String EXPORT_DIR = "./export";
 
@@ -97,21 +98,6 @@ public class TestPictureBookWorkflow extends BaseTest {
 	private BaseRecord testUser;
 	private BaseRecord chatConfig;
 	private OlioContext olioCtx;
-	private boolean priorFlag;
-
-	@Before
-	public void enableV2() {
-		/// BaseTest's @Before has already run (superclass first), so IO is open here.
-		priorFlag = PbFeatureFlag.isV2Enabled();
-		PbFeatureFlag.setV2Enabled(true);
-	}
-
-	@After
-	public void restoreV2() {
-		/// Restored, not left on: TestPictureBookCustom is the flag-OFF non-regression gate and a leaked
-		/// true in a shared JVM would silently turn that gate into a v2 run.
-		PbFeatureFlag.setV2Enabled(priorFlag);
-	}
 
 	private void setupContext() {
 		AuditUtil.setLogToConsole(false);

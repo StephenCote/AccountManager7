@@ -108,6 +108,11 @@ public class PbPipelineUtil {
 		private final String sceneObjectId;
 		private final int sceneIndex;
 		private final Map<String, BaseRecord> nodes = new LinkedHashMap<>();
+		/// W2: human-readable graph-write failures accumulated during a single scene's recording, so a
+		/// swallowed provenance write surfaces on the scene RESULT (not only in the log). Kept non-fatal
+		/// to the image - the graph is provenance, and losing provenance must never lose an image the GPU
+		/// already spent minutes producing - but no longer silent.
+		private final List<String> graphWriteFailures = new ArrayList<>();
 		private BaseRecord run;
 		private int executed = 0;
 		private int failed = 0;
@@ -163,6 +168,22 @@ public class PbPipelineUtil {
 		public BaseRecord node(String handle) {
 			return nodes.get(handle);
 		}
+
+		/**
+		 * W2: record one concise, human-readable graph-write failure (what write failed + the exception
+		 * message). Accumulated for the life of this scene's recording and attached to the scene result
+		 * by {@code generateSceneImage} so the failure is visible in the API response, not only the log.
+		 */
+		public void addGraphWriteFailure(String failure) {
+			if(failure != null && !failure.isBlank()) {
+				graphWriteFailures.add(failure);
+			}
+		}
+
+		/** W2: the graph-write failures accumulated during this scene's recording (never null). */
+		public List<String> getGraphWriteFailures() {
+			return graphWriteFailures;
+		}
 	}
 
 	// ─────────────────────────────── open ───────────────────────────────
@@ -171,19 +192,16 @@ public class PbPipelineUtil {
 	 * Resolve the graph for one PB1 scene, creating the workflow/scene/node skeleton inside an
 	 * <b>existing</b> book if it is not there yet.
 	 * <p>
-	 * Returns <b>null</b>, having logged why, when v2 recording cannot proceed - no flag, no book for
-	 * this slug, no world, or an unauthorized write. A null return is the pipeline's signal to run PB1
-	 * only, which is what keeps the flag-off gate and the "graph failure never loses an image" property
-	 * true.
+	 * Returns <b>null</b>, having logged why, when graph recording cannot proceed - no book for this
+	 * slug, no world, or an unauthorized write. A null return is the pipeline's signal to run the image
+	 * pipeline without recording the graph, which is what keeps the "graph failure never loses an image"
+	 * property true.
 	 *
 	 * @param slug the book's PB2 slug; when null, derived from {@code pb1BookGroupName} by
 	 *        {@link #deriveSlug}
 	 */
 	public static SceneGraph openSceneGraph(BaseRecord user, String slug, String pb1BookGroupName,
 			String sceneObjectId, int sceneIndex, String sceneTitle) {
-		if(!PbFeatureFlag.isV2Enabled()) {
-			return null;
-		}
 		if(user == null || sceneObjectId == null) {
 			return null;
 		}

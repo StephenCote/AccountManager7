@@ -22,7 +22,6 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.picturebook.PbArtifactUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
-import org.cote.accountmanager.olio.picturebook.PbFeatureFlag;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
@@ -2883,10 +2882,9 @@ public class TestPictureBookFull extends BaseTest {
 		assertNotNull("Scene note must have an objectId", sceneOid);
 
 		long orgId = ((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-		boolean priorFlag = PbFeatureFlag.isV2Enabled();
-		try {
-			PbFeatureFlag.setV2Enabled(true);
-
+		// W4: picturebook.v2 retired — graph recording is unconditional now. The flag toggle that used to
+		// wrap this body is gone; the bare block preserves the original variable scoping and indentation.
+		{
 			// ── PB2 book: find or create (world creation is slow on first run only) ─────────────
 			BaseRecord pb2Book = PbBookUtil.findBookBySlug(testUser, PB2_SLUG, orgId);
 			if (pb2Book == null) {
@@ -2974,8 +2972,6 @@ public class TestPictureBookFull extends BaseTest {
 			FileUtil.emitFile(outputPath, portraitBytes);
 			logger.info("Portrait written to: " + outputPath);
 
-		} finally {
-			PbFeatureFlag.setV2Enabled(priorFlag);
 		}
 	}
 

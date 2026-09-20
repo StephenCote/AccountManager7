@@ -1145,11 +1145,10 @@ public class PictureBookUtil {
         // created under .../Scenes/); the client may pass isBook:false for the legacy ~/Chat
         // fallback that should not persist/reuse portraits.
         public Boolean isBookOverride;
-        // PB2 (picturebook.v2) only: the olio.pb.book slug this scene's graph belongs to. When null,
-        // PbPipelineUtil.deriveSlug() derives one from the PB1 book group name. Naming it explicitly
-        // is preferred — the derivation is a convenience for callers that only know the PB1 group, and
-        // a slug that fails to resolve means v2 recording is SKIPPED (logged), never that a book is
-        // created on a render path. Ignored entirely when the flag is off.
+        // The olio.pb.book slug this scene's graph belongs to. When null, PbPipelineUtil.deriveSlug()
+        // derives one from the book group name. Naming it explicitly is preferred — the derivation is a
+        // convenience for callers that only know the book group, and a slug that fails to resolve means
+        // graph recording is SKIPPED (logged), never that a book is created on a render path.
         public String bookSlug;
     }
 
@@ -2182,35 +2181,21 @@ public class PictureBookUtil {
                 // Case-insensitive, whitespace-tolerant (ILIKE, trimmed) — the LLM's own scene-character
                 // name and the name createCharPerson actually persisted aren't guaranteed to match on
                 // case (confirmed live: an exact-match EQUALS query silently missed "Jideon" this way).
-                // Search BOTH homes, legacy first. A pre-per-book-world book keeps its characters
-                // in the PB1 <book>/Characters group; every book created since keeps them in the
-                // book WORLD's Population group (createCharPerson B4 routes them there). Looking
-                // only in the PB1 group made new books resolve nothing: measured 2026-09-14,
-                // "The Big Way Out.pdf" had 0 charPersons in PB1 Characters and all 6 in the
-                // world's Population, so every scene logged "Could not resolve scene character",
-                // Stage 1 produced 0 portraits, and the composite ran with refs=0 — the reported
-                // "composites no longer use the portraits".
-                String charGroupPath = sceneGroupPath.replace("/Scenes", "/Characters");
-                BaseRecord charGrp = IOSystem.getActiveContext().getPathUtil().findPath(user,
-                        ModelNames.MODEL_GROUP, charGroupPath, GroupEnumType.DATA.toString(),
-                        (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
-                if (charGrp != null) {
-                    cp = findCharPersonByNameInGroup(user, cname, charGrp);
-                }
-                if (cp == null) {
-                    BaseRecord popGrp = findBookPopulationGroup(user, sceneGroupPath, bookSlug);
-                    if (popGrp != null) {
-                        cp = findCharPersonByNameInGroup(user, cname, popGrp);
-                        if (cp != null) {
-                            logger.info("Resolved scene character '" + cname
-                                    + "' from the book world's Population group");
-                        }
+                // W3: characters live ONLY in the book WORLD's Population group. createFromScenes is now
+                // a single path and createCharPerson (B4) routes every book's characters into that
+                // Population group, so the legacy PB1 <book>/Characters probe has been removed — it
+                // resolved nothing for any book created with a world (measured 2026-09-14: "The Big Way
+                // Out.pdf" had 0 charPersons in PB1 Characters and all 6 in the world's Population).
+                BaseRecord popGrp = findBookPopulationGroup(user, sceneGroupPath, bookSlug);
+                if (popGrp != null) {
+                    cp = findCharPersonByNameInGroup(user, cname, popGrp);
+                    if (cp != null) {
+                        logger.info("Resolved scene character '" + cname
+                                + "' from the book world's Population group");
                     }
-                    else if (charGrp == null) {
-                        logger.warn("No Characters group at " + charGroupPath
-                                + " and no book-world Population group, while resolving scene character '"
-                                + cname + "'");
-                    }
+                } else {
+                    logger.warn("No book-world Population group found while resolving scene character '"
+                            + cname + "'");
                 }
             }
         } catch (Exception e) {
@@ -5477,11 +5462,6 @@ public class PictureBookUtil {
      */
     @SuppressWarnings("unchecked")
     private static BaseRecord createCharPerson(BaseRecord user, BaseRecord chatConfig, Map<String, Object> charData, BaseRecord charsGroup, String genre,
-            List<String> failedApparelOut, List<String> failedStatisticsOut, String dataPath) {
-        return createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparelOut, failedStatisticsOut, dataPath, null);
-    }
-
-    private static BaseRecord createCharPerson(BaseRecord user, BaseRecord chatConfig, Map<String, Object> charData, BaseRecord charsGroup, String genre,
             List<String> failedApparelOut, List<String> failedStatisticsOut, String dataPath, OlioContext octxHint) {
         String name = (String) charData.get("name");
         if (name == null || name.isEmpty()) return null;
@@ -6285,242 +6265,21 @@ public class PictureBookUtil {
     /**
      * Takes user-curated scene list from Step 2, creates book group, scene notes, extracts +
      * creates charPerson records, saves meta. Returns the .pictureBookMeta record.
+     * <p>
+     * W3 (§2.4): thin delegate to the single {@code pb2BookObjectId}-aware implementation below,
+     * passing {@code null} for the legacy (no-PB2-book) path. Collapsing the two near-identical
+     * overloads into one body means a fix applied to the extraction/character/scene flow (e.g.
+     * {@code canonicalizeSceneCharacterNames}) can never again reach one overload but not the other.
      *
      * @param dataPath the {@code datagen.path} init-param value, threaded down to
      *   {@code createCharPerson} for KI-30's random-baseline-then-override character creation —
      *   see {@link #extract} for the same parameter.
      */
-    @SuppressWarnings("unchecked")
     public static BaseRecord createFromScenes(BaseRecord user, String workObjectId, String chatConfigName,
             String genre, String bookName, List<Map<String, Object>> sceneList, List<Map<String, Object>> charDataListIn,
             String dataPath) {
-        BaseRecord work = findWork(user, workObjectId);
-        if (work == null) throw new PictureBookException(404, "Work not found");
-
-        if (sceneList == null || sceneList.isEmpty()) {
-            throw new PictureBookException(400, "sceneList is required");
-        }
-        List<Map<String, Object>> charDataList = (charDataListIn != null) ? new ArrayList<>(charDataListIn) : new ArrayList<>();
-
-        String effectiveBookName = (bookName != null && !bookName.isEmpty()) ? bookName : work.get(FieldNames.FIELD_NAME);
-        BaseRecord bookGroup = ensureBookGroup(user, effectiveBookName);
-        if (bookGroup == null) {
-            throw new PictureBookException(500, "Failed to create book group");
-        }
-        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
-        if (bookGroupPath == null) bookGroupPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + effectiveBookName;
-
-        BaseRecord scenesGroup = ensureSubGroup(user, bookGroupPath, "Scenes");
-        BaseRecord charsGroup = ensureSubGroup(user, bookGroupPath, "Characters");
-        if (scenesGroup == null || charsGroup == null) {
-            throw new PictureBookException(500, "Failed to create sub-groups");
-        }
-
-        BaseRecord chatConfig = null;
-        if (chatConfigName != null) {
-            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
-        }
-
-        // Extract text for LLM character extraction (if no pre-built character data)
-        String text = extractWorkText(user, work);
-
-        // Fold duplicate spellings of the same character into ONE name before anything reads the
-        // scene list — issue 3. De-duplication below is an exact-string map, so without this an
-        // unnamed character referred to as "Darby's dad" in one chunk and "the father" in another
-        // became two charPersons with two portraits, two wardrobes and a split set of scenes.
-        // Curated Step 3 names are seeded first so they win as the canonical spelling.
-        List<String> curatedNames = new ArrayList<>();
-        for (Map<String, Object> cd : charDataList) {
-            Object cn = cd.get("name");
-            if (cn instanceof String && !((String) cn).trim().isEmpty()) curatedNames.add((String) cn);
-        }
-        Map<String, String> nameAliases = canonicalizeSceneCharacterNames(sceneList, curatedNames);
-
-        // If character data was provided from Step 3, use it directly; otherwise extract from scenes
-        if (charDataList.isEmpty()) {
-            // Collect unique character names from scene list
-            Map<String, Map<String, Object>> uniqueChars = new LinkedHashMap<>();
-            for (Map<String, Object> scene : sceneList) {
-                Object charsObj = scene.get("characters");
-                if (charsObj instanceof List) {
-                    List<Object> sceneChars = (List<Object>) charsObj;
-                    for (Object sc : sceneChars) {
-                        String cname = null;
-                        Map<String, Object> cmap = null;
-                        if (sc instanceof Map) {
-                            cmap = (Map<String, Object>) sc;
-                            cname = (String) cmap.get("name");
-                        } else if (sc instanceof String) {
-                            cname = (String) sc;
-                            cmap = new LinkedHashMap<>();
-                            cmap.put("name", cname);
-                        }
-                        if (cname != null && !cname.isEmpty() && !uniqueChars.containsKey(cname)) {
-                            uniqueChars.put(cname, cmap);
-                        }
-                    }
-                }
-            }
-            for (Map.Entry<String, Map<String, Object>> entry : uniqueChars.entrySet()) {
-                charDataList.add(entry.getValue());
-            }
-        }
-
-        // Map each character (by name) to the scene indices it appears in and the raw content blocks
-        // those scenes were extracted from — the passages where the character actually appears. Used
-        // below to REDUCE per-character detail from the RIGHT text (not the truncated work opening,
-        // which described the wrong passage for a character introduced later, e.g. 'Thug'), to persist
-        // scene references (ATTR_SCENE_REFS), and to produce the condensed imaging description (ATTR_DESCRIPTION).
-        /// Scenes whose cast the source passage does not corroborate. Reported, never corrected -
-        /// see charactersNotInSourceText for why an absent name is evidence rather than proof.
-        List<String> unverifiedSceneCharacters = collectUnverifiedSceneCharacters(sceneList);
-
-        Map<String, List<Integer>> charSceneIndices = new LinkedHashMap<>();
-        Map<String, java.util.LinkedHashSet<String>> charBlocks = new LinkedHashMap<>();
-        for (int si = 0; si < sceneList.size(); si++) {
-            Map<String, Object> scene = sceneList.get(si);
-            Object stObj = scene.get("sourceText");
-            String block = (stObj instanceof String) ? (String) stObj : null;
-            Object charsObj = scene.get("characters");
-            if (!(charsObj instanceof List)) continue;
-            for (Object sc : (List<Object>) charsObj) {
-                String cn = (sc instanceof Map) ? (String) ((Map<String, Object>) sc).get("name")
-                        : (sc instanceof String ? (String) sc : null);
-                if (cn == null || cn.isEmpty()) continue;
-                charSceneIndices.computeIfAbsent(cn, k -> new ArrayList<>()).add(si);
-                if (block != null && !block.isBlank()) {
-                    charBlocks.computeIfAbsent(cn, k -> new java.util.LinkedHashSet<>()).add(block);
-                }
-            }
-        }
-
-        // KI-42: resolve every foreign sub-model group once, before the character loop, rather than
-        // letting all 13 createPersistedForeignInstance call sites re-run the same get-or-create for
-        // each character.
-        //
-        // The context is threaded in, corrected 2026-08-17. This passed `null`, which pre-resolved the
-        // LEGACY ~/{schemaGroup} groups — not the ones createCharPerson actually writes into, since it
-        // resolves its own OlioContext from this same dataPath. So the pre-resolution warmed the wrong
-        // seven groups and left the real destinations to be get-or-created per character, i.e. it did
-        // exactly nothing for the race it exists to shrink. With no dataPath there is no context and the
-        // legacy destinations are the real ones, so passing null then is correct.
-        // KI-30: guarded — a failing OlioContext.initialize() rethrows a RuntimeException, which here
-        // (before the character loop) would otherwise escape as a 500. Degrade to legacy group routing.
-        PbSubRecordUtil.prepareGroups(user, safeGetOlioContext(user, dataPath, "prepareGroups"));
-
-        // Create charPerson records — use LLM for detail extraction if needed
-        Map<String, String> charObjectIds = new LinkedHashMap<>();
-        // createCharPerson() failures are never silently dropped — collected here so a 200
-        // response can never mean "silently 0 characters created".
-        List<String> failedCharacters = new ArrayList<>();
-        List<String> failedApparel = new ArrayList<>();
-        List<String> failedStatistics = new ArrayList<>();
-        List<String> failedExtractions = new ArrayList<>();
-        int cfsCharIdx = 0;
-        for (Map<String, Object> charData : charDataList) {
-            String cname = (String) charData.get("name");
-            if (cname == null || cname.isEmpty()) continue;
-            cfsCharIdx++;
-            PictureBookProgressNotifier.getInstance().notifyProgress(user, "person",
-                    "Creating character " + cfsCharIdx + "/" + charDataList.size() + ": " + cname);
-
-            // REDUCE per-character detail from the character's OWN content blocks (the passages where
-            // they appear) — not the truncated work opening, which described the wrong passage for a
-            // character introduced later (e.g. 'Thug'). Also yields the condensed, style/setting-free
-            // "description" used for imaging (ATTR_DESCRIPTION). Falls back to the (bounded) work text
-            // only when a character has no mapped blocks. Runs only when appearance isn't already given.
-            String reducedDescription = null;
-            java.util.LinkedHashSet<String> blocks = charBlocks.get(cname);
-            String passages = (blocks != null && !blocks.isEmpty())
-                    ? boundedPassages(cname, blocks, MAX_EXTRACTION_TEXT_CHARS)
-                    : (text != null && !text.isEmpty()
-                        ? (text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text)
-                        : null);
-            if ((charData.get("appearance") == null || ((String) charData.getOrDefault("appearance", "")).isEmpty())
-                    && passages != null && !passages.isBlank() && chatConfig != null) {
-                Map<String, String> charVars = new LinkedHashMap<>();
-                charVars.put("name", cname);
-                charVars.put("passages", passages);
-                charVars.put("raceOptions", raceOptionsCsv());
-                charVars.put("ethnicityOptions", ethnicityOptionsCsv());
-                String llmChar = callLlm(user, chatConfig, "pictureBook.reduce-character", charVars);
-                Map<String, Object> llmData = parseLlmJsonObject(llmChar, "reduce-character:" + cname, failedExtractions);
-                if (!llmData.isEmpty()) {
-                    Object d = llmData.remove("description");
-                    // isMeaningful, not !isBlank: this came out of an LLM JSON object, and an LLM that
-                    // cannot describe someone emits the literal string "null"/"n/a"/"unknown" as
-                    // the VALUE instead of omitting the key. A blank check passes that through
-                    // into pbDescription and on into the image prompt.
-                    if (d instanceof String && NarrativeUtil.isMeaningful((String) d)) reducedDescription = ((String) d).trim();
-                    // Merge structured fields without overwriting user/client-provided edits
-                    for (Map.Entry<String, Object> e : llmData.entrySet()) {
-                        if (!charData.containsKey(e.getKey()) || charData.get(e.getKey()) == null
-                                || ((charData.get(e.getKey()) instanceof String) && ((String) charData.get(e.getKey())).isEmpty())) {
-                            charData.put(e.getKey(), e.getValue());
-                        }
-                    }
-                }
-            }
-
-            BaseRecord cp = createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath);
-            if (cp != null) {
-                charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
-                // Attribute 1 (scene refs) + Attribute 2 (condensed description). Attr2 is read at
-                // imaging time (resolveSceneCharacter) as this character's visual description.
-                persistCharacterSceneAttributes(user, cp, charSceneIndices.get(cname),
-                        imagingDescription(reducedDescription, charData));
-            } else {
-                logger.error("createCharPerson failed for '" + cname + "' during /create-from-scenes — character will be absent from the book");
-                failedCharacters.add(cname);
-            }
-        }
-
-        // Create scene notes
-        List<BaseRecord> metaScenes = new ArrayList<>();
-        int idx = 0;
-        for (Map<String, Object> sceneData : sceneList) {
-            BaseRecord note = createSceneNote(user, scenesGroup, sceneData, idx);
-            if (note != null) {
-                BaseRecord sceneEntry = buildSceneEntry(note, sceneData, idx, charObjectIds);
-                if (sceneEntry != null) metaScenes.add(sceneEntry);
-            }
-            idx++;
-        }
-
-        PictureBookProgressNotifier.getInstance().notifyProgress(user, "save", "Saving book...");
-        BaseRecord meta = buildMeta(workObjectId, bookGroup.get(FieldNames.FIELD_OBJECT_ID), effectiveBookName, metaScenes);
-        recordExtractionDiagnostics(meta, nameAliases, unverifiedSceneCharacters);
-        if (!failedCharacters.isEmpty()) {
-            try { meta.set("failedCharacters", failedCharacters); } catch (Exception e) { logger.warn("Failed to record failedCharacters on meta: " + e.getMessage()); }
-        }
-        if (!failedApparel.isEmpty()) {
-            try { meta.set("failedApparel", failedApparel); } catch (Exception e) { logger.warn("Failed to record failedApparel on meta: " + e.getMessage()); }
-        }
-        if (!failedStatistics.isEmpty()) {
-            try { meta.set("failedStatistics", failedStatistics); } catch (Exception e) { logger.warn("Failed to record failedStatistics on meta: " + e.getMessage()); }
-        }
-        if (!failedExtractions.isEmpty()) {
-            try { meta.set("failedExtractions", failedExtractions); } catch (Exception e) { logger.warn("Failed to record failedExtractions on meta: " + e.getMessage()); }
-        }
-        // Book-level composition/art-direction anchor: intentionally left BLANK by default (no
-        // auto-seeded hardcoded art-direction line). Real book-wide style/composition consistency now
-        // comes from the common olio.sd.config's style + bodyStyle/imageSetting/imageAction fields
-        // (SDUtil.getSDConfigPrompt) — the single style seam shared across portraits/landscape/scene.
-        // The compositionContext mechanism (loadCompositionContext/prependContextOnce) is kept intact
-        // so it can be set explicitly later as optional extra prompt-level reinforcement; the
-        // pictureBook.art-direction.json resource remains in place but is no longer auto-applied.
-        try {
-            meta.set("compositionContext", "");
-        } catch (Exception e) { logger.warn("Failed to default compositionContext on meta: " + e.getMessage()); }
-        // Record the ACTUAL group the charPerson records were written into so listCharacters reads
-        // from the same place the write path used (legacy path: the {bookGroupPath}/Characters group).
-        try { meta.set("charsGroupPath", charsGroup.get(FieldNames.FIELD_PATH)); } catch (Exception e) { logger.warn("Failed to record charsGroupPath on meta: " + e.getMessage()); }
-        saveMeta(user, bookGroupPath, meta);
-        PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
-        // One LLM call per character needing detail extraction above — flush once at the end.
-        OllamaModelUtil.unloadAll();
-
-        return meta;
+        return createFromScenes(user, workObjectId, chatConfigName, genre, bookName, sceneList, charDataListIn,
+                dataPath, null);
     }
 
     /**
@@ -6535,30 +6294,29 @@ public class PictureBookUtil {
     public static BaseRecord createFromScenes(BaseRecord user, String workObjectId, String chatConfigName,
             String genre, String bookName, List<Map<String, Object>> sceneList, List<Map<String, Object>> charDataListIn,
             String dataPath, String pb2BookObjectId) {
-        if (pb2BookObjectId == null || pb2BookObjectId.isBlank()) {
-            // backward-compat: delegate unchanged
-            return createFromScenes(user, workObjectId, chatConfigName, genre, bookName, sceneList, charDataListIn, dataPath);
-        }
-        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-        BaseRecord pb2Book = PbBookUtil.readBook(user, pb2BookObjectId, orgId);
-        if (pb2Book == null) {
-            throw new PictureBookException(404, "PB2 book not found: " + pb2BookObjectId);
-        }
-        String bookSlug = pb2Book.get(OlioFieldNames.FIELD_PB_SLUG);
-        if (bookSlug == null || bookSlug.isBlank()) {
-            throw new PictureBookException(500, "PB2 book has no slug — cannot resolve its Olio context");
-        }
-
-        // Run the standard extraction but swap the prepareGroups context with the PB2 world's context
-        // by temporarily resolving the book's OlioContext before the character loop.
-        // Because createFromScenes calls prepareGroups inline, we intercept by calling the new
-        // overload's path directly: reproduce the method body with the overridden prepareGroups call.
+        // W3 (§2.4): single implementation for both overloads. When pb2BookObjectId is null/blank this
+        // is the legacy (no-PB2-book) path: skip the book/world resolution and leave pb2OlioCtx null, so
+        // every pb2OlioCtx-guarded block below (the prepareGroups context, the B4 population re-route,
+        // the gallery-path stamp, createCharPerson's octxHint, persistCharacterImageGalleryPath) and the
+        // pb2BookObjectId stamp all degrade to exactly the old 8-arg behaviour. When present, resolve the
+        // PB2 book's world context as before.
         OlioContext pb2OlioCtx = null;
-        try {
-            pb2OlioCtx = PbOlioContextUtil.getCreateBookContext(user, dataPath, bookSlug);
-        } catch (OlioException e) {
-            logger.warn("createFromScenes(pb2): could not resolve Olio context for slug=" + bookSlug + ": " + e.getMessage()
-                + " — falling back to legacy group routing");
+        if (pb2BookObjectId != null && !pb2BookObjectId.isBlank()) {
+            long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+            BaseRecord pb2Book = PbBookUtil.readBook(user, pb2BookObjectId, orgId);
+            if (pb2Book == null) {
+                throw new PictureBookException(404, "PB2 book not found: " + pb2BookObjectId);
+            }
+            String bookSlug = pb2Book.get(OlioFieldNames.FIELD_PB_SLUG);
+            if (bookSlug == null || bookSlug.isBlank()) {
+                throw new PictureBookException(500, "PB2 book has no slug — cannot resolve its Olio context");
+            }
+            try {
+                pb2OlioCtx = PbOlioContextUtil.getCreateBookContext(user, dataPath, bookSlug);
+            } catch (OlioException e) {
+                logger.warn("createFromScenes(pb2): could not resolve Olio context for slug=" + bookSlug + ": " + e.getMessage()
+                    + " — falling back to legacy group routing");
+            }
         }
 
         BaseRecord work = findWork(user, workObjectId);
@@ -6633,8 +6391,15 @@ public class PictureBookUtil {
             }
         }
 
-        // Route sub-records into the PB2 book's world groups instead of the legacy home groups
-        PbSubRecordUtil.prepareGroups(user, pb2OlioCtx);
+        // Pre-warm the SAME seven sub-record groups the character loop will actually write into
+        // (KI-42, corrected 2026-08-17), or prepareGroups warms the wrong ones and does nothing for the
+        // duplicate-key race it exists to shrink. PB2 (pb2OlioCtx != null): the book's world groups.
+        // Legacy (pb2OlioCtx null): createCharPerson resolves its OWN context from dataPath (octxHint
+        // null → safeGetOlioContext internally), so warm THAT context here — NOT null, which would
+        // pre-warm the legacy ~/{schemaGroup} groups createCharPerson does not use when a dataPath is
+        // present. This conditional preserves the 8-arg path's exact prepareGroups behaviour.
+        OlioContext prepareCtx = (pb2OlioCtx != null) ? pb2OlioCtx : safeGetOlioContext(user, dataPath, "prepareGroups");
+        PbSubRecordUtil.prepareGroups(user, prepareCtx);
 
         // B4: re-route charPerson into the world's population group rather than the legacy
         // ~/Data/PictureBooks/.../Characters group. findPath is read-only — the population
@@ -6776,8 +6541,11 @@ public class PictureBookUtil {
             try { meta.set("failedExtractions", failedExtractions); } catch (Exception e) { logger.warn("Failed to record failedExtractions: " + e.getMessage()); }
         }
         try { meta.set("compositionContext", ""); } catch (Exception e) { logger.warn("Failed to default compositionContext: " + e.getMessage()); }
-        // Store PB2 book objectId separately — bookObjectId remains the book GROUP objectId (needed for delete/reset)
-        try { meta.set("pb2BookObjectId", pb2BookObjectId); } catch (Exception e) { logger.warn("Failed to set pb2BookObjectId on meta: " + e.getMessage()); }
+        // Store PB2 book objectId separately — bookObjectId remains the book GROUP objectId (needed for
+        // delete/reset). Legacy path (null/blank pb2BookObjectId) never set this field, so guard it.
+        if (pb2BookObjectId != null && !pb2BookObjectId.isBlank()) {
+            try { meta.set("pb2BookObjectId", pb2BookObjectId); } catch (Exception e) { logger.warn("Failed to set pb2BookObjectId on meta: " + e.getMessage()); }
+        }
         // Record the ACTUAL group the charPerson records were written into. For PB2 this is the world
         // population group (charsGroup was re-routed above), NOT the empty legacy {bookGroupPath}/Characters
         // group. listCharacters reads from this stored path so the read path matches the write path.
@@ -6964,34 +6732,29 @@ public class PictureBookUtil {
             int currentSceneIndex = resolveCurrentSceneIndex(user, sceneGroupPath, sceneObjectId);
 
             // ══════════════════════════════════════════════════════════════════
-            // PB2 (picturebook.v2) — open the workflow graph for this scene
+            // Open the workflow graph for this scene
             // ══════════════════════════════════════════════════════════════════
-            // Behind the flag, and DEFAULT OFF: with v2 off every call below is a no-op and this
-            // method behaves exactly as PictureBook 1 did, which is what makes
-            // TestPictureBookCustom#TestPictureBookCustomPipeline a real non-regression gate.
-            //
             // openSceneGraph is FIND-ONLY for the book and its world — it never creates them. A
             // render is a USE of a book; a use that created a book (and so a universe, a world,
             // three groups and a role pair) would be the LibraryUtil read-path-that-creates shape
-            // .claude/rules/architecture.md warns about. A missing book logs and returns null.
-            //
-            // Every v2 call in this method is wrapped: the graph is PROVENANCE, and losing
-            // provenance must never lose an image the GPU spent ten minutes producing.
+            // .claude/rules/architecture.md warns about. A missing book (or no slug, no world, or
+            // an unauthorized write) logs and returns null, in which case the nine downstream
+            // `pbGraph != null` blocks all skip and the image pipeline runs without recording the
+            // graph — the graph is PROVENANCE, and losing provenance must never lose an image the
+            // GPU spent ten minutes producing.
             PbPipelineUtil.SceneGraph pbGraph = null;
             String pbBookGroupName = null;
-            if (PbFeatureFlag.isV2Enabled()) {
-                try {
-                    if (bookGroupPath != null) {
-                        int lastSlash = bookGroupPath.lastIndexOf('/');
-                        pbBookGroupName = (lastSlash >= 0 && lastSlash < bookGroupPath.length() - 1)
-                                ? bookGroupPath.substring(lastSlash + 1) : bookGroupPath;
-                    }
-                    pbGraph = PbPipelineUtil.openSceneGraph(user, params.bookSlug, pbBookGroupName,
-                            sceneObjectId, currentSceneIndex, (String) sceneData.get("title"));
-                } catch (Exception pbe) {
-                    logger.warn("PB2: failed to open the scene graph; continuing with PB1 only: " + pbe.getMessage(), pbe);
-                    pbGraph = null;
+            try {
+                if (bookGroupPath != null) {
+                    int lastSlash = bookGroupPath.lastIndexOf('/');
+                    pbBookGroupName = (lastSlash >= 0 && lastSlash < bookGroupPath.length() - 1)
+                            ? bookGroupPath.substring(lastSlash + 1) : bookGroupPath;
                 }
+                pbGraph = PbPipelineUtil.openSceneGraph(user, params.bookSlug, pbBookGroupName,
+                        sceneObjectId, currentSceneIndex, (String) sceneData.get("title"));
+            } catch (Exception pbe) {
+                logger.warn("Graph recording: failed to open the scene graph; continuing without it: " + pbe.getMessage(), pbe);
+                pbGraph = null;
             }
 
             // Stage 0's two prompt nodes. Recorded here, once the prompts are resolved, so the
@@ -7029,6 +6792,7 @@ public class PictureBookUtil {
                     PbPipelineUtil.completeNode(pbGraph, spNode);
                 } catch (Exception pbe) {
                     logger.warn("PB2: failed to record the Stage 0 prompt nodes: " + pbe.getMessage(), pbe);
+                    pbGraph.addGraphWriteFailure("Stage 0 prompt nodes: " + pbe.getMessage());
                 }
             }
 
@@ -7178,6 +6942,7 @@ public class PictureBookUtil {
                                 pbPortraitArtifacts.add(reused);
                             } catch (Exception pbe) {
                                 logger.warn("PB2: failed to record the reused portrait for " + cname + ": " + pbe.getMessage(), pbe);
+                                pbGraph.addGraphWriteFailure("reused portrait for " + cname + ": " + pbe.getMessage());
                             }
                         }
                         continue;
@@ -7251,6 +7016,7 @@ public class PictureBookUtil {
                                 pbPortraitArtifacts.add(pArt);
                             } catch (Exception pbe) {
                                 logger.warn("PB2: failed to record the portrait for " + cname + ": " + pbe.getMessage(), pbe);
+                                pbGraph.addGraphWriteFailure("portrait for " + cname + ": " + pbe.getMessage());
                             }
                         }
 
@@ -7388,6 +7154,7 @@ public class PictureBookUtil {
                         PbPipelineUtil.completeNode(pbGraph, pbLandscapeNode);
                     } catch (Exception pbe) {
                         logger.warn("PB2: failed to record the landscape node: " + pbe.getMessage(), pbe);
+                        pbGraph.addGraphWriteFailure("landscape node: " + pbe.getMessage());
                     }
                 }
 
@@ -7485,6 +7252,7 @@ public class PictureBookUtil {
                     logger.warn("PB2: failed to create the reference/composite nodes: " + pbe.getMessage(), pbe);
                     pbReferenceNode = null;
                     pbCompositeNode = null;
+                    pbGraph.addGraphWriteFailure("reference/composite nodes: " + pbe.getMessage());
                 }
             }
 
@@ -7526,6 +7294,7 @@ public class PictureBookUtil {
                         PbPipelineUtil.completeNode(pbGraph, pbReferenceNode);
                     } catch (Exception pbe) {
                         logger.warn("PB2: failed to record the FLUX.2 references: " + pbe.getMessage(), pbe);
+                        pbGraph.addGraphWriteFailure("FLUX.2 references: " + pbe.getMessage());
                     }
                 }
                 if (flux2Req != null) {
@@ -7582,6 +7351,7 @@ public class PictureBookUtil {
                         PbPipelineUtil.completeNode(pbGraph, pbReferenceNode);
                     } catch (Exception pbe) {
                         logger.warn("PB2: failed to record the Kontext reference strip: " + pbe.getMessage(), pbe);
+                        pbGraph.addGraphWriteFailure("Kontext reference strip: " + pbe.getMessage());
                     }
                 }
                 pbCompositeRequestJson = JSONUtil.exportObject(kontextReq);
@@ -7632,6 +7402,7 @@ public class PictureBookUtil {
                             PbPipelineUtil.completeNode(pbGraph, pbReferenceNode);
                         } catch (Exception pbe) {
                             logger.warn("PB2: failed to record the classic composite canvas: " + pbe.getMessage(), pbe);
+                            pbGraph.addGraphWriteFailure("classic composite canvas: " + pbe.getMessage());
                         }
                     } else {
                         FileUtil.emitFile("./comp-" + sceneObjectId + ".png", compositeBytes);
@@ -7693,6 +7464,7 @@ public class PictureBookUtil {
                     PbPipelineUtil.closeRun(pbGraph, true, null);
                 } catch (Exception pbe) {
                     logger.warn("PB2: failed to record the composite node: " + pbe.getMessage(), pbe);
+                    pbGraph.addGraphWriteFailure("composite node: " + pbe.getMessage());
                     PbPipelineUtil.closeRun(pbGraph, false, pbe.getMessage());
                 }
             }
@@ -7705,6 +7477,12 @@ public class PictureBookUtil {
             genResult.set("seed", extractSeedFromImage(finalImage));
             if (!failedPortraits.isEmpty()) {
                 genResult.set("failedPortraits", failedPortraits);
+            }
+            // W2: surface swallowed graph-write failures on the scene RESULT (not only the log), the
+            // way failedPortraits/failedCharacters already are. Result-only: the render path does not
+            // load/save .pictureBookMeta here, so attaching them to the meta would be dead code.
+            if (pbGraph != null && !pbGraph.getGraphWriteFailures().isEmpty()) {
+                genResult.set("graphWriteFailures", pbGraph.getGraphWriteFailures());
             }
             return genResult;
         } catch (PictureBookException pbe) {

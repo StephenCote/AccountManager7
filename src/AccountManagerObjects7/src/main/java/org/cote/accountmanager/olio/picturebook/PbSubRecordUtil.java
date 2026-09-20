@@ -49,9 +49,9 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
  * <p>
  * <b>Destination resolution is parameterised, not hard-coded, and falls back to the legacy path.</b> With
  * an {@code OlioContext} the sub-record lands in the world group for its model; without one it lands where
- * it always did. That fallback is deliberate: {@code createCharPerson} runs on the flag-off path too, and
- * the phase-3 exit criterion is that {@code TestPictureBookCustom#TestPictureBookCustomPipeline} passes
- * <b>unchanged</b> with {@code picturebook.v2} off.
+ * it always did. That fallback is deliberate: {@code createCharPerson} can run with a null
+ * {@code OlioContext} (a book created without a world, or a context that degraded to null), and must still
+ * place its sub-records.
  */
 public class PbSubRecordUtil {
 	public static final Logger logger = LogManager.getLogger(PbSubRecordUtil.class);
