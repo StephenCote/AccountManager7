@@ -342,3 +342,44 @@ conversation does not re-litigate them:
 - `AccountManagerUx752/src/workflows/pictureBookWorkflow.js` `:99-110`;
   `AccountManagerUx752/src/features/pictureBookWorkflow.js` `:345,675`.
 - Test corpus: `AccountManagerObjects7/media/HarlotsEight_Vol1_SM.docx`.
+
+---
+
+## 8. Architect design-review refinements (2026-09-20, folded in before coding)
+
+The pre-coding architect review found the plan architecturally legal (layering, schema mechanics,
+cast model, PBAC, checkpoint fix all sound in direction) but under-specified in two places that would
+break if coded literally, plus lower-priority items. These are now binding on the implementation:
+
+**REQUIRED (correctness):**
+1. **Checkpoint fix must thread the range through EVERY name-keyed site — not just the note name and
+   the `:4315` guard.** `loadProgressNote` (`PictureBookUtil.java:4219`), `saveExtractCheckpoint`
+   (`:4275`), `clearExtractCheckpointAt` (via `loadProgressNote`), and especially
+   `deleteOrphanedExtractCheckpoints` (`:4388-4389`, currently an **EQUALS** on the bare
+   `EXTRACT_PROGRESS_NOTE + "." + workObjectId`) must all become range-aware. Left as EQUALS, orphan
+   cleanup stops matching the new range-suffixed notes and orphans survive forever (the exact concern
+   §5 raised). Change that EQUALS to a prefix/LIKE match on `EXTRACT_PROGRESS_NOTE + "." + workObjectId`.
+2. **Close the authorization-grant gap on the series (no-new-world) chapter path.** `createBook` today
+   relies on `getCreateBookContext.initialize()` for read grants and asserts readability at
+   `PbBookUtil.java:173-177`. When a chapter skips `getCreateBookContext` (N1 item 2), the chapter
+   book-row group must still receive its creator/series-role read grant explicitly, or that readBack
+   assertion fails. Grant against the series Writer/Admin roles directly (Q7).
+
+**LOWER-PRIORITY (fold in while coding):**
+- The redirect must **enroll each shadow clone into the chapter's book-scoped `castGroup`** — cloning
+  into `destGroup` alone does not tag by chapter, and two chapters would collide in one group with no
+  shadow distinction. Name this write point.
+- The shadow-write interception point is **first-appearance creation** (`createCharPerson`/
+  `createFromScenes`), NOT `resolveSceneCharacter` (`:2154-2199`, which is read-only). First appearance
+  writes a chapter-tagged shadow and must never mint a second baseline.
+- **Chapter-delete is the highest-risk path:** it must forbid world-delete and population-group-
+  recursive-delete, and scope strictly to chapter-tagged `castGroup` members + that chapter's own
+  scene/graph rows. Promote §5's HIGH risk to an explicit constraint in every delete path touching a
+  chapter book.
+- **`castGroup` naming** must distinguish baseline (series-scoped) from per-chapter (book-scoped) so
+  the `name, groupId, organizationId` constraint does not collide in the one shared world.
+- **`olio.pb.sourceRange`** uses real `inherits` (identity-bearing base, e.g. `common.baseLight` +
+  `common.urn`) — never `likeInherits` (no-op).
+- Series-book **list** queries must constrain by `groupId` (or filter per record); an explicit
+  `organizationId` alone satisfies PBAC's query check but is NOT a tenancy filter (`model-api.md`
+  `AccessPoint.list` note).
