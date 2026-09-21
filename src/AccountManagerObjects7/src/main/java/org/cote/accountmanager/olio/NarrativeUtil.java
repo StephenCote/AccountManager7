@@ -242,9 +242,11 @@ public class NarrativeUtil {
 		
 		String col = getColor(w, OlioFieldNames.FIELD_COLOR);
 		// (w.get("color.name") != null ? " " + ((String)w.get("color.name")).toLowerCase() : "");
-		if(col != null) {
-			col = col.replaceAll("\\([^()]*\\)", "");
-		}
+		/// Defence-in-depth: the colour FK can be null (e.g. a shadow clone whose shared-library colour was
+		/// dropped), and getColor then returns null - appended unconditionally below, that renders as the
+		/// literal four-character word "null" in the SD prompt. isMeaningful also screens the "null"/"n/a"/
+		/// "unknown" strings an upstream extractor can leave. Normalise anything non-meaningful to empty.
+		col = isMeaningful(col) ? col.replaceAll("\\([^()]*\\)", "") : "";
 		String pat = (w.get("pattern.name") != null ? " " + ((String)w.get("pattern.name")).toLowerCase().replace(" pattern", "") : "");
 		String fab = (w.get(OlioFieldNames.FIELD_FABRIC) != null ? " " + ((String)w.get(OlioFieldNames.FIELD_FABRIC)).toLowerCase() : "");
 		List<String> locs = w.get(FieldNames.FIELD_LOCATION);
