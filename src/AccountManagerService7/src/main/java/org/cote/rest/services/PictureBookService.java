@@ -78,6 +78,7 @@ import jakarta.ws.rs.core.Response;
  *
  * PB2 Phase 5b (book list + page view):
  *   GET  /books                                               — list all olio.pb.book records the user can read
+ *   GET  /series/{seriesObjectId}/books                       — a series' chapter books (entitled non-owner), with series/chapter/world linkage
  *   GET  /{bookObjectId}/pages                                — ordered scene pages with composite artifact dataObjectId
  *
  * PB2 phase 4 (the olio.pb.* workflow graph; bookObjectId here is the olio.pb.book objectId, NOT the
@@ -222,6 +223,7 @@ public class PictureBookService {
         int count = PictureBookUtil.MAX_SCENES_DEFAULT;
         String chatConfigName = null;
         String promptTemplateOverride = null;
+        String seriesObjectId = null;
         BaseRecord params = parseParams(json);
         if (params != null) {
             /// params.get("count") returns 0 (the int field's unset primitive default) when the
@@ -237,6 +239,12 @@ public class PictureBookService {
             }
             chatConfigName = params.get("chatConfig");
             promptTemplateOverride = params.get("promptTemplate");
+            /// N-series item 4: when the client is extracting a chapter of a series, it sends the
+            /// series objectId so the extraction prompt's cross-chapter character roster is seeded
+            /// from the series baseline cast (PictureBookUtil.resolveSeriesRoster). Transport only:
+            /// the field is forwarded verbatim; all resolution stays in Objects7. Absent/blank on a
+            /// standalone extraction leaves the roster in-run-only, exactly as before.
+            seriesObjectId = params.get("seriesObjectId");
         }
 
         // Async mode: hand the work to the background job executor and return 202 immediately, so
@@ -263,13 +271,14 @@ public class PictureBookService {
             final int fCount = count;
             final String fChatConfig = chatConfigName;
             final String fPromptTemplate = promptTemplateOverride;
+            final String fSeriesObjectId = seriesObjectId;
             AsyncJob job = AsyncJobRegistry.submit(user, "pb.extractScenes", workObjectId, j -> {
                 // The job's OWN progress token is the cancel signal, so POST /rest/job/{id}/cancel
                 // reaches the chunk loop's existing checkpoint. Do not reuse the
                 // PictureBookCancelRegistry token here: that one is keyed on workObjectId and is
                 // the sync path's mechanism.
                 PictureBookUtil.ScenesOnlyResult r = PictureBookUtil.extractScenesOnly(
-                        user, workObjectId, fCount, fChatConfig, fPromptTemplate, j.getProgress());
+                        user, workObjectId, fCount, fChatConfig, fPromptTemplate, j.getProgress(), fSeriesObjectId);
                 BaseRecord out = PictureBookUtil.buildResult();
                 out.set("sceneList", r.scenes);
                 // "Complete" must mean the run reached the end of the text, not merely "nobody
@@ -301,7 +310,7 @@ public class PictureBookService {
         SummarizeProgress cancelToken = PictureBookCancelRegistry.register(user, workObjectId);
         try {
             PictureBookUtil.ScenesOnlyResult result = PictureBookUtil.extractScenesOnly(
-                    user, workObjectId, count, chatConfigName, promptTemplateOverride, cancelToken);
+                    user, workObjectId, count, chatConfigName, promptTemplateOverride, cancelToken, seriesObjectId);
             if (result.chunked) {
                 BaseRecord out = PictureBookUtil.buildResult();
                 try {
@@ -353,15 +362,19 @@ public class PictureBookService {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
         String chatConfigName = null;
+        String seriesObjectId = null;
         BaseRecord params = parseParams(json);
         if (params != null) {
             chatConfigName = params.get("chatConfig");
+            /// N-series item 4: forwarded verbatim to seed the cross-chapter roster from the series
+            /// baseline cast (resolution stays in Objects7). Absent/blank = in-run-only, as before.
+            seriesObjectId = params.get("seriesObjectId");
         }
 
         // KI-10: see extractScenesOnly()'s identical registration pattern.
         SummarizeProgress cancelToken = PictureBookCancelRegistry.register(user, workObjectId);
         try {
-            BaseRecord result = PictureBookUtil.extractChunked(user, workObjectId, chatConfigName, cancelToken);
+            BaseRecord result = PictureBookUtil.extractChunked(user, workObjectId, chatConfigName, cancelToken, seriesObjectId);
             return Response.status(200).entity(toJson(result)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
@@ -1162,12 +1175,16 @@ public class PictureBookService {
 
     /**
      * POST /chapter
-     * Create the next chapter of a book: a new book with its own world, groups and role pair, and
-     * optionally copy records into it. Body:
-     * { fromBookObjectId, slug, title?, copyRecordModel?, copyRecordObjectIds?: [...] }.
+     * Create the next chapter of a series (or a standalone book when no series is given), persisting its
+     * linkage and source provenance and optionally seeding its cast. Body:
+     * { seriesObjectId?, fromBookObjectId?, slug, title?, chapter?, sourceDataObjectId?,
+     *   sourceRange?: { startOffset, endOffset, title }, copyRecordModel?, copyRecordObjectIds?: [...] }.
      *
-     * <p>§3.5 chose COPY over reference deliberately — apparel/wearables are per character, so a
-     * shared instance would make deleting chapter 1 destroy chapter 2's data.
+     * <p>When {@code seriesObjectId} is present the chapter shares the series' ONE world and
+     * {@code copyRecordObjectIds} (charPersons) seed overwritable per-chapter SHADOWS of the shared
+     * baseline. Absent, it is a standalone book copied into its own world — §3.5's COPY-not-reference
+     * choice, so deleting one book never destroys another's data. Transport only: all decisions and
+     * writes live in {@code PbServiceFacade.createChapter}.
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -1181,9 +1198,14 @@ public class PictureBookService {
         if (params == null) {
             return errorResponse(400, "A request body is required");
         }
+        String seriesObjectId = params.get("seriesObjectId");
         String fromBookObjectId = params.get("fromBookObjectId");
         String slug = params.get("slug");
         String title = params.get("title");
+        // int returns 0 (not null) when absent (KI-25) — hasField is the only presence signal, so an
+        // unsent ordinal stays null and the facade lets the series' bookCount choose it.
+        Integer chapter = params.hasField("chapter") ? getInt(params, "chapter") : null;
+        String sourceDataObjectId = params.get("sourceDataObjectId");
         String copyRecordModel = params.get("copyRecordModel");
         List<String> copyIds = new ArrayList<>();
         Object idsObj = params.get("copyRecordObjectIds");
@@ -1192,10 +1214,103 @@ public class PictureBookService {
                 if (o instanceof String) copyIds.add((String) o);
             }
         }
+        // sourceRange is a nested olio.pb.sourceRange model on the request; forward ONLY its span
+        // values, never the deserialized record itself — the facade creates its own owned by the caller,
+        // so a client-supplied id/objectId/owner can never ride into persistence.
+        Map<String, Object> sourceRange = null;
+        Object srObj = params.get("sourceRange");
+        if (srObj instanceof BaseRecord) {
+            BaseRecord sr = (BaseRecord) srObj;
+            sourceRange = new LinkedHashMap<>();
+            if (sr.hasField("startOffset")) sourceRange.put("startOffset", sr.get("startOffset"));
+            if (sr.hasField("endOffset")) sourceRange.put("endOffset", sr.get("endOffset"));
+            Object rt = sr.get("title");
+            if (rt != null) sourceRange.put("title", rt);
+            if (sourceRange.isEmpty()) sourceRange = null;
+        }
         try {
             return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.createChapter(user,
-                context.getInitParameter("datagen.path"), fromBookObjectId, slug, title, copyIds,
-                copyRecordModel))).build();
+                context.getInitParameter("datagen.path"), seriesObjectId, fromBookObjectId, slug, title,
+                chapter, sourceDataObjectId, sourceRange, copyIds, copyRecordModel))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/cast/recopy
+     * Recopy a series chapter's shadow cast from the series baseline (Q6 sync op "recopy"): discard this
+     * chapter's shadow edits and reseed each shadow wholesale from its baseline counterpart. Scene links
+     * resolve by name, so the reseed auto-relinks the chapter's scenes. Returns
+     * { bookObjectId, slug, seriesObjectId, recopied, recopiedObjectIds }.
+     *
+     * <p>Transport only: authorization ({@code canUpdate}), the clear-then-reseed scoped to this chapter's
+     * slug, and the olio-principal physical deletes all live in {@code PbServiceFacade.recopyChapter}.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/cast/recopy")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response recopyChapterCast(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200).entity(JSONUtil.exportObject(
+                PbServiceFacade.recopyChapter(user, bookObjectId))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/cast/merge
+     * Merge series baseline updates into a chapter's existing shadows (Q6 sync op "merge"): pull the
+     * baseline's shared scalar attributes into each shadow while KEEPING the chapter's own overrides
+     * (apparel, state/pose, narrative, portrait). Non-destructive; matched by name; no scene link is
+     * re-pointed. Returns { bookObjectId, slug, seriesObjectId, merged }.
+     *
+     * <p>Not to be confused with {@code /{bookObjectId}/characters/merge}, which de-duplicates two distinct
+     * characters within one book. Transport only: the pull and its authorization live in
+     * {@code PbServiceFacade.mergeChapter} / {@code PbSharingUtil.mergeChapterShadows}.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/cast/merge")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response mergeChapterCast(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200).entity(JSONUtil.exportObject(
+                PbServiceFacade.mergeChapter(user, bookObjectId))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /chapter/detect-boundaries?sourceDataObjectId=...
+     * Read-only chapter-heading → character-offset boundary detection for a manuscript (data.data).
+     * Returns the detected spans as [{startOffset, endOffset, title}, ...] — the exact shape the
+     * POST /chapter body's {@code sourceRange} accepts, so the Ux review step can hand a chosen (or
+     * hand-edited) range straight back to {@code createChapter}. A {@code title} is null for a leading
+     * front-matter or no-heading range; an empty array means the document extracted to no usable text.
+     *
+     * <p>Transport only: manuscript resolution (as the acting user, via AccessPoint), bounded
+     * content-type-aware text extraction, and the pure offset detector all live in
+     * {@code PbServiceFacade.detectSourceBoundaries} / {@code PbChapterBoundaryUtil} in Objects7.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/chapter/detect-boundaries")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response detectChapterBoundaries(
+            @QueryParam("sourceDataObjectId") String sourceDataObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200).entity(JSONUtil.exportObject(
+                PbServiceFacade.detectSourceBoundaries(user, sourceDataObjectId))).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }
@@ -1215,6 +1330,33 @@ public class PictureBookService {
         try {
             return Response.status(200)
                 .entity(JSONUtil.exportObject(PbServiceFacade.listBooks(user))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /series/{seriesObjectId}/books
+     * All chapter books of ONE series (N4), each with its series/chapter/world linkage, so the canvas can
+     * render a whole-series view and order chapters within it. Unlike GET /books (the owner-filtered
+     * selector), this returns a series' chapters to any ENTITLED caller — a holder of the series
+     * Writer/Admin role — regardless of record owner. Returns DTOs: objectId, name, slug, bookStatus,
+     * chapter, seriesObjectId, worldObjectId.
+     *
+     * <p>Transport only: series resolution (as the olio principal, for the FK), candidate enumeration by
+     * the series FK, and per-chapter authorization as the acting user all live in
+     * {@code PbServiceFacade.listSeriesBooks} in Objects7.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/series/{seriesObjectId:[0-9A-Za-z\\-]+}/books")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listSeriesBooks(@PathParam("seriesObjectId") String seriesObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.listSeriesBooks(user, seriesObjectId))).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }

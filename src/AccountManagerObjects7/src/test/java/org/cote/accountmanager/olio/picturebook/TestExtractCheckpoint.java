@@ -561,6 +561,119 @@ public class TestExtractCheckpoint extends BaseTest {
 		assertEquals("B-only", b.scenes.get(0).get("title"));
 	}
 
+	// ── Q8: two ranges of ONE manuscript get independent checkpoints ───────────────
+
+	/// The motivating N2/Q8 defect: a series chapter is a RANGE of one shared manuscript, so two
+	/// chapters reuse ONE workObjectId. Whole-document text gives an identical textHash and identical
+	/// chunking gives an identical guard, so before the fix chapter 2's saveExtractCheckpoint wrote
+	/// the SAME note name as chapter 1 and clobbered it — resume protection was silently lost for
+	/// every chapter but the last one written.
+	///
+	/// This proves the fix at the level the bug lived: the two ranges resolve to DISTINCT notes,
+	/// neither touches the legacy whole-document note, each loads back its own scenes/resume index,
+	/// and clearing one leaves the other intact.
+	@Test
+	public void TestTwoRangesOfOneDocumentGetIndependentCheckpoints() throws Exception {
+		prepare();
+		String work = "ckpt-tworanges-" + UUID.randomUUID();
+		/// SAME document text for both ranges — this is exactly the case the old guard could not
+		/// distinguish, because textHash + chunking are identical across chapters of one manuscript.
+		String hash = PictureBookUtil.extractTextHash("the whole shared manuscript");
+
+		ExtractCheckpoint a = newCheckpoint(hash, 2, 17,
+				listOf(scene("Chapter One Opens", "a gate", 0)));
+		a.startOffset = 0;
+		a.endOffset = 1000;
+		PictureBookUtil.saveExtractCheckpoint(testUser, groupPath, work, a);
+
+		ExtractCheckpoint b = newCheckpoint(hash, 5, 17,
+				listOf(scene("Chapter Two Opens", "a hall", 0),
+						scene("Chapter Two Turns", "a storm", 1)));
+		b.startOffset = 1000;
+		b.endOffset = 2500;
+		PictureBookUtil.saveExtractCheckpoint(testUser, groupPath, work, b);
+
+		/// Distinct notes, not one overwritten in place.
+		BaseRecord noteA = PictureBookUtil.loadProgressNote(testUser, groupPath, work, 0, 1000);
+		BaseRecord noteB = PictureBookUtil.loadProgressNote(testUser, groupPath, work, 1000, 2500);
+		assertNotNull("range A note", noteA);
+		assertNotNull("range B note", noteB);
+		assertFalse("the two ranges must not share one note",
+				noteA.get(FieldNames.FIELD_OBJECT_ID).equals(noteB.get(FieldNames.FIELD_OBJECT_ID)));
+
+		/// The legacy whole-document note must be untouched — a ranged save must never write it.
+		assertNull("no whole-document note should exist for a ranged run",
+				PictureBookUtil.loadProgressNote(testUser, groupPath, work));
+
+		/// Each range loads back ITS OWN state — the crux: no cross-contamination.
+		ExtractCheckpoint backA = PictureBookUtil.loadExtractCheckpoint(testUser, groupPath, work,
+				0, 1000, hash, CHUNK_SIZE, OVERLAP, 17);
+		ExtractCheckpoint backB = PictureBookUtil.loadExtractCheckpoint(testUser, groupPath, work,
+				1000, 2500, hash, CHUNK_SIZE, OVERLAP, 17);
+		assertNotNull(backA);
+		assertNotNull(backB);
+		assertEquals("range A resume index", 2, backA.chunksProcessed);
+		assertEquals("range B resume index", 5, backB.chunksProcessed);
+		assertEquals("range A scene count", 1, backA.scenes.size());
+		assertEquals("range B scene count", 2, backB.scenes.size());
+		assertEquals("Chapter One Opens", backA.scenes.get(0).get("title"));
+		assertEquals("Chapter Two Opens", backB.scenes.get(0).get("title"));
+		assertEquals("range A offsets round-trip", (Integer) 0, backA.startOffset);
+		assertEquals((Integer) 1000, backA.endOffset);
+		assertEquals("range B offsets round-trip", (Integer) 1000, backB.startOffset);
+		assertEquals((Integer) 2500, backB.endOffset);
+
+		/// The whole-document (null-range) load must NOT find either ranged note.
+		assertNull("null-range load must not resolve a ranged note",
+				PictureBookUtil.loadExtractCheckpoint(testUser, groupPath, work, hash,
+						CHUNK_SIZE, OVERLAP, 17));
+
+		/// Clearing one range leaves the other intact — chapter-scoped completion, not a blanket wipe.
+		PictureBookUtil.clearExtractCheckpointAt(testUser, groupPath, work, 0, 1000);
+		assertNull("cleared range A is gone",
+				PictureBookUtil.loadProgressNote(testUser, groupPath, work, 0, 1000));
+		assertNotNull("range B survives A's clear",
+				PictureBookUtil.loadProgressNote(testUser, groupPath, work, 1000, 2500));
+	}
+
+	/// §8 REQUIRED #1: orphan cleanup was an EQUALS on the bare name, which — once chapters write
+	/// range-suffixed notes — would leave every range note orphaned forever. It is now a name-prefix
+	/// (LIKE) match, so a single cleanup for a gone work removes the whole-document note AND every
+	/// range note for that work, and nothing belonging to another work.
+	@Test
+	public void TestOrphanCleanupPrefixDeletesEveryRangeNote() throws Exception {
+		prepare();
+		String work = "ckpt-orphan-" + UUID.randomUUID();
+		String other = "ckpt-orphan-other-" + UUID.randomUUID();
+		String hash = PictureBookUtil.extractTextHash("orphan manuscript");
+
+		/// Two range notes plus the bare whole-document note, all for the same work.
+		ExtractCheckpoint whole = newCheckpoint(hash, 1, 4, listOf(scene("Whole", "w", 0)));
+		PictureBookUtil.saveExtractCheckpoint(testUser, groupPath, work, whole);
+		ExtractCheckpoint r1 = newCheckpoint(hash, 1, 4, listOf(scene("R1", "r1", 0)));
+		r1.startOffset = 0; r1.endOffset = 500;
+		PictureBookUtil.saveExtractCheckpoint(testUser, groupPath, work, r1);
+		ExtractCheckpoint r2 = newCheckpoint(hash, 1, 4, listOf(scene("R2", "r2", 0)));
+		r2.startOffset = 500; r2.endOffset = 900;
+		PictureBookUtil.saveExtractCheckpoint(testUser, groupPath, work, r2);
+
+		/// A different work's note must NOT be swept up by the prefix.
+		ExtractCheckpoint keep = newCheckpoint(hash, 1, 4, listOf(scene("Keep", "k", 0)));
+		PictureBookUtil.saveExtractCheckpoint(testUser, groupPath, other, keep);
+
+		int deleted = PictureBookUtil.deleteOrphanedExtractCheckpoints(testUser, work);
+		assertEquals("bare + two ranges all deleted by one prefix cleanup", 3, deleted);
+
+		assertNull("whole-document note gone",
+				PictureBookUtil.loadProgressNote(testUser, groupPath, work));
+		assertNull("range note 1 gone",
+				PictureBookUtil.loadProgressNote(testUser, groupPath, work, 0, 500));
+		assertNull("range note 2 gone",
+				PictureBookUtil.loadProgressNote(testUser, groupPath, work, 500, 900));
+		assertNotNull("another work's checkpoint must be untouched",
+				PictureBookUtil.loadProgressNote(testUser, groupPath, other));
+	}
+
 	/// failedExtractions accumulated before a crash must come back with the resume, or a resumed
 	/// run would report a clean extraction while some chunks had in fact failed to parse.
 	@Test

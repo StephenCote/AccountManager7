@@ -1,19 +1,33 @@
 package org.cote.accountmanager.olio.picturebook;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 
 /**
@@ -251,7 +265,313 @@ public class PbSharingUtil {
 		return out;
 	}
 
+	// ─────────────────────────────── seed a chapter's shadow cast ───────────────────────────────
+
+	/**
+	 * Seed a chapter's <b>shadow</b> cast from series baseline records, <b>within the one shared series
+	 * world</b> (§3 N1 / §8 lower-priority). This is the Q6 redirect of {@link #copyToChapter}: instead of
+	 * copying into a fresh per-chapter world, it copies baseline records into the series world's own group
+	 * for that model (e.g. {@code population} for {@code charPerson}) and <b>enrols each clone into the
+	 * chapter's book-scoped {@code shadowCastGroup}</b>. Cloning into the group alone does not tag the copy
+	 * by chapter - two chapters share the one series world's Population group, so without the cast-group
+	 * enrolment their shadows would be indistinguishable. The enrolment is the chapter tag.
+	 * <p>
+	 * <b>No per-book membership check, and that is deliberate, not an omission.</b> {@link #copyToChapter}
+	 * checks {@code isBookMember} on both slugs because per-chapter worlds carried per-book role pairs. A
+	 * series chapter has neither: it references the shared world and is gated by the SERIES role pair, which
+	 * {@code PbBookUtil.createBook}'s {@code isEntitledToSeries} check already enforced before this runs. A
+	 * second membership check here would be against roles that do not exist.
+	 * <p>
+	 * <b>Copy, still not reference.</b> The shadow is a fresh instance derived from the baseline, so a
+	 * chapter can redress or age its own shadow without mutating the baseline or another chapter's shadow -
+	 * the re-render guarantee of Q6. {@code cloneIntoGroup}'s stated sub-record limitation (see
+	 * {@link #copyToChapter}) is unchanged: callers pass the records they want re-homed.
+	 *
+	 * @param baselineRecords the series baseline records to seed shadows from (typically {@code charPerson})
+	 * @param targetGroup     the series world's own group for these records (e.g. {@code population})
+	 * @param shadowCastGroup the chapter's book-scoped cast group, from
+	 *                        {@link PbCastUtil#getCreateShadowCastGroup}
+	 * @return the created shadow clones, in input order; a failed clone/create/enrol aborts with the count
+	 *         that succeeded, and the partial seed is NOT rolled back
+	 */
+	public static List<BaseRecord> copyToChapterShadow(BaseRecord user, List<BaseRecord> baselineRecords,
+			BaseRecord targetGroup, BaseRecord shadowCastGroup, BaseRecord targetWorkflow, BaseRecord lineageNode,
+			String bindingGroupPath) {
+		if(user == null || baselineRecords == null || targetGroup == null || shadowCastGroup == null) {
+			throw new PictureBookException(400,
+				"Seeding a chapter shadow needs a user, baseline records, a target group and a shadow cast group");
+		}
+
+		long targetGroupId = ((Number) targetGroup.get(FieldNames.FIELD_ID)).longValue();
+
+		List<BaseRecord> out = new ArrayList<>();
+		for(BaseRecord baseline : baselineRecords) {
+			/// Deep-populate the baseline before cloning. The sources handed in were read with a minimal
+			/// projection (createChapter's findByObjectId), so their render-state sub-records - narrative,
+			/// profile.portrait, store.apparel - are not present; cloneIntoGroup would then copy an empty
+			/// graph and the shadow would carry no render state. getFullRecord applies OlioUtil.planMost, the
+			/// canonical deep read for Olio objects. It is an internal re-read of a record already authorized
+			/// as this user in createChapter, so the unauthorized search is the established Olio pattern here.
+			BaseRecord full = OlioUtil.getFullRecord(baseline);
+			BaseRecord toClone = (full != null ? full : baseline);
+			BaseRecord clone = OlioUtil.cloneIntoGroup(toClone, targetGroup);
+			if(clone == null) {
+				throw new PictureBookException(500, "Seeded " + out.size() + " shadow(s), then failed to clone "
+					+ baseline.getSchema() + " " + baseline.get(FieldNames.FIELD_OBJECT_ID)
+					+ " - the shadow seed is partially applied and was NOT rolled back");
+			}
+			/// HIGH gotcha: cloneIntoGroup re-homes only the TOP-LEVEL groupId (OlioUtil.java:596). Every
+			/// nested sub-record copyDeidentifiedRecord produced is a FRESH copy (all identity fields stripped,
+			/// BaseRecord.java:104-126) that still carries the SOURCE group's groupId. Left there, a chapter's
+			/// shadow narrative/portrait/apparel would live in the series baseline Population group - so
+			/// overwriting a shadow, or deleting the chapter, would reach into baseline data. Re-home the whole
+			/// copied graph into the shadow group before create; the create then cascades the nested records
+			/// (the named participation/reverse-reference exception) into that one group.
+			rehomeSubRecords(clone, targetGroupId, 0);
+			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, clone);
+			if(created == null) {
+				throw new PictureBookException(500, "Seeded " + out.size()
+					+ " shadow(s), then failed to create a shadow copy of " + baseline.getSchema() + " "
+					+ baseline.get(FieldNames.FIELD_OBJECT_ID)
+					+ " - the shadow seed is partially applied and was NOT rolled back");
+			}
+			if(!PbCastUtil.enrollCastMember(shadowCastGroup, created)) {
+				throw new PictureBookException(500, "Created a shadow copy of " + baseline.getSchema() + " "
+					+ baseline.get(FieldNames.FIELD_OBJECT_ID) + " but failed to enrol it into the chapter's shadow cast '"
+					+ shadowCastGroup.get(FieldNames.FIELD_NAME)
+					+ "' - the shadow is untagged and would be indistinguishable from other chapters' shadows");
+			}
+			out.add(created);
+			if(lineageNode != null && targetWorkflow != null && bindingGroupPath != null) {
+				recordLineage(user, targetWorkflow, lineageNode, ROLE_CHAPTER_SOURCE, baseline, bindingGroupPath);
+			}
+		}
+		return out;
+	}
+
+	// ─────────────────────────────── merge baseline updates into shadows ───────────────────────────────
+
+	/**
+	 * Merge series baseline updates into existing chapter shadows (Q6 sync op "merge"): PULL the baseline's
+	 * scalar (column-backed) attributes into each shadow while KEEPING the shadow's own chapter-specific
+	 * overrides - its foreign/nested render state (store.apparel, state/pose, narrative, profile.portrait,
+	 * statistics, instinct, traits, colours) and referenced attributes. This is the counterpart to
+	 * {@link #copyToChapterShadow}: copy/recopy reseed a shadow wholesale from the baseline, merge only
+	 * overlays the shared attributes and leaves the chapter's edits standing.
+	 * <p>
+	 * <b>The shadow keeps its identity, including its name.</b> Scene-to-character links in the PictureBook
+	 * flow resolve BY NAME at render time ({@code resolveSceneCharacter} -> {@code findSceneCharacterGroups},
+	 * shadow-group-first), so the patch is built with {@link PbGraphUtil#patchOf} against the SHADOW (identity
+	 * and name taken from the shadow) and only its scalar values are overwritten with the baseline's. A merge
+	 * therefore never re-points a scene link and never renames a shadow.
+	 * <p>
+	 * <b>Only NON-NULL baseline scalars are pulled, and only those fields are materialised on the patch.</b>
+	 * The field-name {@code newInstance} overload materialises exactly the named fields and the writer
+	 * persists every field present on the patch record (see {@link PbGraphUtil#patchOf}), so materialising a
+	 * field the baseline left null would blank the shadow's own value. The set of fields to patch is therefore
+	 * computed per shadow from the baseline's actually-present scalars - a baseline that never set
+	 * {@code hairStyle} leaves the shadow's {@code hairStyle} alone. (MY JUDGMENT: pull = overwrite-from-non-null;
+	 * a baseline null is treated as "no opinion", not "clear the shadow".)
+	 * <p>
+	 * <b>Matched by case-insensitive trimmed name</b>, the same key the render path resolves on. A shadow with
+	 * no baseline counterpart (a character added only to this chapter) is left untouched. The baseline is
+	 * deep-read with {@code OlioUtil.getFullRecord} so its scalar columns are populated - the cast-member list
+	 * projects only identity fields - which is an internal re-read of a record already authorized as this user
+	 * via the cast list. Writes as the acting {@code user} through {@code AccessPoint.update} and asserts the
+	 * result, so a silent write failure cannot pass for success; a failure aborts with the count that merged
+	 * and the partial merge is NOT rolled back.
+	 *
+	 * @param shadowMembers   the chapter's shadow {@code charPerson}s (from {@code listCastMembers} on the shadow cast)
+	 * @param baselineMembers the series baseline {@code charPerson}s (from {@code listCastMembers} on the baseline cast)
+	 * @return the number of shadows merged (a baseline match found and at least one scalar pulled)
+	 */
+	public static int mergeChapterShadows(BaseRecord user, List<BaseRecord> shadowMembers,
+			List<BaseRecord> baselineMembers) {
+		if(user == null || shadowMembers == null || baselineMembers == null) {
+			throw new PictureBookException(400,
+				"Merging chapter shadows needs a user, shadow members and baseline members");
+		}
+		/// Index baselines by case-insensitive trimmed name - the same key resolveSceneCharacter resolves on.
+		Map<String, BaseRecord> baselineByName = new HashMap<>();
+		for(BaseRecord b : baselineMembers) {
+			String nm = b.get(FieldNames.FIELD_NAME);
+			if(nm != null && nm.trim().length() > 0) {
+				baselineByName.put(nm.trim().toLowerCase(), b);
+			}
+		}
+
+		List<String> scalarFields = scalarPullFields(OlioModelNames.MODEL_CHAR_PERSON);
+		int merged = 0;
+		for(BaseRecord shadow : shadowMembers) {
+			String snm = shadow.get(FieldNames.FIELD_NAME);
+			if(snm == null || snm.trim().length() == 0) {
+				continue;
+			}
+			BaseRecord baseline = baselineByName.get(snm.trim().toLowerCase());
+			if(baseline == null) {
+				/// A character present only in this chapter's shadow cast has no baseline to pull from.
+				continue;
+			}
+			/// Deep-read the baseline so its scalar columns are populated - listCastMembers projects only
+			/// id/objectId/name/groupId/organizationId. getFullRecord is the canonical Olio deep read.
+			BaseRecord full = OlioUtil.getFullRecord(baseline);
+			BaseRecord src = (full != null ? full : baseline);
+
+			/// Only pull scalars the baseline actually holds - materialising a field the baseline left null
+			/// would blank the shadow's value when the writer persists the patch.
+			List<String> pull = new ArrayList<>();
+			for(String fn : scalarFields) {
+				if(src.get(fn) != null) {
+					pull.add(fn);
+				}
+			}
+			if(pull.isEmpty()) {
+				continue;
+			}
+			BaseRecord patch = PbGraphUtil.patchOf(shadow, OlioModelNames.MODEL_CHAR_PERSON,
+				pull.toArray(new String[0]));
+			try {
+				for(String fn : pull) {
+					patch.set(fn, src.get(fn));
+				}
+			}
+			catch(FieldException | ValueException | ModelNotFoundException e) {
+				throw new PictureBookException(500, "Merged " + merged
+					+ " shadow(s), then failed to assemble a merge patch for '" + snm + "': " + e.getMessage());
+			}
+			if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+				throw new PictureBookException(500, "Merged " + merged + " shadow(s), then failed to update shadow '"
+					+ snm + "' - the merge is partially applied and was NOT rolled back");
+			}
+			merged++;
+		}
+		return merged;
+	}
+
+	/**
+	 * The scalar (column-backed) {@code charPerson} fields safe to PULL from a baseline into a shadow on
+	 * merge: non-identity, non-foreign, non-virtual, non-ephemeral, non-referenced, scalar-typed, and
+	 * excluding the fields that pin a record's identity or placement ({@code name}, {@code groupId},
+	 * {@code organizationId}, {@code ownerId}, {@code groupPath}). The KEEP set - every foreign/nested/
+	 * participation render-state field and referenced attribute - is exactly the complement, so a merge
+	 * pulls shared attributes without disturbing the chapter's own apparel/state/pose overrides. Schema
+	 * driven so a scalar attribute added to the model is pulled without an edit here.
+	 */
+	private static List<String> scalarPullFields(String model) {
+		List<String> out = new ArrayList<>();
+		ModelSchema ms = RecordFactory.getSchema(model);
+		if(ms == null) {
+			return out;
+		}
+		Set<String> exclude = new HashSet<>(Arrays.asList(
+			FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID,
+			FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_GROUP_PATH));
+		for(FieldSchema fs : ms.getFields()) {
+			String fn = fs.getName();
+			if(fn == null || exclude.contains(fn)) {
+				continue;
+			}
+			if(fs.isIdentity() || fs.isForeign() || fs.isVirtual() || fs.isEphemeral() || fs.isReferenced()) {
+				continue;
+			}
+			if(isScalarPullType(fs.getFieldType())) {
+				out.add(fn);
+			}
+		}
+		return out;
+	}
+
+	/** True for the field types a merge pulls by value - primitives, strings, enums and timestamps. MODEL,
+	 *  LIST and BLOB are excluded: those carry the chapter's own render-state overrides (KEEP), not shared
+	 *  scalar attributes. */
+	private static boolean isScalarPullType(FieldEnumType t) {
+		if(t == null) {
+			return false;
+		}
+		switch(t) {
+			case STRING:
+			case ENUM:
+			case INT:
+			case LONG:
+			case DOUBLE:
+			case BOOLEAN:
+			case ZONETIME:
+			case TIMESTAMP:
+				return true;
+			default:
+				return false;
+		}
+	}
+
 	// ─────────────────────────────── helpers ───────────────────────────────
+
+	/** The deepest sub-record graph re-homing will descend, mirroring the effective depth of a fully
+	 *  planned charPerson graph and bounding any accidental cycle in populated data. */
+	private static final int REHOME_MAX_DEPTH = 12;
+
+	/**
+	 * Re-home every nested sub-record of a freshly-cloned graph into {@code groupId}, recursively.
+	 * <p>
+	 * Walks the same fields {@code copyDeidentifiedRecord} recursed into - populated foreign {@code MODEL}
+	 * fields and foreign lists of {@code MODEL} - and sets {@code groupId} on any sub-record whose schema
+	 * declares one ({@code common.groupExt}: {@code narrative}, {@code store}+{@code store.apparel},
+	 * {@code profile}+{@code profile.portrait}+{@code album}, and any statistics/instinct the character
+	 * owns). Only {@code groupId} is set: it is the persisted column, while {@code groupPath} is a virtual
+	 * {@code PathProvider} field recomputed from the group on read, so setting it would be cosmetic.
+	 * <p>
+	 * <b>Safe against shared-template contamination.</b> {@code copyDeidentifiedRecord} makes a fresh copy
+	 * of every populated nested record (all identity fields stripped), so nothing here mutates a shared
+	 * universe record - it only stamps the group onto the new owned copies about to be created.
+	 */
+	private static void rehomeSubRecords(BaseRecord rec, long groupId, int depth) {
+		if(rec == null || depth >= REHOME_MAX_DEPTH) {
+			return;
+		}
+		ModelSchema ms = RecordFactory.getSchema(rec.getSchema());
+		if(ms == null) {
+			return;
+		}
+		for(FieldType f : rec.getFields()) {
+			FieldSchema fs = ms.getFieldSchema(f.getName());
+			if(fs == null || !fs.isForeign()) {
+				continue;
+			}
+			if(f.getValueType() == FieldEnumType.MODEL) {
+				Object v = f.getValue();
+				if(v instanceof BaseRecord) {
+					BaseRecord child = (BaseRecord) v;
+					applyGroupId(child, groupId);
+					rehomeSubRecords(child, groupId, depth + 1);
+				}
+			}
+			else if(f.getValueType() == FieldEnumType.LIST && ModelNames.MODEL_MODEL.equals(fs.getBaseType())) {
+				Object v = f.getValue();
+				if(v instanceof List) {
+					for(Object o : (List<?>) v) {
+						if(o instanceof BaseRecord) {
+							BaseRecord child = (BaseRecord) o;
+							applyGroupId(child, groupId);
+							rehomeSubRecords(child, groupId, depth + 1);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/** Set {@code groupId} on {@code rec} when its schema declares one; best-effort and never fatal. */
+	private static void applyGroupId(BaseRecord rec, long groupId) {
+		ModelSchema ms = RecordFactory.getSchema(rec.getSchema());
+		if(ms == null || ms.getFieldSchema(FieldNames.FIELD_GROUP_ID) == null) {
+			return;
+		}
+		try {
+			rec.set(FieldNames.FIELD_GROUP_ID, groupId);
+		}
+		catch(Exception e) {
+			logger.warn("Could not re-home " + rec.getSchema() + " into group " + groupId + ": " + e.getMessage());
+		}
+	}
 
 	/**
 	 * Record where a copied record came from, as a binding on the consuming node. The binding carries the

@@ -54,6 +54,13 @@
 			"foreign": true
 		},
 		{
+			"name": "sourceRange",
+			"baseModel": "olio.pb.sourceRange",
+			"type": "model",
+			"foreign": true,
+			"description": "For a chapter book, the span of sourceData this chapter covers (start/end offsets + detected title). Null for a standalone book that consumed the whole document."
+		},
+		{
 			"name": "sdConfig",
 			"baseModel": "olio.sd.config",
 			"type": "model",

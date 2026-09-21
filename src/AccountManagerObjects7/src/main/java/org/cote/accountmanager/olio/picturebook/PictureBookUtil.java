@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -2151,6 +2152,104 @@ public class PictureBookUtil {
                 .getAccessPoint().list(user, allq).getResults(), "accent-insensitive");
     }
 
+    /**
+     * The book a scene belongs to, resolved for the SOLE purpose of deciding whether the scene is a
+     * SERIES CHAPTER (and, if so, which chapter) so character resolution can look in that chapter's
+     * shadow group before the shared series baseline. Read as the acting user through
+     * {@code AccessPoint}; returns null when no book can be identified (in which case the caller keeps
+     * the pre-existing standalone-book behaviour).
+     *
+     * <p>Resolution order:
+     * <ol>
+     *   <li>{@code bookSlug} — the caller's {@code SceneGenerationParams.bookSlug}, authoritative when
+     *       present (it is the slug the book was actually created with, and the render path passes it).</li>
+     *   <li>The slug DERIVED from {@code sceneGroupPath} (the segment above {@code /Scenes}), tried
+     *       under both the server ({@code PbPipelineUtil.deriveSlug}) and client slug rules — the same
+     *       two-spelling reconciliation {@link #bookPopulationPathCandidates} makes, and for the same
+     *       reason: the two generators disagree by one character on {@code .pdf}-style names.</li>
+     * </ol>
+     */
+    private static BaseRecord resolveChapterBookForScene(BaseRecord user, String sceneGroupPath, String bookSlug) {
+        if (user == null) return null;
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        List<String> slugs = new ArrayList<>();
+        if (bookSlug != null && !bookSlug.isBlank()) slugs.add(bookSlug.trim());
+        if (sceneGroupPath != null) {
+            int idx = sceneGroupPath.lastIndexOf("/Scenes");
+            if (idx > 0) {
+                String bookGroupPath = sceneGroupPath.substring(0, idx);
+                int slash = bookGroupPath.lastIndexOf('/');
+                String bookGroupName = (slash >= 0) ? bookGroupPath.substring(slash + 1) : bookGroupPath;
+                String serverSlug = PbPipelineUtil.deriveSlug(bookGroupName);
+                if (serverSlug != null && !slugs.contains(serverSlug)) slugs.add(serverSlug);
+                String clientSlug = bookGroupName.toLowerCase().replaceAll("[^a-z0-9]+", "-")
+                        .replaceAll("^-+", "").replaceAll("-+$", "");
+                if (clientSlug.length() > 64) clientSlug = clientSlug.substring(0, 64);
+                if (!clientSlug.isEmpty() && !slugs.contains(clientSlug)) slugs.add(clientSlug);
+            }
+        }
+        for (String slug : slugs) {
+            try {
+                BaseRecord book = PbBookUtil.findBookBySlug(user, slug, orgId);
+                if (book != null) return book;
+            } catch (Exception e) {
+                logger.warn("resolveChapterBookForScene: findBookBySlug(" + slug + ") — " + e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The ORDERED list of groups to search for a scene's characters — shadow first, baseline second.
+     *
+     * <p>For a SERIES CHAPTER (a book carrying both a {@code series} and a {@code world} FK) this is
+     * {@code [chapter shadow group (when it exists), series baseline Population]}: the chapter's
+     * per-chapter shadow of a character carries THAT chapter's render state and must win, while the
+     * series baseline is the fallback for a character the chapter has not shadowed yet. Both groups
+     * are derived from the book's {@code world} FK via {@link PbBookUtil#openBookContext} — never from
+     * a slug path, because the chapter's own slug does not name the shared series world, so
+     * {@link #findBookPopulationGroup}'s path candidates cannot reach the series Population.
+     *
+     * <p>For a standalone book (or when no book/context can be resolved) this is exactly the
+     * pre-existing single {@link #findBookPopulationGroup} result — unchanged behaviour.
+     */
+    private static List<BaseRecord> findSceneCharacterGroups(BaseRecord user, String sceneGroupPath, String bookSlug) {
+        List<BaseRecord> groups = new ArrayList<>();
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        BaseRecord book = resolveChapterBookForScene(user, sceneGroupPath, bookSlug);
+        boolean seriesChapter = book != null
+                && book.get(OlioFieldNames.FIELD_PB_SERIES) != null
+                && book.get(OlioFieldNames.FIELD_PB_WORLD) != null;
+        if (seriesChapter) {
+            try {
+                BookContext bctx = PbBookUtil.openBookContext(user, book);
+                if (bctx != null) {
+                    String populationPath = bctx.getGroupPath("population");
+                    String chapterSlug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+                    if (populationPath != null && chapterSlug != null) {
+                        String shadowPath = PbBookUtil.chapterShadowCharGroupPath(populationPath, chapterSlug);
+                        if (shadowPath != null) {
+                            BaseRecord shadow = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                                    ModelNames.MODEL_GROUP, shadowPath, GroupEnumType.DATA.toString(), orgId);
+                            if (shadow != null) groups.add(shadow);
+                        }
+                    }
+                    BaseRecord baseline = bctx.getGroup("population");
+                    if (baseline != null) groups.add(baseline);
+                }
+            } catch (Exception e) {
+                logger.warn("findSceneCharacterGroups: series-chapter resolution failed, falling back to the "
+                        + "path-derived Population group: " + e.getMessage());
+            }
+            if (!groups.isEmpty()) return groups;
+            // fall through: the chapter book was identified but its context/groups couldn't be
+            // assembled — try the legacy path derivation rather than resolving nothing.
+        }
+        BaseRecord popGrp = findBookPopulationGroup(user, sceneGroupPath, bookSlug);
+        if (popGrp != null) groups.add(popGrp);
+        return groups;
+    }
+
     private static ResolvedCharacter resolveSceneCharacter(BaseRecord user, Object charItem, String sceneGroupPath) {
         return resolveSceneCharacter(user, charItem, sceneGroupPath, null);
     }
@@ -2186,16 +2285,26 @@ public class PictureBookUtil {
                 // Population group, so the legacy PB1 <book>/Characters probe has been removed — it
                 // resolved nothing for any book created with a world (measured 2026-09-14: "The Big Way
                 // Out.pdf" had 0 charPersons in PB1 Characters and all 6 in the world's Population).
-                BaseRecord popGrp = findBookPopulationGroup(user, sceneGroupPath, bookSlug);
-                if (popGrp != null) {
-                    cp = findCharPersonByNameInGroup(user, cname, popGrp);
-                    if (cp != null) {
-                        logger.info("Resolved scene character '" + cname
-                                + "' from the book world's Population group");
-                    }
-                } else {
+                // Chapter-aware: for a SERIES CHAPTER the character is resolved in that chapter's
+                // SHADOW group FIRST (it carries the chapter's own render state), falling back to the
+                // shared series baseline Population; for a standalone book this is exactly the single
+                // book-world Population group as before. See findSceneCharacterGroups.
+                List<BaseRecord> candGroups = findSceneCharacterGroups(user, sceneGroupPath, bookSlug);
+                if (candGroups.isEmpty()) {
                     logger.warn("No book-world Population group found while resolving scene character '"
                             + cname + "'");
+                } else {
+                    for (int gi = 0; gi < candGroups.size(); gi++) {
+                        BaseRecord grp = candGroups.get(gi);
+                        cp = findCharPersonByNameInGroup(user, cname, grp);
+                        if (cp != null) {
+                            logger.info("Resolved scene character '" + cname + "' from "
+                                    + (candGroups.size() > 1 ? (gi == 0 ? "the chapter shadow group" : "the series baseline Population group")
+                                                             : "the book world's Population group")
+                                    + " (#" + grp.get(FieldNames.FIELD_ID) + ")");
+                            break;
+                        }
+                    }
                 }
             }
         } catch (Exception e) {
@@ -3993,6 +4102,65 @@ public class PictureBookUtil {
         return new ArrayList<>(names);
     }
 
+    /**
+     * N2 item 4: merge a cross-chapter seed roster (the series baseline cast) with the roster derived
+     * from the current run's scenes, preserving first-seen order and de-duplicating. Seed names come
+     * first so a character established earlier in the series anchors the prompt. Both inputs are
+     * re-guarded with {@link NarrativeUtil#isMeaningful(String)} — the seed is already filtered by
+     * {@link PbCastUtil#seriesCastNames} and the in-run list by {@link #sceneCharacterNames}, but a
+     * literal {@code "null"}/{@code "n/a"} must never reach the prompt, so the guard is applied here
+     * too rather than trusted from the caller.
+     */
+    static List<String> mergeRoster(List<String> seedRoster, List<String> inRunRoster) {
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        if (seedRoster != null) {
+            for (String nm : seedRoster) {
+                if (NarrativeUtil.isMeaningful(nm)) merged.add(nm.trim());
+            }
+        }
+        if (inRunRoster != null) {
+            for (String nm : inRunRoster) {
+                if (NarrativeUtil.isMeaningful(nm)) merged.add(nm.trim());
+            }
+        }
+        return new ArrayList<>(merged);
+    }
+
+    /**
+     * N2 item 4: resolve the series baseline cast names that seed a chapter extraction's roster, given
+     * the {@code olio.pb.series} objectId the chapter belongs to. Returns an empty list — never null,
+     * never throwing — for a standalone (non-series) extraction or any miss (blank id, unreadable
+     * series, series with no shared world, or no baseline cast yet), which restores the pre-N2
+     * in-run-only roster behavior exactly. A roster read must never abort an extraction, so every
+     * failure degrades to "no seed".
+     * <p>
+     * The series is read as the ACTING user through {@code AccessPoint} ({@link PbSeriesUtil#readSeries}),
+     * so a series the caller cannot see yields no seed rather than leaking another tenant's cast. The
+     * baseline cast group lives in the series world's {@code Book} group
+     * ({@link PbBookUtil#bookGroupPath}), keyed on the series world's slug, exactly as
+     * {@link PbServiceFacade#createChapter} resolves the shadow cast group.
+     */
+    public static List<String> resolveSeriesRoster(BaseRecord user, String seriesObjectId, long organizationId) {
+        if (user == null || seriesObjectId == null || seriesObjectId.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+        try {
+            BaseRecord series = PbSeriesUtil.readSeries(user, seriesObjectId.trim(), organizationId);
+            if (series == null) {
+                return new ArrayList<>();
+            }
+            BaseRecord seriesWorld = series.get(OlioFieldNames.FIELD_PB_UNIVERSE);
+            String seriesSlug = (seriesWorld != null ? (String) seriesWorld.get(FieldNames.FIELD_NAME) : null);
+            if (seriesSlug == null) {
+                return new ArrayList<>();
+            }
+            return PbCastUtil.seriesCastNames(user, seriesSlug, PbBookUtil.bookGroupPath(seriesSlug), organizationId);
+        } catch (Exception e) {
+            logger.warn("Failed to resolve series roster for series " + seriesObjectId + ": " + e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
     public static List<Map<String, Object>> scenesForPrompt(List<Map<String, Object>> scenes) {
         List<Map<String, Object>> out = new ArrayList<>(scenes.size());
         /// Index of the first scene that still gets full detail.
@@ -4172,6 +4340,13 @@ public class PictureBookUtil {
      * checkpoint is only resumable against byte-identical source text chunked exactly the same
      * way — otherwise chunk index {@code n} no longer denotes the same passage and resuming would
      * silently splice scenes from one document into another.
+     *
+     * <p>{@code startOffset}/{@code endOffset} identify the RANGE of a shared manuscript this
+     * checkpoint covers (Q8). Null on both means the whole document — the legacy, pre-series
+     * behaviour, which keeps the bare note name and leaves the whole-document path byte-for-byte
+     * unchanged. When a range IS present, the range is baked into the note NAME (see
+     * {@link #progressNoteName}) so two chapters cut from one {@code workObjectId} no longer collide
+     * on one note, and it is re-checked in the load guard as defence-in-depth.
      */
     static final class ExtractCheckpoint {
         String textHash;
@@ -4180,8 +4355,35 @@ public class PictureBookUtil {
         int totalChunks;
         /** Number of chunks whose results are already merged into {@link #scenes}. */
         int chunksProcessed;
+        /** Inclusive start of the covered range within the shared manuscript, or null = whole document. */
+        Integer startOffset;
+        /** Exclusive end of the covered range within the shared manuscript, or null = whole document. */
+        Integer endOffset;
         List<Map<String, Object>> scenes = new ArrayList<>();
         List<String> failedExtractions = new ArrayList<>();
+    }
+
+    /**
+     * Compose the checkpoint note name, range-aware.
+     *
+     * <p>No range (both offsets null) yields the LEGACY bare name
+     * {@code EXTRACT_PROGRESS_NOTE + "." + workObjectId}, so whole-document extraction and any
+     * checkpoint written before the series work are found unchanged. When a range is present the
+     * name carries a {@code .<start>-<end>} suffix so two chapters cut from the SAME
+     * {@code workObjectId} write to distinct notes instead of clobbering each other (the Q8 bug).
+     *
+     * <p>The offsets are baked into the name — not just the guard — because the collision is at the
+     * note level: a shared-manuscript chapter reuses one {@code workObjectId}, whole-document text
+     * gives an identical {@code textHash}, and identical chunking gives an identical guard, so
+     * without a distinct name chapter 2's save would overwrite chapter 1's checkpoint.
+     */
+    static String progressNoteName(String workObjectId, Integer startOffset, Integer endOffset) {
+        String base = EXTRACT_PROGRESS_NOTE + "." + workObjectId;
+        if (startOffset == null && endOffset == null) {
+            return base;
+        }
+        return base + "." + (startOffset == null ? 0 : startOffset)
+                + "-" + (endOffset == null ? 0 : endOffset);
     }
 
     /** Stable digest of the source text, used to invalidate a checkpoint when the document changes. */
@@ -4207,8 +4409,18 @@ public class PictureBookUtil {
         return null;
     }
 
-    /** Find the checkpoint note for a work document, or null. */
+    /** Find the whole-document checkpoint note for a work document, or null. */
     static BaseRecord loadProgressNote(BaseRecord user, String groupPath, String workObjectId) {
+        return loadProgressNote(user, groupPath, workObjectId, null, null);
+    }
+
+    /**
+     * Find the checkpoint note for a work document and RANGE, or null. A null range (both offsets
+     * null) resolves the legacy bare note; a present range resolves that chapter's own suffixed
+     * note (see {@link #progressNoteName}).
+     */
+    static BaseRecord loadProgressNote(BaseRecord user, String groupPath, String workObjectId,
+            Integer startOffset, Integer endOffset) {
         if (groupPath == null || workObjectId == null) return null;
         BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
                 ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(),
@@ -4216,7 +4428,7 @@ public class PictureBookUtil {
         if (grp == null) return null;
         Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_GROUP_ID,
                 grp.get(FieldNames.FIELD_ID));
-        q.field(FieldNames.FIELD_NAME, EXTRACT_PROGRESS_NOTE + "." + workObjectId);
+        q.field(FieldNames.FIELD_NAME, progressNoteName(workObjectId, startOffset, endOffset));
         q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
         q.planMost(true);
         /// A checkpoint is written and re-read repeatedly within one run, so a cached hit from
@@ -4254,6 +4466,11 @@ public class PictureBookUtil {
             out.put("overlap", cp.overlap);
             out.put("totalChunks", cp.totalChunks);
             out.put("chunksProcessed", cp.chunksProcessed);
+            /// Persist the covered range too. The note NAME already isolates chapters, so this is
+            /// not what prevents the collision — it is re-checked by the load guard as
+            /// defence-in-depth against a hand-forged or name-collided note.
+            out.put("startOffset", cp.startOffset);
+            out.put("endOffset", cp.endOffset);
             out.put("updatedAt", ZonedDateTime.now().toString());
             List<Map<String, Object>> slim = new ArrayList<>(cp.scenes.size());
             for (Map<String, Object> s : cp.scenes) {
@@ -4265,14 +4482,18 @@ public class PictureBookUtil {
             out.put("failedExtractions", cp.failedExtractions);
             String json = JSONUtil.exportObject(out);
 
-            BaseRecord existing = loadProgressNote(user, groupPath, workObjectId);
+            /// The note name is range-aware, so a chapter's save finds (and overwrites) ONLY its
+            /// own note; a sibling chapter of the same manuscript has a different suffixed name.
+            BaseRecord existing = loadProgressNote(user, groupPath, workObjectId,
+                    cp.startOffset, cp.endOffset);
             if (existing != null) {
                 existing.set("text", json);
                 IOSystem.getActiveContext().getAccessPoint().update(user, existing);
                 return;
             }
             ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
-            plist.parameter(FieldNames.FIELD_NAME, EXTRACT_PROGRESS_NOTE + "." + workObjectId);
+            plist.parameter(FieldNames.FIELD_NAME,
+                    progressNoteName(workObjectId, cp.startOffset, cp.endOffset));
             BaseRecord rec = IOSystem.getActiveContext().getFactory().newInstance(
                     ModelNames.MODEL_NOTE, user, null, plist);
             rec.set("text", json);
@@ -4290,10 +4511,22 @@ public class PictureBookUtil {
      * where resuming would corrupt the result rather than accelerate it, so the safe answer is a
      * fresh run.
      */
-    @SuppressWarnings("unchecked")
     static ExtractCheckpoint loadExtractCheckpoint(BaseRecord user, String groupPath,
             String workObjectId, String textHash, int chunkSize, int overlap, int totalChunks) {
-        BaseRecord note = loadProgressNote(user, groupPath, workObjectId);
+        return loadExtractCheckpoint(user, groupPath, workObjectId, null, null,
+                textHash, chunkSize, overlap, totalChunks);
+    }
+
+    /**
+     * Range-aware load. A null range (both offsets null) reads the legacy whole-document note; a
+     * present range reads that chapter's own suffixed note and additionally refuses a checkpoint
+     * whose persisted range does not match the requested one.
+     */
+    @SuppressWarnings("unchecked")
+    static ExtractCheckpoint loadExtractCheckpoint(BaseRecord user, String groupPath,
+            String workObjectId, Integer startOffset, Integer endOffset,
+            String textHash, int chunkSize, int overlap, int totalChunks) {
+        BaseRecord note = loadProgressNote(user, groupPath, workObjectId, startOffset, endOffset);
         if (note == null) return null;
         String json = note.get("text");
         if (json == null || json.isEmpty()) return null;
@@ -4307,9 +4540,26 @@ public class PictureBookUtil {
             cp.overlap = intOf(m.get("overlap"));
             cp.totalChunks = intOf(m.get("totalChunks"));
             cp.chunksProcessed = intOf(m.get("chunksProcessed"));
+            /// A missing key round-trips to null (whole-document), not 0 — 0 is a legitimate range
+            /// start, so intOf would conflate "no range recorded" with "range starts at 0".
+            cp.startOffset = (m.get("startOffset") instanceof Number)
+                    ? ((Number) m.get("startOffset")).intValue() : null;
+            cp.endOffset = (m.get("endOffset") instanceof Number)
+                    ? ((Number) m.get("endOffset")).intValue() : null;
             if (textHash != null && !textHash.equals(cp.textHash)) {
                 logger.info("Discarding extraction checkpoint for " + workObjectId
                         + " — source text changed since it was written");
+                return null;
+            }
+            /// Defence-in-depth: the note name already isolates ranges, but a persisted range that
+            /// disagrees with the requested one means this note is not the one we asked for (a name
+            /// collision, or a hand-forged note), so refuse it rather than splice another chapter's
+            /// scenes into this run.
+            if (!java.util.Objects.equals(startOffset, cp.startOffset)
+                    || !java.util.Objects.equals(endOffset, cp.endOffset)) {
+                logger.info("Discarding extraction checkpoint for " + workObjectId
+                        + " — range changed (was " + cp.startOffset + "-" + cp.endOffset
+                        + ", now " + startOffset + "-" + endOffset + ")");
                 return null;
             }
             if (cp.chunkSize != chunkSize || cp.overlap != overlap || cp.totalChunks != totalChunks) {
@@ -4354,9 +4604,20 @@ public class PictureBookUtil {
      * behind for the next extraction of the same document to resume from.
      */
     public static void clearExtractCheckpoint(BaseRecord user, String workObjectId) {
+        clearExtractCheckpoint(user, workObjectId, null, null);
+    }
+
+    /**
+     * Range-aware completion clear. A null range clears the whole-document note; a present range
+     * clears only that chapter's own suffixed note, leaving sibling chapters of the same manuscript
+     * untouched. If the work document is gone, the orphan fallback prefix-deletes EVERY checkpoint
+     * for the work (all ranges) since nothing else can ever reach them.
+     */
+    public static void clearExtractCheckpoint(BaseRecord user, String workObjectId,
+            Integer startOffset, Integer endOffset) {
         String groupPath = findWorkGroupPath(user, workObjectId);
         if (groupPath != null) {
-            clearExtractCheckpointAt(user, groupPath, workObjectId);
+            clearExtractCheckpointAt(user, groupPath, workObjectId, startOffset, endOffset);
             return;
         }
         /// The work document is gone (deleted while a run was in flight, or deleted later), so the
@@ -4367,12 +4628,17 @@ public class PictureBookUtil {
     }
 
     /**
-     * Delete a work's checkpoint note when its group can no longer be resolved.
+     * Delete a work's checkpoint notes when its group can no longer be resolved.
      *
-     * <p>The note name embeds the work objectId, so this is an exact-name lookup rather than the
-     * JSON-linkage scan {@link #deleteOrphanedMetaNotes} needs — nothing else can match, so no
-     * other user's or document's checkpoint is at risk. Best-effort and org-scoped; every failure
-     * is swallowed and logged, because this is cleanup and never a reason to fail the caller.
+     * <p>The note name embeds the work objectId, so this is a name-prefix lookup rather than the
+     * JSON-linkage scan {@link #deleteOrphanedMetaNotes} needs. It is a PREFIX (LIKE) match, not
+     * an EQUALS: a shared-manuscript work now writes one note PER RANGE (see
+     * {@link #progressNoteName}), so an EQUALS on the bare name would leave every range-suffixed
+     * note orphaned forever (the §5/§8 concern). The prefix is
+     * {@code EXTRACT_PROGRESS_NOTE + "." + workObjectId}, and because a work objectId is a
+     * fixed-length UUID it can never be a prefix of another work's id, so no other document's
+     * checkpoint can match. Best-effort and org-scoped; every failure is swallowed and logged,
+     * because this is cleanup and never a reason to fail the caller.
      *
      * @return the number of orphaned checkpoint notes deleted
      */
@@ -4385,8 +4651,12 @@ public class PictureBookUtil {
             long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
             /// An explicit organizationId condition is required for a data.directory-derived list
             /// query or PBAC denies it (and the denial surfaces as an empty result, not an error).
-            Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_NAME,
-                    EXTRACT_PROGRESS_NOTE + "." + workObjectId);
+            /// The trailing '%' makes this a PREFIX match (StatementUtil only auto-wraps a LIKE
+            /// value that contains no '%'), catching the bare whole-document note AND every
+            /// range-suffixed chapter note for this work.
+            Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE);
+            q.field(FieldNames.FIELD_NAME, ComparatorEnumType.LIKE,
+                    EXTRACT_PROGRESS_NOTE + "." + workObjectId + "%");
             q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
             q.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID,
                 FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_NAME });
@@ -4416,8 +4686,17 @@ public class PictureBookUtil {
      * uses this so completing a run does not re-resolve the work record it just finished reading.
      */
     static void clearExtractCheckpointAt(BaseRecord user, String groupPath, String workObjectId) {
+        clearExtractCheckpointAt(user, groupPath, workObjectId, null, null);
+    }
+
+    /**
+     * Range-aware path-based clear. A null range clears the whole-document note; a present range
+     * clears only that chapter's own suffixed note.
+     */
+    static void clearExtractCheckpointAt(BaseRecord user, String groupPath, String workObjectId,
+            Integer startOffset, Integer endOffset) {
         try {
-            BaseRecord note = loadProgressNote(user, groupPath, workObjectId);
+            BaseRecord note = loadProgressNote(user, groupPath, workObjectId, startOffset, endOffset);
             if (note != null) {
                 IOSystem.getActiveContext().getAccessPoint().delete(user, note);
             }
@@ -4444,6 +4723,18 @@ public class PictureBookUtil {
     }
 
     /**
+     * Pre-N2 8-arg entry point (no cross-chapter roster seed). Retained so in-memory callers and the
+     * chunk-loop tests keep their exact signature; delegates with a null {@code seedRoster}, which is
+     * the pre-N2 behavior byte-for-byte.
+     */
+    static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
+            SummarizeProgress cancelToken, List<String> failedExtractions, String workObjectId,
+            boolean[] reachedEndOut, ChunkLlm llm) {
+        return extractChunkedInternal(user, chatConfig, text, cancelToken, failedExtractions, workObjectId,
+                reachedEndOut, llm, null);
+    }
+
+    /**
      * @param workObjectId  the source document, enabling incremental persistence and resume. When
      *                      null, checkpointing is skipped entirely and the method behaves exactly
      *                      as before — which is what the in-memory callers and existing tests rely on.
@@ -4454,11 +4745,17 @@ public class PictureBookUtil {
      *                      interrupted run to report completion. Same out-param idiom as
      *                      {@link #parseLlmJsonObject}'s {@code okOut}.
      * @param llm           the per-chunk model call; null means the real one. See {@link ChunkLlm}.
+     * @param seedRoster    N2 item 4: cross-chapter character names to seed the chunk prompt's
+     *                      {@code knownCharacters} roster with, so a character named in one chapter of
+     *                      a series is not re-invented as "the girl" in the next. Merged
+     *                      (isMeaningful-filtered, de-duped, order-preserving) with the in-run roster
+     *                      derived from the scenes extracted so far. null/empty = no seed = the pre-N2
+     *                      behavior, which every non-series caller and the existing tests rely on.
      */
     @SuppressWarnings("unchecked")
     static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
             SummarizeProgress cancelToken, List<String> failedExtractions, String workObjectId,
-            boolean[] reachedEndOut, ChunkLlm llm) {
+            boolean[] reachedEndOut, ChunkLlm llm, List<String> seedRoster) {
         int chunkSize = 2000;
         int overlap = 200;
         List<String> chunks = new ArrayList<>();
@@ -4622,7 +4919,12 @@ public class PictureBookUtil {
             /// knownCharacterNames. ALWAYS supplied, even empty: an unsupplied template variable is
             /// a HARD failure ("Refusing to call LLM for prompt ... first: '{knownCharacters}'"),
             /// which is how every landscape prompt once broke at once.
-            List<String> roster = knownCharacterNames(sceneList);
+            /// N2 item 4: the roster is the SERIES baseline cast (seedRoster, cross-chapter) UNION this
+            /// run's in-scene names, so "Darby" named in chapter 1 is not re-invented as "the girl" in
+            /// chapter 2. seedRoster is empty for a standalone (non-series) extraction, restoring the
+            /// pre-N2 in-run-only behavior exactly. Both inputs are isMeaningful-filtered again in the
+            /// merge, so an LLM literal "null"/"n/a" never reaches the prompt.
+            List<String> roster = mergeRoster(seedRoster, knownCharacterNames(sceneList));
             vars.put("knownCharacters", roster.isEmpty() ? "(none yet)" : String.join(", ", roster));
             vars.put("chunk", chunks.get(ci));
             // Extract this chunk's scenes, with a bounded retry: qwen3-class models occasionally emit
@@ -6144,6 +6446,20 @@ public class PictureBookUtil {
      */
     public static ScenesOnlyResult extractScenesOnly(BaseRecord user, String workObjectId, int count,
             String chatConfigName, String promptTemplateOverride, SummarizeProgress cancelToken) {
+        return extractScenesOnly(user, workObjectId, count, chatConfigName, promptTemplateOverride, cancelToken, null);
+    }
+
+    /**
+     * N2 item 4 overload: same as the KI-10 overload, plus an optional {@code seriesObjectId} whose
+     * baseline cast names seed the chunk prompt's cross-chapter roster (only the auto-chunk path
+     * consults the roster). {@code null}/blank = no seed = the unchanged standalone behavior. The seed
+     * is resolved once here via {@link #resolveSeriesRoster} (which never throws and yields an empty
+     * list for a standalone extraction or any miss), keeping the resolution — series read, world slug,
+     * baseline cast lookup — in this business-logic layer rather than in transport.
+     */
+    public static ScenesOnlyResult extractScenesOnly(BaseRecord user, String workObjectId, int count,
+            String chatConfigName, String promptTemplateOverride, SummarizeProgress cancelToken,
+            String seriesObjectId) {
         BaseRecord work = findWork(user, workObjectId);
         if (work == null) throw new PictureBookException(404, "Work not found");
 
@@ -6164,9 +6480,13 @@ public class PictureBookUtil {
             /// extractChunkedInternal owns the checkpoint lifecycle, including clearing it on a
             /// genuinely complete run. Deciding that here was wrong: from out here a cancel, an
             /// interrupt and a clean finish are indistinguishable.
+            /// N2 item 4: only the chunked path threads the cross-chapter roster - short single-shot
+            /// text never spans chapters, so seeding it would be noise.
+            List<String> seedRoster = resolveSeriesRoster(user, seriesObjectId,
+                    ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
             boolean[] reachedEnd = new boolean[] { true };
             List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken,
-                    failedExtractions, workObjectId, reachedEnd);
+                    failedExtractions, workObjectId, reachedEnd, null, seedRoster);
             return new ScenesOnlyResult(sceneList, true, failedExtractions, reachedEnd[0]);
         }
 
@@ -6205,6 +6525,17 @@ public class PictureBookUtil {
      */
     public static BaseRecord extractChunked(BaseRecord user, String workObjectId, String chatConfigName,
             SummarizeProgress cancelToken) {
+        return extractChunked(user, workObjectId, chatConfigName, cancelToken, null);
+    }
+
+    /**
+     * N2 item 4 overload: same as the KI-10 overload, plus an optional {@code seriesObjectId} whose
+     * baseline cast names seed the chunk prompt's cross-chapter roster. {@code null}/blank = no seed =
+     * the unchanged behavior. Resolution is delegated to {@link #resolveSeriesRoster} (never throws;
+     * empty for a standalone extraction or any miss).
+     */
+    public static BaseRecord extractChunked(BaseRecord user, String workObjectId, String chatConfigName,
+            SummarizeProgress cancelToken, String seriesObjectId) {
         BaseRecord work = findWork(user, workObjectId);
         if (work == null) throw new PictureBookException(404, "Work not found");
 
@@ -6219,9 +6550,11 @@ public class PictureBookUtil {
         }
 
         List<String> failedExtractions = new ArrayList<>();
+        List<String> seedRoster = resolveSeriesRoster(user, seriesObjectId,
+                ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
         boolean[] reachedEnd = new boolean[] { true };
         List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken,
-                failedExtractions, workObjectId, reachedEnd);
+                failedExtractions, workObjectId, reachedEnd, null, seedRoster);
         BaseRecord result = buildResult();
         try {
             result.set("sceneList", sceneList);
@@ -8620,9 +8953,62 @@ public class PictureBookUtil {
             }
         }
 
+        // §5/§8 EXPLICIT CONSTRAINT: a chapter belongs to a SERIES that shares ONE world across every
+        // chapter (book.world = series.universe). Deleting that world here would wipe the baseline cast,
+        // EVERY other chapter's shadow cast, and the shared population/events in a single call - the
+        // highest-risk over-deletion the plan calls out. So when this book carries a series FK, or the
+        // resolved world is referenced by any series, FORBID WorldUtil.deleteWorld and the shared-world
+        // population-group-recursive-delete outright, and scope the teardown to THIS chapter's own
+        // container groups (already removed in step 2). This makes what was previously an accidental
+        // safety - findWorld(bookWorldPath(), chapterSlug) happening to miss the seriesSlug-named world -
+        // an explicit, regression-proof refusal that also seals the chapterSlug == seriesSlug landmine.
+        boolean seriesChapter = false;
+        try {
+            seriesChapter = (book.hasField(OlioFieldNames.FIELD_PB_SERIES) && book.get(OlioFieldNames.FIELD_PB_SERIES) != null)
+                || (world != null && PbSeriesUtil.isSeriesWorld(world));
+        } catch (Exception e) {
+            logger.warn("teardownBookWorld: series detection failed for slug=" + slug + ": " + e.getMessage());
+        }
+
+        if (seriesChapter) {
+            logger.warn("teardownBookWorld: book " + bookOid + " (slug=" + slug + ") belongs to a book series; "
+                + "REFUSING to delete the shared series world. Scoping teardown to this chapter's own groups.");
+            // Do not evict the shared world's cached context - other chapters still use it.
+            worldObjectId = null;
+            // Remove THIS chapter's own (now-empty) container - the Worlds-parent child named by the chapter
+            // slug - but ONLY when it is not itself a series world's directory tree. A normal chapter's slug
+            // is unique in the book namespace and never names a world, so findWorld(bookWorldPath(), slug)
+            // missed above (world == null) and bookContainerPath(slug) holds only the Book/Workflow/Artifacts
+            // subgroups already removed in step 2 - safe to clear. But when findWorld RESOLVED a world at this
+            // exact path (world != null), the slug names the SHARED series world's container itself (the
+            // chapterSlug == seriesSlug landmine: getCreateSeries names the world by the series slug and does
+            // not reserve it in the book namespace, so a chapter can legitimately take it). That container's
+            // subgroups are the baseline cast plus EVERY chapter's shadow cast, population and events - a
+            // deleteGroupRecursive there is exactly the over-deletion this guard forbids. Step 2 already
+            // removed this chapter's own Book/Workflow/Artifacts subgroups, which is the correct scoped
+            // teardown; leave the shared container and its shared contents untouched.
+            if (world == null) {
+                BaseRecord container = IOSystem.getActiveContext().getPathUtil().findPath(olioUser,
+                    ModelNames.MODEL_GROUP, PbBookUtil.bookContainerPath(slug), GroupEnumType.DATA.toString(), orgId);
+                if (container != null && !deleteGroupRecursive(olioUser, container)) {
+                    ok = false;
+                }
+            } else {
+                logger.warn("teardownBookWorld: chapter slug '" + slug + "' names the shared series world's own "
+                    + "container; leaving that container and its shared cast/population/events intact and scoping "
+                    + "teardown to this chapter's own Book/Workflow/Artifacts subgroups (already removed in step 2).");
+            }
+            // #3e: this chapter's SHADOW records live OUTSIDE its own container, so step 2 did not touch
+            // them - drop them here, scoped to THIS chapter's slug (the series baseline and every OTHER
+            // chapter's shadows stay untouched). Extracted to dropChapterShadowGroups so the recopy sync op
+            // ("clear then reseed from baseline") reuses exactly this teardown.
+            if (!dropChapterShadowGroups(olioUser, book, slug, orgId)) {
+                ok = false;
+            }
+        }
         // 3. Purge the world (event/population records, container group tree, world record). When the world
         // is genuinely absent, fall back to clearing the container group tree so no orphan groups linger.
-        if (world != null) {
+        else if (world != null) {
             try {
                 if (!WorldUtil.deleteWorld(olioUser, world)) {
                     ok = false;
@@ -8668,6 +9054,61 @@ public class PictureBookUtil {
                 + "failures deleting nested artifacts; see server log.");
         }
         return DeleteResult.ok();
+    }
+
+    /**
+     * Drop a chapter's SHADOW records, scoped to THIS chapter's {@code slug} so the series baseline and
+     * every OTHER chapter's shadows are untouched. Shared by {@link #teardownBookWorld} (chapter delete,
+     * #3e) and {@code PbServiceFacade.recopyChapter} (the "clear then reseed from baseline" sync op):
+     * <ul>
+     *   <li>(a) the sibling {@code "Chapter Population {slug}"} character group under the SERIES world's
+     *       Population parent, holding this chapter's shadow {@code charPerson}s and their re-homed
+     *       render-state sub-records (narrative/portrait/apparel); and</li>
+     *   <li>(b) the book-scoped shadow cast group record ({@code "Chapter Cast {slug}"}) in the series
+     *       world's Book group, the tag that distinguished this chapter's shadows.</li>
+     * </ul>
+     * Both are derived from the book's world FK via {@code openBookContext}, never a slug path — the chapter
+     * slug does not name the shared series world, so a path derivation cannot reach either group. Physical
+     * deletes run as {@code olioUser} (the shadow records' owner). Returns true on full success, false if
+     * any delete failed; the caller sets its own aggregate flag.
+     */
+    static boolean dropChapterShadowGroups(BaseRecord olioUser, BaseRecord book, String slug, long orgId) {
+        boolean ok = true;
+        try {
+            BookContext sctx = PbBookUtil.openBookContext(olioUser, book);
+            if (sctx != null) {
+                String populationPath = sctx.getGroupPath("population");
+                if (populationPath != null) {
+                    String shadowPath = PbBookUtil.chapterShadowCharGroupPath(populationPath, slug);
+                    if (shadowPath != null) {
+                        BaseRecord shadowGrp = IOSystem.getActiveContext().getPathUtil().findPath(olioUser,
+                            ModelNames.MODEL_GROUP, shadowPath, GroupEnumType.DATA.toString(), orgId);
+                        if (shadowGrp != null && !deleteGroupRecursive(olioUser, shadowGrp)) {
+                            ok = false;
+                        }
+                    }
+                }
+                // The shadow cast group record lives in the series world's Book group. Its member
+                // participations reference the shadow charPersons deleted just above; drop the tag record
+                // itself so no orphan cast group survives the chapter.
+                String bookGroupPath = sctx.getGroupPath("book");
+                if (bookGroupPath != null) {
+                    BaseRecord shadowCast = PbCastUtil.findCastGroup(olioUser,
+                        PbCastUtil.shadowCastGroupName(slug), bookGroupPath, orgId);
+                    if (shadowCast != null) {
+                        DeleteResult castDel = deleteRecordExplained(olioUser, shadowCast);
+                        if (!castDel.deleted) {
+                            ok = false;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("dropChapterShadowGroups: failed to drop chapter shadow group(s) for slug=" + slug
+                + ": " + e.getMessage());
+            ok = false;
+        }
+        return ok;
     }
 
     /**

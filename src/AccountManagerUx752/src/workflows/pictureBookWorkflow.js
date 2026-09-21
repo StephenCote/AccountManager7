@@ -85,6 +85,32 @@ export async function listPb2Books() {
 }
 
 /**
+ * All chapter books of ONE series (N4 whole-series view), each with its series/chapter/world linkage.
+ * Unlike listPb2Books() (owner-filtered), this returns a series' chapters to any ENTITLED caller (a
+ * holder of the series Writer/Admin role) regardless of record owner — that is the whole point of the
+ * whole-series canvas.
+ *
+ * Returns [{objectId, name, slug, bookStatus, chapter, seriesObjectId, worldObjectId}, ...], sorted by
+ * chapter ascending server-side (the client re-sorts too). The DTO is plain JSON (no schema key), so no
+ * list schema-restoration is needed.
+ *
+ * Distinguishes the two "nothing to show" cases the caller must render differently:
+ *   - series does not exist → 404 → throws Error with .notFound === true
+ *   - series exists but the caller is not entitled, or it has no chapters → [] (empty array, resolved)
+ */
+export async function listSeriesBooks(seriesObjectId) {
+    let resp = await fetch(wfBase() + '/series/' + encodeURIComponent(seriesObjectId) + '/books',
+        { credentials: 'include' });
+    if (resp.status === 404) {
+        let err = new Error('Series not found: ' + seriesObjectId);
+        err.notFound = true;
+        throw err;
+    }
+    if (!resp.ok) throw new Error('listSeriesBooks failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
  * Ordered scene pages for a PB2 book.
  * Returns [{objectId, sceneIndex, title, blurb, summary, dataObjectId}, ...].
  * dataObjectId is null when no composite artifact has been generated yet.
@@ -95,12 +121,49 @@ export async function bookPages(pb2BookObjectId) {
     return resp.json();
 }
 
-/** Create the next chapter of a book. */
-export async function createChapter(fromPb2BookObjectId, slug, title, copyRecordModel, copyRecordObjectIds) {
-    let body = { fromBookObjectId: fromPb2BookObjectId, slug: slug };
+/**
+ * Chapter-heading → character-offset boundary detection for a manuscript (data.data).
+ * Read-only. Returns [{startOffset, endOffset, title}, ...] — the exact shape POST /chapter's
+ * sourceRange accepts, so a chosen (or hand-edited) range can be handed straight back to createChapter.
+ * A null title marks a leading front-matter / no-heading range; an empty array = no usable text.
+ */
+export async function detectBoundaries(sourceDataObjectId) {
+    let resp = await fetch(wfBase() + '/chapter/detect-boundaries?sourceDataObjectId='
+        + encodeURIComponent(sourceDataObjectId), { credentials: 'include' });
+    if (!resp.ok) throw new Error('detectBoundaries failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
+ * Create the next chapter of a book (or a series chapter).
+ * opts (all optional): { seriesObjectId, chapter, sourceDataObjectId, sourceRange }
+ *   - seriesObjectId: the olio.pb.series this chapter belongs to (shares the series' ONE world).
+ *   - chapter: 1-based ordinal within the series (absent ⇒ facade uses series bookCount).
+ *   - sourceDataObjectId: the data.data manuscript this chapter was cut from (N3 / Q8).
+ *   - sourceRange: {startOffset, endOffset, title} — the chosen boundary span within sourceData.
+ *     Sent as a plain nested object (NO inner schema key): the olio.pictureBookRequest model
+ *     declares sourceRange with baseModel olio.pb.sourceRange, so the type is resolved from the
+ *     top-level schema. Adding an inner "schema" here would defeat the server's ensureSchema()
+ *     top-level injection.
+ */
+export async function createChapter(fromPb2BookObjectId, slug, title, copyRecordModel, copyRecordObjectIds, opts) {
+    opts = opts || {};
+    let body = { slug: slug };
+    if (fromPb2BookObjectId) body.fromBookObjectId = fromPb2BookObjectId;
     if (title) body.title = title;
     if (copyRecordModel) body.copyRecordModel = copyRecordModel;
     if (copyRecordObjectIds && copyRecordObjectIds.length) body.copyRecordObjectIds = copyRecordObjectIds;
+    if (opts.seriesObjectId) body.seriesObjectId = opts.seriesObjectId;
+    if (opts.chapter != null) body.chapter = opts.chapter;
+    if (opts.sourceDataObjectId) body.sourceDataObjectId = opts.sourceDataObjectId;
+    if (opts.sourceRange) {
+        let sr = opts.sourceRange;
+        let range = {};
+        if (sr.startOffset != null) range.startOffset = Math.round(Number(sr.startOffset));
+        if (sr.endOffset != null) range.endOffset = Math.round(Number(sr.endOffset));
+        if (sr.title != null && String(sr.title).trim().length) range.title = String(sr.title).trim();
+        if (Object.keys(range).length) body.sourceRange = range;
+    }
     let resp = await fetch(wfBase() + '/chapter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

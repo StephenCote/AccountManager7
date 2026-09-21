@@ -295,6 +295,9 @@ public class OlioFieldNames {
 	public static final String FIELD_PB_CHAPTER = "chapter";
 	public static final String FIELD_PB_BOOK_COUNT = "bookCount";
 	public static final String FIELD_PB_SOURCE_DATA = "sourceData";
+	public static final String FIELD_PB_SOURCE_RANGE = "sourceRange";
+	public static final String FIELD_PB_START_OFFSET = "startOffset";
+	public static final String FIELD_PB_END_OFFSET = "endOffset";
 	public static final String FIELD_PB_SD_CONFIG = "sdConfig";
 	public static final String FIELD_PB_COMPOSITE_SD_CONFIG = "compositeSdConfig";
 	public static final String FIELD_PB_BOOK_STATUS = "bookStatus";
@@ -417,5 +420,8 @@ public class OlioFieldNames {
 	public static final String FIELD_CB_THEME = "theme";
 	public static final String FIELD_CB_MOOD = "mood";
 	public static final String FIELD_CB_KEYWORDS = "keywords";
+
+	/// olio.pb.castGroup — members participation list (participantModel pb.castGroup.member)
+	public static final String FIELD_PB_MEMBERS = "members";
 
 }

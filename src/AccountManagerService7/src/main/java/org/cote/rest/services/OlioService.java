@@ -25,6 +25,7 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
+import org.cote.accountmanager.olio.picturebook.PbSeriesUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileComparison;
@@ -715,6 +716,18 @@ public class OlioService {
 		wq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
 		BaseRecord world = IOSystem.getActiveContext().getAccessPoint().find(user, wq);
 		if (world == null) return Response.status(404).entity("{\"error\":\"World not found\"}").build();
+
+		// §5/§8 EXPLICIT CONSTRAINT: refuse to wipe a world that backs a book SERIES. A series shares ONE
+		// world across all its chapters (book.world = series.universe); WorldUtil.deleteWorld here would
+		// destroy the baseline cast, every chapter's shadow cast, and the shared population/events in a
+		// single call, while orphaning every chapter's book/scene/workflow rows. Deleting a series is a
+		// distinct lifecycle operation, not a raw world delete. Detection lives in Objects7 (this layer
+		// stays pure transport).
+		BaseRecord backingSeries = PbSeriesUtil.findSeriesByWorld(world);
+		if (backingSeries != null) {
+			return Response.status(409).entity("{\"error\":\"This world backs a book series; "
+				+ "delete the series, not its shared world.\"}").build();
+		}
 
 		// Populate 2 levels deep for cleanupWorld sub-group IDs
 		IOSystem.getActiveContext().getReader().populate(world, 2);

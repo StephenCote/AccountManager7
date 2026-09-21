@@ -82,6 +82,19 @@ public class PbOlioContextUtil {
 	public static final String BOOK_ROLE_BASE = "~/Roles/Olio/Books";
 
 	/**
+	 * The role base for SERIES-tier roles - {@code ~/Roles/Olio/Series/{slug}/Writer} and {@code .../Admin}.
+	 * <p>
+	 * A series owns exactly one shared world (its chapters are books that all reference
+	 * {@code series.universe}), so the series role pair is the per-book role pair's analogue at the series
+	 * scope: granted on the shared world's groups by {@link #getCreateSeriesContext(BaseRecord, String, String)},
+	 * and granted DIRECTLY (§8 REQUIRED #2) on each chapter's own book-row/workflow/artifact groups by
+	 * {@code PbBookUtil.createBook}'s series-aware path, because a chapter does not build a world of its own
+	 * and so runs no {@code initialize()} grant pass over its own groups. There is deliberately NO per-chapter
+	 * Writer/Admin pair - chapters are read and written through their series roles.
+	 */
+	public static final String SERIES_ROLE_BASE = "~/Roles/Olio/Series";
+
+	/**
 	 * The only shape a book slug may take: lowercase alphanumerics, dot, underscore and hyphen, first
 	 * character alphanumeric, 1-64 characters.
 	 * <p>
@@ -470,6 +483,231 @@ public class PbOlioContextUtil {
 			return false;
 		}
 		for(String rolePath : new String[] {writerRolePath(bookSlug), adminRolePath(bookSlug)}) {
+			BaseRecord role = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_ROLE, rolePath, RoleEnumType.USER.toString(), octx.getOrganizationId());
+			if(role != null && ioContext.getMemberUtil().isMember(user, role, null)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// ─────────────────────────────── series (N1) ───────────────────────────────
+
+	/** {@code ~/Roles/Olio/Series/{seriesSlug}/Writer} - read/create/update/delete across the series' shared world. */
+	public static String seriesWriterRolePath(String seriesSlug) {
+		return SERIES_ROLE_BASE + "/" + seriesSlug + "/Writer";
+	}
+
+	/** {@code ~/Roles/Olio/Series/{seriesSlug}/Admin} - full control of the series' shared world. */
+	public static String seriesAdminRolePath(String seriesSlug) {
+		return SERIES_ROLE_BASE + "/" + seriesSlug + "/Admin";
+	}
+
+	/**
+	 * {@code /Olio/Universes/Books/Book} - the universe's OWN {@code Book} group, where {@code olio.pb.series}
+	 * rows live.
+	 * <p>
+	 * This is deliberately the group PbBookUtil rejected for book <i>rows</i> (see that class's javadoc): a
+	 * child of the universe container, so the universe grant pass grants the shared universe {@code Reader}
+	 * role Read on it, and every series creator is a member of that role. That is exactly the isolation
+	 * property books must NOT have but a series intentionally does - a series is meant to be discoverable to
+	 * universe members, and its per-chapter data lives in the world (isolated by the series role pair), not
+	 * in this row.
+	 */
+	static String seriesRowGroupPath() {
+		return new OlioContextConfiguration().getUniversePath() + "/" + BOOKS_UNIVERSE + "/"
+			+ BookWorldInitializationRule.GROUP_BOOK;
+	}
+
+	/**
+	 * The series analogue of {@link #newBookConfiguration(BaseRecord, String, String)}: one shared world
+	 * named {@code seriesSlug} under the {@code Books} universe, granted to the SERIES role pair
+	 * ({@link #seriesWriterRolePath(String)} / {@link #seriesAdminRolePath(String)}) rather than a per-book
+	 * pair, plus the same organization-wide universe-tier roles.
+	 * <p>
+	 * A series world is a book-shaped world: no map, no realms, no population generation, but it DOES load the
+	 * same corpora ({@code GenericItemDataLoadRule}) because it holds the baseline and shadow cast for every
+	 * chapter, and generating a character needs apparel templates, colours and word lists.
+	 */
+	static OlioContextConfiguration newSeriesConfiguration(BaseRecord user, String dataPath, String seriesSlug) throws OlioException {
+		if(user == null) {
+			throw new OlioException("User is null");
+		}
+		validateBookSlug(seriesSlug);
+		IOContext ioContext = IOSystem.getActiveContext();
+		OrganizationContext octx = ioContext.findOrganizationContext(user);
+		if(octx == null) {
+			throw new OlioException("Failed to find organization context");
+		}
+		long orgId = octx.getOrganizationId();
+
+		BaseRecord olioUser = ioContext.getFactory().getCreateUser(octx.getAdminUser(), OlioContext.OLIO_USER_NAME, orgId);
+		if(olioUser == null) {
+			throw new OlioException("Failed to find or create the olio user");
+		}
+
+		BaseRecord writerRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, seriesWriterRolePath(seriesSlug), RoleEnumType.USER.toString(), orgId);
+		if(writerRole == null) {
+			throw new OlioException("Failed to create series role " + seriesWriterRolePath(seriesSlug));
+		}
+		BaseRecord adminRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, seriesAdminRolePath(seriesSlug), RoleEnumType.USER.toString(), orgId);
+		if(adminRole == null) {
+			throw new OlioException("Failed to create series role " + seriesAdminRolePath(seriesSlug));
+		}
+
+		/// The universe tier is the SAME shared pair books use - one per organization. A series does not get
+		/// its own universe role: the corpora it reads are the organization's, not the series'.
+		BaseRecord universeReaderRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, universeReaderRolePath(), RoleEnumType.USER.toString(), orgId);
+		if(universeReaderRole == null) {
+			throw new OlioException("Failed to create universe role " + universeReaderRolePath());
+		}
+		BaseRecord universeWriterRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, universeWriterRolePath(), RoleEnumType.USER.toString(), orgId);
+		if(universeWriterRole == null) {
+			throw new OlioException("Failed to create universe role " + universeWriterRolePath());
+		}
+
+		OlioContextConfiguration cfg = new OlioContextConfiguration(
+			user,
+			dataPath,
+			BOOKS_UNIVERSE,
+			seriesSlug,
+			new String[0],
+			0,
+			0,
+			false,
+			false
+		);
+		cfg.setBasePath("/Olio");
+		cfg.setRequireRealms(false);
+		cfg.setEnrolActingUser(false);
+		cfg.setAuthorizationUserRole(writerRole);
+		cfg.setAuthorizationAdminRole(adminRole);
+		cfg.setUniverseAuthorizationUserRole(universeReaderRole);
+		cfg.setUniverseAuthorizationAdminRole(universeWriterRole);
+		cfg.setScanNestedWorldGroups(true);
+		cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {
+			new BookWorldInitializationRule(),
+			new GenericItemDataLoadRule()
+		}));
+		return cfg;
+	}
+
+	/**
+	 * Create (or resolve) the one shared world for series {@code seriesSlug} and return its initialized
+	 * context. The series analogue of {@link #getCreateBookContext(BaseRecord, String, String)}, and it
+	 * follows the identical create-vs-open discipline: probe existence find-only with
+	 * {@link #findSeriesWorld(OrganizationContext, String)} BEFORE anything creates, enrol the creator in the
+	 * series {@code Writer} and universe {@code Reader} roles ONLY on genuine creation, and require an
+	 * already-entitled caller to open an existing series.
+	 * <p>
+	 * A series' chapters are books that all reference this one world ({@code book.world = series.universe}),
+	 * so there is exactly one world per series and it is created here, once.
+	 */
+	public static OlioContext getCreateSeriesContext(BaseRecord user, String dataPath, String seriesSlug) throws OlioException {
+		if(user == null) {
+			throw new OlioException("User is null");
+		}
+		validateBookSlug(seriesSlug);
+
+		IOContext ioContext = IOSystem.getActiveContext();
+		OrganizationContext octx = ioContext.findOrganizationContext(user);
+		if(octx == null) {
+			throw new OlioException("Failed to find organization context");
+		}
+
+		boolean preExisting = (findSeriesWorld(octx, seriesSlug) != null);
+		if(preExisting && !isEntitledToSeries(user, octx, seriesSlug)) {
+			throw new OlioException("Series '" + seriesSlug + "' already exists and "
+				+ user.get(FieldNames.FIELD_NAME) + " is not entitled to it."
+				+ " Opening an existing series requires membership of " + seriesWriterRolePath(seriesSlug)
+				+ " or " + seriesAdminRolePath(seriesSlug) + ".");
+		}
+
+		OlioContextConfiguration cfg = newSeriesConfiguration(user, dataPath, seriesSlug);
+
+		boolean verified = false;
+		try {
+			OlioContext ctx = OlioContextUtil.getCachedContext(user, BOOKS_UNIVERSE, seriesSlug, () -> {
+				OlioContext sctx = new OlioContext(cfg);
+				sctx.initialize();
+				return sctx;
+			});
+			if(ctx == null) {
+				throw new OlioException("Failed to construct a series context for " + seriesSlug);
+			}
+			if(!ctx.isAuthorizationConfigured()) {
+				throw new OlioException("Series context " + seriesSlug + " did not complete world authorization");
+			}
+			if(ctx.getWorld() == null || ctx.getUniverse() == null) {
+				throw new OlioException("Series context " + seriesSlug + " has no world or universe");
+			}
+
+			BaseRecord writerRole = cfg.getAuthorizationUserRole();
+			BaseRecord universeReaderRole = cfg.getUniverseAuthorizationUserRole();
+			if(!preExisting) {
+				if(!ctx.registerUser(octx.getAdminUser(), user, false)) {
+					throw new OlioException("Failed to enrol " + user.get(FieldNames.FIELD_NAME) + " in " + seriesWriterRolePath(seriesSlug));
+				}
+				if(!ioContext.getMemberUtil().isMember(user, writerRole, null)) {
+					throw new OlioException("Creator is not a member of " + seriesWriterRolePath(seriesSlug));
+				}
+				if(!ctx.registerUniverseUser(octx.getAdminUser(), user, false)) {
+					throw new OlioException("Failed to enrol " + user.get(FieldNames.FIELD_NAME) + " in " + universeReaderRolePath());
+				}
+				if(!ioContext.getMemberUtil().isMember(user, universeReaderRole, null)) {
+					throw new OlioException("Creator is not a member of " + universeReaderRolePath());
+				}
+			}
+
+			verifyGrants(ctx, writerRole, universeReaderRole, octx);
+			verified = true;
+			return ctx;
+		}
+		finally {
+			if(!verified) {
+				try {
+					evictBookContext(user, seriesSlug);
+				}
+				catch(Exception e) {
+					logger.error("Failed to evict the unverified series context " + seriesSlug + ": " + e.getMessage(), e);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Find-only: the {@code olio.world} for series {@code seriesSlug}, or null when it does not exist.
+	 * <p>
+	 * The series world shares the {@code /Olio/Universes/Books/Worlds} namespace with book worlds - a
+	 * documented limitation: a series and a standalone book cannot both take the same slug in one
+	 * organization. Creates nothing on any branch.
+	 */
+	private static BaseRecord findSeriesWorld(OrganizationContext octx, String seriesSlug) {
+		IOContext ioContext = IOSystem.getActiveContext();
+		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, octx.getOrganizationId());
+		if(olioUser == null) {
+			return null;
+		}
+		return WorldUtil.findWorld(olioUser, bookWorldPath(), seriesSlug);
+	}
+
+	/**
+	 * Is {@code user} already entitled to the EXISTING series {@code seriesSlug}? True for the organization
+	 * admin, or for a member of the series' own {@code Writer} or {@code Admin} role (both resolved
+	 * find-only). The series analogue of {@link #isEntitledToBook(BaseRecord, OrganizationContext, String)}.
+	 */
+	public static boolean isEntitledToSeries(BaseRecord user, OrganizationContext octx, String seriesSlug) {
+		IOContext ioContext = IOSystem.getActiveContext();
+		BaseRecord orgAdmin = octx.getAdminUser();
+		if(orgAdmin != null && orgAdmin.get(FieldNames.FIELD_ID) != null
+			&& orgAdmin.get(FieldNames.FIELD_ID).equals(user.get(FieldNames.FIELD_ID))) {
+			return true;
+		}
+		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, octx.getOrganizationId());
+		if(olioUser == null) {
+			return false;
+		}
+		for(String rolePath : new String[] {seriesWriterRolePath(seriesSlug), seriesAdminRolePath(seriesSlug)}) {
 			BaseRecord role = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_ROLE, rolePath, RoleEnumType.USER.toString(), octx.getOrganizationId());
 			if(role != null && ioContext.getMemberUtil().isMember(user, role, null)) {
 				return true;

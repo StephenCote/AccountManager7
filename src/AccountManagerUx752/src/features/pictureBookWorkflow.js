@@ -18,8 +18,15 @@ import { applicationPath } from '../core/config.js';
 import {
     getBookInfo, workflowView, nodeView, listStale,
     regenerateNode, pinNode, addMembers, createChapter, testNode,
-    saveCanvas, addBinding, deleteBinding
+    saveCanvas, addBinding, deleteBinding, detectBoundaries,
+    listSeriesBooks
 } from '../workflows/pictureBookWorkflow.js';
+import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
+import { ObjectPicker } from '../components/picker.js';
+
+// Re-exported for callers/tests that import from the canvas module (the pure impl lives in the
+// deps-free ../workflows/pictureBookSeries.js so it is testable without the mithril/router imports).
+export { groupBooksBySeries };
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -106,6 +113,41 @@ let chapterDialog = false;
 let chapterSlug = '';
 let chapterTitle = '';
 let recheckingStale = false;
+
+// N3 — chapter-from-manuscript boundary review state.
+// chapterSourceData: the selected data.data manuscript {objectId, name} (null = no source chosen).
+// boundaryRows: editable [{startOffset, endOffset, title}] detected (or hand-added) ranges.
+// selectedBoundaryIdx: which row becomes the chapter's sourceRange (-1 = none / whole document).
+// detectingBoundaries / boundaryError: loading + error surface for the detect call.
+let chapterSourceData = null;
+let boundaryRows = [];
+let selectedBoundaryIdx = -1;
+let detectingBoundaries = false;
+let boundaryError = null;
+let creatingChapter = false;
+
+// N4 — canvas view state. 'chapter' = the single-chapter workflow graph (zoom-to-single-chapter);
+// 'series' = the whole-series overview across the chapters of THIS book's series (via listSeriesBooks,
+// keyed on graphData.seriesObjectId — the series FK surfaced by workflowView).
+let viewMode = 'chapter';
+let seriesChapters = null;        // groupBooksBySeries() result once loaded (see loadSeriesChapters)
+let seriesChaptersLoading = false;
+let seriesChaptersError = null;
+let seriesChaptersLoaded = false; // true once a load has been attempted for the current book (a
+                                  // standalone book resolves to a null grouping, which must not retrigger
+                                  // a reload every time the Series tab is re-selected).
+
+function resetChapterDialogState() {
+    chapterDialog = false;
+    chapterSlug = '';
+    chapterTitle = '';
+    chapterSourceData = null;
+    boundaryRows = [];
+    selectedBoundaryIdx = -1;
+    detectingBoundaries = false;
+    boundaryError = null;
+    creatingChapter = false;
+}
 
 // ── Layout calculation ────────────────────────────────────────────────
 
@@ -342,16 +384,98 @@ async function doAddMembers() {
     m.redraw();
 }
 
+// N3 — let the user choose the source manuscript (data.data) this chapter is cut from.
+function openChapterSourcePicker() {
+    ObjectPicker.open({
+        type: 'data.data',
+        title: 'Select the source manuscript for this chapter',
+        onSelect: function (item) {
+            if (!item) return;
+            chapterSourceData = { objectId: item.objectId, name: item.name || 'Untitled' };
+            // Selecting a new manuscript invalidates any previously detected ranges.
+            boundaryRows = [];
+            selectedBoundaryIdx = -1;
+            boundaryError = null;
+            m.redraw();
+        }
+    });
+}
+
+// N3 — detect chapter-heading boundaries for the chosen manuscript, as editable rows.
+async function doDetectBoundaries() {
+    if (!chapterSourceData || detectingBoundaries) return;
+    detectingBoundaries = true;
+    boundaryError = null;
+    m.redraw();
+    try {
+        let ranges = await detectBoundaries(chapterSourceData.objectId);
+        boundaryRows = (ranges || []).map(function (r) {
+            return {
+                startOffset: r.startOffset != null ? r.startOffset : 0,
+                endOffset: r.endOffset != null ? r.endOffset : 0,
+                title: r.title != null ? r.title : '',
+            };
+        });
+        // Default selection: first row that carries a real heading (front-matter has none), else the first.
+        if (boundaryRows.length) {
+            let firstTitled = boundaryRows.findIndex(function (r) { return r.title && r.title.trim().length; });
+            selectedBoundaryIdx = firstTitled >= 0 ? firstTitled : 0;
+        } else {
+            selectedBoundaryIdx = -1;
+            boundaryError = 'No chapter boundaries detected — the document has no usable text or no headings. '
+                + 'Add a range manually, or leave unselected to cover the whole document.';
+        }
+    } catch (e) {
+        boundaryError = 'Boundary detection failed: ' + (e.message || '');
+        boundaryRows = [];
+        selectedBoundaryIdx = -1;
+    }
+    detectingBoundaries = false;
+    m.redraw();
+}
+
+// N3 — manual-override helpers for the editable boundary list.
+function addBoundaryRow() {
+    let last = boundaryRows.length ? boundaryRows[boundaryRows.length - 1] : null;
+    let start = last ? (last.endOffset || 0) : 0;
+    boundaryRows.push({ startOffset: start, endOffset: start, title: '' });
+    selectedBoundaryIdx = boundaryRows.length - 1;
+    m.redraw();
+}
+
+function removeBoundaryRow(idx) {
+    boundaryRows.splice(idx, 1);
+    if (selectedBoundaryIdx === idx) selectedBoundaryIdx = -1;
+    else if (selectedBoundaryIdx > idx) selectedBoundaryIdx -= 1;
+    m.redraw();
+}
+
 async function doCreateChapter() {
     if (!chapterSlug.trim()) { page.toast('error', 'Slug is required'); return; }
+    if (creatingChapter) return;
+    // If a boundary row is selected, validate its span before sending.
+    let opts = {};
+    if (chapterSourceData) opts.sourceDataObjectId = chapterSourceData.objectId;
+    if (selectedBoundaryIdx >= 0 && boundaryRows[selectedBoundaryIdx]) {
+        let r = boundaryRows[selectedBoundaryIdx];
+        let start = Math.round(Number(r.startOffset));
+        let end = Math.round(Number(r.endOffset));
+        if (!(end > start)) {
+            page.toast('error', 'Selected range is invalid: endOffset must be greater than startOffset');
+            return;
+        }
+        opts.sourceRange = { startOffset: start, endOffset: end, title: (r.title || '').trim() || null };
+    }
+    creatingChapter = true;
+    m.redraw();
     try {
-        let result = await createChapter(pb2BookObjectId, chapterSlug.trim(), chapterTitle.trim() || null);
+        let result = await createChapter(pb2BookObjectId, chapterSlug.trim(), chapterTitle.trim() || null,
+            null, null, opts);
         page.toast('success', 'Chapter created: ' + result.slug);
-        chapterDialog = false;
-        chapterSlug = '';
-        chapterTitle = '';
+        resetChapterDialogState();
     } catch (e) {
         page.toast('error', 'Chapter failed: ' + e.message);
+        creatingChapter = false;
     }
     m.redraw();
 }
@@ -646,13 +770,73 @@ function renderMemberDialog() {
     ]));
 }
 
+// N3 — one editable boundary row (radio-select + title + start/end offsets + char length).
+function renderBoundaryRow(r, idx) {
+    let selected = selectedBoundaryIdx === idx;
+    let len = (Number(r.endOffset) || 0) - (Number(r.startOffset) || 0);
+    let isFrontMatter = !(r.title && r.title.trim().length);
+    return m('div', {
+        key: idx,
+        'data-boundary-row': idx,
+        style: [
+            'display:flex;align-items:center;gap:6px;padding:6px;border-radius:6px;margin-bottom:4px;',
+            'border:1px solid ' + (selected ? '#3b82f6' : '#e2e8f0'),
+            selected ? 'background:#eff6ff;' : '',
+        ].join(''),
+    }, [
+        m('input', {
+            type: 'radio',
+            name: 'pb-boundary-select',
+            checked: selected,
+            'data-boundary-select': idx,
+            onchange: function () { selectedBoundaryIdx = idx; m.redraw(); },
+            style: 'flex-shrink:0;cursor:pointer;',
+        }),
+        m('input', {
+            type: 'text',
+            'data-boundary-title': idx,
+            value: r.title || '',
+            placeholder: isFrontMatter ? '(front matter)' : 'Chapter title',
+            oninput: function (e) { r.title = e.target.value; },
+            style: 'flex:1;min-width:0;border:1px solid #e2e8f0;border-radius:4px;padding:4px 6px;font-size:12px;'
+                + (isFrontMatter ? 'color:#94a3b8;font-style:italic;' : ''),
+        }),
+        m('input', {
+            type: 'number',
+            'data-boundary-start': idx,
+            value: r.startOffset,
+            title: 'startOffset (inclusive)',
+            oninput: function (e) { r.startOffset = e.target.value === '' ? '' : parseInt(e.target.value, 10); },
+            style: 'width:74px;border:1px solid #e2e8f0;border-radius:4px;padding:4px 6px;font-size:12px;',
+        }),
+        m('input', {
+            type: 'number',
+            'data-boundary-end': idx,
+            value: r.endOffset,
+            title: 'endOffset (exclusive)',
+            oninput: function (e) { r.endOffset = e.target.value === '' ? '' : parseInt(e.target.value, 10); },
+            style: 'width:74px;border:1px solid #e2e8f0;border-radius:4px;padding:4px 6px;font-size:12px;',
+        }),
+        m('span', {
+            style: 'font-size:10px;color:#64748b;width:64px;text-align:right;flex-shrink:0;',
+            title: 'character length',
+        }, (len > 0 ? len.toLocaleString() : '0') + ' ch'),
+        m('button', {
+            title: 'Remove this range',
+            'data-boundary-remove': idx,
+            style: 'border:none;background:none;cursor:pointer;color:#ef4444;font-size:14px;flex-shrink:0;',
+            onclick: function () { removeBoundaryRow(idx); },
+        }, '×'),
+    ]);
+}
+
 function renderChapterDialog() {
     if (!chapterDialog) return null;
     return m('div', {
         style: 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;',
-        onclick: function () { chapterDialog = false; m.redraw(); }
+        onclick: function () { resetChapterDialogState(); m.redraw(); }
     }, m('div', {
-        style: 'background:#fff;border-radius:10px;padding:24px;width:360px;',
+        style: 'background:#fff;border-radius:10px;padding:24px;width:560px;max-width:92vw;max-height:88vh;overflow-y:auto;',
         onclick: function (e) { e.stopPropagation(); }
     }, [
         m('h3', { style: 'font-weight:700;font-size:16px;margin-bottom:12px;' }, 'New Chapter'),
@@ -665,14 +849,67 @@ function renderChapterDialog() {
         }),
         m('label', { style: 'font-size:12px;font-weight:600;color:#374151;' }, 'Title (optional)'),
         m('input', {
-            style: 'width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:13px;box-sizing:border-box;',
+            style: 'width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:13px;box-sizing:border-box;margin-bottom:14px;',
             placeholder: 'Chapter Two',
             value: chapterTitle,
             oninput: function (e) { chapterTitle = e.target.value; },
         }),
-        m('div', { style: 'display:flex;gap:8px;margin-top:12px;justify-content:flex-end;' }, [
-            m('button', { style: 'border:1px solid #e2e8f0;border-radius:6px;padding:6px 14px;cursor:pointer;', onclick: function () { chapterDialog = false; m.redraw(); } }, 'Cancel'),
-            m('button', { style: 'background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-weight:600;', onclick: doCreateChapter }, 'Create'),
+
+        // N3 — source manuscript + boundary review
+        m('div', { style: 'border-top:1px solid #f1f5f9;padding-top:12px;' }, [
+            m('label', { style: 'font-size:12px;font-weight:600;color:#374151;' }, 'Source manuscript (optional)'),
+            m('div', { style: 'font-size:11px;color:#64748b;margin-bottom:6px;' },
+                'Pick the document this chapter is cut from, then detect its chapter boundaries and select the range for this chapter.'),
+            m('div', { style: 'display:flex;gap:8px;align-items:center;margin-bottom:10px;' }, [
+                m('button', {
+                    'data-pick-source': true,
+                    style: 'border:1px solid #3b82f6;color:#3b82f6;background:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;',
+                    onclick: openChapterSourcePicker,
+                }, chapterSourceData ? '📄 Change manuscript' : '📄 Choose manuscript'),
+                chapterSourceData ? m('span', {
+                    style: 'font-size:12px;color:#334155;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;',
+                    title: chapterSourceData.name,
+                }, chapterSourceData.name) : null,
+            ]),
+
+            chapterSourceData ? m('div', { style: 'margin-bottom:10px;' }, [
+                m('button', {
+                    'data-detect-boundaries': true,
+                    style: 'border:1px solid #a855f7;color:#7c3aed;background:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;'
+                        + (detectingBoundaries ? 'opacity:.6;' : ''),
+                    disabled: detectingBoundaries,
+                    onclick: doDetectBoundaries,
+                }, detectingBoundaries ? 'Detecting…' : '🔍 Detect chapter boundaries'),
+            ]) : null,
+
+            boundaryError ? m('div', {
+                style: 'font-size:11px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px;margin-bottom:8px;',
+            }, boundaryError) : null,
+
+            (chapterSourceData && boundaryRows.length) ? m('div', { style: 'margin-bottom:8px;' }, [
+                m('div', { style: 'display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;' }, [
+                    m('span', { style: 'font-size:12px;font-weight:600;color:#374151;' },
+                        'Detected ranges — edit titles/offsets, select this chapter’s range'),
+                ]),
+                m('div', { 'data-boundary-list': true }, boundaryRows.map(function (r, i) { return renderBoundaryRow(r, i); })),
+                m('button', {
+                    'data-add-boundary': true,
+                    style: 'border:1px dashed #cbd5e1;color:#64748b;background:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px;margin-top:4px;',
+                    onclick: addBoundaryRow,
+                }, '+ Add range'),
+                selectedBoundaryIdx < 0 ? m('div', { style: 'font-size:11px;color:#64748b;margin-top:6px;' },
+                    'No range selected — the chapter will cover the whole manuscript.') : null,
+            ]) : null,
+        ]),
+
+        m('div', { style: 'display:flex;gap:8px;margin-top:16px;justify-content:flex-end;' }, [
+            m('button', { style: 'border:1px solid #e2e8f0;border-radius:6px;padding:6px 14px;cursor:pointer;', onclick: function () { resetChapterDialogState(); m.redraw(); } }, 'Cancel'),
+            m('button', {
+                'data-create-chapter': true,
+                style: 'background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-weight:600;' + (creatingChapter ? 'opacity:.6;' : ''),
+                disabled: creatingChapter,
+                onclick: doCreateChapter,
+            }, creatingChapter ? 'Creating…' : 'Create'),
         ]),
     ]));
 }
@@ -797,6 +1034,123 @@ function onCanvasWheel(e) {
     m.redraw();
 }
 
+// ── N4 — whole-series view ────────────────────────────────────────────
+
+async function loadSeriesChapters() {
+    if (seriesChaptersLoading) return;
+    seriesChaptersLoading = true;
+    seriesChaptersError = null;
+    seriesChapters = null;
+    m.redraw();
+    try {
+        // The current chapter's series is the FK workflowView now surfaces. A null seriesObjectId
+        // means THIS book is standalone (not part of a series) — an honest empty state, not an error,
+        // so leave seriesChapters null and let renderSeriesView show the standalone message.
+        let seriesOid = graphData && graphData.seriesObjectId;
+        if (seriesOid) {
+            // listSeriesBooks returns THIS series' chapters visible to the caller (entitled non-owners
+            // included). Group/order via the shared pure helper: one series in, one ordered group out.
+            let books = await listSeriesBooks(seriesOid);
+            seriesChapters = groupBooksBySeries(books || []);
+        }
+    } catch (e) {
+        // 404 (series deleted) is distinct from an empty array (no entitlement / no chapters): the
+        // former throws with .notFound, the latter resolves to [] and never reaches here.
+        seriesChaptersError = (e && e.notFound)
+            ? 'This series no longer exists — it may have been deleted.'
+            : 'Failed to load series: ' + ((e && e.message) || '');
+        seriesChapters = null;
+    }
+    seriesChaptersLoaded = true;
+    seriesChaptersLoading = false;
+    m.redraw();
+}
+
+function setViewMode(mode) {
+    if (viewMode === mode) return;
+    viewMode = mode;
+    if (mode === 'series' && !seriesChaptersLoaded && !seriesChaptersLoading) {
+        loadSeriesChapters();
+    }
+    m.redraw();
+}
+
+// One chapter tile in the whole-series overview. Clicking zooms into that chapter's workflow graph.
+function renderSeriesChapterTile(b) {
+    let isCurrent = b && (b.objectId === pb2BookObjectId);
+    return m('div', {
+        key: b.objectId,
+        'data-series-chapter': b.objectId,
+        style: [
+            'border:2px solid ' + (isCurrent ? '#3b82f6' : '#e2e8f0'),
+            'border-radius:8px;padding:12px;cursor:pointer;background:' + (isCurrent ? '#eff6ff' : '#fff') + ';',
+            'width:200px;box-sizing:border-box;transition:border-color .1s;',
+        ].join(''),
+        onclick: function () {
+            // Zoom to a single chapter: load that book's workflow graph in place.
+            m.route.set('/picture-book/' + b.objectId + '/workflow');
+        },
+    }, [
+        m('div', { style: 'display:flex;align-items:center;gap:6px;margin-bottom:6px;' }, [
+            b.chapter != null ? m('span', {
+                style: 'font-size:10px;font-weight:700;color:#fff;background:#6366f1;border-radius:9999px;padding:2px 7px;flex-shrink:0;',
+            }, 'Ch ' + b.chapter) : null,
+            m('span', { style: 'font-size:11px;font-weight:700;padding:2px 7px;border-radius:9999px;color:#fff;flex-shrink:0;background:' + statusColor(b.bookStatus) },
+                (b.bookStatus || 'UNKNOWN').toUpperCase()),
+        ]),
+        m('div', { style: 'font-size:13px;font-weight:600;color:#111;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;', title: b.name || b.slug },
+            b.name || b.slug || '(untitled)'),
+        b.slug ? m('div', { style: 'font-size:11px;color:#64748b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;', title: b.slug }, b.slug) : null,
+        isCurrent ? m('div', { style: 'font-size:10px;color:#3b82f6;font-weight:600;margin-top:4px;' }, '● current') : null,
+    ]);
+}
+
+// A group header label that never leaks the raw series objectId: groupBooksBySeries falls back to the
+// series KEY (the objectId) when the DTO carries no series name — and our listSeriesBooks DTO does not
+// provide one — so when the name is just the key, show the neutral "Series" label instead.
+function seriesGroupLabel(g) {
+    if (g && g.seriesName && g.seriesName !== g.seriesKey) return g.seriesName;
+    return 'Series';
+}
+
+function renderSeriesView() {
+    let standalone = !seriesChaptersLoading && !seriesChaptersError && !seriesChapters
+        && !!(graphData && !graphData.seriesObjectId);
+    let totalChapters = seriesChapters
+        ? seriesChapters.groups.reduce(function (n, g) { return n + g.chapters.length; }, 0) : 0;
+    return m('div', { 'data-series-view': true, style: 'flex:1;overflow-y:auto;padding:20px;background:#f8fafc;' }, [
+        seriesChaptersLoading ? m('div', { style: 'text-align:center;color:#64748b;padding:40px;' }, 'Loading series…') : null,
+        seriesChaptersError ? m('div', { 'data-series-error': true, style: 'text-align:center;color:#dc2626;padding:40px;' }, seriesChaptersError) : null,
+        // Honest standalone state: THIS book is not part of a series (workflowView.seriesObjectId is null).
+        standalone ? m('div', {
+            'data-series-standalone': true,
+            style: 'text-align:center;color:#64748b;padding:40px;line-height:1.6;',
+        }, [
+            m('div', { style: 'font-size:15px;font-weight:600;color:#334155;margin-bottom:6px;' }, 'Not part of a series'),
+            m('div', { style: 'font-size:13px;' },
+                'This book is standalone — it has no series, so there are no sibling chapters to show. '
+                + 'Chapters created together as a series appear here.'),
+        ]) : null,
+        (!seriesChaptersLoading && !seriesChaptersError && seriesChapters) ? [
+            totalChapters === 0
+                // Series exists but nothing is visible to this caller (no entitlement, or empty series).
+                ? m('div', { 'data-series-empty': true, style: 'text-align:center;color:#64748b;padding:40px;line-height:1.6;' }, [
+                    m('div', { style: 'font-size:15px;font-weight:600;color:#334155;margin-bottom:6px;' }, 'No chapters to show'),
+                    m('div', { style: 'font-size:13px;' },
+                        'This series has no chapters you can access. Ask the series owner to add you as a writer.'),
+                ])
+                : seriesChapters.groups.map(function (g) {
+                    return m('div', { key: g.seriesKey || 'series', 'data-series-group': g.seriesKey || 'series', style: 'margin-bottom:24px;' }, [
+                        m('div', { style: 'font-size:14px;font-weight:700;color:#334155;margin-bottom:10px;' },
+                            seriesGroupLabel(g) + ' — ' + g.chapters.length + ' chapter' + (g.chapters.length === 1 ? '' : 's')),
+                        m('div', { style: 'display:flex;flex-wrap:wrap;gap:12px;' },
+                            g.chapters.map(function (b) { return renderSeriesChapterTile(b); })),
+                    ]);
+                }),
+        ] : null,
+    ]);
+}
+
 // ── Main view ─────────────────────────────────────────────────────────
 
 var pictureBookWorkflowView = {
@@ -828,10 +1182,13 @@ var pictureBookWorkflowView = {
         testLoading = {};
         memberDialog = false;
         memberNames = '';
-        chapterDialog = false;
-        chapterSlug = '';
-        chapterTitle = '';
+        resetChapterDialogState();
         recheckingStale = false;
+        viewMode = 'chapter';
+        seriesChapters = null;
+        seriesChaptersLoading = false;
+        seriesChaptersError = null;
+        seriesChaptersLoaded = false;
         loadGraph(bookGroupObjectId);
     },
     view: function () {
@@ -857,27 +1214,47 @@ var pictureBookWorkflowView = {
                 })() : null,
                 // Spacer
                 m('div', { style: 'flex:1;' }),
-                // Recheck stale button
-                pb2BookObjectId ? m('button', {
+                // N4 — view-mode toggle (single-chapter graph ⇄ whole-series overview).
+                m('div', {
+                    'data-view-mode-toggle': true,
+                    style: 'display:inline-flex;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin-right:4px;',
+                }, [
+                    m('button', {
+                        'data-view-mode': 'chapter',
+                        title: 'Show this chapter’s workflow graph',
+                        style: 'border:none;padding:4px 10px;cursor:pointer;font-size:12px;'
+                            + (viewMode === 'chapter' ? 'background:#3b82f6;color:#fff;' : 'background:#fff;color:#334155;'),
+                        onclick: function () { setViewMode('chapter'); },
+                    }, 'Chapter'),
+                    m('button', {
+                        'data-view-mode': 'series',
+                        title: 'Show all chapters in this series',
+                        style: 'border:none;padding:4px 10px;cursor:pointer;font-size:12px;'
+                            + (viewMode === 'series' ? 'background:#3b82f6;color:#fff;' : 'background:#fff;color:#334155;'),
+                        onclick: function () { setViewMode('series'); },
+                    }, 'Series'),
+                ]),
+                // Recheck stale button — only meaningful for the single-chapter graph.
+                (viewMode === 'chapter' && pb2BookObjectId) ? m('button', {
                     title: 'Recompute staleness from backend and reload graph',
                     style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
                     onclick: doRecheckStale,
                     disabled: recheckingStale,
                 }, recheckingStale ? '…' : '↻ Stale') : null,
-                // Zoom controls
-                m('button', {
+                // Zoom controls — graph-only.
+                viewMode === 'chapter' ? m('button', {
                     style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;',
                     onclick: function () { zoom = Math.max(0.3, zoom * 0.85); m.redraw(); }
-                }, '−'),
-                m('span', { style: 'font-size:12px;min-width:40px;text-align:center;' }, Math.round(zoom * 100) + '%'),
-                m('button', {
+                }, '−') : null,
+                viewMode === 'chapter' ? m('span', { style: 'font-size:12px;min-width:40px;text-align:center;' }, Math.round(zoom * 100) + '%') : null,
+                viewMode === 'chapter' ? m('button', {
                     style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;',
                     onclick: function () { zoom = Math.min(3, zoom * 1.15); m.redraw(); }
-                }, '+'),
-                m('button', {
+                }, '+') : null,
+                viewMode === 'chapter' ? m('button', {
                     style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
                     onclick: function () { pan = { x: 0, y: 0 }; zoom = 1; m.redraw(); }
-                }, 'Reset'),
+                }, 'Reset') : null,
                 // Share button
                 pb2BookObjectId ? m('button', {
                     class: 'btn',
@@ -902,14 +1279,17 @@ var pictureBookWorkflowView = {
                 }, '← Book'),
             ]),
 
+            // N4 — whole-series overview (distinct view state from the single-chapter graph).
+            viewMode === 'series' ? renderSeriesView() : null,
+
             // Error state (red) — a genuine failure (auth / server / network).
-            error ? m('div', { style: 'padding:32px;text-align:center;color:#dc2626;' }, error) : null,
+            (viewMode === 'chapter' && error) ? m('div', { style: 'padding:32px;text-align:center;color:#dc2626;' }, error) : null,
 
             // Empty state (grey) — one of the three honest "no graph to draw" cases (a/b/c).
-            (!error && emptyState) ? renderEmptyState() : null,
+            (viewMode === 'chapter' && !error && emptyState) ? renderEmptyState() : null,
 
-            // Graph canvas
-            (!error && !emptyState) ? m('div', {
+            // Graph canvas (zoom-to-single-chapter)
+            (viewMode === 'chapter' && !error && !emptyState) ? m('div', {
                 style: 'flex:1;overflow:hidden;position:relative;background:#f8fafc;cursor:' + (dragging ? 'grabbing' : 'grab') + ';',
                 onmousedown: onCanvasMouseDown,
                 onmousemove: onCanvasMouseMove,
@@ -931,8 +1311,8 @@ var pictureBookWorkflowView = {
                 ]),
             ]) : null,
 
-            // Node detail panel (fixed overlay)
-            renderNodeDetailPanel(),
+            // Node detail panel (fixed overlay) — chapter view only.
+            viewMode === 'chapter' ? renderNodeDetailPanel() : null,
 
             // Dialogs
             renderMemberDialog(),

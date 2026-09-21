@@ -132,6 +132,31 @@
 			"description": "PB2 phase 4: POST /chapter — the new chapter's title; falls back to the slug when absent."
 		},
 		{
+			"name": "seriesObjectId",
+			"type": "string",
+			"maxLength": 64,
+			"description": "N-series: POST /chapter — the olio.pb.series this chapter belongs to. When present the chapter shares the series' ONE world (book.world = series.universe), carries its series FK and chapter ordinal, and copyRecordObjectIds seed SHADOW charPersons rather than a fresh per-chapter world. Absent = a standalone book, unchanged. Must be declared or RecordDeserializer drops it (KI-24 pattern)."
+		},
+		{
+			"name": "chapter",
+			"type": "int",
+			"description": "N-series: POST /chapter — the 1-based chapter ordinal within the series. Optional; when absent PbBookUtil.createBook uses the series' current bookCount as the next ordinal. An int field returns 0 (not null) when absent (KI-25), so the facade treats a boxed Integer here as authoritative only when the client actually sent it."
+		},
+		{
+			"name": "sourceDataObjectId",
+			"type": "string",
+			"maxLength": 64,
+			"description": "N-series (Q8): POST /chapter — the data.data manuscript this chapter was cut from. Read as the acting user (canRead applies) and patched onto book.sourceData. Must be declared or RecordDeserializer drops it (KI-24 pattern)."
+		},
+		{
+			"name": "sourceRange",
+			"type": "model",
+			"baseModel": "olio.pb.sourceRange",
+			"foreign": false,
+			"ephemeral": true,
+			"description": "N-series (Q8): POST /chapter — the span within sourceDataObjectId this chapter covers (startOffset/endOffset/title). Transport extracts ONLY those three values into a fresh olio.pb.sourceRange the facade creates owned by the acting user; the client's identity/ownership fields are never persisted. A nested model field needs no inner schema (baseModel supplies the type)."
+		},
+		{
 			"name": "copyRecordModel",
 			"type": "string",
 			"maxLength": 128,

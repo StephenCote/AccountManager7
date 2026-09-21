@@ -31,6 +31,13 @@
 			"foreign": true
 		},
 		{
+			"name": "series",
+			"baseModel": "olio.pb.series",
+			"type": "model",
+			"foreign": true,
+			"description": "Set on a series-scoped BASELINE cast group (the canonical charPerson per character, shared across chapters). A per-chapter SHADOW cast group leaves this null and sets 'book' instead. Distinct names avoid the (name, groupId, organizationId) constraint colliding across the two tiers."
+		},
+		{
 			"name": "members",
 			"type": "list",
 			"baseType": "model",

@@ -1,0 +1,37 @@
+{
+	"name": "olio.pb.sourceRange",
+	"inherits": [
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "objectId", "ownerId", "organizationId", "urn"],
+	"icon": "format_list_numbered",
+	"label": "Source Range",
+	"group": "Book",
+	"description": "The span of a source document that a single chapter was extracted from. A lightweight, groupless sub-record hung off olio.pb.book.sourceRange: startOffset/endOffset bound the character range within sourceData, and title carries the chapter heading found at that boundary. Distinct from olio.pb.book.sourceData (which points at the whole document); this narrows that document to one chapter's slice so re-extraction and checkpointing are range-aware.",
+	"fields": [
+		{
+			"name": "startOffset",
+			"type": "int",
+			"description": "Inclusive character offset of the chapter's first character within sourceData."
+		},
+		{
+			"name": "endOffset",
+			"type": "int",
+			"description": "Exclusive character offset of the chapter's last character within sourceData."
+		},
+		{
+			"name": "title",
+			"type": "string",
+			"maxLength": 512,
+			"description": "The chapter heading detected at this boundary, if any."
+		},
+		{
+			"name": "sourceData",
+			"baseModel": "data.data",
+			"type": "model",
+			"foreign": true,
+			"description": "The full source document this range slices into. Usually the same data.data as the book's sourceData."
+		}
+	]
+}

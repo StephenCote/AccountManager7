@@ -2,22 +2,31 @@ package org.cote.accountmanager.olio.picturebook;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
+import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 
 /**
  * The one resolution layer phase 4's REST endpoints delegate to - the PictureBook equivalent of
@@ -171,6 +180,12 @@ public class PbServiceFacade {
 		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
 		out.put("slug", book.get(OlioFieldNames.FIELD_PB_SLUG));
 		out.put("bookName", book.get(FieldNames.FIELD_NAME));
+		/// N4 whole-series view: the client needs THIS chapter's series (and its ordinal) to call
+		/// listSeriesBooks and render the whole-series canvas. Both come from the same bookRequest()
+		/// projection requireBook already loaded as the acting user - null when the book is standalone
+		/// (not part of a series). Transport-only: no new read, no business logic.
+		out.put("seriesObjectId", fkObjectId(book, OlioFieldNames.FIELD_PB_SERIES, null));
+		out.put("chapter", book.get(OlioFieldNames.FIELD_PB_CHAPTER));
 		out.put("workflowObjectId", workflow.get(FieldNames.FIELD_OBJECT_ID));
 		out.put("graphVersion", workflow.get(OlioFieldNames.FIELD_PB_GRAPH_VERSION));
 		out.put("graphStatus", enumString(workflow, OlioFieldNames.FIELD_PB_GRAPH_STATUS));
@@ -396,42 +411,89 @@ public class PbServiceFacade {
 	}
 
 	/**
-	 * Create the next chapter of a book: a new book (its own world, groups and role pair) linked to the
-	 * source, optionally copying named records into it.
+	 * Create the next chapter of a series (or a standalone book when no series is given), persisting the
+	 * chapter's linkage and source provenance and, optionally, seeding its shadow cast from the series
+	 * baseline.
 	 * <p>
-	 * {@code PbBookUtil.createBook} stays the one creation path - this does not hand-roll a world. Copying
-	 * goes through {@code PbSharingUtil.copyToChapter}, which requires membership of <b>both</b> books and
-	 * records the lineage as a {@code chapterSource} binding.
+	 * <b>World creation goes through {@link PbBookUtil#createBook(BaseRecord, String, String, String,
+	 * BaseRecord, Integer)}, never hand-rolled here.</b> When {@code seriesObjectId} is given the chapter
+	 * shares the series' ONE world ({@code book.world = series.universe}) and carries its {@code series} FK
+	 * and {@code chapter} ordinal - no per-chapter world is created (Q6). When it is absent the unchanged
+	 * 4-arg {@code createBook} makes a standalone book with its own world, exactly as before.
 	 * <p>
-	 * §3.5 chose COPY over reference deliberately: apparel/wearables are per character, so a shared
-	 * instance would make deleting chapter 1 destroy chapter 2's data.
+	 * <b>Source provenance (Q8).</b> {@code sourceDataObjectId} links the chapter to the manuscript
+	 * ({@code data.data}) it was cut from; {@code sourceRange} narrows that to one span
+	 * ({@code startOffset}/{@code endOffset}/{@code title}) as a dedicated {@code olio.pb.sourceRange}
+	 * sub-record. {@code createBook} sets neither, so both are patched onto the book here.
+	 * <p>
+	 * <b>Copy is REDIRECTED to the shadow model on the series path (Q6).</b> {@code copyRecordObjectIds}
+	 * naming baseline {@code charPerson}s are cloned into the ONE series world's Population group and
+	 * enrolled into this chapter's book-scoped shadow cast group, so each chapter gets its own overwritable
+	 * shadow of a shared baseline. On the standalone path the legacy {@link PbSharingUtil#copyToChapter}
+	 * (per-book membership, sub-record re-homing into the chapter's own world) is used unchanged, honouring
+	 * §3.5's COPY-not-reference choice so deleting one book never destroys another's data.
 	 */
-	public static Map<String, Object> createChapter(BaseRecord user, String dataPath, String fromBookObjectId,
-			String toSlug, String toTitle, List<String> copyRecordObjectIds, String copyRecordModel) {
-		/// null/empty fromBookObjectId means "create a standalone root book" — the first book in a series.
-		/// A non-null value means "create the next chapter of that book" and requires it to be readable.
-		BaseRecord fromBook = (fromBookObjectId != null && !fromBookObjectId.trim().isEmpty())
-				? requireBook(user, fromBookObjectId) : null;
-		String fromSlug = (fromBook != null ? (String) fromBook.get(OlioFieldNames.FIELD_PB_SLUG) : null);
+	public static Map<String, Object> createChapter(BaseRecord user, String dataPath, String seriesObjectId,
+			String fromBookObjectId, String toSlug, String toTitle, Integer chapter, String sourceDataObjectId,
+			Map<String, Object> sourceRange, List<String> copyRecordObjectIds, String copyRecordModel) {
 		if(toSlug == null || toSlug.trim().length() == 0) {
 			throw new PictureBookException(400, "A slug is required for the new chapter");
 		}
 		long orgId = orgOf(user);
+
+		/// The series this chapter belongs to, when given. Read as the ACTING user through AccessPoint - a
+		/// series objectId the caller cannot read collapses to 404, never a leak. createBook does the
+		/// entitlement check itself; this only proves the series is real and visible.
+		BaseRecord series = null;
+		if(seriesObjectId != null && seriesObjectId.trim().length() > 0) {
+			series = PbSeriesUtil.readSeries(user, seriesObjectId.trim(), orgId);
+			if(series == null) {
+				throw new PictureBookException(404, "Series not found: " + seriesObjectId);
+			}
+		}
+
+		/// null/empty fromBookObjectId means "no explicit predecessor". A non-null value must be readable;
+		/// it is recorded as provenance (and, on the standalone path, gates the copy membership check) - the
+		/// series FK is the real chapter linkage now.
+		BaseRecord fromBook = (fromBookObjectId != null && !fromBookObjectId.trim().isEmpty())
+				? requireBook(user, fromBookObjectId) : null;
+		String fromSlug = (fromBook != null ? (String) fromBook.get(OlioFieldNames.FIELD_PB_SLUG) : null);
+
 		if(PbBookUtil.findBookBySlug(user, toSlug, orgId) != null) {
 			throw new PictureBookException(409, "A book with slug '" + toSlug + "' already exists");
 		}
 
-		BaseRecord toBook = PbBookUtil.createBook(user, dataPath, toSlug,
-			(toTitle != null && toTitle.trim().length() > 0) ? toTitle : toSlug);
+		/// The manuscript this chapter is cut from, when given. Read as the acting user so canRead applies -
+		/// linking a chapter to a document the caller cannot read is a 404, not a silent FK.
+		BaseRecord sourceData = null;
+		if(sourceDataObjectId != null && sourceDataObjectId.trim().length() > 0) {
+			sourceData = IOSystem.getActiveContext().getAccessPoint()
+				.findByObjectId(user, ModelNames.MODEL_DATA, sourceDataObjectId.trim());
+			if(sourceData == null) {
+				throw new PictureBookException(404, "Source document not found: " + sourceDataObjectId);
+			}
+		}
+
+		String title = (toTitle != null && toTitle.trim().length() > 0) ? toTitle : toSlug;
+		BaseRecord toBook = (series != null)
+				? PbBookUtil.createBook(user, dataPath, toSlug, title, series, chapter)
+				: PbBookUtil.createBook(user, dataPath, toSlug, title);
 		if(toBook == null) {
 			throw new PictureBookException(500, "Failed to create chapter '" + toSlug + "'");
 		}
 
+		/// Persist source provenance the creation path does not: the sourceData FK and, when a span is
+		/// given, a dedicated sourceRange sub-record.
+		persistSourceProvenance(user, orgId, toBook, sourceData, sourceRange);
+
 		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("seriesObjectId", series != null ? series.get(FieldNames.FIELD_OBJECT_ID) : null);
 		out.put("fromBookObjectId", fromBook != null ? fromBook.get(FieldNames.FIELD_OBJECT_ID) : null);
 		out.put("fromSlug", fromSlug);
 		out.put("bookObjectId", toBook.get(FieldNames.FIELD_OBJECT_ID));
 		out.put("slug", toSlug);
+		out.put("chapter", toBook.get(OlioFieldNames.FIELD_PB_CHAPTER));
+		out.put("sourceDataObjectId", sourceData != null ? sourceData.get(FieldNames.FIELD_OBJECT_ID) : null);
 		out.put("copied", Integer.valueOf(0));
 
 		if(copyRecordObjectIds == null || copyRecordObjectIds.isEmpty()) {
@@ -446,12 +508,6 @@ public class PbServiceFacade {
 		if(toCtx == null) {
 			throw new PictureBookException(500, "Chapter '" + toSlug + "' has no assemblable world to copy into");
 		}
-		String destField = PbSubRecordUtil.WORLD_GROUP_FIELD.get(copyRecordModel);
-		BaseRecord destGroup = (destField != null ? toCtx.getGroup(destField) : null);
-		if(destGroup == null) {
-			throw new PictureBookException(400, "No chapter destination group is declared for " + copyRecordModel
-				+ " - copyable models are " + PbSubRecordUtil.WORLD_GROUP_FIELD.keySet());
-		}
 
 		List<BaseRecord> sources = new ArrayList<>();
 		for(String oid : copyRecordObjectIds) {
@@ -462,14 +518,394 @@ public class PbServiceFacade {
 			}
 			sources.add(src);
 		}
-		List<BaseRecord> copies = PbSharingUtil.copyToChapter(user, fromSlug, toSlug, sources, destGroup, null, null,
-			null);
+
+		List<BaseRecord> copies;
+		if(series != null) {
+			/// SERIES PATH (Q6): seed this chapter's SHADOW cast from the baseline. Only charPerson is a cast
+			/// member; the shadow clones land in the ONE series world's Population group (not a fresh per-book
+			/// world) and are tagged by this chapter's book-scoped shadow cast group. Overwriting a shadow
+			/// later, or deleting this chapter, touches only these tagged clones - never the baseline and
+			/// never another chapter's shadows.
+			if(!OlioModelNames.MODEL_CHAR_PERSON.equals(copyRecordModel)) {
+				throw new PictureBookException(400, "Only " + OlioModelNames.MODEL_CHAR_PERSON
+					+ " may be seeded as chapter shadows on a series chapter; got " + copyRecordModel);
+			}
+			/// The series world's baseline Population group path is the anchor for this chapter's shadow
+			/// character group (a SIBLING of it). Shadows must NOT land in Population itself: a baseline
+			/// character and its per-chapter shadows share the same load-bearing name by design, so the
+			/// (name, groupId, organizationId) constraint would collide (Defect 1).
+			String populationPath = toCtx.getGroupPath("population");
+			if(populationPath == null) {
+				throw new PictureBookException(500,
+					"The series world has no population group to anchor the chapter shadow group");
+			}
+			BaseRecord seriesWorld = series.get(OlioFieldNames.FIELD_PB_UNIVERSE);
+			String seriesSlug = (seriesWorld != null ? (String) seriesWorld.get(FieldNames.FIELD_NAME) : null);
+			if(seriesSlug == null) {
+				throw new PictureBookException(500, "The series' shared world has no name to scope the cast group by");
+			}
+			/// The chapter's own shadow character group: distinct groupId (no name collision), names
+			/// preserved, inside the series world's group tree, granted to the series role pair and proven
+			/// readable by the creator. The shadow clones and their re-homed render-state sub-records land
+			/// here; the book-scoped shadow cast group only TAGS them by chapter.
+			BaseRecord shadowCharGroup = PbBookUtil.getCreateChapterShadowCharGroup(user, seriesSlug,
+				populationPath, toSlug, orgId);
+			BaseRecord shadowCast = PbCastUtil.getCreateShadowCastGroup(user, toBook, toSlug,
+				PbBookUtil.bookGroupPath(seriesSlug), orgId);
+			copies = PbSharingUtil.copyToChapterShadow(user, sources, shadowCharGroup, shadowCast, null, null, null);
+		}
+		else {
+			/// STANDALONE PATH: unchanged legacy copy into the chapter's OWN world, keyed by the model's world
+			/// group and gated by per-book membership of both slugs.
+			String destField = PbSubRecordUtil.WORLD_GROUP_FIELD.get(copyRecordModel);
+			BaseRecord destGroup = (destField != null ? toCtx.getGroup(destField) : null);
+			if(destGroup == null) {
+				throw new PictureBookException(400, "No chapter destination group is declared for " + copyRecordModel
+					+ " - copyable models are " + PbSubRecordUtil.WORLD_GROUP_FIELD.keySet());
+			}
+			copies = PbSharingUtil.copyToChapter(user, fromSlug, toSlug, sources, destGroup, null, null, null);
+		}
+
 		out.put("copied", Integer.valueOf(copies.size()));
 		List<String> copiedIds = new ArrayList<>();
 		for(BaseRecord c : copies) {
 			copiedIds.add((String) c.get(FieldNames.FIELD_OBJECT_ID));
 		}
 		out.put("copiedObjectIds", copiedIds);
+		return out;
+	}
+
+	// ─────────────────────────────── shadow-cast sync ops (Q6: recopy / merge) ───────────────────────────────
+
+	/**
+	 * <b>Recopy</b> a chapter's shadow cast from the series baseline: discard this chapter's shadow edits and
+	 * reseed each shadow wholesale from its baseline counterpart (Q6 sync op "recopy"). The counterpart of
+	 * {@link #mergeChapter}, which keeps the chapter's edits and only overlays shared attributes.
+	 * <p>
+	 * <b>Authorized as an UPDATE of the chapter, as the acting user.</b> {@link #requireBook} 404s a book the
+	 * caller cannot read; {@code AuthorizationUtil.canUpdate} then gates the write so a read-but-not-update
+	 * caller gets a 403 (mirrors {@code teardownBookWorld}'s {@code canDelete} gate).
+	 * <p>
+	 * <b>Clear then reseed, both scoped to THIS chapter's slug.</b> The clear reuses
+	 * {@code PictureBookUtil.dropChapterShadowGroups} - the exact teardown a chapter-delete runs (#3e) - so the
+	 * series baseline and every OTHER chapter's shadows are untouched; the physical deletes run as the olio
+	 * principal (the shadow records' owner). The reseed recreates the (now empty) shadow character and cast
+	 * groups and calls {@link PbSharingUtil#copyToChapterShadow}, exactly as first-time seeding does in
+	 * {@link #createChapter}.
+	 * <p>
+	 * <b>Reseeds the chapter's CURRENT cast, by name.</b> Only baseline characters whose name matches an
+	 * existing shadow are reseeded, so recopy rebuilds the cast this chapter had rather than pulling in
+	 * characters it never included. When the chapter has no shadows yet, the whole baseline is seeded
+	 * (first-time semantics). Scene-to-character links resolve BY NAME at render time, so reseeding the same
+	 * names auto-relinks the chapter's scenes - no participation is re-pointed.
+	 *
+	 * @return {bookObjectId, slug, seriesObjectId, recopied (count), recopiedObjectIds}
+	 */
+	public static Map<String, Object> recopyChapter(BaseRecord user, String bookObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		long orgId = orgOf(user);
+		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, book);
+		if(prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+			throw new PictureBookException(403, "Not authorized to recopy this chapter's cast");
+		}
+
+		SeriesScope scope = requireSeriesScope(user, book, orgId);
+
+		/// The baseline cast and its members - the canonical characters to reseed from.
+		BaseRecord baselineCast = PbCastUtil.findCastGroup(user, PbCastUtil.baselineCastGroupName(scope.seriesSlug),
+			scope.castGroupPath, orgId);
+		if(baselineCast == null) {
+			throw new PictureBookException(404, "The series has no baseline cast to recopy from");
+		}
+		List<BaseRecord> baselineMembers = PbCastUtil.listCastMembers(user, baselineCast);
+		if(baselineMembers.isEmpty()) {
+			throw new PictureBookException(404, "The series baseline cast is empty; nothing to recopy");
+		}
+
+		/// Capture the names of THIS chapter's current shadows BEFORE the clear so the reseed restores exactly
+		/// the same cast (and no more). Read now - after dropChapterShadowGroups the shadow cast is gone.
+		Set<String> keepNames = new HashSet<>();
+		BaseRecord shadowCast = PbCastUtil.findCastGroup(user, PbCastUtil.shadowCastGroupName(scope.slug),
+			scope.castGroupPath, orgId);
+		if(shadowCast != null) {
+			for(BaseRecord m : PbCastUtil.listCastMembers(user, shadowCast)) {
+				String nm = m.get(FieldNames.FIELD_NAME);
+				if(nm != null && nm.trim().length() > 0) {
+					keepNames.add(nm.trim().toLowerCase());
+				}
+			}
+		}
+
+		/// Select baseline members to reseed: those matching an existing shadow (rebuild the current cast), or
+		/// the whole baseline when the chapter has no shadows yet (first-time seed).
+		List<BaseRecord> toSeed = new ArrayList<>();
+		for(BaseRecord b : baselineMembers) {
+			String nm = b.get(FieldNames.FIELD_NAME);
+			String key = (nm != null ? nm.trim().toLowerCase() : null);
+			if(keepNames.isEmpty() || (key != null && keepNames.contains(key))) {
+				toSeed.add(b);
+			}
+		}
+		if(toSeed.isEmpty()) {
+			throw new PictureBookException(404, "No baseline characters match this chapter's cast; nothing to recopy");
+		}
+
+		/// Clear this chapter's existing shadows as the olio principal, scoped to THIS chapter's slug - the same
+		/// teardown a chapter delete runs. Leaves the shared Population group and baseline intact.
+		BaseRecord olioUser = IOSystem.getActiveContext().getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		if(olioUser == null) {
+			throw new PictureBookException(500, "No olio principal in organization " + orgId);
+		}
+		if(!PictureBookUtil.dropChapterShadowGroups(olioUser, book, scope.slug, orgId)) {
+			throw new PictureBookException(500,
+				"Failed to clear this chapter's existing shadows before recopy; see server log");
+		}
+
+		/// Recreate the (now empty) shadow character + cast groups and reseed from baseline, exactly as
+		/// first-time seeding does in createChapter's series path.
+		BookContext ctx = PbBookUtil.openBookContext(user, book);
+		if(ctx == null) {
+			throw new PictureBookException(500, "This chapter has no assemblable world to reseed shadows into");
+		}
+		String populationPath = ctx.getGroupPath("population");
+		if(populationPath == null) {
+			throw new PictureBookException(500,
+				"The series world has no population group to anchor the chapter shadow group");
+		}
+		BaseRecord shadowCharGroup = PbBookUtil.getCreateChapterShadowCharGroup(user, scope.seriesSlug,
+			populationPath, scope.slug, orgId);
+		BaseRecord newShadowCast = PbCastUtil.getCreateShadowCastGroup(user, book, scope.slug, scope.castGroupPath, orgId);
+		List<BaseRecord> copies = PbSharingUtil.copyToChapterShadow(user, toSeed, shadowCharGroup, newShadowCast,
+			null, null, null);
+
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("slug", scope.slug);
+		out.put("seriesObjectId", scope.series.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("recopied", Integer.valueOf(copies.size()));
+		List<String> ids = new ArrayList<>();
+		for(BaseRecord c : copies) {
+			ids.add((String) c.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		out.put("recopiedObjectIds", ids);
+		return out;
+	}
+
+	/**
+	 * <b>Merge</b> series baseline updates into a chapter's existing shadows: pull the baseline's shared scalar
+	 * attributes into each shadow while KEEPING the chapter's own overrides - apparel, state/pose, narrative,
+	 * portrait (Q6 sync op "merge"). The non-destructive counterpart of {@link #recopyChapter}.
+	 * <p>
+	 * <b>Authorized as an UPDATE of the chapter, as the acting user</b> (same gate as {@link #recopyChapter}).
+	 * The pull itself is {@link PbSharingUtil#mergeChapterShadows}, which matches shadow to baseline by name,
+	 * overwrites only non-null baseline scalars, and leaves every foreign/nested override standing. Nothing is
+	 * cleared or re-created, and no scene link is re-pointed (the shadow keeps its identity and name).
+	 *
+	 * @return {bookObjectId, slug, seriesObjectId, merged (count)}
+	 */
+	public static Map<String, Object> mergeChapter(BaseRecord user, String bookObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		long orgId = orgOf(user);
+		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, book);
+		if(prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+			throw new PictureBookException(403, "Not authorized to merge this chapter's cast");
+		}
+
+		SeriesScope scope = requireSeriesScope(user, book, orgId);
+
+		BaseRecord baselineCast = PbCastUtil.findCastGroup(user, PbCastUtil.baselineCastGroupName(scope.seriesSlug),
+			scope.castGroupPath, orgId);
+		if(baselineCast == null) {
+			throw new PictureBookException(404, "The series has no baseline cast to merge from");
+		}
+		BaseRecord shadowCast = PbCastUtil.findCastGroup(user, PbCastUtil.shadowCastGroupName(scope.slug),
+			scope.castGroupPath, orgId);
+		if(shadowCast == null) {
+			throw new PictureBookException(404, "This chapter has no shadow cast to merge into; seed it first");
+		}
+		List<BaseRecord> baselineMembers = PbCastUtil.listCastMembers(user, baselineCast);
+		List<BaseRecord> shadowMembers = PbCastUtil.listCastMembers(user, shadowCast);
+		int merged = PbSharingUtil.mergeChapterShadows(user, shadowMembers, baselineMembers);
+
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("slug", scope.slug);
+		out.put("seriesObjectId", scope.series.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("merged", Integer.valueOf(merged));
+		return out;
+	}
+
+	/**
+	 * The series-scoped facts both sync ops need, resolved once and validated: the book must be a series
+	 * chapter (carry a {@code series} FK), the series must be readable, and the shared world must have a name.
+	 * Mirrors {@code createChapter}'s series-path resolution so recopy/merge target exactly the groups seeding
+	 * created.
+	 */
+	private static SeriesScope requireSeriesScope(BaseRecord user, BaseRecord book, long orgId) {
+		BaseRecord seriesRef = book.get(OlioFieldNames.FIELD_PB_SERIES);
+		if(seriesRef == null) {
+			throw new PictureBookException(400,
+				"This book is not a series chapter; there is no baseline cast to sync from");
+		}
+		String seriesObjectId = seriesRef.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord series = PbSeriesUtil.readSeries(user, seriesObjectId, orgId);
+		if(series == null) {
+			throw new PictureBookException(404, "The series this chapter belongs to is not readable");
+		}
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+		if(slug == null || slug.trim().length() == 0) {
+			throw new PictureBookException(500, "This chapter has no slug to scope its shadows by");
+		}
+		BaseRecord seriesWorld = series.get(OlioFieldNames.FIELD_PB_UNIVERSE);
+		String seriesSlug = (seriesWorld != null ? (String) seriesWorld.get(FieldNames.FIELD_NAME) : null);
+		if(seriesSlug == null) {
+			throw new PictureBookException(500, "The series' shared world has no name to scope the cast group by");
+		}
+		SeriesScope scope = new SeriesScope();
+		scope.series = series;
+		scope.slug = slug;
+		scope.seriesSlug = seriesSlug;
+		scope.castGroupPath = PbBookUtil.bookGroupPath(seriesSlug);
+		return scope;
+	}
+
+	/** Resolved series-scoped facts for a chapter sync op. */
+	private static final class SeriesScope {
+		private BaseRecord series;
+		private String slug;
+		private String seriesSlug;
+		private String castGroupPath;
+	}
+
+	/**
+	 * Patch the chapter's {@code sourceData} FK and, when a range is supplied, create and link a dedicated
+	 * {@code olio.pb.sourceRange} sub-record (Q8).
+	 * <p>
+	 * The sourceRange is groupless provenance ({@code common.baseLight}); it is created owned by the acting
+	 * user via {@code RecordUtil} (its FK is then read back through the authorized book projection) and its
+	 * reference is patched onto the book as the acting user, PATCH-shaped (identity + name + only the fields
+	 * being set) and result-asserted so a silent write failure cannot pass for success. Only the fields
+	 * actually being set are included in the patch, so a range-only call never blanks an existing
+	 * {@code sourceData} and vice versa.
+	 */
+	private static void persistSourceProvenance(BaseRecord user, long orgId, BaseRecord book,
+			BaseRecord sourceData, Map<String, Object> sourceRange) {
+		boolean haveRange = (sourceRange != null && !sourceRange.isEmpty());
+		if(sourceData == null && !haveRange) {
+			return;
+		}
+
+		BaseRecord rangeRec = null;
+		if(haveRange) {
+			try {
+				rangeRec = RecordFactory.newInstance(OlioModelNames.MODEL_PB_SOURCE_RANGE);
+				IOSystem.getActiveContext().getRecordUtil().applyOwnership(user, rangeRec, orgId);
+				Object so = sourceRange.get(OlioFieldNames.FIELD_PB_START_OFFSET);
+				Object eo = sourceRange.get(OlioFieldNames.FIELD_PB_END_OFFSET);
+				if(so instanceof Number) {
+					rangeRec.set(OlioFieldNames.FIELD_PB_START_OFFSET, Integer.valueOf(((Number) so).intValue()));
+				}
+				if(eo instanceof Number) {
+					rangeRec.set(OlioFieldNames.FIELD_PB_END_OFFSET, Integer.valueOf(((Number) eo).intValue()));
+				}
+				Object rt = sourceRange.get(OlioFieldNames.FIELD_PB_TITLE);
+				if(rt != null && rt.toString().trim().length() > 0) {
+					rangeRec.set(OlioFieldNames.FIELD_PB_TITLE, rt.toString());
+				}
+				/// The span's own back-reference to the manuscript, when known - the book keeps its own
+				/// sourceData FK too, but the range records which document its offsets index into.
+				if(sourceData != null) {
+					rangeRec.set(OlioFieldNames.FIELD_PB_SOURCE_DATA, sourceData);
+				}
+			}
+			catch(FieldException | ValueException | ModelNotFoundException e) {
+				throw new PictureBookException(500, "Failed to assemble the chapter source range: " + e.getMessage());
+			}
+			if(!IOSystem.getActiveContext().getRecordUtil().createRecord(rangeRec)) {
+				throw new PictureBookException(500, "Failed to persist the chapter source range");
+			}
+		}
+
+		List<String> patchFields = new ArrayList<>();
+		if(sourceData != null) {
+			patchFields.add(OlioFieldNames.FIELD_PB_SOURCE_DATA);
+		}
+		if(rangeRec != null) {
+			patchFields.add(OlioFieldNames.FIELD_PB_SOURCE_RANGE);
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(book, OlioModelNames.MODEL_PB_BOOK,
+			patchFields.toArray(new String[0]));
+		try {
+			if(sourceData != null) {
+				patch.set(OlioFieldNames.FIELD_PB_SOURCE_DATA, sourceData);
+			}
+			if(rangeRec != null) {
+				patch.set(OlioFieldNames.FIELD_PB_SOURCE_RANGE, rangeRec);
+			}
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble the chapter source patch: " + e.getMessage());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Chapter '" + book.get(OlioFieldNames.FIELD_PB_SLUG)
+				+ "' was created but its source provenance could not be linked");
+		}
+	}
+
+	/**
+	 * Detect chapter boundaries in a manuscript ({@code data.data}) and return them as character-offset
+	 * ranges shaped to feed {@link #createChapter}'s {@code sourceRange} argument (N3).
+	 * <p>
+	 * <b>Read-only.</b> Nothing is written. The manuscript is resolved as the ACTING user through
+	 * {@code AccessPoint.find} - a manuscript uploaded by the user is user-owned, so it resolves under the
+	 * caller's own PBAC and an objectId the caller cannot read collapses to a 404, never a leak. Text is
+	 * extracted with the repo's bounded, content-type-aware office-doc path
+	 * ({@link ChapBookUtil#extractPoemText(BaseRecord)}, which reads the byteStore via
+	 * {@code ByteModelUtil.getValue} and routes to {@code DocumentUtil.readDocument(bytes, cap, ct)} - never
+	 * a raw byteStore read and never Tika in Service7). Detection is the pure, side-effect-free
+	 * {@link PbChapterBoundaryUtil#detectBoundaries(String)} (no DB, no embedding, unlike
+	 * {@code VectorUtil.chunkByChapter}).
+	 * <p>
+	 * Returns one ordered map per range: {@code {startOffset, endOffset, title}} - exactly the shape the
+	 * {@code POST /chapter} body's {@code sourceRange} accepts, so a chosen (or hand-edited) range can be
+	 * handed straight back to {@link #createChapter}. {@code title} is {@code null} for a leading
+	 * front-matter or no-heading range. An empty list means the document extracted to no usable text.
+	 */
+	public static List<Map<String, Object>> detectSourceBoundaries(BaseRecord user, String sourceDataObjectId) {
+		if(user == null) {
+			throw new PictureBookException(401, "No authenticated principal");
+		}
+		if(sourceDataObjectId == null || sourceDataObjectId.trim().length() == 0) {
+			throw new PictureBookException(400, "A sourceDataObjectId is required");
+		}
+		long orgId = orgOf(user);
+
+		/// Resolve the manuscript as the acting user so canRead applies. planMost(true) + no cache so the
+		/// byteStore is populated with fresh bytes - a minimal findByObjectId projection would omit it.
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, sourceDataObjectId.trim());
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.planMost(true);
+		q.setCache(false);
+		BaseRecord data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		if(data == null) {
+			throw new PictureBookException(404, "Source document not found: " + sourceDataObjectId);
+		}
+
+		/// Bounded, content-type-aware extraction (16MB cap, POI/Tika routing) - the repo's canonical
+		/// office-doc text path. Throws PictureBookException(400) on unsupported type / extraction failure.
+		String text = ChapBookUtil.extractPoemText(data);
+
+		List<Map<String, Object>> out = new ArrayList<>();
+		if(text == null || text.isBlank()) {
+			return out;
+		}
+		for(PbChapterBoundaryUtil.ChapterRange r : PbChapterBoundaryUtil.detectBoundaries(text)) {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put(OlioFieldNames.FIELD_PB_START_OFFSET, Integer.valueOf(r.getStartOffset()));
+			m.put(OlioFieldNames.FIELD_PB_END_OFFSET, Integer.valueOf(r.getEndOffset()));
+			m.put(OlioFieldNames.FIELD_PB_TITLE, r.getTitle());
+			out.add(m);
+		}
 		return out;
 	}
 
@@ -597,6 +1033,118 @@ public class PbServiceFacade {
 			out.add(dto);
 		}
 		return out;
+	}
+
+	/**
+	 * All chapter books of ONE series (N4), each carrying its series/chapter/world linkage, so the canvas
+	 * can render a whole-series view and order chapters within it. This is a SERIES-scoped listing, NOT the
+	 * owner-filtered {@link #listBooks(BaseRecord)} selector: it deliberately does <b>not</b> filter by
+	 * {@code ownerId}, because a series' chapters are owned by the olio principal (or another collaborator)
+	 * and must be visible to an <i>entitled non-owner</i> - a caller who holds the series {@code Writer} or
+	 * {@code Admin} role. Authorization is the series role inheritance that already exists
+	 * ({@link PbBookUtil#grantSeriesRolesOnChapterGroups}, which grants the series role pair CRUD on every
+	 * chapter's {@code Book}/{@code Workflow}/{@code Artifacts} group); nothing new is added here.
+	 * <p>
+	 * <b>Why this is not {@code AccessPoint.list} over a {@code series} FK.</b> {@code AccessPoint.list}
+	 * authorizes the query <i>shape</i>, not each record (see {@code model-api.md}: "AccessPoint.list is NOT
+	 * a per-record authorization boundary"), and a series' chapters each live in their OWN {@code Book} group
+	 * with no shared, policy-driving constrained field - the only row-level link to the series is the
+	 * {@code series} FK, which is not a dynamic-policy field, so a {@code list} scoped by it would authorize
+	 * on {@code organizationId} alone and return the series' chapters to any org member, entitled or not.
+	 * So the {@code series} FK is used only to <b>enumerate the candidate chapters</b> (a bounded set - this
+	 * series, never the whole org), and each candidate is then <b>read as the ACTING user</b> through
+	 * {@link PbBookUtil#readBook(BaseRecord, String, long)} ({@code AccessPoint.find} -> per-record
+	 * {@code canRead}), which is where the series-role entitlement is actually enforced: an entitled caller
+	 * gets the projected chapter, a non-entitled caller gets {@code null} and the chapter is dropped. This is
+	 * "constrain the candidate set, then filter per record itself", the model-api.md-endorsed compensating
+	 * control - not an org-wide list post-filtered client-side.
+	 * <p>
+	 * <b>The series record is resolved as the olio principal, not the acting user.</b> Series rows are
+	 * olio-principal-owned; resolving them as the request user can return {@code null} even for an entitled
+	 * caller. This lookup only supplies the {@code series} RECORD the FK candidate query needs (a
+	 * {@code foreign model} condition takes the record, never its id - {@code model-api.md}); it is never an
+	 * authorization decision - that stays on the per-chapter {@code readBook} as the acting user.
+	 *
+	 * @return one DTO per readable chapter, ascending by {@code chapter} ordinal, each with
+	 *         {@code objectId, name, slug, bookStatus, seriesObjectId, chapter, worldObjectId}
+	 */
+	public static List<Map<String, Object>> listSeriesBooks(BaseRecord user, String seriesObjectId) {
+		if(user == null) {
+			throw new PictureBookException(401, "No authenticated principal");
+		}
+		if(seriesObjectId == null || seriesObjectId.trim().length() == 0) {
+			throw new PictureBookException(400, "A seriesObjectId is required");
+		}
+		long orgId = orgOf(user);
+
+		/// Resolve the series as the OLIO principal - it owns the series row, and this record is used only to
+		/// key the FK candidate query, never to authorize anything.
+		BaseRecord olioUser = IOSystem.getActiveContext().getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		if(olioUser == null) {
+			throw new PictureBookException(500, "No olio principal in organization " + orgId);
+		}
+		BaseRecord series = PbSeriesUtil.readSeries(olioUser, seriesObjectId.trim(), orgId);
+		if(series == null) {
+			throw new PictureBookException(404, "Series not found: " + seriesObjectId);
+		}
+		String resolvedSeriesObjectId = series.get(FieldNames.FIELD_OBJECT_ID);
+
+		/// Candidate enumeration: the series' chapter rows, keyed by the series FK RECORD (a foreign model
+		/// condition takes the record, not its id) and scoped to this organization. Raw search (PBAC bypass)
+		/// as an internal, reliable decision - exactly PbSeriesUtil.findSeriesByWorld's rationale - so every
+		/// chapter is a candidate regardless of the acting user's per-group grants; the per-chapter readBook
+		/// below is the real authorization boundary. Ascending by chapter ordinal, uncached so a
+		/// just-created chapter is visible. Only id/objectId/chapter are needed here.
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SERIES, series);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_CHAPTER });
+		q.setValue(FieldNames.FIELD_SORT_FIELD, OlioFieldNames.FIELD_PB_CHAPTER);
+		q.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING.toString());
+		q.setCache(false);
+		BaseRecord[] candidates = IOSystem.getActiveContext().getSearch().findRecords(q);
+
+		List<Map<String, Object>> out = new ArrayList<>();
+		if(candidates == null) {
+			return out;
+		}
+		for(BaseRecord cand : candidates) {
+			String candObjectId = cand.get(FieldNames.FIELD_OBJECT_ID);
+			if(candObjectId == null) {
+				continue;
+			}
+			/// The authorization boundary: read each chapter as the ACTING user. An entitled caller (series
+			/// Writer/Admin role on this chapter's Book group) gets the projected book; a non-entitled caller
+			/// gets null and the chapter is dropped - so the entitlement is load-bearing, not decorative.
+			BaseRecord book = PbBookUtil.readBook(user, candObjectId, orgId);
+			if(book == null) {
+				continue;
+			}
+			Map<String, Object> dto = new LinkedHashMap<>();
+			dto.put("objectId", book.get(FieldNames.FIELD_OBJECT_ID));
+			dto.put("name", book.get(FieldNames.FIELD_NAME));
+			dto.put("slug", book.get(OlioFieldNames.FIELD_PB_SLUG));
+			dto.put("bookStatus", enumString(book, OlioFieldNames.FIELD_PB_BOOK_STATUS));
+			dto.put("chapter", book.get(OlioFieldNames.FIELD_PB_CHAPTER));
+			dto.put("seriesObjectId", fkObjectId(book, OlioFieldNames.FIELD_PB_SERIES, resolvedSeriesObjectId));
+			dto.put("worldObjectId", fkObjectId(book, OlioFieldNames.FIELD_PB_WORLD, null));
+			out.add(dto);
+		}
+		return out;
+	}
+
+	/**
+	 * The {@code objectId} of a projected foreign-model FK, or {@code fallback} when the FK is null. A book
+	 * projected through {@link PbBookUtil#bookRequest()} carries its {@code series}/{@code world} FKs as a
+	 * minimal ref that includes {@code objectId} (see {@code requireSeriesScope}, which reads
+	 * {@code series.objectId} exactly this way).
+	 */
+	private static String fkObjectId(BaseRecord rec, String field, String fallback) {
+		BaseRecord fk = rec.get(field);
+		if(fk == null) {
+			return fallback;
+		}
+		String oid = fk.get(FieldNames.FIELD_OBJECT_ID);
+		return (oid != null ? oid : fallback);
 	}
 
 	/**

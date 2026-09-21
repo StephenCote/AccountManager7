@@ -82,6 +82,12 @@ public class OlioModelNames extends ModelNames {
 	/// stay exactly as they are because they are the REST contract the Ux depends on.
 	public static final String MODEL_PB_BOOK = "olio.pb.book";
 	public static final String MODEL_PB_SERIES = "olio.pb.series";
+	/**
+	 * The span of a source document a chapter was extracted from. A lightweight, groupless sub-record
+	 * hung off {@code olio.pb.book.sourceRange}. Registered so re-extraction and checkpointing can be
+	 * range-aware without inventing a fresh table per chapter.
+	 */
+	public static final String MODEL_PB_SOURCE_RANGE = "olio.pb.sourceRange";
 	public static final String MODEL_PB_SCENE = "olio.pb.scene";
 	public static final String MODEL_PB_WORKFLOW = "olio.pb.workflow";
 	public static final String MODEL_PB_NODE = "olio.pb.node";
@@ -122,6 +128,7 @@ public class OlioModelNames extends ModelNames {
 		MODEL_PICTURE_BOOK_CHARACTER_STUB,
 		MODEL_PICTURE_BOOK_CHARACTER_STYLE,
 		MODEL_PB_SERIES,
+		MODEL_PB_SOURCE_RANGE,
 		MODEL_PB_BOOK,
 		MODEL_PB_WORKFLOW,
 		MODEL_PB_NODE,

@@ -28,6 +28,8 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
 import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
+import org.cote.accountmanager.schema.type.PermissionEnumType;
+import org.cote.accountmanager.schema.type.RoleEnumType;
 
 /**
  * The {@code olio.pb.book} lifecycle, and the scene rows that replace PB1's per-scene {@code data.note}
@@ -174,6 +176,277 @@ public class PbBookUtil {
 		if(readBack == null) {
 			throw new PictureBookException(500, "Book '" + slug + "' was created but is not readable by its creator"
 				+ " - the world authorization grants did not reach " + bookGroupPath);
+		}
+		return readBack;
+	}
+
+	/**
+	 * Create a CHAPTER book inside an existing series, or - when {@code series} is null - a standalone book
+	 * via the unchanged 4-arg {@link #createBook(BaseRecord, String, String, String)}.
+	 * <p>
+	 * <b>A chapter does NOT get its own world.</b> It references the series' one shared world
+	 * ({@code book.world = series.universe}, see {@link PbSeriesUtil}), carries a {@code series} FK and a
+	 * {@code chapter} ordinal, and its row/scenes/workflow/artifacts live in the chapter's OWN container
+	 * groups ({@code /Olio/Universes/Books/Worlds/{slug}/{Book,Workflow,Artifacts}}) - created here with
+	 * {@code makePath}, NOT by an {@code initialize()} pass (there is no per-chapter world to initialize).
+	 * <p>
+	 * <b>Because no {@code initialize()} runs, nothing grants the chapter's own groups (§8 REQUIRED #2).</b>
+	 * So this method explicitly grants the SERIES {@code Writer} and {@code Admin} roles CRUD on all three
+	 * chapter groups via {@code setEntitlement} - the same grant {@code configureWorldAuthorization} would
+	 * have applied to a per-book role pair. The creator is a series {@code Writer}, so after that grant it
+	 * can write the FK patch and read the book back - both proven before this returns.
+	 *
+	 * @param user    the acting user; must already hold the series' {@code Writer} or {@code Admin} role
+	 * @param dataPath the Olio data path (unused on the chapter path - kept for signature symmetry and the
+	 *                delegated standalone path)
+	 * @param slug    the chapter book's own slug, validated and unique per organization
+	 * @param title   the human title; the record's {@code name} is derived from it and the slug
+	 * @param series  the {@code olio.pb.series} the chapter belongs to, carrying its shared world in
+	 *                {@code universe}; null routes to the standalone path
+	 * @param chapter the chapter ordinal within the series; null defaults to the series' current book count
+	 *                (0-based position)
+	 * @return the chapter book, re-read as {@code user} through {@code AccessPoint}
+	 * @throws PictureBookException 400 malformed slug / series without a world, 403 unentitled to the
+	 *         series, 409 slug already taken, 500 on link failure
+	 */
+	public static BaseRecord createBook(BaseRecord user, String dataPath, String slug, String title,
+			BaseRecord series, Integer chapter) {
+		if(series == null) {
+			return createBook(user, dataPath, slug, title);
+		}
+		if(user == null) {
+			throw new PictureBookException(400, "A book needs a creator");
+		}
+		try {
+			PbOlioContextUtil.validateBookSlug(slug);
+		}
+		catch(OlioException e) {
+			throw new PictureBookException(400, e.getMessage());
+		}
+
+		IOContext ioContext = IOSystem.getActiveContext();
+		OrganizationContext octx = ioContext.findOrganizationContext(user);
+		if(octx == null) {
+			throw new PictureBookException(500, "Failed to find an organization context");
+		}
+		long orgId = octx.getOrganizationId();
+
+		/// The series carries its one shared world in 'universe' (the field name is legacy; the value is the
+		/// per-series olio.world - see PbSeriesUtil). Every chapter's book.world points at exactly this.
+		BaseRecord seriesWorld = series.get(OlioFieldNames.FIELD_PB_UNIVERSE);
+		if(seriesWorld == null) {
+			throw new PictureBookException(400, "Series '" + series.get(FieldNames.FIELD_NAME)
+				+ "' has no shared world; create it through PbSeriesUtil.getCreateSeries first");
+		}
+		String seriesSlug = seriesWorld.get(FieldNames.FIELD_NAME);
+		if(seriesSlug == null) {
+			throw new PictureBookException(500, "The series' shared world has no name");
+		}
+
+		/// Entitlement is checked HERE, up front: opening/adding to a series requires the caller to already
+		/// hold its Writer or Admin role. getCreateSeries enrolled the series creator; a different user must
+		/// have been granted in.
+		if(!PbOlioContextUtil.isEntitledToSeries(user, octx, seriesSlug)) {
+			throw new PictureBookException(403, user.get(FieldNames.FIELD_NAME)
+				+ " is not entitled to series '" + seriesSlug + "'");
+		}
+
+		if(findBookBySlug(user, slug, orgId) != null) {
+			throw new PictureBookException(409, "A book with slug '" + slug + "' already exists in this organization");
+		}
+
+		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		if(olioUser == null) {
+			/// The series world creation already bootstrapped the olio principal, so its absence here is a
+			/// real inconsistency, not the first-context case the standalone path tolerates.
+			throw new PictureBookException(500, "No olio principal in organization " + orgId
+				+ " though series '" + seriesSlug + "' exists");
+		}
+
+		String bookGroupPath = bookGroupPath(slug);
+		/// The chapter's OWN container groups. makePath is get-or-create as the olio principal; no world
+		/// init runs on the chapter, so these three are all that exist and all that must be granted.
+		BaseRecord bookGroup = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_GROUP, bookGroupPath, GroupEnumType.DATA.toString(), orgId);
+		BaseRecord workflowGroup = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_GROUP, workflowGroupPath(slug), GroupEnumType.DATA.toString(), orgId);
+		BaseRecord artifactGroup = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_GROUP, artifactGroupPath(slug), GroupEnumType.DATA.toString(), orgId);
+		if(bookGroup == null || workflowGroup == null || artifactGroup == null) {
+			throw new PictureBookException(500, "Failed to resolve the chapter container groups for '" + slug + "'");
+		}
+
+		BaseRecord created = writeBookRow(ioContext, olioUser, slug, title, bookGroupPath, orgId);
+
+		/// §8 REQUIRED #2: grant the SERIES role pair CRUD on the chapter's own groups. Without this the
+		/// creator - a series Writer - could not write the FK patch below or read the book back, because no
+		/// initialize() ever touched these groups.
+		grantSeriesRolesOnChapterGroups(ioContext, octx, orgId, seriesSlug,
+			new BaseRecord[] {bookGroup, workflowGroup, artifactGroup});
+
+		int ordinal = (chapter != null ? chapter.intValue() : seriesBookCount(series));
+
+		/// Link the chapter to the series' shared world, series and ordinal. As the ACTING user now that the
+		/// series-role CRUD grant has landed - which also proves that grant, exactly as the read-back proves
+		/// the Read half. PATCH-shaped, result asserted.
+		BaseRecord patch = PbGraphUtil.patchOf(created, OlioModelNames.MODEL_PB_BOOK,
+			OlioFieldNames.FIELD_PB_WORLD, OlioFieldNames.FIELD_PB_SERIES, OlioFieldNames.FIELD_PB_CHAPTER,
+			OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID);
+		try {
+			patch.set(OlioFieldNames.FIELD_PB_WORLD, seriesWorld);
+			patch.set(OlioFieldNames.FIELD_PB_SERIES, series);
+			patch.set(OlioFieldNames.FIELD_PB_CHAPTER, Integer.valueOf(ordinal));
+			patch.set(OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID, user.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble the chapter link patch: " + e.getMessage());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to link chapter '" + slug + "' to series '" + seriesSlug + "'");
+		}
+
+		/// Maintain the series' book count. Best-effort: a chapter that is linked but not counted is a
+		/// display nuisance, not a broken book, so a failed increment logs rather than unwinds the chapter.
+		PbSeriesUtil.incrementBookCount(series);
+
+		BaseRecord readBack = findBookBySlug(user, slug, orgId);
+		if(readBack == null) {
+			throw new PictureBookException(500, "Chapter '" + slug + "' was created but is not readable by its creator"
+				+ " - the series-role grants did not reach " + bookGroupPath);
+		}
+		return readBack;
+	}
+
+	/** The series' current {@code bookCount}, or 0 when unset. */
+	private static int seriesBookCount(BaseRecord series) {
+		Integer c = series.get(OlioFieldNames.FIELD_PB_BOOK_COUNT);
+		return (c != null ? c.intValue() : 0);
+	}
+
+	/**
+	 * Grant the series {@code Writer} and {@code Admin} roles CRUD ({@code Read, Update, Create, Delete})
+	 * on each chapter group - the DATA+GROUP entitlement {@code configureWorldAuthorization} applies to a
+	 * world's own groups, targeted here at the series role pair because the chapter has no world init of its
+	 * own. Resolved find-only as the olio principal (the roles were created by {@code newSeriesConfiguration});
+	 * granted as the organization admin, exactly as {@code configureWorldAuthorization} does.
+	 */
+	private static void grantSeriesRolesOnChapterGroups(IOContext ioContext, OrganizationContext octx, long orgId,
+			String seriesSlug, BaseRecord[] groups) {
+		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		if(olioUser == null) {
+			throw new PictureBookException(500, "No olio principal to resolve series roles for '" + seriesSlug + "'");
+		}
+		BaseRecord writerRole = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_ROLE,
+			PbOlioContextUtil.seriesWriterRolePath(seriesSlug), RoleEnumType.USER.toString(), orgId);
+		BaseRecord adminRole = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_ROLE,
+			PbOlioContextUtil.seriesAdminRolePath(seriesSlug), RoleEnumType.USER.toString(), orgId);
+		if(writerRole == null || adminRole == null) {
+			throw new PictureBookException(500, "Series '" + seriesSlug + "' is missing its Writer/Admin roles");
+		}
+		String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
+		String[] entTypes = new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()};
+		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), writerRole, groups, crudperms, entTypes);
+		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), adminRole, groups, crudperms, entTypes);
+	}
+
+	// ─────────────────────────────── chapter shadow character group ───────────────────────────────
+
+	/**
+	 * A per-chapter SHADOW character group's name. Holds this chapter's overwritable {@code charPerson}
+	 * shadows (and their re-homed render-state sub-records), kept OUT of the series baseline
+	 * {@code Population} group so the {@code (name, groupId, organizationId)} constraint never collides -
+	 * a baseline character and its per-chapter shadows all share the SAME {@code name} by design (the name
+	 * is load-bearing prompt/roster text and must be preserved), so they must live in different groups.
+	 */
+	public static String chapterShadowCharGroupName(String chapterSlug) {
+		return "Chapter Population " + chapterSlug;
+	}
+
+	/**
+	 * {@code {population-parent}/Chapter Population {chapterSlug}} - a SIBLING of the series world's
+	 * {@code Population} group, derived from that group's own path so it always lands inside the series
+	 * world's group tree.
+	 * <p>
+	 * <b>Sibling, never a child.</b> {@code common.groupExt}'s {@code groupId} is {@code recursive:true},
+	 * so a {@code groupId} query on the baseline {@code Population} group descends into its subgroups - a
+	 * shadow group nested under Population would leak its shadow characters into every baseline roster read.
+	 * A sibling is outside that recursive scope.
+	 *
+	 * @param populationPath the series world's {@code Population} group path (from
+	 *        {@code BookContext.getGroupPath("population")}); never hardcoded
+	 * @param chapterSlug    the chapter book's slug
+	 * @return the sibling shadow group path, or null when {@code populationPath} is null
+	 */
+	public static String chapterShadowCharGroupPath(String populationPath, String chapterSlug) {
+		if(populationPath == null || chapterSlug == null) {
+			return null;
+		}
+		String parent = populationPath;
+		int idx = populationPath.lastIndexOf('/');
+		if(idx > 0) {
+			parent = populationPath.substring(0, idx);
+		}
+		return parent + "/" + chapterShadowCharGroupName(chapterSlug);
+	}
+
+	/**
+	 * Get-or-create a chapter's shadow character group as a sibling of the series world's
+	 * {@code Population} group, grant the series {@code Writer}/{@code Admin} roles CRUD on it, and prove
+	 * the grant landed by reading the group back through {@code AccessPoint} as the acting user.
+	 * <p>
+	 * The group is made as the olio principal (uniform world-group ownership, exactly as the chapter's own
+	 * {@code Book}/{@code Workflow}/{@code Artifacts} groups are made in {@link #createBook(BaseRecord,
+	 * String, String, String, BaseRecord, Integer)}). Because no {@code initialize()} pass ever touches
+	 * this group, nothing else grants it - so the same {@link #grantSeriesRolesOnChapterGroups} sweep that
+	 * covers the chapter's container groups is applied here.
+	 *
+	 * @param user           the acting user; must hold the series {@code Writer}/{@code Admin} role (proven
+	 *                       by the read-back)
+	 * @param seriesSlug     the series world's slug, to resolve the series role pair to grant
+	 * @param populationPath the series world's {@code Population} group path
+	 * @param chapterSlug    the chapter book's slug
+	 * @param organizationId the organization
+	 * @return the shadow character group, read back as {@code user}
+	 * @throws PictureBookException 400 on missing args, 500 when the group cannot be created, granted, or
+	 *         read back by its creator
+	 */
+	public static BaseRecord getCreateChapterShadowCharGroup(BaseRecord user, String seriesSlug,
+			String populationPath, String chapterSlug, long organizationId) {
+		if(user == null || seriesSlug == null || populationPath == null || chapterSlug == null) {
+			throw new PictureBookException(400,
+				"A chapter shadow character group needs user, seriesSlug, populationPath and chapterSlug");
+		}
+		IOContext ioContext = IOSystem.getActiveContext();
+		OrganizationContext octx = ioContext.findOrganizationContext(user);
+		if(octx == null) {
+			throw new PictureBookException(500, "Failed to find an organization context");
+		}
+		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, organizationId);
+		if(olioUser == null) {
+			throw new PictureBookException(500, "No olio principal in organization " + organizationId);
+		}
+		String shadowPath = chapterShadowCharGroupPath(populationPath, chapterSlug);
+		if(shadowPath == null) {
+			throw new PictureBookException(500, "Could not derive a shadow character group path from '" + populationPath + "'");
+		}
+		BaseRecord group = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_GROUP, shadowPath,
+			GroupEnumType.DATA.toString(), organizationId);
+		if(group == null) {
+			throw new PictureBookException(500, "Failed to create the chapter shadow character group " + shadowPath);
+		}
+		/// §8 REQUIRED #2, extended: this NEW group has no world-init grant, so grant the series role pair
+		/// CRUD on it - the same sweep the chapter's own container groups get.
+		grantSeriesRolesOnChapterGroups(ioContext, octx, organizationId, seriesSlug, new BaseRecord[] {group});
+
+		/// Prove the grant landed: read the group record back as the ACTING user through AccessPoint. A
+		/// shadow group the creator cannot read is a failed create - later shadow charPerson reads (which
+		/// rely on the group-only PBAC shortcut via a groupId condition) would silently return nothing.
+		Query gq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_OBJECT_ID,
+			group.get(FieldNames.FIELD_OBJECT_ID));
+		gq.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
+		gq.setCache(false);
+		BaseRecord readBack = ioContext.getAccessPoint().find(user, gq);
+		if(readBack == null) {
+			throw new PictureBookException(500, "Chapter shadow character group " + shadowPath
+				+ " was created but is not readable by " + user.get(FieldNames.FIELD_NAME)
+				+ " - the series role grants did not reach it");
 		}
 		return readBack;
 	}
@@ -527,6 +800,7 @@ public class PbBookUtil {
 			FieldNames.FIELD_DESCRIPTION,
 			OlioFieldNames.FIELD_PB_SLUG, OlioFieldNames.FIELD_PB_WORLD, OlioFieldNames.FIELD_PB_SERIES,
 			OlioFieldNames.FIELD_PB_CHAPTER, OlioFieldNames.FIELD_PB_SOURCE_DATA,
+			OlioFieldNames.FIELD_PB_SOURCE_RANGE,
 			OlioFieldNames.FIELD_PB_SD_CONFIG, OlioFieldNames.FIELD_PB_COMPOSITE_SD_CONFIG,
 			OlioFieldNames.FIELD_PB_BOOK_STATUS, OlioFieldNames.FIELD_PB_COMPOSITION_CONTEXT,
 			OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID, OlioFieldNames.FIELD_PB_BOOK_TYPE,
