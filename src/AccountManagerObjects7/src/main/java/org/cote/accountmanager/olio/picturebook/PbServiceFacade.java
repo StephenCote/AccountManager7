@@ -411,6 +411,37 @@ public class PbServiceFacade {
 	}
 
 	/**
+	 * Get-or-create the series for {@code seriesSlug} and return the two objectIds the N-series client
+	 * needs to launch per-chapter creation: the series objectId and its ONE shared world's objectId
+	 * (every chapter's {@code book.world} = this series' {@code universe}).
+	 * <p>
+	 * <b>All resolution and authorization live in {@link PbSeriesUtil#getCreateSeries}.</b> This is the
+	 * DTO seam only: it calls that get-or-create and projects the two objectIds off the returned series
+	 * record (re-read as the acting user through {@code AccessPoint}). The acting {@code user} is passed
+	 * straight through — {@code getCreateSeries} resolves the olio principal ITSELF for the privileged
+	 * writes (the series row in the universe's Read-only Book group, and the {@code universe} link) and
+	 * then re-reads as the caller to prove the universe Read grant landed. Service7 neither knows nor
+	 * assumes the olio principal.
+	 * <p>
+	 * <b>Get-or-create, therefore POST-only.</b> An existing readable series is returned as-is (so
+	 * chapter 2+ reuses chapter 1's world instead of colliding with it), but the create branch performs
+	 * privileged writes — so this must never be reachable from a GET/read handler.
+	 *
+	 * @return {@code { seriesObjectId, worldObjectId }}; {@code worldObjectId} is the shared series
+	 *         world ({@code universe} FK), or null if somehow unlinked.
+	 */
+	public static Map<String, Object> createSeries(BaseRecord user, String dataPath, String seriesSlug, String title) {
+		if(user == null) {
+			throw new PictureBookException(401, "No authenticated principal");
+		}
+		BaseRecord series = PbSeriesUtil.getCreateSeries(user, dataPath, seriesSlug, title);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("seriesObjectId", series.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("worldObjectId", fkObjectId(series, OlioFieldNames.FIELD_PB_UNIVERSE, null));
+		return out;
+	}
+
+	/**
 	 * Create the next chapter of a series (or a standalone book when no series is given), persisting the
 	 * chapter's linkage and source provenance and, optionally, seeding its shadow cast from the series
 	 * baseline.
