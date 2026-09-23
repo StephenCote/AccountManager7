@@ -4168,6 +4168,31 @@ public class Chat {
 			ignoreFields.add("think");
 		}
 
+		/// `typical_p` is pruned UNCONDITIONALLY — there is no longer any upstream that accepts it.
+		/// Ollama REMOVED the parameter and Azure/OpenAI never accepted it, so unlike `think` above
+		/// there is no upstream-family split to make here: no gate, no exceptions.
+		///
+		/// Measured 2026-09-23, and stated precisely because the effect is NOT uniform: the parameter
+		/// is FATAL on the PROXIED path (AM7 -> LiteLLM -> ollama_chat), where LiteLLM maps it into
+		/// Ollama's native `options` object and 0.34.2 answers HTTP 400
+		/// {"error":"typical_p is no longer supported"}. On the NATIVE path AM7 writes it as a
+		/// TOP-LEVEL key on /api/chat, where Ollama silently ignores it — replaying AM7's real
+		/// captured wire body against a live 0.34.2 returned 200 with and without it. So this prune
+		/// fixes the proxied path and is merely correct-and-harmless on the native one.
+		///
+		/// THIS IS THE SECOND HALF OF THE FIX AND IT IS NOT REDUNDANT WITH THE FIRST.
+		/// ChatUtil.applyOllamaUpstreamOptions no longer SETS typical_p, but that only governs
+		/// requests this process builds from chatOptions. A session PERSISTED BEFORE that change
+		/// carries typical_p on its own record; the resumed-session path loads it and
+		/// getPrunedRequest -> toFullString serializes whatever is on the record, so every
+		/// pre-existing session would keep sending it and keep 400ing. That is exactly the
+		/// "resumed session carries the field" case the `think` correction note above records.
+		///
+		/// Pruned from the WIRE COPY ONLY. The persisted request and the user's chatOptions keep their
+		/// value, matching the convention set by the gpt-5 sampling-param strip above — nothing here
+		/// rewrites stored user data.
+		ignoreFields.add("typical_p");
+
 		/// Tier B (LiteLLM/Langfuse) tracing — leakage gate (Guardrail 2).
 		/// The tracing fields have two different wire destinations, proven by live AM7 ->
 		/// LiteLLM -> Azure round-trip:

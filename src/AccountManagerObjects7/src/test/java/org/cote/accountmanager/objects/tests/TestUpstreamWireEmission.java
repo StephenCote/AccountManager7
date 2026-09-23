@@ -94,12 +94,39 @@ public class TestUpstreamWireEmission extends BaseTest {
 
 	/// Every Ollama-only extension the KI-72 block emits. Case B asserts ALL of these are absent.
 	private static final String[] OLLAMA_EXTENSIONS = {
-		"num_ctx", "top_k", "repeat_penalty", "typical_p", "min_p", "repeat_last_n", "num_gpu"
+		"num_ctx", "top_k", "repeat_penalty", "min_p", "repeat_last_n", "num_gpu"
 	};
 	/// The same list without num_ctx, which case A splits out into its own test (see caseA2).
 	private static final String[] OLLAMA_EXTENSIONS_EXCEPT_NUM_CTX = {
-		"top_k", "repeat_penalty", "typical_p", "min_p", "repeat_last_n", "num_gpu"
+		"top_k", "repeat_penalty", "min_p", "repeat_last_n", "num_gpu"
 	};
+
+	/// Parameters that must NEVER reach ANY wire, on ANY upstream — a strictly stronger rule than
+	/// the OLLAMA_EXTENSIONS split above, which only says "Ollama yes, Azure no".
+	///
+	/// `typical_p` WAS an emitted Ollama extension and was removed 2026-09-23: Ollama deleted the
+	/// parameter and Azure never accepted it, so no upstream tolerates it and there is no gate to
+	/// key on.
+	///
+	/// WHERE IT ACTUALLY BREAKS (measured; the effect is not uniform, and an earlier revision of
+	/// this comment overstated it): FATAL on the PROXIED path, where LiteLLM maps it into Ollama's
+	/// native `options` object and 0.34.2 answers HTTP 400 "typical_p is no longer supported";
+	/// IGNORED on the native path, where AM7 writes it as a top-level key on /api/chat. The native
+	/// path was never at risk. These cases assert absence everywhere regardless, because the
+	/// parameter is dead and the wire is the same either way.
+	///
+	/// It is asserted ABSENT in every case, including the Ollama-upstream ones that still receive
+	/// the rest of the extensions. NOTE both fixtures deliberately still SET typical_p in
+	/// chatOptions, and neutralizeSessionExtensions deliberately does NOT zero it — so a value is
+	/// always available to leak and none of these assertions can pass vacuously.
+	private static final String[] REMOVED_EXTENSIONS = { "typical_p" };
+
+	/// Shared rationale for every REMOVED_EXTENSIONS assertion.
+	private static final String WHY_REMOVED = "REMOVED PARAMETER: Ollama deleted `typical_p` and"
+		+ " rejects the whole request with HTTP 400 \"typical_p is no longer supported\"; Azure rejects"
+		+ " unknown parameters too. It must not reach any wire. Two things keep it off and BOTH are"
+		+ " required: ChatUtil.applyOllamaUpstreamOptions no longer sets it, and Chat.chatInternal"
+		+ " prunes it unconditionally so sessions PERSISTED BEFORE that change do not keep sending it.";
 
 	private HttpServer server = null;
 	/// path -> captured request body, exactly as read off the socket.
@@ -316,7 +343,6 @@ public class TestUpstreamWireEmission extends BaseTest {
 		}
 		assertEquals(DISTINCT_TOP_K, body.get("top_k").asInt());
 		assertEquals(DISTINCT_REPEAT_PENALTY, body.get("repeat_penalty").asDouble(), 0.0001);
-		assertEquals(DISTINCT_TYPICAL_P, body.get("typical_p").asDouble(), 0.0001);
 		assertEquals(DISTINCT_MIN_P, body.get("min_p").asDouble(), 0.0001);
 		assertEquals(DISTINCT_REPEAT_LAST_N, body.get("repeat_last_n").asInt());
 		assertEquals(DISTINCT_NUM_GPU, body.get("num_gpu").asInt());
@@ -325,6 +351,12 @@ public class TestUpstreamWireEmission extends BaseTest {
 		/// block so generation terminates at the user's cap rather than running unbounded.
 		assertHas(body, "max_tokens", "the resolved token field for an OPENAI_COMPAT dialect");
 		assertEquals(DISTINCT_MAX_TOKENS, body.get("max_tokens").asInt());
+
+		/// ...but the REMOVED parameter must be absent even here, on the very path that receives
+		/// every other extension. chatOptions carries typical_p=0.83, so this cannot pass vacuously.
+		for (String f : REMOVED_EXTENSIONS) {
+			assertHasNot(body, f, WHY_REMOVED);
+		}
 
 		/// The extensions must ride at the TOP LEVEL - there is no `options` sub-object on this wire.
 		assertHasNot(body, "options", "the Ollama OpenAI-compatible endpoint has no `options`"
@@ -409,6 +441,9 @@ public class TestUpstreamWireEmission extends BaseTest {
 			assertHasNot(body, f, "KI-72 PROHIBITION: no Ollama extension may be sent to an"
 				+ " OPENAI_COMPAT endpoint whose upstream is not asserted as Ollama");
 		}
+		for (String f : REMOVED_EXTENSIONS) {
+			assertHasNot(body, f, WHY_REMOVED);
+		}
 		/// ...but the standard OpenAI parameters must still be there, or this case would pass
 		/// vacuously by sending nothing at all.
 		assertHas(body, "max_tokens", "the standard OpenAI token field must still be sent");
@@ -447,6 +482,12 @@ public class TestUpstreamWireEmission extends BaseTest {
 		assertFalse("`think` must be false", body.get("think").asBoolean());
 		for (String f : OLLAMA_EXTENSIONS) {
 			assertHas(body, f, "native Ollama must receive every extension parameter");
+		}
+		/// On the NATIVE path a top-level typical_p is IGNORED by Ollama rather than rejected (see
+		/// REMOVED_EXTENSIONS), so this assertion is not guarding against a live 400 here - it pins
+		/// that the dead parameter is gone from every wire, not just the proxied one.
+		for (String f : REMOVED_EXTENSIONS) {
+			assertHasNot(body, f, WHY_REMOVED);
 		}
 		assertEquals(DISTINCT_TOP_K, body.get("top_k").asInt());
 
@@ -529,7 +570,13 @@ public class TestUpstreamWireEmission extends BaseTest {
 
 		/// The Ollama extensions must STILL be applied on the analyze request - the override is
 		/// scoped to the token field only.
-		for (String f : new String[] { "top_k", "repeat_penalty", "typical_p", "min_p", "repeat_last_n", "num_gpu" }) {
+		/// typical_p is NOT in this list: it is no longer emitted (see REMOVED_EXTENSIONS). Nor would
+		/// asserting its ABSENCE here mean anything - these are hasField() checks on the request, and
+		/// openaiRequestModel.json declares typical_p with a default, which new OpenAIRequest()
+		/// materialises into the fieldMap, so hasField is true whether or not anything set it (the
+		/// same trap the `think` correction note in Chat.chatInternal records). The meaningful
+		/// assertion is on the WIRE body, and cases A1/C/E1 make it.
+		for (String f : new String[] { "top_k", "repeat_penalty", "min_p", "repeat_last_n", "num_gpu" }) {
 			assertTrue("analyze request lost the Ollama extension `" + f + "`", areq.hasField(f));
 		}
 		assertEquals(DISTINCT_TOP_K, (int) (Integer) areq.get("top_k"));
@@ -557,6 +604,20 @@ public class TestUpstreamWireEmission extends BaseTest {
 			DISTINCT_NUM_CTX, (int) (Integer) withOllama.get("num_ctx"));
 		assertEquals("upstream=OLLAMA must put the chatOptions top_k on the request",
 			DISTINCT_TOP_K, (int) (Integer) withOllama.get("top_k"));
+
+		/// PINS THE FIRST HALF OF THE typical_p REMOVAL, INDEPENDENTLY OF THE SECOND.
+		/// The wire-level cases (A1/C/E1) cannot distinguish the two halves: Chat.chatInternal prunes
+		/// typical_p unconditionally, so they would still pass even if applyChatOptions started
+		/// emitting it again. This assertion is at the REQUEST level, below the prune, so it is the
+		/// only thing that would notice the emission coming back.
+		///
+		/// Asserted by VALUE, not by hasField: openaiRequestModel.json declares typical_p with a
+		/// default, which new OpenAIRequest() materialises into the fieldMap, so hasField is true
+		/// regardless (the trap recorded in case D). What matters is that the chatOptions value
+		/// (0.83) was NOT copied across - the field stays at the openaiRequest default.
+		assertFalse("applyChatOptions must NOT copy the chatOptions typical_p onto the request even on"
+			+ " an OLLAMA upstream - Ollama removed the parameter and 400s the request. " + WHY_REMOVED,
+			DISTINCT_TYPICAL_P == (double) (Double) withOllama.get("typical_p"));
 
 		/// With the upstream unasserted, applyChatOptions must not touch the extensions at all: they
 		/// stay at the openaiRequest schema defaults (num_ctx 2048, top_k 0), NOT the chatOptions
@@ -647,14 +708,18 @@ public class TestUpstreamWireEmission extends BaseTest {
 	/// path therefore proves nothing about the upstream gate. Nor does max_tokens: on the native
 	/// path the token-field prune strips it off the wire (see caseC).
 	private static final String[] UPSTREAM_GATED_ONLY = {
-		"top_k", "repeat_penalty", "typical_p", "min_p", "repeat_last_n", "num_gpu"
+		"top_k", "repeat_penalty", "min_p", "repeat_last_n", "num_gpu"
 	};
 	/// Split by SCHEMA TYPE, not by convenience: openaiRequest declares top_k/repeat_last_n/num_gpu
 	/// as int and repeat_penalty/typical_p/min_p as double, and BaseRecord.set dispatches on the
 	/// schema's type - handing an Integer to a double field throws ClassCastException inside
 	/// DoubleValueType.setValue. (Hit while writing this test.)
 	private static final String[] UPSTREAM_GATED_INT = { "top_k", "repeat_last_n", "num_gpu" };
-	private static final String[] UPSTREAM_GATED_DOUBLE = { "repeat_penalty", "typical_p", "min_p" };
+	/// typical_p is DELIBERATELY EXCLUDED here and instead written to a REAL value by
+	/// neutralizeSessionExtensions - the inverse of what this list does. Zeroing it would leave the
+	/// session with nothing to leak, so case E1's "absent from the wire" assertion would prove
+	/// nothing. See the note at that assignment for why the value has to be written explicitly.
+	private static final String[] UPSTREAM_GATED_DOUBLE = { "repeat_penalty", "min_p" };
 
 	/// Neutralize the extension values ON THE PERSISTED SESSION, then prove the neutralization
 	/// actually stuck.
@@ -678,6 +743,14 @@ public class TestUpstreamWireEmission extends BaseTest {
 			sess.set(f, 0.0);
 		}
 		sess.set("think", false);
+		/// ...and typical_p goes the OTHER way: explicitly WRITTEN onto the session rather than
+		/// zeroed. This is what manufactures the legacy row. It cannot arise from the production path
+		/// any more - getCreateChatRequest builds the session through applyChatOptions, which no
+		/// longer emits typical_p, so a session created today persists 0.0 (measured: this assertion
+		/// first failed with expected:<0.83> but was:<0.0>, which is the fix working). Writing it here
+		/// reproduces a session persisted BEFORE the removal, which is the only shape that can still
+		/// leak the parameter and therefore the only shape that exercises the Chat.chatInternal prune.
+		sess.set("typical_p", DISTINCT_TYPICAL_P);
 		assertTrue("saveSession did not persist the neutralized session", ChatUtil.saveSession(user, sess));
 
 		OpenAIRequest back = new OpenAIRequest(OlioUtil.getFullRecord(chatReq.get("session"), false));
@@ -687,6 +760,14 @@ public class TestUpstreamWireEmission extends BaseTest {
 			+ " fail", 0, (int) (Integer) back.get("top_k"));
 		assertFalse("PRECONDITION FAILED: think was not neutralized on the persisted session",
 			(boolean) (Boolean) back.get("think"));
+		/// The INVERSE precondition for typical_p: it must SURVIVE neutralization, because case E1
+		/// asserts it is absent from the wire and that only means something if the session it was
+		/// pruned from actually held a value. This is the legacy session shape - persisted while
+		/// typical_p was still emitted.
+		assertEquals("PRECONDITION FAILED: typical_p must remain on the persisted session so case E1's"
+			+ " absence assertion is non-vacuous - if this is 0 the session has nothing to leak and"
+			+ " the Chat.chatInternal prune is not actually being exercised",
+			DISTINCT_TYPICAL_P, (double) (Double) back.get("typical_p"), 0.0001);
 	}
 
 	/// CASE E1 - THE REGRESSION GUARD. dialect UNKNOWN + chatConfig.serviceType OLLAMA, resumed
@@ -762,8 +843,14 @@ public class TestUpstreamWireEmission extends BaseTest {
 			DISTINCT_NUM_GPU, body.get("num_gpu").asInt());
 		assertEquals("repeat_penalty must carry the chatOptions value - " + why,
 			DISTINCT_REPEAT_PENALTY, body.get("repeat_penalty").asDouble(), 0.0001);
-		assertEquals("typical_p must carry the chatOptions value - " + why,
-			DISTINCT_TYPICAL_P, body.get("typical_p").asDouble(), 0.0001);
+		/// THE LEGACY-SESSION CASE, and the reason the Chat.chatInternal prune is not redundant with
+		/// the removed emission. This session was persisted carrying typical_p=0.83 (see
+		/// neutralizeSessionExtensions, which deliberately leaves it alone) - so the resumed request
+		/// really does hold a value that getPrunedRequest -> toFullString would otherwise serialize.
+		/// It must still not reach the wire.
+		for (String f : REMOVED_EXTENSIONS) {
+			assertHasNot(body, f, WHY_REMOVED);
+		}
 		assertEquals("min_p must carry the chatOptions value - " + why,
 			DISTINCT_MIN_P, body.get("min_p").asDouble(), 0.0001);
 		assertHas(body, "think", "think was neutralized to false on the session and ONLY the"
@@ -830,6 +917,9 @@ public class TestUpstreamWireEmission extends BaseTest {
 				+ " endpoint with no asserted upstream may be Azure OpenAI, which rejects Ollama-only"
 				+ " parameters. The inference floor must NOT promote chatConfig.serviceType=OLLAMA"
 				+ " past a dialect that already resolved OPENAI_COMPAT.");
+		}
+		for (String f : REMOVED_EXTENSIONS) {
+			assertHasNot(body, f, WHY_REMOVED);
 		}
 		assertHasNot(body, "think", "think is an Ollama-only extension and must not reach a"
 			+ " possibly-Azure OPENAI_COMPAT endpoint");

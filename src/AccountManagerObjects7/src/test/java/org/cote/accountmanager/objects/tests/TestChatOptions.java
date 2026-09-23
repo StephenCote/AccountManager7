@@ -474,8 +474,20 @@ public class TestChatOptions extends BaseTest {
 		assertEquals("top_k reflects user value", 60, (int) req.get("top_k"));
 		assertEquals("min_p reflects user value", 0.05, (double) req.get("min_p"), 0.001);
 		assertEquals("repeat_penalty reflects user value", 1.1, (double) req.get("repeat_penalty"), 0.001);
-		assertEquals("typical_p reflects user value", 0.95, (double) req.get("typical_p"), 0.001);
 		assertEquals("repeat_last_n reflects user value", 100, (int) req.get("repeat_last_n"));
+
+		/// typical_p is the ONE chatOptions value that must NOT reach the request, and this assertion
+		/// is deliberately inverted from the ones above. Ollama REMOVED the parameter and Azure never
+		/// accepted it, so ChatUtil.applyOllamaUpstreamOptions no longer emits it. Measured
+		/// 2026-09-23: it is FATAL on the PROXIED path (LiteLLM maps it into Ollama's `options` and
+		/// 0.34.2 answers HTTP 400 "typical_p is no longer supported") and merely IGNORED as a
+		/// top-level key on native /api/chat. chatOptions above still SETS 0.95,
+		/// so this cannot pass vacuously - the value exists and must simply not be copied across.
+		/// Chat.chatInternal additionally prunes it from the wire, which covers sessions persisted
+		/// before the removal; see TestUpstreamWireEmission REMOVED_EXTENSIONS for both halves.
+		assertEquals("typical_p must NOT be applied - Ollama removed the parameter and 400s the"
+			+ " request; the field stays at the openaiRequest default",
+			0.0, (double) req.get("typical_p"), 0.001);
 
 		logger.info("Test passed: user chatOptions reach the request, no defaults-in-options override");
 	}

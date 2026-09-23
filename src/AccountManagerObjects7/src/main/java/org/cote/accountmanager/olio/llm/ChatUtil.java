@@ -2371,8 +2371,33 @@ public class ChatUtil {
 		if(top_k > 0) req.set("top_k", top_k);
 		double repeat_penalty = opts.get("repeat_penalty");
 		if(repeat_penalty > 0.0) req.set("repeat_penalty", repeat_penalty);
-		double typical_p = opts.get("typical_p");
-		if(typical_p > 0.0) req.set("typical_p", typical_p);
+		/// `typical_p` IS DELIBERATELY NOT EMITTED. Ollama REMOVED the parameter; it is dead on every
+		/// upstream (Azure never accepted it either), so there is nothing left to send it to.
+		///
+		/// WHERE IT IS FATAL, MEASURED 2026-09-23 — and the distinction matters, because an earlier
+		/// revision of this comment got it wrong:
+		///     PROXIED  (OPENAI_COMPAT -> LiteLLM -> ollama_chat), typical_p top-level
+		///         -> HTTP 400 litellm.BadRequestError: Ollama_chatException -
+		///            {"error":"typical_p is no longer supported"}
+		///         LiteLLM translates recognised sampling params into Ollama's native `options`
+		///         object, and inside `options` the removed parameter is REJECTED.
+		///     NATIVE   (AM7 -> ollama /api/chat), typical_p top-level  -> HTTP 200, IGNORED.
+		///         This block writes the extensions at the TOP LEVEL, and Ollama silently drops
+		///         unknown top-level keys. Replaying AM7's real captured wire body against a live
+		///         0.34.2 returned 200 both with and without typical_p.
+		///     DIRECT, inside options: {"options":{"typical_p":..}} -> HTTP 400 on 0.34.2, 200 on 0.17.0.
+		/// So the observed breakage is the PROXIED path. The native path was never at risk from this
+		/// parameter, and upgrading an older Ollama does not change that.
+		///
+		/// Version spread that hid it: 0.17.0 accepted typical_p anywhere; 0.34.2 rejects it inside
+		/// `options`. Every OTHER extension below (num_ctx, top_k, repeat_penalty, min_p,
+		/// repeat_last_n, num_gpu, num_predict, think) was probed individually on 0.34.2 and accepted,
+		/// so typical_p is the only casualty and the rest stay.
+		///
+		/// Removing the emission is necessary but NOT sufficient on its own: a session persisted
+		/// before this change still carries typical_p on its own record, and getPrunedRequest ->
+		/// toFullString would serialize it (13 such sessions on am7db carry 0.8). Chat.chatInternal
+		/// therefore also prunes it from the wire copy unconditionally. Both halves are required.
 		double min_p = opts.get("min_p");
 		if(min_p > 0.0) req.set("min_p", min_p);
 		int repeat_last_n = opts.get("repeat_last_n");
