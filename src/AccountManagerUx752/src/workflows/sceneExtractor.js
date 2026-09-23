@@ -150,14 +150,34 @@ async function pollJob(jobId, opts) {
  * @param {boolean} [opts.fresh] discard any resumable checkpoint and re-extract from chunk 1.
  *        A cancelled or interrupted run keeps its checkpoint so the next attempt continues; this
  *        is the escape hatch when the user wants a clean run instead.
+ * @param {number} [opts.startOffset] N-series per-chapter bound: character offset (inclusive) where
+ *        this chapter's slice begins. Appended to the query ONLY together with a real endOffset; the
+ *        server clamps 0 <= start < end <= length and rejects an inverted range. Omitting BOTH keeps
+ *        the whole-document behaviour — and the byte-for-byte SAME query string as before.
+ * @param {number} [opts.endOffset] N-series per-chapter bound: character offset (exclusive) where this
+ *        chapter's slice ends. See startOffset.
+ * @param {string} [opts.seriesObjectId] N-series: the olio.pb.series this chapter belongs to. Sent in
+ *        the BODY (params.get("seriesObjectId") server-side) so the extraction prompt's cross-chapter
+ *        character roster is seeded from the series baseline cast. Absent ⇒ body unchanged, roster
+ *        stays in-run-only, exactly as before.
  * @returns {Promise<{jobId: string, status: string}>}
  */
 async function startExtractScenes(workObjectId, chatConfigName, count, promptTemplateOverride, opts) {
+    opts = opts || {};
     let body = { schema: 'olio.pictureBookRequest' };
     if (count != null && count > 0) body.count = count;
     if (chatConfigName) body.chatConfig = chatConfigName;
     if (promptTemplateOverride) body.promptTemplate = promptTemplateOverride;
-    let qs = '?async=true' + (opts && opts.fresh ? '&fresh=true' : '');
+    if (opts.seriesObjectId) body.seriesObjectId = opts.seriesObjectId;
+    let qs = '?async=true' + (opts.fresh ? '&fresh=true' : '');
+    // Per-chapter bound: append the explicit span ONLY when BOTH offsets are real numbers. A
+    // whole-document caller (no offsets) therefore produces exactly '?async=true' [+ '&fresh=true'],
+    // unchanged from before the N-series fan-out.
+    if (opts.startOffset != null && opts.endOffset != null
+            && !isNaN(Number(opts.startOffset)) && !isNaN(Number(opts.endOffset))) {
+        qs += '&startOffset=' + Math.round(Number(opts.startOffset))
+            + '&endOffset=' + Math.round(Number(opts.endOffset));
+    }
     let resp = await fetch(pbBase() + '/' + workObjectId + '/extract-scenes-only' + qs, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }, credentials: 'include',

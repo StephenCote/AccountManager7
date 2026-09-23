@@ -130,6 +130,60 @@ async function resolveContainer(type) {
     return null;
 }
 
+// ── World-group picker resolution (KI-35) ───────────────────────────
+//
+// Two pickers must default their LANDING container to the parent record's WORLD-relative group
+// rather than the acting user's ~/type path:
+//   olio.store  → apparel   (Store.apparel)
+//   olio.apparel→ wearables (Apparel.wearable)
+// A wearable/apparel added from the user's own group is owned there, so the Olio principal that
+// runs narrate/reimage cannot toggle its `inuse` bit (KI-35) — it stays stuck on/off. Landing the
+// picker on the parent's world group means records added/created there already sit where the Olio
+// principal holds grants. Only the DEFAULT landing container changes: the user / home / library /
+// favorites toggle sources are still resolved (below), so navigation to them is preserved.
+const WORLD_GROUP_PICKERS = {
+    'olio.store': ['apparel'],
+    'olio.apparel': ['wearables']
+};
+
+/**
+ * True when (parentModel, fieldName) identifies one of the two world-group pickers.
+ */
+function isWorldGroupPicker(parentModel, fieldName) {
+    if (!parentModel || !fieldName) return false;
+    let fields = WORLD_GROUP_PICKERS[parentModel];
+    return !!fields && fields.indexOf(fieldName) !== -1;
+}
+
+/**
+ * Resolve the objectId of the parent record's world-relative group.
+ * The parent (olio.store / olio.apparel) carries a numeric groupId (the directory's .id), but the
+ * picker container needs the group's objectId (UUID). Resolve it via a fresh auth.group lookup by
+ * id (numeric — id-typed query fields must be numbers). Returns the group objectId, or null when
+ * this isn't a world-group picker / groupId is absent / the lookup fails — in which case the caller
+ * falls back to the normal user-path landing.
+ */
+async function resolveWorldContainer(parentModel, fieldName, parentEntity) {
+    if (!isWorldGroupPicker(parentModel, fieldName)) return null;
+    if (!parentEntity) return null;
+    let groupId = parentEntity.groupId;
+    if (groupId == null) return null;
+    try {
+        let q = am7client.newQuery('auth.group');
+        q.field('id', groupId);
+        q.entity.request = ['id', 'objectId', 'name', 'path', 'groupPath'];
+        q.entity.cache = false;
+        let qr = await page.search(q);
+        let results = (qr && qr.results) ? qr.results : (Array.isArray(qr) ? qr : null);
+        if (results && results.length && results[0].objectId) {
+            return results[0].objectId;
+        }
+    } catch(e) {
+        console.warn('[Picker] resolveWorldContainer failed for', parentModel, fieldName, e);
+    }
+    return null;
+}
+
 // ── Public API ───────────────────────────────────────────────────────
 
 const ObjectPicker = {
@@ -170,8 +224,15 @@ const ObjectPicker = {
         let favoritesContainerId = opts.favoritesContainerId || null;
         let homeContainerId = opts.homeContainerId || null;
         let containerId = opts.containerId || null;
+        // KI-35: for the two world-group pickers, land on the parent record's world-relative group.
+        let worldContainerId = null;
 
         if (!containerId && usesContainer) {
+            // World-group default (Store.apparel / Apparel.wearable) — resolved from the parent
+            // record's numeric groupId. Null for every other picker, which then land on the user path.
+            if (opts.parentModel && opts.parentField) {
+                worldContainerId = await resolveWorldContainer(opts.parentModel, opts.parentField, opts.parentEntity);
+            }
             // Resolve model default path (~/Colors), library (/Library/Colors), favorites, home root
             if (!userContainerId) userContainerId = await resolveUserContainer(opts.type);
             if (!libraryContainerId) {
@@ -185,8 +246,9 @@ const ObjectPicker = {
             if (!favoritesContainerId) favoritesContainerId = await resolveFavoritesContainer();
             if (!homeContainerId) homeContainerId = await resolveHomeContainer();
 
-            // Start at user's own path; fall back to library; fall back to generic resolve
-            containerId = userContainerId || libraryContainerId || await resolveContainer(opts.type);
+            // Start at the world group (world-group pickers only); otherwise the user's own path;
+            // fall back to library; fall back to generic resolve.
+            containerId = worldContainerId || userContainerId || libraryContainerId || await resolveContainer(opts.type);
         }
 
         if (!containerId && usesContainer) {
@@ -373,5 +435,5 @@ ObjectPicker.PickerView = {
     }
 };
 
-export { ObjectPicker };
+export { ObjectPicker, isWorldGroupPicker, resolveWorldContainer, WORLD_GROUP_PICKERS };
 export default ObjectPicker;

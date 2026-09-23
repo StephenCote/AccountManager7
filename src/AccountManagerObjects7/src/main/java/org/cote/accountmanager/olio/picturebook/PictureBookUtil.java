@@ -1357,6 +1357,48 @@ public class PictureBookUtil {
     }
 
     /**
+     * N-series (per-chapter extraction): validate and clamp a requested half-open source range
+     * against the ACTUAL extracted text length, returning the canonical {@code [start, end)} as a
+     * two-element array, or {@code null} when no range was requested (both offsets null = the whole
+     * document = the pre-N behaviour). The caller supplies the range but is NOT trusted with it — the
+     * whole novel is submitted as one shared {@code workObjectId} and the client cuts chapters from
+     * it, so a bad offset must fail here, on the server, not corrupt an extraction:
+     * <ul>
+     *   <li>a null {@code startOffset} means "from the beginning" (0); a null {@code endOffset} means
+     *       "to the end" ({@code textLen});</li>
+     *   <li>a negative start is clamped up to 0, and an end past the text is clamped down to
+     *       {@code textLen} — a boundary detector that ran against a slightly different text length is
+     *       the least-surprising, non-destructive case, so it is clamped (and logged) rather than
+     *       rejected;</li>
+     *   <li>an inverted or empty range ({@code start >= end}), or a start at/after the end of the
+     *       text, is a caller bug and is REJECTED with 400 — a silently-empty extraction is worse than
+     *       a clear error.</li>
+     * </ul>
+     * The canonical offsets returned here are what the caller threads into the checkpoint (note name
+     * + load guard), so slice and checkpoint always agree and a per-chapter resume finds its own note.
+     */
+    static int[] resolveExtractRange(int textLen, Integer startOffset, Integer endOffset) {
+        if (startOffset == null && endOffset == null) {
+            return null;
+        }
+        int s = (startOffset == null) ? 0 : startOffset.intValue();
+        int e = (endOffset == null) ? textLen : endOffset.intValue();
+        if (s < 0) {
+            logger.warn("Extraction range start " + s + " < 0 — clamping to 0");
+            s = 0;
+        }
+        if (e > textLen) {
+            logger.warn("Extraction range end " + e + " > text length " + textLen + " — clamping to " + textLen);
+            e = textLen;
+        }
+        if (s >= e || s >= textLen) {
+            throw new PictureBookException(400, "Invalid extraction range [" + startOffset + ", " + endOffset
+                    + ") for a " + textLen + "-character document");
+        }
+        return new int[] { s, e };
+    }
+
+    /**
      * Find or create a sub-group under a given parent group path.
      */
     private static BaseRecord ensureSubGroup(BaseRecord user, String parentGroupPath, String subName) {
@@ -4752,10 +4794,28 @@ public class PictureBookUtil {
      *                      derived from the scenes extracted so far. null/empty = no seed = the pre-N2
      *                      behavior, which every non-series caller and the existing tests rely on.
      */
-    @SuppressWarnings("unchecked")
     static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
             SummarizeProgress cancelToken, List<String> failedExtractions, String workObjectId,
             boolean[] reachedEndOut, ChunkLlm llm, List<String> seedRoster) {
+        return extractChunkedInternal(user, chatConfig, text, cancelToken, failedExtractions, workObjectId,
+                reachedEndOut, llm, seedRoster, null, null);
+    }
+
+    /**
+     * N-series per-chapter overload: adds the canonical half-open source RANGE
+     * {@code [startOffset, endOffset)} this extraction covers. Both null = the whole document = the
+     * pre-N behaviour byte-for-byte. A non-null range is baked into the checkpoint note NAME (see
+     * {@link #progressNoteName}) and re-checked by the load guard's range-equality test, which is what
+     * lets two chapters cut from ONE {@code workObjectId} keep separate checkpoints instead of
+     * colliding on a single note — without it each chapter's resume thrashes back to chunk 1. The
+     * offsets are used ONLY to key the checkpoint (name + guard); the text is ALREADY sliced by the
+     * caller, so they are not applied to {@code text} again here.
+     */
+    @SuppressWarnings("unchecked")
+    static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
+            SummarizeProgress cancelToken, List<String> failedExtractions, String workObjectId,
+            boolean[] reachedEndOut, ChunkLlm llm, List<String> seedRoster,
+            Integer startOffset, Integer endOffset) {
         int chunkSize = 2000;
         int overlap = 200;
         List<String> chunks = new ArrayList<>();
@@ -4809,11 +4869,20 @@ public class PictureBookUtil {
         checkpoint.chunkSize = chunkSize;
         checkpoint.overlap = overlap;
         checkpoint.totalChunks = chunks.size();
+        // N-series item 4: the source range this checkpoint covers. Persisted by saveExtractCheckpoint
+        // (which reads cp.startOffset/endOffset) and baked into the note name via progressNoteName, so
+        // a shared-manuscript chapter writes its OWN suffixed note; null/null = whole document = the
+        // legacy bare note, unchanged.
+        checkpoint.startOffset = startOffset;
+        checkpoint.endOffset = endOffset;
         List<Map<String, Object>> sceneList = new ArrayList<>();
         int startChunk = 0;
         if (groupPath != null) {
+            // N-series item 5 (LOAD): the RANGE-aware overload so a per-chapter resume reads its OWN
+            // suffixed checkpoint. The 7-arg overload read the bare note, so every chapter of a shared
+            // manuscript thrashed back to chunk 1 instead of resuming its own partial extraction.
             ExtractCheckpoint prior = loadExtractCheckpoint(user, groupPath, workObjectId,
-                    checkpoint.textHash, chunkSize, overlap, chunks.size());
+                    startOffset, endOffset, checkpoint.textHash, chunkSize, overlap, chunks.size());
             if (prior != null) {
                 startChunk = prior.chunksProcessed;
                 sceneList = prior.scenes;
@@ -5122,7 +5191,10 @@ public class PictureBookUtil {
         }
         if (groupPath != null) {
             if (reachedEnd) {
-                clearExtractCheckpointAt(user, groupPath, workObjectId);
+                // N-series item 5 (COMPLETION CLEAR): clear THIS chapter's own range-suffixed
+                // checkpoint, not the bare note — the no-range overload would clear a sibling
+                // chapter's (or the whole-document) checkpoint instead. null/null = bare note = legacy.
+                clearExtractCheckpointAt(user, groupPath, workObjectId, startOffset, endOffset);
             } else {
                 logger.info("Extraction for " + workObjectId + " stopped early at chunk "
                         + checkpoint.chunksProcessed + "/" + chunks.size()
@@ -6460,12 +6532,51 @@ public class PictureBookUtil {
     public static ScenesOnlyResult extractScenesOnly(BaseRecord user, String workObjectId, int count,
             String chatConfigName, String promptTemplateOverride, SummarizeProgress cancelToken,
             String seriesObjectId) {
+        return extractScenesOnly(user, workObjectId, count, chatConfigName, promptTemplateOverride,
+                cancelToken, seriesObjectId, null, null);
+    }
+
+    /**
+     * N-series per-chapter overload: same as the N2 item 4 overload, plus an optional half-open source
+     * RANGE {@code [startOffset, endOffset)} into the work's extracted text. A non-null range bounds
+     * this extraction to ONE chapter of a shared manuscript, so a full novel submitted as N chapters
+     * runs as N bounded jobs instead of one unbounded ~4-5h job (the UAT poll timeout). Both offsets
+     * null = the whole document = the unchanged pre-N behaviour.
+     *
+     * <p>The range is server-validated and clamped against the ACTUAL extracted text length (never
+     * trusted from the caller) by {@link #resolveExtractRange}, which REJECTS an inverted/empty range
+     * with 400 rather than extracting nothing silently. The text is sliced HERE, before chunking, and
+     * the CANONICAL clamped offsets (not the raw client values) are threaded into
+     * {@link #extractChunkedInternal} so this chapter's checkpoint gets its own range-suffixed note and
+     * a resume finds it rather than thrashing back to chunk 1.
+     */
+    public static ScenesOnlyResult extractScenesOnly(BaseRecord user, String workObjectId, int count,
+            String chatConfigName, String promptTemplateOverride, SummarizeProgress cancelToken,
+            String seriesObjectId, Integer startOffset, Integer endOffset) {
         BaseRecord work = findWork(user, workObjectId);
         if (work == null) throw new PictureBookException(404, "Work not found");
 
         String text = extractWorkText(user, work);
         if (text == null || text.isEmpty()) {
             throw new PictureBookException(400, "No text content found in work");
+        }
+
+        // N-series per-chapter slice. resolveExtractRange validates/clamps the requested range against
+        // the actual extracted length and returns the canonical [start,end) (or null for the whole
+        // document); it throws 400 on an inverted/empty range. The canonical offsets — not the raw
+        // client values — are what get threaded into the checkpoint below, so slice and checkpoint note
+        // always agree.
+        int[] range = resolveExtractRange(text.length(), startOffset, endOffset);
+        Integer cpStart = null;
+        Integer cpEnd = null;
+        if (range != null) {
+            text = text.substring(range[0], range[1]);
+            cpStart = range[0];
+            cpEnd = range[1];
+            if (text.isEmpty()) {
+                throw new PictureBookException(400, "The requested range [" + range[0] + ", " + range[1]
+                        + ") extracted no text content");
+            }
         }
 
         BaseRecord chatConfig = null;
@@ -6486,7 +6597,7 @@ public class PictureBookUtil {
                     ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
             boolean[] reachedEnd = new boolean[] { true };
             List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken,
-                    failedExtractions, workObjectId, reachedEnd, null, seedRoster);
+                    failedExtractions, workObjectId, reachedEnd, null, seedRoster, cpStart, cpEnd);
             return new ScenesOnlyResult(sceneList, true, failedExtractions, reachedEnd[0]);
         }
 
@@ -6616,6 +6727,45 @@ public class PictureBookUtil {
     }
 
     /**
+     * The series slug for a chapter book: the NAME of the ONE world its series shares
+     * ({@code book.world = series.universe}), whose world name IS the series slug - see
+     * {@link PbOlioContextUtil#getCreateSeriesContext(BaseRecord, String, String)}, which creates the
+     * series world named after the slug, and {@code findSeriesWorld}, which finds it by that name.
+     * <p>
+     * Primary source is the projected {@code world} FK's {@code name} - the same field
+     * {@link PbBookUtil#openBookContext(BaseRecord, BaseRecord)} / {@code assembleBookContext} already
+     * rely on from a {@code bookRequest()}-projected book. When the FK came back without a name it is
+     * re-read by objectId as the OLIO PRINCIPAL, because the world record is olio-owned and the acting
+     * user is not guaranteed a direct read of it.
+     *
+     * @return the series slug, or null when the world FK is absent or unresolvable
+     */
+    private static String resolveSeriesWorldSlug(BaseRecord book, long orgId) {
+        BaseRecord world = book.get(OlioFieldNames.FIELD_PB_WORLD);
+        if (world == null) {
+            return null;
+        }
+        String name = world.get(FieldNames.FIELD_NAME);
+        if (name != null && !name.isBlank()) {
+            return name;
+        }
+        String worldObjectId = world.get(FieldNames.FIELD_OBJECT_ID);
+        if (worldObjectId == null || worldObjectId.isBlank()) {
+            return null;
+        }
+        BaseRecord olioUser = IOSystem.getActiveContext().getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+        if (olioUser == null) {
+            return null;
+        }
+        Query wq = QueryUtil.createQuery(OlioModelNames.MODEL_WORLD, FieldNames.FIELD_OBJECT_ID, worldObjectId);
+        wq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        wq.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME});
+        wq.setCache(false);
+        BaseRecord full = IOSystem.getActiveContext().getAccessPoint().find(olioUser, wq);
+        return (full != null ? full.get(FieldNames.FIELD_NAME) : null);
+    }
+
+    /**
      * Overload that accepts an optional PB2 book objectId.
      * <p>
      * When {@code pb2BookObjectId} is non-null, the created characters' sub-records (narratives,
@@ -6644,8 +6794,29 @@ public class PictureBookUtil {
             if (bookSlug == null || bookSlug.isBlank()) {
                 throw new PictureBookException(500, "PB2 book has no slug — cannot resolve its Olio context");
             }
+            // N-series (Q6): a chapter book does NOT own a per-chapter world. Its world FK (book.world)
+            // is the ONE world shared by the whole series (book.world = series.universe), whose world
+            // name is the SERIES slug, not this chapter's slug. Resolving the context by the chapter
+            // slug via getCreateBookContext would miss that shared world and mint a DUPLICATE
+            // per-chapter world — under the per-book role pair, not the series pair — so every chapter
+            // after the first would strand its cast/scenes in its own orphan world. Detect a chapter by
+            // its series FK and resolve the shared series world with the canonical series resolver,
+            // keyed on the series world's own name (= the series slug). Standalone books (no series FK)
+            // keep resolving by their own slug, exactly as before.
+            BaseRecord seriesRef = pb2Book.get(OlioFieldNames.FIELD_PB_SERIES);
+            boolean isChapter = seriesRef != null && seriesRef.get(FieldNames.FIELD_ID) != null
+                && ((Number) seriesRef.get(FieldNames.FIELD_ID)).longValue() > 0L;
             try {
-                pb2OlioCtx = PbOlioContextUtil.getCreateBookContext(user, dataPath, bookSlug);
+                if (isChapter) {
+                    String seriesSlug = resolveSeriesWorldSlug(pb2Book, orgId);
+                    if (seriesSlug == null || seriesSlug.isBlank()) {
+                        throw new OlioException("Chapter book '" + bookSlug + "' references a series whose"
+                            + " shared world could not be resolved from its world FK");
+                    }
+                    pb2OlioCtx = PbOlioContextUtil.getCreateSeriesContext(user, dataPath, seriesSlug);
+                } else {
+                    pb2OlioCtx = PbOlioContextUtil.getCreateBookContext(user, dataPath, bookSlug);
+                }
             } catch (OlioException e) {
                 logger.warn("createFromScenes(pb2): could not resolve Olio context for slug=" + bookSlug + ": " + e.getMessage()
                     + " — falling back to legacy group routing");
@@ -8117,16 +8288,87 @@ public class PictureBookUtil {
     static BaseRecord resolveBookGroupEither(BaseRecord user, String bookObjectId, long orgId) {
         BaseRecord bookGroup = findBookGroup(user, bookObjectId);
         if (bookGroup != null) return bookGroup;
+        // Not a data.group objectId — treat it as an olio.pb.book objectId. The series canvas navigates
+        // by the pb.book objectId; standalone/PB1 navigates by the scene-group objectId (resolved above).
         Query pbQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
         pbQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
         pbQ.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_SLUG });
         BaseRecord pb2Book = IOSystem.getActiveContext().getAccessPoint().find(user, pbQ);
         if (pb2Book == null) return null;
+
+        // Standalone / legacy layout: the scene group name IS the slug — one cheap findPath. Unchanged.
         String slug = pb2Book.get(OlioFieldNames.FIELD_PB_SLUG);
-        if (slug == null || slug.isBlank()) return null;
-        return IOSystem.getActiveContext().getPathUtil().findPath(user,
-                ModelNames.MODEL_GROUP, "~/Data/" + PICTURE_BOOKS_DIR + "/" + slug,
-                GroupEnumType.DATA.toString(), orgId);
+        if (slug != null && !slug.isBlank()) {
+            BaseRecord bySlug = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                    ModelNames.MODEL_GROUP, "~/Data/" + PICTURE_BOOKS_DIR + "/" + slug,
+                    GroupEnumType.DATA.toString(), orgId);
+            if (bySlug != null) return bySlug;
+        }
+
+        // Series-chapter layout: createFromScenes names the scene group after the client bookName — for a
+        // chapter that is the chapter TITLE, which differs from the slug (see TestPbSeriesCreateFromScenes-
+        // OneWorld, where bookName="CFS Chapter A <tag>" but slug="cfsa<tag>"). So the slug lookup above
+        // misses and /scenes and /characters used to 404. The reliable, name-INDEPENDENT link is the scene
+        // group's own .pictureBookMeta note, whose pb2BookObjectId records THIS book's objectId
+        // (createFromScenes stamps it, ~line 7051). Resolve the group through that note.
+        return resolveSceneGroupByMetaBookLink(user, bookObjectId, orgId);
+    }
+
+    /**
+     * Resolve a PB1 scene {@code data.group} from the {@code olio.pb.book} objectId it belongs to, via the
+     * group's own {@code .pictureBookMeta} note — whose {@code pb2BookObjectId} field records the owning
+     * book ({@link #createFromScenes} stamps it). This is NAME-INDEPENDENT: it does not assume the scene
+     * group is named after the book's slug or title, so it fixes the series-chapter case where the scene
+     * group is named after the chapter title while the slug lookup misses.
+     *
+     * <p><b>PBAC.</b> The meta-note {@code list} authorizes the query shape and is org-scoped (an explicit
+     * {@code organizationId} is required for a {@code data.directory}-derived list or PBAC denies it); the
+     * candidate scene group is then resolved through {@code AccessPoint.find} ({@code canRead}) exactly as
+     * {@link #findBookGroup} does — no PBAC bypass, and a group the caller cannot read is skipped. The book
+     * objectId is a fixed-length UUID so the {@code text LIKE} cannot collide across books, and the exact
+     * {@code pb2BookObjectId} field is re-confirmed per candidate before the group is trusted.
+     */
+    @SuppressWarnings("unchecked")
+    private static BaseRecord resolveSceneGroupByMetaBookLink(BaseRecord user, String pb2BookObjectId, long orgId) {
+        if (pb2BookObjectId == null || pb2BookObjectId.isBlank()) return null;
+        Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE);
+        q.field(FieldNames.FIELD_NAME, META_NOTE_NAME);
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        // The value already contains '%', so StatementUtil uses it verbatim (it only auto-wraps a LIKE
+        // value that has no '%' of its own — see deleteOrphanedExtractCheckpoints).
+        q.field("text", ComparatorEnumType.LIKE, "%" + pb2BookObjectId + "%");
+        q.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID,
+                FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, "text" });
+        q.setCache(false);
+        BaseRecord[] notes;
+        try {
+            notes = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
+        } catch (Exception e) {
+            logger.warn("resolveSceneGroupByMetaBookLink: meta-note query failed: " + e.getMessage());
+            return null;
+        }
+        if (notes == null) return null;
+        for (BaseRecord note : notes) {
+            String metaJson = note.get("text");
+            if (metaJson == null || metaJson.isEmpty()) continue;
+            // Confirm the EXACT pb2BookObjectId field equals the book (not a coincidental substring match).
+            try {
+                Map<String, Object> meta = JSONUtil.getMap(metaJson.getBytes(), String.class, Object.class);
+                Object pb2 = meta.get("pb2BookObjectId");
+                if (!(pb2 instanceof String) || !pb2BookObjectId.equals(((String) pb2).trim())) continue;
+            } catch (Exception e) {
+                continue;
+            }
+            Object gid = note.get(FieldNames.FIELD_GROUP_ID);
+            if (!(gid instanceof Number)) continue;
+            // Resolve the owning scene group the same authorized way findBookGroup does (canRead applies).
+            Query gq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_ID, ((Number) gid).longValue());
+            gq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            gq.planMost(true);
+            BaseRecord grp = IOSystem.getActiveContext().getAccessPoint().find(user, gq);
+            if (grp != null) return grp;
+        }
+        return null;
     }
 
     /**
@@ -8288,7 +8530,13 @@ public class PictureBookUtil {
      */
     @SuppressWarnings("unchecked")
     public static List<Map<String, Object>> listScenes(BaseRecord user, String bookObjectId) {
-        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        // Dual-lookup: a PB1 scene-group objectId OR an olio.pb.book objectId (standalone or series
+        // chapter). Standalone/PB1 navigates by the scene-group objectId (findBookGroup resolves it
+        // directly, unchanged); the series canvas navigates by the pb.book objectId, which
+        // resolveBookGroupEither maps to its scene group via the .pictureBookMeta pb2BookObjectId link.
+        // Shared with listCharacters.
+        BaseRecord bookGroup = resolveBookGroupEither(user, bookObjectId, orgId);
         if (bookGroup == null) throw new PictureBookException(404, "Book not found");
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
 
@@ -8361,7 +8609,10 @@ public class PictureBookUtil {
      * Reorder scenes within a book's .pictureBookMeta.
      */
     public static BaseRecord reorderScenes(BaseRecord user, String bookObjectId, List<String> newOrder) {
-        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        // Same dual-lookup as listScenes: accept a PB1 scene-group objectId OR an olio.pb.book objectId
+        // (standalone or series chapter), so a reorder issued from the series canvas resolves too.
+        BaseRecord bookGroup = resolveBookGroupEither(user, bookObjectId, orgId);
         if (bookGroup == null) throw new PictureBookException(404, "Book not found");
 
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);

@@ -1,6 +1,9 @@
 # PictureBook Series / Chapters (N-series) — Implementation Plan
 
-**Status:** PLAN ONLY — not implemented. Authored 2026-09-20.
+**Status:** IN PROGRESS (2026-09-23) — authored 2026-09-20. Backend + Ux fan-out for the bounded
+per-chapter async extraction (fixes Issue 1's 90-min timeout, `IssueLog-2026-09-22.md`) is landed;
+per-chapter scene persistence into each series chapter book (Full N-series) is being completed. Not
+yet end-to-end verified over a full multi-chapter manuscript.
 **Scope:** The "N-series" of `PictureBookWorkflowOverhaul.md` §6 (N1–N4): make series/chapters
 real, share one Olio world per series, additive per-chapter ingest, series reader + chapter-scoped
 canvas. The "W-series" (W1–W5, graph recording) is already **done and verified** — this plan does

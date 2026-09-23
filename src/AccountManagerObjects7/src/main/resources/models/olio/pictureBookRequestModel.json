@@ -132,6 +132,12 @@
 			"description": "PB2 phase 4: POST /chapter — the new chapter's title; falls back to the slug when absent."
 		},
 		{
+			"name": "seriesSlug",
+			"type": "string",
+			"maxLength": 64,
+			"description": "N-series: POST /series — the slug of the series to get-or-create. Validated by PbOlioContextUtil.BOOK_SLUG_PATTERN downstream. Must be declared or RecordDeserializer drops it (KI-24 pattern)."
+		},
+		{
 			"name": "seriesObjectId",
 			"type": "string",
 			"maxLength": 64,

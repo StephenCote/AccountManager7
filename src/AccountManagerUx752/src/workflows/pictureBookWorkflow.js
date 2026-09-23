@@ -111,6 +111,29 @@ export async function listSeriesBooks(seriesObjectId) {
 }
 
 /**
+ * Get-or-create the series for a slug, returning the two ids the N-series fan-out needs BEFORE it can
+ * split a novel into one bounded per-chapter extraction each: { seriesObjectId, worldObjectId }. Every
+ * chapter book created against this series shares worldObjectId (the ONE series world).
+ *
+ * POST, not GET, on purpose: this is get-or-create and the create branch performs privileged writes
+ * (the series row + its shared world). Idempotent — calling it again with the same slug returns the
+ * existing series, so the wizard can re-run a novel submission without minting duplicate series.
+ * Body: { seriesSlug, title? }.
+ */
+export async function createSeries(seriesSlug, title) {
+    let body = { seriesSlug: seriesSlug };
+    if (title) body.title = title;
+    let resp = await fetch(wfBase() + '/series', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) throw new Error('createSeries failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
  * Ordered scene pages for a PB2 book.
  * Returns [{objectId, sceneIndex, title, blurb, summary, dataObjectId}, ...].
  * dataObjectId is null when no composite artifact has been generated yet.

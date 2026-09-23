@@ -722,6 +722,14 @@ function newObjectPage() {
                             foreignData[selKey] = {};
                             m.redraw();
                         });
+                    }, {
+                        // KI-35: pass the parent record so the picker can default its landing
+                        // container to the parent's world-relative group for the two world-group
+                        // pickers (Store.apparel, Apparel.wearable). Every other picker ignores these
+                        // and lands on the user path as before. Toggle navigation is preserved.
+                        parentModel: mlEntity[am7model.jsonModelKey],
+                        parentField: name,
+                        parentEntity: mlEntity
                     });
                 }
             }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, commands.new.icon || "add")));

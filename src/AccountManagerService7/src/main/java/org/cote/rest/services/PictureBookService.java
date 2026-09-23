@@ -208,16 +208,28 @@ public class PictureBookService {
     public Response extractScenesOnly(@PathParam("workObjectId") String workObjectId,
             @QueryParam("async") @DefaultValue("false") boolean async,
             @QueryParam("fresh") @DefaultValue("false") boolean fresh,
+            @QueryParam("startOffset") Integer startOffset,
+            @QueryParam("endOffset") Integer endOffset,
             String json, @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
-        // Extraction now checkpoints partial scenes to a scratch note keyed on the source
-        // document, and a run that was CANCELLED or died mid-flight keeps its checkpoint so the
-        // next attempt continues instead of re-paying for chunks already extracted. `fresh=true`
-        // is the escape hatch: discard the checkpoint and re-extract from chunk 1. Without it a
-        // user who cancelled a run because its output was wrong could never get a clean one.
+        // N-series: startOffset/endOffset (both null = the whole document) bound this call to ONE
+        // chapter of a shared manuscript, so a full novel submitted as N chapters runs as N bounded
+        // jobs instead of one unbounded ~4-5h job (the UAT poll timeout). Query params, not body
+        // fields, for the SAME reason `async` is (see the block below): they need no
+        // olio.pictureBookRequest schema change to take effect on a provisioned deployment and are
+        // trivially curl-able. Forwarded verbatim — PictureBookUtil validates/clamps the range against
+        // the actual extracted text server-side and REJECTS an inverted one; transport does not judge it.
+        //
+        // Extraction now checkpoints partial scenes to a scratch note keyed on the source document
+        // (and, per range, suffixed by it), and a run that was CANCELLED or died mid-flight keeps its
+        // checkpoint so the next attempt continues instead of re-paying for chunks already extracted.
+        // `fresh=true` is the escape hatch: discard the checkpoint and re-extract from chunk 1. Without
+        // it a user who cancelled a run because its output was wrong could never get a clean one.
         if (fresh) {
-            PictureBookUtil.clearExtractCheckpoint(user, workObjectId);
+            // Discard THIS chapter's own range-suffixed checkpoint, not the bare/whole-document one —
+            // otherwise a per-chapter fresh re-run would wipe a sibling chapter's checkpoint.
+            PictureBookUtil.clearExtractCheckpoint(user, workObjectId, startOffset, endOffset);
         }
 
         int count = PictureBookUtil.MAX_SCENES_DEFAULT;
@@ -272,13 +284,16 @@ public class PictureBookService {
             final String fChatConfig = chatConfigName;
             final String fPromptTemplate = promptTemplateOverride;
             final String fSeriesObjectId = seriesObjectId;
+            final Integer fStartOffset = startOffset;
+            final Integer fEndOffset = endOffset;
             AsyncJob job = AsyncJobRegistry.submit(user, "pb.extractScenes", workObjectId, j -> {
                 // The job's OWN progress token is the cancel signal, so POST /rest/job/{id}/cancel
                 // reaches the chunk loop's existing checkpoint. Do not reuse the
                 // PictureBookCancelRegistry token here: that one is keyed on workObjectId and is
                 // the sync path's mechanism.
                 PictureBookUtil.ScenesOnlyResult r = PictureBookUtil.extractScenesOnly(
-                        user, workObjectId, fCount, fChatConfig, fPromptTemplate, j.getProgress(), fSeriesObjectId);
+                        user, workObjectId, fCount, fChatConfig, fPromptTemplate, j.getProgress(),
+                        fSeriesObjectId, fStartOffset, fEndOffset);
                 BaseRecord out = PictureBookUtil.buildResult();
                 out.set("sceneList", r.scenes);
                 // "Complete" must mean the run reached the end of the text, not merely "nobody
@@ -310,7 +325,8 @@ public class PictureBookService {
         SummarizeProgress cancelToken = PictureBookCancelRegistry.register(user, workObjectId);
         try {
             PictureBookUtil.ScenesOnlyResult result = PictureBookUtil.extractScenesOnly(
-                    user, workObjectId, count, chatConfigName, promptTemplateOverride, cancelToken, seriesObjectId);
+                    user, workObjectId, count, chatConfigName, promptTemplateOverride, cancelToken,
+                    seriesObjectId, startOffset, endOffset);
             if (result.chunked) {
                 BaseRecord out = PictureBookUtil.buildResult();
                 try {
@@ -1168,6 +1184,40 @@ public class PictureBookService {
         try {
             return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.addMembers(user,
                 context.getInitParameter("datagen.path"), bookObjectId, userNames, asAdmin))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /series
+     * Get-or-create the series for a slug, returning { seriesObjectId, worldObjectId } — the two ids the
+     * N-series client needs before it fans a novel out into one bounded per-chapter extraction each
+     * (every chapter's book.world = this series' shared world). Body: { seriesSlug, title? }.
+     *
+     * <p>POST, not GET, on purpose: this is get-or-create, and the create branch performs privileged
+     * writes (the series row and its shared world) — {@code getCreateSeries} must never be reachable
+     * from a read handler. Transport only: the acting user is passed straight through and every
+     * decision (slug validation, olio-principal writes, the re-read that proves the caller's grant
+     * landed) lives in {@code PbServiceFacade.createSeries} / {@code PbSeriesUtil.getCreateSeries}.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/series")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createSeries(String json, @Context HttpServletRequest request,
+            @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord params = parseParams(json);
+        if (params == null) {
+            return errorResponse(400, "A request body is required");
+        }
+        String seriesSlug = params.get("seriesSlug");
+        String title = params.get("title");
+        try {
+            return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.createSeries(user,
+                context.getInitParameter("datagen.path"), seriesSlug, title))).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }

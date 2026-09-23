@@ -10,7 +10,7 @@ import {
     startExtractScenes, pollJob, cancelJob, listJobs, scenesFromResult
 } from './sceneExtractor.js';
 import { openCharacterManager, initCharacterManager, renderCharacterManagerContent } from './pictureBookCharacters.js';
-import { listPb2Books } from './pictureBookWorkflow.js';
+import { listPb2Books, detectBoundaries, createSeries, createChapter } from './pictureBookWorkflow.js';
 import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
@@ -81,6 +81,12 @@ let extractProgress = null;     // { current, total } straight from the job's pr
 let extractCancelling = false;  // cancel requested, waiting for the loop to reach a chunk boundary
 let extractPartial = false;     // the scene list is incomplete (cancelled, or stopped early)
 let extractFailedChunks = [];   // chunks whose JSON could not be parsed, surfaced not swallowed
+// N-series fan-out state. When a novel splits into chapters, doExtract runs ONE bounded extraction job
+// per chapter SEQUENTIALLY (one Ollama server; server caps MAX_CONCURRENT_JOBS=2), and these carry the
+// "chapter i of N" context so onExtractProgress can label the shared activity indicator across chapters.
+let extractChapterIndex = 0;    // 1-based index of the chapter currently extracting (0 = not fanning out)
+let extractChapterCount = 0;    // total chapters in this fan-out (0 = single whole-document extraction)
+let pb2SeriesObjectId = null;   // the olio.pb.series created/resolved for a multi-chapter submission
 let blurbRegenerating = {}; // scene index → bool (U3: per-scene "Regenerate blurb" in-flight flag)
 
 // Step 3 (Manage Characters — real charPerson records created at the Step 2→3 transition;
@@ -154,6 +160,9 @@ function resetState() {
     extractCancelling = false;
     extractPartial = false;
     extractFailedChunks = [];
+    extractChapterIndex = 0;
+    extractChapterCount = 0;
+    pb2SeriesObjectId = null;
     blurbRegenerating = {};
     creatingChars = false;
     scenes = [];
@@ -346,11 +355,17 @@ function chatConfigName() {
  * production) and omitting appearance is what makes the real per-character LLM enrichment call
  * fire and build real detail from the source text, instead of a hand-typed guess made before any
  * real charPerson (or its statistics/apparel/narrative) exists.
+ *
+ * @param {Array} [sceneSource] the scenes to draw the cast from. The single-document Step 2→3 path
+ *        passes nothing and gets the wizard-global aggregate (`extractedScenes`); the N-series
+ *        fan-out passes ONE chapter's scenes so each chapter's book is seeded from its own cast, not
+ *        an aggregate the chaptered path no longer builds.
  */
-function buildCharacterStubs() {
+function buildCharacterStubs(sceneSource) {
+    let sceneList = Array.isArray(sceneSource) ? sceneSource : extractedScenes;
     let seen = {};
     let stubs = [];
-    for (let s of extractedScenes) {
+    for (let s of sceneList) {
         if (!Array.isArray(s.characters)) continue;
         for (let c of s.characters) {
             let name = typeof c === 'string' ? c : (c.name || '');
@@ -374,9 +389,14 @@ function buildCharacterStubs() {
  */
 function onExtractProgress(job) {
     extractProgress = { current: job.current || 0, total: job.total || 0 };
+    // In a multi-chapter fan-out, prefix the per-chunk progress with "Chapter i/N" so the user can see
+    // the run advancing across chapters, not just within the current one.
+    let prefix = extractChapterCount > 0
+        ? 'Chapter ' + extractChapterIndex + '/' + extractChapterCount + ' — '
+        : '';
     let label = extractProgress.total > 0
-        ? 'Extracting scenes ' + extractProgress.current + '/' + extractProgress.total
-        : 'Extracting scenes...';
+        ? prefix + 'Extracting scenes ' + extractProgress.current + '/' + extractProgress.total
+        : prefix + 'Extracting scenes...';
     if (extractCancelling) label = 'Cancelling extraction...';
     LLMConnector.setBgActivity('auto_awesome', label);
     m.redraw();
@@ -414,6 +434,14 @@ function applyExtractJob(job) {
  * The server auto-chunks text over 8000 chars. Both response shapes (a bare array for short text,
  * { sceneList, chunked } once chunked) are unwrapped by scenesFromResult.
  *
+ * Issue 1 (novel-length manuscripts): a full novel submitted as ONE unbounded extraction job runs
+ * ~4-5h, and the client poll deadline (JOB_POLL_DEADLINE_MS, 90 min) gives up long before it
+ * finishes — so nothing is ever adopted. The fix is to split a chaptered manuscript into ONE bounded
+ * extraction job per chapter and run them SEQUENTIALLY (one Ollama server; the server caps
+ * MAX_CONCURRENT_JOBS=2). Detection is best-effort: a manuscript with fewer than two detectable
+ * chapters, or any detection failure, falls back to the original single whole-document path below —
+ * which is byte-for-byte unchanged, including the query string it sends.
+ *
  * @param {Object} [opts]
  * @param {boolean} [opts.fresh] discard a resumable checkpoint and re-extract from the first
  *        chunk. A cancelled or interrupted run keeps its checkpoint server-side so the next
@@ -426,16 +454,35 @@ async function doExtract(opts) {
     extractCancelling = false;
     extractPartial = false;
     extractFailedChunks = [];
+    extractChapterIndex = 0;
+    extractChapterCount = 0;
     m.redraw();
     // Hold the indicator so unrelated activity cannot clear it out from under a long run.
     let bgToken = LLMConnector.lockBgActivity();
     try {
-        let started = await startExtractScenes(workObjectId, chatConfigName(), null,
-            getPromptTemplate('extractScenes'), opts);
-        extractJobId = started.jobId;
-        m.redraw();
-        let job = await pollJob(extractJobId, { onProgress: onExtractProgress });
-        applyExtractJob(job);
+        // Best-effort chapter detection. A failure here must NOT abort extraction — it just means we
+        // treat the manuscript as one document, exactly as before this fan-out existed.
+        let ranges = [];
+        try {
+            let detected = await detectBoundaries(workObjectId);
+            if (Array.isArray(detected)) ranges = detected;
+        } catch (e) {
+            console.warn('[pictureBook] chapter boundary detection failed; '
+                + 'extracting as a single document:', e && e.message);
+        }
+        if (ranges.length >= 2) {
+            // Multi-chapter novel: one bounded extraction job per chapter, sequentially.
+            await fanOutChaptersExtract(ranges, opts);
+        } else {
+            // Single whole-document extraction — the ORIGINAL path, unchanged. No offsets, no series;
+            // startExtractScenes produces exactly '?async=true' [+ '&fresh=true'] as before.
+            let started = await startExtractScenes(workObjectId, chatConfigName(), null,
+                getPromptTemplate('extractScenes'), opts);
+            extractJobId = started.jobId;
+            m.redraw();
+            let job = await pollJob(extractJobId, { onProgress: onExtractProgress });
+            applyExtractJob(job);
+        }
     } catch (e) {
         if (e && e.name === 'AbortError') {
             // Stopped watching, deliberately. The job keeps running and its result stays
@@ -450,7 +497,159 @@ async function doExtract(opts) {
         extractCancelling = false;
         extractJobId = null;
         extractProgress = null;
+        extractChapterIndex = 0;
+        extractChapterCount = 0;
         m.redraw();
+    }
+}
+
+/**
+ * Fan a chaptered manuscript out into ONE bounded extraction job per chapter, run SEQUENTIALLY, and
+ * persist each chapter's scenes into ITS OWN chapter book in the ONE shared series world (Full
+ * N-series). There is NO Step-2 aggregate review for chaptered novels — the flow finishes on the
+ * series canvas.
+ *
+ * Sequential is a hard requirement, not a nicety: there is one Ollama server behind extraction and
+ * the server caps concurrent jobs at 2, so each chapter's job is awaited to completion before the
+ * next one starts. Progress is surfaced as "Chapter i/N" via extractChapterIndex/Count, which
+ * onExtractProgress reads.
+ *
+ * Per chapter, in order:
+ *   1. createChapter(...) → capture its `bookObjectId` (the chapter's olio.pb.book objectId). A
+ *      create failure is FATAL for that chapter (no book ⇒ nowhere to persist), so it is recorded
+ *      and reported, never silently swallowed, and the chapter is skipped.
+ *   2. Bounded async extraction over the chapter's [startOffset, endOffset) span (server clamps +
+ *      slices), polled to completion.
+ *   3. createFromScenes(..., chapterBookObjectId) persists THAT chapter's scenes + cast into its own
+ *      chapter book. Because the book's `series` FK points at the shared series world, the backend
+ *      reuses that world rather than minting a duplicate. The cast is seeded from the chapter's own
+ *      scenes (buildCharacterStubs(chapScenes)), not an aggregate.
+ *
+ * On completion, the wizard closes and navigates to the series canvas — the "series" view mode of
+ * the first chapter book's workflow route (there is no route keyed on a series objectId; the series
+ * overview loads from the book's `series` FK).
+ *
+ * @param {Array} ranges [{startOffset, endOffset, title}] from detectBoundaries — already the shape
+ *        createChapter's sourceRange accepts.
+ * @param {Object} [opts] the same opts doExtract received; only opts.fresh is forwarded per chapter.
+ */
+async function fanOutChaptersExtract(ranges, opts) {
+    let title = bookName || workName || '';
+    let seriesSlugBase = generateSlug(title);
+    // Get-or-create the series ONCE (idempotent server-side). Every chapter book created below shares
+    // this series' single world, so re-running a novel submission reuses the same series rather than
+    // minting duplicates.
+    let series = await createSeries(seriesSlugBase, title);
+    pb2SeriesObjectId = series ? series.seriesObjectId : null;
+    extractChapterCount = ranges.length;
+
+    let firstChapterBookOid = null; // where the series canvas is reached (any chapter book resolves it)
+    let persistedCount = 0;         // chapters whose scenes actually landed in a book
+    let problems = [];              // per-chapter failures/warnings, surfaced not swallowed
+    let anyPartial = false;
+    let cancelled = false;
+
+    for (let i = 0; i < ranges.length; i++) {
+        let r = ranges[i];
+        let chapNum = i + 1;
+        extractChapterIndex = chapNum;
+        m.redraw();
+        let chapTitle = (r.title != null && String(r.title).trim().length)
+            ? String(r.title).trim()
+            : 'Chapter ' + chapNum;
+
+        // 1. Create this chapter's book in the series (series-first: no fromBookObjectId) and CAPTURE
+        //    its objectId — createFromScenes needs it to persist the chapter's scenes into the shared
+        //    series world. A create failure means there is nowhere to persist this chapter, so record
+        //    the reason and skip it (validate/report, never a silent no-op).
+        let chapterBookOid = null;
+        try {
+            let ch = await createChapter(null, seriesSlugBase + '-ch' + chapNum, chapTitle, null, null, {
+                seriesObjectId: pb2SeriesObjectId,
+                chapter: chapNum,
+                sourceDataObjectId: workObjectId,
+                sourceRange: { startOffset: r.startOffset, endOffset: r.endOffset, title: chapTitle }
+            });
+            chapterBookOid = ch ? ch.bookObjectId : null;
+        } catch (e) {
+            problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): could not create its book — '
+                + (e && e.message || 'unknown error'));
+            continue;
+        }
+        if (!chapterBookOid) {
+            problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): book creation returned no id.');
+            continue;
+        }
+        if (!firstChapterBookOid) firstChapterBookOid = chapterBookOid;
+
+        // 2. Bounded per-chapter extraction — one job at a time (awaited), carrying the chapter's
+        //    explicit character span and the series so the cross-chapter roster is seeded.
+        let started = await startExtractScenes(workObjectId, chatConfigName(), null,
+            getPromptTemplate('extractScenes'), {
+                fresh: !!(opts && opts.fresh),
+                seriesObjectId: pb2SeriesObjectId,
+                startOffset: r.startOffset,
+                endOffset: r.endOffset
+            });
+        extractJobId = started.jobId;
+        m.redraw();
+        let job = await pollJob(extractJobId, { onProgress: onExtractProgress });
+        extractJobId = null;
+
+        let chapScenes = scenesFromResult(job.result);
+        let chapFailed = (job.result && job.result.failedExtractions) || job.failedExtractions || [];
+        if (chapFailed.length) extractFailedChunks = extractFailedChunks.concat(chapFailed);
+        if (job.status === 'failed') {
+            problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): extraction failed — '
+                + (job.error || 'unknown error'));
+        } else {
+            if (job.status === 'cancelled'
+                || (job.result && job.result.extractionComplete === false)) anyPartial = true;
+            // 3. Persist THIS chapter's scenes + cast into ITS OWN chapter book. The book's series FK
+            //    routes the scenes/cast into the ONE shared series world (no duplicate world minted).
+            if (chapScenes.length) {
+                try {
+                    let meta = await createFromScenes(workObjectId, chatConfigName(), genre || null,
+                        chapTitle, chapScenes, buildCharacterStubs(chapScenes), chapterBookOid);
+                    persistedCount++;
+                    if (meta && meta.failedCharacters && meta.failedCharacters.length) {
+                        problems.push('Chapter ' + chapNum + ': ' + meta.failedCharacters.length
+                            + ' character(s) failed to create.');
+                    } else if (meta && meta.failedExtractions && meta.failedExtractions.length) {
+                        problems.push('Chapter ' + chapNum + ': ' + meta.failedExtractions.length
+                            + ' character(s) had LLM extraction failures.');
+                    }
+                } catch (e) {
+                    problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): scenes extracted but '
+                        + 'could not be saved — ' + (e && e.message || 'unknown error'));
+                }
+            } else if (job.status !== 'cancelled') {
+                problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): no scenes were extracted.');
+            }
+        }
+        // A user Cancel targets the current chapter's job. When it comes back cancelled, stop the
+        // fan-out at this boundary — the chapters already persisted stay in the series.
+        if (job.status === 'cancelled') { cancelled = true; break; }
+    }
+
+    extractPartial = anyPartial || cancelled;
+
+    if (firstChapterBookOid && persistedCount > 0) {
+        // Chaptered novels finish on the SERIES CANVAS (N4), NOT a Step-2 aggregate review. Surface
+        // any per-chapter problems without discarding the chapters that DID persist.
+        if (problems.length) {
+            page.toast('warning', problems.length + ' chapter issue(s): ' + problems.join(' | '));
+        }
+        // The series view is a mode inside the per-book workflow route, loaded from the book's series
+        // FK — so land on the first chapter book's workflow route; it toggles to the series overview.
+        Dialog.close();
+        m.route.set('/picture-book/' + firstChapterBookOid + '/workflow');
+    } else {
+        // Nothing persisted — keep the wizard on step 1 and say why.
+        extractError = problems.length
+            ? ('No chapters were saved. ' + problems.join(' | '))
+            : (cancelled ? 'Extraction was cancelled before any chapter was saved.'
+                         : 'No scenes were extracted from any chapter.');
     }
 }
 
@@ -1999,7 +2198,8 @@ export { doExtract, applyExtractJob, reattachExtractJob, cancelExtract };
 export function __extractStateForTest() {
     return {
         step, workObjectId, extracting, extractError, extractJobId, extractProgress,
-        extractPartial, extractFailedChunks, extractedScenes, reattaching
+        extractPartial, extractFailedChunks, extractedScenes, reattaching,
+        extractChapterIndex, extractChapterCount, pb2SeriesObjectId
     };
 }
 export function __resetExtractStateForTest(work) {
@@ -2014,7 +2214,12 @@ export function __resetExtractStateForTest(work) {
     extractFailedChunks = [];
     extractedScenes = [];
     reattaching = false;
+    extractChapterIndex = 0;
+    extractChapterCount = 0;
+    pb2SeriesObjectId = null;
     chatConfigRef = null;
     promptMode = 'single';
     promptTemplate = null;
+    bookName = '';
+    workName = '';
 }
