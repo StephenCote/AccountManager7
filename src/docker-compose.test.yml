@@ -478,6 +478,16 @@ services:
       # to localhost:11434 -> "Cannot connect to host localhost:11434".
       # (Hit on the very first run of this profile, 2026-09-14.)
       OLLAMA_API_BASE: ${OLLAMA_API_BASE:-http://192.168.1.42:11434}
+      # The HOST-LOCAL Ollama (the `qwen3:8b-local` alias in litellm/config.yaml).
+      # `host.docker.internal`, NOT `localhost`: inside this container localhost is
+      # the CONTAINER, and nothing listens on its :11434. Measured 2026-09-23 from
+      # inside am7test-litellm-1:
+      #   http://localhost:11434/api/tags             -> Errno 111 Connection refused
+      #   http://host.docker.internal:11434/api/tags  -> 200 (way-local, qwen3:8b)
+      # The previous `localhost` default produced litellm's
+      # "Cannot connect to host localhost:11434" at REQUEST time -- the identical
+      # failure the OLLAMA_API_BASE note above records from 2026-09-14.
+      OLLAMA_LOCAL_API_BASE: ${OLLAMA_LOCAL_API_BASE:-http://host.docker.internal:11434}
       # Concurrency cap for the local model. 1 = strict serialisation.
       # See src/litellm/config.yaml for why max_parallel_requests is the knob
       # that QUEUES rather than the one that returns 429.
