@@ -156,28 +156,42 @@ function isWorldGroupPicker(parentModel, fieldName) {
 }
 
 /**
- * Resolve the objectId of the parent record's world-relative group.
- * The parent (olio.store / olio.apparel) carries a numeric groupId (the directory's .id), but the
- * picker container needs the group's objectId (UUID). Resolve it via a fresh auth.group lookup by
- * id (numeric — id-typed query fields must be numbers). Returns the group objectId, or null when
- * this isn't a world-group picker / groupId is absent / the lookup fails — in which case the caller
- * falls back to the normal user-path landing.
+ * Resolve the objectId of the world-relative group the picker should land on.
+ *
+ * The parent (olio.store / olio.apparel) lives in a per-world subgroup, e.g.
+ * `/Olio/Universes/Books/Worlds/<slug>/Apparel`. The picker's target records live in a SIBLING
+ * world subgroup named for the field: Store.apparel → `.../<slug>/Apparel`, Apparel.wearable →
+ * `.../<slug>/Wearables`. We derive that path from the parent's groupPath (world root + field
+ * subgroup) and resolve the group's objectId via the path/find endpoint.
+ *
+ * IMPORTANT: resolve via `page.findObject` (GET /rest/path/find), NOT `page.search`
+ * (POST /rest/model/search). These world groups are owned by the Olio principal, and a
+ * model/search on `auth.group` by a non-owning user returns an EMPTY result (HTTP 200, empty body)
+ * — measured live against the shared test user for id, groupPath and name conditions alike. The
+ * previous implementation used that search and so ALWAYS resolved null, silently dropping the
+ * default back to the user path (the reported bug). The path/find endpoint is authorized for the
+ * acting user even when the group is owned by the Olio principal (measured: 200 with the group).
+ *
+ * Returns the group objectId, or null when this isn't a world-group picker / the parent isn't in a
+ * world / groupPath is absent / the lookup fails — in which case the caller falls back to the
+ * normal user-path landing (unchanged behavior for every non-world parent).
  */
 async function resolveWorldContainer(parentModel, fieldName, parentEntity) {
     if (!isWorldGroupPicker(parentModel, fieldName)) return null;
     if (!parentEntity) return null;
-    let groupId = parentEntity.groupId;
-    if (groupId == null) return null;
+    let groupPath = parentEntity.groupPath;
+    if (!groupPath) return null;
+    // Only applies when the parent actually lives under a world (…/Worlds/<slug>/…). Anywhere else
+    // (a user's own ~/type group) → null, so the caller keeps the normal user-path landing.
+    let wm = /^(.*\/Worlds\/[^/]+)(?:\/|$)/.exec(groupPath);
+    if (!wm) return null;
+    let worldRoot = wm[1];
+    // World subgroups are named for the field (apparel → "Apparel", wearables → "Wearables").
+    let subGroup = fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
+    let targetPath = worldRoot + '/' + subGroup;
     try {
-        let q = am7client.newQuery('auth.group');
-        q.field('id', groupId);
-        q.entity.request = ['id', 'objectId', 'name', 'path', 'groupPath'];
-        q.entity.cache = false;
-        let qr = await page.search(q);
-        let results = (qr && qr.results) ? qr.results : (Array.isArray(qr) ? qr : null);
-        if (results && results.length && results[0].objectId) {
-            return results[0].objectId;
-        }
+        let grp = await page.findObject('auth.group', 'DATA', targetPath);
+        if (grp && grp.objectId) return grp.objectId;
     } catch(e) {
         console.warn('[Picker] resolveWorldContainer failed for', parentModel, fieldName, e);
     }
@@ -229,7 +243,7 @@ const ObjectPicker = {
 
         if (!containerId && usesContainer) {
             // World-group default (Store.apparel / Apparel.wearable) — resolved from the parent
-            // record's numeric groupId. Null for every other picker, which then land on the user path.
+            // record's groupPath via path/find. Null for every other picker, which then land on the user path.
             if (opts.parentModel && opts.parentField) {
                 worldContainerId = await resolveWorldContainer(opts.parentModel, opts.parentField, opts.parentEntity);
             }
