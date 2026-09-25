@@ -12,6 +12,7 @@ import { page } from '../../core/pageClient.js';
 import { olioAdminClient } from './olioAdminClient.js';
 
 let includeLocations = false;
+let locationCodes = '';  // raw ISO-code text; blank = every staged country
 let loading = false;
 let counts = null;      // per-corpus counts object on success
 let errorMsg = null;    // server error message on failure
@@ -21,14 +22,34 @@ function isAdmin() {
     return !!(ctx && ctx.roles && ctx.roles.admin);
 }
 
+// Split on commas/whitespace, drop blanks, uppercase. Returns [] for blank input.
+export function parseLocationCodes(text) {
+    return String(text || '')
+        .split(/[\s,;]+/)
+        .map(s => s.trim().toUpperCase())
+        .filter(s => s.length);
+}
+
+function invalidLocationCodes(codes) {
+    return codes.filter(c => !/^[A-Z]{2}$/.test(c));
+}
+
 async function loadCorpus() {
     if (loading) return;
+    let codes = includeLocations ? parseLocationCodes(locationCodes) : [];
+    let bad = invalidLocationCodes(codes);
+    if (bad.length) {
+        counts = null;
+        errorMsg = 'Country codes must be two-letter ISO codes: ' + bad.join(', ');
+        m.redraw();
+        return;
+    }
     loading = true;
     counts = null;
     errorMsg = null;
     m.redraw();
     try {
-        let res = await olioAdminClient.loadData(includeLocations);
+        let res = await olioAdminClient.loadData(includeLocations, codes);
         counts = (res && typeof res === 'object') ? res : {};
     } catch (e) {
         // Mithril extends the rejected Error with the JSON body's fields, so a 409/400
@@ -71,6 +92,24 @@ function includeLocationsToggle() {
             onchange: e => { includeLocations = e.target.checked; }
         }),
         'Include location data (large)'
+    ]);
+}
+
+function locationCodesInput() {
+    if (!includeLocations) return null;
+    return m('label', { class: 'block text-sm text-gray-700 dark:text-gray-300' }, [
+        m('span', { class: 'block mb-1' }, 'Countries (ISO codes, blank = all staged)'),
+        m('input', {
+            type: 'text',
+            id: 'olioAdminLocationCodes',
+            class: 'w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm',
+            placeholder: 'e.g. AS, IE, GB',
+            value: locationCodes,
+            disabled: loading,
+            oninput: e => { locationCodes = e.target.value; }
+        }),
+        m('span', { class: 'block mt-1 text-xs text-gray-500 dark:text-gray-400' },
+            'Only staged country files are loaded. Large countries (e.g. US) can take hours.')
     ]);
 }
 
@@ -136,6 +175,7 @@ export const olioAdminView = {
                 class: 'p-4 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 space-y-4'
             }, [
                 includeLocationsToggle(),
+                locationCodesInput(),
                 loadButton()
             ]),
             renderResult()

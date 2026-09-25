@@ -446,6 +446,10 @@ async function searchByNameOrgCtx(ctx, type, name, orgId, fields) {
  * @param request Playwright APIRequestContext (unused directly; helper opens its own session so the
  *                chatConfig is owned by the shared user regardless of the caller's session state).
  * @param orgId   numeric organizationId (e.g. 2 for /Development on the Docker stack).
+ * @param opts    optional overrides: configName/connectionName (use distinct names for a non-Ollama
+ *                path so the default Ollama records are never reused), serverUrl, model, serviceType
+ *                (wire-lowercase enum, default 'ollama'), dialect (system.connection.dialect, e.g.
+ *                'openai_compat' for LiteLLM), apiKey (Bearer token stored on the connection).
  * @returns the chatConfig name to pass in the analyze/render body ({chatConfig: name}), or null on failure.
  */
 export async function ensureChatConfig(request, orgId, opts = {}) {
@@ -454,6 +458,9 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
     const password = opts.password || SHARED_PASSWORD;
     const serverUrl = opts.serverUrl || CHAT_SERVER_URL;
     const model = opts.model || CHAT_MODEL;
+    const configName = opts.configName || CHATCONFIG_NAME;
+    const connectionName = opts.connectionName || CHATCONN_NAME;
+    const serviceType = opts.serviceType || 'ollama';
 
     let ctx = await newApiContext();
     try {
@@ -471,43 +478,45 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
         let resolvedOrgId = orgId || (chatDir && chatDir.organizationId);
         if (!resolvedOrgId) { await logoutCtx(ctx); return null; }
 
-        // 1. system.connection holding the Ollama serverUrl (find-or-create).
-        let conn = await searchByNameOrgCtx(ctx, 'system.connection', CHATCONN_NAME, resolvedOrgId,
+        // 1. system.connection holding the serverUrl (find-or-create). `dialect` is what Chat keys
+        //    the wire shape on (system.connection.dialect is authoritative over chatConfig.serviceType).
+        let conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId,
             ['id', 'objectId', 'name', 'serverUrl']);
         if (!conn) {
-            await ctx.post(REST + '/model', {
-                data: {
-                    schema: 'system.connection',
-                    name: CHATCONN_NAME,
-                    groupId: groupId,
-                    groupPath: groupPath,
-                    serverUrl: serverUrl,
-                    requestTimeout: 300
-                }
-            });
-            conn = await searchByNameOrgCtx(ctx, 'system.connection', CHATCONN_NAME, resolvedOrgId,
+            let connBody = {
+                schema: 'system.connection',
+                name: connectionName,
+                groupId: groupId,
+                groupPath: groupPath,
+                serverUrl: serverUrl,
+                requestTimeout: 300
+            };
+            if (opts.dialect) connBody.dialect = opts.dialect;
+            if (opts.apiKey) connBody.apiKey = opts.apiKey;
+            await ctx.post(REST + '/model', { data: connBody });
+            conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId,
                 ['id', 'objectId', 'name', 'serverUrl']);
         }
         if (!conn || !conn.id) { await logoutCtx(ctx); return null; }
 
         // 2. olio.llm.chatConfig referencing that connection by FK (find-or-create).
         //    serviceType enum is lowercase on the wire ("ollama" → LLMServiceEnumType.OLLAMA).
-        let cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', CHATCONFIG_NAME, resolvedOrgId,
+        let cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId,
             ['id', 'objectId', 'name']);
         if (!cfg) {
             await ctx.post(REST + '/model', {
                 data: {
                     schema: 'olio.llm.chatConfig',
-                    name: CHATCONFIG_NAME,
+                    name: configName,
                     groupId: groupId,
                     groupPath: groupPath,
-                    serviceType: 'ollama',
+                    serviceType: serviceType,
                     model: model,
                     analyzeModel: model,
                     connection: { schema: 'system.connection', id: conn.id, objectId: conn.objectId }
                 }
             });
-            cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', CHATCONFIG_NAME, resolvedOrgId,
+            cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId,
                 ['id', 'objectId', 'name']);
         }
 

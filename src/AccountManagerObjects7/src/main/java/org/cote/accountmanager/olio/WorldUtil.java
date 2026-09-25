@@ -189,9 +189,22 @@ public class WorldUtil {
 	}
 	private static int loadLocations(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
-
 		List<String> feats = world.get(OlioFieldNames.FIELD_FEATURES);
-		String[] features = feats.toArray(new String[0]);
+		String[] features = (feats != null ? feats.toArray(new String[0]) : new String[0]);
+		return loadLocations(user, world, basePath, features, reset);
+	}
+
+	/**
+	 * Load GeoNames location data for the given ISO 3166-1 alpha-2 {@code features} into the world's
+	 * locations group. The codes are taken from the caller rather than the world's persisted
+	 * {@code features} list so that a universe declared without features (the default grid universe)
+	 * can still have location data loaded on request.
+	 */
+	private static int loadLocations(BaseRecord user, BaseRecord world, String basePath, String[] features, boolean reset) {
+		IOSystem.getActiveContext().getReader().populate(world);
+		if(features == null) {
+			features = new String[0];
+		}
 		BaseRecord locDir = world.get(FieldNames.FIELD_LOCATIONS);
 		IOSystem.getActiveContext().getReader().populate(locDir);
 		if(features.length > 0) {
@@ -357,12 +370,43 @@ public class WorldUtil {
 	 * @param user             the acting user (used only to resolve the organization context; the writes
 	 *                         are performed as the Olio principal)
 	 * @param dataPath         the {@code datagen.path} corpus root
-	 * @param includeLocations when true, additionally invoke {@code loadLocations} (large; a no-op for the
-	 *                         default unfeatured grid universe)
+	 * @param includeLocations when true, additionally load location data for every staged country file
+	 *                         (see {@link #listStagedLocationFeatures(String)}); large
 	 * @return per-corpus record counts (never null); empty when the org context or principal cannot be
 	 *         resolved
 	 */
 	public static Map<String, Integer> loadOlioData(BaseRecord user, String dataPath, boolean includeLocations) {
+		return loadOlioData(user, dataPath, includeLocations, null);
+	}
+
+	/**
+	 * ISO 3166-1 alpha-2 codes of every staged GeoNames per-country feature file
+	 * ({@code <ISO>.txt}) under {@code <dataPath>/location}, sorted. Empty when the directory is absent
+	 * or holds no such files.
+	 */
+	public static String[] listStagedLocationFeatures(String dataPath) {
+		if(dataPath == null || dataPath.isBlank()) {
+			return new String[0];
+		}
+		File[] files = new File(dataPath + "/location").listFiles((d, n) -> n.matches("^[A-Za-z]{2}\\.txt$"));
+		if(files == null) {
+			return new String[0];
+		}
+		return Arrays.stream(files).map(f -> f.getName().substring(0, 2).toUpperCase()).sorted().toArray(String[]::new);
+	}
+
+	/**
+	 * As {@link #loadOlioData(BaseRecord, String, boolean)}, but with an explicit list of ISO 3166-1
+	 * alpha-2 country codes for the location load. The default grid universe is deliberately created
+	 * with no {@code features} (mirroring {@code OlioContextUtil.getGridContext}), and
+	 * {@code loadLocations} only parses countries it is told about, so without this the location load
+	 * silently did nothing. The codes are passed straight to the loader; the universe's persisted
+	 * (empty) {@code features} list is left untouched so it stays consistent with the grid context init.
+	 *
+	 * @param locationFeatures ISO codes to load when {@code includeLocations} is true; null or empty
+	 *                         means every staged {@code <ISO>.txt} under {@code <dataPath>/location}
+	 */
+	public static Map<String, Integer> loadOlioData(BaseRecord user, String dataPath, boolean includeLocations, String[] locationFeatures) {
 		Map<String, Integer> counts = new LinkedHashMap<>();
 		if(user == null) {
 			logger.error("User is null");
@@ -450,9 +494,16 @@ public class WorldUtil {
 		counts.put("colors", loadColors(olioUser, universe, dataPath + "/colors.csv", (useSharedLibrary == false && reset)));
 		counts.put("patterns", loadPatterns(olioUser, universe, dataPath + "/patterns/patterns.csv", (useSharedLibrary == false && reset)));
 
-		/// (c) Location data is large and feature-gated; only load it when explicitly requested.
+		/// (c) Location data is large; only load it when explicitly requested, for the requested countries.
 		if(includeLocations) {
-			counts.put("locations", loadLocations(olioUser, universe, dataPath + "/location", reset));
+			String[] feats = (locationFeatures != null && locationFeatures.length > 0) ? locationFeatures : listStagedLocationFeatures(dataPath);
+			if(feats.length == 0) {
+				logger.warn("No staged location feature files (<ISO>.txt) found under " + dataPath + "/location");
+			}
+			else {
+				logger.info("Loading location data for " + Arrays.toString(feats));
+			}
+			counts.put("locations", loadLocations(olioUser, universe, dataPath + "/location", feats, reset));
 		}
 
 		logger.info("Loaded Olio corpus for organization " + orgId + ": " + counts);

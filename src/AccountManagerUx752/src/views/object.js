@@ -29,7 +29,8 @@ function newObjectPage() {
     let objectPage = {};
     let entity, inst;
     let tabIndex = 0;
-    let objectType, objectId, objectNew;
+    let objectType, objectId, objectNew, parentNew;
+    let loadError = null;
     let fullMode = false;
     let designMode = false;
     let foreignData = {};
@@ -67,6 +68,8 @@ function newObjectPage() {
             } else if (am7model.isParent(modType) && type.match(/^(auth\.role|auth\.permission)$/gi)) {
                 primitive.parentId = cobj.id;
                 primitive.path = cobj.path;
+            } else if (parentNew && am7model.isParent(modType)) {
+                primitive.parentId = cobj.id;
             }
         }
         if (ctx.pendingEntity) {
@@ -150,9 +153,14 @@ function newObjectPage() {
         }
 
         let modType = am7model.getModel(type);
+        loadError = null;
 
         if (objectNew) {
-            if (objectId && !ctx.contextObjects[objectId]) {
+            // Container-less models (system.user, etc.) arrive with no objectId, or with the
+            // literal "undefined"/"null" from a string-concatenated route — treat both as "no container".
+            if (!objectId || objectId === 'undefined' || objectId === 'null') {
+                resetEntity(getPrimitive(type));
+            } else if (!ctx.contextObjects[objectId]) {
                 let useType = am7model.isGroup(modType) ? 'auth.group' : type;
                 let q = am7view.viewQuery(am7model.newInstance(useType));
                 q.field('objectId', objectId);
@@ -160,8 +168,11 @@ function newObjectPage() {
                     if (qr && qr.count) {
                         ctx.contextObjects[objectId] = qr.results[0];
                         resetEntity(getPrimitive(type));
-                        m.redraw();
-                    } else console.warn('Failed to resolve parent container: ' + objectId);
+                    } else {
+                        console.warn('Failed to resolve parent container: ' + objectId);
+                        loadError = 'Could not resolve the parent container for a new ' + type + ' (' + objectId + ').';
+                    }
+                    m.redraw();
                 });
             } else {
                 resetEntity(getPrimitive(type));
@@ -173,7 +184,10 @@ function newObjectPage() {
                     if (obj) {
                         ctx.contextObjects[objectId] = obj;
                         resetEntity(obj);
-                    } else console.warn('Failed to load entity: ' + objectId);
+                    } else {
+                        console.warn('Failed to load entity: ' + objectId);
+                        loadError = 'Could not load ' + type + ' ' + objectId + '.';
+                    }
                     m.redraw();
                 });
             } else {
@@ -1314,7 +1328,8 @@ function newObjectPage() {
             freeFormInstance = vnode.attrs.freeFormInstance || null;
             objectType = vnode.attrs.freeFormType || vnode.attrs.type || m.route.param('type');
             objectId = vnode.attrs.objectId || m.route.param('objectId');
-            objectNew = vnode.attrs.new || (m.route.get() && m.route.get().match(/^\/new/gi));
+            objectNew = vnode.attrs.new || (m.route.get() && m.route.get().match(/^\/p?new/gi));
+            parentNew = vnode.attrs.parentNew || (m.route.get() && m.route.get().match(/^\/pnew/gi));
             loadEntity();
             if (!freeFormMode && !objectNew && objectType) page.checkFavorites(objectType);
         },
@@ -1349,7 +1364,7 @@ function newObjectPage() {
         },
         onremove: function () {
             document.removeEventListener('keydown', onKeyDown);
-            entity = null; inst = null; tabIndex = 0;
+            entity = null; inst = null; tabIndex = 0; loadError = null; parentNew = false;
             fullMode = false; designMode = false;
             foreignData = {}; valuesState = {}; pinst = {};
             pickerMode = { enabled: false, type: null, callback: null };
@@ -1369,6 +1384,7 @@ function newObjectPage() {
             else m.route.set('/sig');
             return m('div', { style: 'padding:20px' }, 'Redirecting to sign-in…');
         }
+        if (!inst && loadError) return m('div', { class: 'object-load-error', style: 'color:red;padding:20px' }, loadError);
         if (!inst) return m('div', { style: 'padding:20px' }, 'Loading...');
         // freeForm callers (cardgame SD config panel etc.) want only the form body,
         // not the page chrome (toolbar, tabs, picker overlay).

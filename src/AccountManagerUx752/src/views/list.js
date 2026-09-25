@@ -200,7 +200,8 @@ function newListControl() {
         if (embeddedMode && embeddedController && embeddedController.addNew) {
             embeddedController.addNew(pg.resultType, pg.containerId);
         } else {
-            let path = '/' + (m.route.get().match(/plist/) ? 'pnew' : 'new') + '/' + pg.resultType + '/' + pg.containerId;
+            let path = '/' + (m.route.get().match(/plist/) ? 'pnew' : 'new') + '/' + pg.resultType;
+            if (pg.containerId) path += '/' + pg.containerId;
             m.route.set(path, { key: Date.now() });
         }
     }

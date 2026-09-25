@@ -4193,6 +4193,18 @@ public class Chat {
 		/// rewrites stored user data.
 		ignoreFields.add("typical_p");
 
+		/// `options` (olio.llm.request, a nested olio.llm.chatOptions) is the NATIVE Ollama /api/chat
+		/// sub-object and nothing else on any wire. It is keyed on the DIALECT, not the upstream: an
+		/// OPENAI_COMPAT body has no `options` member regardless of what runs the model — LiteLLM builds
+		/// Ollama's `options` itself from the recognised top-level params, and Azure/OpenAI reject the
+		/// key outright. Measured 2026-09-24: PictureBookUtil's extraction path sets `options` (to carry
+		/// think:false) on every request, and against azure/gpt-5.6-terra through LiteLLM the whole
+		/// call failed HTTP 400 "Unknown parameter: 'options'". newRequest() never sets the field, so
+		/// plain chat was unaffected and only the PictureBook path broke. Native OLLAMA keeps it as-is.
+		if (serviceType != LLMServiceEnumType.OLLAMA) {
+			ignoreFields.add("options");
+		}
+
 		/// Tier B (LiteLLM/Langfuse) tracing — leakage gate (Guardrail 2).
 		/// The tracing fields have two different wire destinations, proven by live AM7 ->
 		/// LiteLLM -> Azure round-trip:

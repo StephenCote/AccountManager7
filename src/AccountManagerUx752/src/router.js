@@ -167,8 +167,14 @@ const routes = {
             return layout(pageLayout(explorerControl.renderContent()));
         }
     },
-    "/new/:type/:objectId": {
-        oninit: function (v) { v.attrs.new = true; objectPageControl.view.oninit(v); },
+    "/new/:type": newObjectRoute(false),
+    "/new/:type/:objectId": newObjectRoute(false),
+    "/pnew/:type/:objectId": newObjectRoute(true)
+};
+
+function newObjectRoute(byParent) {
+    return {
+        oninit: function (v) { v.attrs.new = true; if (byParent) v.attrs.parentNew = true; objectPageControl.view.oninit(v); },
         oncreate: function (v) { if (objectPageControl.view.oncreate) objectPageControl.view.oncreate(v); },
         onremove: function () { objectPageControl.view.onremove(); },
         view: function (vnode) {
@@ -179,8 +185,8 @@ const routes = {
                 return layout(pageLayout(m("div", { style: "color:red;padding:20px" }, "Error: " + e.message)));
             }
         }
-    }
-};
+    };
+}
 
 /// §3.6 — disabled deep-link feedback. A path owned by a known-but-disabled feature used to fall
 /// through to the "/main" default with no explanation. The resolver lives in core/featureRoute.js

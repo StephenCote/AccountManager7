@@ -24,6 +24,7 @@ import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
+import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -1242,5 +1243,127 @@ public class TestUpstreamWireEmission extends BaseTest {
 		assertHas(body, "messages", "the request must still carry its messages");
 		assertHas(body, "model", "the request must still carry the model");
 		logger.info("[KI-72][WIRE][I2] PASS");
+	}
+
+	// ------------------------------------------------------------------------------------------
+	// PictureBook extraction path: the `options` sub-object
+	// ------------------------------------------------------------------------------------------
+
+	/// Drive the REAL private PictureBookUtil.callLlmInternal(user, cfg, promptName, vars,
+	/// hardFailureOut, ResolvedPrompt) - the single invocation behind EVERY PictureBook/ChapBook
+	/// LLM call (scene extraction, scene-image-prompt, landscape-prompt, ChapBook theme) - against
+	/// the capture server and return the parsed wire body at `path`.
+	///
+	/// The 6-arg overload is chosen so the prompt is supplied directly instead of resolved through
+	/// ChatUtil.resolveConfig + the classpath prompt resources; what is under test is the request
+	/// construction at that site (it attaches an olio.llm.chatOptions instance as `options` on every
+	/// request), not template resolution. ResolvedPrompt is a package-private nested class with a
+	/// package-private constructor, so it is built by reflection too. Same idiom as caseI's
+	/// PageIndexUtil.callChat: the code under test lives INSIDE the private method, so a test that
+	/// called anything else would be asserting a copy of it.
+	private JsonNode dispatchPictureBookLlmAndCapture(String path, BaseRecord user, BaseRecord cfg) throws Exception {
+		Class<?> resolvedCls = Class.forName(PictureBookUtil.class.getName() + "$ResolvedPrompt");
+		java.lang.reflect.Constructor<?> ctor = resolvedCls.getDeclaredConstructor(String.class, String.class);
+		ctor.setAccessible(true);
+		Object resolved = ctor.newInstance("You are a test assistant. Answer with one word.", "ping");
+
+		Method m = PictureBookUtil.class.getDeclaredMethod("callLlmInternal", BaseRecord.class, BaseRecord.class,
+			String.class, Map.class, boolean[].class, resolvedCls);
+		m.setAccessible(true);
+		boolean[] hardFailure = new boolean[1];
+		Object out = m.invoke(null, user, cfg, "wireTest.prompt", null, hardFailure, resolved);
+
+		String body = captured.get(path);
+		assertNotNull("the capture server recorded NO request body at " + path
+			+ " - PictureBookUtil.callLlmInternal never dispatched, so there is nothing to assert about"
+			+ " the wire (hardFailure=" + hardFailure[0] + ")", body);
+		assertFalse("PictureBookUtil.callLlmInternal reported a HARD failure although the capture server"
+			+ " answered; the wire body is " + body, hardFailure[0]);
+		assertEquals("the capture server's completion did not come back through callLlmInternal", "OK", out);
+		logger.info("[KI-72][WIRE][PICTUREBOOK] " + path + " captured body = " + body);
+		return new ObjectMapper().readTree(body);
+	}
+
+	/// CASE J1 - THE FIX. dialect=OPENAI_COMPAT, upstream unset: the Azure-behind-LiteLLM shape,
+	/// with the very model group the failure was measured against.
+	///
+	/// MEASURED 2026-09-24 against azure/gpt-5.6-terra through LiteLLM: every PictureBook extraction
+	/// call failed HTTP 400 "AzureException BadRequestError - Unknown parameter: 'options'". The site
+	/// is PictureBookUtil.callLlmInternal, which - AFTER newRequest has run applyChatOptions - creates
+	/// an olio.llm.chatOptions instance, sets think:false on it and attaches it as `options`, so the
+	/// field is populated on every request that site sends. `options` is Ollama's NATIVE /api/chat
+	/// sub-object and nothing else on any wire: an OpenAI-compatible body has no such member (LiteLLM
+	/// builds Ollama's `options` itself from the recognised top-level params) and Azure/OpenAI reject
+	/// the key outright. Chat.chatInternal pruned every other Ollama-only field off the
+	/// OPENAI_COMPAT wire but never this one, because newRequest never sets it - so plain chat was
+	/// unaffected and only this path broke.
+	///
+	/// The prune is keyed on the DIALECT, not the upstream: an OPENAI_COMPAT body has no `options`
+	/// member whatever runs the model behind the proxy, so unlike `think` there is no upstream=OLLAMA
+	/// case in which it should be sent.
+	@Test
+	public void caseJ1_pictureBookExtraction_azureCompat_sendsNoOptions() throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserJ");
+		assertNotNull("test user is null", user);
+
+		BaseRecord conn = persistConnection(user, "KI72 J1 Conn " + nonce, base,
+			ConnectionDialectEnumType.OPENAI_COMPAT, null);
+		BaseRecord cfg = chatConfigWithModel(user, "KI72 J1 " + nonce, "gpt-5.6-terra");
+		cfg.set("connection", conn);
+
+		JsonNode body = dispatchPictureBookLlmAndCapture("/v1/chat/completions", user, cfg);
+
+		assertHasNot(body, "options", "`options` is Ollama's native /api/chat sub-object; an"
+			+ " OPENAI_COMPAT endpoint has no such member and Azure rejects the whole request with"
+			+ " HTTP 400 \"Unknown parameter: 'options'\" (measured 2026-09-24, azure/gpt-5.6-terra via"
+			+ " LiteLLM). PictureBookUtil.callLlmInternal sets it on every request, so Chat.chatInternal"
+			+ " must prune it off every non-OLLAMA wire.");
+		assertHasNot(body, "think", "`think` is Ollama-only and must not ride an Azure wire either");
+		/// Non-vacuity: the request still went out and still carries its payload.
+		assertHas(body, "messages", "the request must still carry its messages");
+		assertHas(body, "model", "the request must still carry the model");
+		assertEquals("the model must be the one the chatConfig named", "gpt-5.6-terra", body.get("model").asText());
+		logger.info("[KI-72][WIRE][J1] PASS");
+	}
+
+	/// CASE J2 - NATIVE CONTROL, and the half that makes J1 non-vacuous. dialect=OLLAMA: the SAME
+	/// production path must still put `options` on the /api/chat wire, carrying the think:false that
+	/// PictureBookUtil.callLlmInternal wrote into it. If this case passes, the site really does set
+	/// `options`, so J1's absence can only be the prune and not "the field was never populated".
+	///
+	/// This pins the pre-existing native behaviour, not an endorsement of it: Ollama reads `think`
+	/// at the TOP level of /api/chat, not inside `options`, so `options.think` has never disabled
+	/// thinking there (the top-level `think:false` that also rides this body is what does). Fixing
+	/// that site is a separate change; this case exists so the prune provably does not touch the
+	/// native wire.
+	@Test
+	public void caseJ2_pictureBookExtraction_nativeOllama_keepsOptions() throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserJ");
+		assertNotNull("test user is null", user);
+
+		BaseRecord conn = persistConnection(user, "KI72 J2 Conn " + nonce, base,
+			ConnectionDialectEnumType.OLLAMA, null);
+		BaseRecord cfg = chatConfigWithDistinctOptions(user, "KI72 J2 " + nonce);
+		cfg.set("connection", conn);
+
+		JsonNode body = dispatchPictureBookLlmAndCapture("/api/chat", user, cfg);
+
+		assertHas(body, "options", "NATIVE CONTROL: PictureBookUtil.callLlmInternal attaches `options`"
+			+ " on every request and the prune must leave the native OLLAMA wire alone - if it is gone"
+			+ " here, the prune was keyed on the wrong axis (or the site stopped setting it, in which"
+			+ " case J1 proves nothing and this fixture must change)");
+		assertTrue("`options` must be a JSON object (the serialised olio.llm.chatOptions)",
+			body.get("options").isObject());
+		assertHas(body.get("options"), "think", "the think:false the site wrote into `options` must survive");
+		assertFalse("options.think must be false", body.get("options").get("think").asBoolean());
+		assertHas(body, "think", "top-level think must still ride the native wire");
+		assertFalse("top-level think must be false", body.get("think").asBoolean());
+		assertHas(body, "messages", "the request must still carry its messages");
+		assertHas(body, "model", "the request must still carry the model");
+		logger.info("[KI-72][WIRE][J2] PASS");
 	}
 }

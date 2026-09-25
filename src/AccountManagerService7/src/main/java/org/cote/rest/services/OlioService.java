@@ -1,5 +1,6 @@
 package org.cote.rest.services;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -786,11 +787,12 @@ public class OlioService {
 	 * including resolving/using the Olio principal for the writes — lives in Objects7.
 	 *
 	 * @param body    optional JSON body; {@code {"includeLocations": true}} additionally loads location
-	 *                data (large; default false)
+	 *                data (large; default false); {@code "features": ["AS","IE"]} restricts the location
+	 *                load to those ISO 3166-1 alpha-2 country files (absent/empty = every staged file)
 	 * @param request the HTTP request carrying the authenticated admin principal
-	 * @return 200 with per-corpus counts as JSON; 401 unauthenticated; 409 when the corpus is not present;
-	 *         500 when {@code datagen.path} is unconfigured, or when WorldUtil signals a load failure via
-	 *         an empty counts map
+	 * @return 200 with per-corpus counts as JSON; 400 when {@code features} holds a non-alpha-2 entry;
+	 *         401 unauthenticated; 409 when the corpus is not present; 500 when {@code datagen.path} is
+	 *         unconfigured, or when WorldUtil signals a load failure via an empty counts map
 	 */
 	@POST
 	@Path("/loadData")
@@ -815,18 +817,36 @@ public class OlioService {
 		}
 
 		boolean includeLocations = false;
+		String[] features = null;
 		if (body != null && !body.isBlank()) {
 			try {
 				Map<String, Object> in = JSONUtil.getMap(body.getBytes(), String.class, Object.class);
 				if (in != null && Boolean.TRUE.equals(in.get("includeLocations"))) {
 					includeLocations = true;
 				}
+				/// Optional ISO 3166-1 alpha-2 codes selecting which staged country files to load; absent
+				/// or empty means every staged file (WorldUtil resolves that). Validated at this boundary
+				/// because the codes become file names under datagen.path.
+				Object rawFeatures = (in != null) ? in.get("features") : null;
+				if (rawFeatures instanceof List<?> list && !list.isEmpty()) {
+					List<String> codes = new ArrayList<>();
+					for (Object o : list) {
+						String code = (o == null) ? "" : o.toString().trim();
+						if (!code.matches("^[A-Za-z]{2}$")) {
+							return Response.status(400)
+								.entity("{\"error\":\"features must be ISO 3166-1 alpha-2 country codes\"}")
+								.build();
+						}
+						codes.add(code.toUpperCase());
+					}
+					features = codes.toArray(new String[0]);
+				}
 			} catch (Exception e) {
 				logger.warn("loadOlioData: could not parse request body, defaulting includeLocations=false: " + e.getMessage());
 			}
 		}
 
-		Map<String, Integer> counts = WorldUtil.loadOlioData(user, dataPath, includeLocations);
+		Map<String, Integer> counts = WorldUtil.loadOlioData(user, dataPath, includeLocations, features);
 		/// WorldUtil.loadOlioData returns the corpus keys on SUCCESS (values may be 0) and an EMPTY map on
 		/// every failure/early-return path (its documented failure signal). Map that empty-map failure to a
 		/// 500 rather than delivering it as a 200 with an empty body, which would hide the failure.

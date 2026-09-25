@@ -333,6 +333,124 @@ describe('doExtract — chaptered novel fan-out (Issue 1, Full N-series)', () =>
         expect(s.extractJobId).toBeNull();
     });
 
+    it('re-run: a 409 on a chapter slug REUSES the series\' existing chapter book instead of failing the chapter', async () => {
+        // Chapter slugs are deterministic (<manuscript-slug>-chN). A re-run of the same manuscript —
+        // the real case was 22 chapters left behind by a run that died on an LLM 400 — 409s on every
+        // createChapter. Measured 2026-09-24: "No chapters were saved. Chapter 1 ...: createChapter
+        // failed: 409 | ... | Chapter 22 ...: 409". The single-book path already reuses the user's own
+        // conflicting book; the fan-out must do the same via the series' chapter list.
+        let chapterBodies = [];
+        let seriesBooksCalls = 0;
+        let extractUrls = [];
+        let createFromScenesBodies = [];
+        global.fetch = vi.fn(async (url, init) => {
+            let u = String(url);
+            if (u.includes('detect-boundaries')) {
+                return jsonResponse(200, [
+                    { startOffset: 0, endOffset: 100, title: 'Chapter One' },
+                    { startOffset: 100, endOffset: 250, title: 'Chapter Two' }
+                ]);
+            }
+            if (u.endsWith('/series')) return jsonResponse(200, { seriesObjectId: 'SER-1', worldObjectId: 'W-1' });
+            if (u.endsWith('/chapter')) {
+                chapterBodies.push(JSON.parse(init.body));
+                return jsonResponse(409, { message: 'A book with slug already exists' });
+            }
+            if (u.endsWith('/series/SER-1/books')) {
+                seriesBooksCalls++;
+                // The series already holds a chapter book for every slug the wizard has asked for.
+                return jsonResponse(200, chapterBodies.map(b => ({
+                    objectId: 'BK-EXIST-' + b.chapter, name: b.title, slug: b.slug, bookStatus: 'draft',
+                    chapter: b.chapter, seriesObjectId: 'SER-1', worldObjectId: 'W-1'
+                })));
+            }
+            if (u.includes('extract-scenes-only')) {
+                extractUrls.push(u);
+                return jsonResponse(202, { jobId: 'job-' + extractUrls.length, status: 'running' });
+            }
+            if (u.includes('create-from-scenes')) {
+                let body = JSON.parse(init.body);
+                createFromScenesBodies.push(body);
+                return jsonResponse(200, { pb2BookObjectId: body.pb2BookObjectId, scenes: body.sceneList });
+            }
+            let jobId = u.substring(u.lastIndexOf('/') + 1);
+            return jsonResponse(200, {
+                jobId, status: 'completed', terminal: true, current: 1, total: 1,
+                result: { sceneList: [{ title: 'Scene for ' + jobId, characters: ['Alice'] }], extractionComplete: true }
+            });
+        });
+
+        let routeSet = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        let dialogClose = vi.spyOn(Dialog, 'close').mockImplementation(() => {});
+
+        await pb.doExtract();
+
+        let s = pb.__extractStateForTest();
+        // Exactly one createChapter attempt per chapter — the 409 is resolved by lookup, not by retrying
+        // with a forked slug (which would mint a duplicate chapter in the series).
+        expect(chapterBodies).toHaveLength(2);
+        expect(chapterBodies[0].slug).toMatch(/-ch1$/);
+        expect(chapterBodies[1].slug).toMatch(/-ch2$/);
+        expect(seriesBooksCalls).toBe(2);
+        // Both chapters still extract and persist — into the EXISTING chapter books.
+        expect(extractUrls).toHaveLength(2);
+        expect(createFromScenesBodies).toHaveLength(2);
+        expect(createFromScenesBodies[0].pb2BookObjectId).toBe('BK-EXIST-1');
+        expect(createFromScenesBodies[1].pb2BookObjectId).toBe('BK-EXIST-2');
+        // Ends on the series canvas of the reused first chapter, with no error.
+        expect(s.extractError).toBeNull();
+        expect(s.step).not.toBe(2);
+        expect(dialogClose).toHaveBeenCalled();
+        expect(routeSet).toHaveBeenCalledWith('/picture-book/BK-EXIST-1/workflow');
+    });
+
+    it('a 409 whose slug is NOT one of this series\' chapters forks a suffixed slug (same rule as the single-book path)', async () => {
+        // The slug collides with a book outside this series (another user's / another series'). The
+        // wizard must not adopt that book; it retries once with a suffixed slug in THIS series.
+        let chapterBodies = [];
+        let createFromScenesBodies = [];
+        global.fetch = vi.fn(async (url, init) => {
+            let u = String(url);
+            if (u.includes('detect-boundaries')) {
+                return jsonResponse(200, [
+                    { startOffset: 0, endOffset: 100, title: 'Chapter One' },
+                    { startOffset: 100, endOffset: 250, title: 'Chapter Two' }
+                ]);
+            }
+            if (u.endsWith('/series')) return jsonResponse(200, { seriesObjectId: 'SER-1' });
+            if (u.endsWith('/chapter')) {
+                let body = JSON.parse(init.body);
+                chapterBodies.push(body);
+                if (/-ch\d+$/.test(body.slug)) return jsonResponse(409, {}); // the bare slug is taken elsewhere
+                return jsonResponse(200, { bookObjectId: 'BK-NEW-' + body.chapter, slug: body.slug });
+            }
+            if (u.endsWith('/series/SER-1/books')) return jsonResponse(200, []); // not one of ours
+            if (u.includes('extract-scenes-only')) return jsonResponse(202, { jobId: 'j', status: 'running' });
+            if (u.includes('create-from-scenes')) {
+                let body = JSON.parse(init.body);
+                createFromScenesBodies.push(body);
+                return jsonResponse(200, {});
+            }
+            return jsonResponse(200, { jobId: 'j', status: 'completed', terminal: true,
+                                       result: { sceneList: [{ title: 'A' }], extractionComplete: true } });
+        });
+
+        let routeSet = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        vi.spyOn(Dialog, 'close').mockImplementation(() => {});
+
+        await pb.doExtract();
+
+        // Two attempts per chapter: the bare slug (409) then one suffixed retry that keeps the ordinal.
+        expect(chapterBodies).toHaveLength(4);
+        expect(chapterBodies[1].slug.startsWith(chapterBodies[0].slug + '-')).toBe(true);
+        expect(chapterBodies[1].chapter).toBe(1);
+        expect(chapterBodies[3].slug.startsWith(chapterBodies[2].slug + '-')).toBe(true);
+        expect(chapterBodies[3].chapter).toBe(2);
+        expect(createFromScenesBodies.map(b => b.pb2BookObjectId)).toEqual(['BK-NEW-1', 'BK-NEW-2']);
+        expect(pb.__extractStateForTest().extractError).toBeNull();
+        expect(routeSet).toHaveBeenCalledWith('/picture-book/BK-NEW-1/workflow');
+    });
+
     it('a SINGLE detected chapter falls back to the unchanged whole-document path (no series, no offsets)', async () => {
         let seriesCalls = 0;
         let extractUrl = null;

@@ -10,7 +10,7 @@ import {
     startExtractScenes, pollJob, cancelJob, listJobs, scenesFromResult
 } from './sceneExtractor.js';
 import { openCharacterManager, initCharacterManager, renderCharacterManagerContent } from './pictureBookCharacters.js';
-import { listPb2Books, detectBoundaries, createSeries, createChapter } from './pictureBookWorkflow.js';
+import { listPb2Books, listSeriesBooks, detectBoundaries, createSeries, createChapter } from './pictureBookWorkflow.js';
 import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
@@ -563,18 +563,44 @@ async function fanOutChaptersExtract(ranges, opts) {
         //    series world. A create failure means there is nowhere to persist this chapter, so record
         //    the reason and skip it (validate/report, never a silent no-op).
         let chapterBookOid = null;
+        let chapSlug = seriesSlugBase + '-ch' + chapNum;
+        let chapOpts = {
+            seriesObjectId: pb2SeriesObjectId,
+            chapter: chapNum,
+            sourceDataObjectId: workObjectId,
+            sourceRange: { startOffset: r.startOffset, endOffset: r.endOffset, title: chapTitle }
+        };
         try {
-            let ch = await createChapter(null, seriesSlugBase + '-ch' + chapNum, chapTitle, null, null, {
-                seriesObjectId: pb2SeriesObjectId,
-                chapter: chapNum,
-                sourceDataObjectId: workObjectId,
-                sourceRange: { startOffset: r.startOffset, endOffset: r.endOffset, title: chapTitle }
-            });
+            let ch = await createChapter(null, chapSlug, chapTitle, null, null, chapOpts);
             chapterBookOid = ch ? ch.bookObjectId : null;
         } catch (e) {
-            problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): could not create its book — '
-                + (e && e.message || 'unknown error'));
-            continue;
+            // Chapter slugs are deterministic, so a re-run of the same manuscript (e.g. after an earlier
+            // run failed mid-extraction) 409s on every chapter. Same rule as the single-book path: reuse
+            // the chapter book this series already has for the slug; only fork a suffixed slug when the
+            // slug belongs to some other series/user.
+            if (!(e && e.message && e.message.includes('409'))) {
+                problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): could not create its book — '
+                    + (e && e.message || 'unknown error'));
+                continue;
+            }
+            let existing = null;
+            try {
+                let seriesBooks = pb2SeriesObjectId ? await listSeriesBooks(pb2SeriesObjectId) : [];
+                existing = (seriesBooks || []).find(b => b && b.slug === chapSlug) || null;
+            } catch (_) {}
+            if (existing) {
+                chapterBookOid = existing.objectId;
+            } else {
+                try {
+                    let ch = await createChapter(null, chapSlug + '-' + Date.now().toString(36).slice(-4),
+                        chapTitle, null, null, chapOpts);
+                    chapterBookOid = ch ? ch.bookObjectId : null;
+                } catch (e2) {
+                    problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): could not create its book — '
+                        + (e2 && e2.message || 'unknown error'));
+                    continue;
+                }
+            }
         }
         if (!chapterBookOid) {
             problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): book creation returned no id.');
