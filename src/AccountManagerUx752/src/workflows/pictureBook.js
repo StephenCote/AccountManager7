@@ -37,6 +37,7 @@ let step = 1;
 let workObjectId = null;  // Source document objectId (for extract API)
 let bookObjectId = null;  // Book group objectId (for scenes/viewer/reset APIs)
 let pb2WizardBookOid = null;  // olio.pb.book objectId — PB2 viewer/workflow navigation only
+let pb2WizardSlug = null;     // slug the pb2 book above was created for; a retry with the same slug reuses it
 let workName = '';
 
 // Step 1
@@ -143,6 +144,7 @@ function resetState() {
     step = 1;
     bookObjectId = null;
     pb2WizardBookOid = null;
+    pb2WizardSlug = null;
     method = 'auto';
     bookName = '';
     chatConfigRef = null;
@@ -1767,29 +1769,42 @@ function buildActions() {
                 try {
                     // Create PB2 book first so universe/world exist before scenes are linked
                     let slug = generateSlug(bookName || workName);
-                    let pb2 = null;
-                    try {
-                        pb2 = await createChapBookRecord(slug, bookName || workName);
-                    } catch (slugErr) {
-                        // Only handle 409 slug conflicts — any other error propagates.
-                        if (!slugErr.message || !slugErr.message.includes('409')) throw slugErr;
-                        // Before creating a second world with a new slug, check whether the
-                        // user already owns a book with this slug (e.g. a previous partial run
-                        // that created the book+world but failed on character creation). If so,
-                        // reuse it — creating a new slug would litter an additional world.
-                        let existingBooks = [];
-                        try { existingBooks = await listPb2Books(); } catch (_) {}
-                        let existing = existingBooks.find(b => b.slug === slug);
-                        if (existing) {
-                            pb2 = existing;
-                        } else {
-                            // Slug belongs to another user — pick a unique suffix.
-                            slug = generateSlug(bookName || workName) + '-' + Date.now().toString(36).slice(-4);
+                    const baseSlug = slug;
+                    let pb2BookObjectId = null;
+                    if (pb2WizardBookOid && pb2WizardSlug === baseSlug) {
+                        // An earlier Continue in this wizard already created the book+world for this
+                        // slug and failed afterwards (extraction/characters). Re-POSTing would 409
+                        // against our own row, so reuse it.
+                        pb2BookObjectId = pb2WizardBookOid;
+                    } else {
+                        let pb2 = null;
+                        try {
                             pb2 = await createChapBookRecord(slug, bookName || workName);
+                        } catch (slugErr) {
+                            // Only handle 409 slug conflicts — any other error propagates.
+                            if (!slugErr.message || !slugErr.message.includes('409')) throw slugErr;
+                            // Before creating a second world with a new slug, check whether the
+                            // user already owns a book with this slug (e.g. a previous partial run
+                            // that created the book+world but failed on character creation). If so,
+                            // reuse it — creating a new slug would litter an additional world.
+                            let existingBooks = [];
+                            try { existingBooks = await listPb2Books(); } catch (_) {}
+                            let existing = existingBooks.find(b => b.slug === slug);
+                            if (existing) {
+                                pb2 = existing;
+                            } else {
+                                // Slug belongs to another user — pick a unique suffix.
+                                slug = generateSlug(bookName || workName) + '-' + Date.now().toString(36).slice(-4);
+                                pb2 = await createChapBookRecord(slug, bookName || workName);
+                            }
                         }
+                        // createChapBookRecord returns { bookObjectId }; listPb2Books returns { objectId }
+                        pb2BookObjectId = pb2 ? (pb2.bookObjectId || pb2.objectId) : null;
+                        // Remember it now, before createFromScenes, so a failure there is retryable
+                        // (keyed on the un-suffixed slug so a forked slug is also reused).
+                        pb2WizardBookOid = pb2BookObjectId;
+                        pb2WizardSlug = baseSlug;
                     }
-                    // createChapBookRecord returns { bookObjectId }; listPb2Books returns { objectId }
-                    let pb2BookObjectId = pb2 ? (pb2.bookObjectId || pb2.objectId) : null;
 
                     let meta = await createFromScenes(
                         workObjectId, chatConfigName(), genre || null,
@@ -1798,7 +1813,7 @@ function buildActions() {
                     // bookObjectId MUST be the data.group objectId — /characters, /scenes, reset all need it.
                     // pb2WizardBookOid carries the olio.pb.book objectId for viewer/workflow navigation.
                     bookObjectId = meta.bookObjectId || null;
-                    pb2WizardBookOid = meta.pb2BookObjectId || null;
+                    pb2WizardBookOid = meta.pb2BookObjectId || pb2BookObjectId;
                     metaScenes = meta.scenes || [];
                     scenes = metaScenes;
                     if (meta.failedCharacters && meta.failedCharacters.length) {

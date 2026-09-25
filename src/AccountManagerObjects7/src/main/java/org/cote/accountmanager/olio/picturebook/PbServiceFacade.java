@@ -1033,29 +1033,49 @@ public class PbServiceFacade {
 	// ─────────────────────────────── Phase 5b: book list + page view ───────────────────────────────
 
 	/**
-	 * All {@code olio.pb.book} records owned by the requesting user in their organisation, sorted by name.
-	 * Returns lightweight DTOs — objectId, slug, name, bookStatus — to populate a book selector.
+	 * The requesting user's story {@code olio.pb.book} records in their organisation, sorted by name, as
+	 * lightweight DTOs — objectId, slug, name, bookStatus — to populate the PB2 book selector.
 	 * <p>
-	 * Uses {@code AccessPoint.list} with explicit {@code organizationId} and {@code ownerId} conditions
-	 * following §5.6b: the query shape is authorized through PBAC's query-evaluation path; per-record
-	 * filtering is not applied; however {@code ownerId} constrains results to the requesting user's own
-	 * books, closing the KI-67 cross-owner leak for the selector view. Shared books accessible via
-	 * collaboration roles are not listed here — they are reached by objectId directly.
+	 * <b>Why not {@code ownerId}.</b> Every {@code olio.pb.book} row is owned uniformly by the OLIO
+	 * PRINCIPAL ({@link PbBookUtil#createBook} writes the row as {@code olioUser}), so an {@code ownerId =
+	 * user.id} condition can never match and this list was always empty — which is how a book whose
+	 * extraction failed became invisible in the Ux while its row still blocked a same-name retry with 409.
+	 * The creator is recorded on the row itself as {@code createdByObjectId}, so that is the candidate key.
+	 * <p>
+	 * Same shape as {@link #listSeriesBooks(BaseRecord, String)}: {@code createdByObjectId} + {@code
+	 * organizationId} only <i>enumerate a bounded candidate set</i> via raw search, and each candidate is
+	 * then read as the ACTING user through {@link PbBookUtil#readBook(BaseRecord, String, long)}
+	 * ({@code AccessPoint.find} -> per-record {@code canRead}), which is the authorization boundary —
+	 * {@code AccessPoint.list} authorizes only the query shape (model-api.md), and a book whose grants were
+	 * never applied is dropped here rather than leaked. Books created by other users are not candidates;
+	 * shared books reached through collaboration roles are opened by objectId directly.
+	 * <p>
+	 * {@code CHAPBOOK} rows are excluded: they belong to the ChapBook list ({@code ChapBookUtil.listChapBooks})
+	 * and the PB2 selector routes each entry into the story workflow.
 	 */
 	public static List<Map<String, Object>> listBooks(BaseRecord user) {
 		if(user == null) throw new PictureBookException(401, "No authenticated principal");
 		long orgId = orgOf(user);
+		String userObjectId = user.get(FieldNames.FIELD_OBJECT_ID);
+		List<Map<String, Object>> out = new ArrayList<>();
+		if(userObjectId == null) return out;
+
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_ORGANIZATION_ID, orgId);
-		q.field(FieldNames.FIELD_OWNER_ID, (Long) user.get(FieldNames.FIELD_ID));
-		q.setRequest(PbBookUtil.bookRequest());
+		q.field(OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID, userObjectId);
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID });
 		q.setCache(false);
 		q.setValue(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
 		q.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING.toString());
 		q.setRequestRange(0, 100);
-		BaseRecord[] books = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
-		List<Map<String, Object>> out = new ArrayList<>();
-		if(books == null) return out;
-		for(BaseRecord b : books) {
+		BaseRecord[] candidates = IOSystem.getActiveContext().getSearch().findRecords(q);
+		if(candidates == null) return out;
+
+		for(BaseRecord cand : candidates) {
+			String candObjectId = cand.get(FieldNames.FIELD_OBJECT_ID);
+			if(candObjectId == null) continue;
+			BaseRecord b = PbBookUtil.readBook(user, candObjectId, orgId);
+			if(b == null) continue;
+			if("CHAPBOOK".equalsIgnoreCase(enumString(b, OlioFieldNames.FIELD_PB_BOOK_TYPE))) continue;
 			Map<String, Object> dto = new LinkedHashMap<>();
 			dto.put("objectId", b.get(FieldNames.FIELD_OBJECT_ID));
 			dto.put("name", b.get(FieldNames.FIELD_NAME));

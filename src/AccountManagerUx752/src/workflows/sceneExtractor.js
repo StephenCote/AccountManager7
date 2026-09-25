@@ -619,6 +619,29 @@ async function mergeCharacters(bookObjectId, keepObjectId, mergeObjectIds) {
     return body;
 }
 
+/**
+ * Delete one extracted character from a book and detach it from every scene that names it.
+ *
+ * Extraction sometimes yields non-people (an animal, a figure of speech) that a merge cannot dispose
+ * of because there is nothing to fold them into. The server detaches the scene notes, the book meta
+ * and the PB2 graph BEFORE deleting the record, and reports what it detached.
+ *
+ * @param {string} bookObjectId  book group objectId
+ * @param {string} charObjectId  the charPerson to remove
+ * @returns {Promise<{deleted:boolean, deletedName:string, scenesDetached:number, metaUpdated:boolean, bindingsRemoved:number, nodesRemoved:number, artifactsRemoved:number}>}
+ */
+async function deleteCharacter(bookObjectId, charObjectId) {
+    let resp = await fetch(pbBase() + '/' + bookObjectId + '/character/' + charObjectId, {
+        method: 'DELETE', credentials: 'include'
+    });
+    let body = null;
+    try { body = await resp.json(); } catch (e) { /* non-JSON error body */ }
+    if (!resp.ok) {
+        throw new Error((body && (body.message || body.error)) || ('Delete character failed: ' + resp.status));
+    }
+    return body;
+}
+
 // ── Image URL resolution ─────────────────────────────────────────────
 // Scene meta stores imageObjectId (UUID) but media URLs require groupPath + name.
 // Fetch the image record once, cache it, build URL using am7client.currentOrganization.
@@ -733,6 +756,7 @@ export {
     sceneCharacterLabels,
     tagApparelSceneIndex,
     mergeCharacters,
+    deleteCharacter,
     buildMeta,
     resolveImageUrl,
     resolveAllImageUrls,

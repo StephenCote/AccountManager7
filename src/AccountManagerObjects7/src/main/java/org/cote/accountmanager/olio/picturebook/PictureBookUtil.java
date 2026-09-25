@@ -467,8 +467,29 @@ public class PictureBookUtil {
     }
 
     /**
+     * Result of {@link #deleteCharacter}: what was detached and removed, so the caller can report it
+     * rather than asserting success.
+     */
+    public static final class DeleteCharacterResult {
+        public String deletedName;
+        /** Scene notes whose character list no longer names the character. */
+        public int scenesDetached;
+        /** Whether the book meta's scene character ids were rewritten. */
+        public boolean metaUpdated;
+        /** PB2 graph rows removed: ref bindings to the character plus every edge of its own nodes. */
+        public int bindingsRemoved;
+        /** Character-scoped PB2 nodes (portrait etc.) removed. */
+        public int nodesRemoved;
+        /** Artifacts produced by those nodes removed. */
+        public int artifactsRemoved;
+        /** Whether the charPerson (and its sub-records) were deleted. */
+        public boolean deleted;
+    }
+
+    /**
      * Rewrite one scene note's character list, in place on the note's {@code text} JSON, replacing
-     * every reference to a dropped character with the keeper.
+     * every reference to a dropped character with the keeper — or, when both {@code keepName} and
+     * {@code keepOid} are null, removing the reference outright (the delete case).
      *
      * <p>Scene characters are persisted in TWO shapes and BOTH have to be handled: the note's text
      * JSON keeps the extraction's {@code [{name, role}]} maps (which is what
@@ -496,13 +517,14 @@ public class PictureBookUtil {
             try {
                 textData = JSONUtil.getMap(existingText.getBytes(StandardCharsets.UTF_8), String.class, Object.class);
             } catch (Exception ex) {
-                logger.warn("mergeCharacters: unparseable text on scene "
+                logger.warn("repointSceneCharacters: unparseable text on scene "
                         + scene.get(FieldNames.FIELD_OBJECT_ID) + " - left untouched");
                 return false;
             }
             Object charsObj = textData.get("characters");
             if (!(charsObj instanceof List)) return false;
 
+            boolean remove = (keepName == null && keepOid == null);
             List<Object> chars = (List<Object>) charsObj;
             List<Object> out = new ArrayList<>();
             Set<String> seen = new HashSet<>();
@@ -514,15 +536,17 @@ public class PictureBookUtil {
                     Object raw = cm.get("name");
                     if (raw instanceof String
                             && dropKeys.contains(characterNameKey((String) raw))) {
-                        cm.put("name", keepName);
                         changed = true;
+                        if (remove) continue;
+                        cm.put("name", keepName);
                     }
                 }
                 else if (sc instanceof String) {
                     String v = (String) sc;
                     if (dropOids.contains(v) || dropKeys.contains(characterNameKey(v))) {
-                        entry = (keepOid != null && dropOids.contains(v)) ? keepOid : keepName;
                         changed = true;
+                        if (remove) continue;
+                        entry = (keepOid != null && dropOids.contains(v)) ? keepOid : keepName;
                     }
                 }
                 /// Identity for de-duplication: the name for a map entry, the value for a string.
@@ -549,14 +573,14 @@ public class PictureBookUtil {
             /// swallowing it turns a persistent failure into a silent no-op
             /// (.claude/rules/model-api.md).
             if (IOSystem.getActiveContext().getAccessPoint().update(user, scene) == null) {
-                logger.error("mergeCharacters: FAILED to persist the repointed character list on scene "
+                logger.error("repointSceneCharacters: FAILED to persist the rewritten character list on scene "
                         + scene.get(FieldNames.FIELD_OBJECT_ID)
-                        + " - that scene still references the merged-away character");
+                        + " - that scene still references the dropped character");
                 return false;
             }
             return true;
         } catch (Exception e) {
-            logger.warn("mergeCharacters: failed to repoint scene "
+            logger.warn("repointSceneCharacters: failed to rewrite scene "
                     + scene.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
             return false;
         }
@@ -705,6 +729,199 @@ public class PictureBookUtil {
     }
 
     /**
+     * Delete one extracted character from a book and detach it from every scene that references it.
+     *
+     * <p>Extraction sometimes yields "characters" that are not people at all — an animal, a figure of
+     * speech, a place — and a merge cannot get rid of those (there is nothing to fold them into).
+     * This is the removal path: same authorization and same trusted-group derivation as
+     * {@link #mergeCharacters}, and the same load-bearing order — every reference is detached BEFORE
+     * the record is deleted, so no scene is ever left naming a character that no longer exists.
+     *
+     * <p>What is detached, in order: (1) the scene notes' {@code characters} lists (by name, which is
+     * what the renderer resolves); (2) the book meta's {@code scenes[].characters} objectIds (what the
+     * Ux badges read); (3) the PB2 graph — every binding whose {@code refObjectId} is this character,
+     * plus this character's own {@code scope=character} nodes (portrait) with their edges and
+     * artifacts, since those would otherwise keep a dangling {@code data} FK to the portrait image
+     * deleted in step 4; (4) the charPerson itself with its foreign sub-records.
+     *
+     * <p><b>Bounds.</b> Scene-scoped nodes are left in place: removing their character binding
+     * changes their input hash, so the next stale-check re-renders them without the character.
+     * {@code olio.pb.run.requestedNodeIds} (a historical, non-foreign id list) and cast-group
+     * memberships are not rewritten.
+     *
+     * @throws PictureBookException 404 for an unknown book/character, 403 when the book denies the
+     *         write
+     */
+    public static DeleteCharacterResult deleteCharacter(BaseRecord user, String bookObjectId,
+            String charObjectId) {
+        if (charObjectId == null || charObjectId.isEmpty()) {
+            throw new PictureBookException(400, "Character objectId is required");
+        }
+
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        BaseRecord bookGroup = resolveBookGroupEither(user, bookObjectId, orgId);
+        if (bookGroup == null) throw new PictureBookException(404, "Book not found");
+        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+
+        PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil()
+                .canUpdate(user, user, bookGroup);
+        if (prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+            logger.warn("deleteCharacter: denied UPDATE on book group "
+                    + bookGroup.get(FieldNames.FIELD_NAME) + " for user " + user.get(FieldNames.FIELD_NAME));
+            throw new PictureBookException(403, "Not authorized for this book");
+        }
+
+        String pb2BookObjectId = metaPb2BookObjectId(user, bookGroupPath, bookObjectId);
+        BaseRecord charsGroup = resolveTrustedCharsGroup(user, pb2BookObjectId, bookGroupPath, orgId);
+        if (charsGroup == null) throw new PictureBookException(404, "Book characters not found");
+        long charsGroupId = ((Number) charsGroup.get(FieldNames.FIELD_ID)).longValue();
+
+        BaseRecord target = findBookCharacterById(user, charObjectId, charsGroupId, orgId);
+        if (target == null) throw new PictureBookException(404, "Character not found in this book");
+        String targetName = target.get(FieldNames.FIELD_NAME);
+
+        DeleteCharacterResult result = new DeleteCharacterResult();
+        result.deletedName = targetName;
+
+        Set<String> dropOids = new HashSet<>(Collections.singleton(charObjectId));
+        Set<String> dropKeys = new HashSet<>();
+        String tk = characterNameKey(targetName);
+        if (!tk.isEmpty()) dropKeys.add(tk);
+
+        /// 1. Scene notes - by name, which is what the renderer reads.
+        BaseRecord scenesGroup = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                ModelNames.MODEL_GROUP, bookGroupPath + "/Scenes", GroupEnumType.DATA.toString(), orgId);
+        if (scenesGroup != null) {
+            Query nq = QueryUtil.createQuery(ModelNames.MODEL_NOTE,
+                    FieldNames.FIELD_GROUP_ID, scenesGroup.get(FieldNames.FIELD_ID));
+            nq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            nq.planMost(false);
+            nq.setCache(false);
+            BaseRecord[] notes = IOSystem.getActiveContext().getAccessPoint().list(user, nq).getResults();
+            if (notes != null) {
+                for (BaseRecord note : notes) {
+                    if (META_NOTE_NAME.equals((String) note.get(FieldNames.FIELD_NAME))) continue;
+                    if (repointSceneCharacters(user, note, dropKeys, dropOids, null, null)) {
+                        result.scenesDetached++;
+                    }
+                }
+            }
+        }
+        else {
+            logger.warn("deleteCharacter: no Scenes group under " + bookGroupPath
+                    + " - no scene notes were detached");
+        }
+
+        /// 2. The book meta's objectId lists.
+        result.metaUpdated = repointMetaCharacters(user, bookGroupPath, dropOids, null);
+
+        /// 3. The PB2 graph.
+        detachCharacterFromGraph(user, pb2BookObjectId, charObjectId, orgId, result);
+
+        /// 4. Only now the record itself.
+        result.deleted = deleteBookCharacter(user, target);
+
+        logger.info("deleteCharacter: '" + targetName + "' " + (result.deleted ? "deleted" : "NOT deleted")
+                + " (" + result.scenesDetached + " scene(s) detached, meta "
+                + (result.metaUpdated ? "updated" : "unchanged") + ", graph: " + result.bindingsRemoved
+                + " binding(s), " + result.nodesRemoved + " node(s), " + result.artifactsRemoved
+                + " artifact(s) removed)");
+        return result;
+    }
+
+    /**
+     * Remove a character's footprint from the book's PB2 workflow: every binding that references the
+     * charPerson directly, and every {@code scope=character} node for it together with the edges into
+     * and out of that node and the artifacts it produced. Child rows go before their referents
+     * (binding, artifact → node), the same ordering the book-delete walk uses. A PB1 book, or a PB2
+     * book that has no workflow yet, has nothing to detach.
+     */
+    private static void detachCharacterFromGraph(BaseRecord user, String pb2BookObjectId,
+            String charOid, long orgId, DeleteCharacterResult result) {
+        BaseRecord book;
+        try {
+            book = PbBookUtil.readBook(user, pb2BookObjectId, orgId);
+        } catch (Exception e) {
+            logger.warn("deleteCharacter: could not read PB2 book " + pb2BookObjectId + ": " + e.getMessage());
+            return;
+        }
+        if (book == null) return;
+        BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);
+        if (workflow == null) return;
+
+        List<BaseRecord> nodes = PbGraphUtil.listNodes(user, workflow);
+        List<BaseRecord> charNodes = new ArrayList<>();
+        Set<Long> charNodeIds = new HashSet<>();
+        for (BaseRecord n : nodes) {
+            String scope = n.get(OlioFieldNames.FIELD_PB_SCOPE);
+            String scopeRef = n.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
+            if (PbPipelineUtil.SCOPE_CHARACTER.equals(scope) && charOid.equals(scopeRef)) {
+                charNodes.add(n);
+                charNodeIds.add((Long) n.get(FieldNames.FIELD_ID));
+            }
+        }
+
+        for (BaseRecord n : nodes) {
+            for (BaseRecord b : PbGraphUtil.listBindings(user, n)) {
+                boolean refsChar = OlioModelNames.MODEL_CHAR_PERSON.equals((String) b.get(OlioFieldNames.FIELD_PB_REF_MODEL))
+                        && charOid.equals((String) b.get(OlioFieldNames.FIELD_PB_REF_OBJECT_ID));
+                BaseRecord src = b.get(OlioFieldNames.FIELD_PB_SOURCE_NODE);
+                Long srcId = (src != null) ? src.get(FieldNames.FIELD_ID) : null;
+                boolean edgeOfCharNode = charNodeIds.contains((Long) n.get(FieldNames.FIELD_ID))
+                        || (srcId != null && charNodeIds.contains(srcId));
+                if (!refsChar && !edgeOfCharNode) continue;
+                try {
+                    if (IOSystem.getActiveContext().getAccessPoint().delete(user, b)) {
+                        result.bindingsRemoved++;
+                    }
+                    else {
+                        logger.warn("deleteCharacter: failed to delete binding " + b.get(FieldNames.FIELD_NAME));
+                    }
+                } catch (Exception e) {
+                    logger.warn("deleteCharacter: failed to delete binding " + b.get(FieldNames.FIELD_NAME)
+                            + ": " + e.getMessage());
+                }
+            }
+        }
+
+        for (BaseRecord n : charNodes) {
+            Query aq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_ARTIFACT,
+                    OlioFieldNames.FIELD_PB_PRODUCED_BY_NODE, n);
+            aq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            aq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME });
+            aq.setCache(false);
+            BaseRecord[] arts = IOSystem.getActiveContext().getAccessPoint().list(user, aq).getResults();
+            if (arts != null) {
+                for (BaseRecord a : arts) {
+                    if (a.getSchema() == null) a.setSchema(OlioModelNames.MODEL_PB_ARTIFACT);
+                    try {
+                        if (IOSystem.getActiveContext().getAccessPoint().delete(user, a)) {
+                            result.artifactsRemoved++;
+                        }
+                        else {
+                            logger.warn("deleteCharacter: failed to delete artifact " + a.get(FieldNames.FIELD_NAME));
+                        }
+                    } catch (Exception e) {
+                        logger.warn("deleteCharacter: failed to delete artifact " + a.get(FieldNames.FIELD_NAME)
+                                + ": " + e.getMessage());
+                    }
+                }
+            }
+            try {
+                if (IOSystem.getActiveContext().getAccessPoint().delete(user, n)) {
+                    result.nodesRemoved++;
+                }
+                else {
+                    logger.warn("deleteCharacter: failed to delete node " + n.get(OlioFieldNames.FIELD_PB_HANDLE));
+                }
+            } catch (Exception e) {
+                logger.warn("deleteCharacter: failed to delete node " + n.get(OlioFieldNames.FIELD_PB_HANDLE)
+                        + ": " + e.getMessage());
+            }
+        }
+    }
+
+    /**
      * The {@code pb2BookObjectId} recorded in the book meta, falling back to the request id.
      *
      * <p>Read ONLY as an authorization-checked object-id HINT, never as a group path: it is resolved
@@ -732,7 +949,8 @@ public class PictureBookUtil {
 
     /**
      * Rewrite the book meta's {@code scenes[].characters} objectId lists, replacing dropped ids with
-     * the keeper and de-duplicating. Returns true when the meta was changed and persisted.
+     * the keeper (or removing them when {@code keepOid} is null) and de-duplicating. Returns true
+     * when the meta was changed and persisted.
      */
     @SuppressWarnings("unchecked")
     private static boolean repointMetaCharacters(BaseRecord user, String bookGroupPath,
@@ -757,8 +975,9 @@ public class PictureBookUtil {
                 for (Object c : (List<Object>) cl) {
                     Object v = c;
                     if (c instanceof String && dropOids.contains(c)) {
-                        v = keepOid;
                         changed = true;
+                        if (keepOid == null) continue;
+                        v = keepOid;
                     }
                     String id = String.valueOf(v);
                     if (!seen.add(id)) { changed = true; continue; }
@@ -778,13 +997,13 @@ public class PictureBookUtil {
             BaseRecord metaPatch = metaRec.copyRecord(new String[] {
                     FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "text" });
             if (IOSystem.getActiveContext().getAccessPoint().update(user, metaPatch) == null) {
-                logger.error("mergeCharacters: FAILED to persist the repointed book meta - the Ux "
-                        + "character badges will still show the merged-away character");
+                logger.error("repointMetaCharacters: FAILED to persist the rewritten book meta - the Ux "
+                        + "character badges will still show the dropped character");
                 return false;
             }
             return true;
         } catch (Exception e) {
-            logger.warn("mergeCharacters: failed to repoint the book meta: " + e.getMessage());
+            logger.warn("repointMetaCharacters: failed to rewrite the book meta: " + e.getMessage());
             return false;
         }
     }
@@ -9173,7 +9392,18 @@ public class PictureBookUtil {
         if (olioUser == null) {
             olioUser = user;
         }
+        return teardownBookFootprintAsOlio(olioUser, book, orgId);
+    }
 
+    /**
+     * Steps 1-5 of {@link #teardownBookWorld} with NO authorization decision of its own: the physical
+     * teardown of a book's row, groups, world and cached context, run as {@code olioUser}. The caller has
+     * already decided the delete is legitimate - {@code teardownBookWorld} by {@code canDelete} as the
+     * acting user, {@code PbBookUtil.createBook} because it is unwinding artifacts it created itself
+     * moments earlier in the same call and no grant exists yet for the creator to be authorized against.
+     */
+    static DeleteResult teardownBookFootprintAsOlio(BaseRecord olioUser, BaseRecord book, long orgId) {
+        String bookOid = (book != null) ? book.get(FieldNames.FIELD_OBJECT_ID) : null;
         String slug = (book.hasField(OlioFieldNames.FIELD_PB_SLUG) ? book.get(OlioFieldNames.FIELD_PB_SLUG) : null);
         if (slug == null || slug.isBlank()) {
             // No slug to resolve the world/groups by — the safest we can do is delete the book row itself.
@@ -9277,16 +9507,19 @@ public class PictureBookUtil {
         }
 
         // 4. Safety net: if the book row somehow survived step 2 (e.g. it lived outside the Book group),
-        // delete it directly and surface a concrete reason on failure.
-        Query bookQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookOid);
-        bookQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-        bookQ.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID });
-        bookQ.setCache(false);
-        BaseRecord residualBook = IOSystem.getActiveContext().getSearch().findRecord(bookQ);
-        if (residualBook != null) {
-            DeleteResult bookDel = deleteRecordExplained(olioUser, residualBook);
-            if (!bookDel.deleted) {
-                return bookDel;
+        // delete it directly and surface a concrete reason on failure. A slug-only stand-in (no objectId,
+        // from a createBook rollback whose row was never written) has nothing to look up here.
+        if (bookOid != null) {
+            Query bookQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookOid);
+            bookQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            bookQ.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID });
+            bookQ.setCache(false);
+            BaseRecord residualBook = IOSystem.getActiveContext().getSearch().findRecord(bookQ);
+            if (residualBook != null) {
+                DeleteResult bookDel = deleteRecordExplained(olioUser, residualBook);
+                if (!bookDel.deleted) {
+                    return bookDel;
+                }
             }
         }
 

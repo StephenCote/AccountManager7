@@ -17,6 +17,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.olio.rules.BookWorldInitializationRule;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -129,6 +130,27 @@ public class PbBookUtil {
 			created = writeBookRow(ioContext, olioUser, slug, title, bookGroupPath, orgId);
 		}
 
+		/// A world already at this path is adopted by getCreateBookContext, not created, so it is not this
+		/// call's to unwind. Probe find-only BEFORE creating so the rollback below knows the difference.
+		boolean worldPreExisted = (olioUser != null
+			&& WorldUtil.findWorld(olioUser, PbOlioContextUtil.bookWorldPath(), slug) != null);
+
+		/// From here on the row exists. Any failure before the book is linked and readable must take the
+		/// row - and the world, if this call made it - back out with it. Otherwise the slug stays taken by
+		/// a row the creator can never see (createdByObjectId is only stamped by the patch below), and a
+		/// retry with the same title dies on 409 against an artifact no list will ever show.
+		try {
+			return linkBookToWorld(ioContext, user, created, dataPath, slug, title, bookGroupPath, orgId);
+		}
+		catch(RuntimeException e) {
+			rollbackCreate(ioContext, slug, orgId, worldPreExisted, e);
+			throw e;
+		}
+	}
+
+	/** The world, bootstrap row, FK patch and creator read-back halves of {@link #createBook}. */
+	private static BaseRecord linkBookToWorld(IOContext ioContext, BaseRecord user, BaseRecord created,
+			String dataPath, String slug, String title, String bookGroupPath, long orgId) {
 		/// THEN the world. Grants, both-tier creator enrolment and post-init verification all happen here.
 		OlioContext ctx = null;
 		try {
@@ -178,6 +200,57 @@ public class PbBookUtil {
 				+ " - the world authorization grants did not reach " + bookGroupPath);
 		}
 		return readBack;
+	}
+
+	/**
+	 * Unwind a failed {@link #createBook}: the row this call wrote and, unless it was already there when the
+	 * call began, the world and groups {@code getCreateBookContext} built for it. Runs as the olio principal
+	 * (the owner of every artifact involved); the creator holds no grant at this point to be authorized
+	 * against, and the caller is throwing the original failure regardless. A rollback failure is logged
+	 * with the artifact it left behind - it never masks {@code cause}. Package-private so the rollback path
+	 * can be driven directly by {@code TestPbCreateBookRollback} for the fresh-world branch, which no input
+	 * to {@link #createBook} can make fail on demand.
+	 */
+	static void rollbackCreate(IOContext ioContext, String slug, long orgId, boolean worldPreExisted,
+			RuntimeException cause) {
+		logger.warn("Rolling back book '" + slug + "' after: " + cause.getMessage());
+		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		if(olioUser == null) {
+			logger.error("Cannot roll back book '" + slug + "': no olio principal in organization " + orgId);
+			return;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SLUG, slug);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID,
+			FieldNames.FIELD_NAME, OlioFieldNames.FIELD_PB_SLUG, OlioFieldNames.FIELD_PB_SERIES});
+		q.setCache(false);
+		BaseRecord row = ioContext.getSearch().findRecord(q);
+
+		if(worldPreExisted) {
+			if(row != null) {
+				PictureBookUtil.DeleteResult del = PictureBookUtil.deleteRecordExplained(olioUser, row);
+				if(!del.deleted) {
+					logger.error("Rollback of book '" + slug + "' left its row behind: " + del.reason);
+				}
+			}
+			return;
+		}
+		if(row == null) {
+			/// The row was never written (or is already gone) but the world may be. A slug-only stand-in is
+			/// enough for the teardown to resolve the world and groups by slug.
+			try {
+				row = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK, new String[] {OlioFieldNames.FIELD_PB_SLUG});
+				row.set(OlioFieldNames.FIELD_PB_SLUG, slug);
+			}
+			catch(FieldException | ValueException | ModelNotFoundException e) {
+				logger.error("Rollback of book '" + slug + "' could not build a slug stand-in: " + e.getMessage());
+				return;
+			}
+		}
+		PictureBookUtil.DeleteResult del = PictureBookUtil.teardownBookFootprintAsOlio(olioUser, row, orgId);
+		if(!del.deleted) {
+			logger.error("Rollback of book '" + slug + "' left artifacts behind: " + del.reason);
+		}
 	}
 
 	/**

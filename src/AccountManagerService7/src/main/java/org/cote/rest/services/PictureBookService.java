@@ -794,6 +794,42 @@ public class PictureBookService {
     }
 
     /**
+     * DELETE /{bookObjectId}/character/{objectId}
+     *
+     * <p>Remove one extracted character from the book and detach it from every scene that names it.
+     * Extraction sometimes yields non-people (an animal, an expression) that a merge cannot dispose
+     * of because there is nothing to fold them into; this is the removal path.
+     *
+     * <p>Transport only: PictureBookUtil.deleteCharacter authorizes the book (UPDATE), derives the
+     * characters group server-side, detaches the scene notes, the book meta and the PB2 graph, then
+     * deletes the record.
+     */
+    @RolesAllowed({"admin", "user"})
+    @DELETE
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/character/{objectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response deleteCharacter(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("objectId") String objectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            PictureBookUtil.DeleteCharacterResult res = PictureBookUtil.deleteCharacter(user, bookObjectId, objectId);
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("deleted", res.deleted);
+            out.put("deletedName", res.deletedName);
+            out.put("scenesDetached", res.scenesDetached);
+            out.put("metaUpdated", res.metaUpdated);
+            out.put("bindingsRemoved", res.bindingsRemoved);
+            out.put("nodesRemoved", res.nodesRemoved);
+            out.put("artifactsRemoved", res.artifactsRemoved);
+            return Response.status(200).entity(JSONUtil.exportObject(out)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (Exception e) {
+            return Response.status(500).entity("{\"error\":true,\"message\":\"" + e.getMessage() + "\"}").build();
+        }
+    }
+
+    /**
      * PUT /character/{objectId}/apparel/{apparelObjectId}/scene-tag
      * Tag an apparel entry with the scene index it should first apply from (see
      * PictureBookUtil.selectSceneApparel). Used by the character editor after generating a new

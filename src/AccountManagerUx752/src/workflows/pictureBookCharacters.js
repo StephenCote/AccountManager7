@@ -4,7 +4,7 @@ import { am7model } from '../core/model.js';
 import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import { renderRange } from '../components/formFieldRenderers.js';
-import { listCharacters, tagApparelSceneIndex, mergeCharacters, resolveImageUrl } from './sceneExtractor.js';
+import { listCharacters, tagApparelSceneIndex, mergeCharacters, deleteCharacter, resolveImageUrl } from './sceneExtractor.js';
 import { reimage } from './reimage.js';
 import { outfitBuilder } from './outfitBuilder.js';
 
@@ -39,6 +39,7 @@ let sceneTagInputs = {}; // apparelObjectId -> string (pending scene index input
 let mergeMode = false;
 let mergeSelection = {};   // objectId -> true
 let merging = false;
+let deleting = false;
 
 function resetState() {
     bookObjectId = null;
@@ -50,6 +51,7 @@ function resetState() {
     mergeMode = false;
     mergeSelection = {};
     merging = false;
+    deleting = false;
 }
 
 async function refreshList() {
@@ -148,6 +150,48 @@ async function doMergeSelected() {
         page.toast('error', 'Merge failed: ' + (e.message || e));
     }
     merging = false;
+    m.redraw();
+}
+
+/**
+ * Delete the selected character outright and detach it from every scene.
+ *
+ * Extraction sometimes surfaces an animal, an expression, or a turn of phrase as a "character".
+ * Those are not duplicates of anyone, so merge is the wrong tool — there is nothing to fold them
+ * into. Delete removes the record and drops it from every scene, meta entry and pipeline binding
+ * that referenced it, so a later render does not try to paint a portrait for "a sigh".
+ */
+async function doDeleteSelected() {
+    if (!selectedObjectId || deleting || merging) return;
+    let name = (characters.find(function (c) { return c.objectId === selectedObjectId; }) || {}).name
+        || (selectedInst && selectedInst.entity && selectedInst.entity.name)
+        || selectedObjectId;
+    let ok = window.confirm('Delete "' + name + '"?\n\n'
+        + 'It will be removed from every scene that references it, and deleted along with its '
+        + 'portrait, statistics and wardrobe. This cannot be undone.');
+    if (!ok) return;
+
+    deleting = true;
+    m.redraw();
+    try {
+        let result = await deleteCharacter(bookObjectId, selectedObjectId);
+        let n = (result && result.scenesDetached) || 0;
+        let msg = 'Deleted "' + ((result && result.deletedName) || name) + '" (detached from '
+            + n + ' scene' + (n === 1 ? '' : 's') + ')';
+        if (result && result.deleted === false) {
+            page.toast('error', msg + ' — but the character record itself could not be deleted');
+        }
+        else {
+            page.toast('success', msg);
+        }
+        delete mergeSelection[selectedObjectId];
+        selectedObjectId = null;
+        selectedInst = null;
+        await refreshList();
+    } catch (e) {
+        page.toast('error', 'Delete failed: ' + (e.message || e));
+    }
+    deleting = false;
     m.redraw();
 }
 
@@ -334,10 +378,18 @@ function renderDetail() {
                 m('div', { class: 'text-lg font-semibold' }, selectedInst.entity.name),
                 m('div', { class: 'text-sm text-gray-500' }, 'Gender: ' + (selectedInst.entity.gender || 'UNKNOWN'))
             ]),
-            m('a', {
-                href: '#', class: 'text-sm text-blue-600 dark:text-blue-400 hover:underline',
-                onclick: function (e) { e.preventDefault(); openFullEditor(selectedInst.entity); }
-            }, 'Open Full Editor →')
+            m('div', { class: 'flex items-center gap-3' }, [
+                m('a', {
+                    href: '#', class: 'text-sm text-blue-600 dark:text-blue-400 hover:underline',
+                    onclick: function (e) { e.preventDefault(); openFullEditor(selectedInst.entity); }
+                }, 'Open Full Editor →'),
+                m('button', {
+                    class: 'px-3 py-1 rounded text-xs bg-red-600 text-white hover:bg-red-500 disabled:opacity-50',
+                    title: 'Delete this character and detach it from every scene. Use for extractions that are not really characters (animals, expressions).',
+                    disabled: deleting || merging,
+                    onclick: doDeleteSelected
+                }, deleting ? 'Deleting…' : 'Delete character')
+            ])
         ]),
         m('div', [
             m('div', { class: 'font-medium mb-1' }, 'Portrait'),
