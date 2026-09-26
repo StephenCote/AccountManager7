@@ -191,6 +191,76 @@ model_list:
       # Split the token if they ever need different caps.
       max_parallel_requests: __LOCAL_MAX_PARALLEL__
 
+  - model_name: qwen3:30b-jos-local
+    litellm_params:
+      model: ollama_chat/goekdenizguelmez/JOSIEFIED-Qwen3:30b
+      api_base: os.environ/OLLAMA_LOCAL_API_BASE
+      # Innermost timeout -- see the ladder note in litellm_settings below.
+      timeout: 240
+      # A SEPARATE physical GPU from the LAN box, so it needs its OWN queue --
+      # an entry with no cap gets no semaphore at all, i.e. unlimited
+      # concurrency onto a single-GPU machine. The sed in the compose
+      # entrypoint is a global substitution, so this token renders here too;
+      # both boxes consequently share the one LITELLM_LOCAL_MAX_PARALLEL value.
+      # Split the token if they ever need different caps.
+      max_parallel_requests: __LOCAL_MAX_PARALLEL__
+
+  - model_name: qwen3:30b-jos
+    litellm_params:
+      model: ollama_chat/goekdenizguelmez/JOSIEFIED-Qwen3:30b
+      api_base: os.environ/OLLAMA_API_BASE
+      # Innermost timeout -- see the ladder note in litellm_settings below.
+      timeout: 240
+      # A SEPARATE physical GPU from the LAN box, so it needs its OWN queue --
+      # an entry with no cap gets no semaphore at all, i.e. unlimited
+      # concurrency onto a single-GPU machine. The sed in the compose
+      # entrypoint is a global substitution, so this token renders here too;
+      # both boxes consequently share the one LITELLM_LOCAL_MAX_PARALLEL value.
+      # Split the token if they ever need different caps.
+      max_parallel_requests: __LOCAL_MAX_PARALLEL__
+
+  - model_name: qwen3:8b-jos-local
+    litellm_params:
+      model: ollama_chat/goekdenizguelmez/JOSIEFIED-Qwen3:8b
+      api_base: os.environ/OLLAMA_LOCAL_API_BASE
+      # Innermost timeout -- see the ladder note in litellm_settings below.
+      timeout: 240
+      # A SEPARATE physical GPU from the LAN box, so it needs its OWN queue --
+      # an entry with no cap gets no semaphore at all, i.e. unlimited
+      # concurrency onto a single-GPU machine. The sed in the compose
+      # entrypoint is a global substitution, so this token renders here too;
+      # both boxes consequently share the one LITELLM_LOCAL_MAX_PARALLEL value.
+      # Split the token if they ever need different caps.
+      max_parallel_requests: __LOCAL_MAX_PARALLEL__
+
+  - model_name: qwen3:8b-jos
+    litellm_params:
+      model: ollama_chat/goekdenizguelmez/JOSIEFIED-Qwen3:8b
+      api_base: os.environ/OLLAMA_API_BASE
+      # Innermost timeout -- see the ladder note in litellm_settings below.
+      timeout: 240
+      # A SEPARATE physical GPU from the LAN box, so it needs its OWN queue --
+      # an entry with no cap gets no semaphore at all, i.e. unlimited
+      # concurrency onto a single-GPU machine. The sed in the compose
+      # entrypoint is a global substitution, so this token renders here too;
+      # both boxes consequently share the one LITELLM_LOCAL_MAX_PARALLEL value.
+      # Split the token if they ever need different caps.
+      max_parallel_requests: __LOCAL_MAX_PARALLEL__
+
+  - model_name: way-local-local
+    litellm_params:
+      model: ollama_chat/way-local
+      api_base: os.environ/OLLAMA_LOCAL_API_BASE
+      # Innermost timeout -- see the ladder note in litellm_settings below.
+      timeout: 240
+      # A SEPARATE physical GPU from the LAN box, so it needs its OWN queue --
+      # an entry with no cap gets no semaphore at all, i.e. unlimited
+      # concurrency onto a single-GPU machine. The sed in the compose
+      # entrypoint is a global substitution, so this token renders here too;
+      # both boxes consequently share the one LITELLM_LOCAL_MAX_PARALLEL value.
+      # Split the token if they ever need different caps.
+      max_parallel_requests: __LOCAL_MAX_PARALLEL__
+
 litellm_settings:
   # Tier A: proxy-side tracing to Langfuse (no AM7 code involved).
   success_callback: ["langfuse"]
