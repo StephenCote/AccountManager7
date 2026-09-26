@@ -117,6 +117,9 @@ function clearToast() {
 }
 
 function addToast(type, msg, timeout) {
+    // An unknown type must degrade, not throw: loadToast runs inside every redraw, so one bad
+    // type string ('warning') used to take down the whole app render.
+    if (!toastConfig[type]) type = (type === 'warning') ? 'warn' : 'info';
     let nt = {
         id: uid(luidStub),
         type,

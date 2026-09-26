@@ -32,12 +32,15 @@ import org.apache.logging.log4j.Logger;
  * range runs from the start of its heading line (inclusive) to the start of the next heading line
  * (exclusive), or to the end of the text for the last chapter.
  * <p>
- * <b>Leading text (before the first heading).</b> If there is meaningful (non-whitespace) content
- * before the first detected heading it becomes its own leading range with a {@code null} title
- * ("front matter"); if that leading content is only whitespace it is folded into chapter&nbsp;1 (the
- * first chapter's {@code startOffset} is pulled back to {@code 0}). This keeps the exact offset of
- * every real chapter heading while still guaranteeing whole-text coverage. When the text contains no
- * detectable heading at all, a single range {@code [0, length)} with a {@code null} title is returned.
+ * <b>Leading text (before the first heading).</b> Substantial content before the first detected
+ * heading (a prologue — at least {@link #MIN_STANDALONE_LEAD_CHARS} non-whitespace-trimmed characters)
+ * becomes its own leading range with a {@code null} title ("front matter"). A short lead — a title
+ * page, an author line, whitespace — is folded into chapter&nbsp;1 (the first chapter's
+ * {@code startOffset} is pulled back to {@code 0}). Measured on {@code HarlotsEight_Vol1_SM.docx}: the
+ * lead is an 18-character title line, and giving it its own range produced a phantom, untitled
+ * "Chapter 1" book with nothing to extract and shifted every real chapter's number by one. When the
+ * text contains no detectable heading at all, a single range {@code [0, length)} with a {@code null}
+ * title is returned.
  */
 public class PbChapterBoundaryUtil {
 	private static final Logger logger = LogManager.getLogger(PbChapterBoundaryUtil.class);
@@ -56,6 +59,13 @@ public class PbChapterBoundaryUtil {
 	 * auto-detected set clean.
 	 */
 	private static final int MAX_HEADING_LEN = 72;
+
+	/**
+	 * Minimum trimmed length of text before the first heading for it to be returned as its own
+	 * untitled range. Below this it is a title page, not a prologue: too short to hold a scene and
+	 * half the size of one extraction chunk.
+	 */
+	public static final int MIN_STANDALONE_LEAD_CHARS = 1000;
 
 	/**
 	 * Number-word alternation (compound forms first so the alternation is leftmost-longest correct):
@@ -178,12 +188,12 @@ public class PbChapterBoundaryUtil {
 		int chapterOneStart = firstStart;
 		if (firstStart > 0) {
 			String lead = text.substring(0, firstStart);
-			if (lead.trim().length() > 0) {
-				/// Meaningful front matter before the first heading: its own untitled leading range.
+			if (lead.trim().length() >= MIN_STANDALONE_LEAD_CHARS) {
+				/// A prologue-sized lead before the first heading: its own untitled leading range.
 				ranges.add(new ChapterRange(0, firstStart, null));
 			}
 			else {
-				/// Whitespace-only lead: fold it into chapter 1 so coverage starts at 0.
+				/// Title page / whitespace: fold it into chapter 1 so coverage starts at 0.
 				chapterOneStart = 0;
 			}
 		}

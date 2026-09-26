@@ -688,6 +688,18 @@ public class PbBookUtil {
 			: Collections.emptyList());
 	}
 
+	/** How many scenes the book has — same shape as {@link #listScenes} without materialising them. */
+	public static int countScenes(BaseRecord user, BaseRecord book) {
+		if(user == null || book == null) {
+			return 0;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_BOOK, book);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, PbGraphUtil.orgId(book));
+		q.setRequest(new String[] { FieldNames.FIELD_ID });
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().count(user, q);
+	}
+
 	/**
 	 * Reorder scenes: N patches on {@code sceneIndex}, one per scene, in the order given.
 	 * <p>

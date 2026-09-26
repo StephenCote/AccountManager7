@@ -9,6 +9,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.util.DocumentUtil;
 
 /// Shared scene-composite pipeline selection and request construction.
 ///
@@ -237,6 +238,26 @@ public class SceneCompositeUtil {
 
 		logger.error("buildSceneRequest: unknown composite mode '" + mode + "'");
 		return null;
+	}
+
+	/// Replace the composed text prompt with a caller-supplied one, verbatim, in any mode.
+	///
+	/// FLUX2 and KONTEXT compose their own prompt from (leftDesc, rightDesc, action, setting, mood)
+	/// and ignore classicPrompt entirely, so a per-scene prompt edit that only reached classicPrompt
+	/// was persisted, displayed as "the prompt used", and never sent - the image came out unchanged.
+	/// This is the one seam every mode goes through after buildSceneRequest.
+	///
+	/// The override is NOT passed through SDUtil.appendLoras: the prompt shown to the user for editing
+	/// is the exact string that was sent (lora tags included, if the config has any), so appending again
+	/// would double them. Only typography is normalized, same as appendLoras does for composed prompts.
+	/// Reference images / init image stay attached - the override replaces the words, not the pipeline.
+	public static SWTxt2Img applyPromptOverride(SWTxt2Img s2i, String promptOverride) {
+		if (s2i == null || promptOverride == null || promptOverride.isBlank()) return s2i;
+		String composed = s2i.getPrompt();
+		s2i.setPrompt(DocumentUtil.replaceSmartQuotes(promptOverride.trim()));
+		logger.info("Scene composite: caller-supplied prompt override REPLACES the composed prompt ("
+			+ (composed != null ? composed.length() : 0) + " -> " + s2i.getPrompt().length() + " chars)");
+		return s2i;
 	}
 
 	/// Default img2img creativity per mode, preserving the values both original call sites used.

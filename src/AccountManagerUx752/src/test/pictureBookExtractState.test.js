@@ -504,6 +504,237 @@ describe('doExtract — chaptered novel fan-out (Issue 1, Full N-series)', () =>
     });
 });
 
+describe('doExtract — chaptered fan-out REPORTS missing/incomplete chapters instead of navigating away', () => {
+    // Measured 2026-09-25 on a 6-chapter run of the real manuscript: the Ollama host dropped off the
+    // network mid-run, chapter 5 lost a third of its passages, chapter 6 finished with ZERO scenes,
+    // and the client showed a toast for a few seconds then closed the wizard and navigated to the
+    // series canvas. Nine hours in, "no error anywhere, half the chapters missing." These tests pin
+    // the replacement: a persistent summary that stays until the user acts on it, and a clean run
+    // that still lands on the series canvas.
+
+    /** Three chapters; the caller shapes each chapter's terminal job by jobId. */
+    function fanOutFetch(jobFor) {
+        let extractCount = 0;
+        let createFromScenesBodies = [];
+        let fetch = vi.fn(async (url, init) => {
+            let u = String(url);
+            if (u.includes('detect-boundaries')) {
+                return jsonResponse(200, [
+                    { startOffset: 0, endOffset: 100, title: 'Chapter One' },
+                    { startOffset: 100, endOffset: 250, title: 'Chapter Two' },
+                    { startOffset: 250, endOffset: 400, title: 'Chapter Three' }
+                ]);
+            }
+            if (u.endsWith('/series')) return jsonResponse(200, { seriesObjectId: 'SER-1', worldObjectId: 'W-1' });
+            if (u.endsWith('/chapter')) {
+                let body = JSON.parse(init.body);
+                return jsonResponse(200, { bookObjectId: 'BK-' + body.chapter, slug: body.slug });
+            }
+            if (u.includes('extract-scenes-only')) {
+                extractCount++;
+                return jsonResponse(202, { jobId: 'job-' + extractCount, status: 'running' });
+            }
+            if (u.includes('create-from-scenes')) {
+                let body = JSON.parse(init.body);
+                createFromScenesBodies.push(body);
+                return jsonResponse(200, { bookObjectId: 'PB1', pb2BookObjectId: body.pb2BookObjectId, scenes: body.sceneList });
+            }
+            let jobId = u.substring(u.lastIndexOf('/') + 1);
+            return jsonResponse(200, Object.assign({ jobId, terminal: true }, jobFor(jobId)));
+        });
+        return { fetch, extracts: () => extractCount, persisted: () => createFromScenesBodies };
+    }
+
+    it('stoppedEarlyReason keys on the server\'s stoppedEarly flag, not the wording', () => {
+        // The server's unreachable-LLM breaker entry — exactly as PictureBookUtil writes it.
+        let unreachable = JSON.stringify({
+            context: 'extract-scenes-chunk:3/15', stoppedEarly: true,
+            error: '2 consecutive chunks could not reach the model server. Could not connect to the model '
+                + 'server at http://192.168.1.42:11434 (HttpConnectTimeoutException: HTTP connect timed out) '
+                + '— it is unreachable. Extraction stopped early; fix the cause and re-run to resume from the checkpoint.'
+        });
+        expect(pb.stoppedEarlyReason(unreachable)).toMatch(/could not reach the model server/);
+        // Same entry as an object (the poll may hand back parsed JSON).
+        expect(pb.stoppedEarlyReason(JSON.parse(unreachable))).toMatch(/could not reach the model server/);
+        // The pre-flag wording is still honored for a server that predates the flag.
+        expect(pb.stoppedEarlyReason(JSON.stringify({ context: 'x', error: '2 consecutive LLM calls failed immediately.' })))
+            .toMatch(/failed immediately/);
+        expect(pb.stoppedEarlyReason('LLM call failed immediately')).toMatch(/failed immediately/);
+        // An ordinary per-passage parse failure is NOT a breaker stop.
+        expect(pb.stoppedEarlyReason(JSON.stringify({ context: 'extract-scenes-chunk:4/15', error: 'Unparseable JSON' }))).toBeNull();
+        expect(pb.stoppedEarlyReason(JSON.stringify({ context: 'x', stoppedEarly: false, error: 'Request timed out after 900 seconds' }))).toBeNull();
+        expect(pb.stoppedEarlyReason(null)).toBeNull();
+    });
+
+    it('the server\'s unreachable-model breaker (stoppedEarly:true) aborts the fan-out and stays in the wizard', async () => {
+        let breaker = JSON.stringify({
+            context: 'extract-scenes-chunk:2/12', stoppedEarly: true,
+            error: '2 consecutive chunks could not reach the model server. Could not connect to the model server '
+                + 'at http://192.168.1.42:11434 (HttpConnectTimeoutException: HTTP connect timed out) — it is unreachable. '
+                + 'Extraction stopped early; fix the cause and re-run to resume from the checkpoint.'
+        });
+        let f = fanOutFetch(jobId => {
+            if (jobId === 'job-1') return { status: 'completed', current: 10, total: 10,
+                result: { sceneList: [{ title: 'S1', characters: ['Alice'] }], extractionComplete: true, chunksProcessed: 10 } };
+            // Chapter 2: the host went away. The loop wrote NO scenes and the breaker entry.
+            return { status: 'completed', current: 2, total: 12,
+                result: { sceneList: [], extractionComplete: false, chunksProcessed: 0, failedExtractions: [breaker] } };
+        });
+        global.fetch = f.fetch;
+        let routeSet = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        let dialogClose = vi.spyOn(Dialog, 'close').mockImplementation(() => {});
+
+        await pb.doExtract();
+
+        let s = pb.__extractStateForTest();
+        // Chapter 3 was never attempted — every remaining chapter would hit the same wall.
+        expect(f.extracts()).toBe(2);
+        expect(f.persisted()).toHaveLength(1);
+        expect(routeSet).not.toHaveBeenCalled();
+        expect(dialogClose).not.toHaveBeenCalled();
+        expect(s.step).toBe(1);
+        expect(s.extractError).toMatch(/Extraction stopped at chapter 2\/3/);
+        expect(s.extractError).toMatch(/1 chapter\(s\) were saved/);
+        expect(s.extractError).toMatch(/could not reach the model server/);
+        expect(s.extractPartial).toBe(true);
+        expect(s.extracting).toBe(false);
+    });
+
+    it('a chapter that stopped early but saved scenes leaves a PERSISTENT summary — no toast-and-navigate', async () => {
+        let f = fanOutFetch(jobId => {
+            if (jobId === 'job-2') {
+                // Chapter 2 read 10 of 15 passages then stopped (the server retained its checkpoint).
+                return { status: 'completed', current: 10, total: 15,
+                    result: { sceneList: [{ title: 'S2a', characters: ['Bob'] }, { title: 'S2b', characters: ['Bob'] }],
+                              extractionComplete: false, chunksProcessed: 10 } };
+            }
+            return { status: 'completed', current: 5, total: 5,
+                result: { sceneList: [{ title: 'S-' + jobId, characters: ['Alice'] }], extractionComplete: true, chunksProcessed: 5 } };
+        });
+        global.fetch = f.fetch;
+        let routeSet = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        let dialogClose = vi.spyOn(Dialog, 'close').mockImplementation(() => {});
+
+        await pb.doExtract();
+
+        let s = pb.__extractStateForTest();
+        // All three chapters ran and all three persisted what they had — chapter 2's partial list included.
+        expect(f.extracts()).toBe(3);
+        expect(f.persisted()).toHaveLength(3);
+        expect(f.persisted()[1].pb2BookObjectId).toBe('BK-2');
+        expect(f.persisted()[1].sceneList).toHaveLength(2);
+        // But the wizard did NOT close or navigate: the incomplete chapter is reported and stays reported.
+        expect(routeSet).not.toHaveBeenCalled();
+        expect(dialogClose).not.toHaveBeenCalled();
+        expect(s.extractChapterSummary).not.toBeNull();
+        expect(s.extractChapterSummary.saved).toBe(3);
+        expect(s.extractChapterSummary.total).toBe(3);
+        expect(s.extractChapterSummary.seriesBookOid).toBe('BK-1');
+        expect(s.extractChapterSummary.cancelled).toBe(false);
+        expect(s.extractChapterSummary.problems).toHaveLength(1);
+        expect(s.extractChapterSummary.problems[0]).toMatch(/Chapter 2 \(Chapter Two\): extraction stopped early after 10 of 15 passages/);
+        expect(s.extractChapterSummary.problems[0]).toMatch(/2 scene\(s\) read so far were saved; re-run to resume/);
+        expect(s.extractPartial).toBe(true);
+        expect(s.extractError).toBeNull();
+        expect(s.extracting).toBe(false);
+    });
+
+    it('a chapter that completed with ZERO scenes is reported as missing, and the run does not navigate', async () => {
+        // This is exactly what chapter 6 of the real run looked like before the server fix: every
+        // passage skipped, checkpoint cleared, status COMPLETED, sceneList empty.
+        let f = fanOutFetch(jobId => {
+            if (jobId === 'job-3') {
+                return { status: 'completed', current: 12, total: 12,
+                    result: { sceneList: [], extractionComplete: true, chunksProcessed: 12 } };
+            }
+            return { status: 'completed', current: 5, total: 5,
+                result: { sceneList: [{ title: 'S-' + jobId, characters: ['Alice'] }], extractionComplete: true, chunksProcessed: 5 } };
+        });
+        global.fetch = f.fetch;
+        let routeSet = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        let dialogClose = vi.spyOn(Dialog, 'close').mockImplementation(() => {});
+
+        await pb.doExtract();
+
+        let s = pb.__extractStateForTest();
+        expect(f.extracts()).toBe(3);
+        expect(f.persisted()).toHaveLength(2); // nothing to persist for chapter 3
+        expect(routeSet).not.toHaveBeenCalled();
+        expect(dialogClose).not.toHaveBeenCalled();
+        expect(s.extractChapterSummary).not.toBeNull();
+        expect(s.extractChapterSummary.saved).toBe(2);
+        expect(s.extractChapterSummary.total).toBe(3);
+        expect(s.extractChapterSummary.problems).toHaveLength(1);
+        expect(s.extractChapterSummary.problems[0]).toMatch(/Chapter 3 \(Chapter Three\): no scenes were extracted/);
+    });
+
+    it('a chapter with unreadable passages (no breaker) is reported with the server\'s reason', async () => {
+        let bad = JSON.stringify({ context: 'extract-scenes-chunk:4/9', error: 'Request timed out after 900 seconds' });
+        let f = fanOutFetch(jobId => {
+            if (jobId === 'job-1') {
+                return { status: 'completed', current: 9, total: 9,
+                    result: { sceneList: [{ title: 'S1', characters: ['Alice'] }], extractionComplete: true,
+                              chunksProcessed: 9, failedExtractions: [bad, bad] } };
+            }
+            return { status: 'completed', current: 5, total: 5,
+                result: { sceneList: [{ title: 'S-' + jobId, characters: ['Bob'] }], extractionComplete: true, chunksProcessed: 5 } };
+        });
+        global.fetch = f.fetch;
+        let routeSet = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        vi.spyOn(Dialog, 'close').mockImplementation(() => {});
+
+        await pb.doExtract();
+
+        let s = pb.__extractStateForTest();
+        // Slow-but-alive timeouts are NOT a breaker stop: all three chapters ran.
+        expect(f.extracts()).toBe(3);
+        expect(f.persisted()).toHaveLength(3);
+        expect(routeSet).not.toHaveBeenCalled();
+        expect(s.extractChapterSummary).not.toBeNull();
+        expect(s.extractChapterSummary.saved).toBe(3);
+        expect(s.extractChapterSummary.problems).toHaveLength(1);
+        expect(s.extractChapterSummary.problems[0]).toMatch(/Chapter 1 \(Chapter One\): 2 passage\(s\) could not be read by the model \(Request timed out after 900 seconds\)/);
+        expect(s.extractFailedChunks).toHaveLength(2);
+    });
+
+    it('a CLEAN run still closes the wizard and lands on the series canvas', async () => {
+        let f = fanOutFetch(jobId => ({ status: 'completed', current: 5, total: 5,
+            result: { sceneList: [{ title: 'S-' + jobId, characters: ['Alice'] }], extractionComplete: true, chunksProcessed: 5 } }));
+        global.fetch = f.fetch;
+        let routeSet = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        let dialogClose = vi.spyOn(Dialog, 'close').mockImplementation(() => {});
+
+        await pb.doExtract();
+
+        let s = pb.__extractStateForTest();
+        expect(f.persisted()).toHaveLength(3);
+        expect(s.extractChapterSummary).toBeNull();
+        expect(s.extractError).toBeNull();
+        expect(s.extractPartial).toBe(false);
+        expect(dialogClose).toHaveBeenCalled();
+        expect(routeSet).toHaveBeenCalledWith('/picture-book/BK-1/workflow');
+    });
+
+    it('the summary is cleared when a new extraction starts', async () => {
+        let f = fanOutFetch(jobId => jobId === 'job-3'
+            ? { status: 'completed', current: 1, total: 1, result: { sceneList: [], extractionComplete: true, chunksProcessed: 1 } }
+            : { status: 'completed', current: 1, total: 1,
+                result: { sceneList: [{ title: 'S', characters: ['A'] }], extractionComplete: true, chunksProcessed: 1 } });
+        global.fetch = f.fetch;
+        vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        vi.spyOn(Dialog, 'close').mockImplementation(() => {});
+        await pb.doExtract();
+        expect(pb.__extractStateForTest().extractChapterSummary).not.toBeNull();
+
+        // Re-run: every chapter clean this time.
+        let g = fanOutFetch(() => ({ status: 'completed', current: 1, total: 1,
+            result: { sceneList: [{ title: 'S', characters: ['A'] }], extractionComplete: true, chunksProcessed: 1 } }));
+        global.fetch = g.fetch;
+        await pb.doExtract();
+        expect(pb.__extractStateForTest().extractChapterSummary).toBeNull();
+    });
+});
+
 describe('reattachExtractJob — must not start a second run', () => {
     it('adopts a running job for THIS document and applies its result', async () => {
         let listed = false;

@@ -88,6 +88,10 @@ let extractFailedChunks = [];   // chunks whose JSON could not be parsed, surfac
 let extractChapterIndex = 0;    // 1-based index of the chapter currently extracting (0 = not fanning out)
 let extractChapterCount = 0;    // total chapters in this fan-out (0 = single whole-document extraction)
 let pb2SeriesObjectId = null;   // the olio.pb.series created/resolved for a multi-chapter submission
+// Set when a fan-out finishes with ANY chapter missing or incomplete. The wizard then stays open on
+// this summary instead of closing + navigating: a toast that disappears in a few seconds is not a
+// report when the run took nine hours and half the chapters are gone.
+let extractChapterSummary = null; // { saved, total, problems: [], seriesBookOid, cancelled }
 let blurbRegenerating = {}; // scene index → bool (U3: per-scene "Regenerate blurb" in-flight flag)
 
 // Step 3 (Manage Characters — real charPerson records created at the Step 2→3 transition;
@@ -128,7 +132,8 @@ let sdModelList = [];   // available SD models from server
 let sdLoraList = [];    // available LORAs from server
 let sdModelsLoaded = false;
 let sdLorasFetched = false;
-let lastPrompt = '';    // last LLM-generated image prompt
+let scenePrompts = {};        // objectId → the composite SD prompt actually used for that scene's last render
+let scenePromptExpanded = {}; // objectId → bool (show the full prompt text instead of the truncated line)
 
 // Identity/transient fields never diffed into a per-scene delta nor sent as part of the config.
 const SD_CONFIG_IDENTITY = ['id', 'objectId', 'urn', 'ownerId', 'groupId', 'organizationId', 'groupPath', 'organizationPath', 'narration'];
@@ -165,6 +170,7 @@ function resetState() {
     extractChapterIndex = 0;
     extractChapterCount = 0;
     pb2SeriesObjectId = null;
+    extractChapterSummary = null;
     blurbRegenerating = {};
     creatingChars = false;
     scenes = [];
@@ -188,7 +194,8 @@ function resetState() {
     sdLorasFetched = false;
     sdModelList = [];
     sdModelsLoaded = false;
-    lastPrompt = '';
+    scenePrompts = {};
+    scenePromptExpanded = {};
     metaScenes = [];
     step5ImageUrls = {};
     roleWarning = false;
@@ -458,6 +465,7 @@ async function doExtract(opts) {
     extractFailedChunks = [];
     extractChapterIndex = 0;
     extractChapterCount = 0;
+    extractChapterSummary = null;
     m.redraw();
     // Hold the indicator so unrelated activity cannot clear it out from under a long run.
     let bgToken = LLMConnector.lockBgActivity();
@@ -550,15 +558,17 @@ async function fanOutChaptersExtract(ranges, opts) {
     let problems = [];              // per-chapter failures/warnings, surfaced not swallowed
     let anyPartial = false;
     let cancelled = false;
+    let infraAbort = false;         // the server's unreachable-LLM breaker tripped; stop the fan-out
 
     for (let i = 0; i < ranges.length; i++) {
         let r = ranges[i];
         let chapNum = i + 1;
         extractChapterIndex = chapNum;
         m.redraw();
+        // The server returns a null title only for a prologue-sized lead before the first heading.
         let chapTitle = (r.title != null && String(r.title).trim().length)
             ? String(r.title).trim()
-            : 'Chapter ' + chapNum;
+            : (i === 0 ? 'Front Matter' : 'Chapter ' + chapNum);
 
         // 1. Create this chapter's book in the series (series-first: no fromBookObjectId) and CAPTURE
         //    its objectId — createFromScenes needs it to persist the chapter's scenes into the shared
@@ -612,27 +622,51 @@ async function fanOutChaptersExtract(ranges, opts) {
 
         // 2. Bounded per-chapter extraction — one job at a time (awaited), carrying the chapter's
         //    explicit character span and the series so the cross-chapter roster is seeded.
-        let started = await startExtractScenes(workObjectId, chatConfigName(), null,
-            getPromptTemplate('extractScenes'), {
-                fresh: !!(opts && opts.fresh),
-                seriesObjectId: pb2SeriesObjectId,
-                startOffset: r.startOffset,
-                endOffset: r.endOffset
-            });
-        extractJobId = started.jobId;
-        m.redraw();
-        let job = await pollJob(extractJobId, { onProgress: onExtractProgress });
-        extractJobId = null;
+        //    A thrown error (job submit rejected, poll deadline, network) is THIS chapter's
+        //    problem; without the catch it unwound the whole fan-out and left every later chapter
+        //    unprocessed with no record of why.
+        let job;
+        try {
+            let started = await startExtractScenes(workObjectId, chatConfigName(), null,
+                getPromptTemplate('extractScenes'), {
+                    fresh: !!(opts && opts.fresh),
+                    seriesObjectId: pb2SeriesObjectId,
+                    startOffset: r.startOffset,
+                    endOffset: r.endOffset
+                });
+            extractJobId = started.jobId;
+            m.redraw();
+            job = await pollJob(extractJobId, { onProgress: onExtractProgress });
+        } catch (e) {
+            if (e && e.name === 'AbortError') throw e;
+            job = { status: 'failed', error: (e && e.message) || 'extraction request failed', result: null };
+        } finally {
+            extractJobId = null;
+        }
 
         let chapScenes = scenesFromResult(job.result);
         let chapFailed = (job.result && job.result.failedExtractions) || job.failedExtractions || [];
         if (chapFailed.length) extractFailedChunks = extractFailedChunks.concat(chapFailed);
+        // The server's circuit breaker trips when consecutive LLM calls cannot reach the model server
+        // (host down, nothing listening, wrong model name). Every remaining chapter would hit the
+        // same wall, so stop here instead of spending hours discovering it 20 more times.
+        let infraReason = null;
+        for (let f of chapFailed) {
+            infraReason = stoppedEarlyReason(f);
+            if (infraReason) break;
+        }
+        if (infraReason) {
+            problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): ' + infraReason);
+            infraAbort = true;
+            break;
+        }
         if (job.status === 'failed') {
             problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): extraction failed — '
                 + (job.error || 'unknown error'));
         } else {
-            if (job.status === 'cancelled'
-                || (job.result && job.result.extractionComplete === false)) anyPartial = true;
+            let chapPartial = job.status === 'cancelled'
+                || (job.result && job.result.extractionComplete === false);
+            if (chapPartial) anyPartial = true;
             // 3. Persist THIS chapter's scenes + cast into ITS OWN chapter book. The book's series FK
             //    routes the scenes/cast into the ONE shared series world (no duplicate world minted).
             if (chapScenes.length) {
@@ -654,22 +688,54 @@ async function fanOutChaptersExtract(ranges, opts) {
             } else if (job.status !== 'cancelled') {
                 problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): no scenes were extracted.');
             }
+            // A chapter that stopped before its last passage, or that lost passages the model could
+            // not read, is INCOMPLETE even when its book was saved — it still has to appear in the
+            // report, or "5 of 6 chapters saved" hides that chapter 5 is missing a third of its scenes.
+            if (chapPartial && job.status !== 'cancelled') {
+                let done = job.result && job.result.chunksProcessed != null ? job.result.chunksProcessed : null;
+                let total = job.total != null ? job.total : null;
+                problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): extraction stopped early'
+                    + (done != null && total != null ? ' after ' + done + ' of ' + total + ' passages' : '')
+                    + ' — the ' + chapScenes.length + ' scene(s) read so far were saved; re-run to resume.');
+            } else if (chapFailed.length) {
+                problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): ' + chapFailed.length
+                    + ' passage(s) could not be read by the model ('
+                    + failureReason(chapFailed[0]).slice(0, 160) + ').');
+            }
         }
         // A user Cancel targets the current chapter's job. When it comes back cancelled, stop the
         // fan-out at this boundary — the chapters already persisted stay in the series.
         if (job.status === 'cancelled') { cancelled = true; break; }
     }
 
-    extractPartial = anyPartial || cancelled;
+    extractPartial = anyPartial || cancelled || infraAbort;
+
+    if (infraAbort) {
+        // Stay in the wizard and say exactly what stopped the run. Chapters already saved are in
+        // the series list; re-running the same manuscript resumes from their checkpoints.
+        extractError = 'Extraction stopped at chapter ' + extractChapterIndex + '/' + ranges.length
+            + (persistedCount ? ' (' + persistedCount + ' chapter(s) were saved). ' : '. ')
+            + problems.join(' | ');
+        return;
+    }
 
     if (firstChapterBookOid && persistedCount > 0) {
-        // Chaptered novels finish on the SERIES CANVAS (N4), NOT a Step-2 aggregate review. Surface
-        // any per-chapter problems without discarding the chapters that DID persist.
-        if (problems.length) {
-            page.toast('warning', problems.length + ' chapter issue(s): ' + problems.join(' | '));
+        if (problems.length || anyPartial || cancelled) {
+            // Chapters are missing or incomplete. Stay in the wizard with a persistent report — the
+            // previous behavior (a transient toast, then close + navigate to the series canvas) is
+            // how a nine-hour run lost half its chapters with "no error" anywhere the user could see.
+            extractChapterSummary = {
+                saved: persistedCount,
+                total: ranges.length,
+                problems: problems.slice(),
+                seriesBookOid: firstChapterBookOid,
+                cancelled: cancelled
+            };
+            return;
         }
-        // The series view is a mode inside the per-book workflow route, loaded from the book's series
-        // FK — so land on the first chapter book's workflow route; it toggles to the series overview.
+        // Clean run: chaptered novels finish on the SERIES CANVAS (N4), NOT a Step-2 aggregate
+        // review. The series view is a mode inside the per-book workflow route, loaded from the
+        // book's series FK — so land on the first chapter book's workflow route.
         Dialog.close();
         m.route.set('/picture-book/' + firstChapterBookOid + '/workflow');
     } else {
@@ -679,6 +745,42 @@ async function fanOutChaptersExtract(ranges, opts) {
             : (cancelled ? 'Extraction was cancelled before any chapter was saved.'
                          : 'No scenes were extracted from any chapter.');
     }
+}
+
+/**
+ * A failedExtractions entry is a JSON string (or object) the server wrote per failed passage. When
+ * the extraction loop's circuit breaker stops a run it marks the entry with `stoppedEarly: true` —
+ * that flag, not the wording, is what the client keys on. The 'failed immediately' text match is
+ * kept for entries written by a server that predates the flag.
+ *
+ * @returns {string|null} the human-readable reason when this entry is a breaker stop, else null.
+ */
+function stoppedEarlyReason(entry) {
+    if (entry == null) return null;
+    let raw = typeof entry === 'string' ? entry : JSON.stringify(entry);
+    let parsed = null;
+    if (typeof entry === 'string') {
+        try { parsed = JSON.parse(entry); } catch (_) { parsed = null; }
+    } else {
+        parsed = entry;
+    }
+    if (parsed && typeof parsed === 'object') {
+        if (parsed.stoppedEarly === true) return parsed.error || raw;
+        if (typeof parsed.error === 'string' && parsed.error.includes('failed immediately')) return parsed.error;
+        return null;
+    }
+    return raw.includes('failed immediately') ? raw : null;
+}
+
+/** The server's `error` text from a failedExtractions entry, or the raw entry when it has none. */
+function failureReason(entry) {
+    if (entry == null) return '';
+    let parsed = entry;
+    if (typeof entry === 'string') {
+        try { parsed = JSON.parse(entry); } catch (_) { return entry; }
+    }
+    if (parsed && typeof parsed === 'object' && typeof parsed.error === 'string') return parsed.error;
+    return typeof entry === 'string' ? entry : JSON.stringify(entry);
 }
 
 /**
@@ -820,8 +922,30 @@ async function doRegenerateBlurb(idx, oid) {
 
 // ── Per-scene overrides (real olio.sd.config deltas) ──────────────────
 
+// The prompt actually used for a scene's last render: what this session's generate call returned,
+// else the scene's server-cached scenePrompt (listScenes merges it as `prompt`).
+function scenePromptFor(oid) {
+    if (scenePrompts[oid]) return scenePrompts[oid];
+    let s = scenes.find(function (x) { return x.objectId === oid; })
+        || extractedScenes.find(function (x) { return x.objectId === oid; });
+    return (s && s.prompt) ? s.prompt : '';
+}
+
+// Remember the prompt a render actually used for THIS scene, and keep the scene's override Prompt
+// field in step with it unless the user has edited that field (their edit is the override).
+function recordScenePrompt(oid, s, prompt) {
+    scenePrompts[oid] = prompt;
+    if (s) s.prompt = prompt;
+    let inst = sceneOverrideInsts[oid];
+    if (inst && inst.entity && !(inst.changes || []).includes('description')) {
+        inst.entity.description = prompt;
+    }
+}
+
 // The per-scene override entity starts as a copy of the common config, so its form is pre-filled
 // with the current common values and the diff is empty until the user actually changes something.
+// The Prompt (description) field is pre-filled with THIS scene's last-used prompt so the user edits
+// the real prompt for this scene; the edited text is sent as the scene's own prompt on regenerate.
 function getSceneOverrideInst(oid) {
     if (!sceneOverrideInsts[oid]) {
         let base = sceneOverrides[oid];
@@ -831,6 +955,7 @@ function getSceneOverrideInst(oid) {
                 : am7model.newPrimitive('olio.sd.config');
             base[am7model.jsonModelKey] = 'olio.sd.config';
             SD_CONFIG_IDENTITY.forEach(function (k) { delete base[k]; });
+            base.description = scenePromptFor(oid);
         }
         let entity = am7model.prepareEntity(base, 'olio.sd.config');
         sceneOverrides[oid] = entity;
@@ -1009,7 +1134,7 @@ async function doGenerateOne(s) {
         if (result.seed && sdConfigInst && (sdConfigInst.entity.seed == null || sdConfigInst.entity.seed < 0)) {
             sdConfigInst.entity.seed = result.seed;
         }
-        if (result.prompt) lastPrompt = result.prompt;
+        if (result.prompt) recordScenePrompt(oid, s, result.prompt);
         genProgress[oid] = 'done';
         // Resolve thumbnail
         if (result.imageObjectId) {
@@ -1073,11 +1198,18 @@ function skipScene(oid) {
  * to stop a run at all: the wizard's only Cancel called Dialog.close(), which abandoned the fetch
  * and left `extracting` stuck true.
  */
+// Step 1 status blocks render below the Prompt Templates box, past the fold of the scrollable dialog body.
+function revealOnCreate(vnode) {
+    if (vnode.dom && typeof vnode.dom.scrollIntoView === 'function') {
+        vnode.dom.scrollIntoView({ block: 'nearest' });
+    }
+}
+
 function renderExtractProgress() {
     let cur = extractProgress ? extractProgress.current : 0;
     let total = extractProgress ? extractProgress.total : 0;
     let pct = total > 0 ? Math.round((cur / total) * 100) : 0;
-    return m('div', { class: 'px-4 py-3 text-sm bg-blue-50 dark:bg-blue-900/20 rounded space-y-2' }, [
+    return m('div', { class: 'px-4 py-3 text-sm bg-blue-50 dark:bg-blue-900/20 rounded space-y-2', oncreate: revealOnCreate }, [
         m('div', { class: 'flex items-center gap-2 text-blue-600 dark:text-blue-400' }, [
             m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
             m('span', { class: 'flex-1' },
@@ -1150,6 +1282,57 @@ function renderExtractWarnings() {
         ]));
     }
     return out.length ? m('div', { class: 'space-y-2' }, out) : null;
+}
+
+/**
+ * Persistent end-of-fan-out report for a chaptered manuscript whose run did not finish cleanly.
+ * Stays on screen until the user acts on it: open the series as it is, or re-run to resume.
+ */
+function renderChapterSummary() {
+    let s = extractChapterSummary;
+    if (!s) return null;
+    let missing = Math.max(0, s.total - s.saved);
+    let headline = (s.cancelled
+        ? 'Extraction was cancelled: '
+        : 'Extraction finished with problems: ')
+        + s.saved + ' of ' + s.total + ' chapters saved'
+        + (missing ? ', ' + missing + ' missing' : '')
+        + (s.problems.length ? ', ' + s.problems.length + ' issue' + (s.problems.length === 1 ? '' : 's') : '')
+        + '.';
+    return m('div', {
+        'data-pb-chapter-summary': '1',
+        class: 'p-3 rounded bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 text-xs text-orange-900 dark:text-orange-100 space-y-2',
+        oncreate: revealOnCreate
+    }, [
+        m('div', { class: 'flex items-center gap-2 font-medium' }, [
+            m('span', { class: 'material-symbols-outlined text-sm' }, 'report'),
+            m('span', { 'data-pb-chapter-summary-headline': '1' }, headline)
+        ]),
+        s.problems.length
+            ? m('ul', { class: 'list-disc pl-5 space-y-1 max-h-48 overflow-y-auto' },
+                s.problems.map((p, i) => m('li', { key: i, 'data-pb-chapter-problem': '1' }, p)))
+            : null,
+        m('div', { class: 'flex flex-wrap items-center gap-2 pt-1' }, [
+            m('button', {
+                class: 'btn text-xs btn-primary',
+                'data-pb-open-series': '1',
+                disabled: extracting,
+                onclick: function () {
+                    let oid = s.seriesBookOid;
+                    Dialog.close();
+                    m.route.set('/picture-book/' + oid + '/workflow');
+                }
+            }, 'Open series'),
+            m('button', {
+                class: 'btn text-xs',
+                'data-pb-rerun-resume': '1',
+                disabled: extracting,
+                onclick: function () { doExtract(); }
+            }, 'Re-run to resume'),
+            m('span', { class: 'text-gray-600 dark:text-gray-300' },
+                'Re-running reuses the chapter books already in the series; an incomplete chapter resumes from its checkpoint.')
+        ])
+    ]);
 }
 
 function renderStep1() {
@@ -1308,7 +1491,9 @@ function renderStep1() {
 
             extracting ? renderExtractProgress() : null,
 
-            extractError ? m('div', { class: 'text-red-500 text-sm' }, extractError) : null
+            extractError ? m('div', { class: 'text-red-500 text-sm', 'data-pb-extract-error': '1', oncreate: revealOnCreate }, extractError) : null,
+
+            extractChapterSummary ? renderChapterSummary() : null
         ]) : m('div', { class: 'text-sm text-gray-500 italic' }, 'Manual scene entry — proceed to add scenes.')
     ]);
 }
@@ -1454,12 +1639,27 @@ function renderSdConfig() {
             models: sdModelList,
             loras: sdLoraList,
             onChange: function () { settingsPersisted = false; m.redraw(); }
-        }),
-        lastPrompt ? m('div', { class: 'mt-2' }, [
-            m('div', { class: 'text-xs font-medium text-gray-500' }, 'Last prompt used:'),
-            m('div', { class: 'text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded p-2 mt-1 max-h-20 overflow-y-auto' },
-                lastPrompt)
-        ]) : null
+        })
+    ]);
+}
+
+// The exact composite prompt this scene was last rendered with (per scene, not a book-wide "last
+// prompt"). Truncated to one line until clicked; the Scene Overrides Prompt field edits it.
+function renderScenePromptUsed(oid) {
+    let prompt = scenePromptFor(oid);
+    if (!prompt) return null;
+    let open = !!scenePromptExpanded[oid];
+    return m('div', {
+        class: 'text-xs cursor-pointer flex gap-1 ' + (open ? 'items-start' : 'items-baseline'),
+        'data-pb-scene-prompt': oid,
+        'data-pb-scene-prompt-open': open ? 'true' : 'false',
+        title: open ? 'Click to collapse' : prompt,
+        onclick: function () { scenePromptExpanded[oid] = !open; m.redraw(); }
+    }, [
+        m('span', { class: 'font-medium text-gray-500 shrink-0' }, 'Prompt used:'),
+        m('span', {
+            class: 'text-gray-600 dark:text-gray-400 flex-1 min-w-0 ' + (open ? 'whitespace-pre-wrap break-words' : 'truncate')
+        }, prompt)
     ]);
 }
 
@@ -1579,6 +1779,8 @@ function renderStep4() {
                             onclick: function () { persistSceneStatus(oid, 'pending'); }
                         }, 'Undo skip') : null
                     ]),
+
+                    renderScenePromptUsed(oid),
 
                     // Per-scene overrides — a real per-scene olio.sd.config delta, edited through the
                     // standard form system (forms.sdConfigOverrides via the generic object view),
@@ -1817,9 +2019,9 @@ function buildActions() {
                     metaScenes = meta.scenes || [];
                     scenes = metaScenes;
                     if (meta.failedCharacters && meta.failedCharacters.length) {
-                        page.toast('warning', meta.failedCharacters.length + ' character(s) failed to create: ' + meta.failedCharacters.join(', '));
+                        page.toast('warn', meta.failedCharacters.length + ' character(s) failed to create: ' + meta.failedCharacters.join(', '));
                     } else if (meta.failedExtractions && meta.failedExtractions.length) {
-                        page.toast('warning', meta.failedExtractions.length + ' character(s) had LLM extraction failures and may be incomplete.');
+                        page.toast('warn', meta.failedExtractions.length + ' character(s) had LLM extraction failures and may be incomplete.');
                     }
                     step = 3;
                 } catch (e) {
@@ -2235,12 +2437,12 @@ export function __resetSdConfigForTest() {
 // partial, a failed run whose error must surface, and a reattach that must not start a second run
 // against a document already being extracted. The equivalent server-side branches shipped two real
 // defects before they had tests; this is the client half of that lesson.
-export { doExtract, applyExtractJob, reattachExtractJob, cancelExtract };
+export { doExtract, applyExtractJob, reattachExtractJob, cancelExtract, stoppedEarlyReason };
 export function __extractStateForTest() {
     return {
         step, workObjectId, extracting, extractError, extractJobId, extractProgress,
         extractPartial, extractFailedChunks, extractedScenes, reattaching,
-        extractChapterIndex, extractChapterCount, pb2SeriesObjectId
+        extractChapterIndex, extractChapterCount, pb2SeriesObjectId, extractChapterSummary
     };
 }
 export function __resetExtractStateForTest(work) {
@@ -2258,6 +2460,7 @@ export function __resetExtractStateForTest(work) {
     extractChapterIndex = 0;
     extractChapterCount = 0;
     pb2SeriesObjectId = null;
+    extractChapterSummary = null;
     chatConfigRef = null;
     promptMode = 'single';
     promptTemplate = null;

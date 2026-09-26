@@ -349,6 +349,238 @@ public class TestExtractChunkLoop extends BaseTest {
 		assertTrue("later chunks still produced scenes", scenes.size() > 0);
 	}
 
+	// ── an UNREACHABLE host is not a slow one ────────────────────────────────────
+
+	/// The message Chat produces when the TCP connect to the model server fails.
+	private static final String UNREACHABLE_MSG =
+			"Could not connect to the model server at http://192.168.1.42:11434"
+			+ " (HttpConnectTimeoutException: HTTP connect timed out) — it is unreachable";
+
+	/// A scripted model whose host has dropped off the network: each call burns the real 10s TCP
+	/// connect timeout (simulated by the shortest delay the loop still classifies as slow), then
+	/// Chat reports a typed connect failure and returns null.
+	private static PictureBookUtil.ChunkLlm unreachableHost(List<Integer> attemptsSeen) {
+		return (vars, attempt) -> {
+			attemptsSeen.add(attempt);
+			try {
+				Thread.sleep(PictureBookUtil.LLM_INFRA_FAILURE_MS + 50);
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+			}
+			Chat.setLastCallUnreachableForTest(true);
+			Chat.setLastCallErrorForTest(UNREACHABLE_MSG);
+			return null;
+		};
+	}
+
+	/// THE 9-HOUR DEFECT. The Ollama host dropped off the network mid-run. Every chunk then failed
+	/// its 10s TCP connect — and because 10s is ABOVE LLM_INFRA_FAILURE_MS, the loop read each one
+	/// as "slow model, server is alive", never tripped the breaker, skipped all 14 chunks of the
+	/// chapter in 140s, CLEARED the checkpoint and reported the job COMPLETED with zero scenes.
+	/// Chapter 5 lost chunks 11-15 the same way. The wizard then showed the run as a success.
+	///
+	/// Wall-clock cannot tell an unplugged host from a loaded one; Chat's typed classification
+	/// can, and the loop must use it: no retry on the same chunk (nothing is listening), count
+	/// toward the breaker, and stop early with a failure the client can key on.
+	@Test
+	public void TestUnreachableHostTripsTheBreakerEvenThoughTheConnectTimeoutIsSlow() throws Exception {
+		BaseRecord u = user();
+		SummarizeProgress token = new SummarizeProgress();
+		boolean[] reachedEnd = new boolean[] { true };
+		List<String> failed = new ArrayList<>();
+		final List<Integer> attemptsSeen = Collections.synchronizedList(new ArrayList<Integer>());
+
+		/// Each simulated connect failure costs a real LLM_INFRA_FAILURE_MS sleep; the breaker
+		/// stops the run after two, so the text length barely matters — but keep it several chunks
+		/// so "stopped early" is distinguishable from "ran out of text".
+		run(u, longText(80), token, failed, null, reachedEnd, unreachableHost(attemptsSeen));
+
+		logger.info("[UNREACHABLE] chunks=" + token.getTotal() + " attempted=" + token.getCurrent()
+				+ " llmCalls=" + attemptsSeen.size() + " attemptNumbers=" + attemptsSeen + " failed=" + failed);
+
+		assertFalse("an UNREACHABLE host must stop the run, slow connect timeout or not", reachedEnd[0]);
+		assertTrue("it must stop well before the end", token.getCurrent() < token.getTotal());
+		assertEquals("the breaker trips on the second consecutive unreachable chunk",
+				2, token.getCurrent());
+		assertFalse("an unreachable chunk must NOT be retried — attempt 2 was issued: " + attemptsSeen,
+				attemptsSeen.contains(2));
+		assertEquals("exactly one connect attempt per chunk", token.getCurrent(), attemptsSeen.size());
+
+		String joined = String.join(" ", failed);
+		assertTrue("the client must be told the server could not be reached: " + joined,
+				joined.contains("could not reach the model server"));
+		assertTrue("the failure must carry the typed early-stop signal the client keys on: " + joined,
+				joined.contains("\"stoppedEarly\":true"));
+		assertTrue("and Chat's own message naming the host: " + joined,
+				joined.contains("192.168.1.42:11434"));
+		assertFalse("it must NOT be described as a slow-but-alive timeout: " + joined,
+				joined.contains("Request timed out after"));
+		/// The per-chunk record (not just the breaker entry) must say WHY. "LLM returned no
+		/// content" made an unplugged host, a 900s timeout and a mistyped model name all read alike.
+		assertFalse("the per-chunk record must carry the real reason, not the generic placeholder: " + joined,
+				joined.contains("LLM returned no content"));
+		for (String f : failed) {
+			assertTrue("every per-chunk failure names the unreachable host: " + f,
+					f.contains("it is unreachable"));
+		}
+	}
+
+	/// The same outage, landing on the FINAL chunk only. One unreachable chunk cannot trip the
+	/// breaker, so the loop exits normally — and until this test existed it then CLEARED the
+	/// checkpoint and reported completion for a chapter whose last passage was never read. A
+	/// re-run, once the host is back, must resume at exactly that chunk.
+	@Test
+	public void TestUnreachableHostOnTheFinalChunkKeepsTheCheckpointForResume() throws Exception {
+		BaseRecord u = user();
+		long orgId = u.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String text = longText(60);
+		String docName = "loopWorkUnreach-" + UUID.randomUUID();
+		BaseRecord work = getCreateData(u, docName, "text/plain", text.getBytes(),
+				"~/PbLoopTests", orgId);
+		assertNotNull(work);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		String groupPath = PictureBookUtil.findWorkGroupPath(u, workObjectId);
+		assertNotNull("work group path", groupPath);
+		PictureBookUtil.clearExtractCheckpoint(u, workObjectId);
+
+		// --- first run: every chunk answers except the last, whose host is gone ---
+		final SummarizeProgress t1 = new SummarizeProgress();
+		boolean[] end1 = new boolean[] { true };
+		List<String> failed1 = new ArrayList<>();
+		final AtomicInteger n = new AtomicInteger(0);
+		final List<Integer> attemptsSeen = Collections.synchronizedList(new ArrayList<Integer>());
+		PictureBookUtil.ChunkLlm lastChunkDown = (vars, attempt) -> {
+			/// incrementCurrent runs AFTER this returns, so inside the call current == this chunk's index.
+			if (t1.getCurrent() == t1.getTotal() - 1) {
+				return unreachableHost(attemptsSeen).call(vars, attempt);
+			}
+			return sceneJson("Scene " + n.getAndIncrement());
+		};
+		List<Map<String, Object>> firstScenes = run(u, text, t1, failed1, workObjectId, end1, lastChunkDown);
+
+		assertTrue("the text must span several chunks for this to test anything", t1.getTotal() >= 3);
+		assertEquals("the unreachable final chunk must have been attempted exactly once",
+				1, attemptsSeen.size());
+		assertFalse("a run whose final chunk could not reach the host must NOT report completion", end1[0]);
+		assertEquals("every chunk was attempted", t1.getTotal(), t1.getCurrent());
+		assertEquals("the scenes from the chunks that DID answer are kept",
+				t1.getTotal() - 1, firstScenes.size());
+		assertFalse("the unreachable chunk is recorded as a failure for the client", failed1.isEmpty());
+		assertEquals("exactly one failure — the final chunk", 1, failed1.size());
+		assertEquals("and it is attributed to the final chunk",
+				t1.getTotal(), PictureBookUtil.failedChunkNumber(failed1.get(0)));
+		assertTrue("carrying Chat's reason: " + failed1.get(0), failed1.get(0).contains("it is unreachable"));
+
+		ExtractCheckpoint cp = PictureBookUtil.loadExtractCheckpoint(u, groupPath, workObjectId,
+				PictureBookUtil.extractTextHash(text), 2000, 200, t1.getTotal());
+		assertNotNull("the checkpoint must be KEPT, not cleared as if the run completed", cp);
+		assertEquals("the checkpoint stops one chunk short — at the last chunk actually merged",
+				t1.getTotal() - 1, cp.chunksProcessed);
+		assertEquals("and holds every scene extracted before the outage",
+				firstScenes.size(), cp.scenes.size());
+
+		// --- host is back: the re-drive processes ONLY the missing chunk -------------
+		SummarizeProgress t2 = new SummarizeProgress();
+		boolean[] end2 = new boolean[] { false };
+		List<String> failed2 = new ArrayList<>();
+		final AtomicInteger m = new AtomicInteger(0);
+		PictureBookUtil.ChunkLlm hostIsBack = (vars, attempt) -> {
+			m.incrementAndGet();
+			return sceneJson("Resumed Final");
+		};
+		List<Map<String, Object>> secondScenes = run(u, text, t2, failed2, workObjectId, end2, hostIsBack);
+
+		assertEquals("the resume must call the model for exactly the one chunk that was missed",
+				1, m.get());
+		assertTrue("the re-drive must reach the end", end2[0]);
+		assertEquals("the earlier scenes plus the recovered final one",
+				firstScenes.size() + 1, secondScenes.size());
+		/// The first run's failure was for the very chunk the resume just recovered. Carrying it
+		/// forward would report the chapter as damaged when it is now complete.
+		assertTrue("no failures on the re-drive — the recovered chunk's stale failure must not be carried: "
+				+ failed2, failed2.isEmpty());
+		assertNull("a completed run must clear the checkpoint",
+				PictureBookUtil.loadProgressNote(u, groupPath, workObjectId));
+	}
+
+	/// The other half of the carry-forward rule: a failure for a chunk the resume does NOT revisit
+	/// is still real and must survive the resume. Chunk 2 times out (a live-but-slow server, so
+	/// the loop records it and moves on), chunk 4 is merged and the run is cancelled; the resume
+	/// starts at chunk 5 and never re-reads chunk 2, so its failure — with the model's own reason,
+	/// not the generic placeholder — must still be reported.
+	@Test
+	public void TestResumeKeepsFailuresForChunksItDoesNotRevisit() throws Exception {
+		BaseRecord u = user();
+		long orgId = u.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String text = longText(140);
+		String docName = "loopWorkCarry-" + UUID.randomUUID();
+		BaseRecord work = getCreateData(u, docName, "text/plain", text.getBytes(),
+				"~/PbLoopTests", orgId);
+		assertNotNull(work);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		String groupPath = PictureBookUtil.findWorkGroupPath(u, workObjectId);
+		assertNotNull("work group path", groupPath);
+		PictureBookUtil.clearExtractCheckpoint(u, workObjectId);
+
+		final String TIMEOUT_MSG = "Request timed out after 900 seconds";
+		final SummarizeProgress t1 = new SummarizeProgress();
+		boolean[] end1 = new boolean[] { true };
+		List<String> failed1 = new ArrayList<>();
+		final AtomicInteger n = new AtomicInteger(0);
+		PictureBookUtil.ChunkLlm secondChunkSlow = (vars, attempt) -> {
+			int idx = t1.getCurrent();
+			if (idx == 1) {
+				try { Thread.sleep(PictureBookUtil.LLM_INFRA_FAILURE_MS + 50); }
+				catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+				Chat.setLastCallErrorForTest(TIMEOUT_MSG);
+				return null;
+			}
+			if (idx >= 3) t1.cancel();
+			return sceneJson("Scene " + n.getAndIncrement());
+		};
+		List<Map<String, Object>> firstScenes = run(u, text, t1, failed1, workObjectId, end1, secondChunkSlow);
+
+		assertTrue("the text must span at least 6 chunks for the resume to have work left", t1.getTotal() >= 6);
+		assertFalse("cancelled run must not report reachedEnd", end1[0]);
+		assertEquals("chunks 1, 3 and 4 answered", 3, firstScenes.size());
+		assertEquals("one failure, for the slow chunk", 1, failed1.size());
+		assertEquals(2, PictureBookUtil.failedChunkNumber(failed1.get(0)));
+		assertTrue("recorded with the model's own reason: " + failed1.get(0), failed1.get(0).contains(TIMEOUT_MSG));
+		assertFalse(failed1.get(0).contains("LLM returned no content"));
+
+		ExtractCheckpoint cp = PictureBookUtil.loadExtractCheckpoint(u, groupPath, workObjectId,
+				PictureBookUtil.extractTextHash(text), 2000, 200, t1.getTotal());
+		assertNotNull(cp);
+		assertEquals("checkpoint sits after the last MERGED chunk (4)", 4, cp.chunksProcessed);
+
+		SummarizeProgress t2 = new SummarizeProgress();
+		boolean[] end2 = new boolean[] { false };
+		List<String> failed2 = new ArrayList<>();
+		final AtomicInteger m = new AtomicInteger(0);
+		PictureBookUtil.ChunkLlm rest = (vars, attempt) -> sceneJson("Resumed " + m.getAndIncrement());
+		List<Map<String, Object>> secondScenes = run(u, text, t2, failed2, workObjectId, end2, rest);
+
+		assertTrue("the re-drive must reach the end", end2[0]);
+		assertEquals("resume processed only chunks 5..N", t1.getTotal() - 4, m.get());
+		assertEquals(firstScenes.size() + m.get(), secondScenes.size());
+		assertEquals("chunk 2's failure was NOT revisited, so it is still reported — and nothing else is: "
+				+ failed2, 1, failed2.size());
+		assertEquals(2, PictureBookUtil.failedChunkNumber(failed2.get(0)));
+		assertTrue(failed2.get(0).contains(TIMEOUT_MSG));
+	}
+
+	@Test
+	public void TestFailedChunkNumberReadsTheLoopsOwnContext() {
+		assertEquals(7, PictureBookUtil.failedChunkNumber(
+				"{\"context\":\"extract-scenes-chunk:7/15\",\"stoppedEarly\":true,\"error\":\"x\"}"));
+		assertEquals(12, PictureBookUtil.failedChunkNumber(
+				"{\n  \"context\" : \"extract-scenes-chunk:12/15\",\n  \"error\" : \"LLM returned no content\"\n}"));
+		assertEquals("a non-chunk context is 0", 0,
+				PictureBookUtil.failedChunkNumber("{\"context\":\"reduce-character:Alice\",\"error\":\"x\"}"));
+		assertEquals(0, PictureBookUtil.failedChunkNumber(null));
+		assertEquals(0, PictureBookUtil.failedChunkNumber("not json at all"));
+	}
+
 	// ── retry + salvage, through the REAL loop ───────────────────────────────────
 
 	/// The corrective retry: a first reply that cannot be parsed at all, then a good one. The loop

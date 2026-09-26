@@ -319,6 +319,10 @@ const SHARED_PASSWORD = 'password';
 
 export async function ensureSharedTestUser(request, opts = {}) {
     const org = opts.org || '/Development';
+    // opts.name lets a spec provision its own persistent non-admin user (e.g. one whose ~/Chat holds a
+    // deliberately unreachable LLM config) without mutating anything the shared user owns.
+    const name = opts.name || SHARED_USER;
+    const password = opts.password || SHARED_PASSWORD;
 
     // Phase 1: Admin creates the user if needed
     let ctx = await newApiContext();
@@ -326,11 +330,11 @@ export async function ensureSharedTestUser(request, opts = {}) {
     try {
         await loginCtx(ctx, { org });
 
-        user = await searchCtx(ctx, 'system.user', 'name', SHARED_USER);
+        user = await searchCtx(ctx, 'system.user', 'name', name);
         if (!user || !user.objectId) {
-            user = await createUserCtx(ctx, SHARED_USER);
+            user = await createUserCtx(ctx, name);
             if (user && user.objectId) {
-                await setCredentialCtx(ctx, user.objectId, SHARED_PASSWORD);
+                await setCredentialCtx(ctx, user.objectId, password);
             }
         }
 
@@ -339,16 +343,16 @@ export async function ensureSharedTestUser(request, opts = {}) {
         await ctx.dispose();
     }
 
-    // Phase 2: Log in as shared user to initialize home directory
+    // Phase 2: Log in as the user to initialize home directory
     let userCtx = await newApiContext();
     try {
-        await loginCtx(userCtx, { org, user: SHARED_USER, password: SHARED_PASSWORD });
+        await loginCtx(userCtx, { org, user: name, password });
         await logoutCtx(userCtx);
     } finally {
         await userCtx.dispose();
     }
 
-    return { user, testUserName: SHARED_USER, testPassword: SHARED_PASSWORD };
+    return { user, testUserName: name, testPassword: password };
 }
 
 /**

@@ -1066,10 +1066,15 @@ public class PbServiceFacade {
 		q.setCache(false);
 		q.setValue(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
 		q.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING.toString());
-		q.setRequestRange(0, 100);
+		/// Every chapter of a series is its own row, so one 22-chapter novel is 22 candidates.
+		q.setRequestRange(0, 400);
 		BaseRecord[] candidates = IOSystem.getActiveContext().getSearch().findRecords(q);
 		if(candidates == null) return out;
 
+		/// Series rows are olio-principal-owned (see listSeriesBooks), so their titles are resolved as
+		/// that principal — once per distinct series, not once per chapter.
+		BaseRecord olioUser = null;
+		Map<String, String> seriesTitles = new HashMap<>();
 		for(BaseRecord cand : candidates) {
 			String candObjectId = cand.get(FieldNames.FIELD_OBJECT_ID);
 			if(candObjectId == null) continue;
@@ -1080,7 +1085,25 @@ public class PbServiceFacade {
 			dto.put("objectId", b.get(FieldNames.FIELD_OBJECT_ID));
 			dto.put("name", b.get(FieldNames.FIELD_NAME));
 			dto.put("slug", b.get(OlioFieldNames.FIELD_PB_SLUG));
+			dto.put("title", b.get(FieldNames.FIELD_DESCRIPTION));
 			dto.put("bookStatus", enumString(b, OlioFieldNames.FIELD_PB_BOOK_STATUS));
+			dto.put("chapter", b.get(OlioFieldNames.FIELD_PB_CHAPTER));
+			dto.put("sceneCount", PictureBookUtil.countScenesForBook(user, b));
+			dto.put("worldObjectId", fkObjectId(b, OlioFieldNames.FIELD_PB_WORLD, null));
+			String seriesOid = fkObjectId(b, OlioFieldNames.FIELD_PB_SERIES, null);
+			dto.put("seriesObjectId", seriesOid);
+			if(seriesOid != null) {
+				if(!seriesTitles.containsKey(seriesOid)) {
+					if(olioUser == null) {
+						olioUser = IOSystem.getActiveContext().getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+					}
+					BaseRecord series = (olioUser != null) ? PbSeriesUtil.readSeries(olioUser, seriesOid, orgId) : null;
+					String st = (series != null) ? series.get(FieldNames.FIELD_DESCRIPTION) : null;
+					if(st == null && series != null) st = series.get(FieldNames.FIELD_NAME);
+					seriesTitles.put(seriesOid, st);
+				}
+				dto.put("seriesName", seriesTitles.get(seriesOid));
+			}
 			out.add(dto);
 		}
 		return out;
@@ -1176,6 +1199,7 @@ public class PbServiceFacade {
 			dto.put("slug", book.get(OlioFieldNames.FIELD_PB_SLUG));
 			dto.put("bookStatus", enumString(book, OlioFieldNames.FIELD_PB_BOOK_STATUS));
 			dto.put("chapter", book.get(OlioFieldNames.FIELD_PB_CHAPTER));
+			dto.put("sceneCount", PictureBookUtil.countScenesForBook(user, book));
 			dto.put("seriesObjectId", fkObjectId(book, OlioFieldNames.FIELD_PB_SERIES, resolvedSeriesObjectId));
 			dto.put("worldObjectId", fkObjectId(book, OlioFieldNames.FIELD_PB_WORLD, null));
 			out.add(dto);

@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -184,6 +185,10 @@ public class PictureBookUtil {
     static final String META_NOTE_NAME = ".pictureBookMeta";
     public static final String ATTR_SCENE_REFS = "pbSceneRefs";
     public static final String ATTR_DESCRIPTION = "pbDescription";
+    // Text-stated appearance the charPerson has no field for (skin tone/complexion, distinguishing
+    // marks), lifted from the reduce step's physical block. Folded into the record-derived narration so
+    // the manuscript's own words for a character's skin reach the prompt — never a substituted race.
+    public static final String ATTR_APPEARANCE_NOTES = "pbAppearanceNotes";
     // Prepended to ATTR_DESCRIPTION when it drives a portrait render, matching
     // NarrativeUtil.getSDPrompt's own opening tokens so an Attr2-based portrait keeps render quality.
     private static final String PORTRAIT_QUALITY_PREAMBLE =
@@ -1249,6 +1254,54 @@ public class PictureBookUtil {
         return null;
     }
 
+    /**
+     * The manuscript's own words for what the record cannot hold: {@code physical.skin} (tone or
+     * complexion) and {@code physical.distinguishing} from the reduce step. Pure string work; empty
+     * when the text states neither. LLM placeholder values are screened with
+     * {@link NarrativeUtil#isMeaningful}, parenthetical "reasoning" asides are stripped and each part
+     * is length-capped, matching {@code NarrativeUtil.sanitizeExtractedField}.
+     */
+    @SuppressWarnings("unchecked")
+    public static String appearanceNotes(Map<String, Object> charData) {
+        if (charData == null) return "";
+        Object physicalObj = charData.get("physical");
+        if (!(physicalObj instanceof Map)) return "";
+        Map<String, Object> physical = (Map<String, Object>) physicalObj;
+        List<String> parts = new ArrayList<>();
+        String skin = sanitizeNote(meaningfulOrEmpty(physical.get("skin")), 60);
+        if (!skin.isEmpty()) {
+            String s = skin.toLowerCase(Locale.ROOT);
+            parts.add((s.contains("skin") || s.contains("complexion")) ? skin : skin + " skin");
+        }
+        String distinguishing = sanitizeNote(meaningfulOrEmpty(physical.get("distinguishing")), 120);
+        if (!distinguishing.isEmpty()) parts.add(distinguishing);
+        return String.join(", ", parts);
+    }
+
+    private static String sanitizeNote(String value, int maxLen) {
+        if (value == null) return "";
+        String v = value.replaceAll("\\([^()]*\\)", " ").replaceAll("\\([^()]*\\)", " ")
+                .replaceAll("\\s+", " ").trim();
+        if (v.length() > maxLen) v = v.substring(0, maxLen).trim();
+        return v.replaceAll("[,;:.\\s]+$", "");
+    }
+
+    /**
+     * Persist {@link #ATTR_APPEARANCE_NOTES} on a charPerson (referenced-attribute mechanism, see
+     * {@link #persistCharacterSceneAttributes}). Adds it to the in-memory attribute list too, so the
+     * creation-time {@link #refreshNarrativeFromRecord} can read it before any re-read. Best-effort.
+     */
+    private static void persistAppearanceNotes(BaseRecord charPerson, String notes) {
+        if (charPerson == null || notes == null || notes.isBlank()) return;
+        try {
+            IOSystem.getActiveContext().getRecordUtil().createRecord(
+                    AttributeUtil.addAttribute(charPerson, ATTR_APPEARANCE_NOTES, notes.trim()));
+        } catch (Exception e) {
+            logger.warn("Failed to persist " + ATTR_APPEARANCE_NOTES + " for "
+                    + charPerson.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+        }
+    }
+
     private static void persistCharacterSceneAttributes(BaseRecord user, BaseRecord charPerson,
             List<Integer> sceneIndices, String description) {
         try {
@@ -1438,6 +1491,34 @@ public class PictureBookUtil {
         q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
         q.planMost(true);
         return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+    }
+
+    /**
+     * The {@code [startOffset, endOffset)} of a chapter book's {@code olio.pb.sourceRange}, or null when the
+     * book carries no range or it cannot be read. The book projection only carries the FK, so the offsets
+     * are populated here.
+     */
+    static Integer[] readChapterSourceRange(BaseRecord pb2Book) {
+        if (pb2Book == null || !pb2Book.hasField(OlioFieldNames.FIELD_PB_SOURCE_RANGE)) return null;
+        BaseRecord range = pb2Book.get(OlioFieldNames.FIELD_PB_SOURCE_RANGE);
+        if (range == null || range.get(FieldNames.FIELD_ID) == null
+                || ((Number) range.get(FieldNames.FIELD_ID)).longValue() <= 0L) {
+            return null;
+        }
+        try {
+            IOSystem.getActiveContext().getReader().populate(range,
+                    new String[] { OlioFieldNames.FIELD_PB_START_OFFSET, OlioFieldNames.FIELD_PB_END_OFFSET });
+            Object so = range.hasField(OlioFieldNames.FIELD_PB_START_OFFSET) ? range.get(OlioFieldNames.FIELD_PB_START_OFFSET) : null;
+            Object eo = range.hasField(OlioFieldNames.FIELD_PB_END_OFFSET) ? range.get(OlioFieldNames.FIELD_PB_END_OFFSET) : null;
+            Integer s = (so instanceof Number) ? Integer.valueOf(((Number) so).intValue()) : null;
+            Integer e = (eo instanceof Number) ? Integer.valueOf(((Number) eo).intValue()) : null;
+            // An int column reads back 0, not null, when unset; a [0, 0) range is "no range".
+            if ((s == null || s.intValue() == 0) && (e == null || e.intValue() == 0)) return null;
+            return new Integer[] { s, e };
+        } catch (Exception ex) {
+            logger.warn("Could not read chapter sourceRange offsets: " + ex.getMessage());
+            return null;
+        }
     }
 
     // ----- Scene-addressed authorization ---------------------------------
@@ -2095,6 +2176,7 @@ public class PictureBookUtil {
                         + ": could not build a PersonalityProfile (" + pe.getMessage()
                         + ") - using the record's outfit only");
             }
+            physical = appendTextAppearance(physical, full, charPerson, cname);
 
             String narration = composeRecordNarration(physical, statistics, outfit);
             if (narration == null) {
@@ -2109,6 +2191,51 @@ public class PictureBookUtil {
                     + " - falling back to the stored description");
             return null;
         }
+    }
+
+    /**
+     * Fold the manuscript-stated colouring that {@link NarrativeUtil#describePhysical} does not
+     * render into the physical sentence: the record's ethnicity ("Irish heritage") and the
+     * {@link #ATTR_APPEARANCE_NOTES} attribute (skin tone, distinguishing marks). Both exist only when
+     * the text stated them, so a character the text never colours stays uncoloured — nothing here
+     * substitutes for the race word describePhysical now omits when the record's race list is empty.
+     * <p>
+     * The attribute is read from {@code charPerson} (the caller's instance: at creation it holds the
+     * just-added in-memory attribute; at render time the query projected {@code attributes}) and only
+     * then from the fresh re-read.
+     */
+    public static String appendTextAppearance(String physical, BaseRecord full, BaseRecord charPerson, String cname) {
+        List<String> extras = new ArrayList<>();
+        try {
+            List<String> eths = full.get(OlioFieldNames.FIELD_ETHNICITY);
+            String eth = NarrativeUtil.getEthnicityDescription(eths, null);
+            if (eth != null && !eth.isBlank()) extras.add(eth.trim() + " heritage");
+        } catch (Exception e) {
+            logger.warn("Record-driven description for " + cname + ": ethnicity unreadable (" + e.getMessage() + ")");
+        }
+        String notes = readAppearanceNotes(charPerson);
+        if (notes == null) notes = readAppearanceNotes(full);
+        if (notes != null) extras.add(notes);
+        return appendExtras(physical, extras);
+    }
+
+    private static String readAppearanceNotes(BaseRecord rec) {
+        if (rec == null || !rec.hasField(FieldNames.FIELD_ATTRIBUTES)) return null;
+        try {
+            String n = AttributeUtil.getAttributeValue(rec, ATTR_APPEARANCE_NOTES, (String) null);
+            return (n != null && !n.isBlank()) ? n.trim() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Pure: {@code "…brown hair."} + {@code [a, b]} → {@code "…brown hair, a, b."}; null physical → {@code "a, b."}. */
+    public static String appendExtras(String physical, List<String> extras) {
+        if (extras == null || extras.isEmpty()) return physical;
+        String joined = String.join(", ", extras);
+        if (physical == null || physical.isBlank()) return joined + ".";
+        String base = physical.trim().replaceAll("[.\\s]+$", "");
+        return base + ", " + joined + ".";
     }
 
     /**
@@ -3887,6 +4014,18 @@ public class PictureBookUtil {
         }
     }
 
+    private static final Pattern FAILED_CHUNK_CONTEXT =
+            Pattern.compile("\"context\"\\s*:\\s*\"extract-scenes-chunk:(\\d+)/");
+
+    /// The 1-based chunk number a recorded extraction failure refers to, or 0 when the entry is
+    /// not a per-chunk failure. Reads the context recordFailedExtraction / the loop's breaker wrote.
+    static int failedChunkNumber(String failureJson) {
+        if (failureJson == null) return 0;
+        Matcher mt = FAILED_CHUNK_CONTEXT.matcher(failureJson);
+        if (!mt.find()) return 0;
+        try { return Integer.parseInt(mt.group(1)); } catch (NumberFormatException e) { return 0; }
+    }
+
     /**
      * Call LLM with optional prompt template override name.
      */
@@ -5119,7 +5258,15 @@ public class PictureBookUtil {
                     if (sci >= 0 && sci < chunks.size()) s.put("sourceText", chunks.get(sci));
                 }
                 if (failedExtractions != null && prior.failedExtractions != null) {
-                    failedExtractions.addAll(prior.failedExtractions);
+                    /// Carry forward only failures for chunks this run will NOT revisit. A failure
+                    /// at or past startChunk belongs to a chunk that was never merged and is about
+                    /// to be re-attempted; keeping it reported the chunk as failed even after the
+                    /// resume recovered it.
+                    for (String f : prior.failedExtractions) {
+                        int n = failedChunkNumber(f);
+                        if (n > 0 && n > startChunk) continue;
+                        failedExtractions.add(f);
+                    }
                 }
                 checkpoint.scenes = sceneList;
                 checkpoint.chunksProcessed = startChunk;
@@ -5151,6 +5298,10 @@ public class PictureBookUtil {
         /// something unparseable). Two in a row means the model server is gone, not that the model
         /// is having an off day — see the circuit breaker below.
         int consecutiveEmptyResponses = 0;
+        /// Whether the most recently attempted chunk could not reach the model server. Read after
+        /// the loop: a run whose FINAL chunk never got through is not complete, however normally
+        /// the loop exited — see the post-loop check.
+        boolean lastChunkUnreachable = false;
         for (int ci = startChunk; ci < chunks.size(); ci++) {
             // KI-10: checkpoint at the top of the chunk loop — a mid-run cancel (POST
             // /{workObjectId}/cancel) stops further LLM calls immediately; scenes already
@@ -5223,6 +5374,10 @@ public class PictureBookUtil {
             /// Set when any attempt for THIS chunk failed slowly (i.e. timed out) rather than
             /// failing immediately. Reset per chunk.
             boolean sawSlowFailure = false;
+            /// Set when an attempt for THIS chunk could not connect to the model server at all.
+            /// Distinct from sawSlowFailure on purpose: the TCP connect timeout is 10s, which is
+            /// above LLM_INFRA_FAILURE_MS, so without this an unplugged host looked like a slow one.
+            boolean sawUnreachable = false;
             /// The model's own explanation for the last failure, when it gave one.
             String lastLlmError = null;
             Map<String, Object> chunkResult = null;
@@ -5251,9 +5406,17 @@ public class PictureBookUtil {
                 // "chunks attempted", matching ChatUtil.mapSummarize's incrementCurrent() placement.
                 if (attempt == 1 && cancelToken != null) cancelToken.incrementCurrent();
                 if (llmResp == null || llmResp.isEmpty()) {
-                    /// Only a FAST empty reply suggests the server is gone; a slow one is a
-                    /// timeout against a live-but-loaded model. See LLM_INFRA_FAILURE_MS.
-                    boolean slowFailure = (attemptMs >= LLM_INFRA_FAILURE_MS);
+                    /// Typed first: Chat says whether it could connect at all. Only then does the
+                    /// wall-clock heuristic apply — a FAST empty reply suggests the server answered
+                    /// with an error; a slow one is a timeout against a live-but-loaded model. See
+                    /// LLM_INFRA_FAILURE_MS. The connect timeout (10s) sits ABOVE that threshold, so
+                    /// an unreachable host measured by time alone reads as "slow but alive" — which
+                    /// is how a chapter's 14 chunks were all skipped in 140s and reported complete.
+                    boolean unreachable = Chat.isLastCallUnreachable();
+                    boolean slowFailure = !unreachable && (attemptMs >= LLM_INFRA_FAILURE_MS);
+                    if (unreachable) {
+                        sawUnreachable = true;
+                    }
                     if (slowFailure) {
                         sawSlowFailure = true;
                     }
@@ -5262,6 +5425,12 @@ public class PictureBookUtil {
                     logger.error("No LLM content for " + chunkCtx + " (attempt " + attempt
                             + ", " + attemptMs + "ms)"
                             + (why != null ? " — " + why : " — no reason reported"));
+                    if (unreachable) {
+                        /// Nothing is listening; a retry can only burn another connect timeout.
+                        logger.warn("Chunk " + chunkCtx + ": model server unreachable after "
+                                + attemptMs + "ms — NOT retrying");
+                        break;
+                    }
                     if (slowFailure) {
                         /// NEVER retry a TIMEOUT. The retry above exists for MALFORMED JSON (see the
                         /// comment at the head of this loop) — a fresh generation usually parses. A
@@ -5292,7 +5461,12 @@ public class PictureBookUtil {
                 if (attempt < 2) logger.warn("Chunk " + chunkCtx + " returned unparseable JSON — retrying once");
             }
             if (llmResp == null || llmResp.isEmpty()) {
-                if (sawSlowFailure) {
+                lastChunkUnreachable = sawUnreachable;
+                if (sawUnreachable) {
+                    /// Could not connect. Counts toward the breaker exactly like an immediate
+                    /// failure — this is the case the breaker exists for.
+                    consecutiveEmptyResponses++;
+                } else if (sawSlowFailure) {
                     /// Timed out against a live server. Record the chunk as failed (below) and
                     /// keep going — aborting the rest of the document because the model is having
                     /// a slow spell throws away every remaining passage for no reason.
@@ -5304,6 +5478,7 @@ public class PictureBookUtil {
                 }
             } else {
                 consecutiveEmptyResponses = 0;
+                lastChunkUnreachable = false;
             }
             /// Circuit breaker, for an UNREACHABLE server only. Two chunks in a row whose
             /// attempts all failed IMMEDIATELY means nothing is listening — during a shutdown the
@@ -5316,9 +5491,13 @@ public class PictureBookUtil {
                 /// Report the model's OWN reason. Asserting "the server is down" was wrong and
                 /// actively misleading: the same instant-failure signature is produced by a
                 /// mistyped model name (HTTP 404 "model 'x' not found" in ~12ms), and a user who
-                /// made a typo was told their hardware had failed.
-                logger.error("extractChunkedInternal: " + consecutiveEmptyResponses
-                        + " consecutive chunks failed immediately at " + (ci + 1) + "/" + chunks.size()
+                /// made a typo was told their hardware had failed. The one case where "down" IS
+                /// the truth is a typed connect failure, and Chat's message already names the host.
+                String what = sawUnreachable
+                        ? " consecutive chunks could not reach the model server"
+                        : " consecutive chunks failed immediately";
+                logger.error("extractChunkedInternal: " + consecutiveEmptyResponses + what
+                        + " at " + (ci + 1) + "/" + chunks.size()
                         + " — stopping and keeping the checkpoint (" + sceneList.size() + " scenes). "
                         + (lastLlmError != null ? "Reason: " + lastLlmError
                             : "No reason was reported by the model server."));
@@ -5328,11 +5507,13 @@ public class PictureBookUtil {
                 if (failedExtractions != null) {
                     /// Hand the model's own words to the CLIENT too — this is what the user sees,
                     /// and "model 'qweb3:8b' not found" is actionable where "unreachable" is not.
+                    /// "stoppedEarly" is the typed signal the client keys its abort on; the prose
+                    /// is for the user and may change.
                     String reason = (lastLlmError != null) ? lastLlmError
                         : "the model server did not respond and gave no reason";
                     failedExtractions.add("{\"context\":\"" + chunkCtx
-                        + "\",\"error\":\"" + consecutiveEmptyResponses
-                        + " consecutive chunks failed immediately. " + jsonEscape(reason)
+                        + "\",\"stoppedEarly\":true"
+                        + ",\"error\":\"" + consecutiveEmptyResponses + what + ". " + jsonEscape(reason)
                         + " Extraction stopped early; fix the cause and re-run to resume from the"
                         + " checkpoint.\"}");
                 }
@@ -5352,7 +5533,14 @@ public class PictureBookUtil {
                 // `llmResp != null && !llmResp.isEmpty()`, so a chunk where BOTH attempts returned
                 // nothing (a conversational refusal, a hard infra failure) produced no
                 // failedExtractions entry at all and vanished behind a single WARN.
-                parseLlmJsonObject(llmResp, chunkCtx, failedExtractions);
+                if ((llmResp == null || llmResp.isEmpty()) && lastLlmError != null) {
+                    /// The generic "LLM returned no content" hid the cause from the client: a
+                    /// chunk lost to an unreachable host, a 900s timeout and a mistyped model name
+                    /// all read identically. Chat's own message says which it was.
+                    recordFailedExtraction(failedExtractions, chunkCtx, lastLlmError, null);
+                } else {
+                    parseLlmJsonObject(llmResp, chunkCtx, failedExtractions);
+                }
                 logger.warn("Chunk " + chunkCtx + " still unparseable after retry — skipping");
                 continue;
             }
@@ -5403,6 +5591,22 @@ public class PictureBookUtil {
         if (reachedEnd && Thread.currentThread().isInterrupted()) {
             logger.warn("extractChunkedInternal: interrupted during the final chunk of "
                     + chunks.size() + " — keeping the checkpoint rather than reporting completion");
+            reachedEnd = false;
+        }
+        /// Same hole, different cause: the model server dropped off the network during the FINAL
+        /// chunk. One unreachable chunk cannot trip the breaker (it needs two), so the loop exits
+        /// normally with chunksProcessed one short — and clearing the checkpoint here would report
+        /// a run that never processed its last passage as complete. Keeping it lets a re-run resume
+        /// at exactly that chunk once the host is back. Deliberately NOT extended to a timeout or a
+        /// parse failure on the final chunk: those keep the documented "slow is alive — record the
+        /// failure, reach the end" contract pinned by TestExtractChunkLoop.
+        if (reachedEnd && lastChunkUnreachable) {
+            logger.warn("extractChunkedInternal: the model server was unreachable for the final chunk of "
+                    + chunks.size() + " — keeping the checkpoint at "
+                    + checkpoint.chunksProcessed + " rather than reporting completion");
+            if (groupPath != null) {
+                saveExtractCheckpoint(user, groupPath, workObjectId, checkpoint);
+            }
             reachedEnd = false;
         }
         if (reachedEndOut != null && reachedEndOut.length > 0) {
@@ -5873,7 +6077,233 @@ public class PictureBookUtil {
         }
     }
 
-    private static BaseRecord buildRandomBaseline(OlioContext octx, String preferredLastName, int ageApprox) {
+    /**
+     * The race the manuscript states for a character, as a list of {@link RaceEnumType} constant
+     * NAMES (the shape {@code charPerson.race} stores and {@code NarrativeUtil} reads back), or an
+     * EMPTY list when the text states none.
+     *
+     * <p>The only source is the reduce step's {@code race} field, which the prompt constrains to
+     * {@link #raceOptionsCsv()} or {@code "Unknown"} "if the passages do not indicate it". Unknown,
+     * unmappable and LLM placeholder values ({@link NarrativeUtil#isMeaningful}) all yield the empty
+     * list. Nothing here — and nothing in {@code createCharPerson} — ever substitutes a race the
+     * passages did not state: an empty list means the narration carries no race word, and the
+     * text-stated ethnicity/skin (see {@link #appearanceNotes}) carry the description instead.
+     */
+    public static List<String> resolveTextRace(Map<String, Object> charData, String name) {
+        List<String> race = new ArrayList<>();
+        if (charData == null) return race;
+        Object raceObj = charData.get("race");
+        if (!(raceObj instanceof String) || !NarrativeUtil.isMeaningful((String) raceObj)) return race;
+        String raw = ((String) raceObj).trim();
+        String raceEnum = mapRaceOverride(raw);
+        if (raceEnum == null || RaceEnumType.U.name().equals(raceEnum)) {
+            logger.info("Character " + name + ": text states no usable race ('" + raw + "') - leaving race unset");
+            return race;
+        }
+        race.add(raceEnum);
+        logger.info("Character " + name + ": race from text '" + raw + "' -> " + raceEnum);
+        return race;
+    }
+
+    // ── Race / ethnicity grounding gate ──────────────────────────────────────────────────────
+    //
+    // The reduce-character prompt hands the LLM the full RaceEnumType / EthnicityEnumType option
+    // lists, and the model fills them in from surnames, setting and era instead of from the text.
+    // Measured on HarlotsEight_Vol1 (2026-09-25): "Scottish", "Irish", "European/Anglo Saxon",
+    // "Other Asian", "Other Hispanic" and "Vampire" all came back for characters whose passages
+    // contain none of those words (the whole manuscript has zero occurrences of any of them), while
+    // the race the text names 154 times ("fairy") was missed on three of four fairies. Those labels
+    // were persisted and rendered into every portrait and scene prompt as "<race> <gender>" /
+    // "<ethnicity> heritage". Stephen: "STOP CHANGING THE RACE OF MY CHARACTERS."
+    //
+    // A label survives only when the passages that were actually sent to the model contain the
+    // label's own word — a NECESSARY condition, not proof, but every observed failure fails it —
+    // and, when the model supplied a *_evidence quote, that quote must occur verbatim in the
+    // passages and itself contain the word. Anything else is dropped to "not stated". Both prompts
+    // are in play: provisioned databases hold the seeded (old) DB template with no evidence fields
+    // (ChatLibraryUtil seeds create-if-missing), so the lexical branch has to stand on its own.
+
+    public static final String KEY_RACE_EVIDENCE = "race_evidence";
+    public static final String KEY_ETHNICITY_EVIDENCE = "ethnicity_evidence";
+
+    private static final Set<String> LABEL_STOPWORDS = Set.of("other", "or", "and", "us", "native");
+
+    // Inflections and demonym<->place forms of the enum label's OWN word (fairy -> fairies,
+    // Scottish -> Scotland). Not a synonym table: nothing here lets a label match a different word.
+    private static final Map<String, String[]> LABEL_SURFACE_FORMS = Map.ofEntries(
+        Map.entry("fairy", new String[] {"fairies", "faerie", "faeries"}),
+        Map.entry("elf", new String[] {"elves", "elven", "elvish"}),
+        Map.entry("dwarf", new String[] {"dwarves", "dwarfs", "dwarven", "dwarvish"}),
+        Map.entry("vampire", new String[] {"vampires", "vampiric"}),
+        Map.entry("monster", new String[] {"monsters", "monstrous"}),
+        Map.entry("robot", new String[] {"robots", "robotic"}),
+        Map.entry("succubus", new String[] {"succubi"}),
+        Map.entry("lunatic", new String[] {"lunatics"}),
+        // The enum constant's label is misspelled; accept the real spelling too.
+        Map.entry("exraterrestrial", new String[] {"extraterrestrial", "extraterrestrials"}),
+        Map.entry("asian", new String[] {"asians", "asia"}),
+        Map.entry("indian", new String[] {"indians", "india"}),
+        Map.entry("alaska", new String[] {"alaskan"}),
+        Map.entry("alaskan", new String[] {"alaska"}),
+        Map.entry("hawaiian", new String[] {"hawaiians", "hawaii"}),
+        Map.entry("islander", new String[] {"islanders"}),
+        Map.entry("african", new String[] {"africans", "africa"}),
+        Map.entry("melanesian", new String[] {"melanesians", "melanesia"}),
+        Map.entry("aboriginal", new String[] {"aboriginals", "aborigine", "aborigines"}),
+        Map.entry("chinese", new String[] {"china"}),
+        Map.entry("guamanian", new String[] {"guamanians", "guam"}),
+        Map.entry("japanese", new String[] {"japan"}),
+        Map.entry("korean", new String[] {"koreans", "korea"}),
+        Map.entry("polynesian", new String[] {"polynesians", "polynesia"}),
+        Map.entry("european", new String[] {"europeans", "europe"}),
+        Map.entry("saxon", new String[] {"saxons"}),
+        Map.entry("latin", new String[] {"latino", "latina", "latinos", "latinas"}),
+        Map.entry("american", new String[] {"americans", "america"}),
+        Map.entry("arabic", new String[] {"arab", "arabs", "arabia", "arabian"}),
+        Map.entry("vietnamese", new String[] {"vietnam"}),
+        Map.entry("micronesian", new String[] {"micronesians", "micronesia"}),
+        Map.entry("hispanic", new String[] {"hispanics"}),
+        Map.entry("canadian", new String[] {"canadians", "canada"}),
+        Map.entry("filipino", new String[] {"filipinos", "filipina", "filipinas", "philippines", "philippine"}),
+        Map.entry("mexican", new String[] {"mexicans", "mexico"}),
+        Map.entry("cuban", new String[] {"cubans", "cuba"}),
+        Map.entry("irish", new String[] {"ireland", "irishman", "irishmen", "irishwoman", "irishwomen"}),
+        Map.entry("scottish", new String[] {"scot", "scots", "scotland", "scotsman", "scotsmen", "scotswoman", "scotswomen"}),
+        Map.entry("british", new String[] {"britain", "briton", "britons", "brit", "brits"}),
+        Map.entry("french", new String[] {"france", "frenchman", "frenchmen", "frenchwoman", "frenchwomen"}),
+        Map.entry("german", new String[] {"germans", "germany"}),
+        Map.entry("russian", new String[] {"russians", "russia"}),
+        Map.entry("spanish", new String[] {"spain", "spaniard", "spaniards"})
+    );
+
+    // "White"/"Black" are colour words first: "a dirty white shirt" and "black boots" occur in
+    // any manuscript. For those two labels the word has to sit next to a person/skin word.
+    private static final Set<String> COLOUR_WORD_RACE_LABELS = Set.of("white", "black");
+    private static final String PERSON_CONTEXT_WORDS = "skin|skinned|complexion|flesh|face|faced|features|man|men|"
+        + "woman|women|girl|girls|boy|boys|lady|ladies|gentleman|gentlemen|fellow|fellows|folk|folks|people|"
+        + "person|persons|race|guy|guys|child|children";
+
+    static Set<String> groundingTerms(String label) {
+        Set<String> terms = new LinkedHashSet<>();
+        if (label == null) return terms;
+        for (String w : label.toLowerCase(Locale.ROOT).split("[/,\\s]+")) {
+            if (w.isEmpty() || LABEL_STOPWORDS.contains(w)) continue;
+            terms.add(w);
+            String[] forms = LABEL_SURFACE_FORMS.get(w);
+            if (forms != null) terms.addAll(Arrays.asList(forms));
+        }
+        return terms;
+    }
+
+    private static Pattern wholeWord(String term) {
+        return Pattern.compile("\\b" + Pattern.quote(term) + "\\b",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
+    }
+
+    static String findGroundingTerm(String text, Set<String> terms) {
+        if (text == null || text.isEmpty()) return null;
+        for (String t : terms) {
+            if (wholeWord(t).matcher(text).find()) return t;
+        }
+        return null;
+    }
+
+    static boolean hasPersonContext(String text, String term) {
+        if (text == null || text.isEmpty()) return false;
+        String t = Pattern.quote(term);
+        String near = "(?:\\b(?:" + PERSON_CONTEXT_WORDS + ")\\b\\W+(?:\\w+\\W+){0,4}?\\b" + t + "\\b)"
+            + "|(?:\\b" + t + "\\b\\W+(?:\\w+\\W+){0,4}?\\b(?:" + PERSON_CONTEXT_WORDS + ")\\b)";
+        return Pattern.compile(near, Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS)
+            .matcher(text).find();
+    }
+
+    /** Lowercase, straight quotes/dashes, single spaces, outer quote marks and ellipses stripped. */
+    static String normalizeForQuote(String s) {
+        if (s == null) return "";
+        String t = s.toLowerCase(Locale.ROOT)
+            .replace('‘', '\'').replace('’', '\'')
+            .replace('“', '"').replace('”', '"')
+            .replace('–', '-').replace('—', '-')
+            .replace("…", " ").replace("...", " ")
+            .replaceAll("\\s+", " ").trim();
+        return t.replaceAll("^[\"'\\s]+", "").replaceAll("[\"'\\s]+$", "").trim();
+    }
+
+    /**
+     * Null when {@code label} is grounded in {@code passages}; otherwise a short reason. With an
+     * evidence quote the quote is the whole case: it must occur in the passages and contain the
+     * label's word. Without one, the label's word must occur in the passages.
+     */
+    static String groundingFailure(String label, Object evidenceObj, String passages, boolean colourWord) {
+        Set<String> terms = groundingTerms(label);
+        if (terms.isEmpty()) return "label '" + label + "' has no word to look for";
+        String evidence = (evidenceObj instanceof String && NarrativeUtil.isMeaningful((String) evidenceObj))
+            ? ((String) evidenceObj).trim() : null;
+        if (evidence != null) {
+            String normEv = normalizeForQuote(evidence);
+            if (normEv.isEmpty() || !normalizeForQuote(passages).contains(normEv)) {
+                return "evidence is not a quote from the passages: \"" + evidence + "\"";
+            }
+            String term = findGroundingTerm(normEv, terms);
+            if (term == null) return "evidence does not name it: \"" + evidence + "\"";
+            if (colourWord && !hasPersonContext(normEv, term)) {
+                return "evidence uses '" + term + "' as an object colour, not of a person: \"" + evidence + "\"";
+            }
+            return null;
+        }
+        String term = findGroundingTerm(passages, terms);
+        if (term == null) return "none of " + terms + " occur in the passages";
+        if (colourWord && !hasPersonContext(passages, term)) return "'" + term + "' occurs only as an object colour";
+        return null;
+    }
+
+    /**
+     * Drop any LLM-returned {@code race} / {@code ethnicity} the passages do not state (see the
+     * section comment above). Mutates {@code llmData}: a rejected race becomes "Unknown", a
+     * rejected ethnicity becomes "", and the {@code *_evidence} keys are always removed so they
+     * never reach {@code charData}. Labels that map to no enum are left alone —
+     * {@link #resolveTextRace} / {@link #mapEthnicityOverride} already discard those.
+     */
+    public static void groundRaceAndEthnicity(Map<String, Object> llmData, String passages, String name) {
+        if (llmData == null) return;
+        Object raceEv = llmData.remove(KEY_RACE_EVIDENCE);
+        Object ethEv = llmData.remove(KEY_ETHNICITY_EVIDENCE);
+
+        Object raceObj = llmData.get("race");
+        if (raceObj instanceof String && NarrativeUtil.isMeaningful((String) raceObj)) {
+            String raw = ((String) raceObj).trim();
+            String code = mapRaceOverride(raw);
+            if (code != null && !RaceEnumType.U.name().equals(code)) {
+                String label = RaceEnumType.valueOf(RaceEnumType.valueOf(code));
+                String why = groundingFailure(label, raceEv, passages, COLOUR_WORD_RACE_LABELS.contains(label.toLowerCase(Locale.ROOT)));
+                if (why != null) {
+                    logger.info("Character " + name + ": race '" + raw + "' is not stated by the passages (" + why + ") - not stated");
+                    llmData.put("race", RaceEnumType.valueOf(RaceEnumType.U));
+                } else {
+                    logger.info("Character " + name + ": race '" + raw + "' is grounded in the passages");
+                }
+            }
+        }
+
+        Object ethObj = llmData.get("ethnicity");
+        if (ethObj instanceof String && NarrativeUtil.isMeaningful((String) ethObj)) {
+            String raw = ((String) ethObj).trim();
+            String code = mapEthnicityOverride(raw);
+            if (code != null) {
+                String label = EthnicityEnumType.valueOf(EthnicityEnumType.valueOf(code));
+                String why = groundingFailure(label, ethEv, passages, false);
+                if (why != null) {
+                    logger.info("Character " + name + ": ethnicity '" + raw + "' is not stated by the passages (" + why + ") - not stated");
+                    llmData.put("ethnicity", "");
+                } else {
+                    logger.info("Character " + name + ": ethnicity '" + raw + "' is grounded in the passages");
+                }
+            }
+        }
+    }
+
+    private static BaseRecord buildRandomBaseline(OlioContext octx, String preferredLastName, int ageApprox,
+            List<String> textRace) {
         if (octx == null) return null;
         try {
             BaseRecord baseline = CharacterUtil.randomPerson(octx,
@@ -5881,11 +6311,12 @@ public class PictureBookUtil {
             if (baseline == null) return null;
 
             BaseRecord baseStats = baseline.get(OlioFieldNames.FIELD_STATISTICS);
-            List<String> baseRace = baseline.get(OlioFieldNames.FIELD_RACE);
             String baseGender = baseline.get(FieldNames.FIELD_GENDER);
             if (baseStats != null) {
                 StatisticsUtil.rollStatistics(baseStats, ageApprox);
-                StatisticsUtil.rollHeight(baseStats, baseRace, baseGender, ageApprox);
+                // The TEXT's race (possibly none), never randomPerson's random roll, drives the
+                // height distribution.
+                StatisticsUtil.rollHeight(baseStats, textRace, baseGender, ageApprox);
             }
             BaseRecord basePersonality = baseline.get(FieldNames.FIELD_PERSONALITY);
             if (basePersonality != null) {
@@ -6105,7 +6536,11 @@ public class PictureBookUtil {
             logger.warn("No datagen.path configured — skipping random baseline for " + name
                     + " (pre-KI-30 sparse fallback); apparel colors fall back to the per-owner group");
         }
-        BaseRecord baseline = buildRandomBaseline(octx, lastName, age);
+        // Race comes from the manuscript or not at all. It is resolved BEFORE the random baseline so
+        // the baseline's height roll uses the text-stated race (or the gender-only mean when the
+        // text states none) instead of whatever CharacterUtil.randomPerson rolled.
+        List<String> textRace = resolveTextRace(charData, name);
+        BaseRecord baseline = buildRandomBaseline(octx, lastName, age, textRace);
 
         try {
             ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH,
@@ -6133,33 +6568,17 @@ public class PictureBookUtil {
             }
             charPerson.set("gender", gender);
 
-            // KI-30: race/alignment are plain (non-foreign) fields directly on charPerson, so the
-            // baseline value can be applied straight onto the in-memory record before create() —
-            // no separate persisted-instance/PATCH step needed, unlike the foreign sub-models
-            // below. Only applied when the LLM didn't already determine something more specific
-            // (it never extracts race/alignment today, so this is unconditional for now).
+            // Alignment is the ONLY thing taken from the random baseline here. Race is NEVER taken
+            // from it: CharacterUtil.randomPerson rolls a random race, and stamping that onto an
+            // extracted character put a race the manuscript never stated into every portrait and
+            // composite (describePhysical renders "<age> year old <race> <gender>" from the record).
             if (baseline != null) {
-                List<String> baseRace = baseline.get(OlioFieldNames.FIELD_RACE);
-                if (baseRace != null && !baseRace.isEmpty()) charPerson.set(OlioFieldNames.FIELD_RACE, baseRace);
                 Object baseAlignment = baseline.get(FieldNames.FIELD_ALIGNMENT);
                 if (baseAlignment != null) charPerson.set(FieldNames.FIELD_ALIGNMENT, baseAlignment);
             }
-
-            // C2: race is a list<string> whose values must be RaceEnumType constant NAMES (same as the
-            // random baseline sets). The extraction prompt does not surface race today, but if it ever
-            // does, map the free text to the enum constant and override the baseline; an unmappable
-            // value leaves the baseline race in place (never a raw string). No-op when charData has no
-            // "race" key or it doesn't map.
-            Object raceObj = charData.get("race");
-            if (raceObj instanceof String && NarrativeUtil.isMeaningful((String) raceObj)) {
-                String raceEnum = mapRaceOverride((String) raceObj);
-                if (raceEnum != null) {
-                    charPerson.set(OlioFieldNames.FIELD_RACE, Arrays.asList(raceEnum));
-                } else {
-                    logger.info("LLM race '" + ((String) raceObj).trim() + "' for " + name
-                            + " maps to no RaceEnumType constant — keeping baseline race");
-                }
-            }
+            // Race is exactly what the text stated (resolveTextRace), possibly nothing. Set even when
+            // empty so no factory/baseline default can survive on the record.
+            charPerson.set(OlioFieldNames.FIELD_RACE, new ArrayList<>(textRace));
 
             // Age/ethnicity/skills — plain columns on identity.person/charPerson (not foreign/
             // referenced records), so these can be set directly before create(), same as gender.
@@ -6394,51 +6813,25 @@ public class PictureBookUtil {
                     logger.warn("Failed to seed state baseline for " + name + ": " + e.getMessage());
                 }
 
-                // Hair/eye color — top-level data.color FOREIGN refs on charPerson, set on the random
-                // baseline by CharacterUtil.setStyleByRace (race-appropriate palette). copyBaselineFieldValues
-                // can't carry them (it skips foreign fields), so link them explicitly by FK reference, the
-                // same PATCH mechanism the sub-models above use.
-                try {
-                    BaseRecord baseHair = (baseline.get(OlioFieldNames.FIELD_HAIR_COLOR) instanceof BaseRecord)
-                            ? (BaseRecord) baseline.get(OlioFieldNames.FIELD_HAIR_COLOR) : null;
-                    if (baseHair != null) {
-                        Long hairId = baseHair.get(FieldNames.FIELD_ID);
-                        if (hairId != null && hairId > 0L
-                                && patchCharPersonField(user, charPerson, OlioFieldNames.FIELD_HAIR_COLOR, baseHair) != null) {
-                            charPerson.set(OlioFieldNames.FIELD_HAIR_COLOR, baseHair);
-                        } else {
-                            logger.warn("Failed to link hairColor (id=" + hairId + ") to charPerson " + name);
-                        }
-                    }
-                    BaseRecord baseEye = (baseline.get(OlioFieldNames.FIELD_EYE_COLOR) instanceof BaseRecord)
-                            ? (BaseRecord) baseline.get(OlioFieldNames.FIELD_EYE_COLOR) : null;
-                    if (baseEye != null) {
-                        Long eyeId = baseEye.get(FieldNames.FIELD_ID);
-                        if (eyeId != null && eyeId > 0L
-                                && patchCharPersonField(user, charPerson, OlioFieldNames.FIELD_EYE_COLOR, baseEye) != null) {
-                            charPerson.set(OlioFieldNames.FIELD_EYE_COLOR, baseEye);
-                        } else {
-                            logger.warn("Failed to link eyeColor (id=" + eyeId + ") to charPerson " + name);
-                        }
-                    }
-                } catch (Exception e) {
-                    logger.warn("Failed to seed hair/eye color baseline for " + name + ": " + e.getMessage());
-                }
+                // The baseline's hairColor/eyeColor are deliberately NOT linked: CharacterUtil
+                // .setStyleByRace picks them from a palette keyed to the baseline's RANDOM race, so
+                // carrying them over smuggled that race into the record as hair/eye colour even
+                // after the race field itself stopped being copied. Hair and eyes come from the
+                // text below or stay unset (describePhysical omits them cleanly).
             }
 
-            // The EXTRACTION's own appearance, applied ON TOP of the baseline palette.
+            // The EXTRACTION's own appearance — the only source of hair/eye colour on the record.
             //
-            // This is issue 2's root cause. The LLM's physical.hair / physical.eyes reached only the
-            // narrative's sdPrompt text (buildPortraitPromptFromExtractedData) — never the record —
-            // while hairColor/eyeColor came from CharacterUtil.setStyleByRace's RANDOM race-appropriate
-            // palette. So the persisted character and the text used to image it described two
-            // different people BY CONSTRUCTION, and editing the character in the Ux could not fix it
-            // because imaging never read the record. Seeding here makes the record the extraction,
-            // which is what lets the description be derived from the record afterwards
-            // (refreshNarrativeFromRecord) and lets a post-extraction edit actually take effect.
+            // The LLM's physical.hair / physical.eyes used to reach only the narrative's sdPrompt text
+            // (buildPortraitPromptFromExtractedData) — never the record — so the persisted character
+            // and the text used to image it described two different people BY CONSTRUCTION, and
+            // editing the character in the Ux could not fix it because imaging never read the record.
+            // Seeding here makes the record the extraction, which is what lets the description be
+            // derived from the record afterwards (refreshNarrativeFromRecord) and lets a
+            // post-extraction edit actually take effect.
             //
-            // Best-effort in both directions: an unmappable colour KEEPS the baseline (never a raw
-            // string on a foreign ref), and a failure here never aborts character creation.
+            // Best-effort: an unmappable colour leaves the field unset (never a raw string on a
+            // foreign ref), and a failure here never aborts character creation.
             try {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> physAppearance = (Map<String, Object>) charData.get("physical");
@@ -6566,6 +6959,13 @@ public class PictureBookUtil {
             // Same helper, so there is exactly one definition of what a character's description is.
             // Best-effort: a failure here leaves the creation-time values, which the render-time
             // refresh still corrects.
+            //
+            // Skin tone / distinguishing marks have no field on the record, so without this the
+            // record-derived narration would drop the manuscript's own words for them (and, race
+            // now being text-only, there would be nothing describing a character's colouring at all
+            // when the text names skin but not a census race). Persisted BEFORE the refresh so the
+            // creation-time narration already carries them.
+            persistAppearanceNotes(charPerson, appearanceNotes(charData));
             refreshNarrativeFromRecord(user, charPerson, name);
 
             return charPerson;
@@ -6686,19 +7086,39 @@ public class PictureBookUtil {
     }
 
     /**
+     * data.note is unique on (name, groupId), and the LLM regularly titles two scenes in one chapter
+     * identically ("Dirk and Simon Exchange Gloves" twice in HarlotsEight ch. 6). The second create
+     * then failed on the index and the scene was silently dropped from the book. The note name is
+     * only a container label — the meta entry and every reader key on the note's objectId, and the
+     * displayed title stays {@code sceneData.title} — so a repeat gets a " (n)" suffix.
+     */
+    public static String uniqueSceneNoteName(String title, int idx, Set<String> usedNoteNames) {
+        String base = (title == null || title.isBlank()) ? "Scene " + idx : title.trim();
+        if (usedNoteNames == null) return base;
+        String candidate = base;
+        int n = 2;
+        while (!usedNoteNames.add(candidate.toLowerCase(Locale.ROOT))) {
+            candidate = base + " (" + n++ + ")";
+        }
+        return candidate;
+    }
+
+    /**
      * Create a data.note record for a scene.
      */
-    private static BaseRecord createSceneNote(BaseRecord user, BaseRecord scenesGroup, Map<String, Object> sceneData, int idx) {
+    private static BaseRecord createSceneNote(BaseRecord user, BaseRecord scenesGroup, Map<String, Object> sceneData, int idx,
+            Set<String> usedNoteNames) {
         String title = (String) sceneData.getOrDefault("title", "Scene " + idx);
         String summary = (String) sceneData.getOrDefault("summary", "");
+        String noteName = uniqueSceneNoteName(title, idx, usedNoteNames);
 
         try {
             ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH,
                     scenesGroup.get(FieldNames.FIELD_PATH));
-            plist.parameter(FieldNames.FIELD_NAME, title);
+            plist.parameter(FieldNames.FIELD_NAME, noteName);
             BaseRecord note = IOSystem.getActiveContext().getFactory().newInstance(
                     ModelNames.MODEL_NOTE, user, null, plist);
-            note.set(FieldNames.FIELD_NAME, title);
+            note.set(FieldNames.FIELD_NAME, noteName);
 
             // Store scene metadata + summary as JSON in the text field
             // (data.note has no 'description' field — summary goes in the metadata)
@@ -7003,6 +7423,9 @@ public class PictureBookUtil {
         // pb2BookObjectId stamp all degrade to exactly the old 8-arg behaviour. When present, resolve the
         // PB2 book's world context as before.
         OlioContext pb2OlioCtx = null;
+        String pb2GroupName = null;
+        Integer chapterStart = null;
+        Integer chapterEnd = null;
         if (pb2BookObjectId != null && !pb2BookObjectId.isBlank()) {
             long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
             BaseRecord pb2Book = PbBookUtil.readBook(user, pb2BookObjectId, orgId);
@@ -7013,6 +7436,9 @@ public class PictureBookUtil {
             if (bookSlug == null || bookSlug.isBlank()) {
                 throw new PictureBookException(500, "PB2 book has no slug — cannot resolve its Olio context");
             }
+            // Chapter books are titled "Chapter N", so keying the PB1 group on the title makes every
+            // manuscript's chapter N share ~/Data/PictureBooks/Chapter N. The slug is unique per book.
+            pb2GroupName = bookSlug;
             // N-series (Q6): a chapter book does NOT own a per-chapter world. Its world FK (book.world)
             // is the ONE world shared by the whole series (book.world = series.universe), whose world
             // name is the SERIES slug, not this chapter's slug. Resolving the context by the chapter
@@ -7025,6 +7451,13 @@ public class PictureBookUtil {
             BaseRecord seriesRef = pb2Book.get(OlioFieldNames.FIELD_PB_SERIES);
             boolean isChapter = seriesRef != null && seriesRef.get(FieldNames.FIELD_ID) != null
                 && ((Number) seriesRef.get(FieldNames.FIELD_ID)).longValue() > 0L;
+            if (isChapter) {
+                Integer[] range = readChapterSourceRange(pb2Book);
+                if (range != null) {
+                    chapterStart = range[0];
+                    chapterEnd = range[1];
+                }
+            }
             try {
                 if (isChapter) {
                     String seriesSlug = resolveSeriesWorldSlug(pb2Book, orgId);
@@ -7048,10 +7481,11 @@ public class PictureBookUtil {
 
         List<Map<String, Object>> charDataList = (charDataListIn != null) ? new ArrayList<>(charDataListIn) : new ArrayList<>();
         String effectiveBookName = (bookName != null && !bookName.isEmpty()) ? bookName : work.get(FieldNames.FIELD_NAME);
-        BaseRecord bookGroup = ensureBookGroup(user, effectiveBookName);
+        String groupName = (pb2GroupName != null) ? pb2GroupName : effectiveBookName;
+        BaseRecord bookGroup = ensureBookGroup(user, groupName);
         if (bookGroup == null) throw new PictureBookException(500, "Failed to create book group");
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
-        if (bookGroupPath == null) bookGroupPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + effectiveBookName;
+        if (bookGroupPath == null) bookGroupPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + groupName;
 
         BaseRecord scenesGroup = ensureSubGroup(user, bookGroupPath, "Scenes");
         BaseRecord charsGroup = ensureSubGroup(user, bookGroupPath, "Characters");
@@ -7062,6 +7496,16 @@ public class PictureBookUtil {
             chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
         String text = extractWorkText(user, work);
+        if (text != null && (chapterStart != null || chapterEnd != null)) {
+            // The character-passage fallback below truncates to MAX_EXTRACTION_TEXT_CHARS from the front,
+            // so for chapter 6 of a shared manuscript it would describe chapter 1's people.
+            try {
+                int[] range = resolveExtractRange(text.length(), chapterStart, chapterEnd);
+                text = text.substring(range[0], range[1]);
+            } catch (PictureBookException e) {
+                logger.warn("createFromScenes(pb2): ignoring chapter range [" + chapterStart + ", " + chapterEnd + "): " + e.getMessage());
+            }
+        }
 
         /// Fold duplicate spellings of the same character into ONE name before anything reads the
         /// scene list. This was added to the PB1 overload only, and PB2 is the path every book
@@ -7211,6 +7655,7 @@ public class PictureBookUtil {
                 String llmChar = callLlm(user, chatConfig, "pictureBook.reduce-character", charVars);
                 Map<String, Object> llmData = parseLlmJsonObject(llmChar, "reduce-character:" + cname, failedExtractions);
                 if (!llmData.isEmpty()) {
+                    groundRaceAndEthnicity(llmData, passages, cname);
                     Object d = llmData.remove("description");
                     // isMeaningful, not !isBlank: this came out of an LLM JSON object, and an LLM that
                     // cannot describe someone emits the literal string "null"/"n/a"/"unknown" as
@@ -7238,12 +7683,15 @@ public class PictureBookUtil {
         }
 
         List<BaseRecord> metaScenes = new ArrayList<>();
+        Set<String> usedNoteNames = new HashSet<>();
         int idx = 0;
         for (Map<String, Object> sceneData : sceneList) {
-            BaseRecord note = createSceneNote(user, scenesGroup, sceneData, idx);
+            BaseRecord note = createSceneNote(user, scenesGroup, sceneData, idx, usedNoteNames);
             if (note != null) {
                 BaseRecord sceneEntry = buildSceneEntry(note, sceneData, idx, charObjectIds);
                 if (sceneEntry != null) metaScenes.add(sceneEntry);
+            } else {
+                logger.error("Scene " + idx + " ('" + sceneData.getOrDefault("title", "") + "') was not persisted and is absent from the book");
             }
             idx++;
         }
@@ -7328,7 +7776,17 @@ public class PictureBookUtil {
         if (common == null && bookGroupPath != null) common = getBookSdConfigByPath(user, bookGroupPath);
         if (common == null) common = SDUtil.randomSDConfig();
         SDUtil.fillStyleDefaults(common);
+        // A per-scene override's `description` is THIS scene's edited composite prompt (the wizard's
+        // Scene Overrides "Prompt" field), not an SD config value: nothing in the pipeline reads
+        // common.description, and letting it ride onto `common` would persist a single scene's prompt
+        // as the book-wide config via persistBookSdConfig. Lift it off before the overlay.
+        String scenePromptOverride = null;
         if (params.sdConfigOverride != null) {
+            if (params.sdConfigOverride.hasField(FieldNames.FIELD_DESCRIPTION)) {
+                String d = params.sdConfigOverride.get(FieldNames.FIELD_DESCRIPTION);
+                if (d != null && !d.isBlank()) scenePromptOverride = d.trim();
+                params.sdConfigOverride.setValue(FieldNames.FIELD_DESCRIPTION, null);
+            }
             SDUtil.applyOverrides(common, params.sdConfigOverride);
             SDUtil.fillStyleDefaults(common);
         }
@@ -7384,6 +7842,7 @@ public class PictureBookUtil {
                 ByteModelUtil.getValue(image);
                 IOSystem.getActiveContext().getAccessPoint().member(user, scene, image, null, true);
                 updateSceneImageId(user, scene, imageOid);
+                updateSceneTextField(user, scene, "compositePrompt", params.promptOverride);
                 updateSceneStatus(user, scene, "done", null);
                 BaseRecord genResult = buildResult();
                 genResult.set("imageObjectId", imageOid);
@@ -7446,8 +7905,22 @@ public class PictureBookUtil {
                     }
                 }
             }
-            String scenePrompt = resolveScenePrompt(user, scene, chatConfig, action, setting, mood, common,
-                    charNarrationsForPrompt, params.promptTemplateOverride);
+            String scenePrompt;
+            if (scenePromptOverride != null) {
+                // Human-edited prompt for THIS scene: sent verbatim as the composite's text prompt in
+                // every composite mode (SceneCompositeUtil.applyPromptOverride below), still through the
+                // full portrait/landscape/composite pipeline, unlike params.promptOverride's direct-SD
+                // branch. It is deliberately NOT written into the "scenePrompt" LLM cache: that cache is
+                // pre-lora text that newSceneTxt2Img appends loras to, while the override is the exact
+                // sent string (compositePrompt) - caching it there would double the lora tags on the next
+                // plain regenerate. The wizard re-sends the edit on each regenerate of this scene.
+                scenePrompt = scenePromptOverride;
+                logger.info("Scene " + sceneObjectId + ": using caller-supplied scene prompt override ("
+                        + scenePrompt.length() + " chars)");
+            } else {
+                scenePrompt = resolveScenePrompt(user, scene, chatConfig, action, setting, mood, common,
+                        charNarrationsForPrompt, params.promptTemplateOverride);
+            }
             OllamaModelUtil.unloadAll();
 
             // Resolved once for the whole call — used by Stage 1's per-character scene-tagged
@@ -7953,6 +8426,11 @@ public class PictureBookUtil {
             // the three branches build genuinely different requests and re-deriving one would record a
             // request that was never sent — which is the exact class of dishonesty §9 is guarding against.
             String pbCompositeRequestJson = null;
+            // The request object behind pbCompositeRequestJson. Its getPrompt() is the ONLY truthful
+            // "prompt used" for this scene: FLUX2/Kontext compose their own text from
+            // leftDesc/rightDesc/action/setting/mood and never send scenePrompt, so reporting
+            // scenePrompt as the prompt (which this method did) showed the user a string SD never saw.
+            SWTxt2Img pbCompositeRequestSent = null;
             BaseRecord pbCompositeSnapshot = common;
             if (pbGraph != null) {
                 try {
@@ -8006,6 +8484,7 @@ public class PictureBookUtil {
                     logger.warn("generateSceneImage: could not build a FLUX.2 request — falling back to classic");
                     useFlux2 = false;
                 }
+                SceneCompositeUtil.applyPromptOverride(flux2Req, scenePromptOverride);
                 // PB2 §2.5: the FLUX.2 letterboxed references exist ONLY as base64 inside the request
                 // today — nothing persists them, so there is no way to see what the model was actually
                 // shown. Persist each as an IMAGE artifact on the reference node and keep its objectId,
@@ -8022,6 +8501,7 @@ public class PictureBookUtil {
                 }
                 if (flux2Req != null) {
                     pbCompositeRequestJson = JSONUtil.exportObject(flux2Req);
+                    pbCompositeRequestSent = flux2Req;
                     pbCompositeSnapshot = flux2Cfg;
                 }
                 finalImages = (flux2Req != null)
@@ -8052,6 +8532,7 @@ public class PictureBookUtil {
                 if (params.compositeSdConfig != null) SDUtil.fillStyleDefaults(kontextCfg);
                 SWTxt2Img kontextReq = SWUtil.newKontextSceneTxt2Img(leftDesc, rightDesc, action, setting, null, mood,
                         kontextCfg, steps, cfg, NEG_PROMPT, true);
+                SceneCompositeUtil.applyPromptOverride(kontextReq, scenePromptOverride);
                 if (refComposite != null) {
                     List<String> promptImages = new ArrayList<>();
                     promptImages.add("data:image/png;base64," + Base64.getEncoder().encodeToString(refComposite));
@@ -8078,6 +8559,7 @@ public class PictureBookUtil {
                     }
                 }
                 pbCompositeRequestJson = JSONUtil.exportObject(kontextReq);
+                pbCompositeRequestSent = kontextReq;
                 pbCompositeSnapshot = kontextCfg;
                 finalImages = sdu.createSceneImage(user, sceneGroupPath, sceneName, kontextReq, null, null);
                 if (finalImages == null || finalImages.isEmpty()) {
@@ -8096,6 +8578,7 @@ public class PictureBookUtil {
                 // pictureBook.scene-image-prompt, with its own raw-concatenation fallback) — no
                 // longer a hand-built narrative-sentence StringBuilder here.
                 SWTxt2Img classicReq = SWUtil.newSceneTxt2Img(scenePrompt, NEG_PROMPT, common);
+                SceneCompositeUtil.applyPromptOverride(classicReq, scenePromptOverride);
                 logger.info("generateSceneImage: requesting composite canvas at " + classicReq.getWidth() + "x" + classicReq.getHeight()
                         + " (landscapeBytes=" + (landscapeBytes != null ? landscapeBytes.length : 0)
                         + " leftBytes=" + (leftBytes != null ? leftBytes.length : 0)
@@ -8135,6 +8618,7 @@ public class PictureBookUtil {
                     classicReq.setInitImageCreativity(sceneCreativity);
                 }
                 pbCompositeRequestJson = JSONUtil.exportObject(classicReq);
+                pbCompositeRequestSent = classicReq;
                 pbCompositeSnapshot = common;
                 finalImages = sdu.createSceneImage(user, sceneGroupPath, sceneName, classicReq, null, null);
             }
@@ -8147,6 +8631,12 @@ public class PictureBookUtil {
             ByteModelUtil.getValue(finalImage);
             IOSystem.getActiveContext().getAccessPoint().member(user, scene, finalImage, null, true);
             updateSceneImageId(user, scene, finalImageOid);
+            // The exact text prompt the winning composite request carried (post-fallback, post-override).
+            // Persisted separately from the "scenePrompt" LLM cache, which stays pre-lora and mode-agnostic;
+            // listScenes reports this one as the scene's `prompt` so the wizard shows what SD really got.
+            String compositePromptUsed = (pbCompositeRequestSent != null && pbCompositeRequestSent.getPrompt() != null)
+                    ? pbCompositeRequestSent.getPrompt() : scenePrompt;
+            updateSceneTextField(user, scene, "compositePrompt", compositePromptUsed);
             updateSceneStatus(user, scene, "done", null);
             // ══════════════════════════════════════════════════════════════════
             // PB2 Stage 4 — the COMPOSITE node, its bindings, and the run
@@ -8174,7 +8664,7 @@ public class PictureBookUtil {
                         PbPipelineUtil.bindNode(pbGraph, pbCompositeNode, PbPipelineUtil.ROLE_REFERENCE_STRIP, 0,
                                 pbReferenceNode, null);
                     }
-                    PbGraphUtil.persistPromptText(user, pbCompositeNode, scenePrompt);
+                    PbGraphUtil.persistPromptText(user, pbCompositeNode, compositePromptUsed);
                     // Must go through ByteModelUtil — a raw .get() bypasses decompression/decryption.
                     byte[] finalBytes = ByteModelUtil.getValue(finalImage);
                     PbPipelineUtil.recordImage(pbGraph, pbCompositeNode, PbPipelineUtil.ROLE_COMPOSITE,
@@ -8194,9 +8684,9 @@ public class PictureBookUtil {
 
             BaseRecord genResult = buildResult();
             genResult.set("imageObjectId", finalImageOid);
-            // B9: report the actual prompt sent to SD (the Stage-0 resolved scene prompt), not a
-            // throwaway action+setting reconstruction that never reflected what SD received.
-            genResult.set("prompt", scenePrompt);
+            // B9: report the prompt actually sent to SD. An earlier revision reported scenePrompt here and
+            // called it "the actual prompt" - true only for CLASSIC; FLUX2/Kontext never send it.
+            genResult.set("prompt", compositePromptUsed);
             genResult.set("seed", extractSeedFromImage(finalImage));
             if (!failedPortraits.isEmpty()) {
                 genResult.set("failedPortraits", failedPortraits);
@@ -8547,8 +9037,21 @@ public class PictureBookUtil {
      * objectId is a fixed-length UUID so the {@code text LIKE} cannot collide across books, and the exact
      * {@code pb2BookObjectId} field is re-confirmed per candidate before the group is trusted.
      */
-    @SuppressWarnings("unchecked")
     private static BaseRecord resolveSceneGroupByMetaBookLink(BaseRecord user, String pb2BookObjectId, long orgId) {
+        BaseRecord note = findMetaNoteByBookLink(user, pb2BookObjectId, orgId);
+        if (note == null) return null;
+        Object gid = note.get(FieldNames.FIELD_GROUP_ID);
+        if (!(gid instanceof Number)) return null;
+        // Resolve the owning scene group the same authorized way findBookGroup does (canRead applies).
+        Query gq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_ID, ((Number) gid).longValue());
+        gq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        gq.planMost(true);
+        return IOSystem.getActiveContext().getAccessPoint().find(user, gq);
+    }
+
+    /** The {@code .pictureBookMeta} note whose {@code pb2BookObjectId} is exactly this book, or null. */
+    @SuppressWarnings("unchecked")
+    private static BaseRecord findMetaNoteByBookLink(BaseRecord user, String pb2BookObjectId, long orgId) {
         if (pb2BookObjectId == null || pb2BookObjectId.isBlank()) return null;
         Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE);
         q.field(FieldNames.FIELD_NAME, META_NOTE_NAME);
@@ -8563,7 +9066,7 @@ public class PictureBookUtil {
         try {
             notes = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
         } catch (Exception e) {
-            logger.warn("resolveSceneGroupByMetaBookLink: meta-note query failed: " + e.getMessage());
+            logger.warn("findMetaNoteByBookLink: meta-note query failed: " + e.getMessage());
             return null;
         }
         if (notes == null) return null;
@@ -8574,20 +9077,38 @@ public class PictureBookUtil {
             try {
                 Map<String, Object> meta = JSONUtil.getMap(metaJson.getBytes(), String.class, Object.class);
                 Object pb2 = meta.get("pb2BookObjectId");
-                if (!(pb2 instanceof String) || !pb2BookObjectId.equals(((String) pb2).trim())) continue;
+                if (pb2 instanceof String && pb2BookObjectId.equals(((String) pb2).trim())) return note;
             } catch (Exception e) {
                 continue;
             }
-            Object gid = note.get(FieldNames.FIELD_GROUP_ID);
-            if (!(gid instanceof Number)) continue;
-            // Resolve the owning scene group the same authorized way findBookGroup does (canRead applies).
-            Query gq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_ID, ((Number) gid).longValue());
-            gq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-            gq.planMost(true);
-            BaseRecord grp = IOSystem.getActiveContext().getAccessPoint().find(user, gq);
-            if (grp != null) return grp;
         }
         return null;
+    }
+
+    /**
+     * How many scenes {@link #listScenes(BaseRecord, String)} would return for this {@code olio.pb.book},
+     * without materialising them: the wizard persists a chapter's scenes in its scene group's
+     * {@code .pictureBookMeta} note (linked back by {@code pb2BookObjectId}), so that note's {@code scenes}
+     * array is the count; a book with no such note is a native PB2 book whose scenes are {@code olio.pb.scene}
+     * rows. Used by the book list so a chapter that saved nothing is visible as such.
+     */
+    @SuppressWarnings("unchecked")
+    public static int countScenesForBook(BaseRecord user, BaseRecord book) {
+        if (user == null || book == null) return 0;
+        String bookObjectId = book.get(FieldNames.FIELD_OBJECT_ID);
+        long orgId = PbGraphUtil.orgId(book);
+        BaseRecord note = findMetaNoteByBookLink(user, bookObjectId, orgId);
+        if (note != null) {
+            try {
+                Map<String, Object> meta = JSONUtil.getMap(((String) note.get("text")).getBytes(), String.class, Object.class);
+                Object scenes = meta.get("scenes");
+                return (scenes instanceof List) ? ((List<Object>) scenes).size() : 0;
+            } catch (Exception e) {
+                logger.warn("countScenesForBook: unreadable meta for book " + bookObjectId + ": " + e.getMessage());
+                return 0;
+            }
+        }
+        return PbBookUtil.countScenes(user, book);
     }
 
     /**
@@ -8808,6 +9329,15 @@ public class PictureBookUtil {
                                 String error = (String) textData.get("error");
                                 if (error != null && !error.isEmpty()) {
                                     scene.put("error", error);
+                                }
+                                // The prompt SD actually received for THIS scene's last render
+                                // (compositePrompt: verbatim getPrompt() of the request sent, any mode).
+                                // Falls back to the classic LLM-composed cache (scenePrompt) for scenes
+                                // rendered before compositePrompt existed or not yet rendered.
+                                Object cp = textData.get("compositePrompt");
+                                Object sp = (cp instanceof String && !((String) cp).isEmpty()) ? cp : textData.get("scenePrompt");
+                                if (sp instanceof String && !((String) sp).isEmpty()) {
+                                    scene.put("prompt", sp);
                                 }
                             }
                         }

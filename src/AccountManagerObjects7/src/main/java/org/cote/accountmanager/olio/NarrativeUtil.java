@@ -131,7 +131,7 @@ public class NarrativeUtil {
 			return other;
 		}
 		StringBuilder desc = new StringBuilder();
-		
+		if(eths == null) return desc.toString();
 		for(String rc: eths) {
 			EthnicityEnumType ret = EthnicityEnumType.valueOf(rc);
 			if(desc.length() > 0) desc.append(" and ");
@@ -141,6 +141,7 @@ public class NarrativeUtil {
 	}
 	public static String getRaceDescription(List<String> races) {
 		StringBuilder desc = new StringBuilder();
+		if(races == null) return desc.toString();
 		for(String rc: races) {
 			RaceEnumType ret = RaceEnumType.valueOf(rc);
 			if(desc.length() > 0) desc.append(" and ");

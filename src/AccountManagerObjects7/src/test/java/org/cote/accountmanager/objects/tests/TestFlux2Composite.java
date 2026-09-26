@@ -553,6 +553,102 @@ public class TestFlux2Composite {
 		assertTrue("FLUX.2 must not use an init image", req.getInitImage() == null);
 	}
 
+	// ── Per-scene prompt override (always run) ───────────────────────────────
+	//
+	// Regression cover for the 2026-09-25 report "prompt scene overrides ... allow override when
+	// recreating". The wizard persisted and displayed a per-scene prompt, and PictureBookUtil passed it
+	// to buildSceneRequest as classicPrompt — which FLUX.2 and Kontext never read. The override was
+	// therefore silently ignored in the two modes that are actually used, and the "prompt used" shown
+	// to the user was a string SD never received.
+
+	private static final String OVERRIDE = "a lone fairy with translucent wings sitting on a moonlit "
+		+ "market stall, soft watercolor, muted teal and gold";
+
+	/// Pins the root cause so it cannot be "fixed" by accident somewhere else and then regress: the
+	/// FLUX.2 builder composes its own prompt from the structured fields and does NOT include
+	/// classicPrompt. If this test ever fails, applyPromptOverride below has become redundant and the
+	/// wizard's override path should be re-examined, not the test.
+	@Test
+	public void flux2BuilderIgnoresClassicPrompt() throws Exception {
+		SWTxt2Img req = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_FLUX2,
+			LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, OVERRIDE, "classic negative",
+			fixture("character1.png"), fixture("character2.png"), fixture("landscape1.png"),
+			0.85, null);
+		assertNotNull(req);
+		assertFalse("FLUX.2 composes its own prompt; classicPrompt must not appear in it",
+			req.getPrompt().contains("translucent wings"));
+		assertTrue("the composed prompt is the positional reference wording",
+			req.getPrompt().contains("reference image"));
+	}
+
+	/// The fix: an override REPLACES the composed prompt verbatim, in FLUX.2 mode, while every
+	/// reference image stays attached. Nothing is appended (no lora tags, no style suffix), so what
+	/// the user typed is what SD receives and what getPrompt() reports back as "the prompt used".
+	@Test
+	public void promptOverrideReplacesFlux2ComposedPromptAndKeepsReferences() throws Exception {
+		SWTxt2Img req = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_FLUX2,
+			LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, "", "",
+			fixture("character1.png"), fixture("character2.png"), fixture("landscape1.png"),
+			0.85, null);
+		assertNotNull(req);
+		String composed = req.getPrompt();
+		assertFalse(composed.contains("translucent wings"));
+
+		SWTxt2Img out = SceneCompositeUtil.applyPromptOverride(req, "  " + OVERRIDE + "  ");
+		assertTrue("must mutate and return the same request", out == req);
+		assertEquals("the override is sent verbatim (trimmed), with nothing appended", OVERRIDE, req.getPrompt());
+		assertNotEquals(composed, req.getPrompt());
+		assertEquals("references stay attached", 3, req.getPromptImages().size());
+		assertEquals("model is untouched", SWUtil.defaultFlux2Model(), req.getModel());
+	}
+
+	/// Same contract in Kontext mode: Kontext also composes its own prompt (and uses an init image
+	/// rather than promptimages), so the override has to replace it there too.
+	@Test
+	public void promptOverrideReplacesKontextComposedPrompt() throws Exception {
+		SWTxt2Img req = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_KONTEXT,
+			LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, OVERRIDE, "",
+			fixture("character1.png"), fixture("character2.png"), fixture("landscape1.png"),
+			0.65, null);
+		assertNotNull(req);
+		assertFalse("Kontext composes its own prompt; classicPrompt must not appear in it",
+			req.getPrompt().contains("translucent wings"));
+		Object initBefore = req.getInitImage();
+		SceneCompositeUtil.applyPromptOverride(req, OVERRIDE);
+		assertEquals(OVERRIDE, req.getPrompt());
+		assertEquals("init image is untouched", initBefore, req.getInitImage());
+	}
+
+	/// A null, blank, or absent override is a no-op — the composed prompt is what gets sent. This is
+	/// the normal (non-override) render path, so it must not be disturbed.
+	@Test
+	public void nullOrBlankPromptOverrideIsANoOp() throws Exception {
+		SWTxt2Img req = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_FLUX2,
+			LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, "", "",
+			fixture("character1.png"), fixture("character2.png"), fixture("landscape1.png"),
+			0.85, null);
+		String composed = req.getPrompt();
+		assertTrue(SceneCompositeUtil.applyPromptOverride(req, null) == req);
+		assertEquals(composed, req.getPrompt());
+		SceneCompositeUtil.applyPromptOverride(req, "");
+		assertEquals(composed, req.getPrompt());
+		SceneCompositeUtil.applyPromptOverride(req, "   \n\t ");
+		assertEquals(composed, req.getPrompt());
+		assertNull("a null request is returned as-is", SceneCompositeUtil.applyPromptOverride(null, OVERRIDE));
+	}
+
+	/// The only transformation applied is smart-quote normalization (the same one appendLoras applies
+	/// to every other prompt), because curly quotes from a word processor have broken Swarm prompts.
+	@Test
+	public void promptOverrideNormalizesSmartQuotesOnly() throws Exception {
+		SWTxt2Img req = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_FLUX2,
+			LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, "", "",
+			fixture("character1.png"), fixture("character2.png"), fixture("landscape1.png"),
+			0.85, null);
+		SceneCompositeUtil.applyPromptOverride(req, "“moonlit” stall, the fairy’s wings");
+		assertEquals("\"moonlit\" stall, the fairy's wings", req.getPrompt());
+	}
+
 	// ── Live generation (gated) ──────────────────────────────────────────────
 
 	/// Real generation against the live Swarm server using the staged fixtures. Writes the result to

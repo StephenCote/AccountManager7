@@ -22,7 +22,8 @@ import {
 } from '../workflows/sceneExtractor.js';
 import { pictureBookFromId } from '../workflows/pictureBook.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
-import { listPb2Books, bookPages } from '../workflows/pictureBookWorkflow.js';
+import { listPb2Books, listSeriesBooks, bookPages } from '../workflows/pictureBookWorkflow.js';
+import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
 import { am7olio } from '../components/olio.js';
 import { ReaderShell } from '../components/readerShell.js';
 
@@ -56,6 +57,130 @@ let pbRoleWarning = false;
 // PB2 native books
 let pb2Books = [];
 let pb2Loading = false;
+let pb2ExpandedSeries = {};   // seriesKey -> true while its chapter list is open
+
+function pb2SceneCount(b) {
+    let n = Number(b && b.sceneCount);
+    return isFinite(n) && n > 0 ? n : 0;
+}
+
+// What the reader needs to know about a book at a glance: how many scenes it has, or that extraction
+// left it empty / failed. Books are DRAFT for their whole normal life, so the status word alone says
+// nothing useful and is shown only when it signals a problem.
+function pb2StatusLabel(b) {
+    let status = (b.bookStatus || '').toLowerCase();
+    let n = pb2SceneCount(b);
+    let parts = [];
+    if (n > 0) parts.push(n + ' scene' + (n !== 1 ? 's' : ''));
+    else if (b.sceneCount != null) parts.push('no scenes');
+    if (status === 'failed' || status === 'unknown') parts.push(status);
+    else if (status === 'extracted') parts.push('Migrated');
+    return parts.join(' · ');
+}
+
+function pb2ChapterLabel(b) {
+    let name = b.title || b.name || b.slug || 'Untitled';
+    if (b.chapter == null) return name;
+    let prefix = 'Chapter ' + b.chapter;
+    return /^chapter\b/i.test(name) ? name : prefix + ' — ' + name;
+}
+
+// One PB2 book row. Standalone books and series chapters share this shape; a chapter row is indented
+// under its series card and labelled by its chapter ordinal.
+function renderPb2BookRow(b, isChapter) {
+    let statusLabel = pb2StatusLabel(b);
+    return m('div', {
+        key: b.objectId,
+        'data-pb2-book': b.objectId,
+        'data-pb2-chapter': isChapter ? String(b.chapter != null ? b.chapter : '') : undefined,
+        class: 'flex items-center justify-between border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900/20'
+            + (isChapter ? ' ml-8' : ''),
+        onclick: function () { m.route.set('/picture-book/v2/' + b.objectId); }
+    }, [
+        m('div', { class: 'flex items-center gap-3' }, [
+            m('span', { class: 'material-symbols-outlined ' + (isChapter ? 'text-purple-400 text-lg' : 'text-purple-500') },
+                isChapter ? 'bookmark' : 'schema'),
+            m('div', [
+                m('div', { class: 'font-medium text-sm' }, isChapter ? pb2ChapterLabel(b) : (b.name || b.slug)),
+                m('div', { class: 'text-xs text-gray-500' },
+                    b.slug + (statusLabel ? ' · ' + statusLabel : ''))
+            ])
+        ]),
+        m('div', { class: 'flex items-center gap-1' }, [
+            m('button', {
+                class: 'text-gray-400 hover:text-purple-600 p-1',
+                title: 'Open workflow canvas',
+                onclick: function (e) {
+                    e.stopPropagation();
+                    m.route.set('/picture-book/' + b.objectId + '/workflow');
+                }
+            }, m('span', { class: 'material-symbols-outlined text-lg' }, 'account_tree')),
+            m('button', {
+                class: 'text-red-400 hover:text-red-600 p-1',
+                title: isChapter ? 'Delete chapter' : 'Delete picture book',
+                onclick: function (e) {
+                    e.stopPropagation();
+                    deletePb2BookFromList(b);
+                }
+            }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')),
+            m('span', { class: 'material-symbols-outlined text-gray-400' }, 'chevron_right')
+        ])
+    ]);
+}
+
+// A series is ONE entry in the list: the novel's title with its chapter count. Expanding it lists
+// the chapters (ordered by ordinal) so the reader picks which one to open.
+function renderPb2SeriesCard(g) {
+    let expanded = !!pb2ExpandedSeries[g.seriesKey];
+    let chapters = g.chapters;
+    let withScenes = chapters.filter(function (b) { return pb2SceneCount(b) > 0; }).length;
+    let label = (g.seriesName && g.seriesName !== g.seriesKey) ? g.seriesName : 'Series';
+    let first = chapters[0];
+    return m('div', { key: 'series-' + g.seriesKey, 'data-pb2-series': g.seriesKey, class: 'flex flex-col gap-2' }, [
+        m('div', {
+            'data-pb2-series-header': g.seriesKey,
+            class: 'flex items-center justify-between border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900/20'
+                + (expanded ? ' bg-purple-50/50 dark:bg-purple-900/10' : ''),
+            onclick: function () { pb2ExpandedSeries[g.seriesKey] = !expanded; }
+        }, [
+            m('div', { class: 'flex items-center gap-3' }, [
+                m('span', { class: 'material-symbols-outlined text-purple-600' }, 'menu_book'),
+                m('div', [
+                    m('div', { class: 'font-medium text-sm' }, label),
+                    m('div', { class: 'text-xs text-gray-500' },
+                        chapters.length + ' chapter' + (chapters.length !== 1 ? 's' : '')
+                        + (withScenes !== chapters.length ? ' · ' + withScenes + ' with scenes' : ''))
+                ])
+            ]),
+            m('div', { class: 'flex items-center gap-1' }, [
+                first ? m('button', {
+                    class: 'text-gray-400 hover:text-purple-600 p-1',
+                    title: 'Open series canvas',
+                    onclick: function (e) {
+                        e.stopPropagation();
+                        m.route.set('/picture-book/' + first.objectId + '/workflow');
+                    }
+                }, m('span', { class: 'material-symbols-outlined text-lg' }, 'account_tree')) : null,
+                m('span', { class: 'material-symbols-outlined text-gray-400' }, expanded ? 'expand_less' : 'expand_more')
+            ])
+        ]),
+        expanded ? m('div', { 'data-pb2-series-chapters': g.seriesKey, class: 'flex flex-col gap-2' },
+            chapters.map(function (b) { return renderPb2BookRow(b, true); })) : null
+    ]);
+}
+
+function renderPb2BookList() {
+    let grouped = groupBooksBySeries(pb2Books);
+    if (!grouped.hasSeriesInfo) {
+        return pb2Books.map(function (b) { return renderPb2BookRow(b, false); });
+    }
+    return grouped.groups.map(function (g) {
+        if (g.seriesKey === '__standalone__') {
+            return g.chapters.map(function (b) { return renderPb2BookRow(b, false); });
+        }
+        return renderPb2SeriesCard(g);
+    });
+}
 
 async function loadPb2Books() {
     pb2Loading = true;
@@ -195,45 +320,7 @@ var workSelectorView = {
             // PB2 native books
             pb2Books.length > 0 ? m('div', { class: 'mb-6' }, [
                 m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'Workflow Books (PB2)'),
-                m('div', { class: 'grid grid-cols-1 gap-2' },
-                    pb2Books.map(function (b) {
-                        let status = (b.bookStatus || '').toLowerCase();
-                        let statusLabel = status === 'active' ? 'Active' : status === 'extracted' ? 'Migrated' : status || '';
-                        return m('div', {
-                            key: b.objectId,
-                            class: 'flex items-center justify-between border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900/20',
-                            onclick: function () { m.route.set('/picture-book/v2/' + b.objectId); }
-                        }, [
-                            m('div', { class: 'flex items-center gap-3' }, [
-                                m('span', { class: 'material-symbols-outlined text-purple-500' }, 'schema'),
-                                m('div', [
-                                    m('div', { class: 'font-medium text-sm' }, b.name),
-                                    m('div', { class: 'text-xs text-gray-500' },
-                                        b.slug + (statusLabel ? ' · ' + statusLabel : ''))
-                                ])
-                            ]),
-                            m('div', { class: 'flex items-center gap-1' }, [
-                                m('button', {
-                                    class: 'text-gray-400 hover:text-purple-600 p-1',
-                                    title: 'Open workflow canvas',
-                                    onclick: function (e) {
-                                        e.stopPropagation();
-                                        m.route.set('/picture-book/' + b.objectId + '/workflow');
-                                    }
-                                }, m('span', { class: 'material-symbols-outlined text-lg' }, 'account_tree')),
-                                m('button', {
-                                    class: 'text-red-400 hover:text-red-600 p-1',
-                                    title: 'Delete picture book',
-                                    onclick: function (e) {
-                                        e.stopPropagation();
-                                        deletePb2BookFromList(b);
-                                    }
-                                }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')),
-                                m('span', { class: 'material-symbols-outlined text-gray-400' }, 'chevron_right')
-                            ])
-                        ]);
-                    })
-                )
+                m('div', { 'data-pb2-book-list': true, class: 'grid grid-cols-1 gap-2' }, renderPb2BookList())
             ]) : pb2Loading ? m('div', { class: 'text-sm text-gray-500 mb-6' }, 'Loading PB2 books...') : null,
 
             // Existing PB1 picture books
@@ -343,17 +430,25 @@ async function loadViewer(bookObjectId) {
     clearImageCache();
     m.redraw();
     try {
-        // Resolve book group name for the title
-        try {
-            let q = am7client.newQuery('auth.group');
-            q.field('objectId', bookObjectId);
-            q.range(0, 1);
-            let qr = await am7client.search(q);
-            if (qr && qr.results && qr.results.length > 0) {
-                viewerWorkName = qr.results[0].name || '';
-                m.redraw();
-            }
-        } catch (e) {}
+        // Resolve the title: a legacy book group, or the source document itself when the route was
+        // opened straight from a data.data / data.note objectId (no book generated yet).
+        let resolvedName = null;
+        for (let type of ['auth.group', 'data.data', 'data.note']) {
+            try {
+                let q = am7client.newQuery(type);
+                q.field('objectId', bookObjectId);
+                q.range(0, 1);
+                let qr = await am7client.search(q);
+                if (qr && qr.results && qr.results.length > 0) {
+                    resolvedName = qr.results[0].name || '';
+                    break;
+                }
+            } catch (e) {}
+        }
+        // Never leave the 'Loading...' placeholder in place: it is what the wizard would otherwise
+        // adopt as the book/series name.
+        viewerWorkName = resolvedName || '';
+        m.redraw();
 
         let scenes = [];
         try { scenes = await loadPictureBook(bookObjectId); } catch (e) { /* meta may not exist */ }
@@ -640,8 +735,39 @@ let pb2PageError = null;
 let pb2CurrentPage = 0;
 let pb2BookName = '';
 let pb2BookObjectId = null;
+let pb2Chapters = [];          // sibling chapter books of the open book's series, ordered by chapter
+let pb2SeriesName = null;
 
 function pb2TotalPages() { return pb2Pages.length + 1; } // cover + scenes
+
+// Resolve the open book's series and its ordered chapters so the reader can switch chapters. The
+// owner-filtered selector list is the cheap source; a deep link to another user's shared chapter
+// falls back to the series FK on the full record.
+async function loadPb2Chapters(pb2ObjId, bookFull) {
+    pb2Chapters = [];
+    pb2SeriesName = null;
+    let known = pb2Books.find(function (b) { return b.objectId === pb2ObjId; });
+    if (!known) {
+        try {
+            let all = await listPb2Books();
+            pb2Books = Array.isArray(all) ? all : [];
+        } catch (_) {}
+        known = pb2Books.find(function (b) { return b.objectId === pb2ObjId; });
+    }
+    let seriesOid = (known && known.seriesObjectId)
+        || (bookFull && bookFull.series && bookFull.series.objectId)
+        || null;
+    if (!seriesOid) return;
+    pb2SeriesName = (known && known.seriesName) || null;
+    try {
+        let sib = await listSeriesBooks(seriesOid);
+        let grouped = groupBooksBySeries(sib || []);
+        let g = grouped.groups.find(function (x) { return x.seriesKey === seriesOid; }) || grouped.groups[0];
+        pb2Chapters = g ? g.chapters : [];
+    } catch (_) {
+        pb2Chapters = [];
+    }
+}
 function pb2CurrentScene() { return pb2CurrentPage > 0 ? pb2Pages[pb2CurrentPage - 1] : null; }
 
 function pb2GoToPage(n) {
@@ -667,6 +793,31 @@ function pb2ImageUrl(page) {
         + '/data.data' + page.imageGroupPath + '/' + page.imageName;
 }
 
+// The reader needs the book's name, its world/universe ids (threaded into game REST calls) and its
+// series link. /full is not usable here: planMost(true) on olio.pb.book expands olio.world's foreign
+// fields past PostgreSQL's 100-argument JSON_BUILD_OBJECT limit and the request 404s (model-api.md).
+async function pb2SearchOne(type, objectId, fields) {
+    let q = am7client.newQuery(type);
+    q.cache(false);
+    q.field('objectId', objectId);
+    q.range(0, 1);
+    fields.forEach(function (f) {
+        if (q.entity.request.indexOf(f) < 0) q.entity.request.push(f);
+    });
+    let qr = await am7client.search(q);
+    return (qr && qr.results && qr.results[0]) || null;
+}
+
+async function loadPb2BookContext(pb2ObjId) {
+    let book = await pb2SearchOne('olio.pb.book', pb2ObjId, ['id', 'objectId', 'name', 'world', 'series']);
+    if (book && book.world && book.world.objectId) {
+        // A projected read returns the world one level deep; its basis (the universe) needs its own read.
+        let world = await pb2SearchOne('olio.world', book.world.objectId, ['id', 'objectId', 'name', 'basis']);
+        if (world && world.basis) book.world.basis = world.basis;
+    }
+    return book;
+}
+
 async function loadPb2Pages(pb2ObjId) {
     if (!pb2ObjId || pb2ObjId === 'undefined') return;
     pb2PageLoading = true;
@@ -676,9 +827,7 @@ async function loadPb2Pages(pb2ObjId) {
     pb2BookName = 'Loading...';
     m.redraw();
     try {
-        // Phase 1b: fetch the full book record so world.objectId and world.basis.objectId
-        // are available for threading into game REST calls.
-        let bookFull = await am7client.getFull('olio.pb.book', pb2ObjId);
+        let bookFull = await loadPb2BookContext(pb2ObjId);
         am7olio.setCurrentBook(bookFull || null);
         if (bookFull) {
             pb2BookName = bookFull.name || 'Untitled';
@@ -694,11 +843,32 @@ async function loadPb2Pages(pb2ObjId) {
         if (pb2Pages.length > 0) {
             pb2BookName = pb2Pages[0].title || pb2BookName;
         }
+        await loadPb2Chapters(pb2ObjId, bookFull);
     } catch (e) {
         pb2PageError = 'Failed to load pages: ' + (e.message || '');
     }
     pb2PageLoading = false;
     m.redraw();
+}
+
+function pb2OpenChapter(objectId) {
+    if (!objectId || objectId === pb2BookObjectId) return;
+    pb2BookObjectId = objectId;
+    m.route.set('/picture-book/v2/' + objectId);
+    loadPb2Pages(objectId);
+}
+
+function renderPb2ChapterSelect() {
+    if (pb2Chapters.length < 2) return null;
+    return m('select', {
+        'data-pb2-chapter-select': true,
+        class: 'text-xs border dark:border-gray-700 rounded px-1 py-0.5 bg-white dark:bg-gray-800 max-w-[16rem]',
+        title: pb2SeriesName ? pb2SeriesName + ' — choose a chapter' : 'Choose a chapter',
+        value: pb2BookObjectId,
+        onchange: function (e) { pb2OpenChapter(e.target.value); }
+    }, pb2Chapters.map(function (b) {
+        return m('option', { key: b.objectId, value: b.objectId, selected: b.objectId === pb2BookObjectId }, pb2ChapterLabel(b));
+    }));
 }
 
 function renderPb2Cover() {
@@ -783,9 +953,13 @@ function renderPb2Header() {
             onclick: function () { pb2GoToPage(pb2CurrentPage - 1); }
         }, m('span', { class: 'material-symbols-outlined' }, 'chevron_left')),
 
-        m('div', { class: 'flex-1 text-center' }, [
-            m('span', { class: 'font-semibold text-sm' }, pb2BookName && pb2BookName !== 'Loading...' ? pb2BookName : 'Picture Book'),
-            m('span', { class: 'text-gray-400 text-xs ml-2' }, pageLabel)
+        m('div', { class: 'flex-1 flex flex-col items-center gap-1' }, [
+            m('div', [
+                pb2SeriesName ? m('span', { class: 'text-gray-500 text-xs mr-2' }, pb2SeriesName + ' ·') : null,
+                m('span', { class: 'font-semibold text-sm' }, pb2BookName && pb2BookName !== 'Loading...' ? pb2BookName : 'Picture Book'),
+                m('span', { class: 'text-gray-400 text-xs ml-2' }, pageLabel)
+            ]),
+            renderPb2ChapterSelect()
         ]),
 
         m('button', {
@@ -881,6 +1055,14 @@ export const routes = {
     },
     '/picture-book/v2/:pb2BookObjectId': {
         oninit: function (vnode) { pb2PageReaderView.oninit(vnode); },
+        // Same component, new chapter param: Mithril reuses the instance, so pick up the change here.
+        onupdate: function (vnode) {
+            let id = vnode.attrs.pb2BookObjectId;
+            if (id && id !== pb2BookObjectId) {
+                pb2BookObjectId = id;
+                loadPb2Pages(id);
+            }
+        },
         oncreate: function () { pb2PageReaderView.oncreate(); },
         onremove: function () { pb2PageReaderView.onremove(); },
         view: function () { return layout(pageLayout(m(pb2PageReaderView))); }

@@ -174,14 +174,55 @@ public class Chat {
 	 */
 	private static final ThreadLocal<String> LAST_CALL_ERROR = new ThreadLocal<>();
 
+	/**
+	 * Whether the most recent buffer-mode call on THIS thread failed because the model server could
+	 * not be reached at all (connect timeout, connection refused, unknown host, no route) — as
+	 * opposed to a server that accepted the request and was slow, or answered with an error.
+	 *
+	 * <p>Typed, not a string match: HttpConnectTimeoutException is a subclass of HttpTimeoutException,
+	 * so until this existed a host that had dropped off the network was reported as
+	 * "Request timed out after 900 seconds" after 10s, and the extraction loop — which treats a slow
+	 * failure as "the model is alive, keep going" — burned through every chunk of a chapter in 140s and
+	 * reported the run complete with zero scenes. Measured 2026-09-25 when the Ollama host went down
+	 * mid-run.
+	 */
+	private static final ThreadLocal<Boolean> LAST_CALL_UNREACHABLE = new ThreadLocal<>();
+
 	/** The reason the last buffer-mode call on this thread returned null, or null if unknown. */
 	public static String getLastCallError() {
 		return LAST_CALL_ERROR.get();
 	}
 
+	/** True when the last buffer-mode call on this thread could not connect to the model server. */
+	public static boolean isLastCallUnreachable() {
+		return Boolean.TRUE.equals(LAST_CALL_UNREACHABLE.get());
+	}
+
 	/** Clear before issuing a call, so a stale reason from earlier work on a pooled thread is never read back. */
 	public static void clearLastCallError() {
 		LAST_CALL_ERROR.remove();
+		LAST_CALL_UNREACHABLE.remove();
+	}
+
+	/// Test-only seam, paired with setLastCallErrorForTest: reproduces the unreachable-host failure shape.
+	public static void setLastCallUnreachableForTest(boolean unreachable) {
+		LAST_CALL_UNREACHABLE.set(unreachable);
+	}
+
+	/** True when any throwable in the cause chain says the remote host could not be connected to. */
+	static boolean isConnectivityFailure(Throwable t) {
+		Throwable cur = t;
+		int guard = 0;
+		while (cur != null && guard++ < 16) {
+			if (cur instanceof java.net.http.HttpConnectTimeoutException
+					|| cur instanceof java.net.ConnectException
+					|| cur instanceof java.net.UnknownHostException
+					|| cur instanceof java.net.NoRouteToHostException) {
+				return true;
+			}
+			cur = cur.getCause();
+		}
+		return false;
 	}
 
 	/// Test-only seam: lets a scripted LLM reproduce the exact failure shape Chat produces on a
@@ -4291,6 +4332,7 @@ public class Chat {
 		/// below is skipped entirely. Set here so the bufferError branch can abort instead. Typed
 		/// detection, not a string match on errMsg.
 		final boolean[] bufferTimedOut = new boolean[] { false };
+		final boolean[] bufferUnreachable = new boolean[] { false };
 		logger.info(ser);
 		/// Tier B (LiteLLM/Langfuse) tracing — per-call header-injection hook (Guardrail 1).
 		/// Build the x-langfuse-* header map ONLY for the OPENAI_COMPAT dialect, here at the call
@@ -4469,7 +4511,14 @@ public class Chat {
 				///  - HttpTimeoutException — the JDK request timeout fired (an IOException subtype,
 				///    NOT a java.util.concurrent.TimeoutException, so it must be named explicitly or
 				///    a real timeout would be reported as a generic transport error).
-				if (rootCause instanceof TimeoutException || rootCause instanceof java.net.http.HttpTimeoutException) {
+				/// Connectivity failures are checked FIRST: HttpConnectTimeoutException is a subclass of
+				/// HttpTimeoutException, so a host that is simply not there (10s TCP connect timeout)
+				/// would otherwise be reported as a 900s request timeout, and callers that treat a slow
+				/// server as "alive, keep going" would keep going against a dead one.
+				if (isConnectivityFailure(error)) {
+					bufferUnreachable[0] = true;
+					errMsg = "Could not connect to the model server at " + serviceUrl + " (" + rootCause.getClass().getSimpleName() + ": " + rootCause.getMessage() + ") — it is unreachable";
+				} else if (rootCause instanceof TimeoutException || rootCause instanceof java.net.http.HttpTimeoutException) {
 					bufferTimedOut[0] = true;
 					errMsg = "Request timed out after " + effectiveTimeout + " seconds";
 				} else {
@@ -4548,6 +4597,7 @@ public class Chat {
 				/// Carries the LLM's own message — e.g. "model 'x' not found" — to a caller that
 				/// otherwise only sees null.
 				setLastCallError(bufferError[0]);
+				LAST_CALL_UNREACHABLE.set(bufferUnreachable[0]);
 				if (listener != null) {
 					listener.onerror(user, req, aresp, bufferError[0]);
 				}

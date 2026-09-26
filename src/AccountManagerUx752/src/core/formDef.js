@@ -1313,7 +1313,8 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
             },
             description: {
                 label: 'Prompt',
-                layout: 'full'
+                layout: 'full',
+                format: 'textarea'
             },
             loras: {
                 label: 'LORAs',

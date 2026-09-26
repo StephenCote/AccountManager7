@@ -118,10 +118,17 @@ public class BaseTest {
 		/// resetIO("./test.7z");
 
 		/// USE POSTGRESQL or H2
-		resetIO(testProperties.getProperty("test.db.url"), testProperties.getProperty("test.db.user"), testProperties.getProperty("test.db.password"));
+		/// A -Dtest.db.* on the mvn command line wins over resource.properties, so a run can target a
+		/// different test database (e.g. the Docker stack's am7-pg) without editing a tracked file.
+		resetIO(dbProperty("test.db.url"), dbProperty("test.db.user"), dbProperty("test.db.password"));
 
 	}
 	
+	private String dbProperty(String key) {
+		String sys = System.getProperty(key);
+		return (sys != null && !sys.isBlank()) ? sys : testProperties.getProperty(key);
+	}
+
 	@After
 	public void tearDown() throws Exception{
 		logger.info("Shutting down");

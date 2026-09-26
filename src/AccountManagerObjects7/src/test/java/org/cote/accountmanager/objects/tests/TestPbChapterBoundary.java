@@ -51,7 +51,7 @@ public class TestPbChapterBoundary {
 	@Test
 	public void testDetectBoundariesHeadingForms() {
 		String text =
-			"Front matter before any chapter.\n" +   // leading, non-whitespace -> its own null-title range
+			"Front matter before any chapter.\n" +   // short title-page lead -> folded into chapter 1
 			"CHAPTER ONE\n" +                        // all-caps + word-number
 			"Body of the first chapter goes here.\n" +
 			"Part of the reason he left was never explained.\n" + // prose 'Part of' -> NOT a heading
@@ -69,29 +69,44 @@ public class TestPbChapterBoundary {
 		List<ChapterRange> ranges = PbChapterBoundaryUtil.detectBoundaries(text);
 		assertNotNull(ranges);
 
-		// Titles in order: null (front matter), then the six real headings. The 'Part of the reason'
-		// prose line must be absorbed into CHAPTER ONE's body, not create a range.
+		// Titles in order: the six real headings. The short title-page lead is folded into CHAPTER ONE
+		// (no phantom untitled "chapter 1"), and the 'Part of the reason' prose line must be absorbed
+		// into CHAPTER ONE's body, not create a range.
 		StringBuilder titles = new StringBuilder();
 		for (ChapterRange r : ranges) {
 			titles.append("[").append(r.getTitle()).append("] ");
 		}
-		assertEquals("Detected titles were: " + titles, 7, ranges.size());
-		assertEquals(null, ranges.get(0).getTitle());
-		assertEquals("CHAPTER ONE", ranges.get(1).getTitle());
-		assertEquals("Chapter 2", ranges.get(2).getTitle());
-		assertEquals("IV.", ranges.get(3).getTitle());
-		assertEquals("PART TWO", ranges.get(4).getTitle());
-		assertEquals("Twenty-One", ranges.get(5).getTitle());
-		assertEquals("Chapter Nine: The Reckoning", ranges.get(6).getTitle());
+		assertEquals("Detected titles were: " + titles, 6, ranges.size());
+		assertEquals("CHAPTER ONE", ranges.get(0).getTitle());
+		assertEquals(0, ranges.get(0).getStartOffset());
+		assertEquals("Chapter 2", ranges.get(1).getTitle());
+		assertEquals("IV.", ranges.get(2).getTitle());
+		assertEquals("PART TWO", ranges.get(3).getTitle());
+		assertEquals("Twenty-One", ranges.get(4).getTitle());
+		assertEquals("Chapter Nine: The Reckoning", ranges.get(5).getTitle());
 
 		assertContiguousCoverage(ranges, text.length());
 
 		// The 'Part of the reason...' prose line is inside CHAPTER ONE's range, proving it was not
 		// treated as a boundary.
-		ChapterRange chapterOne = ranges.get(1);
+		ChapterRange chapterOne = ranges.get(0);
 		String chapterOneText = text.substring(chapterOne.getStartOffset(), chapterOne.getEndOffset());
 		assertTrue("CHAPTER ONE range must absorb the 'Part of the reason' prose line",
 			chapterOneText.contains("Part of the reason he left"));
+		assertTrue("CHAPTER ONE range must absorb the short title-page lead",
+			chapterOneText.startsWith("Front matter before any chapter."));
+
+		// A prologue-sized lead (>= MIN_STANDALONE_LEAD_CHARS) is NOT folded: it stays its own range.
+		StringBuilder prologue = new StringBuilder();
+		while (prologue.length() < PbChapterBoundaryUtil.MIN_STANDALONE_LEAD_CHARS) {
+			prologue.append("The storm had not let up for three days, and the roads were rivers. ");
+		}
+		String withPrologue = prologue + "\nChapter 1\nBody.\nChapter 2\nMore body.";
+		List<ChapterRange> pr = PbChapterBoundaryUtil.detectBoundaries(withPrologue);
+		assertEquals(3, pr.size());
+		assertEquals(null, pr.get(0).getTitle());
+		assertEquals("Chapter 1", pr.get(1).getTitle());
+		assertContiguousCoverage(pr, withPrologue.length());
 
 		// Direct false-positive / true-positive checks on the classifier.
 		assertFalse("'Part of the reason...' is prose, not a heading",
@@ -169,15 +184,26 @@ public class TestPbChapterBoundary {
 		assertTrue("A detected chapter span should be whole-chapter sized (not a sentence chunk); "
 			+ "longest span was " + maxLen + " chars", maxLen > 1000);
 
-		// ── Each titled range's offset actually points at its heading in the original text ──
-		for (ChapterRange r : ranges) {
-			if (r.getTitle() != null) {
-				String fromStart = text.substring(r.getStartOffset()).stripLeading();
-				assertTrue("Range at offset " + r.getStartOffset() + " should begin with its detected "
-					+ "heading \"" + r.getTitle() + "\" but began with: "
-					+ fromStart.substring(0, Math.min(40, fromStart.length())),
-					fromStart.startsWith(r.getTitle()));
+		// ── Each titled range's offset actually points at its heading in the original text. The
+		// first range may carry the folded title page ahead of its heading, so it is checked by
+		// containment within its lead instead. ──
+		assertNotNull("The manuscript's short title line must be folded into chapter 1, not returned as"
+			+ " a phantom untitled range", ranges.get(0).getTitle());
+		for (int k = 0; k < ranges.size(); k++) {
+			ChapterRange r = ranges.get(k);
+			if (r.getTitle() == null) continue;
+			String fromStart = text.substring(r.getStartOffset()).stripLeading();
+			if (k == 0) {
+				String lead = fromStart.substring(0, Math.min(
+					PbChapterBoundaryUtil.MIN_STANDALONE_LEAD_CHARS + r.getTitle().length(), fromStart.length()));
+				assertTrue("Chapter 1's range should contain its heading \"" + r.getTitle()
+					+ "\" within the folded lead", lead.contains(r.getTitle()));
+				continue;
 			}
+			assertTrue("Range at offset " + r.getStartOffset() + " should begin with its detected "
+				+ "heading \"" + r.getTitle() + "\" but began with: "
+				+ fromStart.substring(0, Math.min(40, fromStart.length())),
+				fromStart.startsWith(r.getTitle()));
 		}
 	}
 
