@@ -3,11 +3,8 @@
  * Lazy-loaded by features.js when 'cardGame' feature is enabled.
  */
 import m from 'mithril';
-import { am7model } from '../core/model.js';
 import { navigation } from '../components/navigation.js';
-import { page } from '../core/pageClient.js';
-
-function getPage() { return am7model._page || page; }
+import { layout } from '../router.js';
 
 let cardGameApp = null;
 let loading = false;
@@ -31,14 +28,10 @@ async function loadCardGame() {
     }
 }
 
-function layout(content) {
-    let pg = getPage();
-    return [
-        content,
-        pg.loadToast(),
-        pg.components.dialog ? pg.components.dialog.loadDialogs() : null
-    ];
-}
+// Overlays (toast container, dialog host, context menu) are rendered ONCE by the
+// router's shared `layout()` (OverlayGuard). Do not render loadToast()/loadDialogs()
+// again here or inside CardGameApp — a second copy is inert (toast animation targets
+// the first #toast-box-<id>) and steals hit-tests from the live copy (see KI-18).
 
 const routes = {
     "/cardGame": {

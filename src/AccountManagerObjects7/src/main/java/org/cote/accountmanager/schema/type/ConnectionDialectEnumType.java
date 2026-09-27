@@ -17,6 +17,10 @@ import javax.xml.bind.annotation.XmlType;
 ///   OLLAMA        - native Ollama /api/chat
 ///   OPENAI        - Azure OpenAI /openai/deployments/... deployment scheme
 ///   OPENAI_COMPAT - generic OpenAI-compatible /v1/chat/completions (e.g. LiteLLM)
+///   EMULATOR      - in-process fixture/synthesizer replay (org.cote.accountmanager.olio.llm.LlmEmulator).
+///                   serverUrl is `emulator://<set>`; no network call is made. Speaks the
+///                   OpenAI-compatible wire format on the way back so the normal SSE parser
+///                   consumes it. Inert unless the deployment configured a fixture root.
 ///
 /// NOTE: LLMServiceEnumType additionally carries LOCAL, which has no dialect peer; it is
 /// preserved only through the serviceType fallback path (dialect == UNKNOWN).
@@ -28,7 +32,8 @@ public enum ConnectionDialectEnumType {
     UNKNOWN,
     OLLAMA,
     OPENAI,
-    OPENAI_COMPAT
+    OPENAI_COMPAT,
+    EMULATOR
     ;
 
     public String value() {

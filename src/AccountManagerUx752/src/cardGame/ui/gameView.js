@@ -281,22 +281,27 @@ function GameView() {
                 m("div", { class: "cg2-game-header" }, [
                     m("button", {
                         class: "cg2-btn cg2-btn-sm",
-                        onclick() {
-                            getPage().components.dialog.confirm("Exit game? Progress will be lost.", function(ok) {
-                                if (ok) {
-                                    ctx().gameState = null;
-                                    // Restore deck view image state from viewingDeck
-                                    if (viewingDeck) {
-                                        ctx().backgroundImageId = viewingDeck.backgroundImageId || null;
-                                        ctx().backgroundPrompt = viewingDeck.backgroundPrompt || null;
-                                        ctx().backgroundThumbUrl = viewingDeck.backgroundThumbUrl || null;
-                                        ctx().tabletopImageId = viewingDeck.tabletopImageId || null;
-                                        ctx().tabletopThumbUrl = viewingDeck.tabletopThumbUrl || null;
-                                    }
-                                    ctx().screen = "deckView";
-                                    m.redraw();
-                                }
+                        async onclick() {
+                            // Promise form of Dialog.confirm — the legacy string form invokes its
+                            // callback with NO argument, so `function(ok){ if(ok) ... }` never ran.
+                            let ok = await getPage().components.dialog.confirm({
+                                title: "Exit Game",
+                                message: "Exit game? Progress will be lost.",
+                                confirmLabel: "Exit",
+                                destructive: true
                             });
+                            if (!ok) return;
+                            ctx().gameState = null;
+                            // Restore deck view image state from viewingDeck
+                            if (viewingDeck) {
+                                ctx().backgroundImageId = viewingDeck.backgroundImageId || null;
+                                ctx().backgroundPrompt = viewingDeck.backgroundPrompt || null;
+                                ctx().backgroundThumbUrl = viewingDeck.backgroundThumbUrl || null;
+                                ctx().tabletopImageId = viewingDeck.tabletopImageId || null;
+                                ctx().tabletopThumbUrl = viewingDeck.tabletopThumbUrl || null;
+                            }
+                            ctx().screen = "deckView";
+                            m.redraw();
                         }
                     }, "\u2190 Exit"),
                     m("span", { class: "cg2-round-badge" }, "R" + gameState.round),

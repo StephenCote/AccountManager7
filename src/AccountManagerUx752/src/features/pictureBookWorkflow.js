@@ -23,6 +23,7 @@ import {
 } from '../workflows/pictureBookWorkflow.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
 import { ObjectPicker } from '../components/picker.js';
+import { Dialog } from '../components/dialogCore.js';
 
 // Re-exported for callers/tests that import from the canvas module (the pure impl lives in the
 // deps-free ../workflows/pictureBookSeries.js so it is testable without the mithril/router imports).
@@ -107,6 +108,11 @@ let dragStartPos = null;
 // Edge drag state (B8 — port-to-port binding creation)
 let pendingEdgeSrc = null;
 
+// Share / New Chapter dialogs are hosted by the shared dialogCore stack (rendered once by the
+// router's OverlayGuard at z-index 40+), NOT hand-rolled fixed overlays. That keeps them BELOW the
+// ObjectPicker overlay (z-60) and toasts (z-50); the old z-index:500 overlay hid the manuscript
+// picker underneath the New Chapter modal (P1-3). memberDialog/chapterDialog only mark "open" so a
+// second click can't push a duplicate onto the stack; onClose clears them.
 let memberDialog = false;
 let memberNames = '';
 let chapterDialog = false;
@@ -376,8 +382,8 @@ async function doAddMembers() {
     try {
         let result = await addMembers(pb2BookObjectId, names, false);
         page.toast('success', 'Enrolled ' + result.enrolled + '/' + result.requested);
-        memberDialog = false;
-        memberNames = '';
+        // Dialog.close() runs the dialog's onClose, which clears memberDialog/memberNames.
+        if (memberDialog) Dialog.close();
     } catch (e) {
         page.toast('error', 'Share failed: ' + e.message);
     }
@@ -472,7 +478,8 @@ async function doCreateChapter() {
         let result = await createChapter(pb2BookObjectId, chapterSlug.trim(), chapterTitle.trim() || null,
             null, null, opts);
         page.toast('success', 'Chapter created: ' + result.slug);
-        resetChapterDialogState();
+        // Dialog.close() runs the dialog's onClose → resetChapterDialogState().
+        if (chapterDialog) Dialog.close(); else resetChapterDialogState();
     } catch (e) {
         page.toast('error', 'Chapter failed: ' + e.message);
         creatingChapter = false;
@@ -745,16 +752,9 @@ function renderNodeDetailPanel() {
 
 // ── Dialogs ───────────────────────────────────────────────────────────
 
-function renderMemberDialog() {
-    if (!memberDialog) return null;
-    return m('div', {
-        style: 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;',
-        onclick: function () { memberDialog = false; m.redraw(); }
-    }, m('div', {
-        style: 'background:#fff;border-radius:10px;padding:24px;width:360px;',
-        onclick: function (e) { e.stopPropagation(); }
-    }, [
-        m('h3', { style: 'font-weight:700;font-size:16px;margin-bottom:12px;' }, 'Share Book'),
+// Body of the Share Book dialog (re-rendered every redraw via Dialog's content:{view} contract).
+function renderMemberDialogContent() {
+    return m('div', { 'data-share-dialog': true }, [
         m('p', { style: 'font-size:12px;color:#64748b;margin-bottom:8px;' }, 'Enter usernames (comma- or space-separated) to grant Writer access:'),
         m('textarea', {
             style: 'width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:13px;resize:none;box-sizing:border-box;',
@@ -763,11 +763,24 @@ function renderMemberDialog() {
             value: memberNames,
             oninput: function (e) { memberNames = e.target.value; },
         }),
-        m('div', { style: 'display:flex;gap:8px;margin-top:12px;justify-content:flex-end;' }, [
-            m('button', { style: 'btn px-4 py-2 text-gray-600 border rounded;', onclick: function () { memberDialog = false; m.redraw(); } }, 'Cancel'),
-            m('button', { class: 'btn px-4 py-2 bg-blue-600 text-white rounded', onclick: doAddMembers }, 'Share'),
-        ]),
-    ]));
+    ]);
+}
+
+function openMemberDialog() {
+    if (memberDialog) return;
+    memberDialog = true;
+    memberNames = '';
+    Dialog.open({
+        title: 'Share Book',
+        size: 'sm',
+        closable: true,
+        content: { view: renderMemberDialogContent },
+        actions: [
+            { label: 'Cancel', icon: 'cancel', onclick: function () { Dialog.close(); } },
+            { label: 'Share', icon: 'share', primary: true, onclick: function () { doAddMembers(); }, attrs: { 'data-share-submit': true } },
+        ],
+        onClose: function () { memberDialog = false; memberNames = ''; },
+    });
 }
 
 // N3 — one editable boundary row (radio-select + title + start/end offsets + char length).
@@ -830,16 +843,9 @@ function renderBoundaryRow(r, idx) {
     ]);
 }
 
-function renderChapterDialog() {
-    if (!chapterDialog) return null;
-    return m('div', {
-        style: 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:flex;align-items:center;justify-content:center;',
-        onclick: function () { resetChapterDialogState(); m.redraw(); }
-    }, m('div', {
-        style: 'background:#fff;border-radius:10px;padding:24px;width:560px;max-width:92vw;max-height:88vh;overflow-y:auto;',
-        onclick: function (e) { e.stopPropagation(); }
-    }, [
-        m('h3', { style: 'font-weight:700;font-size:16px;margin-bottom:12px;' }, 'New Chapter'),
+// Body of the New Chapter dialog (re-rendered every redraw via Dialog's content:{view} contract).
+function renderChapterDialogContent() {
+    return m('div', { 'data-chapter-dialog': true }, [
         m('label', { style: 'font-size:12px;font-weight:600;color:#374151;' }, 'Slug (URL-safe, unique)'),
         m('input', {
             style: 'width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:13px;box-sizing:border-box;margin-bottom:10px;',
@@ -901,17 +907,39 @@ function renderChapterDialog() {
                     'No range selected — the chapter will cover the whole manuscript.') : null,
             ]) : null,
         ]),
+    ]);
+}
 
-        m('div', { style: 'display:flex;gap:8px;margin-top:16px;justify-content:flex-end;' }, [
-            m('button', { style: 'border:1px solid #e2e8f0;border-radius:6px;padding:6px 14px;cursor:pointer;', onclick: function () { resetChapterDialogState(); m.redraw(); } }, 'Cancel'),
-            m('button', {
-                'data-create-chapter': true,
-                style: 'background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-weight:600;' + (creatingChapter ? 'opacity:.6;' : ''),
-                disabled: creatingChapter,
-                onclick: doCreateChapter,
-            }, creatingChapter ? 'Creating…' : 'Create'),
-        ]),
-    ]));
+// Footer actions for the New Chapter dialog. Built as {view} so the Create label/disabled state
+// tracks `creatingChapter` without reopening the dialog.
+function chapterDialogActions() {
+    return [
+        { label: 'Cancel', icon: 'cancel', onclick: function () { Dialog.close(); } },
+        {
+            label: creatingChapter ? 'Creating…' : 'Create',
+            icon: 'add',
+            primary: true,
+            disabled: creatingChapter,
+            onclick: function () { doCreateChapter(); },
+            attrs: { 'data-create-chapter': true },
+        },
+    ];
+}
+
+function openChapterDialog() {
+    if (chapterDialog) return;
+    resetChapterDialogState();
+    chapterDialog = true;
+    Dialog.open({
+        title: 'New Chapter',
+        size: 'lg',
+        closable: true,
+        content: { view: renderChapterDialogContent },
+        actions: { view: chapterDialogActions },
+        // Any close path (Cancel, X, backdrop, Escape, or Dialog.close() after a successful create)
+        // resets the chapter form state — the same reset the old hand-rolled Cancel/backdrop did.
+        onClose: function () { resetChapterDialogState(); },
+    });
 }
 
 // ── Stale recheck ─────────────────────────────────────────────────────
@@ -1180,6 +1208,9 @@ var pictureBookWorkflowView = {
         pinLoading = {};
         regenLoading = {};
         testLoading = {};
+        // If one of this view's dialogs is still on the shared stack (programmatic route change
+        // while open), pop it so the stack and the open-flags stay coherent.
+        if (memberDialog || chapterDialog) Dialog.close();
         memberDialog = false;
         memberNames = '';
         resetChapterDialogState();
@@ -1259,12 +1290,12 @@ var pictureBookWorkflowView = {
                 pb2BookObjectId ? m('button', {
                     class: 'btn',
                     style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
-                    onclick: function () { memberDialog = true; m.redraw(); }
+                    onclick: openMemberDialog
                 }, '🔗 Share') : null,
                 // Chapter button
                 pb2BookObjectId ? m('button', {
                     style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
-                    onclick: function () { chapterDialog = true; m.redraw(); }
+                    onclick: openChapterDialog
                 }, '📖 Chapter') : null,
                 // Pages button — PB2 page reader
                 pb2BookObjectId ? m('button', {
@@ -1314,12 +1345,15 @@ var pictureBookWorkflowView = {
             // Node detail panel (fixed overlay) — chapter view only.
             viewMode === 'chapter' ? renderNodeDetailPanel() : null,
 
-            // Dialogs
-            renderMemberDialog(),
-            renderChapterDialog(),
+            // Share / New Chapter dialogs are pushed onto the shared dialogCore stack by
+            // openMemberDialog() / openChapterDialog() and rendered by the router's OverlayGuard.
         ]);
     },
 };
+
+// Exported for unit tests (src/test/overlayDialogFixes.test.js) — they open the dialogs
+// onto the shared dialogCore stack without needing the route/canvas to be mounted.
+export { openMemberDialog, openChapterDialog };
 
 // ── Routes ────────────────────────────────────────────────────────────
 

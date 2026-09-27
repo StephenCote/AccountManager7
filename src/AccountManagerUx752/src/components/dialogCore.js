@@ -125,11 +125,13 @@ function renderDialog(cfg, index) {
             if (act.destructive) btnClass += 'am7-dialog-btn-destructive';
             else if (act.primary) btnClass += 'am7-dialog-btn-primary';
             else btnClass += 'am7-dialog-btn-secondary';
-            return m('button', {
+            // act.attrs: optional extra attributes (e.g. data-* test hooks) merged under
+            // the managed class/disabled/onclick so callers can't break button styling.
+            return m('button', Object.assign({}, act.attrs || {}, {
                 class: btnClass,
                 disabled: !!act.disabled,
                 onclick: act.onclick
-            }, [
+            }), [
                 act.icon ? m('span', { class: 'material-symbols-outlined md-18' }, act.icon) : null,
                 act.label || ''
             ]);
@@ -156,7 +158,8 @@ const Dialog = {
      * @param {string} cfg.title
      * @param {string} cfg.size - "sm"|"md"|"lg"|"xl"|"full"
      * @param {*} cfg.content - Mithril vnode or string
-     * @param {Array} cfg.actions - [{label, icon, primary, destructive, onclick}]
+     * @param {Array} cfg.actions - [{label, icon, primary, destructive, disabled, onclick, attrs}]
+     *        (or {view: fn} returning that array; `attrs` = extra button attributes such as data-* hooks)
      * @param {boolean} cfg.closable - default true
      * @param {Function} cfg.onClose - called on any close
      * @param {string} cfg.mode - "modal"|"drawer", default "modal"

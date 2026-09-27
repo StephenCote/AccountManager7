@@ -657,13 +657,18 @@ STATUS EFFECTS: stunned(1t), poisoned(3t, -2HP/t), burning(2t, -3HP/t),
                                     t.isBuiltin ? "Customize" : "Edit"),
                                 t.isCustom ? m("button", {
                                     class: "cg2-btn cg2-btn-danger",
-                                    onclick() {
-                                        getPage().components.dialog.confirm("Delete theme '" + t.name + "'?", async function(ok) {
-                                            if (ok) {
-                                                await themeStorage.remove(t.themeId);
-                                                loadThemeList();
-                                            }
+                                    async onclick() {
+                                        // Promise form of Dialog.confirm — the legacy string form invokes
+                                        // its callback with NO argument, so `if (ok)` never ran.
+                                        let ok = await getPage().components.dialog.confirm({
+                                            title: "Delete Theme",
+                                            message: "Delete theme '" + t.name + "'?",
+                                            confirmLabel: "Delete",
+                                            destructive: true
                                         });
+                                        if (!ok) return;
+                                        await themeStorage.remove(t.themeId);
+                                        loadThemeList();
                                     }
                                 }, "Delete") : null
                             ])

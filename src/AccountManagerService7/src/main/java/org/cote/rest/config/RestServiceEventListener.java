@@ -257,6 +257,15 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		}
 		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(sdDefaultModel);
 
+		/// LLM emulator (system.connection.dialect = EMULATOR) — deployment-global, boot-pinned. Both
+		/// params blank (the default in web.xml.template / entrypoint.sh) leaves it inert, and an
+		/// EMULATOR connection then fails fast with "LLM emulator not configured on this deployment".
+		/// fixtureRoot enables replay/synthesis; recordDir enables the recorder (WARNs loudly inside
+		/// configure()). Propagation bound is a Tomcat restart; Console7 never configures this.
+		org.cote.accountmanager.olio.llm.LlmEmulator.configure(
+			context.getInitParameter("llm.emulator.fixtureRoot"),
+			context.getInitParameter("llm.emulator.recordDir"));
+
 		/// Must run before any HTTP call - the shared Client caches the timeout at first use. Sized by
 		/// the slowest legitimate SD generation, which is GPU-dependent (see ClientUtil).
 		String readTo = context.getInitParameter(ClientUtil.READ_TIMEOUT_CONFIG_KEY);

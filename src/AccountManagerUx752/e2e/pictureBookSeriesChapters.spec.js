@@ -286,4 +286,77 @@ test.describe('PictureBook Series/Chapters (N3 + N4)', () => {
 
         await page.screenshot({ path: 'e2e/screenshots/n3-chapter-dialog.png' });
     });
+
+    // ── P1-3 — "Choose manuscript" picker must open ABOVE the New Chapter dialog ─
+    //
+    // Before the fix the chapter dialog was a hand-rolled `fixed inset-0` modal at z-index 500
+    // while ObjectPicker.PickerView is z-[60], so the picker opened underneath the dialog and
+    // could not be used. The dialog now lives on the shared dialogCore stack (z 40 + depth*10),
+    // below toasts (z-50) and the picker (z-60).
+
+    test('P1-3: Choose manuscript picker opens above the New Chapter dialog and Escape closes only the picker', async ({ page }) => {
+        test.skip(!pb2BookObjectId, 'pb2 book not seeded');
+        await loginAsSharedUser(page);
+        await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid + '/workflow'; }, pb2BookObjectId);
+        await page.waitForFunction(
+            () => document.querySelectorAll('[data-node-id]').length > 0
+                || document.body.innerText.includes('Failed'),
+            { timeout: 30000 }
+        );
+
+        await page.locator('button', { hasText: '📖 Chapter' }).click();
+
+        // The chapter dialog is now a dialogCore dialog — exactly one backdrop, correct title.
+        const backdrop = page.locator('.am7-dialog-backdrop[role="dialog"]');
+        await expect(backdrop).toHaveCount(1, { timeout: 10000 });
+        await expect(page.locator('.am7-dialog-title')).toHaveText('New Chapter');
+        await expect(page.locator('[data-chapter-dialog]')).toBeVisible();
+        await expect(page.locator('.am7-dialog-footer [data-create-chapter]')).toBeVisible();
+
+        // Open the manuscript picker from inside the dialog.
+        const pickBtn = page.locator('[data-pick-source]');
+        await expect(pickBtn).toHaveText(/Choose manuscript/);
+        await pickBtn.click();
+
+        const picker = page.locator('.am7-picker-overlay');
+        await expect(picker).toBeVisible({ timeout: 10000 });
+        await expect(picker.locator('h3')).toHaveText('Select the source manuscript for this chapter');
+
+        // Z-order: the picker overlay must stack above the dialog backdrop, and the topmost
+        // element at the picker panel's centre must belong to the picker, not the dialog.
+        const order = await page.evaluate(() => {
+            const pick = document.querySelector('.am7-picker-overlay');
+            const dlg = document.querySelector('.am7-dialog-backdrop');
+            const zPick = parseInt(getComputedStyle(pick).zIndex, 10);
+            const zDlg = parseInt(getComputedStyle(dlg).zIndex, 10);
+            const panel = pick.querySelector('.relative') || pick;
+            const r = panel.getBoundingClientRect();
+            const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            return {
+                zPick, zDlg,
+                topIsPicker: !!(top && top.closest('.am7-picker-overlay')),
+                topIsDialog: !!(top && top.closest('.am7-dialog-backdrop'))
+            };
+        });
+        expect(order.zPick, 'picker z-index').toBeGreaterThan(order.zDlg);
+        expect(order.topIsPicker, 'element under the cursor at picker centre is the picker').toBe(true);
+        expect(order.topIsDialog, 'dialog must not cover the picker').toBe(false);
+        // The dialog is still open underneath.
+        await expect(backdrop).toHaveCount(1);
+        await expect(page.locator('[data-create-chapter]')).toBeAttached();
+
+        await page.screenshot({ path: 'e2e/screenshots/p1-3-picker-above-dialog.png' });
+
+        // Escape: the picker's capture-phase handler stops propagation, so ONLY the picker closes
+        // and the dialog underneath survives.
+        await page.keyboard.press('Escape');
+        await expect(picker).toHaveCount(0);
+        await expect(backdrop).toHaveCount(1);
+        await expect(page.locator('.am7-dialog-title')).toHaveText('New Chapter');
+
+        // Cancel closes the dialog and leaves nothing behind.
+        await page.locator('.am7-dialog-footer button', { hasText: 'Cancel' }).click();
+        await expect(backdrop).toHaveCount(0);
+        await expect(page.locator('[data-chapter-dialog]')).toHaveCount(0);
+    });
 });

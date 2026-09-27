@@ -40,6 +40,13 @@ set -euo pipefail
 # legitimate SD generation -- a FLUX.2 multi-reference composite is ~638s on a Strix Halo iGPU, and
 # the previous hardcoded 360s aborted the client while the GPU was still working (the image was
 # produced on the SD server regardless; only the caller gave up).
+: "${LLM_EMULATOR_FIXTURE_ROOT:=}"
+# LLM emulator fixture root (system.connection.dialect = emulator). Empty = emulator inert. The test
+# compose mounts the repo's llm-fixtures directory read-only here; never set in production.
+: "${LLM_EMULATOR_RECORD_DIR:=}"
+# LLM emulator RECORDER output directory. Non-empty writes every successful buffer-mode LLM exchange
+# against a real server to disk (request messages + response content; never tokens/headers). Empty
+# by default and should stay empty outside fixture-capture sessions.
 : "${CORS_ALLOWED_ORIGINS:=http://localhost:8899,http://localhost,http://localhost:8080,http://localhost:8888,https://localhost:8899,https://localhost,https://localhost:8443,https://localhost:8888,https://192.168.1.12:8899,https://192.168.1.12:8443}"
 
 # cors.support.credentials is hardcoded true in web.xml.template; combined
@@ -52,7 +59,7 @@ export DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD SESSION_STORE_PATH \
   STORE_PATH DATAGEN_PATH VAULT_PATH VAULT_CREDENTIAL_PATH \
   TASK_SERVER TASK_API_KEY SD_SERVER FACE_SERVER TAG_SERVER \
   VOICE_TTS_SERVER VOICE_STT_SERVER EMBEDDING_SERVER EMBEDDING_TYPE EMBEDDING_AUTH_TOKEN CORS_ALLOWED_ORIGINS \
-  SD_DEFAULT_MODEL HTTP_READ_TIMEOUT
+  SD_DEFAULT_MODEL HTTP_READ_TIMEOUT LLM_EMULATOR_FIXTURE_ROOT LLM_EMULATOR_RECORD_DIR
 
 APP_DIR="$CATALINA_HOME/webapps/${APP_CONTEXT}"
 
@@ -61,7 +68,7 @@ mkdir -p "$STORE_PATH" "$DATAGEN_PATH" "$VAULT_PATH" "$VAULT_CREDENTIAL_PATH" "$
 envsubst '$DB_HOST $DB_PORT $DB_NAME $DB_USER $DB_PASSWORD $SESSION_STORE_PATH' \
   < "$APP_DIR/META-INF/context.xml.template" > "$APP_DIR/META-INF/context.xml"
 
-envsubst '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SERVER $TASK_API_KEY $SD_SERVER $FACE_SERVER $TAG_SERVER $VOICE_TTS_SERVER $VOICE_STT_SERVER $EMBEDDING_SERVER $EMBEDDING_TYPE $EMBEDDING_AUTH_TOKEN $CORS_ALLOWED_ORIGINS $SD_DEFAULT_MODEL $HTTP_READ_TIMEOUT' \
+envsubst '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SERVER $TASK_API_KEY $SD_SERVER $FACE_SERVER $TAG_SERVER $VOICE_TTS_SERVER $VOICE_STT_SERVER $EMBEDDING_SERVER $EMBEDDING_TYPE $EMBEDDING_AUTH_TOKEN $CORS_ALLOWED_ORIGINS $SD_DEFAULT_MODEL $HTTP_READ_TIMEOUT $LLM_EMULATOR_FIXTURE_ROOT $LLM_EMULATOR_RECORD_DIR' \
   < "$APP_DIR/WEB-INF/web.xml.template" > "$APP_DIR/WEB-INF/web.xml"
 
 # Self-signed TLS pair shared by Tomcat (server.xml) and nginx (nginx.conf).

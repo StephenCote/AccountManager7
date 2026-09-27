@@ -221,6 +221,15 @@ services:
       # `docker compose up -d` cannot silently drop it -- which is exactly what happened
       # while adding CATALINA_OPTS above.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://localhost:9443,http://localhost:9443,https://127.0.0.1:9443,http://127.0.0.1:9443,http://localhost:8899,https://localhost:8899,https://192.168.1.39:9443,http://192.168.1.39:9443}
+      # LLM emulator (system.connection.dialect = emulator, serverUrl = emulator://<set>). The TEST
+      # stack enables it by default so Ux/Playwright can drive PictureBook without a live model
+      # server: fixture sets live under the read-only mount below (one dir per set, see
+      # AccountManagerObjects7/src/test/resources/llm-fixtures/*/manifest.json). The recorder is
+      # OFF by default; set LLM_EMULATOR_RECORD_DIR to a writable container path (e.g.
+      # /data/am7/llm-recordings) only for a deliberate fixture-capture session against a real LLM.
+      # Neither is set in the main docker-compose.yml -- production stays inert.
+      LLM_EMULATOR_FIXTURE_ROOT: ${LLM_EMULATOR_FIXTURE_ROOT:-/fixtures/llm}
+      LLM_EMULATOR_RECORD_DIR: ${LLM_EMULATOR_RECORD_DIR:-}
     volumes:
       # Persistent host location (see AM7_DATA_DIR above): app keystores/vault/datagen/streams
       # (/data/am7) + the self-signed TLS pair nginx and Tomcat share (/etc/am7/certs). Losing
@@ -228,6 +237,8 @@ services:
       # is exactly why both live under the same host dir with the same lifecycle.
       - ${AM7_DATA_DIR:-./docker-data}/am7:/data/am7
       - ${AM7_DATA_DIR:-./docker-data}/certs:/etc/am7/certs
+      # LLM emulator fixture sets, read-only. Matches LLM_EMULATOR_FIXTURE_ROOT above.
+      - ./AccountManagerObjects7/src/test/resources/llm-fixtures:/fixtures/llm:ro
     networks:
       - am7-test-net
     restart: unless-stopped

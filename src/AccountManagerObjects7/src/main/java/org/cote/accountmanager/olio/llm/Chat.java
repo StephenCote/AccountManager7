@@ -4371,8 +4371,25 @@ public class Chat {
 		/// while tokens are flowing. Interactive streaming keeps its existing bounds: the mid-stream
 		/// idle watchdog and the ChatListener cancel path.
 		final int transportTimeout = forwardToClient ? 0 : bufferWaitSeconds;
+
+		/// EMULATOR fail-fast: the dialect was selected but this deployment never configured a fixture
+		/// root (Console7 never does; Service7 only when llm.emulator.fixtureRoot is set). Surface the
+		/// exact reason through the same last-call channel a provider error uses, and return null the
+		/// way a buffer-mode error does. LAST_CALL_UNREACHABLE stays false: this is a configuration
+		/// miss, not a connectivity failure, and the chunk loop must not treat it as "server down".
+		if (serviceType == LLMServiceEnumType.EMULATOR && !LlmEmulator.isConfigured()) {
+			String msg = "LLM emulator not configured on this deployment";
+			logger.error(msg + " (connection serverUrl=" + serverUrl + ")");
+			setLastCallError(msg);
+			LAST_CALL_UNREACHABLE.set(false);
+			if (listener != null) {
+				listener.onerror(user, req, new OpenAIResponse(), msg);
+			}
+			return null;
+		}
+
 		final CompletableFuture<HttpResponse<Stream<String>>> rawStreamFuture =
-			ClientUtil.postToRecordAndStream(serviceUrl, authorizationToken, ser, traceHeaders, transportTimeout);
+			openOutboundStream(serviceUrl, authorizationToken, ser, wireReq, traceHeaders, transportTimeout);
 
 		CompletableFuture<HttpResponse<Stream<String>>> streamFuture = rawStreamFuture;
 		if (effectiveTimeout > 0) {
@@ -4606,6 +4623,22 @@ public class Chat {
 			BaseRecord bufMsg = bufferResult[0] != null ? bufferResult[0].get("message") : null;
 			logger.info("[DIAG] chat() buffer mode: returning result=" + (bufferResult[0] != null ? "present" : "null")
 				+ " message=" + (bufMsg != null ? "present" : "null"));
+			/// Emulator RECORDER (fixture capture). Only when the deployment set llm.emulator.recordDir,
+			/// and never for the emulator's own answers (replaying a synthesized answer into a fixture
+			/// would launder it into "recorded truth"). The content captured is the RAW assistant text
+			/// exactly as accumulated from the stream — before the consumer's stripThink — so a replay
+			/// re-exercises the consumer's own post-processing. Keyed on wireReq (the pruned request that
+			/// actually went out), the same object LlmEmulator.respond keys on. Writes request messages
+			/// and response content only: no auth token, no headers, no server URL. Any failure inside
+			/// record() is a WARN; it cannot affect the result we are about to return.
+			if (LlmEmulator.recordDir() != null && serviceType != LLMServiceEnumType.EMULATOR && bufMsg != null) {
+				try {
+					String rawContent = bufMsg.get(FieldNames.FIELD_CONTENT);
+					LlmEmulator.record(wireReq, rawContent);
+				} catch (Exception recEx) {
+					logger.warn("LLM emulator recorder skipped: " + recEx.getMessage());
+				}
+			}
 			return bufferResult[0];
 		}
 
@@ -4764,8 +4797,28 @@ public class Chat {
 	/// (OPENAI_COMPAT). Both use the same SSE `data:` framing and choices/delta shape,
 	/// so the stream parser must treat them identically. Only the URL assembly differs
 	/// (see getServiceUrl), which is why that branch stays OPENAI-specific.
+	/// EMULATOR is included on purpose: LlmEmulator answers in the OpenAI-compatible SSE framing
+	/// (`data:` lines, choices/delta, `[DONE]`) precisely so that this parser path is reused
+	/// verbatim and the emulated exchange is indistinguishable downstream.
 	private boolean isOpenAiCompatible() {
-		return serviceType == LLMServiceEnumType.OPENAI || serviceType == LLMServiceEnumType.OPENAI_COMPAT;
+		return serviceType == LLMServiceEnumType.OPENAI
+			|| serviceType == LLMServiceEnumType.OPENAI_COMPAT
+			|| serviceType == LLMServiceEnumType.EMULATOR;
+	}
+
+	/// The ONE outbound seam. Every dialect that speaks to a real server goes through
+	/// ClientUtil.postToRecordAndStream with the url/token/headers/timeout moving as arguments of the
+	/// same call. EMULATOR never touches the network: LlmEmulator.respond returns a completed (or
+	/// failed) future carrying a fake HttpResponse<Stream<String>> in the same OpenAI-compatible SSE
+	/// shape, which the consumer below reads through statusCode()/headers()/body() exactly as it
+	/// would a real one. The token is deliberately NOT passed to the emulator — it has no use for it
+	/// and must never see it. Callers have already verified LlmEmulator.isConfigured() for EMULATOR.
+	private CompletableFuture<HttpResponse<Stream<String>>> openOutboundStream(String serviceUrl, String token, String ser,
+			OpenAIRequest wireReq, Map<String,String> traceHeaders, int transportTimeoutSeconds) {
+		if (serviceType == LLMServiceEnumType.EMULATOR) {
+			return LlmEmulator.respond(serviceUrl, wireReq, ser);
+		}
+		return ClientUtil.postToRecordAndStream(serviceUrl, token, ser, traceHeaders, transportTimeoutSeconds);
 	}
 
 	public String getServiceUrl(OpenAIRequest req) {
@@ -4782,6 +4835,10 @@ public class Chat {
 			/// route; the request body, Bearer auth, and choices/delta SSE parser are
 			/// reused unchanged.
 			url = serverUrl + "/v1/chat/completions";
+		} else if (serviceType == LLMServiceEnumType.EMULATOR) {
+			/// Pass the emulator://<set> pseudo-URL through UNCHANGED. It is not a URL that gets
+			/// fetched; LlmEmulator parses the set name out of it and never treats it as a path.
+			url = serverUrl;
 		}
 		return url;
 	}

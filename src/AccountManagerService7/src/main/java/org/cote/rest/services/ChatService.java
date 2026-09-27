@@ -91,6 +91,30 @@ public class ChatService {
 		ChatUtil.clearCache();
 		return Response.status(200).entity(true).build();
 	}
+
+	/// LLM emulator counters (pure pass-through of LlmEmulator.stats()). 404 when this deployment
+	/// has no llm.emulator.fixtureRoot configured, so a production stack neither reveals nor
+	/// pretends to have an emulator. Shape: {"configured":true,"hit":n,"miss":n,"synth":n,"fault":n,
+	/// "recorded":n}. `?reset=true` zeroes every counter INCLUDING the per-set fault-occurrence
+	/// counters (manifest faults fire on the Nth call per JVM lifetime, so a test that depends on
+	/// one firing must reset first). Deployment-global by design — there is exactly one emulator
+	/// per JVM, so this is not per-user state and nothing here reads or writes any record.
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/emulator/stats")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response emulatorStats(@QueryParam("reset") boolean reset, @Context HttpServletRequest request){
+		if (!org.cote.accountmanager.olio.llm.LlmEmulator.isConfigured()) {
+			return Response.status(404).entity("{\"configured\":false}").build();
+		}
+		if (reset) {
+			org.cote.accountmanager.olio.llm.LlmEmulator.resetCounters();
+		}
+		Map<String, Object> out = new java.util.LinkedHashMap<>();
+		out.put("configured", true);
+		out.putAll(org.cote.accountmanager.olio.llm.LlmEmulator.stats());
+		return Response.status(200).entity(JSONUtil.exportObject(out)).build();
+	}
 	
 	@RolesAllowed({"admin","user"})
 	@POST

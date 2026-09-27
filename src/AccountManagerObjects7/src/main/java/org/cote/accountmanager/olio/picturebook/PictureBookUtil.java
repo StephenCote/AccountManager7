@@ -1495,8 +1495,12 @@ public class PictureBookUtil {
 
     /**
      * The {@code [startOffset, endOffset)} of a chapter book's {@code olio.pb.sourceRange}, or null when the
-     * book carries no range or it cannot be read. The book projection only carries the FK, so the offsets
-     * are populated here.
+     * book carries no range (no FK, or a range record with no offsets, which an int column reads back as
+     * {@code [0, 0)}). The book projection only carries the FK, so the offsets are populated here.
+     *
+     * @throws PictureBookException (500) when the book DOES carry a sourceRange FK but its offsets cannot be
+     *         read. A chapter whose range exists but is unreadable must fail, not silently fall back to the
+     *         whole manuscript: that fallback extracted chapter 1's people for every chapter.
      */
     static Integer[] readChapterSourceRange(BaseRecord pb2Book) {
         if (pb2Book == null || !pb2Book.hasField(OlioFieldNames.FIELD_PB_SOURCE_RANGE)) return null;
@@ -1516,8 +1520,8 @@ public class PictureBookUtil {
             if ((s == null || s.intValue() == 0) && (e == null || e.intValue() == 0)) return null;
             return new Integer[] { s, e };
         } catch (Exception ex) {
-            logger.warn("Could not read chapter sourceRange offsets: " + ex.getMessage());
-            return null;
+            throw new PictureBookException(500, "Chapter sourceRange (id=" + range.get(FieldNames.FIELD_ID)
+                    + ") exists but its offsets could not be read: " + ex.getMessage());
         }
     }
 
@@ -1634,24 +1638,53 @@ public class PictureBookUtil {
     }
 
     /**
-     * Extract text from a work record. Uses DocumentUtil.getStringContent for PDF/DOCX/text,
-     * falling back to description/text fields for plain records.
+     * Extract text from a work record, falling back to description/text fields for plain records.
+     *
+     * <p><b>Text parity (S6).</b> Chapter offsets ({@code olio.pb.sourceRange.startOffset/endOffset}) are
+     * computed by {@link PbServiceFacade#detectSourceBoundaries} over {@link ChapBookUtil#extractPoemText},
+     * which runs {@link ChapBookUtil#sanitizeText} (U+0000 and C0 stripped, CRLF/CR → LF). The text those
+     * offsets are later applied to — here, via {@link #resolveExtractRange} in {@code extractScenesOnly} and
+     * {@code createFromScenes} — MUST be the same string, or every {@code substring(start, end)} drifts by
+     * one character per CRLF and chapter N is sliced from a window that opens inside chapter N-1. So the
+     * byteStore path uses the SAME canonical reader, and every other path is run through the same
+     * sanitizer. {@code DocumentUtil.getStringContent} remains the fallback for what the poem reader
+     * rejects (PDF, vector-described models, {@code data.note} text).
      */
-    private static String extractWorkText(BaseRecord user, BaseRecord work) {
+    static String extractWorkText(BaseRecord user, BaseRecord work) {
         if (work == null) return null;
 
-        // Try DocumentUtil.getStringContent — handles PDF, DOCX, and text/* automatically
+        // Canonical reader for byteStore-backed works (text/*, .doc/.docx/.rtf/.wpd) — identical to the
+        // facade's boundary detector, so offsets and slices agree.
+        if (work.inherits(ModelNames.MODEL_CRYPTOBYTESTORE)) {
+            try {
+                if (!work.hasField(FieldNames.FIELD_BYTE_STORE)) {
+                    IOSystem.getActiveContext().getReader().populate(work,
+                            new String[] { FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_BYTE_STORE });
+                }
+                String canonical = ChapBookUtil.extractPoemText(work);
+                if (canonical != null && !canonical.isEmpty()) return canonical;
+            } catch (PictureBookException e) {
+                // Not a type the poem reader handles (e.g. application/pdf): fall through to the generic
+                // reader below, sanitized the same way so offsets computed over sanitized text still line up.
+                logger.info("Canonical reader declined work '" + work.get(FieldNames.FIELD_NAME) + "' ("
+                        + e.getMessage() + "); using generic document reader");
+            } catch (Exception e) {
+                logger.warn("Canonical reader failed for work '" + work.get(FieldNames.FIELD_NAME) + "': " + e.getMessage());
+            }
+        }
+
+        // Generic reader — handles PDF, vector-described models, and data.note text.
         try {
-            String extracted = DocumentUtil.getStringContent(work);
+            String extracted = ChapBookUtil.sanitizeText(DocumentUtil.getStringContent(work));
             if (extracted != null && !extracted.isEmpty()) return extracted;
         } catch (Exception e) {
             logger.warn("Failed to extract document content: " + e.getMessage());
         }
 
         // Plain text — try description, then text field
-        String text = work.get(FieldNames.FIELD_DESCRIPTION);
+        String text = ChapBookUtil.sanitizeText(work.get(FieldNames.FIELD_DESCRIPTION));
         if (text != null && !text.isEmpty()) return text;
-        text = work.get("text");
+        text = ChapBookUtil.sanitizeText(work.get("text"));
         if (text != null && !text.isEmpty()) return text;
         return null;
     }
@@ -1742,7 +1775,12 @@ public class PictureBookUtil {
         if (existing != null) {
             try {
                 existing.set("text", metaJson);
-                IOSystem.getActiveContext().getAccessPoint().update(user, existing);
+                // update() returns null when the write did not persist (PBAC deny, validation); that
+                // was being discarded, so a failed meta write read as success to every caller.
+                if (IOSystem.getActiveContext().getAccessPoint().update(user, existing) == null) {
+                    logger.error("Failed to update meta at " + groupPath + ": update did not persist");
+                    return null;
+                }
                 return existing;
             } catch (Exception e) {
                 logger.error("Failed to update meta: " + e.getMessage());
@@ -3739,8 +3777,11 @@ public class PictureBookUtil {
      *   parsing fails; null means "don't bother capturing" (used by call sites that don't have a
      *   meta/result record to attach failures to). See {@link #recordFailedExtraction}.
      */
+    /// Package-private (not private) for the same reason as parseLlmJsonObject below: same-package
+    /// tests (TestLlmEmulator) feed synthesized emulator output through the REAL parser rather than
+    /// a duplicate. Nothing production-side outside this package can reach it.
     @SuppressWarnings("unchecked")
-    private static List<Map<String, Object>> parseLlmJsonArray(String response, String context, List<String> failedExtractions) {
+    static List<Map<String, Object>> parseLlmJsonArray(String response, String context, List<String> failedExtractions) {
         if (response == null || response.isEmpty()) return new ArrayList<>();
         String trimmed = stripThink(response.trim());
         // Strip markdown code fences
@@ -7104,7 +7145,43 @@ public class PictureBookUtil {
     }
 
     /**
-     * Create a data.note record for a scene.
+     * Render-state keys that other code paths write INTO a scene note's text JSON after
+     * {@link #createSceneNote} has written the scene content: the rendered image / landscape
+     * references ({@code updateSceneImageId} / {@code updateSceneLandscapeId}), the verbatim prompt
+     * the last render actually used ({@code compositePrompt}), and the wizard's resume status
+     * ({@code updateSceneStatus}). When a re-run updates an existing scene note in place, these are
+     * carried over so a previously rendered image stays linked to its scene instead of being
+     * orphaned. The two FORWARD-looking prompt caches ({@code scenePrompt}, {@code landscapePrompt})
+     * are deliberately NOT in this list: {@code resolveScenePrompt}/{@code resolveLandscapePrompt}
+     * serve them in preference to re-deriving from setting/action/mood, and the re-run has just
+     * replaced exactly that content, so a carried-over cache would drive the NEXT render from the
+     * OLD scene text.
+     */
+    private static final String[] SCENE_NOTE_RENDER_STATE_KEYS = new String[] {
+            "imageObjectId", "landscapeObjectId", "compositePrompt", "status", "error" };
+
+    /**
+     * Find-or-update a scene {@code data.note} in the book's Scenes group and return the persisted
+     * record (identity + text), or {@code null} when it could not be persisted.
+     *
+     * <p>{@code data.note} is unique on {@code (name, groupId, organizationId)}. Re-running the
+     * wizard on a manuscript whose chapter books already exist reuses the same slug book group and
+     * the same Scenes sub-group (both are find-or-create by path), so before this was a
+     * find-or-update every {@code create} here collided with the first run's note, returned null,
+     * the scene was dropped from {@code metaScenes}, and {@link #createFromScenes} then overwrote
+     * {@code .pictureBookMeta} with {@code scenes: []} - the live "all chapters show 0 scenes"
+     * re-run defect. Now an existing note with the same name is UPDATED in place: its identity
+     * (objectId, which is what the meta entry and every reader key on) is reused, its content is
+     * replaced by exactly what a fresh create would have written, and the render state listed in
+     * {@link #SCENE_NOTE_RENDER_STATE_KEYS} is carried over. No existing note is ever deleted; a
+     * first-run note whose title does not recur in the re-run simply stays in the group and drops
+     * out of the meta.
+     *
+     * <p>The update is a PATCH (identity + {@code name} + {@code text}) built with
+     * {@code copyRecord(String[])}, not a full-object update - see the note on
+     * {@code repointMetaCharacters} and .claude/rules/model-api.md: {@code name} must be in the
+     * patch because the writer validates the patch itself against {@code common.nameId}'s
+     * {@code \S} rule.
      */
     private static BaseRecord createSceneNote(BaseRecord user, BaseRecord scenesGroup, Map<String, Object> sceneData, int idx,
             Set<String> usedNoteNames) {
@@ -7112,25 +7189,30 @@ public class PictureBookUtil {
         String summary = (String) sceneData.getOrDefault("summary", "");
         String noteName = uniqueSceneNoteName(title, idx, usedNoteNames);
 
+        // Store scene metadata + summary as JSON in the text field
+        // (data.note has no 'description' field — summary goes in the metadata)
+        Map<String, Object> sceneStore = new LinkedHashMap<>(sceneData);
+        // Drop the transient raw content block (used only to reduce per-character detail during
+        // createFromScenes) so it never persists into every scene note's text JSON.
+        sceneStore.remove("sourceText");
+        // Likewise the checkpoint's chunk-index bookkeeping: it only means anything while an
+        // extraction is mid-flight, and the book's scene notes outlive that entirely.
+        sceneStore.remove("sourceChunk");
+        sceneStore.put("sceneIndex", idx);
+        sceneStore.put("blurb", summary);
+
         try {
+            BaseRecord existing = findSceneNoteByName(user, scenesGroup, noteName);
+            if (existing != null) {
+                return updateSceneNoteInPlace(user, existing, sceneStore);
+            }
+
             ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH,
                     scenesGroup.get(FieldNames.FIELD_PATH));
             plist.parameter(FieldNames.FIELD_NAME, noteName);
             BaseRecord note = IOSystem.getActiveContext().getFactory().newInstance(
                     ModelNames.MODEL_NOTE, user, null, plist);
             note.set(FieldNames.FIELD_NAME, noteName);
-
-            // Store scene metadata + summary as JSON in the text field
-            // (data.note has no 'description' field — summary goes in the metadata)
-            Map<String, Object> sceneStore = new LinkedHashMap<>(sceneData);
-            // Drop the transient raw content block (used only to reduce per-character detail during
-            // createFromScenes) so it never persists into every scene note's text JSON.
-            sceneStore.remove("sourceText");
-            // Likewise the checkpoint's chunk-index bookkeeping: it only means anything while an
-            // extraction is mid-flight, and the book's scene notes outlive that entirely.
-            sceneStore.remove("sourceChunk");
-            sceneStore.put("sceneIndex", idx);
-            sceneStore.put("blurb", summary);
             note.set("text", JSONUtil.exportObject(sceneStore));
 
             return IOSystem.getActiveContext().getAccessPoint().create(user, note);
@@ -7138,6 +7220,65 @@ public class PictureBookUtil {
             logger.error("Failed to create scene note: " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * The scene note named {@code noteName} in {@code scenesGroup}, projected to identity + name +
+     * text, or null when there is none (or the caller may not read it). Uncached: the same JVM may
+     * have just created or updated it.
+     */
+    private static BaseRecord findSceneNoteByName(BaseRecord user, BaseRecord scenesGroup, String noteName) {
+        Object gid = scenesGroup.get(FieldNames.FIELD_ID);
+        if (!(gid instanceof Number) || ((Number) gid).longValue() <= 0L) return null;
+        Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_GROUP_ID, ((Number) gid).longValue());
+        q.field(FieldNames.FIELD_NAME, noteName);
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+                FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, "text" });
+        q.setCache(false);
+        return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+    }
+
+    /**
+     * Replace an existing scene note's content with {@code sceneStore} (exactly what a fresh
+     * {@link #createSceneNote} writes), carrying over only {@link #SCENE_NOTE_RENDER_STATE_KEYS}
+     * from the previous text. Returns the note (identity preserved, text refreshed) or null when
+     * the update did not persist - the caller treats null as "not persisted" and fails loud.
+     */
+    private static BaseRecord updateSceneNoteInPlace(BaseRecord user, BaseRecord existing, Map<String, Object> sceneStore) {
+        Map<String, Object> merged = new LinkedHashMap<>(sceneStore);
+        String previousText = existing.get("text");
+        if (previousText != null && !previousText.isEmpty()) {
+            try {
+                Map<String, Object> previous = JSONUtil.getMap(previousText.getBytes(), String.class, Object.class);
+                for (String key : SCENE_NOTE_RENDER_STATE_KEYS) {
+                    Object v = previous.get(key);
+                    if (v != null && !merged.containsKey(key)) merged.put(key, v);
+                }
+            } catch (Exception e) {
+                logger.warn("Scene note '" + existing.get(FieldNames.FIELD_NAME)
+                        + "' had unparseable previous text; render state not carried over: " + e.getMessage());
+            }
+        }
+        String newText = JSONUtil.exportObject(merged);
+        try {
+            existing.set("text", newText);
+            BaseRecord patch = existing.copyRecord(new String[] {
+                    FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "text" });
+            BaseRecord updated = IOSystem.getActiveContext().getAccessPoint().update(user, patch);
+            if (updated == null) {
+                logger.error("Scene note '" + existing.get(FieldNames.FIELD_NAME) + "' (objectId="
+                        + existing.get(FieldNames.FIELD_OBJECT_ID) + ") exists but could not be updated in place");
+                return null;
+            }
+        } catch (Exception e) {
+            logger.error("Scene note '" + existing.get(FieldNames.FIELD_NAME) + "' (objectId="
+                    + existing.get(FieldNames.FIELD_OBJECT_ID) + ") exists but the in-place update failed: " + e.getMessage());
+            return null;
+        }
+        logger.info("Scene note '" + existing.get(FieldNames.FIELD_NAME) + "' already existed in the Scenes group; updated in place (objectId="
+                + existing.get(FieldNames.FIELD_OBJECT_ID) + ")");
+        return existing;
     }
 
     // ----- Public pipeline entry points (one per REST endpoint) -----------
@@ -7496,14 +7637,24 @@ public class PictureBookUtil {
             chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
         }
         String text = extractWorkText(user, work);
-        if (text != null && (chapterStart != null || chapterEnd != null)) {
-            // The character-passage fallback below truncates to MAX_EXTRACTION_TEXT_CHARS from the front,
-            // so for chapter 6 of a shared manuscript it would describe chapter 1's people.
+        if (chapterStart != null || chapterEnd != null) {
+            // A chapter book's sourceRange was requested, so the text MUST be that slice. The
+            // character-passage fallback below truncates to MAX_EXTRACTION_TEXT_CHARS from the front, so
+            // silently falling back to the whole manuscript here would describe chapter 1's people for
+            // chapter 6. An unreadable work or an invalid range therefore FAILS the chapter (S6); the
+            // no-range (standalone book) path below is unchanged.
+            if (text == null || text.isEmpty()) {
+                throw new PictureBookException(400, "Chapter range [" + chapterStart + ", " + chapterEnd
+                        + ") was requested but no text content could be read from work '"
+                        + work.get(FieldNames.FIELD_NAME) + "'");
+            }
             try {
                 int[] range = resolveExtractRange(text.length(), chapterStart, chapterEnd);
                 text = text.substring(range[0], range[1]);
             } catch (PictureBookException e) {
-                logger.warn("createFromScenes(pb2): ignoring chapter range [" + chapterStart + ", " + chapterEnd + "): " + e.getMessage());
+                logger.error("createFromScenes(pb2): chapter range [" + chapterStart + ", " + chapterEnd
+                        + ") could not be applied to a " + text.length() + "-character work: " + e.getMessage());
+                throw e;
             }
         }
 
@@ -7684,16 +7835,31 @@ public class PictureBookUtil {
 
         List<BaseRecord> metaScenes = new ArrayList<>();
         Set<String> usedNoteNames = new HashSet<>();
+        List<String> unpersistedScenes = new ArrayList<>();
         int idx = 0;
         for (Map<String, Object> sceneData : sceneList) {
             BaseRecord note = createSceneNote(user, scenesGroup, sceneData, idx, usedNoteNames);
-            if (note != null) {
-                BaseRecord sceneEntry = buildSceneEntry(note, sceneData, idx, charObjectIds);
-                if (sceneEntry != null) metaScenes.add(sceneEntry);
+            BaseRecord sceneEntry = (note != null) ? buildSceneEntry(note, sceneData, idx, charObjectIds) : null;
+            if (sceneEntry != null) {
+                metaScenes.add(sceneEntry);
             } else {
-                logger.error("Scene " + idx + " ('" + sceneData.getOrDefault("title", "") + "') was not persisted and is absent from the book");
+                String sceneTitle = String.valueOf(sceneData.getOrDefault("title", "Scene " + idx));
+                logger.error("Scene " + idx + " ('" + sceneTitle + "') was not persisted and is absent from the book");
+                unpersistedScenes.add(idx + ": " + sceneTitle);
             }
             idx++;
+        }
+        // Fail LOUD, before saveMeta. Persisting a meta whose scenes list is shorter than the list the
+        // caller supplied would silently replace the book's scene list with a partial (or empty) one
+        // while the REST call reports success - exactly what the re-run defect looked like from the
+        // wizard: every chapter "succeeded" and every chapter had 0 scenes. The already-persisted
+        // notes/characters stay; only the meta write is refused. Service7 maps this to a 500 whose body
+        // names the scenes that did not persist.
+        if (!unpersistedScenes.isEmpty() || metaScenes.size() != sceneList.size()) {
+            PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
+            throw new PictureBookException(500, unpersistedScenes.size() + " of " + sceneList.size()
+                    + " scene(s) could not be persisted, so the book's scene list was NOT updated: "
+                    + String.join("; ", unpersistedScenes));
         }
 
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "save", "Saving book...");
@@ -7721,7 +7887,13 @@ public class PictureBookUtil {
         // population group (charsGroup was re-routed above), NOT the empty legacy {bookGroupPath}/Characters
         // group. listCharacters reads from this stored path so the read path matches the write path.
         try { meta.set("charsGroupPath", charsGroup.get(FieldNames.FIELD_PATH)); } catch (Exception e) { logger.warn("Failed to record charsGroupPath on meta: " + e.getMessage()); }
-        saveMeta(user, bookGroupPath, meta);
+        // saveMeta returns null when neither the update nor the create of .pictureBookMeta persisted;
+        // discarding that turned a lost book into a 200. Same fail-loud rule as the scene guard above.
+        if (saveMeta(user, bookGroupPath, meta) == null) {
+            PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
+            throw new PictureBookException(500, "The book's scene list (" + metaScenes.size()
+                    + " scene(s)) was built but .pictureBookMeta could not be written to " + bookGroupPath);
+        }
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         OllamaModelUtil.unloadAll();
         return meta;

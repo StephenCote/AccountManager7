@@ -14,6 +14,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ConnectionDialectEnumType;
+import org.cote.accountmanager.schema.type.ConnectionUpstreamEnumType;
 import org.junit.Test;
 
 /**
@@ -108,6 +109,34 @@ public class TestDialectResolution extends BaseTest {
 		assertNull(resolve(null, null));
 		/// A UNKNOWN-dialect connection with no chatConfig also collapses to null.
 		assertNull(resolve(connection(ConnectionDialectEnumType.UNKNOWN), null));
+	}
+
+	@Test
+	public void testEmulatorDialectResolvesToEmulatorServiceAndUnknownUpstream() throws Exception {
+		/// EMULATOR is a real dialect with a same-named LLMServiceEnumType peer, so the by-name
+		/// mapping wins over any chatConfig.serviceType — including a conflicting OLLAMA.
+		LLMServiceEnumType resolved =
+			resolve(connection(ConnectionDialectEnumType.EMULATOR), chatConfig(LLMServiceEnumType.OLLAMA));
+		assertEquals(LLMServiceEnumType.EMULATOR, resolved);
+		assertEquals(LLMServiceEnumType.EMULATOR, resolve(connection(ConnectionDialectEnumType.EMULATOR), null));
+
+		/// Upstream inference must NOT invent a model-server family for the emulator: no explicit
+		/// upstream + EMULATOR dialect -> UNKNOWN through both the dialect path (resolveUpstream) and
+		/// the service-type floor (inferUpstream). Same KI-72 posture as OPENAI_COMPAT.
+		assertEquals(ConnectionUpstreamEnumType.UNKNOWN, ChatUtil.inferUpstream(LLMServiceEnumType.EMULATOR));
+		Method ru = ChatUtil.class.getDeclaredMethod("resolveUpstream", BaseRecord.class, LLMServiceEnumType.class);
+		ru.setAccessible(true);
+		assertEquals(ConnectionUpstreamEnumType.UNKNOWN,
+			ru.invoke(null, new Object[] { connection(ConnectionDialectEnumType.EMULATOR), LLMServiceEnumType.EMULATOR }));
+
+		/// getServiceUrl: the emulator:// pseudo-URL is passed through unchanged (no path suffix), so
+		/// LlmEmulator can parse the set name out of it.
+		Chat chat = new Chat();
+		chat.setServiceType(resolved);
+		chat.setServerUrl("emulator://harlots-eight");
+		OpenAIRequest req = new OpenAIRequest();
+		req.setModel("qwen3:8b");
+		assertEquals("emulator://harlots-eight", chat.getServiceUrl(req));
 	}
 
 	@Test

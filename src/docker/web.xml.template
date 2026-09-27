@@ -58,6 +58,25 @@
 		<param-name>http.read.timeout</param-name>
 		<param-value>${HTTP_READ_TIMEOUT}</param-value>
 	</context-param>
+	<!--
+		LLM emulator (system.connection.dialect = emulator, serverUrl = emulator://<set>). Directory that
+		holds one sub-directory per fixture set (<set>/manifest.json + <sha256>.json recordings). Empty
+		leaves the emulator inert: an EMULATOR connection then fails fast with a clear last-call error and
+		no network or filesystem access. Test stacks mount fixtures read-only here. Applied at startup only.
+	-->
+	<context-param>
+		<param-name>llm.emulator.fixtureRoot</param-name>
+		<param-value>${LLM_EMULATOR_FIXTURE_ROOT}</param-value>
+	</context-param>
+	<!--
+		LLM emulator RECORDER. When non-empty, every successful buffer-mode LLM exchange against a REAL
+		server is written as a replayable fixture under <recordDir>/<model>/<sha256>.json (request messages
+		and response content only - never auth tokens or headers). Leave empty in production.
+	-->
+	<context-param>
+		<param-name>llm.emulator.recordDir</param-name>
+		<param-value>${LLM_EMULATOR_RECORD_DIR}</param-value>
+	</context-param>
 	<context-param>
 		<param-name>isLog4jAutoInitializationDisabled</param-name>
 		<param-value>false</param-value>

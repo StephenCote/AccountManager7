@@ -263,9 +263,10 @@ const cardGameComponent = {
                     ctx.screen === "themeEditor" && themes.ThemeEditorUI ? m(themes.ThemeEditorUI, { ctx, NS }) : null,
                     ctx.screen === "designer" && designerCanvas.DesignerView ? m(designerCanvas.DesignerView, { ctx, NS }) : null
                 ])
-            ]),
-            page.components.dialog ? page.components.dialog.loadDialogs() : null,
-            page.loadToast()
+            ])
+            // NOTE: do NOT render page.loadToast() / dialog.loadDialogs() here. The
+            // router's shared layout (OverlayGuard) already mounts them once per page;
+            // a second copy duplicated every toast/dialog on /cardGame (P1-2).
         ]);
     }
 };
