@@ -22,6 +22,7 @@ import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.ExtractCheckpoint;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
 /// The chunk loop's CONTROL FLOW, driven through a scripted LLM instead of a live model.
@@ -834,6 +835,38 @@ public class TestExtractChunkLoop extends BaseTest {
 			assertNull("sourceText must never be sent", sc.get("sourceText"));
 			assertNull("sourceChunk is internal bookkeeping", sc.get("sourceChunk"));
 		}
+	}
+
+	/// The persisted scene note JSON (createSceneNote → sceneNoteStore) keeps sourceChunk — the
+	/// scene→chunk provenance the emulated Ux chapter test pins recording gaps on — while still
+	/// dropping the raw passage. Serialize/deserialize the store exactly as the note text would be.
+	@Test
+	public void TestSceneNoteStoreRetainsSourceChunkAndDropsSourceText() throws Exception {
+		Map<String, Object> scene = scene("Kept", "b7", 7);
+		scene.put("summary", "seven");
+		Map<String, Object> store = PictureBookUtil.sceneNoteStore(scene, 3);
+
+		String json = JSONUtil.exportObject(store);
+		assertNotNull(json);
+		Map<String, Object> back = JSONUtil.getMap(json.getBytes(java.nio.charset.StandardCharsets.UTF_8), String.class, Object.class);
+		assertNotNull(back);
+		assertEquals("sourceChunk must survive the note round-trip", 7, ((Number) back.get("sourceChunk")).intValue());
+		assertFalse("sourceText must be stripped before persistence", back.containsKey("sourceText"));
+		assertEquals("Kept", back.get("title"));
+		assertEquals(3, ((Number) back.get("sceneIndex")).intValue());
+		assertEquals("blurb is the summary at persistence time", "seven", back.get("blurb"));
+
+		/// The input map is not mutated (the caller still needs sourceText for the character reduce).
+		assertEquals("PASSAGE-7", scene.get("sourceText"));
+
+		/// A scene supplied without provenance persists without the key rather than with a bogus 0.
+		Map<String, Object> direct = new LinkedHashMap<>();
+		direct.put("title", "Direct");
+		direct.put("summary", "s");
+		direct.put("sourceText", "raw");
+		Map<String, Object> directStore = PictureBookUtil.sceneNoteStore(direct, 0);
+		assertFalse(directStore.containsKey("sourceChunk"));
+		assertFalse(directStore.containsKey("sourceText"));
 	}
 
 	/// Checkpointing is skipped entirely when no work id is supplied — the in-memory callers and

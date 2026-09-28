@@ -157,8 +157,11 @@ document into a run over another.
 Each scene carries a transient ~2000-char `sourceText` (the passage it came from), needed later by
 `createFromScenes` for its per-character reduce. Persisting it would grow the checkpoint by the size
 of the whole document as scenes accumulate, so the checkpoint stores the integer `sourceChunk`
-instead and rehydrates `sourceText` from the identical chunk list on resume. `sourceChunk` is
-stripped again in `createSceneNote`, alongside `sourceText`.
+instead and rehydrates `sourceText` from the identical chunk list on resume. When the scenes are
+finally persisted as notes (`createSceneNote` → `sceneNoteStore`), only `sourceText` is stripped;
+`sourceChunk` is **retained** in the scene note JSON (and mirrored onto the `olio.pictureBookScene`
+DTO by `buildSceneEntry`) so scene→chunk provenance survives. It is still never sent to the LLM —
+`scenesForPrompt` whitelists `PROMPT_SCENE_FIELDS`, which excludes both.
 
 ### Lifecycle — the part that is easy to get wrong
 

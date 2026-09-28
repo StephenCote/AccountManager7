@@ -4678,7 +4678,8 @@ public class PictureBookUtil {
                 scene.put("sourceText", chunkText);
                 // Durable counterpart to the transient sourceText above: the checkpoint persists
                 // this integer instead of the ~2000-char passage and rehydrates sourceText from it
-                // on resume.
+                // on resume. Unlike sourceText it is also RETAINED in the scene note JSON
+                // (sceneNoteStore) so scene->chunk provenance survives past extraction.
                 scene.put("sourceChunk", chunkIndex);
                 sceneList.add(scene);
             }
@@ -5694,14 +5695,12 @@ public class PictureBookUtil {
      * (NarrativeUtil pronouns/labels, BodyStatsProvider, StatisticsUtil, Chat, PromptUtil,
      * VectorProvider, …), so any other case silently falls through to the female branch.
      * Never throws — any unrecognized/blank input maps to "" so a bad LLM value can never
-     * abort character creation.
+     * abort character creation. Delegates to {@link PbGenderUtil#normalize(String)}, the first
+     * step of the deterministic gender chain; "" here means the caller continues down that chain
+     * (name list, pronouns, hash) rather than consulting the random baseline.
      */
     private static String normalizeGender(String raw) {
-        if (raw == null) return "";
-        String g = raw.trim().toLowerCase();
-        if (g.equals("male") || g.equals("m")) return "male";
-        if (g.equals("female") || g.equals("f")) return "female";
-        return "";  // undetermined — caller falls back to baseline
+        return PbGenderUtil.normalize(raw);
     }
 
     // C2: comma-separated human-readable RaceEnumType / EthnicityEnumType values, used to CONSTRAIN the
@@ -6027,6 +6026,12 @@ public class PictureBookUtil {
             scene.set("title", sceneData.getOrDefault("title", "Scene " + idx));
             String desc = (String) sceneData.getOrDefault("blurb", sceneData.getOrDefault("summary", sceneData.getOrDefault("description", "")));
             scene.set(FieldNames.FIELD_DESCRIPTION, desc);
+            // Scene -> manuscript-chunk provenance (see sceneNoteStore). Only set when the scene
+            // actually came out of the chunk loop; scenes supplied directly carry none.
+            Object sourceChunk = sceneData.get("sourceChunk");
+            if (sourceChunk instanceof Number && scene.hasField("sourceChunk")) {
+                scene.set("sourceChunk", ((Number) sourceChunk).intValue());
+            }
             List<String> charIds = new ArrayList<>();
             Object charsObj = sceneData.get("characters");
             if (charsObj instanceof List && charObjectIds != null) {
@@ -6524,10 +6529,14 @@ public class PictureBookUtil {
      *   via {@code OlioContextUtil.getOlioContext(user, dataPath)} — KI-30. May be null/empty, in
      *   which case baseline generation is skipped and the character falls back to the pre-KI-30
      *   sparse-field creation path (non-fatal).
+     * @param passages the manuscript passages this character appears in (the same bounded text
+     *   the reduce-character prompt receives), or null. Read only by the pronoun step of
+     *   {@link PbGenderUtil#resolve} when the LLM left {@code gender} empty and the name list did
+     *   not know the first name.
      */
     @SuppressWarnings("unchecked")
     private static BaseRecord createCharPerson(BaseRecord user, BaseRecord chatConfig, Map<String, Object> charData, BaseRecord charsGroup, String genre,
-            List<String> failedApparelOut, List<String> failedStatisticsOut, String dataPath, OlioContext octxHint) {
+            List<String> failedApparelOut, List<String> failedStatisticsOut, String dataPath, OlioContext octxHint, String passages) {
         String name = (String) charData.get("name");
         if (name == null || name.isEmpty()) return null;
 
@@ -6597,16 +6606,23 @@ public class PictureBookUtil {
             // Apply gender — clamped to the ecosystem-canonical LOWERCASE "male"/"female" only,
             // never a raw/unrecognized LLM value (see normalizeGender()). Must happen before
             // create() so a bad LLM value never aborts character creation.
-            String gender = normalizeGender((String) charData.get("gender"));
-            // Undetermined LLM gender: fall back to the random baseline's gender. CharacterUtil
-            // .randomPerson already stores lowercase "male"/"female", but lowercase() here keeps
-            // the value canonical regardless of the baseline's source so case-sensitive consumers
-            // (NarrativeUtil/BodyStatsProvider/StatisticsUtil) don't silently render female.
-            if ((gender == null || gender.isEmpty()) && baseline != null) {
-                Object baseGender = baseline.get(FieldNames.FIELD_GENDER);
-                if (baseGender != null && !baseGender.toString().isBlank())
-                    gender = baseGender.toString().trim().toLowerCase();
-            }
+            //
+            // DETERMINISTIC when the LLM leaves it empty: llm -> names word list -> pronouns in
+            // the character's own passages -> stable hash of the name (PbGenderUtil.resolve).
+            // The random baseline's gender is deliberately NOT consulted any more: under the
+            // emulator the same manuscript must yield the same characters on every replay, and
+            // CharacterUtil.randomPerson's Math.random() coin toss made portraits, apparel and
+            // statistics flip between runs for every character the text never gendered.
+            final OlioContext octxForGender = octx;
+            PbGenderUtil.Resolution genderResolution = PbGenderUtil.resolve((String) charData.get("gender"), name, firstName,
+                    passages, fn -> PbGenderUtil.genderFromName(octxForGender, fn));
+            String gender = genderResolution.gender();
+            logger.info("gender resolved for \"" + name + "\": " + gender + " via "
+                    + genderResolution.source().name().toLowerCase());
+            // Write it back so every downstream charData reader — buildPortraitPromptFromExtractedData
+            // (which defaults to "She"/"woman" on an empty gender), the fallback portrait prompt
+            // below, describePhysical — sees the same resolved value the record carries.
+            charData.put("gender", gender);
             charPerson.set("gender", gender);
 
             // Alignment is the ONLY thing taken from the random baseline here. Race is NEVER taken
@@ -7186,20 +7202,9 @@ public class PictureBookUtil {
     private static BaseRecord createSceneNote(BaseRecord user, BaseRecord scenesGroup, Map<String, Object> sceneData, int idx,
             Set<String> usedNoteNames) {
         String title = (String) sceneData.getOrDefault("title", "Scene " + idx);
-        String summary = (String) sceneData.getOrDefault("summary", "");
         String noteName = uniqueSceneNoteName(title, idx, usedNoteNames);
 
-        // Store scene metadata + summary as JSON in the text field
-        // (data.note has no 'description' field — summary goes in the metadata)
-        Map<String, Object> sceneStore = new LinkedHashMap<>(sceneData);
-        // Drop the transient raw content block (used only to reduce per-character detail during
-        // createFromScenes) so it never persists into every scene note's text JSON.
-        sceneStore.remove("sourceText");
-        // Likewise the checkpoint's chunk-index bookkeeping: it only means anything while an
-        // extraction is mid-flight, and the book's scene notes outlive that entirely.
-        sceneStore.remove("sourceChunk");
-        sceneStore.put("sceneIndex", idx);
-        sceneStore.put("blurb", summary);
+        Map<String, Object> sceneStore = sceneNoteStore(sceneData, idx);
 
         try {
             BaseRecord existing = findSceneNoteByName(user, scenesGroup, noteName);
@@ -7220,6 +7225,31 @@ public class PictureBookUtil {
             logger.error("Failed to create scene note: " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Exactly what {@link #createSceneNote} serializes into the scene note's {@code text} JSON:
+     * the scene map plus {@code sceneIndex}/{@code blurb}, minus the transient {@code sourceText}.
+     *
+     * <p>{@code sourceText} (the raw ~2000-char passage, used only to reduce per-character detail
+     * during {@code createFromScenes}) is dropped so it never bloats every scene note. Its integer
+     * counterpart {@code sourceChunk} - the 0-based index of the manuscript chunk the scene was
+     * extracted from - is <b>retained</b>: it is a handful of bytes, and it is the only durable
+     * link from a persisted scene back to the chunk (and therefore the LLM exchange) that produced
+     * it, which the emulated Ux chapter test uses to pin declared recording gaps. It is still
+     * never sent to the LLM ({@link #scenesForPrompt} whitelists {@link #PROMPT_SCENE_FIELDS}).
+     *
+     * <p>Package-private so the persistence shape is testable without a database.
+     */
+    static Map<String, Object> sceneNoteStore(Map<String, Object> sceneData, int idx) {
+        String summary = (String) sceneData.getOrDefault("summary", "");
+        // Store scene metadata + summary as JSON in the text field
+        // (data.note has no 'description' field — summary goes in the metadata)
+        Map<String, Object> sceneStore = new LinkedHashMap<>(sceneData);
+        sceneStore.remove("sourceText");
+        sceneStore.put("sceneIndex", idx);
+        sceneStore.put("blurb", summary);
+        return sceneStore;
     }
 
     /**
@@ -7821,7 +7851,7 @@ public class PictureBookUtil {
                     }
                 }
             }
-            BaseRecord cp = createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath, pb2OlioCtx);
+            BaseRecord cp = createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath, pb2OlioCtx, passages);
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
                 persistCharacterSceneAttributes(user, cp, charSceneIndices.get(cname),

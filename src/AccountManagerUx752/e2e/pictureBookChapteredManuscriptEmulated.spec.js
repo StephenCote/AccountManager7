@@ -8,7 +8,9 @@
  *
  * Derived from pictureBookChapteredManuscriptUx.spec.js (live LLM). This spec is deterministic and fast,
  * and runs in one of two modes, decided by whether llm-fixtures/harlots-eight/ holds recorded
- * completions (<sha256>.json) next to its manifest:
+ * completions next to its manifest — committed as `<sha256>.json` entries inside `fixtures.zip`, with
+ * optional loose `<sha256>.json` recorder drops (which win over a same-named zip entry); both are read
+ * through helpers/llmFixtures.js:
  *
  *   REPLAY MODE (recordings present) — the static cache Stephen asked for. The fixtures are the real
  *   model's answers (goekdenizguelmez/JOSIEFIED-Qwen3:8b on 192.168.1.42), captured by running the live
@@ -17,6 +19,15 @@
  *   proof: every persisted scene title must appear in some recorded completion (a synthesized title
  *   never can — it starts with a chapter heading). Cast assertions are ground truth about the manuscript
  *   (fairies exist; no off-race labels; no ethnicity) and hold for the real model's output.
+ *
+ *   RECORDING GAPS (replay mode) — the manifest may declare `recordingGaps`: [{chapter (1-based),
+ *   fromChunk (0-based), reason}]. The recording run lost chapter 2 from chunk 15 (Ollama stalled past
+ *   the 905 s latch), and because each chunk's prompt carries the previous chunk's scene list, every
+ *   later chunk of that chapter builds a request the recording never saw — the synthesizer answers the
+ *   rest of the chapter. So a scene is EXEMPT from the recorded-title check iff its chapter has a gap
+ *   and its `sourceChunk` >= that gap's fromChunk, and the gap is PINNED: the emulator's per-kind
+ *   extract-chunk SYNTH count must equal Σ(K − fromChunk) over the gap chapters actually processed, with
+ *   K the chapter's chunk count. With no gap declared for any processed chapter, replay demands synth == 0.
  *
  *   SYNTH MODE (manifest only) — the emulator's synthesized first scene title for a passage begins with
  *   the passage's first non-blank line, so "first scene of chapter N starts with 'Chapter N'" proves
@@ -62,6 +73,7 @@
 import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser, ensurePath } from './helpers/api.js';
 import { login, screenshot } from './helpers/auth.js';
+import { listFixtureNames, readFixture } from './helpers/llmFixtures.js';
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
@@ -92,12 +104,36 @@ const HARLOTS_CHAPTERS = 21;
 const EMU_MODEL = process.env.PB_EMU_MODEL || 'goekdenizguelmez/JOSIEFIED-Qwen3:8b';
 const MAIN_SET = 'harlots-eight';
 // Fixture sets are bind-mounted read-only into the container from this repo directory, so the host-side
-// spec can see whether the main set holds real recordings (<sha256>.json) or only its manifest.
+// spec can see whether the main set holds real recordings or only its manifest. Recordings are the
+// `<sha256>.json` entries of <set>/fixtures.zip plus any loose `<sha256>.json` recorder drops (loose
+// wins); helpers/llmFixtures.js reads both and THROWS on a corrupt zip rather than reporting an empty set.
 const FIXTURE_ROOT = path.resolve(__dirname, '../../AccountManagerObjects7/src/test/resources/llm-fixtures');
-const FIXTURE_FILE_RE = /^[0-9a-f]{64}\.json$/;
 function realFixtureFiles(set) {
-    try { return fs.readdirSync(path.join(FIXTURE_ROOT, set)).filter(f => FIXTURE_FILE_RE.test(f)); }
-    catch (_) { return []; }
+    return listFixtureNames(path.join(FIXTURE_ROOT, set));
+}
+/** The set's manifest.json (loose, always), or {} when the set directory does not exist. */
+function readManifest(set) {
+    const p = path.join(FIXTURE_ROOT, set, 'manifest.json');
+    if (!fs.existsSync(p)) return {};
+    return JSON.parse(fs.readFileSync(p, 'utf8')); // malformed manifest = loud failure, by design
+}
+/**
+ * Manifest-declared `recordingGaps`, validated and normalized to Map<chapter (1-based), fromChunk (0-based)>.
+ * Several gaps for one chapter collapse to the smallest fromChunk (everything after the first lost
+ * chunk cascades anyway). Anything not of the shape {chapter: int >= 1, fromChunk: int >= 0} fails the
+ * spec — a typo here would silently exempt nothing or everything.
+ */
+function recordingGaps(set) {
+    const raw = readManifest(set).recordingGaps;
+    const gaps = new Map();
+    if (raw === undefined) return gaps;
+    if (!Array.isArray(raw)) throw new Error(set + '/manifest.json recordingGaps must be an array, got ' + JSON.stringify(raw));
+    raw.forEach((g, i) => {
+        const ok = g && Number.isInteger(g.chapter) && g.chapter >= 1 && Number.isInteger(g.fromChunk) && g.fromChunk >= 0;
+        if (!ok) throw new Error(set + '/manifest.json recordingGaps[' + i + '] must be {chapter: int>=1, fromChunk: int>=0}, got ' + JSON.stringify(g));
+        gaps.set(g.chapter, gaps.has(g.chapter) ? Math.min(gaps.get(g.chapter), g.fromChunk) : g.fromChunk);
+    });
+    return gaps;
 }
 // Replay mode: the main set carries real recorded completions, so the emulator answers from the cache
 // (HIT) and only falls back to the synthesizer for a request whose key no fixture matches. Synth mode:
@@ -204,10 +240,12 @@ function emulatorKindTally(sinceIso, set) {
 function recordedSceneTitles(set) {
     const titles = new Set();
     const titleRe = /"title"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+    const setDir = path.join(FIXTURE_ROOT, set);
     for (const f of realFixtureFiles(set)) {
         let content = '';
+        const text = readFixture(setDir, f, 'utf8'); // loose drop first, else the fixtures.zip entry; a CRC/inflate failure THROWS
         try {
-            const fx = JSON.parse(fs.readFileSync(path.join(FIXTURE_ROOT, set, f), 'utf8'));
+            const fx = JSON.parse(text);
             content = String((fx.response && fx.response.content) || '');
         } catch (_) { continue; }
         let m;
@@ -450,12 +488,22 @@ async function pickChatConfig(page, dialog, configName) {
     await expect(cfgField).toContainText(configName);
 }
 
+// The wizard's progress label (pictureBook.js onExtractProgress): "Chapter i/N — Extracting scenes cur/K".
+// K is the chapter's chunk count (the job's `total`, set by the chunked extraction path). Tolerates
+// em dash / en dash / hyphen between the two halves.
+const PROGRESS_RE = /Chapter\s+(\d+)\s*\/\s*(\d+)\s*[—–-]\s*Extracting scenes\s+(\d+)\s*\/\s*(\d+)/;
+
 /**
  * Click Extract and wait for the fan-out to end. Returns
- *   { outcome: 'landed' | 'summary' | 'error', url, elapsedMs, headline, problems, errorText }.
+ *   { outcome: 'landed' | 'summary' | 'error', url, elapsedMs, headline, problems, errorText, chunkTotals }.
  * 'landed' = clean run (wizard closed, workflow route). 'summary' = wizard stayed open on the persistent
  * per-chapter report. 'error' = extractError rendered. Throws if the dialog vanished without navigating
  * (the reported "script error and disappears" symptom) or the budget ran out.
+ *
+ * `chunkTotals` is { [chapter]: K } for every chapter whose "Extracting scenes cur/K" label this 2-second
+ * poll happened to observe. It is EVIDENCE, not the authority: in emulator mode a whole chapter can finish
+ * between two polls, so chapters may be missing from it. The stats block cross-checks it against the
+ * captured job payloads (the same `total` the label renders) and fails on any disagreement.
  */
 async function runExtract(page, budgetMs, tag) {
     const extractBtn = page.locator('button:has-text("Extract")').first();
@@ -465,9 +513,10 @@ async function runExtract(page, budgetMs, tag) {
 
     const errorRe = /Extraction stopped at chapter|No chapters were saved|Extraction was cancelled|No scenes were extracted from any chapter|Extraction failed/;
     let lastProgress = '';
+    const chunkTotals = {};
     for (;;) {
         if (/\/picture-book\/[^/]+\/workflow/.test(page.url())) {
-            return { outcome: 'landed', url: page.url(), elapsedMs: Date.now() - startedAt, problems: [] };
+            return { outcome: 'landed', url: page.url(), elapsedMs: Date.now() - startedAt, problems: [], chunkTotals };
         }
         const dialog = page.locator('[role="dialog"]').first();
         const dialogVisible = await dialog.isVisible().catch(() => false);
@@ -478,7 +527,7 @@ async function runExtract(page, budgetMs, tag) {
                 const problems = await page.locator('[data-pb-chapter-problem]').allTextContents().catch(() => []);
                 await screenshot(page, 'pb-emu-' + tag + '-summary');
                 return { outcome: 'summary', url: page.url(), elapsedMs: Date.now() - startedAt,
-                    headline: headline.trim(), problems: problems.map(p => p.trim()) };
+                    headline: headline.trim(), problems: problems.map(p => p.trim()), chunkTotals };
             }
             // Bounded: the dialog can close (clean landing) between isVisible() and textContent(), and an
             // unbounded textContent() would then wait forever for an element that is never coming back.
@@ -488,12 +537,21 @@ async function runExtract(page, budgetMs, tag) {
             if (m) {
                 await screenshot(page, 'pb-emu-' + tag + '-error');
                 return { outcome: 'error', url: page.url(), elapsedMs: Date.now() - startedAt, problems: [],
-                    errorText: txt.substring(txt.indexOf(m[0]), txt.indexOf(m[0]) + 800) };
+                    errorText: txt.substring(txt.indexOf(m[0]), txt.indexOf(m[0]) + 800), chunkTotals };
             }
             const prog = (txt.match(/Chapter\s+\d+\s*\/\s*\d+[^.]{0,80}/) || [''])[0].trim();
             if (prog && prog !== lastProgress) {
                 lastProgress = prog;
                 console.log('[pb-emu:' + tag + '] +' + fmtMin(Date.now() - startedAt) + ' ' + prog);
+            }
+            const pm = PROGRESS_RE.exec(txt);
+            if (pm) {
+                const chapter = parseInt(pm[1], 10), k = parseInt(pm[4], 10);
+                if (chunkTotals[chapter] !== undefined && chunkTotals[chapter] !== k) {
+                    throw new Error('[' + tag + '] progress label changed chapter ' + chapter + "'s chunk count from "
+                        + chunkTotals[chapter] + ' to ' + k + ' mid-run: ' + JSON.stringify(txt.substring(0, 300)));
+                }
+                chunkTotals[chapter] = k;
             }
         } else if (Date.now() - startedAt > 15000) {
             await screenshot(page, 'pb-emu-' + tag + '-dialog-vanished');
@@ -651,11 +709,19 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         const recordedTitles = REPLAY ? recordedSceneTitles(MAIN_SET) : null;
         if (REPLAY) console.log('[pb-emu] replay mode: ' + realFixtureFiles(MAIN_SET).length + ' recorded fixtures, '
             + recordedTitles.size + ' distinct recorded scene titles');
+        // Manifest-declared recording gaps (see the header). Only gaps for chapters this run actually
+        // processed (1..N) matter; a gap declared for chapter 15 is inert under PB_UX_MAX_CHAPTERS=10.
+        const gapsDeclared = recordingGaps(MAIN_SET);
+        const gapsProcessed = new Map([...gapsDeclared].filter(([ch]) => ch >= 1 && ch <= N));
+        console.log('[pb-emu] recordingGaps declared=' + JSON.stringify([...gapsDeclared]) + ' processed=' + JSON.stringify([...gapsProcessed]));
         const sceneCounts1 = {};
         const firstTitles = {};
         const parityFailures = [];
         const crossChapter = [];
         const unrecorded = [];
+        const badSourceChunk = [];
+        const exemptCounts = {};
+        const maxSourceChunk = {}; // per chapter, for the weaker K fallback in the stats block
         const allHeadings = ranges.map(r => r.title);
         for (let n = 1; n <= N; n++) {
             const b = byChapter.get(n);
@@ -664,13 +730,31 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
             sceneCounts1[n] = list.length;
             expect(['failed', 'unknown'], 'chapter ' + n + ' status ' + b.bookStatus).not.toContain(String(b.bookStatus).toLowerCase());
             expect(list.length, 'chapter ' + n + ' (' + handed[n - 1].title + ') has scenes').toBeGreaterThan(0);
+            // Every persisted scene must say which 0-based extraction chunk added it (PictureBookUtil
+            // .mergeChunkResult stamps it; the scene read path must keep it). Holds in both modes.
+            for (const s of list) {
+                const sc = s.sourceChunk;
+                if (!(Number.isInteger(sc) && sc >= 0)) {
+                    badSourceChunk.push('chapter ' + n + ' scene "' + String(s.title || '') + '": sourceChunk=' + JSON.stringify(sc));
+                } else {
+                    maxSourceChunk[n] = Math.max(maxSourceChunk[n] === undefined ? -1 : maxSourceChunk[n], sc);
+                }
+            }
             const first = String((list[0] && list[0].title) || '');
             firstTitles[n] = first;
             const heading = handed[n - 1].title;
             if (REPLAY) {
+                const fromChunk = gapsProcessed.has(n) ? gapsProcessed.get(n) : null;
                 for (const s of list) {
                     const t = String(s.title || '').trim();
-                    if (!recordedTitles.has(t)) unrecorded.push('chapter ' + n + ': "' + t + '"');
+                    if (recordedTitles.has(t)) continue;
+                    // EXEMPT iff the chapter has a declared gap and the scene came from a chunk at/after it.
+                    if (fromChunk !== null && Number.isInteger(s.sourceChunk) && s.sourceChunk >= fromChunk) {
+                        exemptCounts[n] = (exemptCounts[n] || 0) + 1;
+                        continue;
+                    }
+                    unrecorded.push('chapter ' + n + ': "' + t + '"' + (fromChunk !== null
+                        ? ' (sourceChunk ' + JSON.stringify(s.sourceChunk) + ' is before the declared gap at chunk ' + fromChunk + ')' : ''));
                 }
             } else {
                 const okOwn = first.startsWith(heading);
@@ -694,8 +778,13 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         }
         console.log('[pb-emu] scenes per chapter: ' + JSON.stringify(sceneCounts1));
         console.log('[pb-emu] first scene title per chapter: ' + JSON.stringify(firstTitles));
+        console.log('[pb-emu] max sourceChunk per chapter: ' + JSON.stringify(maxSourceChunk));
+        if (REPLAY) console.log('[pb-emu] unrecorded scenes exempted by declared recording gaps, per chapter: '
+            + JSON.stringify(exemptCounts) + (gapsProcessed.size ? '' : ' (no gap declared for chapters 1..' + N + ')'));
+        expect(badSourceChunk, 'scenes without a non-negative integer sourceChunk (0-based extraction chunk that added the scene)').toEqual([]);
         expect(parityFailures, 'first scene of each chapter starts with its own heading').toEqual([]);
-        expect(unrecorded, 'scene titles not found in any recorded completion (request key drifted from the recording run)').toEqual([]);
+        expect(unrecorded, 'scene titles not found in any recorded completion and not covered by a declared recordingGap '
+            + '(request key drifted from the recording run)').toEqual([]);
         expect(crossChapter, 'scene titles that begin with a DIFFERENT chapter heading').toEqual([]);
 
         // ── Emulator stats (assertion 8): configured, no misses, cache hit / synthesis by mode ──
@@ -706,7 +795,8 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         if (stats1.miss !== 0 || missLines.length) {
             console.log('[pb-emu] docker log evidence:\n' + missLines.join('\n'));
         }
-        console.log('[pb-emu] emulator answers by kind: ' + JSON.stringify(emulatorKindTally(runStartedIso, MAIN_SET)));
+        const kindTally = emulatorKindTally(runStartedIso, MAIN_SET);
+        console.log('[pb-emu] emulator answers by kind: ' + JSON.stringify(kindTally));
         expect(stats1.miss, 'emulator fixture misses (docker logs: ' + missLines.slice(0, 5).join(' || ') + ')').toBe(0);
         if (REPLAY) {
             expect(stats1.hit, 'replay mode: recorded completions were served').toBeGreaterThan(0);
@@ -714,6 +804,71 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
             expect(stats1.synth, 'synth mode: emulator synthesized at least one response').toBeGreaterThan(0);
         }
         expect(stats1.fault, 'no faults in the ' + MAIN_SET + ' set').toBe(0);
+
+        // ── Pin the recording gap (replay mode) ─────────────────────────────────────────────
+        // fanOutChaptersExtract is sequential — one POST /extract-scenes-only job per chapter, awaited
+        // before the next — so cap.jobs[i] is chapter i+1's job.
+        expect(cap.jobs.length, 'one extract-scenes-only job per chapter handed to the wizard').toBe(N);
+        // K (chunk count) per chapter. Authority: the captured job payload's `total`, which is the
+        // number the wizard renders as K in "Extracting scenes cur/K" (JobService.describe always
+        // emits it; the chunked extraction path sets it to chunks.size()). The DOM observations from
+        // runExtract are cross-checked against it — in emulator mode a chapter can finish inside one
+        // 2-second poll, so the DOM alone may miss chapters, but where it saw a K it must be the same K.
+        const chunkCount = {};
+        const kDisagreements = [];
+        for (let n = 1; n <= N; n++) {
+            const payload = cap.jobPayloads.get(cap.jobs[n - 1].jobId) || {};
+            const fromJob = Number.isInteger(payload.total) && payload.total > 0 ? payload.total : null;
+            const fromDom = run1.chunkTotals[n];
+            if (fromJob !== null && fromDom !== undefined && fromDom !== fromJob) {
+                kDisagreements.push('chapter ' + n + ': wizard label K=' + fromDom + ' vs job total=' + fromJob);
+            }
+            if (fromJob !== null) chunkCount[n] = fromJob;
+            else if (fromDom !== undefined) chunkCount[n] = fromDom;
+            else if (maxSourceChunk[n] !== undefined) {
+                // Weaker fallback: max(sourceChunk)+1 is a LOWER bound on K — trailing chunks that
+                // yielded no scenes are invisible to it — so it can only make expectedExtractSynth
+                // too small, never too large. Only reached if neither the job payload nor the label
+                // exposed a chunk count for this chapter.
+                chunkCount[n] = maxSourceChunk[n] + 1;
+                console.log('[pb-emu] chapter ' + n + ': chunk count from max(sourceChunk)+1 = ' + chunkCount[n] + ' (weaker: lower bound)');
+            }
+        }
+        console.log('[pb-emu] chunk count per chapter: ' + JSON.stringify(chunkCount) + ' (wizard label saw ' + JSON.stringify(run1.chunkTotals) + ')');
+        expect(kDisagreements, 'wizard progress label K vs job payload total').toEqual([]);
+        if (REPLAY) {
+            const extractTally = kindTally['extract-chunk'] || { hit: 0, synth: 0 };
+            const dockerUnavailable = dockerLogLines(runStartedIso, ['<docker logs unavailable']).length > 0;
+            if (gapsProcessed.size === 0) {
+                // No gap declared for any processed chapter: the cache must have answered EVERYTHING.
+                expect(stats1.synth, 'replay mode with no declared recordingGaps in chapters 1..' + N
+                    + ': the emulator must synthesize nothing').toBe(0);
+            } else {
+                // Each gap chapter loses chunks fromChunk..K-1 to the synthesizer (the lost chunk plus
+                // every chained chunk after it). Nothing else may be synthesized.
+                let expectedExtractSynth = 0;
+                const perChapter = {};
+                for (const [ch, fromChunk] of gapsProcessed) {
+                    expect(chunkCount[ch], 'chunk count K for gap chapter ' + ch + ' could not be determined').toBeGreaterThan(0);
+                    expect(fromChunk, 'gap chapter ' + ch + ': fromChunk ' + fromChunk + ' must be < K=' + chunkCount[ch]).toBeLessThan(chunkCount[ch]);
+                    perChapter[ch] = chunkCount[ch] - fromChunk;
+                    expectedExtractSynth += perChapter[ch];
+                }
+                console.log('[pb-emu] expected extract-chunk SYNTH from declared gaps: ' + expectedExtractSynth
+                    + ' ' + JSON.stringify(perChapter) + '; emulator extract-chunk tally: ' + JSON.stringify(extractTally)
+                    + '; reduce-character: ' + JSON.stringify(kindTally['reduce-character'] || { hit: 0, synth: 0 })
+                    + '; guess-apparel: ' + JSON.stringify(kindTally['guess-apparel'] || { hit: 0, synth: 0 }));
+                // The per-kind tally comes from the container log; without it the gap cannot be pinned,
+                // and an unpinned gap is exactly the hole this block exists to close — so fail, do not skip.
+                expect(dockerUnavailable, 'docker logs are required to pin the declared recording gap (PB_EMU_CONTAINER=' + CONTAINER + ')').toBe(false);
+                expect(extractTally.synth, 'emulator extract-chunk SYNTH count == Σ(K − fromChunk) over processed gap chapters').toBe(expectedExtractSynth);
+                // Exempted scenes must actually live in the synthesized region: at least one per gap chapter
+                // (a synthesized chunk always yields additions), else the exemption was never exercised.
+                for (const ch of gapsProcessed.keys()) {
+                    expect(exemptCounts[ch] || 0, 'gap chapter ' + ch + ': scenes exempted by the declared gap').toBeGreaterThan(0);
+                }
+            }
+        }
 
         // ── Series card bundling (assertion 6a) ─────────────────────────────────────────────
         await page.goto('/#!/picture-book');

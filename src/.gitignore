@@ -22,3 +22,7 @@ e2e/screenshots/
 **/.env
 !.env.example
 !**/.env.example
+
+# Loose LLM emulator recordings (<sha256>.json recorder drops) are local overrides; the committed copies live in each set's fixtures.zip, and manifest.json stays loose.
+AccountManagerObjects7/src/test/resources/llm-fixtures/*/*.json
+!AccountManagerObjects7/src/test/resources/llm-fixtures/*/manifest.json

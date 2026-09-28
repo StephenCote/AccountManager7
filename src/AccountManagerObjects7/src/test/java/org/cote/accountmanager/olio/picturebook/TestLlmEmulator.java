@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio.picturebook;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -7,6 +8,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.ByteArrayOutputStream;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -17,6 +19,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
@@ -765,5 +769,493 @@ public class TestLlmEmulator extends BaseTest {
 		} finally {
 			deleteTree(rec);
 		}
+	}
+
+	// ------------------------------------------------------------------------------------------------
+	// 7. Zip-bundled fixtures: <set>/fixtures.zip with <sha256>.json entries at the zip ROOT
+	// ------------------------------------------------------------------------------------------------
+
+	/// A recorded-fixture JSON document for req whose assistant content is marker.
+	private static byte[] fixtureJson(OpenAIRequest req, String marker) {
+		String key = LlmEmulator.requestKey(req);
+		return ("{\"key\":\"" + key + "\",\"kind\":\"extract-chunk\",\"model\":\"" + MODEL + "\",\"response\":{\"content\":"
+			+ jsonQuote(marker) + "}}").getBytes(StandardCharsets.UTF_8);
+	}
+
+	/// Build a zip in memory from (entryName → bytes) pairs, in order. A name ending in '/' is a
+	/// directory entry. Uses java.util.zip only — the same reader the emulator uses.
+	private static byte[] zipOf(Object... nameBytesPairs) throws Exception {
+		return zipOf(java.util.zip.Deflater.DEFAULT_COMPRESSION, nameBytesPairs);
+	}
+
+	private static byte[] zipOf(int deflateLevel, Object[] nameBytesPairs) throws Exception {
+		ByteArrayOutputStream bos = new ByteArrayOutputStream();
+		try (ZipOutputStream zout = new ZipOutputStream(bos)) {
+			zout.setLevel(deflateLevel);
+			for (int i = 0; i < nameBytesPairs.length; i += 2) {
+				String name = (String) nameBytesPairs[i];
+				byte[] data = (byte[]) nameBytesPairs[i + 1];
+				zout.putNextEntry(new ZipEntry(name));
+				if (data != null && data.length > 0) zout.write(data);
+				zout.closeEntry();
+			}
+		}
+		return bos.toByteArray();
+	}
+
+	private Path writeZip(String set, byte[] zipBytes) throws Exception {
+		Path zip = tmpRoot.resolve(set).resolve(LlmEmulator.FIXTURES_ZIP);
+		Files.write(zip, zipBytes);
+		return zip;
+	}
+
+	private static String sseBody(HttpResponse<Stream<String>> resp) {
+		StringBuilder body = new StringBuilder();
+		resp.body().forEach(l -> body.append(l).append('\n'));
+		return body.toString();
+	}
+
+	/// (i) A fixture that exists ONLY inside fixtures.zip is served as a HIT with the recorded content.
+	/// The manifest stays loose and strict: a zip fixture must satisfy strict mode exactly like a loose
+	/// one, so a set shipped as manifest.json + fixtures.zip is fully usable with no loose fixtures.
+	@Test
+	public void testZipOnlyFixtureIsServedAsHit() throws Exception {
+		String set = newSet("{\"strict\": true, \"kinds\": {}, \"faults\": []}");
+		OpenAIRequest req = bareRequest(MODEL, template(EXTRACT_CHUNK, "system"), extractChunkUser(CHUNK + "\n(zip only)"));
+		String key = LlmEmulator.requestKey(req);
+		writeZip(set, zipOf(key + ".json", fixtureJson(req, "ZIP-ONLY-MARKER-" + key.substring(0, 8))));
+		assertFalse("test premise: no loose fixture for this key", Files.exists(tmpRoot.resolve(set).resolve(key + ".json")));
+
+		HttpResponse<Stream<String>> resp = LlmEmulator.respond(LlmEmulator.SCHEME + set, req, null).get();
+		assertEquals("zip fixture must be served, not a strict miss", 200, resp.statusCode());
+		String body = sseBody(resp);
+		assertTrue("replayed SSE must carry the ZIP fixture's recorded content: " + body, body.contains("ZIP-ONLY-MARKER-" + key.substring(0, 8)));
+		assertTrue(body.contains("data: [DONE]"));
+
+		Map<String, Long> st = LlmEmulator.stats();
+		assertEquals("a zip fixture is a HIT", 1L, (long) st.get("hit"));
+		assertEquals(0L, (long) st.get("miss"));
+		assertEquals(0L, (long) st.get("synth"));
+		assertEquals("stats().fixtures counts the loaded zip entries", 1L, (long) st.get("fixtures"));
+
+		/// Second call for the same key: still a HIT, and the zip was loaded once (count unchanged).
+		assertEquals(200, LlmEmulator.respond(LlmEmulator.SCHEME + set, req, null).get().statusCode());
+		assertEquals(2L, (long) LlmEmulator.stats().get("hit"));
+		assertEquals(1L, (long) LlmEmulator.stats().get("fixtures"));
+	}
+
+	/// (ii) A loose <key>.json beside fixtures.zip wins over the zip entry with the same name.
+	@Test
+	public void testLooseFixtureOverridesZipEntryWithSameKey() throws Exception {
+		String set = newSet(null);
+		OpenAIRequest req = bareRequest(MODEL, template(EXTRACT_CHUNK, "system"), extractChunkUser(CHUNK + "\n(loose beats zip)"));
+		String key = LlmEmulator.requestKey(req);
+		writeZip(set, zipOf(key + ".json", fixtureJson(req, "FROM-ZIP")));
+
+		/// Zip alone → the zip content. Nothing is shadowed yet.
+		HttpResponse<Stream<String>> r1 = LlmEmulator.respond(LlmEmulator.SCHEME + set, req, null).get();
+		assertEquals(200, r1.statusCode());
+		assertTrue(sseBody(r1).contains("FROM-ZIP"));
+		assertEquals(1L, (long) LlmEmulator.stats().get("hit"));
+		assertEquals("a zip-served hit shadows nothing", 0L, (long) LlmEmulator.stats().get("shadowed"));
+
+		/// Now drop a loose fixture for the SAME key with different content: it must win on the next call
+		/// even though the zip is already loaded and cached for this set — and the shadowing is counted.
+		Files.write(tmpRoot.resolve(set).resolve(key + ".json"), fixtureJson(req, "FROM-LOOSE"));
+		HttpResponse<Stream<String>> r2 = LlmEmulator.respond(LlmEmulator.SCHEME + set, req, null).get();
+		assertEquals(200, r2.statusCode());
+		String body = sseBody(r2);
+		assertTrue("the loose fixture must override the zip entry: " + body, body.contains("FROM-LOOSE"));
+		assertFalse("the zip content must not leak through once a loose fixture exists: " + body, body.contains("FROM-ZIP"));
+		assertEquals(2L, (long) LlmEmulator.stats().get("hit"));
+		assertEquals(0L, (long) LlmEmulator.stats().get("synth"));
+		assertEquals("a loose hit over a same-named zip entry is counted as shadowed", 1L, (long) LlmEmulator.stats().get("shadowed"));
+
+		/// A loose hit in a set whose zip does NOT hold that key is not a shadow.
+		OpenAIRequest looseOnly = bareRequest(MODEL, template(EXTRACT_CHUNK, "system"), extractChunkUser(CHUNK + "\n(loose only)"));
+		Files.write(tmpRoot.resolve(set).resolve(LlmEmulator.requestKey(looseOnly) + ".json"), fixtureJson(looseOnly, "LOOSE-ONLY"));
+		HttpResponse<Stream<String>> r3 = LlmEmulator.respond(LlmEmulator.SCHEME + set, looseOnly, null).get();
+		assertEquals(200, r3.statusCode());
+		assertTrue(sseBody(r3).contains("LOOSE-ONLY"));
+		assertEquals(3L, (long) LlmEmulator.stats().get("hit"));
+		assertEquals("shadowed counts only loose hits the zip could also have served", 1L, (long) LlmEmulator.stats().get("shadowed"));
+
+		/// It is a counter: resetCounters() zeroes it (the zip cache itself is untouched).
+		LlmEmulator.resetCounters();
+		assertEquals(0L, (long) LlmEmulator.stats().get("shadowed"));
+		assertEquals("resetCounters must not drop the zip cache", 1L, (long) LlmEmulator.stats().get("fixtures"));
+	}
+
+	/// (iii) Only entries named EXACTLY <64 hex>.json at the zip root are fixtures. Traversal names,
+	/// nested directories, manifest.json, directory entries and other files are ignored — never matched,
+	/// never resolved against the filesystem, never written anywhere.
+	@Test
+	public void testZipIgnoresNonConformingEntryNames() throws Exception {
+		String set = newSet(null);
+		String sys = template(EXTRACT_CHUNK, "system");
+		OpenAIRequest target = bareRequest(MODEL, sys, extractChunkUser(CHUNK + "\n(nonconforming)"));
+		String key = LlmEmulator.requestKey(target);
+		OpenAIRequest other = bareRequest(MODEL, sys, extractChunkUser(CHUNK + "\n(the one valid entry)"));
+		String otherKey = LlmEmulator.requestKey(other);
+
+		byte[] evil = fixtureJson(target, "EVIL-MUST-NOT-REPLAY");
+		writeZip(set, zipOf(
+			"../evil.json", evil,                     /// traversal name
+			"../" + key + ".json", evil,              /// traversal-prefixed REAL key: must not match the key either
+			"sub/" + key + ".json", evil,             /// nested path holding the real key
+			"dir/", new byte[0],                      /// directory entry
+			"notes.txt", "not a fixture".getBytes(StandardCharsets.UTF_8),
+			LlmEmulator.MANIFEST_FILE, "{\"strict\": true}".getBytes(StandardCharsets.UTF_8), /// manifest inside the zip is ignored (it stays loose)
+			key.toUpperCase() + ".json", evil,        /// wrong case: FIXTURE_FILE is lowercase hex
+			otherKey + ".json", fixtureJson(other, "VALID-ZIP-ENTRY")));
+
+		/// The target key has NO conforming entry → not a hit. The manifest inside the zip did not make
+		/// the set strict (the loose set has no manifest) → synthesis, not a 500.
+		HttpResponse<Stream<String>> resp = LlmEmulator.respond(LlmEmulator.SCHEME + set, target, null).get();
+		assertEquals(200, resp.statusCode());
+		String body = sseBody(resp);
+		assertFalse("a non-conforming zip entry must never be replayed: " + body, body.contains("EVIL-MUST-NOT-REPLAY"));
+		assertEquals("no hit for the target key", 0L, (long) LlmEmulator.stats().get("hit"));
+		assertEquals("non-strict miss → synthesized", 1L, (long) LlmEmulator.stats().get("synth"));
+		assertEquals("exactly one conforming entry was loaded", 1L, (long) LlmEmulator.stats().get("fixtures"));
+
+		/// The one conforming entry is served normally from the same zip.
+		HttpResponse<Stream<String>> ok = LlmEmulator.respond(LlmEmulator.SCHEME + set, other, null).get();
+		assertEquals(200, ok.statusCode());
+		assertTrue(sseBody(ok).contains("VALID-ZIP-ENTRY"));
+		assertEquals(1L, (long) LlmEmulator.stats().get("hit"));
+
+		/// Nothing from the zip was materialized on disk, anywhere near the fixture root.
+		assertFalse(Files.exists(tmpRoot.resolve("evil.json")));
+		assertFalse(Files.exists(tmpRoot.resolve(set).resolve("evil.json")));
+		assertFalse(fileNamedExistsUnder(tmpRoot, "evil.json"));
+		assertFalse(fileNamedExistsUnder(tmpRoot, "notes.txt"));
+		assertFalse("zip entries are map keys, never paths", Files.exists(tmpRoot.resolve(set).resolve("sub")));
+		assertFalse(Files.exists(tmpRoot.resolve(set).resolve("dir")));
+		assertFalse("the in-zip manifest must not be extracted", Files.exists(tmpRoot.resolve(set).resolve(LlmEmulator.MANIFEST_FILE)));
+	}
+
+	/// (iv) A corrupt fixtures.zip (garbage bytes, or a truncated real archive) and a MISSING zip are
+	/// all "no zip fixtures": no exception escapes respond(); non-strict sets synthesize and strict sets
+	/// report an ordinary miss.
+	@Test
+	public void testCorruptOrMissingZipIsAMissNotAnException() throws Exception {
+		String sys = template(EXTRACT_CHUNK, "system");
+		OpenAIRequest req = bareRequest(MODEL, sys, extractChunkUser(CHUNK + "\n(corrupt zip)"));
+
+		/// (a) Garbage bytes where the zip should be, non-strict → synth.
+		String garbageSet = newSet(null);
+		writeZip(garbageSet, "this is not a zip archive at all \u0000\u0001\u0002 PK-but-not-really".getBytes(StandardCharsets.UTF_8));
+		HttpResponse<Stream<String>> r1 = LlmEmulator.respond(LlmEmulator.SCHEME + garbageSet, req, null).get();
+		assertEquals("a corrupt zip must degrade to 'no zip fixtures', not fail the call", 200, r1.statusCode());
+		assertTrue(sseBody(r1).contains("data: [DONE]"));
+		assertEquals(0L, (long) LlmEmulator.stats().get("hit"));
+		assertEquals(1L, (long) LlmEmulator.stats().get("synth"));
+		assertEquals(0L, (long) LlmEmulator.stats().get("fixtures"));
+
+		/// (b) A real archive truncated mid-entry (valid local header, torn data), non-strict → synth.
+		/// Stored (uncompressed) so the entry body is ~4 KB and cutting the file in half is guaranteed to
+		/// tear the entry data itself, not merely the central directory (which ZipInputStream never reads).
+		String truncatedSet = newSet(null);
+		byte[] good = zipOf(java.util.zip.Deflater.NO_COMPRESSION,
+			new Object[] { LlmEmulator.requestKey(req) + ".json", fixtureJson(req, "x".repeat(4096)) });
+		assertTrue("test premise: the archive must be dominated by the entry body", good.length > 4096);
+		writeZip(truncatedSet, java.util.Arrays.copyOf(good, good.length / 2));
+		HttpResponse<Stream<String>> r2 = LlmEmulator.respond(LlmEmulator.SCHEME + truncatedSet, req, null).get();
+		assertEquals("a truncated zip must degrade to 'no zip fixtures', not fail the call", 200, r2.statusCode());
+		String b2 = sseBody(r2);
+		assertFalse("a torn entry must never be served as a fixture", b2.contains("xxxxxxxx"));
+		assertEquals(0L, (long) LlmEmulator.stats().get("hit"));
+		assertEquals(2L, (long) LlmEmulator.stats().get("synth"));
+		assertEquals(0L, (long) LlmEmulator.stats().get("fixtures"));
+
+		/// (c) No zip at all, non-strict → synth (the pre-zip behaviour is unchanged).
+		String missingSet = newSet(null);
+		assertFalse(Files.exists(tmpRoot.resolve(missingSet).resolve(LlmEmulator.FIXTURES_ZIP)));
+		HttpResponse<Stream<String>> r3 = LlmEmulator.respond(LlmEmulator.SCHEME + missingSet, req, null).get();
+		assertEquals(200, r3.statusCode());
+		assertEquals(3L, (long) LlmEmulator.stats().get("synth"));
+
+		/// (d) Corrupt zip in a STRICT set → an ordinary strict miss (500 + "fixture miss (strict)"), not an exception.
+		String strictSet = newSet("{\"strict\": true, \"kinds\": {}, \"faults\": []}");
+		writeZip(strictSet, "garbage".getBytes(StandardCharsets.UTF_8));
+		HttpResponse<Stream<String>> r4 = LlmEmulator.respond(LlmEmulator.SCHEME + strictSet, req, null).get();
+		assertEquals(500, r4.statusCode());
+		String b4 = sseBody(r4);
+		assertTrue("strict + corrupt zip is a plain fixture miss: " + b4, b4.contains("fixture miss (strict)"));
+		assertEquals(1L, (long) LlmEmulator.stats().get("miss"));
+		assertEquals(0L, (long) LlmEmulator.stats().get("hit"));
+		assertEquals(0L, (long) LlmEmulator.stats().get("fixtures"));
+	}
+
+	// ------------------------------------------------------------------------------------------------
+	// 8. Zip loader bounds: cache growth, per-set byte cap, declared-size rejection, recorder parity
+	// ------------------------------------------------------------------------------------------------
+
+	/// A conforming fixture entry name for a small integer: 64 lowercase hex digits + ".json".
+	private static String hexName(int i) {
+		return String.format("%064x", i) + ".json";
+	}
+
+	/// A fixture document for an arbitrary key (no request needed) whose assistant content is content.
+	private static byte[] fixtureBytesForKey(String key64, String content) {
+		return ("{\"key\":\"" + key64 + "\",\"kind\":\"extract-chunk\",\"model\":\"" + MODEL + "\",\"response\":{\"content\":"
+			+ jsonQuote(content) + "}}").getBytes(StandardCharsets.UTF_8);
+	}
+
+	private static int le16(byte[] b, int off) {
+		return (b[off] & 0xff) | ((b[off + 1] & 0xff) << 8);
+	}
+
+	private static int le32(byte[] b, int off) {
+		return le16(b, off) | (le16(b, off + 2) << 16);
+	}
+
+	private static void putLe32(byte[] b, int off, int v) {
+		b[off] = (byte) v;
+		b[off + 1] = (byte) (v >>> 8);
+		b[off + 2] = (byte) (v >>> 16);
+		b[off + 3] = (byte) (v >>> 24);
+	}
+
+	/// Overwrite the FIRST byte of the FIRST entry's compressed data with a deflate block header whose
+	/// BTYPE is 11 (reserved): any attempt to inflate the entry throws on its very first byte.
+	private static void corruptFirstEntryData(byte[] zip) {
+		assertEquals("test premise: local file header signature", 0x04034b50, le32(zip, 0));
+		int nameLen = le16(zip, 26);
+		int extraLen = le16(zip, 28);
+		zip[30 + nameLen + extraLen] = 0x07;
+	}
+
+	/// Rewrite the central-directory UNCOMPRESSED size of the named entry (what ZipEntry.getSize()
+	/// reports) without touching its data. Walks the central directory from the end-of-central-directory
+	/// record so entry data can never be mistaken for a header. Returns true when the entry was found.
+	private static boolean patchCentralDirectorySize(byte[] zip, String entryName, int newUncompressedSize) {
+		int eocd = -1;
+		for (int i = zip.length - 22; i >= 0; i--) {
+			if (le32(zip, i) == 0x06054b50) { eocd = i; break; }
+		}
+		assertTrue("test premise: end-of-central-directory record", eocd >= 0);
+		int entries = le16(zip, eocd + 10);
+		int cen = le32(zip, eocd + 16);
+		for (int n = 0; n < entries; n++) {
+			assertEquals("test premise: central directory header signature", 0x02014b50, le32(zip, cen));
+			int nameLen = le16(zip, cen + 28);
+			int extraLen = le16(zip, cen + 30);
+			int commentLen = le16(zip, cen + 32);
+			String name = new String(zip, cen + 46, nameLen, StandardCharsets.UTF_8);
+			if (name.equals(entryName)) {
+				putLe32(zip, cen + 24, newUncompressedSize);
+				return true;
+			}
+			cen += 46 + nameLen + extraLen + commentLen;
+		}
+		return false;
+	}
+
+	/// (a) A serverUrl naming a set whose directory does not exist synthesizes (non-strict) but must NOT
+	/// add a ZIP_FIXTURES cache key — otherwise any EMULATOR connection could grow the cache without bound
+	/// by rotating invented names. A set whose directory exists is cached exactly once, zip or no zip.
+	@Test
+	public void testNonExistentSetDoesNotGrowTheZipCache() throws Exception {
+		OpenAIRequest req = bareRequest(MODEL, template(EXTRACT_CHUNK, "system"), extractChunkUser(CHUNK + "\n(ghost set)"));
+		assertEquals("test premise: a fresh configuration caches no zip sets", 0, LlmEmulator.cachedZipSets());
+
+		for (int i = 0; i < 5; i++) {
+			String ghost = "ghost-" + UUID.randomUUID().toString().substring(0, 8);
+			assertFalse(Files.exists(tmpRoot.resolve(ghost)));
+			HttpResponse<Stream<String>> r = LlmEmulator.respond(LlmEmulator.SCHEME + ghost, req, null).get();
+			assertEquals("a non-existent, non-strict set synthesizes", 200, r.statusCode());
+			assertTrue(sseBody(r).contains("data: [DONE]"));
+		}
+		assertEquals("invented set names must not add ZIP_FIXTURES keys", 0, LlmEmulator.cachedZipSets());
+		assertEquals(0L, (long) LlmEmulator.stats().get("fixtures"));
+		assertEquals(5L, (long) LlmEmulator.stats().get("synth"));
+		assertEquals(0L, (long) LlmEmulator.stats().get("hit"));
+
+		/// The direct accessor follows the same rule.
+		assertTrue(LlmEmulator.zipFixtures(tmpRoot.resolve("ghost-direct")).isEmpty());
+		assertTrue(LlmEmulator.zipFixtures(null).isEmpty());
+		assertEquals(0, LlmEmulator.cachedZipSets());
+
+		/// A set whose directory EXISTS is cached (once), even with no fixtures.zip in it.
+		String real = newSet(null);
+		assertEquals(200, LlmEmulator.respond(LlmEmulator.SCHEME + real, req, null).get().statusCode());
+		assertEquals("an existing set directory is cached on first lookup", 1, LlmEmulator.cachedZipSets());
+		assertEquals(200, LlmEmulator.respond(LlmEmulator.SCHEME + real, req, null).get().statusCode());
+		assertEquals("...and only once", 1, LlmEmulator.cachedZipSets());
+		assertEquals(0L, (long) LlmEmulator.stats().get("fixtures"));
+
+		/// Reconfiguring drops the cache.
+		LlmEmulator.configure(tmpRoot.toString(), null);
+		assertEquals(0, LlmEmulator.cachedZipSets());
+	}
+
+	/// (b) The per-set BYTE bound: loading stops at the first conforming entry (in central-directory
+	/// order) that would cross the cap, and every later entry is ignored. The production cap admits the
+	/// whole set. Exercised through the package's cap-taking overload; zipFixtures() always passes
+	/// MAX_ZIP_BYTES.
+	@Test
+	public void testPerSetByteCapStopsLoadingAtTheBound() throws Exception {
+		String set = newSet(null);
+		Path setDir = tmpRoot.resolve(set);
+		int n = 6;
+		byte[][] payloads = new byte[n][];
+		Object[] pairs = new Object[n * 2];
+		for (int i = 0; i < n; i++) {
+			payloads[i] = fixtureBytesForKey(hexName(i).substring(0, 64), "P" + i + "-" + "p".repeat(10_000));
+			pairs[i * 2] = hexName(i);
+			pairs[i * 2 + 1] = payloads[i];
+		}
+		writeZip(set, zipOf(pairs));
+		assertEquals(0, LlmEmulator.cachedZipSets());
+
+		long capForThree = (long) payloads[0].length + payloads[1].length + payloads[2].length;
+		Map<String, byte[]> three = LlmEmulator.loadZipFixtures(setDir, capForThree);
+		assertEquals("exactly the first three entries fit the cap", java.util.Set.of(hexName(0), hexName(1), hexName(2)), three.keySet());
+		assertArrayEquals("loaded bytes are the entry's inflated bytes", payloads[2], three.get(hexName(2)));
+
+		/// One byte less and the third entry would cross the bound: it and everything after it are ignored.
+		Map<String, byte[]> two = LlmEmulator.loadZipFixtures(setDir, capForThree - 1);
+		assertEquals(java.util.Set.of(hexName(0), hexName(1)), two.keySet());
+
+		/// A cap below the first entry loads nothing (and does not throw).
+		assertTrue(LlmEmulator.loadZipFixtures(setDir, 10).isEmpty());
+
+		/// Direct loader calls bypass the cache; the production path caches with MAX_ZIP_BYTES, which
+		/// admits everything here (and a recorded chapter set of a few hundred entries / ~1 MB with room to spare).
+		assertEquals(0, LlmEmulator.cachedZipSets());
+		assertEquals(64L * 1024 * 1024, LlmEmulator.MAX_ZIP_BYTES);
+		assertEquals(n, LlmEmulator.zipFixtures(setDir).size());
+		assertEquals(1, LlmEmulator.cachedZipSets());
+		assertEquals((long) n, (long) LlmEmulator.stats().get("fixtures"));
+	}
+
+	/// (c) An entry whose DECLARED uncompressed size exceeds MAX_ZIP_ENTRY_BYTES is skipped without being
+	/// opened. Proof: its compressed data is corrupted so that inflating even its first byte throws, and the
+	/// loader treats any exception as "whole archive unreadable → empty set". The good entry beside it
+	/// surviving therefore proves the oversized entry was never inflated. Then the opposite lie — a header
+	/// declaring 100 bytes for an entry that really inflates past the cap — trips readCapped and drops only
+	/// that entry.
+	@Test
+	public void testOversizedDeclaredEntryIsSkippedWithoutBeingRead() throws Exception {
+		String sys = template(EXTRACT_CHUNK, "system");
+		OpenAIRequest good = bareRequest(MODEL, sys, extractChunkUser(CHUNK + "\n(good beside bomb)"));
+		String goodName = LlmEmulator.requestKey(good) + ".json";
+		String bombName = hexName(0xB0B);
+		byte[] bombBody = new byte[LlmEmulator.MAX_ZIP_ENTRY_BYTES + 1];
+		java.util.Arrays.fill(bombBody, (byte) 'x');
+
+		/// (i) Declared oversize + corrupted deflate stream, listed FIRST so the loader meets it first.
+		String set1 = newSet(null);
+		byte[] zip1 = zipOf(bombName, bombBody, goodName, fixtureJson(good, "GOOD-BESIDE-BOMB"));
+		corruptFirstEntryData(zip1);
+		Path z1 = writeZip(set1, zip1);
+		try (java.util.zip.ZipFile zf = new java.util.zip.ZipFile(z1.toFile())) {
+			ZipEntry bomb = zf.getEntry(bombName);
+			assertEquals("test premise: the central directory declares the real size", (long) bombBody.length, bomb.getSize());
+			assertTrue(bomb.getSize() > LlmEmulator.MAX_ZIP_ENTRY_BYTES);
+			boolean threw = false;
+			try (java.io.InputStream in = zf.getInputStream(bomb)) {
+				in.read(new byte[8192]);
+			} catch (java.io.IOException ex) {
+				threw = true;
+			}
+			assertTrue("test premise: inflating the corrupted entry must throw", threw);
+		}
+		Map<String, byte[]> loaded1 = LlmEmulator.zipFixtures(tmpRoot.resolve(set1));
+		assertEquals("only the good entry loads: the oversized one was rejected on its declared size, never opened",
+			java.util.Set.of(goodName), loaded1.keySet());
+		HttpResponse<Stream<String>> r1 = LlmEmulator.respond(LlmEmulator.SCHEME + set1, good, null).get();
+		assertEquals(200, r1.statusCode());
+		assertTrue(sseBody(r1).contains("GOOD-BESIDE-BOMB"));
+		assertEquals(1L, (long) LlmEmulator.stats().get("hit"));
+		assertEquals(1L, (long) LlmEmulator.stats().get("fixtures"));
+
+		/// (ii) Lying header: a VALID deflate stream of MAX_ZIP_ENTRY_BYTES + 1 bytes whose central-directory
+		/// size claims 100. The declared-size check admits it; readCapped closes it at the cap; only it is dropped.
+		String set2 = newSet(null);
+		byte[] zip2 = zipOf(bombName, bombBody, goodName, fixtureJson(good, "GOOD-BESIDE-LIAR"));
+		assertTrue("test premise: central-directory entry patched", patchCentralDirectorySize(zip2, bombName, 100));
+		Path z2 = writeZip(set2, zip2);
+		try (java.util.zip.ZipFile zf = new java.util.zip.ZipFile(z2.toFile())) {
+			assertEquals("test premise: the header now lies", 100L, zf.getEntry(bombName).getSize());
+		}
+		Map<String, byte[]> loaded2 = LlmEmulator.zipFixtures(tmpRoot.resolve(set2));
+		assertEquals("the liar is dropped at the read cap; the good entry is unaffected", java.util.Set.of(goodName), loaded2.keySet());
+		HttpResponse<Stream<String>> r2 = LlmEmulator.respond(LlmEmulator.SCHEME + set2, good, null).get();
+		assertEquals(200, r2.statusCode());
+		assertTrue(sseBody(r2).contains("GOOD-BESIDE-LIAR"));
+		assertEquals(2L, (long) LlmEmulator.stats().get("hit"));
+		assertEquals(2L, (long) LlmEmulator.stats().get("fixtures"));
+	}
+
+	/// (d) Units parity between recorder and loader. The recorder gates an exchange in CHARS
+	/// (MAX_RECORD_CHARS over request+response content); the loader gates an entry in BYTES
+	/// (MAX_ZIP_ENTRY_BYTES = 4 × MAX_RECORD_CHARS) and then re-applies the recorder's char rule. So:
+	/// a fixture the recorder ACTUALLY WROTE for 1.9M three-byte chars (5.7 MB — over MAX_RECORD_CHARS
+	/// bytes, under it in chars) is admitted from the zip and replayed as a HIT; and a fixture over the
+	/// char cap but under every byte cap is refused by the loader exactly as record() refuses the exchange.
+	/// U+4E2D: one Java char, three UTF-8 bytes.
+	private static final String CJK = "\u4e2d";
+
+	@Test
+	public void testZipEntryByteCapAdmitsEverythingTheRecorderWouldWrite() throws Exception {
+		assertEquals(4L * LlmEmulator.MAX_RECORD_CHARS, (long) LlmEmulator.MAX_ZIP_ENTRY_BYTES);
+		assertEquals(3, CJK.getBytes(StandardCharsets.UTF_8).length);
+		String sys = template(EXTRACT_CHUNK, "system");
+		OpenAIRequest wide = bareRequest(MODEL, sys, extractChunkUser(CHUNK + "\n(multibyte)"));
+		String wideKey = LlmEmulator.requestKey(wide);
+		String marker = "MULTIBYTE-MARKER-" + wideKey.substring(0, 8);
+		String wideContent = marker + CJK.repeat(1_900_000);
+		OpenAIRequest narrow = bareRequest(MODEL, sys, extractChunkUser(CHUNK + "\n(too many chars)"));
+		String narrowKey = LlmEmulator.requestKey(narrow);
+		String narrowContent = "y".repeat(LlmEmulator.MAX_RECORD_CHARS + 1);
+
+		/// 1. What the recorder does with each exchange.
+		Path rec = Files.createTempDirectory("am7-llm-emulator-rec-parity-");
+		byte[] recordedWide;
+		try {
+			LlmEmulator.configure(tmpRoot.toString(), rec.toString());
+			assertTrue("the recorder admits 1.9M chars of 3-byte text (under its CHAR cap)", LlmEmulator.record(wide, wideContent));
+			assertFalse("the recorder refuses " + narrowContent.length() + " chars (over its CHAR cap)", LlmEmulator.record(narrow, narrowContent));
+			assertEquals(1L, (long) LlmEmulator.stats().get("recorded"));
+			Path written;
+			try (Stream<Path> s = Files.walk(rec)) {
+				written = s.filter(p -> p.getFileName().toString().equals(wideKey + ".json")).findFirst().orElse(null);
+			}
+			assertNotNull("recorded fixture file", written);
+			recordedWide = Files.readAllBytes(written);
+		} finally {
+			LlmEmulator.configure(tmpRoot.toString(), null);
+			LlmEmulator.resetCounters();
+			deleteTree(rec);
+		}
+		assertTrue("test premise: the recorded file is over MAX_RECORD_CHARS BYTES (" + recordedWide.length + ")",
+			recordedWide.length > LlmEmulator.MAX_RECORD_CHARS);
+		assertTrue("test premise: ...and under MAX_ZIP_ENTRY_BYTES", recordedWide.length <= LlmEmulator.MAX_ZIP_ENTRY_BYTES);
+		byte[] narrowBytes = fixtureJson(narrow, narrowContent);
+		assertTrue("test premise: the over-char fixture is under the per-entry BYTE cap", narrowBytes.length <= LlmEmulator.MAX_ZIP_ENTRY_BYTES);
+
+		/// 2. What the loader does with the same two documents, bundled in one strict set.
+		String set = newSet("{\"strict\": true, \"kinds\": {}, \"faults\": []}");
+		writeZip(set, zipOf(wideKey + ".json", recordedWide, narrowKey + ".json", narrowBytes));
+		Map<String, byte[]> loaded = LlmEmulator.zipFixtures(tmpRoot.resolve(set));
+		assertEquals("the loader admits exactly what the recorder wrote and refuses what it refused",
+			java.util.Set.of(wideKey + ".json"), loaded.keySet());
+		assertEquals(1L, (long) LlmEmulator.stats().get("fixtures"));
+
+		HttpResponse<Stream<String>> hit = LlmEmulator.respond(LlmEmulator.SCHEME + set, wide, null).get();
+		assertEquals("the recorded multibyte fixture replays from the zip", 200, hit.statusCode());
+		String body = sseBody(hit);
+		assertTrue(body.contains(marker));
+		assertTrue("the multibyte content itself is replayed, not mangled", body.contains(CJK.repeat(200)));
+		assertTrue(body.contains("data: [DONE]"));
+		assertEquals(1L, (long) LlmEmulator.stats().get("hit"));
+
+		HttpResponse<Stream<String>> miss = LlmEmulator.respond(LlmEmulator.SCHEME + set, narrow, null).get();
+		assertEquals("the over-char entry was never loaded, so strict mode reports a plain miss", 500, miss.statusCode());
+		assertTrue(sseBody(miss).contains("fixture miss (strict)"));
+		assertEquals(1L, (long) LlmEmulator.stats().get("miss"));
 	}
 }

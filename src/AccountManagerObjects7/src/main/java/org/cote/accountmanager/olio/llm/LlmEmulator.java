@@ -1,5 +1,7 @@
 package org.cote.accountmanager.olio.llm;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
@@ -16,6 +18,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -29,6 +33,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 import javax.net.ssl.SSLSession;
 
@@ -51,6 +57,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * (a small, deterministic generator that emits the JSON shapes the real PictureBook parsers accept) →
  * miss. A miss in strict mode is an emulated HTTP 500; otherwise the synthesizer always answers.
  *
+ * <p>Fixture layout per set: {@code manifest.json} (always loose) plus fixtures either as loose
+ * {@code <sha256>.json} files or bundled at the ROOT of {@code <set>/fixtures.zip} (entry names exactly
+ * {@code <sha256>.json}; directories and any other entry name are ignored). A loose file always wins over
+ * a zip entry with the same key (counted in {@code stats().shadowed}). The zip is read lazily, once per
+ * set, into memory ({@link #zipFixtures}); only sets whose directory exists are cached, each set's
+ * in-memory fixtures are bounded by {@link #MAX_ZIP_BYTES} (bytes; entries are rejected on their declared
+ * size before being inflated), and each entry must satisfy the recorder's own {@link #MAX_RECORD_CHARS}
+ * rule so recorder and loader agree on what a fixture may be. Build/refresh it from Git Bash on Windows with
+ * {@code cd llm-fixtures/<set> && jar cfM fixtures.zip $(ls | grep -E '^[0-9a-f]{64}\.json$')}.
+ *
  * <p>Configuration is deployment-global and boot-pinned: {@link #configure} is called once from
  * {@code RestServiceEventListener} with the {@code llm.emulator.fixtureRoot} / {@code llm.emulator.recordDir}
  * context params (both empty → inert). It is stored as ONE immutable holder in a single {@code volatile}
@@ -61,7 +77,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * <p>Filesystem safety: the user-record {@code serverUrl} is never used as a path. Only the set name
  * is taken from it, and only after it matches {@code ^[A-Za-z0-9_-]{1,64}$}; the resolved directory
  * must then still start with the configured root. Only files named {@code <64 hex>.json} under the set
- * directory are ever read. The recorder applies the same rules to the model-derived directory name and
+ * directory (or zip entries of exactly that name — a zip entry name is a map key, never a path) are ever
+ * read. The recorder applies the same rules to the model-derived directory name and
  * never writes auth tokens or headers; it is refused outright (recording disabled, replay kept) when its
  * directory equals, sits under, or contains the fixture root, and it skips any exchange larger than
  * {@link #MAX_RECORD_CHARS}.
@@ -72,16 +89,41 @@ public final class LlmEmulator {
 
 	public static final String SCHEME = "emulator://";
 	public static final String MANIFEST_FILE = "manifest.json";
+	/// Optional per-set bundle of fixtures ({@code <sha256>.json} entries at the zip root). Consulted only
+	/// when no loose file of the same name exists.
+	public static final String FIXTURES_ZIP = "fixtures.zip";
 	/// Set (directory) names and recorder directory names must match this exactly.
 	static final Pattern SAFE_NAME = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
 	private static final Pattern FIXTURE_FILE = Pattern.compile("^[0-9a-f]{64}\\.json$");
+	/// Entry-COUNT bound for one set's zip (unit: entries). This is NOT the memory bound on its own
+	/// (50,000 entries at {@link #MAX_ZIP_ENTRY_BYTES} each would be 400 GB): the real per-set bound is
+	/// {@code min(MAX_ZIP_BYTES, MAX_ZIP_FIXTURES × MAX_ZIP_ENTRY_BYTES)} of inflated fixture BYTES,
+	/// enforced by {@link #loadZipFixtures}, and only sets whose directory exists under the fixture root
+	/// are cached.
+	static final int MAX_ZIP_FIXTURES = 50_000;
+	/// Per-SET bound (unit: BYTES of inflated fixture JSON held in memory for one set). Loading stops at
+	/// the first conforming entry that would cross it (one WARN naming loaded/ignored counts). 64 MB
+	/// comfortably admits a recorded chapter set (hundreds of entries, low single-digit MB) while keeping
+	/// the shared Tomcat heap cost of a large or hostile archive bounded and known. Public for
+	/// diagnostics/tests only.
+	public static final long MAX_ZIP_BYTES = 64L * 1024 * 1024;
 	/// Split synthesized/replayed content into SSE deltas of at most this many chars, so the consumer's
 	/// accumulate path sees a realistic multi-chunk stream rather than one giant delta.
 	private static final int SSE_CHUNK_CHARS = 240;
-	/// Recorder cap: an exchange whose request-message content plus response content exceeds this many
-	/// chars is skipped (WARN, not counted as recorded). A hostile or runaway upstream must not be able
-	/// to fill the disk one fixture at a time.
+	/// Recorder cap (unit: CHARS — Java {@code String.length()}, i.e. UTF-16 code units — of every
+	/// request message's content plus the response content, see {@link #exchangeChars}). An exchange over
+	/// this is skipped (WARN, not counted as recorded). A hostile or runaway upstream must not be able to
+	/// fill the disk one fixture at a time. The zip loader applies the SAME rule to each entry it admits
+	/// ({@link #fixtureChars}), so anything the recorder would write, the loader will serve.
 	public static final int MAX_RECORD_CHARS = 2_000_000;
+	/// Per-ENTRY bound for a zip fixture (unit: BYTES of the inflated JSON document), derived from the
+	/// recorder's CHAR cap: a Java char is at most 3 UTF-8 bytes (a supplementary character is 2 chars for
+	/// 4 bytes), so a fixture the recorder wrote holds at most {@code 3 × MAX_RECORD_CHARS} content bytes
+	/// plus JSON escaping and the envelope; 4× is the headroom that guarantees such a file is never
+	/// rejected on size. Checked against the declared {@link ZipEntry#getSize()} BEFORE inflating and
+	/// re-checked while reading ({@link #readCapped}); the char rule is then applied to the decoded
+	/// document. Public for diagnostics/tests only.
+	public static final int MAX_ZIP_ENTRY_BYTES = MAX_RECORD_CHARS * 4;
 
 	public static final String KIND_EXTRACT_CHUNK = "extract-chunk";
 	public static final String KIND_EXTRACT_SCENES = "extract-scenes";
@@ -157,8 +199,22 @@ public final class LlmEmulator {
 	private static final AtomicLong SYNTH = new AtomicLong();
 	private static final AtomicLong FAULT = new AtomicLong();
 	private static final AtomicLong RECORDED = new AtomicLong();
+	/// Hits served from a loose {@code <key>.json} while the set's {@code fixtures.zip} ALSO holds an
+	/// entry of that name (the loose file shadows it). Diagnostic: a non-zero value means the zip is
+	/// not the whole story for that set.
+	private static final AtomicLong SHADOWED = new AtomicLong();
 	/// Per-(set, fault index) match counters driving manifest {@code faults[].occurrence}.
 	private static final ConcurrentHashMap<String, AtomicLong> FAULT_COUNTERS = new ConcurrentHashMap<>();
+	/// Lazily loaded {@code fixtures.zip} contents per set: absolute set directory → (entry name → raw
+	/// fixture JSON bytes). Loaded at most once per set per configuration, on the set's first fixture
+	/// lookup (a loose HIT consults it for the shadow check, a loose miss for the entry itself); for an
+	/// EXISTING set directory a missing zip is cached as an EMPTY map (INFO once) and an unreadable one as
+	/// EMPTY (WARN once) so the filesystem is not re-probed on every lookup. A set directory that does not
+	/// exist is never cached (see {@link #zipFixtures}), so the key count is bounded by the directories
+	/// actually present under the fixture root, not by the names a caller can invent. Per-set contents are
+	/// bounded by {@link #MAX_ZIP_BYTES} bytes. Cleared by {@link #configure}, never by
+	/// {@link #resetCounters} (it is a cache, not a counter).
+	private static final ConcurrentHashMap<String, Map<String, byte[]>> ZIP_FIXTURES = new ConcurrentHashMap<>();
 
 	private LlmEmulator() {
 	}
@@ -202,6 +258,8 @@ public final class LlmEmulator {
 			rec = null;
 		}
 		CONFIG = new Config(root, rec, strict);
+		/// A new root (or a reconfigured same root, e.g. after a fixture-set rebuild) must re-read its zips.
+		ZIP_FIXTURES.clear();
 		if (root != null) {
 			logger.info("LLM emulator configured: fixtureRoot=" + root + " strict=" + strict
 				+ (Files.isDirectory(root) ? "" : " (WARNING: directory does not exist yet)"));
@@ -237,6 +295,13 @@ public final class LlmEmulator {
 		m.put("synth", SYNTH.get());
 		m.put("fault", FAULT.get());
 		m.put("recorded", RECORDED.get());
+		/// Zip-bundled fixtures currently held in memory across all loaded sets (0 until a set's first
+		/// fixture lookup — loose hit or miss — triggers the lazy load). Diagnostic only.
+		long fixtures = 0L;
+		for (Map<String, byte[]> z : ZIP_FIXTURES.values()) fixtures += z.size();
+		m.put("fixtures", fixtures);
+		/// Loose hits that shadowed a same-named zip entry (see SHADOWED). Diagnostic only.
+		m.put("shadowed", SHADOWED.get());
 		return Collections.unmodifiableMap(m);
 	}
 
@@ -252,6 +317,7 @@ public final class LlmEmulator {
 		SYNTH.set(0);
 		FAULT.set(0);
 		RECORDED.set(0);
+		SHADOWED.set(0);
 		FAULT_COUNTERS.clear();
 	}
 
@@ -507,7 +573,7 @@ public final class LlmEmulator {
 			}
 		}
 
-		/// 1. Exact-key fixture.
+		/// 1. Exact-key fixture: loose <key>.json first, then the set's fixtures.zip.
 		String content = readFixtureContent(setDir, key);
 		if (content != null) {
 			HIT.incrementAndGet();
@@ -542,14 +608,42 @@ public final class LlmEmulator {
 		return null;
 	}
 
-	@SuppressWarnings("unchecked")
+	/**
+	 * Resolve the recorded assistant content for {@code key} in {@code setDir}: a loose
+	 * {@code <key>.json} wins; otherwise the same entry name is looked up in the set's lazily loaded
+	 * {@link #FIXTURES_ZIP}. Returns null when neither has it (or the fixture is unparseable).
+	 *
+	 * <p>A loose hit also consults the zip (loading it on first use, exactly as a miss would) so a
+	 * loose file that shadows a same-named zip entry is counted in {@code stats().shadowed} — the
+	 * one signal that a set's zip is not what is actually being replayed.
+	 */
 	private static String readFixtureContent(Path setDir, String key) {
 		String fname = key + ".json";
 		if (!FIXTURE_FILE.matcher(fname).matches()) return null;
 		Path f = setDir.resolve(fname).normalize();
-		if (!f.startsWith(setDir) || !Files.isRegularFile(f)) return null;
+		if (!f.startsWith(setDir)) return null;
+		if (Files.isRegularFile(f)) {
+			if (zipFixtures(setDir).containsKey(fname)) {
+				SHADOWED.incrementAndGet();
+				logger.debug("LLM emulator: loose fixture " + fname + " in set " + setDir.getFileName()
+					+ " shadows the entry of the same name in " + FIXTURES_ZIP);
+			}
+			try {
+				return parseFixtureContent(Files.readAllBytes(f), f.toString());
+			} catch (Exception e) {
+				logger.warn("LLM emulator: unreadable fixture " + f + ": " + e.getMessage());
+				return null;
+			}
+		}
+		byte[] zipped = zipFixtures(setDir).get(fname);
+		if (zipped == null) return null;
+		return parseFixtureContent(zipped, setDir.resolve(FIXTURES_ZIP) + "!" + fname);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static String parseFixtureContent(byte[] bytes, String origin) {
 		try {
-			Map<String, Object> m = JSONUtil.getMap(Files.readAllBytes(f), String.class, Object.class);
+			Map<String, Object> m = JSONUtil.getMap(bytes, String.class, Object.class);
 			if (m == null) return null;
 			Object resp = m.get("response");
 			if (resp instanceof Map) {
@@ -560,9 +654,194 @@ public final class LlmEmulator {
 			Object c = m.get("content");
 			return c instanceof String ? (String) c : null;
 		} catch (Exception e) {
-			logger.warn("LLM emulator: unreadable fixture " + f + ": " + e.getMessage());
+			logger.warn("LLM emulator: unreadable fixture " + origin + ": " + e.getMessage());
 			return null;
 		}
+	}
+
+	/**
+	 * The set's zip-bundled fixtures, loaded on first use and cached for the life of the configuration
+	 * (see {@link #ZIP_FIXTURES}). Never throws; a missing or unreadable zip yields an empty map.
+	 *
+	 * <p>Only a set whose directory actually exists under the fixture root is ever cached. A
+	 * {@code serverUrl} naming a set that does not exist reaches this method on every miss (the
+	 * {@code respond()} path does not reject missing directories — it synthesizes for them), so caching
+	 * it would let any user with an EMULATOR connection add one permanent cache key and one WARN line per
+	 * distinct name by rotating {@code emulator://<name>} through the {@link #SAFE_NAME} space. Such a
+	 * set gets an uncached empty map and at most a DEBUG line. Public for diagnostics/tests only.
+	 */
+	public static Map<String, byte[]> zipFixtures(Path setDir) {
+		if (setDir == null || !Files.isDirectory(setDir)) {
+			logger.debug("LLM emulator: set directory " + setDir + " does not exist; no zip fixtures (not cached)");
+			return Collections.emptyMap();
+		}
+		return ZIP_FIXTURES.computeIfAbsent(setDir.toString(), k -> loadZipFixtures(setDir, MAX_ZIP_BYTES));
+	}
+
+	/** Number of sets currently holding a {@link #ZIP_FIXTURES} cache entry. Diagnostics/tests only. */
+	public static int cachedZipSets() {
+		return ZIP_FIXTURES.size();
+	}
+
+	/**
+	 * Read {@code <setDir>/fixtures.zip} into memory via {@link ZipFile} (central directory first, so an
+	 * entry can be rejected on its declared size without inflating a byte of it). Only entries whose name
+	 * is EXACTLY {@code <64 hex>.json} are kept — directories, nested paths, {@code manifest.json} and
+	 * anything else are ignored. Entry names are used purely as map keys and are never resolved against
+	 * the filesystem.
+	 *
+	 * <p>Units. The recorder's gate ({@link #MAX_RECORD_CHARS}) is in CHARS of request+response content;
+	 * the loader's bounds are in BYTES of the inflated JSON document ({@link #MAX_ZIP_ENTRY_BYTES} per
+	 * entry, {@code byteCap} = {@link #MAX_ZIP_BYTES} per set) plus the recorder's own CHAR rule
+	 * re-applied to each decoded entry ({@link #fixtureChars}). Because {@code MAX_ZIP_ENTRY_BYTES} is
+	 * {@code 4 × MAX_RECORD_CHARS} and a Java char never needs more than 3 UTF-8 bytes, every fixture the
+	 * recorder would write passes the byte checks, and the char check then admits exactly what the
+	 * recorder admits — the two sides cannot disagree about a single fixture.
+	 *
+	 * <p>The REAL per-set memory bound is {@code min(byteCap, MAX_ZIP_FIXTURES × MAX_ZIP_ENTRY_BYTES)} of
+	 * inflated fixture bytes — 64 MB in production — plus the map overhead; the entry count alone is NOT
+	 * the bound (50,000 × 8 MB would be 400 GB). Enforcement, per entry in central directory order:
+	 * <ol>
+	 *   <li>declared {@link ZipEntry#getSize()} {@code < 0} or {@code > MAX_ZIP_ENTRY_BYTES} (bytes) →
+	 *       skipped WITHOUT opening the entry (a zip bomb's declared size is what it would inflate to);</li>
+	 *   <li>once the entry would push the loaded total past {@code byteCap} (bytes), or the count past
+	 *       {@link #MAX_ZIP_FIXTURES}, loading STOPS: that entry and every later conforming entry are
+	 *       counted as ignored and never opened, and ONE WARN names the counts loaded and ignored;</li>
+	 *   <li>the stream is still read through {@link #readCapped} as a guard against a header that lies
+	 *       about its size: at {@code MAX_ZIP_ENTRY_BYTES} the stream is closed and the entry dropped — no
+	 *       read-through of the remainder;</li>
+	 *   <li>the decoded document's request+response content is counted in CHARS exactly as the recorder
+	 *       counts it; over {@code MAX_RECORD_CHARS} → dropped (the recorder would never have written
+	 *       it). A document that does not parse is kept and fails at replay time as before.</li>
+	 * </ol>
+	 * Missing zip → empty (INFO once — a loose-only set is a legitimate configuration, and since the
+	 * shadow check consults the zip on loose HITS too, every such set reaches this line on its first
+	 * lookup); unreadable/corrupt archive → empty (WARN once). Public so a test can lower
+	 * {@code byteCap}; production always passes {@link #MAX_ZIP_BYTES} via {@link #zipFixtures}.
+	 */
+	public static Map<String, byte[]> loadZipFixtures(Path setDir, long byteCap) {
+		Path zip = setDir.resolve(FIXTURES_ZIP).normalize();
+		if (!zip.startsWith(setDir) || !Files.isRegularFile(zip)) {
+			logger.info("LLM emulator: no " + FIXTURES_ZIP + " in set " + setDir.getFileName()
+				+ " — only loose fixtures will be replayed for this set (logged once per set)");
+			return Collections.emptyMap();
+		}
+		Map<String, byte[]> out = new HashMap<>();
+		int ignored = 0;
+		int oversized = 0;
+		int overChars = 0;
+		int capped = 0;
+		long total = 0L;
+		boolean stopped = false;
+		try (ZipFile zf = new ZipFile(zip.toFile())) {
+			Enumeration<? extends ZipEntry> en = zf.entries();
+			while (en.hasMoreElements()) {
+				ZipEntry e = en.nextElement();
+				String name = e.getName();
+				if (e.isDirectory() || name == null || !FIXTURE_FILE.matcher(name).matches()) {
+					ignored++;
+					continue;
+				}
+				long declared = e.getSize();
+				if (declared < 0 || declared > MAX_ZIP_ENTRY_BYTES) {
+					/// Rejected on the central-directory size alone (bytes): never opened, never inflated.
+					oversized++;
+					continue;
+				}
+				if (stopped || out.size() >= MAX_ZIP_FIXTURES || total + declared > byteCap) {
+					stopped = true;
+					capped++;
+					continue;
+				}
+				byte[] data;
+				try (InputStream in = zf.getInputStream(e)) {
+					data = readCapped(in, MAX_ZIP_ENTRY_BYTES);
+				}
+				if (data == null) {
+					/// The header lied: the entry inflated past MAX_ZIP_ENTRY_BYTES. Stream already closed.
+					oversized++;
+					continue;
+				}
+				if (total + data.length > byteCap) {
+					/// The header lied the other way (declared small, inflated larger). Same rule: stop.
+					stopped = true;
+					capped++;
+					continue;
+				}
+				if (fixtureChars(data) > MAX_RECORD_CHARS) {
+					/// Parity with the recorder: it counts CHARS of request+response content and refuses
+					/// anything over MAX_RECORD_CHARS, so the loader refuses the same documents.
+					overChars++;
+					continue;
+				}
+				total += data.length;
+				out.put(name, data);
+			}
+		} catch (Exception ex) {
+			logger.warn("LLM emulator: unreadable " + zip + " (" + ex.getClass().getSimpleName() + ": " + ex.getMessage()
+				+ ") — zip fixtures for this set are treated as EMPTY until the emulator is reconfigured");
+			return Collections.emptyMap();
+		}
+		if (capped > 0) {
+			logger.warn("LLM emulator: " + zip + " exceeds the per-set bound (" + byteCap + " bytes / " + MAX_ZIP_FIXTURES
+				+ " entries): loaded " + out.size() + " fixture(s) totalling " + total + " bytes, ignored " + capped
+				+ " conforming entr" + (capped == 1 ? "y" : "ies") + " beyond the bound");
+		}
+		logger.info("LLM emulator: loaded " + out.size() + " zip fixture(s) (" + total + " bytes) from " + zip
+			+ (ignored > 0 ? "; ignored " + ignored + " non-fixture entr" + (ignored == 1 ? "y" : "ies") : "")
+			+ (oversized > 0 ? "; skipped " + oversized + " over " + MAX_ZIP_ENTRY_BYTES + " bytes" : "")
+			+ (overChars > 0 ? "; skipped " + overChars + " over " + MAX_RECORD_CHARS + " content chars (recorder cap)" : "")
+			+ (capped > 0 ? "; ignored " + capped + " beyond the per-set bound" : ""));
+		return Collections.unmodifiableMap(out);
+	}
+
+	/**
+	 * The recorder's unit recomputed from a fixture document: {@code String.length()} of every
+	 * {@code request.messages[].content} plus the response content ({@code response.content}, or a flat
+	 * {@code content} for a hand-written fixture) — the same sum {@link #exchangeChars} takes on the live
+	 * exchange. Returns -1 when the document cannot be parsed (the caller keeps such an entry; it fails
+	 * at replay time exactly as it did before this check existed).
+	 */
+	@SuppressWarnings("unchecked")
+	static long fixtureChars(byte[] bytes) {
+		try {
+			Map<String, Object> m = JSONUtil.getMap(bytes, String.class, Object.class);
+			if (m == null) return -1L;
+			long total = 0L;
+			Object req = m.get("request");
+			if (req instanceof Map) {
+				Object msgs = ((Map<String, Object>) req).get("messages");
+				if (msgs instanceof List) {
+					for (Object o : (List<Object>) msgs) {
+						if (o instanceof Map) {
+							Object c = ((Map<String, Object>) o).get("content");
+							if (c instanceof String) total += ((String) c).length();
+						}
+					}
+				}
+			}
+			Object resp = m.get("response");
+			Object c = resp instanceof Map ? ((Map<String, Object>) resp).get("content") : m.get("content");
+			if (c instanceof String) total += ((String) c).length();
+			return total;
+		} catch (Exception e) {
+			return -1L;
+		}
+	}
+
+	/**
+	 * Read {@code in} fully, or return null as soon as it would exceed {@code cap} bytes. On the cap the
+	 * caller's try-with-resources closes the stream — the remainder is never inflated.
+	 */
+	private static byte[] readCapped(InputStream in, int cap) throws java.io.IOException {
+		ByteArrayOutputStream buf = new ByteArrayOutputStream();
+		byte[] chunk = new byte[8192];
+		int n;
+		while ((n = in.read(chunk)) != -1) {
+			if (buf.size() + n > cap) return null;
+			buf.write(chunk, 0, n);
+		}
+		return buf.toByteArray();
 	}
 
 	// ------------------------------------------------------------------------------------------------

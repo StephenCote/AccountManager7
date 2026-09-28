@@ -70,6 +70,13 @@ public class TestPbCreateFromScenesRerun extends BaseTest {
 		return scene;
 	}
 
+	/// As above, but carrying chunk provenance the way extractChunkedInternal's scenes do.
+	private static Map<String, Object> castlessScene(String title, String summary, int sourceChunk) {
+		Map<String, Object> scene = castlessScene(title, summary);
+		scene.put("sourceChunk", sourceChunk);
+		return scene;
+	}
+
 	private BaseRecord createWork(BaseRecord user, String tag) throws Exception {
 		ParameterList wplist = ParameterList.newParameterList(FieldNames.FIELD_PATH, WORK_PATH);
 		wplist.parameter(FieldNames.FIELD_NAME, "rerun-src-" + tag);
@@ -161,9 +168,10 @@ public class TestPbCreateFromScenesRerun extends BaseTest {
 
 		// ── RUN 2: SAME titles (what a wizard re-run on the same manuscript supplies), new content ──
 		List<Map<String, Object>> run2 = new ArrayList<>();
-		run2.add(castlessScene("Harbour Lamps", "run2 summary A"));
-		run2.add(castlessScene("The Turning Tide", "run2 summary B"));
-		run2.add(castlessScene("Wall Watchers", "run2 summary C"));
+		// Run 2 carries chunk provenance (as extractChunkedInternal's scenes do): chunk = 10 + scene index.
+		run2.add(castlessScene("Harbour Lamps", "run2 summary A", 10));
+		run2.add(castlessScene("The Turning Tide", "run2 summary B", 11));
+		run2.add(castlessScene("Wall Watchers", "run2 summary C", 12));
 
 		BaseRecord meta2 = null;
 		try {
@@ -194,6 +202,9 @@ public class TestPbCreateFromScenesRerun extends BaseTest {
 			assertEquals("scene " + i + " blurb was replaced by run 2's summary", "run2 summary " + (char) ('A' + i), tj.get("blurb"));
 			assertEquals("scene " + i + " sceneIndex", i, ((Number) tj.get("sceneIndex")).intValue());
 			assertNull("transient sourceText never persists", tj.get("sourceText"));
+			assertNotNull("scene " + i + " sourceChunk provenance persists in the scene note JSON", tj.get("sourceChunk"));
+			assertEquals("scene " + i + " sourceChunk is the chunk index supplied by run 2", 10 + i,
+				((Number) tj.get("sourceChunk")).intValue());
 		}
 		assertEquals("render state (status) on scene 0 survived the in-place update", "accepted",
 			textJson(byOid.get(oids2.get(0))).get("status"));
