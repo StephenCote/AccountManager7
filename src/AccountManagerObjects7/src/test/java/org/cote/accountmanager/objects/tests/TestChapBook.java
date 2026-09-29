@@ -5,7 +5,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assume.assumeTrue;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -144,7 +143,7 @@ public class TestChapBook extends BaseTest {
 	@Test
 	public void TestChapBookRender() throws Exception {
 		String swarmServer = testProperties.getProperty("test.swarm.server");
-		assumeTrue("test.swarm.server not configured — skipping SD test", swarmServer != null && !swarmServer.isBlank());
+		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, swarmServer, "ChapBook render");
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);
@@ -216,7 +215,7 @@ public class TestChapBook extends BaseTest {
 
 		// ── 3. Render the ChapBook against the live Swarm SD server ─────────────
 		long renderStart = System.currentTimeMillis();
-		int rendered = ChapBookUtil.renderChapBook(testUser, bookObjectId, "SWARM", swarmServer);
+		int rendered = ChapBookUtil.renderChapBook(testUser, bookObjectId, "SWARM", swarmServer, null, renderConfig);
 		logger.info("renderChapBook took {}ms, rendered={}/{} scenes",
 			System.currentTimeMillis() - renderStart, rendered, scenes.size());
 
@@ -342,8 +341,7 @@ public class TestChapBook extends BaseTest {
 	@Test
 	public void testChapBookLlmLandscapePrompt() throws Exception {
 		String llmServer = testProperties.getProperty("test.llm.ollama.server");
-		assumeTrue("test.llm.ollama.server not configured — skipping LLM landscape-prompt test",
-			llmServer != null && !llmServer.isBlank());
+		SdTestGate.requireLlmReachable(llmServer);
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);
@@ -453,11 +451,9 @@ public class TestChapBook extends BaseTest {
 	@Test
 	public void TestChapBookRenderDecodedEmitE2E() throws Exception {
 		String swarmServer = testProperties.getProperty("test.swarm.server");
-		assumeTrue("test.swarm.server not configured — skipping ChapBook render E2E",
-			swarmServer != null && !swarmServer.isBlank());
+		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, swarmServer, "ChapBook render");
 		String llmServer = testProperties.getProperty("test.llm.ollama.server");
-		assumeTrue("test.llm.ollama.server not configured — skipping ChapBook render E2E",
-			llmServer != null && !llmServer.isBlank());
+		SdTestGate.requireLlmReachable(llmServer);
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);
@@ -538,7 +534,7 @@ public class TestChapBook extends BaseTest {
 
 		// ── 4. Render against the live Swarm SD server ──────────────────────────
 		long renderStart = System.currentTimeMillis();
-		int rendered = ChapBookUtil.renderChapBook(testUser, bookObjectId, "SWARM", swarmServer);
+		int rendered = ChapBookUtil.renderChapBook(testUser, bookObjectId, "SWARM", swarmServer, null, renderConfig);
 		logger.info("renderChapBook took {}ms, rendered={}/{} scenes",
 			System.currentTimeMillis() - renderStart, rendered, scenes.size());
 		assertTrue("At least 1 scene must be rendered (returned " + rendered + ")", rendered >= 1);
@@ -645,11 +641,9 @@ public class TestChapBook extends BaseTest {
 	@Test
 	public void TestChapBookRenderSceneDecodedEmitE2E() throws Exception {
 		String swarmServer = testProperties.getProperty("test.swarm.server");
-		assumeTrue("test.swarm.server not configured — skipping per-scene ChapBook render E2E",
-			swarmServer != null && !swarmServer.isBlank());
+		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, swarmServer, "ChapBook render");
 		String llmServer = testProperties.getProperty("test.llm.ollama.server");
-		assumeTrue("test.llm.ollama.server not configured — skipping per-scene ChapBook render E2E",
-			llmServer != null && !llmServer.isBlank());
+		SdTestGate.requireLlmReachable(llmServer);
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);
@@ -715,7 +709,7 @@ public class TestChapBook extends BaseTest {
 		// ── 3. Drive the NEW per-scene render path (exactly one SD call) ────────
 		long renderStart = System.currentTimeMillis();
 		ChapBookUtil.SceneRenderResult renderResult = ChapBookUtil.renderChapBookScene(
-			testUser, sceneObjectId, "SWARM", swarmServer, chatConfig, null);
+			testUser, sceneObjectId, "SWARM", swarmServer, chatConfig, renderConfig);
 		logger.info("renderChapBookScene took {}ms for scene {}",
 			System.currentTimeMillis() - renderStart, sceneObjectId);
 
@@ -836,8 +830,7 @@ public class TestChapBook extends BaseTest {
 	@Test
 	public void testChapBookLlmPriorContextThreading() throws Exception {
 		String llmServer = testProperties.getProperty("test.llm.ollama.server");
-		assumeTrue("test.llm.ollama.server not configured — skipping prior-context threading test",
-			llmServer != null && !llmServer.isBlank());
+		SdTestGate.requireLlmReachable(llmServer);
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);

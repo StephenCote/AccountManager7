@@ -53,7 +53,7 @@ public class TestPbCharacterRaceFromText {
 	private static final List<String> RACE_WORDS = Arrays.asList(
 		"white", "black", "asian", "american indian", "alaska native", "native hawaiian",
 		"pacific islander", "lunatic", "robot", "monster", "succubus", "vampire", "exraterrestrial",
-		"elf", "dwarf", "fairy", "unknown");
+		"elf", "dwarf", "fairy", "unknown", "custom");
 
 	private static Map<String, Object> charData(String race) {
 		Map<String, Object> m = new HashMap<>();
@@ -382,6 +382,425 @@ public class TestPbCharacterRaceFromText {
 		d = llm("Fairy", null, null, null);
 		PictureBookUtil.groundRaceAndEthnicity(d, null, "t");
 		assertEquals("no passages means nothing is stated", "Unknown", d.get("race"));
+	}
+
+	// ── Custom race (RaceEnumType.O) + optional raceLabel ────────────────────────────────────
+	//
+	// O is a SINK: the passages literally name a race the enum does not list ("Mer-folk"), the
+	// grounding gate promotes it to race="Custom" + race_label=<the text's word>, and the record
+	// carries the word in charPerson.raceLabel. The word "Custom" itself is never a choice offered
+	// to the LLM, never a mapping target, and never rendered into a narration or prompt.
+
+	private static final String MERFOLK_PASSAGE = "The Mer-folk of the bay surfaced at dusk, their scaled "
+		+ "shoulders glinting. Nerine, eldest of the Mer-folk, watched the lamps come on along the quay.";
+
+	/// Pinned as a LITERAL, not derived from values(): this exact string is embedded in the 106
+	/// recorded LLM-emulator fixtures, so any drift (including a "fix" of the Exraterrestrial typo)
+	/// silently invalidates every one of them. Custom must NOT be offered.
+	@Test
+	public void raceOptionsCsvOmitsCustomAndIsPinned() {
+		assertEquals("American Indian/Alaska Native, Asian, Black, Native Hawaiian or other Pacific Islander, "
+			+ "White, Lunatic, Robot, Monster, Succubus, Unknown, Vampire, Exraterrestrial, Elf, Dwarf, Fairy",
+			PictureBookUtil.raceOptionsCsv());
+		assertFalse(PictureBookUtil.raceOptionsCsv().toLowerCase().contains("custom"));
+	}
+
+	@Test
+	public void customIsNeverAMappingTarget() {
+		assertEquals(null, PictureBookUtil.mapRaceOverride("Custom"));
+		assertEquals(null, PictureBookUtil.mapRaceOverride("custom"));
+		assertEquals(null, PictureBookUtil.mapRaceOverride("O"));
+		assertEquals(null, PictureBookUtil.mapRaceOverride("o"));
+		assertEquals(null, PictureBookUtil.mapRaceOverride("  Custom  "));
+		// Every other constant still maps by label and by name.
+		assertEquals("Z", PictureBookUtil.mapRaceOverride("Fairy"));
+		assertEquals("Z", PictureBookUtil.mapRaceOverride("z"));
+		assertTrue(RaceEnumType.isCustom("O"));
+		assertTrue(RaceEnumType.isCustom(" o "));
+		assertFalse(RaceEnumType.isCustom("Custom"));
+		assertFalse(RaceEnumType.isCustom(null));
+	}
+
+	@Test
+	public void customWithLabelResolvesToOAndLabel() {
+		Map<String, Object> d = charData("Custom");
+		d.put(PictureBookUtil.KEY_RACE_LABEL, "Mer-folk");
+		assertEquals(Arrays.asList(RaceEnumType.O.name()), PictureBookUtil.resolveTextRace(d, "Nerine"));
+		assertEquals("Mer-folk", PictureBookUtil.resolveTextRaceLabel(d));
+		// The constant name is accepted as the Custom marker too (a re-run over persisted data).
+		d = charData("O");
+		d.put(PictureBookUtil.KEY_RACE_LABEL, "  Mer-folk  ");
+		assertEquals(Arrays.asList(RaceEnumType.O.name()), PictureBookUtil.resolveTextRace(d, "Nerine"));
+		assertEquals("trimmed", "Mer-folk", PictureBookUtil.resolveTextRaceLabel(d));
+	}
+
+	@Test
+	public void customWithoutAMeaningfulLabelContributesNothing() {
+		Map<String, Object> d = charData("Custom");
+		assertTrue("Custom with no label is 'not stated'", PictureBookUtil.resolveTextRace(d, "t").isEmpty());
+		assertEquals(null, PictureBookUtil.resolveTextRaceLabel(d));
+		d.put(PictureBookUtil.KEY_RACE_LABEL, "null");
+		assertTrue("LLM literal placeholder label", PictureBookUtil.resolveTextRace(d, "t").isEmpty());
+		assertEquals(null, PictureBookUtil.resolveTextRaceLabel(d));
+		d.put(PictureBookUtil.KEY_RACE_LABEL, "   ");
+		assertTrue(PictureBookUtil.resolveTextRace(d, "t").isEmpty());
+		d.put(PictureBookUtil.KEY_RACE_LABEL, Arrays.asList("Mer-folk"));
+		assertTrue("label must be a string", PictureBookUtil.resolveTextRace(d, "t").isEmpty());
+		assertEquals(null, PictureBookUtil.resolveTextRaceLabel(null));
+	}
+
+	@Test
+	public void groundedOffListRaceBecomesCustomWithLabel() {
+		Map<String, Object> d = llm("Mer-folk", null, null, null);
+		PictureBookUtil.groundRaceAndEthnicity(d, MERFOLK_PASSAGE, "Nerine");
+		assertEquals("Custom", d.get("race"));
+		assertEquals("Mer-folk", d.get(PictureBookUtil.KEY_RACE_LABEL));
+		// Downstream contract: O on the record, the text's own word as the label.
+		assertEquals(Arrays.asList(RaceEnumType.O.name()), PictureBookUtil.resolveTextRace(d, "Nerine"));
+		assertEquals("Mer-folk", PictureBookUtil.resolveTextRaceLabel(d));
+		// With a genuine evidence quote that contains the word.
+		d = llm("Mer-folk", "eldest of the Mer-folk", null, null);
+		PictureBookUtil.groundRaceAndEthnicity(d, MERFOLK_PASSAGE, "Nerine");
+		assertEquals("Custom", d.get("race"));
+		assertEquals("Mer-folk", d.get(PictureBookUtil.KEY_RACE_LABEL));
+	}
+
+	@Test
+	public void offListRaceNeedsEveryWordOfTheLabelInThePassages() {
+		// Only "olive-skinned" is in the passage; "Mediterranean" is not — left untouched, no label,
+		// and resolveTextRace drops it (same contract the pass-through test above pins).
+		Map<String, Object> d = llm("olive-skinned Mediterranean", null, null, null);
+		PictureBookUtil.groundRaceAndEthnicity(d, "Her olive-skinned hands worked the rope.", "t");
+		assertEquals("olive-skinned Mediterranean", d.get("race"));
+		assertFalse(d.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+		assertTrue(PictureBookUtil.resolveTextRace(d, "t").isEmpty());
+		assertEquals(null, PictureBookUtil.resolveTextRaceLabel(d));
+		// A shared word does not carry the rest: "folk" alone does not ground "Mer-folk".
+		d = llm("Mer-folk", null, null, null);
+		PictureBookUtil.groundRaceAndEthnicity(d, "The folk of the bay kept to their boats.", "Nerine");
+		assertEquals("Mer-folk", d.get("race"));
+		assertFalse(d.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+		assertTrue(PictureBookUtil.resolveTextRace(d, "Nerine").isEmpty());
+	}
+
+	@Test
+	public void groundedEthnicityWordAsRaceIsNeverPromotedToCustom() {
+		// "Scottish" maps to an EthnicityEnumType; even when the passage says Scotland it is not a race.
+		Map<String, Object> d = llm("Scottish", null, null, null);
+		PictureBookUtil.groundRaceAndEthnicity(d, "He had come south from Scotland the winter before.", "Caleb");
+		assertEquals("left for resolveTextRace to drop", "Scottish", d.get("race"));
+		assertFalse(d.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+		assertTrue(PictureBookUtil.resolveTextRace(d, "Caleb").isEmpty());
+	}
+
+	@Test
+	public void llmSuppliedRaceLabelIsStripped() {
+		// On-list race with a label the model invented: only the gate may attach race_label.
+		Map<String, Object> d = llm("Fairy", null, null, null);
+		d.put(PictureBookUtil.KEY_RACE_LABEL, "Sidhe");
+		PictureBookUtil.groundRaceAndEthnicity(d, FAIRY_PASSAGE, "Visella");
+		assertEquals("Fairy", d.get("race"));
+		assertFalse("the LLM's own race_label must not survive the gate", d.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+		assertEquals(Arrays.asList(RaceEnumType.Z.name()), PictureBookUtil.resolveTextRace(d, "Visella"));
+		// Ungrounded off-list race with an LLM label: label stripped, race untouched, nothing resolves.
+		d = llm("Mer-folk", null, null, null);
+		d.put(PictureBookUtil.KEY_RACE_LABEL, "Mer-folk");
+		PictureBookUtil.groundRaceAndEthnicity(d, MACINTYRE_PASSAGE, "t");
+		assertEquals("Mer-folk", d.get("race"));
+		assertFalse(d.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+		assertTrue(PictureBookUtil.resolveTextRace(d, "t").isEmpty());
+	}
+
+	@Test
+	public void llmAnsweringCustomIsNotStated() {
+		Map<String, Object> d = llm("Custom", null, null, null);
+		d.put(PictureBookUtil.KEY_RACE_LABEL, "Mer-folk");
+		PictureBookUtil.groundRaceAndEthnicity(d, MERFOLK_PASSAGE, "Nerine");
+		assertEquals("'Custom' names nothing the text could state", "Unknown", d.get("race"));
+		assertFalse(d.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+		assertTrue(PictureBookUtil.resolveTextRace(d, "Nerine").isEmpty());
+		d = llm("O", null, null, null);
+		PictureBookUtil.groundRaceAndEthnicity(d, MERFOLK_PASSAGE, "Nerine");
+		assertEquals("Unknown", d.get("race"));
+	}
+
+	/// A label longer than identity.person raceLabel.maxLength (64) is never promoted: the gate
+	/// leaves the raw string untouched with no race_label, resolveTextRace drops it, and creation
+	/// proceeds with no race — the over-long label is DROPPED, not truncated and not an abort.
+	@Test
+	public void overLongOffListLabelIsDroppedNotPromoted() {
+		String longLabel = "Mer-folk of the deep bay who surface at dusk with scaled shoulders and glinting eyes";
+		assertTrue(longLabel.length() > 64);
+		// Every word of the label IS in the passage, so only the length rule can reject it.
+		String passage = "Nerine was one of the " + longLabel + ".";
+		Map<String, Object> d = llm(longLabel, null, null, null);
+		PictureBookUtil.groundRaceAndEthnicity(d, passage, "Nerine");
+		assertEquals("left untouched for resolveTextRace to drop", longLabel, d.get("race"));
+		assertFalse(d.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+		assertTrue(PictureBookUtil.resolveTextRace(d, "Nerine").isEmpty());
+		assertEquals(null, PictureBookUtil.resolveTextRaceLabel(d));
+		// Exactly 64 characters is still allowed and promoted.
+		String label64 = "Mer-folk " + "a".repeat(64 - "Mer-folk ".length());
+		assertEquals(64, label64.length());
+		d = llm(label64, null, null, null);
+		PictureBookUtil.groundRaceAndEthnicity(d, "The " + label64 + " sang.", "Nerine");
+		assertEquals("Custom", d.get("race"));
+		assertEquals(label64, d.get(PictureBookUtil.KEY_RACE_LABEL));
+		// 65 is not.
+		String label65 = label64 + "a";
+		d = llm(label65, null, null, null);
+		PictureBookUtil.groundRaceAndEthnicity(d, "The " + label65 + " sang.", "Nerine");
+		assertEquals(label65, d.get("race"));
+		assertFalse(d.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+	}
+
+	@Test
+	public void raceDescriptionSubstitutesTheLabelForCustomOnly() {
+		assertEquals("Fae", NarrativeUtil.getRaceDescription(Arrays.asList("O"), "Fae"));
+		assertEquals("Fairy and Fae", NarrativeUtil.getRaceDescription(Arrays.asList("Z", "O"), "Fae"));
+		assertEquals("no dangling conjunction", "White", NarrativeUtil.getRaceDescription(Arrays.asList("E", "O"), null));
+		assertEquals("", NarrativeUtil.getRaceDescription(Arrays.asList("O"), null));
+		assertEquals("LLM literal placeholder is not a label", "", NarrativeUtil.getRaceDescription(Arrays.asList("O"), "null"));
+		assertEquals("", NarrativeUtil.getRaceDescription(Arrays.asList("O"), "   "));
+		assertEquals("trimmed", "Fae", NarrativeUtil.getRaceDescription(Arrays.asList("O"), "  Fae  "));
+		assertEquals("single-arg form drops O", "White", NarrativeUtil.getRaceDescription(Arrays.asList("E", "O")));
+		assertEquals("", NarrativeUtil.getRaceDescription(Arrays.asList("O")));
+		// The label never applies to a non-custom element.
+		assertEquals("White", NarrativeUtil.getRaceDescription(Arrays.asList("E"), "Fae"));
+		assertEquals(Arrays.asList("Fairy", "Fae"), NarrativeUtil.describeRaces(Arrays.asList("Z", "O"), "Fae"));
+		assertEquals(Collections.emptyList(), NarrativeUtil.describeRaces(null, "Fae"));
+		// The word "Custom" is never emitted.
+		for (String s : Arrays.asList(NarrativeUtil.getRaceDescription(Arrays.asList("O"), null),
+				NarrativeUtil.getRaceDescription(Arrays.asList("Z", "O"), "Fae"))) {
+			assertFalse(s, s.toLowerCase().contains("custom"));
+		}
+	}
+
+	// ── cast (caller-supplied) races: user-authored, honored without grounding ──────────────────
+
+	@Test
+	public void offListCastRaceBecomesCustomWithLabelWithoutGrounding() {
+		Map<String, Object> cd = charData("Mer-folk");
+		PictureBookUtil.normalizeCastRace(cd, "Nerine");
+		assertEquals("Custom", cd.get("race"));
+		assertEquals("Mer-folk", cd.get(PictureBookUtil.KEY_RACE_LABEL));
+		assertEquals(Arrays.asList("O"), PictureBookUtil.resolveTextRace(cd, "Nerine"));
+		assertEquals("Mer-folk", PictureBookUtil.resolveTextRaceLabel(cd));
+
+		// Multi-word and untrimmed input: the label is the caller's own words, trimmed.
+		Map<String, Object> mw = charData("  Deep Sea Mer-folk ");
+		PictureBookUtil.normalizeCastRace(mw, "Nerine");
+		assertEquals("Custom", mw.get("race"));
+		assertEquals("Deep Sea Mer-folk", mw.get(PictureBookUtil.KEY_RACE_LABEL));
+	}
+
+	@Test
+	public void onListAndExplicitCustomCastRacesPassThroughUnchanged() {
+		Map<String, Object> fairy = charData("Fairy");
+		PictureBookUtil.normalizeCastRace(fairy, "Tam");
+		assertEquals("Fairy", fairy.get("race"));
+		assertFalse(fairy.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+		assertEquals(Arrays.asList("Z"), PictureBookUtil.resolveTextRace(fairy, "Tam"));
+
+		Map<String, Object> explicit = charData("Custom");
+		explicit.put(PictureBookUtil.KEY_RACE_LABEL, "Selkie");
+		PictureBookUtil.normalizeCastRace(explicit, "Roan");
+		assertEquals("Custom", explicit.get("race"));
+		assertEquals("Selkie", explicit.get(PictureBookUtil.KEY_RACE_LABEL));
+
+		// Constant-name shape is accepted too.
+		Map<String, Object> constant = charData("O");
+		constant.put(PictureBookUtil.KEY_RACE_LABEL, "Selkie");
+		PictureBookUtil.normalizeCastRace(constant, "Roan");
+		assertEquals("O", constant.get("race"));
+		assertEquals("Selkie", constant.get(PictureBookUtil.KEY_RACE_LABEL));
+	}
+
+	@Test
+	public void castRaceExclusionsMatchTheLlmPath() {
+		// An ethnicity word is not a race and is never promoted (Stephen: drop it, never promote).
+		Map<String, Object> eth = charData("Scottish");
+		PictureBookUtil.normalizeCastRace(eth, "Moira");
+		assertEquals("left for resolveTextRace to drop", "Scottish", eth.get("race"));
+		assertFalse(eth.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+		assertTrue(PictureBookUtil.resolveTextRace(eth, "Moira").isEmpty());
+
+		// Over the column width: dropped, never truncated into a label.
+		String longRace = "A".repeat(PictureBookUtil.raceLabelMaxLength() + 1);
+		Map<String, Object> over = charData(longRace);
+		PictureBookUtil.normalizeCastRace(over, "X");
+		assertEquals(longRace, over.get("race"));
+		assertFalse(over.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+		assertTrue(PictureBookUtil.resolveTextRace(over, "X").isEmpty());
+		// Exactly the width is fine.
+		String maxRace = "B".repeat(PictureBookUtil.raceLabelMaxLength());
+		Map<String, Object> max = charData(maxRace);
+		PictureBookUtil.normalizeCastRace(max, "X");
+		assertEquals("Custom", max.get("race"));
+		assertEquals(maxRace, max.get(PictureBookUtil.KEY_RACE_LABEL));
+
+		// Placeholders and blanks are not races and contribute nothing.
+		for (String s : Arrays.asList("null", "n/a", "unknown", "", "   ")) {
+			Map<String, Object> ph = charData(s);
+			PictureBookUtil.normalizeCastRace(ph, "X");
+			assertEquals(s, ph.get("race"));
+			assertFalse(s, ph.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+			assertTrue(s, PictureBookUtil.resolveTextRace(ph, "X").isEmpty());
+		}
+		// Null-safe.
+		PictureBookUtil.normalizeCastRace(null, "X");
+		PictureBookUtil.enforceRaceLabelInvariant(null);
+	}
+
+	@Test
+	public void explicitCustomWithOverLongLabelYieldsNoRaceAndNoLabel() {
+		// normalizeCastRace passes an explicit Custom+race_label pair through unchecked, so the width
+		// guard has to hold at resolveTextRaceLabel — otherwise the label reaches identity.person.raceLabel
+		// (maxLength 64), RecordValidator rejects it, and the whole charPerson create fails.
+		String longLabel = "L".repeat(PictureBookUtil.raceLabelMaxLength() + 1);
+		for (String customShape : Arrays.asList("Custom", "O")) {
+			Map<String, Object> explicit = charData(customShape);
+			explicit.put(PictureBookUtil.KEY_RACE_LABEL, longLabel);
+			PictureBookUtil.normalizeCastRace(explicit, "Roan");
+			assertEquals(customShape, longLabel, explicit.get(PictureBookUtil.KEY_RACE_LABEL));
+			assertEquals(customShape, null, PictureBookUtil.resolveTextRaceLabel(explicit));
+			assertTrue(customShape + ": Custom without a usable label leaves race unset",
+				PictureBookUtil.resolveTextRace(explicit, "Roan").isEmpty());
+		}
+		// Exactly the width still resolves.
+		String maxLabel = "M".repeat(PictureBookUtil.raceLabelMaxLength());
+		Map<String, Object> max = charData("Custom");
+		max.put(PictureBookUtil.KEY_RACE_LABEL, maxLabel);
+		PictureBookUtil.normalizeCastRace(max, "Roan");
+		assertEquals(maxLabel, PictureBookUtil.resolveTextRaceLabel(max));
+		assertEquals(Arrays.asList("O"), PictureBookUtil.resolveTextRace(max, "Roan"));
+		// Whitespace padding does not count toward the width.
+		Map<String, Object> padded = charData("Custom");
+		padded.put(PictureBookUtil.KEY_RACE_LABEL, "  " + maxLabel + "  ");
+		assertEquals(maxLabel, PictureBookUtil.resolveTextRaceLabel(padded));
+	}
+
+	@Test
+	public void raceLabelWidthComesFromThePersonSchema() {
+		// The guard must not drift from the column: it is read from identity.person raceLabel.maxLength.
+		int schemaMax = RecordFactory.getSchema(ModelNames.MODEL_PERSON)
+			.getFieldSchema(OlioFieldNames.FIELD_RACE_LABEL).getMaxLength();
+		assertTrue("personModel.json must declare a positive maxLength on raceLabel", schemaMax > 0);
+		assertEquals(schemaMax, PictureBookUtil.raceLabelMaxLength());
+	}
+
+	@Test
+	public void raceLabelControlCharactersAreStrippedAtWriteTime() {
+		// The label is rendered verbatim into narration and SD prompts, so a newline/tab/escape smuggled
+		// in through cast data or the LLM must be gone from the value that gets STORED, not only the read.
+		Map<String, Object> explicit = charData("Custom");
+		explicit.put(PictureBookUtil.KEY_RACE_LABEL, "Mer-\nfolk\t\u001b[31m");
+		PictureBookUtil.normalizeCastRace(explicit, "Nerine");
+		assertEquals("Mer- folk [31m", PictureBookUtil.resolveTextRaceLabel(explicit));
+
+		Map<String, Object> raw = charData("Sea\r\nElf");
+		PictureBookUtil.normalizeCastRace(raw, "Nerine");
+		assertEquals("Custom", raw.get("race"));
+		assertEquals("Sea Elf", raw.get(PictureBookUtil.KEY_RACE_LABEL));
+		assertEquals("Sea Elf", PictureBookUtil.resolveTextRaceLabel(raw));
+
+		// Nothing but control characters is not a label at all.
+		Map<String, Object> junk = charData("Custom");
+		junk.put(PictureBookUtil.KEY_RACE_LABEL, "\n\t\u0007");
+		assertEquals(null, PictureBookUtil.resolveTextRaceLabel(junk));
+		assertTrue(PictureBookUtil.resolveTextRace(junk, "Nerine").isEmpty());
+	}
+
+	@Test
+	public void raceLabelNeverSitsBesideANonCustomRace() {
+		// A cast label without a Custom race is a stray and is removed up front.
+		Map<String, Object> stray = charData("Fairy");
+		stray.put(PictureBookUtil.KEY_RACE_LABEL, "Selkie");
+		PictureBookUtil.normalizeCastRace(stray, "Tam");
+		assertEquals("Fairy", stray.get("race"));
+		assertFalse(stray.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+
+		Map<String, Object> noRace = new HashMap<>();
+		noRace.put(PictureBookUtil.KEY_RACE_LABEL, "Selkie");
+		PictureBookUtil.normalizeCastRace(noRace, "Tam");
+		assertFalse(noRace.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+
+		// The orphan case: cast says Fairy (on-list, wins the fill-only merge), the LLM grounded an
+		// off-list race and its label alone would have merged in beside the cast's race.
+		Map<String, Object> cast = charData("Fairy");
+		PictureBookUtil.normalizeCastRace(cast, "Tam");
+		Map<String, Object> llm = new LinkedHashMap<>();
+		llm.put("race", "Custom");
+		llm.put(PictureBookUtil.KEY_RACE_LABEL, "Selkie");
+		llm.put("age", "30");
+		for (Map.Entry<String, Object> e : llm.entrySet()) {
+			if (!cast.containsKey(e.getKey()) || cast.get(e.getKey()) == null
+					|| ((cast.get(e.getKey()) instanceof String) && ((String) cast.get(e.getKey())).isEmpty())) {
+				cast.put(e.getKey(), e.getValue());
+			}
+		}
+		assertEquals("pre-invariant: the merge did orphan a label", "Selkie", cast.get(PictureBookUtil.KEY_RACE_LABEL));
+		PictureBookUtil.enforceRaceLabelInvariant(cast);
+		assertEquals("Fairy", cast.get("race"));
+		assertFalse("the orphaned label is removed", cast.containsKey(PictureBookUtil.KEY_RACE_LABEL));
+		assertEquals("other merged keys untouched", "30", cast.get("age"));
+
+		// And when the pair arrives together it is kept whole.
+		Map<String, Object> pair = new HashMap<>();
+		pair.put("race", "Custom");
+		pair.put(PictureBookUtil.KEY_RACE_LABEL, "Selkie");
+		PictureBookUtil.enforceRaceLabelInvariant(pair);
+		assertEquals("Selkie", pair.get(PictureBookUtil.KEY_RACE_LABEL));
+	}
+
+	@Test
+	public void raceLabelControlCharactersAreStrippedBeforeRendering() throws Exception {
+		BaseRecord person = charPerson(Arrays.asList(RaceEnumType.O.name()), null);
+		person.set(OlioFieldNames.FIELD_RACE_LABEL, "Fae\nfolk\t(of the\u0007hollow)");
+		String label = NarrativeUtil.getRaceLabel(person);
+		assertEquals("Fae folk (of the hollow)", label);
+		assertEquals("Fae folk (of the hollow)", NarrativeUtil.getRaceDescription(Arrays.asList("O"), "Fae\r\nfolk (of the\u0007hollow)"));
+		String d = NarrativeUtil.describePhysical(profileFor(person));
+		assertFalse(d, d.contains("\n") || d.contains("\t") || d.contains("\u0007"));
+		assertTrue(d, d.contains("Fae folk (of the hollow) woman"));
+		// Control characters alone are not a label.
+		BaseRecord junk = charPerson(Arrays.asList(RaceEnumType.O.name()), null);
+		junk.set(OlioFieldNames.FIELD_RACE_LABEL, "\n\t\u0001");
+		assertEquals(null, NarrativeUtil.getRaceLabel(junk));
+		assertEquals("", NarrativeUtil.getRaceDescription(Arrays.asList("O"), "\n\t"));
+	}
+
+	@Test
+	public void describePhysicalRendersTheLabelNeverTheWordCustom() throws Exception {
+		BaseRecord person = charPerson(Arrays.asList(RaceEnumType.O.name()), null);
+		person.set(OlioFieldNames.FIELD_RACE_LABEL, "Fae");
+		assertEquals("Fae", NarrativeUtil.getRaceLabel(person));
+		assertEquals("Fae", profileFor(person).getRaceLabel());
+		String d = NarrativeUtil.describePhysical(profileFor(person));
+		logger.info("describePhysical (race O, label Fae): " + d);
+		assertTrue(d, d.contains("28 year old Fae woman"));
+		assertFalse(d, d.toLowerCase().contains("custom"));
+		assertFalse(d.contains("  "));
+
+		// O with no label: no race word at all (RACE_WORDS now includes "custom").
+		BaseRecord unlabeled = charPerson(Arrays.asList(RaceEnumType.O.name()), null);
+		String u = NarrativeUtil.describePhysical(profileFor(unlabeled));
+		logger.info("describePhysical (race O, no label): " + u);
+		assertNoRaceWord(u);
+		assertFalse(u.contains("  "));
+		assertTrue(u, u.contains("28 year old woman with green eyes and auburn hair."));
+
+		// O with a placeholder label behaves like no label.
+		BaseRecord placeholder = charPerson(Arrays.asList(RaceEnumType.O.name()), null);
+		placeholder.set(OlioFieldNames.FIELD_RACE_LABEL, "unknown");
+		assertEquals(null, NarrativeUtil.getRaceLabel(placeholder));
+		assertNoRaceWord(NarrativeUtil.describePhysical(profileFor(placeholder)));
+
+		// Mixed list: the enum label and the custom label both render.
+		BaseRecord mixed = charPerson(Arrays.asList(RaceEnumType.Z.name(), RaceEnumType.O.name()), null);
+		mixed.set(OlioFieldNames.FIELD_RACE_LABEL, "Fae");
+		String mx = NarrativeUtil.describePhysical(profileFor(mixed));
+		assertTrue(mx, mx.contains("28 year old Fairy and Fae woman"));
 	}
 
 	// ── prompt resources: the classpath prompt and its DB-seeded template twin must agree ────────

@@ -94,10 +94,12 @@ public class BaseTest {
 		/// picture-book tests alternate LLM and SD work repeatedly. TestPictureBookFull's
 		/// unload-verification test calls unloadAll(true) directly, so it is unaffected.
 		OllamaModelUtil.setUnloadEnabled(Boolean.parseBoolean(testProperties.getProperty(OllamaModelUtil.CONFIG_KEY)));
-		/// Fallback SD checkpoint for anything that doesn't set one on its config. Reuses
-		/// test.swarm.model so the tests can't drift from the checkpoint the test Swarm actually has —
-		/// the failure mode is silent (empty image list, test logs and skips: KI-39).
-		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(testProperties.getProperty("test.swarm.model"));
+		/// Checkpoints come from the Swarm node's own model list, not from names pinned in
+		/// resource.properties (inventory is per-node; Stephen roams between two Swarm boxes). Resolved
+		/// once per JVM and written back into test.swarm.model / test.swarm.refinerModel, then re-used as
+		/// the fallback checkpoint so nothing drifts from what this node actually has (KI-39).
+		SdTestGate.resolveInstalledCheckpoints(testProperties);
+		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(testProperties.getProperty(SdTestGate.PROP_SWARM_MODEL));
 		/// Must precede any HTTP call (the shared Client caches it). The old 360s default killed every
 		/// FLUX.2 composite mid-generation on the local iGPU - see ClientUtil.
 		String readTo = testProperties.getProperty(org.cote.accountmanager.util.ClientUtil.READ_TIMEOUT_CONFIG_KEY);

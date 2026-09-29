@@ -6,7 +6,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-import static org.junit.Assume.assumeTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -161,11 +160,9 @@ public class TestChapBookSceneLandscapePrompt extends BaseTest {
 	@Test
 	public void testRenderHonorsPromptOverrideVerbatim() {
 		String swarmServer = testProperties.getProperty("test.swarm.server");
-		assumeTrue("test.swarm.server not configured — skipping ChapBook render override test",
-			swarmServer != null && !swarmServer.isBlank());
+		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, swarmServer, "ChapBook prompt-override render");
 		String llmServer = testProperties.getProperty("test.llm.ollama.server");
-		assumeTrue("test.llm.ollama.server not configured — skipping ChapBook render override test",
-			llmServer != null && !llmServer.isBlank());
+		SdTestGate.requireLlmReachable(llmServer);
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);
@@ -196,7 +193,7 @@ public class TestChapBookSceneLandscapePrompt extends BaseTest {
 		String override = "landscape, a lone lighthouse on a stormy cliff";
 
 		ChapBookUtil.SceneRenderResult result = ChapBookUtil.renderChapBookScene(
-			testUser, sceneOid, "SWARM", swarmServer, liveConfig, null, override);
+			testUser, sceneOid, "SWARM", swarmServer, liveConfig, renderConfig, override);
 
 		assertNotNull("renderChapBookScene must return a result", result);
 		// (a) The override drove a real render.

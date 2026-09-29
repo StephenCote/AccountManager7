@@ -4,7 +4,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assume.assumeTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -145,11 +144,9 @@ public class TestChapBookPromptLockedResolution extends BaseTest {
 	@Test
 	public void testBulkRenderHonorsLockedEditVerbatim() {
 		String swarmServer = testProperties.getProperty("test.swarm.server");
-		assumeTrue("test.swarm.server not configured — skipping ChapBook bulk-render lock test",
-			swarmServer != null && !swarmServer.isBlank());
+		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, swarmServer, "ChapBook locked-prompt render");
 		String llmServer = testProperties.getProperty("test.llm.ollama.server");
-		assumeTrue("test.llm.ollama.server not configured — skipping ChapBook bulk-render lock test",
-			llmServer != null && !llmServer.isBlank());
+		SdTestGate.requireLlmReachable(llmServer);
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);
@@ -193,7 +190,7 @@ public class TestChapBookPromptLockedResolution extends BaseTest {
 
 		// ── The ACTUAL whole-book BULK render entry point (NOT the per-scene 7-arg override path). ──
 		ChapBookUtil.ChapBookRenderSummary summary =
-			ChapBookUtil.renderChapBookSummary(testUser, bookOid, "SWARM", swarmServer, liveConfig, null);
+			ChapBookUtil.renderChapBookSummary(testUser, bookOid, "SWARM", swarmServer, liveConfig, renderConfig);
 		assertNotNull("renderChapBookSummary must return a summary", summary);
 		assertEquals("The single scene must have RENDERED in the bulk pass", 1, summary.rendered);
 

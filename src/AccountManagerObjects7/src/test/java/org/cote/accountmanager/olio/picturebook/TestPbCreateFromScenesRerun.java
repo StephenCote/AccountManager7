@@ -20,7 +20,11 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.objects.tests.BaseTest;
+import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.RaceEnumType;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -330,5 +334,326 @@ public class TestPbCreateFromScenesRerun extends BaseTest {
 		assertEquals("persisted meta still points at the baseline notes", new HashSet<>(sceneObjectIds(meta1)), afterOids);
 		assertFalse("nothing was deleted", sceneNotesInBook(testUser, bookGroupOid).isEmpty());
 		assertTrue("sanity: the failing title really exceeded the 256-char name limit", longTitle.length() > 256);
+	}
+
+	/// Chunk-0 provenance. RecordSerializer omits INT fields equal to the schema default, and
+	/// olio.pictureBookScene.sourceChunk had no declared default, so every scene extracted from the
+	/// FIRST chunk of a chapter (sourceChunk == 0) was written to .pictureBookMeta without the key
+	/// while chunk >= 1 scenes kept theirs (measured 2026-09-28: 29 chunk-0 scenes across 10
+	/// chapters came back from GET /scenes with no sourceChunk). Chunk >= 1 was already covered
+	/// above (10 + i); this pins 0, and that a directly-supplied scene (no chunk) stays absent
+	/// rather than acquiring a bogus value.
+	@Test
+	public void testChunkZeroSourceChunkSurvivesInMetaAndListScenes() throws Exception {
+		OlioModelNames.use();
+		BaseRecord testUser = getCreateUser("pbRerunUser");
+		assertNotNull("test user", testUser);
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be configured", dataPath);
+
+		String tag = shortId();
+		BaseRecord work = createWork(testUser, tag);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		String slug = "pbchunk0" + tag;
+		String bookName = "PB Chunk Zero Book " + tag;
+		BaseRecord pb2Book = PbBookUtil.createBook(testUser, dataPath, slug, bookName);
+		assertNotNull("PB2 book must be created", pb2Book);
+		String pb2BookOid = pb2Book.get(FieldNames.FIELD_OBJECT_ID);
+
+		List<Map<String, Object>> scenes = new ArrayList<>();
+		scenes.add(castlessScene("First Chunk Scene", "from chunk 0", 0));
+		scenes.add(castlessScene("Second Chunk Scene", "from chunk 1", 1));
+		scenes.add(castlessScene("Direct Scene", "supplied directly, no chunk"));
+
+		BaseRecord meta = PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction",
+			bookName, scenes, new ArrayList<>(), dataPath, pb2BookOid);
+		assertNotNull("createFromScenes returned meta", meta);
+		String bookGroupOid = meta.get("bookObjectId");
+		assertNotNull("meta.bookObjectId (PB1 group)", bookGroupOid);
+
+		// The persisted .pictureBookMeta JSON itself (what listScenes / GET /scenes parse).
+		BaseRecord bookGroup = PictureBookUtil.findBookGroup(testUser, bookGroupOid);
+		assertNotNull("PB1 book group", bookGroup);
+		Query mq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_GROUP_ID, bookGroup.get(FieldNames.FIELD_ID));
+		mq.field(FieldNames.FIELD_NAME, PictureBookUtil.META_NOTE_NAME);
+		mq.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		mq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "text" });
+		mq.setCache(false);
+		BaseRecord metaNote = IOSystem.getActiveContext().getAccessPoint().find(testUser, mq);
+		assertNotNull(".pictureBookMeta note", metaNote);
+		String metaJson = metaNote.get("text");
+		assertNotNull(".pictureBookMeta text", metaJson);
+		String compactMeta = metaJson.replaceAll("\\s+", "");
+		assertTrue("meta JSON carries sourceChunk 0 for the first-chunk scene: " + metaJson, compactMeta.contains("\"sourceChunk\":0,"));
+		assertFalse("the unset default (-1) never serializes: " + metaJson, compactMeta.contains("\"sourceChunk\":-1"));
+
+		List<Map<String, Object>> listed = PictureBookUtil.listScenes(testUser, bookGroupOid);
+		assertEquals("listScenes reports all 3", 3, listed.size());
+		assertEquals("scene 0 title", "First Chunk Scene", listed.get(0).get("title"));
+		assertTrue("scene 0 sourceChunk is present", listed.get(0).containsKey("sourceChunk"));
+		assertEquals("scene 0 sourceChunk is 0", 0, ((Number) listed.get(0).get("sourceChunk")).intValue());
+		assertEquals("scene 1 sourceChunk is 1", 1, ((Number) listed.get(1).get("sourceChunk")).intValue());
+		assertFalse("a directly-supplied scene carries no sourceChunk at all", listed.get(2).containsKey("sourceChunk"));
+	}
+
+	/// olio.charPerson by objectId, uncached, with race AND raceLabel projected (neither is a default
+	/// query field; an unprojected raceLabel would read as absent and hide a stored value).
+	private BaseRecord findCharPersonWithRace(BaseRecord user, String charObjectId) throws Exception {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charObjectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			OlioFieldNames.FIELD_RACE, OlioFieldNames.FIELD_RACE_LABEL });
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	private static String soleCharacterObjectId(BaseRecord meta) {
+		List<BaseRecord> scenes = meta.get("scenes");
+		assertNotNull("meta.scenes", scenes);
+		assertEquals("one scene", 1, scenes.size());
+		List<String> chars = scenes.get(0).get("characters");
+		assertNotNull("scene.characters", chars);
+		assertEquals("one character on the scene: " + chars, 1, chars.size());
+		return chars.get(0);
+	}
+
+	private static Map<String, Object> cast(String name, String race) {
+		Map<String, Object> c = new LinkedHashMap<>();
+		c.put("name", name);
+		if (race != null) c.put("race", race);
+		return c;
+	}
+
+	/// Fill-only race enrichment of an EXISTING charPerson. Chaptered manuscripts create each character
+	/// on the first chapter it appears in; race is written from the text alone (never the random
+	/// baseline), so a character whose first chapter states no race is created with race []. Measured
+	/// 2026-09-28 on the JOSIEFIED run: chapter 4 grounded "Fairy" for a character chapter 1 had created
+	/// raceless, and createCharPerson's existing-record branch returned the record untouched — the
+	/// stated race was lost. Rule under test (Stephen, 2026-09-28): fill when empty, NEVER overwrite.
+	/// The cast entries carry only name/race and chatConfigName is null, so no LLM call is made.
+	@Test
+	public void testRaceFillOnlyOnExistingCharPerson() throws Exception {
+		OlioModelNames.use();
+		BaseRecord testUser = getCreateUser("pbRerunUser");
+		assertNotNull("test user", testUser);
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be configured", dataPath);
+
+		String tag = shortId();
+		BaseRecord work = createWork(testUser, tag);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		String slug = "pbrace" + tag;
+		String bookName = "PB Race Fill Book " + tag;
+		BaseRecord pb2Book = PbBookUtil.createBook(testUser, dataPath, slug, bookName);
+		assertNotNull("PB2 book must be created", pb2Book);
+		String pb2BookOid = pb2Book.get(FieldNames.FIELD_OBJECT_ID);
+
+		String charName = "Wren Ashcombe " + tag;
+		List<Map<String, Object>> scenes = new ArrayList<>();
+		Map<String, Object> scene = castlessScene("Wren on the Quay", "Wren watches the lamps");
+		scene.put("characters", new ArrayList<>(List.of(charName)));
+		scenes.add(scene);
+
+		// ── RUN 1: the text states no race → created with race [] ──
+		List<Map<String, Object>> cast1 = new ArrayList<>();
+		cast1.add(cast(charName, null));
+		BaseRecord meta1 = PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction",
+			bookName, scenes, cast1, dataPath, pb2BookOid);
+		assertNotNull("run 1 returned meta", meta1);
+		String charOid = soleCharacterObjectId(meta1);
+		BaseRecord cp1 = findCharPersonWithRace(testUser, charOid);
+		assertNotNull("run 1 charPerson", cp1);
+		List<String> race1 = cp1.get("race");
+		assertTrue("run 1: no race stated, none written (random baseline must not leak): " + race1,
+			race1 == null || race1.isEmpty());
+
+		// ── RUN 2: a later chapter grounds "Fairy" → filled onto the SAME record ──
+		List<Map<String, Object>> cast2 = new ArrayList<>();
+		cast2.add(cast(charName, "Fairy"));
+		BaseRecord meta2 = PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction",
+			bookName, scenes, cast2, dataPath, pb2BookOid);
+		assertNotNull("run 2 returned meta", meta2);
+		assertEquals("run 2 reuses the existing charPerson", charOid, soleCharacterObjectId(meta2));
+		BaseRecord cp2 = findCharPersonWithRace(testUser, charOid);
+		assertNotNull("run 2 charPerson", cp2);
+		assertEquals("run 2: empty race filled with the stated Fairy (Z)", List.of("Z"), cp2.get("race"));
+
+		// ── RUN 3: a still-later chapter says "White" → ignored, first grounded race stands ──
+		List<Map<String, Object>> cast3 = new ArrayList<>();
+		cast3.add(cast(charName, "White"));
+		BaseRecord meta3 = PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction",
+			bookName, scenes, cast3, dataPath, pb2BookOid);
+		assertNotNull("run 3 returned meta", meta3);
+		assertEquals("run 3 reuses the existing charPerson", charOid, soleCharacterObjectId(meta3));
+		BaseRecord cp3 = findCharPersonWithRace(testUser, charOid);
+		assertNotNull("run 3 charPerson", cp3);
+		assertEquals("run 3: a non-empty race is never overwritten", List.of("Z"), cp3.get("race"));
+	}
+
+	/// A cast entry in the shape the grounding gate writes into charData: race="Custom" plus
+	/// race_label=<the text's own word>. See the design note on testCustomRaceLabelFillOnly for why
+	/// the test supplies this shape rather than the raw off-list word.
+	private static Map<String, Object> customCast(String name, String label) {
+		Map<String, Object> c = cast(name, RaceEnumType.valueOf(RaceEnumType.O));
+		c.put(PictureBookUtil.KEY_RACE_LABEL, label);
+		return c;
+	}
+
+	private void assertColumnExists(String modelName, String column) {
+		DBUtil dbUtil = ioContext.getDbUtil();
+		assertTrue("table for " + modelName + " must exist", dbUtil.haveTable(modelName));
+		String table = dbUtil.getTableName(modelName);
+		List<String> cols = dbUtil.getTableColumns(table);
+		assertFalse("information_schema returned no columns for " + table, cols.isEmpty());
+		assertTrue("column '" + column + "' must exist on " + table + " (boot DDL patch adds it); columns: " + cols,
+			cols.contains(column.toLowerCase()));
+	}
+
+	/// Custom race (RaceEnumType.O) + raceLabel on a LIVE charPerson: the new nullable column exists on
+	/// both tables, an O race is created together with its label, the fill-only rule never overwrites
+	/// a stored label, and a stored O whose label is blank gets ONLY the label filled.
+	///
+	/// Cast-supplied races are user-authored and are NOT grounded against the text ({@code
+	/// groundRaceAndEthnicity} runs only on LLM output). A raw off-list cast race such as
+	/// {@code race:"Mer-folk"} is normalized by {@code normalizeCastRace} into the same shape the LLM
+	/// grounding gate writes ({@code race:"Custom", race_label:"Mer-folk"}) before createCharPerson sees
+	/// it — the first block pins that this is the no-recompile path to a race the enum does not name.
+	/// The fill-only blocks below use the explicit Custom+label shape, which passes through unchanged.
+	/// No LLM is called (chatConfigName null).
+	@Test
+	public void testCustomRaceLabelFillOnly() throws Exception {
+		OlioModelNames.use();
+		BaseRecord testUser = getCreateUser("pbRerunUser");
+		assertNotNull("test user", testUser);
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be configured", dataPath);
+
+		// ── The column the feature persists into must exist on both tables (boot DDL patch). ──
+		assertColumnExists(ModelNames.MODEL_PERSON, OlioFieldNames.FIELD_RACE_LABEL);
+		assertColumnExists(OlioModelNames.MODEL_CHAR_PERSON, OlioFieldNames.FIELD_RACE_LABEL);
+
+		String tag = shortId();
+		BaseRecord work = createWork(testUser, tag);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		String slug = "pbcustom" + tag;
+		String bookName = "PB Custom Race Book " + tag;
+		BaseRecord pb2Book = PbBookUtil.createBook(testUser, dataPath, slug, bookName);
+		assertNotNull("PB2 book must be created", pb2Book);
+		String pb2BookOid = pb2Book.get(FieldNames.FIELD_OBJECT_ID);
+
+		// ── A raw off-list cast race becomes Custom + label without any recompile or grounding ──
+		String rawName = "Nerine Saltwater " + tag;
+		List<Map<String, Object>> rawScenes = new ArrayList<>();
+		Map<String, Object> rawScene = castlessScene("Nerine Surfaces", "Nerine, eldest of the Mer-folk, surfaces at dusk");
+		rawScene.put("sourceText", "The Mer-folk of the bay surfaced at dusk. Nerine, eldest of the Mer-folk, watched the quay.");
+		rawScene.put("characters", new ArrayList<>(List.of(rawName)));
+		rawScenes.add(rawScene);
+		List<Map<String, Object>> rawCast = new ArrayList<>();
+		rawCast.add(cast(rawName, "Mer-folk"));
+		BaseRecord rawMeta = PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction",
+			bookName, rawScenes, rawCast, dataPath, pb2BookOid);
+		assertNotNull("raw off-list run returned meta", rawMeta);
+		BaseRecord rawCp = findCharPersonWithRace(testUser, soleCharacterObjectId(rawMeta));
+		assertNotNull("raw off-list charPerson", rawCp);
+		assertEquals("raw cast race 'Mer-folk' is off-list, so it is stored as Custom",
+			List.of(RaceEnumType.O.name()), rawCp.get(OlioFieldNames.FIELD_RACE));
+		assertEquals("the cast's own word is the label", "Mer-folk", NarrativeUtil.getRaceLabel(rawCp));
+		// An ethnicity word supplied as a cast race is still dropped, never promoted (same rule as the LLM path).
+		String ethName = "Moira Saltwater " + tag;
+		List<Map<String, Object>> ethScenes = new ArrayList<>();
+		Map<String, Object> ethScene = castlessScene("Moira on the Strand", "Moira walks the strand");
+		ethScene.put("characters", new ArrayList<>(List.of(ethName)));
+		ethScenes.add(ethScene);
+		List<Map<String, Object>> ethCast = new ArrayList<>();
+		ethCast.add(cast(ethName, "Scottish"));
+		BaseRecord ethMeta = PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction",
+			bookName, ethScenes, ethCast, dataPath, pb2BookOid);
+		assertNotNull("ethnicity-word run returned meta", ethMeta);
+		BaseRecord ethCp = findCharPersonWithRace(testUser, soleCharacterObjectId(ethMeta));
+		assertNotNull("ethnicity-word charPerson", ethCp);
+		List<String> ethRace = ethCp.get(OlioFieldNames.FIELD_RACE);
+		assertTrue("cast race 'Scottish' names an ethnicity and is dropped, not promoted: " + ethRace,
+			ethRace == null || ethRace.isEmpty());
+		assertNull("no label for a dropped race", NarrativeUtil.getRaceLabel(ethCp));
+
+		// ── RUN 1: post-grounding shape → created with race ["O"] and raceLabel "Mer-folk" ──
+		String charName = "Nerine Deepwater " + tag;
+		List<Map<String, Object>> scenes = new ArrayList<>();
+		Map<String, Object> scene = castlessScene("Nerine on the Quay", "Nerine watches the lamps");
+		scene.put("characters", new ArrayList<>(List.of(charName)));
+		scenes.add(scene);
+		List<Map<String, Object>> cast1 = new ArrayList<>();
+		cast1.add(customCast(charName, "Mer-folk"));
+		BaseRecord meta1 = PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction",
+			bookName, scenes, cast1, dataPath, pb2BookOid);
+		assertNotNull("run 1 returned meta", meta1);
+		String charOid = soleCharacterObjectId(meta1);
+		BaseRecord cp1 = findCharPersonWithRace(testUser, charOid);
+		assertNotNull("run 1 charPerson", cp1);
+		assertEquals("run 1: Custom race stored as the constant name", List.of(RaceEnumType.O.name()), cp1.get(OlioFieldNames.FIELD_RACE));
+		assertEquals("run 1: the text's own word is the label", "Mer-folk", cp1.get(OlioFieldNames.FIELD_RACE_LABEL));
+		assertEquals("Mer-folk", NarrativeUtil.getRaceLabel(cp1));
+		assertEquals("the record renders its label, never the word Custom", "Mer-folk",
+			NarrativeUtil.getRaceDescription(cp1.get(OlioFieldNames.FIELD_RACE), NarrativeUtil.getRaceLabel(cp1)));
+
+		// ── RUN 2: a later chapter says Selkie → stored race AND label are untouched ──
+		List<Map<String, Object>> cast2 = new ArrayList<>();
+		cast2.add(customCast(charName, "Selkie"));
+		BaseRecord meta2 = PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction",
+			bookName, scenes, cast2, dataPath, pb2BookOid);
+		assertNotNull("run 2 returned meta", meta2);
+		assertEquals("run 2 reuses the existing charPerson", charOid, soleCharacterObjectId(meta2));
+		BaseRecord cp2 = findCharPersonWithRace(testUser, charOid);
+		assertNotNull("run 2 charPerson", cp2);
+		assertEquals("run 2: race never overwritten", List.of(RaceEnumType.O.name()), cp2.get(OlioFieldNames.FIELD_RACE));
+		assertEquals("run 2: a stored label is never overwritten", "Mer-folk", cp2.get(OlioFieldNames.FIELD_RACE_LABEL));
+		// An on-list race on a later chapter does not re-race a Custom character either.
+		List<Map<String, Object>> cast2b = new ArrayList<>();
+		cast2b.add(cast(charName, "Fairy"));
+		PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction", bookName, scenes, cast2b, dataPath, pb2BookOid);
+		BaseRecord cp2b = findCharPersonWithRace(testUser, charOid);
+		assertEquals("run 2b: Fairy does not replace Custom", List.of(RaceEnumType.O.name()), cp2b.get(OlioFieldNames.FIELD_RACE));
+		assertEquals("run 2b: label untouched", "Mer-folk", cp2b.get(OlioFieldNames.FIELD_RACE_LABEL));
+
+		// ── The PB2 staleness hash watches raceLabel: a Custom race renders as its label, so a label edit
+		//    must stale a portrait binding exactly as a race edit would. Stable across an unchanged re-read.
+		String hashLabelled = PbWatchedFields.computeRefHash(testUser, OlioModelNames.MODEL_CHAR_PERSON, charOid);
+		assertNotNull("refHash for a live charPerson", hashLabelled);
+		assertEquals("refHash is deterministic for an unchanged record", hashLabelled,
+			PbWatchedFields.computeRefHash(testUser, OlioModelNames.MODEL_CHAR_PERSON, charOid));
+
+		// ── RUN 3: blank the stored label (explicit-field PATCH), then a chapter says Selkie → label-only fill ──
+		cp2b.set(OlioFieldNames.FIELD_RACE_LABEL, null);
+		BaseRecord nullPatch = cp2b.copyRecord(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID,
+			FieldNames.FIELD_NAME, OlioFieldNames.FIELD_RACE_LABEL });
+		BaseRecord nulled = IOSystem.getActiveContext().getAccessPoint().update(testUser, nullPatch);
+		assertNotNull("PATCH {id, objectId, name, raceLabel=null} must succeed", nulled);
+		BaseRecord cpBlank = findCharPersonWithRace(testUser, charOid);
+		assertNotNull(cpBlank);
+		assertEquals("race survives the label patch", List.of(RaceEnumType.O.name()), cpBlank.get(OlioFieldNames.FIELD_RACE));
+		assertNull("label read back blank after the null patch; raw value: '" + cpBlank.get(OlioFieldNames.FIELD_RACE_LABEL) + "'",
+			NarrativeUtil.getRaceLabel(cpBlank));
+		String hashBlank = PbWatchedFields.computeRefHash(testUser, OlioModelNames.MODEL_CHAR_PERSON, charOid);
+		assertNotNull(hashBlank);
+		assertFalse("blanking raceLabel (race unchanged) must change the watched-field refHash", hashLabelled.equals(hashBlank));
+
+		List<Map<String, Object>> cast3 = new ArrayList<>();
+		cast3.add(customCast(charName, "Selkie"));
+		BaseRecord meta3 = PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction",
+			bookName, scenes, cast3, dataPath, pb2BookOid);
+		assertNotNull("run 3 returned meta", meta3);
+		assertEquals("run 3 reuses the existing charPerson", charOid, soleCharacterObjectId(meta3));
+		BaseRecord cp3 = findCharPersonWithRace(testUser, charOid);
+		assertNotNull("run 3 charPerson", cp3);
+		assertEquals("run 3: race still O", List.of(RaceEnumType.O.name()), cp3.get(OlioFieldNames.FIELD_RACE));
+		assertEquals("run 3: a blank label on a stored O is filled (label-only fill)", "Selkie", cp3.get(OlioFieldNames.FIELD_RACE_LABEL));
+		assertEquals("Selkie", NarrativeUtil.getRaceDescription(cp3.get(OlioFieldNames.FIELD_RACE), NarrativeUtil.getRaceLabel(cp3)));
+
+		// ── RUN 4: label is now set → a further Custom label does not overwrite it ──
+		List<Map<String, Object>> cast4 = new ArrayList<>();
+		cast4.add(customCast(charName, "Kelpie"));
+		PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction", bookName, scenes, cast4, dataPath, pb2BookOid);
+		BaseRecord cp4 = findCharPersonWithRace(testUser, charOid);
+		assertEquals("run 4: filled label is never overwritten", "Selkie", cp4.get(OlioFieldNames.FIELD_RACE_LABEL));
 	}
 }

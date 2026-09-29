@@ -450,12 +450,15 @@ public class TestPbGraph extends BaseTest {
 		assertEquals("pb2cStyle", parsed.get("style"));
 	}
 
-	// ───────── 7: precedence, and the effective config the hash sees ─────────
+	// ───────── 7: precedence - the effective config the executors send, the declared config the hash sees ─────────
 
 	/**
 	 * §2.4's chain, measured end to end rather than asserted from the code. The FLUX.2 leg matters most:
 	 * those six fields carry no schema default precisely so the resource can govern, and a merge that
 	 * left them null would produce a {@code configHash} blind to a resource edit.
+	 * <p>
+	 * The {@code configHash} assertions at the end exercise the exclusion policy on a fully materialised
+	 * record; the production hash input is {@code resolveDeclaredConfig}, covered by {@code case07d}.
 	 */
 	@Test
 	public void case07_effectiveConfigFollowsThePrecedenceChain() {
@@ -564,6 +567,110 @@ public class TestPbGraph extends BaseTest {
 		assertEquals("bookStyle", fromBook.get("style"));
 	}
 
+	/**
+	 * The hash is config-driven: {@code configHash} folds in {@link PbConfigUtil#resolveDeclaredConfig},
+	 * which walks the same book &rarr; node &rarr; FLUX.2 chain as {@code resolveEffectiveConfig} but from an
+	 * empty record, so a schema default that no tier declared never reaches {@code inputHash}. Changing a
+	 * default in {@code configModel.json} therefore marks nothing stale unless {@code PB_PIPELINE_VERSION} is
+	 * bumped - Stephen's choice, 2026-09-28: "I'd rather a rebuild be deterministic and/or config driven."
+	 * <p>
+	 * The book tier here is built <b>sparse</b> ({@code newInstance(model, fields)}), the way a persisted
+	 * {@code olio.sd.config} looks when its other columns are NULL. A fully materialised book config would
+	 * carry every schema default as a real, persisted value - and those ARE inputs, correctly hashed.
+	 */
+	@Test
+	public void case07d_declaredConfigHashesOnlyWhatATierSet() {
+		BaseRecord book = null;
+		BaseRecord node = null;
+		BaseRecord bookCfg = null;
+		try {
+			book = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK);
+			bookCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG, new String[] {"style", "flux2Steps"});
+			bookCfg.set("style", "bookStyle");
+			bookCfg.set("flux2Steps", Integer.valueOf(11));
+			book.set(OlioFieldNames.FIELD_PB_SD_CONFIG, bookCfg);
+
+			node = RecordFactory.newInstance(OlioModelNames.MODEL_PB_NODE);
+			BaseRecord nodeCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+			nodeCfg.set("flux2Steps", Integer.valueOf(3));
+			node.set(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE,
+				PbConfigUtil.sparseOverride(nodeCfg, Arrays.asList("flux2Steps")));
+		}
+		catch(Exception e) {
+			fail("Failed to build the declared-config fixture: " + e.getMessage());
+		}
+
+		BaseRecord declared = PbConfigUtil.resolveDeclaredConfig(book, node, false);
+		BaseRecord effective = PbConfigUtil.resolveEffectiveConfig(book, node, false);
+
+		/// Same chain, same winners.
+		assertEquals("The node override must beat the book tier in the declared config too",
+			Integer.valueOf(3), declared.get("flux2Steps"));
+		assertEquals("bookStyle", declared.get("style"));
+		assertNotNull("The FLUX.2 resource tier IS declared config - a flux2Defaults.json edit must reach the hash",
+			declared.get("flux2Cfg"));
+		Double effectiveFlux2Cfg = effective.get("flux2Cfg");
+		Double declaredFlux2Cfg = declared.get("flux2Cfg");
+		assertEquals("Declared and effective must agree on every value a tier set",
+			effectiveFlux2Cfg, declaredFlux2Cfg);
+
+		/// The difference: schema defaults are on the effective record and absent from the declared one.
+		assertEquals(Integer.valueOf(20), effective.get("steps"));
+		assertFalse("A schema-default-only field must not be materialised on the declared config",
+			declared.hasField("steps"));
+		assertFalse(declared.hasField("scheduler"));
+
+		String declaredCanonical = PbConfigUtil.canonicalConfig(declared);
+		String effectiveCanonical = PbConfigUtil.canonicalConfig(effective);
+		logger.info("declared canonical:\n" + declaredCanonical);
+		assertTrue("v2 prefix - v1 rendered every schema field and cannot collide with this form",
+			declaredCanonical.startsWith("sdConfig/v2"));
+		assertTrue(effectiveCanonical.contains(PbConfigUtil.PAIR_SEPARATOR + "steps=20"));
+		assertTrue(effectiveCanonical.contains(PbConfigUtil.PAIR_SEPARATOR + "scheduler=karras"));
+		assertFalse("A field nobody declared must contribute NOTHING to the canonical form - not even a '-' line,"
+			+ " or adding a field to the schema would move every existing hash",
+			declaredCanonical.contains(PbConfigUtil.PAIR_SEPARATOR + "steps="));
+		assertFalse(declaredCanonical.contains(PbConfigUtil.PAIR_SEPARATOR + "scheduler="));
+		assertFalse("No NULL_TOKEN lines may appear: absent means omitted under v2",
+			declaredCanonical.contains("=" + PbConfigUtil.NULL_TOKEN + PbConfigUtil.PAIR_SEPARATOR)
+			|| declaredCanonical.endsWith("=" + PbConfigUtil.NULL_TOKEN));
+		assertTrue(declaredCanonical.contains(PbConfigUtil.PAIR_SEPARATOR + "style=bookStyle"));
+		assertTrue(declaredCanonical.contains(PbConfigUtil.PAIR_SEPARATOR + "flux2Steps=3"));
+
+		/// An explicit value on a tier DOES move the hash - the same value the default would have supplied,
+		/// deliberately, so the assertion is about declaration and not about the number.
+		String h1 = PbConfigUtil.configHash(declared);
+		try {
+			bookCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG, new String[] {"style", "flux2Steps", "steps"});
+			bookCfg.set("style", "bookStyle");
+			bookCfg.set("flux2Steps", Integer.valueOf(11));
+			bookCfg.set("steps", Integer.valueOf(20));
+			book.set(OlioFieldNames.FIELD_PB_SD_CONFIG, bookCfg);
+		}
+		catch(Exception e) {
+			fail(e.getMessage());
+		}
+		BaseRecord redeclared = PbConfigUtil.resolveDeclaredConfig(book, node, false);
+		Integer effectiveSteps = effective.get("steps");
+		Integer redeclaredEffectiveSteps = PbConfigUtil.resolveEffectiveConfig(book, node, false).get("steps");
+		assertEquals("Declaring steps=20 explicitly leaves the effective render identical ...",
+			effectiveSteps, redeclaredEffectiveSteps);
+		assertNotEquals("... but it is now a declared input and MUST change configHash",
+			h1, PbConfigUtil.configHash(redeclared));
+
+		/// No book, no override (a ChapBook render, a bare node): the declared config is exactly the FLUX.2 six.
+		BaseRecord bare = PbConfigUtil.resolveDeclaredConfig(null, null, false);
+		String bareCanonical = PbConfigUtil.canonicalConfig(bare);
+		logger.info("bare declared canonical:\n" + bareCanonical);
+		String[] bareLines = bareCanonical.split(PbConfigUtil.PAIR_SEPARATOR);
+		assertEquals("A book-less, override-less declared config hashes the six FLUX.2 resource defaults and"
+			+ " nothing else: " + bareCanonical, 1 + 6, bareLines.length);
+		for(String f : new String[] {"flux2Cfg", "flux2Steps", "flux2Width", "flux2Height", "flux2ReferenceSize", "flux2IncludeLandscapeRef"}) {
+			assertTrue("Missing FLUX.2 field in bare declared canonical: " + f,
+				bareCanonical.contains(PbConfigUtil.PAIR_SEPARATOR + f + "="));
+		}
+	}
+
 	// ───────── 8: the hash primitives, pinned ─────────
 
 	/**
@@ -620,10 +727,12 @@ public class TestPbGraph extends BaseTest {
 	 * The {@code computeInputHash} golden vector.
 	 * <p>
 	 * The node's override sets all six FLUX.2 knobs, so {@code flux2Defaults.json} cannot influence the
-	 * result and this vector is stable against a tuning edit to that resource. It <b>will</b> change if a
-	 * schema default in {@code configModel.json} changes, if the canonical form changes, or if
-	 * {@link PbGraphUtil#PB_PIPELINE_VERSION} is bumped - each of which is a change that should require
-	 * someone to look at this test and agree.
+	 * result and this vector is stable against a tuning edit to that resource. Since {@code pb2/2} the hash
+	 * folds in {@link PbConfigUtil#resolveDeclaredConfig} rather than the materialised effective config, so
+	 * a schema-default edit in {@code configModel.json} does <b>not</b> move it either - {@code case07d}
+	 * pins that property. It <b>will</b> change if the canonical form changes or if
+	 * {@link PbGraphUtil#PB_PIPELINE_VERSION} is bumped - each a change that should require someone to
+	 * look at this test and agree.
 	 */
 	@Test
 	public void case09_computeInputHashGoldenVector() {
@@ -663,9 +772,10 @@ public class TestPbGraph extends BaseTest {
 				PbConfigUtil.sha256Hex(canonical));
 			Locale.setDefault(original);
 
-			assertEquals("The inputHash golden vector changed. That is legitimate ONLY if a schema default,"
-				+ " the canonical form, or PB_PIPELINE_VERSION changed deliberately - a bump marks every node"
-				+ " in every book stale. Canonical form logged above.", GOLDEN_INPUT_HASH, hash);
+			assertEquals("The inputHash golden vector changed. That is legitimate ONLY if the canonical form"
+				+ " or PB_PIPELINE_VERSION changed deliberately - a bump marks every node in every book stale."
+				+ " A schema-default edit must NOT move it (case07d). Canonical form logged above.",
+				GOLDEN_INPUT_HASH, hash);
 		}
 		catch(Exception e) {
 			fail("Golden vector case failed: " + e.getMessage());
@@ -675,9 +785,19 @@ public class TestPbGraph extends BaseTest {
 		}
 	}
 
-	/** Filled from the first run; see {@link #case09_computeInputHashGoldenVector()}. Updated after S6: book.sdConfig/compositeSdConfig promoted to foreign FK, which changed the effective-config canonical form. */
+	/**
+	 * Filled from the first run; see {@link #case09_computeInputHashGoldenVector()}. Updated after S6
+	 * (book.sdConfig/compositeSdConfig promoted to foreign FK) and again for {@code pb2/2} (2026-09-28:
+	 * configHash over the declared config, {@code sdConfig/v2}). Canonical form under pb2/2:
+	 * <pre>
+	 * pb2/2
+	 * nodeType=COMPOSITE
+	 * configHash=b55b0563681f55e253dfe44f380834d720af8a9a512e15d9b9c780410647be48
+	 * promptHash=a30f62640fff29e1f4a99e07ddcd38a0db9b8840dcab47e329a9e10f782fd587
+	 * </pre>
+	 */
 	private static final String GOLDEN_INPUT_HASH =
-		"879405447e367aa8235c053aee863cd856ea93ea46e5261b0c6b68dcb33cdef4";
+		"94c3415cde81d1874b5d52d0381529d9fac6ce93765b744f615f8aa177c84ff1";
 
 	// ───────── 10: recomputeStatus computes, it does not write ─────────
 

@@ -19,6 +19,13 @@
 			"maxLength": 32
 		},
 		{
+			"name": "raceLabel",
+			"type": "string",
+			"shortName": "racl",
+			"maxLength": 64,
+			"description": "Free-text name of the race when the race list contains the Custom constant (O). Substitutes only that element; ignored when the list has no Custom entry. Not a default query field: project it alongside race, or decorated exports (QueryPlan) render the Custom entry with no label."
+		},
+		{
 			"name": "ethnicity",
 			"type": "list",
 			"baseType": "string",

@@ -50,7 +50,7 @@ public class PbWatchedFields {
 	 * {@code refHash}, so a change here invalidates stored hashes <b>on purpose</b> and loudly, rather
 	 * than silently comparing hashes computed under two different policies.
 	 */
-	public static final String WATCHED_SET_VERSION = "watched/v1";
+	public static final String WATCHED_SET_VERSION = "watched/v2";
 
 	/**
 	 * {@code olio.charPerson}: identity and appearance, the fields a portrait or a character description
@@ -58,11 +58,12 @@ public class PbWatchedFields {
 	 * <p>
 	 * {@code hairColor} and {@code eyeColor} are foreign {@code data.color} references, so they are
 	 * projected and rendered by name - see {@link #canonicalRef}. {@code alignment} comes from
-	 * {@code common.alignment}, {@code race}/{@code ethnicity}/{@code age}/{@code gender}/the names from
-	 * {@code identity.person}.
+	 * {@code common.alignment}, {@code race}/{@code raceLabel}/{@code ethnicity}/{@code age}/{@code gender}/
+	 * the names from {@code identity.person}. {@code raceLabel} is what a Custom ({@code O}) race actually
+	 * renders as, so a label edit must stale the portrait the same way a race edit does.
 	 */
 	private static final List<String> CHAR_PERSON = Collections.unmodifiableList(Arrays.asList(
-		FieldNames.FIELD_NAME, "firstName", "lastName", "gender", "age", "race", "ethnicity",
+		FieldNames.FIELD_NAME, "firstName", "lastName", "gender", "age", "race", "raceLabel", "ethnicity",
 		"hairColor", "eyeColor", "hairStyle", "alignment"
 	));
 

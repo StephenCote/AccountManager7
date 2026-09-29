@@ -881,7 +881,8 @@
       "W",
       "X",
       "Y",
-      "Z"
+      "Z",
+      "O"
     ],
     "reasonEnumType": [
       "AGE",
@@ -1614,6 +1615,12 @@
           "baseType": "string",
           "shortName": "rac",
           "maxLength": 32
+        },
+        {
+          "name": "raceLabel",
+          "type": "string",
+          "shortName": "racl",
+          "maxLength": 64
         },
         {
           "name": "ethnicity",

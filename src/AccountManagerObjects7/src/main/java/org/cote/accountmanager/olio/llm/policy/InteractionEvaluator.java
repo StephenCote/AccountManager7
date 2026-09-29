@@ -164,7 +164,7 @@ public class InteractionEvaluator {
 			try {
 				areq.set("temperature", 0.3);
 				areq.set("top_p", 0.5);
-				String tokField = ChatUtil.getMaxTokenField(resolvedConfig, chat.getServiceType());
+				String tokField = ChatUtil.getOutputCapField(resolvedConfig, chat.getServiceType());
 				if (tokField != null && !tokField.isEmpty()) {
 					areq.set(tokField, 1024);
 				}

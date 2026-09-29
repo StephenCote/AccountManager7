@@ -396,7 +396,7 @@ public class PromptUtil {
 		if(ctx.sysProf != null) {
 			List<String> sysRaces = ctx.sysProf.getRace();
 	
-			if(sysRaces.contains("L") || sysRaces.contains("S") || sysRaces.contains("V") || sysRaces.contains("R") || sysRaces.contains("W") || sysRaces.contains("X") || sysRaces.contains("Y") || sysRaces.contains("Z")) {
+			if(sysRaces.contains("L") || sysRaces.contains("S") || sysRaces.contains("V") || sysRaces.contains("R") || sysRaces.contains("W") || sysRaces.contains("X") || sysRaces.contains("Y") || sysRaces.contains("Z") || sysRaces.contains("O")) {
 				Optional<BaseRecord> osupp = races.stream().filter(r -> sysRaces.contains(r.get("raceType"))).findFirst();
 				if(osupp.isPresent()) {
 					srace = composeTemplate(osupp.get().get(OlioFieldNames.FIELD_RACE));
@@ -405,7 +405,7 @@ public class PromptUtil {
 		}
 		if(ctx.usrProf != null) {
 			List<String> usrRaces = ctx.usrProf.getRace();
-			if(usrRaces.contains("L") || usrRaces.contains("S") || usrRaces.contains("V") || usrRaces.contains("R") || usrRaces.contains("W") || usrRaces.contains("X") || usrRaces.contains("Y") || usrRaces.contains("Z")) {
+			if(usrRaces.contains("L") || usrRaces.contains("S") || usrRaces.contains("V") || usrRaces.contains("R") || usrRaces.contains("W") || usrRaces.contains("X") || usrRaces.contains("Y") || usrRaces.contains("Z") || usrRaces.contains("O")) {
 				Optional<BaseRecord> osupp = races.stream().filter(r -> usrRaces.contains(r.get("raceType"))).findFirst();
 				if(osupp.isPresent()) {
 					urace = composeTemplate(osupp.get().get(OlioFieldNames.FIELD_RACE));

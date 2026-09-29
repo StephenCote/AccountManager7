@@ -174,12 +174,18 @@ function renderPb2BookList() {
     if (!grouped.hasSeriesInfo) {
         return pb2Books.map(function (b) { return renderPb2BookRow(b, false); });
     }
-    return grouped.groups.map(function (g) {
+    // Every child must be a keyed vnode: a nested array here is an unkeyed fragment, and Mithril
+    // throws "vnodes must either all have keys or none have keys" once a standalone book sits
+    // beside a series card.
+    let out = [];
+    for (let g of grouped.groups) {
         if (g.seriesKey === '__standalone__') {
-            return g.chapters.map(function (b) { return renderPb2BookRow(b, false); });
+            for (let b of g.chapters) out.push(renderPb2BookRow(b, false));
+        } else {
+            out.push(renderPb2SeriesCard(g));
         }
-        return renderPb2SeriesCard(g);
-    });
+    }
+    return out;
 }
 
 async function loadPb2Books() {

@@ -72,8 +72,18 @@ public class PbGraphUtil {
 	 * <b>Bumping this marks every node in every book stale</b> (§10). That is the point, and it is why
 	 * {@link #computeInputHash} logs the version at DEBUG and why this constant carries a comment rather
 	 * than being quietly edited.
+	 * <p>
+	 * <b>Schema defaults are not in the hash.</b> {@code configHash} covers only the values a tier
+	 * declared ({@code PbConfigUtil.resolveDeclaredConfig}), so editing a default in
+	 * {@code olio/sd/configModel.json} (scheduler, sampler, steps, ...) changes what a book with no
+	 * explicit value renders with but leaves every {@code inputHash} untouched. If that default change
+	 * must re-render existing books, bump this constant in the same commit. That is the deliberate cost
+	 * of a config-driven hash: a default change that alters output is silent until someone bumps it.
+	 * <p>
+	 * History: {@code pb2/1} hashed the fully materialised effective config (schema defaults included);
+	 * {@code pb2/2} switched to declared values only ({@code sdConfig/v2}).
 	 */
-	public static final String PB_PIPELINE_VERSION = "pb2/1";
+	public static final String PB_PIPELINE_VERSION = "pb2/2";
 
 	/**
 	 * Fields excluded from a {@code planMost(true)} on the two models that carry the
@@ -411,7 +421,9 @@ public class PbGraphUtil {
 	 * differently on different runs. Each contributes {@code role}, {@code bindingOrdinal}, and its
 	 * resolved source, tried in order: {@code sourceArtifact.contentHash}, then
 	 * {@code refModel + refObjectId + refHash}, then {@code valueHash};</li>
-	 * <li>{@code configHash} of the <b>merged effective</b> config, not the override (§2.3);</li>
+	 * <li>{@code configHash} of the <b>declared</b> config - the full book &rarr; node &rarr; FLUX.2
+	 * precedence chain, not the override alone (§2.3), but without the schema-default fill. See
+	 * {@link #PB_PIPELINE_VERSION} for what that leaves out and when to bump;</li>
 	 * <li>a hash of {@code promptText}.</li>
 	 * </ol>
 	 * Every null renders as {@link PbConfigUtil#NULL_TOKEN} - never {@code ""}, never {@code "null"} -
@@ -443,8 +455,8 @@ public class PbGraphUtil {
 				.append(PbConfigUtil.PAIR_SEPARATOR).append("  source=").append(bindingSourceToken(user, b));
 		}
 
-		BaseRecord effective = PbConfigUtil.resolveEffectiveConfig(book, node, isCompositeNode(node));
-		sb.append(PbConfigUtil.PAIR_SEPARATOR).append("configHash=").append(PbConfigUtil.token(PbConfigUtil.configHash(effective)));
+		BaseRecord declared = PbConfigUtil.resolveDeclaredConfig(book, node, isCompositeNode(node));
+		sb.append(PbConfigUtil.PAIR_SEPARATOR).append("configHash=").append(PbConfigUtil.token(PbConfigUtil.configHash(declared)));
 
 		String promptText = (node.hasField(OlioFieldNames.FIELD_PB_PROMPT_TEXT) ? node.get(OlioFieldNames.FIELD_PB_PROMPT_TEXT) : null);
 		sb.append(PbConfigUtil.PAIR_SEPARATOR).append("promptHash=")

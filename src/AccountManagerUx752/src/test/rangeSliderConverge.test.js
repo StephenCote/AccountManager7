@@ -86,6 +86,22 @@ describe('formFieldRenderers.renderRange — plain-contract canonical slider (KI
         expect(calls).toEqual(['9']);
     });
 
+    it('emits min/max/step BEFORE value so the browser cannot clamp a large value to the default max=100', async () => {
+        // Mithril render.js setAttrs() applies attrs in object insertion order (after `type`). A range
+        // input sanitizes `value` against its current bounds at set time, so value-then-max turned
+        // max_tokens=4096 / num_ctx=8192 into a thumb pinned at 100 (measured on the Docker stack).
+        const { formFieldRenderers } = await import('../components/formFieldRenderers.js');
+        let out = formFieldRenderers.renderRange({ value: 4096, min: 0, max: 120000, step: 1, onInput: vi.fn(), name: 'max_tokens' });
+        for (let inp of findByTag(out, 'input')) {
+            let keys = Object.keys(inp.attrs);
+            let valueIdx = keys.indexOf('value');
+            expect(valueIdx).toBeGreaterThan(keys.indexOf('min'));
+            expect(valueIdx).toBeGreaterThan(keys.indexOf('max'));
+            expect(valueIdx).toBeGreaterThan(keys.indexOf('step'));
+            expect(inp.attrs.value).toBe(4096);
+        }
+    });
+
     it('disabled propagates to both the slider and the spinner', async () => {
         const { formFieldRenderers } = await import('../components/formFieldRenderers.js');
         let out = formFieldRenderers.renderRange({ value: 1, min: 0, max: 10, step: 1, onInput: vi.fn(), disabled: true });

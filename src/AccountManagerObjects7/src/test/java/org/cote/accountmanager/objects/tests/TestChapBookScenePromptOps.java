@@ -91,8 +91,7 @@ public class TestChapBookScenePromptOps extends BaseTest {
 	@Test
 	public void regenerateSceneLandscapePrompt_producesGenuineUnlockedPrompt_evenFromLockedStart() {
 		String llmServer = testProperties.getProperty("test.llm.ollama.server");
-		assumeTrue("test.llm.ollama.server not configured — skipping ChapBook scene regenerate test",
-			llmServer != null && !llmServer.isBlank());
+		SdTestGate.requireLlmReachable(llmServer);
 
 		BaseRecord liveConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "chapbookScenePromptOpsLlm", testProperties);
 		assertNotNull("Live chatConfig must be built", liveConfig);
@@ -136,8 +135,7 @@ public class TestChapBookScenePromptOps extends BaseTest {
 	@Test
 	public void analyzeSceneTheme_persistsNonBlankMoodOntoScene() {
 		String llmServer = testProperties.getProperty("test.llm.ollama.server");
-		assumeTrue("test.llm.ollama.server not configured — skipping ChapBook scene analyze test",
-			llmServer != null && !llmServer.isBlank());
+		SdTestGate.requireLlmReachable(llmServer);
 
 		BaseRecord liveConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "chapbookScenePromptOpsLlm", testProperties);
 		assertNotNull("Live chatConfig must be built", liveConfig);

@@ -5706,9 +5706,15 @@ public class PictureBookUtil {
     // C2: comma-separated human-readable RaceEnumType / EthnicityEnumType values, used to CONSTRAIN the
     // extraction prompt to labels the enum's own valueOfVal() can map back. The enum is the single
     // source of truth — these lists are derived from it at call time, never a hand-maintained copy.
+    // The Custom constant (O) is excluded: it is a SINK that groundRaceAndEthnicity assigns when the
+    // LLM answers with an off-list race the passages literally contain, never a choice the LLM should
+    // answer with — the word "Custom" names nothing the extraction could ground against the text.
     public static String raceOptionsCsv() {
         List<String> vals = new ArrayList<>();
-        for (RaceEnumType r : RaceEnumType.values()) vals.add(RaceEnumType.valueOf(r));
+        for (RaceEnumType r : RaceEnumType.values()) {
+            if (r == RaceEnumType.O) continue;
+            vals.add(RaceEnumType.valueOf(r));
+        }
         return String.join(", ", vals);
     }
 
@@ -5730,18 +5736,30 @@ public class PictureBookUtil {
      * name. Returns null when nothing maps — callers KEEP the random baseline's enum value. The
      * extraction prompt is constrained to {@link #raceOptionsCsv()}, so a well-behaved LLM response
      * is always a value this maps; there is deliberately no hand-maintained synonym table.
+     *
+     * <p>The Custom constant ({@code O}, label "Custom") is never a mapping target here: the LLM
+     * answering "Custom" or "O" says nothing about the character, and the only path that assigns
+     * {@code O} is {@link #groundRaceAndEthnicity}, which does so together with the grounded
+     * off-list text as {@code race_label}.
      */
     public static String mapRaceOverride(String raw) {
         if (raw == null) return null;
         String t = raw.trim();
         if (t.isEmpty()) return null;
+        String mapped = null;
         RaceEnumType exact = RaceEnumType.valueOfVal(t);
-        if (exact != null) return exact.name();
-        for (RaceEnumType r : RaceEnumType.values()) {
-            if (RaceEnumType.valueOf(r).equalsIgnoreCase(t)) return r.name();
-            if (r.name().equalsIgnoreCase(t)) return r.name();
+        if (exact != null) {
+            mapped = exact.name();
+        } else {
+            for (RaceEnumType r : RaceEnumType.values()) {
+                if (RaceEnumType.valueOf(r).equalsIgnoreCase(t) || r.name().equalsIgnoreCase(t)) {
+                    mapped = r.name();
+                    break;
+                }
+            }
         }
-        return null;
+        if (mapped != null && RaceEnumType.isCustom(mapped)) return null;
+        return mapped;
     }
 
     /**
@@ -6134,6 +6152,12 @@ public class PictureBookUtil {
      * list. Nothing here — and nothing in {@code createCharPerson} — ever substitutes a race the
      * passages did not state: an empty list means the narration carries no race word, and the
      * text-stated ethnicity/skin (see {@link #appearanceNotes}) carry the description instead.
+     *
+     * <p>Custom: {@link #groundRaceAndEthnicity} rewrites a grounded off-list race to
+     * {@code race="Custom"} plus {@code race_label=<the text's own word>}. That pair yields
+     * {@code ["O"]} here; the label itself is read by {@link #resolveTextRaceLabel} and stored in
+     * {@code charPerson.raceLabel}. "Custom" WITHOUT a meaningful label contributes nothing, exactly
+     * like "Unknown" — an {@code O} with no label would render as nothing at all.
      */
     public static List<String> resolveTextRace(Map<String, Object> charData, String name) {
         List<String> race = new ArrayList<>();
@@ -6141,6 +6165,16 @@ public class PictureBookUtil {
         Object raceObj = charData.get("race");
         if (!(raceObj instanceof String) || !NarrativeUtil.isMeaningful((String) raceObj)) return race;
         String raw = ((String) raceObj).trim();
+        if (isCustomRaceValue(raw)) {
+            String label = resolveTextRaceLabel(charData);
+            if (label == null) {
+                logger.info("Character " + name + ": text states no usable race ('" + raw + "' without a race_label) - leaving race unset");
+                return race;
+            }
+            race.add(RaceEnumType.O.name());
+            logger.info("Character " + name + ": race from text '" + label + "' -> " + RaceEnumType.O.name() + " (custom)");
+            return race;
+        }
         String raceEnum = mapRaceOverride(raw);
         if (raceEnum == null || RaceEnumType.U.name().equals(raceEnum)) {
             logger.info("Character " + name + ": text states no usable race ('" + raw + "') - leaving race unset");
@@ -6149,6 +6183,84 @@ public class PictureBookUtil {
         race.add(raceEnum);
         logger.info("Character " + name + ": race from text '" + raw + "' -> " + raceEnum);
         return race;
+    }
+
+    /// True when the reduce step's race value is the Custom sink in either shape — the constant
+    /// name "O" or the label "Custom" — which groundRaceAndEthnicity writes as "Custom".
+    private static boolean isCustomRaceValue(String raw) {
+        if (raw == null) return false;
+        String t = raw.trim();
+        return RaceEnumType.isCustom(t) || RaceEnumType.valueOf(RaceEnumType.O).equalsIgnoreCase(t);
+    }
+
+    /**
+     * The meaningful {@code race_label} the grounding gate attached to the character data, or null
+     * when there is none, it is an LLM placeholder ({@link NarrativeUtil#isMeaningful}), or it is
+     * longer than {@link #raceLabelMaxLength()} — the column is that wide, so an over-long label
+     * would fail {@code RecordValidator} and take the whole charPerson create down with it. Control
+     * characters are stripped here ({@link NarrativeUtil#cleanRaceLabel}) so the stored value is
+     * already prompt-safe, not only the read. Only meaningful alongside a {@code race} of "Custom";
+     * callers pair it with {@link #resolveTextRace} containing {@code O}.
+     */
+    public static String resolveTextRaceLabel(Map<String, Object> charData) {
+        if (charData == null) return null;
+        Object o = charData.get(KEY_RACE_LABEL);
+        if (!(o instanceof String)) return null;
+        String label = NarrativeUtil.cleanRaceLabel((String) o);
+        if (label == null) return null;
+        int max = raceLabelMaxLength();
+        if (label.length() > max) {
+            logger.info("race_label '" + label + "' exceeds " + max + " characters - treating as no label");
+            return null;
+        }
+        return label;
+    }
+
+    /**
+     * Normalize a caller-supplied (cast) race BEFORE the LLM reduce step merges into the same map.
+     *
+     * <p>Cast data is user-authored — the same trust as a PATCH on the charPerson form — so an
+     * off-list race word is the no-recompile path to a race {@link RaceEnumType} does not name: it is
+     * rewritten to {@code race="Custom"} + {@code race_label=<the word>}, which {@link #resolveTextRace}
+     * turns into {@code ["O"]} plus the label. It is deliberately NOT grounded against the passages;
+     * only LLM output is grounded ({@link #groundRaceAndEthnicity}). Same exclusions as the LLM path:
+     * a word that names an ethnicity ({@link #mapEthnicityOverride}) is left for
+     * {@link #resolveTextRace} to drop (supply it as {@code ethnicity} instead), and a word longer than
+     * {@link #raceLabelMaxLength()} is left to be dropped rather than truncated. Control characters
+     * are stripped before the width check ({@link NarrativeUtil#cleanRaceLabel}). On-list words and an
+     * explicit {@code Custom}+{@code race_label} pair pass through unchanged.
+     *
+     * <p>Invariant on return: {@code race_label} is present only when {@code race} is Custom, so a
+     * label can never sit beside an on-list race and be mistaken for it later.
+     */
+    public static void normalizeCastRace(Map<String, Object> charData, String name) {
+        if (charData == null) return;
+        Object raceObj = charData.get("race");
+        String raw = (raceObj instanceof String) ? NarrativeUtil.cleanRaceLabel((String) raceObj) : null;
+        if (raw != null) {
+            if (!isCustomRaceValue(raw) && mapRaceOverride(raw) == null) {
+                int max = raceLabelMaxLength();
+                if (mapEthnicityOverride(raw) != null) {
+                    logger.info("Character " + name + ": cast race '" + raw + "' names an ethnicity, not a race - leaving it for resolveTextRace to drop");
+                } else if (raw.length() > max) {
+                    logger.info("Character " + name + ": cast race '" + raw + "' exceeds " + max + " characters - leaving it for resolveTextRace to drop");
+                } else {
+                    charData.put("race", RaceEnumType.valueOf(RaceEnumType.O));
+                    charData.put(KEY_RACE_LABEL, raw);
+                    logger.info("Character " + name + ": cast race '" + raw + "' -> " + RaceEnumType.valueOf(RaceEnumType.O) + " with label");
+                }
+            }
+        }
+        enforceRaceLabelInvariant(charData);
+    }
+
+    /// race_label is meaningful only beside race="Custom"; anywhere else it is a stray (a cast label
+    /// without a Custom race, or an LLM label merged beside a cast on-list race) and is removed.
+    public static void enforceRaceLabelInvariant(Map<String, Object> charData) {
+        if (charData == null || !charData.containsKey(KEY_RACE_LABEL)) return;
+        Object raceObj = charData.get("race");
+        boolean custom = raceObj instanceof String && isCustomRaceValue((String) raceObj);
+        if (!custom) charData.remove(KEY_RACE_LABEL);
     }
 
     // ── Race / ethnicity grounding gate ──────────────────────────────────────────────────────
@@ -6171,6 +6283,37 @@ public class PictureBookUtil {
 
     public static final String KEY_RACE_EVIDENCE = "race_evidence";
     public static final String KEY_ETHNICITY_EVIDENCE = "ethnicity_evidence";
+    /// Meaningful only alongside race="Custom"; read by resolveTextRaceLabel and stored in
+    /// charPerson.raceLabel. Two writers: groundRaceAndEthnicity, for an LLM off-list race the passages
+    /// literally contain (any value the LLM itself put under this key is discarded first), and
+    /// normalizeCastRace, for an off-list race the caller supplied in cast data. Cast data is
+    /// user-authored and is NOT grounded against the text.
+    public static final String KEY_RACE_LABEL = "race_label";
+    /// Used only when the identity.person schema cannot be read (should not happen once models are
+    /// registered); the live width comes from personModel.json via raceLabelMaxLength().
+    private static final int RACE_LABEL_MAX_LENGTH_FALLBACK = 64;
+    private static volatile int raceLabelMaxLength = 0;
+
+    /// identity.person raceLabel.maxLength, read from the field schema so the guard cannot drift from
+    /// the column. RecordValidator rejects the whole record over this width, so an over-long off-list
+    /// label is never promoted to Custom.
+    public static int raceLabelMaxLength() {
+        int len = raceLabelMaxLength;
+        if (len > 0) return len;
+        try {
+            ModelSchema ms = RecordFactory.getSchema(ModelNames.MODEL_PERSON);
+            FieldSchema fs = (ms != null) ? ms.getFieldSchema(OlioFieldNames.FIELD_RACE_LABEL) : null;
+            if (fs != null && fs.getMaxLength() > 0) len = fs.getMaxLength();
+        } catch (Exception e) {
+            logger.warn("Could not read " + ModelNames.MODEL_PERSON + "." + OlioFieldNames.FIELD_RACE_LABEL + " maxLength: " + e.getMessage());
+        }
+        if (len <= 0) {
+            logger.warn(ModelNames.MODEL_PERSON + "." + OlioFieldNames.FIELD_RACE_LABEL + " declares no maxLength - using fallback " + RACE_LABEL_MAX_LENGTH_FALLBACK);
+            len = RACE_LABEL_MAX_LENGTH_FALLBACK;
+        }
+        raceLabelMaxLength = len;
+        return len;
+    }
 
     private static final Set<String> LABEL_STOPWORDS = Set.of("other", "or", "and", "us", "native");
 
@@ -6304,29 +6447,116 @@ public class PictureBookUtil {
     }
 
     /**
+     * Per-word term sets for an OFF-LIST label: one set per non-stopword word of the label, each
+     * holding the word plus its {@link #LABEL_SURFACE_FORMS}. Edge punctuation is stripped from each
+     * word so "Mer-folk," looks for "mer-folk". Unlike {@link #groundingTerms} (one flat set, any
+     * member grounds the label) every set here must be satisfied.
+     */
+    static List<Set<String>> offListGroundingTermSets(String label) {
+        List<Set<String>> sets = new ArrayList<>();
+        if (label == null) return sets;
+        for (String w : label.toLowerCase(Locale.ROOT).split("[/,\\s]+")) {
+            w = w.replaceAll("^[^\\p{L}\\p{N}]+", "").replaceAll("[^\\p{L}\\p{N}]+$", "");
+            if (w.isEmpty() || LABEL_STOPWORDS.contains(w)) continue;
+            Set<String> terms = new LinkedHashSet<>();
+            terms.add(w);
+            String[] forms = LABEL_SURFACE_FORMS.get(w);
+            if (forms != null) terms.addAll(Arrays.asList(forms));
+            sets.add(terms);
+        }
+        return sets;
+    }
+
+    /**
+     * Null when an OFF-LIST race label (one {@link #mapRaceOverride} maps to nothing) is grounded in
+     * {@code passages}; otherwise a short reason. Stricter than {@link #groundingFailure}: EVERY
+     * non-stopword word of the label must occur (whole-word, or a surface form) — a free-text label
+     * is the LLM's own phrase, so one shared word ("skinned", "folk") must not carry the rest. With
+     * an evidence quote, the quote must occur in the passages and itself contain every word; without
+     * one, the passages must. The colour-word/person-context rule is not applied: it exists for the
+     * two enum labels that double as object colours, and an off-list label is never one of those.
+     */
+    static String offListGroundingFailure(String label, Object evidenceObj, String passages) {
+        if (label == null || label.trim().isEmpty()) return "empty label";
+        int max = raceLabelMaxLength();
+        if (label.trim().length() > max) {
+            return "label is longer than " + max + " characters, not a race name";
+        }
+        List<Set<String>> sets = offListGroundingTermSets(label);
+        if (sets.isEmpty()) return "label '" + label + "' has no word to look for";
+        String evidence = (evidenceObj instanceof String && NarrativeUtil.isMeaningful((String) evidenceObj))
+            ? ((String) evidenceObj).trim() : null;
+        String haystack;
+        if (evidence != null) {
+            String normEv = normalizeForQuote(evidence);
+            if (normEv.isEmpty() || !normalizeForQuote(passages).contains(normEv)) {
+                return "evidence is not a quote from the passages: \"" + evidence + "\"";
+            }
+            haystack = normEv;
+        } else {
+            haystack = passages;
+        }
+        for (Set<String> terms : sets) {
+            if (findGroundingTerm(haystack, terms) == null) {
+                return (evidence != null ? "evidence does not contain " : "the passages do not contain ")
+                    + "any of " + terms + (evidence != null ? ": \"" + evidence + "\"" : "");
+            }
+        }
+        return null;
+    }
+
+    /**
      * Drop any LLM-returned {@code race} / {@code ethnicity} the passages do not state (see the
      * section comment above). Mutates {@code llmData}: a rejected race becomes "Unknown", a
      * rejected ethnicity becomes "", and the {@code *_evidence} keys are always removed so they
-     * never reach {@code charData}. Labels that map to no enum are left alone —
-     * {@link #resolveTextRace} / {@link #mapEthnicityOverride} already discard those.
+     * never reach {@code charData}. Ethnicity labels that map to no enum are left alone —
+     * {@link #mapEthnicityOverride} already discards those.
+     *
+     * <p>Off-list race (maps to no {@link RaceEnumType}): if the word is one of the ETHNICITY
+     * vocabulary ({@link #mapEthnicityOverride} maps it, e.g. "Scottish") it is left untouched and
+     * {@link #resolveTextRace} drops it from race — it is never promoted to Custom. Otherwise it is
+     * grounded with {@link #offListGroundingFailure} (every word must occur); grounded, the race
+     * becomes "Custom" and the label is carried as {@link #KEY_RACE_LABEL}; ungrounded, it is left
+     * untouched for {@link #resolveTextRace} to drop. The LLM answering "Custom" itself names
+     * nothing and becomes "Unknown".
      */
     public static void groundRaceAndEthnicity(Map<String, Object> llmData, String passages, String name) {
         if (llmData == null) return;
         Object raceEv = llmData.remove(KEY_RACE_EVIDENCE);
         Object ethEv = llmData.remove(KEY_ETHNICITY_EVIDENCE);
+        // Only this method may attach a race label, and only for a grounded off-list race.
+        llmData.remove(KEY_RACE_LABEL);
 
         Object raceObj = llmData.get("race");
         if (raceObj instanceof String && NarrativeUtil.isMeaningful((String) raceObj)) {
             String raw = ((String) raceObj).trim();
-            String code = mapRaceOverride(raw);
-            if (code != null && !RaceEnumType.U.name().equals(code)) {
-                String label = RaceEnumType.valueOf(RaceEnumType.valueOf(code));
-                String why = groundingFailure(label, raceEv, passages, COLOUR_WORD_RACE_LABELS.contains(label.toLowerCase(Locale.ROOT)));
-                if (why != null) {
-                    logger.info("Character " + name + ": race '" + raw + "' is not stated by the passages (" + why + ") - not stated");
-                    llmData.put("race", RaceEnumType.valueOf(RaceEnumType.U));
-                } else {
-                    logger.info("Character " + name + ": race '" + raw + "' is grounded in the passages");
+            if (isCustomRaceValue(raw)) {
+                logger.info("Character " + name + ": race '" + raw + "' is the Custom sink, not a race the passages could name - not stated");
+                llmData.put("race", RaceEnumType.valueOf(RaceEnumType.U));
+            } else {
+                String code = mapRaceOverride(raw);
+                if (code != null && !RaceEnumType.U.name().equals(code)) {
+                    String label = RaceEnumType.valueOf(RaceEnumType.valueOf(code));
+                    String why = groundingFailure(label, raceEv, passages, COLOUR_WORD_RACE_LABELS.contains(label.toLowerCase(Locale.ROOT)));
+                    if (why != null) {
+                        logger.info("Character " + name + ": race '" + raw + "' is not stated by the passages (" + why + ") - not stated");
+                        llmData.put("race", RaceEnumType.valueOf(RaceEnumType.U));
+                    } else {
+                        logger.info("Character " + name + ": race '" + raw + "' is grounded in the passages");
+                    }
+                } else if (code == null) {
+                    if (mapEthnicityOverride(raw) != null) {
+                        logger.info("Character " + name + ": race '" + raw + "' names an ethnicity, not a race - leaving it for resolveTextRace to drop");
+                    } else {
+                        String why = offListGroundingFailure(raw, raceEv, passages);
+                        if (why == null) {
+                            llmData.put("race", RaceEnumType.valueOf(RaceEnumType.O));
+                            llmData.put(KEY_RACE_LABEL, raw);
+                            logger.info("Character " + name + ": off-list race '" + raw + "' is grounded in the passages -> " + RaceEnumType.valueOf(RaceEnumType.O) + " with label");
+                        } else {
+                            logger.info("Character " + name + ": off-list race '" + raw + "' is not stated by the passages (" + why + ") - leaving it for resolveTextRace to drop");
+                        }
+                    }
                 }
             }
         }
@@ -6510,6 +6740,74 @@ public class PictureBookUtil {
         }
     }
 
+    /**
+     * Fill-only race enrichment for a charPerson that already exists in the book's Characters group.
+     *
+     * <p>A character first met in a passage that never names a race is created with {@code race []}
+     * ({@link #resolveTextRace}); when a LATER chapter's passages ground one, the existing-record
+     * shortcut in {@link #createCharPerson} used to return the record untouched and the grounded race
+     * was lost for the whole book (measured 2026-09-28 on HarlotsEight_Vol1: "The Fairy" created from
+     * chapter 1 with {@code race: Unknown}, chapter 4 grounded {@code Fairy}, nothing was written).
+     *
+     * <p>Fill ONLY: a non-empty race is never overwritten — the first grounded statement wins and a
+     * later chapter can never re-race a character. Ethnicity is not touched here. Best-effort: a
+     * failed patch is logged and the caller still gets the existing record.
+     *
+     * <p>Custom ({@code O}) and {@code raceLabel}: an empty race fills race AND label together (the
+     * label is what an {@code O} renders as). When the stored race already contains {@code O} but the
+     * stored label is blank and the text now supplies a meaningful one, ONLY the label is filled —
+     * still a fill, never a re-race. A non-blank stored label is never overwritten.
+     */
+    private static void fillRaceIfEmpty(BaseRecord user, BaseRecord existing, Map<String, Object> charData, String name) {
+        List<String> textRace = resolveTextRace(charData, name);
+        if (textRace.isEmpty()) return;
+        String textLabel = textRace.contains(RaceEnumType.O.name()) ? resolveTextRaceLabel(charData) : null;
+        List<String> current = existing.hasField(OlioFieldNames.FIELD_RACE) ? existing.get(OlioFieldNames.FIELD_RACE) : null;
+        if (current != null && !current.isEmpty()) {
+            String currentLabel = NarrativeUtil.getRaceLabel(existing);
+            if (current.contains(RaceEnumType.O.name()) && currentLabel == null && textLabel != null) {
+                try {
+                    BaseRecord patch = existing.copyRecord(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID,
+                            FieldNames.FIELD_NAME, OlioFieldNames.FIELD_RACE_LABEL });
+                    patch.set(OlioFieldNames.FIELD_RACE_LABEL, textLabel);
+                    BaseRecord res = IOSystem.getActiveContext().getAccessPoint().update(user, patch);
+                    if (res == null) {
+                        logger.warn("Character " + name + ": race label fill '" + textLabel + "' was NOT persisted (update returned null)");
+                    } else {
+                        existing.set(OlioFieldNames.FIELD_RACE_LABEL, textLabel);
+                        logger.info("Character " + name + ": race label filled on existing record -> '" + textLabel + "'");
+                    }
+                } catch (Exception e) {
+                    logger.warn("Character " + name + ": race label fill failed: " + e.getMessage());
+                }
+                return;
+            }
+            if (!current.equals(textRace)) {
+                logger.info("Character " + name + ": keeping existing race " + current + " (text now states " + textRace + ")");
+            }
+            return;
+        }
+        try {
+            List<String> patchFields = new ArrayList<>(Arrays.asList(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID,
+                    FieldNames.FIELD_NAME, OlioFieldNames.FIELD_RACE));
+            if (textLabel != null) patchFields.add(OlioFieldNames.FIELD_RACE_LABEL);
+            BaseRecord patch = existing.copyRecord(patchFields.toArray(new String[0]));
+            patch.set(OlioFieldNames.FIELD_RACE, new ArrayList<>(textRace));
+            if (textLabel != null) patch.set(OlioFieldNames.FIELD_RACE_LABEL, textLabel);
+            BaseRecord res = IOSystem.getActiveContext().getAccessPoint().update(user, patch);
+            if (res == null) {
+                logger.warn("Character " + name + ": race fill " + textRace + " was NOT persisted (update returned null)");
+            } else {
+                existing.set(OlioFieldNames.FIELD_RACE, new ArrayList<>(textRace));
+                if (textLabel != null) existing.set(OlioFieldNames.FIELD_RACE_LABEL, textLabel);
+                logger.info("Character " + name + ": race filled on existing record -> " + textRace
+                    + (textLabel != null ? " (label '" + textLabel + "')" : ""));
+            }
+        } catch (Exception e) {
+            logger.warn("Character " + name + ": race fill failed: " + e.getMessage());
+        }
+    }
+
     private static BaseRecord patchCharPersonField(BaseRecord user, BaseRecord charPerson, String fieldName, BaseRecord value) {
         try {
             charPerson.set(fieldName, value);
@@ -6553,8 +6851,18 @@ public class PictureBookUtil {
         Query eq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, name);
         eq.field(FieldNames.FIELD_GROUP_ID, charsGroup.get(FieldNames.FIELD_ID));
         eq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        // race and raceLabel are not among the common query fields; project both so the fill-only
+        // check below can see what the record already carries (an unprojected raceLabel would read as
+        // blank and invite a label fill over a stored value).
+        List<String> eqRequest = new ArrayList<>(eq.getRequest());
+        if (!eqRequest.contains(OlioFieldNames.FIELD_RACE)) eqRequest.add(OlioFieldNames.FIELD_RACE);
+        if (!eqRequest.contains(OlioFieldNames.FIELD_RACE_LABEL)) eqRequest.add(OlioFieldNames.FIELD_RACE_LABEL);
+        eq.setRequest(eqRequest);
         BaseRecord existing = IOSystem.getActiveContext().getAccessPoint().find(user, eq);
-        if (existing != null) return existing;
+        if (existing != null) {
+            fillRaceIfEmpty(user, existing, charData, name);
+            return existing;
+        }
 
         // KI-30: run the general random-character generator FIRST to get a fully-populated
         // baseline (statistics/instinct/personality/state/store/profile/race/alignment), then
@@ -6636,6 +6944,15 @@ public class PictureBookUtil {
             // Race is exactly what the text stated (resolveTextRace), possibly nothing. Set even when
             // empty so no factory/baseline default can survive on the record.
             charPerson.set(OlioFieldNames.FIELD_RACE, new ArrayList<>(textRace));
+            // Custom (O) carries the text's own word for the race in raceLabel; resolveTextRace only
+            // yields O when a meaningful label is present, so this is never a bare O.
+            if (textRace.contains(RaceEnumType.O.name())) {
+                String raceLabel = resolveTextRaceLabel(charData);
+                if (raceLabel != null) {
+                    charPerson.set(OlioFieldNames.FIELD_RACE_LABEL, raceLabel);
+                    logger.info("Character " + name + ": custom race label '" + raceLabel + "'");
+                }
+            }
 
             // Age/ethnicity/skills — plain columns on identity.person/charPerson (not foreign/
             // referenced records), so these can be set directly before create(), same as gender.
@@ -7826,6 +8143,10 @@ public class PictureBookUtil {
                     : (text != null && !text.isEmpty()
                         ? (text.length() > MAX_EXTRACTION_TEXT_CHARS ? text.substring(0, MAX_EXTRACTION_TEXT_CHARS) : text)
                         : null);
+            // Before the LLM merge below: a race the CALLER supplied is user-authored and is honored
+            // as-is (off-list -> Custom + label), and the merge only fills keys the cast left empty,
+            // so normalizing first is what keeps the cast's race ahead of the model's.
+            normalizeCastRace(charData, cname);
             if ((charData.get("appearance") == null || ((String) charData.getOrDefault("appearance", "")).isEmpty())
                     && passages != null && !passages.isBlank() && chatConfig != null) {
                 Map<String, String> charVars = new LinkedHashMap<>();
@@ -7849,6 +8170,9 @@ public class PictureBookUtil {
                             charData.put(e.getKey(), e.getValue());
                         }
                     }
+                    // The cast's on-list race wins the merge above but the LLM's race_label would still
+                    // fill in beside it; race and race_label travel as a pair or not at all.
+                    enforceRaceLabelInvariant(charData);
                 }
             }
             BaseRecord cp = createCharPerson(user, chatConfig, charData, charsGroup, genre, failedApparel, failedStatistics, dataPath, pb2OlioCtx, passages);

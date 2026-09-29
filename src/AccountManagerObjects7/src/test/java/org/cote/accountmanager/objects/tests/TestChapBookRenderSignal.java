@@ -4,7 +4,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assume.assumeTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -95,8 +94,7 @@ public class TestChapBookRenderSignal extends BaseTest {
 	@Test
 	public void testPerSceneHardLlmFailureDegradeRenders() {
 		String swarmServer = testProperties.getProperty("test.swarm.server");
-		assumeTrue("test.swarm.server not configured — skipping ChapBook hard-failure degrade render",
-			swarmServer != null && !swarmServer.isBlank());
+		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, swarmServer, "ChapBook render-signal render");
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);
@@ -131,7 +129,7 @@ public class TestChapBookRenderSignal extends BaseTest {
 		assertNotNull("Unreachable chatConfig must be built", unreachable);
 
 		ChapBookUtil.SceneRenderResult result = ChapBookUtil.renderChapBookScene(
-			testUser, sceneObjectId, "SWARM", swarmServer, unreachable, null);
+			testUser, sceneObjectId, "SWARM", swarmServer, unreachable, renderConfig);
 
 		assertNotNull("renderChapBookScene must return a result", result);
 		// The landscape LLM genuinely could not run → the truthful "unavailable" signal must be set,
@@ -170,11 +168,9 @@ public class TestChapBookRenderSignal extends BaseTest {
 	@Test
 	public void testPerSceneHealthyPathAndNoConfigDoNotFalseAlarm() {
 		String swarmServer = testProperties.getProperty("test.swarm.server");
-		assumeTrue("test.swarm.server not configured — skipping healthy-path ChapBook render",
-			swarmServer != null && !swarmServer.isBlank());
+		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, swarmServer, "ChapBook render-signal render");
 		String llmServer = testProperties.getProperty("test.llm.ollama.server");
-		assumeTrue("test.llm.ollama.server not configured — skipping healthy-path ChapBook render",
-			llmServer != null && !llmServer.isBlank());
+		SdTestGate.requireLlmReachable(llmServer);
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);
@@ -199,7 +195,7 @@ public class TestChapBookRenderSignal extends BaseTest {
 
 		// 1. Healthy render with the live LLM: must succeed and NOT raise either flag.
 		ChapBookUtil.SceneRenderResult healthy = ChapBookUtil.renderChapBookScene(
-			testUser, sceneObjectId, "SWARM", swarmServer, liveConfig, null);
+			testUser, sceneObjectId, "SWARM", swarmServer, liveConfig, renderConfig);
 		assertNotNull("Healthy render must return a result", healthy);
 		assertEquals("Healthy live-LLM render must RENDER (genuine stored or fresh-recovered prompt)",
 			ChapBookUtil.SceneRenderStatus.RENDERED, healthy.status);
@@ -219,7 +215,7 @@ public class TestChapBookRenderSignal extends BaseTest {
 		//    Under the corrected Objects7 semantics chatConfig == null only sets llmUnavailable when there is
 		//    no genuine prompt to render on; here the prompt IS genuine, so the PRESERVE invariant holds.
 		ChapBookUtil.SceneRenderResult noConfig = ChapBookUtil.renderChapBookScene(
-			testUser, sceneObjectId, "SWARM", swarmServer, null, null);
+			testUser, sceneObjectId, "SWARM", swarmServer, null, renderConfig);
 		assertNotNull("No-config render must return a result", noConfig);
 		assertEquals("A no-config render of a genuine-prompt scene must STILL render (attempt not blocked)",
 			ChapBookUtil.SceneRenderStatus.RENDERED, noConfig.status);
@@ -239,8 +235,7 @@ public class TestChapBookRenderSignal extends BaseTest {
 	@Test
 	public void testBulkRenderSummaryAggregatesLlmUnavailable() {
 		String swarmServer = testProperties.getProperty("test.swarm.server");
-		assumeTrue("test.swarm.server not configured — skipping bulk ChapBook render summary",
-			swarmServer != null && !swarmServer.isBlank());
+		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, swarmServer, "ChapBook render-signal render");
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);
@@ -267,7 +262,7 @@ public class TestChapBookRenderSignal extends BaseTest {
 		assertNotNull("Unreachable chatConfig must be built", unreachable);
 
 		ChapBookUtil.ChapBookRenderSummary summary = ChapBookUtil.renderChapBookSummary(
-			testUser, bookObjectId, "SWARM", swarmServer, unreachable, null);
+			testUser, bookObjectId, "SWARM", swarmServer, unreachable, renderConfig);
 		assertNotNull("renderChapBookSummary must return a summary", summary);
 		// Every scene's landscape LLM step hard-failed, so every scene must be counted as llmUnavailable,
 		// and (with live SD + a fallback stored prompt to degrade onto) every scene must degrade-render.
@@ -299,8 +294,7 @@ public class TestChapBookRenderSignal extends BaseTest {
 	@Test
 	public void testPerSceneNoConfigDeterminedInObjects7() throws Exception {
 		String swarmServer = testProperties.getProperty("test.swarm.server");
-		assumeTrue("test.swarm.server not configured — skipping no-config Objects7 determination test",
-			swarmServer != null && !swarmServer.isBlank());
+		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, swarmServer, "ChapBook render-signal render");
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		assertNotNull("test.datagen.path must be set", dataPath);
@@ -334,7 +328,7 @@ public class TestChapBookRenderSignal extends BaseTest {
 			ChapBookUtil.isGenuineStoredPrompt(genuineReloaded.get(OlioFieldNames.FIELD_CB_SD_PROMPT)));
 
 		ChapBookUtil.SceneRenderResult genuineResult = ChapBookUtil.renderChapBookScene(
-			testUser, genuineSceneOid, "SWARM", swarmServer, null, null);
+			testUser, genuineSceneOid, "SWARM", swarmServer, null, renderConfig);
 		assertNotNull("Genuine-prompt no-config render must return a result", genuineResult);
 		assertEquals("A genuine-prompt scene must RENDER even with chatConfig == null",
 			ChapBookUtil.SceneRenderStatus.RENDERED, genuineResult.status);
@@ -351,7 +345,7 @@ public class TestChapBookRenderSignal extends BaseTest {
 			fallbackPrompt != null && fallbackPrompt.startsWith("landscape, "));
 
 		ChapBookUtil.SceneRenderResult fallbackResult = ChapBookUtil.renderChapBookScene(
-			testUser, fallbackSceneOid, "SWARM", swarmServer, null, null);
+			testUser, fallbackSceneOid, "SWARM", swarmServer, null, renderConfig);
 		assertNotNull("Fallback no-config render must return a result", fallbackResult);
 		assertTrue("A fallback-only scene rendered with chatConfig == null MUST report llmUnavailable=true "
 			+ "(the LLM step could not run and no genuine prompt existed) — the signal Service7 now passes "

@@ -139,15 +139,73 @@ public class NarrativeUtil {
 		}
 		return desc.toString();
 	}
+	/**
+	 * No-label overload: the Custom constant ({@code O}) is DROPPED, never rendered as the word
+	 * "Custom". Callers that have the record's {@code raceLabel} should use the two-argument form.
+	 */
 	public static String getRaceDescription(List<String> races) {
-		StringBuilder desc = new StringBuilder();
-		if(races == null) return desc.toString();
+		return getRaceDescription(races, null);
+	}
+
+	/**
+	 * Human-readable race phrase for a {@code charPerson.race} list of {@link RaceEnumType}
+	 * constant names, joined with " and ".
+	 *
+	 * <p>The Custom constant ({@code O}) is a sink for a race the enum does not name; its
+	 * human-readable name is the record's {@code raceLabel}. Each {@code O} element is replaced by
+	 * {@code customLabel} when that is {@link #isMeaningful meaningful}, and SKIPPED entirely
+	 * otherwise — no dangling conjunction: {@code ["E","O"]} with a null label is exactly "White",
+	 * {@code ["O"]} with a null label is "". The literal word "Custom" is never emitted into a
+	 * narration, LLM prompt or SD prompt. Every other element renders via
+	 * {@link RaceEnumType#valueOf(RaceEnumType)} exactly as before.
+	 */
+	public static String getRaceDescription(List<String> races, String customLabel) {
+		return String.join(" and ", describeRaces(races, customLabel));
+	}
+
+	/**
+	 * The element-wise form of {@link #getRaceDescription(List, String)}: a NEW list of
+	 * human-readable race names in which each Custom constant ({@code O}) is substituted by
+	 * {@code customLabel} (when meaningful) or dropped (when not). Non-custom constant names map to
+	 * their {@link RaceEnumType} labels. Never returns null; the input list is not modified. This is
+	 * what {@code QueryPlan.filterRecord(rec, decorate=true)} uses to decorate the LLM-facing
+	 * character export, so the label substitution lives here with the rest of the race vocabulary
+	 * rather than in the IO layer.
+	 */
+	public static List<String> describeRaces(List<String> races, String customLabel) {
+		List<String> out = new ArrayList<>();
+		if(races == null) return out;
+		String label = cleanRaceLabel(customLabel);
 		for(String rc: races) {
+			if(RaceEnumType.isCustom(rc)) {
+				if(label != null) out.add(label);
+				continue;
+			}
 			RaceEnumType ret = RaceEnumType.valueOf(rc);
-			if(desc.length() > 0) desc.append(" and ");
-			desc.append(RaceEnumType.valueOf(ret));
+			out.add(RaceEnumType.valueOf(ret));
 		}
-		return desc.toString();
+		return out;
+	}
+
+	/**
+	 * The record's {@code raceLabel}, or null when the record does not carry the field (an
+	 * unprojected read) or the value is not {@link #isMeaningful meaningful}. Reads via
+	 * {@code hasField} first so a projection that omitted the column is not auto-materialized as a
+	 * null field on the record.
+	 */
+	public static String getRaceLabel(BaseRecord person) {
+		if(person == null || !person.hasField(OlioFieldNames.FIELD_RACE_LABEL)) return null;
+		return cleanRaceLabel(person.get(OlioFieldNames.FIELD_RACE_LABEL));
+	}
+
+	/// raceLabel is client-writable (PATCH, cast data) and is rendered straight into narration and
+	/// SD prompts, so control characters (newlines, tabs, escapes) are replaced with a space before
+	/// the value is used anywhere. Applied on both the write path (PictureBookUtil.resolveTextRaceLabel /
+	/// normalizeCastRace) and every read. Null when nothing meaningful remains.
+	public static String cleanRaceLabel(String label) {
+		if(label == null) return null;
+		String cleaned = label.replaceAll("\\p{Cntrl}+", " ").replaceAll("\\s{2,}", " ").trim();
+		return isMeaningful(cleaned) ? cleaned : null;
 	}
 	
 	public static List<String> describeVisibleTarget(BaseRecord targ, boolean all){
@@ -157,7 +215,7 @@ public class NarrativeUtil {
 		if(targ.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)) {
 			int age = targ.get(FieldNames.FIELD_AGE);
 			String gender = targ.get(FieldNames.FIELD_GENDER);
-			desc.add("Race: " + NarrativeUtil.getRaceDescription(targ.get(OlioFieldNames.FIELD_RACE)));
+			desc.add("Race: " + NarrativeUtil.getRaceDescription(targ.get(OlioFieldNames.FIELD_RACE), getRaceLabel(targ)));
 			desc.add("Age: " + age);
 			desc.add("Gender: " + gender);
 			desc.add("Eyes: " + targ.get("eyeColor.name"));
@@ -989,7 +1047,7 @@ public class NarrativeUtil {
 		buff.append(" " + getIsPrettyAthletic(pp));
 		buff.append(" ((" + getNumberName(age).toLowerCase() + ":1.5) (" + age + "yo:1.5)");
 
-		String raceDesc = getRaceDescription(pp.getRace());
+		String raceDesc = getRaceDescription(pp.getRace(), pp.getRaceLabel());
 		buff.append(raceDesc.length() > 0 ? " (" + raceDesc.toLowerCase() + ")" : "");
 
 		String ethDesc = getEthnicityDescription(pp.getEthnicity(), pp.getOtherEthnicity());
@@ -1029,7 +1087,7 @@ public class NarrativeUtil {
 		
 		boolean uarm = NeedsUtil.isUnarmed(person);
 		
-		String raceDesc = getRaceDescription(person.get(OlioFieldNames.FIELD_RACE));
+		String raceDesc = getRaceDescription(person.get(OlioFieldNames.FIELD_RACE), getRaceLabel(person));
 		String magicStr = (describeMagic ? ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) : "");
 		String bodyDesc = describeBodyShape(pp.getRecord());
 		String buildDesc = describeBuild(pp.getRecord());
@@ -1157,7 +1215,7 @@ public class NarrativeUtil {
 
 		String gender = pp.getGender();
 
-		String raceDesc = getRaceDescription(pp.getRace());
+		String raceDesc = getRaceDescription(pp.getRace(), pp.getRaceLabel());
 		String bodyDesc = describeBodyShape(pp.getRecord());
 		String buildDesc = describeBuild(pp.getRecord());
 		buff.append(buildDesc.length() > 0 ? buildDesc + ", " : "");
@@ -1560,7 +1618,7 @@ public class NarrativeUtil {
 		TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get(FieldNames.FIELD_TERRAIN_TYPE));
 		Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)) != tet).map(c -> ((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)).toLowerCase()).collect(Collectors.toSet());
 		
-		String raceDesc = getRaceDescription(pov.get(OlioFieldNames.FIELD_RACE));
+		String raceDesc = getRaceDescription(pov.get(OlioFieldNames.FIELD_RACE), getRaceLabel(pov));
 		buff.append(fname + " is a " + age + " year old " + raceDesc + " " + getGenderLabel(gender, age) + ".");
 		buff.append(" " + pro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
 		buff.append(" " + getDarkTetradDescription(pp));
@@ -1624,7 +1682,7 @@ public class NarrativeUtil {
 			PersonalityProfile pp2 = ProfileUtil.analyzePersonality(ctx, p);
 			String compatKey = OCEANUtil.getCompatibilityKey(pov.get(FieldNames.FIELD_PERSONALITY), p.get(FieldNames.FIELD_PERSONALITY));
 			CompatibilityEnumType mbtiCompat = MBTIUtil.getCompatibility(pov.get("personality.mbtiKey"), p.get("personality.mbtiKey"));
-			buff.append("\n" + p.get(FieldNames.FIELD_FIRST_NAME) + " " + getRaceDescription(p.get(OlioFieldNames.FIELD_RACE)) + " (" + p.get(FieldNames.FIELD_AGE) + " year old " + p.get(FieldNames.FIELD_GENDER) + "): " + compatKey + " / " + mbtiCompat.toString() + " / " + getDarkTetradDescription(pp2));
+			buff.append("\n" + p.get(FieldNames.FIELD_FIRST_NAME) + " " + getRaceDescription(p.get(OlioFieldNames.FIELD_RACE), getRaceLabel(p)) + " (" + p.get(FieldNames.FIELD_AGE) + " year old " + p.get(FieldNames.FIELD_GENDER) + "): " + compatKey + " / " + mbtiCompat.toString() + " / " + getDarkTetradDescription(pp2));
 		}
 		
 		return buff.toString();

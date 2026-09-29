@@ -4138,6 +4138,13 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
                 layout: "third",
                 format: "textlist"
             },
+            /// Free-text name for a custom race. Only meaningful when the race
+            /// list contains "O" (RaceEnumType.O = Custom); it substitutes that
+            /// element only, unlike otherEthnicity which overrides the whole list.
+            raceLabel: {
+                layout: "third",
+                label: "Custom Race Label"
+            },
             ethnicity: {
                 layout: "third",
                 format: "textlist"

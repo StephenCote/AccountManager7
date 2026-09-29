@@ -93,7 +93,8 @@ public class TestChapBookSceneReviewEdits extends BaseTest {
 	 * <ol>
 	 *   <li>Create a ChapBook of 4 scenes from one 4-stanza poem (no LLM).</li>
 	 *   <li>{@code mergeSceneUp} the scene at index 1 → it absorbs the scene at index 2; assert the merged
-	 *       stanza, {@code imageStale=true}, cleared {@code sdPrompt}, the absorbed scene gone, and gap-free
+	 *       stanza, {@code imageStale=true}, the survivor's {@code sdPrompt}/{@code promptLocked} PRESERVED
+	 *       (a hand-edited or locked prompt must survive a merge), the absorbed scene gone, and gap-free
 	 *       {@code sceneIndex} 0..n-1 on the 3 survivors.</li>
 	 *   <li>{@code deleteSceneAndReindex} the first survivor → assert it is gone and the remaining 2 scenes
 	 *       are re-indexed 0..n-1.</li>
@@ -133,10 +134,11 @@ public class TestChapBookSceneReviewEdits extends BaseTest {
 		String s2Stanza = scenes0.get(2).get(OlioFieldNames.FIELD_CB_POEM_STANZA);
 		assertNotNull("Absorbing scene must carry a poemStanza", s1Stanza);
 		assertNotNull("Absorbed scene must carry a poemStanza", s2Stanza);
-		// No-LLM create stores a fallback sdPrompt; confirm it is present so "cleared after merge" is meaningful.
+		// No-LLM create stores a fallback sdPrompt; confirm it is present so "preserved after merge" is meaningful.
 		String s1PromptBefore = scenes0.get(1).get(OlioFieldNames.FIELD_CB_SD_PROMPT);
 		assertTrue("Absorbing scene should have a create-time fallback sdPrompt before merge",
 			s1PromptBefore != null && !s1PromptBefore.isBlank());
+		Object s1LockedBefore = scenes0.get(1).get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
 		int nBeforeMerge = scenes0.size();
 
 		// ── 2. mergeSceneUp: scene at index 1 absorbs scene at index 2 ──────────────────────
@@ -158,12 +160,14 @@ public class TestChapBookSceneReviewEdits extends BaseTest {
 			s1Stanza + "\n" + s2Stanza, merged.get(OlioFieldNames.FIELD_CB_POEM_STANZA));
 		assertEquals("imageStale must be true after a merge",
 			Boolean.TRUE, merged.get(OlioFieldNames.FIELD_PB_IMAGE_STALE));
+		// mergeSceneUp deliberately PRESERVES the absorbing scene's sdPrompt and promptLocked (see its
+		// javadoc): a hand-edited or LOCKED prompt must survive a merge. imageStale=true is what signals
+		// the re-render; an unlocked prompt is regenerated from the merged stanza at that point.
 		String mergedPrompt = merged.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
-		assertTrue("sdPrompt must be cleared after merge (was: " + mergedPrompt + ")",
-			mergedPrompt == null || mergedPrompt.isBlank());
+		assertEquals("sdPrompt must be preserved across a merge", s1PromptBefore, mergedPrompt);
 		Object mergedLocked = merged.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
-		assertTrue("promptLocked must be false/unset after merge (was: " + mergedLocked + ")",
-			mergedLocked == null || Boolean.FALSE.equals(mergedLocked));
+		assertEquals("promptLocked must be preserved across a merge",
+			Boolean.TRUE.equals(s1LockedBefore), Boolean.TRUE.equals(mergedLocked));
 
 		// Survivors are re-indexed to a clean, gap-free 0..n-1 (the old index-3 scene moved to 2).
 		assertContiguousIndices("after merge-up", afterMerge);

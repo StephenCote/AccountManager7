@@ -60,7 +60,9 @@ import com.sun.net.httpserver.HttpServer;
  * <pre>
  * Case A  dialect=OPENAI_COMPAT, upstream=OLLAMA  (the KI-72 fix: Ollama behind a LiteLLM proxy)
  * Case B  dialect=OPENAI_COMPAT, upstream unset   (the Azure case: nothing Ollama-only may be sent)
- * Case C  dialect=OLLAMA                          (native control - must be unchanged)
+ * Case C  dialect=OLLAMA                          (native wire shape: sampling params INSIDE `options`,
+ *                                                  `think` top-level - Ollama ignores top-level copies)
+ * Case C2 dialect=OLLAMA, chatOptions at defaults (the default values must reach `options` too)
  * Case D  dialect=OLLAMA + an analyze/keyframe path that overrides the token value
  * </pre>
  *
@@ -70,10 +72,14 @@ import com.sun.net.httpserver.HttpServer;
  *
  * <p><b>Case D</b> guards the deliberate per-path overrides. {@code Chat.applyAnalyzeOptions}
  * calls {@code applyChatOptions} FIRST (which now emits {@code num_ctx} from chatOptions) and THEN
- * writes the analyze value over the resolved token field; the scene path writes 256 and the
- * keyframe path writes {@code KEYFRAME_MAX_TOKENS} the same way. If the new {@code num_ctx}
- * emission landed after those, an analyze call would silently run at the full conversational
- * context - a regression in cost and latency that nothing else would surface.</p>
+ * writes the analyze CONTEXT over the resolved token field. If the new {@code num_ctx} emission
+ * landed after it, an analyze call would silently run at the full conversational context - a
+ * regression in cost and latency that nothing else would surface. The per-call OUTPUT caps
+ * (title 200, scene 256, keyframe {@code KEYFRAME_MAX_TOKENS}, the evaluators) go through
+ * {@code ChatUtil.getOutputCapField} instead, which is empty on native Ollama: now that
+ * {@code num_ctx} is honored inside {@code options}, writing a cap there would shrink the
+ * context window. D asserts the keyframe cap leaves {@code num_ctx} alone on native Ollama and
+ * still lands in {@code max_tokens} on the proxied dialect.</p>
  */
 public class TestUpstreamWireEmission extends BaseTest {
 
@@ -455,11 +461,64 @@ public class TestUpstreamWireEmission extends BaseTest {
 		logger.info("[KI-72][WIRE][B] PASS");
 	}
 
-	/// CASE C - NATIVE CONTROL. dialect=OLLAMA. Unchanged from the pre-change behaviour in these
-	/// keys: num_ctx present (it is the native token field), think:false present, extensions at the
-	/// top level with no `options` sub-object.
+	/// The sampling/context keys native Ollama /api/chat reads ONLY from `options`. Case C asserts
+	/// every one of these is INSIDE `options` at the configured value and NOT at the top level.
+	/// `think` is deliberately not here: Ollama honors it at the top level and it stays there.
+	/// `num_gpu` is deliberately not here either - see WHY_NUM_GPU_STAYS_TOP_LEVEL.
+	private static final String[] NATIVE_OPTIONS_KEYS = {
+		"num_ctx", "temperature", "top_k", "repeat_penalty", "min_p", "repeat_last_n"
+	};
+
+	/// The first cut of the wire-shape fix relocated num_gpu too, and that was a regression: inside
+	/// `options` Ollama reads num_gpu as the number of layers to offload to the GPU, and chatOptions
+	/// defaults it to 1, so every persisted row pinned the model to ONE GPU layer. Measured
+	/// 2026-09-28 on the DGX Spark: gpt-oss:120b loaded 1.9 GiB of 61.9 GiB into VRAM and every
+	/// PictureBook chunk aborted at the 305s latch. At the top level Ollama ignores it, which is
+	/// exactly where it rode before the fix.
+	private static final String WHY_NUM_GPU_STAYS_TOP_LEVEL = "`num_gpu` must NOT be nested into"
+		+ " `options`: there Ollama honors it as a GPU layer count and the chatOptions default of 1"
+		+ " runs the model on CPU (gpt-oss:120b at 1.9 of 61.9 GiB in VRAM, 305s latch timeouts,"
+		+ " 2026-09-28). It stays at the top level, where Ollama ignores it, until the default is fixed.";
+
+	/// Assert the native /api/chat body shape: `options` is an object carrying every
+	/// NATIVE_OPTIONS_KEYS member, none of them rides the top level, `think` is top-level, and the
+	/// dead `typical_p` is nowhere (top level OR inside `options`, where Ollama 0.34.x would 400).
+	private static JsonNode assertNativeOptionsShape(JsonNode body, String tag) {
+		assertHas(body, "options", tag + ": native Ollama reads sampling/context params ONLY from the"
+			+ " `options` sub-object (measured against Ollama 0.34.3, 2026-09-28); a body without it"
+			+ " leaves the model running at its Modelfile defaults - JOSIEFIED ships repeat_penalty 1"
+			+ " and loops");
+		assertTrue(tag + ": `options` must be a JSON object", body.get("options").isObject());
+		JsonNode options = body.get("options");
+		for (String f : NATIVE_OPTIONS_KEYS) {
+			assertHas(options, f, tag + ": native Ollama reads `" + f + "` only from `options`");
+			assertHasNot(body, f, tag + ": `" + f + "` must not ALSO ride the top level - top-level"
+				+ " copies are ignored by Ollama and only mislead the next reader of a captured body");
+		}
+		assertHas(body, "think", tag + ": `think` is honored at the TOP level of /api/chat and must stay there");
+		assertHasNot(options, "think", tag + ": `think` must not be moved into `options` - this only"
+			+ " applies to bodies where the caller did not put it there itself (see caseJ2)");
+		assertHasNot(options, "num_gpu", tag + ": " + WHY_NUM_GPU_STAYS_TOP_LEVEL);
+		/// ...and it must still be ON the body, or the guard above passes vacuously on a build that
+		/// stopped emitting it altogether.
+		assertHas(body, "num_gpu", tag + ": num_gpu rides the top level (ignored there) - " + WHY_NUM_GPU_STAYS_TOP_LEVEL);
+		for (String f : REMOVED_EXTENSIONS) {
+			assertHasNot(body, f, WHY_REMOVED);
+			assertHasNot(options, f, WHY_REMOVED + " Inside `options` Ollama 0.34.x rejects it with HTTP 400.");
+		}
+		return options;
+	}
+
+	/// CASE C - NATIVE WIRE SHAPE. dialect=OLLAMA. Every sampling/context parameter rides INSIDE
+	/// `options` at the chatOptions value, none rides the top level, and `think` stays top-level.
+	///
+	/// Ollama 0.34.3 /api/chat honors num_ctx/temperature/top_k/top_p/repeat_penalty/... ONLY inside
+	/// `options`; top-level copies are silently ignored (measured 2026-09-28 - the recorded AM7 body
+	/// `{"num_ctx":8192,"options":{"think":false},"temperature":0.9,...}` ran the model at its
+	/// Modelfile defaults, and JOSIEFIED's `repeat_penalty 1` looped). Before this fix this case
+	/// pinned the top-level shape as the "native control"; that shape was the defect.
 	@Test
-	public void caseC_nativeOllamaDialect_isUnchanged() throws Exception {
+	public void caseC_nativeOllamaDialect_nestsSamplingParamsInOptions() throws Exception {
 		String base = startCaptureServer();
 		String nonce = UUID.randomUUID().toString().substring(0, 8);
 		BaseRecord user = getCreateUser("ki72WireUserC");
@@ -476,21 +535,18 @@ public class TestUpstreamWireEmission extends BaseTest {
 		JsonNode body = dispatchAndCapture("/api/chat", user, cfg,
 			LLMServiceEnumType.OLLAMA, ConnectionUpstreamEnumType.OLLAMA);
 
-		assertHas(body, "num_ctx", "native Ollama must receive num_ctx");
-		assertEquals("native num_ctx must carry the chatOptions value",
-			DISTINCT_NUM_CTX, body.get("num_ctx").asInt());
-		assertHas(body, "think", "an explicitly populated think must survive on the native path");
+		JsonNode options = assertNativeOptionsShape(body, "C");
+		assertEquals("options.num_ctx must carry the chatOptions value",
+			DISTINCT_NUM_CTX, options.get("num_ctx").asInt());
+		assertEquals("options.temperature must carry the chatOptions value",
+			0.61, options.get("temperature").asDouble(), 0.0001);
+		assertEquals(DISTINCT_TOP_K, options.get("top_k").asInt());
+		assertEquals(DISTINCT_REPEAT_PENALTY, options.get("repeat_penalty").asDouble(), 0.0001);
+		assertEquals(DISTINCT_MIN_P, options.get("min_p").asDouble(), 0.0001);
+		assertEquals(DISTINCT_REPEAT_LAST_N, options.get("repeat_last_n").asInt());
+		assertEquals("top-level num_gpu must still carry the chatOptions value - " + WHY_NUM_GPU_STAYS_TOP_LEVEL,
+			DISTINCT_NUM_GPU, body.get("num_gpu").asInt());
 		assertFalse("`think` must be false", body.get("think").asBoolean());
-		for (String f : OLLAMA_EXTENSIONS) {
-			assertHas(body, f, "native Ollama must receive every extension parameter");
-		}
-		/// On the NATIVE path a top-level typical_p is IGNORED by Ollama rather than rejected (see
-		/// REMOVED_EXTENSIONS), so this assertion is not guarding against a live 400 here - it pins
-		/// that the dead parameter is gone from every wire, not just the proxied one.
-		for (String f : REMOVED_EXTENSIONS) {
-			assertHasNot(body, f, WHY_REMOVED);
-		}
-		assertEquals(DISTINCT_TOP_K, body.get("top_k").asInt());
 
 		/// max_tokens is ABSENT on the native wire, and that is PRE-EXISTING, not a KI-72 effect.
 		/// applyOllamaUpstreamOptions sets it on the request, but Chat.chatInternal's token-field
@@ -498,14 +554,79 @@ public class TestUpstreamWireEmission extends BaseTest {
 		/// resolved tokField, which for a native OLLAMA dialect IS num_ctx. Measured from the
 		/// captured body (I first asserted it present - that was my expectation, not the shipped
 		/// behaviour). The same prune is what removes num_ctx on the PROXIED path; see caseA2.
+		/// Ollama's own name for the cap is `num_predict`; introducing it is a behaviour change
+		/// beyond the wire-shape fix and is not done here, so neither name is in `options`.
 		assertHasNot(body, "max_tokens", "pre-existing native behaviour: only the resolved token"
 			+ " field (num_ctx) survives Chat.chatInternal's token-field prune");
-		assertHasNot(body, "options", "there must be no `options` sub-object - the extensions ride"
-			+ " at the top level (a sub-object auto-populated with model defaults and silently"
-			+ " overrode the user's temperature/top_p/num_ctx/max_tokens)");
+		assertHasNot(options, "max_tokens", "`max_tokens` is not an Ollama option key and is pruned"
+			+ " before the options nesting runs");
+		assertHasNot(options, "num_predict", "num_predict is deliberately NOT introduced by the"
+			+ " wire-shape fix (Stephen's call; see applyOllamaUpstreamOptions)");
 		/// max_completion_tokens is the o-series field and must never be sent for this model.
 		assertHasNot(body, "max_completion_tokens", "only the resolved token field may be sent");
-		logger.info("[KI-72][WIRE][C] PASS");
+		/// Non-vacuity: the body is still a real chat request.
+		assertHas(body, "messages", "the request must still carry its messages");
+		assertHas(body, "model", "the request must still carry the model");
+		assertTrue("stream must still be forced true on the wire", body.get("stream").asBoolean());
+		logger.info("[KI-72][WIRE][C] PASS options=" + options);
+	}
+
+	/// CASE C2 - THE DEFAULT-CONFIGURATION CASE, and the one that fails if the nesting is done by
+	/// attaching a typed olio.llm.chatOptions record instead of on the serialized body.
+	///
+	/// RecordSerializer omits INT/DOUBLE fields equal to the model's SCHEMA default. A chatOptions
+	/// left at its defaults carries num_ctx 8192, repeat_penalty 1.2, top_k 50 - so a nested
+	/// chatOptions record would serialize as `"options":{}` and the wire would be exactly as broken
+	/// as before, for exactly the configuration Stephen recorded (`"num_ctx":8192`). This case runs
+	/// a chatOptions at its defaults and asserts those values reach `options`.
+	@Test
+	public void caseC2_nativeOllamaDialect_chatOptionsDefaultsReachOptions() throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserC");
+		assertNotNull("test user is null", user);
+
+		BaseRecord conn = persistConnection(user, "KI72 C2 Conn " + nonce, base,
+			ConnectionDialectEnumType.OLLAMA, null);
+		/// Built directly, NOT through chatConfigWithDistinctOptions: this fixture must carry the
+		/// chatOptions SCHEMA DEFAULTS, untouched.
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, "KI72 C2 " + nonce);
+		BaseRecord cfg = IOSystem.getActiveContext().getFactory()
+			.newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
+		assertNotNull("chatConfig factory newInstance returned null", cfg);
+		cfg.set("model", "qwen3:8b");
+		cfg.set("stream", false);
+		cfg.set("connection", conn);
+		BaseRecord opts = cfg.get("chatOptions");
+		if (opts == null) {
+			opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
+			cfg.set("chatOptions", opts);
+		}
+		/// PRECONDITION: the fixture really is at the chatOptions schema defaults, so the values
+		/// asserted below can only be the defaults surviving the trip and not something this test set.
+		assertEquals("fixture precondition: chatOptions.num_ctx must be the schema default",
+			8192, (int) (Integer) opts.get("num_ctx"));
+		assertEquals("fixture precondition: chatOptions.repeat_penalty must be the schema default",
+			1.2, (double) (Double) opts.get("repeat_penalty"), 0.0001);
+		assertEquals("fixture precondition: chatOptions.top_k must be the schema default",
+			50, (int) (Integer) opts.get("top_k"));
+
+		JsonNode body = dispatchAndCapture("/api/chat", user, cfg,
+			LLMServiceEnumType.OLLAMA, ConnectionUpstreamEnumType.OLLAMA);
+
+		JsonNode options = assertNativeOptionsShape(body, "C2");
+		assertEquals("options.num_ctx must carry the chatOptions DEFAULT (8192) - if this is missing the"
+			+ " nesting was done through a typed record and RecordSerializer's skip-when-default dropped it",
+			8192, options.get("num_ctx").asInt());
+		assertEquals("options.repeat_penalty must carry the chatOptions DEFAULT (1.2) - the exact value"
+			+ " whose absence made JOSIEFIED (Modelfile repeat_penalty 1) loop",
+			1.2, options.get("repeat_penalty").asDouble(), 0.0001);
+		assertEquals("options.top_k must carry the chatOptions DEFAULT (50)",
+			50, options.get("top_k").asInt());
+		assertEquals("options.temperature must carry the chatOptions DEFAULT (1.0)",
+			1.0, options.get("temperature").asDouble(), 0.0001);
+		logger.info("[KI-72][WIRE][C2] PASS options=" + options);
 	}
 
 	/// CASE D - the deliberate per-path token overrides must SURVIVE the new num_ctx emission.
@@ -557,7 +678,17 @@ public class TestUpstreamWireEmission extends BaseTest {
 		assertEquals("applyAnalyzeOptions must also still pin its own temperature",
 			Chat.ANALYZE_TEMPERATURE, (double) (Double) areq.get("temperature"), 0.0001);
 
-		/// --- keyframe path (same mechanism, different cap) ---
+		/// --- keyframe path: an OUTPUT cap, which must NOT shrink the context window ---
+		/// Before the wire-shape fix the keyframe cap was written into num_ctx (the only token
+		/// field getMaxTokenField resolves on native Ollama) and rode top-level, where Ollama ignored
+		/// it. Now that num_ctx is relocated into `options` and honored, that same write would pin
+		/// the context window to KEYFRAME_MAX_TOKENS tokens and force a model reload per call.
+		/// Stephen's decision (2026-09-28): caps stay INERT on native Ollama - no num_predict - so
+		/// the keyframe request must keep applyAnalyzeOptions' num_ctx untouched.
+		assertEquals("precondition: on native Ollama there is no output-cap field to write into",
+			"", ChatUtil.getOutputCapField(cfg, LLMServiceEnumType.OLLAMA));
+		assertTrue("non-vacuity: the cap and the analyze context must differ or the assertion below"
+			+ " could not tell a stomp from a no-op", Chat.KEYFRAME_MAX_TOKENS != Chat.ANALYZE_NUM_CTX);
 		Method kf = Chat.class.getDeclaredMethod("buildKeyframeRequest", OpenAIRequest.class, int.class);
 		kf.setAccessible(true);
 		OpenAIRequest kfReq = (OpenAIRequest) kf.invoke(chat, plain, 0);
@@ -565,9 +696,34 @@ public class TestUpstreamWireEmission extends BaseTest {
 			+ " so this half of case D did not exercise anything", kfReq);
 		int kfNumCtx = kfReq.get("num_ctx");
 		logger.info("[KI-72][WIRE][D] keyframe num_ctx=" + kfNumCtx
-			+ " (KEYFRAME_MAX_TOKENS=" + Chat.KEYFRAME_MAX_TOKENS + ")");
-		assertEquals("the keyframe token cap was STOMPED by the new KI-72 num_ctx emission",
-			Chat.KEYFRAME_MAX_TOKENS, kfNumCtx);
+			+ " (KEYFRAME_MAX_TOKENS=" + Chat.KEYFRAME_MAX_TOKENS + ", ANALYZE_NUM_CTX=" + Chat.ANALYZE_NUM_CTX + ")");
+		assertEquals("the keyframe OUTPUT cap was written into num_ctx on native Ollama - that shrinks"
+			+ " the model's context window to " + Chat.KEYFRAME_MAX_TOKENS + " tokens",
+			Chat.ANALYZE_NUM_CTX, kfNumCtx);
+
+		/// CONTROL - the same keyframe builder on a PROXIED dialect (OPENAI_COMPAT, upstream OLLAMA)
+		/// must still apply the cap, to max_tokens, and leave num_ctx at the analyze context. This is
+		/// what proves the change scoped the cap to the num_ctx case rather than dropping it everywhere.
+		BaseRecord pconn = persistConnection(user, "KI72 D Proxied Conn " + nonce, base,
+			ConnectionDialectEnumType.OPENAI_COMPAT, ConnectionUpstreamEnumType.OLLAMA);
+		BaseRecord pcfg = chatConfigWithDistinctOptions(user, "KI72 D Proxied " + nonce);
+		pcfg.set("connection", pconn);
+		Chat pchat = new Chat(user, pcfg, null);
+		assertEquals(LLMServiceEnumType.OPENAI_COMPAT, pchat.getServiceType());
+		assertEquals("max_tokens", ChatUtil.getOutputCapField(pcfg, LLMServiceEnumType.OPENAI_COMPAT));
+		OpenAIRequest pplain = pchat.newRequest(pchat.getModel());
+		pchat.newMessage(pplain, "hello there", Chat.userRole);
+		pchat.newMessage(pplain, "hi, how can I help?", Chat.assistantRole);
+		OpenAIRequest pkf = (OpenAIRequest) kf.invoke(pchat, pplain, 0);
+		assertNotNull("proxied buildKeyframeRequest returned null", pkf);
+		assertEquals("proxied keyframe request lost its output cap - the num_ctx guard must not"
+			+ " suppress max_tokens on OPENAI_COMPAT", Chat.KEYFRAME_MAX_TOKENS, (int) (Integer) pkf.get("max_tokens"));
+		/// On the proxied path the analyze override lands in max_tokens (its tokField), so num_ctx
+		/// is whatever applyOllamaUpstreamOptions copied from chatOptions - and the cap must leave it.
+		assertEquals("proxied keyframe request's num_ctx must be the chatOptions context, untouched by the cap",
+			DISTINCT_NUM_CTX, (int) (Integer) pkf.get("num_ctx"));
+		logger.info("[KI-72][WIRE][D] proxied keyframe max_tokens=" + pkf.get("max_tokens")
+			+ " num_ctx=" + pkf.get("num_ctx"));
 
 		/// The Ollama extensions must STILL be applied on the analyze request - the override is
 		/// scoped to the token field only.
@@ -831,41 +987,49 @@ public class TestUpstreamWireEmission extends BaseTest {
 			+ " applies on the new-session path - or the two paths disagree and 113 live connections"
 			+ " lose this on resume. The session was neutralized first, so the value on the wire can"
 			+ " ONLY have come from the resumed-session apply.";
+		/// This is a NATIVE /api/chat wire, so the extensions ride INSIDE `options` (see caseC); the
+		/// resumed-session path must land there too, since the nesting happens at wire time on the
+		/// pruned copy regardless of how the request was built.
+		JsonNode options = assertNativeOptionsShape(body, "E1");
 		for (String f : UPSTREAM_GATED_ONLY) {
-			assertHas(body, f, why);
+			/// num_gpu is upstream-gated like the rest but is the one member that stays top-level
+			/// (see WHY_NUM_GPU_STAYS_TOP_LEVEL); assertNativeOptionsShape already pinned it there.
+			assertHas("num_gpu".equals(f) ? body : options, f, why);
 		}
 		/// VALUES, not presence: neutralization leaves these fields present-but-zero, so a presence
 		/// assertion would pass on the broken code.
-		assertEquals("top_k must carry the chatOptions value - " + why,
-			DISTINCT_TOP_K, body.get("top_k").asInt());
-		assertEquals("repeat_last_n must carry the chatOptions value - " + why,
-			DISTINCT_REPEAT_LAST_N, body.get("repeat_last_n").asInt());
-		assertEquals("num_gpu must carry the chatOptions value - " + why,
+		assertEquals("options.top_k must carry the chatOptions value - " + why,
+			DISTINCT_TOP_K, options.get("top_k").asInt());
+		assertEquals("options.repeat_last_n must carry the chatOptions value - " + why,
+			DISTINCT_REPEAT_LAST_N, options.get("repeat_last_n").asInt());
+		assertEquals("top-level num_gpu must carry the chatOptions value - " + why,
 			DISTINCT_NUM_GPU, body.get("num_gpu").asInt());
-		assertEquals("repeat_penalty must carry the chatOptions value - " + why,
-			DISTINCT_REPEAT_PENALTY, body.get("repeat_penalty").asDouble(), 0.0001);
+		assertEquals("options.repeat_penalty must carry the chatOptions value - " + why,
+			DISTINCT_REPEAT_PENALTY, options.get("repeat_penalty").asDouble(), 0.0001);
 		/// THE LEGACY-SESSION CASE, and the reason the Chat.chatInternal prune is not redundant with
 		/// the removed emission. This session was persisted carrying typical_p=0.83 (see
 		/// neutralizeSessionExtensions, which deliberately leaves it alone) - so the resumed request
 		/// really does hold a value that getPrunedRequest -> toFullString would otherwise serialize.
-		/// It must still not reach the wire.
+		/// It must still not reach the wire - and, now that the extensions are nested, it must not be
+		/// carried INTO `options` either, where Ollama 0.34.x answers HTTP 400.
 		for (String f : REMOVED_EXTENSIONS) {
 			assertHasNot(body, f, WHY_REMOVED);
+			assertHasNot(options, f, WHY_REMOVED);
 		}
-		assertEquals("min_p must carry the chatOptions value - " + why,
-			DISTINCT_MIN_P, body.get("min_p").asDouble(), 0.0001);
+		assertEquals("options.min_p must carry the chatOptions value - " + why,
+			DISTINCT_MIN_P, options.get("min_p").asDouble(), 0.0001);
 		assertHas(body, "think", "think was neutralized to false on the session and ONLY the"
 			+ " upstream-gated emission block sets it true - " + why);
 		assertTrue("think must be TRUE on the wire - " + why, body.get("think").asBoolean());
 		/// num_ctx is asserted only for its value, and only as a sanity check: on this native path
 		/// the shared token-field route sets it regardless of the upstream, so it is NOT a
 		/// discriminator (see UPSTREAM_GATED_ONLY).
-		assertEquals("num_ctx must carry the chatOptions value on the resumed path",
-			DISTINCT_NUM_CTX, body.get("num_ctx").asInt());
+		assertEquals("options.num_ctx must carry the chatOptions value on the resumed path",
+			DISTINCT_NUM_CTX, options.get("num_ctx").asInt());
 		logger.info("[KI-72][WIRE][E1] PASS - resumed session re-applied the upstream-gated"
-			+ " extensions after neutralization: top_k=" + body.get("top_k").asInt()
+			+ " extensions after neutralization: options.top_k=" + options.get("top_k").asInt()
 			+ " num_gpu=" + body.get("num_gpu").asInt() + " think=" + body.get("think").asBoolean()
-			+ " num_ctx=" + body.get("num_ctx").asInt());
+			+ " options.num_ctx=" + options.get("num_ctx").asInt());
 	}
 
 	/// CASE E2 - THE NEGATIVE ARM, and it is the KI-72 prohibition verified THROUGH the floor
@@ -1364,6 +1528,27 @@ public class TestUpstreamWireEmission extends BaseTest {
 		assertFalse("top-level think must be false", body.get("think").asBoolean());
 		assertHas(body, "messages", "the request must still carry its messages");
 		assertHas(body, "model", "the request must still carry the model");
-		logger.info("[KI-72][WIRE][J2] PASS");
+
+		/// THE MERGE. This is the one production path that already puts an `options` object on the
+		/// request, so it is where the wire-time nesting must MERGE rather than replace: the site's
+		/// think:false (asserted above) and the sampling params must share the one `options` object,
+		/// and none of the sampling params may be left at the top level. This is exactly the recorded
+		/// body `{"num_ctx":8192,"options":{"think":false},"temperature":0.9,...}` that ran JOSIEFIED
+		/// at its Modelfile defaults.
+		JsonNode options = body.get("options");
+		for (String f : NATIVE_OPTIONS_KEYS) {
+			assertHas(options, f, "J2: the sampling params must be merged INTO the `options` object the"
+				+ " PictureBook site already attached, not dropped because it was already present");
+			assertHasNot(body, f, "J2: `" + f + "` must not ALSO ride the top level");
+		}
+		assertHasNot(options, "num_gpu", "J2: " + WHY_NUM_GPU_STAYS_TOP_LEVEL);
+		assertEquals("options.num_ctx must carry the chatOptions value",
+			DISTINCT_NUM_CTX, options.get("num_ctx").asInt());
+		assertEquals("options.repeat_penalty must carry the chatOptions value",
+			DISTINCT_REPEAT_PENALTY, options.get("repeat_penalty").asDouble(), 0.0001);
+		for (String f : REMOVED_EXTENSIONS) {
+			assertHasNot(options, f, WHY_REMOVED);
+		}
+		logger.info("[KI-72][WIRE][J2] PASS options=" + options);
 	}
 }

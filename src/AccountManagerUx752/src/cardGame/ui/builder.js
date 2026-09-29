@@ -452,7 +452,7 @@ function charPickerCard(ch) {
         m("div", { class: "cg2-char-meta" }, [
             chars().str(ch.gender).charAt(0).toUpperCase(),
             " ",
-            chars().str(ch.race).replace(/_/g, " "),
+            chars().raceDisplay(ch).replace(/_/g, " "),
             ch.age ? ", " + ch.age : "",
             ch.trades && ch.trades[0] ? " - " + ch.trades[0] : ""
         ]),

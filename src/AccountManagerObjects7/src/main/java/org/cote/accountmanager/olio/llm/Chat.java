@@ -1213,7 +1213,7 @@ public class Chat {
 		applyChatOptions(titleReq);
 		try {
 			titleReq.set("temperature", 0.3);
-			String tokField = ChatUtil.getMaxTokenField(chatConfig, serviceType);
+			String tokField = ChatUtil.getOutputCapField(chatConfig, serviceType);
 			if (tokField != null && tokField.length() > 0) {
 				titleReq.set(tokField, 200);
 			}
@@ -1367,7 +1367,7 @@ public class Chat {
 		}
 		return ("* " + (vchar == null ? msg.getRole()
 				: vchar.get(FieldNames.FIELD_FIRST_NAME) + " (" + vchar.get(FieldNames.FIELD_AGE) + " year-old "
-						+ NarrativeUtil.getRaceDescription(vchar.get(OlioFieldNames.FIELD_RACE)) + " "
+						+ NarrativeUtil.getRaceDescription(vchar.get(OlioFieldNames.FIELD_RACE), NarrativeUtil.getRaceLabel(vchar)) + " "
 						+ vchar.get(FieldNames.FIELD_GENDER) + ujobDesc + ")")
 				+ " *: " + msg.getContent());
 
@@ -2134,8 +2134,10 @@ public class Chat {
 		sceneReq.setStream(false);
 		applyAnalyzeOptions(req, sceneReq);
 		try { sceneReq.set("temperature", 0.4); } catch (Exception e) { /* ignore */ }
-		String tokField = ChatUtil.getMaxTokenField(chatConfig, serviceType);
-		try { sceneReq.set(tokField, 256); } catch (Exception e) { /* ignore */ }
+		String tokField = ChatUtil.getOutputCapField(chatConfig, serviceType);
+		if (tokField != null && !tokField.isEmpty()) {
+			try { sceneReq.set(tokField, 256); } catch (Exception e) { /* ignore */ }
+		}
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole(systemRole);
@@ -2589,7 +2591,7 @@ public class Chat {
 
 		/// Override max tokens to keyframe cap
 		try {
-			String tokField = ChatUtil.getMaxTokenField(chatConfig, serviceType);
+			String tokField = ChatUtil.getOutputCapField(chatConfig, serviceType);
 			if (tokField != null && !tokField.isEmpty()) {
 				kfReq.set(tokField, KEYFRAME_MAX_TOKENS);
 			}
@@ -4292,6 +4294,11 @@ public class Chat {
 		/// string math via ConversationQualityMetrics — no LLM cost.
 		maybeInjectEchoSteering(wireReq);
 		String ser = JSONUtil.exportObject(wireReq, RecordSerializerConfig.getHiddenForeignUnfilteredModule());
+		/// Native Ollama ignores sampling/context params outside `options` — see
+		/// ChatUtil.nestNativeOllamaOptions. Must run after maybeInjectEchoSteering.
+		if (serviceType == LLMServiceEnumType.OLLAMA) {
+			ser = ChatUtil.nestNativeOllamaOptions(ser);
+		}
 
 		String serviceUrl = getServiceUrl(req);
 		/// Track (server, model) usage for every OLLAMA-serviced request, chat or not, so

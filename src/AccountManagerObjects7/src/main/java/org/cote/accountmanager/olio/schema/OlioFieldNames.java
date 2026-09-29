@@ -191,6 +191,7 @@ public class OlioFieldNames {
 	public static final String FIELD_SKILLS = "skills";
 	
 	public static final String FIELD_RACE = "race";
+	public static final String FIELD_RACE_LABEL = "raceLabel";
 	public static final String FIELD_ETHNICITY = "ethnicity";
 	
 	public static final String FIELD_EYE_COLOR = "eyeColor";

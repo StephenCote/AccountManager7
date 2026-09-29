@@ -45,6 +45,15 @@ import org.cote.accountmanager.util.JSONUtil;
  * returns the merged record; nothing else in PB2 is allowed to merge config by hand, because the
  * merge order is an input to a hash that decides staleness.
  * <p>
+ * <b>Two resolutions, one chain.</b> {@link #resolveEffectiveConfig} starts from a fully materialised
+ * {@code olio.sd.config} (every schema default present) and is what the executors send to the backend.
+ * {@link #resolveDeclaredConfig} walks the <i>same</i> chain from an otherwise empty record and is what
+ * {@link #configHash} folds into {@code inputHash}: only values a tier actually declared, plus the six
+ * FLUX.2 resource defaults. The hash is therefore config-driven - a schema-default edit in
+ * {@code configModel.json} never re-renders an existing book on its own; that happens only when
+ * {@code PbGraphUtil.PB_PIPELINE_VERSION} is bumped deliberately. The cost is stated at those defaults:
+ * a default change that alters output is silent until someone bumps the version.
+ * <p>
  * <b>{@code configOverride} is a SPARSE JSON STRING and stays one</b>, even if {@code olio.sd.config}
  * is later promoted to a persisted model (plan §6c, decision 6c.3.2). 30 of the model's 80 fields
  * carry a schema default, so {@code RecordFactory.newInstance("olio.sd.config")} materialises every
@@ -273,9 +282,11 @@ public class PbConfigUtil {
 	 * <li>{@link #applyFlux2Defaults} last, filling <b>only</b> the six FLUX.2 knobs still unset. Last
 	 * because it must not overwrite an explicit override, and it can only ever fill a hole.</li>
 	 * </ol>
-	 * <b>Consequence to keep stated (§2.3):</b> because {@code configHash} folds this record in, editing
-	 * {@code olio/sd/flux2Defaults.json} invalidates every node in every book. That is intended, and it
-	 * is logged at INFO by {@link #applyFlux2Defaults} for exactly that reason.
+	 * <b>This record is for the executors, not the hash.</b> {@code configHash} folds in
+	 * {@link #resolveDeclaredConfig} instead, so a schema default that only this record carries does not
+	 * reach {@code inputHash}. The FLUX.2 resource tier does reach it (§2.3): editing
+	 * {@code olio/sd/flux2Defaults.json} still invalidates every node that folds those six knobs in, and
+	 * {@link #applyFlux2Defaults} logs at INFO for exactly that reason.
 	 *
 	 * @param book the book, read with at least {@link #requestFields()} - may be null
 	 * @param node the {@code olio.pb.node} whose {@code configOverride} applies - may be null
@@ -291,15 +302,50 @@ public class PbConfigUtil {
 			logger.error("Failed to instantiate " + OlioModelNames.MODEL_SD_CONFIG + ": " + e.getMessage(), e);
 			throw new PictureBookException(500, "Failed to instantiate " + OlioModelNames.MODEL_SD_CONFIG);
 		}
+		return mergeTiers(effective, book, node, composite);
+	}
 
-		SDUtil.applyOverrides(effective, bookConfig(book, composite));
-
-		if(node != null && node.hasField(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE)) {
-			SDUtil.applyOverrides(effective, parseOverride(node.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE)));
+	/**
+	 * Walk the same §2.4 chain as {@link #resolveEffectiveConfig}, but from a record that starts with
+	 * <b>no schema defaults at all</b>, so the result carries only what some tier actually declared:
+	 * <ol>
+	 * <li>the book tier ({@link #bookConfig}) - every non-null, non-blank field the book's config record
+	 * carries. A persisted {@code olio.sd.config} was materialised with its defaults at creation, so for
+	 * an ordinary PictureBook this is every column; the values are the book's own and do not move when
+	 * {@code configModel.json} later changes a default;</li>
+	 * <li>the node's sparse {@code configOverride};</li>
+	 * <li>the six FLUX.2 knobs from {@code flux2Defaults.json}, filled only where still unset.</li>
+	 * </ol>
+	 * A book with no config tier (ChapBook renders, a bare node) therefore hashes just the FLUX.2 six.
+	 * This is the record {@link #configHash} is taken over - see the class comment for why.
+	 *
+	 * @return a new, sparse {@code olio.sd.config}; never null
+	 */
+	public static BaseRecord resolveDeclaredConfig(BaseRecord book, BaseRecord node, boolean composite) {
+		BaseRecord declared = null;
+		try {
+			/// newInstance with an EMPTY field array materialises every field; the six FLUX.2 names give
+			/// applyFlux2Defaults something to fill (it skips fields the record lacks) and carry no default.
+			String[] flux2 = new String[FLUX2_DEFAULTED_FIELDS.length];
+			for(int i = 0; i < FLUX2_DEFAULTED_FIELDS.length; i++) {
+				flux2[i] = FLUX2_DEFAULTED_FIELDS[i][0];
+			}
+			declared = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG, flux2);
 		}
+		catch(FieldException | ModelNotFoundException e) {
+			logger.error("Failed to instantiate a sparse " + OlioModelNames.MODEL_SD_CONFIG + ": " + e.getMessage(), e);
+			throw new PictureBookException(500, "Failed to instantiate " + OlioModelNames.MODEL_SD_CONFIG);
+		}
+		return mergeTiers(declared, book, node, composite);
+	}
 
-		applyFlux2Defaults(effective);
-		return effective;
+	private static BaseRecord mergeTiers(BaseRecord base, BaseRecord book, BaseRecord node, boolean composite) {
+		SDUtil.applyOverrides(base, bookConfig(book, composite));
+		if(node != null && node.hasField(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE)) {
+			SDUtil.applyOverrides(base, parseOverride(node.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE)));
+		}
+		applyFlux2Defaults(base);
+		return base;
 	}
 
 	/**
@@ -361,38 +407,47 @@ public class PbConfigUtil {
 	// ───────────────────────────── hashing ─────────────────────────────
 
 	/**
-	 * Stable SHA-256 over the <b>merged effective</b> config from
-	 * {@link #resolveEffectiveConfig(BaseRecord, BaseRecord, boolean)} - never over the sparse override.
-	 * §2.3 is explicit about that: the hash has to see what the backend will see.
+	 * Stable SHA-256 over the <b>declared</b> config from
+	 * {@link #resolveDeclaredConfig(BaseRecord, BaseRecord, boolean)} - the full precedence chain, never
+	 * the sparse override alone (§2.3), but without the schema-default fill.
 	 *
-	 * @return the lower-case hex digest, or null when {@code effective} is null
+	 * @return the lower-case hex digest, or null when {@code declared} is null
 	 */
-	public static String configHash(BaseRecord effective) {
-		if(effective == null) {
+	public static String configHash(BaseRecord declared) {
+		if(declared == null) {
 			return null;
 		}
-		return sha256Hex(canonicalConfig(effective));
+		return sha256Hex(canonicalConfig(declared));
 	}
 
 	/**
 	 * The exact string {@link #configHash(BaseRecord)} hashes. Public so a test can pin it, and so a
 	 * hash mismatch can be diagnosed by diffing two canonical strings rather than two digests.
 	 * <p>
-	 * Iterates the <b>schema's</b> field order rather than the record's, and renders a field the record
-	 * does not carry as {@link #NULL_TOKEN}. So a projected record and a fully materialised one with the
-	 * same values canonicalise identically, and field order cannot drift with serialisation.
+	 * Iterates the <b>schema's</b> field order rather than the record's, so field order cannot drift with
+	 * serialisation, and emits a {@code name=value} line <b>only for a field the record carries with a
+	 * non-null value</b>. A field the record lacks, or holds as null, contributes nothing - not a
+	 * {@link #NULL_TOKEN} line. That is what lets a new {@code olio.sd.config} field be added without
+	 * disturbing a single existing hash, and it is why {@code v1} (which rendered every schema field,
+	 * absent ones as {@code -}) became {@code v2}. The version prefix means the two forms cannot collide.
 	 */
-	public static String canonicalConfig(BaseRecord effective) {
+	public static String canonicalConfig(BaseRecord declared) {
 		ModelSchema ms = RecordFactory.getSchema(OlioModelNames.MODEL_SD_CONFIG);
 		Set<String> skip = new HashSet<>(CONFIG_HASH_EXCLUDE);
 		StringBuilder sb = new StringBuilder();
-		sb.append("sdConfig/v1");
+		sb.append("sdConfig/v2");
 		for(FieldSchema fs : ms.getFields()) {
 			String n = fs.getName();
 			if(skip.contains(n) || fs.isVirtual() || fs.isEphemeral() || fs.isIdentity()) {
 				continue;
 			}
-			Object v = (effective != null && effective.hasField(n) ? effective.get(n) : null);
+			if(declared == null || !declared.hasField(n)) {
+				continue;
+			}
+			Object v = declared.get(n);
+			if(v == null) {
+				continue;
+			}
 			sb.append(PAIR_SEPARATOR).append(n).append('=').append(token(v));
 		}
 		return sb.toString();

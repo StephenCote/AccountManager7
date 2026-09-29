@@ -12,7 +12,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.olio.EthnicityEnumType;
-import org.cote.accountmanager.olio.RaceEnumType;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -386,9 +386,12 @@ public class QueryPlan extends LooseRecord {
 			///
 			else if(decorate && fn.equals("race") && fs.getFieldType() == FieldEnumType.LIST && "string".equals(fs.getBaseType())) {
 				List<String> list = orec.get(fs.getName());
-				orec.setValue(fs.getName(), list.stream().map(r -> {
-					return RaceEnumType.valueOf(RaceEnumType.valueOf(r));
-				}).collect(Collectors.toList()));
+				/// The Custom constant (O) is substituted by the source record's raceLabel (or dropped
+				/// when there is none) rather than rendered as "Custom". The label is read from the
+				/// SOURCE record, not orec: orec only carries planned fields, and raceLabel is not
+				/// planned/emitted as its own field on the export. The substitution rule lives in
+				/// NarrativeUtil with the rest of the race vocabulary.
+				orec.setValue(fs.getName(), NarrativeUtil.describeRaces(list, NarrativeUtil.getRaceLabel(rec)));
 			}
 			else if(decorate && fn.equals("ethnicity") && fs.getFieldType() == FieldEnumType.LIST && "string".equals(fs.getBaseType())) {
 				List<String> list = orec.get(fs.getName());

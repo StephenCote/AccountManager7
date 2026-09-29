@@ -208,14 +208,17 @@ function renderRangeSliderSpinner(opts) {
     opts = opts || {};
     let { value, onInput, min, max, step, disabled, label, fieldClass, name } = opts;
 
+    // min/max/step MUST precede value: Mithril applies attrs in insertion order, and a range input
+    // sanitizes `value` against its bounds at set time, so value-then-max clamps 4096 to the
+    // default max of 100 and the later max attribute cannot restore it.
     let rangeAttrs = {
         type: "range",
         class: (fieldClass || "") + " range-field-full flex-1",
         name: name,
-        value: value,
         min: min,
         max: max,
         step: step,
+        value: value,
         oninput: onInput
     };
     if (disabled) rangeAttrs.disabled = true;
@@ -224,10 +227,10 @@ function renderRangeSliderSpinner(opts) {
         type: "number",
         class: "text-field-compact w-20 text-right text-sm",
         name: name ? name + "_num" : undefined,
-        value: value,
         min: min,
         max: max,
         step: step,
+        value: value,
         oninput: onInput
     };
     if (disabled) numberAttrs.disabled = true;

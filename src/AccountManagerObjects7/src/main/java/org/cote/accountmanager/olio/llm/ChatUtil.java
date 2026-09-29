@@ -16,6 +16,11 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -637,7 +642,7 @@ public class ChatUtil {
 		if(utrades.size() > 0) {
 			ujobDesc =" " + utrades.get(0).toLowerCase();
 		}
-		String prompt = "A " + character.get(FieldNames.FIELD_AGE) + " year-old " + NarrativeUtil.getRaceDescription(character.get(OlioFieldNames.FIELD_RACE)) + " " + character.get(FieldNames.FIELD_GENDER) + ujobDesc + ". Setting: " + setting;
+		String prompt = "A " + character.get(FieldNames.FIELD_AGE) + " year-old " + NarrativeUtil.getRaceDescription(character.get(OlioFieldNames.FIELD_RACE), NarrativeUtil.getRaceLabel(character)) + " " + character.get(FieldNames.FIELD_GENDER) + ujobDesc + ". Setting: " + setting;
 	
 		OpenAIRequest req = new OpenAIRequest();
 
@@ -2123,7 +2128,22 @@ public class ChatUtil {
 		}
 		return maxTokenField;
 	}
-	
+
+	/// Field to receive a per-call OUTPUT cap (title 200, scene 256, keyframe 1024, evaluator caps).
+	/// Same resolution as getMaxTokenField, except it is empty when that resolves to `num_ctx`:
+	/// on native Ollama `num_ctx` is the context window, not an output limit, and since the
+	/// wire-shape fix it is actually honored inside `options` — writing 200 there shrank the
+	/// model's context to 200 tokens and forced a reload per call (measured 2026-09-28,
+	/// qwen3:8b). Ollama's real output cap (`num_predict`) is deliberately not introduced, so on
+	/// that dialect the caps stay inert, exactly as they were before the wire fix.
+	public static String getOutputCapField(BaseRecord cfg, LLMServiceEnumType service) {
+		String field = getMaxTokenField(cfg, service);
+		if("num_ctx".equals(field)) {
+			return "";
+		}
+		return field;
+	}
+
 	public static String getPresencePenaltyField(BaseRecord cfg) {
 		String presencePenField = "presence_penalty";
 		if(cfg == null) {
@@ -2414,7 +2434,69 @@ public class ChatUtil {
 		boolean think = opts.get("think");
 		if(think) req.set("think", true);
 	}
-	
+
+	/// Sampling/context keys that native Ollama /api/chat reads ONLY from its `options` sub-object.
+	/// Top-level copies are silently ignored (measured against Ollama 0.34.3, 2026-09-28). `think` is
+	/// NOT in this list — it is honored at the top level and stays there. `typical_p` is NOT in this
+	/// list either: it is pruned off the wire copy before this runs, and inside `options` Ollama 0.34.x
+	/// rejects it with HTTP 400 (see applyOllamaUpstreamOptions). `max_tokens` is not an Ollama key
+	/// (Ollama's is `num_predict`) and is pruned on the native path before this runs, so it is not
+	/// listed — introducing num_predict is a behaviour change beyond the wire-shape fix.
+	///
+	/// `num_gpu` is deliberately NOT relocated. Inside `options` Ollama reads it as the number of
+	/// model layers to offload to the GPU, and olio.llm.chatOptions defaults it to 1 — so every
+	/// persisted chatOptions row would pin the model to ONE GPU layer and run the rest on CPU.
+	/// Measured 2026-09-28 on the DGX Spark: gpt-oss:120b loaded with 1.9 GiB of 61.9 GiB in VRAM
+	/// and every chunk extraction aborted at the 305s latch. At the top level Ollama ignores it,
+	/// which is where it sat before the wire-shape fix; it stays there until the default is fixed.
+	static final List<String> NATIVE_OLLAMA_OPTION_KEYS = Arrays.asList(
+		"num_ctx", "temperature", "top_p", "top_k", "min_p", "repeat_penalty", "repeat_last_n",
+		"frequency_penalty", "presence_penalty", "seed"
+	);
+
+	/// Native OLLAMA dialect only: move every NATIVE_OLLAMA_OPTION_KEYS member present at the top
+	/// level of the serialized wire body into the `options` object, merging with whatever `options`
+	/// already carries (PictureBookUtil puts think:false there). Nothing else in the body is touched:
+	/// no message content or order, no top-level `think`, no `model`/`stream`. Operates on the
+	/// serialized JSON rather than nesting a typed olio.llm.chatOptions record on the request because
+	/// RecordSerializer omits INT/DOUBLE fields equal to the model's SCHEMA default, which would
+	/// silently drop the most common configured values (num_ctx 8192, repeat_penalty 1.2, ...).
+	/// Returns the input unchanged if it is not a JSON object or cannot be parsed.
+	static String nestNativeOllamaOptions(String ser) {
+		if (ser == null) return null;
+		try {
+			ObjectMapper mapper = new ObjectMapper();
+			JsonNode root = mapper.readTree(ser);
+			if (root == null || !root.isObject()) return ser;
+			ObjectNode obj = (ObjectNode) root;
+			ObjectNode options = null;
+			JsonNode existing = obj.get("options");
+			if (existing != null && existing.isObject()) {
+				options = (ObjectNode) existing;
+			}
+			boolean moved = false;
+			for (String key : NATIVE_OLLAMA_OPTION_KEYS) {
+				JsonNode val = obj.get(key);
+				if (val == null || val.isNull()) continue;
+				if (options == null) {
+					options = mapper.createObjectNode();
+				}
+				options.set(key, val);
+				obj.remove(key);
+				moved = true;
+			}
+			if (moved) {
+				obj.set("options", options);
+				return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(obj);
+			}
+			return ser;
+		}
+		catch (Exception e) {
+			logger.error("Failed to nest native Ollama options; sending body unchanged: " + e.getMessage());
+			return ser;
+		}
+	}
+
 	public static final List<String> IGNORE_FIELDS = Arrays.asList(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_URN, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ORGANIZATION_PATH);
 	public static OpenAIRequest getPrunedRequest(OpenAIRequest inReq) {
 		return getPrunedRequest(inReq, IGNORE_FIELDS);

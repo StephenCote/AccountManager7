@@ -19,7 +19,8 @@
 		{
 			"name": "sourceChunk",
 			"type": "int",
-			"description": "0-based index of the manuscript chunk the scene was extracted from (extractChunkedInternal); persisted in the scene note JSON so scene→chunk provenance survives — used by the emulated Ux chapter test to pin declared recording gaps. Never sent to the LLM (scenesForPrompt whitelist)."
+			"default": -1,
+			"description": "0-based index of the manuscript chunk the scene was extracted from (extractChunkedInternal); persisted in the scene note JSON so scene→chunk provenance survives — used by the emulated Ux chapter test to pin declared recording gaps. Never sent to the LLM (scenesForPrompt whitelist). default -1 = unset: RecordSerializer omits INT fields equal to the schema default, so with the implicit default of 0 every chunk-0 scene lost its provenance in the .pictureBookMeta JSON; -1 makes 0 serialize and keeps directly-supplied scenes (no chunk) absent."
 		},
 		{
 			"name": "sourceText",

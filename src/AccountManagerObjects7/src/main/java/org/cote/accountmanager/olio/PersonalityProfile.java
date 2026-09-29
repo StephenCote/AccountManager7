@@ -56,7 +56,14 @@ public class PersonalityProfile extends AnimalProfile {
 	public List<String> getRace(){
 		return getRecord().get(OlioFieldNames.FIELD_RACE);
 	}
-	
+
+	/// Record-backed like getRace(): the person's raceLabel when the record carries the field and
+	/// the value is meaningful, else null. Pairs with getRace() for
+	/// NarrativeUtil.getRaceDescription(races, label).
+	public String getRaceLabel(){
+		return NarrativeUtil.getRaceLabel(getRecord());
+	}
+
 	public List<String> getEthnicity(){
 		return getRecord().get("ethnicity");
 	}

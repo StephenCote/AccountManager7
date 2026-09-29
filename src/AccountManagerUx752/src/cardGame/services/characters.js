@@ -108,6 +108,20 @@ function str(v) {
     return typeof v === "string" ? v : (v && v.name ? v.name : String(v || ""));
 }
 
+// Display value for a person/charPerson race. `race` is a list<string> of
+// RaceEnumType letters; "O" (Custom) is named by the free-text `raceLabel`,
+// which substitutes ONLY that element (unlike otherEthnicity, which overrides
+// the whole ethnicity list). An O with no label is dropped rather than shown as
+// a bare letter — the constant is a sink, not a race — so the next element (or
+// the caller's default) shows instead. Keeps str()'s first-element semantics.
+function raceDisplay(char) {
+    if (!char) return "";
+    let races = Array.isArray(char.race) ? char.race : (char.race ? [char.race] : []);
+    let label = typeof char.raceLabel === "string" ? char.raceLabel.trim() : "";
+    races = races.map(r => (String(r).toUpperCase() === "O" ? label : r)).filter(r => r);
+    return str(races);
+}
+
 // Extract first and last name, skipping middle name(s)
 function shortName(fullName) {
     if (!fullName) return "Unknown";
@@ -167,7 +181,7 @@ async function refreshCharacterCard(card) {
     Object.keys(stats).forEach(k => { stats[k] = clampStat(stats[k]); });
     card.name = fresh.name || card.name;
     card.gender = str(fresh.gender) || card.gender || null;
-    card.race = (str(fresh.race) || "HUMAN").toUpperCase();
+    card.race = (raceDisplay(fresh) || "HUMAN").toUpperCase();
     card.alignment = (str(fresh.alignment) || "neutral").toUpperCase().replace(/^(CHAOTIC|LAWFUL|NEUTRAL)(EVIL|GOOD|NEUTRAL)$/, "$1 $2");
     card.age = fresh.age || card.age;
     card.stats = stats;
@@ -211,7 +225,7 @@ function assembleCharacterCard(char) {
     return {
         type: "character", name: shortName(char.name),
         gender: str(char.gender) || null,
-        race: (str(char.race) || "HUMAN").toUpperCase(),
+        race: (raceDisplay(char) || "HUMAN").toUpperCase(),
         alignment: (str(char.alignment) || "neutral").toUpperCase().replace(/^(CHAOTIC|LAWFUL|NEUTRAL)(EVIL|GOOD|NEUTRAL)$/, "$1 $2"),
         age: char.age || null,
         level: 1,
@@ -828,6 +842,7 @@ export const characters = {
     resolveStatistics,
     clampStat,
     str,
+    raceDisplay,
     // Portrait / ID helpers
     getPortraitUrl,
     getCharId,

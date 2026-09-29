@@ -5,7 +5,7 @@
 	"group": "SD Config",
 
 	"hints": ["name"],
-	"description": "Named, reusable SD generation config. Lives in a per-user or org-shared group. The 'configOverride' field on olio.pb.node remains a sparse JSON string (see PictureBook2Plan.md §6c.3.2); only *named*, reusable configs become records.",
+	"description": "Named, reusable SD generation config. Lives in a per-user or org-shared group. The 'configOverride' field on olio.pb.node remains a sparse JSON string (see PictureBook2Plan.md §6c.3.2); only *named*, reusable configs become records. DEFAULTS AND THE PB2 INPUT HASH: the field defaults below are NOT folded into olio.pb.node.inputHash (PbConfigUtil.resolveDeclaredConfig hashes only values a book sdConfig, node override, or the FLUX.2 resource tier actually set). Changing a default here changes what un-overridden nodes render with but marks nothing stale; if existing books must re-render, bump PbGraphUtil.PB_PIPELINE_VERSION in the same change.",
 	"fields": [
 		{
 			"name": "description",
@@ -76,7 +76,8 @@
 		{
 			"name": "scheduler",
 			"type": "string",
-			"default": "karras"
+			"default": "karras",
+			"description": "Schema default, not in inputHash - changing it does not re-render existing books unless PbGraphUtil.PB_PIPELINE_VERSION is bumped (see model description)."
 		},
 		{
 			"name": "sampler",
@@ -86,7 +87,8 @@
 		{
 			"name": "refinerScheduler",
 			"type": "string",
-			"default": "karras"
+			"default": "karras",
+			"description": "Schema default, not in inputHash - changing it does not re-render existing books unless PbGraphUtil.PB_PIPELINE_VERSION is bumped (see model description)."
 		},
 		{
 			"name": "refinerSampler",
