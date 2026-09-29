@@ -1,0 +1,7 @@
+{
+  "description": "LLM emulator set for the HarlotsEight_Vol1_SM.docx PictureBook chapter-handling run. Non-strict: any request without an exact-key recording is answered by the deterministic synthesizer, whose first extracted scene title begins with the first non-blank line of the chunk text so a Ux test can prove which chapter text reached the prompt. Recordings are the <sha256>.json entries of fixtures.zip in this directory (real goekdenizguelmez/JOSIEFIED-Qwen3:8b completions captured through pictureBookChapteredManuscriptUx.spec.js); a loose <sha256>.json recorder drop (LLM_EMULATOR_RECORD_DIR/<model>/<sha256>.json) placed here overrides a same-named zip entry and is git-ignored. recordingGaps declares where the recording run itself lost chunks (chapter 1-based, fromChunk 0-based): from that chunk to the end of the chapter the emulator necessarily synthesizes, because each chunk's prompt carries the previous chunk's scenes; the emulated spec exempts those scenes from the recorded-title check and pins the synth count to exactly that range.",
+  "strict": false,
+  "kinds": {},
+  "faults": [],
+  "recordingGaps": []
+}

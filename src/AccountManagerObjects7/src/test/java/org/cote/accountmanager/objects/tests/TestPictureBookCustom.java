@@ -356,7 +356,6 @@ public class TestPictureBookCustom extends BaseTest {
 	 */
 	private String getOrCreateCatatoneBook(String workObjectId, List<Map<String, Object>> sceneList) throws Exception {
 		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
-		String bookPath = BOOK_GROUP_PATH_PREFIX + CATATONE_BOOK_NAME;
 
 		// W3 re-point: this is now a PB2 book+world. The 9-arg createFromScenes routes charPerson
 		// records into the world's Population group (not the legacy <book>/Characters, which it now
@@ -368,6 +367,13 @@ public class TestPictureBookCustom extends BaseTest {
 		// books named "<x>.pdf"; the test controls both ends here).
 		String slug = PbPipelineUtil.deriveSlug(CATATONE_BOOK_NAME);
 		assertNotNull("A valid slug must derive from '" + CATATONE_BOOK_NAME + "'", slug);
+
+		// The 9-arg createFromScenes keys the PB1 book GROUP on the slug too (pb2GroupName = bookSlug):
+		// /Characters, the Scenes subgroup and .pictureBookMeta all land under ~/Data/PictureBooks/<slug>.
+		// Only Step 2's .scenesCache note lives under the TITLE path (getOrCreateCatatoneScenes). Checking
+		// the title path here never fired, so every run re-ran createFromScenes against the LLM — a third
+		// way the reuse guard has been wrong.
+		String bookPath = BOOK_GROUP_PATH_PREFIX + slug;
 
 		// Reuse guard, PB2 edition. TRIGGER on the /Characters subgroup existing — as before, that is
 		// the "createFromScenes has run" signal (Step 2's scene caching pre-creates only the top-level

@@ -116,15 +116,21 @@ public class TestPictureBookWorkflow extends BaseTest {
 	/**
 	 * The PB1 book group whose scenes this test renders. Failing here is correct and actionable: the
 	 * alternative - inventing a book - would produce a green test that proves nothing about the pipeline.
+	 * <p>
+	 * The 9-arg (PB2) {@code createFromScenes} keys the PB1 group on the book SLUG, not the title
+	 * ({@code pb2GroupName = bookSlug}), so the scenes, {@code .pictureBookMeta} and {@code Characters}
+	 * live under {@code ~/Data/PictureBooks/<slug>}. Only TestPictureBookCustom's own
+	 * {@code .scenesCache} note sits under the title path (see {@link #cachedCatatoneScenes()}).
 	 */
 	private BaseRecord pb1BookGroup() {
 		long orgId = (long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String path = "~/Data/PictureBooks/" + PbPipelineUtil.deriveSlug(PB1_BOOK_NAME);
 		BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
-			org.cote.accountmanager.schema.ModelNames.MODEL_GROUP,
-			"~/Data/PictureBooks/" + PB1_BOOK_NAME,
+			org.cote.accountmanager.schema.ModelNames.MODEL_GROUP, path,
 			org.cote.accountmanager.schema.type.GroupEnumType.DATA.toString(), orgId);
-		assertNotNull("The PB1 book group '~/Data/PictureBooks/" + PB1_BOOK_NAME + "' must exist."
-			+ " Run TestPictureBookCustom#TestPictureBookCustomPipeline once to create it.", grp);
+		assertNotNull("The PB1 book group '" + path + "' must exist (createFromScenes(pb2) keys it on the"
+			+ " slug of '" + PB1_BOOK_NAME + "'). Run TestPictureBookCustom#TestPictureBookCustomPipeline"
+			+ " once to create it.", grp);
 		return grp;
 	}
 
@@ -802,16 +808,27 @@ public class TestPictureBookWorkflow extends BaseTest {
 		assertNotNull(name + ": the narrative must carry sdPrompt - it is the portrait prompt, and it is"
 			+ " persisted by a SEPARATE update that a foreign-field patch does not cascade", sdPrompt);
 		assertFalse(name + ": sdPrompt must not be blank", sdPrompt.isBlank());
-		/// physicalDescription is set from the SAME portraitPrompt in the same patch, so equality is the
-		/// assertion that the separate olio.narrative update actually landed - not merely that the field is
-		/// non-null. Deliberately NOT asserting that sdPrompt contains the character's NAME: it is a visual
-		/// prompt built by NarrativeUtil.buildPortraitPromptFromExtractedData, and for a character the
-		/// extraction described only by role it legitimately reads "...portrait of a ((woman))..." with no
-		/// name. A first attempt asserted the name and failed for that reason - the assertion was wrong,
-		/// not the pipeline.
-		assertEquals(name + ": sdPrompt and physicalDescription are written by one patch, so they must"
-			+ " match - a mismatch means only part of that update landed",
-			sdPrompt, (String) narrative.get("physicalDescription"));
+		/// Contract of createCharPerson -> refreshNarrativeFromRecord -> persistRefreshedNarrative:
+		/// ensureNarrative first writes sdPrompt = physicalDescription = the extraction's portrait prompt,
+		/// then the record-driven refresh REPLACES physicalDescription with NarrativeUtil.describePhysical
+		/// of the persisted record and sdPrompt with PORTRAIT_QUALITY_PREAMBLE + the composed narration
+		/// (physical, statistics, outfit). So the two fields are no longer equal by design; what proves the
+		/// separate olio.narrative patch landed is (a) physicalDescription is the record-derived sentence,
+		/// and (b) sdPrompt is a GENERATED prompt (quality preamble) that embeds that sentence. Deliberately
+		/// NOT asserting that either contains the character's NAME: the physical sentence is built from the
+		/// record ("...0 year old boy child.") and legitimately carries no name.
+		String physicalDescription = narrative.get("physicalDescription");
+		assertNotNull(name + ": the narrative must carry physicalDescription - refreshNarrativeFromRecord"
+			+ " writes it in the same patch as sdPrompt", physicalDescription);
+		assertFalse(name + ": physicalDescription must not be blank", physicalDescription.isBlank());
+		assertFalse(name + ": sdPrompt must be the pipeline-GENERATED prompt (starts with the quality"
+			+ " preamble) - a hand-written-looking prompt here means refreshNarrativeFromRecord never"
+			+ " rewrote it (got '" + sdPrompt + "')", PictureBookUtil.isHandWrittenPrompt(sdPrompt));
+		assertTrue(name + ": sdPrompt must embed the record-derived physicalDescription - both come from"
+			+ " one persistRefreshedNarrative patch, so a prompt without it means only part of that"
+			+ " update landed (sdPrompt='" + sdPrompt + "', physicalDescription='" + physicalDescription
+			+ "')", sdPrompt.contains(physicalDescription.trim()));
+		logger.info(name + ": narrative.physicalDescription = " + physicalDescription);
 		logger.info(name + ": narrative.sdPrompt = " + sdPrompt);
 	}
 
@@ -846,7 +863,11 @@ public class TestPictureBookWorkflow extends BaseTest {
 			(String) data.get(FieldNames.FIELD_OBJECT_ID));
 	}
 
-	/** Delete a PB1 book group this test previously created, so "from scratch" means it. */
+	/**
+	 * Delete a PB1 book group this test previously created, so "from scratch" means it. The TITLE path is
+	 * correct here: the fresh-character case uses the 8-arg legacy {@code createFromScenes}, which keys
+	 * the PB1 group on the book name (only the 9-arg PB2 overload keys it on the slug).
+	 */
 	private void deleteBookGroupIfPresent(String bookName, long orgId) {
 		String path = "~/Data/PictureBooks/" + bookName;
 		BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(testUser,

@@ -1,0 +1,9 @@
+{
+  "description": "Same synthesis behavior as harlots-eight, plus two injected UNREACHABLE faults: the first two extract-chunk requests this JVM sees for this set each fail with an emulated java.net.ConnectException (Chat.isConnectivityFailure -> isLastCallUnreachable). Two consecutive unreachable chunks trip PictureBookUtil.extractChunkedInternal's circuit breaker at chunk 2, so a chaptered wizard run stops at chapter 1 with a typed stoppedEarly failure and the wizard must stay open -- the 2026-09-24/25 outage shape, without a real dead host. Each faults[] entry keeps its own occurrence counter, so two entries with occurrence:1 fire on calls 1 and 2 (consecutive); a single entry cannot fire twice. Counters live in the Tomcat JVM: reset with GET /rest/chat/emulator/stats?reset=true before a run that depends on this firing.",
+  "strict": false,
+  "kinds": {},
+  "faults": [
+    { "kind": "extract-chunk", "occurrence": 1, "mode": "unreachable" },
+    { "kind": "extract-chunk", "occurrence": 1, "mode": "unreachable" }
+  ]
+}

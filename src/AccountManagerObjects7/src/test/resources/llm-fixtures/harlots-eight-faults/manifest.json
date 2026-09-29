@@ -1,0 +1,8 @@
+{
+  "description": "Same synthesis behavior as harlots-eight, plus one injected fault: the THIRD extract-chunk request this JVM sees for this set gets an emulated HTTP 500 ({\"error\":{\"message\":\"emulated failure\"}}). The chunk loop sees a fast null, retries once, and the retry succeeds -- exercising the retry path without a real outage. Fault occurrence counters live in the Tomcat JVM: reset them with GET /rest/chat/emulator/stats?reset=true before a run that depends on this firing. Modes: http500 | unreachable (ConnectException -> Chat.isLastCallUnreachable()) | empty (content '[]').",
+  "strict": false,
+  "kinds": {},
+  "faults": [
+    { "kind": "extract-chunk", "occurrence": 3, "mode": "http500" }
+  ]
+}
