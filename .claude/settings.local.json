@@ -176,5 +176,8 @@
       "C:\\Projects\\GitHub\\AccountManager7",
       "/tmp"
     ]
+  },
+  "skillOverrides": {
+    "loop": "off"
   }
 }

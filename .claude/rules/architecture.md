@@ -157,15 +157,3 @@ different servers. Additive keys plus write-back keep one source of truth per ru
   observed. Server-side changes must be covered by unit tests.
 - UI change: `npx vite build` + `npx vitest run`, and Playwright for behavior (`--workers=1` for LLM paths).
 - Validation tooling: `RecordValidator.validate()`, `HierarchyValidator.checkHierarchy()`, `ValidationUtil`.
-
-## Doc organization notes (for the librarian, not design rules)
-
-- The `Ux7` module is present under `deprecated/AccountManagerUx7/` (not `../AccountManagerUx7/`); it is
-  deprecated legacy reference. Ux752 is the primary UI reference.
-- Every module now has its own `CLAUDE.md` (including `Console7` and `ISO42001`). All are uppercase
-  `CLAUDE.md` for reliable auto-loading on case-sensitive filesystems (previously `Objects7`/`Service7`/
-  legacy `Ux7` used lowercase `claude.md`, a single file each — never a duplicate pair).
-- Shared LLM working-discipline rules (honesty/testing/conduct) are centralized in
-  `.claude/rules/llm-conduct.md`; module CLAUDE.md files link to it rather than copying it. Bias/ideology
-  policy is intentionally not in the docs — it lives in the ISO 42001 code and runtime prompt templates.
-- aiDocs index: `src/aiDocs/README.md`; ISO doc index: `src/aiDocs/ISO42001/README.md`.

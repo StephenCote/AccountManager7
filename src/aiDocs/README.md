@@ -23,6 +23,8 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 | `PageIndexDesign.md` | PageIndex hierarchical TOC index for Objects7 — core engine design (implemented & verified, 2026-07-07) | active |
 | `PageIndexIntegrationPlan.md` | PageIndex REST/chat/MCP/Ux752 integration — phased plan mirroring the vector pattern (not started, 2026-07-08) | active |
 | `SCIM.md` | SCIM 2.0 → AccountManager model mapping reference | reference |
+| `Objects7DeepReference.md` | Explanatory tour of Objects7 (design philosophy, providers, vault, query API, PBAC, Olio map system, validation, bulk ops, attributes, credentials, journaling, file layout) — moved out of `.claude/rules/objects7-reference.md` 2026-09-29; the rules file keeps only the gotchas | reference |
+| `Service7Reference.md` | Explanatory tour of the REST layer (Jersey/JAAS/JWT, per-service route tables, WebSocket, web.xml, pagination, integration testing) — moved out of `.claude/rules/service7-reference.md` 2026-09-29 | reference |
 | `DockerComposeDesign.md` | Single-container Docker Compose (Service7 + Ux752 + nginx) — design & status; **config/doc accuracy audit 2026-09-01** (8 discrepancies logged, incl. SD_SERVER host bug) | active |
 | `dockerDevSetup.md` | **Runbook:** build & start a fresh Docker AM7 install end-to-end (build → first boot → setup token → initial setup → verify), plus day-2 ops, config map, storage map, E2E and troubleshooting. **§12 is the LiteLLM + Langfuse `llmproxy` runbook** — what the seven sidecar containers are for, how to point an AM7 `system.connection`/`chatConfig` at the proxy, and how to log in to both metrics UIs. Companion to `DockerComposeDesign.md` and `LiteLLMLangfuseIntegrationDesign.md` (which hold the *why*) | active |
 

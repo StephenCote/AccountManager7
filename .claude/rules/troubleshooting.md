@@ -25,8 +25,8 @@ tool for that, not a workaround.
 
 ## Server-side gotchas to check first
 - `/rest/model/search` request bodies must use `"schema":"io.query"` (the real registered model,
-  `ModelNames.MODEL_QUERY`) — **not** the bare `"schema":"query"` shown in some doc examples in this
-  repo (`model-api.md`/`service7-reference.md`). The bare form fails `RecordFactory`/`ResourceUtil`
+  `ModelNames.MODEL_QUERY`) — **not** the bare `"schema":"query"` (older doc examples showed that
+  form; they have been corrected). The bare form fails `RecordFactory`/`ResourceUtil`
   resource lookup (`ModelNotFoundException: Model query was not found`) and `ModelService.search`
   silently 404s (`imp == null` branch, `ModelService.java:290-293`) — no stack trace beyond an ERROR-level
   `RecordDeserializer`/`RecordFactory` log line, easy to mistake for a routing/auth failure. Confirmed
