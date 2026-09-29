@@ -177,7 +177,7 @@ public class TestChapBookRenderSignal extends BaseTest {
 		long orgId = ((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 		long ts = System.currentTimeMillis();
 
-		BaseRecord liveConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "chapbookLlmTestConfig", testProperties);
+		BaseRecord liveConfig = OlioTestUtil.getPbChatConfig(testUser, "chapbookLlmTestConfig", testProperties);
 		assertNotNull("Live chatConfig must be built", liveConfig);
 
 		BaseRecord poem = createPoem(testUser, "~/Data/ChapBookSignalOk-" + ts, "Poem Signal Ok " + ts, POEM_TEXT);

@@ -202,6 +202,11 @@
 		<param-name>embedding.type</param-name>
 		<param-value>${EMBEDDING_TYPE}</param-value>
 	</context-param>
+	<context-param>
+		<description>Embedding model name sent in the OpenAI-shaped request body (embedding.type openai / openai_compat, e.g. nomic-embed-text for Ollama). Blank sends no model (Azure resolves it from the deployment URL). Ignored by local.</description>
+		<param-name>embedding.model</param-name>
+		<param-value>${EMBEDDING_MODEL}</param-value>
+	</context-param>
 		<context-param>
 		<description>Embedding Server Authorization Token</description>
 		<param-name>embedding.authorizationToken</param-name>

@@ -208,8 +208,9 @@ public class TestChapBookPromptTemplates extends BaseTest {
 		}
 		BaseRecord testUser = seedAndGetUser();
 
-		// Real Ollama chat config from test properties (server=192.168.1.42, model=qwen3-vl:8b-instruct).
-		BaseRecord chatConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "cbLandscapeLLM", testProperties);
+		// Real picture-book chat config on this JVM's resolved LLM route (LlmTestGate: local container via
+		// LiteLLM when available, else Azure/remote) using the test.llm.model.pb model.
+		BaseRecord chatConfig = OlioTestUtil.getPbChatConfig(testUser, "cbLandscapeLLM", testProperties);
 		assertNotNull("Ollama chat config should build", chatConfig);
 
 		// Invoke the EXACT production method (package-private) via reflection so the full path runs:

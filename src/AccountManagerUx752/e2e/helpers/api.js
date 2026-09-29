@@ -418,10 +418,126 @@ export async function ensureUserWithoutUserRole(request, opts = {}) {
 // connection by FK. Idempotent: searches by stable name (cache:false) first.
 const CHATCONFIG_NAME = 'e2e-chapbook-llm';
 const CHATCONN_NAME = 'e2e-chapbook-conn';
-// CHAT models on the Ollama server at the DGX Spark (192.168.1.42:11434).
-// qwen3:8b is the fast CHAT model — adequate for JSON theme/mood analysis.
-const CHAT_SERVER_URL = 'http://192.168.1.42:11434';
-const CHAT_MODEL = 'qwen3:8b';
+
+// ── LLM route resolution: local LiteLLM (+ containerized Ollama) first, remote .42 second ──
+//
+// Stephen (2026-09-29): "first try the local ollama container before trying Azure or the remote
+// ollama on .42 ... use goekdenizguelmez/JOSIEFIED-Qwen3:8b for picturebook/chatbook tests ...
+// use LiteLLM w/ LLM tests so that it's easier to debug issues."
+//
+// Two routes, decided once per process by resolveChatRoute():
+//   litellm — GET http://127.0.0.1:4000/health/liveliness answers 200. The APP container reaches the
+//             proxy by compose service name, so the system.connection gets serverUrl
+//             http://litellm:4000, dialect openai_compat, upstream ollama (KI-72: without `upstream`
+//             the Ollama extension params — num_ctx, think, ... — are suppressed on OPENAI_COMPAT),
+//             and apiKey = the proxy master key. Model aliases (src/litellm/config.yaml): when the
+//             containerized Ollama (host http://127.0.0.1:11435) lists BOTH 8B models, the `-ctr`
+//             aliases (qwen3:8b-ctr / qwen3:8b-jos-ctr) are used; otherwise the LAN-.42-backed
+//             aliases (qwen3:8b / qwen3:8b-jos).
+//   direct  — LiteLLM is down: today's behaviour, native Ollama at http://192.168.1.42:11434,
+//             dialect ollama, no apiKey, real model names.
+//
+// E2E_LLM_SERVER=<url> overrides the connection URL and FORCES the direct route (native Ollama
+// dialect, real model names) — e.g. E2E_LLM_SERVER=http://192.168.1.42:11434 to pin the DGX Spark,
+// or a host-local Ollama the app container can reach. LiteLLM is not probed when it is set.
+//
+// LITELLM_MASTER_KEY: the proxy's own Bearer key. Defaults to the committed NON-SECRET test-stack
+// default; a real deployment key must come from the environment.
+const LITELLM_PROBE_URL = 'http://127.0.0.1:4000/health/liveliness';   // host-side probe
+const LITELLM_APP_URL = 'http://litellm:4000';                          // what the APP container dials
+const OLLAMA_CTR_TAGS_URL = 'http://127.0.0.1:11435/api/tags';          // containerized Ollama (host port)
+const REMOTE_OLLAMA_URL = 'http://192.168.1.42:11434';                  // DGX Spark, native Ollama
+const LITELLM_MASTER_KEY = process.env.LITELLM_MASTER_KEY || 'sk-am7-litellm-test';
+const ANALYSIS_MODEL_REAL = 'qwen3:8b';                                 // fast CHAT model for JSON analysis
+const PB_MODEL_REAL = 'goekdenizguelmez/JOSIEFIED-Qwen3:8b';           // PictureBook / ChapBook model
+
+// Live ESM bindings: start at the direct-route real names and are reassigned when resolveChatRoute()
+// completes (ensureChatConfig awaits it, so a spec that reads these AFTER awaiting either call sees the
+// resolved alias/model). Read them before that and you get the direct-route names.
+export let PB_CHAT_MODEL = PB_MODEL_REAL;
+export let ANALYSIS_CHAT_MODEL = ANALYSIS_MODEL_REAL;
+
+/** GET with a hard timeout; null on any failure (unreachable, timeout, non-2xx). */
+async function probeGet(url, timeoutMs) {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeoutMs || 3000);
+    try {
+        const r = await fetch(url, { signal: ac.signal });
+        return r.ok ? r : null;
+    } catch {
+        return null;
+    } finally {
+        clearTimeout(t);
+    }
+}
+
+/** True when the Ollama /api/tags body lists `name` (tolerating a `:latest` suffix; case-insensitive). */
+function tagsListModel(tagsJson, name) {
+    const norm = (s) => String(s || '').toLowerCase().replace(/:latest$/, '');
+    const want = norm(name);
+    const models = (tagsJson && Array.isArray(tagsJson.models)) ? tagsJson.models : [];
+    return models.some(m => norm(m.name) === want || norm(m.model) === want);
+}
+
+let chatRoutePromise = null;
+
+/**
+ * Resolve, once per process, how E2E specs reach an LLM (see the block comment above).
+ * @returns {Promise<{route:'litellm'|'direct', serverUrl:string, dialect:string, upstream:string,
+ *           apiKey:(string|null), analysisModel:string, pbModel:string}>}
+ */
+export function resolveChatRoute() {
+    if (chatRoutePromise) return chatRoutePromise;
+    chatRoutePromise = (async () => {
+        let route;
+        const override = process.env.E2E_LLM_SERVER;
+        if (override) {
+            route = { route: 'direct', serverUrl: override, dialect: 'ollama', upstream: 'ollama',
+                apiKey: null, analysisModel: ANALYSIS_MODEL_REAL, pbModel: PB_MODEL_REAL };
+        } else if (await probeGet(LITELLM_PROBE_URL)) {
+            let ctr = false;
+            const tagsResp = await probeGet(OLLAMA_CTR_TAGS_URL);
+            if (tagsResp) {
+                let tags = null;
+                try { tags = await tagsResp.json(); } catch { tags = null; }
+                ctr = tagsListModel(tags, ANALYSIS_MODEL_REAL) && tagsListModel(tags, PB_MODEL_REAL);
+            }
+            route = { route: 'litellm', serverUrl: LITELLM_APP_URL, dialect: 'openai_compat', upstream: 'ollama',
+                apiKey: LITELLM_MASTER_KEY,
+                analysisModel: ctr ? 'qwen3:8b-ctr' : 'qwen3:8b',
+                pbModel: ctr ? 'qwen3:8b-jos-ctr' : 'qwen3:8b-jos' };
+        } else {
+            route = { route: 'direct', serverUrl: REMOTE_OLLAMA_URL, dialect: 'ollama', upstream: 'ollama',
+                apiKey: null, analysisModel: ANALYSIS_MODEL_REAL, pbModel: PB_MODEL_REAL };
+        }
+        PB_CHAT_MODEL = route.pbModel;
+        ANALYSIS_CHAT_MODEL = route.analysisModel;
+        console.log('[e2e-llm] route=' + route.route + ' server=' + route.serverUrl
+            + ' analysis=' + route.analysisModel + ' pb=' + route.pbModel);
+        return route;
+    })();
+    return chatRoutePromise;
+}
+
+/** Case-insensitive enum compare; null/undefined/'' on the wire counts as 'unknown' (SQL NULL reads as UNKNOWN). */
+function enumEq(a, b) {
+    const n = (v) => String(v == null || v === '' ? 'unknown' : v).toLowerCase();
+    return n(a) === n(b);
+}
+
+/**
+ * PATCH /rest/model with schema + identity + the validated `name` + changed fields. The route returns the
+ * literal `true`; anything else is a failure and is thrown, never swallowed (model-api.md PATCH rules).
+ */
+async function patchModelCtx(ctx, schema, rec, changed, what) {
+    const body = Object.assign({ schema, id: rec.id, objectId: rec.objectId, name: rec.name }, changed);
+    const resp = await ctx.patch(REST + '/model', { data: body });
+    const text = (await resp.text()).trim();
+    if (!resp.ok() || text !== 'true') {
+        throw new Error('[e2e-llm] PATCH ' + what + ' failed: HTTP ' + resp.status() + ' body=' + text
+            + ' patch=' + JSON.stringify(Object.assign({}, body, body.apiKey ? { apiKey: '<redacted>' } : {})));
+    }
+}
 
 /** Search a data.directory-derived model by name within an org (cache:false so freshly-created records are seen). */
 async function searchByNameOrgCtx(ctx, type, name, orgId, fields) {
@@ -451,20 +567,43 @@ async function searchByNameOrgCtx(ctx, type, name, orgId, fields) {
  *                chatConfig is owned by the shared user regardless of the caller's session state).
  * @param orgId   numeric organizationId (e.g. 2 for /Development on the Docker stack).
  * @param opts    optional overrides: configName/connectionName (use distinct names for a non-Ollama
- *                path so the default Ollama records are never reused), serverUrl, model, serviceType
- *                (wire-lowercase enum, default 'ollama'), dialect (system.connection.dialect, e.g.
- *                'openai_compat' for LiteLLM), apiKey (Bearer token stored on the connection).
- * @returns the chatConfig name to pass in the analyze/render body ({chatConfig: name}), or null on failure.
+ *                path so the default Ollama records are never reused), serverUrl, model, analyzeModel,
+ *                serviceType (wire-lowercase enum), dialect (system.connection.dialect, e.g.
+ *                'openai_compat' for LiteLLM), upstream, apiKey (Bearer token stored on the connection).
+ *                With NO serverUrl the connection shape and model defaults come from resolveChatRoute()
+ *                (LiteLLM-first; see the block comment above). With an explicit serverUrl the caller
+ *                owns the whole shape: dialect/upstream/apiKey are sent only if given, and the models
+ *                default to the real Ollama names.
+ *
+ * Reconciles leftovers: a connection/chatConfig of the same name left by a previous run (e.g. pointing
+ * at .42 with dialect ollama) is PATCHed to the resolved shape and re-read with cache:false. The
+ * connection's apiKey is encrypted at rest and not readable back, so a key-only drift is not detected.
+ *
+ * @returns the chatConfig name to pass in the analyze/render body ({chatConfig: name}), or null when
+ *          the ~/Chat group or a create could not be resolved. Throws when a PATCH is refused.
  */
 export async function ensureChatConfig(request, orgId, opts = {}) {
     const org = opts.org || '/Development';
     const user = opts.user || SHARED_USER;
     const password = opts.password || SHARED_PASSWORD;
-    const serverUrl = opts.serverUrl || CHAT_SERVER_URL;
-    const model = opts.model || CHAT_MODEL;
     const configName = opts.configName || CHATCONFIG_NAME;
     const connectionName = opts.connectionName || CHATCONN_NAME;
-    const serviceType = opts.serviceType || 'ollama';
+
+    // Desired shape. Caller-specified serverUrl => caller owns dialect/upstream/apiKey (undefined = don't
+    // set, don't compare). Otherwise the resolved route supplies all of them.
+    const route = await resolveChatRoute();
+    const callerOwned = !!opts.serverUrl;
+    const serverUrl = opts.serverUrl || route.serverUrl;
+    const dialect = opts.dialect || (callerOwned ? undefined : route.dialect);
+    const upstream = opts.upstream || (callerOwned ? undefined : route.upstream);
+    const apiKey = opts.apiKey || (callerOwned ? undefined : route.apiKey);
+    const model = opts.model || (callerOwned ? PB_MODEL_REAL : route.pbModel);
+    const analyzeModel = opts.analyzeModel || (callerOwned ? ANALYSIS_MODEL_REAL : route.analysisModel);
+    // serviceType is the deprecated fallback Chat consults only when dialect is UNKNOWN; keep it in step.
+    const serviceType = opts.serviceType || dialect || 'ollama';
+
+    const CONN_FIELDS = ['id', 'objectId', 'name', 'serverUrl', 'dialect', 'upstream'];
+    const CFG_FIELDS = ['id', 'objectId', 'name', 'model', 'analyzeModel', 'serviceType', 'connection'];
 
     let ctx = await newApiContext();
     try {
@@ -482,10 +621,10 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
         let resolvedOrgId = orgId || (chatDir && chatDir.organizationId);
         if (!resolvedOrgId) { await logoutCtx(ctx); return null; }
 
-        // 1. system.connection holding the serverUrl (find-or-create). `dialect` is what Chat keys
-        //    the wire shape on (system.connection.dialect is authoritative over chatConfig.serviceType).
-        let conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId,
-            ['id', 'objectId', 'name', 'serverUrl']);
+        // 1. system.connection holding the serverUrl (find-or-create-or-reconcile). `dialect` is what
+        //    Chat keys the wire shape on (authoritative over chatConfig.serviceType); `upstream` keys
+        //    the Ollama extension params when the dialect is a proxy (KI-72).
+        let conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId, CONN_FIELDS);
         if (!conn) {
             let connBody = {
                 schema: 'system.connection',
@@ -495,18 +634,37 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
                 serverUrl: serverUrl,
                 requestTimeout: 300
             };
-            if (opts.dialect) connBody.dialect = opts.dialect;
-            if (opts.apiKey) connBody.apiKey = opts.apiKey;
+            if (dialect) connBody.dialect = dialect;
+            if (upstream) connBody.upstream = upstream;
+            if (apiKey) connBody.apiKey = apiKey;
             await ctx.post(REST + '/model', { data: connBody });
-            conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId,
-                ['id', 'objectId', 'name', 'serverUrl']);
+            conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId, CONN_FIELDS);
+        } else {
+            let changed = {};
+            if (conn.serverUrl !== serverUrl) changed.serverUrl = serverUrl;
+            if (dialect && !enumEq(conn.dialect, dialect)) changed.dialect = dialect;
+            if (upstream && !enumEq(conn.upstream, upstream)) changed.upstream = upstream;
+            if (Object.keys(changed).length) {
+                // The key rides along with any drift on this route (it cannot be read back to compare).
+                if (apiKey) changed.apiKey = apiKey;
+                console.log('[e2e-llm] reconciling system.connection ' + connectionName + ' ('
+                    + conn.serverUrl + ' dialect=' + conn.dialect + ' upstream=' + conn.upstream + ') -> '
+                    + serverUrl + ' dialect=' + dialect + ' upstream=' + upstream);
+                await patchModelCtx(ctx, 'system.connection', conn, changed, 'system.connection ' + connectionName);
+                conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId, CONN_FIELDS);
+                if (!conn || conn.serverUrl !== serverUrl
+                    || (dialect && !enumEq(conn.dialect, dialect))
+                    || (upstream && !enumEq(conn.upstream, upstream))) {
+                    throw new Error('[e2e-llm] system.connection ' + connectionName
+                        + ' did not read back the patched shape: ' + JSON.stringify(conn));
+                }
+            }
         }
         if (!conn || !conn.id) { await logoutCtx(ctx); return null; }
 
-        // 2. olio.llm.chatConfig referencing that connection by FK (find-or-create).
+        // 2. olio.llm.chatConfig referencing that connection by FK (find-or-create-or-reconcile).
         //    serviceType enum is lowercase on the wire ("ollama" → LLMServiceEnumType.OLLAMA).
-        let cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId,
-            ['id', 'objectId', 'name']);
+        let cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId, CFG_FIELDS);
         if (!cfg) {
             await ctx.post(REST + '/model', {
                 data: {
@@ -516,12 +674,33 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
                     groupPath: groupPath,
                     serviceType: serviceType,
                     model: model,
-                    analyzeModel: model,
+                    analyzeModel: analyzeModel,
                     connection: { schema: 'system.connection', id: conn.id, objectId: conn.objectId }
                 }
             });
-            cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId,
-                ['id', 'objectId', 'name']);
+            cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId, CFG_FIELDS);
+        } else {
+            let changed = {};
+            if (cfg.model !== model) changed.model = model;
+            if (cfg.analyzeModel !== analyzeModel) changed.analyzeModel = analyzeModel;
+            if (!enumEq(cfg.serviceType, serviceType)) changed.serviceType = serviceType;
+            const cfgConnId = cfg.connection && cfg.connection.id;
+            if (cfgConnId !== conn.id) {
+                changed.connection = { schema: 'system.connection', id: conn.id, objectId: conn.objectId };
+            }
+            if (Object.keys(changed).length) {
+                console.log('[e2e-llm] reconciling olio.llm.chatConfig ' + configName + ' (model=' + cfg.model
+                    + ' analyzeModel=' + cfg.analyzeModel + ' serviceType=' + cfg.serviceType
+                    + ' connection=' + cfgConnId + ') -> ' + JSON.stringify(changed));
+                await patchModelCtx(ctx, 'olio.llm.chatConfig', cfg, changed, 'olio.llm.chatConfig ' + configName);
+                cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId, CFG_FIELDS);
+                if (!cfg || cfg.model !== model || cfg.analyzeModel !== analyzeModel
+                    || !enumEq(cfg.serviceType, serviceType)
+                    || (cfg.connection && cfg.connection.id) !== conn.id) {
+                    throw new Error('[e2e-llm] olio.llm.chatConfig ' + configName
+                        + ' did not read back the patched shape: ' + JSON.stringify(cfg));
+                }
+            }
         }
 
         await logoutCtx(ctx);

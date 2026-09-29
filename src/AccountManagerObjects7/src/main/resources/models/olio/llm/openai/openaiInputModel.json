@@ -11,6 +11,10 @@
 		{
 			"name": "dimensions",
 			"type": "int"
+		},
+		{
+			"name": "model",
+			"type": "string"
 		}
 	]
 }

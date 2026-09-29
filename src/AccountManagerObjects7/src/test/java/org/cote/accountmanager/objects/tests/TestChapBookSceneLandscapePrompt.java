@@ -171,7 +171,7 @@ public class TestChapBookSceneLandscapePrompt extends BaseTest {
 		// A live, regeneration-CAPABLE chatConfig. It is deliberately supplied so that IF the override were
 		// misclassified as the no-LLM fallback, recovery WOULD run and overwrite the stored prompt. The
 		// verbatim override short-circuits resolveScenePrompt, so the LLM is in fact never contacted.
-		BaseRecord liveConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "chapbookOverrideLlmConfig", testProperties);
+		BaseRecord liveConfig = OlioTestUtil.getPbChatConfig(testUser, "chapbookOverrideLlmConfig", testProperties);
 		assertNotNull("Live chatConfig must be built", liveConfig);
 
 		BaseRecord poem = createPoem(testUser, "~/Data/ChapBookLandscapeRender-" + ts,

@@ -27,6 +27,10 @@ set -euo pipefail
 # (Azure/OpenAI embeddings endpoint). Selects the branch in EmbeddingUtil.getEmbedding: 'local' POSTs
 # <server>/generate_embedding with {"text":...}; 'openai' POSTs <server> verbatim with an OpenAI body.
 : "${EMBEDDING_TYPE:=local}"
+# Embedding model name sent in the OpenAI-shaped request body (EMBEDDING_TYPE=openai or
+# openai_compat). Ollama's /v1/embeddings rejects a body without one (e.g. nomic-embed-text); Azure
+# resolves the model from the deployment URL, so empty (the default) sends no model. Ignored by 'local'.
+: "${EMBEDDING_MODEL:=}"
 # Embedding-server authorization token (OPENAI branch). A credential: no default value and never
 # committed with one -- supply via env/.env when the embedding server requires auth. Empty means no
 # token is sent (same as voice.authorizationToken).
@@ -58,7 +62,7 @@ esac
 export DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD SESSION_STORE_PATH \
   STORE_PATH DATAGEN_PATH VAULT_PATH VAULT_CREDENTIAL_PATH \
   TASK_SERVER TASK_API_KEY SD_SERVER FACE_SERVER TAG_SERVER \
-  VOICE_TTS_SERVER VOICE_STT_SERVER EMBEDDING_SERVER EMBEDDING_TYPE EMBEDDING_AUTH_TOKEN CORS_ALLOWED_ORIGINS \
+  VOICE_TTS_SERVER VOICE_STT_SERVER EMBEDDING_SERVER EMBEDDING_TYPE EMBEDDING_MODEL EMBEDDING_AUTH_TOKEN CORS_ALLOWED_ORIGINS \
   SD_DEFAULT_MODEL HTTP_READ_TIMEOUT LLM_EMULATOR_FIXTURE_ROOT LLM_EMULATOR_RECORD_DIR
 
 APP_DIR="$CATALINA_HOME/webapps/${APP_CONTEXT}"
@@ -68,7 +72,7 @@ mkdir -p "$STORE_PATH" "$DATAGEN_PATH" "$VAULT_PATH" "$VAULT_CREDENTIAL_PATH" "$
 envsubst '$DB_HOST $DB_PORT $DB_NAME $DB_USER $DB_PASSWORD $SESSION_STORE_PATH' \
   < "$APP_DIR/META-INF/context.xml.template" > "$APP_DIR/META-INF/context.xml"
 
-envsubst '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SERVER $TASK_API_KEY $SD_SERVER $FACE_SERVER $TAG_SERVER $VOICE_TTS_SERVER $VOICE_STT_SERVER $EMBEDDING_SERVER $EMBEDDING_TYPE $EMBEDDING_AUTH_TOKEN $CORS_ALLOWED_ORIGINS $SD_DEFAULT_MODEL $HTTP_READ_TIMEOUT $LLM_EMULATOR_FIXTURE_ROOT $LLM_EMULATOR_RECORD_DIR' \
+envsubst '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SERVER $TASK_API_KEY $SD_SERVER $FACE_SERVER $TAG_SERVER $VOICE_TTS_SERVER $VOICE_STT_SERVER $EMBEDDING_SERVER $EMBEDDING_TYPE $EMBEDDING_MODEL $EMBEDDING_AUTH_TOKEN $CORS_ALLOWED_ORIGINS $SD_DEFAULT_MODEL $HTTP_READ_TIMEOUT $LLM_EMULATOR_FIXTURE_ROOT $LLM_EMULATOR_RECORD_DIR' \
   < "$APP_DIR/WEB-INF/web.xml.template" > "$APP_DIR/WEB-INF/web.xml"
 
 # Self-signed TLS pair shared by Tomcat (server.xml) and nginx (nginx.conf).

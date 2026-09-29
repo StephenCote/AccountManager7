@@ -27,7 +27,6 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
-import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.rules.BookWorldInitializationRule;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -479,31 +478,15 @@ public class TestPictureBookKnownIssues extends BaseTest {
 			org.cote.accountmanager.model.field.FieldEnumType.STRING, fs.getFieldType());
 	}
 
+	/// Picture-book chat config on this JVM's resolved LLM route (LlmTestGate): test.llm.model.pb,
+	/// think:false, 300s. OlioTestUtil.getPbChatConfig reconciles an existing row of the same name.
 	private String ensureChatConfig(BaseRecord user) throws Exception {
-		String model = testProperties.getProperty("test.llm.ollama.model");
+		String model = OlioTestUtil.pbModel(testProperties);
 		String serverUrl = testProperties.getProperty("test.llm.ollama.server");
+		assertNotNull("test.llm.model.pb / test.llm.pb.model must be set", model);
 		assertNotNull("test.llm.ollama.server must be set", serverUrl);
-		String cfgName = "PictureBook KI " + model + ".chat";
-		BaseRecord existing = org.cote.accountmanager.util.DocumentUtil.getRecord(
-			user, OlioModelNames.MODEL_CHAT_CONFIG, cfgName, "~/Chat");
-		if (existing != null) return cfgName;
-
-		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
-		plist.parameter(FieldNames.FIELD_NAME, cfgName);
-		BaseRecord cfg = IOSystem.getActiveContext().getFactory().newInstance(
-			OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
-		cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
-		cfg.set("connection", OlioTestUtil.getCreateConnection(user, cfgName + " Connection", serverUrl, null, 300));
-		cfg.set("model", model);
-		cfg.set("stream", false);
-		BaseRecord opts = cfg.get("chatOptions");
-		if (opts == null) {
-			opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
-			cfg.set("chatOptions", opts);
-		}
-		opts.set("think", false);
-		opts.set("temperature", 0.3);
-		assertNotNull(IOSystem.getActiveContext().getAccessPoint().create(user, cfg));
+		String cfgName = OlioTestUtil.safeName("PictureBook KI " + model + ".chat");
+		assertNotNull("PB chat config could not be created", OlioTestUtil.getPbChatConfig(user, cfgName, testProperties));
 		return cfgName;
 	}
 

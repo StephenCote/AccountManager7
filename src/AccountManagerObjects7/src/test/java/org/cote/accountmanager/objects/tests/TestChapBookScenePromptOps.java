@@ -93,7 +93,7 @@ public class TestChapBookScenePromptOps extends BaseTest {
 		String llmServer = testProperties.getProperty("test.llm.ollama.server");
 		SdTestGate.requireLlmReachable(llmServer);
 
-		BaseRecord liveConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "chapbookScenePromptOpsLlm", testProperties);
+		BaseRecord liveConfig = OlioTestUtil.getPbChatConfig(testUser, "chapbookScenePromptOpsLlm", testProperties);
 		assertNotNull("Live chatConfig must be built", liveConfig);
 
 		String sceneOid = seedFirstSceneOid("regen");
@@ -137,7 +137,7 @@ public class TestChapBookScenePromptOps extends BaseTest {
 		String llmServer = testProperties.getProperty("test.llm.ollama.server");
 		SdTestGate.requireLlmReachable(llmServer);
 
-		BaseRecord liveConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "chapbookScenePromptOpsLlm", testProperties);
+		BaseRecord liveConfig = OlioTestUtil.getPbChatConfig(testUser, "chapbookScenePromptOpsLlm", testProperties);
 		assertNotNull("Live chatConfig must be built", liveConfig);
 
 		String sceneOid = seedFirstSceneOid("analyze");

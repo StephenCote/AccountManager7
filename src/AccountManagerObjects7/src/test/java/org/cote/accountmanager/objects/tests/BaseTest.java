@@ -100,6 +100,11 @@ public class BaseTest {
 		/// the fallback checkpoint so nothing drifts from what this node actually has (KI-39).
 		SdTestGate.resolveInstalledCheckpoints(testProperties);
 		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(testProperties.getProperty(SdTestGate.PROP_SWARM_MODEL));
+		/// LLM route/tier: local Ollama container first, then Azure via LiteLLM (LITELLM_LIVE only), then
+		/// the LAN Spark. Resolved once per JVM; rewrites test.llm.ollama.server to the tier's direct URL
+		/// and adds test.llm.route / test.llm.resolvedTier / test.llm.connection.* / test.llm.model.*.
+		/// One `[LLM-GATE] ...` line in the log says what was chosen. See LlmTestGate.
+		LlmTestGate.resolve(testProperties);
 		/// Must precede any HTTP call (the shared Client caches it). The old 360s default killed every
 		/// FLUX.2 composite mid-generation on the local iGPU - see ClientUtil.
 		String readTo = testProperties.getProperty(org.cote.accountmanager.util.ClientUtil.READ_TIMEOUT_CONFIG_KEY);
@@ -184,6 +189,12 @@ public class BaseTest {
 			/// (setEmbeddingDimensions enforces the match and throws on mismatch).
 			int embeddingDimensions = Integer.parseInt(testProperties.getProperty("test.embedding.dimensions", String.valueOf(org.cote.accountmanager.tools.EmbeddingUtil.DEFAULT_EMBEDDING_DIMENSIONS)));
 			vectorUtil.getEmbedUtil().setEmbeddingDimensions(embeddingDimensions);
+			/// Model name for OpenAI-shaped embedding endpoints (Ollama /v1/embeddings, LiteLLM). Blank
+			/// keeps the LOCAL .42:8123 service, which takes no model - the setter normalizes blank to null.
+			String embeddingModel = testProperties.getProperty("test.embedding.model");
+			if(embeddingModel != null && !embeddingModel.isBlank()) {
+				vectorUtil.getEmbedUtil().setEmbeddingModel(embeddingModel);
+			}
 			ioContext.setVectorUtil(vectorUtil);
 		} catch (StackOverflowError | Exception e) {
 			logger.error(e);

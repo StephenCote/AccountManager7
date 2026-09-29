@@ -28,7 +28,6 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.olio.NarrativeUtil;
-import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.SceneGenerationParams;
@@ -43,7 +42,6 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
-import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.junit.Test;
 
@@ -121,7 +119,6 @@ public class TestPictureBookUtilE2E extends BaseTest {
 		System.out.println("[TestPictureBookUtilE2E] EMIT_DIR = " + EMIT_DIR);
 	}
 
-	private static final String LLM_MODEL = "qwen3-vl:8b-instruct";
 	private static final String ORG_SUBPATH = "/Development/PictureBookUtilE2E";
 
 	/**
@@ -296,31 +293,12 @@ public class TestPictureBookUtilE2E extends BaseTest {
 		"Ash swept a headlamp across walls lined with strange metallic ridges. Neither spoke. The pulse " +
 		"slowed, then stopped, as if the chamber itself had been waiting for them to arrive.";
 
+	/// Picture-book config on this JVM's resolved LLM route (LlmTestGate): model = test.llm.model.pb
+	/// (JOSIEFIED 8B or its LiteLLM alias), think:false, stream:false, 300s. Was a hand-rolled
+	/// qwen3-vl:8b-instruct/OLLAMA config pinned to one box; OlioTestUtil.getPbChatConfig reconciles an
+	/// existing row of the same name to the current route instead of silently reusing a stale one.
 	private BaseRecord getOrCreateChatConfig(BaseRecord user, String name) {
-		BaseRecord existing = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, name, "~/Chat");
-		if (existing != null) return existing;
-		try {
-			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
-			plist.parameter(FieldNames.FIELD_NAME, name);
-			BaseRecord cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
-			cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
-			cfg.set("connection", OlioTestUtil.getCreateConnection(user, name + " Connection",
-				testProperties.getProperty("test.llm.ollama.server", "http://192.168.1.42:11434"), null, 180));
-			cfg.set("model", LLM_MODEL);
-			cfg.set("stream", false);
-
-			BaseRecord opts = cfg.get("chatOptions");
-			if (opts == null) {
-				opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
-				cfg.set("chatOptions", opts);
-			}
-			opts.set("think", false);
-
-			return IOSystem.getActiveContext().getAccessPoint().create(user, cfg);
-		} catch (Exception e) {
-			logger.error("Failed to create chat config: " + e.getMessage(), e);
-			return null;
-		}
+		return OlioTestUtil.getPbChatConfig(user, name, testProperties);
 	}
 
 	/** Creates the "work" source record (data.data, text/plain) findWork()/extractWorkText() resolve. */

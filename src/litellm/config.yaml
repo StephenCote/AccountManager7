@@ -261,6 +261,53 @@ model_list:
       # Split the token if they ever need different caps.
       max_parallel_requests: __LOCAL_MAX_PARALLEL__
 
+  # ---- CONTAINERIZED Ollama (compose profile `ollama`, service `ollama`) -------
+  # A THIRD deployment of the same upstream models, on OLLAMA_CONTAINER_API_BASE
+  # (http://ollama:11434 on the compose network). Suffix `-ctr`, for the same two
+  # reasons `-local` exists: the alias is the routing key and must be distinct, and
+  # the provider prefix stays `ollama_chat/` -- "ctr" lives only in the alias and the
+  # api_base. `q`/`n` initials keep AM7's o-series/gpt-5 heuristics untripped.
+  #
+  # These are what the JUnit LLM gate (Objects7 LlmTestGate) selects on the LOCAL
+  # tier: `qwen3:8b-ctr` for analysis, `qwen3:8b-jos-ctr` for PictureBook/ChapBook.
+  # With the `ollama` profile down they fail visibly at request time
+  # ("Cannot connect to host ollama:11434"); they are never load-balanced with the
+  # LAN or host-local entries because the alias differs.
+  #
+  # CPU-bound on this workstation (no iGPU passthrough), so the shared 240s
+  # innermost timeout is the number to watch on PictureBook-sized prompts.
+  - model_name: qwen3:8b-ctr
+    litellm_params:
+      model: ollama_chat/qwen3:8b
+      api_base: os.environ/OLLAMA_CONTAINER_API_BASE
+      # Innermost timeout -- see the ladder note in litellm_settings below.
+      timeout: 240
+      # Fallback only; a request-body num_ctx always wins (measured, see qwen3:8b above).
+      num_ctx: 40960
+      # Its own queue onto its own (CPU) backend; shares the one rendered cap value.
+      max_parallel_requests: __LOCAL_MAX_PARALLEL__
+
+  - model_name: qwen3:8b-jos-ctr
+    litellm_params:
+      model: ollama_chat/goekdenizguelmez/JOSIEFIED-Qwen3:8b
+      api_base: os.environ/OLLAMA_CONTAINER_API_BASE
+      # Innermost timeout -- see the ladder note in litellm_settings below.
+      timeout: 240
+      # Its own queue onto its own (CPU) backend; shares the one rendered cap value.
+      max_parallel_requests: __LOCAL_MAX_PARALLEL__
+
+  # Embeddings through the proxy, for debugging/tracing parity with the chat
+  # aliases. `ollama/` (NOT `ollama_chat/`): the embeddings route is on the base
+  # provider. NOTE the app itself does NOT use this entry -- am7's EMBEDDING_SERVER
+  # points straight at http://ollama:11434/v1/embeddings because embedding.type /
+  # embedding.model are boot-pinned and the embedding path is not a debug path.
+  # 768-wide natively, matching embedding.dimensions.
+  - model_name: nomic-embed-text-ctr
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: os.environ/OLLAMA_CONTAINER_API_BASE
+      timeout: 120
+
 litellm_settings:
   # Tier A: proxy-side tracing to Langfuse (no AM7 code involved).
   success_callback: ["langfuse"]

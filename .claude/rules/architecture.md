@@ -129,6 +129,28 @@ up changes for free, but a value cached in a boot-time singleton needs an explic
 writer in another JVM (Console7) cannot invalidate an in-process cache. State the real propagation bound;
 never let a message claim an effect the code does not produce.
 
+## Test-config resolvers write back into the existing key; never rename a key read by more than one module
+
+A test-time resolver that picks a value at runtime (which LLM server answers, which SD checkpoint is
+installed) must publish its result **into the property key the tests already read**, not into a new key
+the resolver alone knows about, and must not rename the original. `SdTestGate.resolveInstalledCheckpoints`
+is the standing pattern; `LlmTestGate` (2026-09-29) follows it: it probes local container → Azure →
+`.42` and then, in the same `Properties` object `BaseTest` hands to every test, rewrites
+**`test.llm.ollama.server` in place** (the direct Ollama URL of whichever tier answered) and leaves
+`test.llm.ollama.model` / `test.llm.pb.model` untouched as inputs describing that direct endpoint. It
+adds new keys only for information that had no key before: `test.llm.route`, `test.llm.resolvedTier`,
+`test.llm.connection.{server,dialect,upstream,apiKey}` (what a `system.connection` should be —
+LiteLLM when routed, the direct URL otherwise) and `test.llm.model.{analysis,pb}` (the model names to
+put on a chatConfig for that connection — LiteLLM aliases when routed). Tests not yet migrated to the
+`test.llm.connection.*` / `test.llm.model.*` keys (`TestPromptTemplate`, `TestPromptLibrary`,
+`TestPageIndex`, `TestKeyframeMemory`, `TestMemoryPhase2`, `TestAutoTitleEndToEnd`,
+`TestPictureBookService`, Agent7 `TestAgent`) still read the direct keys and therefore talk to Ollama
+directly, not through LiteLLM — coherent within one run, but do not assume every LLM test shares one
+route. Reason: `resource.properties` keys are read by Objects7, Agent7, Console7 and the Playwright
+helpers independently; renaming one silently leaves the other readers on the old value with no compile
+error, and a "resolved" key that only some tests consult means two tests in one JVM talk to two
+different servers. Additive keys plus write-back keep one source of truth per run.
+
 ## Verification standard (what "done" means)
 
 - Server change: compiled (`mvn compile`), relevant unit tests run (`mvn test -Dtest=...`), `BUILD SUCCESS`

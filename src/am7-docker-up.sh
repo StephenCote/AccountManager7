@@ -15,18 +15,30 @@
 #                                       containers). Off by default - they are
 #                                       real overhead and most work does not
 #                                       need them.
+#    ./am7-docker-up.sh --ollama        ALSO start a containerized Ollama (compose
+#                                       profile `ollama`: the `ollama` server plus a
+#                                       one-shot `ollama-init` that pulls qwen3:8b,
+#                                       goekdenizguelmez/JOSIEFIED-Qwen3:8b and
+#                                       nomic-embed-text). IMPLIES --llmproxy, so the
+#                                       `*-ctr` LiteLLM aliases route to it and every
+#                                       test call is traceable in Langfuse. Also
+#                                       points the app's embeddings at the container
+#                                       (openai_compat / nomic-embed-text) unless
+#                                       AM7_OLLAMA_EMBED=0. Host port 11435 (loopback).
+#                                       CPU-only unless AM7_OLLAMA_GPU=nvidia.
 #    ./am7-docker-up.sh --app-only      the reverse of --llmproxy-only: start ONLY
 #                                       the app + its database (am7 + am7-pg), and
-#                                       STOP any LiteLLM/Langfuse sidecars that are
-#                                       running, so you get the overhead back.
+#                                       STOP any LiteLLM/Langfuse/Ollama sidecars
+#                                       that are running, so you get the overhead back.
 #    ./am7-docker-up.sh --llmproxy-only start ONLY the proxy/observability stack
 #                                       (litellm + langfuse + am7-pg, which hosts
 #                                       litellmdb). Does NOT build, does not stage
 #                                       the Olio seed, and does NOT start the app.
 #                                       Use when you want the proxy without the
 #                                       Service7/Ux752 overhead.
-#    ./am7-docker-up.sh --stop          STOP all 9 containers in the am7test
-#                                       project - app AND sidecars - and exit.
+#    ./am7-docker-up.sh --stop          STOP every container in the am7test
+#                                       project (up to 11: app, LiteLLM/Langfuse
+#                                       and Ollama sidecars) and exit.
 #                                       Nothing is removed: no container, no
 #                                       volume, no data. Build and seed are
 #                                       skipped. See the note at the --stop
@@ -160,9 +172,34 @@ fi
 PROJECT="${PROJECT:-am7test}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.test.yml}"
 
+# Every optional compose profile this project defines. Lifecycle actions (--stop,
+# --start, ps, the `down` advice) must name ALL of them: compose only acts on
+# services in an ACTIVE profile, so a missing entry here silently orphans that
+# profile's containers. Add to this list whenever a profile is added to the file.
+ALL_PROFILES=(--profile llmproxy --profile ollama)
+
+# --ollama knobs (all overridable):
+#   AM7_OLLAMA_EMBED  1 (default) points the app's embeddings at the container:
+#                     EMBEDDING_SERVER=http://ollama:11434/v1/embeddings,
+#                     EMBEDDING_TYPE=openai_compat, EMBEDDING_MODEL=nomic-embed-text.
+#                     0 leaves the compose defaults (the LAN embedApiMini on .42:8123).
+#                     An explicitly exported EMBEDDING_* always wins over both.
+#   AM7_OLLAMA_GPU    nvidia layers docker-compose.ollama-gpu.yml (device reservation).
+#                     Unset = CPU only, which is all Docker Desktop can offer on an
+#                     AMD iGPU host.
+#   OLLAMA_HOST_PORT  host loopback port the container publishes (default 11435, so a
+#                     host Ollama on 11434 - the `-local` aliases - can coexist).
+: "${AM7_OLLAMA_EMBED:=1}"
+: "${AM7_OLLAMA_GPU:=}"
+: "${OLLAMA_HOST_PORT:=11435}"
+export OLLAMA_HOST_PORT
+
 # Honour AM7_DATA_DIR the same way the compose file does (default ./docker-data).
 AM7_DATA_ROOT="${AM7_DATA_DIR:-$SRC_DIR/docker-data}"
 STORE_DIR="$AM7_DATA_ROOT/am7/store"
+# Records which embedding provider a data volume was last booted with. See the
+# sticky-provider WARN below.
+EMBED_MARKER="$AM7_DATA_ROOT/.embedding-provider"
 
 # CORS_ALLOWED_ORIGINS REPLACES the compose default, so list every origin -
 # appending is not a thing. localhost + 127.0.0.1 + the LAN IP, http and https.
@@ -172,28 +209,33 @@ export CORS_ALLOWED_ORIGINS CATALINA_OPTS
 usage() {
   cat <<'USAGE'
 
- am7-docker-up.sh [--no-build | --prebuilt] [--llmproxy | --llmproxy-only | --app-only]
+ am7-docker-up.sh [--no-build | --prebuilt] [--llmproxy | --llmproxy-only | --app-only] [--ollama]
  am7-docker-up.sh --stop | --start
 
    --no-build        start the existing am7:latest image
    --prebuilt        build with PREBUILT=1 (host-built WAR)
    --llmproxy        also start the LiteLLM + Langfuse sidecars (7 containers)
-   --llmproxy-only   start ONLY those sidecars - no app, no build, no seed
+   --ollama          also start a containerized Ollama + one-shot model pull
+                     (2 containers; IMPLIES --llmproxy). Publishes 127.0.0.1:11435.
+                     Points the app's embeddings at it unless AM7_OLLAMA_EMBED=0.
+   --llmproxy-only   start ONLY the sidecars - no app, no build, no seed
+                     (with --ollama, the Ollama pair is included)
    --app-only        start ONLY the app + its DB, and STOP any running sidecars
-   --stop            STOP all 9 containers in the am7test project and exit.
+   --stop            STOP every container in the am7test project and exit.
                      Does NOT remove them or touch any data.
    --start           start those stopped containers back up, without recreating
                      or rebuilding anything. The counterpart to --stop.
 
- Flags may be combined, e.g.:  ./am7-docker-up.sh --no-build --llmproxy
+ Flags may be combined, e.g.:  ./am7-docker-up.sh --no-build --ollama
  --stop and --start are exclusive - they ignore every other flag.
 
  Settings are environment overrides, not file edits:
    LAN_IP  APP_PORT  CATALINA_OPTS  SEED_ARGS  SEED_STAGING  AM7_DATA_DIR
    PG_SHARED_BUFFERS  PG_WORK_MEM  PG_EFFECTIVE_CACHE_SIZE  PG_SHM_SIZE
+   AM7_OLLAMA_EMBED  AM7_OLLAMA_GPU  OLLAMA_HOST_PORT  OLLAMA_PULL_MODELS
  e.g.  LAN_IP=10.0.0.5 CATALINA_OPTS='-Xms2g -Xmx24g' ./am7-docker-up.sh --no-build
 
- Runbook: src/aiDocs/dockerDevSetup.md section 12
+ Runbook: src/aiDocs/dockerDevSetup.md sections 12-13
 
 USAGE
 }
@@ -202,7 +244,10 @@ USAGE
 BUILD_FLAG="--build"
 PREBUILT_BUILD=""
 PROFILE_ARGS=()
+EXTRA_FILE_ARGS=()
 ENVFILE_ARGS=()
+LLMPROXY=""
+OLLAMA=""
 LLMPROXY_ONLY=""
 APP_ONLY=""
 LIFECYCLE=""
@@ -211,8 +256,12 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --no-build)       BUILD_FLAG="" ;;
     --prebuilt)       BUILD_FLAG=""; PREBUILT_BUILD=1 ;;
-    --llmproxy)       PROFILE_ARGS=(--profile llmproxy) ;;
-    --llmproxy-only)  PROFILE_ARGS=(--profile llmproxy); LLMPROXY_ONLY=1; BUILD_FLAG="" ;;
+    --llmproxy)       LLMPROXY=1 ;;
+    --llmproxy-only)  LLMPROXY=1; LLMPROXY_ONLY=1; BUILD_FLAG="" ;;
+    # --ollama IMPLIES --llmproxy: the point of the container is that the `*-ctr`
+    # LiteLLM aliases route to it and every test call lands in Langfuse, so a
+    # proxy-less variant would be a third routing shape nothing needs.
+    --ollama)         OLLAMA=1; LLMPROXY=1 ;;
     --app-only)       APP_ONLY=1 ;;
     --stop)           LIFECYCLE=stop ;;
     --start)          LIFECYCLE=start ;;
@@ -222,10 +271,46 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# Profiles are ADDITIVE - assembled after the loop so flag order does not matter.
+[ -n "$LLMPROXY" ] && PROFILE_ARGS+=(--profile llmproxy)
+[ -n "$OLLAMA" ]   && PROFILE_ARGS+=(--profile ollama)
+
 if [ -n "$APP_ONLY" ] && [ -n "$LLMPROXY_ONLY" ]; then
   echo "ERROR: --app-only and --llmproxy-only are opposites; pick one." >&2
   exit 1
 fi
+if [ -n "$APP_ONLY" ] && [ -n "$OLLAMA" ]; then
+  echo "ERROR: --app-only stops every sidecar, including Ollama; it cannot be combined with --ollama." >&2
+  exit 1
+fi
+
+if [ -n "$OLLAMA" ]; then
+  # GPU opt-in: an override file rather than an always-on device reservation,
+  # because `deploy.resources.reservations.devices` makes `up` FAIL outright on a
+  # host without the NVIDIA runtime.
+  case "$AM7_OLLAMA_GPU" in
+    "")      ;;
+    nvidia)  EXTRA_FILE_ARGS=(-f docker-compose.ollama-gpu.yml) ;;
+    *) echo "ERROR: AM7_OLLAMA_GPU='$AM7_OLLAMA_GPU' - only 'nvidia' (or unset) is supported." >&2; exit 1 ;;
+  esac
+  # Container embeddings for the APP. Each is `: "${VAR:=default}"`, so a value the
+  # caller already exported wins; the compose ${VAR:-...} defaults are what these
+  # replace. The URL is the compose SERVICE name - resolvable only inside the
+  # am7-test-net network, which is where Tomcat runs.
+  if [ "$AM7_OLLAMA_EMBED" != "0" ]; then
+    : "${EMBEDDING_SERVER:=http://ollama:11434/v1/embeddings}"
+    : "${EMBEDDING_TYPE:=openai_compat}"
+    : "${EMBEDDING_MODEL:=nomic-embed-text}"
+    export EMBEDDING_SERVER EMBEDDING_TYPE EMBEDDING_MODEL
+  fi
+fi
+
+# The embedding provider this `up` will hand the app, as compose will see it:
+# exported value, else the compose default. Space-separated "server type model"
+# ('-' for no model) - the .bat writes the same marker and a '|' would be parsed
+# as a pipe by cmd's echo. (Values that live only in src/.env are not visible
+# here, so a .env override makes this marker approximate - it is a WARN, not a gate.)
+EMBED_EFFECTIVE="${EMBEDDING_SERVER:-http://192.168.1.42:8123} ${EMBEDDING_TYPE:-local} ${EMBEDDING_MODEL:--}"
 
 case "$LIFECYCLE" in
   stop|start)
@@ -264,13 +349,42 @@ if [ "${#PROFILE_ARGS[@]}" -gt 0 ] && [ -f "$SRC_DIR/volatile/llmproxy.env" ]; t
   ENVFILE_ARGS=(--env-file ./volatile/llmproxy.env)
 fi
 
+# Corporate TLS interception (Microsoft Global Secure Access on this network):
+# with the VPN up, every HTTPS site is re-signed by a CA the ollama and litellm
+# images do not trust, so `ollama pull` and LiteLLM->Azure fail with x509 errors.
+# If a CA bundle is present, layer docker-compose.extra-ca.yml, which mounts it
+# into both. Measured 2026-09-29: pulls that failed with "certificate signed by
+# unknown authority" succeeded immediately once the file was mounted. See
+# aiDocs/dockerDevSetup.md section 13.6 for how to produce the PEM.
+CA_FILE_ARGS=()
+if [ -n "${AM7_EXTRA_CA_FILE:-}" ]; then
+  [ -f "$AM7_EXTRA_CA_FILE" ] || { echo "ERROR: AM7_EXTRA_CA_FILE='$AM7_EXTRA_CA_FILE' does not exist." >&2; exit 1; }
+  export AM7_EXTRA_CA_FILE
+  CA_FILE_ARGS=(-f docker-compose.extra-ca.yml)
+elif [ -f "$SRC_DIR/volatile/extra-ca.pem" ]; then
+  CA_FILE_ARGS=(-f docker-compose.extra-ca.yml)
+fi
+
 # One place that assembles the invariant part of every compose call. The
 # ${arr[@]+"${arr[@]}"} form is the empty-array-safe expansion under `set -u`
 # (bash 3.2 on macOS errors on a bare "${arr[@]}" when the array is empty).
 dc() {
   "${COMPOSE[@]}" -p "$PROJECT" -f "$COMPOSE_FILE" \
+    ${EXTRA_FILE_ARGS[@]+"${EXTRA_FILE_ARGS[@]}"} \
+    ${CA_FILE_ARGS[@]+"${CA_FILE_ARGS[@]}"} \
     ${ENVFILE_ARGS[@]+"${ENVFILE_ARGS[@]}"} \
     ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} "$@"
+}
+# Same, but with EVERY profile active - for whole-project actions (stop/start/ps/
+# the sidecar stop in --app-only) that must reach containers regardless of which
+# flags THIS invocation was given. The CA override rides along so its one-shot
+# litellm-ca-init service is part of the project model (else `ps`/`down` treat
+# it as an orphan); the GPU override does not, because it is an `up` concern.
+dc_all() {
+  "${COMPOSE[@]}" -p "$PROJECT" -f "$COMPOSE_FILE" \
+    ${CA_FILE_ARGS[@]+"${CA_FILE_ARGS[@]}"} \
+    ${ENVFILE_ARGS[@]+"${ENVFILE_ARGS[@]}"} \
+    "${ALL_PROFILES[@]}" "$@"
 }
 
 echo "============================================================"
@@ -283,15 +397,51 @@ echo "   LAN URL      : https://$LAN_IP:$APP_PORT"
 echo "   postgres     : localhost:15433 (inspect only)"
 echo "   data dir     : $AM7_DATA_ROOT"
 echo "   CATALINA_OPTS: $CATALINA_OPTS"
-if [ "${#PROFILE_ARGS[@]}" -gt 0 ]; then
+if [ -n "$LLMPROXY" ]; then
   echo "   llmproxy     : ON  - litellm http://127.0.0.1:4000/ui/  langfuse http://127.0.0.1:3001"
 elif [ -n "$APP_ONLY" ]; then
   echo "   llmproxy     : off - and any running sidecars will be STOPPED (--app-only)"
 else
   echo "   llmproxy     : off (pass --llmproxy to start the LiteLLM/Langfuse sidecars)"
 fi
+if [ "${#CA_FILE_ARGS[@]}" -gt 0 ]; then
+  echo "   extra CA     : ${AM7_EXTRA_CA_FILE:-./volatile/extra-ca.pem} -> ollama + litellm (docker-compose.extra-ca.yml)"
+fi
+if [ -n "$OLLAMA" ]; then
+  echo "   ollama       : ON  - http://127.0.0.1:$OLLAMA_HOST_PORT  gpu=${AM7_OLLAMA_GPU:-cpu-only}"
+  echo "                  litellm aliases: qwen3:8b-ctr  qwen3:8b-jos-ctr  nomic-embed-text-ctr"
+  if [ "$AM7_OLLAMA_EMBED" != "0" ]; then
+    echo "   embeddings   : $EMBEDDING_SERVER  type=$EMBEDDING_TYPE  model=$EMBEDDING_MODEL"
+  else
+    echo "   embeddings   : compose defaults (AM7_OLLAMA_EMBED=0)"
+  fi
+else
+  echo "   ollama       : off (pass --ollama for a containerized Ollama; implies --llmproxy)"
+fi
 echo "============================================================"
 echo
+
+# STICKY EMBEDDING PROVIDER - WARN, do not refuse. embedding.server is DB-BACKED
+# (a /System system.connection row seeded from EMBEDDING_SERVER on the FIRST boot
+# of a data volume and re-read from the DB afterwards), while embedding.type and
+# embedding.model are BOOT-PINNED from the env every start. So changing provider
+# on an existing volume gives you a new type/model against the OLD stored URL, and
+# vectors already in the fixed-width common.vectorExt.embedding column carry no
+# provenance. On this disposable test volume the fix is a reset; on anything else,
+# know before you switch. (architecture.md "Config: DB-backed vs boot-pinned".)
+if [ -z "$LIFECYCLE" ] && [ -z "$LLMPROXY_ONLY" ] && [ -r "$EMBED_MARKER" ]; then
+  EMBED_PREVIOUS="$(head -n1 "$EMBED_MARKER" 2>/dev/null | tr -d '\r\n')"
+  if [ -n "$EMBED_PREVIOUS" ] && [ "$EMBED_PREVIOUS" != "$EMBED_EFFECTIVE" ]; then
+    echo "  WARNING: embedding provider differs from the one this data dir last booted with."
+    echo "           was : $EMBED_PREVIOUS"
+    echo "           now : $EMBED_EFFECTIVE            (server type model)"
+    echo "           embedding.server is DB-backed and will NOT follow EMBEDDING_SERVER on an"
+    echo "           existing volume; type/model WILL. Existing vectors keep their old width/"
+    echo "           provenance. Reset the volume (dockerDevSetup.md section 7) or repoint the"
+    echo "           /System embedding connection by hand if this switch is intentional."
+    echo
+  fi
+fi
 
 # Daemon reachability. NOTE: `docker compose version` above proves nothing about
 # the daemon - it only prints the CLI plugin's own version and never connects. So
@@ -345,13 +495,14 @@ fi
 
 # --stop / --start: whole-project lifecycle, no build, no seed, no data touched.
 #
-# THE `--profile llmproxy` HERE IS LOAD-BEARING, not decoration. Compose only acts
-# on services in an ACTIVE profile, and a profile is active only when named. So the
-# obvious `docker compose -p am7test -f docker-compose.test.yml stop` reaches just
-# 2 of the 9 containers and silently leaves the 7 LiteLLM/Langfuse sidecars running.
-# Measured 2026-09-17 with `stop --dry-run` against all 9 running: without the flag
-# it stopped only am7test-am7-1 and am7-pg. Passing the profile is additive - the
-# non-profile services stay active - so this one call covers the whole project.
+# THE PROFILE FLAGS HERE (via dc_all = ALL_PROFILES) ARE LOAD-BEARING, not decoration.
+# Compose only acts on services in an ACTIVE profile, and a profile is active only
+# when named. So the obvious `docker compose -p am7test -f docker-compose.test.yml
+# stop` reaches just 2 of the containers and silently leaves the LiteLLM/Langfuse
+# and Ollama sidecars running. Measured 2026-09-17 with `stop --dry-run` against all
+# 9 then-defined containers: without the flag it stopped only am7test-am7-1 and
+# am7-pg. Passing profiles is additive - the non-profile services stay active - so
+# one call naming every profile covers the whole project (up to 11 containers now).
 #
 # `stop`/`start`, never `down`: the containers and their volumes survive, so a
 # --start brings the stack back in seconds with no rebuild and no re-seed.
@@ -391,14 +542,14 @@ if [ -n "$LIFECYCLE" ]; then
   #
   # `start` takes no timeout, so only pass it for `stop`.
   if [ "$LIFECYCLE" = "stop" ]; then
-    "${COMPOSE[@]}" -p "$PROJECT" -f "$COMPOSE_FILE" --profile llmproxy stop -t "${STOP_GRACE:-20}"
+    dc_all stop -t "${STOP_GRACE:-20}"
   else
-    "${COMPOSE[@]}" -p "$PROJECT" -f "$COMPOSE_FILE" --profile llmproxy start
+    dc_all start
   fi
   lifecycle_rc=$?
   echo
   echo "[2/2] Status:"
-  "${COMPOSE[@]}" -p "$PROJECT" -f "$COMPOSE_FILE" --profile llmproxy ps -a
+  dc_all ps -a
   echo
   echo "============================================================"
   if [ "$lifecycle_rc" -ne 0 ]; then
@@ -418,12 +569,15 @@ fi
 # --app-only: the reverse of --llmproxy-only. `docker compose up` would simply
 # leave already-running profile containers alone, so "only the app" has to stop
 # them explicitly - that is the whole point of the flag (reclaiming the RAM the
-# 7 sidecars hold). `stop`, not `down`: it leaves the containers and their data
-# in place so a later --llmproxy restarts them in seconds.
+# sidecars hold). `stop`, not `down`: it leaves the containers and their data
+# in place so a later --llmproxy / --ollama restarts them in seconds. Naming a
+# service that was never created is harmless (compose reports "no such service"
+# only for names absent from the FILE, not for uncreated containers).
 if [ -n "$APP_ONLY" ]; then
-  echo "[0/4] --app-only: stopping any running LiteLLM/Langfuse sidecars ..."
-  "${COMPOSE[@]}" -p "$PROJECT" -f "$COMPOSE_FILE" --profile llmproxy stop \
-    litellm langfuse-web langfuse-worker langfuse-clickhouse langfuse-minio langfuse-redis langfuse-db
+  echo "[0/4] --app-only: stopping any running LiteLLM/Langfuse/Ollama sidecars ..."
+  dc_all stop \
+    litellm langfuse-web langfuse-worker langfuse-clickhouse langfuse-minio langfuse-redis langfuse-db \
+    ollama ollama-init
   echo
 fi
 
@@ -434,8 +588,14 @@ fi
 # langfuse-worker is listed because nothing depends_on it, yet without it the
 # ingestion API accepts events and the UI stays permanently empty.
 if [ -n "$LLMPROXY_ONLY" ]; then
-  echo "[1/2] Starting the LiteLLM/Langfuse stack only (no app, no build, no seed) ..."
-  if ! dc up -d litellm langfuse-web langfuse-worker; then
+  SIDECAR_SERVICES=(litellm langfuse-web langfuse-worker)
+  if [ -n "$OLLAMA" ]; then
+    SIDECAR_SERVICES+=(ollama ollama-init)
+    echo "[1/2] Starting the LiteLLM/Langfuse stack + Ollama only (no app, no build, no seed) ..."
+  else
+    echo "[1/2] Starting the LiteLLM/Langfuse stack only (no app, no build, no seed) ..."
+  fi
+  if ! dc up -d "${SIDECAR_SERVICES[@]}"; then
     echo "ERROR: 'docker compose up' failed." >&2
     exit 1
   fi
@@ -451,7 +611,16 @@ if [ -n "$LLMPROXY_ONLY" ]; then
 
  Point an AM7 system.connection at http://litellm:4000 with dialect=OPENAI_COMPAT
  (http://127.0.0.1:4000 from host-side JUnit). Runbook: aiDocs/dockerDevSetup.md section 12.
- Stop: ${COMPOSE[*]} -p $PROJECT -f $COMPOSE_FILE --profile llmproxy down
+EOF
+  if [ -n "$OLLAMA" ]; then
+    cat <<EOF
+ Ollama (container): http://127.0.0.1:$OLLAMA_HOST_PORT/api/tags   aliases: qwen3:8b-ctr qwen3:8b-jos-ctr nomic-embed-text-ctr
+ Model pull (multi-GB on first run; the aliases 404 until it finishes):
+   ${COMPOSE[*]} -p $PROJECT -f $COMPOSE_FILE ${ALL_PROFILES[*]} logs -f ollama-init
+EOF
+  fi
+  cat <<EOF
+ Stop: ${COMPOSE[*]} -p $PROJECT -f $COMPOSE_FILE ${ALL_PROFILES[*]} down
 ============================================================
 EOF
   exit 0
@@ -500,8 +669,14 @@ echo "[3/4] Starting containers ..."
 # plus nothing else. Naming them keeps --app-only honest if a non-profile service
 # is ever added.
 if [ -n "$APP_ONLY" ]; then
+  # The CA override rides along (as in the .bat) so the project model matches the
+  # one dc_all just used to stop the sidecars; otherwise compose reports the
+  # litellm-ca-init container as an orphan on every --app-only run.
   # shellcheck disable=SC2086  # BUILD_FLAG is either "--build" or nothing
-  "${COMPOSE[@]}" -p "$PROJECT" -f "$COMPOSE_FILE" up $BUILD_FLAG -d am7 am7-pg
+  "${COMPOSE[@]}" -p "$PROJECT" -f "$COMPOSE_FILE" \
+    ${CA_FILE_ARGS[@]+"${CA_FILE_ARGS[@]}"} \
+    ${ENVFILE_ARGS[@]+"${ENVFILE_ARGS[@]}"} \
+    up $BUILD_FLAG -d am7 am7-pg
   up_rc=$?
 else
   # shellcheck disable=SC2086
@@ -513,9 +688,26 @@ if [ "$up_rc" -ne 0 ]; then
   exit 1
 fi
 
+# Record the embedding provider this volume was just booted with (feeds the sticky
+# WARN above on the next run). Best-effort: a root-owned data dir on Linux makes
+# this unwritable, and that must not fail the `up`.
+mkdir -p "$AM7_DATA_ROOT" 2>/dev/null || true
+printf '%s\n' "$EMBED_EFFECTIVE" > "$EMBED_MARKER" 2>/dev/null || true
+
 echo
 echo "[4/4] Status:"
 dc ps
+
+if [ -n "$OLLAMA" ]; then
+  cat <<EOF
+
+ Ollama container : http://127.0.0.1:$OLLAMA_HOST_PORT/api/tags
+ Model pull       : ollama-init pulls ${OLLAMA_PULL_MODELS:-nomic-embed-text qwen3:8b goekdenizguelmez/JOSIEFIED-Qwen3:8b}
+                    (multi-GB on first run; the *-ctr LiteLLM aliases 404 until it exits 0). Follow it:
+                    ${COMPOSE[*]} -p $PROJECT -f $COMPOSE_FILE ${ALL_PROFILES[*]} logs -f ollama-init
+ Aliases          : curl -s -H "Authorization: Bearer \$LITELLM_MASTER_KEY" http://127.0.0.1:4000/v1/models | grep -- -ctr
+EOF
+fi
 
 # Give the entrypoint a moment to render web.xml and mint the setup token.
 sleep 3
@@ -578,11 +770,12 @@ echo "============================================================"
 echo
 echo " Follow the log:   ${COMPOSE[*]} -p $PROJECT -f $COMPOSE_FILE logs -f am7"
 echo " Stop (keep all):  ./am7-docker-up.sh --stop     # containers kept, restart with --start"
-# NOTE the --profile llmproxy on the `down`: without it compose removes only 2 of the
-# 9 containers and then fails trying to delete a network the other 7 are still on.
-# The earlier advice here omitted it. Verified with `down --dry-run` 2026-09-17.
+# NOTE the profile flags on the `down`: without them compose removes only the 2
+# non-profile containers and then fails trying to delete a network the sidecars are
+# still on. The earlier advice here omitted them. Verified with `down --dry-run`
+# 2026-09-17 (llmproxy); ollama added to ALL_PROFILES 2026-09-29.
 echo " Remove (keep data volumes):"
-echo "                   ${COMPOSE[*]} -p $PROJECT -f $COMPOSE_FILE --profile llmproxy down"
+echo "                   ${COMPOSE[*]} -p $PROJECT -f $COMPOSE_FILE ${ALL_PROFILES[*]} down"
 echo
 
 exit 0

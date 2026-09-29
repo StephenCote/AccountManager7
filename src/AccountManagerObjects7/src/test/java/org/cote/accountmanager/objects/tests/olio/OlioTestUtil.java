@@ -26,6 +26,8 @@ import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
@@ -66,6 +68,8 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ConnectionDialectEnumType;
+import org.cote.accountmanager.schema.type.ConnectionUpstreamEnumType;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -472,9 +476,115 @@ public class OlioTestUtil {
 	/// Connection info (serverUrl/apiKey/requestTimeout) lives on the system.connection
 	/// sub-record now.  Create (idempotent) a connection in ~/Chat and return it so a
 	/// chatConfig can reference it via the "connection" FK.
+	///
+	/// This overload sets NO dialect/upstream, so the row lands at the model default UNKNOWN and any
+	/// chatConfig built on it resolves its transport through the deprecated serviceType fallback. Kept
+	/// for the callers that depend on exactly that (getUnreachableOllamaConfig, the OpenAI/Azure config).
 	public static BaseRecord getCreateConnection(BaseRecord user, String name, String serverUrl, String apiKey, int requestTimeout) {
+		return getCreateConnection(user, name, serverUrl, apiKey, null, null, requestTimeout);
+	}
+
+	/// ---- LLM route/tier plumbing (LlmTestGate write-back) -------------------------------------------
+	///
+	/// The keys below are written by LlmTestGate.resolve (called from BaseTest.setup) and describe the
+	/// ONE endpoint the tests should talk to this JVM: LiteLLM (OPENAI_COMPAT + master key) when the
+	/// proxy is up, else native Ollama. Chat.configureChat re-queries the connection BY FK ID and reads
+	/// dialect/upstream from THAT row, so everything here is persisted, never left in memory.
+	public static final String PROP_CONNECTION_SERVER = "test.llm.connection.server";
+	public static final String PROP_CONNECTION_DIALECT = "test.llm.connection.dialect";
+	public static final String PROP_CONNECTION_UPSTREAM = "test.llm.connection.upstream";
+	public static final String PROP_CONNECTION_API_KEY = "test.llm.connection.apiKey";
+	public static final String PROP_MODEL_ANALYSIS = "test.llm.model.analysis";
+	public static final String PROP_MODEL_PB = "test.llm.model.pb";
+	public static final String PROP_ROUTE = "test.llm.route";
+
+	/// requestTimeout for picture-book / chap-book configs: JOSIEFIED 8B extraction over a long passage
+	/// on a busy box legitimately runs past the 120s connection default.
+	public static final int PB_REQUEST_TIMEOUT = 300;
+
+	/// Model for analysis-style tests (extraction, tagging, prompts): the gate's write-back, else the
+	/// pre-gate key so a caller that never ran BaseTest.setup still gets the configured name.
+	public static String analysisModel(Properties props) {
+		String m = props.getProperty(PROP_MODEL_ANALYSIS);
+		if (m == null || m.isBlank()) m = props.getProperty("test.llm.ollama.model");
+		return (m != null && !m.isBlank()) ? m.trim() : null;
+	}
+
+	/// Model for picture-book / chap-book tests: the gate's write-back, else test.llm.pb.model, else the
+	/// analysis model (a box with only qwen3:8b still runs the pipeline; only the calibrated-quality
+	/// assertions skip).
+	public static String pbModel(Properties props) {
+		String m = props.getProperty(PROP_MODEL_PB);
+		if (m == null || m.isBlank()) m = props.getProperty("test.llm.pb.model");
+		if (m == null || m.isBlank()) return analysisModel(props);
+		return m.trim();
+	}
+
+	/// Record-name-safe form of a model name: `goekdenizguelmez/JOSIEFIED-Qwen3:8b` carries a '/', which
+	/// must not appear in a data.directory record name (it reads as a path separator to the path
+	/// utilities and to anyone eyeballing ~/Chat). Used when a config name embeds the model.
+	public static String safeName(String name) {
+		return name == null ? null : name.replace('/', '_').replace('\\', '_');
+	}
+
+	/// What the connection row for this JVM's route must look like. Built from the gate's write-back;
+	/// falls back to a direct-Ollama shape when the gate has not run (no route key).
+	public static final class ConnectionTarget {
+		public final String serverUrl;
+		/// null = "do not touch apiKey" (direct route). Non-null only when route=litellm.
+		public final String apiKey;
+		public final ConnectionDialectEnumType dialect;
+		public final ConnectionUpstreamEnumType upstream;
+		public final int requestTimeout;
+		public ConnectionTarget(String serverUrl, String apiKey, ConnectionDialectEnumType dialect, ConnectionUpstreamEnumType upstream, int requestTimeout) {
+			this.serverUrl = serverUrl;
+			this.apiKey = apiKey;
+			this.dialect = dialect;
+			this.upstream = upstream;
+			this.requestTimeout = requestTimeout;
+		}
+		public static ConnectionTarget fromProperties(Properties props, int requestTimeout) {
+			String route = props.getProperty(PROP_ROUTE);
+			boolean litellm = "litellm".equalsIgnoreCase(route);
+			String server = props.getProperty(PROP_CONNECTION_SERVER);
+			if (server == null || server.isBlank()) server = props.getProperty("test.llm.ollama.server");
+			ConnectionDialectEnumType dialect = enumOr(ConnectionDialectEnumType.class, props.getProperty(PROP_CONNECTION_DIALECT), ConnectionDialectEnumType.OLLAMA);
+			ConnectionUpstreamEnumType upstream = enumOr(ConnectionUpstreamEnumType.class, props.getProperty(PROP_CONNECTION_UPSTREAM), ConnectionUpstreamEnumType.OLLAMA);
+			String key = props.getProperty(PROP_CONNECTION_API_KEY);
+			/// Direct route: leave apiKey out entirely. A stale key from an earlier LiteLLM run is
+			/// harmless to native Ollama and clearing it would mean re-persisting an encrypted field for
+			/// nothing.
+			String apiKey = (litellm && key != null && !key.isBlank()) ? key.trim() : null;
+			return new ConnectionTarget(server != null ? server.trim() : null, apiKey, dialect, upstream, requestTimeout);
+		}
+		@Override
+		public String toString() {
+			return "serverUrl=" + serverUrl + " dialect=" + dialect + " upstream=" + upstream + " requestTimeout=" + requestTimeout + " apiKey=" + (apiKey != null ? "<set>" : "<untouched>");
+		}
+	}
+
+	private static <E extends Enum<E>> E enumOr(Class<E> cls, String value, E fallback) {
+		if (value == null || value.isBlank()) return fallback;
+		try {
+			return Enum.valueOf(cls, value.trim().toUpperCase());
+		} catch (IllegalArgumentException e) {
+			logger.warn("Unknown " + cls.getSimpleName() + " '" + value + "' - using " + fallback);
+			return fallback;
+		}
+	}
+
+	/// Create (idempotent) a connection in ~/Chat with an EXPLICIT dialect and upstream. Passing null for
+	/// either leaves the model default (UNKNOWN). `upstream` is asserted rather than inferred because
+	/// OPENAI_COMPAT must never infer OLLAMA (KI-72) - a LiteLLM-fronted Ollama needs it set to get the
+	/// Ollama extension parameters (num_ctx, think, ...). When the row already exists and a dialect was
+	/// requested, it is reconciled to the requested shape so a stale row from an earlier run (other
+	/// route, other box) cannot silently redirect this run.
+	public static BaseRecord getCreateConnection(BaseRecord user, String name, String serverUrl, String apiKey, ConnectionDialectEnumType dialect, ConnectionUpstreamEnumType upstream, int requestTimeout) {
 		BaseRecord conn = DocumentUtil.getRecord(user, ModelNames.MODEL_CONNECTION, name, "~/Chat");
 		if (conn != null) {
+			if (dialect != null) {
+				return reconcileConnection(user, conn, new ConnectionTarget(serverUrl, apiKey, dialect, upstream, requestTimeout));
+			}
 			return conn;
 		}
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
@@ -488,11 +598,108 @@ public class OlioTestUtil {
 				c.set("apiKey", apiKey);
 			}
 			c.set("requestTimeout", requestTimeout);
-			return IOSystem.getActiveContext().getAccessPoint().create(user, c);
+			if (dialect != null) {
+				c.set("dialect", dialect);
+			}
+			if (upstream != null) {
+				c.set(FieldNames.FIELD_UPSTREAM, upstream);
+			}
+			BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, c);
+			assertNotNull("AccessPoint.create returned null for system.connection '" + name + "'", created);
+			return created;
 		} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
 			logger.error(e);
 		}
 		return null;
+	}
+
+	private static final String[] CONNECTION_READ_FIELDS = new String[] {
+		FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID,
+		"serverUrl", "requestTimeout", "apiKey", "dialect", FieldNames.FIELD_UPSTREAM
+	};
+
+	/// Fresh, uncached read of a connection row with the transport fields projected. `create` returns
+	/// identity fields only and a planMost read may have come from cache, so anything that compares or
+	/// asserts these fields goes through here.
+	public static BaseRecord readConnection(BaseRecord user, long connId) {
+		Query cq = QueryUtil.createQuery(ModelNames.MODEL_CONNECTION, FieldNames.FIELD_ID, connId);
+		cq.setRequest(CONNECTION_READ_FIELDS);
+		cq.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+	}
+
+	/// Bring a persisted connection in line with `target`. Compares serverUrl / dialect / upstream /
+	/// requestTimeout (and apiKey only when the target carries one) against a fresh read, and when
+	/// anything differs PATCHES exactly those fields:
+	///   - explicit-field newInstance, NEVER the bare overload (that would materialise every field at
+	///     its default and blank the columns not set - model-api.md);
+	///   - `name` is included because the writer validates the patch record itself and
+	///     common.nameId requires \S on name;
+	///   - apiKey is in the patch ONLY when target.apiKey != null (route=litellm); on the direct route
+	///     the field is left out of the patch entirely.
+	/// The update result is asserted, never discarded - a null return is the only signal of a
+	/// validation failure. Returns the reconciled row re-read from the DB.
+	public static BaseRecord reconcileConnection(BaseRecord user, BaseRecord conn, ConnectionTarget target) {
+		if (conn == null || target == null) return conn;
+		long connId = conn.get(FieldNames.FIELD_ID);
+		BaseRecord cur = readConnection(user, connId);
+		if (cur == null) {
+			logger.warn("Connection id=" + connId + " could not be re-read; leaving as-is");
+			return conn;
+		}
+		String curUrl = cur.get("serverUrl");
+		String curDialect = cur.get("dialect");
+		String curUpstream = cur.get(FieldNames.FIELD_UPSTREAM);
+		Integer curTimeout = cur.get("requestTimeout");
+		String curKey = cur.get("apiKey");
+		boolean urlDiff = target.serverUrl != null && !target.serverUrl.equals(curUrl);
+		boolean dialectDiff = target.dialect != null && !target.dialect.name().equalsIgnoreCase(curDialect == null ? "UNKNOWN" : curDialect);
+		boolean upstreamDiff = target.upstream != null && !target.upstream.name().equalsIgnoreCase(curUpstream == null ? "UNKNOWN" : curUpstream);
+		boolean timeoutDiff = curTimeout == null || curTimeout.intValue() != target.requestTimeout;
+		boolean keyDiff = target.apiKey != null && !target.apiKey.equals(curKey);
+		if (!urlDiff && !dialectDiff && !upstreamDiff && !timeoutDiff && !keyDiff) {
+			return cur;
+		}
+		logger.info("Reconciling connection '" + cur.get(FieldNames.FIELD_NAME) + "' id=" + connId
+			+ " (url " + curUrl + "->" + target.serverUrl + ", dialect " + curDialect + "->" + target.dialect
+			+ ", upstream " + curUpstream + "->" + target.upstream + ", timeout " + curTimeout + "->" + target.requestTimeout
+			+ (keyDiff ? ", apiKey changed" : "") + ")");
+		try {
+			List<String> fields = new ArrayList<>(Arrays.asList(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+				"serverUrl", "dialect", FieldNames.FIELD_UPSTREAM, "requestTimeout"));
+			if (target.apiKey != null) {
+				fields.add("apiKey");
+			}
+			BaseRecord patch = RecordFactory.newInstance(ModelNames.MODEL_CONNECTION, fields.toArray(new String[0]));
+			patch.set(FieldNames.FIELD_ID, connId);
+			patch.set(FieldNames.FIELD_OBJECT_ID, cur.get(FieldNames.FIELD_OBJECT_ID));
+			patch.set(FieldNames.FIELD_NAME, cur.get(FieldNames.FIELD_NAME));
+			patch.set("serverUrl", target.serverUrl != null ? target.serverUrl : curUrl);
+			patch.set("dialect", target.dialect != null ? target.dialect : enumOr(ConnectionDialectEnumType.class, curDialect, ConnectionDialectEnumType.UNKNOWN));
+			patch.set(FieldNames.FIELD_UPSTREAM, target.upstream != null ? target.upstream : enumOr(ConnectionUpstreamEnumType.class, curUpstream, ConnectionUpstreamEnumType.UNKNOWN));
+			patch.set("requestTimeout", target.requestTimeout);
+			if (target.apiKey != null) {
+				patch.set("apiKey", target.apiKey);
+			}
+			BaseRecord updated = IOSystem.getActiveContext().getAccessPoint().update(user, patch);
+			assertNotNull("AccessPoint.update returned null reconciling system.connection id=" + connId + " to " + target
+				+ " - check the log for 'Failed to modify record' / validation errors", updated);
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+			throw new AssertionError("Failed to build connection patch: " + e.getMessage(), e);
+		}
+		BaseRecord back = readConnection(user, connId);
+		assertNotNull("Reconciled connection id=" + connId + " could not be read back", back);
+		if (target.serverUrl != null) {
+			assertTrue("serverUrl did not persist (" + back.get("serverUrl") + " != " + target.serverUrl + ")", target.serverUrl.equals(back.get("serverUrl")));
+		}
+		if (target.dialect != null) {
+			assertTrue("dialect did not persist", target.dialect.name().equalsIgnoreCase(back.get("dialect")));
+		}
+		if (target.upstream != null) {
+			assertTrue("upstream did not persist", target.upstream.name().equalsIgnoreCase(back.get(FieldNames.FIELD_UPSTREAM)));
+		}
+		return back;
 	}
 
 	/// Set requestTimeout on a chatConfig's connection sub-record (requestTimeout moved off chatConfig).
@@ -510,25 +717,145 @@ public class OlioTestUtil {
 		}
 	}
 
+	/// Analysis-style chatConfig (extraction, tagging, prompt generation) on this JVM's resolved LLM
+	/// route: model = test.llm.model.analysis, connection per LlmTestGate's write-back (LiteLLM +
+	/// OPENAI_COMPAT + master key when the proxy is up, else native Ollama), requestTimeout 120.
+	/// Idempotent by name; an existing config is RECONCILED (connection row, then model/serviceType)
+	/// so a row left by an earlier run on another route/box cannot silently redirect this run.
 	public static BaseRecord getOllamaOpenAIConfig(BaseRecord user, String name, Properties testProperties) {
-		BaseRecord ocfg = null;
+		return getCreateTierChatConfig(user, name, testProperties, analysisModel(testProperties), 120, false);
+	}
+
+	/// Picture-book / chap-book chatConfig on this JVM's resolved LLM route: model = test.llm.model.pb
+	/// (JOSIEFIED-Qwen3 8B, or its LiteLLM alias), think:false on chatOptions (the qwen3 family emits a
+	/// <think> block otherwise, which the extraction parsers do not want), stream:false, temperature
+	/// 0.3, requestTimeout PB_REQUEST_TIMEOUT. Same idempotent / reconcile behaviour as
+	/// getOllamaOpenAIConfig. Analysis callers keep getOllamaOpenAIConfig; this is for the PB pipeline.
+	public static BaseRecord getPbChatConfig(BaseRecord user, String name, Properties testProperties) {
+		return getCreateTierChatConfig(user, name, testProperties, pbModel(testProperties), PB_REQUEST_TIMEOUT, true);
+	}
+
+	/// serviceType is the deprecated fallback; keep it tracking the dialect so a connection row that
+	/// somehow reads UNKNOWN still resolves to the same transport.
+	private static LLMServiceEnumType serviceTypeFor(ConnectionDialectEnumType dialect) {
+		if (dialect == null) return LLMServiceEnumType.OLLAMA;
+		try {
+			return LLMServiceEnumType.valueOf(dialect.name());
+		} catch (IllegalArgumentException e) {
+			return LLMServiceEnumType.OLLAMA;
+		}
+	}
+
+	private static BaseRecord getCreateTierChatConfig(BaseRecord user, String name, Properties testProperties, String model, int requestTimeout, boolean pbOptions) {
+		ConnectionTarget target = ConnectionTarget.fromProperties(testProperties, requestTimeout);
+		LLMServiceEnumType serviceType = serviceTypeFor(target.dialect);
+		String connName = name + " Connection";
 		BaseRecord cfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, name, "~/Chat");
 		if (cfg != null) {
-			/// Return a fully-populated record so the connection FK sub-record is resolved.
-			return OlioUtil.getFullRecord(cfg);
+			/// Existing config: reconcile the referenced connection row first (Chat re-queries it by FK id),
+			/// then the config's own model/serviceType, then RE-FETCH - the earlier planMost read may be
+			/// cached and CacheDBSearch does not invalidate a parent when its nested connection changes.
+			BaseRecord conn = cfg.get("connection");
+			if (conn == null) {
+				conn = getCreateConnection(user, connName, target.serverUrl, target.apiKey, target.dialect, target.upstream, requestTimeout);
+			} else {
+				conn = reconcileConnection(user, conn, target);
+			}
+			String curModel = cfg.get("model");
+			String curService = cfg.get("serviceType");
+			BaseRecord curConn = cfg.get("connection");
+			boolean connDiff = curConn == null || conn == null;
+			if (!connDiff) {
+				long curConnId = curConn.get(FieldNames.FIELD_ID);
+				long newConnId = conn.get(FieldNames.FIELD_ID);
+				connDiff = curConnId != newConnId;
+			}
+			boolean modelDiff = model != null && !model.equals(curModel);
+			boolean serviceDiff = !serviceType.name().equalsIgnoreCase(curService);
+			try {
+				/// PB options: a row created earlier as an analysis config under a name now routed here would
+				/// otherwise keep stream:true / think:true and hand <think> blocks to the extraction parsers.
+				/// chatOptions is an embedded model (no table), so it rides on the parent patch as a whole.
+				boolean streamDiff = false;
+				boolean optsDiff = false;
+				BaseRecord opts = null;
+				if (pbOptions) {
+					Boolean curStream = cfg.get("stream");
+					streamDiff = curStream == null || curStream;
+					opts = cfg.get("chatOptions");
+					if (opts == null) {
+						opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
+						optsDiff = true;
+					} else {
+						Boolean think = opts.get("think");
+						Double temp = opts.get("temperature");
+						optsDiff = think == null || think || temp == null || Math.abs(temp - 0.3) > 1e-9;
+					}
+					if (optsDiff) {
+						opts.set("think", false);
+						opts.set("temperature", 0.3);
+					}
+				}
+				if (modelDiff || serviceDiff || connDiff || streamDiff || optsDiff) {
+					logger.info("Reconciling chatConfig '" + name + "' (model " + curModel + "->" + model + ", serviceType " + curService + "->" + serviceType
+						+ (connDiff ? ", connection" : "") + (streamDiff ? ", stream->false" : "") + (optsDiff ? ", chatOptions think->false temperature->0.3" : "") + ")");
+					List<String> fields = new ArrayList<>(Arrays.asList(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "model", "serviceType"));
+					if (connDiff) fields.add("connection");
+					if (streamDiff) fields.add("stream");
+					if (optsDiff) fields.add("chatOptions");
+					BaseRecord patch = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_CONFIG, fields.toArray(new String[0]));
+					patch.set(FieldNames.FIELD_ID, cfg.get(FieldNames.FIELD_ID));
+					patch.set(FieldNames.FIELD_OBJECT_ID, cfg.get(FieldNames.FIELD_OBJECT_ID));
+					patch.set(FieldNames.FIELD_NAME, cfg.get(FieldNames.FIELD_NAME));
+					patch.set("model", model != null ? model : curModel);
+					patch.set("serviceType", serviceType);
+					if (connDiff) patch.set("connection", conn);
+					if (streamDiff) patch.set("stream", false);
+					if (optsDiff) patch.set("chatOptions", opts);
+					BaseRecord updated = IOSystem.getActiveContext().getAccessPoint().update(user, patch);
+					assertNotNull("AccessPoint.update returned null reconciling chatConfig '" + name + "'", updated);
+				}
+			} catch (FieldException | ModelNotFoundException | ValueException e) {
+				logger.error(e);
+				throw new AssertionError("Failed to build chatConfig patch: " + e.getMessage(), e);
+			}
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_ID, cfg.get(FieldNames.FIELD_ID));
+			q.setCache(false);
+			OlioUtil.planMost(q);
+			BaseRecord fresh = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+			assertNotNull("chatConfig '" + name + "' could not be re-read after reconcile", fresh);
+			return fresh;
 		}
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, name);
+		BaseRecord ocfg = null;
 		try {
 			cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
-			cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
-			cfg.set("connection", getCreateConnection(user, name + " Connection", testProperties.getProperty("test.llm.ollama.server"), null, 120));
-			cfg.set("model", testProperties.getProperty("test.llm.ollama.model"));
+			cfg.set("serviceType", serviceType);
+			cfg.set("connection", getCreateConnection(user, connName, target.serverUrl, target.apiKey, target.dialect, target.upstream, requestTimeout));
+			cfg.set("model", model);
+			if (pbOptions) {
+				cfg.set("stream", false);
+				BaseRecord opts = cfg.get("chatOptions");
+				if (opts == null) {
+					opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
+					cfg.set("chatOptions", opts);
+				}
+				opts.set("think", false);
+				opts.set("temperature", 0.3);
+			}
 			ocfg = IOSystem.getActiveContext().getAccessPoint().create(user, cfg);
+			assertNotNull("AccessPoint.create returned null for chatConfig '" + name + "'", ocfg);
 		} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
 			logger.error(e);
+			return null;
 		}
-		return ocfg;
+		/// Create returns identity fields only; hand back the fully-populated record the callers expect.
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_ID, ocfg.get(FieldNames.FIELD_ID));
+		q.setCache(false);
+		OlioUtil.planMost(q);
+		BaseRecord fresh = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		return fresh != null ? fresh : ocfg;
 	}
 
 	/// Build (idempotent) an OLLAMA chatConfig whose connection points at an UNREACHABLE host so any LLM

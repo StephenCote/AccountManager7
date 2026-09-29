@@ -183,10 +183,12 @@ The bundled `am7-pg` seeds `am72db`/`am7user`/`password` on first boot (from `PO
 exactly what the app connects to over the private network — no manual DB/user creation. The app waits
 on `am7-pg`'s healthcheck before starting. In the **default** stack everything is a host bind mount, so `down` keeps the
 data and a full reset is just deleting `./docker-data` (the DB and the keystores share one lifecycle,
-so they can't desync into the orphaned-org state). **The optional `llmproxy` profile is the one
-exception:** `langfuse-clickhouse` and `langfuse-minio` use **named volumes**, because both commit by
-atomic rename and that fails on a Docker Desktop Windows bind mount. `rm -rf ./docker-data` therefore
-does not clear Langfuse trace data — use `--profile llmproxy down -v`. **Windows note:**
+so they can't desync into the orphaned-org state). **The optional profiles are the exception:**
+`langfuse-clickhouse` and `langfuse-minio` (`llmproxy`) use **named volumes**, because both commit by
+atomic rename and that fails on a Docker Desktop Windows bind mount, and the `ollama` profile's
+`ollama-models` volume is named too (multi-GB model blobs, same rename pattern during pulls).
+`rm -rf ./docker-data` therefore clears neither Langfuse trace data nor pulled models — use
+`--profile llmproxy --profile ollama down -v`. **Windows note:**
 if Postgres fails to initialize on the host bind mount (rare on Docker Desktop/WSL2), swap the `am7-pg`
 data mount for a named volume — see the inline comment in `docker-compose.test.yml`.
 
@@ -436,6 +438,24 @@ here — nothing writes state outside it):
 Because keystores, streams, and seed data all sit under `/data/am7`, the single `am7-data` mount
 covers them. If key material needs independent backup/rotation from bulk data later, it can be split
 onto its own volume via sub-path mounts (`am7-keys:/data/am7/store/.jks`, `.../store/.vault`).
+
+Profile-scoped named volumes in `docker-compose.test.yml` (not bind mounts; survive `docker-data`
+deletion; removed only by `down -v` with the profile active):
+
+| Volume | Profile | Container path | Holds |
+|--------|---------|----------------|-------|
+| `langfuse-clickhouse-data` / `-logs` | `llmproxy` | `/var/lib/clickhouse`, `/var/log/clickhouse-server` | Langfuse trace store |
+| `langfuse-minio-data` | `llmproxy` | `/data` | Langfuse blob store |
+| `ollama-models` | `ollama` | `/root/.ollama` | pulled model blobs + manifests (~11 GB for the three defaults) |
+| `litellm-ca` | `llmproxy` (only when `docker-compose.extra-ca.yml` is layered) | `/etc/am7-ca` (ro on `litellm`; `/out` on `litellm-ca-init`) | `ca-bundle.pem` = alpine's public roots + `volatile/extra-ca.pem`, rebuilt by `litellm-ca-init` on every `up`; declared in the override file, so a `down` run without `-f docker-compose.extra-ca.yml` leaves it (and the init container) as orphans — see `dockerDevSetup.md` §13.6 |
+
+One more piece of state rides along with the `ollama` profile: **`${AM7_DATA_DIR}/.embedding-provider`**,
+a one-line marker (`server type model`) that `am7-docker-up.sh/.bat` writes after each successful `up`
+and compares on the next. It exists because `embedding.type`/`embedding.model` are boot-pinned from env
+while `embedding.server` can be overridden by a stored `system.connection` named `embedding`
+(`ServerConfigUtil`), and the stored vectors carry no model provenance — so silently switching
+provider on a populated volume mixes incomparable vectors in one fixed-width column. The wrapper only
+WARNs; it never refuses to start.
 
 ### Seeding the Olio corpus (`datagen/`)
 

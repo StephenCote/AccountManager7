@@ -29,7 +29,6 @@ import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
-import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
@@ -90,11 +89,12 @@ public class TestPictureBookFull extends BaseTest {
 	private BaseRecord testUser;
 	private BaseRecord chatConfig;
 
-	/// Read from test.llm.ollama.model rather than hardcoded. A hardcoded name pins these tests to
-	/// one machine's model library: qwen3-vl:8b-instruct is not installed on every Ollama host, and a
-	/// missing model fails at the API boundary with an error that looks nothing like the real cause.
+	/// The picture-book model for THIS run: test.llm.model.pb as resolved by LlmTestGate (JOSIEFIED 8B
+	/// or its LiteLLM alias), falling back through test.llm.pb.model to the analysis model. Never
+	/// hardcoded: a pinned name is one machine's model library, and a missing model fails at the API
+	/// boundary with an error that looks nothing like the real cause.
 	private static String pbLlmModel(java.util.Properties props) {
-		String m = props.getProperty("test.llm.ollama.model");
+		String m = OlioTestUtil.pbModel(props);
 		return (m != null && !m.isBlank()) ? m : "qwen3-vl:8b-instruct";
 	}
 
@@ -104,43 +104,19 @@ public class TestPictureBookFull extends BaseTest {
 		testUser = mf.getCreateUser(testOrgCtx.getAdminUser(), "pbTestUser", testOrgCtx.getOrganizationId());
 		assertNotNull("Test user should be created", testUser);
 
-		// Use qwen3-vl:8b-instruct explicitly for PictureBook tests — small, fast, with think:false
 		String ollamaServer = testProperties.getProperty("test.llm.ollama.server");
 		assertNotNull("test.llm.ollama.server must be set", ollamaServer);
 		chatConfig = getOrCreatePbChatConfig(testUser, ollamaServer);
 		assertNotNull("Chat config should be created", chatConfig);
 	}
 
+	/// Picture-book config on this JVM's resolved LLM route: think:false, stream:false, temperature 0.3,
+	/// 300s. OlioTestUtil.getPbChatConfig reconciles an existing row of the same name (connection URL /
+	/// dialect / upstream, then model) so a row left by an earlier run on another route cannot silently
+	/// redirect this one. `serverUrl` is kept in the signature only as the caller's reachability witness.
 	private BaseRecord getOrCreatePbChatConfig(BaseRecord user, String serverUrl) {
-		String cfgName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
-		BaseRecord existing = org.cote.accountmanager.util.DocumentUtil.getRecord(
-			user, OlioModelNames.MODEL_CHAT_CONFIG, cfgName, "~/Chat");
-		if (existing != null) return existing;
-
-		try {
-			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
-			plist.parameter(FieldNames.FIELD_NAME, cfgName);
-			BaseRecord cfg = IOSystem.getActiveContext().getFactory().newInstance(
-				OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
-			cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
-			cfg.set("connection", OlioTestUtil.getCreateConnection(user, cfgName + " Connection", serverUrl, null, 300));
-			cfg.set("model", pbLlmModel(testProperties));
-			cfg.set("stream", false);
-
-			// Set think:false on chatOptions
-			BaseRecord opts = cfg.get("chatOptions");
-			if (opts == null) {
-				opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
-				cfg.set("chatOptions", opts);
-			}
-			opts.set("think", false);
-			opts.set("temperature", 0.3);
-
-			return IOSystem.getActiveContext().getAccessPoint().create(user, cfg);
-		} catch (Exception e) {
-			logger.error("Failed to create PB chat config: " + e.getMessage());
-			return null;
-		}
+		String cfgName = OlioTestUtil.safeName("PictureBook " + pbLlmModel(testProperties) + ".chat");
+		return OlioTestUtil.getPbChatConfig(user, cfgName, testProperties);
 	}
 
 	/**
@@ -156,9 +132,10 @@ public class TestPictureBookFull extends BaseTest {
 	private void requireCalibratedLlm(String calibratedModel) {
 		String configured = pbLlmModel(testProperties);
 		org.junit.Assume.assumeTrue("SKIPPED: this assertion is calibrated for the LLM '" + calibratedModel
-			+ "' and test.llm.ollama.model is '" + configured + "'. Extraction quality differs per model, "
-			+ "so running it here would assert the model's competence, not the pipeline's correctness. "
-			+ "This is NOT a pass — point test.llm.ollama.model at '" + calibratedModel + "' to exercise it.",
+			+ "' and the resolved picture-book model (test.llm.model.pb) is '" + configured + "'. Extraction "
+			+ "quality differs per model, so running it here would assert the model's competence, not the "
+			+ "pipeline's correctness. This is NOT a pass — point test.llm.pb.model at '" + calibratedModel
+			+ "' (on a direct route) to exercise it.",
 			calibratedModel.equals(configured));
 	}
 

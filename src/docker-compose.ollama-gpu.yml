@@ -1,0 +1,22 @@
+# Opt-in NVIDIA GPU layer for the `ollama` service in docker-compose.test.yml.
+#
+# Kept OUT of the main file on purpose: `deploy.resources.reservations.devices` makes
+# `docker compose up` FAIL OUTRIGHT on a host without the NVIDIA container runtime
+# (Docker Desktop on the AMD Strix Halo dev box, for one), so it cannot be a default.
+# CPU-only Ollama is the default; layer this file in when the host has an NVIDIA GPU
+# and nvidia-container-toolkit installed:
+#
+#   AM7_OLLAMA_GPU=nvidia ./am7-docker-up.sh --ollama          (the wrapper adds -f for you)
+#   docker compose -p am7test -f docker-compose.test.yml -f docker-compose.ollama-gpu.yml \
+#     --profile llmproxy --profile ollama up -d                 (by hand)
+#
+# Verify: docker exec am7test-ollama-1 nvidia-smi
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

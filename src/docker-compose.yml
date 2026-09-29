@@ -35,6 +35,10 @@ services:
       # Must match EMBEDDING_SERVER's shape: 'local' expects a /generate_embedding service; 'openai'
       # expects a full Azure/OpenAI embeddings URL that answers a bare POST.
       EMBEDDING_TYPE: ${EMBEDDING_TYPE:-local}
+      # Model name sent in the OpenAI-shaped embeddings body for 'openai' / 'openai_compat'
+      # (Ollama's /v1/embeddings rejects a request without one, e.g. nomic-embed-text). Blank sends
+      # no model (Azure resolves it from the deployment URL). Ignored by 'local'.
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
       # Embedding-server auth token (OPENAI branch). A credential -- keep it out of git: leave the
       # default empty and supply the real value via a .env file or the host environment. Empty means
       # no Authorization header is sent.

@@ -1,0 +1,60 @@
+# Corporate TLS-interception override for the outbound-calling sidecars.
+#
+# am7-docker-up.sh/.bat layer this file automatically when ./volatile/extra-ca.pem
+# exists (or AM7_EXTRA_CA_FILE points at a PEM bundle). It makes the `ollama`
+# and `litellm` containers trust the proxy CA that re-signs every HTTPS site on
+# this network (Microsoft Global Secure Access -> CommunityCare root), without
+# which `ollama pull` fails with "x509: certificate signed by unknown authority"
+# and LiteLLM cannot reach Azure. The PEM is public CA material, but it is
+# environment-specific, so it lives in the git-ignored volatile/ dir, never here.
+#
+# How each container picks it up:
+#   ollama  - a Go binary; Go's x509 loader reads EVERY file in /etc/ssl/certs,
+#             so a mounted PEM there is trusted with no update-ca-certificates
+#             and no command override. Pulls run in the SERVER (ollama-init only
+#             calls its API), which is why the mount is on `ollama`.
+#   litellm - Python/httpx honour SSL_CERT_FILE; it must be a COMPLETE bundle
+#             (public roots + the corporate CA), because pointing SSL_CERT_FILE
+#             at the corporate CA alone breaks trust the moment the proxy is off.
+#             litellm-ca-init builds that bundle into a named volume on every up.
+#
+# Building the PEM is a manual, one-time step - aiDocs/dockerDevSetup.md section
+# 13.6: export the corporate root from the Windows machine store and append the
+# intermediates `openssl s_client -showcerts` sees for registry.ollama.ai.
+#
+# Layered with `-f` (by both wrappers) rather than via `include:`, so a plain
+# `docker compose -f docker-compose.test.yml ...` without this file keeps working
+# on a network with no interception. Note: `down` without this file leaves the
+# litellm-ca volume and litellm-ca-init container behind as orphans (harmless).
+
+services:
+  ollama:
+    volumes:
+      - ${AM7_EXTRA_CA_FILE:-./volatile/extra-ca.pem}:/etc/ssl/certs/am7-extra-ca.pem:ro
+
+  litellm-ca-init:
+    image: alpine:3.20
+    profiles: ["llmproxy"]
+    volumes:
+      - ${AM7_EXTRA_CA_FILE:-./volatile/extra-ca.pem}:/extra-ca.pem:ro
+      - litellm-ca:/out
+    # alpine ships /etc/ssl/certs/ca-certificates.crt (ca-certificates-bundle) —
+    # no apk add, which would itself have to cross the intercepting proxy.
+    command:
+      - sh
+      - -c
+      - 'cat /etc/ssl/certs/ca-certificates.crt /extra-ca.pem > /out/ca-bundle.pem && echo "[am7] litellm CA bundle - $$(grep -c BEGIN /out/ca-bundle.pem) certs"'
+    restart: "no"
+
+  litellm:
+    depends_on:
+      litellm-ca-init:
+        condition: service_completed_successfully
+    volumes:
+      - litellm-ca:/etc/am7-ca:ro
+    environment:
+      SSL_CERT_FILE: /etc/am7-ca/ca-bundle.pem
+      REQUESTS_CA_BUNDLE: /etc/am7-ca/ca-bundle.pem
+
+volumes:
+  litellm-ca:

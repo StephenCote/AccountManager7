@@ -1,6 +1,8 @@
 package org.cote.accountmanager.tools;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -60,6 +62,14 @@ public class EmbeddingUtil {
 	private volatile Endpoint endpoint = new Endpoint(null, null);
 	private volatile LLMServiceEnumType serviceType = LLMServiceEnumType.UNKNOWN;
 
+	/// Embedding model name sent as the OpenAI-shaped request body's `model` field
+	/// (e.g. "nomic-embed-text" for a local Ollama /v1/embeddings endpoint, or a deployment
+	/// name for OPENAI_COMPAT gateways such as LiteLLM). Null/blank means "do not send a model"
+	/// — Azure resolves the model from the deployment URL, so the OPENAI branch historically
+	/// never sent one. Read once per getEmbedding() call; volatile because it is set from
+	/// boot/config code and read from request threads.
+	private volatile String embeddingModel = null;
+
 	public EmbeddingUtil(LLMServiceEnumType type, String url, String token) {
 		this.endpoint = new Endpoint(url, token);
 		this.serviceType = type;
@@ -67,6 +77,16 @@ public class EmbeddingUtil {
 
 	public LLMServiceEnumType getServiceType() {
 		return serviceType;
+	}
+
+	public String getEmbeddingModel() {
+		return embeddingModel;
+	}
+
+	/// Blank is normalized to null so callers reading properties/init-params can pass the raw
+	/// (possibly empty) value straight through.
+	public void setEmbeddingModel(String embeddingModel) {
+		this.embeddingModel = (embeddingModel != null && !embeddingModel.isBlank()) ? embeddingModel.trim() : null;
 	}
 
 	/// Single-read accessor for the (url, token) pair. Callers that need both MUST use this.
@@ -209,6 +229,65 @@ public class EmbeddingUtil {
 		return resp != null ? resp.getSummary() : null;
 	}
 	
+	/// True when the active service speaks the OpenAI embeddings wire protocol — Azure OpenAI
+	/// (OPENAI, /openai/deployments/... URL, api-key auth) or a generic OpenAI-compatible
+	/// /v1/embeddings endpoint (OPENAI_COMPAT: LiteLLM, the containerized Ollama). Both share the
+	/// request body and the data[0].embedding response shape; only the auth header and whether
+	/// `dimensions` is honored differ (see buildOpenAiInput / authHeaders).
+	private boolean isOpenAiShaped() {
+		return serviceType == LLMServiceEnumType.OPENAI || serviceType == LLMServiceEnumType.OPENAI_COMPAT;
+	}
+
+	/// Build the OpenAI-shaped embeddings request body for the OPENAI / OPENAI_COMPAT branch.
+	/// Public on purpose (like validateEmbeddingWidth): the body is assertable by a unit test in
+	/// objects.tests without a network call. Pure builder — no side effects.
+	///
+	/// - `input`: always.
+	/// - `model`: when embeddingModel is set (either dialect). Ollama's /v1/embeddings rejects a body
+	///   with no model; Azure resolves the model from the deployment URL, so the OPENAI branch
+	///   historically sent none — a blank embeddingModel preserves that (a null STRING is omitted
+	///   by RecordSerializer, never emitted as "model":null).
+	/// - `dimensions`: OPENAI only, and only when embeddingDimensions > 0 (0/negative means "let
+	///   the model decide"). text-embedding-3-small returns 1536 by default, but the
+	///   common.vectorExt.embedding column is a fixed width, so Azure is asked for the configured
+	///   count. OPENAI_COMPAT deliberately does NOT send it: Ollama's /v1/embeddings ignores or
+	///   rejects `dimensions`, and nomic-embed-text is natively 768, which must already match
+	///   embedding.dimensions (the runtime width guard in getEmbedding rejects a mismatch).
+	public BaseRecord buildOpenAiInput(String content) throws FieldException, ValueException, ModelNotFoundException {
+		BaseRecord inp = RecordFactory.newInstance(OlioModelNames.MODEL_OPENAI_INPUT);
+		inp.set("input", content);
+		String model = this.embeddingModel;
+		if(model != null && !model.isBlank()) {
+			inp.set("model", model);
+		}
+		if(serviceType == LLMServiceEnumType.OPENAI && embeddingDimensions > 0) {
+			inp.set("dimensions", embeddingDimensions);
+		}
+		return inp;
+	}
+
+	/// Auth header set for the OpenAI-shaped POST, keyed by dialect. Azure OPENAI authenticates with
+	/// `api-key` (what ClientUtil.postJSON always sent before OPENAI_COMPAT existed); OPENAI_COMPAT
+	/// uses `Authorization: Bearer <token>` — the header the LLMServiceEnumType.OPENAI_COMPAT javadoc
+	/// names and the one Chat's streaming path already sends via postToRecordAndStream. LiteLLM
+	/// requires it; Ollama ignores it. A null/blank token yields null (no auth header at all).
+	/// Public for the unit test (no network needed). Takes the single-read Endpoint snapshot, never
+	/// re-reads the field, so the url/token pair the caller posts with is the pair the header came from.
+	public Map<String,String> authHeaders(Endpoint ep) {
+		String token = (ep != null ? ep.getAuthorizationToken() : null);
+		if(token == null || token.isBlank()) {
+			return null;
+		}
+		Map<String,String> headers = new HashMap<>();
+		if(serviceType == LLMServiceEnumType.OPENAI_COMPAT) {
+			headers.put("Authorization", "Bearer " + token);
+		}
+		else {
+			headers.put("api-key", token);
+		}
+		return headers;
+	}
+
 	public float[] getEmbedding(String content){
 		float[] emb = new float[0];
 		/// ONE volatile read of the (url, token) pair for the whole call. Previously these were two
@@ -222,22 +301,16 @@ public class EmbeddingUtil {
 					emb = resp.getEmbedding();
 				}
 			}
-			else if(serviceType == LLMServiceEnumType.OPENAI) {
-				BaseRecord inp = RecordFactory.newInstance(OlioModelNames.MODEL_OPENAI_INPUT);
-				inp.set("input", content);
-				/// Bug 2: text-embedding-3-small returns 1536 dims by default, but the
-				/// common.vectorExt.embedding column is a fixed width. Request the configured
-				/// dimension count from Azure (text-embedding-3-small supports the "dimensions"
-				/// parameter) so the stored vector matches the column and does not overflow/truncate.
-				/// Only send it when > 0 (0/negative means "let the model decide").
-				if(embeddingDimensions > 0) {
-					inp.set("dimensions", embeddingDimensions);
-				}
+			else if(isOpenAiShaped()) {
+				BaseRecord inp = buildOpenAiInput(content);
 				/// Bug 1: read the raw JSON response string. post(String.class,...) runs
 				/// JSONUtil.importObject(json, String.class) which throws on a JSON-object body,
 				/// so it returned null and this branch never parsed the response. postJSON reads
 				/// the entity directly and forwards the raw body to the parse code below.
-				String respStr = ClientUtil.postJSON(String.class, ClientUtil.getResource(ep.getServerUrl()), ep.getAuthorizationToken(), inp.toFullString(), MediaType.APPLICATION_JSON_TYPE);
+				///
+				/// Auth header differs by dialect (see authHeaders): Azure OPENAI takes `api-key`,
+				/// OPENAI_COMPAT takes `Authorization: Bearer` (LiteLLM requires it; Ollama ignores it).
+				String respStr = ClientUtil.postJSON(String.class, ClientUtil.getResource(ep.getServerUrl()), authHeaders(ep), inp.toFullString(), MediaType.APPLICATION_JSON_TYPE);
 				if(respStr != null) {
 					BaseRecord resp = RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, respStr);
 					if(resp != null) {

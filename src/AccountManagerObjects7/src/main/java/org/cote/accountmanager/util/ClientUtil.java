@@ -8,6 +8,7 @@ import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
@@ -175,7 +176,7 @@ public class ClientUtil {
 	}
 	
 	public static <T> T postJSON(Class<T> cls, WebTarget resource, String jsonText, MediaType responseType){
-		return postJSON(cls, resource, null, jsonText, responseType);
+		return postJSON(cls, resource, (String) null, jsonText, responseType);
 	}
 
 	/// Raw-string POST variant that also sets the Azure/OpenAI "api-key" header when an
@@ -185,9 +186,29 @@ public class ClientUtil {
 	/// (post(String.class,...) throws on a JSON-object body). Used by EmbeddingUtil's OPENAI
 	/// branch so the raw response reaches its own openaiResponse parse code.
 	public static <T> T postJSON(Class<T> cls, WebTarget resource, String authorizationToken, String jsonText, MediaType responseType){
-		Builder bld = getRequestBuilder(resource).accept(responseType);
+		Map<String,String> headers = null;
 		if(authorizationToken != null) {
-			bld.header("api-key", authorizationToken);
+			headers = new HashMap<>();
+			headers.put("api-key", authorizationToken);
+		}
+		return postJSON(cls, resource, headers, jsonText, responseType);
+	}
+
+	/// Header-map variant of postJSON. The 5-arg overload above hardcodes Azure OpenAI's `api-key`
+	/// header and delegates here, so every existing caller is byte-identical. OpenAI-compatible
+	/// endpoints (LLMServiceEnumType.OPENAI_COMPAT: LiteLLM, Ollama's /v1/embeddings) authenticate
+	/// with `Authorization: Bearer <token>` instead — the same header postToRecordAndStream sends on
+	/// the chat path — and EmbeddingUtil picks the header set per service type and passes it here.
+	/// Headers travel as an argument of this single call (never static state), so there is no torn
+	/// url/header pair across threads. A null/empty map sends no auth header at all.
+	public static <T> T postJSON(Class<T> cls, WebTarget resource, Map<String,String> headers, String jsonText, MediaType responseType){
+		Builder bld = getRequestBuilder(resource).accept(responseType);
+		if(headers != null) {
+			for(Map.Entry<String,String> h : headers.entrySet()) {
+				if(h.getKey() != null && h.getValue() != null) {
+					bld.header(h.getKey(), h.getValue());
+				}
+			}
 		}
 		Response response = bld.post(Entity.json(jsonText));
 

@@ -152,6 +152,63 @@ public class RestServiceEventListener implements ApplicationEventListener {
 	/// bound singletons without a restart — see that class for why no request seam can do it.
 	private static final String threads = "org.cote.service.threads.NotificationThread,org.cote.service.threads.ServerConfigRefreshThread";
 
+	/// Boot-time sanity check that embedding.type and the effective embedding.server URL agree in
+	/// SHAPE. The two are configured independently (type is boot-pinned from web.xml, the URL is
+	/// DB-backed with web.xml as fallback), so they drift apart on an existing data volume when the
+	/// provider is switched: the stored system.connection URL keeps pointing at the old server while
+	/// the type changes. The symptom is a silent "Embedding for chunk 1 is null or empty" with no
+	/// hint at the cause. WARN only — never fail boot; an unreachable/mismatched embedding server is
+	/// already tolerated by testVectorStore.
+	///
+	///   LOCAL         expects <host:port> for the bundled embedApiMini.py; it POSTs <url>/generate_embedding
+	///   OPENAI        expects a full Azure URL (/openai/deployments/<dep>/embeddings?api-version=...)
+	///   OPENAI_COMPAT expects a full /v1/embeddings URL (LiteLLM, Ollama)
+	public static void warnOnEmbeddingTypeUrlMismatch(LLMServiceEnumType type, String url) {
+		if (type == null || url == null || url.isBlank()) {
+			return;
+		}
+		String u = url.trim();
+		String path = "";
+		try {
+			java.net.URI uri = java.net.URI.create(u);
+			path = (uri.getPath() != null ? uri.getPath() : "");
+		} catch (IllegalArgumentException e) {
+			logger.warn("embedding.server '" + u + "' is not a parseable URL");
+			return;
+		}
+		boolean looksAzure = path.contains("/openai/deployments/");
+		boolean looksCompat = path.endsWith("/v1/embeddings");
+		boolean looksOpenAi = looksCompat || looksAzure;
+		/// "No path beyond host:port" — the shape the LOCAL custom service takes.
+		boolean looksLocal = path.isEmpty() || path.equals("/");
+		if (type == LLMServiceEnumType.LOCAL && looksOpenAi) {
+			logger.warn("embedding.type=" + type + " but embedding.server '" + u + "' looks like an OpenAI-shaped"
+					+ " embeddings endpoint. The LOCAL branch POSTs <server>/generate_embedding and will get 404s;"
+					+ " set embedding.type=openai (Azure) or openai_compat (LiteLLM/Ollama /v1/embeddings).");
+		} else if ((type == LLMServiceEnumType.OPENAI || type == LLMServiceEnumType.OPENAI_COMPAT) && looksLocal) {
+			logger.warn("embedding.type=" + type + " but embedding.server '" + u + "' has no path — it looks like"
+					+ " the LOCAL /generate_embedding custom service (host:port only). The " + type + " branch POSTs"
+					+ " an OpenAI body to that URL verbatim. Expected a full embeddings URL"
+					+ (type == LLMServiceEnumType.OPENAI ? " (/openai/deployments/<deployment>/embeddings?api-version=...)."
+							: " (.../v1/embeddings).")
+					+ " If embedding.server is DB-backed (system.connection), the stored URL is still the old one.");
+		} else if (type == LLMServiceEnumType.OPENAI_COMPAT && looksAzure) {
+			/// Seen live 2026-09-29: --ollama set type=openai_compat/model=nomic-embed-text in env, but a
+			/// stored system.connection 'embedding' still pointed at Azure. OPENAI_COMPAT sends no
+			/// `dimensions` (Ollama ignores it) and Bearer auth, so Azure text-embedding-3-small answered
+			/// at its native 1536 against a 768 schema — the probe passed and the width guard pinned 1536.
+			logger.warn("embedding.type=" + type + " but embedding.server '" + u + "' is an Azure OpenAI deployment URL."
+					+ " OPENAI_COMPAT sends Bearer auth and NO `dimensions`, so Azure returns the model's native width"
+					+ " (1536 for text-embedding-3-small), not embedding.dimensions. Use embedding.type=openai for Azure,"
+					+ " or repoint the stored system.connection 'embedding' at the intended /v1/embeddings server"
+					+ " (the env/web.xml embedding.server is only a fallback when no record exists).");
+		} else if (type == LLMServiceEnumType.OPENAI && looksCompat) {
+			logger.warn("embedding.type=" + type + " but embedding.server '" + u + "' is a /v1/embeddings endpoint"
+					+ " (LiteLLM/Ollama shape). The OPENAI branch is Azure-specific: it sends the `api-key` header (not"
+					+ " Bearer — LiteLLM will 401) and `dimensions`. Use embedding.type=openai_compat with embedding.model set.");
+		}
+	}
+
 	private void testVectorStore(IOContext ioContext, OrganizationContext octx) {
 
 		DBUtil util = ioContext.getDbUtil();
@@ -173,24 +230,40 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		/// server is down) is logged as a warning and DOES NOT disable vector support for the session — the
 		/// pgvector extension stays enabled so it recovers automatically once the embedding server returns.
 		List<BaseRecord> store = new ArrayList<>();
+		/// Report the EFFECTIVE embedding configuration (DB-backed URL, else the web.xml init-param;
+		/// plus the boot-pinned type and model actually bound to the EmbeddingUtil), not the raw
+		/// init-params — printing the init-param while a different DB value is actually in use
+		/// sends you debugging the wrong endpoint.
+		String effective = describeEffectiveEmbeddingConfig(ioContext);
 		try {
 			store = IOSystem.getActiveContext().getVectorUtil().createVectorStore(octx.getDocumentControl(),
 					"Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
 		} catch (Exception e) {
-			logger.warn("Embedding-server startup probe failed (vector support remains ENABLED): " + e.getMessage());
+			logger.warn("Embedding-server startup probe failed (vector support remains ENABLED) at " + effective
+					+ ": " + e.getMessage());
 			return;
 		}
 		if (store == null || store.size() == 0) {
-			/// Report the EFFECTIVE embedding server (DB-backed value, else the web.xml init-param),
-			/// not the raw init-param — printing the init-param while a different DB value is
-			/// actually in use sends you debugging the wrong endpoint.
 			logger.warn("Embedding-server startup probe returned no vector store (server may be down at "
-					+ ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_EMBEDDING, context.getInitParameter("embedding.server"))
+					+ effective
 					+ "). Vector support remains ENABLED and will "
 					+ "recover when the embedding server is reachable.");
 		} else {
-			logger.info("Embedding-server startup probe OK; vector DB support enabled");
+			logger.info("Embedding-server startup probe OK (" + effective + "); vector DB support enabled");
 		}
+	}
+
+	/// "server=<effective url> type=<type> model=<model or blank>" for the boot log lines above.
+	private String describeEffectiveEmbeddingConfig(IOContext ioContext) {
+		String url = ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_EMBEDDING, context.getInitParameter("embedding.server"));
+		String type = "";
+		String model = "";
+		VectorUtil vu = (ioContext != null ? ioContext.getVectorUtil() : null);
+		if (vu != null && vu.getEmbedUtil() != null) {
+			type = String.valueOf(vu.getEmbedUtil().getServiceType());
+			model = (vu.getEmbedUtil().getEmbeddingModel() != null ? vu.getEmbedUtil().getEmbeddingModel() : "");
+		}
+		return "server=" + url + " type=" + type + " model=" + model;
 	}
 
 	/// Per-organization post-initialization provisioning for the default organizations:
@@ -313,15 +386,26 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			LLMServiceEnumType embServiceType = (embType == null || embType.isBlank())
 					? LLMServiceEnumType.LOCAL
 					: LLMServiceEnumType.valueOf(embType.trim().toUpperCase());
-			VectorUtil vectorUtil = new VectorUtil(
-					embServiceType,
-					ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_EMBEDDING, context.getInitParameter("embedding.server")), authToken);
+			String embServerUrl = ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_EMBEDDING, context.getInitParameter("embedding.server"));
+			VectorUtil vectorUtil = new VectorUtil(embServiceType, embServerUrl, authToken);
 			/// Configurable embedding dimensions, synced to the common.vectorExt.embedding column
 			/// (setEmbeddingDimensions enforces the match and throws on mismatch).
 			String embeddingDimensions = context.getInitParameter("embedding.dimensions");
 			if (embeddingDimensions != null && embeddingDimensions.trim().length() > 0) {
 				vectorUtil.getEmbedUtil().setEmbeddingDimensions(Integer.parseInt(embeddingDimensions.trim()));
 			}
+			/// embedding.model is boot-pinned like embedding.type: the model name sent in the
+			/// OpenAI-shaped request body (OPENAI / OPENAI_COMPAT branch). Ollama's /v1/embeddings
+			/// rejects a body without one; Azure resolves the model from the deployment URL, so
+			/// blank leaves it unset (null) and the Azure body is unchanged. Ignored by LOCAL.
+			/// ServerConfigUtil's TTL refresh swaps only the endpoint on this same EmbeddingUtil
+			/// instance, so the model set here survives a DB-backed URL change.
+			String embModel = context.getInitParameter("embedding.model");
+			vectorUtil.getEmbedUtil().setEmbeddingModel(embModel);
+			embModel = vectorUtil.getEmbedUtil().getEmbeddingModel();
+			logger.info("Embedding configuration: server=" + embServerUrl + " type=" + embServiceType
+					+ " model=" + (embModel != null ? embModel : ""));
+			warnOnEmbeddingTypeUrlMismatch(embServiceType, embServerUrl);
 			ioContext.setVectorUtil(vectorUtil);
 			authToken = context.getInitParameter("voice.authorizationToken");
 			

@@ -144,7 +144,10 @@ public class BaseTest {
 			else {
 				logger.debug("Working with existing organization " + organizationPath);
 			}
-			ioContext.setVectorUtil(new VectorUtil(LLMServiceEnumType.valueOf(testProperties.getProperty("test.embedding.type").toUpperCase()), testProperties.getProperty("test.embedding.server"), testProperties.getProperty("test.embedding.authorizationToken")));
+			VectorUtil vectorUtil = new VectorUtil(LLMServiceEnumType.valueOf(testProperties.getProperty("test.embedding.type").toUpperCase()), testProperties.getProperty("test.embedding.server"), testProperties.getProperty("test.embedding.authorizationToken"));
+			/// Model name for the OpenAI-shaped embeddings body (openai / openai_compat); blank -> none sent.
+			vectorUtil.getEmbedUtil().setEmbeddingModel(testProperties.getProperty("test.embedding.model"));
+			ioContext.setVectorUtil(vectorUtil);
 		} catch (StackOverflowError | Exception e) {
 			logger.error(e);
 			e.printStackTrace();

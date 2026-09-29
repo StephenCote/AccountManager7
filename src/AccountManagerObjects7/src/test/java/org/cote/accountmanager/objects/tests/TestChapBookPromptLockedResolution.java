@@ -154,7 +154,7 @@ public class TestChapBookPromptLockedResolution extends BaseTest {
 
 		// A live, regeneration-CAPABLE chatConfig. Deliberately supplied: if the locked edit were
 		// misclassified as the no-LLM fallback, recovery WOULD run and overwrite the stored prompt.
-		BaseRecord liveConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "chapbookBulkLockLlmConfig", testProperties);
+		BaseRecord liveConfig = OlioTestUtil.getPbChatConfig(testUser, "chapbookBulkLockLlmConfig", testProperties);
 		assertNotNull("Live chatConfig must be built", liveConfig);
 
 		BaseRecord poem = createPoem(testUser, "~/Data/ChapBookBulkLock-" + ts,

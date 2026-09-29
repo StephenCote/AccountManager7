@@ -85,6 +85,14 @@ first boot, setup token, initial setup, verify, reset, troubleshooting) and
 stack for testing (Playwright E2E, manual REST checks, etc.) should bring this up via
 `docker-compose up` rather than assuming/depending on an ad hoc locally-managed Tomcat instance.
 
+**LLM for tests: local container first, then Azure, then `.42`.** `src/am7-docker-up.bat --ollama`
+(implies `--llmproxy`) adds an in-stack Ollama at `http://127.0.0.1:11435` that pulls
+`nomic-embed-text` (embeddings), `qwen3:8b` (analysis) and `goekdenizguelmez/JOSIEFIED-Qwen3:8b`
+(PictureBook/ChapBook) and points the app's embeddings at it — runbook §13 of `dockerDevSetup.md`.
+`LlmTestGate` (Objects7 `BaseTest.setup()`) and `resolveChatRoute()` (`e2e/helpers/api.js`) pick the
+first tier that answers and, when LiteLLM (`:4000`) is up, route through it so every call is a
+Langfuse trace (`:3001`) — read the `[LLM-GATE]` / `[e2e-llm]` line, and debug from the trace.
+
 **Frontend (`src/AccountManagerUx752/`).** Run from that directory.
 ```
 cd src/AccountManagerUx752

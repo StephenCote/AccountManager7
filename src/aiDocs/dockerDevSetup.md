@@ -121,8 +121,10 @@ Set-Location C:\Projects\GitHub\AccountManager7\src
 docker compose -p am7test -f docker-compose.test.yml up --build -d
 ```
 
-`src\am7-docker-up.bat` wraps this (plus `--no-build` / `--prebuilt`, and the `--llmproxy` /
-`--llmproxy-only` / `--app-only` options for the optional LLM-proxy sidecars — see §12.2).
+`src\am7-docker-up.bat` wraps this (plus `--no-build` / `--prebuilt`, the `--llmproxy` /
+`--llmproxy-only` / `--app-only` options for the optional LLM-proxy sidecars — see §12.2 — and
+`--ollama` for an in-stack Ollama container that the LLM tests and the app's embeddings prefer over
+`.42` — see §13).
 
 To keep persistent state somewhere other than `.\docker-data` — note PowerShell needs the env var set
 on its own line, there is no inline `VAR=value cmd` prefix:
@@ -878,7 +880,9 @@ prints usage.
 | `am7-docker-up.bat` | app + `am7-pg` | **not started** (default) |
 | `am7-docker-up.bat --llmproxy` | app + `am7-pg` + all seven sidecars | started |
 | `am7-docker-up.bat --llmproxy-only` | **only** the proxy/observability stack — no app, no build, no Olio seed staging | started |
-| `am7-docker-up.bat --app-only` | **only** app + `am7-pg` | **stopped** (reclaims the overhead) |
+| `am7-docker-up.bat --app-only` | **only** app + `am7-pg` | **stopped** (reclaims the overhead; also stops `ollama`/`ollama-init`) |
+| `am7-docker-up.bat --ollama` | app + `am7-pg` + all seven sidecars **+ `ollama` + `ollama-init`** (implies `--llmproxy`) — see §13 | started |
+| `am7-docker-up.bat --llmproxy-only --ollama` | proxy/observability stack + the Ollama container, no app | started |
 
 - **`--llmproxy-only`** names `litellm langfuse-web langfuse-worker` explicitly and lets compose pull
   in each one's `depends_on`, which drags along `am7-pg` (it hosts `litellmdb`), `langfuse-db`,
@@ -892,7 +896,14 @@ prints usage.
   and a later `--llmproxy` brings them back in seconds. Measured: sidecars all exited, `am7` +
   `am7-pg` running, exit code 0.
 - `--app-only` together with `--llmproxy-only` is **rejected with an error** — they are opposites.
+  So is `--app-only` with `--ollama`.
 - Combines with the build flags: `am7-docker-up.bat --no-build --llmproxy`.
+- **Lifecycle flags act on every profile.** `--stop` / `--start` / `--ps`, the `--app-only` stop list
+  and the printed `down` advice all name `--profile llmproxy --profile ollama` (the script's
+  `ALL_PROFILES`). This is load-bearing, not cosmetic: compose only touches services whose profile is
+  active, so a `stop` issued without the profiles leaves the sidecars and the Ollama container running
+  and a `down` without them orphans them (`docker ps` still shows them, compose no longer owns them).
+  If you drive compose by hand, always pass both profiles for lifecycle verbs.
 - If `src/volatile/llmproxy.env` exists, the script passes `--env-file .\volatile\llmproxy.env`
   automatically whenever a profile flag is used. If it is absent you silently get the committed
   throwaway defaults (12.5).
@@ -1275,3 +1286,274 @@ behaviour you measured in step 2; until then the digest pin is what stops silent
 
 **6. Re-run the live checks** — 12.3 in full, plus a chat completion through the proxy from inside
 the app container and confirmation that the same call appears as a Langfuse trace.
+
+## 13. Optional local Ollama — the `ollama` profile (`--ollama`)
+
+A second opt-in profile in the **same** `docker-compose.test.yml`, added 2026-09-29. It runs an
+Ollama server **inside the stack** so LLM tests and the app's embeddings no longer depend on the
+DGX Spark at `192.168.1.42` or on Azure. Two services:
+
+| Service | Image | Role |
+|---|---|---|
+| `ollama` | `ollama/ollama:latest` | the server; `http://ollama:11434` on the compose network, published **loopback-only** at `http://127.0.0.1:11435` (`OLLAMA_BIND_HOST` / `OLLAMA_HOST_PORT`; 11434 is deliberately left free for a host-installed Ollama) |
+| `ollama-init` | same image | one-shot; waits for `ollama` healthy, then `ollama pull` for each name in `OLLAMA_PULL_MODELS` (default `nomic-embed-text qwen3:8b goekdenizguelmez/JOSIEFIED-Qwen3:8b`), prints `ollama list`, exits 0 only if every pull succeeded (`restart: "no"`) |
+
+Nothing in the default stack `depends_on` either of them; the app boots whether or not the models
+have arrived (the embedding startup probe WARNs and continues). Models land in the **named volume
+`ollama-models`** (~11 GB for the three defaults) and survive `docker-data` deletion — `down -v` with
+the profile active is what removes them.
+
+### 13.1 Bring it up
+
+```powershell
+cd C:\Projects\GitHub\AccountManager7\src
+.\am7-docker-up.bat --ollama                   # build + app + am7-pg + llmproxy sidecars + ollama + ollama-init
+.\am7-docker-up.bat --no-build --ollama        # same, skip the image build
+.\am7-docker-up.bat --llmproxy-only --ollama   # proxy stack + Ollama, no app
+```
+
+`--ollama` **implies `--llmproxy`**: the point is to front the container with LiteLLM so every test
+call is traced in Langfuse. `litellm/config.yaml` carries three container-backed aliases, all with
+`api_base: os.environ/OLLAMA_CONTAINER_API_BASE` (default `http://ollama:11434`):
+
+| Alias | Upstream model | For |
+|---|---|---|
+| `qwen3:8b-ctr` | `ollama_chat/qwen3:8b` | analysis / general chat |
+| `qwen3:8b-jos-ctr` | `ollama_chat/goekdenizguelmez/JOSIEFIED-Qwen3:8b` | PictureBook / ChapBook |
+| `nomic-embed-text-ctr` | `ollama/nomic-embed-text` | embeddings via the proxy (tests only — the app embeds directly, 13.3) |
+
+The existing `qwen3:8b` / `qwen3:8b-jos` aliases still point at `.42`; nothing was renamed.
+
+First boot pulls ~11 GB. Follow it, and do not expect the `-ctr` aliases to answer until it exits 0:
+
+```powershell
+docker compose -p am7test -f docker-compose.test.yml --profile llmproxy --profile ollama logs -f ollama-init
+```
+
+By hand, without the wrapper:
+
+```powershell
+docker compose -p am7test -f docker-compose.test.yml --env-file .\volatile\llmproxy.env `
+  --profile llmproxy --profile ollama up -d
+```
+
+### 13.2 Verify
+
+| Check | Command | Expect |
+|---|---|---|
+| Server up | `curl.exe -s http://127.0.0.1:11435/api/tags` | JSON `models[]` listing the three names once `ollama-init` is done |
+| Pull finished | `docker compose -p am7test -f docker-compose.test.yml --profile llmproxy --profile ollama ps -a ollama-init` | `Exited (0)` |
+| Proxy sees the aliases | `curl.exe -s -H "Authorization: Bearer sk-am7-litellm-test" http://127.0.0.1:4000/v1/models \| findstr -- -ctr` | the three `-ctr` ids |
+| Completion through the proxy | `curl.exe -s http://127.0.0.1:4000/v1/chat/completions -H "Authorization: Bearer sk-am7-litellm-test" -H "Content-Type: application/json" -d "{\"model\":\"qwen3:8b-ctr\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hi\"}],\"max_tokens\":20}"` | a `choices[0].message` — and a new trace at `http://127.0.0.1:3001` |
+| App can reach it | `docker exec am7test-am7-1 curl -s -o /dev/null -w "%{http_code}" http://ollama:11434/api/tags` | `200` |
+| App is embedding through it | `docker logs am7test-am7-1 2>&1 \| findstr /i embedding` | a boot line naming `http://ollama:11434/v1/embeddings`, type `OPENAI_COMPAT`, model `nomic-embed-text`, and **no** `Unhandled service type` |
+| Direct embedding, 768-wide | `curl.exe -s http://127.0.0.1:11435/v1/embeddings -H "Content-Type: application/json" -d "{\"model\":\"nomic-embed-text\",\"input\":\"hello\"}"` | `data[0].embedding` with 768 floats |
+
+**CPU inference.** The dev box is an AMD Strix Halo iGPU with no Docker passthrough, so the default
+is CPU-only: an 8B model answers a short prompt in tens of seconds and a PictureBook extraction
+prompt can run for minutes. `OLLAMA_MAX_LOADED_MODELS=1` and `OLLAMA_KEEP_ALIVE=5m` keep the two 8B
+models from both sitting in RAM next to Langfuse and an 8 GB Tomcat. On an NVIDIA host:
+
+```powershell
+$env:AM7_OLLAMA_GPU = "nvidia"; .\am7-docker-up.bat --ollama     # layers in docker-compose.ollama-gpu.yml
+docker exec am7test-ollama-1 nvidia-smi                          # verify
+```
+
+That override lives in its own file because `deploy.resources.reservations.devices` makes `up` fail
+outright on a host without the NVIDIA runtime.
+
+### 13.3 What it changes for the app — embeddings
+
+With `--ollama` (unless `AM7_OLLAMA_EMBED=0`, or you set them yourself) the wrapper exports:
+
+```
+EMBEDDING_SERVER=http://ollama:11434/v1/embeddings
+EMBEDDING_TYPE=openai_compat
+EMBEDDING_MODEL=nomic-embed-text
+```
+
+`EMBEDDING_TYPE=openai_compat` is the OpenAI-shaped `/v1/embeddings` path: `model` is sent (required
+by Ollama), `dimensions` is **not** (Ollama ignores or rejects it; `nomic-embed-text` is natively 768,
+matching `embedding.dimensions` and the fixed-width `common.vectorExt.embedding` column).
+`EMBEDDING_MODEL` is forwarded by compose → `entrypoint.sh` → `web.xml` `embedding.model`.
+
+**The sticky part (read before switching providers on an existing volume).** `embedding.type` and
+`embedding.model` are re-read from `web.xml` on every boot, but `embedding.server` can be overridden
+at runtime by a stored `system.connection` named `embedding` in `/System`'s `/Library/Connections`
+(`ServerConfigUtil`, §8). If such a record exists, changing `EMBEDDING_SERVER` in env changes nothing
+while the type/model do change, and the three disagree. And stored vectors carry no model provenance,
+so switching embedding models on a populated DB silently mixes incomparable vectors. The wrapper keeps
+`docker-data\.embedding-provider` (`server type model`) and prints a **WARN** when the effective
+triple differs from the previous boot; it never refuses to start. The app also WARNs at boot when the
+type and the URL shape disagree (e.g. `local` with a `/v1/embeddings` URL).
+
+**Remedy when the stored record wins.** The tell in `docker logs am7test-am7-1` is the boot INFO
+`Embedding configuration: server=<old URL> type=OPENAI_COMPAT model=nomic-embed-text` followed by the
+type/URL-shape WARN and `EmbeddingUtil - Len: 1536` (Azure's native width) instead of `Len: 768`.
+Repoint the record in the **stack's own database** — `am7-pg`, host port `15433`, database `am72db`
+(same name as, but not, the Eclipse-Tomcat `am72db` on the host postgres at `15432`) — then recreate
+the app container so the boot probe re-runs:
+
+```powershell
+docker exec am7-pg psql -U am7user -d am72db -c "SELECT id, serverurl, (apikey IS NOT NULL) AS has_apikey FROM a7_system_connection_0_1 WHERE name='embedding';"
+docker exec am7-pg psql -U am7user -d am72db -c "UPDATE a7_system_connection_0_1 SET serverurl='http://ollama:11434/v1/embeddings' WHERE name='embedding';"   # UPDATE 1
+.\am7-docker-up.bat --ollama
+```
+
+If `has_apikey` is `t`, clear the key through the UI (`#!/list/system.connection`) or a `PATCH` with
+`apiKey:""` rather than SQL — `crypto.vaultExt` bookkeeping lives on the row, and Ollama would
+otherwise receive the old provider's key as a `Bearer` header. Expect the next boot to log
+`server=http://ollama:11434/v1/embeddings type=OPENAI_COMPAT model=nomic-embed-text`, then `Len: 768`
+and `Embedding width baseline for this process established at 768`, with no shape WARN.
+
+### 13.4 What it changes for tests — the local → Azure → `.42` order
+
+LLM tests now resolve their target **once per JVM/process** instead of hardcoding `.42`:
+
+1. **local** — the Ollama container, if `http://127.0.0.1:11435/api/tags` lists both `qwen3:8b` and
+   `goekdenizguelmez/JOSIEFIED-Qwen3:8b`;
+2. **azure** — `gpt-5.6-terra` through LiteLLM, only when `LITELLM_LIVE` is set and
+   `GET /health?model=gpt-5.6-terra` reports the deployment healthy (one small paid call, logged at
+   INFO); applies to the *analysis* model only — PictureBook/ChapBook stay on the JOSIEFIED alias;
+3. **remote** — the DGX Spark at `192.168.1.42`.
+
+Independently, **route** is `litellm` whenever `http://127.0.0.1:4000/health/liveliness` answers
+(connection `dialect=OPENAI_COMPAT`, `upstream=OLLAMA`, master key, alias names such as
+`qwen3:8b-ctr`), otherwise `direct` (native Ollama, `dialect=OLLAMA`, real model names). Objects7's
+`LlmTestGate` (called from `BaseTest.setup()`) prints one line —
+`[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000`
+— and writes the result back into the existing property keys (`test.llm.ollama.server` keeps its
+native-URL meaning; new `test.llm.connection.*`, `test.llm.model.analysis`, `test.llm.model.pb`).
+`-Dtest.llm.ollama.server=<url>` bypasses the probes. The Playwright helper
+(`e2e/helpers/api.js` `resolveChatRoute()`) does the same for E2E and logs `[e2e-llm] route=…`.
+Because every routed call goes through LiteLLM, **debug an LLM test by opening its trace in Langfuse
+(`http://127.0.0.1:3001`) or `docker logs am7test-litellm-1`** before reading AM7 logs.
+
+`resource.properties` keys involved (all ADD-only; nothing was renamed): `test.llm.ollama.local.server`,
+`test.llm.pb.model`, `test.llm.litellm.azure.model`, `test.embedding.model` (blank keeps the `.42:8123`
+LOCAL embedding service for JUnit; the container alternative is documented inline).
+
+### 13.5 Stop / remove
+
+```powershell
+.\am7-docker-up.bat --stop     # stop all 11 containers, keep everything
+.\am7-docker-up.bat --start
+.\am7-docker-up.bat --app-only # stop the sidecars AND ollama/ollama-init, keep app + am7-pg
+docker compose -p am7test -f docker-compose.test.yml --profile llmproxy --profile ollama down      # remove; models kept
+docker compose -p am7test -f docker-compose.test.yml --profile llmproxy --profile ollama down -v   # also wipe models + traces
+```
+
+### 13.6 Corporate TLS interception — `volatile/extra-ca.pem` + `docker-compose.extra-ca.yml`
+
+**Symptom.** `ollama-init` exits 1 with every pull ending in
+`Error: pull model manifest: ... x509: certificate signed by unknown authority` (after downloading
+gigabytes — the manifest is verified late), and `docker logs am7test-litellm-1` shows
+`CERTIFICATE_VERIFY_FAILED` on any Azure call. Both are the same thing: with the corporate VPN up,
+Microsoft Global Secure Access re-signs every HTTPS site with a chain the `ollama` and `litellm`
+images do not trust —
+
+```
+leaf (registry.ollama.ai)  <-  CN=Microsoft Global Secure Access Intermediate CA2
+                           <-  O=CommunityCare, CN=CCOKTLS2025
+                           <-  CN=ca, DC=ccok, DC=com        (root; in LocalMachine\Root)
+```
+
+Confirm it is interception and not a real bad cert before doing anything. Use the `openssl` that
+ships with Git for Windows (`C:\Program Files\Git\mingw64\bin\openssl.exe`; plain `openssl` in Git
+Bash) — do **not** `apk add openssl` inside a container for this, since that download is itself
+intercepted and fails the same way:
+
+```powershell
+$openssl = 'C:\Program Files\Git\mingw64\bin\openssl.exe'
+'' | & $openssl s_client -connect registry.ollama.ai:443 -servername registry.ollama.ai 2>$null | & $openssl x509 -noout -issuer
+# issuer=CN=Microsoft Global Secure Access Intermediate CA2      <- intercepted
+# issuer=C=US, O=Google Trust Services, CN=WE1                    <- not intercepted (measured 2026-09-29, VPN off); look elsewhere
+```
+
+**Fix = one PEM file, mounted by an override the wrappers layer for you.** Build
+`src\volatile\extra-ca.pem` once, **while the VPN is on** (git-ignored via `.gitignore` `volatile*`;
+it is public CA material but environment-specific, so it never goes in the repo):
+
+```powershell
+cd C:\Projects\GitHub\AccountManager7\src
+$openssl = 'C:\Program Files\Git\mingw64\bin\openssl.exe'
+# 1. the corporate root, from the Windows machine store (thumbprint as of 2026-09-29; valid to 2029)
+$c = Get-ChildItem Cert:\LocalMachine\Root | Where-Object Thumbprint -eq '003628E11BB3134ADE9FC798B63482DC9E41D7E2'
+"-----BEGIN CERTIFICATE-----`n" + [Convert]::ToBase64String($c.RawData, 'InsertLineBreaks') + "`n-----END CERTIFICATE-----" |
+  Set-Content -Encoding ascii .\volatile\extra-ca.pem
+# 2. the intermediates the proxy serves (they are NOT in the Windows store): every block except the first (the leaf)
+$show = ('' | & $openssl s_client -connect registry.ollama.ai:443 -servername registry.ollama.ai -showcerts 2>$null) -join "`n"
+[regex]::Matches($show, '(?s)-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----') |
+  ForEach-Object Value | Select-Object -Skip 1 | Add-Content -Encoding ascii .\volatile\extra-ca.pem
+# 3. verify: 3 certs, and the bundle validates the served leaf
+(Select-String -Path .\volatile\extra-ca.pem -Pattern 'BEGIN CERTIFICATE').Count          # 3
+'' | & $openssl s_client -connect registry.ollama.ai:443 -servername registry.ollama.ai -CAfile .\volatile\extra-ca.pem 2>$null | Select-String 'Verify return code'
+# Verify return code: 0 (ok)
+```
+
+If the thumbprint no longer matches, list candidates with
+`Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*ccok*' | Format-List Subject,Thumbprint,NotAfter`.
+
+**What the wrappers then do.** When `.\volatile\extra-ca.pem` exists — or `AM7_EXTRA_CA_FILE`
+points at a bundle (the wrapper errors out if that path is missing) — `am7-docker-up.bat`/`.sh`
+add `-f docker-compose.extra-ca.yml` to **every** compose call (up, stop, start, ps, sidecar stop)
+and the banner prints `extra CA : .\volatile\extra-ca.pem -> ollama + litellm`. The override:
+
+| Service | What it does | Why that way |
+|---|---|---|
+| `ollama` | mounts the PEM at `/etc/ssl/certs/am7-extra-ca.pem` | Go's x509 loader reads every file in `/etc/ssl/certs`, so no `update-ca-certificates` and no command override; the pull runs in the **server**, so the mount is here, not on `ollama-init` |
+| `litellm-ca-init` (new, `llmproxy` profile, one-shot) | `cat` alpine's shipped `/etc/ssl/certs/ca-certificates.crt` + the PEM into the named volume `litellm-ca` as `ca-bundle.pem` | Python/httpx honour `SSL_CERT_FILE` but it **replaces** the trust store, so it must be a complete bundle (public roots + corporate CA) or trust breaks the moment the proxy is off. No `apk add` — that would itself have to cross the proxy |
+| `litellm` | `depends_on: litellm-ca-init` (completed), mounts `litellm-ca:/etc/am7-ca:ro`, sets `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE=/etc/am7-ca/ca-bundle.pem` | trust for Azure / Langfuse callbacks / anything else LiteLLM calls out to |
+
+The file is layered with `-f` rather than `include:`d so the plain
+`docker compose -f docker-compose.test.yml …` commands elsewhere in this runbook keep working on a
+network with no interception. Two consequences: (a) if you run compose **by hand** with the override
+active you must add `-f docker-compose.extra-ca.yml` too, or `up` recreates `ollama`/`litellm`
+without the mount; (b) `down` without it leaves `litellm-ca` and `am7test-litellm-ca-init-1` behind
+as harmless orphans. The mount is inert when the proxy is off — the containers just carry one extra
+trusted CA — so there is no need to remove the PEM when the VPN goes down.
+
+Verify (after `up`):
+
+```powershell
+docker logs am7test-litellm-ca-init-1                     # [am7] litellm CA bundle - 148 certs
+docker exec am7test-ollama-1 ollama pull nomic-embed-text # success (was x509 before)
+docker exec am7test-litellm-1 python -c "import httpx;print(httpx.get('https://login.microsoftonline.com/',timeout=10).status_code)"   # 200
+```
+
+### 13.7 Provenance
+
+Written 2026-09-29 off `docker-compose.test.yml`, `docker-compose.ollama-gpu.yml`,
+`docker-compose.extra-ca.yml`, `am7-docker-up.sh/.bat`, `litellm/config.yaml`, `.env.example`.
+Measured the same day on the Windows dev box (corporate VPN **on** for the first part):
+`--ollama --no-build` brought up all 11 containers, `ollama` healthy in ~10 s, `ollama-init` pulling
+at ~10–12 MB/s and then **failing** all three pulls with `x509: certificate signed by unknown
+authority` — the 13.6 diagnosis. With `extra-ca.pem` mounted, `ollama pull nomic-embed-text`
+succeeded immediately and a re-run of `ollama-init` pulled `qwen3:8b` (cached layers) and JOSIEFIED;
+`/api/tags` lists all three. Through LiteLLM: `nomic-embed-text-ctr` returned 768 floats;
+`qwen3:8b-ctr` with `max_tokens: 400` answered `PONG` in 34.7 s on CPU (with `max_tokens: 40` the
+reply was **empty** — qwen3's thinking tokens go to `reasoning_content` and exhaust a small budget
+first, so give it a few hundred). `litellm-ca-init` printed `148 certs`; litellm's `httpx` reached
+`login.microsoftonline.com` → 200. Marker file written as `http://ollama:11434/v1/embeddings
+openai_compat nomic-embed-text`.
+
+Later the same day (VPN **off**), the two rows that were still open were closed:
+
+- **App is embedding through it.** The stack's `am72db` (in `am7-pg`) held a `/System`
+  `system.connection` `embedding` (id 6, no `apiKey`) still pointing at the Azure deployment URL,
+  so the app booted with `type=OPENAI_COMPAT` against Azure and logged `Len: 1536` plus the
+  shape WARN — the 13.3 sticky case, live. Repointed it with the `UPDATE` in 13.3 (`UPDATE 1`).
+  The first recreate used `--ollama --no-build` and booted an **older WAR** (`EmbeddingUtil -
+  Unhandled service type: OPENAI_COMPAT`, no `Embedding configuration:` line): the image was from
+  2026-09-26 and the previous container had only been hot-patched with `docker cp`, which a
+  recreate discards. `--ollama` (with build) rebuilt `am7:latest` and the fresh boot logged
+  `Embedding configuration: server=http://ollama:11434/v1/embeddings type=OPENAI_COMPAT
+  model=nomic-embed-text`, `EmbeddingUtil - Len: 768`, `Embedding width baseline for this process
+  established at 768`, no shape WARN, `Server startup in [12924] milliseconds`; the container's
+  `EMBEDDING_AUTH_TOKEN` was empty (the `.env` Azure token line is commented out).
+- **Wrapper-driven `--ollama` bring-up.** Same run: `ollama-init` `Exited (0)` on the first
+  attempt (all three models already in the `ollama-models` volume), `ollama` and `litellm`
+  healthy, all 11 containers up.
+
+Lesson recorded: if a container was hot-patched (`docker cp` of a jar/classes), **any** recreate —
+including `--no-build` — reverts it to the image. Rebuild before trusting a post-recreate boot log.

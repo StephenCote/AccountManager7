@@ -70,8 +70,14 @@ public class TestChapBookDefaultChatConfig extends BaseTest {
 		// populateDefaults seeds MANY named configs from templates (contentAnalysis, generalChat, coding,
 		// ...) plus the "Open Chat" alias — so the library is deliberately crowded here, which is exactly
 		// the condition under which determinism must hold.
+		// populateDefaults builds a dialect-less, key-less library connection, so it must point at a
+		// DIRECT Ollama URL (test.llm.ollama.server is rewritten by LlmTestGate to the resolved local or
+		// remote Ollama) with the RAW picture-book model name — not the LiteLLM alias in test.llm.model.pb.
 		String server = testProperties.getProperty("test.llm.ollama.server");
-		String model = testProperties.getProperty("test.llm.ollama.model");
+		String model = testProperties.getProperty("test.llm.pb.model",
+			testProperties.getProperty("test.llm.ollama.model"));
+		assertNotNull("test.llm.ollama.server must be set", server);
+		assertNotNull("test.llm.pb.model / test.llm.ollama.model must be set", model);
 		ChatLibraryUtil.populateDefaults(user, server, model, "ollama");
 
 		// Precondition: a shared-library config now exists (no owner filter) and its dir resolves.

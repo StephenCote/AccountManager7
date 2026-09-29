@@ -32,6 +32,17 @@ Claude has a pattern of:
    The Issue 7 landscape-prompt path was reported untestable; when actually run it called `qwen3:8b` and
    returned a real prompt in ~9 seconds. If an Objects7 test needs Ollama, check the
    `test.llm.ollama.server` property in `resource.properties`, gate the test on it if needed, and run it.
+   **Where the LLM comes from (order, as of 2026-09-29):** first the **local Ollama container**
+   (`am7-docker-up --ollama`, `http://127.0.0.1:11435`; `qwen3:8b` for analysis,
+   `goekdenizguelmez/JOSIEFIED-Qwen3:8b` for PictureBook/ChapBook, `nomic-embed-text` for embeddings),
+   then **Azure via LiteLLM** (`gpt-5.6-terra`, analysis only, only when `LITELLM_LIVE` is set), then the
+   **remote `.42`**. `LlmTestGate` (Objects7 `BaseTest.setup()`) and `resolveChatRoute()`
+   (`e2e/helpers/api.js`) do this once per run and print a `[LLM-GATE] route=… tier=…` /
+   `[e2e-llm] route=…` line — quote that line when reporting an LLM test result. Whenever LiteLLM is up
+   the tests route through it, so **debug a failing LLM test from its Langfuse trace
+   (`http://127.0.0.1:3001`) or `docker logs am7test-litellm-1` first.** "The container is still
+   pulling models" is a reason to wait for `ollama-init` to exit 0 (`docker compose … logs -f
+   ollama-init`) or to fall through to the next tier — not a reason to skip.
 3. **NEVER use admin user for testing.** Use `ensureSharedTestUser()` / `ensureIso42001TestUser()` from `e2e/helpers/api.js`.
 4. **ALWAYS read the reference UI implementation BEFORE writing ANY UI code.** `AccountManagerUx752/` is the primary/canonical UI reference. `deprecated/AccountManagerUx7/client/` is the deprecated legacy reference, still consultable when you need to understand a pattern's origin. If you don't know how something works, LOOK.
 5. **NEVER claim an issue is fixed without a passing test** that exercises the fix end-to-end.

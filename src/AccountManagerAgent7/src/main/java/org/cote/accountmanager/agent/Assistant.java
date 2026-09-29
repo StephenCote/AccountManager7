@@ -75,7 +75,10 @@ public class Assistant {
 
 		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"), setup && Boolean.parseBoolean(properties.getProperty("test.db.reset")));
 		if(ioContext != null) {
-			ioContext.setVectorUtil(new VectorUtil(LLMServiceEnumType.valueOf(properties.getProperty("test.embedding.type").toUpperCase()), properties.getProperty("test.embedding.server"), properties.getProperty("test.embedding.authorizationToken")));
+			VectorUtil vectorUtil = new VectorUtil(LLMServiceEnumType.valueOf(properties.getProperty("test.embedding.type").toUpperCase()), properties.getProperty("test.embedding.server"), properties.getProperty("test.embedding.authorizationToken"));
+			/// Model name for the OpenAI-shaped embeddings body (openai / openai_compat); blank -> none sent.
+			vectorUtil.getEmbedUtil().setEmbeddingModel(properties.getProperty("test.embedding.model"));
+			ioContext.setVectorUtil(vectorUtil);
 		}
 
 		

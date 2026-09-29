@@ -21,18 +21,15 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
-import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
-import org.cote.accountmanager.util.DocumentUtil;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -95,32 +92,15 @@ public class TestPictureBookListCharactersPb2 extends BaseTest {
 		return u;
 	}
 
-	/** A chat config pointed at the live Ollama host in resource.properties. */
+	/** A picture-book chat config on this JVM's resolved LLM route (LlmTestGate): test.llm.model.pb,
+	 *  think:false, 300s. OlioTestUtil.getPbChatConfig reconciles an existing row of the same name. */
 	private String ensureChatConfig(BaseRecord user) throws Exception {
-		String model = testProperties.getProperty("test.llm.ollama.model");
+		String model = OlioTestUtil.pbModel(testProperties);
 		String serverUrl = testProperties.getProperty("test.llm.ollama.server");
-		assertNotNull("test.llm.ollama.model must be set", model);
+		assertNotNull("test.llm.model.pb / test.llm.pb.model must be set", model);
 		assertNotNull("test.llm.ollama.server must be set", serverUrl);
-		String cfgName = "PB2 ListChars " + model + ".chat";
-		BaseRecord existing = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, cfgName, "~/Chat");
-		if (existing != null) return cfgName;
-
-		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
-		plist.parameter(FieldNames.FIELD_NAME, cfgName);
-		BaseRecord cfg = IOSystem.getActiveContext().getFactory().newInstance(
-			OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
-		cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
-		cfg.set("connection", OlioTestUtil.getCreateConnection(user, cfgName + " Connection", serverUrl, null, 300));
-		cfg.set("model", model);
-		cfg.set("stream", false);
-		BaseRecord opts = cfg.get("chatOptions");
-		if (opts == null) {
-			opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
-			cfg.set("chatOptions", opts);
-		}
-		opts.set("think", false);
-		opts.set("temperature", 0.3);
-		assertNotNull(IOSystem.getActiveContext().getAccessPoint().create(user, cfg));
+		String cfgName = OlioTestUtil.safeName("PB2 ListChars " + model + ".chat");
+		assertNotNull("PB chat config could not be created", OlioTestUtil.getPbChatConfig(user, cfgName, testProperties));
 		return cfgName;
 	}
 

@@ -347,7 +347,7 @@ public class TestChapBook extends BaseTest {
 		assertNotNull("test.datagen.path must be set", dataPath);
 
 		// Create chatConfig via OlioTestUtil (idempotent: reuses existing if present)
-		BaseRecord chatConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "chapbookLlmTestConfig", testProperties);
+		BaseRecord chatConfig = OlioTestUtil.getPbChatConfig(testUser, "chapbookLlmTestConfig", testProperties);
 		assertNotNull("chatConfig must be created for LLM test", chatConfig);
 
 		long ts = System.currentTimeMillis();
@@ -465,7 +465,7 @@ public class TestChapBook extends BaseTest {
 		new File(emitDir).mkdirs();
 
 		// Real LLM chatConfig so createChapBookScene runs the chapBook.landscape-prompt LLM path.
-		BaseRecord chatConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "chapbookLlmTestConfig", testProperties);
+		BaseRecord chatConfig = OlioTestUtil.getPbChatConfig(testUser, "chapbookLlmTestConfig", testProperties);
 		assertNotNull("chatConfig must be created for the LLM landscape-prompt path", chatConfig);
 
 		long ts = System.currentTimeMillis();
@@ -655,7 +655,7 @@ public class TestChapBook extends BaseTest {
 		new File(emitDir).mkdirs();
 
 		// Real LLM chatConfig so renderChapBookScene runs the chapBook.landscape-prompt LLM path.
-		BaseRecord chatConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "chapbookLlmTestConfig", testProperties);
+		BaseRecord chatConfig = OlioTestUtil.getPbChatConfig(testUser, "chapbookLlmTestConfig", testProperties);
 		assertNotNull("chatConfig must be created for the LLM landscape-prompt path", chatConfig);
 
 		long ts = System.currentTimeMillis();
@@ -837,7 +837,7 @@ public class TestChapBook extends BaseTest {
 
 		long orgId = ((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 
-		BaseRecord chatConfig = OlioTestUtil.getOllamaOpenAIConfig(testUser, "chapbookLlmTestConfig", testProperties);
+		BaseRecord chatConfig = OlioTestUtil.getPbChatConfig(testUser, "chapbookLlmTestConfig", testProperties);
 		assertNotNull("chatConfig must be created for the LLM prior-context test", chatConfig);
 
 		long ts = System.currentTimeMillis();

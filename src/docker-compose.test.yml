@@ -197,8 +197,19 @@ services:
       VOICE_TTS_SERVER: ${VOICE_TTS_SERVER:-http://192.168.1.42:8001}
       VOICE_STT_SERVER: ${VOICE_STT_SERVER:-http://192.168.1.42:8002}
       EMBEDDING_SERVER: ${EMBEDDING_SERVER:-http://192.168.1.42:8123}
-      # Embedding protocol: 'local' (bundled embedApiMini.py, default) or 'openai' (Azure/OpenAI).
+      # Embedding protocol: 'local' (bundled embedApiMini.py, default), 'openai' (Azure/OpenAI,
+      # full URL answering a bare POST) or 'openai_compat' (an OpenAI-shaped /v1/embeddings that
+      # needs a `model` in the body -- the containerized Ollama). am7-docker-up --ollama exports
+      #   EMBEDDING_SERVER=http://ollama:11434/v1/embeddings EMBEDDING_TYPE=openai_compat
+      #   EMBEDDING_MODEL=nomic-embed-text
+      # unless AM7_OLLAMA_EMBED=0. STICKY: embedding.server is DB-backed (a system.connection
+      # row seeded from this default on first boot of a data volume) while embedding.type and
+      # embedding.model are boot-pinned from these vars, so switching provider on an EXISTING
+      # ${AM7_DATA_DIR} does not repoint the stored server URL -- the wrapper WARNs about that.
       EMBEDDING_TYPE: ${EMBEDDING_TYPE:-local}
+      # Model name sent in the /v1/embeddings body for the openai_compat branch (Ollama rejects
+      # a request without one). Ignored by 'local'; the 'openai' branch keeps its no-model body.
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
       # Embedding-server auth token (OPENAI branch). A credential -- keep it out of git: leave the
       # default empty and supply the real value via a .env file or the host environment. Empty means
       # no Authorization header is sent.
@@ -499,6 +510,15 @@ services:
       # "Cannot connect to host localhost:11434" at REQUEST time -- the identical
       # failure the OLLAMA_API_BASE note above records from 2026-09-14.
       OLLAMA_LOCAL_API_BASE: ${OLLAMA_LOCAL_API_BASE:-http://host.docker.internal:11434}
+      # The CONTAINERIZED Ollama (compose profile `ollama`, service `ollama` below) -- the
+      # `*-ctr` aliases in litellm/config.yaml. Service-name URL on the compose network, so
+      # it is reachable from litellm regardless of what the host publishes. Deliberately a
+      # THIRD variable rather than a repoint of OLLAMA_LOCAL_API_BASE: `-local` means the
+      # host's own Ollama and that meaning must not change under existing tests. When the
+      # `ollama` profile is not active this resolves to nothing at request time (litellm's
+      # "Cannot connect to host ollama:11434"), which is the expected, visible failure for a
+      # `-ctr` alias with no container behind it.
+      OLLAMA_CONTAINER_API_BASE: ${OLLAMA_CONTAINER_API_BASE:-http://ollama:11434}
       # Concurrency cap for the local model. 1 = strict serialisation.
       # See src/litellm/config.yaml for why max_parallel_requests is the knob
       # that QUEUES rather than the one that returns 429.
@@ -548,6 +568,106 @@ services:
       retries: 12
       start_period: 30s
     restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # OPTIONAL containerized Ollama (compose profile `ollama`).
+  #
+  #   ./am7-docker-up.sh --ollama          (implies --llmproxy; see the wrapper)
+  #
+  # Purpose: a self-contained LLM + embedding backend so the test order can be
+  # LOCAL CONTAINER -> Azure -> LAN Spark (192.168.1.42) without depending on
+  # the LAN box being up. Reached three ways, and the distinction matters:
+  #   - litellm  -> http://ollama:11434         (OLLAMA_CONTAINER_API_BASE, the
+  #                                              `*-ctr` aliases in litellm/config.yaml)
+  #   - am7      -> http://ollama:11434/v1/embeddings  (EMBEDDING_SERVER when the
+  #                                              wrapper enables container embeddings)
+  #   - host     -> http://127.0.0.1:11435      (OLLAMA_HOST_PORT; the JUnit gate probes
+  #                                              /api/tags here. 11435, NOT 11434, so a
+  #                                              host Ollama -- `qwen3:8b-local` -- can
+  #                                              coexist.)
+  # Models are pulled by the one-shot `ollama-init` below into the named volume,
+  # so the multi-GB download happens once per volume, not per `up`.
+  #
+  # CPU-ONLY BY DEFAULT. This workstation is an AMD Strix Halo iGPU, which Docker
+  # Desktop cannot pass through, so an 8B model here runs on CPU and is SLOW
+  # (expect tens of seconds per short completion, minutes for a PictureBook
+  # extraction). NVIDIA hosts opt in with AM7_OLLAMA_GPU=nvidia, which layers
+  # docker-compose.ollama-gpu.yml. Nothing in the default stack starts this.
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    ports:
+      # LOOPBACK-ONLY by default, same reasoning as litellm's :4000 above: this is
+      # an unauthenticated API that will happily load a model and burn CPU/GPU for
+      # anyone who can reach it. Override OLLAMA_BIND_HOST only on a trusted LAN.
+      - "${OLLAMA_BIND_HOST:-127.0.0.1}:${OLLAMA_HOST_PORT:-11435}:11434"
+    environment:
+      # How long a model stays resident after its last request. Two 8B models plus
+      # Tomcat (-Xmx8g) and six Langfuse services contend for host RAM, so keep
+      # this short; raise it for a long interactive session.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+      # Only one model resident at a time -- analysis (qwen3:8b) and PictureBook
+      # (JOSIEFIED) alternate within a test run and two 8B residents on CPU is
+      # the RAM failure mode.
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
+    volumes:
+      # NAMED VOLUME, like the Clickhouse/MinIO exception above and for the same
+      # reason: Ollama's blob store is written by atomic rename, which fails on a
+      # Docker Desktop for Windows bind mount. Disposable cache, not AM7 state --
+      # `down -v` re-pulls, nothing is lost. `rm -rf ./docker-data` does NOT clear it.
+      - ollama-models:/root/.ollama
+    networks:
+      - am7-test-net
+    healthcheck:
+      # No curl/wget in this image; the CLI talks to the local daemon.
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  # One-shot model pull. Runs to completion and exits 0; `restart: "no"` so a
+  # `ps` shows it Exited rather than crash-looping, and NOTHING depends_on it --
+  # a pull can take many minutes on first run and must not block am7 or litellm
+  # from starting (both fail visibly at REQUEST time if a model is missing).
+  # Watch it with:  docker compose -p am7test -f docker-compose.test.yml logs -f ollama-init
+  # `ollama pull` is idempotent: an already-present model returns in seconds.
+  ollama-init:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      # Space-separated. Defaults are the three the tests are pinned to:
+      # embeddings (768-wide, matching embedding.dimensions and the fixed-width
+      # common.vectorExt.embedding column) / analysis / PictureBook+ChapBook.
+      # The ~270 MB embedding model goes first so the app's embedding path is
+      # usable minutes into a first boot instead of after two ~5 GB pulls.
+      OLLAMA_PULL_MODELS: ${OLLAMA_PULL_MODELS:-nomic-embed-text qwen3:8b goekdenizguelmez/JOSIEFIED-Qwen3:8b}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -u
+        rc=0
+        for m in $$OLLAMA_PULL_MODELS; do
+          echo "[am7] ollama pull $$m"
+          if ollama pull "$$m"; then
+            echo "[am7] pulled $$m"
+          else
+            echo "[am7] FAILED to pull $$m" >&2
+            rc=1
+          fi
+        done
+        echo "[am7] installed models:"
+        ollama list
+        exit $$rc
+    networks:
+      - am7-test-net
+    restart: "no"
 
   # --- Langfuse v4 (latest stable) -----------------------------------------
   # v4 is a SIX-service deployment, not the two-service v2 this profile
@@ -842,12 +962,13 @@ services:
 
 
 volumes:
-  # Only the `llmproxy` (Langfuse v4) profile uses named volumes; everything
-  # else in this file is bind-mounted under AM7_DATA_DIR on purpose. See the
-  # comments on langfuse-clickhouse for why these two must be the exception.
+  # Only the `llmproxy` (Langfuse v4) and `ollama` profiles use named volumes;
+  # everything else in this file is bind-mounted under AM7_DATA_DIR on purpose.
+  # See the comments on langfuse-clickhouse and ollama for why these are the exception.
   langfuse-clickhouse-data:
   langfuse-clickhouse-logs:
   langfuse-minio-data:
+  ollama-models:
 
 networks:
   am7-test-net:
