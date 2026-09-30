@@ -14,6 +14,7 @@ import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbMigrationUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookCancelRegistry;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
+import org.cote.accountmanager.olio.picturebook.PbSeriesUtil;
 import org.cote.accountmanager.olio.picturebook.PbServiceFacade;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookProgressNotifier;
@@ -1443,6 +1444,33 @@ public class PictureBookService {
         try {
             return Response.status(200)
                 .entity(JSONUtil.exportObject(PbServiceFacade.listSeriesBooks(user, seriesObjectId))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * DELETE /series/{seriesObjectId}
+     * Delete a whole chaptered book: every chapter book and its footprint, the ONE shared series world,
+     * the series row, and the series Writer/Admin role pair. Per-chapter delete (DELETE /{bookObjectId}/reset)
+     * remains available for removing a single chapter. Returns {@code {deleted:true, chapters:N}}.
+     *
+     * <p>Transport only: entitlement (series Writer/Admin or org admin) plus a per-chapter canDelete
+     * pre-pass, and the ordered teardown, all live in {@code PbSeriesUtil.deleteSeries} in Objects7.
+     */
+    @RolesAllowed({"admin", "user"})
+    @DELETE
+    @Path("/series/{seriesObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response deleteSeries(@PathParam("seriesObjectId") String seriesObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            int chapters = PbSeriesUtil.deleteSeries(user, seriesObjectId);
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("deleted", Boolean.TRUE);
+            out.put("chapters", Integer.valueOf(chapters));
+            return Response.status(200).entity(JSONUtil.exportObject(out)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }

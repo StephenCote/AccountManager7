@@ -7,6 +7,8 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { am7model } from '../core/model.js';
+// See upstreamUi.test.js: without this import am7model.forms is empty and form assertions are vacuous.
+import '../core/formDef.js';
 
 beforeAll(() => {
     // Minimal stubs so prepareInstance/newInstance run in node env (matches model.test.js).
@@ -36,6 +38,18 @@ describe('P2-3 dialect model descriptor', () => {
         expect(am7model.enums.connectionDialectEnumType).toEqual([
             'UNKNOWN', 'OLLAMA', 'OPENAI', 'OPENAI_COMPAT'
         ]);
+    });
+
+    it('the named connection form renders dialect as a select fed by the enum', () => {
+        // formDef.js forms.connection has an explicit field list; the editor (views/object.js
+        // setInst) uses it verbatim, so dialect must be listed there or it is never shown. Enum
+        // fields need no format: am7view.getFormatForType('enum') -> 'select', values from
+        // am7model.enums.connectionDialectEnumType.
+        let form = am7model.forms.connection;
+        expect(form).toBeDefined();
+        expect(form.fields.dialect).toBeDefined();
+        expect(form.fields.dialect.hint).toMatch(/OPENAI_COMPAT/);
+        expect(form.fields.dialect.hint).toMatch(/LiteLLM/);
     });
 
     it('olio.llm.chatConfig.serviceType maxLength is aligned to the server model (16, was 10)', () => {

@@ -16,7 +16,7 @@ import { layout, pageLayout } from '../router.js';
 import { ObjectPicker } from '../components/picker.js';
 import { Dialog } from '../components/dialogCore.js';
 import {
-    loadPictureBook, reorderScenes, resetPictureBook,
+    loadPictureBook, reorderScenes, resetPictureBook, deletePictureBookSeries,
     resolveImageUrl, resolveAllImageUrls, clearImageCache,
     resolveCharacterNames, sceneCharacterLabels
 } from '../workflows/sceneExtractor.js';
@@ -161,6 +161,15 @@ function renderPb2SeriesCard(g) {
                         m.route.set('/picture-book/' + first.objectId + '/workflow');
                     }
                 }, m('span', { class: 'material-symbols-outlined text-lg' }, 'account_tree')) : null,
+                m('button', {
+                    class: 'text-red-400 hover:text-red-600 p-1',
+                    title: 'Delete series (all chapters)',
+                    'data-pb2-series-delete': g.seriesKey,
+                    onclick: function (e) {
+                        e.stopPropagation();
+                        deletePb2SeriesFromList(g);
+                    }
+                }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')),
                 m('span', { class: 'material-symbols-outlined text-gray-400' }, expanded ? 'expand_less' : 'expand_more')
             ])
         ]),
@@ -300,6 +309,37 @@ async function deletePb2BookFromList(b) {
     if (!ok) return;
     // Backend reset() accepts either data.group objectId or olio.pb.book objectId.
     await performPbDelete(b.objectId, reloadSelectorLists);
+}
+
+// Whole-series delete: the series card's own delete removes every chapter, the shared series world
+// and the series record in one call. Per-chapter delete (renderPb2BookRow) stays available alongside.
+async function deletePb2SeriesFromList(g) {
+    if (!g || !g.seriesKey || g.seriesKey === '__standalone__') return;
+    let label = (g.seriesName && g.seriesName !== g.seriesKey) ? g.seriesName : 'this series';
+    let n = g.chapters ? g.chapters.length : 0;
+    let ok = await Dialog.confirm({
+        title: 'Delete Series',
+        message: 'Delete "' + label + '" and all ' + n + ' chapter' + (n !== 1 ? 's' : '')
+            + '? Every chapter\'s scenes, characters and images, plus the shared series world, will be removed.',
+        confirmLabel: 'Delete series', confirmIcon: 'delete', destructive: true
+    });
+    if (!ok) return;
+    let outcome = null;
+    let hardError = null;
+    try {
+        let result = await deletePictureBookSeries(g.seriesKey);
+        if (result && result.deleted) outcome = 'deleted';
+        else if (pbDeleteIsGone(result)) outcome = 'gone';
+        else hardError = (result && result.reason) || 'Failed to delete series';
+    } catch (e) {
+        if (pbDeleteIsGone(e)) outcome = 'gone';
+        else hardError = (e && e.message) || 'Failed to delete series';
+    }
+    if (outcome === 'deleted') page.toast('success', 'Series deleted');
+    else if (outcome === 'gone') page.toast('info', 'Already removed');
+    else page.toast('error', hardError);
+    am7client.clearCache(0, true);
+    try { await reloadSelectorLists(); } catch (_) {}
 }
 
 var workSelectorView = {

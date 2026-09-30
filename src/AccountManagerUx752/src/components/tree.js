@@ -129,11 +129,17 @@ function newTreeComponent() {
         });
     }
 
+    function resetOlio() {
+        olio = undefined;
+        checkOlio = false;
+    }
+
     function refreshTree() {
         Object.keys(treeMatrix).forEach(function(i) {
             resetNode(i, true);
         });
         am7client.clearCache("auth.group", true);
+        resetOlio();
         m.redraw();
     }
 
@@ -336,7 +342,8 @@ function newTreeComponent() {
             if (!selectedNode) selectedNode = origin.objectId;
             tree.push(getTreeViewNode(origin));
 
-            // Olio mode: also show /Olio/Universes
+            // Olio mode: also show /Olio/Universes. Visible only to Olio User/Admin members
+            // (or once Olio data exists), so the lookup is re-run on every mount and Refresh.
             if (olioMode && !olio && !checkOlio) {
                 checkOlio = true;
                 page.findObject("auth.group", "DATA", "/Olio/Universes").then(function(g) {
@@ -372,6 +379,7 @@ function newTreeComponent() {
             dnd = page.components.dnd;
             list = vnode.attrs.list;
             origin = vnode.attrs.origin || (page.user ? page.user.homeDirectory : null);
+            resetOlio();
         },
         onremove: function() { },
         view: function() {

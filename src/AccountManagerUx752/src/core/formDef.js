@@ -5615,6 +5615,16 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
                 label: "API Key",
                 type: "password"
             },
+            dialect: {
+                layout: "one",
+                label: "Dialect",
+                hint: "Wire protocol of this endpoint: OLLAMA (/api/chat), OPENAI (Azure /openai/deployments/...), OPENAI_COMPAT (/v1/chat/completions, e.g. LiteLLM). Authoritative; the chat config's legacy Service Type is only a fallback when this is UNKNOWN."
+            },
+            upstream: {
+                layout: "one",
+                label: "Upstream",
+                hint: "Model-server family behind the endpoint (e.g. OLLAMA behind a LiteLLM proxy enables Ollama-only options). Independent of Dialect: upstream OPENAI is not dialect OPENAI."
+            },
             requestTimeout: {
                 layout: "one",
                 label: "Request Timeout (sec)",

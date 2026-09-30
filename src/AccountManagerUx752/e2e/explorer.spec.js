@@ -6,6 +6,7 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
+import { ensureSharedTestUser, addUserToRole, removeUserFromRole, findPath, apiLogin, apiLogout } from './helpers/api.js';
 
 /**
  * Navigate to the explorer view.
@@ -147,5 +148,61 @@ test.describe('Explorer view', () => {
         let url = page.url();
         expect(url).toContain('explorer');
         await screenshot(page, 'explorer-from-aside');
+    });
+});
+
+/**
+ * The Olio branch (/Olio/Universes) is readable only by members of ~/Roles/Olio User or
+ * ~/Roles/Olio Admin (OlioContext.configureEnvironment grants Read to those two roles only).
+ * The tree used to look the group up exactly once per SPA session and silently drop the
+ * branch forever if the lookup came back empty — so enrolling a user (or loading Olio data)
+ * had no visible effect until a full page reload. It now re-checks on every mount and Refresh.
+ */
+test.describe('Explorer Olio branch', () => {
+    const OLIO_USER_ROLE = 'Olio User';
+    const treePanel = 'div[style*="width:250px"], div[style*="width: 250px"]';
+
+    test('Universes node follows Olio User membership and reappears on Refresh', async ({ page, request }) => {
+        const { user, testUserName, testPassword } = await ensureSharedTestUser(request);
+        expect(user && user.objectId, 'shared test user must exist').toBeTruthy();
+
+        // Precondition: the org actually has Olio data. Checked with an admin session on the test's own
+        // request context (provisioning only — the UI runs as the shared user) so a missing
+        // /Olio/Universes fails loudly here instead of masquerading as a PBAC denial below.
+        expect((await apiLogin(request)).ok()).toBeTruthy();
+        const universes = await findPath(request, 'auth.group', 'DATA', '/Olio/Universes');
+        await apiLogout(request);
+        expect(universes && universes.objectId, '/Olio/Universes must exist in /Development (load Olio data first)').toBeTruthy();
+
+        // Start from a known state: NOT a member of Olio User.
+        await removeUserFromRole(request, user.objectId, OLIO_USER_ROLE);
+
+        try {
+            await login(page, { user: testUserName, password: testPassword });
+            await goToExplorer(page);
+            await expect(page.locator('text=Explorer').first()).toBeVisible({ timeout: 10000 });
+
+            // The origin (home directory, named after the user) renders; the Universes node must not.
+            const homeNode = page.locator(treePanel).locator('span.text-sm', { hasText: testUserName }).first();
+            await expect(homeNode).toBeVisible({ timeout: 10000 });
+            const universesNode = page.locator(treePanel).locator('span.text-sm', { hasText: /^Universes$/ });
+            await page.waitForTimeout(1500);
+            await expect(universesNode).toHaveCount(0);
+
+            // The raw lookup the tree performs comes back empty for a non-member.
+            const denied = await page.request.get('/AccountManagerService7/rest/path/find/auth.group/DATA/B64-' + Buffer.from('/Olio/Universes').toString('base64').replace(/=/g, '%3D'));
+            expect(denied.status()).toBe(200);
+            expect((await denied.text()).trim()).toBe('');
+            await screenshot(page, 'explorer-olio-absent');
+
+            // Enrol as admin, then use the tree's own Refresh — no reload, no re-login.
+            expect(await addUserToRole(request, user.objectId, OLIO_USER_ROLE)).toBe(true);
+            await page.locator(treePanel).locator('button:has(span:text-is("refresh"))').first().click();
+
+            await expect(universesNode.first()).toBeVisible({ timeout: 15000 });
+            await screenshot(page, 'explorer-olio-present');
+        } finally {
+            await removeUserFromRole(request, user.objectId, OLIO_USER_ROLE);
+        }
     });
 });

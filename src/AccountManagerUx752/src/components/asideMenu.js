@@ -1,5 +1,6 @@
 import m from 'mithril';
 import { am7model } from '../core/model.js';
+import { am7view } from '../core/view.js';
 import { am7client } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
 import { getMenuItems, isMenuItemVisible, visibleCategories } from '../features.js';
@@ -17,15 +18,15 @@ function navigateToCategory(cat) {
     let type = order[0];
     let mod = am7model.getModel(type);
     if (mod && (am7model.isGroup(mod) || mod.group)) {
-        // Support absolute paths (starting with /) or relative to home directory
-        let catPath = cat.group || cat.name;
+        // Same resolution as panel.clickPanelItem: an explicit category group (absolute, or relative to
+        // home), otherwise the model's own default folder (~/Characters for olio.charPerson, etc.).
         let path;
-        if (catPath.match(/^\//)) {
-            // Absolute path — use as-is (e.g. /Olio/Universes)
-            path = catPath;
+        if (cat.group && cat.group.match(/^\//)) {
+            path = cat.group;
+        } else if (cat.group) {
+            path = page.user ? page.user.homeDirectory.path + "/" + cat.group : null;
         } else {
-            // Relative path — prepend user's home directory
-            path = page.user ? page.user.homeDirectory.path + "/" + catPath : null;
+            path = am7view.pathForType(type);
         }
         if (path) {
             am7client.make("auth.group", "data", path, function (v) {

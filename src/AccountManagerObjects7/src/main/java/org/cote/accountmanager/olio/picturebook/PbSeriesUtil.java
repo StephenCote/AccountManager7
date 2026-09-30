@@ -1,5 +1,9 @@
 package org.cote.accountmanager.olio.picturebook;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -10,8 +14,12 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.WorldUtil;
+import org.cote.accountmanager.olio.picturebook.PictureBookUtil.DeleteResult;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -19,6 +27,9 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.OrderEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
+import org.cote.accountmanager.schema.type.RoleEnumType;
 
 /**
  * The {@code olio.pb.series} lifecycle - the scope for "the chapters of one book" (N1, Q6/Q7).
@@ -305,6 +316,209 @@ public class PbSeriesUtil {
 		return next;
 	}
 
+	// ─────────────────────────────── delete ───────────────────────────────
+
+	/**
+	 * Delete a whole series: every chapter book and its footprint, then the ONE shared world, then the
+	 * series row and the series role pair. This is the only path allowed to delete a series world - the
+	 * per-chapter teardown ({@link PictureBookUtil#teardownBookWorld}) refuses to, because from a single
+	 * chapter's point of view the world is still shared. Here every chapter is gone first, so nothing is
+	 * shared any more.
+	 * <p>
+	 * <b>Authorization.</b> The caller must be entitled to the series
+	 * ({@link PbOlioContextUtil#isEntitledToSeries}: org admin, or a member of the series {@code Writer}/
+	 * {@code Admin} role) AND {@code canDelete} must PERMIT on every chapter row as the acting user. Both
+	 * are decided up front, before anything is removed, so a denial never leaves a half-deleted series.
+	 * The physical deletes then run as the olio principal - the legitimate owner of the rows, groups,
+	 * world and roles - exactly as {@code teardownBookWorld} and {@code WorldUtil.deleteWorld} do.
+	 * <p>
+	 * Order: (1) per-chapter {@code teardownBookWorld} (its series guard scopes each to the chapter's own
+	 * groups + shadows); (2) {@code WorldUtil.deleteWorld} on the shared world, then evict its cached
+	 * context; (3) the series row; (4) the {@code ~/Roles/Olio/Series/{slug}} role subtree, so a same-slug
+	 * recreate does not inherit the old membership. Any failure at (1) or (2) aborts before (3) so the
+	 * series row - the only path back to the surviving chapters and world - stays in place and a retry
+	 * through this same method can finish the job.
+	 *
+	 * @return the number of chapter books torn down
+	 * @throws PictureBookException 400/401 on bad input, 403 when not entitled or a chapter delete is
+	 *         denied, 404 when no such series, 500 when the olio principal is missing or a physical delete
+	 *         failed after authorization
+	 */
+	public static int deleteSeries(BaseRecord user, String seriesObjectId) {
+		if(user == null) {
+			throw new PictureBookException(401, "No authenticated principal");
+		}
+		if(seriesObjectId == null || seriesObjectId.trim().length() == 0) {
+			throw new PictureBookException(400, "A seriesObjectId is required");
+		}
+		IOContext ioContext = IOSystem.getActiveContext();
+		OrganizationContext octx = ioContext.findOrganizationContext(user);
+		if(octx == null) {
+			throw new PictureBookException(500, "Failed to find an organization context");
+		}
+		long orgId = octx.getOrganizationId();
+		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		if(olioUser == null) {
+			throw new PictureBookException(500, "No olio principal in organization " + orgId);
+		}
+		BaseRecord series = readSeries(olioUser, seriesObjectId.trim(), orgId);
+		if(series == null) {
+			throw new PictureBookException(404, "Series not found: " + seriesObjectId);
+		}
+		String seriesSlug = seriesSlug(series);
+		if(seriesSlug == null || seriesSlug.trim().length() == 0) {
+			// A blank slug would make the role paths below collapse onto ~/Roles/Olio/Series itself.
+			throw new PictureBookException(500, "Series " + seriesObjectId + " has no slug in its name; refusing to delete");
+		}
+		if(!PbOlioContextUtil.isEntitledToSeries(user, octx, seriesSlug)) {
+			throw new PictureBookException(403, user.get(FieldNames.FIELD_NAME)
+				+ " is not entitled to series '" + seriesSlug + "'");
+		}
+
+		/// Candidate chapters by the series FK RECORD (same enumeration as PbServiceFacade.listSeriesBooks),
+		/// read back as the olio principal so every chapter row is in hand regardless of the caller's
+		/// per-group grants; the caller's right to delete each one is decided next.
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SERIES, series);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_CHAPTER });
+		q.setValue(FieldNames.FIELD_SORT_FIELD, OlioFieldNames.FIELD_PB_CHAPTER);
+		q.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING.toString());
+		q.setCache(false);
+		BaseRecord[] candidates = ioContext.getSearch().findRecords(q);
+		List<BaseRecord> chapters = new ArrayList<>();
+		if(candidates != null) {
+			for(BaseRecord cand : candidates) {
+				String oid = cand.get(FieldNames.FIELD_OBJECT_ID);
+				BaseRecord book = (oid != null ? PbBookUtil.readBook(olioUser, oid, orgId) : null);
+				if(book == null) {
+					throw new PictureBookException(500, "Chapter " + oid + " of series '" + seriesSlug
+						+ "' could not be read as the olio principal");
+				}
+				chapters.add(book);
+			}
+		}
+		for(BaseRecord book : chapters) {
+			PolicyResponseType prr = ioContext.getAuthorizationUtil().canDelete(user, user, book);
+			if(prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+				throw new PictureBookException(403, "Not authorized to delete chapter '"
+					+ book.get(OlioFieldNames.FIELD_PB_SLUG) + "' of series '" + seriesSlug + "'");
+			}
+		}
+
+		List<String> failures = new ArrayList<>();
+		for(BaseRecord book : chapters) {
+			DeleteResult res = PictureBookUtil.teardownBookWorld(user, book, orgId);
+			if(!res.deleted) {
+				if(!res.authorized) {
+					throw new PictureBookException(403, res.reason);
+				}
+				failures.add(res.reason);
+			}
+		}
+		if(!failures.isEmpty()) {
+			// Stop while the series row still exists, so the surviving chapters stay reachable and a retry
+			// through this same method can finish the job instead of orphaning them behind a 404.
+			throw new PictureBookException(500, "Series '" + seriesSlug + "' chapter teardown failed; series left in place for retry: "
+				+ String.join("; ", failures));
+		}
+
+		BaseRecord world = seriesWorld(olioUser, series, seriesSlug);
+		if(world != null) {
+			String worldObjectId = world.get(FieldNames.FIELD_OBJECT_ID);
+			boolean worldDeleted = false;
+			try {
+				worldDeleted = WorldUtil.deleteWorld(olioUser, world);
+			}
+			catch(Exception e) {
+				logger.warn("deleteSeries: WorldUtil.deleteWorld failed for series '" + seriesSlug + "': " + e.getMessage());
+			}
+			if(worldObjectId != null) {
+				try {
+					OlioContextUtil.evictByWorld(orgId, worldObjectId);
+				}
+				catch(Exception e) {
+					logger.warn("deleteSeries: evictByWorld failed for world=" + worldObjectId + ": " + e.getMessage());
+				}
+			}
+			if(!worldDeleted) {
+				// Same reasoning as the chapter abort above: the series row is the only path back to this world.
+				throw new PictureBookException(500, "Failed to delete the shared world of series '" + seriesSlug
+					+ "'; series left in place for retry. See server log.");
+			}
+		}
+
+		DeleteResult rowDel = PictureBookUtil.deleteRecordExplained(olioUser, series);
+		if(!rowDel.deleted) {
+			failures.add(rowDel.reason);
+		}
+
+		for(String rolePath : new String[] { PbOlioContextUtil.seriesWriterRolePath(seriesSlug),
+				PbOlioContextUtil.seriesAdminRolePath(seriesSlug), PbOlioContextUtil.SERIES_ROLE_BASE + "/" + seriesSlug }) {
+			BaseRecord role = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_ROLE, rolePath,
+				RoleEnumType.USER.toString(), orgId);
+			if(role != null) {
+				DeleteResult roleDel = PictureBookUtil.deleteRecordExplained(olioUser, role);
+				if(!roleDel.deleted) {
+					failures.add(roleDel.reason);
+				}
+			}
+		}
+
+		if(!failures.isEmpty()) {
+			throw new PictureBookException(500, "Series '" + seriesSlug + "' deletion completed with failures: "
+				+ String.join("; ", failures));
+		}
+		logger.info("Deleted series '" + seriesSlug + "' (" + chapters.size() + " chapter(s)) in organization " + orgId);
+		return chapters.size();
+	}
+
+	/**
+	 * The shared world a series is about to take down with it, resolved through the series row's own
+	 * {@code universe} FK rather than by name. A name lookup under {@code bookWorldPath()} would also match a
+	 * <i>standalone</i> book whose slug equals this series' slug - exactly the orphan-series case
+	 * ({@link #getCreateSeries} writes the row before the world, so a same-slug collision at world creation
+	 * leaves a row with {@code universe = null}). The FK target must sit in the Books/Worlds folder and must
+	 * be claimed back by this same series row, or the world is refused.
+	 *
+	 * @return the fully read world, or {@code null} when the series has no world (nothing to delete)
+	 * @throws PictureBookException 500 when the FK points at a world this series does not own
+	 */
+	private static BaseRecord seriesWorld(BaseRecord olioUser, BaseRecord series, String seriesSlug) {
+		BaseRecord universeRef = series.get(OlioFieldNames.FIELD_PB_UNIVERSE);
+		if(universeRef == null) {
+			logger.warn("deleteSeries: series '" + seriesSlug + "' has no universe; no shared world to delete");
+			return null;
+		}
+		long orgId = ((Number) olioUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		BaseRecord worldDir = IOSystem.getActiveContext().getPathUtil().findPath(olioUser, ModelNames.MODEL_GROUP,
+			PbOlioContextUtil.bookWorldPath(), GroupEnumType.DATA.toString(), orgId);
+		if(worldDir == null) {
+			logger.warn("deleteSeries: " + PbOlioContextUtil.bookWorldPath() + " does not exist; no shared world to delete");
+			return null;
+		}
+		long universeId = ((Number) universeRef.get(FieldNames.FIELD_ID)).longValue();
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_WORLD, FieldNames.FIELD_ID, universeId);
+		q.field(FieldNames.FIELD_GROUP_ID, (long) worldDir.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.planMost(true, Arrays.asList(new String[] { OlioFieldNames.FIELD_REALMS, FieldNames.FIELD_TAGS,
+			FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_CONTROLS }));
+		q.setCache(false);
+		BaseRecord world = IOSystem.getActiveContext().getSearch().findRecord(q);
+		if(world == null) {
+			logger.warn("deleteSeries: universe " + universeId + " of series '" + seriesSlug
+				+ "' is not a world under " + PbOlioContextUtil.bookWorldPath() + "; leaving it alone");
+			return null;
+		}
+		BaseRecord claimant = findSeriesByWorld(world);
+		long seriesId = ((Number) series.get(FieldNames.FIELD_ID)).longValue();
+		if(claimant == null || ((Number) claimant.get(FieldNames.FIELD_ID)).longValue() != seriesId) {
+			throw new PictureBookException(500, "World '" + world.get(FieldNames.FIELD_NAME) + "' is not claimed by series '"
+				+ seriesSlug + "' (claimed by " + (claimant != null ? claimant.get(FieldNames.FIELD_NAME) : "nothing")
+				+ "); refusing to delete it");
+		}
+		return world;
+	}
+
 	// ─────────────────────────────── names & projection ───────────────────────────────
 
 	/**
@@ -313,6 +527,16 @@ public class PbSeriesUtil {
 	 */
 	public static String seriesName(String seriesSlug) {
 		return "Series " + seriesSlug;
+	}
+
+	/** The inverse of {@link #seriesName(String)}: the slug a series row was created for. */
+	public static String seriesSlug(BaseRecord series) {
+		String name = series.get(FieldNames.FIELD_NAME);
+		if(name == null) {
+			return null;
+		}
+		String prefix = seriesName("");
+		return (name.startsWith(prefix) ? name.substring(prefix.length()) : name);
 	}
 
 	/** What to project on a series read. Includes {@code universe} (the shared world FK) and {@code bookCount}. */

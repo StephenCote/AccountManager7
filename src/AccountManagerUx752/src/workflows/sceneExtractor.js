@@ -475,6 +475,27 @@ async function resetPictureBook(bookObjectId) {
 }
 
 /**
+ * Delete a whole chaptered book: every chapter, the shared series world, and the series itself.
+ * Same result shape as resetPictureBook so the selector's delete flow can treat both alike.
+ * @param {string} seriesObjectId - olio.pb.series objectId
+ * @returns {Promise<{deleted:boolean, chapters:number, reason:string|null, status:number}>}
+ */
+async function deletePictureBookSeries(seriesObjectId) {
+    let resp = await fetch(pbBase() + '/series/' + seriesObjectId, {
+        method: 'DELETE',
+        credentials: 'include'
+    });
+    let body = null;
+    try { body = await resp.json(); } catch (_) { /* no body / non-JSON */ }
+    if (body && typeof body === 'object') {
+        let deleted = body.deleted === true;
+        let reason = deleted ? null : (body.reason || body.error || body.message || ('Series delete failed: ' + resp.status));
+        return { deleted: deleted, chapters: body.chapters || 0, reason: reason, status: resp.status };
+    }
+    return { deleted: resp.ok, chapters: 0, reason: resp.ok ? null : ('Series delete failed: ' + resp.status), status: resp.status };
+}
+
+/**
  * List a book's extracted characters (for the "Manage Characters" review/edit screen).
  * @param {string} bookObjectId - book group objectId
  * @returns {Promise<Array>}
@@ -750,6 +771,7 @@ export {
     reorderScenes,
     setSceneStatus,
     resetPictureBook,
+    deletePictureBookSeries,
     listCharacters,
     resolveCharacterNames,
     sceneCharacterLabel,

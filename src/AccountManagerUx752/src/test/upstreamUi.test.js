@@ -13,6 +13,10 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { am7model } from '../core/model.js';
+// main.js loads formDef.js for its side effect (am7model.forms = forms). Without this import
+// am7model.forms is the empty object modelDef.js initialises, and any assertion about the
+// connection form is vacuous — that is exactly how the missing Dialect/Upstream selectors shipped.
+import '../core/formDef.js';
 
 beforeAll(() => {
     // Minimal stubs so prepareInstance/newInstance run in node env (matches model.test.js).
@@ -56,11 +60,15 @@ describe('upstream model descriptor', () => {
         expect(d).toMatch(/OPENAI_COMPAT->UNKNOWN/);
     });
 
-    it('upstream does not need a formDef entry, for the same reason dialect does not', () => {
-        // views/object.js setInst() looks up am7model.forms[<model simple name>] and only falls back
-        // to generateDefaultForm() when absent. `system.connection` has no named form, so the editor
-        // is generically driven from modelDef and enum fields get format "select" automatically.
-        expect(am7model.forms.connection).toBeUndefined();
+    it('the named connection form renders upstream (the editor never falls back to the generic form)', () => {
+        // views/object.js setInst() looks up am7model.forms[<model simple name>] and only calls
+        // generateDefaultForm() when that is absent. `system.connection` HAS a named form
+        // (formDef.js forms.connection) with an explicit field list, so a field missing from that
+        // list is simply never rendered - no descriptor entry can compensate.
+        let form = am7model.forms.connection;
+        expect(form).toBeDefined();
+        expect(form.fields.upstream).toBeDefined();
+        expect(form.fields.upstream.hint).toMatch(/not dialect OPENAI/i);
     });
 });
 
