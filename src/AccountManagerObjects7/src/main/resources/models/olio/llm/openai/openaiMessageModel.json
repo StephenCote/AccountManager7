@@ -23,7 +23,11 @@
 		{
 			"name": "thinking",
 			"type": "string"
+		},
+		{
+			"name": "reasoning_content",
+			"type": "string",
+			"description": "OpenAI-dialect reasoning tokens (LiteLLM/vLLM/DeepSeek-style). Ollama emits the same thing as `thinking`. Without this field every streamed delta from a reasoning model logged an 'Invalid field' ERROR, one per token."
 		}
-
 	]
 }

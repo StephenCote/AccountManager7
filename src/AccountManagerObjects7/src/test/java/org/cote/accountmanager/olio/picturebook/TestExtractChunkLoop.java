@@ -854,10 +854,24 @@ public class TestExtractChunkLoop extends BaseTest {
 		assertFalse("sourceText must be stripped before persistence", back.containsKey("sourceText"));
 		assertEquals("Kept", back.get("title"));
 		assertEquals(3, ((Number) back.get("sceneIndex")).intValue());
-		assertEquals("blurb is the summary at persistence time", "seven", back.get("blurb"));
+		assertEquals("a user-edited summary wins over the LLM blurb", "seven", back.get("blurb"));
 
 		/// The input map is not mutated (the caller still needs sourceText for the character reduce).
 		assertEquals("PASSAGE-7", scene.get("sourceText"));
+
+		/// The production shape: the extraction prompt asks the LLM for `blurb` and nothing ever
+		/// sets `summary` unless the user edits the scene. The blurb must reach the note — this is
+		/// exactly what the reader shows under each page, and the old code wrote summary-or-"" over it.
+		Map<String, Object> llmOnly = scene("LLM", "the caretaker arranges the vessels", 2);
+		Map<String, Object> llmStore = PictureBookUtil.sceneNoteStore(llmOnly, 1);
+		Map<String, Object> llmBack = JSONUtil.getMap(JSONUtil.exportObject(llmStore).getBytes(java.nio.charset.StandardCharsets.UTF_8), String.class, Object.class);
+		assertEquals("LLM blurb must survive persistence when no summary was supplied",
+				"the caretaker arranges the vessels", llmBack.get("blurb"));
+
+		/// An LLM placeholder in summary ("null"/"none") must not displace a real blurb.
+		Map<String, Object> placeholder = scene("Ph", "real blurb", 4);
+		placeholder.put("summary", "null");
+		assertEquals("real blurb", PictureBookUtil.sceneNoteStore(placeholder, 0).get("blurb"));
 
 		/// A scene supplied without provenance persists without the key rather than with a bogus 0.
 		Map<String, Object> direct = new LinkedHashMap<>();

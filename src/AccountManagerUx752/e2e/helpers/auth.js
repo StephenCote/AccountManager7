@@ -64,6 +64,28 @@ export async function login(page, opts = {}) {
 }
 
 /**
+ * Open a tool from the App Panel (#!/app): Explorer, Passkeys, Access Requests. These moved off the
+ * flyout, so navigate the way a user does — flyout "App Panel" entry, then the tool's card.
+ * @param {import('@playwright/test').Page} page
+ * @param {string} route - the tool's route, e.g. '/explorer', '/webauthn', '/accessRequests'
+ */
+export async function openAppTool(page, route) {
+    // The aside is in the DOM whether or not the drawer is open; click its button via JS so the
+    // drawer state does not matter (it overflows the viewport, like the old flyout helpers).
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('aside button'))
+        .some(b => /App Panel$/.test(b.textContent.trim())), { timeout: 10000 });
+    await page.evaluate(() => {
+        let btn = Array.from(document.querySelectorAll('aside button')).find(b => /App Panel$/.test(b.textContent.trim()));
+        if (btn) btn.click();
+    });
+    await page.waitForURL(/#!\/app$/, { timeout: 10000 });
+    const card = page.locator('[data-tool="' + route + '"]');
+    await card.waitFor({ state: 'visible', timeout: 15000 });
+    await card.click();
+    await page.waitForURL(new RegExp('#!' + route.replace(/\//g, '\\/') + '(\\/|$)'), { timeout: 15000 });
+}
+
+/**
  * Take a named screenshot for visual reference.
  * @param {import('@playwright/test').Page} page
  * @param {string} name - Screenshot filename (without extension)

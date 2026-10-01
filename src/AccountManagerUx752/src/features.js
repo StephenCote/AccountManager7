@@ -3,7 +3,8 @@
 // This module holds ONLY the non-serializable half of the feature manifest — the per-id wiring:
 //   routes:        () => import(...)   lazy chunk factory (kept as an ES module so Vite can
 //                                      tree-shake / code-split the dead import() paths)
-//   menuItems:     [...]              top/aside menu entries
+//   menuItems:     [...]              menu entries; `section` is 'top' (top bar), 'aside' (flyout
+//                                      Features list) or 'app' (a card on the App Panel, #!/app)
 //   routePrefixes: [...]              route path prefixes this feature owns (§3.6 catch-all)
 //
 // The DATA half (id, label, description, required, deps) lives in ./features.manifest.json, which is
@@ -81,12 +82,12 @@ const featureWiring = {
     },
     webauthn: {
         routes: () => import('./features/webauthn.js'),
-        menuItems: [{ icon: 'passkey', label: 'Passkeys', route: '/webauthn', section: 'aside' }],
+        menuItems: [{ icon: 'passkey', label: 'Passkeys', route: '/webauthn', section: 'app' }],
         routePrefixes: ['/webauthn']
     },
     accessRequests: {
         routes: () => import('./features/accessRequests.js'),
-        menuItems: [{ icon: 'switch_access_shortcut', label: 'Access Requests', route: '/accessRequests', section: 'aside' }],
+        menuItems: [{ icon: 'switch_access_shortcut', label: 'Access Requests', route: '/accessRequests', section: 'app' }],
         routePrefixes: ['/accessRequests']
     },
     featureConfig: {

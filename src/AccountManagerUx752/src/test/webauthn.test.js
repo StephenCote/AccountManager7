@@ -14,14 +14,15 @@ describe('WebAuthn Feature', () => {
         expect(features.webauthn.deps).toContain('core');
     });
 
-    it('webauthn feature has correct menu item', () => {
+    it('webauthn feature has correct menu item (App Panel card, not the flyout)', () => {
         initFeatures(['core', 'webauthn']);
-        let asideItems = getMenuItems('aside');
-        let passkeyItem = asideItems.find(mi => mi.label === 'Passkeys');
+        let appItems = getMenuItems('app');
+        let passkeyItem = appItems.find(mi => mi.label === 'Passkeys');
         expect(passkeyItem).toBeDefined();
         expect(passkeyItem.icon).toBe('passkey');
         expect(passkeyItem.route).toBe('/webauthn');
-        expect(passkeyItem.section).toBe('aside');
+        expect(passkeyItem.section).toBe('app');
+        expect(getMenuItems('aside').find(mi => mi.label === 'Passkeys')).toBeUndefined();
     });
 
     it('webauthn is enabled in full profile', () => {

@@ -2,23 +2,13 @@
  * Access Requests E2E tests — Tests navigation, tab switching, and new request form.
  */
 import { test, expect } from './helpers/fixtures.js';
-import { login, screenshot } from './helpers/auth.js';
+import { login, screenshot, openAppTool } from './helpers/auth.js';
 
 /**
- * Navigate to the Access Requests page via the aside menu button.
+ * Navigate to the Access Requests page via its App Panel card (flyout → App Panel → Access Requests).
  */
 async function goToAccessRequests(page) {
-    await page.waitForFunction(() => {
-        let buttons = Array.from(document.querySelectorAll('button'));
-        return buttons.some(b => b.textContent.trim().includes('Access Requests'));
-    }, { timeout: 10000 });
-
-    await page.evaluate(() => {
-        let buttons = Array.from(document.querySelectorAll('button'));
-        let btn = buttons.find(b => b.textContent.trim().includes('Access Requests'));
-        if (btn) btn.click();
-    });
-    await page.waitForTimeout(1500);
+    await openAppTool(page, '/accessRequests');
 }
 
 test.describe('Access Requests feature', () => {

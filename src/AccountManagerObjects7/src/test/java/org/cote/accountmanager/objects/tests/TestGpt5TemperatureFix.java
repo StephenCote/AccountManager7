@@ -228,4 +228,26 @@ public class TestGpt5TemperatureFix extends BaseTest {
 		assertEquals("service_tier value should deserialize", "default", resp.get("service_tier"));
 		assertEquals("obfuscation value should deserialize", "TqKimuL5lqGa0k6", resp.get("obfuscation"));
 	}
+
+	/// Reasoning models behind LiteLLM/vLLM stream their thinking as `delta.reasoning_content`
+	/// (the OpenAI-dialect twin of Ollama's `thinking`). The field was missing from openaiMessage,
+	/// so every streamed token logged `Invalid field: olio.llm.openai.openaiMessage.reasoning_content`
+	/// — 7195 ERROR lines in two hours of one PictureBook extraction.
+	@Test
+	public void TestReasoningContentDeltaDeserializes() {
+		String chunk = "{\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"\","
+			+ "\"reasoning_content\":\" expressions,\"},\"index\":0,\"finish_reason\":null}],"
+			+ "\"created\":1234567890,\"id\":\"chatcmpl-r1\",\"model\":\"qwen3:30b-jos\","
+			+ "\"object\":\"chat.completion.chunk\"}";
+
+		BaseRecord resp = RecordFactory.importRecord(
+			org.cote.accountmanager.olio.schema.OlioModelNames.MODEL_OPENAI_RESPONSE, chunk);
+		assertNotNull("reasoning chunk failed to deserialize", resp);
+		java.util.List<BaseRecord> choices = resp.get("choices");
+		assertEquals(1, choices.size());
+		BaseRecord delta = choices.get(0).get("delta");
+		assertNotNull("delta should deserialize", delta);
+		assertTrue("reasoning_content should now be a known field", delta.hasField("reasoning_content"));
+		assertEquals(" expressions,", delta.get("reasoning_content"));
+	}
 }

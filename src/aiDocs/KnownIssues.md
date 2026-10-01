@@ -3672,14 +3672,21 @@ for every one of them, and nothing has been repointed. The exposure is entirely 
 > below; the text around this note describes the pre-fix behaviour and is kept for deployments
 > running an older Objects7.
 
-**A compounding observation (noted, not fixed).** With thinking forced back on, every streamed delta
-from a reasoning model also logs
+**A compounding observation — FIXED 2026-10-01 (the `reasoning_content` half).** With thinking forced
+back on, every streamed delta from a reasoning model also logged
 `ERROR RecordDeserializer - Invalid field: olio.llm.openai.openaiMessage.reasoning_content <token>` —
-one line per token, hundreds per call — because `olio.llm.openai.openaiMessage` has no
-`reasoning_content` field (same for `openaiResponse.prompt_eval_cached_count` on the Ollama path). So
-the reasoning tokens are both *paid for* and *silently discarded*, and the log is flooded while it
-happens. Observed 2026-09-14 during the LiteLLM proxy tests. Pre-existing and independent of this
-issue's gating defect, but it makes the symptom much worse; worth handling together.
+one line per token, hundreds per call — because `olio.llm.openai.openaiMessage` had no
+`reasoning_content` field. Observed 2026-09-14 during the LiteLLM proxy tests; reported again by Stephen
+2026-10-01 from a PictureBook extraction of `Ourselves.doc` on `qwen3:30b-jos` via LiteLLM — **7195**
+such lines in two hours of one job. Fix: `reasoning_content` (string) added to
+`openaiMessageModel.json` next to `thinking`; the model is `ioConstraints:["unknown"]` so no DDL is
+involved — rebuild the jar and restart. Proof: `TestGpt5TemperatureFix.TestReasoningContentDeltaDeserializes`
+(red without the field with the exact ERROR line, green with it); live, 0 `Invalid field` /
+0 `RecordDeserializer` lines in `am7test-am7-1` since the redeploy while a direct stream against the same
+LiteLLM route (`qwen3:8b-jos-ctr`) carried `reasoning_content` on 268 deltas. **Still open, deliberately:**
+`openaiResponse.prompt_eval_cached_count` on the Ollama path (one line per *response*, not per token —
+much lower volume), and the reasoning tokens are still *discarded* rather than wrapped into `content`
+as `<think>…</think>` the way the Ollama path does with `thinking`; both are Stephen's call.
 
 ---
 
@@ -3863,11 +3870,43 @@ about the outcome; the mechanism is an injected token.
   comment. Fixing it changes main-path generation behaviour and is Stephen's call.
   `TestUpstreamWireEmission` `caseC` pins the current behaviour rather than the comment's intent.
 
-The compounding `reasoning_content` deserialization noise noted above is unchanged and still
-unfixed — but with `think:false` now reaching the model it stops being triggered for configs that set
-it. Operator guidance is in `dockerDevSetup.md` §12.4.
+The compounding `reasoning_content` deserialization noise noted above was fixed separately on
+2026-10-01 (field added to `openaiMessage`; see that paragraph). `think:false` reaching the model
+still matters for configs that set it — it stops paying for the tokens — but a config that leaves
+thinking on no longer floods the log. Operator guidance is in `dockerDevSetup.md` §12.4.
 
 **Touched:** `ChatUtil.java` (extension block, `resolveUpstream`/`inferUpstream`, resumed-session
 branch), `Chat.java` (`keepThink`, `minTokens`, prune list, connection projection, `getUpstream()`,
 WARN), `ConnectionUpstreamEnumType.java` (new), `connectionModel.json`, `FieldNames.java`,
 `ServerConfigUtil.java`, and `AccountManagerUx752/src/core/modelDef.js` for the operator path.
+
+### KI-73. Finished STORY books show "No text yet." on every page — `sceneNoteStore` discarded the LLM's `blurb` — **FIXED 2026-10-01** (reported by Stephen on `Ourselves.doc`)
+
+**Symptom.** A PictureBook built from an extracted document rendered every page with
+`<em>No text yet.</em>` in the PB2 reader (`pictureBook.js renderPb2ScenePage`, which shows
+`poemStanza || blurb || summary`). Images, titles, settings and moods were all present; only the text was
+missing.
+
+**Cause.** The extract-scenes LLM reply carries each scene's prose as `blurb` and never emits `summary`
+(`summary` only exists when a wizard edit supplies it). `PictureBookUtil.sceneNoteStore` built the
+persisted `data.note` JSON with `blurb = summary-or-""`, so the LLM's text was overwritten with an empty
+string at persistence. Everything downstream copied that nothing faithfully: `PbPipelineUtil.dualWriteScene`
+PATCHed the empty blurb onto `olio.pb.scene`, `PbServiceFacade.bookPageView` handed `/pages` empty strings,
+and the reader fell through to its placeholder. Measured on the Docker DB before the fix: **0 of 8617**
+scene notes had a blurb. The gated render test in `pictureBook.spec.js` never caught it because its
+hand-built scene supplies `summary`.
+
+**Fix.** `sceneNoteStore` now prefers a meaningful `summary` (a wizard edit still wins) and otherwise keeps
+the LLM's `blurb`, with `NarrativeUtil.isMeaningful` guarding both so a literal `"null"` placeholder cannot
+leak into the page.
+
+**Proof.** JUnit `TestExtractChunkLoop.TestSceneNoteStoreRetainsSourceChunkAndDropsSourceText` (LLM-blurb-only
+and `summary:"null"` cases); Playwright `e2e/pictureBookSceneText.spec.js` — load-safe tier proves the
+persisted notes carry the exact blurb, and the `PB_SD_TESTS=1` tier rendered a scene (LLM via LiteLLM + SD),
+saw `/pages` return the blurb, and screenshotted the reader displaying it (`2 passed (1.8m)`,
+`[e2e-llm] route=litellm server=http://litellm:4000`). Both run as `e2etest_shared`.
+
+**Residual.** Books extracted before the fix (Ourselves included) still have empty blurbs in their scene
+notes and `olio.pb.scene` rows; they need re-extraction or the per-scene regenerate-blurb path to pick up
+text. No migration was written — the scene notes hold whatever the LLM said at the time and the original
+`blurb` is gone from them.

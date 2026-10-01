@@ -7,7 +7,7 @@
  * 15a: Backend API integration tests verify the REST endpoints directly against the live backend.
  */
 import { test, expect } from './helpers/fixtures.js';
-import { login, screenshot } from './helpers/auth.js';
+import { login, screenshot, openAppTool } from './helpers/auth.js';
 import { request as pwRequest } from '@playwright/test';
 
 const BASE_URL = 'https://localhost:8899';
@@ -29,29 +29,10 @@ async function apiLogin(ctx, opts = {}) {
 }
 
 /**
- * Navigate to the WebAuthn settings page via JS click on the aside Passkeys button.
- * The aside nav overflows the viewport, so we can't use Playwright's click() directly.
- * Retries to handle the case where feature routes haven't loaded yet.
+ * Navigate to the WebAuthn settings page via its App Panel card (flyout → App Panel → Passkeys).
  */
 async function goToWebauthn(page) {
-    // Wait for the aside Passkeys button to appear in the DOM
-    await page.waitForFunction(() => {
-        let buttons = Array.from(document.querySelectorAll('button'));
-        return buttons.some(b => {
-            let t = b.textContent.trim();
-            return t.includes('Passkeys') && !t.includes('Sign in');
-        });
-    }, { timeout: 10000 });
-
-    await page.evaluate(() => {
-        let buttons = Array.from(document.querySelectorAll('button'));
-        let btn = buttons.find(b => {
-            let t = b.textContent.trim();
-            return t.includes('Passkeys') && !t.includes('Sign in');
-        });
-        if (btn) btn.click();
-    });
-    await page.waitForTimeout(1500);
+    await openAppTool(page, '/webauthn');
 }
 
 test.describe('WebAuthn passkey flow', () => {

@@ -16,7 +16,6 @@ import { MemoryPanel } from '../chat/MemoryPanel.js';
 import { ChatTokenRenderer } from '../chat/ChatTokenRenderer.js';
 import { ChatSetupWizard } from '../chat/ChatSetupWizard.js';
 import { AnalysisManager } from '../chat/AnalysisManager.js';
-import { LLMDebugPanel } from '../chat/LLMDebugPanel.js';
 import { am7chat } from '../chat/chatUtil.js';
 import { ObjectPicker } from '../components/picker.js';
 import { GossipPanel } from '../chat/GossipPanel.js';
@@ -1001,12 +1000,7 @@ function renderToolbar() {
                 class: "p-1.5 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800",
                 title: "Delete session",
                 onclick: doDelete
-            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "delete")) : null,
-            m("button", {
-                class: "p-1.5 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800",
-                title: "LLM Debug",
-                onclick: function() { LLMDebugPanel.toggle(); }
-            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "bug_report"))
+            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "delete")) : null
         ])
     ]);
 }
@@ -1333,7 +1327,6 @@ const chatView = {
             ]),
             // Overlays
             m(ChatSetupWizard.WizardView),
-            m(LLMDebugPanel.PanelView),
             m(ObjectPicker.PickerView),
             renderNewSessionDialog()
         ]);

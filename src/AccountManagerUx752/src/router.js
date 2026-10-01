@@ -17,6 +17,7 @@ import { newListControl } from './views/list.js';
 import { newObjectPage } from './views/object.js';
 import { newNavigatorControl } from './views/navigator.js';
 import { newExplorerControl } from './views/explorer.js';
+import { appPanelView } from './views/appPanel.js';
 import { am7decorator } from './components/decorator.js';
 import { newPaginationControl } from './components/pagination.js';
 import { initTheme } from './components/topMenu.js';
@@ -31,13 +32,18 @@ let _navRoute = null;
 
 let _navHide = undefined;
 
+let _navCrumbVisible = undefined;
+
 const NavGuard = {
     onbeforeupdate(vnode) {
         let route = m.route.get();
         let hide = vnode.attrs.hideBreadcrumb;
-        if (route === _navRoute && hide === _navHide) return false;
+        // The breadcrumb bar renders inside the nav subtree, so its toggle (App Panel) must get through the guard.
+        let crumbVisible = page.components.breadCrumb ? page.components.breadCrumb.isVisible() : undefined;
+        if (route === _navRoute && hide === _navHide && crumbVisible === _navCrumbVisible) return false;
         _navRoute = route;
         _navHide = hide;
+        _navCrumbVisible = crumbVisible;
         return true;
     },
     view(vnode) {
@@ -165,6 +171,11 @@ const routes = {
         onremove: function() { if (explorerControl.view.onremove) explorerControl.view.onremove(); },
         view: function() {
             return layout(pageLayout(explorerControl.renderContent()));
+        }
+    },
+    "/app": {
+        view: function() {
+            return layout(pageLayout(m(appPanelView)));
         }
     },
     "/new/:type": newObjectRoute(false),

@@ -5,39 +5,14 @@
  * Left panel: tree (auth.group hierarchy). Right panel: list view for selected folder.
  */
 import { test, expect } from './helpers/fixtures.js';
-import { login, screenshot } from './helpers/auth.js';
+import { login, screenshot, openAppTool } from './helpers/auth.js';
 import { ensureSharedTestUser, addUserToRole, removeUserFromRole, findPath, apiLogin, apiLogout } from './helpers/api.js';
 
 /**
- * Navigate to the explorer view.
- * Tries route navigation first; falls back to clicking the aside Explorer button.
+ * Navigate to the explorer view via its App Panel card (flyout → App Panel → Explorer).
  */
 async function goToExplorer(page) {
-    // Open the aside menu if needed and click the Explorer button.
-    // Mithril routing requires m.route.set() (triggered by button onclick),
-    // not raw window.location.hash assignment.
-    let hamburger = page.locator('button[aria-label="Toggle navigation menu"], button:has(span:text("menu"))').first();
-    let asideOpen = await page.locator('.explorer-button, button:has(span:text("Explorer"))').count() > 0;
-    if (!asideOpen) {
-        await hamburger.click({ timeout: 5000 }).catch(() => {});
-        await page.waitForTimeout(300);
-    }
-
-    // Click the Explorer button in the aside menu
-    await page.waitForFunction(() => {
-        let spans = Array.from(document.querySelectorAll('span'));
-        return spans.some(s => s.textContent.trim() === 'Explorer');
-    }, { timeout: 10000 });
-    await page.evaluate(() => {
-        // Find the button containing an "Explorer" span and click it
-        let buttons = Array.from(document.querySelectorAll('button'));
-        let btn = buttons.find(b => {
-            let spans = b.querySelectorAll('span');
-            return Array.from(spans).some(s => s.textContent.trim() === 'Explorer');
-        });
-        if (btn) btn.click();
-    });
-    await page.waitForURL(/.*#!\/explorer/, { timeout: 10000 });
+    await openAppTool(page, '/explorer');
 }
 
 test.describe('Explorer view', () => {
@@ -128,26 +103,16 @@ test.describe('Explorer view', () => {
         }
     });
 
-    test('aside menu Explorer button navigates to explorer', async ({ page }) => {
+    test('App Panel Explorer card navigates to explorer (no Explorer button on the flyout)', async ({ page }) => {
         await login(page);
 
-        // Find the aside Explorer button — contains a span with text "Explorer"
-        await page.waitForFunction(() => {
-            let buttons = Array.from(document.querySelectorAll('button'));
-            return buttons.some(b => Array.from(b.querySelectorAll('span')).some(s => s.textContent.trim() === 'Explorer'));
-        }, { timeout: 10000 });
+        // Explorer moved from the flyout to the App Panel; the aside must not offer it directly.
+        let asideExplorer = await page.$$eval('aside button', els => els.filter(b => /^\s*\S+\s*Explorer\s*$/.test(b.textContent)).length);
+        expect(asideExplorer, 'the flyout should no longer have an Explorer button').toBe(0);
 
-        await page.evaluate(() => {
-            let buttons = Array.from(document.querySelectorAll('button'));
-            let btn = buttons.find(b => Array.from(b.querySelectorAll('span')).some(s => s.textContent.trim() === 'Explorer'));
-            if (btn) btn.click();
-        });
-        await page.waitForTimeout(1500);
-
-        // Should be on the explorer route
-        let url = page.url();
-        expect(url).toContain('explorer');
-        await screenshot(page, 'explorer-from-aside');
+        await openAppTool(page, '/explorer');
+        expect(page.url()).toContain('explorer');
+        await screenshot(page, 'explorer-from-app-panel');
     });
 });
 

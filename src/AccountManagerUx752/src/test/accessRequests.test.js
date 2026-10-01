@@ -14,14 +14,15 @@ describe('Access Requests Feature', () => {
         expect(features.accessRequests.deps).toContain('core');
     });
 
-    it('accessRequests feature has correct menu item', () => {
+    it('accessRequests feature has correct menu item (App Panel card, not the flyout)', () => {
         initFeatures(['core', 'accessRequests']);
-        let asideItems = getMenuItems('aside');
-        let arItem = asideItems.find(mi => mi.label === 'Access Requests');
+        let appItems = getMenuItems('app');
+        let arItem = appItems.find(mi => mi.label === 'Access Requests');
         expect(arItem).toBeDefined();
         expect(arItem.icon).toBe('switch_access_shortcut');
         expect(arItem.route).toBe('/accessRequests');
-        expect(arItem.section).toBe('aside');
+        expect(arItem.section).toBe('app');
+        expect(getMenuItems('aside').find(mi => mi.label === 'Access Requests')).toBeUndefined();
     });
 
     it('accessRequests is enabled in full profile', () => {

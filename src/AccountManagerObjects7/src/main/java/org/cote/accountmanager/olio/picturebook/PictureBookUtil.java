@@ -7568,13 +7568,14 @@ public class PictureBookUtil {
      * <p>Package-private so the persistence shape is testable without a database.
      */
     static Map<String, Object> sceneNoteStore(Map<String, Object> sceneData, int idx) {
-        String summary = (String) sceneData.getOrDefault("summary", "");
-        // Store scene metadata + summary as JSON in the text field
-        // (data.note has no 'description' field — summary goes in the metadata)
+        // `summary` is only set by a wizard edit, so it wins; the LLM emits `blurb`, which must survive.
+        String summary = sceneData.get("summary") instanceof String ? (String) sceneData.get("summary") : null;
+        String blurb = sceneData.get("blurb") instanceof String ? (String) sceneData.get("blurb") : null;
+        String text = NarrativeUtil.isMeaningful(summary) ? summary : (NarrativeUtil.isMeaningful(blurb) ? blurb : "");
         Map<String, Object> sceneStore = new LinkedHashMap<>(sceneData);
         sceneStore.remove("sourceText");
         sceneStore.put("sceneIndex", idx);
-        sceneStore.put("blurb", summary);
+        sceneStore.put("blurb", text);
         return sceneStore;
     }
 
