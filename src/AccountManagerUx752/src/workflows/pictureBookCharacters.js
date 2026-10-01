@@ -11,7 +11,9 @@ import { outfitBuilder } from './outfitBuilder.js';
 /**
  * PictureBook "Manage Characters" workflow — review/edit extracted charPerson records for a book:
  * customize/complete statistics, generate/tag apparel per scene, regenerate a portrait.
- * Launched from the PictureBook wizard (step 4/5) via openCharacterManager(bookObjectId).
+ * Launched from the PictureBook wizard (step 4/5) via openCharacterManager(bookObjectId), and
+ * directly from the PB2 book list / reader header via openCharacterManager(bookObjectId,
+ * {standalone: true}) — see openFullEditor for what `standalone` changes.
  *
  * Reuses existing workflows wholesale rather than re-implementing them:
  *  - reimage(entity, inst)       — portrait regeneration (same call the generic charPerson
@@ -40,6 +42,15 @@ let mergeMode = false;
 let mergeSelection = {};   // objectId -> true
 let merging = false;
 let deleting = false;
+// Inline name/description edit of the selected character (renderDetail header).
+let editingIdentity = false;
+let editName = '';
+let editDescription = '';
+let savingIdentity = false;
+// true when the manager was opened on its own (book list / reader header), with no wizard Dialog
+// underneath whose in-progress state a route change would discard. Set ONLY from the explicit
+// {standalone: true} option passed by the launch site — never inferred from the dialog stack.
+let standalone = false;
 
 function resetState() {
     bookObjectId = null;
@@ -52,6 +63,11 @@ function resetState() {
     mergeSelection = {};
     merging = false;
     deleting = false;
+    editingIdentity = false;
+    editName = '';
+    editDescription = '';
+    savingIdentity = false;
+    standalone = false;
 }
 
 async function refreshList() {
@@ -62,6 +78,7 @@ async function refreshList() {
 async function selectCharacter(objectId) {
     selectedObjectId = objectId;
     selectedInst = null;
+    editingIdentity = false;
     m.redraw();
     let entity = await am7client.getFull('olio.charPerson', objectId);
     if (!entity) {
@@ -79,6 +96,55 @@ async function patchStatField(statistics, field, value) {
         objectId: statistics.objectId,
         [field]: value
     });
+}
+
+function beginEditIdentity() {
+    if (!selectedInst) return;
+    editName = selectedInst.entity.name || '';
+    editDescription = selectedInst.entity.description || '';
+    editingIdentity = true;
+    m.redraw();
+}
+
+function cancelEditIdentity() {
+    editingIdentity = false;
+    m.redraw();
+}
+
+/**
+ * Save the inline name/description edit. PATCH idiom: schema + identity + changed fields, and `name`
+ * is ALWAYS present — charPerson inherits common.nameId whose `\S` rule is validated on the patch
+ * record itself, so a patch without name is rejected (model-api.md). page.patchObject resolves
+ * undefined on failure (am7client.patch swallows the rejection), so treat a falsy result as failure.
+ */
+async function saveIdentity() {
+    if (!selectedInst || savingIdentity) return;
+    let ent = selectedInst.entity;
+    let name = (editName || '').trim();
+    if (!name) {
+        page.toast('error', 'Name is required');
+        return;
+    }
+    let desc = editDescription || '';
+    let patch = { schema: 'olio.charPerson', id: ent.id, objectId: ent.objectId, name: name };
+    if (desc !== (ent.description || '')) patch.description = desc;
+    savingIdentity = true;
+    m.redraw();
+    try {
+        let ok = await page.patchObject(patch);
+        if (!ok) throw new Error('server rejected the update');
+        // Drop any cached charPerson reads (search results are keyed per type) before re-reading, so
+        // the detail and the list both reflect the new values rather than the cached record.
+        am7client.clearCache('olio.charPerson', true);
+        editingIdentity = false;
+        page.toast('success', 'Character saved');
+        await selectCharacter(ent.objectId);
+        await refreshList();
+    } catch (e) {
+        page.toast('error', 'Failed to save character: ' + (e.message || e));
+    }
+    savingIdentity = false;
+    m.redraw();
 }
 
 async function doReimage() {
@@ -202,11 +268,12 @@ function toggleMergeMode() {
 }
 
 /**
- * Open a record's full generic editor in a new tab rather than navigating the current one: this
- * screen renders inside the PictureBook wizard's Dialog (either inline at Step 3, or as the Steps
- * 4/5 stacked popup), and there's no route-based back nav that would restore the in-progress
+ * Open a record's full generic editor in a new tab rather than navigating the current one: when
+ * this screen renders inside the PictureBook wizard's Dialog (either inline at Step 3, or as the
+ * Steps 4/5 stacked popup) there's no route-based back nav that would restore the in-progress
  * wizard state (extracted scenes, created book/characters, etc.) if we navigated away in place.
- * A new tab leaves the wizard exactly as it is.
+ * A new tab leaves the wizard exactly as it is. Used for apparel records, and for the character
+ * itself unless the manager is `standalone`.
  */
 function openInNewTab(type, objectId) {
     let url = window.location.origin + window.location.pathname + '#!/view/' + type + '/' + objectId;
@@ -217,9 +284,22 @@ function openInNewTab(type, objectId) {
  * Open the full generic charPerson editor for a character — gives access to every field
  * (including anything this screen doesn't expose a dedicated panel for, e.g. a manually-edited
  * narrative.sdPrompt/outfitDescription) without duplicating the generic editor here.
+ *
+ * Where it opens depends on how the manager was launched:
+ *  - standalone (book list / reader header, `openCharacterManager(id, {standalone: true})`): there
+ *    is no wizard underneath, so close the manager and navigate in place to the generic editor
+ *    route (/view/<type>/:objectId, router.js); the editor's Cancel returns to the launching page.
+ *  - inside the wizard (Step 3 inline, or the Steps 4/5 stacked popup): open a new tab via
+ *    openInNewTab so the wizard's in-progress state stays exactly as it is.
  */
 function openFullEditor(entity) {
-    openInNewTab(entity[am7model.jsonModelKey], entity.objectId);
+    let type = entity[am7model.jsonModelKey] || 'olio.charPerson';
+    if (standalone) {
+        Dialog.closeAll();
+        m.route.set('/view/' + type + '/' + entity.objectId);
+    } else {
+        openInNewTab(type, entity.objectId);
+    }
 }
 
 async function tagApparel(apparelObjectId) {
@@ -265,6 +345,7 @@ function renderCharacterListItem(c) {
     return m('div', {
         class: 'px-3 py-2 rounded cursor-pointer border ' +
             (isSelected ? 'border-blue-500 bg-blue-50 dark:bg-blue-950' : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800'),
+        'data-char-item': c.objectId,
         onclick: function () { if (!mergeMode) selectCharacter(c.objectId); }
     }, [
         m('div', { class: 'flex items-center' }, [
@@ -365,6 +446,44 @@ const PortraitImage = {
     }
 };
 
+// Inline name/description editor shown in place of the detail header. Uses the same text-field
+// classes as the rest of the manager (scene-tag input) and the standard button classes.
+function renderIdentityEditor() {
+    return m('div', { class: 'flex flex-col gap-2 flex-1 min-w-0', 'data-char-identity-editor': true }, [
+        m('input', {
+            type: 'text',
+            class: 'text-field-compact w-full',
+            placeholder: 'Name',
+            'data-char-name-input': true,
+            value: editName,
+            disabled: savingIdentity,
+            oninput: function (e) { editName = e.target.value; },
+            onkeydown: function (e) {
+                if (e.key === 'Enter') { e.preventDefault(); saveIdentity(); }
+                else if (e.key === 'Escape') { e.preventDefault(); cancelEditIdentity(); }
+            }
+        }),
+        m('textarea', {
+            class: 'text-field-compact w-full',
+            rows: 3,
+            placeholder: 'Description',
+            'data-char-description-input': true,
+            value: editDescription,
+            disabled: savingIdentity,
+            oninput: function (e) { editDescription = e.target.value; }
+        }),
+        m('div', { class: 'flex items-center gap-2' }, [
+            m('button', {
+                class: 'button primary text-xs',
+                'data-char-save': true,
+                disabled: savingIdentity || !(editName || '').trim(),
+                onclick: saveIdentity
+            }, savingIdentity ? 'Saving…' : 'Save'),
+            m('button', { class: 'button text-xs', disabled: savingIdentity, onclick: cancelEditIdentity }, 'Cancel')
+        ])
+    ]);
+}
+
 function renderDetail() {
     if (!selectedObjectId) {
         return m('div', { class: 'text-sm text-gray-500 p-4' }, 'Select a character from the list.');
@@ -373,14 +492,27 @@ function renderDetail() {
         return m('div', { class: 'text-sm text-gray-500 p-4' }, 'Loading…');
     }
     return m('div', { class: 'flex flex-col gap-4 p-4' }, [
-        m('div', { class: 'flex items-center justify-between' }, [
-            m('div', [
-                m('div', { class: 'text-lg font-semibold' }, selectedInst.entity.name),
-                m('div', { class: 'text-sm text-gray-500' }, 'Gender: ' + (selectedInst.entity.gender || 'UNKNOWN'))
+        m('div', { class: 'flex items-start justify-between gap-4' }, [
+            editingIdentity ? renderIdentityEditor() : m('div', { class: 'min-w-0' }, [
+                m('div', { class: 'flex items-center gap-2' }, [
+                    m('div', { 'data-char-name': true, class: 'text-lg font-semibold' }, selectedInst.entity.name),
+                    m('button', {
+                        class: 'text-gray-400 hover:text-blue-600',
+                        title: 'Edit name and description',
+                        'data-char-edit': true,
+                        onclick: beginEditIdentity
+                    }, m('span', { class: 'material-symbols-outlined text-base' }, 'edit'))
+                ]),
+                m('div', { class: 'text-sm text-gray-500' }, 'Gender: ' + (selectedInst.entity.gender || 'UNKNOWN')),
+                selectedInst.entity.description
+                    ? m('div', { 'data-char-description': true, class: 'text-sm text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap' },
+                        selectedInst.entity.description)
+                    : null
             ]),
-            m('div', { class: 'flex items-center gap-3' }, [
+            m('div', { class: 'flex items-center gap-3 flex-shrink-0' }, [
                 m('a', {
                     href: '#', class: 'text-sm text-blue-600 dark:text-blue-400 hover:underline',
+                    'data-char-full-editor': selectedInst.entity.objectId,
                     onclick: function (e) { e.preventDefault(); openFullEditor(selectedInst.entity); }
                 }, 'Open Full Editor →'),
                 m('button', {
@@ -459,10 +591,12 @@ function renderContent() {
  * wizard's Step 3, which renders renderCharacterManagerContent() inline inside its own already-open
  * Dialog. Fires the initial character-list fetch.
  * @param {string} theBookObjectId - book group objectId
+ * @param {{standalone?: boolean}} [opts] - standalone: no wizard Dialog underneath (see openFullEditor)
  */
-async function initCharacterManager(theBookObjectId) {
+async function initCharacterManager(theBookObjectId, opts) {
     resetState();
     bookObjectId = theBookObjectId;
+    standalone = !!(opts && opts.standalone);
     loading = true;
     m.redraw();
     await refreshList();
@@ -476,12 +610,14 @@ function renderCharacterManagerContent() {
 }
 
 /**
- * Open Manage Characters as its own stacked Dialog — used by the wizard's steps 4/5 "Manage
- * Characters" button (a quick one-off tweak while generating/viewing, on top of the wizard's own
- * open Dialog), independent of Step 3's inline rendering of the exact same content.
+ * Open Manage Characters as its own Dialog — used by the wizard's steps 4/5 "Manage Characters"
+ * button (a quick one-off tweak while generating/viewing, stacked on top of the wizard's own open
+ * Dialog), independent of Step 3's inline rendering of the exact same content; and by the PB2 book
+ * list / reader header, which pass {standalone: true} because nothing is open underneath.
  * @param {string} theBookObjectId - book group objectId
+ * @param {{standalone?: boolean}} [opts] - standalone: no wizard Dialog underneath (see openFullEditor)
  */
-async function openCharacterManager(theBookObjectId) {
+async function openCharacterManager(theBookObjectId, opts) {
     Dialog.open({
         title: 'Manage Characters',
         size: 'xl',
@@ -490,7 +626,7 @@ async function openCharacterManager(theBookObjectId) {
             { label: 'Close', icon: 'close', primary: true, onclick: function () { Dialog.close(); } }
         ]
     });
-    await initCharacterManager(theBookObjectId);
+    await initCharacterManager(theBookObjectId, opts);
 }
 
 export { openCharacterManager, initCharacterManager, renderCharacterManagerContent };

@@ -19,9 +19,11 @@ import {
     getBookInfo, workflowView, nodeView, listStale,
     regenerateNode, pinNode, addMembers, createChapter, testNode,
     saveCanvas, addBinding, deleteBinding, detectBoundaries,
-    listSeriesBooks
+    listSeriesBooks, listPb2Books
 } from '../workflows/pictureBookWorkflow.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
+import { loadPictureBook } from '../workflows/sceneExtractor.js';
+import { pictureBookFromId } from '../workflows/pictureBook.js';
 import { ObjectPicker } from '../components/picker.js';
 import { Dialog } from '../components/dialogCore.js';
 
@@ -82,8 +84,12 @@ let graphData = null;     // workflowView response
 let positions = {};       // nodeObjectId → {x, y}
 let loading = false;
 let error = null;
-// Informational empty state (NOT an error). One of the three honest "no graph to draw" cases —
-// see loadGraph. Shape: {icon, title, body}. Rendered neutrally (grey), distinct from `error` (red).
+// Informational empty state (NOT an error). One of the honest "no graph to draw" cases —
+// see loadGraph. Shape: {icon, title, body, scenes?}. Rendered neutrally (grey), distinct from
+// `error` (red). When `scenes` is a non-empty array the panel lists them and offers ONE way to
+// render: open the book in the wizard (the graph is created at first render, and the wizard is the
+// single render entry point — it owns the SD config resolution, see workflows/pictureBook.js
+// ensureSdConfig / persistBookSettings).
 let emptyState = null;
 
 let selectedNodeId = null;
@@ -202,6 +208,24 @@ function canvasSize() {
 
 // ── Data loading ──────────────────────────────────────────────────────
 
+/**
+ * Empty state for a book that exists but has no workflow graph yet. The graph row is written by the
+ * server at the FIRST scene render (PbServiceFacade.requireWorkflow: "generate a scene first"), so
+ * the honest message is "nothing rendered yet — N extracted", listing the extracted scenes, with a
+ * single button that opens the book in the wizard (the only render entry point). `scenes` is the
+ * GET /{id}/scenes DTO list ([{objectId, title, description, characters, userEdited}], ordered).
+ */
+function noWorkflowYetState(scenes) {
+    let list = Array.isArray(scenes) ? scenes : [];
+    return {
+        icon: 'draft',
+        title: 'No workflow graph yet',
+        body: 'No scenes have been rendered yet — ' + list.length + ' extracted. '
+            + 'The workflow graph is created at first render.',
+        scenes: list
+    };
+}
+
 async function loadGraph(groupOid) {
     loading = true;
     error = null;
@@ -214,14 +238,30 @@ async function loadGraph(groupOid) {
     try {
         // B7: Try direct PB2 path first — ChapBook / PB2 book objectIds ARE pb2BookObjectIds.
         // If workflowView succeeds the route ID is already the pb2BookObjectId.
-        // If it returns null (404 for a PB1 group objectId), fall back to the bridge.
+        // If it returns null (404 "Book not found" for a PB1 group objectId), fall back to the bridge.
+        // If it returns {noWorkflow:true} the id IS a PB2 book whose graph has not been created yet.
         let gd = null;
-        // workflowView returns null on 404 (PB1 group objectId), throws on 401/403/500
+        // workflowView returns null / {noWorkflow} on 404, throws on 401/403/500
         try {
             gd = await workflowView(groupOid);
         } catch (directErr) {
             // Real error (401/403/500) — surface it directly, do not fall back
             error = 'Failed to load workflow: ' + directErr.message;
+            loading = false;
+            m.redraw();
+            return;
+        }
+        if (gd !== null && gd.noWorkflow) {
+            // The route id is a PB2 book with no workflow row. Resolve its name from the book list
+            // (the /workflow 404 body carries no name) and list its scenes for first render.
+            pb2BookObjectId = groupOid;
+            let scenes = await loadPictureBook(groupOid);
+            try {
+                let books = await listPb2Books();
+                let hit = (books || []).find(function (b) { return b.objectId === groupOid; });
+                if (hit) bookName = hit.name || hit.slug || '';
+            } catch (_) { /* name is cosmetic; the header falls back to the id */ }
+            emptyState = noWorkflowYetState(scenes);
             loading = false;
             m.redraw();
             return;
@@ -234,15 +274,21 @@ async function loadGraph(groupOid) {
             // null = 404: fall back to PB1 bridge: resolve group objectId → pb2BookObjectId
             let info = await getBookInfo(groupOid);
             if (!info) {
-                // State (a): getBookInfo 404 — the book meta carries no pb2BookObjectId, so this
-                // book was created before the workflow graph existed. There is nothing to record.
-                emptyState = {
-                    icon: 'history',
-                    title: 'No workflow graph for this book',
-                    body: 'This book predates the workflow graph — it was created before workflow '
-                        + 'recording existed, so there is nothing to show here. Re-render its scenes '
-                        + 'to create a graph.'
-                };
+                // getBookInfo 404 — the book meta carries no pb2BookObjectId. Two honest cases:
+                let scenes = await loadPictureBook(groupOid);
+                if (scenes && scenes.length) {
+                    // The PB1 book has extracted scenes but no PB2 record/graph — the first render (in
+                    // the wizard) creates the graph, so show the same "nothing rendered yet" state.
+                    emptyState = noWorkflowYetState(scenes);
+                } else {
+                    // State (a): genuinely legacy — no PB2 record AND no scenes. Nothing to record.
+                    emptyState = {
+                        icon: 'history',
+                        title: 'No workflow graph for this book',
+                        body: 'This book predates the workflow graph — it was created before workflow '
+                            + 'recording existed and has no scenes, so there is nothing to show here.'
+                    };
+                }
                 loading = false;
                 m.redraw();
                 return;
@@ -250,16 +296,11 @@ async function loadGraph(groupOid) {
             pb2BookObjectId = info.pb2BookObjectId;
             bookName = info.bookName || '';
             gd = await workflowView(pb2BookObjectId);
-            if (gd === null) {
-                // State (b) — the previously SILENT case: the book resolves to a PB2 book, but no
-                // olio.pb.workflow row was ever written for it. Workflow recording was off when its
-                // scenes were rendered, so the images exist without a graph behind them.
-                emptyState = {
-                    icon: 'sync_disabled',
-                    title: 'Workflow was not recorded',
-                    body: 'Workflow recording was off when these scenes were rendered, so no graph '
-                        + 'was saved for them. Re-render a scene to start recording the graph.'
-                };
+            if (gd === null || gd.noWorkflow) {
+                // The book resolves to a PB2 book, but no olio.pb.workflow row exists for it yet.
+                // The graph is created at first render (in the wizard), so list the scenes.
+                let scenes = await loadPictureBook(pb2BookObjectId);
+                emptyState = noWorkflowYetState(scenes);
                 loading = false;
                 m.redraw();
                 return;
@@ -288,14 +329,58 @@ async function loadGraph(groupOid) {
 // these are honest "nothing to draw" outcomes, not failures.
 function renderEmptyState() {
     if (!emptyState) return null;
+    let scenes = emptyState.scenes || [];
     return m('div', {
+        class: 'pb-wf-empty',
         style: 'flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;'
-            + 'text-align:center;padding:48px 24px;color:#64748b;',
+            + 'text-align:center;padding:48px 24px;color:#64748b;overflow:auto;',
     }, [
         m('span', { class: 'material-symbols-outlined', style: 'font-size:56px;color:#cbd5e1;margin-bottom:12px;' },
             emptyState.icon || 'info'),
         m('div', { style: 'font-size:16px;font-weight:600;color:#334155;margin-bottom:8px;' }, emptyState.title),
         m('div', { style: 'font-size:13px;max-width:440px;line-height:1.6;' }, emptyState.body),
+        scenes.length ? renderEmptyStateScenes(scenes) : null,
+        scenes.length ? renderOpenInWizardButton() : null,
+    ]);
+}
+
+// Scene list for the "no workflow yet" state: index + title only. Rendering is NOT offered per scene
+// here — the wizard is the single render entry point (renderOpenInWizardButton below).
+function renderEmptyStateScenes(scenes) {
+    return m('div', { class: 'pb-wf-empty-scenes', style: 'margin-top:20px;width:100%;max-width:560px;text-align:left;' }, [
+        m('div', { style: 'font-size:12px;font-weight:600;color:#475569;margin-bottom:6px;' },
+            scenes.length + ' extracted scene' + (scenes.length === 1 ? '' : 's')),
+        m('ul', { style: 'list-style:none;margin:0;padding:0;border:1px solid #e2e8f0;border-radius:6px;background:#fff;' },
+            scenes.map(function (s, i) {
+                return m('li', {
+                    key: s.objectId || i,
+                    class: 'pb-wf-empty-scene',
+                    style: 'display:flex;align-items:center;gap:10px;padding:6px 10px;'
+                        + (i ? 'border-top:1px solid #f1f5f9;' : '')
+                }, [
+                    m('span', { style: 'font-size:12px;color:#94a3b8;width:2em;text-align:right;flex-shrink:0;' }, (i + 1) + '.'),
+                    m('span', { class: 'pb-wf-empty-scene-title', style: 'flex:1;font-size:13px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' },
+                        s.title || ('Scene ' + (i + 1)))
+                ]);
+            }))
+    ]);
+}
+
+// The one render action on the empty canvas: reopen the book in the wizard, exactly as the book
+// list's Edit pencil does (features/pictureBook.js renderPb2EditButton). The wizard resumes on its
+// scene step and its Generate path resolves the SD config (ensureSdConfig → persistBookSettings) —
+// rendering from here would bypass that and use whatever /settings happens to hold. The route id is
+// what the wizard resumes with: the PB2 book id on a direct hit, the PB1 group id via the bridge;
+// both are accepted (resolveBookGroupEither).
+function renderOpenInWizardButton() {
+    return m('button', {
+        'data-wf-open-wizard': bookGroupObjectId,
+        class: 'mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm flex items-center gap-1',
+        title: 'Open this book in the Picture Book wizard to render its scenes',
+        onclick: function () { pictureBookFromId(bookGroupObjectId, bookName || ''); }
+    }, [
+        m('span', { class: 'material-symbols-outlined text-sm' }, 'edit'),
+        'Open in wizard to render'
     ]);
 }
 
@@ -1229,10 +1314,12 @@ var pictureBookWorkflowView = {
             // Toolbar
             m('div', { style: 'display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid #e2e8f0;flex-shrink:0;' }, [
                 m('span', { class: 'material-symbols-outlined', style: 'color:#3b82f6;' }, 'account_tree'),
-                m('span', { style: 'font-weight:700;font-size:15px;' }, bookName ? bookName + ' — Workflow' : 'Workflow Graph'),
+                m('span', { 'data-wf-title': true, style: 'font-weight:700;font-size:15px;' }, bookName ? bookName + ' — Workflow' : 'Workflow Graph'),
                 loading ? m('span', { style: 'font-size:12px;color:#64748b;margin-left:8px;' }, 'Loading…') : null,
-                graphData ? m('span', { style: 'font-size:12px;color:#64748b;margin-left:8px;' },
-                    (graphData.nodeCount || 0) + ' nodes') : null,
+                // Count the nodes actually returned: the DTO's nodeCount is the stored counter and
+                // has been observed as 0 for a graph with populated nodes[].
+                graphData ? m('span', { 'data-node-count': true, style: 'font-size:12px;color:#64748b;margin-left:8px;' },
+                    ((graphData.nodes && graphData.nodes.length) || 0) + ' nodes') : null,
                 // Stale count badge
                 graphData && graphData.nodes ? (function () {
                     let staleCount = graphData.nodes.filter(function (n) {
@@ -1303,10 +1390,20 @@ var pictureBookWorkflowView = {
                     style: 'border:1px solid #a855f7;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;color:#7c3aed;',
                     onclick: function () { m.route.set('/picture-book/v2/' + pb2BookObjectId); }
                 }, '📖 Pages') : null,
-                // Back button
+                // Back button. When the route id IS the PB2 book (ChapBook / PB2 chapter — the direct
+                // workflowView hit), the PB1 viewer route would 404 on it, so go to the PB2 page
+                // reader instead; the book name rides along in history.state so the reader can
+                // title itself before its own book lookup returns.
                 m('button', {
+                    'data-back-to-book': true,
                     style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
-                    onclick: function () { m.route.set('/picture-book/' + bookGroupObjectId); }
+                    onclick: function () {
+                        if (pb2BookObjectId && pb2BookObjectId === bookGroupObjectId) {
+                            m.route.set('/picture-book/v2/' + pb2BookObjectId, null, { state: { bookName: bookName || '' } });
+                        } else {
+                            m.route.set('/picture-book/' + bookGroupObjectId);
+                        }
+                    }
                 }, '← Book'),
             ]),
 
@@ -1360,6 +1457,14 @@ export { openMemberDialog, openChapterDialog };
 export const routes = {
     '/picture-book/:bookObjectId/workflow': {
         oninit: function (vnode) { pictureBookWorkflowView.oninit(vnode); },
+        // Same-route navigation (series chapter tile → another chapter's canvas) changes the URL
+        // but Mithril reuses this component instance, so oninit does not re-run. Re-init when the
+        // route param no longer matches the book we loaded. Same idiom as the v2 reader route in
+        // pictureBook.js.
+        onupdate: function (vnode) {
+            let id = vnode.attrs.bookObjectId;
+            if (id && id !== bookGroupObjectId) pictureBookWorkflowView.oninit(vnode);
+        },
         view: function () { return layout(pageLayout(m(pictureBookWorkflowView))); }
     }
 };

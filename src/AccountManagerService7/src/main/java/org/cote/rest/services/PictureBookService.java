@@ -64,9 +64,9 @@ import jakarta.ws.rs.core.Response;
  *   POST /{workObjectId}/extract-scenes-only  — Scene extraction only (no character creation)
  *   POST /scene/{sceneObjectId}/generate      — Generate SD image for one scene
  *   POST /scene/{sceneObjectId}/blurb         — Regenerate scene blurb via LLM
- *   GET  /{bookObjectId}/scenes               — Ordered scene list from .pictureBookMeta (bookObjectId = book group objectId)
- *   GET  /{bookObjectId}/settings              — Last-used image generation settings for this book
- *   PUT  /{bookObjectId}/settings              — Store the book's common (+ optional composite) olio.sd.config once
+ *   GET  /{bookObjectId}/scenes               — Ordered scene list from .pictureBookMeta (bookObjectId = book group objectId OR olio.pb.book objectId)
+ *   GET  /{bookObjectId}/settings              — Last-used image generation settings for this book (same either-id as /scenes)
+ *   PUT  /{bookObjectId}/settings              — Store the book's common (+ optional composite) olio.sd.config once (same either-id as /scenes)
  *   POST /{bookObjectId}/prepare-images        — Batch-resolve landscape prompts for a set of scenes, then flush idle Ollama models once
  *   PUT  /{bookObjectId}/scenes/order         — Reorder scenes
  *   PUT  /scene/{sceneObjectId}/status        — Persist a client-driven scene status (accepted/skipped/pending/...)
@@ -875,7 +875,10 @@ public class PictureBookService {
      * GET /{bookObjectId}/settings
      * Returns the last-used image generation settings for this book (auto-captured on every
      * scene generation — see PictureBookUtil.persistBookSdConfig), or {} if none have been
-     * saved yet (a fresh book that hasn't generated an image).
+     * saved yet (a fresh book that hasn't generated an image). bookObjectId is EITHER the PB1
+     * book-group objectId OR the olio.pb.book objectId, exactly as /scenes and /characters accept
+     * (PictureBookUtil.resolveBookGroupEither) — the wizard's resume path holds the pb.book objectId
+     * when opened from a PB2 surface.
      */
     @RolesAllowed({"admin", "user"})
     @GET

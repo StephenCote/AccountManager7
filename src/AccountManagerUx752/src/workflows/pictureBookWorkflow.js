@@ -18,10 +18,49 @@ export async function getBookInfo(bookGroupObjectId) {
     return resp.json();
 }
 
-/** Full workflow graph: {bookObjectId, slug, bookName, nodeCount, nodes[], edges[]} */
+/**
+ * Classify a 404 body from GET /{id}/workflow. The facade returns two DIFFERENT 404s that the
+ * canvas must render differently (PbServiceFacade.requireBook / requireWorkflow):
+ *   - {"error":"Book not found"}  → the id is not an olio.pb.book at all (a PB1 group oid, or
+ *     nothing)                                                          → 'not-found'
+ *   - {"error":"This book has no workflow yet - generate a scene first"} → the id IS a PB2 book
+ *     whose graph has not been created yet (the graph is written at first render) → 'no-workflow'
+ * Pure; exported for Vitest. Unknown/empty bodies fall back to 'not-found' (the pre-existing
+ * behaviour), so a body-format change on the server can only lose the nicer state, never crash.
+ */
+export function classifyWorkflowNotFound(bodyText) {
+    let msg = '';
+    if (bodyText && typeof bodyText === 'object') {
+        msg = bodyText.error || bodyText.message || '';
+    } else if (typeof bodyText === 'string' && bodyText.length) {
+        try {
+            let j = JSON.parse(bodyText);
+            msg = (j && (j.error || j.message)) || '';
+        } catch (_) {
+            msg = bodyText;
+        }
+    }
+    msg = String(msg).toLowerCase();
+    if (msg.indexOf('no workflow') >= 0) return 'no-workflow';
+    return 'not-found';
+}
+
+/**
+ * Full workflow graph: {bookObjectId, slug, bookName, nodeCount, nodes[], edges[]}
+ * Returns null when the id is not a PB2 book (404 "Book not found"), and {noWorkflow:true} when
+ * the id IS a PB2 book that has no workflow row yet (404 "no workflow yet") — see
+ * classifyWorkflowNotFound. Throws on any other non-2xx.
+ */
 export async function workflowView(pb2BookObjectId) {
     let resp = await fetch(wfBase() + '/' + pb2BookObjectId + '/workflow', { credentials: 'include' });
-    if (resp.status === 404) return null;
+    if (resp.status === 404) {
+        let body = '';
+        try { body = await resp.text(); } catch (_) {}
+        if (classifyWorkflowNotFound(body) === 'no-workflow') {
+            return { noWorkflow: true, bookObjectId: pb2BookObjectId };
+        }
+        return null;
+    }
     if (!resp.ok) throw new Error('workflowView failed: ' + resp.status);
     return resp.json();
 }

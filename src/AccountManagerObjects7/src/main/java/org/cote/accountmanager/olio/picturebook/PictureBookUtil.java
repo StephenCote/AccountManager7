@@ -1840,9 +1840,15 @@ public class PictureBookUtil {
     /**
      * Read back the last-used image generation settings for a book (see persistBookSdConfig),
      * or null if the book has never generated an image / has no meta yet.
+     *
+     * <p>{@code bookObjectId} is EITHER the PB1 scene-group ({@code data.group}) objectId OR the
+     * {@code olio.pb.book} objectId — the same dual-lookup {@link #listScenes} / {@link #listCharacters}
+     * accept, via {@link #resolveBookGroupEither}. The wizard's resume path holds the pb.book objectId
+     * when opened from a PB2 surface, so both handles must resolve here as they do for {@code /scenes}.
      */
     public static BaseRecord getBookSdConfig(BaseRecord user, String bookObjectId) {
-        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        BaseRecord bookGroup = resolveBookGroupEither(user, bookObjectId, orgId);
         if (bookGroup == null) throw new PictureBookException(404, "Book not found");
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
         return getBookSdConfigByPath(user, bookGroupPath);
@@ -1885,13 +1891,16 @@ public class PictureBookUtil {
      * <p>
      * S6: also persists each config as an olio.sd.config row and patches the olio.pb.book FK when
      * a PB2 book record exists in the book group.
+     * <p>
+     * {@code bookObjectId} is EITHER the PB1 scene-group objectId OR the {@code olio.pb.book} objectId —
+     * the same dual-lookup as {@link #getBookSdConfig}, so a config saved by one handle reads back by the other.
      */
     public static BaseRecord setBookSdConfig(BaseRecord user, String bookObjectId, BaseRecord sdConfig, BaseRecord compositeSdConfig) {
-        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        BaseRecord bookGroup = resolveBookGroupEither(user, bookObjectId, orgId);
         if (bookGroup == null) throw new PictureBookException(404, "Book not found");
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
         long bookGroupId = bookGroup.get(FieldNames.FIELD_ID);
-        long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
         if (sdConfig != null) {
             SDUtil.fillStyleDefaults(sdConfig);
             persistBookSdConfig(user, bookGroupPath, sdConfig);

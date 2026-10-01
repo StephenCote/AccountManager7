@@ -21,6 +21,7 @@ import {
     resolveCharacterNames, sceneCharacterLabels
 } from '../workflows/sceneExtractor.js';
 import { pictureBookFromId } from '../workflows/pictureBook.js';
+import { openCharacterManager } from '../workflows/pictureBookCharacters.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
 import { listPb2Books, listSeriesBooks, bookPages } from '../workflows/pictureBookWorkflow.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
@@ -107,6 +108,8 @@ function renderPb2BookRow(b, isChapter) {
             ])
         ]),
         m('div', { class: 'flex items-center gap-1' }, [
+            renderPb2EditButton(b),
+            renderPb2CharactersButton(b),
             m('button', {
                 class: 'text-gray-400 hover:text-purple-600 p-1',
                 title: 'Open workflow canvas',
@@ -126,6 +129,41 @@ function renderPb2BookRow(b, isChapter) {
             m('span', { class: 'material-symbols-outlined text-gray-400' }, 'chevron_right')
         ])
     ]);
+}
+
+// Edit path for a PB2 book: reopen the wizard against the book. /{id}/scenes, /{id}/characters accept
+// the olio.pb.book objectId directly (dual lookup server-side), so pictureBookFromId's resume branch
+// lands on Step 4/5 with the book's scenes. Same pencil icon as the PB1 viewer's edit action.
+function pb2BookDisplayName(b) {
+    return (b && (b.name || b.title || b.slug)) || 'Untitled';
+}
+
+// `cls` overrides the list-row button class (the reader header uses its own, without p-1).
+function renderPb2EditButton(b, cls) {
+    return m('button', {
+        class: cls || 'text-gray-400 hover:text-purple-600 p-1',
+        title: 'Edit picture book',
+        'data-pb2-edit': b.objectId,
+        onclick: function (e) {
+            e.stopPropagation();
+            pictureBookFromId(b.objectId, pb2BookDisplayName(b));
+        }
+    }, m('span', { class: 'material-symbols-outlined text-lg' }, 'edit'));
+}
+
+// Characters: open the character manager directly against the book (no wizard detour). `standalone`
+// tells the manager there is no wizard Dialog underneath, so its "Open Full Editor" may navigate in
+// place instead of opening a new tab (pictureBookCharacters.js openFullEditor).
+function renderPb2CharactersButton(b, cls) {
+    return m('button', {
+        class: cls || 'text-gray-400 hover:text-purple-600 p-1',
+        title: 'Manage characters',
+        'data-pb2-characters': b.objectId,
+        onclick: function (e) {
+            e.stopPropagation();
+            openCharacterManager(b.objectId, { standalone: true });
+        }
+    }, m('span', { class: 'material-symbols-outlined text-lg' }, 'groups'));
 }
 
 // A series is ONE entry in the list: the novel's title with its chapter count. Expanding it lists
@@ -153,6 +191,10 @@ function renderPb2SeriesCard(g) {
                 ])
             ]),
             m('div', { class: 'flex items-center gap-1' }, [
+                // Series-level Edit / Characters act on the FIRST chapter, exactly as the series'
+                // canvas button below does; each chapter row carries its own pair for the others.
+                first ? renderPb2EditButton(first) : null,
+                first ? renderPb2CharactersButton(first) : null,
                 first ? m('button', {
                     class: 'text-gray-400 hover:text-purple-600 p-1',
                     title: 'Open series canvas',
@@ -476,10 +518,12 @@ async function loadViewer(bookObjectId) {
     clearImageCache();
     m.redraw();
     try {
-        // Resolve the title: a legacy book group, or the source document itself when the route was
-        // opened straight from a data.data / data.note objectId (no book generated yet).
+        // Resolve the title: a legacy book group, the source document itself when the route was
+        // opened straight from a data.data / data.note objectId (no book generated yet), or a PB2
+        // olio.pb.book when the route id is a PB2 book objectId (/{id}/scenes accepts either, so the
+        // viewer works for it — but none of the PB1 lookups know its name).
         let resolvedName = null;
-        for (let type of ['auth.group', 'data.data', 'data.note']) {
+        for (let type of ['auth.group', 'data.data', 'data.note', 'olio.pb.book']) {
             try {
                 let q = am7client.newQuery(type);
                 q.field('objectId', bookObjectId);
@@ -489,6 +533,18 @@ async function loadViewer(bookObjectId) {
                     resolvedName = qr.results[0].name || '';
                     break;
                 }
+            } catch (e) {}
+        }
+        if (!resolvedName) {
+            // A shared PB2 chapter the search cannot see for this caller: the /books DTO list
+            // (same source the selector uses) still carries its name.
+            try {
+                if (!pb2Books.length) {
+                    let all = await listPb2Books();
+                    pb2Books = Array.isArray(all) ? all : [];
+                }
+                let known = pb2Books.find(function (b) { return b.objectId === bookObjectId; });
+                if (known) resolvedName = known.name || known.title || known.slug || '';
             } catch (e) {}
         }
         // Never leave the 'Loading...' placeholder in place: it is what the wizard would otherwise
@@ -783,8 +839,24 @@ let pb2BookName = '';
 let pb2BookObjectId = null;
 let pb2Chapters = [];          // sibling chapter books of the open book's series, ordered by chapter
 let pb2SeriesName = null;
+let pb2SceneTotal = null;      // GET /{id}/scenes count (all extracted scenes); null = unknown
 
 function pb2TotalPages() { return pb2Pages.length + 1; } // cover + scenes
+
+// Pages that actually have a rendered composite image: /pages returns one entry per olio.pb.scene
+// row, and dataObjectId is null until a composite artifact exists for it (PbServiceFacade.bookPageView).
+function pb2RenderedCount() {
+    return pb2Pages.filter(function (p) { return p && p.dataObjectId; }).length;
+}
+
+// Book name carried through m.route.set(..., {state:{bookName}}) by the canvas "← Book" button, so
+// the reader can title itself before its own olio.pb.book lookup returns. Cosmetic; never required.
+function pb2NameHint() {
+    try {
+        let st = typeof window !== 'undefined' && window.history ? window.history.state : null;
+        return (st && typeof st.bookName === 'string') ? st.bookName : '';
+    } catch (_) { return ''; }
+}
 
 // Resolve the open book's series and its ordered chapters so the reader can switch chapters. The
 // owner-filtered selector list is the cheap source; a deep link to another user's shared chapter
@@ -869,8 +941,9 @@ async function loadPb2Pages(pb2ObjId) {
     pb2PageLoading = true;
     pb2PageError = null;
     pb2Pages = [];
+    pb2SceneTotal = null;
     pb2CurrentPage = 0;
-    pb2BookName = 'Loading...';
+    pb2BookName = pb2NameHint() || 'Loading...';
     m.redraw();
     try {
         let bookFull = await loadPb2BookContext(pb2ObjId);
@@ -881,14 +954,22 @@ async function loadPb2Pages(pb2ObjId) {
             // Fallback: look for this book in the already-loaded pb2Books list
             let known = pb2Books.find(function (b) { return b.objectId === pb2ObjId; });
             if (known) pb2BookName = known.name || 'Untitled';
-            else pb2BookName = 'Untitled';
+            else pb2BookName = pb2NameHint() || 'Untitled';
         }
 
-        let pages = await bookPages(pb2ObjId);
-        pb2Pages = Array.isArray(pages) ? pages : [];
-        if (pb2Pages.length > 0) {
-            pb2BookName = pb2Pages[0].title || pb2BookName;
-        }
+        // Two reads: /pages (PbServiceFacade.bookPageView) returns one entry per olio.pb.scene row,
+        // each with dataObjectId null until its composite is rendered — so the rendered count is the
+        // number of entries WITH a dataObjectId (pb2RenderedCount). /scenes lists every extracted
+        // scene; for STORY books the olio.pb.scene row is only created at first render
+        // (PbPipelineUtil.getCreateSceneRow), so /pages can be shorter than /scenes and the total M
+        // comes from /scenes. The cover shows "N rendered of M scenes". (The book title is the BOOK's
+        // name — never the first page's scene title.)
+        let loaded = await Promise.all([
+            bookPages(pb2ObjId),
+            loadPictureBook(pb2ObjId).catch(function () { return null; })
+        ]);
+        pb2Pages = Array.isArray(loaded[0]) ? loaded[0] : [];
+        pb2SceneTotal = Array.isArray(loaded[1]) ? loaded[1].length : null;
         await loadPb2Chapters(pb2ObjId, bookFull);
     } catch (e) {
         pb2PageError = 'Failed to load pages: ' + (e.message || '');
@@ -897,11 +978,12 @@ async function loadPb2Pages(pb2ObjId) {
     m.redraw();
 }
 
+// Only change the route; the route's onupdate hook does the single load once the new param is
+// live. Setting pb2BookObjectId or loading here races that hook (it still sees the old attr on the
+// change-event redraw) and leaves the previous chapter's name over the new chapter's pages.
 function pb2OpenChapter(objectId) {
     if (!objectId || objectId === pb2BookObjectId) return;
-    pb2BookObjectId = objectId;
     m.route.set('/picture-book/v2/' + objectId);
-    loadPb2Pages(objectId);
 }
 
 function renderPb2ChapterSelect() {
@@ -915,6 +997,15 @@ function renderPb2ChapterSelect() {
     }, pb2Chapters.map(function (b) {
         return m('option', { key: b.objectId, value: b.objectId, selected: b.objectId === pb2BookObjectId }, pb2ChapterLabel(b));
     }));
+}
+
+// "N rendered of M scenes" — N = pages with a composite image, M = extracted scenes (/scenes). M can
+// never honestly be below N, so when /scenes is unknown or short (e.g. it failed and returned []),
+// fall back to the page count.
+function pb2CoverCountLabel() {
+    let rendered = pb2RenderedCount();
+    let total = (pb2SceneTotal != null) ? Math.max(pb2SceneTotal, pb2Pages.length) : pb2Pages.length;
+    return rendered + ' rendered of ' + total + ' scene' + (total !== 1 ? 's' : '');
 }
 
 function renderPb2Cover() {
@@ -934,8 +1025,7 @@ function renderPb2Cover() {
                 class: 'text-4xl font-bold text-white mb-3',
                 style: 'text-shadow: 0 2px 8px rgba(0,0,0,0.7); font-family: Georgia, serif;'
             }, pb2BookName || 'Untitled'),
-            m('p', { class: 'text-lg text-gray-300 opacity-70' },
-                pb2Pages.length + ' scene' + (pb2Pages.length !== 1 ? 's' : '')),
+            m('p', { 'data-pb2-cover-count': true, class: 'text-lg text-gray-300 opacity-70' }, pb2CoverCountLabel()),
             pb2Pages.length > 0 ? m('button', {
                 class: 'mt-8 px-6 py-2 bg-purple-500/30 hover:bg-purple-500/50 text-white rounded-full backdrop-blur-sm transition-colors',
                 onclick: function () { pb2GoToPage(1); }
@@ -1002,7 +1092,7 @@ function renderPb2Header() {
         m('div', { class: 'flex-1 flex flex-col items-center gap-1' }, [
             m('div', [
                 pb2SeriesName ? m('span', { class: 'text-gray-500 text-xs mr-2' }, pb2SeriesName + ' ·') : null,
-                m('span', { class: 'font-semibold text-sm' }, pb2BookName && pb2BookName !== 'Loading...' ? pb2BookName : 'Picture Book'),
+                m('span', { 'data-pb2-book-name': true, class: 'font-semibold text-sm' }, pb2BookName && pb2BookName !== 'Loading...' ? pb2BookName : 'Picture Book'),
                 m('span', { class: 'text-gray-400 text-xs ml-2' }, pageLabel)
             ]),
             renderPb2ChapterSelect()
@@ -1013,6 +1103,13 @@ function renderPb2Header() {
             disabled: pb2CurrentPage >= total - 1,
             onclick: function () { pb2GoToPage(pb2CurrentPage + 1); }
         }, m('span', { class: 'material-symbols-outlined' }, 'chevron_right')),
+
+        // Edit (wizard) and Characters — same pair the book list rows offer.
+        pb2BookObjectId ? renderPb2EditButton(
+            { objectId: pb2BookObjectId, name: (pb2BookName && pb2BookName !== 'Loading...') ? pb2BookName : '' },
+            'text-gray-500 hover:text-purple-600') : null,
+        pb2BookObjectId ? renderPb2CharactersButton(
+            { objectId: pb2BookObjectId }, 'text-gray-500 hover:text-purple-600') : null,
 
         // Open workflow canvas — always visible for PB2 books
         pb2BookObjectId ? m('button', {
@@ -1074,7 +1171,13 @@ var pb2PageReaderView = {
                     : pb2Pages.length === 0
                         ? m('div', { class: 'text-center py-12' }, [
                             m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 block mb-4' }, 'auto_stories'),
-                            m('div', { class: 'text-sm text-gray-500 mb-4' }, 'No scenes in this book yet.'),
+                            // Honest empty state: /pages is empty when the book has no olio.pb.scene rows —
+                            // nothing extracted, or (STORY books) extracted scenes not yet rendered, since
+                            // their scene rows are created at first render. /scenes gives the extracted count.
+                            m('div', { 'data-pb2-empty': true, class: 'text-sm text-gray-500 mb-4' },
+                                pb2SceneTotal > 0
+                                    ? pb2SceneTotal + ' scene' + (pb2SceneTotal !== 1 ? 's' : '') + ' extracted — none rendered yet.'
+                                    : 'No scenes in this book yet.'),
                             pb2BookObjectId ? m('button', {
                                 class: 'px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm',
                                 onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/workflow'); }
@@ -1115,6 +1218,11 @@ export const routes = {
     },
     '/picture-book/:bookObjectId': {
         oninit: function (vnode) { pictureBookView.oninit(vnode); },
+        // Same-route navigation reuses the instance (see the v2 route above) — re-init on a new id.
+        onupdate: function (vnode) {
+            let id = vnode.attrs.bookObjectId;
+            if (id && id !== viewerBookId) pictureBookView.oninit(vnode);
+        },
         view: function () {
             // ReaderShell renders its own fullscreen overlay; when active, skip the layout chrome
             // so the overlay covers it (reads the shell-mutated pbReader.fullscreen).
