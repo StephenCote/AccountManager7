@@ -33,15 +33,19 @@ async function waitFor(pred, label) {
     throw new Error('timed out waiting for ' + label + '; route=' + m.route.get() + ' html=' + (root ? root.innerHTML.substring(0, 300) : '<no root>'));
 }
 
-async function mountApp(extraRoutes) {
+// One shared routes object: Mithril's router keeps the last resolved component at module level, so a
+// re-mount with a fresh routes object renders the old component first and then swaps it for the new
+// identity on resolution — re-running oninit/onremove on everything inside.
+const ROUTES = {
+    "/app": { view: function () { return m(appPanelView); } },
+    "/explorer": { view: function () { return m("div", { class: "marker" }, "EXPLORER-VIEW"); } },
+    "/webauthn": { view: function () { return m("div", { class: "marker" }, "PASSKEYS-VIEW"); } }
+};
+
+async function mountApp() {
     root = document.createElement('div');
     document.body.appendChild(root);
-    let routes = Object.assign({
-        "/app": { view: function () { return m(appPanelView); } },
-        "/explorer": { view: function () { return m("div", { class: "marker" }, "EXPLORER-VIEW"); } },
-        "/webauthn": { view: function () { return m("div", { class: "marker" }, "PASSKEYS-VIEW"); } }
-    }, extraRoutes || {});
-    m.route(root, "/app", routes);
+    m.route(root, "/app", ROUTES);
     await waitFor(function () { return m.route.get() === '/app' && !!root.querySelector('[data-toggle="breadcrumb"]'); }, 'App Panel to render');
     return root;
 }
@@ -157,6 +161,36 @@ describe('App Panel view', () => {
         expect(fresh.className).not.toContain('text-red-600');
         expect(dbg.querySelector('button[title="Abort all"]')).not.toBeNull();
         expect(dbg.querySelector('button[title="Cancel"]')).not.toBeNull();
+    });
+
+    it('LLM Debug ignores a fetch that resolves after the panel was unmounted', async () => {
+        requestSpy.mockRestore();
+        // Every status fetch stays pending until the test resolves it, so timing is under test control.
+        let pending = [];
+        requestSpy = vi.spyOn(m, 'request').mockImplementation(function (opts) {
+            if (opts && /\/rest\/chat\/llm\/active$/.test(opts.url)) {
+                return new Promise(function (r) { pending.push(r); });
+            }
+            return Promise.resolve(null);
+        });
+        initFeatures(['core']);
+        await mountApp();
+        expect(pending.length).toBe(1);
+        expect(root.querySelector('[data-llm-debug]').textContent).toContain('Loading');
+        m.mount(root, null);
+        root = null;
+        await settle();
+        // The first response arrives after unmount, carrying rows that must never be shown later.
+        pending[0]({ summarizations: [], llmRequests: [{ requestId: 'stale-req-0000000000', model: 'stale-model', tokenCount: 1, serviceType: 'chat', stopped: false }], bufferModeStreams: 0, activeLLMCallCount: 0, activeLLMCalls: [] });
+        await settle();
+        window.location.hash = '';
+        await mountApp();
+        expect(pending.length).toBe(2);
+        let text = root.querySelector('[data-llm-debug]').textContent;
+        expect(text).toContain('Loading');
+        expect(text).not.toContain('stale-model');
+        pending[1](EMPTY_STATUS);
+        await waitFor(function () { return /No active requests/.test(root.querySelector('[data-llm-debug]').textContent); }, 'fresh idle status');
     });
 
     it('LLM Debug stops polling when the panel is unmounted', async () => {

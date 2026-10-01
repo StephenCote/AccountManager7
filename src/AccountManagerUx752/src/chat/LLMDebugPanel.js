@@ -10,10 +10,13 @@ let _data = null;
 let _loaded = false;
 let _poller = null;
 let _pollInterval = 2000;
+let _generation = 0;
 
 async function fetchActive() {
+    let gen = _generation;
+    let data = null;
     try {
-        _data = await m.request({
+        data = await m.request({
             method: 'GET',
             url: applicationPath + "/rest/chat/llm/active",
             withCredentials: true,
@@ -25,8 +28,10 @@ async function fetchActive() {
         });
     } catch (e) {
         console.warn("[LLMDebugPanel] fetch failed:", e);
-        _data = null;
     }
+    // A response that lands after the panel was unmounted must not repopulate the next mount.
+    if (gen !== _generation) return;
+    _data = data;
     _loaded = true;
     m.redraw();
 }
@@ -38,6 +43,7 @@ function startPoller() {
 }
 
 function stopPoller() {
+    _generation++;
     if (_poller) {
         clearInterval(_poller);
         _poller = null;
