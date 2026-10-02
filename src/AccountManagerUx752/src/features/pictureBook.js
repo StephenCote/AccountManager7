@@ -50,20 +50,18 @@ function openDocumentPicker(type) {
 
 // ── Existing picture books ───────────────────────────────────────────
 
-let existingBooks = [];
-let existingLoading = false;
-
 // Issue 9: role check warning flag
 let pbRoleWarning = false;
 
-// PB2 native books
+// PB2 native books. The selector lists only these: the PB1 ".pictureBookMeta" list was dropped because
+// that note is also every PB2 book's scene store (createFromScenes writes it), so each book showed twice.
 let pb2Books = [];
 let pb2Loading = false;
 let pb2ExpandedSeries = {};   // seriesKey -> true while its chapter list is open
 
 // Unfinished extractions: server-side checkpoints with no book behind them. A single-document
 // extraction persists only its checkpoint until the user reaches "Continue" on Step 2, so an
-// interrupted run appears in neither book list above — this is the only place it can be seen or
+// interrupted run does not appear in the book list above — this is the only place it can be seen or
 // discarded without starting another LLM run.
 let pendingExtractions = [];
 let pendingExtractionsLoading = false;
@@ -261,46 +259,8 @@ async function loadPb2Books() {
     m.redraw();
 }
 
-async function loadExistingBooks() {
-    existingLoading = true;
-    m.redraw();
-    try {
-        // Search for .pictureBookMeta notes — each one represents an extracted picture book
-        // With decoupled identity, meta lives under ~/PictureBooks/{bookName}/
-        let q = am7client.newQuery('data.note');
-        q.cache(false);
-        q.field('name', '.pictureBookMeta');
-        q.range(0, 20);
-        if (q.entity.request.indexOf('text') < 0) q.entity.request.push('text');
-        if (q.entity.request.indexOf('groupPath') < 0) q.entity.request.push('groupPath');
-        let qr = await am7client.search(q);
-        existingBooks = [];
-        if (qr && qr.results) {
-            for (let meta of qr.results) {
-                let parsed = {};
-                try { parsed = JSON.parse(meta.text || '{}'); } catch (e) {}
-                // Use bookObjectId if available, fall back to workObjectId for legacy books
-                let bookId = parsed.bookObjectId || parsed.workObjectId;
-                if (bookId) {
-                    existingBooks.push({
-                        bookObjectId: bookId,
-                        workName: parsed.workName || 'Untitled',
-                        sceneCount: parsed.sceneCount || 0,
-                        extractedAt: parsed.extractedAt || ''
-                    });
-                }
-            }
-        }
-    } catch (e) {
-        existingBooks = [];
-    }
-    existingLoading = false;
-    m.redraw();
-}
-
 // Issue 1 (idempotent delete): a book can be gone server-side while a stale row still shows in the
-// list — a lingering .pictureBookMeta note outlives a deleted book group, or a double-click races
-// the list refresh. Deleting an already-gone book is idempotent server-side (HTTP 404 with body
+// list — another tab deleted it, or a double-click races the list refresh. Deleting an already-gone book is idempotent server-side (HTTP 404 with body
 // {"error":"Book not found"}), so treat "already gone" as a benign success, ALWAYS reload the
 // list(s) afterward (even on a hard error) so a stale row can never persist, and only raise a real
 // red error for a genuine failure (403 auth denial, 500 with a concrete reason).
@@ -447,19 +407,11 @@ function renderPendingExtractions() {
     ]);
 }
 
-// Reload every selector list — a stale entry may be in any of them (PB1 meta notes, PB2 books,
-// or an unfinished extraction that has since become a book or been discarded).
+// Reload every selector list — a stale entry may be in either of them (PB2 books, or an unfinished
+// extraction that has since become a book or been discarded).
 async function reloadSelectorLists() {
     await loadPb2Books();
-    await loadExistingBooks();
     await loadPendingExtractions();
-}
-
-async function deleteBookFromList(book) {
-    if (!book || !book.bookObjectId) return;
-    let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete "' + book.workName + '"? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
-    if (!ok) return;
-    await performPbDelete(book.bookObjectId, reloadSelectorLists);
 }
 
 async function deletePb2BookFromList(b) {
@@ -506,7 +458,6 @@ var workSelectorView = {
         // Issue 9: check for AccountUsers role
         let roles = page.context && page.context() && page.context().roles;
         pbRoleWarning = !(roles && roles.user);
-        loadExistingBooks();
         loadPb2Books();
         loadPendingExtractions();
     },
@@ -529,57 +480,12 @@ var workSelectorView = {
                 m('div', { 'data-pb2-book-list': true, class: 'grid grid-cols-1 gap-2' }, renderPb2BookList())
             ]) : pb2Loading ? m('div', { class: 'text-sm text-gray-500 mb-6' }, 'Loading PB2 books...') : null,
 
-            // Existing PB1 picture books
-            existingBooks.length > 0 ? m('div', { class: 'mb-6' }, [
-                m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'Legacy Books (PB1)'),
-                m('div', { class: 'grid grid-cols-1 gap-2' },
-                    existingBooks.map(function (b) {
-                        let incomplete = !b.sceneCount;
-                        return m('div', {
-                            key: b.bookObjectId,
-                            class: 'flex items-center justify-between border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20',
-                            onclick: function () { m.route.set('/picture-book/' + b.bookObjectId); }
-                        }, [
-                            m('div', { class: 'flex items-center gap-3' }, [
-                                m('span', { class: 'material-symbols-outlined ' + (incomplete ? 'text-gray-400' : 'text-amber-500') }, 'auto_stories'),
-                                m('div', [
-                                    m('div', { class: 'font-medium text-sm' }, b.workName),
-                                    m('div', { class: 'text-xs text-gray-500' },
-                                        incomplete
-                                            ? 'Incomplete — no scenes'
-                                            : b.sceneCount + ' scene' + (b.sceneCount !== 1 ? 's' : ''))
-                                ])
-                            ]),
-                            m('div', { class: 'flex items-center gap-1' }, [
-                                m('button', {
-                                    class: 'text-gray-400 hover:text-blue-600 p-1',
-                                    title: 'Open workflow canvas',
-                                    onclick: function (e) {
-                                        e.stopPropagation();
-                                        m.route.set('/picture-book/' + b.bookObjectId + '/workflow');
-                                    }
-                                }, m('span', { class: 'material-symbols-outlined text-lg' }, 'account_tree')),
-                                m('button', {
-                                    class: 'text-red-400 hover:text-red-600 p-1',
-                                    title: 'Delete picture book',
-                                    onclick: function (e) {
-                                        e.stopPropagation();
-                                        deleteBookFromList(b);
-                                    }
-                                }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')),
-                                m('span', { class: 'material-symbols-outlined text-gray-400' }, 'chevron_right')
-                            ])
-                        ]);
-                    })
-                )
-            ]) : existingLoading ? m('div', { class: 'text-sm text-gray-500 mb-6' }, 'Loading...') : null,
-
             // Checkpoints with no book behind them yet
             renderPendingExtractions(),
 
             // New picture book
             m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' },
-                (existingBooks.length > 0 || pendingExtractions.length > 0) ? 'Create New' : 'Select a document'),
+                (pb2Books.length > 0 || pendingExtractions.length > 0) ? 'Create New' : 'Select a document'),
             m('div', { class: 'flex flex-col gap-3' }, [
                 m('button', {
                     class: 'flex items-center gap-3 border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 text-left',
