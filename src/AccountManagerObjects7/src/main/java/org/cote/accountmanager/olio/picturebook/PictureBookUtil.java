@@ -127,6 +127,13 @@ public class PictureBookUtil {
     // Default scene count when not specified — LLM decides actual count
     public static final int MAX_SCENES_DEFAULT = 10;
 
+    // Extracted characters the manuscript says nothing about: an unstated age is an adult, and
+    // every base statistic is set flat to this value instead of rolled. rollStatistics spreads a
+    // depleting allotment across a shuffle, so the last stats drawn routinely land at 2 — which
+    // NarrativeUtil then renders as "retarded" for roughly a quarter of extracted characters.
+    public static final int DEFAULT_EXTRACTED_AGE = 25;
+    public static final int DEFAULT_EXTRACTED_STATISTIC = 10;
+
     // Max chars of source text sent per LLM call (scene extraction, per-character detail
     // extraction) and the auto-chunk trigger threshold in extractScenesOnly. Text longer than
     // this is hard-truncated at the character boundary (not chunked) wherever it's used as a
@@ -6258,13 +6265,13 @@ public class PictureBookUtil {
     }
 
     /**
-     * Parse the LLM-extracted "age_approx" field (free text — "mid-30s", "25", "elderly", etc.)
-     * into a plain int. Returns 0 (StatisticsUtil's own "adult, no special-case" convention —
-     * see rollStatistics/rollHeight's own age&lt;=0 checks) for anything that doesn't start with a
-     * parseable number, rather than guessing.
+     * Parse the LLM-extracted "age_approx" field (a JSON number, or free text — "mid-30s", "25",
+     * "elderly", etc.) into a plain int. Returns 0 for anything without a parseable number rather
+     * than guessing; createCharPerson substitutes DEFAULT_EXTRACTED_AGE for that.
      */
     private static int parseAgeApprox(Map<String, Object> charData) {
         Object ageObj = charData.get("age_approx");
+        if (ageObj instanceof Number) return Math.max(0, ((Number) ageObj).intValue());
         if (!(ageObj instanceof String)) return 0;
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+)").matcher((String) ageObj);
         if (m.find()) {
@@ -6860,7 +6867,7 @@ public class PictureBookUtil {
             BaseRecord baseStats = baseline.get(OlioFieldNames.FIELD_STATISTICS);
             String baseGender = baseline.get(FieldNames.FIELD_GENDER);
             if (baseStats != null) {
-                StatisticsUtil.rollStatistics(baseStats, ageApprox);
+                StatisticsUtil.setFlatStatistics(baseStats, DEFAULT_EXTRACTED_STATISTIC);
                 // The TEXT's race (possibly none), never randomPerson's random roll, drives the
                 // height distribution.
                 StatisticsUtil.rollHeight(baseStats, textRace, baseGender, ageApprox);
@@ -7138,10 +7145,15 @@ public class PictureBookUtil {
         // KI-30: run the general random-character generator FIRST to get a fully-populated
         // baseline (statistics/instinct/personality/state/store/profile/race/alignment), then
         // apply the LLM-extracted overrides on top of it below — instead of building the
-        // charPerson from an almost-empty record. Age is needed by rollStatistics/rollHeight, so
-        // it's parsed here (ahead of its other, pre-existing use further down) rather than
-        // duplicating the parseAgeApprox() call.
+        // charPerson from an almost-empty record. Age is needed by rollHeight, so it's parsed here
+        // (ahead of its other, pre-existing use further down) rather than duplicating the
+        // parseAgeApprox() call.
         int age = parseAgeApprox(charData);
+        if (age <= 0) {
+            age = DEFAULT_EXTRACTED_AGE;
+            logger.info("Character " + name + ": no usable age_approx (" + charData.get("age_approx")
+                    + ") — defaulting to " + age);
+        }
         // KI-30 + C3 (shared-library colors): acquire the memoized OlioContext once and thread it into
         // BOTH the random baseline and the apparel/color path, so apparel colors resolve against the
         // world's shared color library (ctx.getUniverse().colors) rather than a per-owner fallback group.
@@ -7231,7 +7243,7 @@ public class PictureBookUtil {
             // fields it couldn't determine ("null", "n/a", "unknown", etc. — confirmed live: this
             // extraction prompt returns the literal text "null" for ethnicity far more often than
             // a real JSON null, which a plain != null/isBlank() check would not catch).
-            if (age > 0) charPerson.set("age", age);
+            charPerson.set("age", age);
             // C2: ethnicity is a list<string> whose values must be EthnicityEnumType constant NAMES
             // (NarrativeUtil.getEthnicityDescription reads them back via EthnicityEnumType.valueOf(name),
             // which throws on raw free text). Map the LLM's free-text value to the enum constant the
@@ -7527,10 +7539,13 @@ public class PictureBookUtil {
             try {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> physical = (Map<String, Object>) charData.get("physical");
-                StatisticsUtil.estimateFromExtractedPhysical(statistics, physical, normalizeGender(gender), parseAgeApprox(charData));
-                // Persist the FULL rolled statistics — the earlier partial 6-field patch dropped every
-                // other rolled stat (mental/social/etc.), leaving them 0. olio.statistics has no foreign
-                // refs, so a full AccessPoint update is PBAC-safe and saves everything rollStatistics set.
+                // Flat first: when the OlioContext was unavailable there was no baseline, so the
+                // persisted record is still all schema-default zeros at this point.
+                StatisticsUtil.setFlatStatistics(statistics, DEFAULT_EXTRACTED_STATISTIC);
+                StatisticsUtil.applyExtractedPhysical(statistics, physical, normalizeGender(gender), age);
+                // Persist the FULL statistics — the earlier partial 6-field patch dropped every other
+                // stat (mental/social/etc.), leaving them 0. olio.statistics has no foreign refs, so a
+                // full AccessPoint update is PBAC-safe and saves everything that was just set.
                 BaseRecord statsPersisted = IOSystem.getActiveContext().getAccessPoint().update(user, statistics);
                 if (statsPersisted == null) {
                     logger.warn("Failed to persist estimated statistics for " + name + " — AccessPoint.update denied or failed");

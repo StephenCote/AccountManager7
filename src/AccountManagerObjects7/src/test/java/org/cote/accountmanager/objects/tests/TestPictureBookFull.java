@@ -18,7 +18,11 @@ import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.CivilUtil;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.PersonalityProfile;
+import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.picturebook.PbArtifactUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
@@ -358,13 +362,14 @@ public class TestPictureBookFull extends BaseTest {
 	 * KI-30 regression test: createCharPerson() must call CharacterUtil.randomPerson() (via
 	 * OlioContextUtil.getOlioContext(user, dataPath)) FIRST to build a fully-populated baseline,
 	 * then apply the LLM-extracted overrides on top — not build the charPerson from an almost-
-	 * empty record. race/alignment/instinct/personality/state are the strongest regression signal:
-	 * before this fix, createCharPerson() never set race/alignment at all and never created
+	 * empty record. alignment/instinct/personality/state are the strongest regression signal:
+	 * before this fix, createCharPerson() never set alignment at all and never created
 	 * instinct/personality/state as persisted foreign sub-records (they stayed permanently null) —
 	 * unlike statistics, whose non-zero physicalStrength/agility values (also asserted below, per
 	 * the fix spec) turn out to ALREADY have existed pre-fix via a separate, unrelated call
-	 * (StatisticsUtil.estimateFromExtractedPhysical -> rollStatistics, unconditional regardless of
-	 * this fix) — confirmed by the swap test described in this method's fix note in KnownIssues.md.
+	 * (StatisticsUtil's extracted-physical step, unconditional regardless of this fix) — confirmed
+	 * by the swap test described in this method's fix note in KnownIssues.md. Race was originally a
+	 * signal too, but since 2026-09-28 it is taken from the manuscript only, never the baseline.
 	 */
 	@Test
 	public void TestCreateFromScenesSeedsRandomBaselineOnCharacter() throws Exception {
@@ -417,11 +422,14 @@ public class TestPictureBookFull extends BaseTest {
 		BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
 		assertNotNull("Character should be resolvable by name", cp);
 
-		// KI-30 primary regression signal: race/alignment — never set on charPerson at all before
-		// this fix.
+		// KI-30 primary regression signal: alignment — never set on charPerson at all before this
+		// fix. Race is deliberately NOT a baseline signal any more: since 2026-09-28 race comes from
+		// the manuscript or not at all (createCharPerson sets exactly resolveTextRace(), and the
+		// random baseline's rolled race must never leak — see TestPbCreateFromScenesRerun run 1).
+		// This stub states no race, so the record must carry none.
 		List<String> race = cp.get(OlioFieldNames.FIELD_RACE);
-		assertTrue("race must be populated from the random baseline (KI-30) — was never set before this fix",
-			race != null && !race.isEmpty());
+		assertTrue("race must be empty when the text states none — the random baseline's race must not leak: " + race,
+			race == null || race.isEmpty());
 		Object alignment = cp.get(FieldNames.FIELD_ALIGNMENT);
 		assertNotNull("alignment must be populated from the random baseline (KI-30) — was never set before this fix",
 			alignment);
@@ -456,6 +464,138 @@ public class TestPictureBookFull extends BaseTest {
 		logger.info("KI-30 verified: race=" + race + " alignment=" + alignment
 			+ " instinct.id=" + instinctId + " personality.id=" + personalityId + " state.id=" + stateId
 			+ " statistics.physicalStrength=" + strength + " agility=" + agility);
+	}
+
+	/**
+	 * An extracted character the manuscript gives no age or statistics for must read as an average
+	 * adult: age PictureBookUtil.DEFAULT_EXTRACTED_AGE, every base statistic
+	 * DEFAULT_EXTRACTED_STATISTIC, with only the extracted build keywords moving stats off that
+	 * line. Before this, age stayed at the schema default 0 and the statistics came from
+	 * rollStatistics' depleting allotment, so NarrativeUtil described roughly a quarter of extracted
+	 * characters as "retarded ... 0 year old". Also pins parseAgeApprox on prose ("mid-30s" -> 30)
+	 * and on a JSON number (42 -> 42, previously 0 because only strings were parsed).
+	 */
+	@Test
+	public void TestCreateFromScenesDefaultsAgeAndStatisticsForExtractedCharacters() throws Exception {
+		logger.info("Test: extracted characters with no age/stats in the text get age "
+			+ PictureBookUtil.DEFAULT_EXTRACTED_AGE + " and flat " + PictureBookUtil.DEFAULT_EXTRACTED_STATISTIC + " statistics");
+		setupTestContext();
+
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be set for the OlioContext baseline", dataPath);
+		String chatConfigName = "PictureBook " + pbLlmModel(testProperties) + ".chat";
+		long stamp = System.currentTimeMillis();
+
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, "Default Age Stats Story " + stamp);
+		BaseRecord work = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, testUser, null, plist);
+		work.set("text", TEST_STORY);
+		BaseRecord createdWork = IOSystem.getActiveContext().getAccessPoint().create(testUser, work);
+		assertNotNull(createdWork);
+		String workObjectId = createdWork.get(FieldNames.FIELD_OBJECT_ID);
+
+		List<Map<String, Object>> sceneList = new ArrayList<>();
+		Map<String, Object> scene0 = new LinkedHashMap<>();
+		scene0.put("title", "The Forest");
+		scene0.put("blurb", "Elena and Marcus enter the ancient forest.");
+		scene0.put("setting", "ancient forest");
+		scene0.put("action", "walking cautiously");
+		scene0.put("mood", "tense");
+		sceneList.add(scene0);
+
+		String unstatedName = "Unstated DefAge " + stamp;
+		String proseAgeName = "ProseAge DefAge " + stamp;
+		String numericAgeName = "NumericAge DefAge " + stamp;
+
+		Map<String, Object> unstated = new LinkedHashMap<>();
+		unstated.put("name", unstatedName);
+		unstated.put("gender", "female");
+		unstated.put("role", "protagonist");
+		Map<String, Object> physical = new LinkedHashMap<>();
+		physical.put("build", "slender");
+		unstated.put("physical", physical);
+
+		Map<String, Object> proseAge = new LinkedHashMap<>();
+		proseAge.put("name", proseAgeName);
+		proseAge.put("gender", "male");
+		proseAge.put("role", "companion");
+		proseAge.put("age_approx", "mid-30s");
+
+		Map<String, Object> numericAge = new LinkedHashMap<>();
+		numericAge.put("name", numericAgeName);
+		numericAge.put("gender", "male");
+		numericAge.put("role", "elder");
+		numericAge.put("age_approx", 42);
+
+		List<Map<String, Object>> charDataList = new ArrayList<>(Arrays.asList(unstated, proseAge, numericAge));
+
+		BaseRecord meta = PictureBookUtil.createFromScenes(testUser, workObjectId, chatConfigName, null,
+			"Default Age Stats Book " + stamp, sceneList, charDataList, dataPath);
+		assertNotNull("createFromScenes should return meta", meta);
+		List<Object> failedCharacters = meta.get("failedCharacters");
+		assertTrue("All three characters should create — failedCharacters=" + failedCharacters,
+			failedCharacters == null || failedCharacters.isEmpty());
+		List<Object> failedStatistics = meta.get("failedStatistics");
+		assertTrue("Statistics must persist for all three — failedStatistics=" + failedStatistics,
+			failedStatistics == null || failedStatistics.isEmpty());
+
+		// Unstated age + "slender" build: default adult, flat stats except the two the build keyword moves.
+		BaseRecord cpUnstated = findFullCharacterByName(unstatedName);
+		int ageUnstated = cpUnstated.get(FieldNames.FIELD_AGE);
+		assertEquals("no age_approx must default to DEFAULT_EXTRACTED_AGE, not stay 0",
+			PictureBookUtil.DEFAULT_EXTRACTED_AGE, ageUnstated);
+		BaseRecord stats = cpUnstated.get(OlioFieldNames.FIELD_STATISTICS);
+		assertNotNull(stats);
+		Long statsId = stats.get(FieldNames.FIELD_ID);
+		assertTrue("statistics must be the persisted record", statsId != null && statsId > 0L);
+		int flat = PictureBookUtil.DEFAULT_EXTRACTED_STATISTIC;
+		for (String statName : StatisticsUtil.getBaseStatisticNames()) {
+			int expected = flat;
+			if (OlioFieldNames.FIELD_AGILITY.equals(statName)) expected = flat + 3;
+			else if (OlioFieldNames.FIELD_PHYSICAL_STRENGTH.equals(statName)) expected = flat - 3;
+			int actual = stats.get(statName);
+			assertEquals("persisted " + statName + " for an extracted character with no stated stats", expected, actual);
+		}
+		int potential = stats.get("potential");
+		assertEquals("flat statistics leave no unallocated potential", 0, potential);
+		double height = stats.get(OlioFieldNames.FIELD_HEIGHT);
+		assertTrue("height is still rolled for an adult (prose build text does not parse to a height): " + height, height >= 4.0);
+
+		PersonalityProfile pp = ProfileUtil.getProfile(null, cpUnstated);
+		assertNotNull(pp);
+		assertEquals("intelligence 10 reads as average, never as the bottom bucket",
+			"schooled in the essentials", NarrativeUtil.getIsPrettySmart(pp));
+		String physicalDesc = NarrativeUtil.describePhysical(pp);
+		assertTrue("describePhysical must carry the default adult age: " + physicalDesc,
+			physicalDesc.contains(PictureBookUtil.DEFAULT_EXTRACTED_AGE + " year old"));
+		assertFalse("describePhysical must not render a 0 year old: " + physicalDesc,
+			java.util.regex.Pattern.compile("\\b0 year old").matcher(physicalDesc).find());
+
+		// Prose age: the first integer in the text wins, not the default.
+		BaseRecord cpProse = findFullCharacterByName(proseAgeName);
+		int ageProse = cpProse.get(FieldNames.FIELD_AGE);
+		assertEquals("age_approx \"mid-30s\" parses to 30", 30, ageProse);
+		BaseRecord statsProse = cpProse.get(OlioFieldNames.FIELD_STATISTICS);
+		int intelligenceProse = statsProse.get(OlioFieldNames.FIELD_INTELLIGENCE);
+		assertEquals("no physical text at all: intelligence stays flat", flat, intelligenceProse);
+
+		// Numeric age: a JSON number is honoured instead of being dropped to 0 and then defaulted.
+		BaseRecord cpNumeric = findFullCharacterByName(numericAgeName);
+		int ageNumeric = cpNumeric.get(FieldNames.FIELD_AGE);
+		assertEquals("age_approx 42 (number) parses to 42", 42, ageNumeric);
+
+		logger.info("Defaults verified: unstated age=" + ageUnstated + " prose age=" + ageProse + " numeric age=" + ageNumeric
+			+ " smart=" + NarrativeUtil.getIsPrettySmart(pp) + " physical=" + physicalDesc);
+	}
+
+	private BaseRecord findFullCharacterByName(String name) {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_NAME, name);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, testUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.planMost(true);
+		q.setCache(false);
+		BaseRecord cp = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
+		assertNotNull("Character " + name + " should be resolvable by name", cp);
+		return cp;
 	}
 
 	// ── Group Hierarchy Tests ────────────────────────────────────────────
@@ -977,9 +1117,10 @@ public class TestPictureBookFull extends BaseTest {
 				+ " endurance=" + elenaStats.get("physicalEndurance") + " height=" + elenaStats.get("height"));
 			logger.info("Marcus stats: strength=" + marcusStats.get("physicalStrength") + " agility=" + marcusStats.get("agility")
 				+ " endurance=" + marcusStats.get("physicalEndurance") + " height=" + marcusStats.get("height"));
-			assertTrue("Elena and Marcus should NOT have completely identical statistics — rollStatistics() "
-				+ "randomizes a baseline per character regardless, so this should essentially always be true; "
-				+ "an exact match across all four fields would indicate the estimation step silently did nothing",
+			assertTrue("Elena and Marcus should NOT have completely identical statistics — the base stats are "
+				+ "flat 10 for extracted characters, so the difference has to come from applyExtractedPhysical "
+				+ "(build keywords and the per-character height roll/parse); an exact match across all four "
+				+ "fields would indicate that step silently did nothing",
 				anyDifferent);
 		}
 	}

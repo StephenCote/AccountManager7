@@ -2082,7 +2082,8 @@ public class NarrativeUtil {
 		if (charData == null || name == null) return null;
 		Map<String, Object> phys = (Map<String, Object>) charData.get("physical");
 		String gender     = (String) charData.getOrDefault("gender", "");
-		String ageApprox  = sanitizeExtractedField((String) charData.getOrDefault("age_approx", ""), 40);
+		Object ageObj     = charData.get("age_approx");
+		String ageApprox  = sanitizeExtractedField(ageObj != null ? String.valueOf(ageObj) : "", 40);
 		String build      = sanitizeExtractedField(phys != null ? (String) phys.getOrDefault("build", "") : "", 60);
 		String hair       = sanitizeExtractedField(phys != null ? (String) phys.getOrDefault("hair", "") : "", 60);
 		String eyes       = sanitizeExtractedField(phys != null ? (String) phys.getOrDefault("eyes", "") : "", 40);

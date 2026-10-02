@@ -157,7 +157,7 @@ public class StatisticsUtil {
 			}
 
 			rec.set("potential", (allotment > 0 ? allotment : 0));
-			
+
 			/// Invoke inspect to perform any calculations on virtual fields
 			///
 			(new MemoryReader()).inspect(rec);
@@ -166,6 +166,26 @@ public class StatisticsUtil {
 			logger.error(e);
 		}
 
+	}
+
+	/// Deterministic counterpart to rollStatistics: every base statistic is set to the same value
+	/// (clamped to the statistic range) and potential is zeroed.
+	public static void setFlatStatistics(BaseRecord rec, int value) {
+		if(!rec.inherits(OlioModelNames.MODEL_CHAR_STATISTICS)) {
+			logger.error("Record is not a statistics record");
+			return;
+		}
+		int val = Math.max(Rules.INITIAL_MINIMUM_STATISTIC, Math.min(Rules.MAXIMUM_STATISTIC, value));
+		try {
+			for(StatisticRule stat : statistics) {
+				rec.set(stat.getName(), (val * stat.getMultiplier()));
+			}
+			rec.set("potential", 0);
+			(new MemoryReader()).inspect(rec);
+		}
+		catch(ModelNotFoundException | FieldException | ValueException | ReaderException e) {
+			logger.error(e);
+		}
 	}
 
 	private static final Pattern HEIGHT_FEET_INCHES = Pattern.compile("(\\d+)\\s*(?:['’]|ft|feet)\\s*(\\d{1,2})");
@@ -215,7 +235,7 @@ public class StatisticsUtil {
 
 	/**
 	 * Nudge physicalStrength/agility/physicalEndurance (±3-4, clamped 0-20) off keyword matches in
-	 * a free-text build description, on top of whatever baseline rollStatistics() already rolled.
+	 * a free-text build description, on top of whatever baseline is already on the record.
 	 * This is what actually varies BodyStatsProvider's computed weight per character (driven by
 	 * physicalStrength/agility/maximumHealth, not height alone) — without this, every character
 	 * estimated via this path would still get an identical computed weight.
@@ -254,14 +274,12 @@ public class StatisticsUtil {
 
 	/**
 	 * Best-effort mapping of an extracted character's free-text {@code physical} description
-	 * (from the pictureBook.extract-character LLM prompt: height/build/etc.) onto a persisted
-	 * olio.statistics record. Always rolls a random baseline first (avoids the degenerate
-	 * all-zero/all-default case), then overrides height/build-driven stats only where the
-	 * extracted text actually parses to something concrete — never guesses on prose text.
+	 * (from the pictureBook.extract-character LLM prompt: height/build/etc.) onto a statistics
+	 * record that already carries a baseline (rolled or flat — the caller decides). Overrides
+	 * height/build-driven stats only where the extracted text actually parses to something
+	 * concrete — never guesses on prose text.
 	 */
-	@SuppressWarnings("unchecked")
-	public static void estimateFromExtractedPhysical(BaseRecord stats, Map<String, Object> physical, String gender, int age) {
-		rollStatistics(stats, age);
+	public static void applyExtractedPhysical(BaseRecord stats, Map<String, Object> physical, String gender, int age) {
 		if (physical == null) return;
 		Object heightObj = physical.get("height");
 		Double parsedHeight = (heightObj instanceof String) ? parseHeightToFeetInches((String) heightObj) : null;
