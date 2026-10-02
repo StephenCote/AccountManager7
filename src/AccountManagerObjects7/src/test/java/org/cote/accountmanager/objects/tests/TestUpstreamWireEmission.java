@@ -421,6 +421,69 @@ public class TestUpstreamWireEmission extends BaseTest {
 		logger.info("[KI-72][WIRE][A2] PASS");
 	}
 
+	/// CASE A3 - THE DEFAULT num_gpu ON THE PROXIED PATH. dialect=OPENAI_COMPAT + upstream=OLLAMA
+	/// with chatOptions at its schema defaults: `num_gpu` must be ABSENT from the body while the
+	/// other extensions still ride at their default values.
+	///
+	/// This is the exact configuration that ran the 2026-10-02 Ourselves.doc extraction on CPU: the
+	/// org-3 contentAnalysis chatOptions never stored num_gpu, the row read back the then-default 1,
+	/// applyOllamaUpstreamOptions emitted it, and LiteLLM copied it into Ollama `options` - one GPU
+	/// layer for a 30b model. Unlike the native path there is no "top level is ignored" escape here.
+	/// The precondition pins the schema default at 0, and the wire assertion pins that 0 means
+	/// "nothing sent" rather than "send 0" (which Ollama would read as zero GPU layers).
+	@Test
+	public void caseA3_openAiCompatWithOllamaUpstream_defaultNumGpuIsAbsent() throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserA");
+		assertNotNull("test user is null", user);
+
+		BaseRecord conn = persistConnection(user, "KI72 A3 Conn " + nonce, base,
+			ConnectionDialectEnumType.OPENAI_COMPAT, ConnectionUpstreamEnumType.OLLAMA);
+		/// Built directly, NOT through chatConfigWithDistinctOptions: num_gpu must be the SCHEMA
+		/// DEFAULT, untouched, or this proves nothing about what a persisted row reads back as.
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, "KI72 A3 " + nonce);
+		BaseRecord cfg = IOSystem.getActiveContext().getFactory()
+			.newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
+		assertNotNull("chatConfig factory newInstance returned null", cfg);
+		cfg.set("model", "qwen3:8b");
+		cfg.set("stream", false);
+		cfg.set("connection", conn);
+		BaseRecord opts = cfg.get("chatOptions");
+		if (opts == null) {
+			opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
+			cfg.set("chatOptions", opts);
+		}
+		assertEquals("fixture precondition: chatOptions.num_gpu schema default must be 0 (unset) -"
+			+ " a default of 1 is the one-GPU-layer trap this case exists to catch",
+			0, (int) (Integer) opts.get("num_gpu"));
+		assertEquals("fixture precondition: chatOptions.repeat_penalty must be the schema default",
+			1.2, (double) (Double) opts.get("repeat_penalty"), 0.0001);
+
+		JsonNode body = dispatchAndCapture("/v1/chat/completions", user, cfg,
+			LLMServiceEnumType.OPENAI_COMPAT, ConnectionUpstreamEnumType.OLLAMA);
+
+		assertHasNot(body, "num_gpu", "A3: " + WHY_DEFAULT_NUM_GPU_IS_ABSENT);
+		/// Non-vacuity: the upstream gate is OPEN on this path, so the other extensions must still be
+		/// there at their defaults. If they were missing too, the absence above would just mean the
+		/// gate was closed, not that the default was fixed.
+		assertHas(body, "think", "A3: the upstream gate must be open on this path - think:false was set"
+			+ " on the request and upstream=OLLAMA keeps it");
+		assertFalse("`think` must be false", body.get("think").asBoolean());
+		assertHas(body, "repeat_penalty", "A3: the upstream gate must be open - repeat_penalty 1.2 is"
+			+ " the chatOptions default and the default-value emission is what case C2 pins natively");
+		assertEquals(1.2, body.get("repeat_penalty").asDouble(), 0.0001);
+		assertHas(body, "num_ctx", "A3: num_ctx must still ride the proxied wire (caseA2)");
+		assertEquals(8192, body.get("num_ctx").asInt());
+		assertHas(body, "top_k", "A3: top_k 50 is the chatOptions default and must still be sent");
+		assertEquals(50, body.get("top_k").asInt());
+		for (String f : REMOVED_EXTENSIONS) {
+			assertHasNot(body, f, WHY_REMOVED);
+		}
+		logger.info("[KI-72][WIRE][A3] PASS - default chatOptions put no num_gpu on the proxied wire");
+	}
+
 	/// CASE B - THE AZURE CASE, and the non-vacuous half. dialect=OPENAI_COMPAT with `upstream`
 	/// unset: NOTHING Ollama-only may reach the wire. Azure OpenAI rejects unknown parameters
 	/// outright ("Unknown parameter: 'think'"), so "just always emit them" is not an available fix.
@@ -471,14 +534,31 @@ public class TestUpstreamWireEmission extends BaseTest {
 
 	/// The first cut of the wire-shape fix relocated num_gpu too, and that was a regression: inside
 	/// `options` Ollama reads num_gpu as the number of layers to offload to the GPU, and chatOptions
-	/// defaults it to 1, so every persisted row pinned the model to ONE GPU layer. Measured
+	/// then defaulted it to 1, so every persisted row pinned the model to ONE GPU layer. Measured
 	/// 2026-09-28 on the DGX Spark: gpt-oss:120b loaded 1.9 GiB of 61.9 GiB into VRAM and every
 	/// PictureBook chunk aborted at the 305s latch. At the top level Ollama ignores it, which is
 	/// exactly where it rode before the fix.
+	///
+	/// The PROXIED path had no such escape: LiteLLM copies a top-level num_gpu into Ollama `options`
+	/// (measured 2026-10-02: qwen3:8b via LiteLLM at num_gpu:1 loaded 11% into VRAM; with the key
+	/// ABSENT, 100%). The chatOptions default is therefore now 0, and 0 is never emitted - see
+	/// caseA3 and caseC2 for the default-configuration assertions on both wires.
 	private static final String WHY_NUM_GPU_STAYS_TOP_LEVEL = "`num_gpu` must NOT be nested into"
-		+ " `options`: there Ollama honors it as a GPU layer count and the chatOptions default of 1"
-		+ " runs the model on CPU (gpt-oss:120b at 1.9 of 61.9 GiB in VRAM, 305s latch timeouts,"
-		+ " 2026-09-28). It stays at the top level, where Ollama ignores it, until the default is fixed.";
+		+ " `options`: there Ollama honors it as a GPU layer count, and when chatOptions defaulted it"
+		+ " to 1 that ran the model on CPU (gpt-oss:120b at 1.9 of 61.9 GiB in VRAM, 305s latch"
+		+ " timeouts, 2026-09-28). An explicitly configured value stays at the top level, where native"
+		+ " Ollama ignores it.";
+
+	/// Why a chatOptions left at its defaults must put NO num_gpu on ANY wire. Ollama treats
+	/// `num_gpu: 0` inside `options` as ZERO GPU layers (CPU-only), so the fix is not "send 0", it is
+	/// "send nothing": ChatUtil.applyOllamaUpstreamOptions emits only when > 0, and openaiRequest's
+	/// own num_gpu default is 0 so RecordSerializer's skip-when-default keeps the request's untouched
+	/// field off the wire. Absent, Ollama offloads every layer that fits (measured 2026-10-02, 100%
+	/// in VRAM vs 11% at num_gpu:1 through LiteLLM).
+	private static final String WHY_DEFAULT_NUM_GPU_IS_ABSENT = "a chatOptions at its schema defaults"
+		+ " must not put `num_gpu` on the wire AT ALL - not 1 (one GPU layer, CPU inference through"
+		+ " LiteLLM, the 2026-10-02 Ourselves.doc extraction) and not 0 (Ollama reads options.num_gpu:0"
+		+ " as zero layers). Absent is what lets Ollama offload everything that fits.";
 
 	/// Assert the native /api/chat body shape: `options` is an object carrying every
 	/// NATIVE_OPTIONS_KEYS member, none of them rides the top level, `think` is top-level, and the
@@ -499,9 +579,9 @@ public class TestUpstreamWireEmission extends BaseTest {
 		assertHasNot(options, "think", tag + ": `think` must not be moved into `options` - this only"
 			+ " applies to bodies where the caller did not put it there itself (see caseJ2)");
 		assertHasNot(options, "num_gpu", tag + ": " + WHY_NUM_GPU_STAYS_TOP_LEVEL);
-		/// ...and it must still be ON the body, or the guard above passes vacuously on a build that
-		/// stopped emitting it altogether.
-		assertHas(body, "num_gpu", tag + ": num_gpu rides the top level (ignored there) - " + WHY_NUM_GPU_STAYS_TOP_LEVEL);
+		/// Whether num_gpu rides the TOP level depends on the fixture: a configured value does (cases
+		/// C, E1 assert presence AND value so the guard above cannot pass vacuously on a build that
+		/// stopped emitting it); the schema default must not (case C2 asserts absence).
 		for (String f : REMOVED_EXTENSIONS) {
 			assertHasNot(body, f, WHY_REMOVED);
 			assertHasNot(options, f, WHY_REMOVED + " Inside `options` Ollama 0.34.x rejects it with HTTP 400.");
@@ -544,6 +624,8 @@ public class TestUpstreamWireEmission extends BaseTest {
 		assertEquals(DISTINCT_REPEAT_PENALTY, options.get("repeat_penalty").asDouble(), 0.0001);
 		assertEquals(DISTINCT_MIN_P, options.get("min_p").asDouble(), 0.0001);
 		assertEquals(DISTINCT_REPEAT_LAST_N, options.get("repeat_last_n").asInt());
+		assertHas(body, "num_gpu", "C: a CONFIGURED num_gpu rides the top level (ignored there) - "
+			+ WHY_NUM_GPU_STAYS_TOP_LEVEL);
 		assertEquals("top-level num_gpu must still carry the chatOptions value - " + WHY_NUM_GPU_STAYS_TOP_LEVEL,
 			DISTINCT_NUM_GPU, body.get("num_gpu").asInt());
 		assertFalse("`think` must be false", body.get("think").asBoolean());
@@ -611,11 +693,14 @@ public class TestUpstreamWireEmission extends BaseTest {
 			1.2, (double) (Double) opts.get("repeat_penalty"), 0.0001);
 		assertEquals("fixture precondition: chatOptions.top_k must be the schema default",
 			50, (int) (Integer) opts.get("top_k"));
+		assertEquals("fixture precondition: chatOptions.num_gpu schema default must be 0 (unset) -"
+			+ " a default of 1 is the one-GPU-layer trap", 0, (int) (Integer) opts.get("num_gpu"));
 
 		JsonNode body = dispatchAndCapture("/api/chat", user, cfg,
 			LLMServiceEnumType.OLLAMA, ConnectionUpstreamEnumType.OLLAMA);
 
 		JsonNode options = assertNativeOptionsShape(body, "C2");
+		assertHasNot(body, "num_gpu", "C2: " + WHY_DEFAULT_NUM_GPU_IS_ABSENT);
 		assertEquals("options.num_ctx must carry the chatOptions DEFAULT (8192) - if this is missing the"
 			+ " nesting was done through a typed record and RecordSerializer's skip-when-default dropped it",
 			8192, options.get("num_ctx").asInt());

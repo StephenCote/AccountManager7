@@ -10450,7 +10450,7 @@
         {
           "name": "num_gpu",
           "type": "int",
-          "default": 1
+          "default": 0
         },
         {
           "name": "max_tokens",

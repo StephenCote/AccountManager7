@@ -2444,11 +2444,14 @@ public class ChatUtil {
 	/// listed — introducing num_predict is a behaviour change beyond the wire-shape fix.
 	///
 	/// `num_gpu` is deliberately NOT relocated. Inside `options` Ollama reads it as the number of
-	/// model layers to offload to the GPU, and olio.llm.chatOptions defaults it to 1 — so every
-	/// persisted chatOptions row would pin the model to ONE GPU layer and run the rest on CPU.
-	/// Measured 2026-09-28 on the DGX Spark: gpt-oss:120b loaded with 1.9 GiB of 61.9 GiB in VRAM
-	/// and every chunk extraction aborted at the 305s latch. At the top level Ollama ignores it,
-	/// which is where it sat before the wire-shape fix; it stays there until the default is fixed.
+	/// model layers to offload to the GPU. olio.llm.chatOptions USED to default it to 1, so every
+	/// persisted row pinned the model to ONE GPU layer: measured 2026-09-28 on the DGX Spark,
+	/// gpt-oss:120b loaded 1.9 of 61.9 GiB into VRAM and every chunk extraction hit the 305s latch.
+	/// The native path dodged that only because the top level is ignored; the PROXIED path did not —
+	/// LiteLLM copies a top-level num_gpu into Ollama `options` (measured 2026-10-02: qwen3:8b via
+	/// LiteLLM at num_gpu:1 loaded 11% into VRAM, absent → 100%). The chatOptions default is now 0,
+	/// which the `> 0` guard above never emits and openaiRequest's own default-0 keeps off the wire,
+	/// so Ollama sees no key and offloads everything that fits. Nesting it here remains unnecessary.
 	static final List<String> NATIVE_OLLAMA_OPTION_KEYS = Arrays.asList(
 		"num_ctx", "temperature", "top_p", "top_k", "min_p", "repeat_penalty", "repeat_last_n",
 		"frequency_penalty", "presence_penalty", "seed"

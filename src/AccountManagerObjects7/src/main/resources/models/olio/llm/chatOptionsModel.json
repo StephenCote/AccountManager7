@@ -63,7 +63,8 @@
 		{
 			"name": "num_gpu",
 			"type": "int",
-			"default": 1
+			"default": 0,
+			"description": "Ollama GPU layer count. 0 = unset: never emitted, Ollama offloads every layer that fits. Any positive value reaches Ollama's `options` through LiteLLM and pins the model to that many layers (1 = CPU inference)."
 		},
 		{
 			"name": "max_tokens",
