@@ -7,6 +7,9 @@ import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.IPictureBookProgressHandler;
@@ -362,6 +365,79 @@ public class PictureBookService {
         } finally {
             PictureBookCancelRegistry.unregister(user, workObjectId, cancelToken);
         }
+    }
+
+    /**
+     * POST /{workObjectId}/extract-retry-failed?async=&startOffset=&endOffset=
+     * Re-runs ONLY the passages the last chunked extraction could not read (refusal, stall,
+     * unparseable reply, ...) against the checkpoint the completed run kept for this document /
+     * range, and returns the merged scene list in the same { sceneList, extractionComplete,
+     * chunksProcessed, chunked, failedExtractions } shape as the chunked branch of
+     * extract-scenes-only. Body: { chatConfig, seriesObjectId } — chatConfig is how a user swaps in
+     * a model that will not refuse the content. 404 when there is no checkpoint to retry against.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{workObjectId:[0-9A-Za-z\\-]+}/extract-retry-failed")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response extractRetryFailed(@PathParam("workObjectId") String workObjectId,
+            @QueryParam("async") @DefaultValue("false") boolean async,
+            @QueryParam("startOffset") Integer startOffset,
+            @QueryParam("endOffset") Integer endOffset,
+            String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+        String chatConfigName = null;
+        String seriesObjectId = null;
+        BaseRecord params = parseParams(json);
+        if (params != null) {
+            chatConfigName = params.get("chatConfig");
+            seriesObjectId = params.get("seriesObjectId");
+        }
+
+        if (async) {
+            final String fChatConfig = chatConfigName;
+            final String fSeriesObjectId = seriesObjectId;
+            AsyncJob job = AsyncJobRegistry.submit(user, "pb.retryFailedChunks", workObjectId, j -> {
+                PictureBookUtil.ScenesOnlyResult r = PictureBookUtil.retryFailedChunks(
+                        user, workObjectId, fChatConfig, j.getProgress(), fSeriesObjectId,
+                        startOffset, endOffset);
+                return toJson(retryResult(r, j.getProgress()));
+            });
+            if (job != null) {
+                return Response.status(202).entity("{\"jobId\":\"" + job.getJobId()
+                        + "\",\"status\":\"" + job.getStatus().name().toLowerCase() + "\"}").build();
+            }
+            logger.warn("Async retry requested but the job could not be submitted — running synchronously");
+        }
+
+        SummarizeProgress cancelToken = PictureBookCancelRegistry.register(user, workObjectId);
+        try {
+            PictureBookUtil.ScenesOnlyResult r = PictureBookUtil.retryFailedChunks(
+                    user, workObjectId, chatConfigName, cancelToken, seriesObjectId, startOffset, endOffset);
+            return Response.status(200).entity(toJson(retryResult(r, cancelToken))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (FieldException | ValueException | ModelNotFoundException e) {
+            logger.error("Failed to build retry result for " + workObjectId + ": " + e.getMessage(), e);
+            return Response.status(500).entity("{\"error\":\"Failed to build retry result\"}").build();
+        } finally {
+            PictureBookCancelRegistry.unregister(user, workObjectId, cancelToken);
+        }
+    }
+
+    private BaseRecord retryResult(PictureBookUtil.ScenesOnlyResult r, SummarizeProgress progress)
+            throws FieldException, ValueException, ModelNotFoundException {
+        BaseRecord out = PictureBookUtil.buildResult();
+        out.set("sceneList", r.scenes);
+        out.set("extractionComplete", r.complete);
+        out.set("chunksProcessed", progress != null ? progress.getCurrent() : -1);
+        out.set("chunked", r.chunked);
+        if (r.failedExtractions != null && !r.failedExtractions.isEmpty()) {
+            out.set("failedExtractions", r.failedExtractions);
+        }
+        return out;
     }
 
     /**

@@ -3910,3 +3910,19 @@ saw `/pages` return the blurb, and screenshotted the reader displaying it (`2 pa
 notes and `olio.pb.scene` rows; they need re-extraction or the per-scene regenerate-blurb path to pick up
 text. No migration was written — the scene notes hold whatever the LLM said at the time and the original
 `blurb` is gone from them.
+
+### KI-74. PictureBook cancel stops the loop, not the in-flight LLM call — `abort-all` stays user-reachable until it does — OPEN (2026-10-01, Stephen)
+KI-10's cancel token is checked at chunk/scene boundaries, so a cancel takes effect only after the LLM
+call that is already running returns; the call itself keeps consuming the model. The LLM Debug
+"Abort all" (`POST /rest/chat/llm/abort-all`) does terminate the active streams, which is why it works
+where cancel does not.
+
+**Decision (Stephen, 2026-10-01).** `abort-all` and `GET /rest/chat/llm/active` remain
+`@RolesAllowed({"admin","user"})` and the App Panel (`#!/app`) exposes them to every user, even though
+abort-all stops *all* users' streams server-wide and `/llm/active` lists everyone's request/session ids.
+Do not restrict them to admin while any cancel path (PictureBook first) leaves its background LLM call
+running. When cancel genuinely aborts the call, revisit whether abort-all should become admin-only.
+
+**Fix direction.** Give the cancel token a handle on the live LLM request (the same `ChatUtil` stream
+registry abort-all drains) so `cancel()` aborts the in-flight call rather than waiting for the next loop
+check.

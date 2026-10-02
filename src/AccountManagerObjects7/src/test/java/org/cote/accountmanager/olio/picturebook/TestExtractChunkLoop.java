@@ -897,4 +897,410 @@ public class TestExtractChunkLoop extends BaseTest {
 		assertTrue(reachedEnd[0]);
 		assertTrue(scenes.size() > 0);
 	}
+
+	// ── per-passage failure classification: refusal, stall, truncation ─────────
+
+	private static Map<String, Object> failure(String json) {
+		Map<String, Object> f = JSONUtil.getMap(json.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+				String.class, Object.class);
+		assertNotNull("failure record must be JSON: " + json, f);
+		return f;
+	}
+
+	/// A scripted model that knows which chunk it is on. attemptChunk increments the progress
+	/// token AFTER attempt 1 returns, so inside attempt 2 the token already points at the next
+	/// chunk — a model keyed on token.getCurrent() would mis-attribute its own retry.
+	private static final class ChunkAware implements PictureBookUtil.ChunkLlm {
+		interface Reply { String at(int chunkIdx, int attempt, Map<String, String> vars); }
+		private final AtomicInteger chunkIdx = new AtomicInteger(-1);
+		final List<String> callLog = Collections.synchronizedList(new ArrayList<>());
+		private final Reply reply;
+		ChunkAware(Reply reply) { this.reply = reply; }
+		@Override
+		public String call(Map<String, String> vars, int attempt) {
+			int idx = (attempt == 1) ? chunkIdx.incrementAndGet() : chunkIdx.get();
+			callLog.add(idx + ":" + attempt);
+			return reply.at(idx, attempt, vars);
+		}
+		int attemptsFor(int idx) {
+			int n = 0;
+			for (String c : callLog) if (c.startsWith(idx + ":")) n++;
+			return n;
+		}
+	}
+
+	/// A content-policy refusal: the model answered, with a "no". Before this was classified it
+	/// read as "no content" — retried against the same model (which refused again), counted toward
+	/// the unreachable-server breaker (two refused passages in a row STOPPED the run), and reported
+	/// to the user as the server's fault. It is now recorded once, typed, with the model's words,
+	/// and the run carries on.
+	@Test
+	public void TestRefusalIsRecordedOnceWithTheModelsWordsAndDoesNotTripTheBreaker() throws Exception {
+		BaseRecord u = user();
+		SummarizeProgress token = new SummarizeProgress();
+		boolean[] reachedEnd = new boolean[] { false };
+		List<String> failed = new ArrayList<>();
+		final String REFUSAL = "I can't help with content of that nature.";
+		/// Chunks 2 and 3 (consecutive!) are refused; the breaker trips at two consecutive
+		/// immediate failures, so this is exactly the shape that used to abort the run.
+		ChunkAware llm = new ChunkAware((idx, attempt, vars) -> {
+			if (idx == 1 || idx == 2) {
+				PictureBookUtil.setLastRefusalForTest(REFUSAL);
+				return null;
+			}
+			return sceneJson("Scene " + idx);
+		});
+
+		List<Map<String, Object>> scenes = run(u, longText(80), token, failed, null, reachedEnd, llm);
+
+		assertTrue("the text must span at least 5 chunks", token.getTotal() >= 5);
+		assertTrue("two consecutive refusals must NOT stop the run — the server is fine", reachedEnd[0]);
+		assertEquals("every chunk was attempted", token.getTotal(), token.getCurrent());
+		assertEquals("a refusal is attempted ONCE — the same model will refuse again", 1, llm.attemptsFor(1));
+		assertEquals(1, llm.attemptsFor(2));
+		assertEquals("every other passage produced its scene", token.getTotal() - 2, scenes.size());
+		assertEquals("one failure per refused passage, nothing else: " + failed, 2, failed.size());
+		for (String f : failed) {
+			Map<String, Object> rec = failure(f);
+			assertEquals("typed as a refusal so the client can say so: " + f, "refusal", rec.get("kind"));
+			assertEquals("the model's own words are kept for the user to read", REFUSAL, rec.get("rawResponse"));
+			assertFalse("a refusal is not a breaker stop", f.contains("stoppedEarly"));
+			assertTrue("a refused passage is retryable with another model", PictureBookUtil.isRetryableFailure(f));
+			String err = String.valueOf(rec.get("error"));
+			assertTrue("the reason tells the user what to do: " + err, err.contains("different model"));
+		}
+		assertEquals(2, PictureBookUtil.failedChunkNumber(failed.get(0)));
+		assertEquals(3, PictureBookUtil.failedChunkNumber(failed.get(1)));
+	}
+
+	/// A mid-stream stall (LiteLLM queue stall, proxy dropping a long response): unlike a timeout
+	/// it IS retried, exactly once, with a hint that says "cut off", not "malformed". A passage
+	/// that stalls twice is recorded as stalled; a passage whose stream is cut off after some
+	/// text arrived is recorded as truncated with the partial text; neither trips the breaker.
+	@Test
+	public void TestStallIsRetriedOnceThenRecordedAsStalledOrTruncated() throws Exception {
+		BaseRecord u = user();
+		SummarizeProgress token = new SummarizeProgress();
+		boolean[] reachedEnd = new boolean[] { false };
+		List<String> failed = new ArrayList<>();
+		final String STALL_MSG = "The model stopped sending data mid-reply (no data for 60s); 0 characters had been received before the stream stalled";
+		final String PARTIAL = "Here are the scenes I found in this passage";
+		final List<String> retryHints = Collections.synchronizedList(new ArrayList<>());
+		ChunkAware llm = new ChunkAware((idx, attempt, vars) -> {
+			if (attempt == 2) retryHints.add(idx + ":" + vars.get("chunk"));
+			if (idx == 1) {
+				/// Stalls on BOTH attempts, with nothing received — the exact shape Chat produces.
+				Chat.setLastCallStalledForTest(true);
+				Chat.setLastCallErrorForTest(STALL_MSG);
+				return null;
+			}
+			if (idx == 2) {
+				/// Stalls once, then the fresh request completes — the common LiteLLM case.
+				if (attempt == 1) {
+					Chat.setLastCallStalledForTest(true);
+					Chat.setLastCallErrorForTest(STALL_MSG);
+					return null;
+				}
+				return sceneJson("Recovered After Stall");
+			}
+			if (idx == 3) {
+				/// The stream delivered part of a prose preamble and then went quiet, twice.
+				Chat.setLastCallStalledForTest(true);
+				return PARTIAL;
+			}
+			return sceneJson("Scene " + idx);
+		});
+
+		List<Map<String, Object>> scenes = run(u, longText(100), token, failed, null, reachedEnd, llm);
+
+		assertTrue("the text must span at least 6 chunks", token.getTotal() >= 6);
+		assertTrue("stalls are a live server — the run must reach the end", reachedEnd[0]);
+		assertEquals("a stall is retried exactly once", 2, llm.attemptsFor(1));
+		assertEquals(2, llm.attemptsFor(2));
+		assertEquals(2, llm.attemptsFor(3));
+		assertEquals("a healthy chunk is called once", 1, llm.attemptsFor(0));
+		for (String h : retryHints) {
+			assertTrue("the retry must say the reply was CUT OFF, not malformed: " + h,
+					h.contains("cut off before it finished"));
+			assertFalse(h.contains("could not be parsed as JSON"));
+		}
+		assertEquals("chunks 2 and 4 failed; chunk 3 recovered on its retry: " + failed, 2, failed.size());
+
+		Map<String, Object> stalled = failure(failed.get(0));
+		assertEquals(2, ((Number) stalled.get("chunk")).intValue());
+		assertEquals("stalled", stalled.get("kind"));
+		assertEquals("Chat's own reason is carried", STALL_MSG, stalled.get("error"));
+
+		Map<String, Object> truncated = failure(failed.get(1));
+		assertEquals(4, ((Number) truncated.get("chunk")).intValue());
+		assertEquals("partial text + stall is a truncation, not 'no JSON'", "truncated", truncated.get("kind"));
+		assertEquals("the partial text is kept for inspection", PARTIAL, truncated.get("rawResponse"));
+
+		boolean recovered = false;
+		for (Map<String, Object> sc : scenes) if ("Recovered After Stall".equals(sc.get("title"))) recovered = true;
+		assertTrue("the once-stalled passage's retry must have been merged", recovered);
+		assertEquals(token.getTotal() - 2, scenes.size());
+		Chat.clearLastCallError();
+	}
+
+	// ── keep-on-failure + retryFailedChunks, end to end through the real DB ──────
+
+	/// The text as retryFailedChunks will re-read it: the checkpoint is keyed on a hash of the
+	/// SANITIZED work text, so the first run must be driven with that same text or the retry
+	/// cannot find its own checkpoint.
+	private String workText(BaseRecord u, String workObjectId) {
+		BaseRecord work = PictureBookUtil.findWork(u, workObjectId);
+		assertNotNull("work must be findable as the test user", work);
+		String text = PictureBookUtil.extractWorkText(u, work);
+		assertNotNull("work text", text);
+		assertTrue("work text must span several chunks", text.length() > 3 * PictureBookUtil.EXTRACT_CHUNK_SIZE);
+		return text;
+	}
+
+	private static int indexOfTitle(List<Map<String, Object>> scenes, String title) {
+		for (int i = 0; i < scenes.size(); i++) if (title.equals(scenes.get(i).get("title"))) return i;
+		return -1;
+	}
+
+	/// THE user-facing requirement: a model refuses one passage; the rest of the document is
+	/// fine. Previously the completed run deleted its checkpoint and the only recourse was to
+	/// resubmit the whole document. Now the run keeps its checkpoint (chunksProcessed = total,
+	/// failure records attached), a plain re-run costs nothing and still reports the gap, and
+	/// retryFailedChunks re-runs ONLY that passage — with another model — merges its scenes
+	/// back into document order, drops the stale failure, and clears the checkpoint.
+	@Test
+	public void TestRefusedPassageSurvivesCompletionAndIsRecoveredByRetryFailedChunks() throws Exception {
+		BaseRecord u = user();
+		long orgId = u.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String docName = "loopWorkRetry-" + UUID.randomUUID();
+		BaseRecord work = getCreateData(u, docName, "text/plain", longText(100).getBytes(), "~/PbLoopTests", orgId);
+		assertNotNull(work);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		String groupPath = PictureBookUtil.findWorkGroupPath(u, workObjectId);
+		assertNotNull("work group path", groupPath);
+		PictureBookUtil.clearExtractCheckpoint(u, workObjectId);
+		String text = workText(u, workObjectId);
+		List<String> chunks = PictureBookUtil.chunkText(text);
+		assertTrue(chunks.size() >= 5);
+
+		// --- first run: the third passage is refused, everything else answers -------
+		SummarizeProgress t1 = new SummarizeProgress();
+		boolean[] end1 = new boolean[] { false };
+		List<String> failed1 = new ArrayList<>();
+		ChunkAware first = new ChunkAware((idx, attempt, vars) -> {
+			if (idx == 2) {
+				PictureBookUtil.setLastRefusalForTest("I won't describe that.");
+				return null;
+			}
+			return sceneJson("Scene " + idx);
+		});
+		List<Map<String, Object>> firstScenes = run(u, text, t1, failed1, workObjectId, end1, first);
+
+		assertEquals(chunks.size(), t1.getTotal());
+		assertTrue("a refusal does not stop the run", end1[0]);
+		assertEquals(chunks.size() - 1, firstScenes.size());
+		assertEquals(1, failed1.size());
+		assertEquals(3, PictureBookUtil.failedChunkNumber(failed1.get(0)));
+		assertEquals("refusal", failure(failed1.get(0)).get("kind"));
+
+		ExtractCheckpoint cp = PictureBookUtil.loadExtractCheckpoint(u, groupPath, workObjectId,
+				PictureBookUtil.extractTextHash(text), 2000, 200, chunks.size());
+		assertNotNull("a run that reached the end WITH a failed passage must KEEP its checkpoint", cp);
+		assertEquals("...marked fully processed, so a plain re-run does not redo anything",
+				chunks.size(), cp.chunksProcessed);
+		assertEquals("...holding every scene", firstScenes.size(), cp.scenes.size());
+		assertNotNull(cp.failedExtractions);
+		assertEquals("...and the failure record", 1, cp.failedExtractions.size());
+
+		// --- a plain re-run is a no-op that still reports the gap -----------------
+		SummarizeProgress t2 = new SummarizeProgress();
+		boolean[] end2 = new boolean[] { false };
+		List<String> failed2 = new ArrayList<>();
+		final AtomicInteger rerunCalls = new AtomicInteger(0);
+		List<Map<String, Object>> rerun = run(u, text, t2, failed2, workObjectId, end2,
+				(vars, attempt) -> { rerunCalls.incrementAndGet(); return sceneJson("Must Not Be Called"); });
+		assertEquals("nothing left to extract, so the model is not called", 0, rerunCalls.get());
+		assertTrue(end2[0]);
+		assertEquals(firstScenes.size(), rerun.size());
+		assertEquals("the refused passage is still reported", 1, failed2.size());
+		assertEquals(3, PictureBookUtil.failedChunkNumber(failed2.get(0)));
+		assertNotNull("and the checkpoint is still there for the retry",
+				PictureBookUtil.loadProgressNote(u, groupPath, workObjectId));
+
+		// --- retry with "another model": ONLY passage 3 is re-run ------------------
+		SummarizeProgress t3 = new SummarizeProgress();
+		final List<Map<String, String>> seen = Collections.synchronizedList(new ArrayList<>());
+		PictureBookUtil.ChunkLlm otherModel = (vars, attempt) -> {
+			seen.add(vars);
+			return sceneJson("Recovered Three");
+		};
+		PictureBookUtil.ScenesOnlyResult r = PictureBookUtil.retryFailedChunks(u, workObjectId, null, t3,
+				null, null, null, otherModel);
+
+		assertEquals("exactly one model call — the refused passage", 1, seen.size());
+		assertEquals("progress is scoped to the retried passages", 1, t3.getTotal());
+		assertEquals(1, t3.getCurrent());
+		assertEquals("the passage sent is the one that was refused", chunks.get(2), seen.get(0).get("chunk"));
+		assertTrue(r.complete);
+		assertTrue(r.chunked);
+		assertTrue("the recovered passage's failure record is gone: " + r.failedExtractions, r.failedExtractions.isEmpty());
+		assertEquals(firstScenes.size() + 1, r.scenes.size());
+		int at = indexOfTitle(r.scenes, "Recovered Three");
+		assertTrue(at > 0);
+		assertEquals("the recovered scene lands in DOCUMENT order, after passage 2's scene",
+				"Scene 1", r.scenes.get(at - 1).get("title"));
+		assertEquals("...and before passage 4's", "Scene 3", r.scenes.get(at + 1).get("title"));
+		for (int i = 0; i < r.scenes.size(); i++) {
+			assertEquals("indexes are reassigned after reordering", i, r.scenes.get(i).get("index"));
+			assertNotNull("every scene carries its passage for the character reduce", r.scenes.get(i).get("sourceText"));
+		}
+		assertNull("nothing left failed and the run was complete — checkpoint cleared",
+				PictureBookUtil.loadProgressNote(u, groupPath, workObjectId));
+
+		/// The retried passage must see the scenes that come AFTER it (title-only, so it neither
+		/// re-adds nor loses them) as well as the ones before it.
+		String prev = seen.get(0).get("previousScenes");
+		assertNotNull(prev);
+		assertTrue("later scenes are visible to the retried passage: " + prev, prev.contains("Scene 3"));
+		assertTrue(prev.contains("Scene 0"));
+	}
+
+	/// The other outcome: the retry fails too (here the second model stalls). The checkpoint
+	/// stays, the failure record is REPLACED with the new reason rather than duplicated, a
+	/// passage that did recover is merged and its record dropped, and a later retry can finish
+	/// the job. Once nothing is left, asking again is a clean 404, not a re-run.
+	@Test
+	public void TestRetryThatFailsAgainReplacesTheReasonAndKeepsTheCheckpoint() throws Exception {
+		BaseRecord u = user();
+		long orgId = u.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String docName = "loopWorkRetry2-" + UUID.randomUUID();
+		BaseRecord work = getCreateData(u, docName, "text/plain", longText(120).getBytes(), "~/PbLoopTests", orgId);
+		assertNotNull(work);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		String groupPath = PictureBookUtil.findWorkGroupPath(u, workObjectId);
+		PictureBookUtil.clearExtractCheckpoint(u, workObjectId);
+		String text = workText(u, workObjectId);
+		List<String> chunks = PictureBookUtil.chunkText(text);
+		assertTrue(chunks.size() >= 6);
+
+		// --- first run: passages 2 and 4 refused ------------------------------------
+		SummarizeProgress t1 = new SummarizeProgress();
+		boolean[] end1 = new boolean[] { false };
+		List<String> failed1 = new ArrayList<>();
+		ChunkAware first = new ChunkAware((idx, attempt, vars) -> {
+			if (idx == 1 || idx == 3) {
+				PictureBookUtil.setLastRefusalForTest("No.");
+				return null;
+			}
+			return sceneJson("Scene " + idx);
+		});
+		List<Map<String, Object>> firstScenes = run(u, text, t1, failed1, workObjectId, end1, first);
+		assertTrue(end1[0]);
+		assertEquals(2, failed1.size());
+		assertEquals(chunks.size() - 2, firstScenes.size());
+
+		// --- retry: passage 2 recovers, passage 4 stalls twice ----------------------
+		final String STALL_MSG = "The model stopped sending data mid-reply (no data for 60s); 0 characters had been received before the stream stalled";
+		SummarizeProgress t2 = new SummarizeProgress();
+		final List<String> calls = Collections.synchronizedList(new ArrayList<>());
+		PictureBookUtil.ChunkLlm second = (vars, attempt) -> {
+			String chunk = vars.get("chunk");
+			if (chunk.startsWith(chunks.get(3))) {
+				calls.add("4:" + attempt);
+				Chat.setLastCallStalledForTest(true);
+				Chat.setLastCallErrorForTest(STALL_MSG);
+				return null;
+			}
+			calls.add("2:" + attempt);
+			assertEquals("the passage sent is passage 2's", chunks.get(1), chunk);
+			return sceneJson("Recovered Two");
+		};
+		PictureBookUtil.ScenesOnlyResult r = PictureBookUtil.retryFailedChunks(u, workObjectId, null, t2,
+				null, null, null, second);
+
+		assertEquals("passage 2 once, passage 4 twice (stall retry): " + calls, listOf("2:1", "4:1", "4:2"), calls);
+		assertEquals(2, t2.getTotal());
+		assertTrue(r.complete);
+		assertEquals("one failure left — passage 4, with the NEW reason, not duplicated: " + r.failedExtractions,
+				1, r.failedExtractions.size());
+		Map<String, Object> left = failure(r.failedExtractions.get(0));
+		assertEquals(4, ((Number) left.get("chunk")).intValue());
+		assertEquals("the record now says what happened THIS time", "stalled", left.get("kind"));
+		assertEquals(STALL_MSG, left.get("error"));
+		assertEquals(firstScenes.size() + 1, r.scenes.size());
+		assertEquals("Recovered Two", r.scenes.get(1).get("title"));
+
+		ExtractCheckpoint cp = PictureBookUtil.loadExtractCheckpoint(u, groupPath, workObjectId,
+				PictureBookUtil.extractTextHash(text), 2000, 200, chunks.size());
+		assertNotNull("a retry that left a failure keeps the checkpoint", cp);
+		assertEquals(chunks.size(), cp.chunksProcessed);
+		assertEquals("the merged scene list is what is checkpointed", r.scenes.size(), cp.scenes.size());
+		assertEquals(1, cp.failedExtractions.size());
+		assertEquals(4, PictureBookUtil.failedChunkNumber(cp.failedExtractions.get(0)));
+
+		// --- second retry finishes the job -------------------------------------------
+		SummarizeProgress t3 = new SummarizeProgress();
+		final AtomicInteger thirdCalls = new AtomicInteger(0);
+		PictureBookUtil.ScenesOnlyResult r2 = PictureBookUtil.retryFailedChunks(u, workObjectId, null, t3,
+				null, null, null, (vars, attempt) -> {
+					thirdCalls.incrementAndGet();
+					assertEquals(chunks.get(3), vars.get("chunk"));
+					return sceneJson("Recovered Four");
+				});
+		assertEquals("only the still-failed passage is re-run", 1, thirdCalls.get());
+		assertTrue(r2.failedExtractions.isEmpty());
+		assertEquals(chunks.size(), r2.scenes.size());
+		assertEquals("Recovered Four", r2.scenes.get(3).get("title"));
+		assertNull("all passages recovered — checkpoint cleared",
+				PictureBookUtil.loadProgressNote(u, groupPath, workObjectId));
+
+		// --- nothing stored any more: a further retry is a clear 404 ----------------
+		try {
+			PictureBookUtil.retryFailedChunks(u, workObjectId, null, new SummarizeProgress(), null, null, null,
+					(vars, attempt) -> sceneJson("Never"));
+			assertTrue("expected a 404 when no extraction state exists", false);
+		} catch (PictureBookException e) {
+			assertEquals(404, e.getStatus());
+		}
+		Chat.clearLastCallError();
+	}
+
+	/// The previousScenes a RETRIED passage is shown: scenes before it windowed exactly as the
+	/// first pass would have shown them (anchored at the retried chunk, not the end of the
+	/// list), scenes from later passages appended title-only so the model neither re-adds nor
+	/// loses them. A scene with no provenance counts as "before".
+	@Test
+	public void TestRetryPromptShowsLaterScenesTitleOnlyAndAnchorsTheWindowAtTheRetriedChunk() throws Exception {
+		List<Map<String, Object>> scenes = new ArrayList<>();
+		for (int i = 0; i < 14; i++) {
+			Map<String, Object> sc = scene("Scene " + i, "blurb " + i, i);
+			sc.put("characters", listOf("Person " + i));
+			scenes.add(sc);
+		}
+		Map<String, Object> orphan = scene("Orphan", "no provenance", 0);
+		orphan.remove("sourceChunk");
+		scenes.add(orphan);
+
+		List<Map<String, Object>> sent = PictureBookUtil.scenesForRetryPrompt(scenes, 7);
+
+		assertEquals("every scene stays addressable", 15, sent.size());
+		/// Before the retried chunk: scenes 0..7 plus the orphan = 9, windowed to the last 6 in detail.
+		for (int i = 0; i < 3; i++) {
+			assertEquals("older scenes keep only title + cast: " + sent.get(i), 2, sent.get(i).size());
+			assertNull(sent.get(i).get("blurb"));
+		}
+		for (int i = 3; i < 9; i++) {
+			assertNotNull("the window around the retried chunk keeps detail: " + sent.get(i), sent.get(i).get("blurb"));
+		}
+		assertEquals("Scene 7", sent.get(7).get("title"));
+		assertEquals("the provenance-less scene is treated as earlier material", "Orphan", sent.get(8).get("title"));
+		/// After it: scenes 8..13, title + cast only, in order.
+		for (int i = 9; i < 15; i++) {
+			Map<String, Object> s = sent.get(i);
+			assertEquals("Scene " + (i - 1), s.get("title"));
+			assertEquals("later scenes are title + cast only: " + s, 2, s.size());
+			assertNull(s.get("blurb"));
+			assertNull(s.get("sourceText"));
+		}
+	}
 }

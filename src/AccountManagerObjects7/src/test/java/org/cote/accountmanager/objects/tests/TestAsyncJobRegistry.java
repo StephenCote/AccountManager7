@@ -83,6 +83,25 @@ public class TestAsyncJobRegistry extends BaseTest {
 		assertNull(job.getResult());
 	}
 
+	/// An Error (not an Exception) thrown by the work must still terminate the job. The pool's
+	/// FutureTask swallows anything that escapes runJob, so without this the job sits RUNNING for
+	/// ever and a client polls it until its own budget runs out — seen live with a
+	/// pb.retryFailedChunks job whose work had logged its final line minutes earlier.
+	@Test
+	public void TestErrorThrownByWorkStillTerminatesTheJob() throws Exception {
+		BaseRecord u = user("owner-error-1");
+		AsyncJob job = AsyncJobRegistry.submit(u, "test.error", "work-2b", j -> {
+			throw new NoSuchFieldError("deliberate linkage error");
+		});
+		assertNotNull(job);
+		awaitTerminal(job);
+		assertEquals(AsyncJob.Status.FAILED, job.getStatus());
+		assertEquals("deliberate linkage error", job.getError());
+		assertNull(job.getResult());
+		assertNotNull("a failed job must still be collectable by its owner",
+			AsyncJobRegistry.get(u, job.getJobId()));
+	}
+
 	// ── ownership: a non-owner must not be able to see or touch a job ──────────
 
 	@Test

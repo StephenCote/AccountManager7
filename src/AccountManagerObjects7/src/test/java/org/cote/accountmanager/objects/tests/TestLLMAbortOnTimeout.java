@@ -1,6 +1,7 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -376,6 +377,52 @@ public class TestLLMAbortOnTimeout extends BaseTest {
 				+ server.msFromRequestToDisconnect() + "ms (endReason=" + server.endReason + ")");
 			assertTrue("Shape B: giving up after the response headers arrived must CLOSE the"
 				+ " response body (cancel() is a no-op once ofLines() has completed the future)."
+				+ " The socket was still open " + OBSERVE_SECONDS + "s later.", closed);
+
+			assertTrue("active LLM call registry did not return to baseline (" + baseline + ")",
+				awaitCallCount(baseline, OBSERVE_SECONDS));
+		}
+	}
+
+	/// (5b) SHAPE C end-to-end — headers arrive fast and the model KEEPS producing tokens past
+	/// requestTimeout. Neither the pre-headers orTimeout nor the idle watchdog applies: the only bound
+	/// was the transport backstop at requestTimeout+5s, whose abort surfaced as "Error during
+	/// streaming chat response: ... IOException: closed". Measured 2026-09-30 against the .42 GPU
+	/// (pictureBookRetryFailed R2): five chunks each ran ~13s under requestTimeout=8 and every one
+	/// was reported as that transport error instead of a timeout. Asserts the call now gives up AT
+	/// the configured budget (not +5), names it a timeout with the "Request timed out after N
+	/// seconds" prefix callers match on, and tears the exchange down.
+	@Test
+	public void testShapeC_generationRunningPastRequestTimeoutIsReportedAsTimeout() throws Exception {
+		try (BlackholeServer server = new BlackholeServer(true, 40)) {
+			int baseline = LLMConnectionManager.getActiveLLMCallCount();
+			Chat chat = chatPointedAt(server.baseUrl());
+
+			long start = System.currentTimeMillis();
+			OpenAIResponse resp = chat.chat(bufferModeRequest());
+			long elapsed = System.currentTimeMillis() - start;
+			String why = Chat.getLastCallError();
+			logger.info("[ABORT-C] chat() returned after " + elapsed + "ms, resp="
+				+ (resp == null ? "null" : "present") + ", lastCallError=" + why);
+
+			assertNull("buffer-mode chat whose generation outruns requestTimeout must give up and return null", resp);
+			assertTrue("blackhole server never saw the request",
+				server.requestReceived.await(5, TimeUnit.SECONDS));
+			assertTrue("Shape C: the call must give up at the configured budget (" + REQUEST_TIMEOUT_SECONDS
+				+ "s), not at the +5s transport backstop; it returned after " + elapsed + "ms",
+				elapsed >= (REQUEST_TIMEOUT_SECONDS - 1) * 1000L && elapsed < (REQUEST_TIMEOUT_SECONDS + 3) * 1000L);
+			assertNotNull("a reason must be reported through Chat.getLastCallError()", why);
+			assertTrue("Shape C must be reported as a TIMEOUT, not a transport fault; got: " + why,
+				why.startsWith("Request timed out after " + REQUEST_TIMEOUT_SECONDS + " seconds"));
+			assertTrue("the reason should say the model was still generating and how far it got; got: " + why,
+				why.contains("still generating") && why.contains("characters had been received"));
+			assertFalse("a slow-but-answering server is not 'unreachable'", Chat.isLastCallUnreachable());
+			assertFalse("a slow-but-answering server is not 'stalled' (it never went silent)", Chat.isLastCallStalled());
+
+			boolean closed = server.clientDisconnected.await(OBSERVE_SECONDS, TimeUnit.SECONDS);
+			logger.info("[ABORT-C] exchange torn down? " + closed + " after "
+				+ server.msFromRequestToDisconnect() + "ms (endReason=" + server.endReason + ")");
+			assertTrue("Shape C: giving up on a still-generating reply must CLOSE the response body."
 				+ " The socket was still open " + OBSERVE_SECONDS + "s later.", closed);
 
 			assertTrue("active LLM call registry did not return to baseline (" + baseline + ")",

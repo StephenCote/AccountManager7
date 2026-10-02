@@ -189,6 +189,52 @@ async function startExtractScenes(workObjectId, chatConfigName, count, promptTem
 }
 
 /**
+ * Re-run ONLY the passages the last extraction could not read, as a background job.
+ *
+ * The server keeps the completed run's checkpoint whenever a passage failed for a reason a
+ * second attempt can fix (refusal, stall, truncated/unparseable reply, timeout). This re-drives
+ * exactly those chunks — typically after the user picks a different chat config, which is how a
+ * content-policy refusal gets past — and the job's result is the merged scene list in the same
+ * { sceneList, extractionComplete, chunksProcessed, chunked, failedExtractions } shape the
+ * extraction job returns, so applyExtractJob adopts it unchanged.
+ *
+ * @param {string} workObjectId
+ * @param {string|null} chatConfigName the config to retry with (null = the server default)
+ * @param {Object} [opts]
+ * @param {string} [opts.seriesObjectId] N-series: forwarded in the body as for startExtractScenes.
+ * @param {number} [opts.startOffset] the chapter span the checkpoint was written for — the
+ *        checkpoint note is keyed on the range, so a chaptered retry must carry the SAME offsets
+ *        its extraction did. Both-or-neither, as for startExtractScenes.
+ * @param {number} [opts.endOffset]
+ * @returns {Promise<{jobId: string, status: string}>}
+ * @throws Error carrying the HTTP status; 404 means there is no checkpoint left to retry against.
+ */
+async function startRetryFailedChunks(workObjectId, chatConfigName, opts) {
+    opts = opts || {};
+    let body = { schema: 'olio.pictureBookRequest' };
+    if (chatConfigName) body.chatConfig = chatConfigName;
+    if (opts.seriesObjectId) body.seriesObjectId = opts.seriesObjectId;
+    let qs = '?async=true';
+    if (opts.startOffset != null && opts.endOffset != null
+            && !isNaN(Number(opts.startOffset)) && !isNaN(Number(opts.endOffset))) {
+        qs += '&startOffset=' + Math.round(Number(opts.startOffset))
+            + '&endOffset=' + Math.round(Number(opts.endOffset));
+    }
+    let resp = await fetch(pbBase() + '/' + workObjectId + '/extract-retry-failed' + qs, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(body)
+    });
+    if (resp.status === 401 || resp.status === 403) handleAuthFailure(resp.status);
+    if (resp.status !== 202) {
+        throw new Error(resp.status === 404
+            ? 'Nothing left to retry: the server no longer has the failed passages for this document (404)'
+            : 'Retry failed passages failed: ' + resp.status);
+    }
+    return resp.json();
+}
+
+/**
  * Normalize an extraction result to a plain scene array.
  *
  * The endpoint returns two shapes -- a bare array for short text, or { sceneList, chunked } once it
@@ -754,6 +800,7 @@ export {
     JobAuthError,
     extractScenes,
     startExtractScenes,
+    startRetryFailedChunks,
     scenesFromResult,
     getJob,
     pollJob,

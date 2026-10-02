@@ -668,13 +668,17 @@ describe('doExtract — chaptered fan-out REPORTS missing/incomplete chapters in
         expect(s.extractChapterSummary.problems[0]).toMatch(/Chapter 3 \(Chapter Three\): no scenes were extracted/);
     });
 
-    it('a chapter with unreadable passages (no breaker) is reported with the server\'s reason', async () => {
-        let bad = JSON.stringify({ context: 'extract-scenes-chunk:4/9', error: 'Request timed out after 900 seconds' });
+    it('a chapter with unreadable passages (no breaker) reports EACH passage with its reason, and keeps what a retry needs', async () => {
+        // One typed entry (as the server writes it today) and one legacy entry with no `kind`.
+        let refused = JSON.stringify({ context: 'extract-scenes-chunk:4/9', kind: 'refusal', chunk: 4, total: 9,
+            error: 'The model declined to process this passage (content policy).',
+            rawResponse: 'I\'m sorry, but I can\'t help with that request.' });
+        let timedOut = JSON.stringify({ context: 'extract-scenes-chunk:7/9', error: 'Request timed out after 900 seconds' });
         let f = fanOutFetch(jobId => {
             if (jobId === 'job-1') {
                 return { status: 'completed', current: 9, total: 9,
                     result: { sceneList: [{ title: 'S1', characters: ['Alice'] }], extractionComplete: true,
-                              chunksProcessed: 9, failedExtractions: [bad, bad] } };
+                              chunksProcessed: 9, failedExtractions: [refused, timedOut] } };
             }
             return { status: 'completed', current: 5, total: 5,
                 result: { sceneList: [{ title: 'S-' + jobId, characters: ['Bob'] }], extractionComplete: true, chunksProcessed: 5 } };
@@ -692,9 +696,172 @@ describe('doExtract — chaptered fan-out REPORTS missing/incomplete chapters in
         expect(routeSet).not.toHaveBeenCalled();
         expect(s.extractChapterSummary).not.toBeNull();
         expect(s.extractChapterSummary.saved).toBe(3);
-        expect(s.extractChapterSummary.problems).toHaveLength(1);
-        expect(s.extractChapterSummary.problems[0]).toMatch(/Chapter 1 \(Chapter One\): 2 passage\(s\) could not be read by the model \(Request timed out after 900 seconds\)/);
+        // One line PER passage, saying what actually happened — not "2 passage(s) could not be read".
+        expect(s.extractChapterSummary.problems).toHaveLength(2);
+        expect(s.extractChapterSummary.problems[0]).toMatch(/^Chapter 1 \(Chapter One\): Passage 4 of 9 — the model declined to process this passage \(content policy\)/);
+        expect(s.extractChapterSummary.problems[1]).toMatch(/^Chapter 1 \(Chapter One\): Passage 7 of 9 — Request timed out after 900 seconds\./);
         expect(s.extractFailedChunks).toHaveLength(2);
+        // The per-chapter record carries exactly what a per-passage retry needs: the chapter's book
+        // and the offsets its checkpoint is keyed on.
+        let chapters = s.extractChapterSummary.chapters;
+        expect(chapters).toHaveLength(3);
+        expect(chapters[0]).toMatchObject({ num: 1, title: 'Chapter One', bookOid: 'BK-1', startOffset: 0, endOffset: 100, persisted: true });
+        expect(chapters[0].failed).toHaveLength(2);
+        expect(chapters[1].failed).toHaveLength(0);
+        expect(s.extractChapterSummary.seriesObjectId).toBe('SER-1');
+    });
+
+    it('Retry failed passages (chaptered): re-runs ONLY the chapters with retryable passages, against their own offsets, and re-persists the merged list', async () => {
+        let refused = JSON.stringify({ context: 'extract-scenes-chunk:2/5', kind: 'refusal', chunk: 2, total: 5,
+            error: 'declined', rawResponse: 'I cannot' });
+        let f = fanOutFetch(jobId => {
+            if (jobId === 'job-2') {
+                return { status: 'completed', current: 5, total: 5,
+                    result: { sceneList: [{ title: 'S2a', characters: ['Bob'], sourceChunk: 0 }], extractionComplete: true,
+                              chunksProcessed: 5, failedExtractions: [refused] } };
+            }
+            return { status: 'completed', current: 5, total: 5,
+                result: { sceneList: [{ title: 'S-' + jobId, characters: ['Alice'], sourceChunk: 0 }], extractionComplete: true, chunksProcessed: 5 } };
+        });
+        global.fetch = f.fetch;
+        vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        vi.spyOn(Dialog, 'close').mockImplementation(() => {});
+        await pb.doExtract();
+        expect(pb.__extractStateForTest().extractChapterSummary.problems).toHaveLength(1);
+
+        // Now the retry: the server re-reads passage 2 of chapter 2 and returns the MERGED list.
+        let retryUrls = [];
+        let persistedAfter = [];
+        global.fetch = vi.fn(async (url, init) => {
+            let u = String(url);
+            if (u.includes('extract-retry-failed')) {
+                retryUrls.push(u);
+                expect(JSON.parse(init.body)).toMatchObject({ schema: 'olio.pictureBookRequest', chatConfig: 'better-model', seriesObjectId: 'SER-1' });
+                return jsonResponse(202, { jobId: 'retry-1', status: 'running' });
+            }
+            if (u.includes('create-from-scenes')) {
+                let body = JSON.parse(init.body);
+                persistedAfter.push(body);
+                return jsonResponse(200, { bookObjectId: 'PB1', pb2BookObjectId: body.pb2BookObjectId, scenes: body.sceneList });
+            }
+            return jsonResponse(200, { jobId: 'retry-1', status: 'completed', terminal: true, current: 1, total: 1,
+                result: { sceneList: [{ title: 'S2a', sourceChunk: 0 }, { title: 'S2-recovered', sourceChunk: 1 }],
+                          extractionComplete: true, chunksProcessed: 5, chunked: true } });
+        });
+        pb.__setExtractStateForTest({ chatConfigRef: { name: 'better-model', objectId: 'cc-2' } });
+
+        await pb.doRetryFailedChapters();
+
+        let s = pb.__extractStateForTest();
+        // Only chapter 2 had a retryable passage, so exactly one retry — bounded to ITS offsets.
+        expect(retryUrls).toHaveLength(1);
+        expect(retryUrls[0]).toMatch(/\/work-1\/extract-retry-failed\?async=true&startOffset=100&endOffset=250$/);
+        // The merged list went back into chapter 2's book.
+        expect(persistedAfter).toHaveLength(1);
+        expect(persistedAfter[0].pb2BookObjectId).toBe('BK-2');
+        expect(persistedAfter[0].sceneList.map(x => x.title)).toEqual(['S2a', 'S2-recovered']);
+        expect(persistedAfter[0].chatConfig).toBe('better-model');
+        // Nothing left to report; flags reset.
+        expect(s.extractChapterSummary.problems).toHaveLength(0);
+        expect(s.extractChapterSummary.chapters[1].failed).toHaveLength(0);
+        expect(s.extractFailedChunks).toHaveLength(0);
+        expect(s.extracting).toBe(false);
+        expect(s.retryingFailed).toBe(false);
+        expect(s.extractError).toBeNull();
+    });
+
+    it('a chaptered run in which EVERY chapter failed keeps the per-chapter report and retry (not just an error string)', async () => {
+        // Each chapter's book was created before its extraction, so the books exist in the series
+        // with zero scenes. Before the fix this fell to "No chapters were saved. ..." with no retry
+        // affordance — and a plain re-run is served from the kept checkpoints without calling the
+        // model, so the user was stuck.
+        let timeoutFor = (n, total) => JSON.stringify({ context: 'extract-scenes-chunk:' + n + '/' + total, kind: 'timeout',
+            chunk: n, total: total, error: 'Request timed out after 8 seconds' });
+        let f = fanOutFetch(jobId => ({ status: 'completed', current: 2, total: 2,
+            result: { sceneList: [], extractionComplete: true, chunksProcessed: 2,
+                      failedExtractions: [timeoutFor(1, 2), timeoutFor(2, 2)] } }));
+        global.fetch = f.fetch;
+        let routeSet = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        let dialogClose = vi.spyOn(Dialog, 'close').mockImplementation(() => {});
+
+        await pb.doExtract();
+
+        let s = pb.__extractStateForTest();
+        expect(f.extracts()).toBe(3);
+        expect(f.persisted()).toHaveLength(0);
+        expect(routeSet).not.toHaveBeenCalled();
+        expect(dialogClose).not.toHaveBeenCalled();
+        expect(s.step).toBe(1);
+        expect(s.extractChaptered).toBe(true);
+        expect(s.extractError).toBeNull();
+        expect(s.extractChapterSummary).not.toBeNull();
+        expect(s.extractChapterSummary.saved).toBe(0);
+        expect(s.extractChapterSummary.total).toBe(3);
+        expect(s.extractChapterSummary.seriesBookOid).toBe('BK-1');
+        // One "no scenes" line plus two passage lines per chapter — each passage says why.
+        expect(s.extractChapterSummary.problems).toHaveLength(9);
+        expect(s.extractChapterSummary.problems[0]).toMatch(/^Chapter 1 \(Chapter One\): no scenes were extracted/);
+        expect(s.extractChapterSummary.problems[1]).toMatch(/^Chapter 1 \(Chapter One\): Passage 1 of 2 — the model did not finish within the request timeout/);
+        expect(s.extractFailedChunks).toHaveLength(6);
+        s.extractChapterSummary.chapters.forEach((c, i) => {
+            expect(c.bookOid).toBe('BK-' + (i + 1));
+            expect(c.persisted).toBeFalsy();
+            expect(c.failed).toHaveLength(2);
+        });
+
+        // Retry with a better model: chapters 1 and 3 recover, chapter 2's second passage is refused.
+        let retryUrls = [];
+        let persistedAfter = [];
+        let stillRefused = JSON.stringify({ context: 'extract-scenes-chunk:2/2', kind: 'refusal', chunk: 2, total: 2,
+            error: 'declined', rawResponse: 'I cannot help with that.' });
+        global.fetch = vi.fn(async (url, init) => {
+            let u = String(url);
+            if (u.includes('extract-retry-failed')) {
+                retryUrls.push(u);
+                expect(JSON.parse(init.body)).toMatchObject({ schema: 'olio.pictureBookRequest', chatConfig: 'better-model', seriesObjectId: 'SER-1' });
+                return jsonResponse(202, { jobId: 'retry-' + retryUrls.length, status: 'running' });
+            }
+            if (u.includes('create-from-scenes')) {
+                let body = JSON.parse(init.body);
+                persistedAfter.push(body);
+                return jsonResponse(200, { bookObjectId: 'PB1', pb2BookObjectId: body.pb2BookObjectId, scenes: body.sceneList });
+            }
+            let jobId = u.substring(u.lastIndexOf('/') + 1);
+            if (jobId === 'retry-2') {
+                return jsonResponse(200, { jobId, status: 'completed', terminal: true, current: 2, total: 2,
+                    result: { sceneList: [{ title: 'C2-a', sourceChunk: 0 }], extractionComplete: true, chunksProcessed: 2, chunked: true,
+                              failedExtractions: [stillRefused] } });
+            }
+            return jsonResponse(200, { jobId, status: 'completed', terminal: true, current: 2, total: 2,
+                result: { sceneList: [{ title: jobId + '-a', sourceChunk: 0 }, { title: jobId + '-b', sourceChunk: 1 }],
+                          extractionComplete: true, chunksProcessed: 2, chunked: true } });
+        });
+        pb.__setExtractStateForTest({ chatConfigRef: { name: 'better-model', objectId: 'cc-2' } });
+
+        await pb.doRetryFailedChapters();
+
+        s = pb.__extractStateForTest();
+        expect(retryUrls).toHaveLength(3);
+        expect(retryUrls[0]).toMatch(/\/work-1\/extract-retry-failed\?async=true&startOffset=0&endOffset=100$/);
+        expect(retryUrls[1]).toMatch(/\/work-1\/extract-retry-failed\?async=true&startOffset=100&endOffset=250$/);
+        expect(retryUrls[2]).toMatch(/\/work-1\/extract-retry-failed\?async=true&startOffset=250&endOffset=400$/);
+        // Recovered scenes land in EACH chapter's own (previously empty) book.
+        expect(persistedAfter.map(b => b.pb2BookObjectId)).toEqual(['BK-1', 'BK-2', 'BK-3']);
+        expect(persistedAfter[0].sceneList.map(x => x.title)).toEqual(['retry-1-a', 'retry-1-b']);
+        expect(persistedAfter[1].sceneList.map(x => x.title)).toEqual(['C2-a']);
+        expect(s.extractChapterSummary.saved).toBe(3);
+        expect(s.extractChapterSummary.chapters.map(c => c.persisted)).toEqual([true, true, true]);
+        // Only chapter 2's refused passage remains, and it still says why. The stale "no scenes were
+        // extracted" lines are gone — every chapter now has scenes.
+        expect(s.extractFailedChunks).toHaveLength(1);
+        expect(pb.describeFailedPassage(s.extractFailedChunks[0]).kind).toBe('refusal');
+        expect(s.extractChapterSummary.chapters[1].failed).toHaveLength(1);
+        expect(s.extractChapterSummary.problems).toEqual([
+            expect.stringMatching(/^Chapter 2 \(Chapter Two\): Passage 2 of 2 — the model declined/)
+        ]);
+        expect(s.extracting).toBe(false);
+        expect(s.retryingFailed).toBe(false);
+        expect(s.extractError).toBeNull();
     });
 
     it('a CLEAN run still closes the wizard and lands on the series canvas', async () => {
@@ -732,6 +899,183 @@ describe('doExtract — chaptered fan-out REPORTS missing/incomplete chapters in
         global.fetch = g.fetch;
         await pb.doExtract();
         expect(pb.__extractStateForTest().extractChapterSummary).toBeNull();
+    });
+});
+
+describe('failed passages — explain WHY, and retry only those', () => {
+    // Entries exactly as PictureBookUtil.recordFailedExtraction writes them (JSON strings).
+    const entry = (o) => JSON.stringify(o);
+
+    it('describeFailedPassage keys the explanation on the server\'s typed kind, keeps the model\'s own words, and mirrors the server\'s retryable rule', () => {
+        let d = pb.describeFailedPassage(entry({ context: 'extract-scenes-chunk:3/12', kind: 'refusal', chunk: 3, total: 12,
+            error: 'The model declined to process this passage (content policy).',
+            rawResponse: ' I\'m sorry, but I can\'t assist with that. ' }));
+        expect(d).toMatchObject({ chunk: 3, total: 12, kind: 'refusal', retryable: true });
+        expect(d.reason).toMatch(/declined to process this passage \(content policy\) — retry it with a different model/);
+        expect(d.detail).toBe('The model declined to process this passage (content policy).');
+        expect(d.raw).toBe('I\'m sorry, but I can\'t assist with that.');
+
+        // Every kind the server can emit has a plain-language reading (not the kind token itself).
+        for (let k of ['stalled', 'truncated', 'timeout', 'unreachable', 'error', 'empty', 'no-json', 'parse']) {
+            let x = pb.describeFailedPassage(entry({ kind: k, chunk: 1, total: 2, error: 'e' }));
+            expect(x.kind).toBe(k);
+            expect(x.reason).not.toBe(k);
+            expect(x.reason.length).toBeGreaterThan(20);
+            expect(x.retryable).toBe(true);
+        }
+        // A breaker stop is NOT retryable through the per-passage path — Resume handles it.
+        let stop = pb.describeFailedPassage(entry({ context: 'extract-scenes-chunk:5/12', kind: 'stopped-early', chunk: 5, total: 12,
+            stoppedEarly: true, error: '2 consecutive chunks could not reach the model server.' }));
+        expect(stop.retryable).toBe(false);
+        expect(stop.reason).toMatch(/stopped before this passage was attempted/);
+        // Legacy entry (pre-`kind`, pre-`chunk`): position parsed from context, reason is the server text.
+        let legacy = pb.describeFailedPassage(entry({ context: 'extract-scenes-chunk:4/9', error: 'Request timed out after 900 seconds' }));
+        expect(legacy).toMatchObject({ chunk: 4, total: 9, kind: null, retryable: true, reason: 'Request timed out after 900 seconds' });
+        // Unparseable / unknown: shown verbatim, never retryable (no passage to retry).
+        expect(pb.describeFailedPassage('chunk 3 unparseable')).toMatchObject({ chunk: 0, retryable: false, reason: 'chunk 3 unparseable' });
+        // Object form (the poll may hand back parsed JSON).
+        expect(pb.describeFailedPassage({ kind: 'stalled', chunk: 2, total: 2 })).toMatchObject({ chunk: 2, kind: 'stalled', retryable: true });
+    });
+
+    it('mergeRecoveredScenes keeps the user\'s list and inserts recovered scenes among their neighbours by provenance', () => {
+        // The user renamed scene A and deleted scene B (from chunk 1) in Step 2; chunk 1 failed and
+        // was retried; the server returns the full merged list with B back and a new scene N.
+        let current = [{ title: 'A renamed', sourceChunk: 0 }, { title: 'C', sourceChunk: 2 }, { title: 'manual' }];
+        let merged = [{ title: 'A', sourceChunk: 0 }, { title: 'N1', sourceChunk: 1 }, { title: 'N2', sourceChunk: 1 }, { title: 'C', sourceChunk: 2 }];
+        let out = pb.mergeRecoveredScenes(current, merged, { 2: true });
+        expect(out.map(s => s.title)).toEqual(['A renamed', 'N1', 'N2', 'C', 'manual']);
+        // Nothing retried for chunk 0, so the server's un-renamed 'A' did NOT clobber the user's edit.
+        expect(out[0].title).toBe('A renamed');
+        // A recovered scene from the LAST chunk goes to the end.
+        let tail = pb.mergeRecoveredScenes([{ title: 'A', sourceChunk: 0 }], [{ title: 'Z', sourceChunk: 5 }], { 6: true });
+        expect(tail.map(s => s.title)).toEqual(['A', 'Z']);
+    });
+
+    it('doRetryFailed posts to extract-retry-failed with the chosen chat config, polls, folds in the recovered scenes, and clears the failures', async () => {
+        pb.__setExtractStateForTest({
+            step: 2,
+            extractedScenes: [{ title: 'S0', sourceChunk: 0 }, { title: 'S2', sourceChunk: 2 }],
+            extractFailedChunks: [entry({ context: 'extract-scenes-chunk:2/3', kind: 'refusal', chunk: 2, total: 3, error: 'declined', rawResponse: 'no' })],
+            chatConfigRef: { name: 'permissive-model', objectId: 'cc-9' }
+        });
+        let urls = [];
+        let tick = 0;
+        global.fetch = vi.fn(async (url, init) => {
+            let u = String(url);
+            urls.push(u);
+            if (u.includes('extract-retry-failed')) {
+                expect(init.method).toBe('POST');
+                expect(JSON.parse(init.body)).toEqual({ schema: 'olio.pictureBookRequest', chatConfig: 'permissive-model' });
+                return jsonResponse(202, { jobId: 'retry-7', status: 'running' });
+            }
+            tick++;
+            if (tick < 2) return jsonResponse(200, { jobId: 'retry-7', status: 'running', current: 0, total: 1, terminal: false });
+            return jsonResponse(200, { jobId: 'retry-7', status: 'completed', terminal: true, current: 1, total: 1,
+                result: { sceneList: [{ title: 'S0', sourceChunk: 0 }, { title: 'S1 recovered', sourceChunk: 1 }, { title: 'S2', sourceChunk: 2 }],
+                          extractionComplete: true, chunksProcessed: 3, chunked: true } });
+        });
+
+        let p = pb.doRetryFailed();
+        expect(pb.__extractStateForTest().extracting).toBe(true);
+        expect(pb.__extractStateForTest().retryingFailed).toBe(true);
+        await p;
+
+        let s = pb.__extractStateForTest();
+        expect(urls[0]).toMatch(/\/work-1\/extract-retry-failed\?async=true$/);
+        expect(urls.filter(u => u.includes('/rest/job/retry-7'))).toHaveLength(2);
+        expect(s.extractedScenes.map(x => x.title)).toEqual(['S0', 'S1 recovered', 'S2']);
+        expect(s.extractFailedChunks).toEqual([]);
+        expect(s.extractPartial).toBe(false);
+        expect(s.step).toBe(2);
+        expect(s.extracting).toBe(false);
+        expect(s.retryingFailed).toBe(false);
+        expect(s.extractJobId).toBeNull();
+        expect(s.extractError).toBeNull();
+    });
+
+    it('doRetryFailed: a passage that fails AGAIN stays listed (with the new reason), and the list is untouched', async () => {
+        let stillBad = entry({ context: 'extract-scenes-chunk:2/3', kind: 'refusal', chunk: 2, total: 3, error: 'declined again', rawResponse: 'still no' });
+        pb.__setExtractStateForTest({
+            step: 2,
+            extractedScenes: [{ title: 'S0', sourceChunk: 0 }],
+            extractFailedChunks: [entry({ context: 'extract-scenes-chunk:2/3', kind: 'refusal', chunk: 2, total: 3, error: 'declined' })]
+        });
+        global.fetch = vi.fn(async (url) => {
+            if (String(url).includes('extract-retry-failed')) return jsonResponse(202, { jobId: 'retry-8', status: 'running' });
+            return jsonResponse(200, { jobId: 'retry-8', status: 'completed', terminal: true, current: 1, total: 1,
+                result: { sceneList: [{ title: 'S0', sourceChunk: 0 }], extractionComplete: true, chunksProcessed: 3, failedExtractions: [stillBad] } });
+        });
+        await pb.doRetryFailed();
+        let s = pb.__extractStateForTest();
+        expect(s.extractedScenes.map(x => x.title)).toEqual(['S0']);
+        expect(s.extractFailedChunks).toEqual([stillBad]);
+        expect(pb.describeFailedPassage(s.extractFailedChunks[0]).detail).toBe('declined again');
+        expect(s.extracting).toBe(false);
+    });
+
+    it('doRetryFailed: the server having no checkpoint (404) is reported, not swallowed', async () => {
+        pb.__setExtractStateForTest({
+            step: 2, extractedScenes: [{ title: 'S0', sourceChunk: 0 }],
+            extractFailedChunks: [entry({ kind: 'timeout', chunk: 2, total: 3, error: 't/o' })]
+        });
+        global.fetch = vi.fn(async () => jsonResponse(404, { error: 'no checkpoint' }));
+        await pb.doRetryFailed();
+        let s = pb.__extractStateForTest();
+        expect(s.extractError).toMatch(/Nothing left to retry.*404/);
+        expect(s.extractedScenes).toHaveLength(1);
+        expect(s.extracting).toBe(false);
+        expect(s.retryingFailed).toBe(false);
+    });
+
+    it('a single-document run in which EVERY passage failed keeps the reasons on Step 1, and a successful retry advances to Step 2', async () => {
+        // The slow-model / whole-document-refusal shape: the job completes with zero scenes and one
+        // typed failure per passage. Before, this dead-ended on "No scenes returned by LLM" with the
+        // failures discarded; the per-passage reasons and the retry must survive on Step 1.
+        const timeouts = [1, 2, 3].map(n => entry({ context: 'extract-scenes-chunk:' + n + '/3', kind: 'timeout', chunk: n, total: 3,
+            error: 'Request timed out after 8 seconds' }));
+        global.fetch = vi.fn(async (url) => {
+            let u = String(url);
+            if (u.includes('detect-boundaries')) return jsonResponse(200, []);
+            if (u.includes('extract-scenes-only')) return jsonResponse(202, { jobId: 'all-fail', status: 'running' });
+            return jsonResponse(200, { jobId: 'all-fail', status: 'completed', terminal: true, current: 3, total: 3,
+                result: { sceneList: [], chunked: true, extractionComplete: true, chunksProcessed: 3, failedExtractions: timeouts } });
+        });
+        await pb.doExtract();
+        let s = pb.__extractStateForTest();
+        expect(s.step).toBe(1);
+        expect(s.extractChaptered).toBe(false);
+        expect(s.extractError).toBe('No scenes returned by LLM');
+        expect(s.extractFailedChunks).toEqual(timeouts);
+        expect(s.extractFailedChunks.map(f => pb.describeFailedPassage(f).retryable)).toEqual([true, true, true]);
+
+        // Retry (with the default config) recovers two passages: the list now exists, so Step 2.
+        let body = null;
+        global.fetch = vi.fn(async (url, init) => {
+            if (String(url).includes('extract-retry-failed')) { body = JSON.parse(init.body); return jsonResponse(202, { jobId: 'retry-9', status: 'running' }); }
+            return jsonResponse(200, { jobId: 'retry-9', status: 'completed', terminal: true, current: 3, total: 3,
+                result: { sceneList: [{ title: 'R1', sourceChunk: 0 }, { title: 'R3', sourceChunk: 2 }], chunked: true, extractionComplete: true, chunksProcessed: 3,
+                          failedExtractions: [entry({ context: 'extract-scenes-chunk:2/3', kind: 'refusal', chunk: 2, total: 3, error: 'declined' })] } });
+        });
+        await pb.doRetryFailed();
+        s = pb.__extractStateForTest();
+        expect(body).toEqual({ schema: 'olio.pictureBookRequest' });
+        expect(s.step).toBe(2);
+        expect(s.extractedScenes.map(x => x.title)).toEqual(['R1', 'R3']);
+        expect(s.extractFailedChunks).toHaveLength(1);
+        expect(pb.describeFailedPassage(s.extractFailedChunks[0]).kind).toBe('refusal');
+        expect(s.extractError).toBeNull();
+        expect(s.extracting).toBe(false);
+    });
+
+    it('doRetryFailed is a no-op when nothing is retryable (only a breaker stop)', async () => {
+        pb.__setExtractStateForTest({
+            step: 2, extractedScenes: [{ title: 'S0', sourceChunk: 0 }],
+            extractFailedChunks: [entry({ kind: 'stopped-early', chunk: 2, total: 3, stoppedEarly: true, error: 'stopped' })]
+        });
+        global.fetch = vi.fn(async () => { throw new Error('must not be called'); });
+        await pb.doRetryFailed();
+        expect(global.fetch).not.toHaveBeenCalled();
+        expect(pb.__extractStateForTest().extracting).toBe(false);
     });
 });
 

@@ -188,6 +188,24 @@ public class Chat {
 	 */
 	private static final ThreadLocal<Boolean> LAST_CALL_UNREACHABLE = new ThreadLocal<>();
 
+	/**
+	 * Whether the most recent buffer-mode call on THIS thread was cut off MID-REPLY: the server had
+	 * started answering and then stopped. Two shapes, both set here and nowhere else:
+	 * <ul>
+	 *   <li>the mid-stream idle watchdog ({@code chatConfig.streamIdleTimeoutSeconds}) force-closed
+	 *       the body after no data arrived for the configured interval — the call returns null and
+	 *       {@link #getLastCallError()} says so;</li>
+	 *   <li>the stream ended WITHOUT its terminator ({@code [DONE]} / {@code finish_reason} /
+	 *       {@code done:true}) — the call returns whatever content had arrived, which for a JSON
+	 *       reply is a truncated object.</li>
+	 * </ul>
+	 * Distinct from a request timeout (the server never finished within the deadline) and from an
+	 * unreachable host, because the right response differs: a stalled proxy stream is worth one
+	 * re-attempt, a timeout is not. Before this existed a LiteLLM stall landed in the extraction
+	 * loop as a slow "Error during streaming chat response: ... closed" that was never retried.
+	 */
+	private static final ThreadLocal<Boolean> LAST_CALL_STALLED = new ThreadLocal<>();
+
 	/** The reason the last buffer-mode call on this thread returned null, or null if unknown. */
 	public static String getLastCallError() {
 		return LAST_CALL_ERROR.get();
@@ -198,15 +216,26 @@ public class Chat {
 		return Boolean.TRUE.equals(LAST_CALL_UNREACHABLE.get());
 	}
 
+	/** True when the last buffer-mode call on this thread was cut off mid-reply (see {@link #LAST_CALL_STALLED}). */
+	public static boolean isLastCallStalled() {
+		return Boolean.TRUE.equals(LAST_CALL_STALLED.get());
+	}
+
 	/** Clear before issuing a call, so a stale reason from earlier work on a pooled thread is never read back. */
 	public static void clearLastCallError() {
 		LAST_CALL_ERROR.remove();
 		LAST_CALL_UNREACHABLE.remove();
+		LAST_CALL_STALLED.remove();
 	}
 
 	/// Test-only seam, paired with setLastCallErrorForTest: reproduces the unreachable-host failure shape.
 	public static void setLastCallUnreachableForTest(boolean unreachable) {
 		LAST_CALL_UNREACHABLE.set(unreachable);
+	}
+
+	/// Test-only seam: reproduces the mid-reply stall shape (idle watchdog close / missing terminator).
+	public static void setLastCallStalledForTest(boolean stalled) {
+		LAST_CALL_STALLED.set(stalled);
 	}
 
 	/** True when any throwable in the cause chain says the remote host could not be connected to. */
@@ -4340,6 +4369,20 @@ public class Chat {
 		/// detection, not a string match on errMsg.
 		final boolean[] bufferTimedOut = new boolean[] { false };
 		final boolean[] bufferUnreachable = new boolean[] { false };
+		/// Mid-reply stall markers (see LAST_CALL_STALLED). idleFired: the idle watchdog closed the
+		/// body. sawTerminator: the stream delivered its own end marker. stoppedByListener: a user
+		/// stop ended it, which is neither. Content received before the stall is counted so the
+		/// reason can say how far the reply got.
+		final boolean[] idleFired = new boolean[] { false };
+		final boolean[] sawTerminator = new boolean[] { false };
+		final boolean[] stoppedByListener = new boolean[] { false };
+		final int[] idleSecUsed = new int[] { 0 };
+		/// Shape C markers (buffer mode). bodyStarted: headers arrived and the body was being read,
+		/// so a later over-budget error is "still generating", not "never answered". deadlineFired:
+		/// the hard deadline below closed the body because generation ran past effectiveTimeout.
+		final boolean[] bodyStarted = new boolean[] { false };
+		final boolean[] deadlineFired = new boolean[] { false };
+		final long callStartMs = System.currentTimeMillis();
 		logger.info(ser);
 		/// Tier B (LiteLLM/Langfuse) tracing — per-call header-injection hook (Guardrail 1).
 		/// Build the x-langfuse-* header map ONLY for the OPENAI_COMPAT dialect, here at the call
@@ -4464,6 +4507,7 @@ public class Chat {
 					return;
 				}
 				boolean hasListener = listener != null;
+				bodyStarted[0] = true;
 				java.util.Iterator<String> streamIt = response.body().iterator();
 				int lineCount = 0;
 				/// Mid-stream idle watchdog: if no chunk arrives for
@@ -4477,12 +4521,14 @@ public class Chat {
 						if (v instanceof Number) idleSec = ((Number) v).intValue();
 					} catch (Exception ignore) { /* default */ }
 				}
+				idleSecUsed[0] = idleSec;
 				if (idleSec > 0) {
 					final HttpResponse<Stream<String>> respRef = response;
 					final String streamIdRef = streamId;
 					String idleLabel = LLMConnectionManager.getCurrentCallLabel();
 					if (idleLabel == null) idleLabel = "chat";
 					streamIdleWatchdog.start(streamId, idleLabel, idleSec * 1000L, sid -> {
+						idleFired[0] = true;
 						try {
 							logger.warn("[STREAM-IDLE] forcing close of stream " + sid + " after idle timeout");
 							respRef.body().close();
@@ -4491,17 +4537,40 @@ public class Chat {
 						}
 					});
 				}
+				/// SHAPE C — hard deadline, BUFFER MODE ONLY. orTimeout above bounds only the wait for
+				/// headers, and the idle watchdog only fires when the stream goes silent; a model that
+				/// keeps producing tokens past effectiveTimeout was bounded by nothing but the transport
+				/// backstop at effectiveTimeout+5s, whose abort surfaced as "IOException: closed" — a
+				/// non-explanation. Measured 2026-09-30 (pictureBookRetryFailed R2): every chunk ran
+				/// ~13s under requestTimeout=8 and was reported as a transport error, not a timeout.
+				/// Close the body at the configured budget, measured from call start, and say so. Never
+				/// for interactive streaming: a conversation that streams longer than requestTimeout
+				/// while tokens flow must not be cut off.
+				java.util.concurrent.ScheduledFuture<?> deadlineTask = null;
+				if (!forwardToClient && effectiveTimeout > 0) {
+					final HttpResponse<Stream<String>> respRef = response;
+					long remainingMs = effectiveTimeout * 1000L - (System.currentTimeMillis() - callStartMs);
+					deadlineTask = streamIdleWatchdog.deadline(streamId, LLMConnectionManager.getCurrentCallLabel(), remainingMs, sid -> {
+						deadlineFired[0] = true;
+						try {
+							respRef.body().close();
+						} catch (Exception ce) {
+							logger.debug("[STREAM-DEADLINE] close threw " + ce.getClass().getSimpleName() + ": " + ce.getMessage());
+						}
+					});
+				}
 				try {
-					while (streamIt.hasNext()) {
-						if (hasListener && listener.isStopStream(req)) break;
+					while (!deadlineFired[0] && streamIt.hasNext()) {
+						if (hasListener && listener.isStopStream(req)) { stoppedByListener[0] = true; break; }
 						String line = streamIt.next();
 						lineCount++;
 						streamIdleWatchdog.touch(streamId);
 						boolean done = processStreamChunk(line, req, aresp, forwardToClient);
-						if (done) break;
+						if (done) { sawTerminator[0] = true; break; }
 					}
 				} finally {
 					streamIdleWatchdog.stop(streamId);
+					if (deadlineTask != null) deadlineTask.cancel(false);
 				}
 				if (!forwardToClient) {
 					BaseRecord bufMsg = aresp.get("message");
@@ -4527,6 +4596,15 @@ public class Chat {
 		}).whenComplete((result, error) -> {
 			/// Global registry cleanup
 			LLMConnectionManager.unregisterStream(streamId);
+			/// Shape C: the body was being read and the call is over its budget — either our deadline
+			/// closed it, or the transport backstop got there first. Both are the configured timeout,
+			/// not a transport fault, and the message must say so (and keep the "Request timed out
+			/// after N seconds" prefix that callers match on). Guarded on bodyStarted so a stage that
+			/// timed out BEFORE headers (Shape A) is not described as "still generating".
+			boolean overBudgetMidBody = !forwardToClient && effectiveTimeout > 0 && bodyStarted[0]
+				&& (deadlineFired[0] || (System.currentTimeMillis() - callStartMs) >= effectiveTimeout * 1000L);
+			String overBudgetMsg = "Request timed out after " + effectiveTimeout
+				+ " seconds while the model was still generating; " + streamedLength(aresp) + " characters had been received";
 			if (error != null) {
 				String errMsg;
 				Throwable rootCause = error.getCause() != null ? error.getCause() : error;
@@ -4542,6 +4620,16 @@ public class Chat {
 				if (isConnectivityFailure(error)) {
 					bufferUnreachable[0] = true;
 					errMsg = "Could not connect to the model server at " + serviceUrl + " (" + rootCause.getClass().getSimpleName() + ": " + rootCause.getMessage() + ") — it is unreachable";
+				} else if (idleFired[0]) {
+					/// The idle watchdog closed the body: the server was answering and then went
+					/// silent mid-reply. Whatever streamed before the stall is still in aresp, but it is
+					/// an unfinished reply, not a complete one, and the caller must not treat it as
+					/// either "the model said nothing" or "the model is down".
+					errMsg = "The model stopped sending data mid-reply (no data for " + idleSecUsed[0] + "s); "
+						+ streamedLength(aresp) + " characters had been received before the stream stalled";
+				} else if (overBudgetMidBody) {
+					bufferTimedOut[0] = true;
+					errMsg = overBudgetMsg;
 				} else if (rootCause instanceof TimeoutException || rootCause instanceof java.net.http.HttpTimeoutException) {
 					bufferTimedOut[0] = true;
 					errMsg = "Request timed out after " + effectiveTimeout + " seconds";
@@ -4564,6 +4652,12 @@ public class Chat {
 					/// thenAccept — don't also fire the success completion path
 					/// (which would run handleResponse on an empty response).
 					logger.debug("Skipping completion callback — HTTP error already handled");
+				} else if (!forwardToClient && deadlineFired[0]) {
+					/// The deadline closed the body and the iterator unwound without throwing. The
+					/// partial text is not a reply; report the timeout, not a truncated success.
+					bufferTimedOut[0] = true;
+					logger.error("[DIAG] whenComplete: " + overBudgetMsg);
+					bufferError[0] = overBudgetMsg;
 				} else if (forwardToClient && listener != null) {
 					listener.oncomplete(user, req, aresp);
 				} else {
@@ -4622,12 +4716,25 @@ public class Chat {
 				/// otherwise only sees null.
 				setLastCallError(bufferError[0]);
 				LAST_CALL_UNREACHABLE.set(bufferUnreachable[0]);
+				LAST_CALL_STALLED.set(idleFired[0]);
 				if (listener != null) {
 					listener.onerror(user, req, aresp, bufferError[0]);
 				}
 				return null;
 			}
 			BaseRecord bufMsg = bufferResult[0] != null ? bufferResult[0].get("message") : null;
+			/// A stream that ended without its terminator ([DONE] / finish_reason / done:true) and
+			/// was not stopped by the listener was cut off upstream — most often a proxy closing a
+			/// queued-then-abandoned response, or the idle watchdog closing a silent body without
+			/// the iterator throwing. The partial content is returned as-is so the caller can try
+			/// to salvage it, but it is flagged so a parse failure is retried as a stall rather than
+			/// blamed on the model.
+			boolean truncated = bufferResult[0] != null && !sawTerminator[0] && !stoppedByListener[0];
+			LAST_CALL_STALLED.set(truncated);
+			if (truncated) {
+				logger.warn("[DIAG] chat() buffer mode: stream ended without a terminator after "
+					+ streamedLength(aresp) + " characters" + (idleFired[0] ? " (idle watchdog fired)" : ""));
+			}
 			logger.info("[DIAG] chat() buffer mode: returning result=" + (bufferResult[0] != null ? "present" : "null")
 				+ " message=" + (bufMsg != null ? "present" : "null"));
 			/// Emulator RECORDER (fixture capture). Only when the deployment set llm.emulator.recordDir,
@@ -4656,6 +4763,16 @@ public class Chat {
 	/// Phase 7: Shared stream chunk processing — eliminates duplicated parsing logic
 	/// between Ollama (message-based) and OpenAI (choices/delta-based) response formats.
 	/// Returns true when the stream is complete ([DONE], done:true, or empty message).
+	private static int streamedLength(OpenAIResponse aresp) {
+		try {
+			BaseRecord msg = aresp != null ? aresp.get("message") : null;
+			String content = msg != null ? msg.get("content") : null;
+			return content != null ? content.length() : 0;
+		} catch (Exception e) {
+			return 0;
+		}
+	}
+
 	private boolean processStreamChunk(String line, OpenAIRequest req, OpenAIResponse aresp, boolean forwardToClient) {
 		if (line == null || line.isEmpty()) {
 			return false;

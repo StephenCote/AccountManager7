@@ -90,6 +90,25 @@ public final class StreamIdleWatchdog {
 		if (e != null && e.task != null) e.task.cancel(false);
 	}
 
+	/// One-shot absolute deadline on the same daemon scheduler. Fires `onDeadline.accept(streamId)`
+	/// once after `delayMs` unless the returned future is cancelled first. Independent of the idle
+	/// entry for the same stream: `stop(streamId)` does not cancel it, so the caller must cancel the
+	/// returned future when the stream completes normally.
+	public ScheduledFuture<?> deadline(String streamId, String label, long delayMs, Consumer<String> onDeadline) {
+		if (streamId == null || onDeadline == null) return null;
+		final String lbl = label == null ? "?" : label;
+		final long delay = Math.max(1L, delayMs);
+		return scheduler.schedule(() -> {
+			logger.warn("[STREAM-DEADLINE] " + lbl + " stream=" + streamId
+				+ " still receiving after its " + delay + "ms budget — invoking onDeadline");
+			try {
+				onDeadline.accept(streamId);
+			} catch (Exception ex) {
+				logger.warn("[STREAM-DEADLINE] onDeadline callback threw: " + ex.getMessage());
+			}
+		}, delay, TimeUnit.MILLISECONDS);
+	}
+
 	/// Test/diagnostic — how many streams are being watched.
 	public int activeCount() {
 		return entries.size();

@@ -143,7 +143,10 @@ public class TestPictureBookRestContract extends BaseTest {
 			{ "regenerateNode", "POST" },
 			{ "pinNode", "POST" },
 			{ "addMembers", "POST" },
-			{ "createChapter", "POST" }
+			{ "createChapter", "POST" },
+			/// Failed-passage retry (2026-10-01): re-runs only the chunks a completed extraction could not
+			/// read, so a refusal no longer forces the whole work to be resubmitted.
+			{ "extractRetryFailed", "POST" }
 		};
 		for(String[] e : expected) {
 			Method found = null;
@@ -183,7 +186,9 @@ public class TestPictureBookRestContract extends BaseTest {
 			"sceneIndex", "scenes",
 			/// PB2 phase 4
 			"pinned", "userNames", "asAdmin", "fromBookObjectId", "slug", "title", "copyRecordModel",
-			"copyRecordObjectIds"
+			"copyRecordObjectIds",
+			/// extract-scenes-only (N-series) and extract-retry-failed
+			"seriesObjectId"
 		};
 		List<String> undeclared = new ArrayList<>();
 		for(String f : read) {

@@ -569,7 +569,8 @@ async function searchByNameOrgCtx(ctx, type, name, orgId, fields) {
  * @param opts    optional overrides: configName/connectionName (use distinct names for a non-Ollama
  *                path so the default Ollama records are never reused), serverUrl, model, analyzeModel,
  *                serviceType (wire-lowercase enum), dialect (system.connection.dialect, e.g.
- *                'openai_compat' for LiteLLM), upstream, apiKey (Bearer token stored on the connection).
+ *                'openai_compat' for LiteLLM), upstream, apiKey (Bearer token stored on the connection),
+ *                requestTimeout (seconds; the connection's hard per-call timeout, default 300).
  *                With NO serverUrl the connection shape and model defaults come from resolveChatRoute()
  *                (LiteLLM-first; see the block comment above). With an explicit serverUrl the caller
  *                owns the whole shape: dialect/upstream/apiKey are sent only if given, and the models
@@ -601,8 +602,9 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
     const analyzeModel = opts.analyzeModel || (callerOwned ? ANALYSIS_MODEL_REAL : route.analysisModel);
     // serviceType is the deprecated fallback Chat consults only when dialect is UNKNOWN; keep it in step.
     const serviceType = opts.serviceType || dialect || 'ollama';
+    const requestTimeout = opts.requestTimeout || 300;
 
-    const CONN_FIELDS = ['id', 'objectId', 'name', 'serverUrl', 'dialect', 'upstream'];
+    const CONN_FIELDS = ['id', 'objectId', 'name', 'serverUrl', 'dialect', 'upstream', 'requestTimeout'];
     const CFG_FIELDS = ['id', 'objectId', 'name', 'model', 'analyzeModel', 'serviceType', 'connection'];
 
     let ctx = await newApiContext();
@@ -632,7 +634,7 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
                 groupId: groupId,
                 groupPath: groupPath,
                 serverUrl: serverUrl,
-                requestTimeout: 300
+                requestTimeout: requestTimeout
             };
             if (dialect) connBody.dialect = dialect;
             if (upstream) connBody.upstream = upstream;
@@ -644,6 +646,7 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
             if (conn.serverUrl !== serverUrl) changed.serverUrl = serverUrl;
             if (dialect && !enumEq(conn.dialect, dialect)) changed.dialect = dialect;
             if (upstream && !enumEq(conn.upstream, upstream)) changed.upstream = upstream;
+            if (opts.requestTimeout && conn.requestTimeout !== requestTimeout) changed.requestTimeout = requestTimeout;
             if (Object.keys(changed).length) {
                 // The key rides along with any drift on this route (it cannot be read back to compare).
                 if (apiKey) changed.apiKey = apiKey;
@@ -654,7 +657,8 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
                 conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId, CONN_FIELDS);
                 if (!conn || conn.serverUrl !== serverUrl
                     || (dialect && !enumEq(conn.dialect, dialect))
-                    || (upstream && !enumEq(conn.upstream, upstream))) {
+                    || (upstream && !enumEq(conn.upstream, upstream))
+                    || (opts.requestTimeout && conn.requestTimeout !== requestTimeout)) {
                     throw new Error('[e2e-llm] system.connection ' + connectionName
                         + ' did not read back the patched shape: ' + JSON.stringify(conn));
                 }

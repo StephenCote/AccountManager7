@@ -7,7 +7,7 @@ import {
     createFromScenes, createChapBookRecord, generateSceneImage, prepareSceneImagePrompts,
     cancelPictureBook, regenerateBlurb, loadPictureBook, getBookSdConfig, setBookSdConfig, setSceneStatus,
     resolveImageUrl, resolveAllImageUrls,
-    startExtractScenes, pollJob, cancelJob, listJobs, scenesFromResult
+    startExtractScenes, startRetryFailedChunks, pollJob, cancelJob, listJobs, scenesFromResult
 } from './sceneExtractor.js';
 import { openCharacterManager, initCharacterManager, renderCharacterManagerContent } from './pictureBookCharacters.js';
 import { listPb2Books, listSeriesBooks, detectBoundaries, createSeries, createChapter } from './pictureBookWorkflow.js';
@@ -81,7 +81,9 @@ let reattaching = false;        // a reattach lookup is in flight (claimed befor
 let extractProgress = null;     // { current, total } straight from the job's progress token
 let extractCancelling = false;  // cancel requested, waiting for the loop to reach a chunk boundary
 let extractPartial = false;     // the scene list is incomplete (cancelled, or stopped early)
-let extractFailedChunks = [];   // chunks whose JSON could not be parsed, surfaced not swallowed
+let extractFailedChunks = [];   // per-passage failure records ({context, kind, chunk, total, error, rawResponse}), surfaced not swallowed
+let retryingFailed = false;     // a failed-passage retry job is in flight (extracting is also true)
+let extractChaptered = false;   // the last run took the per-chapter fan-out, not the single-document path
 // N-series fan-out state. When a novel splits into chapters, doExtract runs ONE bounded extraction job
 // per chapter SEQUENTIALLY (one Ollama server; server caps MAX_CONCURRENT_JOBS=2), and these carry the
 // "chapter i of N" context so onExtractProgress can label the shared activity indicator across chapters.
@@ -167,6 +169,8 @@ function resetState() {
     extractCancelling = false;
     extractPartial = false;
     extractFailedChunks = [];
+    retryingFailed = false;
+    extractChaptered = false;
     extractChapterIndex = 0;
     extractChapterCount = 0;
     pb2SeriesObjectId = null;
@@ -480,7 +484,8 @@ async function doExtract(opts) {
             console.warn('[pictureBook] chapter boundary detection failed; '
                 + 'extracting as a single document:', e && e.message);
         }
-        if (ranges.length >= 2) {
+        extractChaptered = ranges.length >= 2;
+        if (extractChaptered) {
             // Multi-chapter novel: one bounded extraction job per chapter, sequentially.
             await fanOutChaptersExtract(ranges, opts);
         } else {
@@ -556,6 +561,7 @@ async function fanOutChaptersExtract(ranges, opts) {
     let firstChapterBookOid = null; // where the series canvas is reached (any chapter book resolves it)
     let persistedCount = 0;         // chapters whose scenes actually landed in a book
     let problems = [];              // per-chapter failures/warnings, surfaced not swallowed
+    let chapters = [];              // per-chapter record: what was saved, what failed, how to retry it
     let anyPartial = false;
     let cancelled = false;
     let infraAbort = false;         // the server's unreachable-LLM breaker tripped; stop the fan-out
@@ -569,6 +575,11 @@ async function fanOutChaptersExtract(ranges, opts) {
         let chapTitle = (r.title != null && String(r.title).trim().length)
             ? String(r.title).trim()
             : (i === 0 ? 'Front Matter' : 'Chapter ' + chapNum);
+        // The chapter's checkpoint is keyed on its offsets, so a later per-passage retry must carry
+        // exactly these — keep them with the chapter's report rather than re-deriving them.
+        let chap = { num: chapNum, title: chapTitle, bookOid: null, startOffset: r.startOffset,
+            endOffset: r.endOffset, failed: [], problems: [], persisted: false };
+        chapters.push(chap);
 
         // 1. Create this chapter's book in the series (series-first: no fromBookObjectId) and CAPTURE
         //    its objectId — createFromScenes needs it to persist the chapter's scenes into the shared
@@ -591,7 +602,7 @@ async function fanOutChaptersExtract(ranges, opts) {
             // the chapter book this series already has for the slug; only fork a suffixed slug when the
             // slug belongs to some other series/user.
             if (!(e && e.message && e.message.includes('409'))) {
-                problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): could not create its book — '
+                chap.problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): could not create its book — '
                     + (e && e.message || 'unknown error'));
                 continue;
             }
@@ -608,17 +619,18 @@ async function fanOutChaptersExtract(ranges, opts) {
                         chapTitle, null, null, chapOpts);
                     chapterBookOid = ch ? ch.bookObjectId : null;
                 } catch (e2) {
-                    problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): could not create its book — '
+                    chap.problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): could not create its book — '
                         + (e2 && e2.message || 'unknown error'));
                     continue;
                 }
             }
         }
         if (!chapterBookOid) {
-            problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): book creation returned no id.');
+            chap.problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): book creation returned no id.');
             continue;
         }
         if (!firstChapterBookOid) firstChapterBookOid = chapterBookOid;
+        chap.bookOid = chapterBookOid;
 
         // 2. Bounded per-chapter extraction — one job at a time (awaited), carrying the chapter's
         //    explicit character span and the series so the cross-chapter roster is seeded.
@@ -646,6 +658,7 @@ async function fanOutChaptersExtract(ranges, opts) {
 
         let chapScenes = scenesFromResult(job.result);
         let chapFailed = (job.result && job.result.failedExtractions) || job.failedExtractions || [];
+        chap.failed = chapFailed;
         if (chapFailed.length) extractFailedChunks = extractFailedChunks.concat(chapFailed);
         // The server's circuit breaker trips when consecutive LLM calls cannot reach the model server
         // (host down, nothing listening, wrong model name). Every remaining chapter would hit the
@@ -656,12 +669,12 @@ async function fanOutChaptersExtract(ranges, opts) {
             if (infraReason) break;
         }
         if (infraReason) {
-            problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): ' + infraReason);
+            chap.problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): ' + infraReason);
             infraAbort = true;
             break;
         }
         if (job.status === 'failed') {
-            problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): extraction failed — '
+            chap.problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): extraction failed — '
                 + (job.error || 'unknown error'));
         } else {
             let chapPartial = job.status === 'cancelled'
@@ -674,33 +687,32 @@ async function fanOutChaptersExtract(ranges, opts) {
                     let meta = await createFromScenes(workObjectId, chatConfigName(), genre || null,
                         chapTitle, chapScenes, buildCharacterStubs(chapScenes), chapterBookOid);
                     persistedCount++;
+                    chap.persisted = true;
                     if (meta && meta.failedCharacters && meta.failedCharacters.length) {
-                        problems.push('Chapter ' + chapNum + ': ' + meta.failedCharacters.length
+                        chap.problems.push('Chapter ' + chapNum + ': ' + meta.failedCharacters.length
                             + ' character(s) failed to create.');
                     } else if (meta && meta.failedExtractions && meta.failedExtractions.length) {
-                        problems.push('Chapter ' + chapNum + ': ' + meta.failedExtractions.length
+                        chap.problems.push('Chapter ' + chapNum + ': ' + meta.failedExtractions.length
                             + ' character(s) had LLM extraction failures.');
                     }
                 } catch (e) {
-                    problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): scenes extracted but '
+                    chap.problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): scenes extracted but '
                         + 'could not be saved — ' + (e && e.message || 'unknown error'));
                 }
             } else if (job.status !== 'cancelled') {
-                problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): no scenes were extracted.');
+                chap.noScenesProblem = 'Chapter ' + chapNum + ' (' + chapTitle + '): no scenes were extracted.';
+                chap.problems.push(chap.noScenesProblem);
             }
-            // A chapter that stopped before its last passage, or that lost passages the model could
-            // not read, is INCOMPLETE even when its book was saved — it still has to appear in the
-            // report, or "5 of 6 chapters saved" hides that chapter 5 is missing a third of its scenes.
+            // A chapter that stopped before its last passage is INCOMPLETE even when its book was
+            // saved — it still has to appear in the report, or "5 of 6 chapters saved" hides that
+            // chapter 5 is missing a third of its scenes. (Passages the model could not read are
+            // reported one line each by summaryProblems, from chap.failed.)
             if (chapPartial && job.status !== 'cancelled') {
                 let done = job.result && job.result.chunksProcessed != null ? job.result.chunksProcessed : null;
                 let total = job.total != null ? job.total : null;
-                problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): extraction stopped early'
+                chap.problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): extraction stopped early'
                     + (done != null && total != null ? ' after ' + done + ' of ' + total + ' passages' : '')
                     + ' — the ' + chapScenes.length + ' scene(s) read so far were saved; re-run to resume.');
-            } else if (chapFailed.length) {
-                problems.push('Chapter ' + chapNum + ' (' + chapTitle + '): ' + chapFailed.length
-                    + ' passage(s) could not be read by the model ('
-                    + failureReason(chapFailed[0]).slice(0, 160) + ').');
             }
         }
         // A user Cancel targets the current chapter's job. When it comes back cancelled, stop the
@@ -708,6 +720,7 @@ async function fanOutChaptersExtract(ranges, opts) {
         if (job.status === 'cancelled') { cancelled = true; break; }
     }
 
+    problems = summaryProblems(chapters);
     extractPartial = anyPartial || cancelled || infraAbort;
 
     if (infraAbort) {
@@ -728,6 +741,8 @@ async function fanOutChaptersExtract(ranges, opts) {
                 saved: persistedCount,
                 total: ranges.length,
                 problems: problems.slice(),
+                chapters: chapters,
+                seriesObjectId: pb2SeriesObjectId,
                 seriesBookOid: firstChapterBookOid,
                 cancelled: cancelled
             };
@@ -738,6 +753,20 @@ async function fanOutChaptersExtract(ranges, opts) {
         // book's series FK — so land on the first chapter book's workflow route.
         Dialog.close();
         m.route.set('/picture-book/' + firstChapterBookOid + '/workflow');
+    } else if (firstChapterBookOid && chapters.some(function (c) { return c.bookOid && Object.keys(retryablePassages(c.failed)).length; })) {
+        // Every chapter's book exists in the series but none received a scene, and the passages
+        // failed in a way another model may read. Keep the per-chapter report: a plain re-run is
+        // served from the kept checkpoints without calling the model, so the retry button is the
+        // only way forward short of "Start over".
+        extractChapterSummary = {
+            saved: 0,
+            total: ranges.length,
+            problems: problems.slice(),
+            chapters: chapters,
+            seriesObjectId: pb2SeriesObjectId,
+            seriesBookOid: firstChapterBookOid,
+            cancelled: cancelled
+        };
     } else {
         // Nothing persisted — keep the wizard on step 1 and say why.
         extractError = problems.length
@@ -781,6 +810,247 @@ function failureReason(entry) {
     }
     if (parsed && typeof parsed === 'object' && typeof parsed.error === 'string') return parsed.error;
     return typeof entry === 'string' ? entry : JSON.stringify(entry);
+}
+
+// Plain-language reading of the server's failure `kind`. The server's `error` prose is free to
+// change; `kind` is the contract (PictureBookUtil KIND_*), so this is keyed on it.
+const FAILURE_KIND_TEXT = {
+    'refusal': 'the model declined to process this passage (content policy) — retry it with a different model',
+    'stalled': 'the model\'s reply stopped mid-stream and nothing usable arrived',
+    'truncated': 'the model\'s reply was cut off mid-stream and the partial text could not be read',
+    'timeout': 'the model did not finish within the request timeout',
+    'unreachable': 'the model server could not be reached',
+    'error': 'the model server returned an error',
+    'empty': 'the model returned an empty reply',
+    'no-json': 'the model\'s reply contained no scene list (no JSON)',
+    'parse': 'the model\'s reply contained a scene list that could not be read, even after repair',
+    'stopped-early': 'the run stopped before this passage was attempted'
+};
+
+/**
+ * Explain one failedExtractions entry to a person.
+ *
+ * @returns {{chunk:number,total:number,kind:string|null,reason:string,detail:string,raw:string,retryable:boolean}}
+ *   chunk/total are the 1-based passage position (0 when unknown); reason is the plain-language
+ *   explanation; detail is the server's error text; raw is what the model actually replied (the
+ *   refusal wording, the truncated JSON, ...); retryable mirrors the server's rule — a passage that
+ *   was attempted and failed can be re-run alone, a breaker stop is resumed by a plain re-run.
+ */
+function describeFailedPassage(entry) {
+    let p = entry;
+    if (typeof entry === 'string') {
+        try { p = JSON.parse(entry); } catch (_) { p = null; }
+    }
+    if (!p || typeof p !== 'object') {
+        return { chunk: 0, total: 0, kind: null, reason: entry == null ? '' : String(entry), detail: '', raw: '', retryable: false };
+    }
+    let chunk = Number(p.chunk) || 0;
+    let total = Number(p.total) || 0;
+    if (!chunk && typeof p.context === 'string') {
+        let mt = /^extract-scenes-chunk:(\d+)\/(\d+)$/.exec(p.context);
+        if (mt) { chunk = Number(mt[1]); total = Number(mt[2]); }
+    }
+    let stopped = p.stoppedEarly === true || p.kind === 'stopped-early';
+    let kind = p.kind || (stopped ? 'stopped-early' : null);
+    let detail = typeof p.error === 'string' ? p.error : '';
+    let reason = (kind && FAILURE_KIND_TEXT[kind]) || detail || 'the reply could not be read';
+    let raw = typeof p.rawResponse === 'string' ? p.rawResponse.trim() : '';
+    return { chunk, total, kind, reason, detail, raw, retryable: chunk > 0 && !stopped };
+}
+
+function passageLabel(d) {
+    return d.chunk ? 'Passage ' + d.chunk + (d.total ? ' of ' + d.total : '') : 'A passage';
+}
+
+/** One sentence per failed passage: "Passage 4 of 9 — the model declined ... (server text)". */
+function passageProblemText(d) {
+    let text = passageLabel(d) + ' — ' + d.reason;
+    if (d.detail && d.detail !== d.reason) text += ' (' + d.detail.slice(0, 160) + ')';
+    return text + '.';
+}
+
+/** Distinct 1-based passage numbers that a retry would re-run, as a lookup. */
+function retryablePassages(failed) {
+    let out = {};
+    (failed || []).forEach(function (f) {
+        let d = describeFailedPassage(f);
+        if (d.retryable) out[d.chunk] = true;
+    });
+    return out;
+}
+
+/**
+ * Fold the scenes a retry recovered into the list the user is reviewing, keeping that list.
+ *
+ * The server returns the whole merged list, but Step 2 is an editing surface — titles get
+ * changed, scenes removed or reordered — so replacing the list would discard that work to add a
+ * few scenes. Only scenes whose provenance (`sourceChunk`, 0-based) is one of the passages that
+ * were re-run are new; each is inserted before the first existing scene from a later passage, so
+ * it lands among its neighbours. Scenes with no provenance are left where they are.
+ */
+function mergeRecoveredScenes(current, merged, retriedPassages) {
+    let out = current.slice();
+    (merged || []).forEach(function (s) {
+        if (!s || typeof s.sourceChunk !== 'number' || !retriedPassages[s.sourceChunk + 1]) return;
+        let at = out.findIndex(function (x) {
+            return x && typeof x.sourceChunk === 'number' && x.sourceChunk > s.sourceChunk;
+        });
+        out.splice(at < 0 ? out.length : at, 0, s);
+    });
+    return out;
+}
+
+/** Apply a terminal failed-passage retry job to the Step 2 list. */
+function applyRetryJob(job, retriedPassages) {
+    if (job.status === 'failed') {
+        extractError = job.error || 'Retrying the failed passages failed';
+        return;
+    }
+    let result = job.result || {};
+    extractedScenes = mergeRecoveredScenes(extractedScenes, scenesFromResult(result), retriedPassages);
+    extractFailedChunks = result.failedExtractions || job.failedExtractions || [];
+    if (result.extractionComplete === false) extractPartial = true;
+    // A run in which EVERY passage failed never left Step 1; once the retry recovers scenes there
+    // is a list to review, so advance exactly as a successful Extract would.
+    if (step === 1 && extractedScenes.length) step = 2;
+}
+
+/**
+ * Re-run ONLY the passages the last extraction could not read, with the currently selected chat
+ * config, and fold any recovered scenes into the Step 2 list. The server kept the checkpoint for
+ * exactly these passages, so a refusal or a stalled stream costs one passage to recover, not the
+ * whole document.
+ */
+async function doRetryFailed() {
+    if (extracting || !workObjectId) return;
+    let targets = retryablePassages(extractFailedChunks);
+    if (!Object.keys(targets).length) return;
+    extracting = true;
+    retryingFailed = true;
+    extractError = null;
+    extractProgress = null;
+    extractCancelling = false;
+    m.redraw();
+    let bgToken = LLMConnector.lockBgActivity();
+    try {
+        let started = await startRetryFailedChunks(workObjectId, chatConfigName(),
+            { seriesObjectId: pb2SeriesObjectId });
+        extractJobId = started.jobId;
+        m.redraw();
+        let job = await pollJob(extractJobId, { onProgress: onExtractProgress });
+        applyRetryJob(job, targets);
+    } catch (e) {
+        if (!(e && e.name === 'AbortError')) extractError = e.message || 'Retrying the failed passages failed';
+    } finally {
+        LLMConnector.unlockBgActivity(bgToken);
+        LLMConnector.setBgActivity(null, null);
+        extracting = false;
+        retryingFailed = false;
+        extractCancelling = false;
+        extractJobId = null;
+        extractProgress = null;
+        m.redraw();
+    }
+}
+
+/**
+ * Chaptered counterpart of doRetryFailed: for every chapter whose extraction left retryable
+ * passages, re-run just those passages against that chapter's checkpoint (same offsets its
+ * extraction used — the checkpoint is keyed on them) and re-persist the merged scene list into the
+ * chapter's book. createFromScenes finds-or-updates scene notes by name, so re-persisting the
+ * scenes already there is idempotent and keeps their render state.
+ */
+async function doRetryFailedChapters() {
+    let s = extractChapterSummary;
+    if (!s || extracting || !workObjectId) return;
+    let targets = (s.chapters || []).filter(function (c) { return c.bookOid && Object.keys(retryablePassages(c.failed)).length; });
+    if (!targets.length) return;
+    extracting = true;
+    retryingFailed = true;
+    extractError = null;
+    extractProgress = null;
+    extractCancelling = false;
+    extractChapterCount = targets.length;
+    m.redraw();
+    let bgToken = LLMConnector.lockBgActivity();
+    try {
+        for (let i = 0; i < targets.length; i++) {
+            let c = targets[i];
+            extractChapterIndex = i + 1;
+            m.redraw();
+            let job;
+            try {
+                let started = await startRetryFailedChunks(workObjectId, chatConfigName(), {
+                    seriesObjectId: s.seriesObjectId,
+                    startOffset: c.startOffset,
+                    endOffset: c.endOffset
+                });
+                extractJobId = started.jobId;
+                m.redraw();
+                job = await pollJob(extractJobId, { onProgress: onExtractProgress });
+            } catch (e) {
+                if (e && e.name === 'AbortError') throw e;
+                job = { status: 'failed', error: (e && e.message) || 'retry request failed', result: null };
+            } finally {
+                extractJobId = null;
+            }
+            if (job.status === 'failed') {
+                c.problems.push('Chapter ' + c.num + ' (' + c.title + '): retrying its failed passages failed — '
+                    + (job.error || 'unknown error'));
+                continue;
+            }
+            let result = job.result || {};
+            let merged = scenesFromResult(result);
+            c.failed = result.failedExtractions || job.failedExtractions || [];
+            if (merged.length) {
+                try {
+                    await createFromScenes(workObjectId, chatConfigName(), genre || null,
+                        c.title, merged, buildCharacterStubs(merged), c.bookOid);
+                    if (!c.persisted) { c.persisted = true; s.saved++; }
+                    if (c.noScenesProblem) {
+                        c.problems = c.problems.filter(function (p) { return p !== c.noScenesProblem; });
+                        c.noScenesProblem = null;
+                    }
+                } catch (e) {
+                    c.problems.push('Chapter ' + c.num + ' (' + c.title + '): passages recovered but the scenes '
+                        + 'could not be saved — ' + (e && e.message || 'unknown error'));
+                }
+            }
+            if (job.status === 'cancelled') break;
+        }
+        s.problems = summaryProblems(s.chapters);
+        extractFailedChunks = [].concat.apply([], s.chapters.map(function (c) { return c.failed; }));
+    } catch (e) {
+        if (!(e && e.name === 'AbortError')) extractError = e.message || 'Retrying the failed passages failed';
+    } finally {
+        LLMConnector.unlockBgActivity(bgToken);
+        LLMConnector.setBgActivity(null, null);
+        extracting = false;
+        retryingFailed = false;
+        extractCancelling = false;
+        extractJobId = null;
+        extractProgress = null;
+        extractChapterIndex = 0;
+        extractChapterCount = 0;
+        m.redraw();
+    }
+}
+
+/**
+ * Flatten the per-chapter report into the display list: a chapter's own problems, then one line per
+ * passage the model could not read. Breaker stops are skipped here — the chapter already carries
+ * the breaker's own line.
+ */
+function summaryProblems(chapters) {
+    let out = [];
+    (chapters || []).forEach(function (c) {
+        out = out.concat(c.problems);
+        (c.failed || []).forEach(function (f) {
+            if (stoppedEarlyReason(f)) return;
+            out.push('Chapter ' + c.num + ' (' + c.title + '): ' + passageProblemText(describeFailedPassage(f)));
+        });
+    });
+    return out;
 }
 
 /**
@@ -1214,6 +1484,9 @@ function renderExtractProgress() {
             m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
             m('span', { class: 'flex-1' },
                 extractCancelling ? 'Cancelling — finishing the current chunk...'
+                    : retryingFailed
+                        ? (extractChapterCount > 1 ? 'Retrying failed passages — chapter ' + extractChapterIndex + ' of ' + extractChapterCount
+                            : 'Retrying failed passages' + (total > 0 ? ' — ' + cur + ' of ' + total : '...'))
                     : (total > 0 ? 'Extracting scenes — chunk ' + cur + ' of ' + total
                         : 'Extracting scenes...')),
             extractJobId ? m('button', {
@@ -1273,15 +1546,89 @@ function renderExtractWarnings() {
         ]));
     }
     if (extractFailedChunks && extractFailedChunks.length) {
-        out.push(m('div', { class: 'p-2 rounded bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 text-xs text-orange-800 dark:text-orange-200 flex items-center gap-2' }, [
-            m('span', { class: 'material-symbols-outlined text-sm' }, 'error_outline'),
-            m('span', extractFailedChunks.length + ' passage'
-                + (extractFailedChunks.length === 1 ? '' : 's')
-                + ' could not be read by the model, so any scenes in '
-                + (extractFailedChunks.length === 1 ? 'it' : 'them') + ' are missing.')
-        ]));
+        out.push(renderFailedPassages());
+    }
+    if (step === 2 && extractError) {
+        out.push(m('div', { class: 'text-red-500 text-xs', 'data-pb-extract-error': '1' }, extractError));
     }
     return out.length ? m('div', { class: 'space-y-2' }, out) : null;
+}
+
+/**
+ * The passages the model could not read, one line each with WHY — and the way to recover them.
+ *
+ * The previous banner said only "N passages could not be read", which left the user guessing
+ * between a context-window problem, a too-strict prompt, a stalled stream and a content-policy
+ * refusal (all of which happen, and each has a different remedy). The server now records a typed
+ * `kind` plus the model's own reply per passage; this shows them, lets the user switch the chat
+ * config, and re-runs ONLY the failed passages against the server's checkpoint — the whole
+ * document no longer has to be resubmitted to recover one refused passage.
+ */
+function renderFailedPassages() {
+    let described = extractFailedChunks.map(describeFailedPassage);
+    let retryCount = Object.keys(retryablePassages(extractFailedChunks)).length;
+    let anyChaptered = !!extractChapterSummary;
+    return m('div', {
+        'data-pb-failed-passages': '1',
+        class: 'p-2 rounded bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 text-xs text-orange-800 dark:text-orange-200 space-y-2'
+    }, [
+        m('div', { class: 'flex items-center gap-2 font-medium' }, [
+            m('span', { class: 'material-symbols-outlined text-sm' }, 'error_outline'),
+            m('span', described.length + ' passage' + (described.length === 1 ? '' : 's')
+                + ' could not be read by the model, so any scenes in '
+                + (described.length === 1 ? 'it' : 'them') + ' are missing.')
+        ]),
+        m('ul', { class: 'list-disc pl-5 space-y-1 max-h-40 overflow-y-auto' },
+            described.map(function (d, i) {
+                return m('li', { key: i, 'data-pb-failed-passage': '1', 'data-pb-failed-kind': d.kind || '' }, [
+                    m('span', { class: 'font-medium' }, passageLabel(d) + ' — '),
+                    m('span', d.reason + '.'),
+                    d.detail && d.detail !== d.reason
+                        ? m('div', { class: 'text-orange-700 dark:text-orange-300' }, d.detail)
+                        : null,
+                    d.raw ? m('div', {
+                        class: 'font-mono text-[11px] text-gray-600 dark:text-gray-400 truncate',
+                        title: d.raw.slice(0, 2000)
+                    }, 'Model replied: ' + d.raw.slice(0, 200)) : null
+                ]);
+            })),
+        anyChaptered ? null : m('div', { class: 'flex flex-wrap items-center gap-2 pt-1' }, [
+            m('button', {
+                class: 'btn text-xs btn-primary',
+                'data-pb-retry-failed': '1',
+                disabled: extracting || !retryCount,
+                title: retryCount
+                    ? 'Re-run only these passages with the chat config shown; the scenes already listed are kept'
+                    : 'These passages were never attempted — use Resume to continue the run',
+                onclick: function () { doRetryFailed(); }
+            }, [
+                m('span', { class: 'material-symbols-outlined text-xs mr-1' }, 'replay'),
+                extracting && retryingFailed ? 'Retrying...' : 'Retry ' + retryCount + ' failed passage' + (retryCount === 1 ? '' : 's')
+            ]),
+            m('span', { class: 'text-gray-600 dark:text-gray-300' }, 'using'),
+            m('button', {
+                class: 'btn text-xs',
+                'data-pb-retry-chatconfig': '1',
+                disabled: extracting,
+                title: 'Change the chat config (model) the retry will use — a refused passage usually needs a different model',
+                onclick: function () {
+                    ObjectPicker.openLibrary({
+                        libraryType: 'chatConfig',
+                        title: 'Select Chat Config',
+                        onSelect: function (item) {
+                            if (item && item.name) {
+                                chatConfigRef = { name: item.name, objectId: item.objectId };
+                                m.redraw();
+                            }
+                        }
+                    });
+                }
+            }, [
+                chatConfigRef ? chatConfigRef.name : '(default chat config)',
+                m('span', { class: 'material-symbols-outlined text-xs ml-1' }, 'search')
+            ])
+        ])
+    ]);
 }
 
 /**
@@ -1292,6 +1639,9 @@ function renderChapterSummary() {
     let s = extractChapterSummary;
     if (!s) return null;
     let missing = Math.max(0, s.total - s.saved);
+    let retryable = (s.chapters || []).reduce(function (n, c) {
+        return n + (c.bookOid ? Object.keys(retryablePassages(c.failed)).length : 0);
+    }, 0);
     let headline = (s.cancelled
         ? 'Extraction was cancelled: '
         : 'Extraction finished with problems: ')
@@ -1329,8 +1679,19 @@ function renderChapterSummary() {
                 disabled: extracting,
                 onclick: function () { doExtract(); }
             }, 'Re-run to resume'),
+            retryable ? m('button', {
+                class: 'btn text-xs',
+                'data-pb-retry-failed-chapters': '1',
+                disabled: extracting,
+                title: 'Re-run only the ' + retryable + ' passage(s) the model could not read, with the chat config selected above, and add any recovered scenes to their chapter books',
+                onclick: function () { doRetryFailedChapters(); }
+            }, [
+                m('span', { class: 'material-symbols-outlined text-xs mr-1' }, 'replay'),
+                'Retry ' + retryable + ' failed passage' + (retryable === 1 ? '' : 's')
+            ]) : null,
             m('span', { class: 'text-gray-600 dark:text-gray-300' },
-                'Re-running reuses the chapter books already in the series; an incomplete chapter resumes from its checkpoint.')
+                'Re-running reuses the chapter books already in the series; an incomplete chapter resumes from its checkpoint.'
+                + (retryable ? ' Retrying re-reads only the failed passages — change the chat config above first if the model declined them.' : ''))
         ])
     ]);
 }
@@ -1492,6 +1853,11 @@ function renderStep1() {
             extracting ? renderExtractProgress() : null,
 
             extractError ? m('div', { class: 'text-red-500 text-sm', 'data-pb-extract-error': '1', oncreate: revealOnCreate }, extractError) : null,
+
+            // A single-document run in which EVERY passage failed has no Step 2 to show the per-passage
+            // reasons on — "No scenes returned by LLM" alone is exactly the unexplained dead end this
+            // banner exists to replace, so it renders here too, retry included.
+            !extractChaptered && extractFailedChunks.length ? renderFailedPassages() : null,
 
             extractChapterSummary ? renderChapterSummary() : null
         ]) : m('div', { class: 'text-sm text-gray-500 italic' }, 'Manual scene entry — proceed to add scenes.')
@@ -2437,18 +2803,30 @@ export function __resetSdConfigForTest() {
 // partial, a failed run whose error must surface, and a reattach that must not start a second run
 // against a document already being extracted. The equivalent server-side branches shipped two real
 // defects before they had tests; this is the client half of that lesson.
-export { doExtract, applyExtractJob, reattachExtractJob, cancelExtract, stoppedEarlyReason };
+export { doExtract, applyExtractJob, reattachExtractJob, cancelExtract, stoppedEarlyReason,
+    describeFailedPassage, mergeRecoveredScenes, doRetryFailed, doRetryFailedChapters };
 export function __extractStateForTest() {
     return {
-        step, workObjectId, extracting, extractError, extractJobId, extractProgress,
+        step, workObjectId, extracting, retryingFailed, extractChaptered, extractError, extractJobId, extractProgress,
         extractPartial, extractFailedChunks, extractedScenes, reattaching,
-        extractChapterIndex, extractChapterCount, pb2SeriesObjectId, extractChapterSummary
+        extractChapterIndex, extractChapterCount, pb2SeriesObjectId, extractChapterSummary, chatConfigRef
     };
+}
+export function __setExtractStateForTest(patch) {
+    if ('step' in patch) step = patch.step;
+    if ('extractedScenes' in patch) extractedScenes = patch.extractedScenes;
+    if ('extractFailedChunks' in patch) extractFailedChunks = patch.extractFailedChunks;
+    if ('extractPartial' in patch) extractPartial = patch.extractPartial;
+    if ('extractChapterSummary' in patch) extractChapterSummary = patch.extractChapterSummary;
+    if ('pb2SeriesObjectId' in patch) pb2SeriesObjectId = patch.pb2SeriesObjectId;
+    if ('chatConfigRef' in patch) chatConfigRef = patch.chatConfigRef;
 }
 export function __resetExtractStateForTest(work) {
     step = 1;
     workObjectId = work || null;
     extracting = false;
+    retryingFailed = false;
+    extractChaptered = false;
     extractError = null;
     extractJobId = null;
     extractProgress = null;

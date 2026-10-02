@@ -3739,6 +3739,19 @@ public class PictureBookUtil {
         + "i'?m (not able|unable) to|i am (not able|unable) to|i won'?t be able to|"
         + "against my (guidelines|programming|policy)|as an ai (language )?model)");
 
+    /// The refusal text callLlmInternal discarded for the most recent call on this thread, or null
+    /// when the last call did not refuse. callLlmInternal returns null for a refusal for a good
+    /// reason (refusal prose must never become an SD prompt or persisted content), but that left
+    /// the chunk loop unable to tell "the model declined this passage" from "the server returned
+    /// nothing" — so a content-policy refusal was recorded as "LLM returned no content", retried
+    /// against the same model, and counted toward the unreachable-server circuit breaker. Same
+    /// ThreadLocal idiom as Chat.LAST_CALL_ERROR; cleared by the loop before every attempt.
+    private static final ThreadLocal<String> LAST_REFUSAL = new ThreadLocal<>();
+
+    static String getLastRefusal() { return LAST_REFUSAL.get(); }
+    static void clearLastRefusal() { LAST_REFUSAL.remove(); }
+    static void setLastRefusalForTest(String refusal) { LAST_REFUSAL.set(refusal); }
+
     /**
      * Parse LLM JSON response into a list of maps, stripping markdown fences if present.
      */
@@ -3850,7 +3863,7 @@ public class PictureBookUtil {
             List<String> failedExtractions, boolean[] okOut) {
         if (okOut != null && okOut.length > 0) okOut[0] = false;
         if (response == null || response.isEmpty()) {
-            recordFailedExtraction(failedExtractions, context, "LLM returned no content", response);
+            recordFailedExtraction(failedExtractions, context, KIND_EMPTY, "LLM returned no content", response);
             return new LinkedHashMap<>();
         }
         String trimmed = stripCodeFences(stripThink(response.trim()));
@@ -3904,13 +3917,14 @@ public class PictureBookUtil {
             }
         }
         if (!sawBrace) {
-            recordFailedExtraction(failedExtractions, context, "No JSON object ({...}) found in LLM response", response);
+            recordFailedExtraction(failedExtractions, context, KIND_NO_JSON,
+                "No JSON object ({...}) found in LLM response", response);
             return new LinkedHashMap<>();
         }
         /// Report the parser's OWN message. The previous code stored "JSON object parse returned
         /// null" because JSONUtil.getMap swallowed the IOException, which told an investigator
         /// nothing about what was actually wrong with the response.
-        recordFailedExtraction(failedExtractions, context,
+        recordFailedExtraction(failedExtractions, context, KIND_PARSE,
             err[0] != null ? err[0] : "JSON object could not be parsed", response);
         return new LinkedHashMap<>();
     }
@@ -4051,10 +4065,51 @@ public class PictureBookUtil {
      * not a separate API, just enough breadcrumb to not lose the LLM's original (bad) output.
      */
     private static void recordFailedExtraction(List<String> sink, String context, String error, String rawResponse) {
+        recordFailedExtraction(sink, context, null, error, rawResponse);
+    }
+
+    /// Failure kinds, carried on the record as {@code kind} so a client can explain a failed
+    /// passage without pattern-matching the prose in {@code error} (which is free to change).
+    ///   refusal       — the model declined the passage (content policy); retry with another model
+    ///   stalled       — the stream stopped mid-reply and nothing usable arrived
+    ///   truncated     — the stream stopped mid-reply and the partial text would not parse
+    ///   timeout       — the model did not finish within the request timeout
+    ///   unreachable   — could not connect to the model server
+    ///   error         — the server answered with an error (bad model name, HTTP 4xx/5xx, ...)
+    ///   empty         — the model returned nothing and gave no reason
+    ///   no-json       — the reply contained no JSON object at all
+    ///   parse         — the reply contained JSON that could not be read even after repair
+    ///   stopped-early — the circuit breaker stopped the run at this chunk
+    static final String KIND_REFUSAL = "refusal";
+    static final String KIND_STALLED = "stalled";
+    static final String KIND_TRUNCATED = "truncated";
+    static final String KIND_TIMEOUT = "timeout";
+    static final String KIND_UNREACHABLE = "unreachable";
+    static final String KIND_ERROR = "error";
+    static final String KIND_EMPTY = "empty";
+    static final String KIND_NO_JSON = "no-json";
+    static final String KIND_PARSE = "parse";
+    static final String KIND_STOPPED_EARLY = "stopped-early";
+
+    private static final Pattern CHUNK_CONTEXT_PARTS =
+            Pattern.compile("^extract-scenes-chunk:(\\d+)/(\\d+)$");
+
+    private static void recordFailedExtraction(List<String> sink, String context, String kind,
+            String error, String rawResponse) {
         if (sink == null) return;
         try {
             Map<String, Object> failure = new LinkedHashMap<>();
             failure.put("context", context);
+            if (kind != null) failure.put("kind", kind);
+            /// Numeric chunk position alongside the context string so a client can list "passage
+            /// 7 of 15" without re-parsing the context; failedChunkNumber keeps reading context.
+            if (context != null) {
+                Matcher cm = CHUNK_CONTEXT_PARTS.matcher(context);
+                if (cm.find()) {
+                    failure.put("chunk", Integer.parseInt(cm.group(1)));
+                    failure.put("total", Integer.parseInt(cm.group(2)));
+                }
+            }
             failure.put("error", error);
             failure.put("rawResponse", rawResponse);
             failure.put("failedAt", ZonedDateTime.now().toString());
@@ -4074,6 +4129,31 @@ public class PictureBookUtil {
         Matcher mt = FAILED_CHUNK_CONTEXT.matcher(failureJson);
         if (!mt.find()) return 0;
         try { return Integer.parseInt(mt.group(1)); } catch (NumberFormatException e) { return 0; }
+    }
+
+    private static final Pattern STOPPED_EARLY_FLAG = Pattern.compile("\"stoppedEarly\"\\s*:\\s*true");
+
+    /// A breaker entry marks where the run STOPPED; the chunks from there on were never attempted
+    /// and are resumed by a plain re-run, not retried one by one. Everything else with a chunk
+    /// number is a passage that was attempted and failed, which retryFailedChunks can redo.
+    static boolean isRetryableFailure(String failureJson) {
+        return failedChunkNumber(failureJson) > 0 && !STOPPED_EARLY_FLAG.matcher(failureJson).find();
+    }
+
+    static int countRetryableFailures(List<String> failures) {
+        if (failures == null) return 0;
+        int n = 0;
+        for (String f : failures) if (isRetryableFailure(f)) n++;
+        return n;
+    }
+
+    /// Distinct 1-based chunk numbers of the retryable failures, ascending.
+    static List<Integer> retryableChunkNumbers(List<String> failures) {
+        java.util.TreeSet<Integer> out = new java.util.TreeSet<>();
+        if (failures != null) {
+            for (String f : failures) if (isRetryableFailure(f)) out.add(failedChunkNumber(f));
+        }
+        return new ArrayList<>(out);
     }
 
     /**
@@ -4337,6 +4417,7 @@ public class PictureBookUtil {
                     String sentUser = (userTpl != null) ? userTpl : "";
                     if (sentUser.length() > 4000) sentUser = sentUser.substring(0, 4000) + " …(truncated, " + userTpl.length() + " chars total)";
                     logger.warn("  refused-request user=[" + sentUser + "]");
+                    LAST_REFUSAL.set(snip);
                     return null;
                 }
                 logger.info(out);
@@ -4633,13 +4714,10 @@ public class PictureBookUtil {
                 ///
                 /// Names only, so this stays affordable: a dozen characters is a couple of hundred
                 /// bytes against the ~1.5KB per scene the reduction exists to avoid.
-                Object t = s.get("title");
-                if (t != null) c.put("title", t);
-                List<String> who = sceneCharacterNames(s);
-                if (!who.isEmpty()) c.put("characters", who);
+                c = titleOnlyScene(s);
                 /// Skip a titleless older scene entirely — an empty object would waste tokens and
                 /// could not be matched against anyway.
-                if (!c.containsKey("title")) continue;
+                if (c == null) continue;
             } else {
                 for (String f : PROMPT_SCENE_FIELDS) {
                     Object v = s.get(f);
@@ -4647,6 +4725,43 @@ public class PictureBookUtil {
                 }
             }
             out.add(c);
+        }
+        return out;
+    }
+
+    /** Title plus the names of who is in it, or null for a titleless scene. */
+    private static Map<String, Object> titleOnlyScene(Map<String, Object> s) {
+        Object t = s.get("title");
+        if (t == null) return null;
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("title", t);
+        List<String> who = sceneCharacterNames(s);
+        if (!who.isEmpty()) c.put("characters", who);
+        return c;
+    }
+
+    /**
+     * {@code previousScenes} for a passage being RE-RUN after the rest of the document was
+     * extracted. A first-pass chunk sees only the scenes before it; a retried chunk also has
+     * scenes from LATER passages on record. Those go in title-only — so the model neither
+     * re-adds a scene a later passage already produced nor loses the ability to revise one by
+     * title — and the detail window is anchored at the retried chunk, not at the end of the list,
+     * so the model is shown the same neighbourhood the first pass would have shown it.
+     *
+     * @param chunkIndex 0-based index of the chunk being retried
+     */
+    static List<Map<String, Object>> scenesForRetryPrompt(List<Map<String, Object>> scenes, int chunkIndex) {
+        List<Map<String, Object>> before = new ArrayList<>();
+        List<Map<String, Object>> after = new ArrayList<>();
+        for (Map<String, Object> s : scenes) {
+            Object sc = s.get("sourceChunk");
+            boolean later = (sc instanceof Number) && ((Number) sc).intValue() > chunkIndex;
+            (later ? after : before).add(s);
+        }
+        List<Map<String, Object>> out = scenesForPrompt(before);
+        for (Map<String, Object> s : after) {
+            Map<String, Object> c = titleOnlyScene(s);
+            if (c != null) out.add(c);
         }
         return out;
     }
@@ -5156,6 +5271,217 @@ public class PictureBookUtil {
         }
     }
 
+    /**
+     * Everything one passage's attempt(s) produced, for the caller to count, classify and record.
+     * Shared by the chunk loop and {@link #retryFailedChunks} so the two never disagree about what
+     * a refusal, a stall, a timeout or an unreachable host looks like.
+     */
+    static final class ChunkAttempt {
+        /** The parsed reply when {@link #parseOk}; may be an empty object ("no new scenes"). */
+        Map<String, Object> result;
+        boolean parseOk;
+        /** The raw reply of the LAST attempt, or null/empty when nothing came back. */
+        String llmResp;
+        /// Set when any attempt failed slowly (i.e. timed out) rather than failing immediately.
+        boolean sawSlowFailure;
+        /// Set when an attempt could not connect to the model server at all. Distinct from
+        /// sawSlowFailure on purpose: the TCP connect timeout is 10s, which is above
+        /// LLM_INFRA_FAILURE_MS, so without this an unplugged host looked like a slow one.
+        boolean sawUnreachable;
+        /// Set when the model DECLINED this passage (a conversational/content-policy refusal).
+        /// The same model will decline it again, so it is not retried here; it is recorded so
+        /// the user can resubmit just this chunk with a different model (retryFailedChunks).
+        boolean sawRefusal;
+        String lastRefusal;
+        /// Set when an attempt's stream stopped mid-reply (LiteLLM/proxy stall, idle watchdog).
+        /// Unlike a timeout this IS worth one retry: the server was answering, the reply was
+        /// simply cut off, and a fresh request usually completes.
+        boolean sawStall;
+        boolean lastAttemptStalled;
+        /// The model's own explanation for the last failure, when it gave one.
+        String lastLlmError;
+
+        boolean emptyReply() {
+            return llmResp == null || llmResp.isEmpty();
+        }
+    }
+
+    /**
+     * Extract one passage's scenes, with a bounded retry: qwen3-class models occasionally emit
+     * malformed JSON (a stray quote, a corrupted token mid-generation) — a fresh generation almost
+     * always parses. Intermediate attempts pass a NULL failure-sink so a recovered chunk leaves no
+     * spurious failedExtractions record; only the FINAL failure is recorded, by the caller via
+     * {@link #recordChunkFailure}. Classification order on an empty reply: refusal (never retried,
+     * never counted as a server failure), unreachable (never retried), stall (retried once),
+     * timeout (never retried), else an immediate failure (retried).
+     *
+     * @param cancelToken progress sink; the chunk counts as attempted once, on the first attempt
+     */
+    static ChunkAttempt attemptChunk(ChunkLlm chunkLlm, Map<String, String> vars, String chunkCtx,
+            SummarizeProgress cancelToken) {
+        ChunkAttempt a = new ChunkAttempt();
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            /// On the retry, TELL the model what went wrong. The previous version re-issued a
+            /// byte-identical request — same template, same vars, same options — so its only
+            /// mechanism was sampling luck, at ~90s a try. Truncation in particular will just
+            /// recur. A corrective instruction costs nothing and addresses the actual cause.
+            /// The wording follows the cause: a stalled stream was cut off, not malformed, and
+            /// telling the model its JSON was bad when it never finished is simply wrong.
+            Map<String, String> attemptVars = vars;
+            if (attempt > 1) {
+                attemptVars = new LinkedHashMap<>(vars);
+                String hint = a.lastAttemptStalled
+                    ? "\n\nIMPORTANT: your previous reply was cut off before it finished."
+                        + " Reply with ONLY a single complete, valid JSON object. Keep every"
+                        + " field short so the whole object fits in one reply."
+                    : "\n\nIMPORTANT: your previous reply could not be parsed as JSON (it was"
+                        + " truncated or malformed). Reply with ONLY a single complete, valid JSON"
+                        + " object. Keep every field short so the whole object fits in one reply.";
+                attemptVars.put("chunk", vars.get("chunk") + hint);
+            }
+            long attemptStart = System.currentTimeMillis();
+            /// Clear first: this thread is pooled, so a reason left over from earlier work
+            /// would otherwise be misreported as this chunk's.
+            Chat.clearLastCallError();
+            clearLastRefusal();
+            a.llmResp = chunkLlm.call(attemptVars, attempt);
+            long attemptMs = System.currentTimeMillis() - attemptStart;
+            a.lastAttemptStalled = Chat.isLastCallStalled();
+            // KI-10: count the chunk as processed once (first attempt) — progress reflects
+            // "chunks attempted", matching ChatUtil.mapSummarize's incrementCurrent() placement.
+            if (attempt == 1 && cancelToken != null) cancelToken.incrementCurrent();
+            if (a.emptyReply()) {
+                String refusal = getLastRefusal();
+                if (refusal != null) {
+                    /// The model answered — with a refusal. callLlmInternal discards the text
+                    /// (it must never become content) and returns null, which used to read as
+                    /// "no content": retried against the same model, counted toward the
+                    /// unreachable-server breaker, reported to the user as the server's fault.
+                    a.sawRefusal = true;
+                    a.lastRefusal = refusal;
+                    a.lastLlmError = "The model declined to process this passage";
+                    logger.warn("Chunk " + chunkCtx + ": the model declined the passage after "
+                            + attemptMs + "ms — NOT retrying with the same model: "
+                            + refusal.substring(0, Math.min(160, refusal.length())));
+                    break;
+                }
+                /// Typed first: Chat says whether it could connect at all. Only then does the
+                /// wall-clock heuristic apply — a FAST empty reply suggests the server answered
+                /// with an error; a slow one is a timeout against a live-but-loaded model. See
+                /// LLM_INFRA_FAILURE_MS. The connect timeout (10s) sits ABOVE that threshold, so
+                /// an unreachable host measured by time alone reads as "slow but alive" — which
+                /// is how a chapter's 14 chunks were all skipped in 140s and reported complete.
+                boolean unreachable = Chat.isLastCallUnreachable();
+                boolean stalled = !unreachable && a.lastAttemptStalled;
+                boolean slowFailure = !unreachable && !stalled && (attemptMs >= LLM_INFRA_FAILURE_MS);
+                if (unreachable) a.sawUnreachable = true;
+                if (stalled) a.sawStall = true;
+                if (slowFailure) a.sawSlowFailure = true;
+                String why = Chat.getLastCallError();
+                if (why != null) a.lastLlmError = why;
+                logger.error("No LLM content for " + chunkCtx + " (attempt " + attempt
+                        + ", " + attemptMs + "ms)"
+                        + (why != null ? " — " + why : " — no reason reported"));
+                if (unreachable) {
+                    /// Nothing is listening; a retry can only burn another connect timeout.
+                    logger.warn("Chunk " + chunkCtx + ": model server unreachable after "
+                            + attemptMs + "ms — NOT retrying");
+                    break;
+                }
+                if (stalled) {
+                    /// A stall is the one slow failure that IS retried, once. The idle
+                    /// watchdog closed a stream the server had stopped feeding (a LiteLLM
+                    /// queue stall, a proxy dropping a long response); the exchange is
+                    /// already torn down, so unlike a timeout the retry does not queue behind
+                    /// a still-running generation.
+                    if (attempt < 2) {
+                        logger.warn("Chunk " + chunkCtx + ": stream stalled mid-reply after "
+                                + attemptMs + "ms — retrying once");
+                        continue;
+                    }
+                    logger.warn("Chunk " + chunkCtx + ": stream stalled again on the retry — giving up on this chunk");
+                    break;
+                }
+                if (slowFailure) {
+                    /// NEVER retry a TIMEOUT. The retry above exists for MALFORMED JSON (see the
+                    /// comment at the head of this loop) — a fresh generation usually parses. A
+                    /// timeout is not that: the request did not fail because of sampling luck, it
+                    /// failed because the server could not finish in time, and re-issuing it
+                    /// cannot succeed for the reason it failed. Worse, AM7 does not (did not)
+                    /// abort the outbound exchange on give-up, so the first generation is STILL
+                    /// occupying the model server's slot; attempt 2 queues a second one behind it
+                    /// and doubles the load on an already-saturated server. Measured 2026-09-14:
+                    /// two threads looping timeout->retry left Ollama unable to answer a trivial
+                    /// "Say OK" within 90s. Note also that attempt 2 appends a "your previous
+                    /// reply could not be parsed as JSON" instruction, which is factually wrong
+                    /// for a timeout and only makes the prompt larger.
+                    /// Give up on THIS CHUNK only — the outer loop deliberately continues to the
+                    /// next chunk (see the circuit breaker there), which stays unchanged.
+                    logger.warn("Chunk " + chunkCtx + " timed out after " + attemptMs
+                            + "ms — NOT retrying (a timeout cannot be fixed by repeating the call)");
+                    break;
+                }
+                continue;
+            }
+            boolean[] ok = new boolean[1];
+            Map<String, Object> parsed = parseLlmJsonObject(a.llmResp, chunkCtx, null, ok);
+            /// Break on PARSE SUCCESS, not on non-emptiness. A validly-parsed empty object means
+            /// "no new scenes in this chunk" — a correct answer — and retrying it wasted a full
+            /// generation and then recorded a bogus failure.
+            if (ok[0]) { a.result = parsed; a.parseOk = true; break; }
+            if (a.lastAttemptStalled) {
+                /// Partial text from a stream that was cut off. Unparseable because it is
+                /// incomplete, not because the model wrote bad JSON.
+                a.sawStall = true;
+                if (attempt < 2) logger.warn("Chunk " + chunkCtx + " stream stalled mid-reply ("
+                        + a.llmResp.length() + " chars received) — retrying once");
+            } else if (attempt < 2) {
+                logger.warn("Chunk " + chunkCtx + " returned unparseable JSON — retrying once");
+            }
+        }
+        return a;
+    }
+
+    /**
+     * Record the final, unrecoverable failure of one passage (re-parsing with the real sink so the
+     * raw text is captured for inspection).
+     *
+     * <p>The null/empty-response case is recorded too. Previously this was guarded by
+     * {@code llmResp != null && !llmResp.isEmpty()}, so a chunk where BOTH attempts returned
+     * nothing (a conversational refusal, a hard infra failure) produced no failedExtractions entry
+     * at all and vanished behind a single WARN.
+     */
+    static void recordChunkFailure(List<String> failedExtractions, String chunkCtx, ChunkAttempt a) {
+        boolean emptyReply = a.emptyReply();
+        if (emptyReply && a.sawRefusal) {
+            /// The refusal text goes in rawResponse so the user can see WHAT the model said; it
+            /// is never returned as content.
+            recordFailedExtraction(failedExtractions, chunkCtx, KIND_REFUSAL,
+                "The model declined to process this passage (content policy). Retry it with a different model.",
+                a.lastRefusal);
+        } else if (emptyReply && (a.lastLlmError != null || a.sawUnreachable || a.sawStall || a.sawSlowFailure)) {
+            /// The generic "LLM returned no content" hid the cause from the client: a chunk lost
+            /// to an unreachable host, a 900s timeout and a mistyped model name all read
+            /// identically. Chat's own message says which it was.
+            String kind = a.sawUnreachable ? KIND_UNREACHABLE
+                : a.sawStall ? KIND_STALLED
+                : a.sawSlowFailure ? KIND_TIMEOUT
+                : KIND_ERROR;
+            String error = a.lastLlmError != null ? a.lastLlmError
+                : a.sawUnreachable ? "Could not connect to the model server"
+                : a.sawStall ? "The model stopped sending data mid-reply"
+                : "The model did not respond in time";
+            recordFailedExtraction(failedExtractions, chunkCtx, kind, error, null);
+        } else if (!emptyReply && a.lastAttemptStalled) {
+            recordFailedExtraction(failedExtractions, chunkCtx, KIND_TRUNCATED,
+                "The model's reply was cut off mid-stream (" + a.llmResp.length()
+                + " characters received) and the partial text could not be parsed as JSON",
+                a.llmResp);
+        } else {
+            parseLlmJsonObject(a.llmResp, chunkCtx, failedExtractions);
+        }
+    }
+
     private static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
             SummarizeProgress cancelToken) {
         return extractChunkedInternal(user, chatConfig, text, cancelToken, null, null, null);
@@ -5220,28 +5546,50 @@ public class PictureBookUtil {
      * offsets are used ONLY to key the checkpoint (name + guard); the text is ALREADY sliced by the
      * caller, so they are not applied to {@code text} again here.
      */
+    static final int EXTRACT_CHUNK_SIZE = 2000;
+    static final int EXTRACT_CHUNK_OVERLAP = 200;
+
+    /**
+     * Cut the source text into the overlapping passages the chunk loop extracts from. Deterministic
+     * for a given text, which is what both the checkpoint guard ({@link #loadExtractCheckpoint}
+     * re-checks size/overlap/count) and {@link #retryFailedChunks} depend on: a retried passage must
+     * be the SAME text the original run failed on, so the retry re-chunks through this one method
+     * rather than carrying its own copy of the algorithm.
+     */
+    static List<String> chunkText(String text) {
+        List<String> chunks = new ArrayList<>();
+        int pos = 0;
+        while (pos < text.length()) {
+            int end = Math.min(pos + EXTRACT_CHUNK_SIZE, text.length());
+            if (end < text.length()) {
+                int lastPeriod = text.lastIndexOf('.', end);
+                int lastNewline = text.lastIndexOf('\n', end);
+                int breakAt = Math.max(lastPeriod, lastNewline);
+                if (breakAt > pos + EXTRACT_CHUNK_SIZE / 2) end = breakAt + 1;
+            }
+            chunks.add(text.substring(pos, end));
+            pos = end - EXTRACT_CHUNK_OVERLAP;
+            if (pos < 0) pos = 0;
+            if (end >= text.length()) break;
+        }
+        return chunks;
+    }
+
+    /** The real per-chunk model call: the prompt is resolved ONCE and reused for every chunk. */
+    private static ChunkLlm defaultChunkLlm(BaseRecord user, BaseRecord chatConfig) {
+        ResolvedPrompt chunkPrompt = resolvePrompt(user, chatConfig, "pictureBook.extract-chunk");
+        return (vars, attempt) -> callLlmResolved(user, chatConfig, "pictureBook.extract-chunk",
+                vars, chunkPrompt);
+    }
+
     @SuppressWarnings("unchecked")
     static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
             SummarizeProgress cancelToken, List<String> failedExtractions, String workObjectId,
             boolean[] reachedEndOut, ChunkLlm llm, List<String> seedRoster,
             Integer startOffset, Integer endOffset) {
-        int chunkSize = 2000;
-        int overlap = 200;
-        List<String> chunks = new ArrayList<>();
-        int pos = 0;
-        while (pos < text.length()) {
-            int end = Math.min(pos + chunkSize, text.length());
-            if (end < text.length()) {
-                int lastPeriod = text.lastIndexOf('.', end);
-                int lastNewline = text.lastIndexOf('\n', end);
-                int breakAt = Math.max(lastPeriod, lastNewline);
-                if (breakAt > pos + chunkSize / 2) end = breakAt + 1;
-            }
-            chunks.add(text.substring(pos, end));
-            pos = end - overlap;
-            if (pos < 0) pos = 0;
-            if (end >= text.length()) break;
-        }
+        int chunkSize = EXTRACT_CHUNK_SIZE;
+        int overlap = EXTRACT_CHUNK_OVERLAP;
+        List<String> chunks = chunkText(text);
 
         // KI-10: populate progress (total/current), same as ChatUtil's mapSummarize/reduceSummaries
         // do with their own SummarizeProgress — lets a caller/test observe how many chunks have
@@ -5259,14 +5607,7 @@ public class PictureBookUtil {
         // See ResolvedPrompt / resolvePrompt for why the lookup chain itself must stay intact.
         // Only the real LLM path needs the composed prompt; a test seam supplies replies directly
         // and must not require a resolvable chat config or a live template lookup.
-        final ChunkLlm chunkLlm;
-        if (llm != null) {
-            chunkLlm = llm;
-        } else {
-            ResolvedPrompt chunkPrompt = resolvePrompt(user, chatConfig, "pictureBook.extract-chunk");
-            chunkLlm = (vars, attempt) -> callLlmResolved(user, chatConfig, "pictureBook.extract-chunk",
-                    vars, chunkPrompt);
-        }
+        final ChunkLlm chunkLlm = (llm != null) ? llm : defaultChunkLlm(user, chatConfig);
 
         // Incremental persistence + resume. Nothing here used to be written until the final chunk,
         // so a dropped connection or a container restart discarded the whole run (measured
@@ -5422,102 +5763,24 @@ public class PictureBookUtil {
             // almost always parses. Intermediate attempts pass a NULL failure-sink so a recovered
             // chunk leaves no spurious failedExtractions record; only the FINAL failure is recorded.
             String chunkCtx = "extract-scenes-chunk:" + (ci + 1) + "/" + chunks.size();
-            /// Set when any attempt for THIS chunk failed slowly (i.e. timed out) rather than
-            /// failing immediately. Reset per chunk.
-            boolean sawSlowFailure = false;
-            /// Set when an attempt for THIS chunk could not connect to the model server at all.
-            /// Distinct from sawSlowFailure on purpose: the TCP connect timeout is 10s, which is
-            /// above LLM_INFRA_FAILURE_MS, so without this an unplugged host looked like a slow one.
-            boolean sawUnreachable = false;
-            /// The model's own explanation for the last failure, when it gave one.
-            String lastLlmError = null;
-            Map<String, Object> chunkResult = null;
-            String llmResp = null;
-            boolean parseOk = false;
-            for (int attempt = 1; attempt <= 2; attempt++) {
-                /// On the retry, TELL the model what went wrong. The previous version re-issued a
-                /// byte-identical request — same template, same vars, same options — so its only
-                /// mechanism was sampling luck, at ~90s a try. Truncation in particular will just
-                /// recur. A corrective instruction costs nothing and addresses the actual cause.
-                Map<String, String> attemptVars = vars;
-                if (attempt > 1) {
-                    attemptVars = new LinkedHashMap<>(vars);
-                    attemptVars.put("chunk", vars.get("chunk")
-                        + "\n\nIMPORTANT: your previous reply could not be parsed as JSON (it was"
-                        + " truncated or malformed). Reply with ONLY a single complete, valid JSON"
-                        + " object. Keep every field short so the whole object fits in one reply.");
-                }
-                long attemptStart = System.currentTimeMillis();
-                /// Clear first: this thread is pooled, so a reason left over from earlier work
-                /// would otherwise be misreported as this chunk's.
-                Chat.clearLastCallError();
-                llmResp = chunkLlm.call(attemptVars, attempt);
-                long attemptMs = System.currentTimeMillis() - attemptStart;
-                // KI-10: count the chunk as processed once (first attempt) — progress reflects
-                // "chunks attempted", matching ChatUtil.mapSummarize's incrementCurrent() placement.
-                if (attempt == 1 && cancelToken != null) cancelToken.incrementCurrent();
-                if (llmResp == null || llmResp.isEmpty()) {
-                    /// Typed first: Chat says whether it could connect at all. Only then does the
-                    /// wall-clock heuristic apply — a FAST empty reply suggests the server answered
-                    /// with an error; a slow one is a timeout against a live-but-loaded model. See
-                    /// LLM_INFRA_FAILURE_MS. The connect timeout (10s) sits ABOVE that threshold, so
-                    /// an unreachable host measured by time alone reads as "slow but alive" — which
-                    /// is how a chapter's 14 chunks were all skipped in 140s and reported complete.
-                    boolean unreachable = Chat.isLastCallUnreachable();
-                    boolean slowFailure = !unreachable && (attemptMs >= LLM_INFRA_FAILURE_MS);
-                    if (unreachable) {
-                        sawUnreachable = true;
-                    }
-                    if (slowFailure) {
-                        sawSlowFailure = true;
-                    }
-                    String why = Chat.getLastCallError();
-                    if (why != null) lastLlmError = why;
-                    logger.error("No LLM content for " + chunkCtx + " (attempt " + attempt
-                            + ", " + attemptMs + "ms)"
-                            + (why != null ? " — " + why : " — no reason reported"));
-                    if (unreachable) {
-                        /// Nothing is listening; a retry can only burn another connect timeout.
-                        logger.warn("Chunk " + chunkCtx + ": model server unreachable after "
-                                + attemptMs + "ms — NOT retrying");
-                        break;
-                    }
-                    if (slowFailure) {
-                        /// NEVER retry a TIMEOUT. The retry above exists for MALFORMED JSON (see the
-                        /// comment at the head of this loop) — a fresh generation usually parses. A
-                        /// timeout is not that: the request did not fail because of sampling luck, it
-                        /// failed because the server could not finish in time, and re-issuing it
-                        /// cannot succeed for the reason it failed. Worse, AM7 does not (did not)
-                        /// abort the outbound exchange on give-up, so the first generation is STILL
-                        /// occupying the model server's slot; attempt 2 queues a second one behind it
-                        /// and doubles the load on an already-saturated server. Measured 2026-09-14:
-                        /// two threads looping timeout->retry left Ollama unable to answer a trivial
-                        /// "Say OK" within 90s. Note also that attempt 2 appends a "your previous
-                        /// reply could not be parsed as JSON" instruction, which is factually wrong
-                        /// for a timeout and only makes the prompt larger.
-                        /// Give up on THIS CHUNK only — the outer loop deliberately continues to the
-                        /// next chunk (see the circuit breaker below), which stays unchanged.
-                        logger.warn("Chunk " + chunkCtx + " timed out after " + attemptMs
-                                + "ms — NOT retrying (a timeout cannot be fixed by repeating the call)");
-                        break;
-                    }
-                    continue;
-                }
-                boolean[] ok = new boolean[1];
-                Map<String, Object> parsed = parseLlmJsonObject(llmResp, chunkCtx, null, ok);
-                /// Break on PARSE SUCCESS, not on non-emptiness. A validly-parsed empty object means
-                /// "no new scenes in this chunk" — a correct answer — and retrying it wasted a full
-                /// generation and then recorded a bogus failure.
-                if (ok[0]) { chunkResult = parsed; parseOk = true; break; }
-                if (attempt < 2) logger.warn("Chunk " + chunkCtx + " returned unparseable JSON — retrying once");
-            }
-            if (llmResp == null || llmResp.isEmpty()) {
-                lastChunkUnreachable = sawUnreachable;
-                if (sawUnreachable) {
+            ChunkAttempt a = attemptChunk(chunkLlm, vars, chunkCtx, cancelToken);
+            if (a.emptyReply()) {
+                lastChunkUnreachable = a.sawUnreachable;
+                if (a.sawUnreachable) {
                     /// Could not connect. Counts toward the breaker exactly like an immediate
                     /// failure — this is the case the breaker exists for.
                     consecutiveEmptyResponses++;
-                } else if (sawSlowFailure) {
+                } else if (a.sawRefusal) {
+                    /// The model is up and answering; it just will not do this passage. Not a
+                    /// server failure, so it must not help trip the breaker.
+                    consecutiveEmptyResponses = 0;
+                } else if (a.sawStall) {
+                    /// The server was streaming and then went quiet. It is alive; record the
+                    /// chunk and continue exactly as for a timeout.
+                    consecutiveEmptyResponses = 0;
+                    logger.warn("Chunk " + chunkCtx + " stalled mid-reply but the model server is"
+                            + " responding — recording the failure and continuing");
+                } else if (a.sawSlowFailure) {
                     /// Timed out against a live server. Record the chunk as failed (below) and
                     /// keep going — aborting the rest of the document because the model is having
                     /// a slow spell throws away every remaining passage for no reason.
@@ -5544,13 +5807,13 @@ public class PictureBookUtil {
                 /// mistyped model name (HTTP 404 "model 'x' not found" in ~12ms), and a user who
                 /// made a typo was told their hardware had failed. The one case where "down" IS
                 /// the truth is a typed connect failure, and Chat's message already names the host.
-                String what = sawUnreachable
+                String what = a.sawUnreachable
                         ? " consecutive chunks could not reach the model server"
                         : " consecutive chunks failed immediately";
                 logger.error("extractChunkedInternal: " + consecutiveEmptyResponses + what
                         + " at " + (ci + 1) + "/" + chunks.size()
                         + " — stopping and keeping the checkpoint (" + sceneList.size() + " scenes). "
-                        + (lastLlmError != null ? "Reason: " + lastLlmError
+                        + (a.lastLlmError != null ? "Reason: " + a.lastLlmError
                             : "No reason was reported by the model server."));
                 /// Tell the CLIENT, not just the log. Without this the caller sees a run that
                 /// stopped early with no explanation — and if it stopped on chunk 1 it sees an
@@ -5560,10 +5823,12 @@ public class PictureBookUtil {
                     /// and "model 'qweb3:8b' not found" is actionable where "unreachable" is not.
                     /// "stoppedEarly" is the typed signal the client keys its abort on; the prose
                     /// is for the user and may change.
-                    String reason = (lastLlmError != null) ? lastLlmError
+                    String reason = (a.lastLlmError != null) ? a.lastLlmError
                         : "the model server did not respond and gave no reason";
                     failedExtractions.add("{\"context\":\"" + chunkCtx
-                        + "\",\"stoppedEarly\":true"
+                        + "\",\"kind\":\"" + KIND_STOPPED_EARLY + "\""
+                        + ",\"chunk\":" + (ci + 1) + ",\"total\":" + chunks.size()
+                        + ",\"stoppedEarly\":true"
                         + ",\"error\":\"" + consecutiveEmptyResponses + what + ". " + jsonEscape(reason)
                         + " Extraction stopped early; fix the cause and re-run to resume from the"
                         + " checkpoint.\"}");
@@ -5576,32 +5841,18 @@ public class PictureBookUtil {
                 reachedEnd = false;
                 break;
             }
-            if (!parseOk) {
-                // Record the final, unrecoverable failure (re-parse with the real sink so the raw text
-                // is captured for inspection), then skip this chunk.
-                //
-                // The null/empty-response case is recorded too. Previously this was guarded by
-                // `llmResp != null && !llmResp.isEmpty()`, so a chunk where BOTH attempts returned
-                // nothing (a conversational refusal, a hard infra failure) produced no
-                // failedExtractions entry at all and vanished behind a single WARN.
-                if ((llmResp == null || llmResp.isEmpty()) && lastLlmError != null) {
-                    /// The generic "LLM returned no content" hid the cause from the client: a
-                    /// chunk lost to an unreachable host, a 900s timeout and a mistyped model name
-                    /// all read identically. Chat's own message says which it was.
-                    recordFailedExtraction(failedExtractions, chunkCtx, lastLlmError, null);
-                } else {
-                    parseLlmJsonObject(llmResp, chunkCtx, failedExtractions);
-                }
+            if (!a.parseOk) {
+                recordChunkFailure(failedExtractions, chunkCtx, a);
                 logger.warn("Chunk " + chunkCtx + " still unparseable after retry — skipping");
                 continue;
             }
-            if (chunkResult == null || chunkResult.isEmpty()) {
+            if (a.result == null || a.result.isEmpty()) {
                 /// Parsed cleanly to an empty object: nothing to merge, and NOT a failure.
                 logger.info("Chunk " + chunkCtx + " reported no new scenes");
                 continue;
             }
 
-            mergeChunkResult(sceneList, chunkResult, chunks.get(ci), ci);
+            mergeChunkResult(sceneList, a.result, chunks.get(ci), ci);
             logger.info("Chunk " + (ci + 1) + "/" + chunks.size() + " processed: " + sceneList.size() + " scenes total");
             // Checkpoint. `ci + 1` chunks are now fully merged into sceneList, so that is the
             // index a resume must start from. Written every EXTRACT_CHECKPOINT_EVERY chunks and
@@ -5630,10 +5881,13 @@ public class PictureBookUtil {
         // finish all return normally with a scene list, which is precisely how an interrupted run
         // came to delete its own checkpoint.
         //
-        // Cleared only when the loop reached the end. Per-chunk parse failures do NOT block the
-        // clear — they are already surfaced to the client in failedExtractions, the run genuinely
-        // reached the end of the text, and chunksProcessed has advanced past them, so keeping the
-        // checkpoint would leave a record that can never be consumed or cleared.
+        // Cleared only when the loop reached the end AND no passage is left in a failed state.
+        // A run that reached the end with per-chunk failures (a refusal, a stall, a timeout) keeps
+        // its checkpoint with chunksProcessed = total: the scenes and the failure records are
+        // then on the server, so retryFailedChunks can re-run ONLY those passages — with a
+        // different model if the cause was a refusal — and merge the result, instead of the user
+        // having to resubmit the whole document. Such a checkpoint is consumable (a plain re-run
+        // returns it as-is, a retry shrinks it) and is cleared the moment no failures remain.
         /// Re-check interruption AFTER the loop. The top-of-loop guard cannot see an interrupt
         /// that lands during the FINAL chunk: that chunk's LLM call returns null, one empty
         /// response is not enough to trip the circuit breaker, the `!parseOk` branch continues, the
@@ -5665,10 +5919,18 @@ public class PictureBookUtil {
         }
         if (groupPath != null) {
             if (reachedEnd) {
-                // N-series item 5 (COMPLETION CLEAR): clear THIS chapter's own range-suffixed
-                // checkpoint, not the bare note — the no-range overload would clear a sibling
-                // chapter's (or the whole-document) checkpoint instead. null/null = bare note = legacy.
-                clearExtractCheckpointAt(user, groupPath, workObjectId, startOffset, endOffset);
+                int remaining = countRetryableFailures(failedExtractions);
+                if (remaining > 0) {
+                    checkpoint.chunksProcessed = chunks.size();
+                    saveExtractCheckpoint(user, groupPath, workObjectId, checkpoint);
+                    logger.info("Extraction for " + workObjectId + " reached the end with " + remaining
+                            + " failed passage(s) — checkpoint kept so they can be retried individually");
+                } else {
+                    // N-series item 5 (COMPLETION CLEAR): clear THIS chapter's own range-suffixed
+                    // checkpoint, not the bare note — the no-range overload would clear a sibling
+                    // chapter's (or the whole-document) checkpoint instead. null/null = bare note = legacy.
+                    clearExtractCheckpointAt(user, groupPath, workObjectId, startOffset, endOffset);
+                }
             } else {
                 logger.info("Extraction for " + workObjectId + " stopped early at chunk "
                         + checkpoint.chunksProcessed + "/" + chunks.size()
@@ -7758,6 +8020,186 @@ public class PictureBookUtil {
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         OllamaModelUtil.unloadAll();
         return new ScenesOnlyResult(scenes, false, failedExtractions);
+    }
+
+    /**
+     * Re-run ONLY the passages that failed in a previous chunked extraction of this work (and
+     * range), merging what they yield into the scenes already on the server.
+     *
+     * <p>A chunked run that reaches the end with per-passage failures keeps its checkpoint (see the
+     * completion block of {@link #extractChunkedInternal}): the scenes, and one typed failure
+     * record per failed passage. Before this the only recourse was to resubmit the whole document,
+     * which for a content-policy refusal just failed the same way — the same model declines the
+     * same passage. This re-chunks the work's text through the identical algorithm, re-attempts
+     * each retryable failure (one that names a chunk and is not the breaker's stopped-early
+     * marker) with the model behind {@code chatConfigName} — normally a DIFFERENT one — and merges
+     * each recovered passage into the stored scene list, with its scenes re-ordered into document
+     * position. Passages that fail again have their record REPLACED with the new reason. The
+     * checkpoint is rewritten with the result, and cleared the moment no retryable failure
+     * remains on a complete run.
+     *
+     * <p>A checkpoint that has NOT reached the end (the breaker tripped, or the run was cancelled)
+     * is still accepted: the failures it holds below {@code chunksProcessed} are retried and the
+     * rest is left for a plain re-run to resume, which the result's {@code complete=false} tells
+     * the caller.
+     *
+     * @throws PictureBookException 404 when the work does not exist or no checkpoint for this
+     *                              text/range exists (nothing to retry; run the extraction first)
+     */
+    public static ScenesOnlyResult retryFailedChunks(BaseRecord user, String workObjectId,
+            String chatConfigName, SummarizeProgress cancelToken, String seriesObjectId,
+            Integer startOffset, Integer endOffset) {
+        return retryFailedChunks(user, workObjectId, chatConfigName, cancelToken, seriesObjectId,
+                startOffset, endOffset, null);
+    }
+
+    /** @param llm the per-passage model call; null means the real one. See {@link ChunkLlm}. */
+    static ScenesOnlyResult retryFailedChunks(BaseRecord user, String workObjectId,
+            String chatConfigName, SummarizeProgress cancelToken, String seriesObjectId,
+            Integer startOffset, Integer endOffset, ChunkLlm llm) {
+        BaseRecord work = findWork(user, workObjectId);
+        if (work == null) throw new PictureBookException(404, "Work not found");
+
+        String text = extractWorkText(user, work);
+        if (text == null || text.isEmpty()) {
+            throw new PictureBookException(400, "No text content found in work");
+        }
+        /// Same slice as extractScenesOnly, so the chunks — and the checkpoint note name — match.
+        int[] range = resolveExtractRange(text.length(), startOffset, endOffset);
+        Integer cpStart = null;
+        Integer cpEnd = null;
+        if (range != null) {
+            text = text.substring(range[0], range[1]);
+            cpStart = range[0];
+            cpEnd = range[1];
+        }
+        List<String> chunks = chunkText(text);
+        String groupPath = findWorkGroupPath(user, workObjectId);
+        ExtractCheckpoint cp = (groupPath == null) ? null : loadExtractCheckpoint(user, groupPath,
+                workObjectId, cpStart, cpEnd, extractTextHash(text), EXTRACT_CHUNK_SIZE,
+                EXTRACT_CHUNK_OVERLAP, chunks.size());
+        if (cp == null) {
+            throw new PictureBookException(404,
+                    "No extraction state is stored for this work; run the extraction first");
+        }
+        List<Map<String, Object>> sceneList = cp.scenes;
+        List<String> failedExtractions = cp.failedExtractions;
+        for (Map<String, Object> s : sceneList) {
+            Object sc = s.get("sourceChunk");
+            if (!(sc instanceof Number)) continue;
+            int sci = ((Number) sc).intValue();
+            if (sci >= 0 && sci < chunks.size()) s.put("sourceText", chunks.get(sci));
+        }
+        /// Only passages the original run actually attempted. On an incomplete checkpoint the
+        /// chunks past chunksProcessed were never reached and belong to a resume, not a retry.
+        List<Integer> toRetry = new ArrayList<>();
+        for (int n : retryableChunkNumbers(failedExtractions)) {
+            if (n <= cp.chunksProcessed && n <= chunks.size()) toRetry.add(n);
+        }
+        boolean complete = cp.chunksProcessed >= chunks.size();
+        if (toRetry.isEmpty()) {
+            logger.info("retryFailedChunks: nothing to retry for " + workObjectId);
+            return new ScenesOnlyResult(sceneList, true, failedExtractions, complete);
+        }
+
+        BaseRecord chatConfig = null;
+        if (chatConfigName != null) {
+            chatConfig = ChatUtil.resolveConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatConfigName, null);
+        }
+        final ChunkLlm chunkLlm = (llm != null) ? llm : defaultChunkLlm(user, chatConfig);
+        List<String> seedRoster = resolveSeriesRoster(user, seriesObjectId,
+                ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
+        if (cancelToken != null) {
+            cancelToken.setTotal(toRetry.size());
+            cancelToken.setCurrent(0);
+        }
+        logger.info("retryFailedChunks: re-running " + toRetry.size() + " failed passage(s) of "
+                + chunks.size() + " for " + workObjectId + " with chat config " + chatConfigName);
+
+        int recovered = 0;
+        for (int i = 0; i < toRetry.size(); i++) {
+            int n = toRetry.get(i);
+            int ci = n - 1;
+            if ((cancelToken != null && cancelToken.isCancelled()) || Thread.currentThread().isInterrupted()) {
+                /// Stop calling the model; the passages not yet reached keep their records.
+                logger.warn("retryFailedChunks: stopped after " + i + "/" + toRetry.size()
+                        + " passage(s) — keeping the remaining failure records");
+                break;
+            }
+            PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_awesome",
+                    "Retrying passage " + n + "/" + chunks.size() + " (" + (i + 1) + " of " + toRetry.size() + ")...");
+            Map<String, String> vars = new LinkedHashMap<>();
+            vars.put("previousScenes", sceneList.isEmpty() ? "[]"
+                    : JSONUtil.exportObject(scenesForRetryPrompt(sceneList, ci)));
+            List<String> roster = mergeRoster(seedRoster, knownCharacterNames(sceneList));
+            vars.put("knownCharacters", roster.isEmpty() ? "(none yet)" : String.join(", ", roster));
+            vars.put("chunk", chunks.get(ci));
+            String chunkCtx = "extract-scenes-chunk:" + n + "/" + chunks.size();
+            /// Drop the old record now, after the cancel check: whatever this attempt produces —
+            /// scenes, or a fresh failure with the current reason — supersedes it.
+            failedExtractions.removeIf(f -> isRetryableFailure(f) && failedChunkNumber(f) == n);
+            ChunkAttempt a = attemptChunk(chunkLlm, vars, chunkCtx, cancelToken);
+            if (!a.parseOk) {
+                recordChunkFailure(failedExtractions, chunkCtx, a);
+                logger.warn("retryFailedChunks: passage " + chunkCtx + " failed again");
+                if (a.sawUnreachable) {
+                    /// Nothing is listening; every remaining passage would fail the same way
+                    /// and overwrite a real reason (a refusal) with "unreachable".
+                    logger.error("retryFailedChunks: model server unreachable — stopping with "
+                            + (toRetry.size() - i - 1) + " passage(s) not retried");
+                    break;
+                }
+                continue;
+            }
+            recovered++;
+            if (a.result == null || a.result.isEmpty()) {
+                logger.info("retryFailedChunks: passage " + chunkCtx + " reported no new scenes");
+                continue;
+            }
+            mergeChunkResult(sceneList, a.result, chunks.get(ci), ci);
+            logger.info("retryFailedChunks: passage " + chunkCtx + " recovered: " + sceneList.size() + " scenes total");
+        }
+
+        /// mergeChunkResult appends; a passage retried from the middle of the document must land
+        /// its scenes back among their neighbours. Stable, so the first pass's order is untouched
+        /// and a scene with no provenance keeps the position of the scene before it.
+        List<Integer> keys = new ArrayList<>(sceneList.size());
+        int lastKey = 0;
+        for (Map<String, Object> s : sceneList) {
+            Object sc = s.get("sourceChunk");
+            if (sc instanceof Number) lastKey = ((Number) sc).intValue();
+            keys.add(lastKey);
+        }
+        List<Integer> order = new ArrayList<>(sceneList.size());
+        for (int i = 0; i < sceneList.size(); i++) order.add(i);
+        order.sort(java.util.Comparator.comparingInt(keys::get));
+        List<Map<String, Object>> sorted = new ArrayList<>(sceneList.size());
+        for (int idx : order) sorted.add(sceneList.get(idx));
+        sceneList.clear();
+        sceneList.addAll(sorted);
+        for (int i = 0; i < sceneList.size(); i++) {
+            Map<String, Object> scene = sceneList.get(i);
+            scene.put("index", i);
+            if (scene.get("blurb") == null && scene.get("summary") != null) {
+                scene.put("blurb", scene.get("summary"));
+            }
+        }
+        PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
+
+        int remaining = countRetryableFailures(failedExtractions);
+        if (complete && remaining == 0) {
+            clearExtractCheckpointAt(user, groupPath, workObjectId, cpStart, cpEnd);
+            logger.info("retryFailedChunks: all passages of " + workObjectId + " recovered ("
+                    + recovered + " this run) — checkpoint cleared");
+        } else {
+            cp.scenes = sceneList;
+            cp.failedExtractions = failedExtractions;
+            saveExtractCheckpoint(user, groupPath, workObjectId, cp);
+            logger.info("retryFailedChunks: " + recovered + " passage(s) recovered, " + remaining
+                    + " still failed for " + workObjectId + " — checkpoint kept");
+        }
+        OllamaModelUtil.unloadAll();
+        return new ScenesOnlyResult(sceneList, true, failedExtractions, complete);
     }
 
     /**

@@ -195,10 +195,15 @@ public final class AsyncJobRegistry {
 				return;
 			}
 			finish(job, AsyncJob.Status.COMPLETED, result, null);
-		} catch (Exception e) {
+		} catch (Throwable t) {
+			/// Throwable, not Exception: executor().submit() wraps the runnable in a FutureTask whose
+			/// Future nobody reads, so an Error escaping here is swallowed silently and the job stays
+			/// RUNNING forever (sweep never evicts a non-terminal job). Measured 2026-10-01: a
+			/// pb.retryFailedChunks job logged its last line, its worker went back to the pool idle,
+			/// and GET /rest/job/{id} reported running/non-terminal 20 minutes later.
 			logger.error("Async job failed: kind=" + job.getKind() + " jobId=" + job.getJobId()
-				+ " — " + e.getMessage(), e);
-			finish(job, AsyncJob.Status.FAILED, null, e.getMessage() == null ? e.toString() : e.getMessage());
+				+ " — " + t, t);
+			finish(job, AsyncJob.Status.FAILED, null, t.getMessage() == null ? t.toString() : t.getMessage());
 		}
 	}
 
