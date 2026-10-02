@@ -65,6 +65,9 @@ import jakarta.ws.rs.core.Response;
  * Endpoints under /olio/picture-book:
  *   POST /{workObjectId}/extract              — Full LLM extraction: scenes + characters → creates ~/PictureBooks/{bookName}/
  *   POST /{workObjectId}/extract-scenes-only  — Scene extraction only (no character creation)
+ *   GET  /extract-checkpoints                 — The caller's unfinished extractions (checkpoint notes with no book yet)
+ *   GET  /{workObjectId}/extract-checkpoints  — One document's checkpoints (whole-document + chapter ranges)
+ *   DELETE /{workObjectId}/extract-checkpoints?startOffset=&endOffset= — Discard a checkpoint without re-extracting
  *   POST /scene/{sceneObjectId}/generate      — Generate SD image for one scene
  *   POST /scene/{sceneObjectId}/blurb         — Regenerate scene blurb via LLM
  *   GET  /{bookObjectId}/scenes               — Ordered scene list from .pictureBookMeta (bookObjectId = book group objectId OR olio.pb.book objectId)
@@ -424,6 +427,62 @@ public class PictureBookService {
             return Response.status(500).entity("{\"error\":\"Failed to build retry result\"}").build();
         } finally {
             PictureBookCancelRegistry.unregister(user, workObjectId, cancelToken);
+        }
+    }
+
+    /**
+     * GET /extract-checkpoints
+     * Every unfinished extraction the caller owns — the checkpoint notes a cancelled, interrupted
+     * or partially-failed run left behind before any book existed. Rows: workObjectId, workName,
+     * workMissing, startOffset, endOffset, chunksProcessed, totalChunks, sceneCount, failedCount,
+     * complete, updatedAt. Scene payloads are not included.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/extract-checkpoints")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listExtractCheckpoints(@Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        return Response.status(200)
+            .entity(JSONUtil.exportObject(PictureBookUtil.listExtractCheckpoints(user))).build();
+    }
+
+    /**
+     * GET /{workObjectId}/extract-checkpoints
+     * The checkpoints for ONE source document (whole-document plus any chapter ranges), same row
+     * shape as the user-wide list. Empty array when there is nothing to resume or discard.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{workObjectId:[0-9A-Za-z\\-]+}/extract-checkpoints")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response describeExtractCheckpoints(@PathParam("workObjectId") String workObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        return Response.status(200)
+            .entity(JSONUtil.exportObject(PictureBookUtil.describeExtractCheckpoints(user, workObjectId))).build();
+    }
+
+    /**
+     * DELETE /{workObjectId}/extract-checkpoints?startOffset=&endOffset=
+     * Discard a checkpoint without starting another extraction (the only prior way to remove one
+     * was {@code extract-scenes-only?fresh=true}). No range = the whole-document note; a range =
+     * that chapter's note. Returns {@code {"deleted": n}}.
+     */
+    @RolesAllowed({"admin", "user"})
+    @DELETE
+    @Path("/{workObjectId:[0-9A-Za-z\\-]+}/extract-checkpoints")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response discardExtractCheckpoint(@PathParam("workObjectId") String workObjectId,
+            @QueryParam("startOffset") Integer startOffset,
+            @QueryParam("endOffset") Integer endOffset,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            int deleted = PictureBookUtil.discardExtractCheckpoint(user, workObjectId, startOffset, endOffset);
+            return Response.status(200).entity("{\"deleted\":" + deleted + "}").build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
         }
     }
 

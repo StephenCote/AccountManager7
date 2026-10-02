@@ -18,9 +18,10 @@ import { Dialog } from '../components/dialogCore.js';
 import {
     loadPictureBook, reorderScenes, resetPictureBook, deletePictureBookSeries,
     resolveImageUrl, resolveAllImageUrls, clearImageCache,
-    resolveCharacterNames, sceneCharacterLabels
+    resolveCharacterNames, sceneCharacterLabels,
+    listExtractCheckpoints, discardExtractCheckpoints
 } from '../workflows/sceneExtractor.js';
-import { pictureBookFromId } from '../workflows/pictureBook.js';
+import { pictureBookFromId, describeCheckpointRow } from '../workflows/pictureBook.js';
 import { openCharacterManager } from '../workflows/pictureBookCharacters.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
 import { listPb2Books, listSeriesBooks, bookPages } from '../workflows/pictureBookWorkflow.js';
@@ -59,6 +60,14 @@ let pbRoleWarning = false;
 let pb2Books = [];
 let pb2Loading = false;
 let pb2ExpandedSeries = {};   // seriesKey -> true while its chapter list is open
+
+// Unfinished extractions: server-side checkpoints with no book behind them. A single-document
+// extraction persists only its checkpoint until the user reaches "Continue" on Step 2, so an
+// interrupted run appears in neither book list above — this is the only place it can be seen or
+// discarded without starting another LLM run.
+let pendingExtractions = [];
+let pendingExtractionsLoading = false;
+let pendingExtractionDiscarding = {};  // noteObjectId -> true while its discard is in flight
 
 function pb2SceneCount(b) {
     let n = Number(b && b.sceneCount);
@@ -332,10 +341,118 @@ async function performPbDelete(objectId, reloadFn) {
     return !!outcome;
 }
 
-// Reload BOTH selector lists — a stale entry may be in either (PB1 meta notes or PB2 books).
+async function loadPendingExtractions() {
+    pendingExtractionsLoading = true;
+    m.redraw();
+    try {
+        let rows = await listExtractCheckpoints();
+        pendingExtractions = Array.isArray(rows) ? rows : [];
+    } catch (e) {
+        pendingExtractions = [];
+    }
+    pendingExtractionsLoading = false;
+    m.redraw();
+}
+
+function pendingExtractionLabel(row) {
+    if (row.workMissing) return 'Source document no longer exists';
+    return row.workName || 'Untitled';
+}
+
+async function discardPendingExtraction(row) {
+    if (!row || !row.workObjectId) return;
+    let key = row.noteObjectId || row.workObjectId;
+    if (pendingExtractionDiscarding[key]) return;
+    let ok = await Dialog.confirm({
+        title: 'Discard unfinished extraction',
+        message: 'Discard the saved progress for "' + pendingExtractionLabel(row) + '" (' + describeCheckpointRow(row) + ')?'
+            + ' The scenes extracted so far will be lost.',
+        confirmLabel: 'Discard', confirmIcon: 'delete', destructive: true
+    });
+    if (!ok) return;
+    pendingExtractionDiscarding[key] = true;
+    m.redraw();
+    try {
+        let deleted = await discardExtractCheckpoints(row.workObjectId, { startOffset: row.startOffset, endOffset: row.endOffset });
+        page.toast(deleted ? 'success' : 'info', deleted ? 'Unfinished extraction discarded' : 'Already removed');
+    } catch (e) {
+        page.toast('error', (e && e.message) || 'Failed to discard the unfinished extraction');
+    }
+    delete pendingExtractionDiscarding[key];
+    await loadPendingExtractions();
+}
+
+// The wizard can discard the checkpoint (Step 1 banner) or turn it into a book, so the lists are
+// re-read when it closes — this view only loads them on oninit.
+function openPendingExtraction(row) {
+    pictureBookFromId(row.workObjectId, row.workName, reloadSelectorLists);
+}
+
+function renderPendingExtractionRow(row, i) {
+    let key = row.noteObjectId || (row.workObjectId + ':' + i);
+    let busy = !!pendingExtractionDiscarding[key];
+    let canOpen = !row.workMissing;
+    return m('div', {
+        key: key,
+        'data-pb-checkpoint-row': '1',
+        'data-pb-checkpoint-work': row.workObjectId,
+        class: 'flex items-center justify-between border border-yellow-300 dark:border-yellow-700 rounded px-4 py-3'
+            + (canOpen ? ' cursor-pointer hover:bg-yellow-50 dark:hover:bg-yellow-900/20' : ' opacity-75'),
+        onclick: function () { if (canOpen) openPendingExtraction(row); }
+    }, [
+        m('div', { class: 'flex items-center gap-3 min-w-0' }, [
+            m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'history'),
+            m('div', { class: 'min-w-0' }, [
+                m('div', { class: 'font-medium text-sm truncate' }, pendingExtractionLabel(row)),
+                m('div', { class: 'text-xs text-gray-500' }, describeCheckpointRow(row)
+                    + (row.updatedAt ? ' · last saved ' + formatCheckpointTime(row.updatedAt) : ''))
+            ])
+        ]),
+        m('div', { class: 'flex items-center gap-1 shrink-0' }, [
+            canOpen ? m('button', {
+                class: 'text-gray-400 hover:text-blue-600 p-1',
+                title: row.complete ? 'Open and review the saved scenes' : 'Open and resume the extraction',
+                'data-pb-checkpoint-open': '1',
+                disabled: busy,
+                onclick: function (e) { e.stopPropagation(); openPendingExtraction(row); }
+            }, m('span', { class: 'material-symbols-outlined text-lg' }, 'resume')) : null,
+            m('button', {
+                class: 'text-red-400 hover:text-red-600 p-1',
+                title: 'Discard the saved progress',
+                'data-pb-checkpoint-discard': '1',
+                disabled: busy,
+                onclick: function (e) { e.stopPropagation(); discardPendingExtraction(row); }
+            }, m('span', { class: 'material-symbols-outlined text-lg' }, busy ? 'hourglass_empty' : 'delete'))
+        ])
+    ]);
+}
+
+// The server writes Java's ZonedDateTime.toString(), e.g. 2026-10-01T22:12:18.2Z[GMT]; Date.parse
+// rejects the bracketed zone id.
+function formatCheckpointTime(iso) {
+    let d = new Date(String(iso).replace(/\[[^\]]*\]$/, ''));
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString();
+}
+
+function renderPendingExtractions() {
+    if (!pendingExtractions.length) {
+        return pendingExtractionsLoading ? m('div', { class: 'text-sm text-gray-500 mb-6' }, 'Checking for unfinished extractions...') : null;
+    }
+    return m('div', { class: 'mb-6' }, [
+        m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'Unfinished Extractions'),
+        m('div', { class: 'text-xs text-gray-500 mb-2' },
+            'Extractions that stopped before a book was created. Open one to resume, or discard its saved progress.'),
+        m('div', { 'data-pb-checkpoint-list': '1', class: 'grid grid-cols-1 gap-2' }, pendingExtractions.map(renderPendingExtractionRow))
+    ]);
+}
+
+// Reload every selector list — a stale entry may be in any of them (PB1 meta notes, PB2 books,
+// or an unfinished extraction that has since become a book or been discarded).
 async function reloadSelectorLists() {
     await loadPb2Books();
     await loadExistingBooks();
+    await loadPendingExtractions();
 }
 
 async function deleteBookFromList(book) {
@@ -391,6 +508,7 @@ var workSelectorView = {
         pbRoleWarning = !(roles && roles.user);
         loadExistingBooks();
         loadPb2Books();
+        loadPendingExtractions();
     },
     view: function () {
         return m('div', { class: 'p-4 max-w-3xl' }, [
@@ -456,9 +574,12 @@ var workSelectorView = {
                 )
             ]) : existingLoading ? m('div', { class: 'text-sm text-gray-500 mb-6' }, 'Loading...') : null,
 
+            // Checkpoints with no book behind them yet
+            renderPendingExtractions(),
+
             // New picture book
             m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' },
-                existingBooks.length > 0 ? 'Create New' : 'Select a document'),
+                (existingBooks.length > 0 || pendingExtractions.length > 0) ? 'Create New' : 'Select a document'),
             m('div', { class: 'flex flex-col gap-3' }, [
                 m('button', {
                     class: 'flex items-center gap-3 border dark:border-gray-700 rounded px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 text-left',

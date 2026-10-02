@@ -7,7 +7,8 @@ import {
     createFromScenes, createChapBookRecord, generateSceneImage, prepareSceneImagePrompts,
     cancelPictureBook, regenerateBlurb, loadPictureBook, getBookSdConfig, setBookSdConfig, setSceneStatus,
     resolveImageUrl, resolveAllImageUrls,
-    startExtractScenes, startRetryFailedChunks, pollJob, cancelJob, listJobs, scenesFromResult
+    startExtractScenes, startRetryFailedChunks, pollJob, cancelJob, listJobs, scenesFromResult,
+    getExtractCheckpoints, discardExtractCheckpoints
 } from './sceneExtractor.js';
 import { openCharacterManager, initCharacterManager, renderCharacterManagerContent } from './pictureBookCharacters.js';
 import { listPb2Books, listSeriesBooks, detectBoundaries, createSeries, createChapter } from './pictureBookWorkflow.js';
@@ -94,6 +95,11 @@ let pb2SeriesObjectId = null;   // the olio.pb.series created/resolved for a mul
 // this summary instead of closing + navigating: a toast that disappears in a few seconds is not a
 // report when the run took nine hours and half the chapters are gone.
 let extractChapterSummary = null; // { saved, total, problems: [], seriesBookOid, cancelled }
+// Server-side checkpoints for this document that have no book behind them yet. A single-document
+// extraction persists nothing but its checkpoint until createFromScenes runs, so an interrupted run
+// is invisible everywhere except here — Step 1 shows them with Resume/Discard.
+let pendingCheckpoints = [];    // rows from GET /{workObjectId}/extract-checkpoints (no scene payload)
+let checkpointDiscarding = false;
 let blurbRegenerating = {}; // scene index → bool (U3: per-scene "Regenerate blurb" in-flight flag)
 
 // Step 3 (Manage Characters — real charPerson records created at the Step 2→3 transition;
@@ -175,6 +181,8 @@ function resetState() {
     extractChapterCount = 0;
     pb2SeriesObjectId = null;
     extractChapterSummary = null;
+    pendingCheckpoints = [];
+    checkpointDiscarding = false;
     blurbRegenerating = {};
     creatingChars = false;
     scenes = [];
@@ -515,6 +523,9 @@ async function doExtract(opts) {
         extractChapterIndex = 0;
         extractChapterCount = 0;
         m.redraw();
+        // The run either consumed the checkpoint (clean finish) or left one (cancel/stop/failures);
+        // the Step 1 banner must reflect which. Not awaited — it is a refresh, not part of the run.
+        loadPendingCheckpoints();
     }
 }
 
@@ -950,6 +961,7 @@ async function doRetryFailed() {
         extractJobId = null;
         extractProgress = null;
         m.redraw();
+        loadPendingCheckpoints();
     }
 }
 
@@ -1517,6 +1529,108 @@ function renderExtractProgress() {
  * client at all. Proceeding to build a book from a partial list is legitimate — the user just has
  * to know that is what they are doing.
  */
+/** Refresh the Step 1 checkpoint banner for the open document. Never throws; a failed read hides the banner. */
+async function loadPendingCheckpoints() {
+    let wid = workObjectId;
+    if (!wid) return;
+    let rows = [];
+    try {
+        rows = await getExtractCheckpoints(wid);
+    } catch (e) {
+        console.warn('[pictureBook] checkpoint lookup failed:', e && e.message);
+    }
+    // The dialog may have moved on to another document while this was in flight.
+    if (wid !== workObjectId) return;
+    pendingCheckpoints = Array.isArray(rows) ? rows : [];
+    m.redraw();
+}
+
+/** One-line description of a checkpoint row for the banner and the list. */
+function describeCheckpointRow(row) {
+    let parts = [];
+    let processed = Number(row.chunksProcessed) || 0;
+    let total = Number(row.totalChunks) || 0;
+    if (row.startOffset != null && row.endOffset != null) {
+        parts.push('chars ' + row.startOffset + '–' + row.endOffset);
+    }
+    parts.push(total ? processed + ' of ' + total + ' passage' + (total === 1 ? '' : 's') : processed + ' passage' + (processed === 1 ? '' : 's'));
+    let sc = Number(row.sceneCount) || 0;
+    parts.push(sc + ' scene' + (sc === 1 ? '' : 's') + ' saved');
+    let fc = Number(row.failedCount) || 0;
+    if (fc) parts.push(fc + ' failed passage' + (fc === 1 ? '' : 's'));
+    return parts.join(' · ');
+}
+
+/**
+ * Remove a checkpoint without starting an extraction. This is the ONLY discard path that does not
+ * cost an LLM run: "Start over" (?fresh=true) also discards, but then re-extracts the document.
+ */
+async function discardPendingCheckpoint(row) {
+    if (!workObjectId || checkpointDiscarding || extracting) return;
+    let ok = await Dialog.confirm({
+        title: 'Discard unfinished extraction',
+        message: 'Discard the saved progress for "' + workName + '" (' + describeCheckpointRow(row) + ')?'
+            + ' The scenes extracted so far will be lost and the next extraction starts from the beginning.',
+        confirmLabel: 'Discard', confirmIcon: 'delete', destructive: true
+    });
+    if (!ok) return;
+    checkpointDiscarding = true;
+    m.redraw();
+    try {
+        let deleted = await discardExtractCheckpoints(workObjectId, { startOffset: row.startOffset, endOffset: row.endOffset });
+        page.toast(deleted ? 'success' : 'info', deleted ? 'Unfinished extraction discarded' : 'Already removed');
+    } catch (e) {
+        page.toast('error', (e && e.message) || 'Failed to discard the unfinished extraction');
+    } finally {
+        checkpointDiscarding = false;
+        await loadPendingCheckpoints();
+    }
+}
+
+/**
+ * Step 1 banner: the server holds progress for this document from a run that never reached
+ * createFromScenes. Resume continues from the saved passage (a complete-with-failures checkpoint
+ * resumes instantly — no LLM calls — straight into the Step 2 review with its failed-passage banner);
+ * Discard removes the checkpoint outright. Hidden while a run is in flight, since that run is the resume.
+ */
+function renderCheckpointBanner() {
+    if (extracting || !pendingCheckpoints.length) return null;
+    return m('div', {
+        'data-pb-checkpoint-banner': '1',
+        class: 'p-2 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-xs text-yellow-800 dark:text-yellow-200 space-y-2'
+    }, [
+        m('div', { class: 'flex items-center gap-2 font-medium' }, [
+            m('span', { class: 'material-symbols-outlined text-sm' }, 'history'),
+            m('span', pendingCheckpoints.length === 1
+                ? 'An earlier extraction of this document was interrupted before a book was created. Its progress is saved.'
+                : pendingCheckpoints.length + ' earlier extractions of this document were interrupted before a book was created. Their progress is saved.')
+        ]),
+        m('ul', { class: 'space-y-1' }, pendingCheckpoints.map(function (row, i) {
+            let complete = !!row.complete;
+            return m('li', { key: row.noteObjectId || i, 'data-pb-checkpoint-row': '1', class: 'flex items-center gap-2' }, [
+                m('span', { class: 'flex-1' }, describeCheckpointRow(row)),
+                m('button', {
+                    class: 'btn text-xs btn-primary',
+                    'data-pb-checkpoint-resume': '1',
+                    disabled: extracting || checkpointDiscarding,
+                    title: complete
+                        ? 'Every passage was processed; open the saved scenes for review (no extraction runs)'
+                        : 'Continue extracting from the saved passage',
+                    onclick: function () { doExtract(); }
+                }, [m('span', { class: 'material-symbols-outlined text-xs mr-1' }, 'resume'),
+                    complete ? 'Review saved scenes' : 'Resume']),
+                m('button', {
+                    class: 'btn text-xs',
+                    'data-pb-checkpoint-discard': '1',
+                    disabled: extracting || checkpointDiscarding,
+                    title: 'Delete the saved progress without extracting anything',
+                    onclick: function () { discardPendingCheckpoint(row); }
+                }, [m('span', { class: 'material-symbols-outlined text-xs mr-1' }, 'delete'), 'Discard'])
+            ]);
+        }))
+    ]);
+}
+
 function renderExtractWarnings() {
     let out = [];
     if (extractPartial) {
@@ -1699,6 +1813,8 @@ function renderChapterSummary() {
 function renderStep1() {
     return m('div', { class: 'p-4 space-y-4' }, [
         m('div', { class: 'text-sm text-gray-600 dark:text-gray-400 mb-2' }, 'Source: ' + workName),
+
+        renderCheckpointBanner(),
 
         // Picture book name
         m('div', [
@@ -2672,7 +2788,7 @@ async function tryResumeExistingBook(id) {
     }
 }
 
-async function pictureBook(entity, inst) {
+async function pictureBook(entity, inst, onClose) {
     if (!inst) {
         page.toast('error', 'No instance provided');
         return;
@@ -2701,6 +2817,10 @@ async function pictureBook(entity, inst) {
     let pbRoles = page.context && page.context() && page.context().roles;
     roleWarning = !(pbRoles && pbRoles.user);
 
+    // A fresh source document (not an existing book) may carry progress from an interrupted run
+    // that never produced a book. Not awaited — the banner fills in on its own redraw.
+    if (!bookObjectId) loadPendingCheckpoints();
+
     // Reattach to an extraction already running for this document, rather than offering to start a
     // second one. Deliberately NOT awaited: it resolves only when the run finishes, and the dialog
     // has to open now. The dialog therefore renders once WITHOUT progress and then updates — the
@@ -2712,6 +2832,7 @@ async function pictureBook(entity, inst) {
         title: 'Picture Book — ' + workName,
         size: 'xl',
         closable: false,
+        onClose: typeof onClose === 'function' ? onClose : undefined,
         content: {
             view: function () {
                 return m('div', [
@@ -2733,8 +2854,10 @@ async function pictureBook(entity, inst) {
 /**
  * Simplified entry point — opens the wizard with just an objectId and name.
  * Used by the viewer empty state when no inst/entity is available.
+ * `onClose`, when given, runs whenever the wizard dialog closes, so a caller showing a list
+ * the wizard may have changed (a discarded checkpoint, a new book) can refresh it.
  */
-async function pictureBookFromId(objectId, name) {
+async function pictureBookFromId(objectId, name, onClose) {
     console.log('[PictureBook] pictureBookFromId called: objectId=' + objectId + ' name=' + name);
     if (!objectId) {
         page.toast('error', 'No document selected');
@@ -2746,7 +2869,7 @@ async function pictureBookFromId(objectId, name) {
             name: function () { return name || 'Untitled'; }
         }
     };
-    await pictureBook(null, fakeInst);
+    await pictureBook(null, fakeInst, onClose);
 }
 
 export { pictureBook, pictureBookFromId };
@@ -2804,12 +2927,14 @@ export function __resetSdConfigForTest() {
 // against a document already being extracted. The equivalent server-side branches shipped two real
 // defects before they had tests; this is the client half of that lesson.
 export { doExtract, applyExtractJob, reattachExtractJob, cancelExtract, stoppedEarlyReason,
-    describeFailedPassage, mergeRecoveredScenes, doRetryFailed, doRetryFailedChapters };
+    describeFailedPassage, mergeRecoveredScenes, doRetryFailed, doRetryFailedChapters,
+    loadPendingCheckpoints, discardPendingCheckpoint, describeCheckpointRow, renderCheckpointBanner };
 export function __extractStateForTest() {
     return {
         step, workObjectId, extracting, retryingFailed, extractChaptered, extractError, extractJobId, extractProgress,
         extractPartial, extractFailedChunks, extractedScenes, reattaching,
-        extractChapterIndex, extractChapterCount, pb2SeriesObjectId, extractChapterSummary, chatConfigRef
+        extractChapterIndex, extractChapterCount, pb2SeriesObjectId, extractChapterSummary, chatConfigRef,
+        pendingCheckpoints, checkpointDiscarding
     };
 }
 export function __setExtractStateForTest(patch) {
@@ -2820,10 +2945,15 @@ export function __setExtractStateForTest(patch) {
     if ('extractChapterSummary' in patch) extractChapterSummary = patch.extractChapterSummary;
     if ('pb2SeriesObjectId' in patch) pb2SeriesObjectId = patch.pb2SeriesObjectId;
     if ('chatConfigRef' in patch) chatConfigRef = patch.chatConfigRef;
+    if ('pendingCheckpoints' in patch) pendingCheckpoints = patch.pendingCheckpoints;
+    if ('extracting' in patch) extracting = patch.extracting;
+    if ('workName' in patch) workName = patch.workName;
 }
 export function __resetExtractStateForTest(work) {
     step = 1;
     workObjectId = work || null;
+    pendingCheckpoints = [];
+    checkpointDiscarding = false;
     extracting = false;
     retryingFailed = false;
     extractChaptered = false;

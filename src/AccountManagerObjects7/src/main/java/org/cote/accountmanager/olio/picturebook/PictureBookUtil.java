@@ -5254,6 +5254,186 @@ public class PictureBookUtil {
         return deleted;
     }
 
+    // ----- Checkpoint discovery + discard (surfacing unfinished extractions) ---------
+
+    /**
+     * Every extraction checkpoint the user owns, newest first — the data behind the "Unfinished
+     * extractions" list.
+     *
+     * <p>Until {@code createFromScenes} runs, a single-document extraction persists NOTHING but its
+     * checkpoint note: no book, no group, nothing the book list can show. An interrupted or
+     * partially-failed run therefore left scenes on disk that no UI could see or remove, and the
+     * only route that deleted the note ({@code ?fresh=true}) started another LLM run to do it.
+     * This is the read side of fixing that. It is a pure read — nothing is created or repaired.
+     *
+     * <p>Org-wide by name prefix, like {@link #deleteOrphanedExtractCheckpoints}, and additionally
+     * filtered to {@code ownerId}: {@code AccessPoint.list} authorizes the query shape, not each
+     * row, so without the owner condition an org-wide list would hand back other users' notes.
+     * Notes whose work document is gone are included with {@code workMissing=true} so the list is
+     * also where orphans get cleaned up.
+     */
+    public static List<Map<String, Object>> listExtractCheckpoints(BaseRecord user) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (user == null) return out;
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE);
+        q.field(FieldNames.FIELD_NAME, ComparatorEnumType.LIKE, EXTRACT_PROGRESS_NOTE + ".%");
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        q.field(FieldNames.FIELD_OWNER_ID, user.get(FieldNames.FIELD_ID));
+        q.setRequest(checkpointNoteFields());
+        q.setCache(false);
+        BaseRecord[] notes = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
+        if (notes == null) return out;
+        Map<String, BaseRecord> works = new HashMap<>();
+        for (BaseRecord note : notes) {
+            Map<String, Object> row = describeCheckpointNote(note);
+            if (row == null) continue;
+            String wid = (String) row.get("workObjectId");
+            BaseRecord work = works.containsKey(wid) ? works.get(wid) : findWork(user, wid);
+            works.put(wid, work);
+            row.put("workName", work != null ? work.get(FieldNames.FIELD_NAME) : null);
+            row.put("workMissing", work == null);
+            out.add(row);
+        }
+        out.sort((a, b) -> String.valueOf(b.get("updatedAt")).compareTo(String.valueOf(a.get("updatedAt"))));
+        return out;
+    }
+
+    /**
+     * The checkpoints for ONE work document (whole-document plus every chapter range), for the
+     * wizard's step-1 banner. Group-scoped: resolved through the work's own group exactly as
+     * {@link #loadProgressNote} is, so it sees precisely what a resume would. Empty when the work
+     * cannot be resolved — orphans are the user-wide list's job, not this one's.
+     */
+    public static List<Map<String, Object>> describeExtractCheckpoints(BaseRecord user, String workObjectId) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (user == null || workObjectId == null || workObjectId.isBlank()) return out;
+        BaseRecord work = findWork(user, workObjectId);
+        if (work == null) return out;
+        String groupPath = null;
+        try { groupPath = work.get(FieldNames.FIELD_GROUP_PATH); } catch (Exception e) { /* no groupPath */ }
+        if (groupPath == null || groupPath.isEmpty()) return out;
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
+                ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), orgId);
+        if (grp == null) return out;
+        Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_GROUP_ID,
+                grp.get(FieldNames.FIELD_ID));
+        q.field(FieldNames.FIELD_NAME, ComparatorEnumType.LIKE, EXTRACT_PROGRESS_NOTE + "." + workObjectId + "%");
+        q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        q.setRequest(checkpointNoteFields());
+        q.setCache(false);
+        BaseRecord[] notes = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
+        if (notes == null) return out;
+        for (BaseRecord note : notes) {
+            Map<String, Object> row = describeCheckpointNote(note);
+            if (row == null) continue;
+            row.put("workName", work.get(FieldNames.FIELD_NAME));
+            row.put("workMissing", false);
+            out.add(row);
+        }
+        out.sort((a, b) -> String.valueOf(b.get("updatedAt")).compareTo(String.valueOf(a.get("updatedAt"))));
+        return out;
+    }
+
+    private static String[] checkpointNoteFields() {
+        return new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID,
+            FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
+            FieldNames.FIELD_NAME, FieldNames.FIELD_TEXT, FieldNames.FIELD_MODIFIED_DATE };
+    }
+
+    /**
+     * Summarise one checkpoint note without its scene payload: progress, counts and range. The
+     * scenes themselves can run to hundreds of KB and nothing in a list needs them. Returns null
+     * for a note whose name does not carry a work id — never for unparseable JSON, which is
+     * reported as a row with zero counts so the user can still discard it.
+     */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> describeCheckpointNote(BaseRecord note) {
+        String name = note.get(FieldNames.FIELD_NAME);
+        String prefix = EXTRACT_PROGRESS_NOTE + ".";
+        if (name == null || !name.startsWith(prefix) || name.length() <= prefix.length()) return null;
+        String rest = name.substring(prefix.length());
+        /// A work objectId is a UUID (no dots), so the first dot — if any — starts the range suffix.
+        int dot = rest.indexOf('.');
+        String workObjectId = dot < 0 ? rest : rest.substring(0, dot);
+        Integer startOffset = null;
+        Integer endOffset = null;
+        if (dot >= 0) {
+            String[] range = rest.substring(dot + 1).split("-", 2);
+            try {
+                startOffset = Integer.valueOf(range[0]);
+                if (range.length > 1) endOffset = Integer.valueOf(range[1]);
+            } catch (NumberFormatException e) { /* malformed suffix: report as whole-document */ }
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("workObjectId", workObjectId);
+        row.put("noteObjectId", note.get(FieldNames.FIELD_OBJECT_ID));
+        row.put("startOffset", startOffset);
+        row.put("endOffset", endOffset);
+        int processed = 0, total = 0, sceneCount = 0, failedCount = 0;
+        String updatedAt = null;
+        String json = note.get(FieldNames.FIELD_TEXT);
+        if (json != null && !json.isEmpty()) {
+            try {
+                Map<String, Object> m = JSONUtil.getMap(json.getBytes(StandardCharsets.UTF_8), String.class, Object.class);
+                if (m != null) {
+                    processed = intOf(m.get("chunksProcessed"));
+                    total = intOf(m.get("totalChunks"));
+                    Object sc = m.get("scenes");
+                    if (sc instanceof List) sceneCount = ((List<?>) sc).size();
+                    Object fe = m.get("failedExtractions");
+                    if (fe instanceof List) failedCount = countRetryableFailures((List<String>) fe);
+                    if (m.get("updatedAt") != null) updatedAt = String.valueOf(m.get("updatedAt"));
+                    /// The JSON's own work id is authoritative when present; the name is the fallback.
+                    if (m.get("workObjectId") instanceof String && !((String) m.get("workObjectId")).isBlank()) {
+                        row.put("workObjectId", m.get("workObjectId"));
+                    }
+                }
+            } catch (Exception e) {
+                logger.warn("Unparseable extraction checkpoint " + name + ": " + e.getMessage());
+            }
+        }
+        if (updatedAt == null) {
+            Object mod = note.get(FieldNames.FIELD_MODIFIED_DATE);
+            updatedAt = mod != null ? String.valueOf(mod) : "";
+        }
+        row.put("chunksProcessed", processed);
+        row.put("totalChunks", total);
+        row.put("sceneCount", sceneCount);
+        row.put("failedCount", failedCount);
+        row.put("complete", total > 0 && processed >= total);
+        row.put("updatedAt", updatedAt);
+        return row;
+    }
+
+    /**
+     * User-initiated discard of a checkpoint, from the list or the wizard banner.
+     *
+     * <p>Range-keyed like {@link #clearExtractCheckpoint}: a null range removes the whole-document
+     * note, a present range removes that chapter's note only. When the work document is gone the
+     * notes are unreachable by any resume and are swept as a set, as the completion clear does.
+     * Deletion goes through {@code AccessPoint.delete} so a note the caller may not delete is
+     * refused by PBAC, not by this method.
+     *
+     * @return the number of checkpoint notes removed (0 when there was nothing to discard)
+     */
+    public static int discardExtractCheckpoint(BaseRecord user, String workObjectId,
+            Integer startOffset, Integer endOffset) throws PictureBookException {
+        if (user == null || workObjectId == null || workObjectId.isBlank()) return 0;
+        String groupPath = findWorkGroupPath(user, workObjectId);
+        if (groupPath == null) {
+            return deleteOrphanedExtractCheckpoints(user, workObjectId);
+        }
+        BaseRecord note = loadProgressNote(user, groupPath, workObjectId, startOffset, endOffset);
+        if (note == null) return 0;
+        try {
+            return IOSystem.getActiveContext().getAccessPoint().delete(user, note) ? 1 : 0;
+        } catch (Exception e) {
+            throw new PictureBookException(500, "Failed to discard extraction checkpoint: " + e.getMessage(), e);
+        }
+    }
+
     /**
      * Path-based counterpart, for callers that already hold the work's group path. The chunk loop
      * uses this so completing a run does not re-resolve the work record it just finished reading.

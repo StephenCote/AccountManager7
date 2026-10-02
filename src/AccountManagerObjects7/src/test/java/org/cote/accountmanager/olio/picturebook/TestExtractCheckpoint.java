@@ -674,6 +674,173 @@ public class TestExtractCheckpoint extends BaseTest {
 				PictureBookUtil.loadProgressNote(testUser, groupPath, other));
 	}
 
+	// ── discovery + discard: the surface for a checkpoint with no book behind it ────
+
+	/// Until createFromScenes runs, an interrupted single-document extraction leaves ONLY its
+	/// checkpoint note — no book, nothing the list could show, and nothing a user could delete short
+	/// of starting another LLM run with ?fresh=true. describeExtractCheckpoints is the read side:
+	/// it must report progress, scene and failed-passage counts WITHOUT the scene payload, and
+	/// discardExtractCheckpoint must remove the note without any extraction.
+	@Test
+	public void TestDescribeAndDiscardCheckpointForARealWork() throws Exception {
+		prepare();
+		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String docName = "ckptDescribe-" + UUID.randomUUID();
+		BaseRecord work = getCreateData(testUser, docName, "text/plain",
+				"the interrupted manuscript".getBytes(), groupPath, orgId);
+		assertNotNull(work);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		String resolved = PictureBookUtil.findWorkGroupPath(testUser, workObjectId);
+		assertNotNull(resolved);
+
+		assertTrue("no checkpoint yet means an empty description, not an error",
+				PictureBookUtil.describeExtractCheckpoints(testUser, workObjectId).isEmpty());
+
+		String hash = PictureBookUtil.extractTextHash("the interrupted manuscript");
+		ExtractCheckpoint cp = newCheckpoint(hash, 5, 17,
+				listOf(scene("One", "a", 0), scene("Two", "b", 2), scene("Three", "c", 4)));
+		cp.failedExtractions = new ArrayList<>();
+		/// One retryable passage failure and one breaker entry (stoppedEarly), which is NOT retryable.
+		cp.failedExtractions.add("{\"context\":\"extract-scenes-chunk:3/17\",\"kind\":\"unparseable\"}");
+		cp.failedExtractions.add("{\"context\":\"extract-scenes-chunk:6/17\",\"stoppedEarly\":true}");
+		PictureBookUtil.saveExtractCheckpoint(testUser, resolved, workObjectId, cp);
+
+		List<Map<String, Object>> rows = PictureBookUtil.describeExtractCheckpoints(testUser, workObjectId);
+		assertEquals("exactly the one whole-document checkpoint", 1, rows.size());
+		Map<String, Object> row = rows.get(0);
+		assertEquals(workObjectId, row.get("workObjectId"));
+		assertEquals(docName, row.get("workName"));
+		assertEquals(Boolean.FALSE, row.get("workMissing"));
+		assertNull("whole-document row has no range", row.get("startOffset"));
+		assertNull(row.get("endOffset"));
+		assertEquals(5, row.get("chunksProcessed"));
+		assertEquals(17, row.get("totalChunks"));
+		assertEquals(3, row.get("sceneCount"));
+		assertEquals("only the retryable failure counts", 1, row.get("failedCount"));
+		assertEquals(Boolean.FALSE, row.get("complete"));
+		assertNotNull(row.get("noteObjectId"));
+		assertFalse("updatedAt must be populated", String.valueOf(row.get("updatedAt")).isEmpty());
+		assertFalse("the scene payload must not be in a list row", row.containsKey("scenes"));
+
+		int deleted = PictureBookUtil.discardExtractCheckpoint(testUser, workObjectId, null, null);
+		assertEquals(1, deleted);
+		assertNull("note gone", PictureBookUtil.loadProgressNote(testUser, resolved, workObjectId));
+		assertTrue(PictureBookUtil.describeExtractCheckpoints(testUser, workObjectId).isEmpty());
+		assertEquals("a second discard is a no-op, not an error", 0,
+				PictureBookUtil.discardExtractCheckpoint(testUser, workObjectId, null, null));
+	}
+
+	/// A run that reached the end with retryable failures keeps its checkpoint with
+	/// chunksProcessed == totalChunks; the description must say so (complete=true, failedCount>0)
+	/// because the wizard offers "Retry failed passages" rather than "Resume" for it.
+	@Test
+	public void TestDescribeReportsCompleteWithFailuresAndPerRangeDiscard() throws Exception {
+		prepare();
+		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		BaseRecord work = getCreateData(testUser, "ckptRanges-" + UUID.randomUUID(), "text/plain",
+				"a shared manuscript".getBytes(), groupPath, orgId);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		String resolved = PictureBookUtil.findWorkGroupPath(testUser, workObjectId);
+		String hash = PictureBookUtil.extractTextHash("a shared manuscript");
+
+		ExtractCheckpoint done = newCheckpoint(hash, 4, 4, listOf(scene("Done", "d", 0)));
+		done.startOffset = 0; done.endOffset = 1000;
+		done.failedExtractions = new ArrayList<>();
+		done.failedExtractions.add("{\"context\":\"extract-scenes-chunk:2/4\",\"kind\":\"refusal\"}");
+		PictureBookUtil.saveExtractCheckpoint(testUser, resolved, workObjectId, done);
+
+		ExtractCheckpoint partial = newCheckpoint(hash, 1, 4, listOf(scene("Partial", "p", 0)));
+		partial.startOffset = 1000; partial.endOffset = 2000;
+		PictureBookUtil.saveExtractCheckpoint(testUser, resolved, workObjectId, partial);
+
+		List<Map<String, Object>> rows = PictureBookUtil.describeExtractCheckpoints(testUser, workObjectId);
+		assertEquals(2, rows.size());
+		Map<String, Object> doneRow = null, partialRow = null;
+		for (Map<String, Object> r : rows) {
+			if (Integer.valueOf(0).equals(r.get("startOffset"))) doneRow = r; else partialRow = r;
+		}
+		assertNotNull(doneRow);
+		assertNotNull(partialRow);
+		assertEquals("range parsed from the note name", 1000, doneRow.get("endOffset"));
+		assertEquals(Boolean.TRUE, doneRow.get("complete"));
+		assertEquals(1, doneRow.get("failedCount"));
+		assertEquals(1000, partialRow.get("startOffset"));
+		assertEquals(2000, partialRow.get("endOffset"));
+		assertEquals(Boolean.FALSE, partialRow.get("complete"));
+
+		/// Discarding one range must leave the sibling range alone.
+		assertEquals(1, PictureBookUtil.discardExtractCheckpoint(testUser, workObjectId, 0, 1000));
+		rows = PictureBookUtil.describeExtractCheckpoints(testUser, workObjectId);
+		assertEquals(1, rows.size());
+		assertEquals(1000, rows.get(0).get("startOffset"));
+		/// And a null-range discard does NOT touch a ranged note — it is keyed exactly like clear.
+		assertEquals(0, PictureBookUtil.discardExtractCheckpoint(testUser, workObjectId, null, null));
+		assertNotNull(PictureBookUtil.loadProgressNote(testUser, resolved, workObjectId, 1000, 2000));
+	}
+
+	/// The user-wide list must return the caller's checkpoints and ONLY the caller's: AccessPoint.list
+	/// authorizes the query shape, not each row, so an org-wide prefix search without the owner
+	/// condition would surface another user's unfinished work. It must also include a checkpoint
+	/// whose work document is gone (workMissing), since the list is the one place an orphan can be
+	/// discarded from.
+	@Test
+	public void TestListIsOwnerScopedAndIncludesOrphans() throws Exception {
+		prepare();
+		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		BaseRecord otherUser = getCreateUser("pbCkptOther");
+		assertNotNull(otherUser);
+		String hash = PictureBookUtil.extractTextHash("owner scoping");
+
+		BaseRecord mine = getCreateData(testUser, "ckptMine-" + UUID.randomUUID(), "text/plain",
+				"owner scoping".getBytes(), groupPath, orgId);
+		String mineId = mine.get(FieldNames.FIELD_OBJECT_ID);
+		PictureBookUtil.saveExtractCheckpoint(testUser, PictureBookUtil.findWorkGroupPath(testUser, mineId),
+				mineId, newCheckpoint(hash, 2, 9, listOf(scene("Mine", "m", 0))));
+
+		/// A checkpoint for a work id that resolves to no document at all.
+		String orphanId = UUID.randomUUID().toString();
+		PictureBookUtil.saveExtractCheckpoint(testUser, groupPath, orphanId,
+				newCheckpoint(hash, 1, 3, listOf(scene("Orphan", "o", 0))));
+
+		/// Another user's checkpoint in the same organisation.
+		String theirsId = "ckpt-theirs-" + UUID.randomUUID();
+		PictureBookUtil.saveExtractCheckpoint(otherUser, "~/PbCheckpointTestsOther", theirsId,
+				newCheckpoint(hash, 1, 3, listOf(scene("Theirs", "t", 0))));
+
+		List<Map<String, Object>> rows = PictureBookUtil.listExtractCheckpoints(testUser);
+		Map<String, Object> mineRow = null, orphanRow = null;
+		for (Map<String, Object> r : rows) {
+			assertFalse("another user's checkpoint must not be listed", theirsId.equals(r.get("workObjectId")));
+			if (mineId.equals(r.get("workObjectId"))) mineRow = r;
+			if (orphanId.equals(r.get("workObjectId"))) orphanRow = r;
+		}
+		assertNotNull("own checkpoint listed", mineRow);
+		assertEquals(mine.get(FieldNames.FIELD_NAME), mineRow.get("workName"));
+		assertEquals(Boolean.FALSE, mineRow.get("workMissing"));
+		assertEquals(2, mineRow.get("chunksProcessed"));
+		assertNotNull("orphan listed so it can be discarded", orphanRow);
+		assertEquals(Boolean.TRUE, orphanRow.get("workMissing"));
+		assertNull(orphanRow.get("workName"));
+
+		/// The other user sees theirs and not mine.
+		List<Map<String, Object>> theirRows = PictureBookUtil.listExtractCheckpoints(otherUser);
+		boolean sawTheirs = false;
+		for (Map<String, Object> r : theirRows) {
+			assertFalse(mineId.equals(r.get("workObjectId")));
+			if (theirsId.equals(r.get("workObjectId"))) sawTheirs = true;
+		}
+		assertTrue(sawTheirs);
+
+		/// Discarding the orphan goes through the gone-work sweep and must remove it.
+		assertEquals(1, PictureBookUtil.discardExtractCheckpoint(testUser, orphanId, null, null));
+		for (Map<String, Object> r : PictureBookUtil.listExtractCheckpoints(testUser)) {
+			assertFalse("orphan gone after discard", orphanId.equals(r.get("workObjectId")));
+		}
+
+		PictureBookUtil.discardExtractCheckpoint(testUser, mineId, null, null);
+		PictureBookUtil.deleteOrphanedExtractCheckpoints(otherUser, theirsId);
+	}
+
 	/// failedExtractions accumulated before a crash must come back with the resume, or a resumed
 	/// run would report a clean extraction while some chunks had in fact failed to parse.
 	@Test

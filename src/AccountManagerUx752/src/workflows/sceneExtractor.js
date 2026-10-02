@@ -235,6 +235,53 @@ async function startRetryFailedChunks(workObjectId, chatConfigName, opts) {
 }
 
 /**
+ * Unfinished extractions across all of the caller's documents: one row per checkpoint note, with
+ * progress counts but no scene payload. Includes checkpoints whose source document is gone
+ * (workMissing=true) so they can be discarded from the list.
+ */
+async function listExtractCheckpoints() {
+    let resp = await fetch(pbBase() + '/extract-checkpoints', {
+        method: 'GET', headers: { 'Accept': 'application/json' }, credentials: 'include'
+    });
+    if (resp.status === 401 || resp.status === 403) handleAuthFailure(resp.status);
+    if (!resp.ok) throw new Error('List unfinished extractions failed: ' + resp.status);
+    let rows = await resp.json();
+    return Array.isArray(rows) ? rows : [];
+}
+
+/** Checkpoints for one document (whole-document plus any chapter ranges). */
+async function getExtractCheckpoints(workObjectId) {
+    let resp = await fetch(pbBase() + '/' + workObjectId + '/extract-checkpoints', {
+        method: 'GET', headers: { 'Accept': 'application/json' }, credentials: 'include'
+    });
+    if (resp.status === 401 || resp.status === 403) handleAuthFailure(resp.status);
+    if (!resp.ok) throw new Error('Read extraction checkpoint failed: ' + resp.status);
+    let rows = await resp.json();
+    return Array.isArray(rows) ? rows : [];
+}
+
+/**
+ * Discard a checkpoint without starting an extraction. No range = the whole-document checkpoint;
+ * a range = that chapter's. Resolves to the number of notes deleted.
+ */
+async function discardExtractCheckpoints(workObjectId, opts) {
+    opts = opts || {};
+    let qs = '';
+    if (opts.startOffset != null && opts.endOffset != null
+            && !isNaN(Number(opts.startOffset)) && !isNaN(Number(opts.endOffset))) {
+        qs = '?startOffset=' + Math.round(Number(opts.startOffset))
+            + '&endOffset=' + Math.round(Number(opts.endOffset));
+    }
+    let resp = await fetch(pbBase() + '/' + workObjectId + '/extract-checkpoints' + qs, {
+        method: 'DELETE', headers: { 'Accept': 'application/json' }, credentials: 'include'
+    });
+    if (resp.status === 401 || resp.status === 403) handleAuthFailure(resp.status);
+    if (!resp.ok) throw new Error('Discard extraction checkpoint failed: ' + resp.status);
+    let body = await resp.json();
+    return (body && typeof body.deleted === 'number') ? body.deleted : 0;
+}
+
+/**
  * Normalize an extraction result to a plain scene array.
  *
  * The endpoint returns two shapes -- a bare array for short text, or { sceneList, chunked } once it
@@ -801,6 +848,9 @@ export {
     extractScenes,
     startExtractScenes,
     startRetryFailedChunks,
+    listExtractCheckpoints,
+    getExtractCheckpoints,
+    discardExtractCheckpoints,
     scenesFromResult,
     getJob,
     pollJob,
