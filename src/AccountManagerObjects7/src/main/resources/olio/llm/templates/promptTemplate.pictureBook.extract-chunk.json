@@ -26,7 +26,7 @@
 				"{knownCharacters}",
 				"Naming rules: if a character in this segment is one of the established characters above, use that exact name - do not invent a variant. For a character the text never names, use a single stable descriptor and reuse it for the rest of the work (e.g. always \"Darby's father\", never \"Dad\" in one scene and \"the old man\" in another). Prefer a possessive form tied to a named character when the relationship is clear.",
 				"",
-				"Extract new scenes or revise existing ones from this text segment. Return a JSON object with three arrays:",
+				"Extract new scenes or revise existing ones from this text segment. Add at most {maxNew} new scenes from this segment, choosing only the most visually notable moments; prefer revising an existing scene over adding a near-duplicate of it, and skip dialogue-only beats. Return a JSON object with three arrays:",
 				"{\"additions\":[{\"title\":\"...\",\"blurb\":\"2-3 sentence description\",\"setting\":\"environment description\",\"action\":\"what characters are doing\",\"mood\":\"atmosphere, lighting\",\"characters\":[{\"name\":\"...\",\"role\":\"brief role\"}],\"diffusionPrompt\":\"detailed stable diffusion prompt for illustration\"}],\"revisions\":[{\"title\":\"existing scene title to revise\",\"blurb\":\"updated blurb\",\"setting\":\"updated setting\",\"action\":\"updated action\",\"mood\":\"updated mood\",\"characters\":[...],\"diffusionPrompt\":\"updated prompt\"}],\"removals\":[]}",
 				"",
 				"TEXT SEGMENT:",

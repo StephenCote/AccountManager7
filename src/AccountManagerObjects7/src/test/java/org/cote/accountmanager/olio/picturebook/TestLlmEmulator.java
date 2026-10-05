@@ -151,6 +151,7 @@ public class TestLlmEmulator extends BaseTest {
 		String u = template(EXTRACT_CHUNK, "user");
 		u = u.replace("{previousScenes}", "[]");
 		u = u.replace("{knownCharacters}", "(none yet)");
+		u = u.replace("{maxNew}", "4");
 		u = u.replace("{chunk}", chunk);
 		return u + "\n/no_think";
 	}

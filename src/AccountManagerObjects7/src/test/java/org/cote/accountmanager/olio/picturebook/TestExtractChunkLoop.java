@@ -41,13 +41,19 @@ import org.junit.Test;
 public class TestExtractChunkLoop extends BaseTest {
 	public static final Logger logger = LogManager.getLogger(TestExtractChunkLoop.class);
 
-	/// Comfortably over chunkSize 2000 so the text splits into several chunks. Sentence-ended so
-	/// the loop's break-on-period logic behaves like it does on real prose.
+	/// Comfortably over EXTRACT_CHUNK_SIZE so the text splits into several chunks. Sentence-ended so
+	/// the loop's break-on-period logic behaves like it does on real prose. Each sentence is padded
+	/// in proportion to the chunk stride (92 chars when the stride was 2000-200), so longText(N)
+	/// still cuts into the number of chunks the per-test floors below were written against.
+	private static final int SENTENCE_CHARS = 92 * (PictureBookUtil.EXTRACT_CHUNK_SIZE - PictureBookUtil.EXTRACT_CHUNK_OVERLAP) / 1800;
 	private static String longText(int sentences) {
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < sentences; i++) {
-			sb.append("Sentence number ").append(i)
-			  .append(" carries enough words to make the passage realistically long for chunking. ");
+			StringBuilder s = new StringBuilder("Sentence number ").append(i)
+			  .append(" carries enough words to make the passage realistically long for chunking");
+			while (s.length() < SENTENCE_CHARS - 2) s.append(", and then some more words to fill it out");
+			s.setLength(SENTENCE_CHARS - 2);
+			sb.append(s).append(". ");
 		}
 		return sb.toString();
 	}
@@ -473,7 +479,7 @@ public class TestExtractChunkLoop extends BaseTest {
 		assertTrue("carrying Chat's reason: " + failed1.get(0), failed1.get(0).contains("it is unreachable"));
 
 		ExtractCheckpoint cp = PictureBookUtil.loadExtractCheckpoint(u, groupPath, workObjectId,
-				PictureBookUtil.extractTextHash(text), 2000, 200, t1.getTotal());
+				PictureBookUtil.extractTextHash(text), PictureBookUtil.EXTRACT_CHUNK_SIZE, PictureBookUtil.EXTRACT_CHUNK_OVERLAP, t1.getTotal());
 		assertNotNull("the checkpoint must be KEPT, not cleared as if the run completed", cp);
 		assertEquals("the checkpoint stops one chunk short — at the last chunk actually merged",
 				t1.getTotal() - 1, cp.chunksProcessed);
@@ -550,7 +556,7 @@ public class TestExtractChunkLoop extends BaseTest {
 		assertFalse(failed1.get(0).contains("LLM returned no content"));
 
 		ExtractCheckpoint cp = PictureBookUtil.loadExtractCheckpoint(u, groupPath, workObjectId,
-				PictureBookUtil.extractTextHash(text), 2000, 200, t1.getTotal());
+				PictureBookUtil.extractTextHash(text), PictureBookUtil.EXTRACT_CHUNK_SIZE, PictureBookUtil.EXTRACT_CHUNK_OVERLAP, t1.getTotal());
 		assertNotNull(cp);
 		assertEquals("checkpoint sits after the last MERGED chunk (4)", 4, cp.chunksProcessed);
 
@@ -690,7 +696,7 @@ public class TestExtractChunkLoop extends BaseTest {
 		assertTrue("some scenes were extracted before the cancel", extractedBefore > 0);
 
 		ExtractCheckpoint cp = PictureBookUtil.loadExtractCheckpoint(u, groupPath, workObjectId,
-				PictureBookUtil.extractTextHash(text), 2000, 200, t1.getTotal());
+				PictureBookUtil.extractTextHash(text), PictureBookUtil.EXTRACT_CHUNK_SIZE, PictureBookUtil.EXTRACT_CHUNK_OVERLAP, t1.getTotal());
 		assertNotNull("a cancelled run must LEAVE a resumable checkpoint", cp);
 		assertEquals("the checkpoint holds the scenes extracted so far",
 				extractedBefore, cp.scenes.size());
@@ -1185,7 +1191,7 @@ public class TestExtractChunkLoop extends BaseTest {
 		assertEquals("refusal", failure(failed1.get(0)).get("kind"));
 
 		ExtractCheckpoint cp = PictureBookUtil.loadExtractCheckpoint(u, groupPath, workObjectId,
-				PictureBookUtil.extractTextHash(text), 2000, 200, chunks.size());
+				PictureBookUtil.extractTextHash(text), PictureBookUtil.EXTRACT_CHUNK_SIZE, PictureBookUtil.EXTRACT_CHUNK_OVERLAP, chunks.size());
 		assertNotNull("a run that reached the end WITH a failed passage must KEEP its checkpoint", cp);
 		assertEquals("...marked fully processed, so a plain re-run does not redo anything",
 				chunks.size(), cp.chunksProcessed);
@@ -1312,7 +1318,7 @@ public class TestExtractChunkLoop extends BaseTest {
 		assertEquals("Recovered Two", r.scenes.get(1).get("title"));
 
 		ExtractCheckpoint cp = PictureBookUtil.loadExtractCheckpoint(u, groupPath, workObjectId,
-				PictureBookUtil.extractTextHash(text), 2000, 200, chunks.size());
+				PictureBookUtil.extractTextHash(text), PictureBookUtil.EXTRACT_CHUNK_SIZE, PictureBookUtil.EXTRACT_CHUNK_OVERLAP, chunks.size());
 		assertNotNull("a retry that left a failure keeps the checkpoint", cp);
 		assertEquals(chunks.size(), cp.chunksProcessed);
 		assertEquals("the merged scene list is what is checkpointed", r.scenes.size(), cp.scenes.size());
@@ -1383,5 +1389,89 @@ public class TestExtractChunkLoop extends BaseTest {
 			assertNull(s.get("blurb"));
 			assertNull(s.get("sourceText"));
 		}
+	}
+
+	// ── the per-chunk scene budget ({maxNew}) ─────────────────────────────────────
+
+	/// The budget is the requested total spread over the passages, rounded up, never below one,
+	/// and a missing/zero target falls back to the default scene count — so an old checkpoint that
+	/// never recorded a target still gets a sane budget.
+	@Test
+	public void TestChunkSceneBudgetSpreadsTheTargetOverThePassages() {
+		assertEquals(4, PictureBookUtil.chunkSceneBudget(10, 3));
+		assertEquals(1, PictureBookUtil.chunkSceneBudget(10, 10));
+		assertEquals("never below one", 1, PictureBookUtil.chunkSceneBudget(3, 10));
+		assertEquals("a single passage gets the whole target", 12, PictureBookUtil.chunkSceneBudget(12, 1));
+		assertEquals("zero chunks is treated as one", 12, PictureBookUtil.chunkSceneBudget(12, 0));
+		int dflt = (int) Math.ceil((double) PictureBookUtil.MAX_SCENES_DEFAULT / 4);
+		assertEquals("zero target → default scene count", dflt, PictureBookUtil.chunkSceneBudget(0, 4));
+		assertEquals("negative target → default scene count", dflt, PictureBookUtil.chunkSceneBudget(-1, 4));
+	}
+
+	/// Every passage of a run is told the same {maxNew} — ceil(target / passages) — and a retry
+	/// of a failed passage is told the SAME number, read back from the checkpoint rather than
+	/// recomputed from a default. This is what keeps a short story from yielding 73 micro-scenes.
+	@Test
+	public void TestMaxNewBudgetReachesEveryChunkAndSurvivesTheCheckpointIntoRetry() throws Exception {
+		BaseRecord u = user();
+		long orgId = u.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String docName = "loopWorkBudget-" + UUID.randomUUID();
+		BaseRecord work = getCreateData(u, docName, "text/plain", longText(100).getBytes(), "~/PbLoopTests", orgId);
+		assertNotNull(work);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		String groupPath = PictureBookUtil.findWorkGroupPath(u, workObjectId);
+		PictureBookUtil.clearExtractCheckpoint(u, workObjectId);
+		String text = workText(u, workObjectId);
+		List<String> chunks = PictureBookUtil.chunkText(text);
+		assertTrue(chunks.size() >= 5);
+
+		/// Five per passage; the default (10 over >= 5 passages) is at most two, so a retry that
+		/// silently fell back to MAX_SCENES_DEFAULT would be caught.
+		final int target = 4 * chunks.size() + 1;
+		final String expected = String.valueOf(PictureBookUtil.chunkSceneBudget(target, chunks.size()));
+		assertEquals("5", expected);
+		assertFalse("the test is only meaningful when the budget differs from the default",
+				expected.equals(String.valueOf(PictureBookUtil.chunkSceneBudget(PictureBookUtil.MAX_SCENES_DEFAULT, chunks.size()))));
+
+		// --- first run: passage 3 refused, every call sees the budget ---------------
+		final List<String> seenBudgets = Collections.synchronizedList(new ArrayList<>());
+		SummarizeProgress t1 = new SummarizeProgress();
+		boolean[] end1 = new boolean[] { false };
+		List<String> failed1 = new ArrayList<>();
+		ChunkAware first = new ChunkAware((idx, attempt, vars) -> {
+			seenBudgets.add(vars.get("maxNew"));
+			if (idx == 2) {
+				PictureBookUtil.setLastRefusalForTest("No.");
+				return null;
+			}
+			return sceneJson("Scene " + idx);
+		});
+		List<Map<String, Object>> firstScenes = PictureBookUtil.extractChunkedInternal(u, null, text, t1, failed1,
+				workObjectId, end1, first, null, null, null, target);
+		assertTrue(end1[0]);
+		assertEquals(1, failed1.size());
+		assertEquals(chunks.size() - 1, firstScenes.size());
+		assertEquals("one model call per passage", chunks.size(), seenBudgets.size());
+		for (String b : seenBudgets) assertEquals("every passage is given the same budget", expected, b);
+
+		ExtractCheckpoint cp = PictureBookUtil.loadExtractCheckpoint(u, groupPath, workObjectId,
+				PictureBookUtil.extractTextHash(text), PictureBookUtil.EXTRACT_CHUNK_SIZE, PictureBookUtil.EXTRACT_CHUNK_OVERLAP, chunks.size());
+		assertNotNull("a run that left a failure keeps the checkpoint", cp);
+		assertEquals("the requested total is persisted with the checkpoint", target, cp.targetCount);
+
+		// --- retry: the recovered passage is told the same budget -------------------
+		final List<String> retryBudgets = Collections.synchronizedList(new ArrayList<>());
+		PictureBookUtil.ScenesOnlyResult r = PictureBookUtil.retryFailedChunks(u, workObjectId, null, new SummarizeProgress(),
+				null, null, null, (vars, attempt) -> {
+					retryBudgets.add(vars.get("maxNew"));
+					assertEquals(chunks.get(2), vars.get("chunk"));
+					return sceneJson("Recovered Three");
+				});
+		assertEquals(listOf(expected), retryBudgets);
+		assertTrue(r.failedExtractions.isEmpty());
+		assertEquals(chunks.size(), r.scenes.size());
+		assertEquals("Recovered Three", r.scenes.get(2).get("title"));
+		assertNull("all passages recovered — checkpoint cleared",
+				PictureBookUtil.loadProgressNote(u, groupPath, workObjectId));
 	}
 }

@@ -4928,6 +4928,12 @@ public class PictureBookUtil {
         int totalChunks;
         /** Number of chunks whose results are already merged into {@link #scenes}. */
         int chunksProcessed;
+        /**
+         * The request's scene count, kept so {@link #retryFailedChunks} (which has no request count
+         * of its own) gives a retried passage the same {@code maxNew} budget the original run did.
+         * 0 on checkpoints written before the budget existed = {@link #MAX_SCENES_DEFAULT}.
+         */
+        int targetCount;
         /** Inclusive start of the covered range within the shared manuscript, or null = whole document. */
         Integer startOffset;
         /** Exclusive end of the covered range within the shared manuscript, or null = whole document. */
@@ -5039,6 +5045,7 @@ public class PictureBookUtil {
             out.put("overlap", cp.overlap);
             out.put("totalChunks", cp.totalChunks);
             out.put("chunksProcessed", cp.chunksProcessed);
+            out.put("targetCount", cp.targetCount);
             /// Persist the covered range too. The note NAME already isolates chapters, so this is
             /// not what prevents the collision — it is re-checked by the load guard as
             /// defence-in-depth against a hand-forged or name-collided note.
@@ -5113,6 +5120,7 @@ public class PictureBookUtil {
             cp.overlap = intOf(m.get("overlap"));
             cp.totalChunks = intOf(m.get("totalChunks"));
             cp.chunksProcessed = intOf(m.get("chunksProcessed"));
+            cp.targetCount = intOf(m.get("targetCount"));
             /// A missing key round-trips to null (whole-document), not 0 — 0 is a legitimate range
             /// start, so intOf would conflate "no range recorded" with "range starts at 0".
             cp.startOffset = (m.get("startOffset") instanceof Number)
@@ -5751,21 +5759,29 @@ public class PictureBookUtil {
             SummarizeProgress cancelToken, List<String> failedExtractions, String workObjectId,
             boolean[] reachedEndOut, ChunkLlm llm, List<String> seedRoster) {
         return extractChunkedInternal(user, chatConfig, text, cancelToken, failedExtractions, workObjectId,
-                reachedEndOut, llm, seedRoster, null, null);
+                reachedEndOut, llm, seedRoster, null, null, MAX_SCENES_DEFAULT);
     }
 
     /**
-     * N-series per-chapter overload: adds the canonical half-open source RANGE
-     * {@code [startOffset, endOffset)} this extraction covers. Both null = the whole document = the
-     * pre-N behaviour byte-for-byte. A non-null range is baked into the checkpoint note NAME (see
-     * {@link #progressNoteName}) and re-checked by the load guard's range-equality test, which is what
-     * lets two chapters cut from ONE {@code workObjectId} keep separate checkpoints instead of
-     * colliding on a single note — without it each chapter's resume thrashes back to chunk 1. The
-     * offsets are used ONLY to key the checkpoint (name + guard); the text is ALREADY sliced by the
-     * caller, so they are not applied to {@code text} again here.
+     * The chunk prompt's {@code maxNew}: the request's scene count spread evenly over the chunks,
+     * never less than one per chunk. Until 2026-10-05 the chunk prompt had no bound at all — the
+     * single-shot prompt's {@code count} never reached the chunked path — so a 17K-char story cut
+     * into ten passages produced 73 micro-scenes, and the ever-growing scene list is also what the
+     * model degenerated into verbatim A/B loops on. 0 or negative = {@link #MAX_SCENES_DEFAULT}.
      */
-    static final int EXTRACT_CHUNK_SIZE = 2000;
-    static final int EXTRACT_CHUNK_OVERLAP = 200;
+    static int chunkSceneBudget(int targetCount, int chunkCount) {
+        if (targetCount <= 0) targetCount = MAX_SCENES_DEFAULT;
+        return Math.max(1, (int) Math.ceil((double) targetCount / Math.max(1, chunkCount)));
+    }
+
+    /// 2000/200 until 2026-10-05: ten 500-token passages of a ~17K-char story each asked for scenes
+    /// with no budget, which yielded 73 micro-scenes and, as the repetitive list grew, the verbatim
+    /// A/B loops RunawayDetector now cuts. ~2K tokens per chunk is still well inside the 8K context
+    /// MAX_EXTRACTION_TEXT_CHARS assumes once the previous-scene list is added; a story that short
+    /// now runs in 3 chunks. Changing either value invalidates existing extract checkpoints (the
+    /// load guard rejects "chunking changed") — intended.
+    static final int EXTRACT_CHUNK_SIZE = 8000;
+    static final int EXTRACT_CHUNK_OVERLAP = 400;
 
     /**
      * Cut the source text into the overlapping passages the chunk loop extracts from. Deterministic
@@ -5800,14 +5816,29 @@ public class PictureBookUtil {
                 vars, chunkPrompt);
     }
 
+    /**
+     * N-series per-chapter overload: adds the canonical half-open source RANGE
+     * {@code [startOffset, endOffset)} this extraction covers. Both null = the whole document = the
+     * pre-N behaviour byte-for-byte. A non-null range is baked into the checkpoint note NAME (see
+     * {@link #progressNoteName}) and re-checked by the load guard's range-equality test, which is what
+     * lets two chapters cut from ONE {@code workObjectId} keep separate checkpoints instead of
+     * colliding on a single note — without it each chapter's resume thrashes back to chunk 1. The
+     * offsets are used ONLY to key the checkpoint (name + guard); the text is ALREADY sliced by the
+     * caller, so they are not applied to {@code text} again here.
+     *
+     * <p>{@code targetCount} is the request's scene count (the same value the single-shot prompt
+     * receives as {@code count}); see {@link #chunkSceneBudget} for how it becomes the per-chunk
+     * {@code maxNew}.
+     */
     @SuppressWarnings("unchecked")
     static List<Map<String, Object>> extractChunkedInternal(BaseRecord user, BaseRecord chatConfig, String text,
             SummarizeProgress cancelToken, List<String> failedExtractions, String workObjectId,
             boolean[] reachedEndOut, ChunkLlm llm, List<String> seedRoster,
-            Integer startOffset, Integer endOffset) {
+            Integer startOffset, Integer endOffset, int targetCount) {
         int chunkSize = EXTRACT_CHUNK_SIZE;
         int overlap = EXTRACT_CHUNK_OVERLAP;
         List<String> chunks = chunkText(text);
+        final String maxNew = String.valueOf(chunkSceneBudget(targetCount, chunks.size()));
 
         // KI-10: populate progress (total/current), same as ChatUtil's mapSummarize/reduceSummaries
         // do with their own SummarizeProgress — lets a caller/test observe how many chunks have
@@ -5837,6 +5868,7 @@ public class PictureBookUtil {
         checkpoint.chunkSize = chunkSize;
         checkpoint.overlap = overlap;
         checkpoint.totalChunks = chunks.size();
+        checkpoint.targetCount = targetCount;
         // N-series item 4: the source range this checkpoint covers. Persisted by saveExtractCheckpoint
         // (which reads cp.startOffset/endOffset) and baked into the note name via progressNoteName, so
         // a shared-manuscript chapter writes its OWN suffixed note; null/null = whole document = the
@@ -5975,6 +6007,7 @@ public class PictureBookUtil {
             /// merge, so an LLM literal "null"/"n/a" never reaches the prompt.
             List<String> roster = mergeRoster(seedRoster, knownCharacterNames(sceneList));
             vars.put("knownCharacters", roster.isEmpty() ? "(none yet)" : String.join(", ", roster));
+            vars.put("maxNew", maxNew);
             vars.put("chunk", chunks.get(ci));
             // Extract this chunk's scenes, with a bounded retry: qwen3-class models occasionally emit
             // malformed JSON (a stray quote, a corrupted token mid-generation) — a fresh generation
@@ -8222,7 +8255,7 @@ public class PictureBookUtil {
                     ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
             boolean[] reachedEnd = new boolean[] { true };
             List<Map<String, Object>> sceneList = extractChunkedInternal(user, chatConfig, text, cancelToken,
-                    failedExtractions, workObjectId, reachedEnd, null, seedRoster, cpStart, cpEnd);
+                    failedExtractions, workObjectId, reachedEnd, null, seedRoster, cpStart, cpEnd, count);
             return new ScenesOnlyResult(sceneList, true, failedExtractions, reachedEnd[0]);
         }
 
@@ -8341,6 +8374,8 @@ public class PictureBookUtil {
         }
         logger.info("retryFailedChunks: re-running " + toRetry.size() + " failed passage(s) of "
                 + chunks.size() + " for " + workObjectId + " with chat config " + chatConfigName);
+        /// Same per-chunk budget the original run used (persisted on the checkpoint).
+        final String maxNew = String.valueOf(chunkSceneBudget(cp.targetCount, chunks.size()));
 
         int recovered = 0;
         for (int i = 0; i < toRetry.size(); i++) {
@@ -8359,6 +8394,7 @@ public class PictureBookUtil {
                     : JSONUtil.exportObject(scenesForRetryPrompt(sceneList, ci)));
             List<String> roster = mergeRoster(seedRoster, knownCharacterNames(sceneList));
             vars.put("knownCharacters", roster.isEmpty() ? "(none yet)" : String.join(", ", roster));
+            vars.put("maxNew", maxNew);
             vars.put("chunk", chunks.get(ci));
             String chunkCtx = "extract-scenes-chunk:" + n + "/" + chunks.size();
             /// Drop the old record now, after the cancel check: whatever this attempt produces —

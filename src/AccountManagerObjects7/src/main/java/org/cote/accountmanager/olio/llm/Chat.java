@@ -257,9 +257,9 @@ public class Chat {
 	/**
 	 * Runaway-generation detector for buffer-mode replies: fires when the reply has become
 	 * PERIODIC — its tail is at least {@link #MIN_REPEATS} consecutive verbatim copies of one block
-	 * of text (the period), covering at least {@link #WINDOW_CHARS}{@code *}{@link #MIN_REPEATS}
-	 * characters. The period is found from the trailing {@link #WINDOW_CHARS} characters: wherever
-	 * they last occurred before is one period back.
+	 * of text (the period), covering at least {@link #MIN_LOOP_CHARS} characters — or, for a long
+	 * period, just two copies covering {@link #LONG_LOOP_CHARS}. The period is found from the
+	 * trailing {@link #WINDOW_CHARS} characters: wherever they last occurred before is one period back.
 	 *
 	 * <p>Deliberately model-agnostic and prompt-agnostic: it reads nothing but the text. Requiring the
 	 * whole period to repeat — not just a recurring window — is what separates a sampler stuck in a
@@ -277,7 +277,16 @@ public class Chat {
 	 */
 	public static final class RunawayDetector {
 		public static final int WINDOW_CHARS = 300;
-		public static final int MIN_REPEATS = 5;
+		/// Was 5: on a 4.8K-char period that is ~24K chars (~4 min at 30 tok/s) of GPU before the cut
+		/// (Ourselves.doc chunks 3 and 10, 2026-10-05). Three consecutive verbatim copies is still not
+		/// something a refrain or a boilerplate-sharing list produces (the text between differs).
+		public static final int MIN_REPEATS = 3;
+		/// The loop must cover at least this much of the tail however many copies that takes, so a
+		/// short line repeated three times is not a runaway.
+		public static final int MIN_LOOP_CHARS = 1500;
+		/// Two consecutive verbatim copies that together cover this much ARE a runaway: nothing
+		/// legitimate repeats 4K+ characters back to back, and waiting for a third is another minute.
+		public static final int LONG_LOOP_CHARS = 8000;
 		/// Re-check only after this much new text — indexOf over a 50K-char reply per token is wasteful.
 		public static final int CHECK_STRIDE_CHARS = 64;
 		/// Spacing of the loop-block windows probed when locating the cut; bounds the cost of a fire
@@ -296,7 +305,7 @@ public class Chat {
 		public boolean check(String content) {
 			if (content == null) return false;
 			int len = content.length();
-			if (len < WINDOW_CHARS * MIN_REPEATS || len - lastCheckedLength < CHECK_STRIDE_CHARS) return false;
+			if (len < MIN_LOOP_CHARS || len - lastCheckedLength < CHECK_STRIDE_CHARS) return false;
 			lastCheckedLength = len;
 			int tailStart = len - WINDOW_CHARS;
 			String tail = content.substring(tailStart);
@@ -314,7 +323,9 @@ public class Chat {
 					pos -= cand;
 					n++;
 				}
-				if (n >= MIN_REPEATS && n * cand >= WINDOW_CHARS * MIN_REPEATS) {
+				boolean loop = (n >= MIN_REPEATS && n * cand >= MIN_LOOP_CHARS)
+					|| (n >= 2 && n * cand >= LONG_LOOP_CHARS);
+				if (loop) {
 					d = cand;
 					copies = n;
 					break;

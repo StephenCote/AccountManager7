@@ -987,10 +987,17 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
             + encodeURIComponent(docObjectId));
         expect(Array.isArray(ranges) && ranges.length >= FAULT_CHAPTERS, 'manuscript detected as chaptered').toBe(true);
         // The fault is "3rd extract-chunk call": only chapters longer than MAX_EXTRACTION_TEXT_CHARS (8000)
-        // take the chunked path, and a >8000-char chapter yields >= 4 chunk calls (2000/200 chunking).
-        // Hand the wizard enough leading chapters that at least one is chunked.
+        // take the chunked path, and with EXTRACT_CHUNK_SIZE/OVERLAP = 8000/400 a chunked chapter
+        // yields at least 1 + ceil((len - 8000) / 7600) chunk calls (break-on-period only shortens
+        // chunks, so this is a floor). Hand the wizard enough leading chapters that the chunked
+        // ones add up to >= 3 calls, or the fault never fires.
+        const CHUNK_SIZE = 8000, CHUNK_OVERLAP = 400;
+        const chunkCalls = r => {
+            const len = r.endOffset - r.startOffset;
+            return len > 8000 ? 1 + Math.ceil((len - CHUNK_SIZE) / (CHUNK_SIZE - CHUNK_OVERLAP)) : 0;
+        };
         let N = FAULT_CHAPTERS;
-        while (N < ranges.length && !ranges.slice(0, N).some(r => (r.endOffset - r.startOffset) > 8000)) N++;
+        while (N < ranges.length && ranges.slice(0, N).reduce((a, r) => a + chunkCalls(r), 0) < 3) N++;
         const handed = ranges.slice(0, N);
         console.log('[pb-emu:faults] chapters handed: ' + N + ' chars=' + JSON.stringify(handed.map(r => r.endOffset - r.startOffset)));
 

@@ -272,6 +272,12 @@ public class TestChatRunawayDetection extends BaseTest {
 		assertEquals("the period must be one A scene plus one B scene", LOOP_PERIOD, det.period);
 		assertTrue("the reply must end in at least MIN_REPEATS copies of the period", det.periodCopies >= Chat.RunawayDetector.MIN_REPEATS);
 		assertTrue("firstRepeatIndex must point inside the reply", det.firstRepeatIndex > 0 && det.firstRepeatIndex < firedAt);
+		/// Pins the cost of a fire: MIN_REPEATS copies past the cut, plus one period of slack for the
+		/// check stride and the cut landing a little before the first clean copy. At the old 5 copies
+		/// this reply took ~8.8K chars past the cut; at 3 it must take no more than ~7K.
+		assertTrue("the detector must fire within MIN_REPEATS+1 periods of the cut (fired " + (firedAt - det.firstRepeatIndex)
+			+ " chars past it, period " + det.period + ")",
+			firedAt - det.firstRepeatIndex <= (Chat.RunawayDetector.MIN_REPEATS + 1) * LOOP_PERIOD);
 
 		assertCutAtTheStartOfTheLoop(content.substring(0, det.firstRepeatIndex));
 	}
@@ -281,7 +287,7 @@ public class TestChatRunawayDetection extends BaseTest {
 	public void testDetectorIgnoresARefrainPoem() {
 		String poem = refrainPoem();
 		assertTrue("poem must be long enough for the detector to look at it at all (" + poem.length() + ")",
-			poem.length() >= Chat.RunawayDetector.WINDOW_CHARS * Chat.RunawayDetector.MIN_REPEATS);
+			poem.length() >= Chat.RunawayDetector.MIN_LOOP_CHARS);
 		Chat.RunawayDetector det = new Chat.RunawayDetector();
 		for (int len = 0; len <= poem.length(); len += 17) {
 			assertFalse("the detector fired on a poem with a refrain at " + len + " chars",
@@ -329,7 +335,7 @@ public class TestChatRunawayDetection extends BaseTest {
 	public void testDetectorIgnoresDistinctScenesThatShareLongBoilerplate() {
 		String json = distinctScenesWithSharedBoilerplate(12);
 		assertTrue("list must be long enough for the detector to look at it (" + json.length() + ")",
-			json.length() >= Chat.RunawayDetector.WINDOW_CHARS * Chat.RunawayDetector.MIN_REPEATS);
+			json.length() >= Chat.RunawayDetector.MIN_LOOP_CHARS);
 		Chat.RunawayDetector det = new Chat.RunawayDetector();
 		for (int len = 0; len <= json.length(); len += 17) {
 			assertFalse("the detector fired on a list of distinct scenes with shared boilerplate at " + len + " chars",
@@ -365,6 +371,84 @@ public class TestChatRunawayDetection extends BaseTest {
 				&& det.firstRepeatIndex < prefix.length() + Chat.RunawayDetector.CUT_PROBE_STRIDE_CHARS);
 		assertTrue("the cut must keep the distinct scenes whole (cut=" + det.firstRepeatIndex + ")",
 			json.substring(0, det.firstRepeatIndex).startsWith(prefix));
+	}
+
+	/// A scene object whose diffusionPrompt is a long run of DISTINCT detail sentences, so the block
+	/// has no internal period shorter than itself.
+	private static String longSceneBlock(int targetChars) {
+		StringBuilder sb = new StringBuilder("    {\n      \"title\": \"Scene 7: The kettle boils over\",\n      \"sdPrompt\": \"");
+		int i = 0;
+		while (sb.length() < targetChars - 40) {
+			sb.append("detail ").append(i).append(": the ").append(i % 2 == 0 ? "steam" : "light")
+				.append(" settles on surface number ").append(i * 7 % 101).append("; ");
+			i++;
+		}
+		return sb.append("\"\n    },\n").toString();
+	}
+
+	/// Feeds growing prefixes the way the stream reader does, then the complete text on a fresh
+	/// detector (check() skips a prefix within CHECK_STRIDE_CHARS of the last one it looked at, so
+	/// the exact end is otherwise easy to miss). -1 = never fired.
+	private static int firstFire(String text) {
+		Chat.RunawayDetector det = new Chat.RunawayDetector();
+		for (int len = 0; len < text.length(); len += 17) {
+			if (det.check(text.substring(0, len))) return len;
+		}
+		return new Chat.RunawayDetector().check(text) ? text.length() : -1;
+	}
+
+	/// (2d) The long-period rule: a 4.5K-char scene emitted twice back to back is a runaway after
+	/// the SECOND copy — waiting for a third is another minute of GPU on a period that size — and
+	/// the cut still lands on the first copy so the distinct scenes before it survive.
+	@Test
+	public void testDetectorFiresOnTwoCopiesOfALongPeriod() {
+		String distinct = distinctScenesWithSharedBoilerplate(4);
+		String prefix = distinct.substring(0, distinct.lastIndexOf("  ]"));
+		String block = longSceneBlock(Chat.RunawayDetector.LONG_LOOP_CHARS / 2 + 500);
+		assertTrue("block must be long enough that two copies clear LONG_LOOP_CHARS (" + block.length() + ")",
+			2 * block.length() >= Chat.RunawayDetector.LONG_LOOP_CHARS);
+
+		String oneCopyAndAHalf = prefix + block + block.substring(0, block.length() / 2);
+		assertEquals("one copy plus a partial second is not yet a loop", -1, firstFire(oneCopyAndAHalf));
+
+		String twoCopies = prefix + block + block;
+		int firedAt = firstFire(twoCopies);
+		Chat.RunawayDetector det2 = new Chat.RunawayDetector();
+		assertTrue(det2.check(twoCopies));
+		logger.info("[RUNAWAY-UNIT] long-period loop fired at " + firedAt + " of " + twoCopies.length() + " period=" + det2.period
+			+ " copies=" + det2.periodCopies + " cut=" + det2.firstRepeatIndex);
+		assertTrue("two verbatim copies of a " + block.length() + "-char block must fire", firedAt > 0);
+		assertEquals("the period must be the repeated block", block.length(), det2.period);
+		assertEquals("it must have fired on the second copy, not waited for MIN_REPEATS", 2, det2.periodCopies);
+		assertTrue("the cut must land within one probe stride of the first copy (cut=" + det2.firstRepeatIndex
+			+ ", first copy at " + prefix.length() + ")",
+			det2.firstRepeatIndex >= prefix.length()
+				&& det2.firstRepeatIndex < prefix.length() + Chat.RunawayDetector.CUT_PROBE_STRIDE_CHARS);
+	}
+
+	/// (2e) The floor MIN_REPEATS now leans on: three copies of a 400-char line are 1200 chars of
+	/// repetition — under MIN_LOOP_CHARS, so not a runaway — while a fourth copy clears the floor and
+	/// fires. A short repeated line (a chorus, a table row) must need more than three copies.
+	@Test
+	public void testThreeCopiesOfAShortLineAreUnderTheFloorButAFourthIsNot() {
+		String distinct = distinctScenesWithSharedBoilerplate(4);
+		String prefix = distinct.substring(0, distinct.lastIndexOf("  ]"));
+		StringBuilder line = new StringBuilder("    {\"title\": \"Scene 5: the clock strikes\", \"sdPrompt\": \"");
+		int i = 0;
+		while (line.length() < 380) line.append("tick ").append(i++).append(", ");
+		line.append("\"},\n");
+		assertTrue("line must be short enough that three copies stay under MIN_LOOP_CHARS (" + line.length() + ")",
+			3 * line.length() < Chat.RunawayDetector.MIN_LOOP_CHARS);
+		assertTrue("...and long enough that four copies clear it", 4 * line.length() >= Chat.RunawayDetector.MIN_LOOP_CHARS);
+
+		String three = prefix + line + line + line;
+		assertEquals("three copies under the floor must not fire", -1, firstFire(three));
+
+		String four = three + line;
+		Chat.RunawayDetector det = new Chat.RunawayDetector();
+		assertTrue("four copies over the floor must fire", det.check(four));
+		assertEquals("the period must be the repeated line", line.length(), det.period);
+		assertEquals(4, det.periodCopies);
 	}
 
 	/// (3) END TO END through Chat.chat() in buffer mode: the recorded runaway reply streamed from a
