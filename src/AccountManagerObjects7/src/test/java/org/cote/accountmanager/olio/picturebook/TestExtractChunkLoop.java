@@ -1043,6 +1043,87 @@ public class TestExtractChunkLoop extends BaseTest {
 		Chat.clearLastCallError();
 	}
 
+	/// A runaway (Chat's detector stopped a reply that was repeating the same scene verbatim and
+	/// kept the prefix before the loop) is a stall with a different cause, so it needs a different
+	/// correction: the retry hint must say the reply REPEATED itself and ask for each scene once,
+	/// not "it was cut off, keep it short". When the kept prefix already parses there is no retry
+	/// at all; when it never parses, the failure is recorded as truncated with the loop as reason.
+	@Test
+	public void TestRunawayIsRetriedWithALoopHintOrSalvagedWithoutARetry() throws Exception {
+		BaseRecord u = user();
+		SummarizeProgress token = new SummarizeProgress();
+		boolean[] reachedEnd = new boolean[] { false };
+		List<String> failed = new ArrayList<>();
+		final String RUNAWAY_MSG = "The model's output started repeating itself (the last 300 characters had already appeared 4 times); generation was stopped after 16000 characters and the reply truncated to 8686 characters, where the repetition began";
+		final String UNPARSEABLE_PREFIX = "Here are the scenes I found, listed as they appear";
+		final List<String> retryHints = Collections.synchronizedList(new ArrayList<>());
+		ChunkAware llm = new ChunkAware((idx, attempt, vars) -> {
+			if (attempt == 2) retryHints.add(idx + ":" + vars.get("chunk"));
+			if (idx == 1) {
+				/// The chunk-6 shape: the kept prefix is valid-enough JSON — salvaged, no retry.
+				Chat.setLastCallStalledForTest(true);
+				Chat.setLastCallRunawayForTest(true);
+				Chat.setLastCallErrorForTest(RUNAWAY_MSG);
+				return sceneJson("Salvaged Before The Loop");
+			}
+			if (idx == 2) {
+				/// Looped once with an unparseable prefix, then the corrected retry completes.
+				if (attempt == 1) {
+					Chat.setLastCallStalledForTest(true);
+					Chat.setLastCallRunawayForTest(true);
+					Chat.setLastCallErrorForTest(RUNAWAY_MSG);
+					return UNPARSEABLE_PREFIX;
+				}
+				return sceneJson("Recovered After Runaway");
+			}
+			if (idx == 3) {
+				/// Loops on both attempts, never producing parseable text.
+				Chat.setLastCallStalledForTest(true);
+				Chat.setLastCallRunawayForTest(true);
+				Chat.setLastCallErrorForTest(RUNAWAY_MSG);
+				return UNPARSEABLE_PREFIX;
+			}
+			return sceneJson("Scene " + idx);
+		});
+
+		List<Map<String, Object>> scenes = run(u, longText(100), token, failed, null, reachedEnd, llm);
+
+		assertTrue("the text must span at least 6 chunks", token.getTotal() >= 6);
+		assertTrue("a runaway is a live server — the run must reach the end", reachedEnd[0]);
+		assertEquals("a salvaged runaway prefix is NOT retried", 1, llm.attemptsFor(1));
+		assertEquals("an unparseable runaway prefix is retried exactly once", 2, llm.attemptsFor(2));
+		assertEquals(2, llm.attemptsFor(3));
+		assertEquals("a healthy chunk is called once", 1, llm.attemptsFor(0));
+		assertEquals("one retry hint per retried chunk: " + retryHints, 2, retryHints.size());
+		for (String h : retryHints) {
+			assertTrue("the retry must say the reply REPEATED itself: " + h, h.contains("started repeating the same scene"));
+			assertTrue("and ask for each scene exactly once: " + h, h.contains("exactly once"));
+			assertFalse("not the plain-stall wording: " + h, h.contains("cut off before it finished"));
+			assertFalse("not the malformed-JSON wording: " + h, h.contains("could not be parsed as JSON"));
+		}
+
+		assertEquals("only the twice-looped chunk failed: " + failed, 1, failed.size());
+		Map<String, Object> rec = failure(failed.get(0));
+		assertEquals(4, ((Number) rec.get("chunk")).intValue());
+		assertEquals("a runaway prefix is a truncation (retryable), not 'no JSON'", "truncated", rec.get("kind"));
+		String err = String.valueOf(rec.get("error"));
+		assertTrue("the reason names the loop, not a dead stream: " + err, err.contains("started repeating itself"));
+		assertTrue("Chat's own reason is carried: " + err, err.contains(RUNAWAY_MSG));
+		assertFalse(err.contains("cut off mid-stream"));
+		assertEquals("the kept prefix is retained for inspection", UNPARSEABLE_PREFIX, rec.get("rawResponse"));
+		assertTrue("a runaway chunk is retryable", PictureBookUtil.isRetryableFailure(failed.get(0)));
+
+		boolean salvaged = false, recovered = false;
+		for (Map<String, Object> sc : scenes) {
+			if ("Salvaged Before The Loop".equals(sc.get("title"))) salvaged = true;
+			if ("Recovered After Runaway".equals(sc.get("title"))) recovered = true;
+		}
+		assertTrue("the salvaged prefix's scene must have been merged", salvaged);
+		assertTrue("the corrected retry's scene must have been merged", recovered);
+		assertEquals(token.getTotal() - 1, scenes.size());
+		Chat.clearLastCallError();
+	}
+
 	// ── keep-on-failure + retryFailedChunks, end to end through the real DB ──────
 
 	/// The text as retryFailedChunks will re-read it: the checkpoint is keyed on a hash of the

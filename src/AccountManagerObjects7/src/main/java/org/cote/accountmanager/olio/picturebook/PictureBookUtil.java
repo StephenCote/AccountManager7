@@ -5485,6 +5485,11 @@ public class PictureBookUtil {
         /// simply cut off, and a fresh request usually completes.
         boolean sawStall;
         boolean lastAttemptStalled;
+        /// Set when the last attempt's stall was Chat's runaway detector cutting a reply that had
+        /// started repeating itself verbatim (also lastAttemptStalled). The retry hint and the
+        /// failure record say so, because "cut off before it finished" is the wrong instruction
+        /// for a model that was never going to finish.
+        boolean lastAttemptRunaway;
         /// The model's own explanation for the last failure, when it gave one.
         String lastLlmError;
 
@@ -5513,11 +5518,18 @@ public class PictureBookUtil {
             /// mechanism was sampling luck, at ~90s a try. Truncation in particular will just
             /// recur. A corrective instruction costs nothing and addresses the actual cause.
             /// The wording follows the cause: a stalled stream was cut off, not malformed, and
-            /// telling the model its JSON was bad when it never finished is simply wrong.
+            /// telling the model its JSON was bad when it never finished is simply wrong. A
+            /// runaway (the reply repeated the same scene until Chat stopped it) was neither:
+            /// "keep it short" does not stop a loop, "list each scene once and stop" might.
             Map<String, String> attemptVars = vars;
             if (attempt > 1) {
                 attemptVars = new LinkedHashMap<>(vars);
-                String hint = a.lastAttemptStalled
+                String hint = a.lastAttemptRunaway
+                    ? "\n\nIMPORTANT: your previous reply started repeating the same scene over"
+                        + " and over and had to be stopped. List each scene exactly once, in order,"
+                        + " then close the JSON object and stop. Reply with ONLY a single complete,"
+                        + " valid JSON object."
+                    : a.lastAttemptStalled
                     ? "\n\nIMPORTANT: your previous reply was cut off before it finished."
                         + " Reply with ONLY a single complete, valid JSON object. Keep every"
                         + " field short so the whole object fits in one reply."
@@ -5534,6 +5546,7 @@ public class PictureBookUtil {
             a.llmResp = chunkLlm.call(attemptVars, attempt);
             long attemptMs = System.currentTimeMillis() - attemptStart;
             a.lastAttemptStalled = Chat.isLastCallStalled();
+            a.lastAttemptRunaway = Chat.isLastCallRunaway();
             // KI-10: count the chunk as processed once (first attempt) — progress reflects
             // "chunks attempted", matching ChatUtil.mapSummarize's incrementCurrent() placement.
             if (attempt == 1 && cancelToken != null) cancelToken.incrementCurrent();
@@ -5615,13 +5628,26 @@ public class PictureBookUtil {
             /// Break on PARSE SUCCESS, not on non-emptiness. A validly-parsed empty object means
             /// "no new scenes in this chunk" — a correct answer — and retrying it wasted a full
             /// generation and then recorded a bogus failure.
-            if (ok[0]) { a.result = parsed; a.parseOk = true; break; }
+            if (ok[0]) {
+                if (a.lastAttemptRunaway) {
+                    /// The common runaway outcome: the prefix Chat kept (everything before the
+                    /// repetition began) repairs into the distinct scenes. No second round.
+                    logger.warn("Chunk " + chunkCtx + ": the model's reply started repeating itself; the "
+                            + a.llmResp.length() + "-char prefix before the loop was salvaged (attempt " + attempt + ")");
+                }
+                a.result = parsed; a.parseOk = true; break;
+            }
             if (a.lastAttemptStalled) {
                 /// Partial text from a stream that was cut off. Unparseable because it is
                 /// incomplete, not because the model wrote bad JSON.
                 a.sawStall = true;
-                if (attempt < 2) logger.warn("Chunk " + chunkCtx + " stream stalled mid-reply ("
-                        + a.llmResp.length() + " chars received) — retrying once");
+                if (a.lastAttemptRunaway) {
+                    String why = Chat.getLastCallError();
+                    if (why != null) a.lastLlmError = why;
+                }
+                if (attempt < 2) logger.warn("Chunk " + chunkCtx + (a.lastAttemptRunaway
+                        ? " reply started repeating itself and was stopped (" : " stream stalled mid-reply (")
+                        + a.llmResp.length() + " chars kept) — retrying once");
             } else if (attempt < 2) {
                 logger.warn("Chunk " + chunkCtx + " returned unparseable JSON — retrying once");
             }
@@ -5660,10 +5686,15 @@ public class PictureBookUtil {
                 : "The model did not respond in time";
             recordFailedExtraction(failedExtractions, chunkCtx, kind, error, null);
         } else if (!emptyReply && a.lastAttemptStalled) {
-            recordFailedExtraction(failedExtractions, chunkCtx, KIND_TRUNCATED,
-                "The model's reply was cut off mid-stream (" + a.llmResp.length()
-                + " characters received) and the partial text could not be parsed as JSON",
-                a.llmResp);
+            /// Same kind either way — the text IS truncated and the chunk IS retryable — but the
+            /// reason tells the user whether the stream died or the model looped.
+            String error = a.lastAttemptRunaway
+                ? "The model's reply started repeating itself and was stopped; the " + a.llmResp.length()
+                    + " characters before the repetition began could not be parsed as JSON"
+                    + (a.lastLlmError != null ? " (" + a.lastLlmError + ")" : "")
+                : "The model's reply was cut off mid-stream (" + a.llmResp.length()
+                    + " characters received) and the partial text could not be parsed as JSON";
+            recordFailedExtraction(failedExtractions, chunkCtx, KIND_TRUNCATED, error, a.llmResp);
         } else {
             parseLlmJsonObject(a.llmResp, chunkCtx, failedExtractions);
         }

@@ -206,9 +206,34 @@ public class Chat {
 	 */
 	private static final ThreadLocal<Boolean> LAST_CALL_STALLED = new ThreadLocal<>();
 
-	/** The reason the last buffer-mode call on this thread returned null, or null if unknown. */
+	/**
+	 * Whether the most recent buffer-mode call on THIS thread was cut short by the runaway detector:
+	 * the model kept generating, but its output had started repeating itself verbatim (see
+	 * {@link RunawayDetector}). The exchange is torn down, the content is truncated at the point
+	 * where the repetition began and returned, and {@link #LAST_CALL_STALLED} is ALSO set so the
+	 * existing "unfinished reply, worth one re-attempt" handling applies unchanged. This flag exists
+	 * so a caller that wants to word its re-attempt differently (a loop is not a cut-off) can tell
+	 * the two apart without matching on the reason string.
+	 *
+	 * <p>Measured 2026-10-05 (Ourselves.doc, extract-scenes-chunk 6/10): after 12 distinct scenes
+	 * the model alternated two scene objects verbatim 45 times at a steady 34 tok/s until the 300s
+	 * deadline — 48,710 characters for a chunk whose healthy neighbours answered in ~600 tokens.
+	 * Nothing in the stream reader could tell that from a long legitimate reply, so the call ran to
+	 * the full timeout and the chunk was then NOT retried (a timeout is never retried).
+	 */
+	private static final ThreadLocal<Boolean> LAST_CALL_RUNAWAY = new ThreadLocal<>();
+
+	/**
+	 * The reason the last buffer-mode call on this thread returned null — or, when the runaway
+	 * detector cut the reply short, why the returned content was truncated. Null if unknown.
+	 */
 	public static String getLastCallError() {
 		return LAST_CALL_ERROR.get();
+	}
+
+	/** True when the last buffer-mode call on this thread was cut short by the runaway detector (see {@link #LAST_CALL_RUNAWAY}). */
+	public static boolean isLastCallRunaway() {
+		return Boolean.TRUE.equals(LAST_CALL_RUNAWAY.get());
 	}
 
 	/** True when the last buffer-mode call on this thread could not connect to the model server. */
@@ -226,6 +251,118 @@ public class Chat {
 		LAST_CALL_ERROR.remove();
 		LAST_CALL_UNREACHABLE.remove();
 		LAST_CALL_STALLED.remove();
+		LAST_CALL_RUNAWAY.remove();
+	}
+
+	/**
+	 * Runaway-generation detector for buffer-mode replies: fires when the reply has become
+	 * PERIODIC — its tail is at least {@link #MIN_REPEATS} consecutive verbatim copies of one block
+	 * of text (the period), covering at least {@link #WINDOW_CHARS}{@code *}{@link #MIN_REPEATS}
+	 * characters. The period is found from the trailing {@link #WINDOW_CHARS} characters: wherever
+	 * they last occurred before is one period back.
+	 *
+	 * <p>Deliberately model-agnostic and prompt-agnostic: it reads nothing but the text. Requiring the
+	 * whole period to repeat — not just a recurring window — is what separates a sampler stuck in a
+	 * cycle from legitimate repetition: a poem's refrain, a repeated JSON key, or a list of distinct
+	 * items that each carry the same long boilerplate (an SD style suffix, say) all recur, but the
+	 * text BETWEEN the copies differs, so no period repeats and nothing fires. Sampling/penalty
+	 * settings that make cycles less likely belong on the chatConfig; this is the backstop for when
+	 * they fail.
+	 *
+	 * <p>{@link #firstRepeatIndex} is the earliest point at which the reply first said (a window of)
+	 * what it then kept saying — the first occurrence of any {@link #WINDOW_CHARS}-character stretch
+	 * of the looped block. The caller truncates there, so what survives is everything the model
+	 * produced before it began repeating itself, including the lead-in where it was converging on the
+	 * loop with near-copies.
+	 */
+	public static final class RunawayDetector {
+		public static final int WINDOW_CHARS = 300;
+		public static final int MIN_REPEATS = 5;
+		/// Re-check only after this much new text — indexOf over a 50K-char reply per token is wasteful.
+		public static final int CHECK_STRIDE_CHARS = 64;
+		/// Spacing of the loop-block windows probed when locating the cut; bounds the cost of a fire
+		/// and is how far past the loop's first copy the cut can land (salvage drops the partial item).
+		public static final int CUT_PROBE_STRIDE_CHARS = 50;
+
+		private int lastCheckedLength = 0;
+		/// Non-overlapping occurrences of the trailing window in the whole reply (for the message).
+		public int repeats = 0;
+		/// Length of the repeating block and how many consecutive verbatim copies end the reply.
+		public int period = 0;
+		public int periodCopies = 0;
+		public int firstRepeatIndex = -1;
+
+		/// Returns true when the content is judged a runaway. Cheap when nothing new has arrived.
+		public boolean check(String content) {
+			if (content == null) return false;
+			int len = content.length();
+			if (len < WINDOW_CHARS * MIN_REPEATS || len - lastCheckedLength < CHECK_STRIDE_CHARS) return false;
+			lastCheckedLength = len;
+			int tailStart = len - WINDOW_CHARS;
+			String tail = content.substring(tailStart);
+
+			/// Each earlier occurrence of the tail, nearest first, is a candidate period. The nearest
+			/// usually is the period; it is not when the window happens to fall on text two loop
+			/// items share (the same JSON keys in both scenes), so keep looking outward.
+			int d = 0;
+			int copies = 0;
+			for (int prev = content.lastIndexOf(tail, tailStart - 1); prev >= 0; prev = content.lastIndexOf(tail, prev - 1)) {
+				int cand = tailStart - prev;
+				int n = 1;
+				int pos = len - cand;
+				while (pos - cand >= 0 && content.regionMatches(pos - cand, content, pos, cand)) {
+					pos -= cand;
+					n++;
+				}
+				if (n >= MIN_REPEATS && n * cand >= WINDOW_CHARS * MIN_REPEATS) {
+					d = cand;
+					copies = n;
+					break;
+				}
+			}
+			if (d == 0) return false;
+
+			int count = 1;
+			int first = -1;
+			int idx = content.indexOf(tail);
+			while (idx >= 0 && idx < tailStart) {
+				if (first < 0) first = idx;
+				count++;
+				idx = content.indexOf(tail, idx + WINDOW_CHARS);
+			}
+			/// The cut: the earliest first occurrence of any WINDOW_CHARS-long window of the looped
+			/// block (probed at a stride). The block is read circularly — it is aligned to the end of
+			/// the reply, not to where the model's loop happens to start — and unrolled far enough
+			/// that every probe is a full window even when the period is shorter than one. Never
+			/// later than the tail's own first occurrence.
+			int cut = first;
+			String block = content.substring(len - d);
+			StringBuilder unrolled = new StringBuilder(block);
+			while (unrolled.length() < d + WINDOW_CHARS) unrolled.append(block);
+			int probeStride = Math.max(1, Math.min(CUT_PROBE_STRIDE_CHARS, d));
+			for (int off = 0; off < d; off += probeStride) {
+				int at = content.indexOf(unrolled.substring(off, off + WINDOW_CHARS));
+				if (at >= 0 && at < cut) cut = at;
+			}
+			repeats = count;
+			period = d;
+			periodCopies = copies;
+			firstRepeatIndex = cut;
+			return true;
+		}
+	}
+
+	/// Kill switch for the runaway detector (buffer mode only). Default on; -Dllm.runaway.detect=false
+	/// turns it off for a JVM, setRunawayDetectionEnabled(false) for a test.
+	private static volatile boolean runawayDetectionEnabled =
+		!"false".equalsIgnoreCase(System.getProperty("llm.runaway.detect", "true"));
+
+	public static void setRunawayDetectionEnabled(boolean enabled) {
+		runawayDetectionEnabled = enabled;
+	}
+
+	public static boolean isRunawayDetectionEnabled() {
+		return runawayDetectionEnabled;
 	}
 
 	/// Test-only seam, paired with setLastCallErrorForTest: reproduces the unreachable-host failure shape.
@@ -236,6 +373,11 @@ public class Chat {
 	/// Test-only seam: reproduces the mid-reply stall shape (idle watchdog close / missing terminator).
 	public static void setLastCallStalledForTest(boolean stalled) {
 		LAST_CALL_STALLED.set(stalled);
+	}
+
+	/// Test-only seam: reproduces the runaway-detector shape (a stall whose cause was verbatim repetition).
+	public static void setLastCallRunawayForTest(boolean runaway) {
+		LAST_CALL_RUNAWAY.set(runaway);
 	}
 
 	/** True when any throwable in the cause chain says the remote host could not be connected to. */
@@ -4382,6 +4524,11 @@ public class Chat {
 		/// the hard deadline below closed the body because generation ran past effectiveTimeout.
 		final boolean[] bodyStarted = new boolean[] { false };
 		final boolean[] deadlineFired = new boolean[] { false };
+		/// Runaway marker (buffer mode): the read loop itself closed the body because the reply had
+		/// started repeating verbatim (see RunawayDetector / LAST_CALL_RUNAWAY). runawayMsg carries the
+		/// reason so the completion stage can report it without recomputing anything.
+		final boolean[] runawayFired = new boolean[] { false };
+		final String[] runawayMsg = new String[] { null };
 		final long callStartMs = System.currentTimeMillis();
 		logger.info(ser);
 		/// Tier B (LiteLLM/Langfuse) tracing — per-call header-injection hook (Guardrail 1).
@@ -4559,6 +4706,16 @@ public class Chat {
 						}
 					});
 				}
+				/// Runaway detector, BUFFER MODE ONLY. The deadline above bounds how long a reply may
+				/// take; nothing bounded what it was allowed to be. A reply that has started repeating
+				/// itself verbatim is not going to finish — it runs to the deadline, which is then
+				/// reported as a timeout and never retried. Checked on the accumulated text after each
+				/// chunk; when it fires, the content is cut back to where the repetition began, the
+				/// body is closed (the same primitive the idle watchdog uses, so the model server
+				/// stops generating), and the reply is returned as a stalled partial so the caller
+				/// can salvage it or re-attempt once. Not applied to interactive streaming: a user
+				/// watching the reply has a stop button, and a heuristic must not end a conversation.
+				final RunawayDetector runaway = (!forwardToClient && runawayDetectionEnabled) ? new RunawayDetector() : null;
 				try {
 					while (!deadlineFired[0] && streamIt.hasNext()) {
 						if (hasListener && listener.isStopStream(req)) { stoppedByListener[0] = true; break; }
@@ -4567,6 +4724,29 @@ public class Chat {
 						streamIdleWatchdog.touch(streamId);
 						boolean done = processStreamChunk(line, req, aresp, forwardToClient);
 						if (done) { sawTerminator[0] = true; break; }
+						if (runaway != null) {
+							BaseRecord rmsg = aresp.get("message");
+							String rcontent = rmsg != null ? rmsg.get("content") : null;
+							if (runaway.check(rcontent)) {
+								runawayFired[0] = true;
+								int fullLen = rcontent.length();
+								int cut = Math.max(0, runaway.firstRepeatIndex);
+								rmsg.setValue("content", rcontent.substring(0, cut));
+								runawayMsg[0] = "The model's output started repeating itself (the reply ends in "
+									+ runaway.periodCopies + " verbatim copies of the same " + runaway.period
+									+ " characters; the last " + RunawayDetector.WINDOW_CHARS + " had already appeared "
+									+ (runaway.repeats - 1) + " times); generation was stopped after " + fullLen
+									+ " characters and the reply truncated to " + cut + " characters, where the repetition began";
+								logger.warn("[STREAM-RUNAWAY] " + runawayMsg[0] + " (stream " + streamId + ", "
+									+ (System.currentTimeMillis() - callStartMs) + "ms)");
+								try {
+									response.body().close();
+								} catch (Exception ce) {
+									logger.debug("[STREAM-RUNAWAY] close threw " + ce.getClass().getSimpleName() + ": " + ce.getMessage());
+								}
+								break;
+							}
+						}
 					}
 				} finally {
 					streamIdleWatchdog.stop(streamId);
@@ -4627,6 +4807,10 @@ public class Chat {
 					/// either "the model said nothing" or "the model is down".
 					errMsg = "The model stopped sending data mid-reply (no data for " + idleSecUsed[0] + "s); "
 						+ streamedLength(aresp) + " characters had been received before the stream stalled";
+				} else if (runawayFired[0]) {
+					/// The read loop breaks before touching the iterator again, so the close it issued
+					/// should not surface here; if the transport does throw anyway, say what happened.
+					errMsg = runawayMsg[0];
 				} else if (overBudgetMidBody) {
 					bufferTimedOut[0] = true;
 					errMsg = overBudgetMsg;
@@ -4652,9 +4836,11 @@ public class Chat {
 					/// thenAccept — don't also fire the success completion path
 					/// (which would run handleResponse on an empty response).
 					logger.debug("Skipping completion callback — HTTP error already handled");
-				} else if (!forwardToClient && deadlineFired[0]) {
+				} else if (!forwardToClient && deadlineFired[0] && !runawayFired[0]) {
 					/// The deadline closed the body and the iterator unwound without throwing. The
 					/// partial text is not a reply; report the timeout, not a truncated success.
+					/// A runaway that fired first wins: the detector already cut and closed the
+					/// reply, and the deadline may still land between its close and the cancel above.
 					bufferTimedOut[0] = true;
 					logger.error("[DIAG] whenComplete: " + overBudgetMsg);
 					bufferError[0] = overBudgetMsg;
@@ -4716,7 +4902,8 @@ public class Chat {
 				/// otherwise only sees null.
 				setLastCallError(bufferError[0]);
 				LAST_CALL_UNREACHABLE.set(bufferUnreachable[0]);
-				LAST_CALL_STALLED.set(idleFired[0]);
+				LAST_CALL_STALLED.set(idleFired[0] || runawayFired[0]);
+				LAST_CALL_RUNAWAY.set(runawayFired[0]);
 				if (listener != null) {
 					listener.onerror(user, req, aresp, bufferError[0]);
 				}
@@ -4726,14 +4913,19 @@ public class Chat {
 			/// A stream that ended without its terminator ([DONE] / finish_reason / done:true) and
 			/// was not stopped by the listener was cut off upstream — most often a proxy closing a
 			/// queued-then-abandoned response, or the idle watchdog closing a silent body without
-			/// the iterator throwing. The partial content is returned as-is so the caller can try
-			/// to salvage it, but it is flagged so a parse failure is retried as a stall rather than
-			/// blamed on the model.
+			/// the iterator throwing — or cut short by the runaway detector. The partial content is
+			/// returned as-is so the caller can try to salvage it, but it is flagged so a parse
+			/// failure is retried as a stall rather than blamed on the model.
 			boolean truncated = bufferResult[0] != null && !sawTerminator[0] && !stoppedByListener[0];
 			LAST_CALL_STALLED.set(truncated);
+			LAST_CALL_RUNAWAY.set(runawayFired[0]);
+			if (runawayFired[0]) {
+				setLastCallError(runawayMsg[0]);
+			}
 			if (truncated) {
 				logger.warn("[DIAG] chat() buffer mode: stream ended without a terminator after "
-					+ streamedLength(aresp) + " characters" + (idleFired[0] ? " (idle watchdog fired)" : ""));
+					+ streamedLength(aresp) + " characters" + (idleFired[0] ? " (idle watchdog fired)" : "")
+					+ (runawayFired[0] ? " (runaway detector fired)" : ""));
 			}
 			logger.info("[DIAG] chat() buffer mode: returning result=" + (bufferResult[0] != null ? "present" : "null")
 				+ " message=" + (bufMsg != null ? "present" : "null"));
