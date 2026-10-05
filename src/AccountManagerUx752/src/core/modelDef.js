@@ -10424,7 +10424,7 @@
           "type": "int",
           "default": 64,
           "minValue": 0,
-          "maxValue": 100
+          "maxValue": 2048
         },
         {
           "name": "temperature",
@@ -10445,7 +10445,7 @@
           "type": "int",
           "default": 8192,
           "minValue": 0,
-          "maxValue": 120000
+          "maxValue": 131072
         },
         {
           "name": "num_gpu",

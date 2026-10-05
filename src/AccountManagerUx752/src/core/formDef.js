@@ -5068,12 +5068,14 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         forms: ["groupinfo", "attributes"]
     };
 
-    /// Options presets for the chatOptions balancer — aligned with chatConfig templates
+    /// Options presets for the chatOptions balancer — mirrored 1:1 by the Objects7 templates in
+    /// olio/llm/templates/chatConfig.*.json; change both together. typical_p is deliberately absent:
+    /// ChatUtil.applyChatOptions never emits it (Ollama removed the parameter and 400s on it).
     let chatOptionsPresets = {
         "General Chat": {
             desc: "Conversational — moderate creativity with memory support",
             temperature: 0.8, top_p: 0.9, top_k: 50,
-            min_p: 0.05, typical_p: 0.9,
+            min_p: 0.05,
             repeat_penalty: 1.15, repeat_last_n: 64,
             frequency_penalty: 0.3, presence_penalty: 0.1,
             max_tokens: 4096, num_ctx: 16384, seed: 0
@@ -5081,7 +5083,7 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         "RPG / Creative": {
             desc: "Broad vocabulary and variety for narrative and roleplay",
             temperature: 0.8, top_p: 0.95, top_k: 60,
-            min_p: 0.05, typical_p: 0.95,
+            min_p: 0.05,
             repeat_penalty: 1.1, repeat_last_n: 100,
             frequency_penalty: 0.2, presence_penalty: 0.3,
             max_tokens: 16384, num_ctx: 131072, seed: 0
@@ -5089,7 +5091,7 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         "Behavioral": {
             desc: "Balanced precision and nuance for psychological analysis",
             temperature: 0.5, top_p: 0.9, top_k: 50,
-            min_p: 0.1, typical_p: 0.85,
+            min_p: 0.1,
             repeat_penalty: 1.2, repeat_last_n: 64,
             frequency_penalty: 0.3, presence_penalty: 0.2,
             max_tokens: 4096, num_ctx: 32768, seed: 0
@@ -5097,7 +5099,7 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         "Content Analysis": {
             desc: "Precise and focused for analytical work",
             temperature: 0.3, top_p: 0.8, top_k: 40,
-            min_p: 0.15, typical_p: 0.8,
+            min_p: 0.15,
             repeat_penalty: 1.3, repeat_last_n: 64,
             frequency_penalty: 0.3, presence_penalty: 0.2,
             max_tokens: 8192, num_ctx: 65536, seed: 0
@@ -5105,7 +5107,7 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         "Coding": {
             desc: "Focused code generation — low repeat penalty for natural code patterns",
             temperature: 0.3, top_p: 0.85, top_k: 40,
-            min_p: 0.15, typical_p: 0.8,
+            min_p: 0.15,
             repeat_penalty: 1.05, repeat_last_n: 32,
             frequency_penalty: 0.0, presence_penalty: 0.0,
             max_tokens: 8192, num_ctx: 65536, seed: 0
@@ -5113,7 +5115,7 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         "Technical Eval": {
             desc: "Most deterministic — reproducible, consistent technical output",
             temperature: 0.2, top_p: 0.75, top_k: 30,
-            min_p: 0.2, typical_p: 0.75,
+            min_p: 0.2,
             repeat_penalty: 1.0, repeat_last_n: 32,
             frequency_penalty: 0.0, presence_penalty: 0.0,
             max_tokens: 8192, num_ctx: 65536, seed: 42
@@ -6388,4 +6390,4 @@ function applySdModelLimits(models) {
 // Register all forms on the model
 Object.assign(am7model.forms, forms);
 
-export { forms, applySdModelLimits };
+export { forms, applySdModelLimits, chatOptionsPresets };

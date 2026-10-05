@@ -441,7 +441,8 @@ public class ChatUtil {
 			if(templateOpts != null) {
 				BaseRecord opts = chatConfig.get("chatOptions");
 				if(opts != null) {
-					String[] doubleOptFields = {"temperature", "top_p", "min_p", "typical_p", "repeat_penalty", "frequency_penalty", "presence_penalty"};
+					/// typical_p is not a template field: applyChatOptions never emits it (Ollama removed it).
+					String[] doubleOptFields = {"temperature", "top_p", "min_p", "repeat_penalty", "frequency_penalty", "presence_penalty"};
 					String[] intOptFields = {"top_k", "repeat_last_n", "max_tokens", "num_ctx", "num_gpu", "seed"};
 					for(String f : doubleOptFields) {
 						if(templateOpts.hasField(f)) opts.set(f, (double) templateOpts.get(f));

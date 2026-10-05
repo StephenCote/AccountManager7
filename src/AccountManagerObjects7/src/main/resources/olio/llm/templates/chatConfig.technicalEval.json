@@ -18,7 +18,6 @@
 		"top_p": 0.75,
 		"top_k": 30,
 		"min_p": 0.2,
-		"typical_p": 0.75,
 		"repeat_penalty": 1.0,
 		"repeat_last_n": 32,
 		"frequency_penalty": 0.0,
