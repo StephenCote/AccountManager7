@@ -24,7 +24,11 @@ import {
 import { pictureBookFromId, describeCheckpointRow } from '../workflows/pictureBook.js';
 import { openCharacterManager } from '../workflows/pictureBookCharacters.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
-import { listPb2Books, listSeriesBooks, bookPages } from '../workflows/pictureBookWorkflow.js';
+import {
+    listPb2Books, listSeriesBooks, bookPages,
+    bookHealth, healBook, orgHealth, healOrg, summarizeHealth,
+    listOrphans, purgeOrphans, countOrphans
+} from '../workflows/pictureBookWorkflow.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
 import { am7olio } from '../components/olio.js';
 import { ReaderShell } from '../components/readerShell.js';
@@ -416,7 +420,7 @@ async function reloadSelectorLists() {
 
 async function deletePb2BookFromList(b) {
     if (!b || !b.objectId) return;
-    let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete "' + (b.name || 'this book') + '"? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
+    let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete "' + (b.name || 'this book') + '"? Scenes, characters, images, workflow, world and roles will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
     if (!ok) return;
     // Backend reset() accepts either data.group objectId or olio.pb.book objectId.
     await performPbDelete(b.objectId, reloadSelectorLists);
@@ -453,6 +457,248 @@ async function deletePb2SeriesFromList(g) {
     try { await reloadSelectorLists(); } catch (_) {}
 }
 
+// ── Health check + orphan cleanup (list view) ───────────────────────────
+// Checks are read-only; nothing is changed until the user clicks Repair (health) or confirms the
+// orphan purge. Both act through the server's code paths so every environment heals the same way.
+
+let pbHealth = null;                    // last org health report; null until "Check health"
+let pbHealthLoading = false;
+let pbHealthError = null;
+let pbHealthRepairing = false;
+let pbHealthOverwriteTemplates = false; // explicit opt-in: drifted prompt templates are only reported otherwise
+let pbOrphanScanning = false;
+let pbOrphanPurging = false;
+let pbOrphanOrgWide = false;            // AccountAdministrators only: whole-organization scope
+
+function pbIsAdmin() {
+    let roles = page.context && page.context() && page.context().roles;
+    return !!(roles && roles.admin);
+}
+
+function pbHealthSeverityIcon(sev) {
+    let s = String(sev || '').toUpperCase();
+    if (s === 'ERROR') return m('span', { class: 'material-symbols-outlined text-red-500' }, 'error');
+    if (s === 'WARN') return m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning');
+    return m('span', { class: 'material-symbols-outlined text-blue-500' }, 'info');
+}
+
+function pbFindingKey(f, i) {
+    let r = f.refs || {};
+    return [f.code, r.model, r.objectId || r.id, r.slug, r.name, i].filter(x => x !== undefined && x !== null).join(':');
+}
+
+function pbFindingLabel(f) {
+    let r = f.refs || {};
+    let prefix = r.slug ? r.slug + ': ' : '';
+    return prefix + (f.message || f.code);
+}
+
+/** Repair is possible when the server reports healable findings, or drift is present and overwrite was opted into. */
+function pbHealthCanRepair() {
+    let s = summarizeHealth(pbHealth);
+    return s.healable > 0 || (s.hasDrift && pbHealthOverwriteTemplates);
+}
+
+export async function checkOrgHealth() {
+    pbHealthLoading = true;
+    pbHealthError = null;
+    m.redraw();
+    try {
+        pbHealth = await orgHealth();
+    } catch (e) {
+        pbHealth = null;
+        pbHealthError = (e && e.message) || 'Health check failed';
+    }
+    pbHealthLoading = false;
+    m.redraw();
+}
+
+function pbHealOutcomeToast(result) {
+    let healed = Array.isArray(result && result.healed) ? result.healed.length : 0;
+    let skipped = Array.isArray(result && result.skipped) ? result.skipped.length : 0;
+    let s = summarizeHealth(result);
+    let msg = healed + ' repair' + (healed !== 1 ? 's' : '') + ' applied'
+        + (skipped ? ', ' + skipped + ' skipped' : '')
+        + (s.errors ? '; ' + s.errors + (s.errors !== 1 ? ' errors remain' : ' error remains') : '');
+    page.toast(s.errors ? 'info' : 'success', msg);
+}
+
+export async function repairOrgHealth() {
+    if (!pbHealth || pbHealthRepairing || !pbHealthCanRepair()) return;
+    let s = summarizeHealth(pbHealth);
+    let ok = await Dialog.confirm({
+        title: 'Repair Picture Books',
+        message: 'Apply ' + s.healable + ' repair' + (s.healable !== 1 ? 's' : '') + ' across your picture books?'
+            + (pbHealthOverwriteTemplates && s.hasDrift ? ' Drifted prompt templates will be overwritten with the shipped versions.' : '')
+            + ' Nothing is re-rendered; missing scene rows are backfilled from the images already saved.',
+        confirmLabel: 'Repair', confirmIcon: 'build'
+    });
+    if (!ok) return;
+    pbHealthRepairing = true;
+    m.redraw();
+    try {
+        let result = await healOrg({ overwriteTemplates: !!pbHealthOverwriteTemplates });
+        pbHealth = result;
+        pbHealOutcomeToast(result);
+    } catch (e) {
+        page.toast('error', (e && e.message) || 'Repair failed');
+    }
+    pbHealthRepairing = false;
+    am7client.clearCache(0, true);
+    try { await reloadSelectorLists(); } catch (_) {}
+    m.redraw();
+}
+
+function pbOrphanScope() {
+    return (pbOrphanOrgWide && pbIsAdmin()) ? 'org' : 'own';
+}
+
+function pbOrphanSummaryText(scan) {
+    let parts = (scan && Array.isArray(scan.categories) ? scan.categories : [])
+        .filter(c => c && Number(c.count) > 0)
+        .map(c => c.count + ' × ' + c.code);
+    return parts.join(', ');
+}
+
+export async function cleanupOrphans() {
+    if (pbOrphanScanning || pbOrphanPurging) return;
+    let scope = pbOrphanScope();
+    pbOrphanScanning = true;
+    m.redraw();
+    let scan = null;
+    try {
+        scan = await listOrphans(scope);
+    } catch (e) {
+        pbOrphanScanning = false;
+        page.toast('error', (e && e.message) || 'Orphan scan failed');
+        m.redraw();
+        return;
+    }
+    pbOrphanScanning = false;
+    m.redraw();
+    let total = countOrphans(scan);
+    if (total === 0) {
+        page.toast('info', scope === 'org' ? 'No orphaned picture book records in this organization' : 'No orphaned picture book records of yours');
+        return;
+    }
+    let ok = await Dialog.confirm({
+        title: 'Clean Up Orphans',
+        message: 'Permanently delete ' + total + ' orphaned record' + (total !== 1 ? 's' : '')
+            + (scope === 'org' ? ' across the whole organization' : ' left behind by your failed or deleted picture books')
+            + ' (' + pbOrphanSummaryText(scan) + ')? Live books are never touched.',
+        confirmLabel: 'Delete orphans', confirmIcon: 'delete_sweep', destructive: true
+    });
+    if (!ok) return;
+    pbOrphanPurging = true;
+    m.redraw();
+    try {
+        let result = await purgeOrphans(scope, {});
+        let deleted = Number(result && result.deleted) || 0;
+        let denied = Number(result && result.denied) || 0;
+        let failed = Number(result && result.failed) || 0;
+        let msg = deleted + ' orphan' + (deleted !== 1 ? 's' : '') + ' deleted'
+            + (denied ? ', ' + denied + ' denied' : '')
+            + (failed ? ', ' + failed + ' failed' : '');
+        page.toast(failed || denied ? 'info' : 'success', msg);
+    } catch (e) {
+        page.toast('error', (e && e.message) || 'Orphan cleanup failed');
+    }
+    pbOrphanPurging = false;
+    am7client.clearCache(0, true);
+    try { await reloadSelectorLists(); } catch (_) {}
+    if (pbHealth) { try { await checkOrgHealth(); } catch (_) {} }
+    m.redraw();
+}
+
+function renderHealthFindings() {
+    let findings = (pbHealth && Array.isArray(pbHealth.findings)) ? pbHealth.findings.filter(Boolean) : [];
+    if (!findings.length) {
+        return m('div', { 'data-pb-health-clean': '1', class: 'flex items-center gap-2 text-sm text-green-700 dark:text-green-300 mb-2' }, [
+            m('span', { class: 'material-symbols-outlined text-green-500' }, 'check_circle'),
+            'No problems found.'
+        ]);
+    }
+    return m('div', { 'data-pb-health-findings': '1', class: 'grid grid-cols-1 gap-2 mb-2' }, findings.map(function (f, i) {
+        return m('div', {
+            key: pbFindingKey(f, i),
+            'data-pb-health-finding': f.code,
+            'data-pb-health-severity': String(f.severity || '').toUpperCase(),
+            class: 'flex items-center justify-between border border-yellow-300 dark:border-yellow-700 rounded px-4 py-2'
+        }, [
+            m('div', { class: 'flex items-center gap-3 min-w-0' }, [
+                pbHealthSeverityIcon(f.severity),
+                m('div', { class: 'min-w-0' }, [
+                    m('div', { class: 'text-sm' }, pbFindingLabel(f)),
+                    m('div', { class: 'text-xs text-gray-500' }, f.code + (f.healable ? ' · repairable' : ''))
+                ])
+            ])
+        ]);
+    }));
+}
+
+export function renderHealthPanel() {
+    let s = summarizeHealth(pbHealth);
+    let busy = pbHealthLoading || pbHealthRepairing || pbOrphanScanning || pbOrphanPurging;
+    return m('div', { 'data-pb-health-panel': '1', class: 'mb-6' }, [
+        m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'Health'),
+        m('div', { class: 'text-xs text-gray-500 mb-2' },
+            'Check every picture book you created for missing or broken settings. Checking changes nothing; Repair fixes what it can.'),
+        pbHealth ? renderHealthFindings() : null,
+        pbHealthError ? m('div', { 'data-pb-health-error': '1', class: 'text-sm text-red-600 mb-2' }, pbHealthError) : null,
+        pbHealth && s.hasDrift ? m('label', { class: 'flex items-center gap-2 text-sm mb-2 cursor-pointer' }, [
+            m('input', {
+                type: 'checkbox',
+                'data-pb-health-overwrite-templates': '1',
+                checked: pbHealthOverwriteTemplates,
+                disabled: busy,
+                onchange: function (e) { pbHealthOverwriteTemplates = !!e.target.checked; }
+            }),
+            'Overwrite drifted prompt templates with the shipped versions'
+        ]) : null,
+        m('div', { class: 'flex flex-wrap items-center gap-2' }, [
+            m('button', {
+                class: 'flex items-center gap-2 border dark:border-gray-700 rounded px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800',
+                'data-pb-health-check': '1',
+                disabled: busy,
+                onclick: checkOrgHealth
+            }, [
+                m('span', { class: 'material-symbols-outlined text-lg' }, pbHealthLoading ? 'hourglass_empty' : 'health_and_safety'),
+                pbHealth ? 'Re-check health' : 'Check health'
+            ]),
+            pbHealth ? m('button', {
+                class: 'flex items-center gap-2 rounded px-3 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed',
+                'data-pb-health-repair': '1',
+                disabled: busy || !pbHealthCanRepair(),
+                title: pbHealthCanRepair() ? 'Apply every repairable finding' : 'Nothing repairable was found',
+                onclick: repairOrgHealth
+            }, [
+                m('span', { class: 'material-symbols-outlined text-lg' }, pbHealthRepairing ? 'hourglass_empty' : 'build'),
+                'Repair'
+            ]) : null,
+            m('button', {
+                class: 'flex items-center gap-2 border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 rounded px-3 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-900/20',
+                'data-pb-orphans-scan': '1',
+                disabled: busy,
+                title: 'Find and delete records left behind by failed extractions and deleted books',
+                onclick: cleanupOrphans
+            }, [
+                m('span', { class: 'material-symbols-outlined text-lg' }, (pbOrphanScanning || pbOrphanPurging) ? 'hourglass_empty' : 'delete_sweep'),
+                'Clean up orphans'
+            ]),
+            pbIsAdmin() ? m('label', { class: 'flex items-center gap-2 text-sm cursor-pointer ml-1' }, [
+                m('input', {
+                    type: 'checkbox',
+                    'data-pb-orphans-org-wide': '1',
+                    checked: pbOrphanOrgWide,
+                    disabled: busy,
+                    onchange: function (e) { pbOrphanOrgWide = !!e.target.checked; }
+                }),
+                'Whole organization'
+            ]) : null
+        ])
+    ]);
+}
+
 var workSelectorView = {
     oninit: function () {
         // Issue 9: check for AccountUsers role
@@ -482,6 +728,9 @@ var workSelectorView = {
 
             // Checkpoints with no book behind them yet
             renderPendingExtractions(),
+
+            // Health check / repair / orphan cleanup (read-only until Repair or purge is confirmed)
+            renderHealthPanel(),
 
             // New picture book
             m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' },
@@ -797,7 +1046,7 @@ function renderViewerActionsRight(nav) {
             class: 'text-red-400 hover:text-red-600',
             title: 'Delete picture book',
             onclick: async function () {
-                let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
+                let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book? Scenes, characters, images, workflow, world and roles will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
                 if (!ok) return;
                 let gone = await performPbDelete(viewerBookId, null);
                 if (gone) {
@@ -867,6 +1116,8 @@ let pb2BookObjectId = null;
 let pb2Chapters = [];          // sibling chapter books of the open book's series, ordered by chapter
 let pb2SeriesName = null;
 let pb2SceneTotal = null;      // GET /{id}/scenes count (all extracted scenes); null = unknown
+let pb2Health = null;          // GET /{id}/health report; null = not checked or the check failed
+let pb2HealthRepairing = false;
 
 function pb2TotalPages() { return pb2Pages.length + 1; } // cover + scenes
 
@@ -969,6 +1220,7 @@ async function loadPb2Pages(pb2ObjId) {
     pb2PageError = null;
     pb2Pages = [];
     pb2SceneTotal = null;
+    pb2Health = null;
     pb2CurrentPage = 0;
     pb2BookName = pb2NameHint() || 'Loading...';
     m.redraw();
@@ -991,12 +1243,16 @@ async function loadPb2Pages(pb2ObjId) {
         // (PbPipelineUtil.getCreateSceneRow), so /pages can be shorter than /scenes and the total M
         // comes from /scenes. The cover shows "N rendered of M scenes". (The book title is the BOOK's
         // name — never the first page's scene title.)
+        // The read-only health report rides along so the reader can explain an empty/short page list
+        // (e.g. a stale workflow blocking rendering) and offer Repair. Its failure never blocks the pages.
         let loaded = await Promise.all([
             bookPages(pb2ObjId),
-            loadPictureBook(pb2ObjId).catch(function () { return null; })
+            loadPictureBook(pb2ObjId).catch(function () { return null; }),
+            bookHealth(pb2ObjId).catch(function () { return null; })
         ]);
         pb2Pages = Array.isArray(loaded[0]) ? loaded[0] : [];
         pb2SceneTotal = Array.isArray(loaded[1]) ? loaded[1].length : null;
+        pb2Health = loaded[2] || null;
         await loadPb2Chapters(pb2ObjId, bookFull);
     } catch (e) {
         pb2PageError = 'Failed to load pages: ' + (e.message || '');
@@ -1150,13 +1406,112 @@ function renderPb2Header() {
             class: 'text-red-400 hover:text-red-600',
             title: 'Delete picture book',
             onclick: async function () {
-                let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book? Scenes, characters, and images will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
+                let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book? Scenes, characters, images, workflow, world and roles will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
                 if (!ok) return;
                 let gone = await performPbDelete(pb2BookObjectId, null);
                 if (gone) m.route.set('/picture-book');
             }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')) : null
     ]);
+}
+
+// ── PB2 reader health banner ─────────────────────────────────────────────
+// Shown only when the read-only book health check reported a problem. Repair applies the server's
+// healable findings for THIS book (403 for non-entitled users surfaces as an error toast).
+
+/** Pure: empty-state text for a PB2 book with no page rows. */
+export function pb2EmptyStateText(sceneTotal, health) {
+    let n = Number(sceneTotal) || 0;
+    if (n <= 0) return 'No scenes in this book yet.';
+    let scenes = n + ' scene' + (n !== 1 ? 's' : '') + ' extracted';
+    if (summarizeHealth(health).hasStaleGraph) {
+        return scenes + ' — rendering was blocked by a stale workflow left by a previously deleted copy of this book. Repair, then render.';
+    }
+    return scenes + ' — none rendered yet.';
+}
+
+export async function repairPb2Book() {
+    if (!pb2BookObjectId || pb2HealthRepairing) return;
+    let s = summarizeHealth(pb2Health);
+    if (s.healable === 0) return;
+    let ok = await Dialog.confirm({
+        title: 'Repair Picture Book',
+        message: 'Apply ' + s.healable + ' repair' + (s.healable !== 1 ? 's' : '') + ' to this book?'
+            + ' Nothing is re-rendered; missing scene rows are backfilled from the images already saved.',
+        confirmLabel: 'Repair', confirmIcon: 'build'
+    });
+    if (!ok) return;
+    pb2HealthRepairing = true;
+    m.redraw();
+    let bookId = pb2BookObjectId;
+    try {
+        let result = await healBook(bookId, {});
+        pbHealOutcomeToast(result);
+    } catch (e) {
+        page.toast('error', (e && e.message) || 'Repair failed');
+    }
+    pb2HealthRepairing = false;
+    am7client.clearCache(0, true);
+    if (bookId === pb2BookObjectId) await loadPb2Pages(bookId);
+    m.redraw();
+}
+
+export function renderPb2HealthBanner() {
+    let s = summarizeHealth(pb2Health);
+    if (!pb2Health || (s.errors === 0 && s.warnings === 0)) return null;
+    let findings = Array.isArray(pb2Health.findings) ? pb2Health.findings.filter(function (f) {
+        return f && String(f.severity || '').toUpperCase() !== 'INFO';
+    }) : [];
+    let n = s.errors + s.warnings;
+    return m('div', {
+        'data-pb2-health-banner': '1',
+        'data-pb2-health-errors': s.errors,
+        class: 'mb-4 p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200'
+    }, [
+        m('div', { class: 'flex items-center gap-2' }, [
+            m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
+            m('span', { class: 'flex-1' }, 'This book has ' + n + ' health problem' + (n !== 1 ? 's' : '')
+                + (s.healable ? ' (' + s.healable + ' repairable)' : '') + '.'),
+            m('button', {
+                class: 'flex items-center gap-1 rounded px-3 py-1 text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed',
+                'data-pb2-health-repair': '1',
+                disabled: pb2HealthRepairing || s.healable === 0,
+                title: s.healable ? 'Repair this book' : 'Nothing repairable was found',
+                onclick: repairPb2Book
+            }, [
+                m('span', { class: 'material-symbols-outlined text-lg' }, pb2HealthRepairing ? 'hourglass_empty' : 'build'),
+                'Repair'
+            ])
+        ]),
+        findings.length ? m('ul', { class: 'mt-2 ml-8 list-disc text-xs' }, findings.map(function (f, i) {
+            return m('li', { key: pbFindingKey(f, i), 'data-pb2-health-finding': f.code }, f.message || f.code);
+        })) : null
+    ]);
+}
+
+// Test seams for the health/orphan state (module-level lets are otherwise unreachable from Vitest).
+export function __pbHealthStateForTest() {
+    return {
+        pbHealth, pbHealthLoading, pbHealthError, pbHealthRepairing, pbHealthOverwriteTemplates,
+        pbOrphanScanning, pbOrphanPurging, pbOrphanOrgWide,
+        pb2Health, pb2HealthRepairing, pb2BookObjectId, pb2SceneTotal, pb2Pages
+    };
+}
+export function __setPbHealthStateForTest(patch) {
+    patch = patch || {};
+    if ('pbHealth' in patch) pbHealth = patch.pbHealth;
+    if ('pbHealthLoading' in patch) pbHealthLoading = !!patch.pbHealthLoading;
+    if ('pbHealthError' in patch) pbHealthError = patch.pbHealthError;
+    if ('pbHealthRepairing' in patch) pbHealthRepairing = !!patch.pbHealthRepairing;
+    if ('pbHealthOverwriteTemplates' in patch) pbHealthOverwriteTemplates = !!patch.pbHealthOverwriteTemplates;
+    if ('pbOrphanScanning' in patch) pbOrphanScanning = !!patch.pbOrphanScanning;
+    if ('pbOrphanPurging' in patch) pbOrphanPurging = !!patch.pbOrphanPurging;
+    if ('pbOrphanOrgWide' in patch) pbOrphanOrgWide = !!patch.pbOrphanOrgWide;
+    if ('pb2Health' in patch) pb2Health = patch.pb2Health;
+    if ('pb2HealthRepairing' in patch) pb2HealthRepairing = !!patch.pb2HealthRepairing;
+    if ('pb2BookObjectId' in patch) pb2BookObjectId = patch.pb2BookObjectId;
+    if ('pb2SceneTotal' in patch) pb2SceneTotal = patch.pb2SceneTotal;
+    if ('pb2Pages' in patch) pb2Pages = Array.isArray(patch.pb2Pages) ? patch.pb2Pages : [];
 }
 
 function renderPb2PageDots() {
@@ -1189,8 +1544,10 @@ var pb2PageReaderView = {
         am7olio.setCurrentBook(null);
     },
     view: function () {
+        let emptyStale = pb2SceneTotal > 0 && summarizeHealth(pb2Health).hasStaleGraph;
         return m('div', { class: 'p-4 flex flex-col h-full' }, [
             renderPb2Header(),
+            pb2PageLoading ? null : renderPb2HealthBanner(),
             pb2PageLoading
                 ? m('div', { class: 'text-sm text-gray-500 text-center py-12' }, 'Loading scenes...')
                 : pb2PageError
@@ -1201,10 +1558,13 @@ var pb2PageReaderView = {
                             // Honest empty state: /pages is empty when the book has no olio.pb.scene rows —
                             // nothing extracted, or (STORY books) extracted scenes not yet rendered, since
                             // their scene rows are created at first render. /scenes gives the extracted count.
-                            m('div', { 'data-pb2-empty': true, class: 'text-sm text-gray-500 mb-4' },
-                                pb2SceneTotal > 0
-                                    ? pb2SceneTotal + ' scene' + (pb2SceneTotal !== 1 ? 's' : '') + ' extracted — none rendered yet.'
-                                    : 'No scenes in this book yet.'),
+                            // When the health check found a stale workflow (the known cause of "images
+                            // rendered, no scene rows"), say so and point at Repair instead of "none rendered".
+                            m('div', {
+                                'data-pb2-empty': true,
+                                'data-pb2-empty-stale': emptyStale ? '1' : undefined,
+                                class: 'text-sm text-gray-500 mb-4'
+                            }, pb2EmptyStateText(pb2SceneTotal, pb2Health)),
                             pb2BookObjectId ? m('button', {
                                 class: 'px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm',
                                 onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/workflow'); }

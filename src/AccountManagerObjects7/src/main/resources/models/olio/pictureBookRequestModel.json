@@ -207,6 +207,18 @@
 			"name": "configOverride",
 			"type": "string",
 			"description": "PUT /scene/{sceneObjectId}/config-override — the SPARSE olio.sd.config JSON STRING to persist onto the scene's configOverride column (PbBookUtil.setSceneConfigOverride). Deliberately a STRING, not a nested olio.sd.config model field: a model field would materialize every defaulted config field and make 'override' indistinguishable from 'default' (see PbConfigUtil and the olio.pb.scene.configOverride field description). The string passes through verbatim; blank/absent clears the field. Must be declared or RecordDeserializer drops it (KI-24 pattern)."
+		},
+		{
+			"name": "codes",
+			"type": "list",
+			"baseType": "string",
+			"description": "Health/orphan: POST /health/heal, /{bookObjectId}/health/heal, /orphans/purge, /orphans/org/purge — the PbHealthUtil finding codes or PbOrphanUtil category codes to act on. Absent = all. Must be declared or RecordDeserializer drops it (KI-24 pattern)."
+		},
+		{
+			"name": "overwriteTemplates",
+			"type": "boolean",
+			"default": false,
+			"description": "Health: POST /health/heal — explicit opt-in to overwrite PROMPT_TEMPLATE_DRIFT findings with the shipped resource. Drift is only reported otherwise."
 		}
 	]
 }

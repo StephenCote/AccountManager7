@@ -183,6 +183,121 @@ export async function bookPages(pb2BookObjectId) {
     return resp.json();
 }
 
+// ─────────────────────────────── health check + self-heal ───────────────────────────────
+// Report shape (PbHealthUtil): { scope:'book'|'org', bookObjectId?, slug?, checkedAt,
+//   findings:[{code, severity:'ERROR'|'WARN'|'INFO', message, healable, refs}],
+//   summary:{errors, warnings, infos, healable}, healed:[{code, refs, action}], skipped:[{code, refs, reason}] }
+// GETs are read-only on the server (nothing created, nothing acted on as admin); only the POST heal
+// routes change anything, and only for the codes the caller passes (absent = every healable finding).
+
+export const HEALTH_STALE_GRAPH = 'STALE_GRAPH';
+export const HEALTH_TEMPLATE_DRIFT = 'PROMPT_TEMPLATE_DRIFT';
+
+/** Read-only health report for one PB2 book. 404 (book gone) → null. */
+export async function bookHealth(pb2BookObjectId) {
+    let resp = await fetch(wfBase() + '/' + pb2BookObjectId + '/health', { credentials: 'include' });
+    if (resp.status === 404) return null;
+    if (!resp.ok) throw new Error('bookHealth failed: ' + resp.status);
+    return resp.json();
+}
+
+/** Repair one PB2 book. Body: { codes?: [], overwriteTemplates?: false }. 403 when not entitled. */
+export async function healBook(pb2BookObjectId, body) {
+    let resp = await fetch(wfBase() + '/' + pb2BookObjectId + '/health/heal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body || {})
+    });
+    if (!resp.ok) throw new Error('healBook failed: ' + resp.status);
+    return resp.json();
+}
+
+/** Read-only health report across every book the caller can see, plus org-level checks. */
+export async function orgHealth() {
+    let resp = await fetch(wfBase() + '/health', { credentials: 'include' });
+    if (!resp.ok) throw new Error('orgHealth failed: ' + resp.status);
+    return resp.json();
+}
+
+/** Repair across the caller's books. Body: { codes?: [], overwriteTemplates?: false }. */
+export async function healOrg(body) {
+    let resp = await fetch(wfBase() + '/health/heal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body || {})
+    });
+    if (!resp.ok) throw new Error('healOrg failed: ' + resp.status);
+    return resp.json();
+}
+
+/**
+ * Pure summary of a health report for rendering decisions.
+ * Returns { errors, warnings, healable, hasStaleGraph, hasDrift }; a null/malformed report → all zero/false.
+ */
+export function summarizeHealth(report) {
+    let out = { errors: 0, warnings: 0, healable: 0, hasStaleGraph: false, hasDrift: false };
+    if (!report || typeof report !== 'object') return out;
+    let findings = Array.isArray(report.findings) ? report.findings : [];
+    let summary = report.summary && typeof report.summary === 'object' ? report.summary : null;
+    if (summary) {
+        out.errors = Number(summary.errors) || 0;
+        out.warnings = Number(summary.warnings) || 0;
+        out.healable = Number(summary.healable) || 0;
+    } else {
+        findings.forEach(f => {
+            if (!f) return;
+            let sev = String(f.severity || '').toUpperCase();
+            if (sev === 'ERROR') out.errors++;
+            else if (sev === 'WARN') out.warnings++;
+            if (f.healable) out.healable++;
+        });
+    }
+    out.hasStaleGraph = findings.some(f => f && f.code === HEALTH_STALE_GRAPH);
+    out.hasDrift = findings.some(f => f && f.code === HEALTH_TEMPLATE_DRIFT);
+    return out;
+}
+
+// ─────────────────────────────── orphan cleanup ───────────────────────────────
+// scan shape (PbOrphanUtil): { scope:'own'|'org', checkedAt, categories:[{code, count, items:[{code, model, id,
+//   objectId, name, path, slug, reason}]}], total, warnings }
+// purge shape: { scope, purgedAt, codes, results:[item + outcome, reason, count], deleted, denied, failed
+//   (integer counts), cleanupOrphansRan, warnings }
+// The org-wide routes are separate paths because JAX-RS role-gates per path, not per query-param value;
+// the server also re-checks AccountAdministrators membership itself.
+
+function orphanBase(scope) {
+    return wfBase() + (scope === 'org' ? '/orphans/org' : '/orphans');
+}
+
+/** Dry run. scope 'own' (default) = the caller's own leftovers; 'org' = whole organization (admins only). */
+export async function listOrphans(scope) {
+    let resp = await fetch(orphanBase(scope), { credentials: 'include' });
+    if (!resp.ok) throw new Error('listOrphans failed: ' + resp.status);
+    return resp.json();
+}
+
+/** Apply. Re-scans server-side and acts on that set. Body: { codes?: [] } (absent = every category). */
+export async function purgeOrphans(scope, body) {
+    let resp = await fetch(orphanBase(scope) + '/purge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body || {})
+    });
+    if (!resp.ok) throw new Error('purgeOrphans failed: ' + resp.status);
+    return resp.json();
+}
+
+/** Pure: total orphan count for a scan (server `total`, else summed category counts); null/malformed → 0. */
+export function countOrphans(scan) {
+    if (!scan || typeof scan !== 'object') return 0;
+    if (typeof scan.total === 'number') return scan.total;
+    if (!Array.isArray(scan.categories)) return 0;
+    return scan.categories.reduce((n, c) => n + (Number(c && c.count) || 0), 0);
+}
+
 /**
  * Chapter-heading → character-offset boundary detection for a manuscript (data.data).
  * Read-only. Returns [{startOffset, endOffset, title}, ...] — the exact shape POST /chapter's

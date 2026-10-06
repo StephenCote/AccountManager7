@@ -247,8 +247,13 @@ public class PbPipelineUtil {
 			return g;
 		}
 		catch(Exception e) {
-			/// Provenance must never break rendering. Log the whole thing and let PB1 proceed.
-			logger.warn("PB2 recording skipped for scene " + sceneObjectId + ": " + e.getMessage(), e);
+			/// Provenance must never break rendering, but a skipped recording is what leaves a rendered image
+			/// with no olio.pb.scene row ("N scenes extracted - none rendered yet"), so it is an ERROR with the
+			/// remedy named, not a WARN that scrolls past.
+			logger.error("PB2 recording skipped for scene " + sceneObjectId + " (index " + sceneIndex + ") of book "
+				+ slug + ": " + e.getMessage() + ". The image will be saved but no scene row will be recorded;"
+				+ " run the book health check (GET /olio/picture-book/{id}/health) and Repair to purge any stale"
+				+ " workflow left by a previously deleted copy of this book and to backfill the scene rows.", e);
 			return null;
 		}
 	}

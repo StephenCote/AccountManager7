@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio.picturebook;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -760,6 +761,105 @@ public class PbOlioContextUtil {
 		for(BaseRecord grp : groups) {
 			if(!ioContext.getAuthorizationUtil().checkEntitlement(role, readPerm, grp)) {
 				throw new OlioException("Missing Read grant for " + role.get(FieldNames.FIELD_NAME) + " on " + tier + " group " + grp.get(FieldNames.FIELD_NAME) + " (#" + grp.get(FieldNames.FIELD_ID) + ")");
+			}
+		}
+	}
+
+	/** Result of {@link #checkGrants(BaseRecord, String, boolean)}: what is absent, never what to do about it. */
+	static final class GrantAudit {
+		/** Role paths that do not exist. */
+		final List<String> missingRoles = new ArrayList<>();
+		/** {@code {tier, role, group, groupId}} for every (role, group) pair lacking Read. */
+		final List<Map<String, Object>> missingGrants = new ArrayList<>();
+		/** Non-null when the audit could not run at all (no olio principal / universe / world / Read permission). */
+		String error;
+
+		boolean clean() {
+			return error == null && missingRoles.isEmpty() && missingGrants.isEmpty();
+		}
+	}
+
+	/**
+	 * Find-only counterpart of {@link #verifyGrants(OlioContext, BaseRecord, BaseRecord, OrganizationContext)}
+	 * for the health check: the same two-tier, two-role Read audit over the same group enumeration, but
+	 * it never opens an {@code OlioContext} (which would grant) and it reports every gap instead of
+	 * throwing on the first.
+	 * <p>
+	 * Nothing here creates. The olio principal is {@code findUser}, the world is {@code WorldUtil.findWorld},
+	 * the roles and the Read permission are {@code findPath}, and the group enumeration is
+	 * {@link OlioContext#findAuthorizationGroups(BaseRecord, BaseRecord, String, OrganizationContext)}.
+	 *
+	 * @param worldSlug the book or series world name under {@link #bookWorldPath()}
+	 * @param series    true to audit the series role pair rather than the per-book pair
+	 */
+	static GrantAudit checkGrants(BaseRecord user, String worldSlug, boolean series) {
+		GrantAudit audit = new GrantAudit();
+		IOContext ioContext = IOSystem.getActiveContext();
+		OrganizationContext octx = ioContext.findOrganizationContext(user);
+		if(octx == null) {
+			audit.error = "No organization context for user " + user.get(FieldNames.FIELD_NAME);
+			return audit;
+		}
+		long orgId = octx.getOrganizationId();
+		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		if(olioUser == null) {
+			audit.error = "No olio principal in organization " + orgId;
+			return audit;
+		}
+		BaseRecord world = WorldUtil.findWorld(olioUser, bookWorldPath(), worldSlug);
+		if(world == null) {
+			audit.error = "No world " + worldSlug + " under " + bookWorldPath();
+			return audit;
+		}
+		BookContext bctx = assembleBookContext(world);
+		if(bctx == null) {
+			audit.error = "No " + BOOKS_UNIVERSE + " universe in organization " + orgId;
+			return audit;
+		}
+		BaseRecord readPerm = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_PERMISSION, "/Read", PermissionEnumType.DATA.toString(), orgId);
+		if(readPerm == null) {
+			audit.error = "Failed to resolve the Read permission";
+			return audit;
+		}
+
+		String worldRolePath = series ? seriesWriterRolePath(worldSlug) : writerRolePath(worldSlug);
+		String worldAdminRolePath = series ? seriesAdminRolePath(worldSlug) : adminRolePath(worldSlug);
+		Map<String, BaseRecord> roles = new HashMap<>();
+		for(String rolePath : new String[] {worldRolePath, worldAdminRolePath, universeReaderRolePath(), universeWriterRolePath()}) {
+			BaseRecord role = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_ROLE, rolePath, RoleEnumType.USER.toString(), orgId);
+			if(role == null) {
+				audit.missingRoles.add(rolePath);
+			}
+			else {
+				roles.put(rolePath, role);
+			}
+		}
+		OlioContextConfiguration paths = new OlioContextConfiguration();
+		auditTier(ioContext, audit, roles.get(worldRolePath), readPerm, olioUser, bctx.getWorld(), bookWorldPath(), "world", octx);
+		auditTier(ioContext, audit, roles.get(universeReaderRolePath()), readPerm, olioUser, bctx.getUniverse(), paths.getUniversePath(), "universe", octx);
+		return audit;
+	}
+
+	private static void auditTier(IOContext ioContext, GrantAudit audit, BaseRecord role, BaseRecord readPerm, BaseRecord olioUser, BaseRecord cfgWorld, String containerPath, String tier, OrganizationContext octx) {
+		if(role == null) {
+			return;
+		}
+		List<BaseRecord> groups;
+		try {
+			groups = OlioContext.findAuthorizationGroups(olioUser, cfgWorld, containerPath, octx);
+		}
+		catch(OlioException e) {
+			audit.error = (audit.error == null ? "" : audit.error + "; ") + tier + ": " + e.getMessage();
+			return;
+		}
+		for(BaseRecord grp : groups) {
+			if(!ioContext.getAuthorizationUtil().checkEntitlement(role, readPerm, grp)) {
+				Map<String, Object> gap = new HashMap<>();
+				gap.put("tier", tier);
+				gap.put("role", role.get(FieldNames.FIELD_NAME));
+				gap.put("group", grp.get(FieldNames.FIELD_NAME));
+				gap.put("groupId", grp.get(FieldNames.FIELD_ID));
+				audit.missingGrants.add(gap);
 			}
 		}
 	}

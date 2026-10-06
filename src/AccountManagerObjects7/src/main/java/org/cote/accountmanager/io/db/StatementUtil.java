@@ -200,7 +200,10 @@ public class StatementUtil {
 					}
 				}
 				
-				if(ms.inherits(ModelNames.MODEL_VECTOR_EXT)) {
+				// common.vectorExt only declares chunk/content/embedding; the vectorReference columns exist solely on
+				// models that add them (data.vectorModelStore). Emitting the delete for other inheritors
+				// (data.pageIndexNode) fails the whole cleanup batch with "column vectorreferencetype does not exist".
+				if(ms.inherits(ModelNames.MODEL_VECTOR_EXT) && ms.hasField(FieldNames.FIELD_VECTOR_REFERENCE) && ms.hasField(FieldNames.FIELD_VECTOR_REFERENCE_TYPE)) {
 					for(String cmodel : names) {
 						if(cmodel.equals(ModelNames.MODEL_MODEL) || cmodel.equals(ModelNames.MODEL_PARTICIPATION)) {
 							continue;

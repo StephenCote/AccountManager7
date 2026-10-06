@@ -450,26 +450,37 @@ public class RecordFactory {
 	}
 	
 	public static void cleanupOrphans(String model) {
+		cleanupOrphansExplained(model);
+	}
+
+	/// Returns true when the orphan batch executed without a SQL error; false (after logging the failing batch) otherwise.
+	public static boolean cleanupOrphansExplained(String model) {
 		if(IOSystem.getActiveContext().getIoType() == RecordIO.DATABASE) {
-			
+
 			String sql = StatementUtil.getDeleteOrphanTemplate(model);
 			if(sql != null && sql.length() > 0) {
 				long start = System.currentTimeMillis();
-
+				boolean ok = false;
 				try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); Statement st = con.createStatement();){
 					st.executeUpdate(sql);
 					CacheUtil.clearCache();
+					ok = true;
 				}
 				catch (SQLException e) {
-					logger.error(e);
+					// The template runs as one batch, so a single bad statement aborts every delete in it.
+					logger.error("Orphan cleanup batch failed (model=" + (model == null ? "all" : model) + "): " + e.getMessage());
+					logger.error("Failing orphan cleanup batch:\n" + sql);
 			    }
 				long stop = System.currentTimeMillis();
 				logger.info("Cleaned up orphans in " + (stop - start) + "ms");
+				return ok;
 			}
+			return true;
 		}
 		else {
 			logger.info("Orphan cleanup not supported on " + IOSystem.getActiveContext().getIoType().toString());
 		}
+		return false;
 	}
 	/// Update an existing schema's persisted definition and reload caches
 	public static boolean updateSchemaDefinition(ModelSchema ms) {

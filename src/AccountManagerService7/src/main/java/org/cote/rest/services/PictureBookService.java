@@ -2,8 +2,10 @@ package org.cote.rest.services;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -78,7 +80,22 @@ import jakarta.ws.rs.core.Response;
  *   PUT  /scene/{sceneObjectId}/status        — Persist a client-driven scene status (accepted/skipped/pending/...)
  *   PUT  /scene/{sceneObjectId}/config-override — Persist a per-scene sparse olio.sd.config override (ChapBook scenes feed the config-precedence merge through this)
  *   POST /{key}/cancel                        — KI-10: cancel an in-flight extraction/prepare-images call (key = the same workObjectId/bookObjectId passed to the call being cancelled)
- *   DELETE /{bookObjectId}/reset              — Delete entire book group
+ *   DELETE /{bookObjectId}/reset              — Delete the whole book footprint (PbDeleteUtil.deleteBookComplete): PB2 graph, roles, world, ~U tree, meta, source range
+ *
+ * Health check + self-heal (PbHealthUtil via PbServiceFacade; GETs are read-only and create nothing,
+ * heals run only on an explicit POST):
+ *   GET  /health                                — org view: every book the caller created + checkpoints, prompt templates, orphan counts
+ *   POST /health/heal                           — repair the org view; body { codes?: [...], overwriteTemplates?: false }
+ *   GET  /{bookObjectId}/health                 — one book's findings (404 when not readable)
+ *   POST /{bookObjectId}/health/heal            — repair one book (403 when the caller may not update it); same body
+ *
+ * Orphan cleanup (PbOrphanUtil via PbServiceFacade; "own" = the caller's leftovers, "org" = the whole
+ * organization and admin-only — a separate method so @RolesAllowed gates it, with Objects7 re-checking
+ * AccountAdministrators membership regardless):
+ *   GET  /orphans                               — dry run, own scope
+ *   POST /orphans/purge                         — remove, own scope; body { codes?: [...] }
+ *   GET  /orphans/org                           — dry run, whole organization (admin)
+ *   POST /orphans/org/purge                     — remove, whole organization (admin); same body
  *
  * PB2 bridge (book group objectId → olio.pb.book objectId):
  *   GET  /{bookGroupObjectId}/pb2                             — resolve PB1 book group to PB2 book; 404 if no PB2 book yet
@@ -1829,9 +1846,200 @@ public class PictureBookService {
         }
     }
 
+    // ----- Health check + self-heal (transport only; PbHealthUtil owns every check and repair) -----
+
+    /** The optional {@code codes} string array from a heal/purge body, or null when absent (= all codes). */
+    private static List<String> getCodes(BaseRecord params) {
+        if (params == null) return null;
+        Object codesObj = params.get("codes");
+        if (!(codesObj instanceof List)) return null;
+        List<String> codes = new ArrayList<>();
+        for (Object o : (List<?>) codesObj) {
+            if (o instanceof String && !((String) o).trim().isEmpty()) codes.add(((String) o).trim());
+        }
+        return codes.isEmpty() ? null : codes;
+    }
+
+    private static boolean getFlag(BaseRecord params, String key) {
+        if (params == null) return false;
+        Object v = params.get(key);
+        return (v instanceof Boolean) && ((Boolean) v).booleanValue();
+    }
+
+    /**
+     * GET /health
+     * Read-only report over every book the caller created in the organization plus the org-level checks
+     * (dangling extraction checkpoints, PictureBook/ChapBook prompt templates, orphan counts). Creates
+     * nothing and never acts as the org admin.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/health")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response orgHealth(@Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.orgHealth(user))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /health/heal
+     * Repair the org view. Body: { codes?: ["STALE_GRAPH", ...], overwriteTemplates?: false }. Absent
+     * codes = every healable finding; drifted prompt templates are only overwritten when
+     * overwriteTemplates is true. Books the caller may not update are reported as skipped, not failed.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/health/heal")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response healOrg(String json, @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord params = parseParams(json);
+        List<String> codes = getCodes(params);
+        Set<String> codeSet = (codes != null) ? new LinkedHashSet<>(codes) : null;
+        try {
+            return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.healOrg(user,
+                context.getInitParameter("datagen.path"), codeSet, getFlag(params, "overwriteTemplates")))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /{bookObjectId}/health
+     * Read-only findings for one olio.pb.book (404 when the caller cannot read it).
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/health")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response bookHealth(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.bookHealth(user, bookObjectId))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/health/heal
+     * Repair one book (404 when not readable, 403 when the caller may not update it). Same body as
+     * POST /health/heal.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/health/heal")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response healBook(@PathParam("bookObjectId") String bookObjectId, String json,
+            @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord params = parseParams(json);
+        List<String> codes = getCodes(params);
+        Set<String> codeSet = (codes != null) ? new LinkedHashSet<>(codes) : null;
+        try {
+            return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.healBook(user,
+                context.getInitParameter("datagen.path"), bookObjectId, codeSet,
+                getFlag(params, "overwriteTemplates")))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    // ----- Orphan cleanup (transport only; PbOrphanUtil owns scope, scan and purge) -----
+
+    /**
+     * GET /orphans
+     * Dry run: the caller's own stray PictureBook records (books they created, their ~/Data/PictureBooks
+     * folders and checkpoints, and the worlds/groups/roles carrying one of those slugs), grouped by category.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/orphans")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response scanOrphans(@Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.scanOrphans(user, false))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /orphans/purge
+     * Remove the caller's own orphans. Body: { codes?: ["ORPHAN_WORLD", ...] } — absent codes = every
+     * category. The purge re-scans first so the dry run and the apply act on the same item set.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/orphans/purge")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response purgeOrphans(String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.purgeOrphans(user, false, getCodes(parseParams(json)))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /orphans/org
+     * Dry run over the whole organization. Admin-only at the transport layer; PbOrphanUtil additionally
+     * re-checks AccountAdministrators membership and 403s otherwise.
+     */
+    @RolesAllowed({"admin"})
+    @GET
+    @Path("/orphans/org")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response scanOrgOrphans(@Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.scanOrphans(user, true))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /orphans/org/purge
+     * Remove orphans across the whole organization. Same gating as GET /orphans/org; same body as
+     * POST /orphans/purge.
+     */
+    @RolesAllowed({"admin"})
+    @POST
+    @Path("/orphans/org/purge")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response purgeOrgOrphans(String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.purgeOrphans(user, true, getCodes(parseParams(json)))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
     /**
      * DELETE /{bookObjectId}/reset
-     * Delete the book group contents (Scenes/, Characters/, meta) then the group itself.
+     * Delete the whole book footprint via PbDeleteUtil.deleteBookComplete (PictureBookUtil.reset is a thin
+     * wrapper keeping the {reset, reason} contract and the 404 on an already-removed book).
      */
     @RolesAllowed({"admin", "user"})
     @DELETE

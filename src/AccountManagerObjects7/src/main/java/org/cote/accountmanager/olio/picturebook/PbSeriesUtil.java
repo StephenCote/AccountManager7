@@ -407,7 +407,16 @@ public class PbSeriesUtil {
 
 		List<String> failures = new ArrayList<>();
 		for(BaseRecord book : chapters) {
-			DeleteResult res = PictureBookUtil.teardownBookWorld(user, book, orgId);
+			DeleteResult res;
+			try {
+				res = PbDeleteUtil.deleteBookComplete(user, book.get(FieldNames.FIELD_OBJECT_ID));
+			}
+			catch(PictureBookException e) {
+				if(e.getStatus() == 404) {
+					continue;
+				}
+				throw e;
+			}
 			if(!res.deleted) {
 				if(!res.authorized) {
 					throw new PictureBookException(403, res.reason);

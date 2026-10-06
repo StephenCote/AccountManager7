@@ -353,7 +353,7 @@ public class PbMigrationUtil {
 	 * PATCH-shaped per {@code model-api.md}: identity + name + the changed fields. Fields absent in
 	 * the PB1 data are skipped. The update result is asserted — a discarded null is a silent no-op.
 	 */
-	private static void patchSceneTextFields(BaseRecord user, BaseRecord scene,
+	static boolean patchSceneTextFields(BaseRecord user, BaseRecord scene,
 			Map<String, Object> sceneData, List<String> warnings) {
 		String[] candidates = {
 			OlioFieldNames.FIELD_PB_SUMMARY,  // "summary"
@@ -361,16 +361,18 @@ public class PbMigrationUtil {
 			OlioFieldNames.FIELD_PB_ACTION,   // "action"
 			OlioFieldNames.FIELD_PB_MOOD,     // "mood"
 			OlioFieldNames.FIELD_PB_BLURB,    // "blurb"
+			FieldNames.FIELD_DESCRIPTION,     // "description"
+			OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID, // "imageObjectId" (rendered image recorded on the PB1 scene note)
 		};
 
 		List<String> toSet = new ArrayList<>();
 		for(String f : candidates) {
-			if(sceneData.containsKey(f) && sceneData.get(f) != null) {
+			if(sceneData.containsKey(f) && sceneData.get(f) != null && !sceneData.get(f).toString().isBlank()) {
 				toSet.add(f);
 			}
 		}
 		if(toSet.isEmpty()) {
-			return;
+			return true;
 		}
 
 		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
@@ -382,11 +384,13 @@ public class PbMigrationUtil {
 		}
 		catch(FieldException | ValueException | ModelNotFoundException e) {
 			warnings.add("Scene '" + scene.get(FieldNames.FIELD_NAME) + "' text patch error: " + e.getMessage());
-			return;
+			return false;
 		}
 		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 			warnings.add("Scene '" + scene.get(FieldNames.FIELD_NAME) + "': text field patch was not persisted");
+			return false;
 		}
+		return true;
 	}
 
 	/**

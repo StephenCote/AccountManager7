@@ -1560,6 +1560,60 @@ public class PbServiceFacade {
 		return out;
 	}
 
+	// ─────────────────────────────── health check + self-heal ───────────────────────────────
+
+	/**
+	 * Read-only health report for every book the caller created in their organization plus the
+	 * organization-level checks (checkpoints, prompt templates, orphan counts). Creates nothing.
+	 */
+	public static Map<String, Object> orgHealth(BaseRecord user) {
+		if(user == null) throw new PictureBookException(401, "No authenticated principal");
+		return PbHealthUtil.checkOrg(user);
+	}
+
+	/**
+	 * Repair the organization view: every healable finding on the caller's books that the caller may update,
+	 * then the organization-level findings. {@code codes} null means every healable code;
+	 * {@code overwriteTemplates} is the explicit opt-in for overwriting drifted prompt templates.
+	 */
+	public static Map<String, Object> healOrg(BaseRecord user, String dataPath, Set<String> codes, boolean overwriteTemplates) {
+		if(user == null) throw new PictureBookException(401, "No authenticated principal");
+		return PbHealthUtil.healOrg(user, dataPath, codes, overwriteTemplates);
+	}
+
+	/**
+	 * Read-only health report for one book; 404 when the caller cannot read it. {@code PbHealthUtil} reads
+	 * the book through {@code PbBookUtil.readBook} itself, so it is not re-read here.
+	 */
+	public static Map<String, Object> bookHealth(BaseRecord user, String bookObjectId) {
+		return PbHealthUtil.checkBook(user, bookObjectId);
+	}
+
+	/** Repair one book; 404 when the caller cannot read it, 403 when the caller may not update it. */
+	public static Map<String, Object> healBook(BaseRecord user, String dataPath, String bookObjectId, Set<String> codes, boolean overwriteTemplates) {
+		return PbHealthUtil.healBook(user, dataPath, bookObjectId, codes, overwriteTemplates);
+	}
+
+	// ─────────────────────────────── orphan cleanup ───────────────────────────────
+
+	/**
+	 * Dry run: the stray PictureBook records the caller may remove. {@code orgWide} widens the scan to the
+	 * whole organization and is refused (403) unless the caller is in AccountAdministrators.
+	 */
+	public static Map<String, Object> scanOrphans(BaseRecord user, boolean orgWide) {
+		if(user == null) throw new PictureBookException(401, "No authenticated principal");
+		return PbOrphanUtil.scan(user, orgWide);
+	}
+
+	/**
+	 * Remove the orphans a fresh scan reports, optionally limited to {@code codes}. Same scope rule and 403
+	 * as {@link #scanOrphans}.
+	 */
+	public static Map<String, Object> purgeOrphans(BaseRecord user, boolean orgWide, List<String> codes) {
+		if(user == null) throw new PictureBookException(401, "No authenticated principal");
+		return PbOrphanUtil.purge(user, orgWide, codes);
+	}
+
 	/**
 	 * An enum field as a string, tolerant of the wire/Java case split.
 	 * <p>

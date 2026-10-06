@@ -165,7 +165,7 @@ public class PictureBookUtil {
         GENRE_THEME_MAP.put("historical", "period");
     }
 
-    private static final String PICTURE_BOOKS_DIR = "PictureBooks";
+    static final String PICTURE_BOOKS_DIR = "PictureBooks";
 
     /**
      * Name of the sub-group every book scene note is created in (see createFromScenes'
@@ -173,7 +173,7 @@ public class PictureBookUtil {
      * {@link #resolveSceneBookGroup} to tell a real book scene (whose owning book group is the
      * parent of this group) from the legacy {@code ~/Chat} single-image fallback.
      */
-    private static final String SCENES_DIR = "Scenes";
+    static final String SCENES_DIR = "Scenes";
 
     /**
      * Name of the sub-group every book charPerson is created in (see createFromScenes'
@@ -181,7 +181,19 @@ public class PictureBookUtil {
      * {@link #authorizeCharacterApparel} to reach the owning book group the same way
      * {@link #resolveSceneBookGroup} does from a scene.
      */
-    private static final String CHARACTERS_DIR = "Characters";
+    static final String CHARACTERS_DIR = "Characters";
+
+    /**
+     * Every PB2 graph model, ordered child→parent so a delete never precedes its referent:
+     * binding→node/sourceNode, run→workflow, node→workflow, artifact→producedByNode (node), workflow→book,
+     * scene→book, castGroup→book/series, book. Shared by {@link #deleteGroupRecursive},
+     * {@code PbDeleteUtil} and {@code PbOrphanUtil}.
+     */
+    static final String[] PB_CHILD_TO_PARENT = new String[] {
+            OlioModelNames.MODEL_PB_BINDING, OlioModelNames.MODEL_PB_RUN, OlioModelNames.MODEL_PB_ARTIFACT,
+            OlioModelNames.MODEL_PB_NODE, OlioModelNames.MODEL_PB_WORKFLOW, OlioModelNames.MODEL_PB_SCENE,
+            OlioModelNames.MODEL_PB_CAST_GROUP, OlioModelNames.MODEL_PB_BOOK
+    };
 
     // Per-character attributes written by createFromScenes' reduce step. ATTR_SCENE_REFS = CSV of the
     // scene indices the character appears in; ATTR_DESCRIPTION = the LLM-reduced, style/setting-free
@@ -1757,7 +1769,7 @@ public class PictureBookUtil {
      * Load the .pictureBookMeta record from a group path.
      * Uses data.note (text field has no length limit).
      */
-    private static BaseRecord loadMeta(BaseRecord user, String groupPath) {
+    static BaseRecord loadMeta(BaseRecord user, String groupPath) {
         if (groupPath == null) return null;
         BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
                 ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(),
@@ -4881,7 +4893,7 @@ public class PictureBookUtil {
      * {@code text} field has no length limit, and a dot-prefixed name keeps it out of ordinary
      * document listings.
      */
-    private static final String EXTRACT_PROGRESS_NOTE = ".pbExtractProgress";
+    static final String EXTRACT_PROGRESS_NOTE = ".pbExtractProgress";
 
     /**
      * Persist accumulated scenes every this many chunks.
@@ -9189,7 +9201,10 @@ public class PictureBookUtil {
                 pbGraph = PbPipelineUtil.openSceneGraph(user, params.bookSlug, pbBookGroupName,
                         sceneObjectId, currentSceneIndex, (String) sceneData.get("title"));
             } catch (Exception pbe) {
-                logger.warn("Graph recording: failed to open the scene graph; continuing without it: " + pbe.getMessage(), pbe);
+                logger.error("Graph recording: failed to open the scene graph for scene " + sceneObjectId
+                        + " (index " + currentSceneIndex + ") of book " + params.bookSlug + "; continuing without it: "
+                        + pbe.getMessage() + ". No olio.pb.scene row will be recorded for this render -"
+                        + " run the book health check (GET /olio/picture-book/{id}/health) and Repair.", pbe);
                 pbGraph = null;
             }
 
@@ -10655,6 +10670,11 @@ public class PictureBookUtil {
         public boolean deleted;
         public boolean authorized;
         public String reason;
+        /**
+         * Per-step audit of a composite delete ({@code PbDeleteUtil.deleteBookComplete}): one entry per
+         * footprint piece as {@code {step, model, count, ok, reason}}. Empty for a single-record delete.
+         */
+        public List<Map<String, Object>> steps = new ArrayList<>();
 
         public DeleteResult() {}
 
@@ -10662,6 +10682,20 @@ public class PictureBookUtil {
             this.deleted = deleted;
             this.authorized = authorized;
             this.reason = reason;
+        }
+
+        /** Append a step record; returns {@code ok} so callers can fold it into their aggregate flag. */
+        public boolean step(String step, String model, int count, boolean ok, String reason) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("step", step);
+            m.put("model", model);
+            m.put("count", count);
+            m.put("ok", ok);
+            if (reason != null) {
+                m.put("reason", reason);
+            }
+            steps.add(m);
+            return ok;
         }
 
         /** A successful delete: deleted + authorized, no reason. */
@@ -10761,47 +10795,52 @@ public class PictureBookUtil {
      * @param bookObjectId the book objectId whose orphaned meta note(s) should be removed
      * @return the number of orphaned meta notes deleted
      */
-    private static int deleteOrphanedMetaNotes(BaseRecord user, String bookObjectId) {
+    static int deleteOrphanedMetaNotes(BaseRecord user, String bookObjectId) {
         if (user == null || bookObjectId == null || bookObjectId.isBlank()) {
             return 0;
         }
         int deleted = 0;
         try {
             long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-            // Mirror loadExistingBooks: org-wide name search for .pictureBookMeta notes, projecting text
-            // so the JSON linkage can be read. An explicit organizationId condition is required for a
-            // data.directory-derived list query or PBAC denies it.
+            // Only the caller's own meta notes: an org-wide list without a groupId is denied outright by
+            // PBAC as soon as another user's note matches, which silently deleted nothing in shared orgs.
             Query q = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_NAME, META_NOTE_NAME);
             q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            q.field(FieldNames.FIELD_OWNER_ID, user.get(FieldNames.FIELD_ID));
             q.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID,
-                FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TEXT });
+                FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TEXT });
             q.setCache(false);
-            BaseRecord[] notes = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
+            BaseRecord[] notes = IOSystem.getActiveContext().getSearch().findRecords(q);
             if (notes == null) {
                 return 0;
             }
             for (BaseRecord note : notes) {
+                if (note.getSchema() == null) {
+                    note.setSchema(ModelNames.MODEL_NOTE);
+                }
                 String text = note.get(FieldNames.FIELD_TEXT);
                 if (text == null || text.isBlank()) {
                     continue;
                 }
-                String ref = null;
+                boolean matches = false;
                 try {
                     Map<String, Object> m = JSONUtil.getMap(text.getBytes(), String.class, Object.class);
                     if (m != null) {
-                        Object b = m.get("bookObjectId");
-                        Object w = m.get("workObjectId");
-                        if (b instanceof String && !((String) b).isBlank()) {
-                            ref = (String) b;
-                        } else if (w instanceof String && !((String) w).isBlank()) {
-                            ref = (String) w;
+                        // A meta note links to a book through any of these keys: the PB1 work/book id it
+                        // was created against, or the PB2 row it was later linked to.
+                        for (String key : new String[]{ "bookObjectId", "workObjectId", "pb2BookObjectId" }) {
+                            Object v = m.get(key);
+                            if (v instanceof String && bookObjectId.equals(v)) {
+                                matches = true;
+                                break;
+                            }
                         }
                     }
                 } catch (Exception ignore) {
                     // Not JSON / unparseable — cannot be the note we are looking for.
                     continue;
                 }
-                if (bookObjectId.equals(ref)) {
+                if (matches) {
                     try {
                         if (deleteRecordExplained(user, note).deleted) {
                             deleted++;
@@ -10820,196 +10859,25 @@ public class PictureBookUtil {
     }
 
     /**
-     * Delete the book group contents (Scenes/, Characters/, meta) then the group itself.
-     * Explicit child deletion — AccessPoint.delete on a group does NOT cascade — so
-     * {@link #deleteGroupRecursive(BaseRecord, BaseRecord)} walks and deletes every record nested
-     * under Scenes/Characters bottom-up before either sub-group (and, subsequently, the book group
-     * itself) is deleted. See KI-32: previously this method deleted exactly 4 top-level rows and
-     * left everything nested underneath (scenes, characters, generated images, nested subgroups)
-     * orphaned, which surfaced later as {@code PathProvider} "Parent auth.group index not found"
-     * log spam for any surviving record whose parentId chain climbed through one of the deleted-out
-     * -from-under-it intermediate groups.
+     * Delete a PictureBook and everything it created. Delegates to
+     * {@link PbDeleteUtil#deleteBookComplete}, which removes the caller's {@code ~/Data/PictureBooks/<slug>}
+     * tree (Scenes/, Characters/, images, meta — see KI-32 for why the walk is explicit) AND the PB2 footprint
+     * (graph rows, cast groups, roles, Book/Workflow/Artifacts groups, world, source range, checkpoints).
+     * Previously this method deleted only the caller's tree plus the book row, which left the world and a
+     * dead-FK workflow behind; a same-slug re-extract then adopted that world, collided on the workflow's
+     * unique name and silently stopped recording rendered scenes.
      *
-     * <p>Also deletes each character's own foreign single-model sub-records (profile, narrative,
-     * statistics, store, instinct, personality, state — see {@code createPersistedForeignInstance}),
-     * which are persisted under the acting user's own shared {@code ~/Profiles}/{@code ~/Narratives}
-     * /etc. buckets rather than grouped under the book's Characters subtree — this group-subtree
-     * walk would otherwise never reach them (closed 2026-07-23, previously a documented gap here).
-     *
-     * <p>Returns a {@link DeleteResult} rather than a bare boolean (Issue 1): a partial/persistence
-     * failure surfaces {@code deleted=false} together with the concrete, logged {@code reason} of the
-     * first failing terminal delete, so the transport layer can put that reason in the {@code reset:false}
-     * response body instead of a generic literal. The incomplete/orphan and PB2 cleanup branches still
-     * return a success result, and a genuinely-absent book still throws {@link PictureBookException} 404.
+     * <p>Returns a {@link DeleteResult}: a partial/persistence failure surfaces {@code deleted=false} with
+     * the concrete {@code reason} of the first failing step (and every step in {@code steps}), so the
+     * transport layer can put it in the {@code reset:false} body. A genuinely-absent book still throws
+     * {@link PictureBookException} 404, which the UX relies on for "Already removed".
      *
      * @param user         the acting user
-     * @param bookObjectId a data.group objectId or an olio.pb.book objectId
-     * @return a {@link DeleteResult}: {@code deleted=true} on full success, else {@code deleted=false}
-     *         with the concrete failure reason
+     * @param bookObjectId a data.group objectId (legacy PB1) or an olio.pb.book objectId
      * @throws PictureBookException 404 when no such book/group exists, 403 from the incomplete/orphan guard
      */
     public static DeleteResult reset(BaseRecord user, String bookObjectId) {
-        BaseRecord bookGroup = findBookGroup(user, bookObjectId);
-
-        // If not found as a data.group objectId, try treating it as an olio.pb.book objectId
-        String pb2BookToDelete = null;
-        if (bookGroup == null) {
-            long orgId2 = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-            Query pbQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
-            pbQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId2);
-            pbQ.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_SLUG });
-            BaseRecord pb2Book = IOSystem.getActiveContext().getAccessPoint().find(user, pbQ);
-            if (pb2Book == null) {
-                // The acting user cannot READ the row through AccessPoint. Every olio.pb.book is owned
-                // uniformly by the OLIO PRINCIPAL, and a book whose world creation FAILED mid-flight
-                // never had the acting user's grants applied - so it is invisible and undeletable to
-                // them through AccessPoint. That is exactly the reported "incomplete/failed book is
-                // impossible to delete" defect. Re-resolve AS THE OLIO PRINCIPAL (the sanctioned pattern
-                // for olio-owned rows) to tell "does not exist" apart from "exists but ungranted", then
-                // delete it under a creator/orphan guard so this can never remove another user's book.
-                if (deleteIncompleteBookAsOlio(user, bookObjectId, orgId2)) {
-                    return DeleteResult.ok();
-                }
-            }
-            if (pb2Book != null) {
-                pb2BookToDelete = bookObjectId;
-                String slug = pb2Book.get(OlioFieldNames.FIELD_PB_SLUG);
-                if (slug != null && !slug.isBlank()) {
-                    String bookPath = "~/Data/" + PICTURE_BOOKS_DIR + "/" + slug;
-                    bookGroup = IOSystem.getActiveContext().getPathUtil().findPath(user,
-                        ModelNames.MODEL_GROUP, bookPath, GroupEnumType.DATA.toString(), orgId2);
-                }
-            }
-        }
-
-        if (bookGroup == null) {
-            // The book GROUP is gone, so the group-path walk below (loadMeta at bookGroupPath) can never
-            // reach this book's .pictureBookMeta note. But the PB1 "Legacy Books" list (loadExistingBooks)
-            // finds that note by an ORG-WIDE search on name=".pictureBookMeta", keyed only on the
-            // bookObjectId/workObjectId embedded in the note's JSON — so an already-gone delete that
-            // stops here leaves the note behind and the row REAPPEARS on the next reload (the reported
-            // residual gap). Clear any meta note referencing THIS bookObjectId by the same JSON linkage
-            // the list uses, so a listed-but-already-gone book genuinely leaves the list. Runs before
-            // BOTH the benign ok() (pb2BookToDelete != null) and the 404 (pb2BookToDelete == null)
-            // branches below, and preserves the 404 signal so the UX still shows "Already removed".
-            deleteOrphanedMetaNotes(user, bookObjectId);
-
-            // Orphaned record — no data.group found (creation likely failed mid-flight).
-            // Delete whatever olio.pb.book record we found so the user can clear it from the list.
-            if (pb2BookToDelete != null) {
-                try {
-                    long orgId4 = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-                    Query pbDelQ2 = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, pb2BookToDelete);
-                    pbDelQ2.field(FieldNames.FIELD_ORGANIZATION_ID, orgId4);
-                    BaseRecord orphan = IOSystem.getActiveContext().getAccessPoint().find(user, pbDelQ2);
-                    if (orphan != null) {
-                        IOSystem.getActiveContext().getAccessPoint().delete(user, orphan);
-                        logger.info("Deleted orphaned olio.pb.book record: " + pb2BookToDelete);
-                    }
-                } catch (Exception e) {
-                    logger.warn("Failed to delete orphaned olio.pb.book: " + e.getMessage());
-                }
-                return DeleteResult.ok();
-            }
-            throw new PictureBookException(404, "Book not found");
-        }
-
-        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
-        boolean ok = true;
-        // Capture the concrete reason of the first terminal-delete failure so the transport layer can
-        // surface it in the reset:false response body (Issue 1) instead of a generic literal.
-        String failReason = null;
-
-        // Read meta before deleting to capture pb2BookObjectId for olio.pb.book cleanup
-        if (pb2BookToDelete == null) {
-            BaseRecord metaForPb2 = loadMeta(user, bookGroupPath);
-            if (metaForPb2 != null) {
-                try {
-                    String metaText = metaForPb2.get(FieldNames.FIELD_TEXT);
-                    if (metaText != null) {
-                        Map<String, Object> metaMap = JSONUtil.getMap(metaText.getBytes(), String.class, Object.class);
-                        if (metaMap != null) {
-                            Object pb2ObjIdObj = metaMap.get("pb2BookObjectId");
-                            if (pb2ObjIdObj instanceof String && !((String) pb2ObjIdObj).isBlank()) {
-                                pb2BookToDelete = (String) pb2ObjIdObj;
-                            }
-                        }
-                    }
-                } catch (Exception ignored) {}
-            }
-        }
-
-        // Recursively delete sub-groups (Scenes/, Characters/) and everything nested under them
-        for (String sub : new String[]{"Scenes", "Characters"}) {
-            String subPath = bookGroupPath + "/" + sub;
-            BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(user,
-                    ModelNames.MODEL_GROUP, subPath, GroupEnumType.DATA.toString(),
-                    (long) user.get(FieldNames.FIELD_ORGANIZATION_ID));
-            if (grp != null) {
-                try {
-                    if (!deleteGroupRecursive(user, grp)) {
-                        ok = false;
-                        if (failReason == null) {
-                            failReason = "Recursive delete of the " + sub + " group failed; see server log.";
-                        }
-                    }
-                } catch (Exception e) {
-                    logger.warn("Failed to recursively delete " + sub + " group: " + e.getMessage());
-                    ok = false;
-                    if (failReason == null) {
-                        failReason = "Recursive delete of the " + sub + " group threw: " + e.getMessage();
-                    }
-                }
-            }
-        }
-
-        // Delete .pictureBookMeta record
-        BaseRecord metaRec = loadMeta(user, bookGroupPath);
-        if (metaRec != null) {
-            try {
-                // Best-effort: a meta delete failure does not fail the whole reset (unchanged semantics).
-                // deleteRecordExplained logs the concrete reason on failure.
-                deleteRecordExplained(user, metaRec);
-            } catch (Exception e) {
-                logger.warn("Failed to delete meta: " + e.getMessage());
-            }
-        }
-
-        // Delete the book group itself
-        try {
-            DeleteResult groupDel = deleteRecordExplained(user, bookGroup);
-            if (!groupDel.deleted) {
-                ok = false;
-                if (failReason == null) {
-                    failReason = groupDel.reason;
-                }
-            }
-        } catch (Exception e) {
-            logger.warn("Failed to delete book group: " + e.getMessage());
-            ok = false;
-            if (failReason == null) {
-                failReason = "Delete of the book group threw: " + e.getMessage();
-            }
-        }
-
-        // Delete the olio.pb.book record when this is (or was) a PB2 book
-        if (pb2BookToDelete != null) {
-            try {
-                long orgId3 = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-                Query pbDelQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, pb2BookToDelete);
-                pbDelQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId3);
-                BaseRecord pb2BookRec = IOSystem.getActiveContext().getAccessPoint().find(user, pbDelQ);
-                if (pb2BookRec != null) {
-                    // Best-effort: deleteRecordExplained logs the concrete reason on failure; a failure
-                    // here does not fail the whole reset (unchanged semantics).
-                    deleteRecordExplained(user, pb2BookRec);
-                }
-            } catch (Exception e) {
-                logger.warn("Failed to delete olio.pb.book record: " + e.getMessage());
-            }
-        }
-
-        return ok ? DeleteResult.ok() : DeleteResult.failed(failReason);
+        return PbDeleteUtil.deleteBookComplete(user, bookObjectId);
     }
 
     /**
@@ -11378,7 +11246,7 @@ public class PictureBookUtil {
      * and book rows survive their deleted group and collide on the unique {@code (name, groupId,
      * organizationId)} index when a same-slug book is recreated (the reported delete/recreate defect).
      */
-    private static boolean deleteGroupRecursive(BaseRecord user, BaseRecord group) {
+    static boolean deleteGroupRecursive(BaseRecord user, BaseRecord group) {
         boolean ok = true;
         long groupId = group.get(FieldNames.FIELD_ID);
         long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
@@ -11386,6 +11254,7 @@ public class PictureBookUtil {
         // 1. Recurse into nested auth.group subgroups first (deepest-first)
         Query subQ = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, groupId);
         subQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        subQ.setCache(false);
         BaseRecord[] subGroups = IOSystem.getActiveContext().getSearch().findRecords(subQ);
         for (BaseRecord sg : subGroups) {
             if (!deleteGroupRecursive(user, sg)) ok = false;
@@ -11394,14 +11263,10 @@ public class PictureBookUtil {
         // 2. Delete data.note children (e.g. scene notes)
         Query noteQ = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_GROUP_ID, groupId);
         noteQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        noteQ.setCache(false);
         BaseRecord[] notes = IOSystem.getActiveContext().getSearch().findRecords(noteQ);
         for (BaseRecord n : notes) {
-            try {
-                IOSystem.getActiveContext().getAccessPoint().delete(user, n);
-            } catch (Exception e) {
-                logger.warn("Failed to delete note " + n.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
-                ok = false;
-            }
+            if (!deleteChecked(user, n, "note")) ok = false;
         }
 
         // 3. Delete olio.charPerson children, and each character's own dedicated foreign
@@ -11421,6 +11286,7 @@ public class PictureBookUtil {
         List<String> charRequest = new ArrayList<>(Arrays.asList(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID));
         charRequest.addAll(Arrays.asList(charForeignFields));
         charQ.setRequest(charRequest.toArray(new String[0]));
+        charQ.setCache(false);
         BaseRecord[] chars = IOSystem.getActiveContext().getSearch().findRecords(charQ);
         for (BaseRecord cp : chars) {
             for (String foreignField : charForeignFields) {
@@ -11428,69 +11294,66 @@ public class PictureBookUtil {
                     BaseRecord fk = cp.get(foreignField);
                     Long fkId = (fk != null) ? fk.get(FieldNames.FIELD_ID) : null;
                     if (fkId != null && fkId > 0L) {
-                        IOSystem.getActiveContext().getAccessPoint().delete(user, fk);
+                        if (!deleteChecked(user, fk, "character " + cp.get(FieldNames.FIELD_OBJECT_ID) + "'s " + foreignField)) ok = false;
                     }
                 } catch (Exception e) {
                     logger.warn("Failed to delete character " + cp.get(FieldNames.FIELD_OBJECT_ID) + "'s " + foreignField + ": " + e.getMessage());
                     ok = false;
                 }
             }
-            try {
-                IOSystem.getActiveContext().getAccessPoint().delete(user, cp);
-            } catch (Exception e) {
-                logger.warn("Failed to delete character " + cp.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
-                ok = false;
-            }
+            if (!deleteChecked(user, cp, "character")) ok = false;
         }
 
         // 4. Delete data.data children (generated portraits/landscapes/composites grouped directly
         // here, as opposed to a charPerson's own foreign store/profile records — see reset()'s note)
         Query dataQ = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, groupId);
         dataQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        dataQ.setCache(false);
         BaseRecord[] datas = IOSystem.getActiveContext().getSearch().findRecords(dataQ);
         for (BaseRecord d : datas) {
-            try {
-                IOSystem.getActiveContext().getAccessPoint().delete(user, d);
-            } catch (Exception e) {
-                logger.warn("Failed to delete data " + d.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
-                ok = false;
-            }
+            if (!deleteChecked(user, d, "data")) ok = false;
         }
 
         // 4b. Delete PB2 rows grouped here, child→parent so a foreign-key delete never precedes its
-        // referent: binding→node, run→(workflow/node), node→workflow, scene→book. The Book group holds
-        // scene + book rows; the Workflow group holds workflow/node/binding/run rows. These are NOT
+        // referent (PB_CHILD_TO_PARENT). The Book group holds scene + castGroup + book rows; the Workflow
+        // group holds workflow/node/binding/run rows; the Artifacts group holds artifact rows. These are NOT
         // data.note / data.data / olio.charPerson, so steps 2-4 never reached them — and neither did
         // WorldUtil.deleteGroupTree, which deletes GROUPS only. That is exactly why a same-slug recreate
         // collided: leftover olio.pb.scene rows survived their (deleted) group and tripped the unique
         // (name, groupId, organizationId) index. Harmless no-op for PB1/reset() groups that hold none.
-        String[] pbChildToParent = new String[] {
-                OlioModelNames.MODEL_PB_BINDING, OlioModelNames.MODEL_PB_RUN, OlioModelNames.MODEL_PB_NODE,
-                OlioModelNames.MODEL_PB_WORKFLOW, OlioModelNames.MODEL_PB_SCENE, OlioModelNames.MODEL_PB_BOOK
-        };
-        for (String pbModel : pbChildToParent) {
+        for (String pbModel : PB_CHILD_TO_PARENT) {
             Query pbQ = QueryUtil.createQuery(pbModel, FieldNames.FIELD_GROUP_ID, groupId);
             pbQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
             pbQ.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID });
             pbQ.setCache(false);
             BaseRecord[] pbRows = IOSystem.getActiveContext().getSearch().findRecords(pbQ);
             for (BaseRecord r : pbRows) {
-                try {
-                    IOSystem.getActiveContext().getAccessPoint().delete(user, r);
-                } catch (Exception e) {
-                    logger.warn("Failed to delete " + pbModel + " " + r.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
-                    ok = false;
-                }
+                if (!deleteChecked(user, r, pbModel)) ok = false;
             }
         }
 
         // 5. Finally delete the group itself
-        try {
-            IOSystem.getActiveContext().getAccessPoint().delete(user, group);
-        } catch (Exception e) {
-            logger.warn("Failed to delete group " + ((String) group.get(FieldNames.FIELD_PATH)) + ": " + e.getMessage());
-            ok = false;
-        }
+        if (!deleteChecked(user, group, "group " + group.get(FieldNames.FIELD_PATH))) ok = false;
         return ok;
+    }
+
+    /**
+     * {@code AccessPoint.delete} returns {@code false} on a PBAC denial or a persistence failure rather
+     * than throwing, so a delete loop that only catches exceptions reports success while rows survive.
+     * This is the one place a tree walk deletes a record: it folds both the boolean and any exception
+     * into a single checked result and logs which record was left behind.
+     */
+    private static boolean deleteChecked(BaseRecord user, BaseRecord rec, String label) {
+        try {
+            boolean del = IOSystem.getActiveContext().getAccessPoint().delete(user, rec);
+            if (!del) {
+                logger.warn("Delete of " + label + " " + rec.get(FieldNames.FIELD_OBJECT_ID)
+                    + " returned false (denied or failed at persistence); see audit log");
+            }
+            return del;
+        } catch (Exception e) {
+            logger.warn("Failed to delete " + label + " " + rec.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+            return false;
+        }
     }
 }

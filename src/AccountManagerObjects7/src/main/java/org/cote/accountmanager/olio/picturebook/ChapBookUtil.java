@@ -1173,13 +1173,10 @@ public class ChapBookUtil {
 	 * the 404-vs-403 distinction so the transport layer does not have to re-implement the readBook +
 	 * bookType check (which would violate the Service7 transport-only rule): it throws
 	 * {@link PictureBookException} <b>404</b> when the book is not found, <b>403</b> when it exists but
-	 * is not a CHAPBOOK. The terminal delete is delegated to
-	 * {@link PictureBookUtil#deleteRecordExplained(BaseRecord, BaseRecord)}, which runs the explicit
-	 * {@code canDelete} check and returns a concrete, logged reason: a PBAC denial surfaces as <b>403</b>
-	 * and a genuine persistence failure as <b>500</b> (both carrying that reason, via
-	 * {@link PictureBookException}), rather than a bare {@code AccessPoint.delete} {@code false} the
-	 * transport layer would map to a generic 500 (Issue 1). The method returns true only on a successful
-	 * delete of a valid, authorized CHAPBOOK; any failure throws.
+	 * is not a CHAPBOOK. The delete itself is {@link PbDeleteUtil#deleteBookComplete}: a PBAC denial
+	 * surfaces as <b>403</b> and a persistence failure as <b>500</b>, both carrying the concrete reason via
+	 * {@link PictureBookException}. The method returns true only on a successful delete of a valid,
+	 * authorized CHAPBOOK; any failure throws.
 	 *
 	 * @param user         the acting user
 	 * @param bookObjectId objectId of the book to delete
@@ -1193,36 +1190,24 @@ public class ChapBookUtil {
 		}
 		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 		BaseRecord book = PbBookUtil.readBook(user, bookObjectId, orgId);
-		if (book == null) {
-			// The acting user cannot READ the row through AccessPoint. Every olio.pb.book is owned by the
-			// OLIO PRINCIPAL, and a book whose world creation FAILED mid-flight never had the creator's
-			// grants applied - so readBook returns null and the book is otherwise permanently undeletable
-			// (yet still appears in the org-wide /books list, which uses AccessPoint.list not find). This is
-			// the reported "incomplete/failed ChapBook is undeletable" regression. Re-resolve AS THE OLIO
-			// PRINCIPAL (the sanctioned pattern for olio-owned rows - see troubleshooting.md /
-			// WorldUtil.deleteWorld, NOT a PBAC bypass since the olio principal is the row's legitimate
-			// owner) under a creator/orphan+incomplete guard so this can never remove another user's book.
-			// This mirrors PictureBookUtil.reset()'s handling of the same defect. The helper reuses the same
-			// no-bookType-check guard reset() relies on: authorization comes from the creator/orphan guard,
-			// not from the bookType, so the 403 for a stranger's book is preserved even without a CHAPBOOK
-			// filter. The helper returns false for a genuinely-absent row, preserving the 404 below.
-			if (PictureBookUtil.deleteIncompleteBookAsOlio(user, bookObjectId, orgId)) {
-				return true;
+		if (book != null) {
+			String bookType = book.get(OlioFieldNames.FIELD_PB_BOOK_TYPE);
+			if (bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
+				throw new PictureBookException(403, "Book " + bookObjectId + " is not a CHAPBOOK");
 			}
-			throw new PictureBookException(404, "ChapBook not found: " + bookObjectId);
 		}
-		String bookType = book.get(OlioFieldNames.FIELD_PB_BOOK_TYPE);
-		if (bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
-			throw new PictureBookException(403, "Book " + bookObjectId + " is not a CHAPBOOK");
+		// An unreadable row (olio-owned, creator's grants never applied because world creation failed) is
+		// resolved inside deleteBookComplete as the olio principal under its creator/orphan guard, so an
+		// incomplete ChapBook stays deletable by its creator and a stranger's book still gets 403.
+		PictureBookUtil.DeleteResult result;
+		try {
+			result = PbDeleteUtil.deleteBookComplete(user, bookObjectId);
+		} catch (PictureBookException e) {
+			if (e.getStatus() == 404) {
+				throw new PictureBookException(404, "ChapBook not found: " + bookObjectId);
+			}
+			throw e;
 		}
-		// COMPLETE teardown, not just the book row: delete every artifact the book world left behind — the
-		// olio.pb.scene rows, the workflow graph, the /Book|/Workflow|/Artifacts groups, the olio.world and
-		// its event/population records, and the cached OlioContext. Deleting only the book row (the old
-		// behaviour) orphaned the scenes, whose unique (name, groupId, organizationId) index then collided
-		// on a same-slug recreate and produced a BLANK book (the reported defect). teardownBookWorld decides
-		// authorization as the acting user (canDelete → 403 on denial) and performs the physical deletes as
-		// the olio principal, returning the same DeleteResult contract so the 403-vs-500 mapping is unchanged.
-		PictureBookUtil.DeleteResult result = PictureBookUtil.teardownBookWorld(user, book, orgId);
 		if (!result.deleted) {
 			throw new PictureBookException(result.authorized ? 500 : 403, result.reason);
 		}

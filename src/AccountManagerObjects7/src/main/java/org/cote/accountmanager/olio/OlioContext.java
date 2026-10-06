@@ -459,7 +459,29 @@ public class OlioContext {
 		if(octx == null) {
 			throw new OlioException("Failed to find organization context");
 		}
-		GrantTargets targets = resolveGrantTargets(cfgWorld, containerPath, octx);
+		return findAuthorizationGroups(olioUser, cfgWorld, containerPath, octx);
+	}
+
+	/**
+	 * Static, find-only counterpart of {@link #getAuthorizationGroups(BaseRecord, String)} for callers
+	 * that hold a world record but no initialized context (a health check must not run
+	 * {@code initialize()}, which grants). Same enumeration, same partition, same order (shared, then own).
+	 *
+	 * @param olioUser      the olio principal of the world's organization, used to resolve the container group
+	 * @param cfgWorld      the world (or universe) record with its foreign {@code auth.group} fields populated
+	 * @param containerPath the path whose child named {@code cfgWorld.name} holds the world's groups
+	 */
+	public static List<BaseRecord> findAuthorizationGroups(BaseRecord olioUser, BaseRecord cfgWorld, String containerPath, OrganizationContext octx) throws OlioException {
+		if(cfgWorld == null) {
+			throw new OlioException("World is null");
+		}
+		if(olioUser == null) {
+			throw new OlioException("Olio User is null");
+		}
+		if(octx == null) {
+			throw new OlioException("Organization context is null");
+		}
+		GrantTargets targets = resolveGrantTargets(olioUser, cfgWorld, containerPath, octx, false);
 		List<BaseRecord> all = new ArrayList<>(targets.shared);
 		all.addAll(targets.own);
 		return all;
@@ -500,6 +522,10 @@ public class OlioContext {
 	 * {@code path} field that may not be computed on a foreign-field read.
 	 */
 	private GrantTargets resolveGrantTargets(BaseRecord cfgWorld, String containerPath, OrganizationContext octx) throws OlioException {
+		return resolveGrantTargets(olioUser, cfgWorld, containerPath, octx, config != null && config.isUseSharedLibraries());
+	}
+
+	private static GrantTargets resolveGrantTargets(BaseRecord olioUser, BaseRecord cfgWorld, String containerPath, OrganizationContext octx, boolean useSharedLibraries) throws OlioException {
 		IOContext ioContext = IOSystem.getActiveContext();
 		long organizationId = octx.getOrganizationId();
 		GrantTargets targets = new GrantTargets();
@@ -545,6 +571,9 @@ public class OlioContext {
 			throw new OlioException("Failed to find parent group " + worldContainerPath);
 		}
 		Query ppq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, pdir.get(FieldNames.FIELD_ID), organizationId);
+		// Group creation never invalidates a cached children query; a stale hit here drops the newest
+		// child (e.g. the universe's Book group) from the grant pass.
+		ppq.setCache(false);
 		for(BaseRecord group : ioContext.getSearch().findRecords(ppq)) {
 			long gid = group.get(FieldNames.FIELD_ID);
 			if(seen.contains(gid)) {
@@ -560,7 +589,7 @@ public class OlioContext {
 		/// Fail loudly rather than silently: a world configured to use the shared libraries but whose
 		/// shared partition is EMPTY means every library corpus was classified as the world's own and
 		/// is about to receive Delete.
-		if(config != null && config.isUseSharedLibraries() && targets.shared.isEmpty()) {
+		if(useSharedLibraries && targets.shared.isEmpty()) {
 			logger.error("SHARED LIBRARY CLASSIFICATION FAILED for world " + cfgWorld.get(FieldNames.FIELD_NAME)
 				+ " in organization " + organizationId + ": useSharedLibraries is true but NO group classified as shared."
 				+ " Every /Library corpus is about to be granted Delete. Resolved " + libraryGroupIds.size()
@@ -578,7 +607,7 @@ public class OlioContext {
 	 * or on the {@code shared} attribute being present in memory. An organization with no
 	 * {@code /Library} yields an empty set, which is correct: there is nothing shared to protect.
 	 */
-	private Set<Long> resolveSharedLibraryGroupIds(OrganizationContext octx) {
+	private static Set<Long> resolveSharedLibraryGroupIds(OrganizationContext octx) {
 		Set<Long> ids = new HashSet<>();
 		IOContext ioContext = IOSystem.getActiveContext();
 		BaseRecord libDir = ioContext.getPathUtil().findPath(octx.getAdminUser(), ModelNames.MODEL_GROUP, LibraryUtil.basePath, GroupEnumType.DATA.toString(), octx.getOrganizationId());
@@ -586,6 +615,7 @@ public class OlioContext {
 			return ids;
 		}
 		Query lq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, libDir.get(FieldNames.FIELD_ID), octx.getOrganizationId());
+		lq.setCache(false);
 		for(BaseRecord group : ioContext.getSearch().findRecords(lq)) {
 			ids.add((long)group.get(FieldNames.FIELD_ID));
 		}
@@ -684,7 +714,7 @@ public class OlioContext {
 		ioContext.getAuthorizationUtil().setEntitlement(olioUser, effectiveAdminRole(), new BaseRecord[] {dir}, crudperms, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
 
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, dir.get(FieldNames.FIELD_ID), dir.get(FieldNames.FIELD_ORGANIZATION_ID));
-
+		pq.setCache(false);
 		BaseRecord[] dirs = ioContext.getSearch().findRecords(pq);
 
 		// logger.info("Scan group " + dir.get(FieldNames.FIELD_NAME) + " (#" + dir.get(FieldNames.FIELD_ID) + " in #" +  dir.get(FieldNames.FIELD_ORGANIZATION_ID) + ") with " + dirs.length + " children");

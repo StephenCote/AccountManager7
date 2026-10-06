@@ -135,6 +135,13 @@ public class PbBookUtil {
 		boolean worldPreExisted = (olioUser != null
 			&& WorldUtil.findWorld(olioUser, PbOlioContextUtil.bookWorldPath(), slug) != null);
 
+		/// An adopted world may still hold the graph of a previously deleted copy of this slug; its
+		/// workflow would collide on the unique name index and every render would then save an image
+		/// without a scene row. Purge it before anything binds to the new row.
+		if(worldPreExisted && created != null) {
+			PbHealthUtil.purgeStaleGraph(olioUser, created, slug, orgId);
+		}
+
 		/// From here on the row exists. Any failure before the book is linked and readable must take the
 		/// row - and the world, if this call made it - back out with it. Otherwise the slug stays taken by
 		/// a row the creator can never see (createdByObjectId is only stamped by the patch below), and a
@@ -347,6 +354,7 @@ public class PbBookUtil {
 		}
 
 		BaseRecord created = writeBookRow(ioContext, olioUser, slug, title, bookGroupPath, orgId);
+		PbHealthUtil.purgeStaleGraph(olioUser, created, slug, orgId);
 
 		/// §8 REQUIRED #2: grant the SERIES role pair CRUD on the chapter's own groups. Without this the
 		/// creator - a series Writer - could not write the FK patch below or read the book back, because no
@@ -400,7 +408,7 @@ public class PbBookUtil {
 	 * own. Resolved find-only as the olio principal (the roles were created by {@code newSeriesConfiguration});
 	 * granted as the organization admin, exactly as {@code configureWorldAuthorization} does.
 	 */
-	private static void grantSeriesRolesOnChapterGroups(IOContext ioContext, OrganizationContext octx, long orgId,
+	static void grantSeriesRolesOnChapterGroups(IOContext ioContext, OrganizationContext octx, long orgId,
 			String seriesSlug, BaseRecord[] groups) {
 		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
 		if(olioUser == null) {
