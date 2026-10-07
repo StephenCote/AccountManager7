@@ -528,23 +528,9 @@ function getFormattedContent(content, msg, idx) {
     if (cached !== undefined) return cached;
 
     let processed = ChatTokenRenderer.pruneForDisplay(content, hideThoughts);
-    if (hideThoughts) {
-        processed = processed.replace(/<think>[\s\S]*?<\/think>/g, "");
-    } else {
-        /// When showing thoughts, wrap each <think>...</think> in a visible
-        /// styled <details> block so users can actually SEE them. Without
-        /// this they pass through as a raw unknown HTML element with no
-        /// styling — the text shows but blends invisibly into the message.
-        processed = processed.replace(/<think>([\s\S]*?)<\/think>/g, function(_m, inner) {
-            let escaped = String(inner)
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            return '<details class="chat-thoughts my-2 rounded border border-amber-300 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-900/20 text-xs" open>'
-                 + '<summary class="cursor-pointer px-2 py-1 text-amber-700 dark:text-amber-300 font-medium">thinking</summary>'
-                 + '<div class="px-2 py-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">'
-                 + escaped
-                 + '</div></details>';
-        });
-    }
+    /// Strip <think>/<thought>/<private> when hidden; when shown, wrap them in a
+    /// visible styled <details> block (see ChatTokenRenderer.renderThoughts).
+    processed = ChatTokenRenderer.renderThoughts(processed, hideThoughts);
     // 1. Strip MCP blocks before markdown (they contain XML that marked would escape)
     processed = ChatTokenRenderer.processMcpTokens(processed, false);
 
@@ -698,19 +684,7 @@ function renderStreamingMessage() {
     let cacheTag = raw + "|" + (hideThoughts ? "h" : "s");
     if (cacheTag !== _streamCache.text) {
         let content = ChatTokenRenderer.pruneForDisplay(raw, hideThoughts);
-        if (hideThoughts) {
-            content = content.replace(/<think>[\s\S]*?<\/think>/g, "");
-        } else {
-            content = content.replace(/<think>([\s\S]*?)<\/think>/g, function(_m, inner) {
-                let escaped = String(inner)
-                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                return '<details class="chat-thoughts my-2 rounded border border-amber-300 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-900/20 text-xs" open>'
-                     + '<summary class="cursor-pointer px-2 py-1 text-amber-700 dark:text-amber-300 font-medium">thinking</summary>'
-                     + '<div class="px-2 py-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">'
-                     + escaped
-                     + '</div></details>';
-            });
-        }
+        content = ChatTokenRenderer.renderThoughts(content, hideThoughts);
         _streamCache.text = cacheTag;
         _streamCache.formatted = formatContent(content);
     }

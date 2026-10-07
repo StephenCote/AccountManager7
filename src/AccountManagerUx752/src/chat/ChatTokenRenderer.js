@@ -18,6 +18,12 @@ if (typeof window !== "undefined") {
 }
 
 const IMAGE_TOKEN_RE = /\$\{image\.([^}]+)\}/g;
+
+/// Tags whose content is hidden unless show-thoughts is toggled on. think/thought are model
+/// reasoning; private is the character's internal dialog requested by the prompt config.
+/// (*asterisk* emotes are deliberately NOT here — they are meant to stay visible.)
+const THOUGHT_TAGS = ["think", "thought", "private"];
+const THOUGHT_BLOCK_RE = /<(think|thought|private)>([\s\S]*?)<\/\1>/gi;
 // Backend produces ${audio.TEXT} — arbitrary text after "audio." until closing }
 const AUDIO_TOKEN_RE = /\$\{audio\.([^}]+)\}/g;
 // Backend uses XML format: <mcp:context type="..." uri="..." ephemeral="true">...</mcp:context>
@@ -190,14 +196,35 @@ const ChatTokenRenderer = {
     },
 
     /**
+     * Hide or reveal thought blocks (<think>, <thought>, <private>).
+     * hideThoughts=true strips them; otherwise each block is wrapped in a styled <details> so it is
+     * actually visible (a raw unknown element passed to marked renders unstyled and blends in).
+     */
+    renderThoughts: function(content, hideThoughts) {
+        if (!content) return "";
+        if (hideThoughts) {
+            return content.replace(THOUGHT_BLOCK_RE, "");
+        }
+        return content.replace(THOUGHT_BLOCK_RE, function(_m, tag, inner) {
+            let escaped = String(inner)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            let label = tag.toLowerCase() === "private" ? "private" : "thinking";
+            return '<details class="chat-thoughts my-2 rounded border border-amber-300 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-900/20 text-xs" open>'
+                 + '<summary class="cursor-pointer px-2 py-1 text-amber-700 dark:text-amber-300 font-medium">' + label + '</summary>'
+                 + '<div class="px-2 py-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">'
+                 + escaped
+                 + '</div></details>';
+        });
+    },
+
+    /**
      * Prune content for display — removes LLM artifacts and metadata.
-     * Optionally strips thinking/thought tags.
+     * Optionally strips thinking/thought/private tags.
      */
     pruneForDisplay: function(content, hideThoughts) {
         if (!content) return "";
         if (hideThoughts) {
-            content = LLMConnector.pruneTag(content, "think");
-            content = LLMConnector.pruneTag(content, "thought");
+            THOUGHT_TAGS.forEach(function(t) { content = LLMConnector.pruneTag(content, t); });
         }
         content = LLMConnector.pruneToMark(content, "<|reserved_special_token");
         content = LLMConnector.pruneToMark(content, "(Metrics");

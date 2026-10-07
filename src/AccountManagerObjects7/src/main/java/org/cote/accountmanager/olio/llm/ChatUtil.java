@@ -1708,6 +1708,8 @@ public class ChatUtil {
 
 	private static final Pattern THINK_PATTERN = Pattern.compile("<think>.*?</think>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 	private static final Pattern THOUGHT_PATTERN = Pattern.compile("<thought>.*?</thought>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+	/// Character internal dialog requested by the prompt config (hidden like thoughts; *emotes* stay visible)
+	private static final Pattern PRIVATE_PATTERN = Pattern.compile("<private>.*?</private>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
 	/**
 	 * Populate ephemeral display fields on a message.
@@ -1722,7 +1724,7 @@ public class ChatUtil {
 
 		try {
 			String lower = content.toLowerCase();
-			boolean hasThoughts = lower.contains("<think>") || lower.contains("<thought>");
+			boolean hasThoughts = lower.contains("<think>") || lower.contains("<thought>") || lower.contains("<private>");
 			boolean hasMetrics = content.contains("(Metrics");
 			boolean hasKeyframe = content.contains("(KeyFrame") || (content.contains("<mcp:context") && content.contains("/keyframe/"));
 
@@ -1735,6 +1737,7 @@ public class ChatUtil {
 			display = stripAtMark(display, "<|reserved_special_token");
 			display = THINK_PATTERN.matcher(display).replaceAll("");
 			display = THOUGHT_PATTERN.matcher(display).replaceAll("");
+			display = PRIVATE_PATTERN.matcher(display).replaceAll("");
 			display = McpContextParser.stripAll(display);
 			display = stripBetween(display, "--- INTERACTION HISTORY", "END INTERACTION HISTORY ---");
 			display = stripBetween(display, "--- CITATION", "END CITATIONS ---");

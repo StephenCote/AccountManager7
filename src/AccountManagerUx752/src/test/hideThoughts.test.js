@@ -10,12 +10,11 @@
  *      an unstyled inline element, so the thought text blended invisibly
  *      into the message and looked like nothing happened.
  *
- * Verified via source inspection of the rendering logic (the function is
- * embedded in chat.js with many module-level dependencies; extracting the
- * helper would require a separate file). The Playwright counterpart can
- * be added once a chat session with thinking-mode content exists.
+ * The show/hide transform now lives in ChatTokenRenderer.renderThoughts and is
+ * exercised directly; chat.js is only checked for delegating to it. Handles
+ * <think>, <thought> and <private> (character internal dialog).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -40,23 +39,12 @@ describe('Show/Hide thoughts — chat.js source contract', () => {
         expect(m, 'stream cache tag should depend on hideThoughts').toBeTruthy();
     });
 
-    it('when hideThoughts=false, <think> blocks get wrapped in a styled <details>', () => {
-        // Find the else branch and confirm it emits <details> markup
-        // rather than letting raw <think> pass to marked.parse.
-        let hasShowBranch = /<think>\(.*?\)<\\\/think>/.test(chatJsSrc.replace(/\s+/g, ''));
-        // Look for the wrap-as-details substitution pattern
-        expect(chatJsSrc, 'should wrap <think> as <details class="chat-thoughts">')
-            .toMatch(/<think>.*<\/think>/);
-        expect(chatJsSrc, 'chat-thoughts wrapper class should be emitted')
-            .toContain('chat-thoughts');
-        expect(chatJsSrc, 'thinking summary label should be emitted')
-            .toContain('>thinking<');
-    });
-
-    it('when hideThoughts=true, <think> blocks are stripped (not wrapped)', () => {
-        // The stripping branch must still exist.
-        expect(chatJsSrc, 'should still strip <think>...</think> when hidden')
-            .toMatch(/replace\(\s*\/<think>\[\\s\\S\]\*\?<\\\/think>\/g\s*,\s*""\s*\)/);
+    it('both render paths delegate to ChatTokenRenderer.renderThoughts', () => {
+        // getFormattedContent and renderStreamingMessage must share one implementation,
+        // so a tag added there (e.g. <private>) applies to saved AND streaming messages.
+        let calls = chatJsSrc.match(/ChatTokenRenderer\.renderThoughts\(\s*\w+\s*,\s*hideThoughts\s*\)/g) || [];
+        expect(calls.length).toBe(2);
+        expect(chatJsSrc, 'no leftover <think>-only regex in chat.js').not.toMatch(/\/<think>/);
     });
 
     it('toggle handler flips hideThoughts and triggers redraw', () => {
@@ -67,32 +55,16 @@ describe('Show/Hide thoughts — chat.js source contract', () => {
     });
 });
 
-describe('Show/Hide thoughts — wrap-as-details regex behavior', () => {
-    /// The exact replace pattern is mirrored from chat.js getFormattedContent
-    /// else-branch. If you change this in chat.js, change it here too —
-    /// the goal is to assert the actual transformation, not just the
-    /// presence of strings in source.
-    function wrapThoughtsAsDetails(content) {
-        return content.replace(/<think>([\s\S]*?)<\/think>/g, function(_m, inner) {
-            let escaped = String(inner)
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            return '<details class="chat-thoughts my-2 rounded border border-amber-300 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-900/20 text-xs" open>'
-                 + '<summary class="cursor-pointer px-2 py-1 text-amber-700 dark:text-amber-300 font-medium">thinking</summary>'
-                 + '<div class="px-2 py-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">'
-                 + escaped
-                 + '</div></details>';
-        });
-    }
-
-    function stripThoughts(content) {
-        return content.replace(/<think>[\s\S]*?<\/think>/g, "");
-    }
+describe('Show/Hide thoughts — ChatTokenRenderer.renderThoughts', () => {
+    let R, L;
+    beforeAll(async () => {
+        R = (await import('../chat/ChatTokenRenderer.js')).ChatTokenRenderer;
+        L = (await import('../chat/LLMConnector.js')).LLMConnector;
+    });
 
     it('wraps a single <think> block in <details class="chat-thoughts">', () => {
-        let result = wrapThoughtsAsDetails(
-            'Before <think>secret reasoning</think> after.');
+        let result = R.renderThoughts('Before <think>secret reasoning</think> after.', false);
         expect(result).toContain('<details class="chat-thoughts');
-        expect(result).toContain('<summary');
         expect(result).toContain('>thinking</summary>');
         expect(result).toContain('secret reasoning');
         expect(result).not.toContain('<think>');
@@ -100,43 +72,68 @@ describe('Show/Hide thoughts — wrap-as-details regex behavior', () => {
         expect(result).toContain(' after.');
     });
 
-    it('wraps multiple <think> blocks independently', () => {
-        let result = wrapThoughtsAsDetails(
-            '<think>one</think> middle <think>two</think>');
-        let matches = result.match(/chat-thoughts/g) || [];
-        expect(matches.length).toBe(2);
-        expect(result).toContain('one');
-        expect(result).toContain('two');
+    it('wraps <private> character dialog with a "private" label when shown', () => {
+        let result = R.renderThoughts('"Hi Stephen!" <private>I am assessing him</private> *smiles*', false);
+        expect(result).toContain('>private</summary>');
+        expect(result).toContain('I am assessing him');
+        expect(result).not.toContain('<private>');
+        expect(result, '*emotes* stay visible').toContain('*smiles*');
+    });
+
+    it('wraps <thought> blocks too (previously passed through raw when shown)', () => {
+        let result = R.renderThoughts('A <thought>hmm</thought> B', false);
+        expect(result).toContain('chat-thoughts');
+        expect(result).not.toContain('<thought>');
+    });
+
+    it('wraps multiple mixed blocks independently', () => {
+        let result = R.renderThoughts('<think>one</think> middle <private>two</private>', false);
+        expect((result.match(/chat-thoughts/g) || []).length).toBe(2);
         expect(result).toContain(' middle ');
     });
 
-    it('handles multiline thoughts (the regex must span newlines)', () => {
-        let result = wrapThoughtsAsDetails(
-            'A<think>line1\nline2\nline3</think>B');
+    it('does not pair mismatched tags', () => {
+        let src = '<think>a</private>';
+        expect(R.renderThoughts(src, false)).toBe(src);
+        expect(R.renderThoughts(src, true)).toBe(src);
+    });
+
+    it('handles multiline content (the regex must span newlines)', () => {
+        let result = R.renderThoughts('A<private>line1\nline2\nline3</private>B', false);
         expect(result).toContain('line1\nline2\nline3');
         expect(result).toContain('chat-thoughts');
     });
 
-    it('escapes HTML inside the thought to prevent injection', () => {
-        let result = wrapThoughtsAsDetails(
-            '<think>raw <script>alert(1)</script> & < ></think>');
+    it('escapes HTML inside the block to prevent injection', () => {
+        let result = R.renderThoughts('<private>raw <script>alert(1)</script> & < ></private>', false);
         expect(result).not.toContain('<script>alert(1)</script>');
         expect(result).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
         expect(result).toContain('&amp;');
     });
 
-    it('stripThoughts removes the block entirely when hidden', () => {
-        let result = stripThoughts(
-            'Before <think>secret</think> after.');
-        expect(result).toBe('Before  after.');
-        expect(result).not.toContain('secret');
-        expect(result).not.toContain('<think>');
+    it('strips every block entirely when hidden, keeping *emotes*', () => {
+        let result = R.renderThoughts('Before <think>x</think><private>secret</private> *waves* after.', true);
+        expect(result).toBe('Before  *waves* after.');
     });
 
-    it('content without <think> is unchanged in either branch', () => {
-        let plain = 'Just a normal message with no thinking.';
-        expect(wrapThoughtsAsDetails(plain)).toBe(plain);
-        expect(stripThoughts(plain)).toBe(plain);
+    it('pruneForDisplay(hide=true) strips <private> and keeps *emotes*', () => {
+        let result = R.pruneForDisplay('"Hi!" <private>secret</private> *grins*', true);
+        expect(result).not.toContain('secret');
+        expect(result).toContain('*grins*');
+    });
+
+    it('pruneForDisplay(hide=false) leaves <private> for renderThoughts to wrap', () => {
+        expect(R.pruneForDisplay('<private>secret</private>', false)).toContain('<private>secret</private>');
+    });
+
+    it('LLMConnector.pruneAll strips <private>', () => {
+        expect(L.pruneAll('Hi <private>secret</private> there')).not.toContain('secret');
+    });
+
+    it('content without blocks is unchanged in either mode', () => {
+        let plain = 'Just a normal message with *an emote*.';
+        expect(R.renderThoughts(plain, false)).toBe(plain);
+        expect(R.renderThoughts(plain, true)).toBe(plain);
     });
 });
 

@@ -519,6 +519,7 @@ const LLMConnector = {
         cnt = LLMConnector.pruneToMark(cnt, "<|reserved_special_token");
         cnt = LLMConnector.pruneTag(cnt, "think");
         cnt = LLMConnector.pruneTag(cnt, "thought");
+        cnt = LLMConnector.pruneTag(cnt, "private");
         cnt = LLMConnector.pruneToMark(cnt, "(Metrics");
         cnt = LLMConnector.pruneToMark(cnt, "(Reminder");
         cnt = LLMConnector.pruneToMark(cnt, "(KeyFrame");
