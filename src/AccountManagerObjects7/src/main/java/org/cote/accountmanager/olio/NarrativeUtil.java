@@ -926,6 +926,35 @@ public class NarrativeUtil {
 		return mof;
 
 	}
+
+	/**
+	 * True when the record carries no usable age. {@code age} is a plain int column, so a character
+	 * whose age was never set reads 0 - a picture-book character the manuscript never aged, a
+	 * character created through the generic editor with the field left blank. Non-positive is the
+	 * only signal there is; {@code birthDate} is the epoch default on those same records.
+	 *
+	 * <p>Used by the two describers whose text drives IMAGE prompts ({@link #describePhysical},
+	 * {@link #getSDMinPrompt}), where "0 year old boy child" is not a harmless placeholder: it told
+	 * the diffusion model to draw an adult as a child (IssueLog-2026-09-22, muhpnuzi ch1, "Simon").
+	 * Deliberately NOT applied to {@link #getGenderLabel} or {@link #describe}: in the Olio
+	 * simulation a 0-year-old is a real newborn (EvolutionUtil recomputes age from birthDate), and
+	 * the sim's narrative sentence keeps saying so.
+	 */
+	public static boolean isAgeUnstated(int age) {
+		return age <= 0;
+	}
+
+	/**
+	 * Gender noun for a described character: {@link #getGenderLabel} when the age is known, the
+	 * adult noun when it is unstated ({@link #isAgeUnstated}) - an unaged character is drawn as an
+	 * adult rather than as a child.
+	 */
+	public static String getDescribedGenderLabel(String gender, int age) {
+		if(isAgeUnstated(age)) {
+			return getGenderLabel(gender, Rules.MINIMUM_ADULT_AGE + 1);
+		}
+		return getGenderLabel(gender, age);
+	}
 	
 	public static String getSDNegativePrompt(BaseRecord person) {
 
@@ -945,15 +974,19 @@ public class NarrativeUtil {
 		return getSDPrompt(ctx, ProfileUtil.getProfile(ctx, person), person, setting);
 	}
 	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, String setting) {
-		return getSDPrompt(ctx, pp, person, setting, "professional photograph", "full body");
+		return getSDPrompt(ctx, pp, person, setting, "full body");
 	}
-	
-	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, String setting, String pictureType, String bodyType) {
-		return getSDPrompt(ctx, pp, person, SDUtil.randomSDConfig(), setting, pictureType, bodyType);
+
+	/// The former `pictureType` ("professional photograph" / "((DEPRECATED))") parameter was removed
+	/// 2026-10-07: the prompt builder below had not read it for a long time (only a stale comment
+	/// remained), so every caller was threading a value that never reached the model. Picture style
+	/// now comes solely from the SD config (SDUtil.getSDConfigPrompt).
+	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, String setting, String bodyType) {
+		return getSDPrompt(ctx, pp, person, SDUtil.randomSDConfig(), setting, bodyType);
 	}
-	
-	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType) {
-		return getSDPrompt(ctx, pp, person, sdConfig, setting, pictureType, bodyType, null);
+
+	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, BaseRecord sdConfig, String setting, String bodyType) {
+		return getSDPrompt(ctx, pp, person, sdConfig, setting, bodyType, null);
 	}
 	
 	private static String[] verbs = new String[] {"running in", "walking in", "sitting in", "talking in", "dancing in", "working in", "playing in", "sleeping in", "bathing in", "dressing in", "swimming in", "skiing in"};
@@ -961,16 +994,16 @@ public class NarrativeUtil {
 	public static String randomVerb() {
 		return verbs[rand.nextInt(verbs.length)];
 	}
-	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType, String verb) {
+	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, BaseRecord sdConfig, String setting, String bodyType, String verb) {
 		StringBuilder buff = new StringBuilder();
-		
+
 		if(verb == null) {
 			verb = verbs[rand.nextInt(verbs.length)];
 			if(rand.nextDouble() >= 0.5) {
 				verb = getInteractionGerund(OlioUtil.getRandomInteraction()) + " in";
 			}
 		}
-		
+
 		int age = pp.getAge();
 		String gender = person.get(FieldNames.FIELD_GENDER);
 		String pro = ("male".equals(gender) ? "he" : "she");
@@ -978,7 +1011,6 @@ public class NarrativeUtil {
 		String mof = getGenderLabel(gender, age);
 
 		int m = Rules.MINIMUM_ADULT_AGE;
-		/// ((" + pictureType + "))
 		buff.append("8k highly detailed ((highest quality)) ((ultra realistic)) ((" + bodyType + "))");
 		
 		buff.append(" of " + getSDMinPrompt(pp));
@@ -1030,8 +1062,7 @@ public class NarrativeUtil {
 		String gender = pp.getGender();
 		String pro = ("male".equals(gender) ? "he" : "she");
 		String cpro = pro.substring(0,1).toUpperCase() + pro.substring(1);
-		boolean isMale = gender.equals("male");
-		String mof = getGenderLabel(gender, age);
+		String mof = getDescribedGenderLabel(gender, age);
 
 		String buildDesc = describeBuild(pp.getRecord());
 		String shapeDesc = describeBodyShape(pp.getRecord());
@@ -1045,15 +1076,23 @@ public class NarrativeUtil {
 			buff.append(")");
 		}
 		buff.append(" " + getIsPrettyAthletic(pp));
-		buff.append(" ((" + getNumberName(age).toLowerCase() + ":1.5) (" + age + "yo:1.5)");
 
+		/// One weighted group: "((<age words>:1.5) (<age>yo:1.5) (<race>) (<ethnicity>) (<gender>))".
+		/// An unstated age (see isAgeUnstated) contributes NO age token - "((zero:1.5) (0yo:1.5))"
+		/// told the diffusion model, at weight 1.5, to draw a newborn.
+		List<String> group = new ArrayList<>();
+		if(!isAgeUnstated(age)) {
+			group.add("(" + getNumberName(age).toLowerCase() + ":1.5)");
+			group.add("(" + age + "yo:1.5)");
+		}
 		String raceDesc = getRaceDescription(pp.getRace(), pp.getRaceLabel());
-		buff.append(raceDesc.length() > 0 ? " (" + raceDesc.toLowerCase() + ")" : "");
+		if(raceDesc.length() > 0) group.add("(" + raceDesc.toLowerCase() + ")");
 
 		String ethDesc = getEthnicityDescription(pp.getEthnicity(), pp.getOtherEthnicity());
-		buff.append(ethDesc.length() > 0 ? " (" + ethDesc.toLowerCase() + ")" : "");
+		if(ethDesc.length() > 0) group.add("(" + ethDesc.toLowerCase() + ")");
 
-		buff.append(" (" + mof.toLowerCase() + "))");
+		group.add("(" + mof.toLowerCase() + ")");
+		buff.append(" (" + String.join(" ", group) + ")");
 
 		String hairColor = getColor(pp.getRecord(), OlioFieldNames.FIELD_HAIR_COLOR);
 		String hairStyle = pp.getRecord().get(OlioFieldNames.FIELD_HAIR_STYLE);
@@ -1220,9 +1259,11 @@ public class NarrativeUtil {
 		String buildDesc = describeBuild(pp.getRecord());
 		buff.append(buildDesc.length() > 0 ? buildDesc + ", " : "");
 		buff.append(bodyDesc.length() > 0 ? bodyDesc + " " : "");
-		buff.append(age + " year old ");
+		/// An unstated age is omitted and the character is described as an adult - see
+		/// isAgeUnstated. "0 year old boy child" reached the image prompts.
+		if(!isAgeUnstated(age)) buff.append(age + " year old ");
 		if(raceDesc != null && raceDesc.length() > 0) buff.append(raceDesc + " ");
-		buff.append(getGenderLabel(gender, age));
+		buff.append(getDescribedGenderLabel(gender, age));
 
 		/// "with X eyes and Y Z hair" - assembled from whichever parts exist, so a missing hairStyle
 		/// drops one word instead of inserting "null", and a character with no colours at all simply

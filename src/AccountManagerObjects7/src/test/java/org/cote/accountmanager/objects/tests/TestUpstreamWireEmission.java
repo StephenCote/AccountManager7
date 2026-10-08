@@ -3,6 +3,7 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayOutputStream;
@@ -10,6 +11,7 @@ import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
@@ -293,11 +295,17 @@ public class TestUpstreamWireEmission extends BaseTest {
 		/// hybrid reasoning model (qwen3) does; see TestLiteLLMOllamaProxy testD.
 		req.set("think", false);
 		chat.newMessage(req, "ping", Chat.userRole);
+		return dispatchPrepared(path, chat, req);
+	}
 
+	/// Dispatch a request the CALLER prepared (so cases that must NOT touch `think`, or that hand in a
+	/// deserialized "resumed session" request, can share the capture/parse path).
+	private JsonNode dispatchPrepared(String path, Chat chat, OpenAIRequest req) throws Exception {
 		assertEquals("Chat built the wrong transport URL",
 			chat.getServerUrl() + path, chat.getServiceUrl(req));
 
 		lastRequest = req;
+		captured.remove(path);
 		chat.chat(req);
 
 		String body = captured.get(path);
@@ -630,20 +638,22 @@ public class TestUpstreamWireEmission extends BaseTest {
 			DISTINCT_NUM_GPU, body.get("num_gpu").asInt());
 		assertFalse("`think` must be false", body.get("think").asBoolean());
 
-		/// max_tokens is ABSENT on the native wire, and that is PRE-EXISTING, not a KI-72 effect.
-		/// applyOllamaUpstreamOptions sets it on the request, but Chat.chatInternal's token-field
-		/// ignore-list prunes every one of {num_ctx, max_tokens, max_completion_tokens} except the
-		/// resolved tokField, which for a native OLLAMA dialect IS num_ctx. Measured from the
-		/// captured body (I first asserted it present - that was my expectation, not the shipped
-		/// behaviour). The same prune is what removes num_ctx on the PROXIED path; see caseA2.
-		/// Ollama's own name for the cap is `num_predict`; introducing it is a behaviour change
-		/// beyond the wire-shape fix and is not done here, so neither name is in `options`.
-		assertHasNot(body, "max_tokens", "pre-existing native behaviour: only the resolved token"
-			+ " field (num_ctx) survives Chat.chatInternal's token-field prune");
-		assertHasNot(options, "max_tokens", "`max_tokens` is not an Ollama option key and is pruned"
-			+ " before the options nesting runs");
-		assertHasNot(options, "num_predict", "num_predict is deliberately NOT introduced by the"
-			+ " wire-shape fix (Stephen's call; see applyOllamaUpstreamOptions)");
+		/// KI-72 follow-up (2026-10-07, LLM lane item 7): the user-configured OUTPUT CAP now reaches
+		/// native Ollama. Before, Chat.chatInternal's token-field prune stripped `max_tokens` from the
+		/// native wire (tokField is num_ctx there) so generation ran unbounded (num_predict -1); the
+		/// earlier revision of this case pinned that as "pre-existing behaviour, Stephen's call
+		/// 2026-09-28". The parent lane's directive reversed it: chatInternal keeps `max_tokens` on
+		/// the native wire COPY and ChatUtil.nestNativeOllamaOptions RENAMES it to Ollama's own
+		/// `options.num_predict` - the identical translation LiteLLM performs for the proxied path
+		/// (caseA2), so both Ollama paths now cap at chatOptions.max_tokens.
+		assertHasNot(body, "max_tokens", "`max_tokens` is not an Ollama key; it must be RENAMED into"
+			+ " options.num_predict, not left at the top level where Ollama ignores it");
+		assertHasNot(options, "max_tokens", "`max_tokens` must not be moved under its own name -"
+			+ " Ollama's output cap is `num_predict`");
+		assertHas(options, "num_predict", "the chatOptions output cap must reach native Ollama as"
+			+ " options.num_predict (KI-72 follow-up, item 7)");
+		assertEquals("options.num_predict must carry the chatOptions max_tokens value",
+			DISTINCT_MAX_TOKENS, options.get("num_predict").asInt());
 		/// max_completion_tokens is the o-series field and must never be sent for this model.
 		assertHasNot(body, "max_completion_tokens", "only the resolved token field may be sent");
 		/// Non-vacuity: the body is still a real chat request.
@@ -711,6 +721,13 @@ public class TestUpstreamWireEmission extends BaseTest {
 			50, options.get("top_k").asInt());
 		assertEquals("options.temperature must carry the chatOptions DEFAULT (1.0)",
 			1.0, options.get("temperature").asDouble(), 0.0001);
+		/// Item 7: the chatOptions DEFAULT max_tokens (4096) differs from the openaiRequest schema
+		/// default (2048), so it serializes and must arrive as options.num_predict.
+		assertEquals("fixture precondition: chatOptions.max_tokens must be the schema default",
+			4096, (int) (Integer) opts.get("max_tokens"));
+		assertHas(options, "num_predict", "C2: the default chatOptions output cap must reach native Ollama");
+		assertEquals(4096, options.get("num_predict").asInt());
+		assertHasNot(body, "max_tokens", "C2: renamed, not duplicated");
 		logger.info("[KI-72][WIRE][C2] PASS options=" + options);
 	}
 
@@ -763,15 +780,23 @@ public class TestUpstreamWireEmission extends BaseTest {
 		assertEquals("applyAnalyzeOptions must also still pin its own temperature",
 			Chat.ANALYZE_TEMPERATURE, (double) (Double) areq.get("temperature"), 0.0001);
 
+		/// The analyze path also carries an OUTPUT cap now (item 5 parity): ANALYZE_MAX_TOKENS in the
+		/// dialect's cap field, which on native Ollama is max_tokens (-> options.num_predict on the wire).
+		assertEquals("analyze request must carry ANALYZE_MAX_TOKENS in max_tokens on native Ollama",
+			Chat.ANALYZE_MAX_TOKENS, (int) (Integer) areq.get("max_tokens"));
+
 		/// --- keyframe path: an OUTPUT cap, which must NOT shrink the context window ---
 		/// Before the wire-shape fix the keyframe cap was written into num_ctx (the only token
 		/// field getMaxTokenField resolves on native Ollama) and rode top-level, where Ollama ignored
-		/// it. Now that num_ctx is relocated into `options` and honored, that same write would pin
-		/// the context window to KEYFRAME_MAX_TOKENS tokens and force a model reload per call.
-		/// Stephen's decision (2026-09-28): caps stay INERT on native Ollama - no num_predict - so
-		/// the keyframe request must keep applyAnalyzeOptions' num_ctx untouched.
-		assertEquals("precondition: on native Ollama there is no output-cap field to write into",
-			"", ChatUtil.getOutputCapField(cfg, LLMServiceEnumType.OLLAMA));
+		/// it. Once num_ctx was relocated into `options` and honored, that same write would have
+		/// pinned the context window to KEYFRAME_MAX_TOKENS tokens, so for a while caps were kept INERT
+		/// on native Ollama (getOutputCapField returned "" there; recorded 2026-09-28).
+		/// KI-72 follow-up (2026-10-07, LLM lane item 7) reverses that: getOutputCapField resolves
+		/// max_tokens on native Ollama too, Chat.chatInternal keeps it on the native wire copy, and
+		/// nestNativeOllamaOptions renames it to options.num_predict. The invariant this case guards is
+		/// unchanged: the cap lands in the OUTPUT field and num_ctx stays at the analyze context.
+		assertEquals("precondition: on native Ollama the output-cap field is now max_tokens (item 7)",
+			"max_tokens", ChatUtil.getOutputCapField(cfg, LLMServiceEnumType.OLLAMA));
 		assertTrue("non-vacuity: the cap and the analyze context must differ or the assertion below"
 			+ " could not tell a stomp from a no-op", Chat.KEYFRAME_MAX_TOKENS != Chat.ANALYZE_NUM_CTX);
 		Method kf = Chat.class.getDeclaredMethod("buildKeyframeRequest", OpenAIRequest.class, int.class);
@@ -780,15 +805,20 @@ public class TestUpstreamWireEmission extends BaseTest {
 		assertNotNull("buildKeyframeRequest returned null - the fixture has no formattable history,"
 			+ " so this half of case D did not exercise anything", kfReq);
 		int kfNumCtx = kfReq.get("num_ctx");
-		logger.info("[KI-72][WIRE][D] keyframe num_ctx=" + kfNumCtx
+		logger.info("[KI-72][WIRE][D] keyframe num_ctx=" + kfNumCtx + " max_tokens=" + kfReq.get("max_tokens")
 			+ " (KEYFRAME_MAX_TOKENS=" + Chat.KEYFRAME_MAX_TOKENS + ", ANALYZE_NUM_CTX=" + Chat.ANALYZE_NUM_CTX + ")");
 		assertEquals("the keyframe OUTPUT cap was written into num_ctx on native Ollama - that shrinks"
 			+ " the model's context window to " + Chat.KEYFRAME_MAX_TOKENS + " tokens",
 			Chat.ANALYZE_NUM_CTX, kfNumCtx);
+		assertEquals("native keyframe request must carry its output cap in max_tokens (item 7)",
+			Chat.KEYFRAME_MAX_TOKENS, (int) (Integer) kfReq.get("max_tokens"));
 
 		/// CONTROL - the same keyframe builder on a PROXIED dialect (OPENAI_COMPAT, upstream OLLAMA)
-		/// must still apply the cap, to max_tokens, and leave num_ctx at the analyze context. This is
-		/// what proves the change scoped the cap to the num_ctx case rather than dropping it everywhere.
+		/// must apply the cap to max_tokens and leave num_ctx at the ANALYZE context. Item 5 parity:
+		/// applyAnalyzeOptions now pins num_ctx = ANALYZE_NUM_CTX on EVERY Ollama upstream, so a
+		/// proxied analyze/keyframe call no longer runs at the full conversational chatOptions.num_ctx
+		/// (the earlier revision of this control asserted DISTINCT_NUM_CTX here - that was the
+		/// native/proxied asymmetry item 5 removes).
 		BaseRecord pconn = persistConnection(user, "KI72 D Proxied Conn " + nonce, base,
 			ConnectionDialectEnumType.OPENAI_COMPAT, ConnectionUpstreamEnumType.OLLAMA);
 		BaseRecord pcfg = chatConfigWithDistinctOptions(user, "KI72 D Proxied " + nonce);
@@ -799,14 +829,15 @@ public class TestUpstreamWireEmission extends BaseTest {
 		OpenAIRequest pplain = pchat.newRequest(pchat.getModel());
 		pchat.newMessage(pplain, "hello there", Chat.userRole);
 		pchat.newMessage(pplain, "hi, how can I help?", Chat.assistantRole);
+		assertEquals("precondition: a normal proxied request carries the chatOptions num_ctx",
+			DISTINCT_NUM_CTX, (int) (Integer) pplain.get("num_ctx"));
 		OpenAIRequest pkf = (OpenAIRequest) kf.invoke(pchat, pplain, 0);
 		assertNotNull("proxied buildKeyframeRequest returned null", pkf);
 		assertEquals("proxied keyframe request lost its output cap - the num_ctx guard must not"
 			+ " suppress max_tokens on OPENAI_COMPAT", Chat.KEYFRAME_MAX_TOKENS, (int) (Integer) pkf.get("max_tokens"));
-		/// On the proxied path the analyze override lands in max_tokens (its tokField), so num_ctx
-		/// is whatever applyOllamaUpstreamOptions copied from chatOptions - and the cap must leave it.
-		assertEquals("proxied keyframe request's num_ctx must be the chatOptions context, untouched by the cap",
-			DISTINCT_NUM_CTX, (int) (Integer) pkf.get("num_ctx"));
+		assertEquals("proxied keyframe request's num_ctx must be the ANALYZE context (item 5 parity),"
+			+ " not the conversational chatOptions value and not the cap",
+			Chat.ANALYZE_NUM_CTX, (int) (Integer) pkf.get("num_ctx"));
 		logger.info("[KI-72][WIRE][D] proxied keyframe max_tokens=" + pkf.get("max_tokens")
 			+ " num_ctx=" + pkf.get("num_ctx"));
 
@@ -1261,6 +1292,84 @@ public class TestUpstreamWireEmission extends BaseTest {
 		logger.info("[KI-72][WIRE][G3pos] PASS - an opaque user reached the wire body unchanged.");
 	}
 
+	// ──────────── CASE N - Tier B4 completion: structured `metadata` object on the wire ────────────
+
+	/// Dispatch a real chat() carrying BOTH tracing values on the request and return the wire body,
+	/// for the given dialect. `session_id` is what the ISO engine sets (run objectId); `user` is the
+	/// opaque correlation key the design mandates.
+	private JsonNode dispatchWithTracing(String caseTag, ConnectionDialectEnumType dialect, String path,
+			String userValue, String sessionValue) throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserN" + caseTag);
+		assertNotNull("test user is null", user);
+		BaseRecord conn = persistConnection(user, "B4 N" + caseTag + " Conn " + nonce, base, dialect,
+			ConnectionUpstreamEnumType.OLLAMA);
+		BaseRecord cfg = chatConfigWithDistinctOptions(user, "B4 N" + caseTag + " " + nonce);
+		cfg.set("connection", conn);
+		Chat chat = new Chat(user, cfg, null);
+		OpenAIRequest req = chat.newRequest(chat.getModel());
+		req.setStream(false);
+		req.setValue("user", userValue);
+		req.setValue("session_id", sessionValue);
+		chat.newMessage(req, "ping", Chat.userRole);
+		return dispatchPrepared(path, chat, req);
+	}
+
+	/// CASE N1 - OPENAI_COMPAT (LiteLLM): the body carries `metadata` as a JSON OBJECT with the two
+	/// Langfuse-recognised keys, built from the opaque values; top-level `session_id` stays pruned and
+	/// body `user` stays (the pre-existing emission points are unchanged by the addition).
+	@Test
+	public void caseN1_proxied_emitsStructuredMetadataObject() throws Exception {
+		String opaqueUser = UUID.randomUUID().toString();
+		String opaqueSession = UUID.randomUUID().toString();
+		JsonNode body = dispatchWithTracing("1", ConnectionDialectEnumType.OPENAI_COMPAT, "/v1/chat/completions",
+			opaqueUser, opaqueSession);
+
+		assertHas(body, "metadata", "Tier B4: OPENAI_COMPAT must carry a structured metadata object -"
+			+ " the only form Langfuse consumes as trace metadata (P3-2)");
+		assertTrue("metadata must be a JSON OBJECT, not a string", body.get("metadata").isObject());
+		assertEquals("metadata.session_id -> Langfuse trace.sessionId", opaqueSession,
+			body.get("metadata").get("session_id").asText());
+		assertEquals("metadata.trace_user_id -> Langfuse trace.userId", opaqueUser,
+			body.get("metadata").get("trace_user_id").asText());
+		assertEquals("no invented keys", 2, body.get("metadata").size());
+		assertHasNot(body, "session_id", "top-level session_id is not a valid OpenAI parameter and stays pruned");
+		assertEquals("body `user` is unchanged by the metadata addition", opaqueUser, body.get("user").asText());
+		logger.info("[B4][WIRE][N1] PASS - structured metadata object reached the proxied wire.");
+	}
+
+	/// CASE N2 - GUARDRAIL 2 on the wire: the SAME request on a native OLLAMA connection carries no
+	/// `metadata` at all (and, as before, neither tracing field).
+	@Test
+	public void caseN2_nativeOllama_emitsNoMetadata() throws Exception {
+		String opaqueUser = UUID.randomUUID().toString();
+		String opaqueSession = UUID.randomUUID().toString();
+		JsonNode body = dispatchWithTracing("2", ConnectionDialectEnumType.OLLAMA, "/api/chat",
+			opaqueUser, opaqueSession);
+		assertHasNot(body, "metadata", "Guardrail 2: native Ollama must never receive the Langfuse metadata object");
+		assertHasNot(body, "session_id", "session_id is pruned for every dialect");
+		assertHasNot(body, "user", "user is pruned for every non-OPENAI_COMPAT dialect");
+		logger.info("[B4][WIRE][N2] PASS - native Ollama wire carries no tracing metadata.");
+	}
+
+	/// CASE N3 - GUARDRAIL 3 on the wire: a non-opaque `user` on OPENAI_COMPAT is dropped from the
+	/// metadata object too; the opaque session_id still arrives, so the object is present with one key.
+	@Test
+	public void caseN3_proxied_nonOpaqueUserDroppedFromMetadata() throws Exception {
+		String pii = "someone@example.com";
+		String opaqueSession = UUID.randomUUID().toString();
+		JsonNode body = dispatchWithTracing("3", ConnectionDialectEnumType.OPENAI_COMPAT, "/v1/chat/completions",
+			pii, opaqueSession);
+		assertHas(body, "metadata", "the opaque session_id must still produce the metadata object");
+		assertEquals(opaqueSession, body.get("metadata").get("session_id").asText());
+		assertFalse("GUARDRAIL 3: a non-opaque user must not appear as metadata.trace_user_id",
+			body.get("metadata").has("trace_user_id"));
+		assertFalse("the PII value must not appear anywhere in the wire body",
+			body.toString().contains(pii));
+		logger.info("[B4][WIRE][N3] PASS - PII dropped from the metadata object, session kept.");
+	}
+
 	// ------------------------------------------------------------------------------------------
 	// KI-72 residual family, site 5: ChatUtil.supportsSamplingParams
 	// ------------------------------------------------------------------------------------------
@@ -1278,6 +1387,9 @@ public class TestUpstreamWireEmission extends BaseTest {
 	/// and an assertion on its ABSENCE (caseH2) would pass vacuously.
 	private static final double DISTINCT_TOP_P = 0.44;
 	private static final double DISTINCT_FREQUENCY_PENALTY = 0.29;
+	/// Non-default so the item 8 presence_penalty assertions (H1 absent / H3 present) are about the
+	/// prune and not about RecordSerializer skipping a default-valued double.
+	private static final double DISTINCT_PRESENCE_PENALTY = 0.17;
 
 	/// chatConfig whose MODEL NAME is the variable under test. supportsSamplingParams' fallback
 	/// heuristic fires on the model string ("gpt-5..." / "o..."), so the model name is what makes
@@ -1289,6 +1401,7 @@ public class TestUpstreamWireEmission extends BaseTest {
 		assertNotNull("chatOptions is null", opts);
 		opts.set("top_p", DISTINCT_TOP_P);
 		opts.set("frequency_penalty", DISTINCT_FREQUENCY_PENALTY);
+		opts.set("presence_penalty", DISTINCT_PRESENCE_PENALTY);
 		return cfg;
 	}
 
@@ -1331,11 +1444,77 @@ public class TestUpstreamWireEmission extends BaseTest {
 		assertHas(body, "top_p", "same site: top_p is pruned by the same boolean");
 		assertEquals("top_p must carry the chatOptions value", DISTINCT_TOP_P,
 			body.get("top_p").asDouble(), 0.0001);
-		assertHas(body, "frequency_penalty", "same site: frequency_penalty is the third member of"
-			+ " the pruned triple");
-		assertEquals("frequency_penalty must carry the chatOptions value", DISTINCT_FREQUENCY_PENALTY,
-			body.get("frequency_penalty").asDouble(), 0.0001);
+		/// LLM lane item 8 (2026-10-07): frequency_penalty / presence_penalty are DELIBERATELY ABSENT on
+		/// the PROXIED Ollama wire. LiteLLM's ollama_chat provider does not forward frequency_penalty as
+		/// an OpenAI penalty - it MAPS it onto Ollama's options.repeat_penalty, so AM7's 0.0 default
+		/// arrived as repeat_penalty 0.0 (reward repetition) and qwen3 looped in `<think>` (measured
+		/// 2026-10-02). Chat.chatInternal prunes both on OPENAI_COMPAT + upstream OLLAMA and
+		/// applyOllamaUpstreamOptions always emits an explicit repeat_penalty instead, so the proxy has
+		/// nothing to derive. Earlier this case asserted frequency_penalty PRESENT as "the third member
+		/// of the pruned triple" - the sampling-param gate still keeps it (caseH2 proves the gate), but
+		/// the proxied-hijack prune removes it afterwards, and that is the behaviour wanted here.
+		assertHasNot(body, "frequency_penalty", "item 8: on PROXIED Ollama frequency_penalty must NOT be"
+			+ " emitted - LiteLLM maps it onto options.repeat_penalty");
+		assertHasNot(body, "presence_penalty", "item 8: presence_penalty is pruned alongside it");
+		assertHas(body, "repeat_penalty", "item 8: Ollama's own penalty must be sent explicitly so the"
+			+ " proxy derives nothing");
+		assertEquals("repeat_penalty must carry the chatOptions value", DISTINCT_REPEAT_PENALTY,
+			body.get("repeat_penalty").asDouble(), 0.0001);
 		logger.info("[KI-72][WIRE][H1] PASS");
+	}
+
+	/// CASE H3 - item 8 CONTROL: the NATIVE path keeps frequency_penalty / presence_penalty. Native
+	/// /api/chat reads them inside `options` as genuine, independent penalties (not a repeat_penalty
+	/// alias), so the proxied prune must be keyed on BOTH axes and leave this wire alone. Also pins
+	/// that repeat_penalty is still emitted explicitly there.
+	@Test
+	public void caseH3_nativeOllamaKeepsOpenAIPenalties() throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserH");
+		assertNotNull("test user is null", user);
+
+		BaseRecord conn = persistConnection(user, "KI72 H3 Conn " + nonce, base,
+			ConnectionDialectEnumType.OLLAMA, null);
+		BaseRecord cfg = chatConfigWithModel(user, "KI72 H3 " + nonce, "openchat");
+		cfg.set("connection", conn);
+
+		JsonNode body = dispatchAndCapture("/api/chat", user, cfg,
+			LLMServiceEnumType.OLLAMA, ConnectionUpstreamEnumType.OLLAMA);
+		JsonNode options = assertNativeOptionsShape(body, "H3");
+		assertEquals("native options.frequency_penalty must carry the chatOptions value (not pruned)",
+			DISTINCT_FREQUENCY_PENALTY, options.get("frequency_penalty").asDouble(), 0.0001);
+		assertHas(options, "presence_penalty", "native keeps presence_penalty too");
+		assertEquals(DISTINCT_PRESENCE_PENALTY, options.get("presence_penalty").asDouble(), 0.0001);
+		assertEquals(DISTINCT_REPEAT_PENALTY, options.get("repeat_penalty").asDouble(), 0.0001);
+		logger.info("[KI-72][WIRE][H3] PASS");
+	}
+
+	/// CASE H4 - item 8, the DEFAULT-repeat_penalty half. A chatOptions whose repeat_penalty is 0
+	/// (older rows pre-dating the field) used to send NOTHING, which on the proxied path let LiteLLM
+	/// derive repeat_penalty from frequency_penalty. Now ChatUtil.OLLAMA_DEFAULT_REPEAT_PENALTY (1.1,
+	/// Ollama's own default) is emitted explicitly.
+	@Test
+	public void caseH4_proxiedOllamaZeroRepeatPenaltyEmitsOllamaDefault() throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserH");
+		assertNotNull("test user is null", user);
+
+		BaseRecord conn = persistConnection(user, "KI72 H4 Conn " + nonce, base,
+			ConnectionDialectEnumType.OPENAI_COMPAT, ConnectionUpstreamEnumType.OLLAMA);
+		BaseRecord cfg = chatConfigWithDistinctOptions(user, "KI72 H4 " + nonce);
+		BaseRecord opts = cfg.get("chatOptions");
+		opts.set("repeat_penalty", 0.0);
+		cfg.set("connection", conn);
+
+		JsonNode body = dispatchAndCapture("/v1/chat/completions", user, cfg,
+			LLMServiceEnumType.OPENAI_COMPAT, ConnectionUpstreamEnumType.OLLAMA);
+		assertHas(body, "repeat_penalty", "item 8: an unset chatOptions.repeat_penalty must still produce"
+			+ " an explicit wire value - otherwise LiteLLM derives it from frequency_penalty");
+		assertEquals(ChatUtil.OLLAMA_DEFAULT_REPEAT_PENALTY, body.get("repeat_penalty").asDouble(), 0.0001);
+		assertHasNot(body, "frequency_penalty", "item 8: never on the proxied Ollama wire");
+		logger.info("[KI-72][WIRE][H4] PASS repeat_penalty=" + body.get("repeat_penalty"));
 	}
 
 	/// CASE H2 - THE PROHIBITION HALF, and it is what stops H1 from being satisfied by "always send
@@ -1635,5 +1814,283 @@ public class TestUpstreamWireEmission extends BaseTest {
 			assertHasNot(options, f, WHY_REMOVED);
 		}
 		logger.info("[KI-72][WIRE][J2] PASS options=" + options);
+	}
+
+	// ------------------------------------------------------------------------------------------
+	// LLM lane 2026-10-07, item 10: chatConfig WITHOUT a chatOptions record
+	// ------------------------------------------------------------------------------------------
+
+	/// chatConfig IN MEMORY whose chatOptions is explicitly NULL - the shape a config created over
+	/// REST without a nested chatOptions has. Nothing is persisted.
+	private BaseRecord chatConfigWithoutOptions(BaseRecord user, String name, String model) throws Exception {
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		BaseRecord cfg = IOSystem.getActiveContext().getFactory()
+			.newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
+		assertNotNull("chatConfig factory newInstance returned null", cfg);
+		cfg.set("model", model);
+		cfg.set("stream", false);
+		cfg.set("chatOptions", null);
+		assertNull("fixture precondition: chatOptions must be null", cfg.get("chatOptions"));
+		return cfg;
+	}
+
+	/// CASE K1 - NATIVE Ollama with opts == null. Before item 10 applyChatOptions skipped the whole
+	/// Ollama-extension block when chatOptions was null, so the wire carried none of
+	/// top_k/repeat_penalty/min_p/repeat_last_n and no explicit think. Now an in-memory chatOptions
+	/// at its schema defaults is materialised for the request only; the chatConfig is NOT mutated.
+	@Test
+	public void caseK1_nativeOllamaNullChatOptions_materialisesDefaultsWithoutMutatingConfig() throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserK");
+		assertNotNull("test user is null", user);
+
+		BaseRecord conn = persistConnection(user, "KI72 K1 Conn " + nonce, base,
+			ConnectionDialectEnumType.OLLAMA, null);
+		BaseRecord cfg = chatConfigWithoutOptions(user, "KI72 K1 " + nonce, "qwen3:8b");
+		cfg.set("connection", conn);
+
+		Chat chat = new Chat(user, cfg, null);
+		assertEquals(LLMServiceEnumType.OLLAMA, chat.getServiceType());
+		assertEquals(ConnectionUpstreamEnumType.OLLAMA, chat.getUpstream());
+		OpenAIRequest req = chat.newRequest(chat.getModel());
+		req.setStream(false);
+		chat.newMessage(req, "ping", Chat.userRole);
+		/// NOT setting think here - K1 proves the default path emits it on its own.
+		JsonNode body = dispatchPrepared("/api/chat", chat, req);
+
+		assertNull("item 10: the chatConfig record must NOT be mutated - defaults are in-memory only",
+			cfg.get("chatOptions"));
+		JsonNode options = assertNativeOptionsShape(body, "K1");
+		assertEquals("chatOptions schema default num_ctx (8192) must reach options", 8192, options.get("num_ctx").asInt());
+		assertEquals("chatOptions schema default top_k (50)", 50, options.get("top_k").asInt());
+		assertEquals("chatOptions schema default repeat_penalty (1.2)", 1.2, options.get("repeat_penalty").asDouble(), 0.0001);
+		assertEquals("chatOptions schema default min_p (0.1)", 0.1, options.get("min_p").asDouble(), 0.0001);
+		assertEquals("chatOptions schema default repeat_last_n (64)", 64, options.get("repeat_last_n").asInt());
+		assertEquals("chatOptions schema default max_tokens (4096) -> options.num_predict (item 7)",
+			4096, options.get("num_predict").asInt());
+		/// The OpenAI-shaped parameters keep their long-standing null-opts fallbacks (0.9 / 0.5),
+		/// deliberately - item 10 is scoped to the Ollama extension block.
+		assertEquals("null-opts temperature fallback is unchanged (0.9)", 0.9, options.get("temperature").asDouble(), 0.0001);
+		/// top_p is NOT asserted: the null-opts fallback (0.5) equals openaiRequest's schema default,
+		/// so RecordSerializer omits it - its absence here is compaction, not a prune.
+		assertFalse("item 9: think must be an explicit false", body.get("think").asBoolean());
+		assertHasNot(body, "num_gpu", "K1: " + WHY_DEFAULT_NUM_GPU_IS_ABSENT);
+		logger.info("[KI-72][WIRE][K1] PASS options=" + options);
+	}
+
+	/// CASE K2 - the PROXIED half of K1 (OPENAI_COMPAT + upstream OLLAMA), plus the CONTROL: the
+	/// same null-chatOptions config on an Azure-shaped connection (upstream UNKNOWN) must receive
+	/// NONE of the Ollama extensions - materialising defaults must not leak them onto a wire that
+	/// rejects unknown parameters.
+	@Test
+	public void caseK2_proxiedOllamaNullChatOptions_andAzureControl() throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserK");
+		assertNotNull("test user is null", user);
+
+		BaseRecord conn = persistConnection(user, "KI72 K2 Conn " + nonce, base,
+			ConnectionDialectEnumType.OPENAI_COMPAT, ConnectionUpstreamEnumType.OLLAMA);
+		BaseRecord cfg = chatConfigWithoutOptions(user, "KI72 K2 " + nonce, "qwen3:8b");
+		cfg.set("connection", conn);
+		Chat chat = new Chat(user, cfg, null);
+		assertEquals(ConnectionUpstreamEnumType.OLLAMA, chat.getUpstream());
+		OpenAIRequest req = chat.newRequest(chat.getModel());
+		req.setStream(false);
+		chat.newMessage(req, "ping", Chat.userRole);
+		JsonNode body = dispatchPrepared("/v1/chat/completions", chat, req);
+
+		assertNull("item 10: chatConfig not mutated", cfg.get("chatOptions"));
+		assertEquals("proxied null-opts: num_ctx default must be sent", 8192, body.get("num_ctx").asInt());
+		assertEquals(50, body.get("top_k").asInt());
+		assertEquals(1.2, body.get("repeat_penalty").asDouble(), 0.0001);
+		assertEquals(64, body.get("repeat_last_n").asInt());
+		assertEquals("proxied cap stays max_tokens (LiteLLM maps it to num_predict)", 4096, body.get("max_tokens").asInt());
+		assertHas(body, "think", "item 9: explicit think on the proxied wire");
+		assertFalse(body.get("think").asBoolean());
+		assertHasNot(body, "frequency_penalty", "item 8: never on proxied Ollama");
+		assertHasNot(body, "options", "no native `options` object on an OPENAI_COMPAT body");
+
+		/// CONTROL: Azure-shaped (OPENAI_COMPAT, upstream unset -> UNKNOWN).
+		BaseRecord aconn = persistConnection(user, "KI72 K2 Azure Conn " + nonce, base,
+			ConnectionDialectEnumType.OPENAI_COMPAT, null);
+		BaseRecord acfg = chatConfigWithoutOptions(user, "KI72 K2 Azure " + nonce, "gpt-4.1");
+		acfg.set("connection", aconn);
+		Chat achat = new Chat(user, acfg, null);
+		assertEquals(ConnectionUpstreamEnumType.UNKNOWN, achat.getUpstream());
+		OpenAIRequest areq = achat.newRequest(achat.getModel());
+		areq.setStream(false);
+		achat.newMessage(areq, "ping", Chat.userRole);
+		JsonNode abody = dispatchPrepared("/v1/chat/completions", achat, areq);
+		for (String f : new String[] { "num_ctx", "top_k", "repeat_penalty", "min_p", "repeat_last_n", "num_gpu", "think", "options" }) {
+			assertHasNot(abody, f, "K2 CONTROL: a null-chatOptions config on a NON-Ollama upstream must"
+				+ " not receive the Ollama extension `" + f + "` - Azure rejects unknown parameters");
+		}
+		assertEquals("Azure control keeps the OpenAI-shaped fallbacks", 0.9, abody.get("temperature").asDouble(), 0.0001);
+		assertEquals(4096, abody.get("max_tokens").asInt());
+		logger.info("[KI-72][WIRE][K2] PASS");
+	}
+
+	// ------------------------------------------------------------------------------------------
+	// LLM lane 2026-10-07, item 9: `think` explicit and deterministic on upstream=OLLAMA
+	// ------------------------------------------------------------------------------------------
+
+	/// CASE L1 - chatOptions.think=true must reach the wire as true, and =false as false, on BOTH
+	/// Ollama paths. Before item 9 applyOllamaUpstreamOptions wrote `think` only when truthy.
+	@Test
+	public void caseL1_thinkIsEmittedExplicitlyTrueAndFalse() throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserL");
+		assertNotNull("test user is null", user);
+
+		BaseRecord nconn = persistConnection(user, "KI72 L1 Native Conn " + nonce, base,
+			ConnectionDialectEnumType.OLLAMA, null);
+		BaseRecord pconn = persistConnection(user, "KI72 L1 Proxied Conn " + nonce, base,
+			ConnectionDialectEnumType.OPENAI_COMPAT, ConnectionUpstreamEnumType.OLLAMA);
+
+		for (boolean thinkValue : new boolean[] { true, false }) {
+			for (int i = 0; i < 2; i++) {
+				boolean nativePath = (i == 0);
+				BaseRecord cfg = chatConfigWithDistinctOptions(user, "KI72 L1 " + thinkValue + " " + i + " " + nonce);
+				((BaseRecord) cfg.get("chatOptions")).set("think", thinkValue);
+				cfg.set("connection", nativePath ? nconn : pconn);
+				Chat chat = new Chat(user, cfg, null);
+				OpenAIRequest req = chat.newRequest(chat.getModel());
+				req.setStream(false);
+				chat.newMessage(req, "ping", Chat.userRole);
+				/// Precondition on the REQUEST: applyOllamaUpstreamOptions wrote the chatOptions value.
+				assertTrue("applyOllamaUpstreamOptions must set think on the request", req.hasField("think"));
+				assertEquals(thinkValue, (boolean) (Boolean) req.get("think"));
+				String path = nativePath ? "/api/chat" : "/v1/chat/completions";
+				JsonNode body = dispatchPrepared(path, chat, req);
+				assertHas(body, "think", "item 9: think must ride every Ollama-upstream wire explicitly ("
+					+ (nativePath ? "native" : "proxied") + ", value " + thinkValue + ")");
+				assertEquals("item 9: the wire think must equal chatOptions.think (" + (nativePath ? "native" : "proxied") + ")",
+					thinkValue, body.get("think").asBoolean());
+			}
+		}
+		logger.info("[KI-72][WIRE][L1] PASS");
+	}
+
+	/// CASE L2 - the RESUMED-SESSION shape: a request DESERIALIZED from JSON that never carried
+	/// `think`. RecordDeserializer only materialises the keys present in the JSON (no schema
+	/// defaults), so hasField("think") is false and the pre-item-9 code sent nothing - the wire then
+	/// depended on which code path built the request. Chat.chatInternal now sets an explicit
+	/// think:false on the wire copy for exactly this case.
+	@Test
+	public void caseL2_resumedRequestWithoutThinkGetsExplicitFalse() throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserL");
+		assertNotNull("test user is null", user);
+
+		BaseRecord conn = persistConnection(user, "KI72 L2 Conn " + nonce, base,
+			ConnectionDialectEnumType.OLLAMA, null);
+		BaseRecord cfg = chatConfigWithDistinctOptions(user, "KI72 L2 " + nonce);
+		cfg.set("connection", conn);
+		Chat chat = new Chat(user, cfg, null);
+		OpenAIRequest req = chat.newRequest(chat.getModel());
+		req.setStream(false);
+		chat.newMessage(req, "ping", Chat.userRole);
+
+		/// Produce the deserialized shape by round-tripping through JSON WITHOUT the field.
+		OpenAIRequest resumed = ChatUtil.getPrunedRequest(req, Arrays.asList("think"));
+		assertFalse("fixture precondition: a request deserialized from JSON lacking `think` must NOT"
+			+ " have the field materialised - if this fails the premise of L2 (and of Chat's keepThink"
+			+ " note) is wrong and the test must be rethought, not patched", resumed.hasField("think"));
+		assertEquals("round-trip kept the model", req.getModel(), resumed.getModel());
+
+		JsonNode body = dispatchPrepared("/api/chat", chat, resumed);
+		assertHas(body, "think", "item 9: a resumed request without `think` must still send an explicit value");
+		assertFalse("item 9: ...and that value is false", body.get("think").asBoolean());
+		assertFalse("the dispatched request object itself is left untouched (wire copy only)",
+			resumed.hasField("think"));
+		logger.info("[KI-72][WIRE][L2] PASS");
+	}
+
+	// ------------------------------------------------------------------------------------------
+	// LLM lane 2026-10-07, items 5/7: caps on the native wire as options.num_predict
+	// ------------------------------------------------------------------------------------------
+
+	/// CASE M1 - the per-call OUTPUT CAP reaches native Ollama. Drives the REAL private
+	/// Chat.buildKeyframeRequest and dispatches the result, asserting options.num_predict ==
+	/// KEYFRAME_MAX_TOKENS and options.num_ctx == ANALYZE_NUM_CTX on the captured body. Before
+	/// item 7 the keyframe request carried no cap at all on native Ollama (caseD pinned that).
+	@Test
+	public void caseM1_nativeKeyframeCapArrivesAsNumPredict() throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserM");
+		assertNotNull("test user is null", user);
+
+		BaseRecord conn = persistConnection(user, "KI72 M1 Conn " + nonce, base,
+			ConnectionDialectEnumType.OLLAMA, null);
+		BaseRecord cfg = chatConfigWithDistinctOptions(user, "KI72 M1 " + nonce);
+		cfg.set("connection", conn);
+		Chat chat = new Chat(user, cfg, null);
+		OpenAIRequest plain = chat.newRequest(chat.getModel());
+		plain.setStream(false);
+		chat.newMessage(plain, "hello there", Chat.userRole);
+		chat.newMessage(plain, "hi, how can I help?", Chat.assistantRole);
+
+		Method kf = Chat.class.getDeclaredMethod("buildKeyframeRequest", OpenAIRequest.class, int.class);
+		kf.setAccessible(true);
+		OpenAIRequest kfReq = (OpenAIRequest) kf.invoke(chat, plain, 0);
+		assertNotNull("buildKeyframeRequest returned null", kfReq);
+		kfReq.setStream(false);
+		JsonNode body = dispatchPrepared("/api/chat", chat, kfReq);
+		JsonNode options = assertNativeOptionsShape(body, "M1");
+		assertEquals("item 7: the keyframe output cap must arrive as options.num_predict",
+			Chat.KEYFRAME_MAX_TOKENS, options.get("num_predict").asInt());
+		assertEquals("item 5: the keyframe context is the analyze context, not shrunk by the cap",
+			Chat.ANALYZE_NUM_CTX, options.get("num_ctx").asInt());
+		assertHasNot(body, "max_tokens", "renamed, not duplicated");
+		assertEquals("analyze temperature", Chat.ANALYZE_TEMPERATURE, options.get("temperature").asDouble(), 0.0001);
+		logger.info("[KI-72][WIRE][M1] PASS options=" + options);
+	}
+
+	/// CASE M2 - the generic analyze request on the PROXIED path: num_ctx pinned to ANALYZE_NUM_CTX
+	/// (item 5 parity), max_tokens = ANALYZE_MAX_TOKENS, frequency_penalty absent (item 8),
+	/// repeat_penalty present, think explicit (item 9). Drives the REAL private applyAnalyzeOptions.
+	@Test
+	public void caseM2_proxiedAnalyzeRequestParity() throws Exception {
+		String base = startCaptureServer();
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord user = getCreateUser("ki72WireUserM");
+		assertNotNull("test user is null", user);
+
+		BaseRecord conn = persistConnection(user, "KI72 M2 Conn " + nonce, base,
+			ConnectionDialectEnumType.OPENAI_COMPAT, ConnectionUpstreamEnumType.OLLAMA);
+		BaseRecord cfg = chatConfigWithDistinctOptions(user, "KI72 M2 " + nonce);
+		cfg.set("connection", conn);
+		Chat chat = new Chat(user, cfg, null);
+		OpenAIRequest plain = chat.newRequest(chat.getModel());
+		plain.setStream(false);
+		chat.newMessage(plain, "hello there", Chat.userRole);
+
+		OpenAIRequest areq = new OpenAIRequest();
+		Method m = Chat.class.getDeclaredMethod("applyAnalyzeOptions", OpenAIRequest.class, OpenAIRequest.class);
+		m.setAccessible(true);
+		m.invoke(chat, plain, areq);
+		areq.setStream(false);
+		chat.newMessage(areq, "summarize", Chat.userRole);
+		JsonNode body = dispatchPrepared("/v1/chat/completions", chat, areq);
+
+		assertEquals("item 5: proxied analyze num_ctx must be ANALYZE_NUM_CTX, not chatOptions.num_ctx",
+			Chat.ANALYZE_NUM_CTX, body.get("num_ctx").asInt());
+		assertEquals("item 5: proxied analyze output cap", Chat.ANALYZE_MAX_TOKENS, body.get("max_tokens").asInt());
+		assertEquals(Chat.ANALYZE_TEMPERATURE, body.get("temperature").asDouble(), 0.0001);
+		assertHasNot(body, "frequency_penalty", "item 8: never on proxied Ollama, analyze path included");
+		assertHasNot(body, "presence_penalty", "item 8");
+		assertEquals("Ollama extension survives the analyze overrides", DISTINCT_REPEAT_PENALTY,
+			body.get("repeat_penalty").asDouble(), 0.0001);
+		assertEquals(DISTINCT_TOP_K, body.get("top_k").asInt());
+		assertHas(body, "think", "item 9: explicit think on the analyze wire");
+		assertFalse(body.get("think").asBoolean());
+		assertHasNot(body, "options", "no native options object on OPENAI_COMPAT");
+		logger.info("[KI-72][WIRE][M2] PASS");
 	}
 }

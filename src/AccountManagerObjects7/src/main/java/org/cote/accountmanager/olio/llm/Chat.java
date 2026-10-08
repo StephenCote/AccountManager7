@@ -2033,7 +2033,26 @@ public class Chat {
 	public static final double ANALYZE_FREQUENCY_PENALTY = 0.0;
 	public static final double ANALYZE_PRESENCE_PENALTY = 0.0;
 	public static final int ANALYZE_NUM_CTX = 8192;
+	/// Output budget for a generic analyze call (narrate/summarize). Historically this was the same
+	/// 8192 written into the dialect's token field — which on OpenAI/Azure/proxied dialects IS the
+	/// output cap (max_tokens), so the value is unchanged there. Specific builders (scene 256,
+	/// keyframe 1024, title 200, evaluator caps) override it through getOutputCapField.
+	public static final int ANALYZE_MAX_TOKENS = 8192;
 
+	/// Analyze-request options, with the SAME two-axis handling as the main path (2026-10-07,
+	/// parity pass): applyChatOptions (upstream-aware) first, then the conservative overrides.
+	///  - num_ctx (context window) is an Ollama extension and is keyed on the UPSTREAM: an Ollama
+	///    behind a LiteLLM proxy gets ANALYZE_NUM_CTX exactly like a native one. Before this pass only
+	///    the native path got it (via the dialect-derived token field), and a proxied analyze call ran
+	///    at the full conversational chatOptions.num_ctx.
+	///  - the output cap is keyed on the DIALECT through getOutputCapField (max_tokens /
+	///    max_completion_tokens / "" for gpt-5). On native Ollama that now resolves to max_tokens,
+	///    which Chat.chatInternal keeps on the wire and nestNativeOllamaOptions turns into
+	///    options.num_predict — so an analyze call is bounded on every path instead of only the
+	///    OpenAI-shaped ones.
+	///  - think / frequency_penalty / presence_penalty / typical_p / options are handled at
+	///    chatInternal's prune, which every analyze request passes through (chat(areq)).
+	/// TestUpstreamWireEmission caseD / caseM1 / caseM2.
 	private void applyAnalyzeOptions(OpenAIRequest req, OpenAIRequest areq) {
 		String amodel = chatConfig.get("analyzeModel");
 		if (amodel == null) {
@@ -2051,9 +2070,12 @@ public class Chat {
 			areq.set("top_p", top_p);
 			areq.set("frequency_penalty", frequency_penalty);
 			areq.set("presence_penalty", presence_penalty);
-			String tokField = ChatUtil.getMaxTokenField(chatConfig, serviceType);
-			if(tokField != null && tokField.length() > 0) {
-				areq.set(tokField, num_ctx);
+			if (getUpstream() == ConnectionUpstreamEnumType.OLLAMA) {
+				areq.set("num_ctx", num_ctx);
+			}
+			String capField = ChatUtil.getOutputCapField(chatConfig, serviceType);
+			if(capField != null && capField.length() > 0) {
+				areq.set(capField, ANALYZE_MAX_TOKENS);
 			}
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -2874,45 +2896,9 @@ public class Chat {
 		/// (checkInteractionTrigger / flushPendingInteraction).
 	}
 
-	/// Phase 14b: Extract discrete memories from the conversation segment
-	/// using a dedicated memory extraction prompt. Called from the async keyframe pipeline.
-	/// Returns the list of extracted memories (for linking to interactions), or empty list on failure/skip.
-	private List<BaseRecord> extractMemoriesIfEnabled(OpenAIRequest req, OpenAIRequest snapshotReq,
-			String cfgObjId, BaseRecord systemChar, BaseRecord userChar, int previousKeyframeAt) {
-
-		logger.info("extractMemoriesIfEnabled: START");
-		boolean extractMemories = false;
-		try {
-			extractMemories = chatConfig.get("extractMemories");
-		} catch (Exception e) {
-			// field may not be set
-		}
-		if (!extractMemories) {
-			logger.info("extractMemoriesIfEnabled: extractMemories=false — skipping");
-			return new ArrayList<>();
-		}
-
-		if (listener != null) {
-			listener.onEvalProgress(user, req, "memoryExtract", "Extracting memories...");
-		}
-
-		try {
-			List<BaseRecord> memories = extractMemoriesFromSegment(snapshotReq, cfgObjId, systemChar, userChar, previousKeyframeAt);
-
-			if (listener != null) {
-				String countMsg = memories.size() + " memories extracted";
-				listener.onMemoryEvent(user, req, "extracted", countMsg);
-				listener.onEvalProgress(user, req, "memoryExtractDone", countMsg);
-			}
-			return memories;
-		} catch (Exception e) {
-			logger.warn("Memory extraction failed: " + e.getMessage());
-			if (listener != null) {
-				listener.onEvalProgress(user, req, "memoryExtractDone", "error");
-			}
-			return new ArrayList<>();
-		}
-	}
+	/// MemoryKeyframeDecouplingPlan §2.3 #6: the keyframe-coupled
+	/// extractMemoriesIfEnabled(...) wrapper was superseded by extractMemoriesAsync and
+	/// removed 2026-10-07 (it had no remaining callers).
 
 	/// Phase 14b: Dedicated memory extraction — uses a structured prompt to extract
 	/// categorized engrams (FACT, RELATIONSHIP, EMOTION, DECISION, DISCOVERY) from
@@ -4339,13 +4325,18 @@ public class Chat {
 		/// DELIBERATELY NOT RE-KEYED (seen, considered, left — do not "complete" these):
 		///  - getMaxTokenField and the tokValue line: they genuinely decide the wire token-field NAME
 		///    from the dialect and are correct. Only this prune changes.
-		///  - The native-Ollama `max_tokens` prune: on a native OLLAMA dialect tokField IS "num_ctx",
-		///    so "max_tokens" stays in the prune list and defeats applyOllamaUpstreamOptions'
-		///    max_tokens set (and its "so generation terminates at the user-configured cap" comment).
-		///    Pre-existing, affects the main native path's generation behaviour, and is Stephen's
-		///    call — not fixed here.
+		///
+		/// The native-Ollama `max_tokens` prune (KI-72 follow-up, 2026-10-07): on a native OLLAMA
+		/// dialect tokField IS "num_ctx", so "max_tokens" used to stay in the prune list and defeat
+		/// applyOllamaUpstreamOptions' max_tokens set — the user-configured output cap never reached
+		/// Ollama and generation ran unbounded (num_predict -1). It now stays on the native wire COPY
+		/// and ChatUtil.nestNativeOllamaOptions renames it to options.num_predict, which is the same
+		/// translation LiteLLM performs on the proxied path. max_completion_tokens is still pruned.
 		if (getUpstream() == ConnectionUpstreamEnumType.OLLAMA) {
 			tokenFieldPrunes.remove("num_ctx");
+		}
+		if (serviceType == LLMServiceEnumType.OLLAMA) {
+			tokenFieldPrunes.remove("max_tokens");
 		}
 		ignoreFields.addAll(tokenFieldPrunes);
 
@@ -4359,6 +4350,22 @@ public class Chat {
 		/// getPresencePenaltyField.
 		if (!ChatUtil.supportsSamplingParams(chatConfig, serviceType, getUpstream())) {
 			ignoreFields.addAll(Arrays.asList("temperature", "top_p", "frequency_penalty"));
+		}
+
+		/// PROXIED Ollama (OPENAI_COMPAT dialect + upstream OLLAMA), 2026-10-07: do NOT emit
+		/// frequency_penalty / presence_penalty. LiteLLM's ollama_chat provider does not pass them
+		/// through as the OpenAI penalties Ollama also understands; it MAPS frequency_penalty onto
+		/// Ollama's options.repeat_penalty — so AM7's default frequency_penalty 0.0 arrived as
+		/// repeat_penalty 0.0 (reward repetition) and the model fell into `<think>` loops (measured
+		/// 2026-10-02; see memory "project-litellm-ollama-param-hijack"). Ollama's own penalty is
+		/// repeat_penalty, which applyOllamaUpstreamOptions now always emits explicitly for an Ollama
+		/// upstream, so the proxy has nothing left to derive. The NATIVE path is untouched: /api/chat
+		/// reads frequency_penalty / presence_penalty inside `options` as genuine, independent
+		/// penalties, and nestNativeOllamaOptions relocates them there. Keyed on BOTH axes because the
+		/// hijack is a property of the proxy translating for an Ollama upstream — an Azure model behind
+		/// the same OPENAI_COMPAT endpoint keeps its OpenAI penalties. TestUpstreamWireEmission caseH1.
+		if (serviceType == LLMServiceEnumType.OPENAI_COMPAT && getUpstream() == ConnectionUpstreamEnumType.OLLAMA) {
+			ignoreFields.addAll(Arrays.asList("frequency_penalty", "presence_penalty"));
 		}
 
 		/// Defect #1: olio.llm.openai.openaiRequest declares `think` with default false, and
@@ -4383,12 +4390,21 @@ public class Chat {
 		/// `think` with "default": false and the constructor materialises it into the fieldMap, while
 		/// BaseRecord.hasField is just fieldMap.containsKey(name) — so hasField("think") is already
 		/// true for a request nobody touched, and on an Ollama upstream `think:false` rides the wire
-		/// whether or not a caller set it. The hasField half only bites a request DESERIALIZED without
-		/// the field (e.g. a resumed session). Left as-is deliberately: the emitted value is false,
-		/// which is the safe one, and the upstream half is what keeps it away from Azure. Recorded
-		/// because a comment asserting an effect the code does not produce is what let the num_ctx
-		/// prune go unnoticed; it also made a first PageIndexUtil test pass against unfixed code.
-		boolean keepThink = (getUpstream() == ConnectionUpstreamEnumType.OLLAMA && req.hasField("think"));
+		/// whether or not a caller set it. The hasField half only bit a request DESERIALIZED without
+		/// the field (e.g. a resumed session), and there it made the wire depend on which code path
+		/// built the request. Recorded because a comment asserting an effect the code does not produce
+		/// is what let the num_ctx prune go unnoticed; it also made a first PageIndexUtil test pass
+		/// against unfixed code.
+		///
+		/// 2026-10-07: the hasField half is REMOVED so emission is deterministic on the upstream axis
+		/// alone. Upstream OLLAMA (native or proxied) always sends `think` with an explicit boolean —
+		/// ChatUtil.applyOllamaUpstreamOptions writes the chatOptions value (false by default) on every
+		/// request it builds, and for a request that reaches here WITHOUT the field (a session
+		/// deserialized from JSON only carries the keys that were in the JSON — RecordDeserializer does
+		/// not materialise schema defaults, and neither does getPrunedRequest's re-import) the wire copy
+		/// is given an explicit think:false below, so "false is sent as false" on every path. Any other
+		/// upstream never sees the key. TestUpstreamWireEmission caseL1 / caseL2.
+		boolean keepThink = (getUpstream() == ConnectionUpstreamEnumType.OLLAMA);
 		if(!keepThink) {
 			ignoreFields.add("think");
 		}
@@ -4455,9 +4471,11 @@ public class Chat {
 		/// preserved in the metadata blob; drop_params keeps Azure from 400ing). A plain STRING body
 		/// value (what a string-typed field would emit) is silently dropped and lands nowhere; an
 		/// x-langfuse-metadata HEADER is not honored as structured metadata (only an incidental
-		/// raw-header echo). The former field was string-typed and structured-object typing is a
-		/// deferred follow-up, so shipping it would have been dead schema — hence removed from the model
-		/// and from this prune.
+		/// raw-header echo). The former field was string-typed, so shipping it would have been dead
+		/// schema — hence removed from the model and from this prune. The follow-up landed 2026-10-07
+		/// (Tier B4 completion): the structured object is injected into the SERIALIZED body below
+		/// (buildTracingMetadata + ChatUtil.injectTracingMetadata), OPENAI_COMPAT only, with no model
+		/// field involved.
 		/// Mirrors the `think` gate above.
 		ignoreFields.addAll(buildTracingIgnoreFields(req));
 
@@ -4468,6 +4486,11 @@ public class Chat {
 		/// Always set stream=true on the wire request so the LLM always streams
 		OpenAIRequest wireReq = ChatUtil.getPrunedRequest(req, ignoreFields);
 		wireReq.setStream(true);
+		/// Deterministic `think` on an Ollama upstream (see the keepThink note above): a request that
+		/// arrived without the field still sends an explicit false. Wire copy only; `req` is untouched.
+		if (keepThink && !wireReq.hasField("think")) {
+			try { wireReq.set("think", false); } catch (Exception e) { logger.warn("Could not set explicit think:false on the wire request: " + e.getMessage()); }
+		}
 		/// Phase 1 (ConversationQualityPlan): if the last few assistant
 		/// responses are too similar to each other, inject a one-shot
 		/// system-level steering message into THIS turn's wire request
@@ -4481,30 +4504,34 @@ public class Chat {
 		if (serviceType == LLMServiceEnumType.OLLAMA) {
 			ser = ChatUtil.nestNativeOllamaOptions(ser);
 		}
+		/// Tier B4 completion (2026-10-07): structured Langfuse `metadata` OBJECT on the wire body,
+		/// OPENAI_COMPAT only (Guardrail 2). Built from the same opaque-validated values as the
+		/// headers (Guardrail 3) and injected into the serialized JSON rather than carried as a model
+		/// field, because (P3-2 above) only a JSON object is consumed as metadata and the request model
+		/// has no object-typed field for it — a string field would be dead schema. Returns `ser`
+		/// unchanged when there is nothing to emit, so a request with no tracing fields is byte-identical.
+		if (serviceType == LLMServiceEnumType.OPENAI_COMPAT) {
+			ser = ChatUtil.injectTracingMetadata(ser, buildTracingMetadata(req));
+		}
 
 		String serviceUrl = getServiceUrl(req);
-		/// Track (server, model) usage for every OLLAMA-serviced request, chat or not, so
-		/// non-chat callers (PictureBook, summarization, ISO 42001 bias trials) can later flush
-		/// idle models before GPU-heavy work via OllamaModelUtil.unloadAll(). Live chat never
+		/// Track (server, model) usage for every request whose model-server family is Ollama, chat
+		/// or not, so non-chat callers (PictureBook, summarization, ISO 42001 bias trials) can later
+		/// flush idle models before GPU-heavy work via OllamaModelUtil.unloadAll(). Live chat never
 		/// calls unloadAll() itself, but recording here is unconditional — the registry should
 		/// always reflect reality regardless of who loaded a given model. Record the bare server
 		/// base URL (getServerUrl()), NOT serviceUrl — serviceUrl already has "/api/chat" (or
 		/// "/api/generate") appended, and unloadAll() appends its own "/api/generate" suffix.
 		///
-		/// KI-72: THIS TEST STAYS KEYED ON THE WIRE DIALECT AND MUST NOT BE "COMPLETED" TO USE
-		/// getUpstream(). The registry this feeds is consumed by OllamaModelUtil.unloadAll(), which
-		/// appends its own "/api/generate" (OllamaModelUtil.java:114) and speaks the NATIVE Ollama
-		/// API — so re-keying it on the upstream family would make unloadAll() POST /api/generate at
-		/// LiteLLM, which does not serve that route.
-		///
-		/// ACCEPTED GAP, stated rather than hidden: with upstream=OLLAMA behind a LiteLLM proxy,
-		/// getServerUrl() is the PROXY and this native test is false, so nothing records the real
-		/// Ollama model load and unloadAll() can never free that GPU memory. That is a real hole for
-		/// the single-GPU scenario this change exists to enable. Closing it needs the proxy's
-		/// upstream base URL to be knowable here (a separate per-connection value), not a wider test.
-		if (serviceType == LLMServiceEnumType.OLLAMA) {
-			OllamaModelUtil.recordUsage(getServerUrl(), req.getModel());
-		}
+		/// KI-72 follow-up (2026-10-07): BOTH axes are passed. OllamaModelUtil keys its registry on
+		/// them — dialect OLLAMA is a native server unloadAll() can POST to; dialect OPENAI_COMPAT
+		/// with upstream OLLAMA (LiteLLM) is recorded as PROXIED and unloadAll() SKIPS it with a WARN
+		/// (or routes to a direct URL registered via OllamaModelUtil.registerDirectUrl) instead of
+		/// POSTing /api/generate at the proxy, which does not serve that route. This closes the
+		/// former "ACCEPTED GAP" where proxied loads were simply invisible to the registry; the
+		/// remaining gap is that nothing in AM7 populates registerDirectUrl yet (needs a
+		/// per-connection value — see the item 11 DECISION in the LLM lane report).
+		OllamaModelUtil.recordUsage(getServerUrl(), req.getModel(), serviceType, getUpstream());
 		if (!forwardToClient) {
 			logger.info("[DIAG] chat() buffer mode: url=" + serviceUrl + " model=" + req.getModel()
 				+ " serLength=" + (ser != null ? ser.length() : "null")
@@ -5199,6 +5226,35 @@ public class Chat {
 			headers.put("x-langfuse-session-id", sessionVal);
 		}
 		return headers.isEmpty() ? null : headers;
+	}
+
+	/// Tier B4 (2026-10-07) — the structured Langfuse `metadata` body object, the third emission point
+	/// of the tracing values after the header map and the body `user`. Returns null for every dialect
+	/// except OPENAI_COMPAT (Guardrail 2: Azure and native Ollama never see it) and null when nothing
+	/// opaque is set, so a request that carries no tracing fields leaves the body untouched.
+	///
+	/// Keys are the ones LiteLLM's Langfuse callback promotes to first-class trace fields when they
+	/// arrive as a JSON OBJECT under `metadata` (settled empirically 2026-09-03, see the P3-2 note in
+	/// chatInternal): `session_id` -> trace.sessionId and `trace_user_id` -> trace.userId. Values go
+	/// through TracingIdValidator exactly like the headers (Guardrail 3, DROP + WARN, never reject), so
+	/// a human identifier placed on `user` is dropped from all three emission points at once. Nothing
+	/// else is added: Objects7 neither invents trace names nor interprets the values. A LinkedHashMap
+	/// so the emitted key order is stable for wire assertions. Package-visible for the unit test, the
+	/// same idiom as buildTracingIgnoreFields.
+	Map<String,String> buildTracingMetadata(OpenAIRequest req) {
+		if (serviceType != LLMServiceEnumType.OPENAI_COMPAT || req == null) {
+			return null;
+		}
+		Map<String,String> meta = new java.util.LinkedHashMap<>();
+		String sessionVal = req.hasField("session_id") ? TracingIdValidator.opaqueOrNull("session_id", (String) req.get("session_id")) : null;
+		if (sessionVal != null) {
+			meta.put("session_id", sessionVal);
+		}
+		String userVal = req.hasField("user") ? TracingIdValidator.opaqueOrNull("user", (String) req.get("user")) : null;
+		if (userVal != null) {
+			meta.put("trace_user_id", userVal);
+		}
+		return meta.isEmpty() ? null : meta;
 	}
 
 	/// Phase 14c: Enhanced memory reconstitution with budget-allocated type-prioritized

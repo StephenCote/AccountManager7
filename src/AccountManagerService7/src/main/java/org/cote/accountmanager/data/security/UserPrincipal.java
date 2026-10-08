@@ -3,6 +3,7 @@ package org.cote.accountmanager.data.security;
 
 import java.io.Serializable;
 import java.security.Principal;
+import java.util.Objects;
 
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
@@ -51,6 +52,11 @@ public class UserPrincipal extends LooseRecord implements Principal,Serializable
 	    }
 	 
 
+	    /// Identity is (organizationPath, name), NOT name alone. A user name is only unique within an
+	    /// organization, and ServiceUtil.principalCache is keyed by this object: with name-only identity,
+	    /// /Development/admin and /System/admin collided and every REST call after the second login was
+	    /// served as whichever user was cached first (confirmed live 2026-10-05). organizationPath is what
+	    /// every constructor site (AM7LoginModule, AM7RequestWrapper) actually populates; id is optional.
 	    public boolean equals(Object o) {
 	        if (o == null)
 	            return false;
@@ -62,19 +68,21 @@ public class UserPrincipal extends LooseRecord implements Principal,Serializable
 	            return false;
 	        UserPrincipal that = (UserPrincipal)o;
 
-	        if (this.getName().equals(that.getName()))
-	            return true;
-	        return false;
+	        return Objects.equals(this.getName(), that.getName())
+	        	&& Objects.equals(this.getOrganizationPath(), that.getOrganizationPath());
 	    }
-	 
+
 	    public String getName() {
 	    	return get(FieldNames.FIELD_NAME);
 	    }
-	 
+
+	    public String getOrganizationPath() {
+	    	return get(FieldNames.FIELD_ORGANIZATION_PATH);
+	    }
+
 	    @Override
 	    public int hashCode() {
-	    	String name = get(FieldNames.FIELD_NAME);
-	    	return name.hashCode();
+	    	return Objects.hash(getOrganizationPath(), getName());
 	    }
 	 
 	    @Override

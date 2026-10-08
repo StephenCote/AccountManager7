@@ -439,7 +439,7 @@ async function doRegen(n) {
 }
 
 async function doTest(n) {
-    if (testLoading[n.objectId] || n.pinned) return;
+    if (testLoading[n.objectId] || n.pinned || n.executable === false) return;
     let nodeOid = n.objectId;
     let wasSelected = selectedNodeId === nodeOid;
     testLoading[nodeOid] = true;
@@ -719,8 +719,11 @@ function renderNodeCard(n) {
                 disabled: !!pinLoading[n.objectId],
             }, pinLoading[n.objectId] ? '…' : (n.pinned ? '📌' : '📍')),
 
-            // Test button — execute this node against the SD/LLM backend right now
-            !n.pinned ? m('button', {
+            // Test button — execute this node against the SD/LLM backend right now.
+            // Only for node types the backend can drive singly (graph DTO `executable`, from
+            // PbNodeExecutor.EXECUTABLE_TYPES); the rest would 501. An older server that omits the
+            // flag keeps the old behaviour.
+            !n.pinned && n.executable !== false ? m('button', {
                 title: 'Execute this node now',
                 style: [
                     'border:1px solid #6366f1;border-radius:4px;padding:1px 6px;cursor:pointer;',

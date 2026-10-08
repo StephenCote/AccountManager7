@@ -5,6 +5,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
@@ -50,6 +51,8 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelAccess;
+import org.cote.accountmanager.schema.ModelAccessPolicies;
+import org.cote.accountmanager.schema.ModelAccessPolicyBind;
 import org.cote.accountmanager.schema.ModelAccessRoles;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
@@ -392,6 +395,23 @@ public class PolicyUtil {
 	public String getPolicyName(FieldSchema fs, SystemPermissionEnumType spet) {
 		return permissionNameMap.get(spet);
 	}
+	/**
+	 * Patterns for a populated foreign field of {@code object}: the read-policy patterns of each linked record,
+	 * so that reading the parent also requires being able to read what it links to.
+	 * <p>
+	 * A linked record whose model declares {@code access.policies.bind} is NOT evaluated as its own resource.
+	 * The bind means "my authorization is the authorization of the record I reference" - the same contract
+	 * {@link org.cote.accountmanager.security.AuthorizationUtil#canDo} applies at the top level - so the
+	 * patterns come from the bound record instead. When the bound record is {@code object} itself (the common
+	 * case: a person's {@code contactInformation} references that person), the field adds no constraint at all,
+	 * because the enclosing evaluation is already deciding exactly that question. Until 2026-10-07 the bind was
+	 * ignored here, so a user entitled to the parent but neither owning the contact record nor holding the field
+	 * role was denied the parent whenever the field was projected; that is the gap the
+	 * {@code planMost(false, [contactInformation])} filters in {@code AccessPoint} were working around.
+	 *
+	 * @return the patterns to OR into the field's rule, or {@code null} when every linked record is bound to
+	 *         {@code object} itself and the field therefore needs no rule
+	 */
 	private List<PatternType> getForeignPatterns(BaseRecord actor, SystemPermissionEnumType spet, BaseRecord object, FieldType f, FieldSchema fs){
 		List<PatternType> patterns = new ArrayList<>();
 		if(spet == SystemPermissionEnumType.DELETE) {
@@ -417,14 +437,29 @@ public class PolicyUtil {
 				else {
 					logger.error("Unhandled field type: " + fs.getFieldType().toString());
 				}
+				int boundToEnclosing = 0;
+				int considered = 0;
 				for(BaseRecord linkedObj : objects) {
+					if(linkedObj == null) {
+						continue;
+					}
+					considered++;
 					if(!linkedObj.hasField(FieldNames.FIELD_URN) || linkedObj.get(FieldNames.FIELD_URN) == null) {
 						reader.populate(linkedObj, RecordUtil.getPossibleFields(linkedObj.getSchema(), PolicyEvaluator.FIELD_POPULATION));
 					}
 
-					if(RecordUtil.isIdentityRecord(linkedObj)) {
+					BaseRecord target = resolveBoundTarget(actor, object, linkedObj);
+					if(target == object) {
+						boundToEnclosing++;
+						if(trace) {
+							logger.info(fs.getName() + " is bound to the enclosing " + object.getSchema() + "; no additional pattern");
+						}
+						continue;
+					}
+
+					if(RecordUtil.isIdentityRecord(target)) {
 						try {
-							PolicyType recPolicy = this.getResourcePolicy(POLICY_SYSTEM_READ_OBJECT, actor, null, linkedObj).toConcrete();
+							PolicyType recPolicy = this.getResourcePolicy(POLICY_SYSTEM_READ_OBJECT, actor, null, target).toConcrete();
 							patterns.addAll(recPolicy.getRules().get(0).getPatterns());
 						}
 						catch(ReaderException e) {
@@ -435,12 +470,89 @@ public class PolicyUtil {
 						logger.debug("Skip " + fs.getName() + " because it does not have an identity value and therefore cannot be checked for system level read access.");
 					}
 				}
+				if(considered > 0 && boundToEnclosing == considered) {
+					return null;
+				}
 			}
 			finally {
 				foreignPolicyDepth.set(depth);
 			}
 		}
 		return patterns;
+	}
+
+	/**
+	 * Apply a linked record's {@code access.policies.bind}, if it declares one, mirroring
+	 * {@code AuthorizationUtil.canDo}: resolve the record named by the bind's objectId / objectSchema fields.
+	 *
+	 * @return {@code enclosing} when the bind points at the enclosing record itself; the bound record when it
+	 *         points elsewhere and is readable by {@code actor}; otherwise {@code linkedObj} unchanged (no bind,
+	 *         or an orphan / unreadable binding, which then falls back to the linked record's own policy exactly
+	 *         as before).
+	 */
+	private BaseRecord resolveBoundTarget(BaseRecord actor, BaseRecord enclosing, BaseRecord linkedObj) {
+		ModelSchema lms = RecordFactory.getSchema(linkedObj.getSchema());
+		ModelAccessPolicyBind bind = Optional.ofNullable(lms)
+			.map(ModelSchema::getAccess)
+			.map(ModelAccess::getPolicies)
+			.map(ModelAccessPolicies::getBind)
+			.orElse(null);
+		if(bind == null || bind.getObjectId() == null) {
+			return linkedObj;
+		}
+		FieldSchema idfs = lms.getFieldSchema(bind.getObjectId());
+		if(idfs == null) {
+			logger.warn("Bind on " + linkedObj.getSchema() + " names unknown field " + bind.getObjectId());
+			return linkedObj;
+		}
+		List<String> bindFields = new ArrayList<>();
+		bindFields.add(bind.getObjectId());
+		if(bind.getObjectSchema() != null) {
+			bindFields.add(bind.getObjectSchema());
+		}
+		reader.conditionalPopulate(linkedObj, RecordUtil.getPossibleFields(linkedObj.getSchema(), bindFields.toArray(new String[0])));
+
+		long lobjId = 0L;
+		String objId = null;
+		Object idVal = (linkedObj.hasField(bind.getObjectId()) ? linkedObj.get(bind.getObjectId()) : null);
+		if(idVal == null) {
+			return linkedObj;
+		}
+		if("long".equals(idfs.getType())) {
+			lobjId = (Long) idVal;
+		}
+		else {
+			objId = idVal.toString();
+		}
+		String model = bind.getSchema();
+		if(bind.getObjectSchema() != null && linkedObj.hasField(bind.getObjectSchema()) && linkedObj.get(bind.getObjectSchema()) != null) {
+			model = linkedObj.get(bind.getObjectSchema());
+		}
+		if(model == null || (lobjId <= 0L && objId == null)) {
+			return linkedObj;
+		}
+
+		if(enclosing != null && model.equals(enclosing.getSchema())) {
+			if(lobjId > 0L && enclosing.hasField(FieldNames.FIELD_ID) && enclosing.get(FieldNames.FIELD_ID) != null && lobjId == (long) enclosing.get(FieldNames.FIELD_ID)) {
+				return enclosing;
+			}
+			if(objId != null && enclosing.hasField(FieldNames.FIELD_OBJECT_ID) && objId.equals(enclosing.get(FieldNames.FIELD_OBJECT_ID))) {
+				return enclosing;
+			}
+		}
+
+		BaseRecord ref = null;
+		if(objId != null) {
+			ref = IOSystem.getActiveContext().getAccessPoint().findByObjectId(actor, model, objId);
+		}
+		else {
+			ref = IOSystem.getActiveContext().getAccessPoint().findById(actor, model, lobjId);
+		}
+		if(ref == null) {
+			logger.warn("Orphan binding for " + model + " " + (objId != null ? objId : Long.toString(lobjId)) + " from nested " + linkedObj.getSchema());
+			return linkedObj;
+		}
+		return ref;
 	}
 	
 	public List<BaseRecord> getSchemaRules(BaseRecord actor, SystemPermissionEnumType spet, BaseRecord object){
@@ -473,7 +585,17 @@ public class PolicyUtil {
 						if(trace) {
 							logger.info("Add " + spet.toString() + " foreign access pattern for " + object.getSchema() + "." + f.getName());
 						}
-						patterns.addAll(getForeignPatterns(actor, spet, object, f, fs));
+						List<PatternType> foreignPatterns = getForeignPatterns(actor, spet, object, f, fs);
+						if(foreignPatterns == null) {
+							/// Every linked record is bound (access.policies.bind) to this very object: its access IS this
+							/// evaluation, so the field imposes no further rule - including the field roles, which are
+							/// only an alternative route to the same answer.
+							if(trace) {
+								logger.info("Skip rule for " + object.getSchema() + "." + f.getName() + ": bound to the enclosing object");
+							}
+							continue;
+						}
+						patterns.addAll(foreignPatterns);
 					}
 				}
 				if(trace) {

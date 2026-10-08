@@ -2134,16 +2134,21 @@ public class ChatUtil {
 	}
 
 	/// Field to receive a per-call OUTPUT cap (title 200, scene 256, keyframe 1024, evaluator caps).
-	/// Same resolution as getMaxTokenField, except it is empty when that resolves to `num_ctx`:
-	/// on native Ollama `num_ctx` is the context window, not an output limit, and since the
-	/// wire-shape fix it is actually honored inside `options` — writing 200 there shrank the
-	/// model's context to 200 tokens and forced a reload per call (measured 2026-09-28,
-	/// qwen3:8b). Ollama's real output cap (`num_predict`) is deliberately not introduced, so on
-	/// that dialect the caps stay inert, exactly as they were before the wire fix.
+	/// Same resolution as getMaxTokenField, except when that resolves to `num_ctx` (native Ollama):
+	/// `num_ctx` is the context window, not an output limit, and since the wire-shape fix it is
+	/// honored inside `options` — writing 200 there shrank the model's context to 200 tokens and
+	/// forced a reload per call (measured 2026-09-28, qwen3:8b). On that dialect the cap goes to
+	/// `max_tokens` instead: it is NOT an Ollama key and never rides the native wire under that name,
+	/// but Chat.chatInternal keeps it on the native wire copy and nestNativeOllamaOptions relocates it
+	/// to `options.num_predict` — Ollama's real output cap. This is the same translation LiteLLM
+	/// performs for the proxied path (max_tokens -> num_predict), so the two Ollama paths now cap
+	/// identically. Until 2026-10-07 this returned "" for native Ollama and every per-call cap was
+	/// inert there (recorded at the time as Stephen's call; reversed under the KI-72 follow-up that
+	/// directed the cap to reach Ollama). TestUpstreamWireEmission caseC / caseD / caseM1.
 	public static String getOutputCapField(BaseRecord cfg, LLMServiceEnumType service) {
 		String field = getMaxTokenField(cfg, service);
 		if("num_ctx".equals(field)) {
-			return "";
+			return "max_tokens";
 		}
 		return field;
 	}
@@ -2353,7 +2358,21 @@ public class ChatUtil {
 			/// properties of the thing running the model, so an Ollama reached through an
 			/// OpenAI-compatible proxy (LiteLLM) must still receive them, while a genuine
 			/// Azure/OpenAI endpoint behind the same OPENAI_COMPAT dialect must not.
-			if(upstream == ConnectionUpstreamEnumType.OLLAMA && opts != null) {
+			///
+			/// 2026-10-07: a chatConfig created over REST WITHOUT a chatOptions record (opts == null)
+			/// used to skip this block entirely, so an Ollama upstream received NONE of its extensions
+			/// (no top_k/repeat_penalty/min_p/repeat_last_n, no explicit think, no num_ctx on the
+			/// proxied path) and ran at whatever the server or proxy defaulted to. Materialise an
+			/// IN-MEMORY olio.llm.chatOptions at its schema defaults for this request only - the
+			/// chatConfig record is NOT mutated and nothing is persisted. Deliberately scoped to the
+			/// Ollama-extension block: the OpenAI-shaped parameters above keep their long-standing
+			/// hard-coded fallbacks (temperature 0.9 / top_p 0.5), so a null-chatOptions config on an
+			/// Azure/OpenAI connection behaves exactly as before. TestUpstreamWireEmission caseK1/K2.
+			if(upstream == ConnectionUpstreamEnumType.OLLAMA) {
+				if(opts == null) {
+					opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
+					logger.info("chatConfig has no chatOptions; applying in-memory schema defaults for the Ollama upstream extensions (record not modified)");
+				}
 				applyOllamaUpstreamOptions(req, opts, num_ctx, max_tokens);
 			}
 
@@ -2362,6 +2381,12 @@ public class ChatUtil {
 			logger.error("Error applying chat options: " + ex.getMessage());
 		}
 	}
+
+	/// Ollama's own documented default for repeat_penalty (Modelfile PARAMETER default 1.1). Emitted
+	/// explicitly on an Ollama upstream when chatOptions carries no positive value, so the wire never
+	/// leaves the parameter to be DERIVED by a proxy - see the frequency_penalty note in
+	/// Chat.chatInternal (LiteLLM's ollama_chat maps frequency_penalty onto options.repeat_penalty).
+	public static final double OLLAMA_DEFAULT_REPEAT_PENALTY = 1.1;
 
 	/// KI-72: the Ollama extension parameters, keyed on the UPSTREAM family rather than the wire
 	/// dialect. Extracted verbatim from applyChatOptions so the one emission point serves both the
@@ -2380,21 +2405,25 @@ public class ChatUtil {
 		/// terminates at the user-configured cap instead of running
 		/// unbounded.
 		///
-		/// CAVEAT — THIS DOES NOT TAKE EFFECT ON THE NATIVE OLLAMA PATH. Setting it here is not the
-		/// same as it reaching the wire: on a native OLLAMA dialect getMaxTokenField resolves
-		/// "num_ctx", so "max_tokens" stays in Chat.chatInternal's token-field prune list and is
-		/// stripped off the wire copy. The paragraph above therefore describes the intent, and holds
-		/// only on the PROXIED path (OPENAI_COMPAT dialect + upstream OLLAMA), where tokField is
-		/// "max_tokens" and the prune removes it from the list instead. TestUpstreamWireEmission
-		/// caseC pins the real native behaviour. Pre-existing, affects main-path generation, and
-		/// deliberately NOT changed here — it is Stephen's call. Recorded so the next reader does
-		/// not trust the claim above; an unqualified comment asserting an effect the code does not
-		/// produce is what let the num_ctx prune go unnoticed in the first place.
+		/// HOW IT REACHES THE WIRE (2026-10-07, KI-72 follow-up): on the PROXIED path (OPENAI_COMPAT
+		/// dialect + upstream OLLAMA) tokField is "max_tokens", it survives Chat.chatInternal's
+		/// token-field prune, and LiteLLM maps it onto Ollama's options.num_predict. On the NATIVE
+		/// path tokField is "num_ctx", and until 2026-10-07 "max_tokens" stayed in the prune list and
+		/// was stripped - so this set never took effect there (caseC pinned that). chatInternal now
+		/// keeps max_tokens on the native wire copy and nestNativeOllamaOptions relocates it to
+		/// options.num_predict, so both Ollama paths cap generation at this value.
 		if(max_tokens > 0) req.set("max_tokens", max_tokens);
 		int top_k = opts.get("top_k");
 		if(top_k > 0) req.set("top_k", top_k);
+		/// repeat_penalty is ALWAYS emitted explicitly on an Ollama upstream (2026-10-07). A chatOptions
+		/// value <= 0 means "unset" (older rows pre-dating the field), and the previous `> 0` guard then
+		/// sent nothing - which on the PROXIED path let LiteLLM's ollama_chat DERIVE options.repeat_penalty
+		/// from frequency_penalty (0.0 -> repeat_penalty 0.0 = reward repetition -> `<think>` loops; see
+		/// Chat.chatInternal, which now also prunes frequency/presence_penalty on that path). Falling back
+		/// to Ollama's own default keeps the native path semantically unchanged and makes the proxied
+		/// wire deterministic. TestUpstreamWireEmission caseH1 / caseL1.
 		double repeat_penalty = opts.get("repeat_penalty");
-		if(repeat_penalty > 0.0) req.set("repeat_penalty", repeat_penalty);
+		req.set("repeat_penalty", (repeat_penalty > 0.0) ? repeat_penalty : OLLAMA_DEFAULT_REPEAT_PENALTY);
 		/// `typical_p` IS DELIBERATELY NOT EMITTED. Ollama REMOVED the parameter; it is dead on every
 		/// upstream (Azure never accepted it either), so there is nothing left to send it to.
 		///
@@ -2428,15 +2457,21 @@ public class ChatUtil {
 		if(repeat_last_n > 0) req.set("repeat_last_n", repeat_last_n);
 		int num_gpu = opts.get("num_gpu");
 		if(num_gpu > 0) req.set("num_gpu", num_gpu);
-		/// Only emit `think` when explicitly enabled. Models that
-		/// don't support thinking (e.g. way-local) reject the
-		/// request outright when `think` is present in ANY form —
-		/// even `false` — with: "<model> does not support thinking".
-		/// Default false from chatOptions therefore poisons every
-		/// request to non-thinking models. Match the convention of
-		/// the other Ollama-extension fields above: gate on truthy.
+		/// `think` is emitted EXPLICITLY, true or false, on every Ollama upstream (2026-10-07).
+		///
+		/// The earlier version only wrote it when truthy, on the belief that `think:false` made
+		/// non-thinking models reject the request. That belief was already contradicted in practice:
+		/// olio.llm.openai.openaiRequest declares `think` with "default": false, new OpenAIRequest()
+		/// materialises it, RecordSerializer always writes a non-null BOOLEAN, and Chat.chatInternal keeps
+		/// the field on any Ollama upstream - so `think:false` has ridden every native and proxied
+		/// Ollama wire for months (TestUpstreamWireEmission caseA1/C/I1 assert exactly that). Ollama only
+		/// demands the thinking capability when the value is TRUE. What the truthy-only write actually
+		/// did was make the emitted value depend on which code path built the request (a DESERIALIZED
+		/// resumed session without the field sent nothing). Writing the chatOptions value explicitly
+		/// makes the wire deterministic: false means "thinking off" on hybrid reasoning models such as
+		/// qwen3, true requests it. Chat.chatInternal prunes the field on every non-Ollama upstream.
 		boolean think = opts.get("think");
-		if(think) req.set("think", true);
+		req.set("think", think);
 	}
 
 	/// Sampling/context keys that native Ollama /api/chat reads ONLY from its `options` sub-object.
@@ -2444,8 +2479,8 @@ public class ChatUtil {
 	/// NOT in this list — it is honored at the top level and stays there. `typical_p` is NOT in this
 	/// list either: it is pruned off the wire copy before this runs, and inside `options` Ollama 0.34.x
 	/// rejects it with HTTP 400 (see applyOllamaUpstreamOptions). `max_tokens` is not an Ollama key
-	/// (Ollama's is `num_predict`) and is pruned on the native path before this runs, so it is not
-	/// listed — introducing num_predict is a behaviour change beyond the wire-shape fix.
+	/// (Ollama's is `num_predict`) and is not listed here: nestNativeOllamaOptions RENAMES it to
+	/// `options.num_predict` (2026-10-07, KI-72 follow-up) rather than moving it under its own name.
 	///
 	/// `num_gpu` is deliberately NOT relocated. Inside `options` Ollama reads it as the number of
 	/// model layers to offload to the GPU. olio.llm.chatOptions USED to default it to 1, so every
@@ -2469,6 +2504,13 @@ public class ChatUtil {
 	/// RecordSerializer omits INT/DOUBLE fields equal to the model's SCHEMA default, which would
 	/// silently drop the most common configured values (num_ctx 8192, repeat_penalty 1.2, ...).
 	/// Returns the input unchanged if it is not a JSON object or cannot be parsed.
+	///
+	/// `max_tokens` (2026-10-07, KI-72 follow-up): a top-level `max_tokens` is RENAMED to
+	/// `options.num_predict` - Ollama's output cap - and removed from the top level, where it is not an
+	/// Ollama key. This mirrors what LiteLLM does for the proxied path, so a chatOptions.max_tokens (or
+	/// a per-call cap from getOutputCapField) now bounds generation identically on both Ollama paths.
+	/// A `max_tokens` equal to the openaiRequest schema default never reaches this method
+	/// (RecordSerializer skips default-valued INT fields), which again matches the proxied wire.
 	static String nestNativeOllamaOptions(String ser) {
 		if (ser == null) return null;
 		try {
@@ -2492,6 +2534,15 @@ public class ChatUtil {
 				obj.remove(key);
 				moved = true;
 			}
+			JsonNode cap = obj.get("max_tokens");
+			if (cap != null && cap.isNumber() && cap.asInt() > 0) {
+				if (options == null) {
+					options = mapper.createObjectNode();
+				}
+				options.put("num_predict", cap.asInt());
+				obj.remove("max_tokens");
+				moved = true;
+			}
 			if (moved) {
 				obj.set("options", options);
 				return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(obj);
@@ -2500,6 +2551,45 @@ public class ChatUtil {
 		}
 		catch (Exception e) {
 			logger.error("Failed to nest native Ollama options; sending body unchanged: " + e.getMessage());
+			return ser;
+		}
+	}
+
+	/// Tier B4 (2026-10-07): put a structured `metadata` OBJECT on the serialized wire body. Operates on
+	/// the JSON string for the same reason nestNativeOllamaOptions does — the request model carries no
+	/// object-typed `metadata` field (a string-typed one was removed as dead schema, P3-2) and Langfuse
+	/// consumes ONLY a JSON object here. Merges into an existing `metadata` object if one is present
+	/// (none is today), never overwriting keys the caller already placed. Returns the input unchanged
+	/// when `metadata` is null/empty or the body is not a JSON object, so a body with nothing to trace
+	/// is byte-identical. The dialect gate (OPENAI_COMPAT only) lives at the call site in
+	/// Chat.chatInternal; this method is dialect-agnostic on purpose so the unit test can drive it.
+	static String injectTracingMetadata(String ser, Map<String, String> metadata) {
+		if (ser == null || metadata == null || metadata.isEmpty()) return ser;
+		try {
+			ObjectMapper mapper = new ObjectMapper();
+			JsonNode root = mapper.readTree(ser);
+			if (root == null || !root.isObject()) return ser;
+			ObjectNode obj = (ObjectNode) root;
+			ObjectNode meta;
+			JsonNode existing = obj.get("metadata");
+			if (existing != null && existing.isObject()) {
+				meta = (ObjectNode) existing;
+			}
+			else {
+				meta = mapper.createObjectNode();
+			}
+			boolean added = false;
+			for (Map.Entry<String, String> e : metadata.entrySet()) {
+				if (e.getKey() == null || e.getValue() == null || meta.has(e.getKey())) continue;
+				meta.put(e.getKey(), e.getValue());
+				added = true;
+			}
+			if (!added) return ser;
+			obj.set("metadata", meta);
+			return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(obj);
+		}
+		catch (Exception e) {
+			logger.error("Failed to inject tracing metadata; sending body unchanged: " + e.getMessage());
 			return ser;
 		}
 	}

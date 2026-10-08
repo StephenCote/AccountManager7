@@ -1,6 +1,5 @@
 {
 	"name": "olio.cb.set",
-	"likeInherits": ["data.directory"],
 	"inherits": [
 		"data.directory"
 	],

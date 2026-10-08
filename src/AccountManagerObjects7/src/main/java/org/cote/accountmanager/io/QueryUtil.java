@@ -112,8 +112,47 @@ public class QueryUtil {
 		String havingClause = query.get(FieldNames.FIELD_HAVING_CLAUSE);
 		String gcF = (groupClause != null ? groupClause : "*");
 		String hcF = (havingClause != null ? havingClause : "*");
+		String pF = planKey(query);
 
-		return (actorId + "-" + type + "-" + "-" + sortBy + "-" + order.toLowerCase().substring(0, 3) + "-" + startIndex + "-" + count + " [" + jF + "] [" + reqF + "] [" + gcF + "] [" + hcF + "] " + fieldKey(query));
+		return (actorId + "-" + type + "-" + "-" + sortBy + "-" + order.toLowerCase().substring(0, 3) + "-" + startIndex + "-" + count + " [" + jF + "] [" + reqF + "] [" + gcF + "] [" + hcF + "]" + (pF.length() > 0 ? " {" + pF + "}" : "") + " " + fieldKey(query));
+	}
+
+	/// Sub-plans change what a nested foreign model projects without changing the top-level request list,
+	/// so two queries with identical request fields but different nested plans (planField("connection",
+	/// ["serverUrl"]) versus a bare "connection", or an expanded "connection.serverUrl" path) must not share a
+	/// cache entry. Only sub-plans contribute; the top-level plan fields mirror the request list already.
+	private static String planKey(BaseRecord query) {
+		if(!query.hasField(FieldNames.FIELD_PLAN)) {
+			return "";
+		}
+		BaseRecord plan = query.get(FieldNames.FIELD_PLAN);
+		if(plan == null) {
+			return "";
+		}
+		return subPlanKey(plan);
+	}
+
+	private static String subPlanKey(BaseRecord plan) {
+		List<BaseRecord> plans = plan.get(FieldNames.FIELD_PLANS);
+		if(plans == null || plans.size() == 0) {
+			return "";
+		}
+		StringBuilder buff = new StringBuilder();
+		for(BaseRecord p : plans) {
+			if(buff.length() > 0) {
+				buff.append(";");
+			}
+			List<String> pfields = p.get(FieldNames.FIELD_FIELDS);
+			buff.append((String)p.get(FieldNames.FIELD_FIELD_NAME));
+			buff.append("[");
+			buff.append(pfields != null ? pfields.stream().collect(Collectors.joining(",")) : "");
+			buff.append("]");
+			String nested = subPlanKey(p);
+			if(nested.length() > 0) {
+				buff.append("{" + nested + "}");
+			}
+		}
+		return buff.toString();
 	}
 
 	private static String fieldKey(BaseRecord field) {

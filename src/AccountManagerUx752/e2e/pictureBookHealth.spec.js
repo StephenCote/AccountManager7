@@ -177,11 +177,14 @@ test.describe.serial('PictureBook — health check, repair, orphan cleanup, comp
         await restLogin(request);
         // Fail loudly, not silently, when the deployed stack predates the health routes (an old image
         // 404s with Tomcat's HTML page, which would otherwise read like a product bug further down).
-        const probe = await request.get(PB + '/health');
+        // Probe the admin-only org scope: it answers 403 in milliseconds when the routes exist, where
+        // GET /health runs the full per-book audit (tens of seconds once the shared user has accumulated
+        // books) and blew the 60 s hook timeout on 2026-10-07.
+        const probe = await request.get(PB + '/orphans/org');
         if (probe.status() === 404) {
-            throw new Error('GET ' + PB + '/health returned 404 — the running Service7 image predates the health/orphan routes. Rebuild and redeploy the Docker image, then re-run.');
+            throw new Error('GET ' + PB + '/orphans/org returned 404 — the running Service7 image predates the health/orphan routes. Rebuild and redeploy the Docker image, then re-run.');
         }
-        expect(probe.status(), 'GET /health').toBe(200);
+        expect(probe.status(), 'GET /orphans/org as the shared user').toBe(403);
     });
 
     test.afterAll(async ({ request }) => {
@@ -224,8 +227,10 @@ test.describe.serial('PictureBook — health check, repair, orphan cleanup, comp
         const heal = await request.post(PB + '/' + oid + '/health/heal', { data: {} });
         expect(heal.status(), 'POST /{id}/health/heal on a clean book').toBe(200);
         const healed = await heal.json();
-        expect(Array.isArray(healed.healed)).toBe(true);
-        expect(healed.healed, 'nothing to heal on a fresh book').toEqual([]);
+        // JSONUtil.exportObject serializes with Include.NON_EMPTY, so an empty `healed` list is OMITTED on
+        // the wire (the UI's "N repairs applied" toast guards for this the same way). Absent == nothing healed.
+        expect(healed.healed || [], 'nothing to heal on a fresh book').toEqual([]);
+        expect(healed.skipped || [], 'nothing skipped on a fresh book').toEqual([]);
         expect(healed.summary.errors).toBe(0);
 
         // An unreadable / nonexistent book is a 404, not a report.

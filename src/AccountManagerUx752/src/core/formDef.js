@@ -17,7 +17,11 @@ import m from 'mithril';
 import { am7model } from './model.js';
 import { PageIndexTree } from '../components/pageIndexTree.js';
 
-    /// TODO: Currently out of date
+    /// Forms are keyed by the model's SIMPLE name (model.js prepareInstance: am7model.forms[schema.split(".").pop()],
+    /// views/object.js setInst, tableListEditor/tableEntry persist paths) — e.g. auth.group → forms.group — never
+    /// by domain. The domain-named seed entries below are a Ux7 leftover with no reader: `message`, `data` and
+    /// `policy` are overwritten by the real forms of those simple names further down, and the other seven stay
+    /// empty objects. Kept as-is (re-checked 2026-10-07) so no key order changes; do not add forms under them.
     let forms = {
         access: {},
         auth: {},
@@ -599,6 +603,32 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         virtual: true,
         ephemeral: true,
         format: 'table'
+    });
+
+    /// KI-1: auth.group has no single participant discriminator (a group can hold USER, ACCOUNT and
+    /// PERSON members at once), so instead of auth.role's one `$flex`/foreignType-driven `members`
+    /// field it gets one virtual list field per participant model. membership.objectMembers() loads
+    /// each via am7client.members(auth.group, id, <baseModel>) and the generic member-list editor
+    /// (views/object.js renderMemberListField) adds/removes via am7client.member() with a null
+    /// participation field (virtual field → default participation).
+    let group = am7model.getModel("auth.group");
+    [
+        { name: "userMembers", label: "Users", baseModel: "system.user" },
+        { name: "accountMembers", label: "Accounts", baseModel: "identity.account" },
+        { name: "personMembers", label: "Persons", baseModel: "identity.person" }
+    ].forEach(function(gm) {
+        group.fields.push({
+            name: gm.name,
+            label: gm.label,
+            type: 'list',
+            baseType: "model",
+            baseModel: gm.baseModel,
+            function: 'objectMembers',
+            promise: true,
+            virtual: true,
+            ephemeral: true,
+            format: 'table'
+        });
     });
 
     let dataM = am7model.getModel("data.data");
@@ -2302,6 +2332,55 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         }
     };
 
+    /// KI-1: per-participant-type member tables for auth.group. Same commands as forms.rolemember but
+    /// without `typeAttribute` — each field's baseModel IS the participant model.
+    forms.groupmember = {
+        label: "Member",
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                function: 'addMember',
+                properties: {
+                    picker: true
+                }
+            },
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteMember',
+                condition: ['select']
+            }
+        },
+        fields: {
+            name: {
+                layout: "half"
+            },
+            schema: {
+                layout: "half"
+            }
+        }
+    };
+
+    forms.groupmembers = {
+        label: "Members",
+        requiredAttributes: ["objectId"],
+        fields: {
+            userMembers: {
+                layout: 'full',
+                form: forms.groupmember
+            },
+            accountMembers: {
+                layout: 'full',
+                form: forms.groupmember
+            },
+            personMembers: {
+                layout: 'full',
+                form: forms.groupmember
+            }
+        }
+    };
+
     forms.eventtags = {
         label: "Events and Tags",
         requiredAttributes: ["objectId"],
@@ -2366,7 +2445,7 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
             }
         },
         //["name", "description", "createdDate", "modifiedDate", "expiryDate", "mimeType", "dataBytesStore"],
-        forms: ["parentinfo", "tags", "ctlattributes"]
+        forms: ["parentinfo", "groupmembers", "tags", "ctlattributes"]
     };
 
     forms.form = {
@@ -4823,15 +4902,18 @@ import { PageIndexTree } from '../components/pageIndexTree.js';
         }
     };
 
-    /// TODO: This whole nonsense is a WIP while migrating from the old to new model definition, and the UI updates being made around those changes.
+    /// Client-side narrowing of olio.llm.promptRaceConfig.raceType (re-checked 2026-10-07; not a migration WIP).
+    /// The backend field is the full RaceEnumType (A..E humans, L/R/M/S/U/V/W/X/Y/Z, O=Custom; default "E"), but a
+    /// promptConfig "races" row only means anything for the non-human codes that PromptUtil.buildRaceReplacements
+    /// substitutes into ${system.race}/${user.race} (it matches L S V R W X Y Z O). So the picker is narrowed here,
+    /// on the shared model definition, to the letter codes a prompt author should write for; the form field below
+    /// narrows it again (without "M"). Both lists omit "V" (Vampire) and "O" (Custom) that the backend does match —
+    /// a product call, not a bug being tracked here. Rows are embedded in promptConfig.races (non-foreign list), so
+    /// tableListEditor.persistEntry saves them with the parent; no per-row create/patch is involved.
     let prc = am7model.getModel("olio.llm.promptRaceConfig");
     let prcr = am7model.getModelField(prc, "raceType");
     prcr.type = "list";
     prcr.limit = ["L", "W", "X", "Y", "Z", "R", "S", "M"];
-    forms.races = {
-        form: forms.promptRaceConfig,
-        standardUpdate: true
-    };
     forms.promptRaceConfig = {
         label: "Race",
         format: "table",

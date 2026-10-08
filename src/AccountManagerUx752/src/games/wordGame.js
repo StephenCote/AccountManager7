@@ -267,7 +267,8 @@ async function prepareChatConfig() {
         if (libCfg) return libCfg;
     }
     let am7chat = page.components.chat;
-    return am7chat ? am7chat.makeChat(chatName, "herm-local", "http://localhost:11434", "ollama") : null;
+    // Endpoint comes from the library system.connection (makeChat resolves it); no serverUrl here.
+    return am7chat ? am7chat.makeChat(chatName, "herm-local", null, "ollama") : null;
 }
 
 let endPromptName = "WordBattleEndRound.prompt";

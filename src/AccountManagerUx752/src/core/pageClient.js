@@ -334,9 +334,27 @@ async function wssSend(name, message, recipient, schema) {
     try {
         let recipientId = null;
         if (typeof recipient == "number") recipientId = recipient;
-        else if (typeof recipient == "string") {
-            // Simplified for Phase 0 — full implementation in later phases
-            console.warn("String recipient lookup not yet implemented in Ux75");
+        else if (typeof recipient == "string" && recipient.length) {
+            // Ux7 pageClient.js:692 — resolve a user name to its numeric id via
+            // GET /rest/model/system.user/null/{name}. (Ux7 passed the AM5 alias "USER"; the AM7 model
+            // name is system.user.) PBAC decides who is resolvable: a non-admin resolves only names it
+            // may read, so an unresolvable name is reported and the message is NOT sent broadcast.
+            let obj = null;
+            try {
+                // getByName returns the cached record synchronously or the request promise; the callback
+                // fires on either path. Resolve on whichever lands first, never hang on a swallowed error.
+                obj = await new Promise(function (res) {
+                    let r = am7client.getByName("system.user", null, recipient, function (v) { res(v || null); });
+                    Promise.resolve(r).then(function (v) { res(v || null); }, function () { res(null); });
+                });
+            } catch (e) {
+                obj = null;
+            }
+            if (obj && obj.id != null) recipientId = obj.id;
+        }
+        if (recipient != null && recipient !== "" && recipientId == null) {
+            console.warn("Invalid recipientId (" + recipientId + ") for recipient " + recipient);
+            return false;
         }
         let msg = {
             data: uwm.base64Encode(message),

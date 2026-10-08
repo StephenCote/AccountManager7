@@ -22,7 +22,13 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.RecordUtil;
 
-/// TODO: QueryPlan currently won't work with $flex field types
+/// $flex (and $self) foreign fields are deliberately NOT plannable, by design rather than omission:
+/// a plan is built from the SCHEMA, and a $flex field's concrete model is only known per ROW (it is
+/// read from the field's foreignType column, StatementUtil.java ~1628). So canPlan(), planForFields()
+/// and planForMostFields() all skip such fields, Query.isPlannable() refuses a nested path through
+/// them, and StatementUtil materializes a $flex field as an {id, schema} identity pair only
+/// (StatementUtil.java ~811). To get the full flex target, read it by that identity afterwards
+/// (RecordReader.populate / a second Query on the resolved schema), not through this plan.
 ///
 public class QueryPlan extends LooseRecord {
 	
@@ -216,7 +222,12 @@ public class QueryPlan extends LooseRecord {
 		planForFields(recurse, PlanType.MOST, filter, new HashSet<>());
 	}
 	private int maximumDepth = 500;
-	
+
+	/// PostgreSQL refuses any function call with more than 100 arguments (FUNC_MAX_ARGS). A nested
+	/// foreign model is materialized as one JSON_BUILD_OBJECT('field', column, ...) call plus the
+	/// trailing schema pair, so a sub-plan can carry at most (100 - 2) / 2 column-backed fields.
+	public static final int MAX_NESTED_PLAN_FIELDS = 49;
+
 	private void planForFields(boolean recurse, PlanType planType, List<String> filter, Set<String> pathSet) {
 		List<String> flds = new ArrayList<>();
 		BaseRecord parent = get("parent");
@@ -233,8 +244,15 @@ public class QueryPlan extends LooseRecord {
 			else {
 				flds = RecordUtil.getRequestFields(schema, filter);
 			}
+			if(parent != null) {
+				int materialized = countMaterializedFields(schema, flds, parent.get(FieldNames.FIELD_MODEL_NAME));
+				if(materialized > MAX_NESTED_PLAN_FIELDS) {
+					logger.info("Reducing " + planPath() + " to common fields: " + materialized + " nested fields exceed the limit of " + MAX_NESTED_PLAN_FIELDS);
+					flds = Arrays.asList(RecordUtil.getCommonFields(schema.getName()));
+				}
+			}
 		}
-		
+
 		final List<String> uflds = flds.stream().filter(s -> {
 			boolean ob = true;
 			if(parent != null) {
@@ -278,6 +296,28 @@ public class QueryPlan extends LooseRecord {
 		}
 	}
 	
+	/// Mirrors the field filter in StatementUtil.getInnerSelectTemplate: counts the planned fields
+	/// that become JSON_BUILD_OBJECT arguments for a nested model (parentModel is the model holding the
+	/// foreign field).
+	public static int countMaterializedFields(ModelSchema schema, List<String> fields, String parentModel) {
+		int count = 0;
+		for(String name : fields) {
+			FieldSchema fs = schema.getFieldSchema(name);
+			if(fs == null || fs.isVirtual() || fs.isEphemeral() || fs.getFieldType() == FieldEnumType.BLOB) {
+				continue;
+			}
+			String baseModel = fs.getBaseModel();
+			if(fs.isForeign() && baseModel != null && (baseModel.equals(parentModel) || ModelNames.MODEL_SELF.equals(baseModel) || ModelNames.MODEL_FLEX.equals(baseModel))) {
+				continue;
+			}
+			if(!fs.isFollowReference() && !fs.isIdentity()) {
+				continue;
+			}
+			count++;
+		}
+		return count;
+	}
+
 	private boolean checkRecursion(FieldSchema field) {
 		boolean outBool = false;
 		BaseRecord parent = get("parent");

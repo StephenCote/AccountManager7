@@ -947,6 +947,9 @@ public class PbServiceFacade {
 		m.put("objectId", node.get(FieldNames.FIELD_OBJECT_ID));
 		m.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
 		m.put("nodeType", enumString(node, OlioFieldNames.FIELD_PB_NODE_TYPE));
+		/// Whether POST .../node/{oid}/test has an executor for this type (PbNodeExecutor.EXECUTABLE_TYPES).
+		/// The canvas only offers "Test" when this is true; otherwise the route answers 501.
+		m.put("executable", Boolean.valueOf(PbNodeExecutor.isExecutable(node)));
 		m.put("storedStatus", enumString(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
 		m.put("status", String.valueOf(PbGraphUtil.recomputeStatus(user, node, book)));
 		m.put("pinned", node.get(OlioFieldNames.FIELD_PB_PINNED));
@@ -1462,7 +1465,9 @@ public class PbServiceFacade {
 	 * null server is a 503 at the executor rather than a silent no-op, so the error reaches the caller
 	 * clearly.
 	 * <p>
-	 * Only PORTRAIT nodes are implemented today. All other node types return 400.
+	 * Only the types in {@link PbNodeExecutor#EXECUTABLE_TYPES} are implemented; any other node type is a
+	 * 501 naming the supported types. The graph DTO's per-node {@code executable} flag tells the canvas
+	 * which nodes to offer "Test" on, so the 501 is reachable only by a hand-built request.
 	 */
 	public static Map<String, Object> testNode(BaseRecord user, String bookObjectId, String nodeObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
@@ -1589,9 +1594,13 @@ public class PbServiceFacade {
 		return PbHealthUtil.checkBook(user, bookObjectId);
 	}
 
-	/** Repair one book; 404 when the caller cannot read it, 403 when the caller may not update it. */
-	public static Map<String, Object> healBook(BaseRecord user, String dataPath, String bookObjectId, Set<String> codes, boolean overwriteTemplates) {
-		return PbHealthUtil.healBook(user, dataPath, bookObjectId, codes, overwriteTemplates);
+	/**
+	 * Repair one book; 404 when the caller cannot read it, 403 when the caller may not update it. Prompt
+	 * templates are organization-level, so there is no {@code overwriteTemplates} at book scope - see
+	 * {@link #healOrg}.
+	 */
+	public static Map<String, Object> healBook(BaseRecord user, String dataPath, String bookObjectId, Set<String> codes) {
+		return PbHealthUtil.healBook(user, dataPath, bookObjectId, codes);
 	}
 
 	// ─────────────────────────────── orphan cleanup ───────────────────────────────

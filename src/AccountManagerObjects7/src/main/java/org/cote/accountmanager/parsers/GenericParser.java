@@ -214,7 +214,6 @@ public class GenericParser {
 										ft.setValue(date);
 										break;
 									} catch (ParseException e) {
-										// TODO Auto-generated catch block
 										logger.error("Failed to parse date: " + rval + " with format " + format);
 										e.printStackTrace();
 									}

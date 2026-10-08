@@ -29,7 +29,6 @@ const IGNORED_PATTERNS = [
     /Failed to load resource:.*status of (4|5)\d\d/, // Expected HTTP errors from REST API
     /Failed to (get|post|put|delete) \/AccountManagerService7/i, // am7client REST error logging
     /WebSocket.*error/i,                 // WebSocket connection errors when backend unavailable
-    /\[magic8\] Failed to load/,         // Magic8 lazy-load failure (backend resource unavailable)
     /\[TestHarness\] LLM test suite not available/, // Test harness optional LLM suite
     /REFACTOR:/,                         // Dev-only refactor markers in am7client.js
     /\[features\] Failed to load routes/, // Feature route loading failure (backend dependent)

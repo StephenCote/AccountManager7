@@ -52,6 +52,9 @@ public class IOContext {
 	private AccessPoint accessPoint = null;
 	private boolean enforceAuthorization = true;
 	private boolean enforceValidation = true;
+	/// Mirror of IOProperties.isDropColumns() (database.dropColumns / db.schema.dropColumns), captured by IOSystem.open().
+	/// Off by default. Every DROP COLUMN path - boot-time orphan cleanup and RecordFactory.removeFieldFromSchema - must gate on it.
+	private boolean dropColumns = false;
 	private BatchQueue queue = null;
 	private SystemTaskQueue taskQueue = null;
 	
@@ -135,7 +138,15 @@ public class IOContext {
 	public boolean isEnforceAuthorization() {
 		return enforceAuthorization;
 	}
-	
+
+	public boolean isDropColumns() {
+		return dropColumns;
+	}
+
+	public void setDropColumns(boolean dropColumns) {
+		this.dropColumns = dropColumns;
+	}
+
 	public DBUtil getDbUtil() {
 		return dbUtil;
 	}

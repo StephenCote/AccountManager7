@@ -23,14 +23,31 @@ Models are defined as JSON files in `src/main/resources/models/` organized by do
 
 **Model inheritance resolution:** Depth-first traversal with last-wins for field conflicts. When a model inherits from multiple parents, each parent tree is resolved depth-first, and later field definitions override earlier ones.
 
-**`likeInherits` is metadata only — it inherits nothing and creates no table.** It is a
-`ModelSchema.java` getter/setter that **no code in `RecordFactory` or `DBUtil` ever reads**: no DDL
-effect, no field-inheritance effect. A model declaring `likeInherits: [data.directory]` instead of
-`inherits: [...]` gets no table and resolves no parent fields, so every field access (`name`,
-`groupId`, …) fails with `Invalid field`. Hit on `olio.sd.config` — `a7_olio_sd_config_0_1` was never
-created, and two Docker builds **exited 0** while failing at the curl step, so nothing surfaced the
-cause. Always use real `inherits: [...]`; if you find `likeInherits` in a model definition, treat it
-as a design annotation, then fix it to `inherits` and rebuild the WAR.
+**`likeInherits` inherits no fields and creates no table — but it is NOT inert.** `DBUtil` never
+reads it (no DDL effect), and it adds no parent fields, so a model declaring
+`likeInherits: [data.directory]` instead of `inherits: [...]` gets no table and resolves no parent
+fields: every field access (`name`, `groupId`, …) fails with `Invalid field`. Hit on `olio.sd.config`
+— `a7_olio_sd_config_0_1` was never created, and two Docker builds **exited 0** while failing at the
+curl step, so nothing surfaced the cause. Two places *do* read it, and both bite (verified 2026-10-07;
+an earlier revision of this paragraph said nothing reads it, which was wrong):
+- `RecordFactory.importSchema` (`RecordFactory.java:780-784`) adds every `likeInherits` entry to the
+  "already imported" set **before** walking `inherits`. So a parent listed in **both** lists is skipped
+  by the `inherits` walk (`already imported`) and contributes **no fields** — the model silently loses
+  its parent's columns with no error. This is why the `olio.sd.config` / `setModel.json` fix had to
+  remove the `likeInherits` entry, not just add the `inherits` one.
+- `RecordUtil.inherits(ms, name)` (`RecordUtil.java:336`) returns true when `likeInherits` contains the
+  name, so a `likeInherits: [data.directory]` model is treated as directory-derived by every
+  `inherits("data.directory")` site (the group-only PBAC shortcut in `AccessPoint.java:200` among the
+  seven listed under KI-69) despite having no `groupId` field.
+
+So `likeInherits` is a deliberate pattern, not a mistake, in the ten models that use it (`data.tag`,
+`data.color`, `data.location`, `identity.profile`, …): they assemble the directory shape themselves
+from `common.groupExt` + `common.name` + `common.description` and declare `likeInherits:
+[data.directory]` so the `inherits("data.directory")` sites treat them as directory records. The two
+defects are (a) `likeInherits` **instead of** `inherits` on a model that does not declare the fields
+itself (`olio.sd.config`), and (b) the same parent in **both** lists (`olio.cb.set`, fixed 2026-10-07 by
+deleting the `likeInherits` line). When you touch a model, check which case you have; in both, rebuild
+the WAR.
 
 **Never re-declare an inherited field or constraint.** `DBUtil Index collision` and
 `Column does not exist` ERROR lines at startup or in test output are **real schema defects**, not
@@ -135,9 +152,12 @@ same DB keeps the stale schema until *it* restarts.
 `DROP TABLE IF EXISTS <t> CASCADE` (`:594`) plus a delete of the modelschema row, and its
 system-model guard is **commented out** (`:565-568`) — it only logs a warning and proceeds. On
 `system.connection` that would destroy every connection row and cascade into `chatConfig`.
-Also note `removeFieldFromSchema` (`:534-559`) does `ALTER TABLE ... DROP COLUMN IF EXISTS` with
-**no** off-by-default property gate, contrary to the rule in `architecture.md`; `SchemaService
-.deleteField` reaches it and guards only on `FieldSchema.isSystem()`.
+`removeFieldFromSchema` (`:550-580`) does `ALTER TABLE ... DROP COLUMN IF EXISTS`; since 2026-10-07 it
+is gated on `IOContext.isDropColumns()` (the `IOProperties.isDropColumns()` value — `database.dropColumns`
+/ `db.schema.dropColumns`, off by default — mirrored by `IOSystem.open()`) and refuses the whole
+operation, schema definition included, with an ERROR log when the gate is closed
+(`TestRemoveFieldGate`). `SchemaService.deleteField` reaches it and additionally guards on
+`FieldSchema.isSystem()` / `isIdentity()`.
 
 > An earlier revision of this section said flatly that "editing a model `.json` has no runtime
 > effect" on a provisioned deployment. That is true for Path 2 and **false for Path 1**, which is the

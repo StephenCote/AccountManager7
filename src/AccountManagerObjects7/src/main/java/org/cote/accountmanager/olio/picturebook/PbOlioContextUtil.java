@@ -759,10 +759,41 @@ public class PbOlioContextUtil {
 	 */
 	private static void verifyReadGrants(IOContext ioContext, BaseRecord role, BaseRecord readPerm, List<BaseRecord> groups, String tier) throws OlioException {
 		for(BaseRecord grp : groups) {
-			if(!ioContext.getAuthorizationUtil().checkEntitlement(role, readPerm, grp)) {
+			if(!hasReadGrant(ioContext, role, readPerm, grp)) {
 				throw new OlioException("Missing Read grant for " + role.get(FieldNames.FIELD_NAME) + " on " + tier + " group " + grp.get(FieldNames.FIELD_NAME) + " (#" + grp.get(FieldNames.FIELD_ID) + ")");
 			}
 		}
+	}
+
+	/**
+	 * Does {@code role} hold Read on {@code grp}? Direct participation first, effective entitlement second.
+	 * <p>
+	 * The grants {@code configureWorldAuthorization} applies are DIRECT (role -> Read -> group), so the
+	 * common, healthy case is answered by one participation query:
+	 * {@code findMembers(grp, null, role.schema, role.id, readPerm.id)}. Only a miss falls through to
+	 * {@code AuthorizationUtil.checkEntitlement}, which keeps the effective-grant semantics (a role that
+	 * holds Read through another role is still not reported as a gap).
+	 * <p>
+	 * Why the order matters: {@code checkEntitlement} reads EVERY Read participation on the group and, for
+	 * each role participant it meets before the actor's own, does {@code reader.read(role)} plus an
+	 * effective-membership walk. The seven shared library groups carry one Read grant per world role in the
+	 * organization, so that walk is O(worlds) DB reads per group per audit and the organization health scan
+	 * went quadratic in the number of books. Measured 2026-10-07 on the Docker stack, 35 books: 70 s for
+	 * {@code GET /olio/picture-book/health}, ~2 s per world, almost all of it inside that loop. The direct
+	 * check is the same question asked in the order the data is written.
+	 */
+	static boolean hasReadGrant(IOContext ioContext, BaseRecord role, BaseRecord readPerm, BaseRecord grp) {
+		try {
+			long roleId = role.get(FieldNames.FIELD_ID);
+			long permId = readPerm.get(FieldNames.FIELD_ID);
+			if(!ioContext.getMemberUtil().findMembers(grp, null, role.getSchema(), roleId, permId).isEmpty()) {
+				return true;
+			}
+		}
+		catch(Exception e) {
+			logger.warn("Direct Read grant lookup failed for " + role.get(FieldNames.FIELD_NAME) + " on " + grp.get(FieldNames.FIELD_NAME) + ": " + e.getMessage() + " - falling back to checkEntitlement");
+		}
+		return ioContext.getAuthorizationUtil().checkEntitlement(role, readPerm, grp);
 	}
 
 	/** Result of {@link #checkGrants(BaseRecord, String, boolean)}: what is absent, never what to do about it. */
@@ -780,6 +811,36 @@ public class PbOlioContextUtil {
 	}
 
 	/**
+	 * Per-scan memo for {@link #checkGrants(BaseRecord, String, boolean, BookContext, GrantAuditScan)}.
+	 * <p>
+	 * An organization health scan audits every readable book, and the grant audit is where the time goes:
+	 * each tier is ~36 groups, each group one {@code checkEntitlement} (a participation read plus an
+	 * effective-membership walk per granted role). The universe tier is the SAME audit for every book in
+	 * the organization (one {@code Books} universe, one universe {@code Reader} role), and series chapters
+	 * share their series world, so re-running them per book is pure repetition. Measured 2026-10-07 on the
+	 * Docker stack: 37 books, 2-3 s per book regardless of scene count, 111 s for the org scan, every
+	 * thread-dump sample inside {@code auditTier -> checkEntitlement}. The memo removed the universe
+	 * repetition (111 s -> 70 s); the remaining per-world cost was the shared-group walk described on
+	 * {@link #hasReadGrant(IOContext, BaseRecord, BaseRecord, BaseRecord)}.
+	 * <p>
+	 * One instance spans one scan and is dropped with it - nothing here outlives the request, so a grant
+	 * applied by the heal pass is seen by the post-heal audit, which builds a fresh scan.
+	 */
+	static final class GrantAuditScan {
+		/** Completed audits keyed by {@code (series ? "series:" : "book:") + worldSlug}. */
+		private final Map<String, GrantAudit> byWorld = new HashMap<>();
+		/** The universe-tier gaps, once audited; null until then. */
+		private List<Map<String, Object>> universeGaps;
+		private String universeError;
+		private boolean universeAudited;
+
+		/** How many world audits were served from the memo (test visibility). */
+		int worldHits;
+		/** How many universe-tier audits were served from the memo (test visibility). */
+		int universeHits;
+	}
+
+	/**
 	 * Find-only counterpart of {@link #verifyGrants(OlioContext, BaseRecord, BaseRecord, OrganizationContext)}
 	 * for the health check: the same two-tier, two-role Read audit over the same group enumeration, but
 	 * it never opens an {@code OlioContext} (which would grant) and it reports every gap instead of
@@ -793,6 +854,23 @@ public class PbOlioContextUtil {
 	 * @param series    true to audit the series role pair rather than the per-book pair
 	 */
 	static GrantAudit checkGrants(BaseRecord user, String worldSlug, boolean series) {
+		return checkGrants(user, worldSlug, series, null, null);
+	}
+
+	/**
+	 * {@link #checkGrants(BaseRecord, String, boolean)} with two optional short-cuts for a multi-book scan.
+	 *
+	 * @param bctx the {@link BookContext} already assembled for this world by the caller (the health audit
+	 *             assembles it to check the universe exists), or null to assemble it here
+	 * @param scan a per-scan memo, or null for a stand-alone audit. With a scan, the universe tier is
+	 *             audited once per scan and a world already audited in this scan is returned as-is.
+	 */
+	static GrantAudit checkGrants(BaseRecord user, String worldSlug, boolean series, BookContext bctx, GrantAuditScan scan) {
+		String scanKey = (series ? "series:" : "book:") + worldSlug;
+		if(scan != null && scan.byWorld.containsKey(scanKey)) {
+			scan.worldHits++;
+			return scan.byWorld.get(scanKey);
+		}
 		GrantAudit audit = new GrantAudit();
 		IOContext ioContext = IOSystem.getActiveContext();
 		OrganizationContext octx = ioContext.findOrganizationContext(user);
@@ -806,15 +884,17 @@ public class PbOlioContextUtil {
 			audit.error = "No olio principal in organization " + orgId;
 			return audit;
 		}
-		BaseRecord world = WorldUtil.findWorld(olioUser, bookWorldPath(), worldSlug);
-		if(world == null) {
-			audit.error = "No world " + worldSlug + " under " + bookWorldPath();
-			return audit;
-		}
-		BookContext bctx = assembleBookContext(world);
 		if(bctx == null) {
-			audit.error = "No " + BOOKS_UNIVERSE + " universe in organization " + orgId;
-			return audit;
+			BaseRecord world = WorldUtil.findWorld(olioUser, bookWorldPath(), worldSlug);
+			if(world == null) {
+				audit.error = "No world " + worldSlug + " under " + bookWorldPath();
+				return audit;
+			}
+			bctx = assembleBookContext(world);
+			if(bctx == null) {
+				audit.error = "No " + BOOKS_UNIVERSE + " universe in organization " + orgId;
+				return audit;
+			}
 		}
 		BaseRecord readPerm = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_PERMISSION, "/Read", PermissionEnumType.DATA.toString(), orgId);
 		if(readPerm == null) {
@@ -836,7 +916,31 @@ public class PbOlioContextUtil {
 		}
 		OlioContextConfiguration paths = new OlioContextConfiguration();
 		auditTier(ioContext, audit, roles.get(worldRolePath), readPerm, olioUser, bctx.getWorld(), bookWorldPath(), "world", octx);
-		auditTier(ioContext, audit, roles.get(universeReaderRolePath()), readPerm, olioUser, bctx.getUniverse(), paths.getUniversePath(), "universe", octx);
+
+		/// Universe tier: identical for every book in the organization, so a scan audits it once.
+		if(scan != null && scan.universeAudited) {
+			scan.universeHits++;
+			audit.missingGrants.addAll(scan.universeGaps);
+			if(scan.universeError != null) {
+				audit.error = (audit.error == null ? "" : audit.error + "; ") + scan.universeError;
+			}
+		}
+		else {
+			GrantAudit universe = new GrantAudit();
+			auditTier(ioContext, universe, roles.get(universeReaderRolePath()), readPerm, olioUser, bctx.getUniverse(), paths.getUniversePath(), "universe", octx);
+			audit.missingGrants.addAll(universe.missingGrants);
+			if(universe.error != null) {
+				audit.error = (audit.error == null ? "" : audit.error + "; ") + universe.error;
+			}
+			if(scan != null) {
+				scan.universeAudited = true;
+				scan.universeGaps = universe.missingGrants;
+				scan.universeError = universe.error;
+			}
+		}
+		if(scan != null) {
+			scan.byWorld.put(scanKey, audit);
+		}
 		return audit;
 	}
 
@@ -853,7 +957,7 @@ public class PbOlioContextUtil {
 			return;
 		}
 		for(BaseRecord grp : groups) {
-			if(!ioContext.getAuthorizationUtil().checkEntitlement(role, readPerm, grp)) {
+			if(!hasReadGrant(ioContext, role, readPerm, grp)) {
 				Map<String, Object> gap = new HashMap<>();
 				gap.put("tier", tier);
 				gap.put("role", role.get(FieldNames.FIELD_NAME));

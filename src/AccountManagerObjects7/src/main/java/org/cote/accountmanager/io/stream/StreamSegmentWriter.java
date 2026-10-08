@@ -22,42 +22,48 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.StreamEnumType;
 import org.cote.accountmanager.util.FileUtil;
 
+/// The specialized writer declared by data.streamSegment's "io" block. A segment is not a record in a
+/// store: it is a byte range appended to (or positioned in) the stream's backing file under
+/// .streams/<org>/<group>/<objectId>. Every IWriter method that assumes a record store is therefore
+/// either a documented no-op or an explicit "not supported" - never a silent false.
+///
+/// Reached through RecordUtil.createRecord -> ModelSchema.getIo().getWriter() and from
+/// StreamProvider.writeSegments when a data.stream is created with inline segments.
 public class StreamSegmentWriter implements IWriter {
 
 	public static final Logger logger = LogManager.getLogger(StreamSegmentWriter.class);
-	
+
 	StreamSegmentUtil ssUtil = null;
-	
+
 	public StreamSegmentWriter() {
 		ssUtil = new StreamSegmentUtil();
 	}
-	
+
+	/// Nothing is buffered: writeFileSegment opens, locks, writes and releases the channel per call.
 	@Override
 	public void flush() {
-		// TODO Auto-generated method stub
-		
+
 	}
 
+	/// Segments are file-backed; this is not the record-level FILE IO (FileWriter), but it is the honest answer.
 	@Override
 	public RecordIO getRecordIo() {
-		// TODO Auto-generated method stub
-		return null;
+		return RecordIO.FILE;
 	}
 
+	/// No channel or lock outlives a single writeSegment call, so there is nothing to close.
 	@Override
 	public void close() throws WriterException {
-		// TODO Auto-generated method stub
-		
+
 	}
-	
+
 	@Override
 	public int write(BaseRecord[] recs) throws WriterException {
 		throw new WriterException("Bulk segment write operations are not supported");
 	}
-	
+
 	@Override
 	public boolean write(BaseRecord rec) throws WriterException {
-		// TODO Auto-generated method stub
 		boolean outBool = false;
 		try {
 			writeSegment(rec);
@@ -69,28 +75,30 @@ public class StreamSegmentWriter implements IWriter {
 		return outBool;
 	}
 
+	/// A segment already names its destination (the stream file); writing it to an arbitrary OutputStream
+	/// is StreamSegmentUtil.streamToOutput's job, not the writer's.
 	@Override
 	public boolean write(BaseRecord rec, OutputStream stream) throws WriterException {
-		// TODO Auto-generated method stub
-		return false;
+		throw new WriterException("Writing a segment to an external stream is not supported; use StreamSegmentUtil");
 	}
 
+	/// There is no per-segment delete: a segment is a byte range of the stream file, and the file belongs
+	/// to the data.stream record. Removing the file when the stream is deleted is the stream's concern
+	/// (KnownIssues.md KI-20, which is a gated-property design decision, not this writer's).
 	@Override
 	public boolean delete(BaseRecord rec) throws WriterException {
-		// TODO Auto-generated method stub
-		return false;
+		throw new WriterException("Segment delete is not supported; segments are byte ranges of the owning stream's file");
 	}
 
 	@Override
 	public boolean delete(BaseRecord rec, OutputStream stream) throws WriterException {
-		// TODO Auto-generated method stub
-		return false;
+		throw new WriterException("Segment delete is not supported; segments are byte ranges of the owning stream's file");
 	}
 
+	/// data.streamSegment declares no providers, and the bytes are written verbatim, so there is nothing to translate.
 	@Override
 	public void translate(RecordOperation operation, BaseRecord rec) {
-		// TODO Auto-generated method stub
-		
+
 	}
 	
 	public long writeSegment(BaseRecord segment) throws ModelException {

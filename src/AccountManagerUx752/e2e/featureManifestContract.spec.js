@@ -86,9 +86,15 @@ test.describe('Feature manifest contract (D2)', () => {
         let ids = manifest.map(f => f.id);
 
         expect(ids, "'media' is the id that rotted out of the old server-side list").toContain('media');
-        // Drift guard on the count documented in aiDocs/UxFeatureFlagDesign.md. Also the freshness
-        // check: the PRE-change service served 12 ids and no `media`, so 12 here means a stale image.
-        expect(ids.length, 'expected the 13 documented features; 12 without media means a stale deployment').toBe(13);
+        // Drift/freshness guard on the count. The count is the Objects7 resource's, not a literal:
+        // the literal "13" this used to carry went stale the day the manifest grew to 16 (2026-09-08,
+        // see aiDocs/UxFeatureFlagDesign.md) and the test then failed against a CORRECT deployment.
+        // The PRE-change service served 12 ids and no `media`, so fewer than the resource means a
+        // stale image; more means the service is no longer serving the resource verbatim.
+        let resourceIds = JSON.parse(fs.readFileSync(OBJECTS7_MANIFEST, 'utf8')).map(f => f.id);
+        expect(ids.length, 'served ' + ids.length + ' features but the Objects7 resource declares '
+            + resourceIds.length + ' (12 without media means a stale deployment)').toBe(resourceIds.length);
+        expect(ids.length, 'the manifest cannot have shrunk below the 13 the original review counted').toBeGreaterThanOrEqual(13);
 
         for (let f of manifest) {
             expect(typeof f.label, 'feature ' + f.id + ' has no label').toBe('string');

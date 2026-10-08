@@ -510,11 +510,94 @@ public class TestExtractChunkLoop extends BaseTest {
 				PictureBookUtil.loadProgressNote(u, groupPath, workObjectId));
 	}
 
+	/// KI-74 made a cancel ABORT the in-flight LLM call, so the chunk being generated when the user
+	/// cancels comes back empty and is deliberately not recorded as a failure. The loop then went
+	/// back to its top to save the checkpoint and stop — which works for every chunk except the
+	/// LAST, where the for-condition ends the loop first: reachedEnd stayed true, the post-loop
+	/// block cleared the checkpoint, and the run reported extractionComplete=true. Measured live
+	/// 2026-10-07 (pictureBookAsyncJob A4): a 2-chunk extraction cancelled during chunk 2 came back
+	/// `cancelled` with extractionComplete=true, its one chunk of scenes gone from the checkpoint.
+	/// The model here does what the real abort does: cancels the token from inside the final
+	/// chunk's call and returns nothing.
+	@Test
+	public void TestCancelDuringTheFinalChunkKeepsTheCheckpointAndDoesNotReportReachedEnd() throws Exception {
+		BaseRecord u = user();
+		long orgId = u.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String text = longText(60);
+		String docName = "loopWorkCancelLast-" + UUID.randomUUID();
+		BaseRecord work = getCreateData(u, docName, "text/plain", text.getBytes(),
+				"~/PbLoopTests", orgId);
+		assertNotNull(work);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		String groupPath = PictureBookUtil.findWorkGroupPath(u, workObjectId);
+		assertNotNull("work group path", groupPath);
+		PictureBookUtil.clearExtractCheckpoint(u, workObjectId);
+
+		// --- first run: every chunk answers; the cancel lands DURING the final chunk's call ---
+		final SummarizeProgress t1 = new SummarizeProgress();
+		boolean[] end1 = new boolean[] { true };
+		List<String> failed1 = new ArrayList<>();
+		final AtomicInteger n = new AtomicInteger(0);
+		final AtomicInteger finalChunkCalls = new AtomicInteger(0);
+		PictureBookUtil.ChunkLlm cancelledOnLast = (vars, attempt) -> {
+			/// incrementCurrent runs AFTER this returns, so inside the call current == this chunk's index.
+			if (t1.getCurrent() == t1.getTotal() - 1) {
+				finalChunkCalls.incrementAndGet();
+				/// What PictureBookCancelRegistry.cancel does to the worker: the token flips and the
+				/// stream is torn down, so Chat returns nothing for this attempt.
+				t1.cancel();
+				return null;
+			}
+			return sceneJson("Scene " + n.getAndIncrement());
+		};
+		List<Map<String, Object>> firstScenes = run(u, text, t1, failed1, workObjectId, end1, cancelledOnLast);
+
+		assertTrue("the text must span several chunks for this to test anything", t1.getTotal() >= 3);
+		assertEquals("the aborted final chunk is attempted once and never retried", 1, finalChunkCalls.get());
+		assertFalse("a run cancelled during its final chunk must NOT report completion", end1[0]);
+		assertEquals("the scenes from the chunks that answered before the cancel are kept",
+				t1.getTotal() - 1, firstScenes.size());
+		assertTrue("the aborted chunk is the cancel, not a failed passage: " + failed1, failed1.isEmpty());
+
+		ExtractCheckpoint cp = PictureBookUtil.loadExtractCheckpoint(u, groupPath, workObjectId,
+				PictureBookUtil.extractTextHash(text), PictureBookUtil.EXTRACT_CHUNK_SIZE, PictureBookUtil.EXTRACT_CHUNK_OVERLAP, t1.getTotal());
+		assertNotNull("the checkpoint must be KEPT, not cleared as if the run completed", cp);
+		assertEquals("the checkpoint stops one chunk short — at the last chunk actually merged",
+				t1.getTotal() - 1, cp.chunksProcessed);
+		assertEquals("and holds every scene extracted before the cancel",
+				firstScenes.size(), cp.scenes.size());
+
+		// --- re-drive: processes ONLY the chunk the cancel took, then completes ---------
+		SummarizeProgress t2 = new SummarizeProgress();
+		boolean[] end2 = new boolean[] { false };
+		List<String> failed2 = new ArrayList<>();
+		final AtomicInteger m = new AtomicInteger(0);
+		PictureBookUtil.ChunkLlm resumed = (vars, attempt) -> {
+			m.incrementAndGet();
+			return sceneJson("Resumed Final");
+		};
+		List<Map<String, Object>> secondScenes = run(u, text, t2, failed2, workObjectId, end2, resumed);
+
+		assertEquals("the resume must call the model for exactly the one chunk the cancel aborted",
+				1, m.get());
+		assertTrue("the re-drive must reach the end", end2[0]);
+		assertEquals("the earlier scenes plus the recovered final one",
+				firstScenes.size() + 1, secondScenes.size());
+		assertTrue("no failures on the re-drive: " + failed2, failed2.isEmpty());
+		assertNull("a completed run must clear the checkpoint",
+				PictureBookUtil.loadProgressNote(u, groupPath, workObjectId));
+	}
+
 	/// The other half of the carry-forward rule: a failure for a chunk the resume does NOT revisit
 	/// is still real and must survive the resume. Chunk 2 times out (a live-but-slow server, so
 	/// the loop records it and moves on), chunk 4 is merged and the run is cancelled; the resume
 	/// starts at chunk 5 and never re-reads chunk 2, so its failure — with the model's own reason,
 	/// not the generic placeholder — must still be reported.
+	/// <p>
+	/// This also pins the KI-74 "finished before the cancel took effect" shape: the cancel is
+	/// raised INSIDE chunk 4's call, but the call returns a complete, parseable reply — so the loop
+	/// must keep those scenes and advance the checkpoint to 4 rather than discarding paid-for work
+	/// (the aborted/empty shape is TestCancelDuringTheFinalChunkKeepsTheCheckpointAndDoesNotReportReachedEnd).
 	@Test
 	public void TestResumeKeepsFailuresForChunksItDoesNotRevisit() throws Exception {
 		BaseRecord u = user();
@@ -666,9 +749,10 @@ public class TestExtractChunkLoop extends BaseTest {
 	public void TestCancelledRunResumesFromItsCheckpointOnReDrive() throws Exception {
 		BaseRecord u = user();
 		long orgId = u.get(FieldNames.FIELD_ORGANIZATION_ID);
-		/// Long enough that cancelling after 2 chunks leaves several unprocessed. With a short
-		/// text the cancel lands on the FINAL chunk, the loop finishes naturally, and reachedEnd
-		/// is correctly true — right behaviour, but it tests nothing about resume.
+		/// Long enough that cancelling after 2 chunks leaves several unprocessed, so the resume has
+		/// several chunks to drive. The cancel-on-the-FINAL-chunk shape is a different contract
+		/// (KI-74: the aborted chunk is not merged, reachedEnd must be false, checkpoint kept) and
+		/// is pinned by TestCancelDuringTheFinalChunkKeepsTheCheckpointAndDoesNotReportReachedEnd.
 		String text = longText(140);
 		String docName = "loopWork-" + UUID.randomUUID();
 		BaseRecord work = getCreateData(u, docName, "text/plain", text.getBytes(),

@@ -125,8 +125,7 @@ public class MemberUtil implements IMember {
 		try {
 			del = IOSystem.getActiveContext().getWriter().delete(q);
 		} catch (WriterException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			logger.error(e);
 		}
 		CacheUtil.clearCache(rec);
 		if(del > 0) {

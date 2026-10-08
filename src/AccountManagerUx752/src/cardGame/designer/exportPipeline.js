@@ -5,11 +5,15 @@
  * Ported from Ux7 IIFE to ESM.
  *
  * Depends on:
- *   - window.html2canvas (loaded from node_modules)
- *   - window.JSZip (loaded from node_modules)
+ *   - window.html2canvas and window.JSZip. Ux7 loaded both from <script src="/node_modules/..."> tags
+ *     in its index.html; Ux752 does NOT ship or load them (neither is in package.json, index.html has
+ *     no tag), so checkLibraries() reports both missing and the export dialog's Export button stays
+ *     disabled. Wiring the two libraries in is Stephen's call (new dependencies); nothing here runs
+ *     until that is done.
  *   - gameConstants (CARD_SIZES, CARD_TYPES)
  *   - layoutConfig (getLayout)
- *   - layoutRenderer (LayoutCardFace, renderCardToContainer)
+ *   - layoutRenderer (LayoutCardFace)
+ *   - rendering/cardFace.js (CardBack, renderCharacterBackBody) for card backs, imported lazily
  */
 import m from 'mithril';
 import { gameConstants as C } from '../constants/gameConstants.js';
@@ -53,9 +57,6 @@ async function renderCardToCanvas(card, deck, sizeKey, bgImage) {
     let sz = C.CARD_SIZES[sizeKey];
     if (!sz) throw new Error("Unknown card size: " + sizeKey);
 
-    let pxW = sz.px[0];
-    let pxH = sz.px[1];
-
     // Determine the render type for layout lookup
     let cardType = card.type;
     if (cardType === "item" && card.subtype === "consumable") {
@@ -63,6 +64,44 @@ async function renderCardToCanvas(card, deck, sizeKey, bgImage) {
     }
 
     let layout = LC.getLayout(deck, cardType, sizeKey);
+
+    return captureVnode(sz, function () {
+        return m(LR.LayoutCardFace, {
+            card: card,
+            deck: deck,
+            sizeKey: sizeKey,
+            layoutConfig: layout,
+            bgImage: bgImage,
+            noPreview: true
+        });
+    });
+}
+
+// ── Render a single card BACK to a canvas element ───────────────
+// The back is what the game shows when a card is face-down / flipped (rendering/cardFace.js): the
+// type-coloured CardBack for every type, except character cards, whose back is the stats/skills face
+// (renderCharacterBackBody) with the deck's optional back art. There is no designer layout for backs
+// (layoutConfig.js only describes fronts), so this reuses the game renderers directly.
+async function renderCardBackToCanvas(card, deck, sizeKey, bgImageBack) {
+    let sz = C.CARD_SIZES[sizeKey];
+    if (!sz) throw new Error("Unknown card size: " + sizeKey);
+    // Dynamic: rendering/cardFace.js pulls overlays → pageClient; keep the designer module decoupled.
+    let CF = await import('../rendering/cardFace.js');
+    return captureVnode(sz, function () {
+        return backVnode(CF, card, bgImageBack);
+    });
+}
+
+// Pure: the vnode for a card's back. Exported (via the barrel) for the unit test.
+function backVnode(CF, card, bgImageBack) {
+    if (card && card.type === "character") return CF.renderCharacterBackBody(card, bgImageBack || null);
+    return m(CF.CardBack, { type: (card && card.type) || "item" });
+}
+
+// ── Offscreen render + html2canvas capture at a print size ───────
+async function captureVnode(sz, vnodeFn) {
+    let pxW = sz.px[0];
+    let pxH = sz.px[1];
 
     // Create offscreen container
     let container = document.createElement("div");
@@ -94,14 +133,7 @@ async function renderCardToCanvas(card, deck, sizeKey, bgImage) {
                 overflow: "hidden",
                 fontSize: Math.round(10 * scale) + "px"
             }
-        }, m(LR.LayoutCardFace, {
-            card: card,
-            deck: deck,
-            sizeKey: sizeKey,
-            layoutConfig: layout,
-            bgImage: bgImage,
-            noPreview: true
-        })));
+        }, vnodeFn()));
 
         // Wait for images to load
         let images = container.querySelectorAll("img");
@@ -162,6 +194,8 @@ async function exportDeck(deck, options) {
     let quality = options.quality || 90;
     let includeBack = options.includeBack || false;
     let bgImage = options.bgImage || null;
+    // Character-card backs can carry the deck's back art (deckView passes ctxObj.cardBackImageUrl).
+    let bgImageBack = options.bgImageBack || (deck && deck.cardBackImageUrl) || null;
 
     let cards = deck?.cards || [];
     if (cards.length === 0) throw new Error("Deck has no cards");
@@ -215,10 +249,13 @@ async function exportDeck(deck, options) {
             exportState.completed++;
             m.redraw();
 
-            // Render back (if requested)
+            // Render back (if requested) — was a skipped TODO (carried over from Ux7) until 2026-10-07.
             if (includeBack && !exportState.cancelled) {
-                // TODO: implement card back rendering with layout
-                // For now, skip back rendering
+                exportState.currentCard = (card.name || ("Card " + (i + 1))) + " (back)";
+                m.redraw();
+                let backCanvas = await renderCardBackToCanvas(card, deck, sizeKey, bgImageBack);
+                let backBlob = await canvasToBlob(backCanvas, format, quality);
+                zip.file("backs/" + fileName, backBlob);
                 exportState.completed++;
                 m.redraw();
             }
@@ -277,6 +314,8 @@ export const exportPipeline = {
     exportState,
     checkLibraries,
     renderCardToCanvas,
+    renderCardBackToCanvas,
+    backVnode,
     canvasToBlob,
     exportDeck,
     cancelExport,

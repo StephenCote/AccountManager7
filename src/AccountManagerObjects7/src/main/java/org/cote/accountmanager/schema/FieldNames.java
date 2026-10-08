@@ -243,6 +243,8 @@ public class FieldNames {
 		public static final String FIELD_DN = "dn";
 		public static final String FIELD_INITIALIZED = "initialized";
 		public static final String FIELD_PRIMARY_KEY = "primaryKey";
+		/// auth.credential's "is the active credential" flag (NOT primaryKey, which is a key field name)
+		public static final String FIELD_PRIMARY = "primary";
 		public static final String FIELD_GLOBAL_KEY = "globalKey";
 		
 		public static  final String FIELD_RESOURCE = "resource";
@@ -283,7 +285,10 @@ public class FieldNames {
 		public static final String FIELD_PERSON = "person";
 		
 		public static final String FIELD_FIELD_NAME = "fieldName";
-		
+		/// io.query.plan / io.queryPlan.plans
+		public static final String FIELD_PLAN = "plan";
+		public static final String FIELD_PLANS = "plans";
+
 		public static final String FIELD_FUNCTION = "function";
 		
 		public static final String FIELD_CLASS = "class";

@@ -3,7 +3,7 @@ import { am7model } from '../core/model.js';
 import { am7view } from '../core/view.js';
 import { am7client } from '../core/am7client.js';
 import { page } from '../core/pageClient.js';
-import { summarize, vectorize, pageIndex, reimage, reimageApparel, memberCloud, adoptCharacter, outfitBuilder, pictureBook } from '../workflows/index.js';
+import { summarize, vectorize, pageIndex, reimage, reimageApparel, memberCloud, adoptCharacter, outfitBuilder, pictureBook, makeFact, startGameWithCharacter } from '../workflows/index.js';
 // Navigation is handled by router's pageLayout wrapper
 
 /**
@@ -37,6 +37,9 @@ function newObjectPage() {
     let valuesState = {};
     let pickerMode = { enabled: false, type: null, callback: null };
     let pinst = {}; // Cached sub-object instances for model ref forms
+    // Keys folded in from page.context().pendingEntity by getPrimitive() (workflows/makeFact.js); setInst()
+    // registers them as changes so the pre-filled /new form can be saved without a dummy edit.
+    let pendingKeys = null;
 
     // --- Debug accessor -------------------------------------------------
     // Live view of this object page's context for browser-console inspection.
@@ -73,8 +76,12 @@ function newObjectPage() {
             }
         }
         if (ctx.pendingEntity) {
+            pendingKeys = [];
             Object.keys(ctx.pendingEntity).forEach((k) => {
-                if (!k.match(/^(parentId|parentPath|groupPath)$/)) primitive[k] = ctx.pendingEntity[k];
+                if (!k.match(/^(parentId|parentPath|groupPath)$/)) {
+                    primitive[k] = ctx.pendingEntity[k];
+                    if (k !== am7model.jsonModelKey && primitive[k] != null && primitive[k] !== '') pendingKeys.push(k);
+                }
             });
             ctx.pendingEntity = undefined;
         }
@@ -94,6 +101,10 @@ function newObjectPage() {
             inst = am7model.prepareInstance(entity, form);
             // Expose pinst cache so formDef viewProperties (e.g., bodyShape onchange) can access sub-instances
             inst._pinst = function() { return pinst; };
+            if (pendingKeys) {
+                pendingKeys.forEach((k) => inst.change(k));
+                pendingKeys = null;
+            }
         }
     }
 
@@ -960,10 +971,10 @@ function newObjectPage() {
     objectPage.adoptCharacter = adoptCharacter;
     objectPage.outfitBuilder = outfitBuilder;
     objectPage.pictureBook = pictureBook;
-
-    // Stub handlers for commands not yet implemented (prevent "Command function not found" warnings)
-    objectPage.makeFact = function () { page.toast('info', 'Fact creation not yet implemented'); };
-    objectPage.startGameWithCharacter = function () { page.toast('info', 'Game start not yet implemented'); };
+    // Ported from the Ux7 reference (object.js:1529 makeFact, dialog.js:1805 startGameWithCharacter);
+    // both were "not yet implemented" toast stubs until 2026-10-07.
+    objectPage.makeFact = makeFact;
+    objectPage.startGameWithCharacter = startGameWithCharacter;
 
     // --- Tab support ---
 

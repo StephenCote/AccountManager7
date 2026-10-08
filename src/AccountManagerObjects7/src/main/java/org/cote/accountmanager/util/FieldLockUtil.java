@@ -75,10 +75,11 @@ public class FieldLockUtil {
 		}
 		
 		else {
-			/// Work with a copy when updating values
-			/// TODO: There are some remaining instances where a cached object is altered, fails the update authorization, and isn't reset/cleared from the cache
-			/// The expected outcome should be to wipe the reference from the cache whether the update succeeds or fails
-			///
+			/// Work with a copy when updating values. getFieldLock hands back the search cache's own
+			/// instance: mutating it in place and then failing the update (PBAC) would leave the cache
+			/// claiming one lock state while the row holds the other. On success the writer evicts the
+			/// entry itself (DBWriter.write -> CacheUtil.clearCache(rec)); on failure the cache was never
+			/// touched, so it is accurate either way. lockField follows the same rule.
 			lock = lock.copyRecord();
 			if(lock != null && ((boolean)lock.get(FieldNames.FIELD_ENABLED)) == true) {
 				try {
@@ -109,15 +110,17 @@ public class FieldLockUtil {
 			lock = newFieldLock(user, modelName, recordId, fieldName);
 			lock = IOSystem.getActiveContext().getAccessPoint().create(user, lock);
 		}
-		else {
-			if(lock != null && ((boolean)lock.get(FieldNames.FIELD_ENABLED)) == false) {
-				try {
-					lock.set(FieldNames.FIELD_ENABLED, true);
-				} catch (FieldException | ValueException | ModelNotFoundException e) {
-					logger.error(e);
-				}
-				IOSystem.getActiveContext().getAccessPoint().update(user, lock);
+		else if(((boolean)lock.get(FieldNames.FIELD_ENABLED)) == false) {
+			/// Re-arming a released lock: same copy-before-mutate rule as unlockField. Before 2026-10-07
+			/// this set the bit on the cached instance and discarded the update result, so a denied
+			/// re-lock (another user) reported "locked" and poisoned every later isFieldLocked read.
+			lock = lock.copyRecord();
+			try {
+				lock.set(FieldNames.FIELD_ENABLED, true);
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
 			}
+			lock = IOSystem.getActiveContext().getAccessPoint().update(user, lock);
 		}
 		return (lock != null && ((boolean)lock.get(FieldNames.FIELD_ENABLED)));
 	}

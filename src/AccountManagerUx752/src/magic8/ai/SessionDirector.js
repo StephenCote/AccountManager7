@@ -835,14 +835,30 @@ class SessionDirector {
         let fullTemplate;
         try {
             fullTemplate = await LLMConnector.getOpenChatTemplate(chatDir);
-            if (fullTemplate && fullTemplate.serverUrl) {
-                log('Find "Open Chat" template', true, fullTemplate.objectId || 'loaded');
-                log('Load template details', true,
-                    `model=${fullTemplate.model}, service=${fullTemplate.serviceType}, server=${fullTemplate.serverUrl}`);
-            } else {
-                log('Find "Open Chat" template', false, 'Not found or missing serverUrl');
+            if (!fullTemplate) {
+                log('Find "Open Chat" template', false, 'Not found');
                 return results;
             }
+            // The endpoint lives on the referenced system.connection, not on the chatConfig
+            // (Chat.configureChat proceeds with NO endpoint when connection is unset). A pre-migration
+            // ~/Chat copy of the template carries none; ensureConfig (Test 5) then falls back to the
+            // library default connection, so resolve the same fallback here and gate on that.
+            let connRef = LLMConnector.connectionRef(fullTemplate.connection);
+            let connSource = 'template';
+            if (!connRef) {
+                connRef = LLMConnector.connectionRef(await LLMConnector.getDefaultConnection());
+                connSource = 'library default';
+            }
+            if (!connRef) {
+                log('Find "Open Chat" template', false, 'Template has no connection and no library default connection exists');
+                return results;
+            }
+            log('Find "Open Chat" template', true, fullTemplate.objectId || 'loaded');
+            const conn = await LLMConnector.resolveConnection(connRef);
+            const server = (conn && conn.serverUrl) ? conn.serverUrl : 'unresolved';
+            const connName = (conn && conn.name) || connRef.objectId || connRef.id;
+            log('Load template details', true,
+                `model=${fullTemplate.model}, service=${fullTemplate.serviceType}, connection=${connName} (${connSource}), server=${server}`);
         } catch (err) {
             log('Find "Open Chat" template', false, err.message);
             return results;

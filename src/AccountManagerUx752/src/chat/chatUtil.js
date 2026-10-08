@@ -39,7 +39,12 @@ async function getChatRequest(requestName, chatCfg, promptCfg) {
     return req;
 }
 
-async function makeChat(sName, sModel, sServerUrl, sServiceType) {
+/// The endpoint (serverUrl/apiKey/requestTimeout) is a system.connection referenced by
+/// chatConfig.connection; `connection` is an optional {id, objectId} ref, defaulting to the
+/// library connection (/Library/Connections). Without one Chat.configureChat has no endpoint.
+/// `sServerUrl` is retained for the legacy positional call shape and ignored — chatConfig no
+/// longer declares serverUrl.
+async function makeChat(sName, sModel, sServerUrl, sServiceType, connection) {
     let grp = await page.findObject("auth.group", "data", "~/Chat");
     let q = am7view.viewQuery(am7model.newInstance("olio.llm.chatConfig"));
     q.field("groupId", grp.id);
@@ -48,19 +53,31 @@ async function makeChat(sName, sModel, sServerUrl, sServiceType) {
     let cfg;
     let qr = await page.search(q);
     if (!qr || !qr.results || qr.results.length === 0) {
+        let connRef = LLMConnector.connectionRef(connection || await LLMConnector.getDefaultConnection());
+        if (!connRef) {
+            console.warn("[chatUtil] makeChat: no system.connection available for '" + sName + "' — chat library not initialized?");
+        }
         let icfg = am7model.newInstance("olio.llm.chatConfig");
         icfg.api.groupId(grp.id);
         icfg.api.groupPath(grp.path);
         icfg.api.name(sName);
         icfg.api.model(sModel);
         icfg.api.messageTrim(6);
-        icfg.api.serverUrl(sServerUrl);
-        icfg.api.serviceType(sServiceType);
+        if (sServiceType) icfg.api.serviceType(sServiceType);
+        if (connRef) icfg.entity.connection = connRef;
         await page.createObject(icfg.entity);
         qr = await page.search(q);
     }
     if (qr?.results.length > 0) {
         cfg = qr.results[0];
+        // Pre-refactor configs carry no connection; backfill so the server has an endpoint.
+        if (cfg && !(cfg.connection && (cfg.connection.id || cfg.connection.objectId))) {
+            let connRef = LLMConnector.connectionRef(connection || await LLMConnector.getDefaultConnection());
+            if (connRef) {
+                cfg.connection = connRef;
+                await page.patchObject(cfg);
+            }
+        }
     }
     if (!cfg) {
         page.toast("error", "Could not create chat config");

@@ -5,21 +5,22 @@
  * certification (with a requested certifier), read the single request + its message thread, append a message,
  * approve & sign, verify, then revoke and confirm verification now fails.
  *
- * GATED behind ISO_LLM_E2E=1 (it needs a report, which needs a real run against the single-thread DGX Spark).
- * Run single-threaded:
- *   ISO_LLM_E2E=1 ISO_LLM_ENDPOINT=e2e-iso-qwen3 npx playwright test e2e/iso42001-certification.spec.js --workers=1 --project=chromium
+ * GATED behind ISO_LLM_E2E=1 (it needs a report, which needs a real run against the LLM). Run single-threaded.
+ * The endpoint is an ISO-user-OWNED olio.llm.chatConfig provisioned by ensureChatConfig (route resolved by
+ * resolveChatRoute: local container → LiteLLM → .42), unless ISO_LLM_ENDPOINT names an existing one.
+ *   ISO_LLM_E2E=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 \
+ *     npx playwright test e2e/iso42001-certification.spec.js --workers=1 --project=chromium
  *
  * Uses the provisioned ISO user (Testers/Reporters/Certifiers/Administrators) so one principal can drive the
  * whole flow. Never admin.
  */
 import { test, expect } from './helpers/fixtures.js';
-import { ensureIso42001TestUser, apiLogin, apiLogout, ensurePath } from './helpers/api.js';
+import { ensureIso42001TestUser, ensureChatConfig, apiLogin, apiLogout, ensurePath } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = 'https://localhost:8899';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
 const ISO = REST + '/iso42001';
-const LLM_ENDPOINT = process.env.ISO_LLM_ENDPOINT || 'generalChat';
 
 async function jpost(ctx, url, body) {
     let resp = await ctx.post(url, { headers: { 'Content-Type': 'application/json' }, data: body });
@@ -32,12 +33,22 @@ async function jpost(ctx, url, body) {
 test.describe.serial('ISO 42001 certification lifecycle (live)', () => {
     let iso = {};
     let ctx;
+    let llmEndpoint = process.env.ISO_LLM_ENDPOINT || null;
 
     test.skip(process.env.ISO_LLM_E2E !== '1',
-        'gated behind ISO_LLM_E2E=1 (needs a report from a real run; single-thread DGX)');
+        'gated behind ISO_LLM_E2E=1 (needs a report from a real run; single-thread LLM)');
 
     test.beforeAll(async ({ request }) => {
         iso = await ensureIso42001TestUser(request);
+        if (!llmEndpoint) {
+            // Distinct names: the helper's defaults are the shared user's records, and a name+org search
+            // that also matches another user's row is denied outright by PBAC (no groupId condition).
+            llmEndpoint = await ensureChatConfig(request, null, {
+                user: iso.testUserName, password: iso.testPassword,
+                configName: 'e2e-iso-llm', connectionName: 'e2e-iso-conn'
+            });
+        }
+        expect(llmEndpoint, 'an ISO-user-owned chatConfig endpoint must be provisioned').toBeTruthy();
         ctx = await pwRequest.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
         await apiLogin(ctx, { user: iso.testUserName, password: iso.testPassword });
     });
@@ -58,7 +69,7 @@ test.describe.serial('ISO 42001 certification lifecycle (live)', () => {
         let cfg = await jpost(ctx, ISO + '/config', {
             schema: 'iso42001.testConfig', name: 'e2e-cert-' + Date.now().toString(36),
             groupId: group.id, organizationId: group.organizationId,
-            moduleId: 'BIAS', testIds: ['BIAS-ATTR-002'], endpointName: LLM_ENDPOINT,
+            moduleId: 'BIAS', testIds: ['BIAS-ATTR-002'], endpointName: llmEndpoint,
             endpointType: 'openai', samplesPerGroup: 1, tier: 1
         });
         expect(cfg.status, 'config create: ' + cfg.text).toBe(200);

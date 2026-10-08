@@ -81,6 +81,23 @@ public class TestAsyncLLMSlotRegistry {
 		assertFalse(r.tryAcquire("chat1", "interaction", 2000L));
 	}
 
+	/// MemoryKeyframeDecouplingPlan §3: the standalone memory pipeline shares the
+	/// SAME per-chatConfig slot as the keyframe pipeline (Chat.flushPendingMemory
+	/// acquires kind "memory"). A keyframe in flight must block a memory extraction
+	/// on the same chatConfig and vice versa, and release must hand the slot across.
+	@Test
+	public void memoryKindSharesSlotWithKeyframe() {
+		AsyncLLMSlotRegistry r = new AsyncLLMSlotRegistry(TIMEOUT_MS);
+		assertTrue(r.tryAcquire("chat1", "keyframe", 1000L));
+		assertFalse(r.tryAcquire("chat1", "memory", 1500L));
+		r.release("chat1");
+		assertTrue(r.tryAcquire("chat1", "memory", 2000L));
+		assertFalse(r.tryAcquire("chat1", "keyframe", 2500L));
+		assertFalse(r.tryAcquire("chat1", "interaction", 2500L));
+		/// Another chatConfig's memory extraction is unaffected.
+		assertTrue(r.tryAcquire("chat2", "memory", 2500L));
+	}
+
 	@Test
 	public void differentChatConfigsIndependent() {
 		AsyncLLMSlotRegistry r = new AsyncLLMSlotRegistry(TIMEOUT_MS);

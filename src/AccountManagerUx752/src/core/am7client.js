@@ -619,6 +619,11 @@ import { cacheDb } from './cacheDb.js';
 	}
 
 	function makeFind(sType, sObjType, sPath, bMake,fH){
+		// KI-13 (2026-10-07): callers pass the sub-type in every case ("DATA", "data", "UNKNOWN", "bucket");
+		// PathService.doMakeFind upper-cases it server-side, but the client cache key did not, so
+		// find('auth.group','data','~/Gallery') and find('auth.group','DATA','~/Gallery') each hit the server
+		// and kept separate cache entries. Normalize here so one path resolves once per session.
+		sObjType = (sObjType == null ? "" : String(sObjType)).toUpperCase();
 		var sK = "FIND-" + sObjType;
 
 		/// Band-aid - need to better encode these

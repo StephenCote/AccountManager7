@@ -16,6 +16,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.iso42001.reporting.ReportGenerator;
 import org.cote.accountmanager.iso42001.schema.ISO42001ModelNames;
+import org.cote.accountmanager.iso42001.schema.ISO42001Provisioning;
 import org.cote.accountmanager.model.field.KeyStoreBean;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -54,8 +55,34 @@ public class ISO42001CertificationFactory {
 	public static final String STATUS_EXPIRED = "EXPIRED";
 	public static final String STATUS_REVOKED = "REVOKED";
 
-	/** Default application-level validity for a new certification, in years. */
-	private static final int DEFAULT_VALIDITY_YEARS = 1;
+	/** Default application-level validity for a new certification, in months (design §9A.8: "12 months"). */
+	public static final int DEFAULT_VALIDITY_MONTHS = 12;
+	/**
+	 * Upper bound on a caller-supplied validity period, in months. ⚠ Judgment call (2026-10-07): the design
+	 * gives only the 12-month default; 60 months (5 years) comfortably exceeds the 3-year ISO certification
+	 * cycle and stops a typo ("1200") from issuing a century-long certification. Out-of-range input is
+	 * rejected, not clamped.
+	 */
+	public static final int MAX_VALIDITY_MONTHS = 60;
+	/** Certifier title stamped when the approver supplies none. */
+	public static final String DEFAULT_CERTIFIER_TITLE = "ISO 42001 Certifier";
+
+	/**
+	 * Create a signed certification with the default terms ({@link #DEFAULT_CERTIFIER_TITLE},
+	 * {@link #DEFAULT_VALIDITY_MONTHS}, no notes). See
+	 * {@link #createCertification(BaseRecord, BaseRecord, BaseRecord, String, int, String)}.
+	 */
+	public BaseRecord createCertification(BaseRecord user, BaseRecord report, BaseRecord certifier) {
+		return createCertification(user, report, certifier, null, 0, null);
+	}
+
+	/**
+	 * Is {@code validityMonths} acceptable as a certification validity period? {@code 0} means "use the
+	 * default"; anything else must lie in {@code 1..}{@link #MAX_VALIDITY_MONTHS}.
+	 */
+	public static boolean isValidValidityMonths(int validityMonths) {
+		return validityMonths == 0 || (validityMonths >= 1 && validityMonths <= MAX_VALIDITY_MONTHS);
+	}
 
 	/**
 	 * Create a signed certification for {@code report} (design §3.1 step 4). The certifier's keystore is
@@ -63,18 +90,31 @@ public class ISO42001CertificationFactory {
 	 * certification is persisted as {@code certifier}. On success the report is stamped
 	 * {@code status=CERTIFIED} with {@code report.certification} linked.
 	 *
-	 * @param user      the acting (context) user — normally the same as {@code certifier}
-	 * @param report    the report to certify (must be persisted; re-read here for its sections)
-	 * @param certifier the ISO42001Certifiers-role user whose key signs the report hash
+	 * @param user           the acting (context) user — normally the same as {@code certifier}
+	 * @param report         the report to certify (must be persisted; re-read here for its sections)
+	 * @param certifier      the ISO42001Certifiers-role user whose key signs the report hash
+	 * @param certifierTitle the certifier's title to stamp ({@code certifierTitle}); null/blank →
+	 *                       {@link #DEFAULT_CERTIFIER_TITLE}
+	 * @param validityMonths application-level validity ({@code expiryDate = now + months}); {@code 0} →
+	 *                       {@link #DEFAULT_VALIDITY_MONTHS}; otherwise must satisfy
+	 *                       {@link #isValidValidityMonths} or the call fails
+	 * @param notes          optional certification notes / scope limitations ({@code notes}); null → unset
 	 * @return the persisted certification record (fully populated in memory), or {@code null} on failure
-	 *         (e.g. RBAC denial, missing keystore)
+	 *         (e.g. RBAC denial, missing keystore, invalid validity period)
 	 */
-	public BaseRecord createCertification(BaseRecord user, BaseRecord report, BaseRecord certifier) {
+	public BaseRecord createCertification(BaseRecord user, BaseRecord report, BaseRecord certifier,
+			String certifierTitle, int validityMonths, String notes) {
 		AccessPoint ap = IOSystem.getActiveContext().getAccessPoint();
 		if (report == null || certifier == null) {
 			logger.error("createCertification requires a report and a certifier");
 			return null;
 		}
+		if (!isValidValidityMonths(validityMonths)) {
+			logger.error("createCertification: validityMonths " + validityMonths + " is outside 1.." + MAX_VALIDITY_MONTHS);
+			return null;
+		}
+		int months = validityMonths == 0 ? DEFAULT_VALIDITY_MONTHS : validityMonths;
+		String title = (certifierTitle == null || certifierTitle.isBlank()) ? DEFAULT_CERTIFIER_TITLE : certifierTitle.trim();
 
 		String reportOid = report.get(FieldNames.FIELD_OBJECT_ID);
 		long orgId = lng(report, FieldNames.FIELD_ORGANIZATION_ID);
@@ -116,7 +156,7 @@ public class ISO42001CertificationFactory {
 		Date now = new Date();
 		GregorianCalendar cal = new GregorianCalendar();
 		cal.setTime(now);
-		cal.add(GregorianCalendar.YEAR, DEFAULT_VALIDITY_YEARS);
+		cal.add(GregorianCalendar.MONTH, months);
 
 		BaseRecord certification;
 		try {
@@ -127,7 +167,10 @@ public class ISO42001CertificationFactory {
 			certification.set(FieldNames.FIELD_OWNER_ID, (long) certifier.get(FieldNames.FIELD_ID));
 			certification.set("report", fullReport);
 			certification.set("certifier", certifier);
-			certification.set("certifierTitle", "ISO 42001 Certifier");
+			certification.set("certifierTitle", title);
+			if (notes != null && !notes.isBlank()) {
+				certification.set("notes", notes.trim());
+			}
 			certification.set("certificationDate", now);
 			certification.set(FieldNames.FIELD_EXPIRY_DATE, cal.getTime());
 			certification.set("reportHash", reportHash);
@@ -253,8 +296,12 @@ public class ISO42001CertificationFactory {
 
 	/**
 	 * Revoke a certification (application-level; design §3.1 / B6). Sets {@code status=REVOKED} so a
-	 * subsequent {@link #verifyCertification} fails. Update of the certification is gated to
-	 * {@code ISO42001Administrators} by the model, so {@code user} must be an administrator.
+	 * subsequent {@link #verifyCertification} fails. Design role matrix: revoke is
+	 * {@code ISO42001Administrators} ONLY. The model gates update to Administrators, but PBAC's owner
+	 * shortcut also permits the record owner — and the owner of a certification is the certifier who signed
+	 * it ({@link #createCertification} runs as the certifier). Found 2026-10-07 by
+	 * {@code TestISO42001Lifecycle}: a certifier revoked the certification it had just signed. So the
+	 * administrator role is checked explicitly here, in addition to (not instead of) the PBAC update.
 	 *
 	 * @return {@code true} if the revocation persisted
 	 */
@@ -265,6 +312,11 @@ public class ISO42001CertificationFactory {
 		}
 		String oid = certification.get(FieldNames.FIELD_OBJECT_ID);
 		long orgId = lng(certification, FieldNames.FIELD_ORGANIZATION_ID);
+		if (!ISO42001Provisioning.isInRole(user, ISO42001Provisioning.ROLE_ADMINISTRATORS, orgId)) {
+			logger.warn("revokeCertification denied: " + (user != null ? user.get(FieldNames.FIELD_NAME) : null)
+				+ " is not an " + ISO42001Provisioning.ROLE_ADMINISTRATORS + " member (certification " + oid + ")");
+			return false;
+		}
 		try {
 			Query q = QueryUtil.createQuery(ISO42001ModelNames.MODEL_CERTIFICATION, FieldNames.FIELD_OBJECT_ID, oid);
 			q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);

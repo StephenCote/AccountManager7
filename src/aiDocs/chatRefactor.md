@@ -1082,7 +1082,7 @@ public static CompletableFuture<HttpResponse<Stream<String>>> postToRecordAndStr
 | `temperature` | 1.0 | 0.0-2.0 | OK as base default, but too high for analytical tasks | OK as base; override via chatConfig templates |
 | `repeat_penalty` | 1.2 | 0.0-2.0 | OK, but mapped to `frequency_penalty` which has different semantics in OpenAI (range -2.0 to 2.0) | Fix mapping; add separate `frequency_penalty` and `presence_penalty` fields |
 | `num_ctx` | 8192 | unbounded | Low for modern models (GPT-4o supports 128k, Claude supports 200k). OK for Ollama local models. | OK as default for local; chatConfig templates override for cloud |
-| `num_gpu` | 1 | unbounded | Ollama-specific. Irrelevant for OpenAI/Anthropic. | OK, Ollama-specific |
+| `num_gpu` | 0 *(was 1; changed 2026-10-02 — doc corrected 2026-10-07)* | unbounded | Ollama-specific **GPU layer count**, not a GPU count. `0` = unset: never emitted, Ollama offloads every layer that fits; a positive value pins that many layers (`1` = effectively CPU inference — the old default). Irrelevant for OpenAI/Anthropic. | OK, Ollama-specific (`chatOptionsModel.json:65-68`) |
 | **MISSING** | - | - | No `max_tokens` / `max_completion_tokens` field | Add field |
 | **MISSING** | - | - | No `frequency_penalty` (OpenAI-native) | Add field |
 | **MISSING** | - | - | No `presence_penalty` (OpenAI-native) | Add field |
@@ -2773,7 +2773,7 @@ Refactor CardGame's `testMode.js` to register with the shared framework:
 | `temperature` | double | 1.0 | 0.0-2.0 | OK |
 | `repeat_penalty` | double | 1.2 | 0.0-2.0 | OK (Ollama-native) |
 | `num_ctx` | int | 8192 | unbounded | OK |
-| `num_gpu` | int | 1 | unbounded | OK (Ollama-native) |
+| `num_gpu` | int | 0 *(was 1; changed 2026-10-02 — doc corrected 2026-10-07)* | unbounded | OK (Ollama-native; layer count, 0 = unset/not emitted, let Ollama decide) |
 | *MISSING* | - | - | - | `max_tokens`, `frequency_penalty`, `presence_penalty`, `seed` |
 
 **2. `openaiRequestModel.json` — wire format fields (already present on request):**

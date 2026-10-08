@@ -160,11 +160,24 @@ public class ISO42001ServiceFacade {
 
 	/** Approve + sign a certification request (delegates to {@link ISO42001CertificationRequestFactory#approveRequest}). */
 	public static BaseRecord approveRequest(BaseRecord user, String requestId, String note) {
+		return approveRequest(user, requestId, note, null, 0, null);
+	}
+
+	/**
+	 * Approve + sign with explicit certification terms (title, validity months, notes) — the Approve &amp;
+	 * Sign dialog's inputs. {@code validityMonths == 0} means default; the transport layer should validate
+	 * the range with {@link ISO42001CertificationFactory#isValidValidityMonths} to return a 400 rather than
+	 * a bare failure. Delegates to
+	 * {@link ISO42001CertificationRequestFactory#approveRequest(BaseRecord, BaseRecord, String, String, int, String)}.
+	 */
+	public static BaseRecord approveRequest(BaseRecord user, String requestId, String note,
+			String certifierTitle, int validityMonths, String notes) {
 		BaseRecord request = findByObjectId(user, ISO42001ModelNames.MODEL_CERTIFICATION_REQUEST, requestId);
 		if (request == null) {
 			return null;
 		}
-		return new ISO42001CertificationRequestFactory().approveRequest(user, request, note);
+		return new ISO42001CertificationRequestFactory()
+			.approveRequest(user, request, note, certifierTitle, validityMonths, notes);
 	}
 
 	/** Deny a certification request (delegates to {@link ISO42001CertificationRequestFactory#denyRequest}). */

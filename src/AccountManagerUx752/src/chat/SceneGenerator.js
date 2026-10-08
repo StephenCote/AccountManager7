@@ -71,9 +71,24 @@ const SD_CONFIG_IDENTITY = ['id', 'objectId', 'urn', 'ownerId', 'groupId', 'orga
     'groupPath', 'organizationPath', 'narration'];
 const SD_CONFIG_NEVER_RESTORE = ['model', 'refinerModel'];
 
+/// Field names the client olio.sd.config model declares (core/modelDef.js mirror). Resolved once.
+let _sdConfigFieldNames = null;
+function isSdConfigField(k) {
+    if (!_sdConfigFieldNames) {
+        let fields = (typeof am7model.getModelFields === 'function') ? am7model.getModelFields('olio.sd.config') : null;
+        _sdConfigFieldNames = new Set((fields || []).map(function (f) { return f.name; }));
+    }
+    return _sdConfigFieldNames.has(k);
+}
+
 /// Overlay a saved config's tweaks onto a fresh template entity. Skips identity, the model pair, and
 /// any null/blank value — a blank must not overwrite a good template value, which is precisely how ""
-/// reached the server. Unknown legacy keys are dropped by virtue of only copying what the model has.
+/// reached the server. Unknown legacy keys are dropped: a key is copied only when the olio.sd.config
+/// MODEL declares it (or the template already carries it).
+/// KI-65 (2026-10-07): this used to require `k in entity`, i.e. the key had to be present on the
+/// template object. But GET /olio/randomImageConfig serializes only the fields the server explicitly
+/// set (no steps/cfg/refinerSteps/width/height/...), so every saved numeric tweak was silently dropped
+/// on reload — the config "persisted" but never came back. Membership is now checked against the model.
 function overlaySaved(entity, stored) {
     if (!stored) return;
     for (let k in stored) {
@@ -81,7 +96,7 @@ function overlaySaved(entity, stored) {
         if (k === am7model.jsonModelKey) continue;
         let v = stored[k];
         if (v === undefined || v === null || v === '' || v === 0) continue;
-        if (!(k in entity)) continue;
+        if (!isSdConfigField(k) && !(k in entity)) continue;
         entity[k] = v;
     }
 }

@@ -128,7 +128,6 @@ public class Undress extends CommonAction implements IAction {
 	@Override
 	public boolean counterAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor)
 			throws OlioException {
-		// TODO Auto-generated method stub
 		return false;
 	}
 

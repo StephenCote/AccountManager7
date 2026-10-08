@@ -61,7 +61,25 @@ public class PrincipalService {
 	public static void clearCache() {
 		profiles.clear();
 	}
-	
+
+	/// The cached profile carries the user's direct role participations (ApplicationUtil.getApplicationProfile),
+	/// so it must be dropped whenever one of those changes or the UI keeps gating on pre-grant roles until the
+	/// next Tomcat restart (KI-77).
+	public static void evictProfile(BaseRecord user) {
+		if(user == null) {
+			return;
+		}
+		String urn = user.get(FieldNames.FIELD_URN);
+		if(urn != null) {
+			profiles.remove(urn);
+		}
+	}
+
+	public static boolean isProfileCached(BaseRecord user) {
+		String urn = (user == null ? null : user.get(FieldNames.FIELD_URN));
+		return urn != null && profiles.containsKey(urn);
+	}
+
 	@RolesAllowed({"user"})
 	@GET
 	@Path("/anonymous")

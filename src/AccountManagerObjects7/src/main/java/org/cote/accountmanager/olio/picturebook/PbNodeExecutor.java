@@ -1,9 +1,12 @@
 package org.cote.accountmanager.olio.picturebook;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -46,8 +49,50 @@ public class PbNodeExecutor {
 
 	public static final Logger logger = LogManager.getLogger(PbNodeExecutor.class);
 
+	/**
+	 * The node types {@link #executeNode} can drive on their own. This is the single source of truth
+	 * for the {@code switch} below, for the {@code executable} flag the graph DTO carries per node
+	 * ({@code PbServiceFacade.nodeSummary}), and for the 501 message. The remaining
+	 * {@link PbNodeTypeEnumType} values (SOURCE_TEXT, SCENE_EXTRACT, SCENE, CHARACTER,
+	 * CHARACTER_DESCRIPTION, APPAREL, MANNEQUIN, PAGE, BOOK_ASSEMBLY, STYLE_BIBLE) are stages the
+	 * whole-book pipeline ({@code PictureBookUtil.createFromScenes} / {@code PbPipelineUtil}) produces
+	 * as a unit; they have no single-node executor, so the canvas must not offer "Test" on them.
+	 */
+	public static final Set<PbNodeTypeEnumType> EXECUTABLE_TYPES = Collections.unmodifiableSet(EnumSet.of(
+		PbNodeTypeEnumType.PORTRAIT,
+		PbNodeTypeEnumType.LANDSCAPE,
+		PbNodeTypeEnumType.SCENE_PROMPT,
+		PbNodeTypeEnumType.LANDSCAPE_PROMPT,
+		PbNodeTypeEnumType.REFERENCE_STRIP,
+		PbNodeTypeEnumType.COMPOSITE
+	));
+
 	private PbNodeExecutor() {
 		/// static utility
+	}
+
+	/** True when {@link #executeNode} has an implementation for {@code nodeType}. Null is not executable. */
+	public static boolean isExecutable(PbNodeTypeEnumType nodeType) {
+		return nodeType != null && EXECUTABLE_TYPES.contains(nodeType);
+	}
+
+	/** {@link #isExecutable(PbNodeTypeEnumType)} read off a node record's {@code nodeType} field. */
+	public static boolean isExecutable(BaseRecord node) {
+		if(node == null || !node.hasField(OlioFieldNames.FIELD_PB_NODE_TYPE)) {
+			return false;
+		}
+		PbNodeTypeEnumType nodeType = node.getEnum(OlioFieldNames.FIELD_PB_NODE_TYPE);
+		return isExecutable(nodeType);
+	}
+
+	/** Stable, sorted names of {@link #EXECUTABLE_TYPES} for messages and DTOs. */
+	public static List<String> executableTypeNames() {
+		List<String> names = new ArrayList<>();
+		for(PbNodeTypeEnumType t : EXECUTABLE_TYPES) {
+			names.add(t.name());
+		}
+		Collections.sort(names);
+		return names;
 	}
 
 	/**
@@ -59,14 +104,25 @@ public class PbNodeExecutor {
 	 * stubs that come back on the node. This is a requirement because {@link PbGraphUtil#markStaleDownstream}
 	 * calls {@link PbGraphUtil#listNodes} which conditions on the workflow record and reads its {@code id}
 	 * via {@link org.cote.accountmanager.io.StatementUtil}.
+	 * <p>
+	 * A node whose type is not in {@link #EXECUTABLE_TYPES} is refused with a 501 before any IO; the
+	 * message names the supported types so the caller can tell a product gap from a broken request.
 	 *
 	 * @return DTO map describing the new artifact
 	 */
 	public static Map<String, Object> executeNode(BaseRecord user, BaseRecord book,
 			BaseRecord workflow, BaseRecord node, String swarmServer) {
+		if(node == null) {
+			throw new PictureBookException(400, "A node is required");
+		}
 		PbNodeTypeEnumType nodeType = node.getEnum(OlioFieldNames.FIELD_PB_NODE_TYPE);
 		if(nodeType == null) {
 			nodeType = PbNodeTypeEnumType.UNKNOWN;
+		}
+		if(!isExecutable(nodeType)) {
+			throw new PictureBookException(501,
+				"Single-node execution is not implemented for node type " + nodeType
+				+ "; executable types are " + String.join(", ", executableTypeNames()));
 		}
 		switch(nodeType) {
 			case PORTRAIT:

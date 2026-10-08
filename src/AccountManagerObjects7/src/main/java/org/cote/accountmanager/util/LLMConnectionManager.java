@@ -55,6 +55,130 @@ public class LLMConnectionManager {
 	/// Graceful stop flags — keyed by request OID for interactive chat.
 	private static final ConcurrentHashMap<String, Boolean> stopFlags = new ConcurrentHashMap<>();
 
+	/// ---- Per-operation cancel scopes (KI-74) -------------------------------------------------------
+	///
+	/// A long-running operation (a PictureBook extraction, an async job) makes many LLM calls from ONE
+	/// worker thread, and its cancel token is checked only between those calls - so a cancel used to
+	/// take effect after the call already running finished, while the model kept generating for a
+	/// caller that had given up. The operation binds a scope object (its cancel token, compared by
+	/// identity) to its thread before it starts; every stream Chat registers from that thread is then
+	/// attached to the scope, and a cancel arriving on ANOTHER thread can {@link #abortCancelScope}
+	/// it: close the response body (the primitive that actually stops a generation whose headers have
+	/// arrived) and cancel the raw sendAsync future (the one that works while the request is still
+	/// queued upstream) - the same two phases, in the same order, as {@link #stopAllStreams()}, but for
+	/// one operation's streams only. Same thread-local idiom as {@code currentCallLabel} above.
+	private static final ThreadLocal<Object> cancelScope = new ThreadLocal<>();
+	private static final ConcurrentHashMap<Object, Set<String>> scopeStreams = new ConcurrentHashMap<>();
+	private static final ConcurrentHashMap<String, Object> streamScopes = new ConcurrentHashMap<>();
+
+	/// Bind {@code scope} to the current thread: every stream registered from this thread until
+	/// {@link #unbindCancelScope} is attached to it. Null clears the binding. Call on the thread that
+	/// will make the LLM calls (registration happens on the calling thread, not the stream's).
+	public static void bindCancelScope(Object scope) {
+		if (scope == null) {
+			cancelScope.remove();
+		} else {
+			cancelScope.set(scope);
+		}
+	}
+
+	/// The scope bound to the current thread, or null.
+	public static Object currentCancelScope() {
+		return cancelScope.get();
+	}
+
+	/// Clear the current thread's binding - only if it is still {@code scope} (or scope is null), so a
+	/// stale unbind cannot drop a newer binding. Bookkeeping for the scope's streams is kept until
+	/// {@link #releaseCancelScope}; a stream still in flight at unbind time stays abortable.
+	public static void unbindCancelScope(Object scope) {
+		Object cur = cancelScope.get();
+		if (scope == null || cur == scope) {
+			cancelScope.remove();
+		}
+	}
+
+	/// Drop all bookkeeping for {@code scope}. Call when the operation is over (in a finally, beside
+	/// the token's own unregister). Does NOT abort anything.
+	public static void releaseCancelScope(Object scope) {
+		if (scope == null) return;
+		Set<String> ids = scopeStreams.remove(scope);
+		if (ids != null) {
+			for (String id : ids) {
+				streamScopes.remove(id, scope);
+			}
+		}
+	}
+
+	/// Abort every stream currently attached to {@code scope}. Returns how many were aborted. The
+	/// scope's bookkeeping stays in place (the operation releases it when it unwinds), so a stream
+	/// registered after this call - e.g. a retry the loop fires before it sees the cancel flag - is
+	/// still attached and a second abort call reaches it.
+	public static int abortCancelScope(Object scope) {
+		if (scope == null) return 0;
+		Set<String> ids = scopeStreams.get(scope);
+		if (ids == null || ids.isEmpty()) return 0;
+		int n = 0;
+		for (String id : new java.util.ArrayList<>(ids)) {
+			if (abortStream(id)) n++;
+		}
+		if (n > 0) {
+			logger.info("abortCancelScope: aborted " + n + " in-flight LLM stream(s)");
+		}
+		return n;
+	}
+
+	/// Streams currently attached to {@code scope} (registered and not yet unregistered/aborted).
+	public static int getCancelScopeStreamCount(Object scope) {
+		if (scope == null) return 0;
+		Set<String> ids = scopeStreams.get(scope);
+		return ids == null ? 0 : ids.size();
+	}
+
+	private static void attachToScope(String streamId) {
+		Object scope = cancelScope.get();
+		if (scope == null || streamId == null) return;
+		scopeStreams.computeIfAbsent(scope, k -> ConcurrentHashMap.newKeySet()).add(streamId);
+		streamScopes.put(streamId, scope);
+	}
+
+	private static void detachFromScope(String streamId) {
+		if (streamId == null) return;
+		Object scope = streamScopes.remove(streamId);
+		if (scope != null) {
+			Set<String> ids = scopeStreams.get(scope);
+			if (ids != null) ids.remove(streamId);
+		}
+	}
+
+	/// Abort ONE outbound LLM exchange and drop it from the registry: close its response body if the
+	/// headers have arrived (closing the socket is what makes the model server stop generating), and
+	/// cancel the raw future if they have not (the request is still queued upstream). Per-stream form
+	/// of {@link #stopAllStreams()}; idempotent and exception-safe - a failed abort is logged at debug
+	/// and never thrown, because it must not replace whatever error the caller is already handling.
+	/// Returns true when the stream was registered and an abort was attempted.
+	public static boolean abortStream(String streamId) {
+		if (streamId == null) return false;
+		CompletableFuture<HttpResponse<Stream<String>>> future = activeStreams.remove(streamId);
+		boolean closed = closeHttpResponse(streamId);
+		boolean cancelled = false;
+		if (future != null) {
+			try {
+				if (!future.isDone()) {
+					cancelled = future.cancel(true);
+				}
+			} catch (Exception e) {
+				logger.debug("abortStream: cancel future " + streamId + ": " + e.getMessage());
+			}
+		}
+		streamLabels.remove(streamId);
+		detachFromScope(streamId);
+		boolean known = (future != null || closed);
+		if (known) {
+			logger.info("abortStream " + streamId + ": closedResponseBody=" + closed + " cancelledFuture=" + cancelled);
+		}
+		return known;
+	}
+
 	/// Register a new streaming future. Returns the stream ID for later cleanup.
 	/// The label is taken from the thread-local set by the caller (or defaults
 	/// to "chat") so each active stream is identifiable in the debug view.
@@ -64,6 +188,7 @@ public class LLMConnectionManager {
 		String label = currentCallLabel.get();
 		if (label == null || label.isEmpty()) label = "chat";
 		streamLabels.put(streamId, label + "|" + System.currentTimeMillis());
+		attachToScope(streamId);
 		return streamId;
 	}
 
@@ -74,6 +199,7 @@ public class LLMConnectionManager {
 		activeStreams.put(streamId, future);
 		String safeLabel = (label == null || label.isEmpty()) ? "chat" : label;
 		streamLabels.put(streamId, safeLabel + "|" + System.currentTimeMillis());
+		attachToScope(streamId);
 		return streamId;
 	}
 
@@ -119,6 +245,7 @@ public class LLMConnectionManager {
 			activeStreams.remove(streamId);
 			activeHttpResponses.remove(streamId);
 			streamLabels.remove(streamId);
+			detachFromScope(streamId);
 		}
 	}
 
@@ -246,6 +373,10 @@ public class LLMConnectionManager {
 		activeHttpResponses.clear();
 		streamLabels.clear();
 		stopFlags.clear();
+		/// Every stream is gone, so no scope has anything left to abort; the scope objects
+		/// themselves are released by their operations when they unwind.
+		streamScopes.clear();
+		scopeStreams.clear();
 		/// Sync calls aren't cancellable from here (no future to cancel) but we
 		/// clear the registry so the view of "active" matches reality after a stop.
 		activeSyncCalls.clear();

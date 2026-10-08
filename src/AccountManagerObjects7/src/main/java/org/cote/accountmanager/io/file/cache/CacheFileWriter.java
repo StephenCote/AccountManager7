@@ -5,11 +5,12 @@ import org.cote.accountmanager.io.file.FileWriter;
 import org.cote.accountmanager.io.file.IndexEntry;
 import org.cote.accountmanager.util.CryptoUtil;
 
+/// FileWriter that evicts the file-IO caches around each write and delete: by path digest for the
+/// per-path entries (CacheFileSearch/CacheFileReader clearCache(String)) and by index entry on delete.
 public class CacheFileWriter extends FileWriter {
 
 	public CacheFileWriter(String base) {
 		super(base);
-		// TODO Auto-generated constructor stub
 	}
 	
 	@Override

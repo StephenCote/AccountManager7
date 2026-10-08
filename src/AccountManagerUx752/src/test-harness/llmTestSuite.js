@@ -25,12 +25,12 @@ import { ContextPanel } from '../chat/ContextPanel.js';
 import { MemoryPanel } from '../chat/MemoryPanel.js';
 import { ChatTokenRenderer } from '../chat/ChatTokenRenderer.js';
 import { AnalysisManager } from '../chat/AnalysisManager.js';
-// TODO: import am7sd from '../olio/sdConfig.js' when ported to Ux75
-let am7sd = (typeof globalThis.am7sd !== 'undefined') ? globalThis.am7sd : null;
-// TODO: import am7imageTokens when ported to Ux75
-let am7imageTokens = (typeof globalThis.am7imageTokens !== 'undefined') ? globalThis.am7imageTokens : null;
-// TODO: import am7audioTokens when ported to Ux75
-let am7audioTokens = (typeof globalThis.am7audioTokens !== 'undefined') ? globalThis.am7audioTokens : null;
+// All three were ported to ESM long ago (components/sdConfig.js, chat/imageTokens.js, chat/audioTokens.js)
+// but until 2026-10-07 this suite still read them off globalThis (Ux7 IIFE globals that Ux752 never sets),
+// so tests 173/103b/104b/204 always reported "not loaded"/"skipped". Import them like every other consumer.
+import { am7sd } from '../components/sdConfig.js';
+import { am7imageTokens } from '../chat/imageTokens.js';
+import { am7audioTokens } from '../chat/audioTokens.js';
 
 let TF = TestFramework;
 
@@ -144,11 +144,18 @@ async function findByName(schema, groupId, name) {
 
 async function findOrCreateConfig(schema, testGroup, template, extraFields) {
     let existing = await findByName(schema, testGroup.id, template.name);
+    // The endpoint (serverUrl/apiKey/requestTimeout) is a system.connection referenced by
+    // chatConfig.connection; the template may name one, else use the library default.
+    let connRef = null;
+    if (schema === "olio.llm.chatConfig") {
+        connRef = LLMConnector.connectionRef(template.connection || await LLMConnector.getDefaultConnection());
+        if (!connRef) log("config", "No system.connection available for " + template.name + " — chat library not initialized?", "warn");
+    }
     if (existing) {
         // OI-24: Update-if-changed — sync key fields from template
         let needsPatch = false;
         let syncFields = schema === "olio.llm.chatConfig"
-            ? ["serverUrl", "serviceType", "model", "stream", "prune", "messageTrim", "chatOptions", "assist", "rating", "startMode", "remindEvery", "keyframeEvery", "autoTunePrompts", "autoTuneChatOptions", "requestTimeout", "extractMemories", "memoryBudget", "memoryExtractionEvery", "autoTitle"]
+            ? ["serviceType", "model", "stream", "prune", "messageTrim", "chatOptions", "assist", "rating", "startMode", "remindEvery", "keyframeEvery", "autoTunePrompts", "autoTuneChatOptions", "extractMemories", "memoryBudget", "memoryExtractionEvery", "autoTitle"]
             : ["system", "user", "assistant", "episodeRule"];
         for (let i = 0; i < syncFields.length; i++) {
             let f = syncFields[i];
@@ -156,6 +163,10 @@ async function findOrCreateConfig(schema, testGroup, template, extraFields) {
                 existing[f] = template[f];
                 needsPatch = true;
             }
+        }
+        if (connRef && !LLMConnector.sameConnection(existing.connection, connRef)) {
+            existing.connection = connRef;
+            needsPatch = true;
         }
         if (extraFields) {
             for (let f in extraFields) {
@@ -167,7 +178,6 @@ async function findOrCreateConfig(schema, testGroup, template, extraFields) {
         }
         if (needsPatch) {
             try {
-                delete existing.apiKey;
                 await page.patchObject(existing);
                 log("config", "Updated stale config (OI-24): " + template.name, "info");
             } catch (e) {
@@ -184,6 +194,7 @@ async function findOrCreateConfig(schema, testGroup, template, extraFields) {
     entity.schema = schema;
     entity.groupId = testGroup.id;
     entity.groupPath = testGroup.path;
+    if (connRef) entity.connection = connRef;
     if (extraFields) {
         for (let key in extraFields) entity[key] = extraFields[key];
     }
@@ -195,7 +206,7 @@ async function findOrCreateConfig(schema, testGroup, template, extraFields) {
         let basic = { schema: schema, name: template.name, groupId: testGroup.id, groupPath: testGroup.path };
         if (schema === "olio.llm.chatConfig") {
             basic.model = template.model || "llama3";
-            if (template.serverUrl) basic.serverUrl = template.serverUrl;
+            if (connRef) basic.connection = connRef;
             basic.serviceType = template.serviceType || "OLLAMA";
             basic.messageTrim = template.messageTrim || 6;
         } else if (schema === "olio.llm.promptConfig") {
@@ -364,10 +375,11 @@ async function testConfigLoad(cats) {
     log("config", "promptConfig loaded: " + promptCfg.name, "pass");
     logData("config", "promptConfig", promptCfg);
 
-    // Test 64: Server reachable
-    let serverUrl = chatCfg.serverUrl;
+    // Test 64: Server reachable — the endpoint is the referenced system.connection
+    let conn = await LLMConnector.resolveConnection(chatCfg.connection);
+    let serverUrl = conn ? conn.serverUrl : null;
     if (serverUrl) {
-        log("config", "Server URL configured: " + serverUrl, "pass");
+        log("config", "Connection '" + conn.name + "' server URL configured: " + serverUrl + " (requestTimeout=" + conn.requestTimeout + "s)", "pass");
         // Check model availability via AM7 REST proxy (prompt endpoint)
         try {
             let resp = await m.request({
@@ -380,7 +392,7 @@ async function testConfigLoad(cats) {
             log("config", "Chat REST endpoint unreachable: " + e.message, "warn");
         }
     } else {
-        log("config", "No serverUrl on chatConfig", "warn");
+        log("config", "No connection (or unresolvable connection) on chatConfig — Chat.configureChat will have no endpoint", "warn");
     }
 
     // Validate model field
@@ -1689,7 +1701,7 @@ async function testConversationManager(cats) {
         try {
             // Create with messageTrim=6
             let cfgBase = { name: updateTestName, model: chatCfg ? chatCfg.model : "llama3", serviceType: chatCfg ? chatCfg.serviceType : "OLLAMA", messageTrim: 6 };
-            if (chatCfg && chatCfg.serverUrl) cfgBase.serverUrl = chatCfg.serverUrl;
+            if (chatCfg && chatCfg.connection) cfgBase.connection = chatCfg.connection;
             let cfg1 = await findOrCreateConfig("olio.llm.chatConfig", suiteState.testGroup, cfgBase);
             if (!cfg1) {
                 log("convmgr", "OI-24: Could not create test config", "fail");
@@ -2559,7 +2571,8 @@ async function testPhase13Coverage(cats) {
         let modelDef = am7model.getModel("olio.llm.chatConfig");
         if (modelDef && modelDef.fields) {
             let fieldNames = modelDef.fields.map(function(f) { return f.name; });
-            let p13Fields = ["autoTitle", "autoTunePrompts", "autoTuneChatOptions", "requestTimeout", "extractMemories", "memoryBudget", "memoryExtractionEvery"];
+            // requestTimeout moved to system.connection; chatConfig references it via `connection`
+            let p13Fields = ["autoTitle", "autoTunePrompts", "autoTuneChatOptions", "connection", "extractMemories", "memoryBudget", "memoryExtractionEvery"];
             for (let i = 0; i < p13Fields.length; i++) {
                 let present = fieldNames.indexOf(p13Fields[i]) !== -1;
                 log("coverage", "150" + String.fromCharCode(97 + i) + ": chatConfig schema has " + p13Fields[i] + ": " + present, present ? "pass" : "fail");

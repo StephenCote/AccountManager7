@@ -35,10 +35,25 @@ public class SceneCompositeUtil {
 	public static final String MODE_KONTEXT = "kontext";
 	public static final String MODE_CLASSIC = "classic";
 
+	/// The accepted compositeMode vocabulary, for error messages ("expected flux2|kontext|classic").
+	public static final String SUPPORTED_MODES = MODE_FLUX2 + "|" + MODE_KONTEXT + "|" + MODE_CLASSIC;
+
 	/// Panel size for the KONTEXT stitched strip. Unchanged from both original call sites.
 	private static final int KONTEXT_PANEL_SIZE = 1024;
 
 	private SceneCompositeUtil() { }
+
+	/// Is {@code mode} (case-insensitive, trimmed) one of the three pipelines buildSceneRequest can
+	/// build? Null/blank is NOT supported here — "absent" is resolveMode's business, not a mode.
+	///
+	/// Exists so a transport boundary can reject an unknown compositeMode with a clear 400 BEFORE
+	/// resolveMode silently downgrades it to classic. resolveMode keeps that fallback on purpose for
+	/// saved configs read back from the DB; a value a caller just typed into a request is different.
+	public static boolean isSupportedMode(String mode) {
+		if (mode == null) return false;
+		String m = mode.trim().toLowerCase();
+		return MODE_FLUX2.equals(m) || MODE_KONTEXT.equals(m) || MODE_CLASSIC.equals(m);
+	}
 
 	/// Resolve the composite pipeline for a config.
 	///

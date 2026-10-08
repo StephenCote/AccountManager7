@@ -343,7 +343,7 @@ public class TestKontext extends BaseTest {
 			/// name that this node may not have. Stamp the one test.swarm.model says is installed.
 			SdTestGate.stampInstalledModel(SDUtil.randomSDConfig(), testProperties),
 			"Kontext Portrait - " + person.get(FieldNames.FIELD_NAME) + " - " + UUID.randomUUID().toString(),
-			"random", "professional portrait", "full body", "standing", 20, 1, false, -1);
+			"random", "full body", "standing", 20, 1, false, -1);
 
 		if (images.isEmpty()) {
 			logger.warn("Portrait generation failed for " + person.get(FieldNames.FIELD_NAME));

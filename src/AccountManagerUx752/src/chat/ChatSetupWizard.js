@@ -2,6 +2,9 @@
  * ChatSetupWizard — First-time library setup wizard (ESM port)
  * Shown when LLMConnector.ensureLibrary() returns false.
  * Collects: serviceType, serverUrl, model name.
+ * POST /rest/chat/library/init turns serverUrl into the shared library system.connection
+ * (/Library/Connections, "Local Ollama") that every library chatConfig references; the
+ * chatConfigs themselves no longer carry serverUrl/apiKey/requestTimeout.
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
@@ -89,7 +92,8 @@ function renderStep1() {
             value: _config.serverUrl,
             placeholder: "http://localhost:11434",
             oninput: e => { _config.serverUrl = e.target.value; }
-        })
+        }),
+        m("p", { class: "mt-2 text-xs text-gray-400" }, "This becomes the shared library connection in /Library/Connections. Chat configs reference the connection; edit it there to change the endpoint or API key later.")
     ]);
 }
 
@@ -124,7 +128,7 @@ function renderStep3() {
                 m("span", { class: "text-gray-800 dark:text-white" }, _config.model)
             ])
         ]),
-        m("p", { class: "mt-3 text-xs text-gray-400" }, "This will create shared chat config templates in /Library/ChatConfigs available to all users.")
+        m("p", { class: "mt-3 text-xs text-gray-400" }, "This will create the shared library connection in /Library/Connections and chat config templates in /Library/ChatConfigs that reference it, available to all users.")
     ]);
 }
 

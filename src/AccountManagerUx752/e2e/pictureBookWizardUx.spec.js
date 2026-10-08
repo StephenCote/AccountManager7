@@ -9,12 +9,17 @@
  * during deserialization -> zero charPerson records ever created -> "Manage Characters"
  * screen rendered blank) actually works end-to-end through the UI, not just via a
  * direct backend call.
+ *
+ * Live-LLM test (scene extraction + character creation, up to 60 min on the local-container tier),
+ * so it is gated like its siblings and must run serially:
+ *   PB_ASYNC_TESTS=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/pictureBookWizardUx.spec.js --workers=1 --project=chromium
  */
 import { test, expect } from '@playwright/test';
 import { login, screenshot } from './helpers/auth.js';
-import { setupWorkflowTestData, cleanupTestUser, apiLogin, apiLogout, ensurePath, createNote } from './helpers/api.js';
+import { setupWorkflowTestData, cleanupTestUser, apiLogin, apiLogout, ensurePath, createNote, resolveChatRoute } from './helpers/api.js';
 
 const REST = '/AccountManagerService7/rest';
+const LLM_ENABLED = process.env.PB_ASYNC_TESTS === '1';
 
 // Same text pictureBookLive.spec.js already uses successfully with this model/server
 // combination — ruling out "story too short for the extractor" as a variable while
@@ -36,12 +41,19 @@ A vacuum forms between the two tables, two singles abandoned at a Valentines Day
 Outside, the rain began to fall, light and misty, fog churning like a smoldering fire through the streets. Bathed in the bright neon lights advertising the very explicit fantasies so secretly craved, the walk across the slick street through choking fog appeared programmatic, hypnotic, and the way the doors whisper open and greet with a pleasant warm puff of air is resplendent, only to be greeted by a solemn faced caretaker who prepares an arrangement of new vessels into which you must pour your soul.`;
 
 test.describe('Picture Book Wizard — real UX flow', () => {
-    test.describe.configure({ timeout: 900000 });
+    // Per-call LLM request timeout on the test's system.connection (seconds) — see the beforeAll
+    // comment for the measurements behind it.
+    const EXTRACT_REQUEST_TIMEOUT_S = 600;
+    // 60 min: up to two extraction generations (the Scene List wait below, 2 x 600s + margin) plus
+    // the character-creation wait (1800s, see CREATE_CHARACTERS_WAIT_MS) plus the Step 3/4 UI
+    // checks, on the slow local-container LLM tier. Playwright retries once (playwright.config.js).
+    test.describe.configure({ timeout: 3600000 });
     let testInfo = {};
     let docName = '';
     let noteObjectId = null;
 
     test.beforeAll(async ({ request }) => {
+        test.skip(!LLM_ENABLED, 'PB_ASYNC_TESTS!=1 — skips the live LLM wizard click-through');
         testInfo = await setupWorkflowTestData(request, { suffix: 'pbux' + Date.now().toString(36) });
 
         await apiLogin(request, { user: testInfo.testUserName, password: testInfo.testPassword });
@@ -60,20 +72,34 @@ test.describe('Picture Book Wizard — real UX flow', () => {
         // record referenced via chatConfig's "connection" FK -- a flat serverUrl field directly on
         // chatConfig is silently ignored by Chat.configureChat(), which only reads it off the
         // linked connection. Create the connection first, then link it on chatConfig create.
+        //
+        // The connection shape and model names come from resolveChatRoute() (local container ->
+        // LiteLLM -> .42), exactly like ensureChatConfig(). The per-call timeout is 600s, not the
+        // 300s ensureChatConfig uses: the 10-scene extract of the AIME passage is a ~1800-token
+        // reply, and the local-container tier (qwen3:8b-jos-ctr, CPU) measured 191s, 223s, 254s and
+        // then >300s for it across four runs on 2026-10-07 -- the 300s run hit Chat's buffer-mode
+        // timeout ("Aborted the outbound LLM exchange (buffer-mode timeout after 300s)" -> "Null LLM
+        // response"), the job COMPLETED with zero scenes and the wizard never reached Step 2.
+        // This used to hardcode .42 + qwen3-vl:8b-instruct + requestTimeout 120: the identical
+        // request measured 81s against an idle .42 (1793 tokens at ~24 tok/s), so with .42 shared
+        // across concurrent test lanes the 120s deadline fired the same way.
+        const route = await resolveChatRoute();
         let chatDir = await ensurePath(request, 'auth.group', 'data', '~/Chat');
         if (!chatDir || !chatDir.id) {
             throw new Error('beforeAll: could not ensure ~/Chat directory — chatDir=' + JSON.stringify(chatDir));
         }
-        let connResp = await request.post(REST + '/model', {
-            data: {
-                schema: 'system.connection',
-                name: 'contentAnalysis Connection',
-                groupId: chatDir.id,
-                groupPath: chatDir.path,
-                serverUrl: 'http://192.168.1.42:11434',
-                requestTimeout: 120
-            }
-        });
+        let connBodyReq = {
+            schema: 'system.connection',
+            name: 'contentAnalysis Connection',
+            groupId: chatDir.id,
+            groupPath: chatDir.path,
+            serverUrl: route.serverUrl,
+            requestTimeout: EXTRACT_REQUEST_TIMEOUT_S
+        };
+        if (route.dialect) connBodyReq.dialect = route.dialect;
+        if (route.upstream) connBodyReq.upstream = route.upstream;
+        if (route.apiKey) connBodyReq.apiKey = route.apiKey;
+        let connResp = await request.post(REST + '/model', { data: connBodyReq });
         let connBody = await connResp.text();
         if (!connResp.ok()) {
             throw new Error('beforeAll: system.connection create failed (' + connResp.status() + '): ' + connBody);
@@ -88,9 +114,9 @@ test.describe('Picture Book Wizard — real UX flow', () => {
                 name: 'contentAnalysis',
                 groupId: chatDir.id,
                 groupPath: chatDir.path,
-                model: 'qwen3-vl:8b-instruct',
-                analyzeModel: 'qwen3-vl:8b-instruct',
-                serviceType: 'ollama',
+                model: route.pbModel,
+                analyzeModel: route.analysisModel,
+                serviceType: route.dialect || 'ollama',
                 stream: false,
                 connection: { schema: 'system.connection', id: conn.id, objectId: conn.objectId }
             }
@@ -104,10 +130,12 @@ test.describe('Picture Book Wizard — real UX flow', () => {
     });
 
     test.afterAll(async ({ request }) => {
+        if (!LLM_ENABLED) return;
         await cleanupTestUser(request, testInfo.user && testInfo.user.objectId, { userName: testInfo.testUserName });
     });
 
     test('extract -> continue creates real characters -> Manage Characters shows them', async ({ page }) => {
+        test.skip(!LLM_ENABLED, 'PB_ASYNC_TESTS!=1 — skips the live LLM wizard click-through');
         expect(noteObjectId, 'note was not created in beforeAll').toBeTruthy();
 
         page.on('response', async (resp) => {
@@ -149,8 +177,12 @@ test.describe('Picture Book Wizard — real UX flow', () => {
         await extractBtn.click();
 
         // Extraction is a real LLM call — allow several minutes. Wizard auto-advances to Step 2
-        // (renderStep2's "Scene List (N)" heading) on success.
-        await expect(page.locator('text=/Scene List \\(\\d+\\)/')).toBeVisible({ timeout: 300000 });
+        // (renderStep2's "Scene List (N)" heading) on success. Budget: the local-container tier
+        // measured 191s to >300s per generation on 2026-10-07 (see the connection comment above),
+        // and the single-shot extractor retries ONCE with a corrective instruction when the first
+        // reply is malformed JSON (PictureBookUtil.extractSingleShot), so one worst-case run is two
+        // generations, each bounded by the connection's 600s request timeout — 1320s covers that.
+        await expect(page.locator('text=/Scene List \\(\\d+\\)/')).toBeVisible({ timeout: 2 * EXTRACT_REQUEST_TIMEOUT_S * 1000 + 120000 });
         await screenshot(page, 'wizardux-step2-scenes');
 
         let sceneHeading = await page.locator('text=/Scene List \\(\\d+\\)/').first().textContent();
@@ -173,12 +205,23 @@ test.describe('Picture Book Wizard — real UX flow', () => {
         // user-avatar badge (first in DOM order, rendered behind the modal backdrop), which is a
         // real match but the wrong element entirely -- not a duplicate-dialog bug (confirmed via
         // .am7-dialog-backdrop count == 1), just an under-scoped locator.
+        // Budget: createFromScenes makes two LLM calls per named character (extract-character
+        // ~65s + guess-apparel ~22s on the local-container tier, measured 2026-10-07 via LiteLLM),
+        // and the number of named characters is whatever the LLM put in the 10 scenes: one run
+        // produced 5, the next produced 16 (Adult 1, Cat, Attendee 1, AI Assistant, ... Attendee 3),
+        // i.e. ~24 min of sequential LLM time. The earlier 480s and 900s waits both expired while
+        // the server was still (correctly) creating characters; when a wait expires, afterAll's
+        // cleanupTestUser deletes the user and connection out from under the still-running
+        // createFromScenes request, which then logs "createCharPerson failed ... AUDIT DENY" and
+        // "URI with undefined scheme" for every remaining character -- test-harness noise, not a
+        // product defect. 30 min covers ~20 named characters on the local tier.
+        const CREATE_CHARACTERS_WAIT_MS = 1800000;
         let dialog = page.getByRole('dialog');
         let emptyState = dialog.locator('text=No characters extracted yet.');
         let anyCharacterCard = dialog.locator('div.font-medium.text-sm').first();
         await Promise.race([
-            emptyState.waitFor({ state: 'visible', timeout: 480000 }),
-            anyCharacterCard.waitFor({ state: 'visible', timeout: 480000 })
+            emptyState.waitFor({ state: 'visible', timeout: CREATE_CHARACTERS_WAIT_MS }),
+            anyCharacterCard.waitFor({ state: 'visible', timeout: CREATE_CHARACTERS_WAIT_MS })
         ]).catch(() => {});
         await screenshot(page, 'wizardux-step3-managecharacters');
 

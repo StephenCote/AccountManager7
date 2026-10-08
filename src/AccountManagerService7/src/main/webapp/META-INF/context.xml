@@ -34,7 +34,7 @@
           username="am7user"
           password="password"
           driverClassName="org.postgresql.Driver"
-          url="jdbc:postgresql://localhost:15431/am72db"
+          url="jdbc:postgresql://localhost:15430/am72db"
           closeMethod="close"
           />
           

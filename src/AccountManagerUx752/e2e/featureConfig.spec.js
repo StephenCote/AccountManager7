@@ -10,7 +10,7 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
-import { ensureAdminRoleTestUser } from './helpers/api.js';
+import { ensureAdminRoleTestUser, getAvailableFeatures } from './helpers/api.js';
 
 let featAdmin = null;
 
@@ -107,12 +107,18 @@ test.describe('Feature Configuration admin panel', () => {
         await screenshot(page, 'feature-config-deps');
     });
 
-    test('the manifest error banner is absent (no client/server drift)', async ({ page }) => {
+    test('the manifest error banner is absent (no client/server drift)', async ({ page, request }) => {
+        // M in "N of M features enabled" is availableFeatures.length — what the server served. Read it
+        // from the live endpoint rather than a literal: the "13" this used to assert went stale when the
+        // manifest grew to 16 and the test then failed against a correct deployment.
+        let { status, manifest } = await getAvailableFeatures(request);
+        expect(status, 'GET /rest/config/features/available').toBe(200);
+        expect(manifest.length).toBeGreaterThanOrEqual(13);
+
         await openAsAdminRoleUser(page);
 
         // D2: a wiring id with no manifest entry is surfaced here as a hard error, never a silent skip.
         await expect(page.locator('text=Feature manifest error')).toHaveCount(0);
-        // "N of M features enabled" — M is availableFeatures.length, i.e. what the server served.
-        await expect(page.locator('text=/of 13 features enabled/')).toBeVisible({ timeout: 5000 });
+        await expect(page.locator('text=/of ' + manifest.length + ' features enabled/')).toBeVisible({ timeout: 5000 });
     });
 });

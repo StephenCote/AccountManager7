@@ -12,7 +12,6 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
-import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -21,6 +20,7 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionEnumType;
+import org.cote.accountmanager.schema.type.CredentialEnumType;
 import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
 import org.cote.accountmanager.security.CredentialUtil;
@@ -55,13 +55,16 @@ public class CredentialService {
 	public boolean newPrimaryCredential(@PathParam("type") String objectType, @PathParam("objectId") String objectId, String authReqJson,@Context HttpServletRequest request){
 
 		BaseRecord authReq = JSONUtil.importObject(authReqJson,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
-		
+
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord audit = AuditUtil.startAudit(user, ActionEnumType.MODIFY, null, null);
-		BaseRecord owner = null;
 		boolean outBool = false;
 
-		BaseRecord newCred = null;
+		if(authReq == null || !ModelNames.MODEL_AUTHENTICATION_REQUEST.equals(authReq.getSchema())) {
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Request body is not an " + ModelNames.MODEL_AUTHENTICATION_REQUEST);
+			return outBool;
+		}
+
 		try{
 			BaseRecord targetObject = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, objectType, objectId);
 			if(targetObject == null) {
@@ -74,13 +77,27 @@ public class CredentialService {
 			 *    The authenticated user must be an account administrator
 			 *    Or the current credential must be supplied
 			 */
-			//boolean accountAdmin = org.cote.accountmanager.data.services.AuthorizationService.is
 			if(ModelNames.MODEL_USER.equals(objectType)) {
+				/// KI-14: the new credential value comes from the request (auth.authenticationRequest.credential),
+				/// never from a literal. Only hashed passwords are supported by CredentialFactory; anything else
+				/// would persist an UNKNOWN-type row that can authenticate nobody, so reject it up front.
+				CredentialEnumType cet = authReq.getEnum(FieldNames.FIELD_CREDENTIAL_TYPE);
+				if(cet != null && cet != CredentialEnumType.UNKNOWN && cet != CredentialEnumType.HASHED_PASSWORD) {
+					AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Unsupported credential type " + cet);
+					return outBool;
+				}
+				byte[] newCredBytes = authReq.get(FieldNames.FIELD_CREDENTIAL);
+				if(newCredBytes == null || newCredBytes.length == 0) {
+					AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "No credential supplied");
+					return outBool;
+				}
+
 				BaseRecord cred = CredentialUtil.getLatestCredential(targetObject);
-				
-				ParameterList plist = ParameterUtil.newParameterList(FieldNames.FIELD_TYPE, authReq.get(FieldNames.FIELD_CREDENTIAL_TYPE));
-				plist.parameter("password", "password");
-				newCred = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CREDENTIAL, targetObject, null, plist);
+				BaseRecord newCred = CredentialUtil.newCredential(targetObject, authReq);
+				if(newCred == null) {
+					AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Failed to construct credential");
+					return outBool;
+				}
 				boolean verify = false;
 				if(cred == null) {
 					logger.info("Create new credential");
@@ -93,26 +110,38 @@ public class CredentialService {
 						verify = true;
 					}
 					else {
-						VerificationEnumType vet = IOSystem.getActiveContext().getFactory().verify(targetObject, cred, ParameterUtil.newParameterList("password", new String((byte[])cred.get(FieldNames.FIELD_CHECK_CREDENTIAL))));
+						/// The current credential is supplied on the REQUEST (checkCredential); auth.credential has
+						/// no such field, and reading it from the stored record logged a stack trace and NPE'd.
+						byte[] checkBytes = authReq.get(FieldNames.FIELD_CHECK_CREDENTIAL);
+						if(checkBytes == null || checkBytes.length == 0) {
+							AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Current credential is required to replace an existing credential");
+							return outBool;
+						}
+						VerificationEnumType vet = IOSystem.getActiveContext().getFactory().verify(targetObject, cred, ParameterUtil.newParameterList(FieldNames.FIELD_PASSWORD, new String(checkBytes)));
 						if(vet == VerificationEnumType.VERIFIED) {
 							verify = true;
 						}
 						else {
 							logger.error("Failed to verify current credential");
+							AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "Current credential did not verify");
+							return outBool;
 						}
 					}
-					
+
 				}
 				if(verify) {
 					if(cred != null) {
-						cred.set("primary", false);
+						/// KI-15: the flag on auth.credential is "primary" (FieldNames.FIELD_PRIMARY), not "primaryKey".
+						cred.set(FieldNames.FIELD_PRIMARY, false);
 						IOSystem.getActiveContext().getRecordUtil().updateRecord(cred);
 					}
 					outBool = IOSystem.getActiveContext().getRecordUtil().createRecord(newCred);
+					AuditUtil.closeAudit(audit, (outBool ? ResponseEnumType.PERMIT : ResponseEnumType.INVALID), (outBool ? "Credential " + (cred == null ? "created" : "replaced") : "Failed to persist credential"));
 				}
 			}
 			else {
 				logger.warn("**** TODO: Handle model " + objectType);
+				AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Unhandled model " + objectType);
 			}
 		}
 		catch(NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException e) {

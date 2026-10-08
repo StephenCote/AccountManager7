@@ -8,6 +8,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.iso42001.certification.CertificationVerification;
+import org.cote.accountmanager.iso42001.certification.ISO42001CertificationFactory;
 import org.cote.accountmanager.iso42001.engine.BiasModuleRegistry;
 import org.cote.accountmanager.iso42001.schema.ISO42001ModelNames;
 import org.cote.accountmanager.iso42001.service.ISO42001ServiceFacade;
@@ -332,8 +333,24 @@ public class ISO42001Service {
 		if (user == null) {
 			return unauthorized();
 		}
-		String note = text(body(json), "note");
-		BaseRecord cert = ISO42001ServiceFacade.approveRequest(user, requestId, note != null ? note : "Approved");
+		JsonNode b = body(json);
+		String note = text(b, "note");
+		/// Approve & Sign dialog terms (design §9A.8): optional title, validity period (months), notes.
+		/// validityMonths absent/0 → factory default; out of range → 400 (validation, not clamping).
+		String title = text(b, "title");
+		String notes = text(b, "notes");
+		int validityMonths = 0;
+		JsonNode vm = b.get("validityMonths");
+		if (vm != null && !vm.isNull()) {
+			/// isIntegralNumber: canConvertToInt() alone is true for 12.5 and would silently truncate it.
+			if (!vm.isIntegralNumber() || !vm.canConvertToInt() || !ISO42001CertificationFactory.isValidValidityMonths(vm.asInt())) {
+				return badRequest("'validityMonths' must be an integer from 1 to "
+					+ ISO42001CertificationFactory.MAX_VALIDITY_MONTHS);
+			}
+			validityMonths = vm.asInt();
+		}
+		BaseRecord cert = ISO42001ServiceFacade.approveRequest(user, requestId,
+			note != null ? note : "Approved", title, validityMonths, notes);
 		if (cert == null) {
 			return badRequest("Approve failed (request not found, not a certifier, or access denied)");
 		}

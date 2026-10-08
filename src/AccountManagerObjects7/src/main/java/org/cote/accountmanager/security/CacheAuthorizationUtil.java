@@ -15,6 +15,9 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.CryptoUtil;
 
+/// Entitlement-decision cache over AuthorizationUtil. NOT wired by default: IOFactory.getAuthorizationUtil
+/// returns the plain AuthorizationUtil, so this class is only live where it is constructed explicitly.
+/// Decisions are keyed by a digest of actor + permission + object urns and evicted per record by urn.
 public class CacheAuthorizationUtil extends AuthorizationUtil implements ICache {
 	
 	private Map<String, Boolean> decisionCache = new ConcurrentHashMap<>(); 
@@ -56,20 +59,20 @@ public class CacheAuthorizationUtil extends AuthorizationUtil implements ICache 
 
 	@Override
 	public void clearCache() {
-		// TODO Auto-generated method stub
 		decisionCache.clear();
 		keyCache.clear();
 	}
 
+	/// Intentional no-op: the keys passed to CacheUtil.clearCache(String) are query hashes and
+	/// file-path digests, never an entitlement digest, so there is nothing here to match.
 	@Override
 	public void clearCache(String key) {
-		// TODO Auto-generated method stub
-		
+
 	}
 
+	/// Evicts every entitlement decision in which rec was the actor or the object, by urn.
 	@Override
 	public void clearCache(BaseRecord rec) {
-		// TODO Auto-generated method stub
 		if(rec.hasField(FieldNames.FIELD_URN)) {
 			String urn = rec.get(FieldNames.FIELD_URN);
 			if(keyCache.containsKey(urn)) {
@@ -81,21 +84,26 @@ public class CacheAuthorizationUtil extends AuthorizationUtil implements ICache 
 		}
 	}
 
+	/// Intentional no-op. An IndexEntry is the file-IO index record and carries no urn, so no
+	/// decision can be selected by it; see CachePolicyUtil.clearCacheByIdx for the file-IO gap.
 	@Override
 	public void clearCacheByIdx(IndexEntry idx) {
-		// TODO Auto-generated method stub
 
 	}
 
+	/// Same contract as the other ICache providers: drop everything and leave the provider set, so a
+	/// closed instance is not kept alive (and fanned out to) by CacheUtil. Before 2026-10-07 this was
+	/// empty and the registration taken in the constructor was never released.
 	@Override
 	public void cleanupCache() {
-		// TODO Auto-generated method stub
-		
+		clearCache();
+		CacheUtil.removeProvider(this);
 	}
-	
+
+	/// Intentional no-op. Decisions are indexed by actor and object urn, not by model; a model-wide
+	/// eviction is clearCache(). MemberUtil.clearParticipationQueryCache documents the consequence.
 	@Override
 	public void clearCacheByModel(String model) {
-		// TODO Auto-generated method stub
 
 	}
 	

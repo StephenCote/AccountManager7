@@ -66,14 +66,49 @@ export DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD SESSION_STORE_PATH \
   SD_DEFAULT_MODEL HTTP_READ_TIMEOUT LLM_EMULATOR_FIXTURE_ROOT LLM_EMULATOR_RECORD_DIR
 
 APP_DIR="$CATALINA_HOME/webapps/${APP_CONTEXT}"
+# Unprivileged account every long-running process drops to (see supervisord.conf). Created in the
+# Dockerfile; the entrypoint itself stays root only long enough to render config, fix volume
+# ownership and mint the setup token.
+APP_USER=am7
 
 mkdir -p "$STORE_PATH" "$DATAGEN_PATH" "$VAULT_PATH" "$VAULT_CREDENTIAL_PATH" "$SESSION_STORE_PATH"
 
-envsubst '$DB_HOST $DB_PORT $DB_NAME $DB_USER $DB_PASSWORD $SESSION_STORE_PATH' \
-  < "$APP_DIR/META-INF/context.xml.template" > "$APP_DIR/META-INF/context.xml"
+# The rendered values land inside XML (attribute values in context.xml, element text in web.xml).
+# envsubst is a plain text substitution, so a password containing `&` or `<` -- or a `"` in any
+# attribute -- would yield a malformed file that Tomcat refuses to parse, or (for `"`) ends the
+# attribute early. Escape the five XML specials on a COPY of each variable inside a subshell so the
+# raw values stay intact for the filesystem/token logic below.
+xml_escape() {
+  local s=$1
+  s=${s//&/&amp;}
+  s=${s//</&lt;}
+  s=${s//>/&gt;}
+  s=${s//\"/&quot;}
+  s=${s//\'/&apos;}
+  printf '%s' "$s"
+}
 
-envsubst '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SERVER $TASK_API_KEY $SD_SERVER $FACE_SERVER $TAG_SERVER $VOICE_TTS_SERVER $VOICE_STT_SERVER $EMBEDDING_SERVER $EMBEDDING_TYPE $EMBEDDING_MODEL $EMBEDDING_AUTH_TOKEN $CORS_ALLOWED_ORIGINS $SD_DEFAULT_MODEL $HTTP_READ_TIMEOUT $LLM_EMULATOR_FIXTURE_ROOT $LLM_EMULATOR_RECORD_DIR' \
-  < "$APP_DIR/WEB-INF/web.xml.template" > "$APP_DIR/WEB-INF/web.xml"
+render_xml_template() {
+  local spec=$1 in=$2 out=$3 name
+  (
+    for name in $spec; do
+      name=${name#\$}
+      export "$name=$(xml_escape "${!name}")"
+    done
+    envsubst "$spec" < "$in" > "$out"
+  )
+}
+
+render_xml_template '$DB_HOST $DB_PORT $DB_NAME $DB_USER $DB_PASSWORD $SESSION_STORE_PATH' \
+  "$APP_DIR/META-INF/context.xml.template" "$APP_DIR/META-INF/context.xml"
+
+render_xml_template '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SERVER $TASK_API_KEY $SD_SERVER $FACE_SERVER $TAG_SERVER $VOICE_TTS_SERVER $VOICE_STT_SERVER $EMBEDDING_SERVER $EMBEDDING_TYPE $EMBEDDING_MODEL $EMBEDDING_AUTH_TOKEN $CORS_ALLOWED_ORIGINS $SD_DEFAULT_MODEL $HTTP_READ_TIMEOUT $LLM_EMULATOR_FIXTURE_ROOT $LLM_EMULATOR_RECORD_DIR' \
+  "$APP_DIR/WEB-INF/web.xml.template" "$APP_DIR/WEB-INF/web.xml"
+
+# Both rendered files carry credentials (DB password, task/embedding tokens). Readable by the app
+# user only; the image ships without them so nothing else in the container has a copy.
+chown "$APP_USER:$APP_USER" "$APP_DIR/META-INF/context.xml" "$APP_DIR/WEB-INF/web.xml"
+chmod 600 "$APP_DIR/META-INF/context.xml" "$APP_DIR/WEB-INF/web.xml"
 
 # Self-signed TLS pair shared by Tomcat (server.xml) and nginx (nginx.conf).
 # Persisted under /etc/am7/certs so a mounted volume survives restarts;
@@ -81,10 +116,10 @@ envsubst '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SER
 CERT_DIR=/etc/am7/certs
 if [ ! -f "$CERT_DIR/server.cert" ] || [ ! -f "$CERT_DIR/server.key" ]; then
   mkdir -p "$CERT_DIR"
-  umask 077
-  openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
-    -keyout "$CERT_DIR/server.key" -out "$CERT_DIR/server.cert" \
-    -subj "/CN=am7-container"
+  ( umask 077
+    openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+      -keyout "$CERT_DIR/server.key" -out "$CERT_DIR/server.cert" \
+      -subj "/CN=am7-container" )
   chmod 600 "$CERT_DIR/server.key"
 fi
 
@@ -174,5 +209,28 @@ else
   echo "entrypoint.sh: read the one-shot token (NOT logged) with:"
   echo "entrypoint.sh:   docker exec <container> cat $SETUP_TOKEN_FILE"
 fi
+
+# ---------------------------------------------------------------------------
+# Hand the writable state to the unprivileged app user. Everything above ran as
+# root (and the data/cert paths are usually volumes, so the image-time chown in
+# the Dockerfile does not reach a volume that already existed or was populated
+# by an older root-running image). Tomcat must own the store/vault/datagen/
+# session dirs and be able to read -- and, on setup completion, delete -- the
+# token minted above; Tomcat and nginx both read the TLS pair.
+#
+# Docker Desktop bind mounts of a Windows path (the test compose) ignore chown:
+# every file reports root with mode 0777, so the app user can write regardless.
+# Warn and continue rather than fail there.
+# ---------------------------------------------------------------------------
+chown_app() {
+  local p
+  for p in "$@"; do
+    [ -n "$p" ] && [ -e "$p" ] || continue
+    chown -R "$APP_USER:$APP_USER" "$p" 2>/dev/null \
+      || echo "entrypoint.sh: warning: could not chown $p to $APP_USER (bind mount?); continuing" >&2
+  done
+}
+chown_app "$STORE_PATH" "$DATAGEN_PATH" "$VAULT_PATH" "$VAULT_CREDENTIAL_PATH" "$SESSION_STORE_PATH" \
+  "$CERT_DIR" "$LLM_EMULATOR_RECORD_DIR"
 
 exec /usr/bin/supervisord -c /etc/supervisord.conf

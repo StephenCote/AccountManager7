@@ -179,7 +179,6 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 	
 	@Override
 	public void generateRegion(OlioContext context, BaseRecord realm) {
-		// TODO Auto-generated method stub
 		logger.info("Prep fields");
 		BaseRecord field1 = findLocation(context, "Field 1");
 		BaseRecord field2 = findLocation(context, "Field 2");

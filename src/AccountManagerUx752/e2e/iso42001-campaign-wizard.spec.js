@@ -44,8 +44,11 @@ test.describe.serial('ISO 42001 campaign wizard — create (live, deterministic)
     test.beforeAll(async ({ request }) => {
         iso = await ensureIso42001TestUser(request);
         // Provision an endpoint (olio.llm.chatConfig) OWNED BY the ISO user so it's both listed and readable.
+        // Distinct names: the helper's defaults are the shared user's records, and a name+org search that
+        // also matches another user's row is denied outright by PBAC (no groupId condition).
         endpointName = await ensureChatConfig(request, null, {
-            user: iso.testUserName, password: iso.testPassword
+            user: iso.testUserName, password: iso.testPassword,
+            configName: 'e2e-iso-llm', connectionName: 'e2e-iso-conn'
         });
         expect(endpointName, 'an ISO-user-owned chatConfig endpoint must be provisioned').toBeTruthy();
     });
@@ -120,7 +123,8 @@ test.describe.serial('ISO 42001 campaign wizard — create & launch (live LLM)',
     test.beforeAll(async ({ request }) => {
         iso = await ensureIso42001TestUser(request);
         endpointName = await ensureChatConfig(request, null, {
-            user: iso.testUserName, password: iso.testPassword
+            user: iso.testUserName, password: iso.testPassword,
+            configName: 'e2e-iso-llm', connectionName: 'e2e-iso-conn'
         });
         expect(endpointName, 'an ISO-user-owned chatConfig endpoint must be provisioned').toBeTruthy();
     });

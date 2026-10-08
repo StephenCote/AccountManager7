@@ -1,8 +1,9 @@
 # LiteLLM / Langfuse Integration — Design & Plan
 
-**Date:** 2026-09-01 (design) · **updated 2026-09-14** (as-built)
-**Status:** **implemented** — B1/B2/B3/B5 **done**, B4 **partial**. Design ratified by architecture
-review (APPROVED with guardrails) on 2026-09-01; built, run and measured through 2026-09-14.
+**Date:** 2026-09-01 (design) · **updated 2026-09-14** (as-built) · **B4 completed 2026-10-07**
+**Status:** **implemented** — B1/B2/B3/B4/B5 **done**. Design ratified by architecture
+review (APPROVED with guardrails) on 2026-09-01; built, run and measured through 2026-09-14; the
+structured `metadata` half of B4 landed 2026-10-07 (§3 B4 row).
 **Read §6 "As-built (2026-09-14)" first** for what actually shipped, what was measured, and the open
 follow-ups. §§1–5 are the original design and are retained; where they disagreed with the build they
 have been corrected in place.
@@ -152,12 +153,13 @@ The layering constraint above held.
 | B1 | `OPENAI_COMPAT` dialect enum + `getServiceUrl()` branch (`/v1/chat/completions`); reuse body/parser/auth | **DONE** — `ConnectionDialectEnumType{UNKNOWN,OLLAMA,OPENAI,OPENAI_COMPAT}`; URL branch at `Chat.java:4443`; `Chat.java:4432` (`isOpenAiCompatible()`) shares SSE framing with `OPENAI` | Objects7 |
 | B2 | `dialect` (`ConnectionDialectEnumType`) field on `system.connection` + safe default; resolver | **DONE** — `dialect` on `system.connection` (`maxLength:16`, default `UNKNOWN`), authoritative per §5.1 P3-1; `ChatUtil.resolveServiceType(connection, chatConfig)` at the `Chat.configureChat()` convergence point. `chatConfig.serviceType` remains the deprecated derived fallback and is **NOT** retired (still the only carrier of `LOCAL`) | Objects7 (+ Ux752 edit form) |
 | B3 | Optional LiteLLM + Langfuse compose services behind profiles | **DONE — profile first actually run 2026-09-14** (it had never been run before; the first-run defects it exposed are in §6.8) | Docker |
-| B4 | *(optional)* Tier B native tracing: gated request metadata + per-call header hook | **PARTIAL** — `Chat.java:4007,4068` emits body `session_id` + `x-langfuse-*` headers, gated to `OPENAI_COMPAT` only | Objects7 |
+| B4 | *(optional)* Tier B native tracing: gated request metadata + per-call header hook | **DONE (2026-10-07)** — three emission points in `Chat.chatInternal`, all gated to `OPENAI_COMPAT` and all Guardrail-3-validated via `TracingIdValidator`: (1) body `user` kept only there (`Chat.buildTracingIgnoreFields`; `session_id` is pruned from the body for **every** dialect — it is not an OpenAI parameter and an earlier revision of this row wrongly said it was emitted); (2) `x-langfuse-session-id` / `x-langfuse-user-id` headers (`Chat.buildTracingHeaders`); (3) a structured `metadata` JSON **object** `{session_id, trace_user_id}` injected into the serialized body (`Chat.buildTracingMetadata` + `ChatUtil.injectTracingMetadata`, the same JSON-rewrite idiom as `nestNativeOllamaOptions`, because the request model carries no object-typed field and a string field is dead schema per P3-2). Tests: `TestTierBTracingUnit` (9 cases, 3 for the metadata object) and `TestUpstreamWireEmission` caseN1–N3 (real `chat()` bytes). | Objects7 |
 | B5 | *(optional, future)* Langfuse metrics → ISO 42001 reports | **DONE** — ISO42001 `LangfuseMetricsClient` / `LangfuseMetrics` wired via `TestExecutor` / `TestRunner` | ISO42001 |
 
-**Sequence (as originally recommended):** B1 → B2 → B3, then decide on B4/B5. As of 2026-09-14 B1,
-B2, B3 and B5 are done and B4 is partial. The open code items are the tracked Objects7 follow-up in
-§6.6 / **KI-72** (Ollama-extension gating) and the still-deferred retirement of `chatConfig.serviceType` (§5.1).
+**Sequence (as originally recommended):** B1 → B2 → B3, then decide on B4/B5. As of 2026-10-07 all
+five are done (B4 was partial from 2026-09-14 until the structured `metadata` object shipped). The
+remaining open item is the still-deferred retirement of `chatConfig.serviceType` (§5.1); KI-72
+(Ollama-extension gating) closed with the `upstream` axis.
 
 ## 4. Verification standard
 - Objects7 change: `mvn -o -pl AccountManagerObjects7 install -DskipTests` then compile dependents;
@@ -169,9 +171,10 @@ B2, B3 and B5 are done and B4 is partial. The open code items are the tracked Ob
 ## 5. Open decisions — all three now resolved (kept for provenance)
 1. **Langfuse depth:** Tier A only (proxy-side, zero AM7 code) or also Tier B (native tracing)?
    Recommendation: **Tier A first.**
-   **Resolved as built (2026-09-14):** Tier A shipped; Tier B is **partial** — body `session_id` +
-   `x-langfuse-*` headers, gated to `OPENAI_COMPAT` (`Chat.java:4007,4068`). No further Tier B work
-   is scheduled.
+   **Resolved as built (2026-09-14, completed 2026-10-07):** Tier A shipped; Tier B shipped in full —
+   body `user`, `x-langfuse-*` headers and the structured `metadata` object, all gated to
+   `OPENAI_COMPAT` (see the §3 B4 row for the method names; file line numbers are not cited because
+   they drift). No further Tier B work is scheduled.
 2. **`serviceType` fate:** **Decided (2026-09-03) — see §5.1:** derive from `connection.dialect` and
    deprecate `chatConfig.serviceType`; interim resolver now, full removal deferred.
 3. **B5 in scope?** Whether Langfuse-metrics-into-ISO-reports is part of this initiative or a later one.
@@ -742,8 +745,13 @@ this host. The key itself is stored in `system.connection.apiKey`, which is vaul
   the native path generation is not capped by the user's setting today. Unrelated to the upstream
   axis. Fixing it changes main-path generation behaviour (cost and latency), so it is Stephen's call;
   `TestUpstreamWireEmission` `caseC` pins the current behaviour rather than the comment's intent.
-- **B4 is partial** (`Chat.java:4007,4068`, gated to `OPENAI_COMPAT`); no further Tier B work is
-  scheduled.
+- ~~**B4 is partial** (`Chat.java:4007,4068`, gated to `OPENAI_COMPAT`)~~ — **DONE 2026-10-07.** The
+  missing half was the structured `metadata` object (P3-2 had established that only a JSON object is
+  consumed as Langfuse metadata, and the string-typed field had been removed as dead schema). It is
+  now injected into the serialized body for `OPENAI_COMPAT` only, from the same opaque-validated
+  values as the headers (`Chat.buildTracingMetadata`, `ChatUtil.injectTracingMetadata`); §3 B4 row.
+  Side effect worth knowing: a non-opaque `user` now logs the Guardrail 3 WARN three times per call
+  (ignore-list, header, metadata), once per emission point. No further Tier B work is scheduled.
 - ~~**Objects7:** enforce Guardrail 3 opaqueness at the emission point~~ — **DONE 2026-09-15** via
   `TracingIdValidator.isOpaque`, an allowlist shape test (UUID, or a 12–128 char
   `^[A-Za-z0-9][A-Za-z0-9._:-]*$` token containing a digit). Two corrections to the item as it was

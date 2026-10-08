@@ -23,8 +23,16 @@ e2e/screenshots/
 !.env.example
 !**/.env.example
 
+# Local test credentials (KI-11). The tracked resource.properties keeps every
+# *.authorizationToken blank; SecretTestGate (Objects7 test harness) fills those
+# same keys at setup from -D / AM7_* env vars / this file. NEVER commit it.
+**/src/test/resources/resource.local.properties
+**/src/main/resources/resource.local.properties
+
 # Loose LLM emulator recordings (<sha256>.json recorder drops) are local overrides; the committed copies live in each set's fixtures.zip, and manifest.json stays loose.
 AccountManagerObjects7/src/test/resources/llm-fixtures/*/*.json
 !AccountManagerObjects7/src/test/resources/llm-fixtures/*/manifest.json
 # runaway/ is not an emulator set: hand-named recorded replies (the Ourselves.doc chunk-6 loop) that the runaway-detector tests read directly.
 !AccountManagerObjects7/src/test/resources/llm-fixtures/runaway/*.json
+# malformed-array/ likewise: the real glitched scene-extraction reply (2026-10-07) that TestLlmJsonArraySalvage reads directly.
+!AccountManagerObjects7/src/test/resources/llm-fixtures/malformed-array/*.json

@@ -186,12 +186,24 @@ function objectMembers(ctx, name, field) {
         let am7client = getClient();
         let ftype = field ? (field.typeAttribute || field.foreignType) : null;
 
-        if (!entity || !entity.objectId || !field || !ftype) {
+        if (!entity || !entity.objectId || !field) {
             res([]);
             return;
         }
 
-        let type = am7view.typeToModel(entity[ftype]);
+        // Participant model: either resolved from an enum attribute on the container (auth.role.members →
+        // entity.type USER/ACCOUNT/PERSON), or — KI-1, auth.group's per-type userMembers/accountMembers/
+        // personMembers — fixed by the field's own baseModel.
+        let type = null;
+        if (ftype) {
+            type = am7view.typeToModel(entity[ftype]);
+        } else if (field.baseModel && field.baseModel.charAt(0) !== '$' && am7model.getModel(field.baseModel)) {
+            type = field.baseModel;
+        }
+        if (!type) {
+            res([]);
+            return;
+        }
         am7client.members(
             entity[am7model.jsonModelKey], entity.objectId,
             type, 0, 100,

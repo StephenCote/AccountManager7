@@ -124,6 +124,11 @@ DOES carry Delete on the book's own world groups. The working fixture uses a tar
 
 - **X-async — DEFERRED.** Make ChapBook render asynchronous. Held for a final wave from a green
   baseline because it changes the **synchronous render request/response contract that C2 depends on**.
+  > **Corrected 2026-10-07:** X-async is no longer deferred — the async job layer **shipped and was
+  > verified live on 2026-09-13** (`PictureBookAsyncJobDesign.md`: shared `AsyncJobRegistry` +
+  > `JobService` polling via `?async=true` → `202 {jobId}` → `GET /rest/job/{jobId}`, extraction
+  > checkpoint/resume, ChapBook progress; the bulk render is verified to its 202 contract). The
+  > "deferred" status above is left as written for history only.
 - **B5 — owner-only.** `sdConfig` is stored as a `text` column; the redesign wants a `bigint` FK.
   That is a **non-additive** schema change needing an owner-run migration. Surface it to the owner;
   do not attempt (never touch the untouchable local `am72db`; see §6).
@@ -153,6 +158,9 @@ Per the standing scope-discipline rule — note, don't touch, unless asked:
 - **LLM is live at `192.168.1.42:11434`; SD (Swarm) is live at `192.168.1.39:7801`.** Not
   interchangeable — `.42` crashes under sustained SD load. Docker cannot reach the LAN, so SD/LLM
   paths must run against the **local Eclipse Tomcat**, not Docker (see `troubleshooting.md`).
+  > **Corrected 2026-10-07:** the "Docker cannot reach the LAN" claim was wrong — re-measured
+  > 2026-09-13 from inside `am7test-am7-1` (`.42:11434` → 200, `.39:7801` → 302); LLM/SD integration
+  > tests do run through the Docker stack. See `.claude/rules/troubleshooting.md`.
 - **Do not commit or push unless explicitly asked.** (This session: "Don't commit.")
 - **Do not weaken, skip, or fake tests.**
 

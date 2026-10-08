@@ -3,8 +3,8 @@
 > **Looking for the step-by-step procedure?** See **[`dockerDevSetup.md`](dockerDevSetup.md)** — the
 > operational runbook for building and starting a fresh install (build → first boot → setup token →
 > initial setup → verify), written directly off current source. **This** file holds the design
-> rationale and history. Where the two disagree, prefer the runbook: several curl examples below omit
-> the `/AccountManagerService7` context path and 404 (audit item 4, unfixed here).
+> rationale and history. Where the two disagree, prefer the runbook. (The setup `curl` examples below
+> used to omit the `/AccountManagerService7` context path and 404 — corrected 2026-10-07, audit item 4.)
 
 **Status: verified working end-to-end** (core stack). Config/doc **accuracy audit 2026-09-01** found
 discrepancies — see "Accuracy audit" immediately below. Design body last substantively updated 2026-09-09
@@ -21,25 +21,40 @@ follow-up under that same heading).
 ## Accuracy audit (2026-09-01) — discrepancies to fix
 
 Source review of `docker-compose.yml`, `docker-compose.test.yml`, `Dockerfile`, `docker/entrypoint.sh`,
-`nginx.conf`, this doc, and the root `CLAUDE.md` / `troubleshooting.md`. Documentation only — **nothing
-changed yet.** Ordered by severity.
+`nginx.conf`, this doc, and the root `CLAUDE.md` / `troubleshooting.md`. Documentation only — nothing
+changed at the time. Ordered by severity. **Re-checked 2026-10-07 against the current files; each item
+now carries its status.**
 
 1. **BUG — `SD_SERVER` points at the wrong host in the canonical compose.** `docker-compose.yml:21`
    defaults `SD_SERVER=http://192.168.1.42:7801`, but `.42` is the **Ollama LLM** host (`:11434`); the
    SD/Swarm host is `.39:7801` (used by `entrypoint.sh:20` and `docker-compose.test.yml:71`). Wrong on
    both host and port meaning.
+   **DONE (2026-10-07):** `docker-compose.yml:27` now defaults `SD_SERVER: ${SD_SERVER:-http://192.168.1.39:7801}`,
+   matching `entrypoint.sh` and `docker-compose.test.yml`.
 2. **LATENT — nginx REST timeout below the app default.** `nginx.conf:58` caps `/AccountManagerService7/`
    at `900s`, but `HTTP_READ_TIMEOUT` defaults to `1200s` and a FLUX.2 render (~638s, can exceed 900s)
    can be aborted mid-flight by nginx. Raise the nginx cap to ≥ app default, or document the ceiling.
+   **DONE 2026-09-13** (commit "Timeout fix"): `docker/nginx.conf` now sets `proxy_read_timeout 3600s` on
+   both `/AccountManagerService7/` and `/AccountManagerService7/wss`, with the measured 900s/17-chunk
+   failure recorded in the file comment; the structural fix (async jobs + polling) is
+   `PictureBookAsyncJobDesign.md`. `HTTP_READ_TIMEOUT` is still empty-by-default (= 1200s code default,
+   `entrypoint.sh:42-43`, `web.xml.template:55-59`).
 3. **Stale Tomcat version in this doc:** says 11.0.24 (below); `Dockerfile:71` is `11.0.25`.
+   **DONE 2026-10-07** — the follow-up bullet at the end of this doc now says 11.0.25, and notes that the
+   `archive.apache.org` fallback is present in `Dockerfile:91-93`.
 4. **Doc setup `curl` examples omit the context path and 404** (`:54,129` use
    `https://localhost:9443/rest/setup/`; nginx only routes `/AccountManagerService7/...` to Tomcat, so
    those hit vite). The tokenless "Verification 2026-07-15" narrative also predates setup-token
    hardening (`entrypoint.sh:73-157`).
+   **DONE 2026-10-07 (curl):** the Option A setup `curl` in this doc now uses
+   `https://127.0.0.1:9443/AccountManagerService7/rest/setup/`. The 2026-07-15 narrative is left as
+   dated history; `dockerDevSetup.md` is the current procedure.
 5. **`docker cp` container name inconsistent:** `:352` uses `src-am7-1` inside the 9443/test-stack
    section; `troubleshooting.md` and `:52` use `am7test-am7-1`. Each is right only for its own `-p`
-   project name.
+   project name. **DONE 2026-10-07** — the dist-refresh snippet now uses `am7test-am7-1` (it sits next to
+   the `-p am7test` rebuild command).
 6. **Stale top-line status date** vs. later 08-05/08-29 content in the same file.
+   **DONE** — the status line now carries "Design body last substantively updated 2026-09-09".
 7. **RESOLVED 2026-09-13/14 — the premise was false.** This item logged a 3-way guidance
    contradiction: root `CLAUDE.md` ("use Docker, not local Tomcat") vs. `troubleshooting.md`
    ("Docker can't reach LAN → use Eclipse Tomcat for SD/LLM") vs. memory ("always Docker"). There is
@@ -53,6 +68,9 @@ changed yet.** Ordered by severity.
    a standing property of the setup.
 8. **Minor:** compose comment implies pg on `15432` (`docker-compose.yml:12-13`) while this doc's
    Option B uses `15433`.
+   **RESOLVED (re-checked 2026-10-07):** the compose comment (`docker-compose.yml:10-20`) was rewritten to
+   point at `setup/dockerNotes.txt` and no longer names a port; `DB_PORT` still defaults to `15432` (the
+   dev Postgres, `:22`), and Option B below overrides it explicitly (`DB_PORT=15433`). Consistent.
 
 ## Extension note — optional LiteLLM / Langfuse sidecars (SHIPPED)
 
@@ -121,7 +139,7 @@ docker compose -p am7test -f docker-compose.test.yml up --build
 # is NOT printed to the log; read it out of the container:
 SETUP_TOKEN=$(docker exec am7test-am7-1 cat /data/am7/store/.setup.token)
 
-curl -k -X POST https://localhost:9443/rest/setup/ \
+curl -k -X POST https://127.0.0.1:9443/AccountManagerService7/rest/setup/ \
   -H 'Content-Type: application/json' \
   -H "X-AM7-Setup-Token: $SETUP_TOKEN" \
   -d '{"credential":"'"$(printf 'password' | base64)"'"}'
@@ -168,7 +186,7 @@ curl -k -X POST https://localhost:9443/rest/setup/ \
 #     -d '{"schema":"auth.credential","organizationPath":"/Development","name":"admin","credential":"cGFzc3dvcmQ=","type":"hashed_password"}'
 #
 # NOTE the REST path prefix: /AccountManagerService7/rest/... through nginx. The curl earlier in this
-# file omits it (`https://localhost:9443/rest/setup/`) and will 404.
+# file used to omit it (`https://localhost:9443/rest/setup/`) and 404'd — corrected 2026-10-07 (audit item 4).
 #
 # NOTE 127.0.0.1, not localhost: Docker publishes IPv4-only and Chromium resolves localhost to ::1
 # first, failing with net::ERR_CONNECTION_ABORTED. Playwright must use the IPv4 literal, and
@@ -201,7 +219,7 @@ docker run -d --name am7-pg -p 15433:5432 \
   -e POSTGRES_DB=am72db -e POSTGRES_USER=am7user -e POSTGRES_PASSWORD=password \
   pgvector/pgvector:0.8.6-pg18-trixie
 DB_HOST=host.docker.internal DB_PORT=15433 docker compose up --build
-# then the same POST /rest/setup/ as above, against https://localhost:8443
+# then the same token-authenticated POST as above, against https://127.0.0.1:8443/AccountManagerService7/rest/setup/
 ```
 
 That image is **stock** — Option B's database gets none of the AM7 tuning that Option A bakes into its
@@ -267,14 +285,30 @@ stays external (matches `setup/dockerNotes.txt` precedent of running it as its o
   `vitest@2.1.9`, package.json wants `^4.1.9`), so `npm ci` fails with `EUSAGE`. Worked around by
   using `npm install` in the Dockerfile's Ux752 build stage instead. **The lock file itself should
   still be regenerated in the repo** — not done here, out of this task's scope.
+  **Re-checked 2026-10-07:** the lock was regenerated on 2026-08-20 and is in sync (`npm ci --dry-run`
+  exits 0; lock pins `vitest@4.1.10`). The Dockerfile still says `npm install`, deliberately: a
+  `--target ux-build` trial with `RUN npm ci` accepted the lock and only failed 73s in on tarball
+  downloads with `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` (corp TLS proxy), and changing the RUN line
+  invalidates the cached layer that every on-VPN `--prebuilt` rebuild depends on. Switch to `npm ci`
+  from an off-proxy build (or add a build-time CA injection — not done).
 - **Security review (`security-reviewer` agent) flagged and fixed**: original `web.xml`/`context.xml`
   were leaking into the image layer despite being "templated" (fixed — `rm` them at explode time);
   generated TLS private key had no restrictive permissions (fixed — `umask 077` + `chmod 600`);
   `CORS_ALLOWED_ORIGINS` had no guard against a wildcard override combined with
   `cors.support.credentials=true` (fixed — `entrypoint.sh` now refuses `*`).
-  **Not yet addressed** (non-blocking, flagged as follow-up): the whole stack runs as root inside
-  the container (no non-root user for supervisord's children); `envsubst` substitutes env vars into
-  XML attributes without escaping (`"`, `<`, `>`, `&` in a value could corrupt the XML).
+  **Both follow-ups DONE 2026-10-07:** (a) the image now creates `am7` (uid/gid 1000, nologin) and
+  `supervisord.conf` drops Tomcat, `vite preview` and nginx to it (`user=am7`); only PID 1
+  (`supervisord`) and the entrypoint stay root. `entrypoint.sh` renders `context.xml`/`web.xml` as
+  `0600 am7:am7` and `chown`s the data/cert volumes (warning, not failing, on a bind mount it cannot
+  chown). Verified on a `--prebuilt --ollama` rebuild: `docker exec am7test-am7-1 ps` shows nginx
+  master+workers, `java` (Tomcat) and `node … vite preview` all as `am7`; Tomcat deployed in 11.4s;
+  `/rest/schema` → 200; no permission errors in `docker logs`. Note for the Dockerfile: the `adduser`
+  layer sits **after** the `apk add`/Tomcat download layer on purpose — placing it before invalidates
+  that layer's cache and the rebuild then needs the Alpine mirrors, which the corp TLS proxy blocks
+  (`TLS: server certificate not trusted`). `docker cp` hot-redeploys still work: files land as
+  `root:root` but world-readable, which Tomcat/nginx (as `am7`) can read. (b) `entrypoint.sh`
+  XML-escapes `& < > " '` in every substituted value (`xml_escape`/`render_xml_template`) before
+  `envsubst`.
 - **Tomcat's HTTPS connector moved off `:8443` to `127.0.0.1:8444`** (internal-only) since nginx now
   owns the external `:8443`; `docker/server.xml` and `docker/nginx.conf` were written from scratch
   (no `server.xml` was previously tracked in the repo — Stephen's local Tomcat config isn't in git).
@@ -525,7 +559,7 @@ await page.addInitScript(() => {
 ```bash
 cd src/AccountManagerUx752
 npx vite build
-docker cp ./dist/. src-am7-1:/opt/ux752/dist/
+docker cp ./dist/. am7test-am7-1:/opt/ux752/dist/   # container name follows the -p project (am7test); corrected 2026-10-07
 ```
 `vite preview` serves static files from disk — the new files are picked up immediately without restarting the container. To fully rebuild the image (e.g. after backend changes):
 ```bash
@@ -542,11 +576,15 @@ docker compose -p am7test -f src/docker-compose.test.yml up --build -d
   `-Dlog-path=/data/am7/logs` from `setenv.sh` (backwards-compatible — default unchanged off the dev box).
 - Regenerate `AccountManagerUx752/package-lock.json` (out of sync; Dockerfile uses `npm install`).
 - **Pinned Tomcat download will eventually 404.** `dlcdn.apache.org` only serves the current patch
-  release; once `TOMCAT_VERSION` (11.0.24) is superseded, the runtime-stage `curl` breaks with no
-  code change. An `|| curl … archive.apache.org …` fallback was drafted but reverted — it forces a
-  fresh download to re-verify, which can't complete while a VPN/corporate TLS proxy is intercepting
-  HTTPS (curl can't verify the substituted cert; do **not** add `curl -k`, that would MITM-expose the
-  Tomcat binary). Re-add the archive fallback on the next legitimate `TOMCAT_VERSION` bump (which
-  re-downloads anyway), and/or stage the tarball via a local download cache/mirror.
-- Consider running the container as non-root (supervisord children run as root).
-- Consider escaping `envsubst` inputs (`"`, `<`, `>`, `&` in an env value could corrupt the XML).
+  release; once `TOMCAT_VERSION` (**11.0.25**, `Dockerfile:71` — corrected 2026-10-07, this bullet
+  previously said 11.0.24) is superseded, the `dlcdn` `curl` breaks with no code change. **The
+  `|| curl … archive.apache.org …` fallback is now present** (`Dockerfile:91-93`), so a superseded pin
+  falls back to the archive instead of failing the build. Original caveat kept for context: the fallback
+  was once reverted because it forces a fresh download to re-verify, which can't complete while a
+  VPN/corporate TLS proxy is intercepting HTTPS (curl can't verify the substituted cert; do **not** add
+  `curl -k`, that would MITM-expose the Tomcat binary). Staging the tarball via a local download
+  cache/mirror remains the robust option behind the proxy.
+- ~~Consider running the container as non-root (supervisord children run as root).~~ **Done 2026-10-07**
+  — `am7` uid 1000; see the "Both follow-ups DONE" note in the verification section above.
+- ~~Consider escaping `envsubst` inputs (`"`, `<`, `>`, `&` in an env value could corrupt the XML).~~
+  **Done 2026-10-07** — `xml_escape` in `entrypoint.sh`.

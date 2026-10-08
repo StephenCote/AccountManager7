@@ -15,6 +15,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.MembershipStatistic;
@@ -99,6 +100,9 @@ public class AuthorizationService {
 		}
 		if(object != null && actor != null) {
 			outBool = IOSystem.getActiveContext().getAccessPoint().member(user, object, fieldName, actor, null, enable);
+			if(outBool && ModelNames.MODEL_USER.equals(actor.getSchema())) {
+				PrincipalService.evictProfile(actor);
+			}
 		}
 		else {
 			String objKey = objectType + " " + objectId;

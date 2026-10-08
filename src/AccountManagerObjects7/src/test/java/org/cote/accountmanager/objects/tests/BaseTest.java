@@ -89,6 +89,11 @@ public class BaseTest {
 			resetDataSchema = Boolean.parseBoolean(testProperties.getProperty("test.db.reset"));
 		}
 		testDataPath = testProperties.getProperty("test.data.path");
+		/// Credentials (KI-11): the tracked resource.properties keeps every *.authorizationToken blank.
+		/// Fill those same keys from -D / AM7_* env / a gitignored resource.local.properties so no
+		/// consumer changes and nothing secret is ever committed. Must run before anything reads a
+		/// token (LlmTestGate below, the VectorUtil in resetIO). Values are never logged.
+		SecretTestGate.resolve(testProperties);
 		/// Opportunistic Ollama unload before GPU-heavy work. OFF unless the test properties turn it
 		/// on — a large model (gpt-oss:120b) costs more to reload than the freed VRAM saves, and the
 		/// picture-book tests alternate LLM and SD work repeatedly. TestPictureBookFull's

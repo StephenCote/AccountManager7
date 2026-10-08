@@ -1,7 +1,16 @@
 # PictureBook Workflow — Overhaul / Correction
 
-**Raised:** 2026-09-19 · **Status:** proposal, not started · **Trigger:** "the whole workflow part
-seems broken … compose an overhaul to address"
+**Raised:** 2026-09-19 · **Status:** W-series (W1–W5, graph recording) **done and verified**;
+N-series (§6, series/chapters) **IN PROGRESS** under `PictureBookSeriesChaptersPlan.md` (2026-09-23)
+· **Trigger:** "the whole workflow part seems broken … compose an overhaul to address"
+
+> **Corrected 2026-10-07:** this header previously read "proposal, not started". Per
+> `PictureBookSeriesChaptersPlan.md` the W-series landed (the `picturebook.v2` flag and
+> `PbFeatureFlag.java` are **deleted**, graph recording is unconditional, `createFromScenes` collapsed,
+> `resolveSceneCharacter` is Population-only, `graphWriteFailures` added). Several `file:line` refs in
+> §2 and the §7 "key locations" table are therefore stale — see that plan's §1 table for the verified
+> current locations; the code wins where this doc disagrees. Q7/Q9/Q11 in §8 were ratified 2026-09-20
+> (recorded in that plan's §0).
 
 > **Design of record remains `PictureBook2Plan.md`** (read Appendix D first). Build state is
 > `PictureBook2ImplementationState.md`. This document does **not** supersede either. It records what
@@ -414,20 +423,24 @@ Q11.
 - **Q6 — ownership inversion. ANSWERED 2026-09-19: one world per series.** Recorded in §6.4. The
   remaining work is to reconcile this with `PictureBook2Plan.md` §3.5 in that document, so the two
   do not contradict each other for the next reader.
-- **Q7 — role model for a series.** Per-book two-tier roles today. Does a series get its own
-  Writer/Admin pair, do chapters keep per-book roles with a series-level Reader, or does chapter
-  membership simply follow series membership?
+- **Q7 — role model for a series. ANSWERED 2026-09-20: chapters use the series Writer/Admin roles
+  DIRECTLY — no per-chapter role pair** (`PictureBookSeriesChaptersPlan.md` §0, N1). Original question:
+  per-book two-tier roles today. Does a series get its own Writer/Admin pair, do chapters keep per-book
+  roles with a series-level Reader, or does chapter membership simply follow series membership?
 - **Q8 — what is a chapter, as input? ANSWERED 2026-09-19: both.** Its own document *and* a range
   within one manuscript. See §6.5 N3 for the two consequences (a source descriptor rather than a bare
   `sourceData` FK, and a range-aware checkpoint key).
-- **Q9 — scale.** `MAX_SCENES_DEFAULT = 10`. Is that per chapter now? A 40-chapter novel at 10 each
-  is ~400 scenes and several thousand graph nodes — which also decides whether the workflow canvas
-  scopes per chapter (§6.5 N4) or needs replacing.
+- **Q9 — scale. ANSWERED 2026-09-20: `MAX_SCENES` is per-chapter for now (no UX surface yet); the
+  canvas shows the whole series AND can zoom to a single chapter — two view states**
+  (`PictureBookSeriesChaptersPlan.md` §0, N4). Original question: `MAX_SCENES_DEFAULT = 10`. Is that
+  per chapter now? A 40-chapter novel at 10 each is ~400 scenes and several thousand graph nodes —
+  which also decides whether the workflow canvas scopes per chapter (§6.5 N4) or needs replacing.
 - **Q10 — existing works.** Do the standalone books already in the database become implicit
   one-chapter series (no data movement), or stay outside the series model entirely?
-- **Q11 — who decides chapter boundaries in the single-manuscript case?** (Follow-on from Q8.)
-  Manual designation in the Ux, auto-detection of chapter headings, or auto-detect with manual
-  override? `VectorUtil.chunkByChapter`'s `startsWith("Chapter ")` is the only existing detector and
+- **Q11 — who decides chapter boundaries in the single-manuscript case? ANSWERED 2026-09-20:
+  auto-detect headings + manual override in the Ux** (`PictureBookSeriesChaptersPlan.md` §0, N3).
+  (Follow-on from Q8.) Original question: manual designation in the Ux, auto-detection of chapter
+  headings, or auto-detect with manual override? `VectorUtil.chunkByChapter`'s `startsWith("Chapter ")` is the only existing detector and
   is not sufficient (§6.5). Auto-detect-with-override is the obvious shape, but detection quality on
   a real manuscript is the deciding factor — which the designated test manuscript will settle.
 

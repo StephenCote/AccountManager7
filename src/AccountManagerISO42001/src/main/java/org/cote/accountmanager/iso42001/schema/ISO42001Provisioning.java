@@ -25,14 +25,26 @@ import org.cote.accountmanager.schema.type.RoleEnumType;
  * org admin user — so nothing ISO-specific leaks into Objects7. A generic provisioning callback on
  * {@code initialize} would be the alternative if other subsystems wanted the same seam.</p>
  *
- * <p><b>Role-to-role entitlement (the PBAC unwind).</b> The {@code iso42001.certificationRequest} model
- * inherits {@code access.accessRequest}, whose {@code approvalStatus} field is gated at the FIELD level to
- * the system roles {@code Approvers}/{@code RequestUpdaters}. Rather than granting those system roles to
- * each certifier <em>user</em> (test-only scaffolding), this util makes the ISO <em>roles</em>
- * {@code ISO42001Certifiers}/{@code ISO42001Administrators} members of those system roles — so any user in
- * an ISO role inherits the approval capability via the actor→role→role→entitlement unwind. A non-certifier
- * is still denied at the {@code certificationRequest} model-update boundary (Certifiers/Administrators
- * only), so the negative-RBAC checks remain genuine.</p>
+ * <p><b>Approval entitlement.</b> The {@code iso42001.certificationRequest} model inherits
+ * {@code access.accessRequest}, whose {@code approvalStatus} field is gated at the FIELD level to the system
+ * roles {@code Approvers}/{@code RequestUpdaters} (a dynamic schema rule added by
+ * {@code PolicyUtil.getSchemaRules} whenever an update record carries a non-empty {@code approvalStatus}).
+ * This util wires the ISO <em>roles</em> {@code ISO42001Certifiers}/{@code ISO42001Administrators} into
+ * those system roles (role-to-role membership), <em>and</em> — because the policy evaluator does not unwind
+ * nested role membership — also enrols every current <em>user</em> member of those ISO roles directly in
+ * {@code Approvers}/{@code RequestUpdaters} ({@link #syncApproverEntitlements}).</p>
+ *
+ * <p><b>Measured 2026-10-07 (am7isotestdb, policy trace on):</b> {@code PolicyEvaluator.evaluateRoleAuthorization}
+ * calls {@code MemberUtil.isMember(actor, role, null, true)}, which checks the actor's DIRECT participation in
+ * the role and then walks the role's own {@code parentId} chain; it never follows role→role memberships. So
+ * with only the role-to-role grants a certifier's deny/approve was {@code AUDIT DENY ... MODIFY
+ * iso42001.certificationRequest} ({@code Is ...isocertifier in ...approvers = false}). The role-to-role
+ * grants are kept because they are the correct declarative data (the DB {@code effectiveRoles} views honour
+ * them) and the direct user sync becomes redundant the day the evaluator unwinds nested roles. Until then,
+ * {@link #ensureRoles} must be re-run (boot, setup completion) after users are added to the ISO roles for
+ * them to gain approval capability; {@link #ensureUserEntitlements} does it for one user on demand. A
+ * non-certifier is still denied at the {@code certificationRequest} model-update boundary
+ * (Certifiers/Administrators only), so the negative-RBAC checks remain genuine.</p>
  */
 public class ISO42001Provisioning {
 
@@ -82,6 +94,78 @@ public class ISO42001Provisioning {
 		// updater roles read access to users via the system AccountUsersReaders role.
 		grantRoleToRole(adminUser, accountUsersReaders, certifiers);
 		grantRoleToRole(adminUser, accountUsersReaders, admins);
+
+		syncApproverEntitlements(adminUser, orgId);
+	}
+
+	/**
+	 * Enrol every current user member of {@code ISO42001Certifiers}/{@code ISO42001Administrators} directly in
+	 * the system {@code Approvers} and {@code RequestUpdaters} roles (idempotent). See the class javadoc for
+	 * why the role-to-role grants alone are not honoured by the policy evaluator.
+	 *
+	 * @return the number of distinct users synchronised (0 when the roles are empty or unresolvable)
+	 */
+	public static int syncApproverEntitlements(BaseRecord adminUser, long orgId) {
+		int synced = 0;
+		for (String isoRole : Arrays.asList(ROLE_CERTIFIERS, ROLE_ADMINISTRATORS)) {
+			BaseRecord role = role(adminUser, isoRole, orgId);
+			if (role == null) {
+				continue;
+			}
+			List<BaseRecord> users;
+			try {
+				users = IOSystem.getActiveContext().getMemberUtil().getMembers(role, null, ModelNames.MODEL_USER);
+			} catch (Exception e) {
+				logger.error("Failed to list members of " + isoRole, e);
+				continue;
+			}
+			for (BaseRecord u : users) {
+				if (ensureUserEntitlements(adminUser, u, orgId)) {
+					synced++;
+				}
+			}
+		}
+		return synced;
+	}
+
+	/**
+	 * Enrol one user directly in the system {@code Approvers} and {@code RequestUpdaters} roles so the user can
+	 * transition {@code approvalStatus} on an {@code iso42001.certificationRequest}. Idempotent. Intended for a
+	 * user who is (or is being made) an {@code ISO42001Certifiers}/{@code ISO42001Administrators} member; it does
+	 * NOT grant the ISO role itself.
+	 *
+	 * @return true when both system roles resolved and the user is a member of each afterwards
+	 */
+	public static boolean ensureUserEntitlements(BaseRecord adminUser, BaseRecord user, long orgId) {
+		BaseRecord requestUpdaters = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUEST_UPDATERS, RoleEnumType.USER.toString(), orgId);
+		BaseRecord approvers = AccessSchema.getSystemRole(AccessSchema.ROLE_APPROVERS, RoleEnumType.USER.toString(), orgId);
+		if (user == null || requestUpdaters == null || approvers == null) {
+			logger.warn("Cannot wire approver entitlement; user or system role is null (user=" + user
+				+ ", approvers=" + approvers + ", requestUpdaters=" + requestUpdaters + ")");
+			return false;
+		}
+		boolean ok = grantMember(adminUser, approvers, user);
+		ok = grantMember(adminUser, requestUpdaters, user) && ok;
+		return ok;
+	}
+
+	/**
+	 * Is {@code user} a (direct, or via the role's own parent chain) member of the named ISO role in
+	 * {@code orgId}? Read-only: resolves the role with {@code findPath} and never creates anything. Used for
+	 * the application-level checks the design's role matrix requires on top of model PBAC where the PBAC
+	 * owner shortcut would otherwise widen the gate (e.g. a signing certifier owns the certification record
+	 * it signed, so model-level "update = Administrators" alone does not stop the certifier revoking it).
+	 */
+	public static boolean isInRole(BaseRecord user, String roleName, long orgId) {
+		if (user == null || roleName == null) {
+			return false;
+		}
+		BaseRecord role = IOSystem.getActiveContext().getPathUtil()
+			.findPath(null, ModelNames.MODEL_ROLE, "/" + roleName, RoleEnumType.USER.toString(), orgId);
+		if (role == null) {
+			return false;
+		}
+		return IOSystem.getActiveContext().getMemberUtil().isMember(user, role, null, true);
 	}
 
 	/** Create (idempotent) and return an ISO role at the org role root ({@code /Name}). */
@@ -104,12 +188,23 @@ public class ISO42001Provisioning {
 			logger.warn("Cannot wire role entitlement; a role is null (parent=" + parentRole + ", member=" + memberRole + ")");
 			return;
 		}
-		if (!IOSystem.getActiveContext().getMemberUtil().isMember(memberRole, parentRole, null)) {
-			boolean ok = IOSystem.getActiveContext().getMemberUtil().member(adminUser, parentRole, memberRole, null, true);
-			if (!ok) {
-				logger.warn("Failed to add role " + memberRole.get(FieldNames.FIELD_NAME)
-					+ " to role " + parentRole.get(FieldNames.FIELD_NAME));
-			}
+		grantMember(adminUser, parentRole, memberRole);
+	}
+
+	/**
+	 * Make {@code member} (a role or a user) a direct member of {@code role}, idempotently.
+	 *
+	 * @return true when {@code member} is a member of {@code role} afterwards
+	 */
+	private static boolean grantMember(BaseRecord adminUser, BaseRecord role, BaseRecord member) {
+		if (IOSystem.getActiveContext().getMemberUtil().isMember(member, role, null)) {
+			return true;
 		}
+		boolean ok = IOSystem.getActiveContext().getMemberUtil().member(adminUser, role, member, null, true);
+		if (!ok) {
+			logger.warn("Failed to add " + member.getSchema() + " " + member.get(FieldNames.FIELD_NAME)
+				+ " to role " + role.get(FieldNames.FIELD_NAME));
+		}
+		return ok;
 	}
 }

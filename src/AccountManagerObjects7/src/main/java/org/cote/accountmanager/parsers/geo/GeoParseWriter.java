@@ -22,7 +22,6 @@ public class GeoParseWriter implements IParseWriter {
 	
 	@Override
 	public int getBatchSize() {
-		// TODO Auto-generated method stub
 		return batchSize;
 	}
 	

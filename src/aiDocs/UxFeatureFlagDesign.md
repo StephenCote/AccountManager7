@@ -479,6 +479,33 @@ authenticated users and needs the precedence fix before an appliance build behav
 
 ---
 
+## 4b. Completion status (verified 2026-10-07)
+
+Each row was re-verified against the code on 2026-10-07 by grep **and** by running the named tests
+on that date against the live Docker stack (`https://127.0.0.1:9443`, production build, for the
+browser-behaviour rows; the `:8899` Vite dev server for the manifest/admin-panel rows). All tests
+run as `ensureSharedTestUser()` / `ensureAdminRoleTestUser()` — never `admin`. Pass lines quoted
+are from those runs. Vitest aggregate for the five feature suites: `Test Files 5 passed (5) / Tests
+95 passed (95)`.
+
+| Item | Status | Implementation | Verified by |
+|---|---|---|---|
+| D1 — org-scoped config, Objects7 resolver, pure-transport service | DONE | `AccountManagerObjects7/.../util/FeatureConfigUtil.java` (`ConcurrentHashMap<Long,Entry>` keyed by `organizationId`, `/Library/Configuration/.featureConfig` `data.data`, `getEnabledFeatures`/`setEnabledFeatures`/`invalidate`, core force-included on read); `AccountManagerService7/.../FeatureConfigService.java` (`@Path("/config")`, GET `/features` user, PUT `/features` admin, GET `/features/available`) | `e2e/featureFlagsLive.spec.js` "D1: an admin-role user PUT is visible to a different user over REST", "D1: a plain user cannot PUT the feature config", "D1: the reduced set is what the plain user's browser session actually renders" — `9 passed (13.9s)`; Objects7 `TestFeatureConfigUtil` |
+| D2 — one manifest | DONE | `AccountManagerObjects7/src/main/resources/features/uxFeatureManifest.json` served verbatim; byte-identical mirror `AccountManagerUx752/src/features.manifest.json`; `features.js` keeps wiring only and merges server data (`getManifestErrors()` hard error, not silent skip); `features/featureConfig.js` renders `profiles` imported from `features.js` | `e2e/featureManifestContract.spec.js` (4 tests, links 1–3) + `e2e/featureConfig.spec.js` "the manifest error banner is absent" — `10 passed (22.6s)`; `src/test/featureFlags.test.js` "D2 — one manifest" (9 tests) |
+| D3 — apply without reload, redirect when stranded | DONE | `features.js` `applyFeatures(list, {currentRoute, redirect, refresh, redraw})` → `initFeatures` + `loadFeatureRoutes` + redirect to `/main` when `disabledFeatureForPath(current)`; `featureConfig.js:77` awaits it on save; no "reload the page" copy | `e2e/featureFlagsLive.spec.js` "D3: disabling a feature applies without a page reload — menu AND route"; `src/test/featureFlags.test.js` "D3 — applyFeatures applies without a reload" (5 tests) |
+| D4 — one visibility predicate + `devMode` | DONE | `features.js` `isMenuItemVisible(mi, {roles, devMode})` (adminOnly / devOnly / roles); used by `components/topMenu.js:78` and `components/asideMenu.js:89`; `core/pageClient.js:869` `devMode` from `import.meta.env.DEV`; ISO aside items tagged `roles:['iso42001Any']` | `src/test/featureFlags.test.js` "D4 — isMenuItemVisible" (8 tests, incl. "testHarness is hidden when devMode is false" and "both menus use the shared predicate") |
+| D5 — feature-tagged categories at all three consumers | DONE | `core/modelDef.js` categories `olio`→`feature:"cardGame"`, `ai`→`feature:"chat"` (hand-curated, see the HAND-CURATED notes at `modelDef.js:109-117`); `features.js` `visibleCategories(categories)`; applied in `components/panel.js:93,290` and `components/asideMenu.js:86`. The third consumer named in the D5 table, `core/model.js:29` (`getPrototype`), deliberately does **not** filter: it only walks the untagged `identity`/`asset` categories, and importing `features.js` there would create an import cycle (asserted by `featureFlags.test.js` "is applied at exactly the three category consumers"). Eager `olio.js`/`gameStream.js` weight accepted as core — option (b) — recorded in `AccountManagerUx752/CLAUDE.md:53` | `e2e/featureFlagsLive.spec.js` "D5: the minimal profile removes Olio and AI from the dashboard and the sidebar", "D5: the full profile brings Olio and AI back"; `src/test/featureFlags.test.js` "D5 — visibleCategories" (6 tests); `src/test/panel.test.js` "minimal profile drops the olio and ai cards and keeps the four core ones" |
+| §3.6 — disabled deep link says so | DONE | `features.js` `featureForPath`/`disabledFeatureForPath` over declared `routePrefixes`; `core/featureRoute.js` is the variadic catch-all route rendering "This feature is not enabled." (plus `components/panel.js:299` for a feature-filtered category) | `e2e/featureFlagsLive.spec.js` "§3.6: a deep link into a disabled feature says so instead of silently bouncing", "§3.6: an enabled route still resolves normally"; `src/test/disabledFeatureRoute.test.js` (7 tests, real Mithril router); `src/test/featureFlags.test.js` "§3.6 — routePrefixes are self-verifying" / "featureForPath" |
+| §3.7 — override precedence incl. failure branch | DONE | `core/featureProfile.js` `resolveFeatureProfile({devMode, search, user, getFeatureConfig, buildProfile})`: `?features=` (dev only) → server → `__FEATURE_PROFILE__` → `'standard'`, with the explicit failure branch (`configFailed` ⇒ fail-open `full` + visible toast at `router.js:317-321`); `vite.config.js:24` defines `__FEATURE_PROFILE__` from `VITE_FEATURE_PROFILE` | `e2e/featureFlagsLive.spec.js` "§3.7: in a production build ?features= is ignored and the server config wins" (production build at `:9443`); `src/test/featureFlags.test.js` "§3.7 — profile precedence" (incl. the failure branch) |
+| §3.8 — build-time chunk exclusion | NOT DONE | `vite.config.js` has only the `__FEATURE_PROFILE__` define and three vendor `manualChunks`; nothing stubs the `import()` factories, so `vite build` still emits every feature chunk | No test. The design itself scopes this to "only if a slim artifact is actually required" — whether one is required is Stephen's call; nothing here is broken in the absence of it |
+
+Two test-maintenance notes from the 2026-10-07 verification: `e2e/featureManifestContract.spec.js`
+and `e2e/featureConfig.spec.js` had hard-coded the review-era count of `13` features and were failing
+against a **correct** 16-feature deployment; both now derive the expected count from the Objects7
+resource / live endpoint (with a `>= 13` floor), so the drift guard no longer has its own drift.
+
+---
+
 ## 5. Feature flags are not an authorization boundary
 
 Everything above is packaging and UX. The security boundary remains PBAC plus `@RolesAllowed`, which

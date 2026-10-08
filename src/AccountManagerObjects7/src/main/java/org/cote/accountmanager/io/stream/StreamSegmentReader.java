@@ -20,43 +20,47 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.StreamEnumType;
 import org.cote.accountmanager.util.StreamUtil;
 
+/// The specialized reader declared by data.streamSegment's "io" block. A segment is addressed by
+/// streamId + startPosition + length and read straight out of the stream's backing file, so the only
+/// meaningful entry point is read(BaseRecord) (reached via RecordReader.readAlternate). The IReader
+/// methods that assume a record store with identities and foreign fields are explicit "not supported"
+/// or documented no-ops - never a silent null.
 public class StreamSegmentReader implements IReader {
 	public static final Logger logger = LogManager.getLogger(StreamSegmentReader.class);
-	
+
 	StreamSegmentUtil ssUtil = null;
-	
+
 	public StreamSegmentReader() {
 		ssUtil = new StreamSegmentUtil();
 	}
-	
+
+	/// Nothing is buffered between reads.
 	@Override
 	public void flush() {
-		// TODO Auto-generated method stub
-		
+
 	}
 
+	/// Segments are file-backed; this is not the record-level FILE IO (FileReader), but it is the honest answer.
 	@Override
 	public RecordIO getRecordIo() {
-		// TODO Auto-generated method stub
-		return null;
+		return RecordIO.FILE;
 	}
 
+	/// data.streamSegment has no foreign fields, so there is nothing to populate at any depth.
 	@Override
 	public void populate(BaseRecord rec) {
-		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
 	public void populate(BaseRecord rec, int foreignDepth) {
-		// TODO Auto-generated method stub
-		
+
 	}
 
+	/// No channel outlives a single read call, so there is nothing to close.
 	@Override
 	public void close() throws ReaderException {
-		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
@@ -132,58 +136,58 @@ public class StreamSegmentReader implements IReader {
 
     }
 
+	/// Inspect is read-without-side-effects: a segment carries no providers to run, so the record is returned
+	/// as handed in (the same contract MemoryReader.inspect honours), never null.
 	@Override
 	public BaseRecord inspect(BaseRecord rec) throws ReaderException {
-		// TODO Auto-generated method stub
-		return null;
+		if(rec == null) {
+			throw new ReaderException("Null segment");
+		}
+		return rec;
 	}
 
+	/// Segments have no objectId, urn or id; they are addressed by streamId + startPosition + length through
+	/// read(BaseRecord) or a data.streamSegment Query (StreamSegmentSearch).
 	@Override
 	public BaseRecord read(String model, String objectId) throws ReaderException {
-		// TODO Auto-generated method stub
-		return null;
+		throw new ReaderException("Segments are not addressable by objectId; query by streamId, startPosition and length");
 	}
 
 	@Override
 	public BaseRecord readByUrn(String model, String urn) throws ReaderException {
-		// TODO Auto-generated method stub
-		return null;
+		throw new ReaderException("Segments are not addressable by urn; query by streamId, startPosition and length");
 	}
 
 	@Override
 	public BaseRecord read(String model, long id) throws ReaderException {
-		// TODO Auto-generated method stub
-		return null;
+		throw new ReaderException("Segments are not addressable by id; query by streamId, startPosition and length");
 	}
 
+	/// data.streamSegment declares no providers, so there is nothing to translate.
 	@Override
 	public void translate(RecordOperation operation, BaseRecord rec) {
-		// TODO Auto-generated method stub
-		
+
 	}
 
+	/// data.streamSegment has no foreign fields, so every populate variant is a no-op.
 	@Override
 	public void populate(BaseRecord rec, String[] requestFields) {
-		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
 	public void populate(BaseRecord rec, String[] requestFields, int foreignDepth) {
-		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
 	public void repopulate(BaseRecord rec, int foreignDepth) {
-		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
 	public void conditionalPopulate(BaseRecord rec, String[] requestFields) {
-		// TODO Auto-generated method stub
-		
+
 	}
 
 }

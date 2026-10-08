@@ -28,9 +28,14 @@ import org.cote.accountmanager.schema.type.ApprovalResponseEnumType;
  * the result back onto {@code resultingCertification}.</p>
  *
  * <p><b>RBAC (model {@code access.roles}):</b> create=Reporters; read=Readers/Certifiers;
- * update=Certifiers/Administrators; and (redeclared on this model) {@code approvalStatus} update is gated
- * to Certifiers/Administrators. So only a certifier/administrator can append to the thread, approve, or
- * deny — a non-certifier (reporter/tester) is denied at the model-update boundary.</p>
+ * update=Certifiers/Administrators. The {@code approvalStatus} field is NOT redeclared on this model (a
+ * child model redeclaring an inherited field would produce duplicate schema fields — {@code RecordFactory}
+ * appends inherited fields without de-duplication); it keeps the inherited {@code access.accessRequest}
+ * field rule, update = system {@code Approvers}/{@code RequestUpdaters}, which is only evaluated when the
+ * update record carries {@code approvalStatus} (approve/deny, not append). Certifiers/Administrators
+ * satisfy it because {@code ISO42001Provisioning} enrols them in those system roles. So only a
+ * certifier/administrator can append to the thread, approve, or deny — a non-certifier (reporter/tester)
+ * is denied at the model-update boundary.</p>
  */
 public class ISO42001CertificationRequestFactory {
 
@@ -115,11 +120,43 @@ public class ISO42001CertificationRequestFactory {
 	 * {@code approvalStatus=APPROVE}, then fire {@link ISO42001CertificationFactory#createCertification}
 	 * (the certifier signs the report hash) and link the resulting certification onto the request.
 	 *
+	 * <p>The status transition is deliberately made <em>first</em>: it is the PBAC gate (inherited
+	 * {@code approvalStatus} field rule → system Approvers/RequestUpdaters), so an unentitled caller is
+	 * refused before anything is signed. The price is that a signing failure would otherwise strand the
+	 * request at APPROVE with no certification — so if {@code createCertification} returns null
+	 * <em>or throws</em>, the request is reverted to REQUEST with an audit message and the failure is
+	 * surfaced (null return, or the original throwable). Measured live 2026-10-07 in the Docker image: a
+	 * BouncyCastle {@code bcprov 1.76 / bcpkix 1.80} skew made the certifier's first keystore generation
+	 * throw {@code NoSuchFieldError} — an {@code Error}, past every {@code catch (Exception)} — and the
+	 * request was left APPROVED with nothing signed.</p>
+	 *
 	 * @param certifier the ISO42001Certifiers-role approver
 	 * @return the created certification, or {@code null} if approval/update was denied or signing failed
+	 *         (in which case the request is back at REQUEST)
 	 */
 	public BaseRecord approveRequest(BaseRecord certifier, BaseRecord request, String note) {
+		return approveRequest(certifier, request, note, null, 0, null);
+	}
+
+	/**
+	 * {@link #approveRequest(BaseRecord, BaseRecord, String)} with explicit certification terms (design
+	 * §9A.8 Approve &amp; Sign dialog: title, validity period, notes). The terms are passed straight to
+	 * {@link ISO42001CertificationFactory#createCertification(BaseRecord, BaseRecord, BaseRecord, String, int, String)};
+	 * an invalid {@code validityMonths} is rejected <em>before</em> the request is transitioned, so a bad
+	 * period never touches the request at all.
+	 *
+	 * @param certifierTitle stamped as {@code certification.certifierTitle} (null → default)
+	 * @param validityMonths {@code 0} → default; else {@code 1..MAX_VALIDITY_MONTHS}
+	 * @param notes          stamped as {@code certification.notes} (null → unset)
+	 */
+	public BaseRecord approveRequest(BaseRecord certifier, BaseRecord request, String note,
+			String certifierTitle, int validityMonths, String notes) {
 		AccessPoint ap = IOSystem.getActiveContext().getAccessPoint();
+		if (!ISO42001CertificationFactory.isValidValidityMonths(validityMonths)) {
+			logger.error("approveRequest: validityMonths " + validityMonths + " is outside 1.."
+				+ ISO42001CertificationFactory.MAX_VALIDITY_MONTHS + "; request left untouched");
+			return null;
+		}
 		long orgId = lng(request, FieldNames.FIELD_ORGANIZATION_ID);
 		String oid = request.get(FieldNames.FIELD_OBJECT_ID);
 
@@ -135,8 +172,9 @@ public class ISO42001CertificationRequestFactory {
 			return null;
 		}
 
+		List<BaseRecord> msgs;
 		try {
-			List<BaseRecord> msgs = full.get(FieldNames.FIELD_MESSAGES);
+			msgs = full.get(FieldNames.FIELD_MESSAGES);
 			if (msgs == null) {
 				msgs = new ArrayList<>();
 			}
@@ -152,10 +190,23 @@ public class ISO42001CertificationRequestFactory {
 			return null;
 		}
 
-		/// Fire signing as the certifier.
-		BaseRecord certification = new ISO42001CertificationFactory().createCertification(certifier, report, certifier);
+		/// Fire signing as the certifier. From here on the request is APPROVED, so any failure must put it
+		/// back to REQUEST (see class/method javadoc). LinkageError is caught alongside RuntimeException on
+		/// purpose: a crypto-provider class/field mismatch is exactly the failure that reaches this point as
+		/// an Error, and the request state must not depend on which kind of throwable the JVM chose.
+		BaseRecord certification;
+		try {
+			certification = certificationFactory()
+				.createCertification(certifier, report, certifier, certifierTitle, validityMonths, notes);
+		} catch (RuntimeException | LinkageError e) {
+			logger.error("approveRequest: signing threw " + e.getClass().getSimpleName() + "; reverting request to REQUEST", e);
+			revertToRequest(certifier, full, msgs, orgId,
+				"Signing failed (" + e.getClass().getSimpleName() + "); request returned to REQUEST");
+			throw e;
+		}
 		if (certification == null) {
-			logger.error("approveRequest: createCertification failed");
+			logger.error("approveRequest: createCertification failed; reverting request to REQUEST");
+			revertToRequest(certifier, full, msgs, orgId, "Signing failed; request returned to REQUEST");
 			return null;
 		}
 
@@ -196,6 +247,39 @@ public class ISO42001CertificationRequestFactory {
 
 	// ------------------------------------------------------------------
 
+	/**
+	 * Signing collaborator. Protected so a test can subclass this factory and hand back a
+	 * {@link ISO42001CertificationFactory} whose {@code createCertification} fails (null or throws) to
+	 * exercise the APPROVE→REQUEST revert without touching the real keystore/crypto path. Production
+	 * callers never override it.
+	 */
+	protected ISO42001CertificationFactory certificationFactory() {
+		return new ISO42001CertificationFactory();
+	}
+
+	/**
+	 * Compensating update after a failed signing: append {@code reason} to the thread and set
+	 * {@code approvalStatus=REQUEST} so the request is re-approvable. Uses the same minimal-update shape (and
+	 * therefore the same PBAC path) as the APPROVE transition that just succeeded for this certifier. A failure
+	 * here is logged at ERROR with the request id — it is the one case that leaves the request APPROVED with
+	 * no certification, and it needs an administrator.
+	 */
+	private void revertToRequest(BaseRecord certifier, BaseRecord full, List<BaseRecord> msgs, long orgId, String reason) {
+		AccessPoint ap = IOSystem.getActiveContext().getAccessPoint();
+		try {
+			List<BaseRecord> thread = (msgs != null) ? msgs : new ArrayList<>();
+			thread.add(message(certifier, reason, orgId));
+			BaseRecord reverted = ap.update(certifier, minimalUpdate(full, thread, ApprovalResponseEnumType.REQUEST, null));
+			if (reverted == null) {
+				logger.error("approveRequest: could NOT revert request " + full.get(FieldNames.FIELD_OBJECT_ID)
+					+ " to REQUEST after a signing failure; it is APPROVED without a certification");
+			}
+		} catch (Exception e) {
+			logger.error("approveRequest: revert of request " + full.get(FieldNames.FIELD_OBJECT_ID)
+				+ " to REQUEST threw; it is APPROVED without a certification", e);
+		}
+	}
+
 	private BaseRecord readRequest(BaseRecord user, String oid, long orgId) {
 		Query q = QueryUtil.createQuery(ISO42001ModelNames.MODEL_CERTIFICATION_REQUEST, FieldNames.FIELD_OBJECT_ID, oid);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
@@ -212,10 +296,31 @@ public class ISO42001CertificationRequestFactory {
 	 */
 	private BaseRecord minimalUpdate(BaseRecord full, List<BaseRecord> msgs, ApprovalResponseEnumType status,
 			BaseRecord resultingCertification) throws Exception {
-		BaseRecord upd = RecordFactory.model(ISO42001ModelNames.MODEL_CERTIFICATION_REQUEST).newInstance();
+		/// Materialize ONLY the fields we set. The bare RecordFactory.model(..).newInstance() overload
+		/// materializes every model field at its default, and the DB writer persists every field present on
+		/// the record, so the "minimal" update silently blanked report, requestedCertifier, justification,
+		/// ownerId and approvalStatus on every appendMessage/deny/approve (found live 2026-10-07: approve
+		/// after an appended message failed with "request has no report reference").
+		Object gid = full.get(FieldNames.FIELD_GROUP_ID);
+		List<String> fieldNames = new ArrayList<>(List.of(
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_NAME
+		));
+		if (gid != null) {
+			fieldNames.add(FieldNames.FIELD_GROUP_ID);
+		}
+		if (msgs != null) {
+			fieldNames.add(FieldNames.FIELD_MESSAGES);
+		}
+		if (status != null) {
+			fieldNames.add(FieldNames.FIELD_APPROVAL_STATUS);
+		}
+		if (resultingCertification != null) {
+			fieldNames.add("resultingCertification");
+		}
+		BaseRecord upd = RecordFactory.newInstance(ISO42001ModelNames.MODEL_CERTIFICATION_REQUEST,
+			fieldNames.toArray(new String[0]));
 		upd.set(FieldNames.FIELD_ID, full.get(FieldNames.FIELD_ID));
 		upd.set(FieldNames.FIELD_OBJECT_ID, full.get(FieldNames.FIELD_OBJECT_ID));
-		Object gid = full.get(FieldNames.FIELD_GROUP_ID);
 		if (gid != null) {
 			upd.set(FieldNames.FIELD_GROUP_ID, gid);
 		}

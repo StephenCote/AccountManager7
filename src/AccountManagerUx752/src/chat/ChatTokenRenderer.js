@@ -3,8 +3,9 @@
  * Handles image tokens (${image.*}), audio tokens (${audio.text "..."}),
  * MCP context blocks, and display pruning.
  *
- * Image/audio resolution requires am7imageTokens/am7audioTokens libraries
- * (not yet ported). Current implementation renders placeholder UI elements.
+ * Image/audio resolution uses the ported am7imageTokens / am7audioTokens modules (imported below and
+ * also registered on window for the older window.* checks). The placeholder branches only run when
+ * those globals are absent, e.g. in a non-browser test environment.
  */
 import m from 'mithril';
 import { LLMConnector } from './LLMConnector.js';
@@ -46,6 +47,25 @@ function escapeHtmlAttr(str) {
 }
 
 const ChatTokenRenderer = {
+
+    /**
+     * Parse image tokens from content string (Ux7 ChatTokenRenderer.js:25 — part of the OI-20 token
+     * API, dropped in the first ESM port; the LLM test harness "Tokens" category exercises it).
+     * Returns the am7imageTokens descriptors ({key, id, tags, start, end, ...}) or [].
+     */
+    parseImageTokens: function(content) {
+        if (!content || typeof content !== "string") return [];
+        return am7imageTokens.parse(content) || [];
+    },
+
+    /**
+     * Parse audio tokens from content string (Ux7 ChatTokenRenderer.js:36). Returns the
+     * am7audioTokens descriptors ({text, start, end, ...}) or [].
+     */
+    parseAudioTokens: function(content) {
+        if (!content || typeof content !== "string") return [];
+        return am7audioTokens.parse(content) || [];
+    },
 
     /**
      * Process image tokens in content string.

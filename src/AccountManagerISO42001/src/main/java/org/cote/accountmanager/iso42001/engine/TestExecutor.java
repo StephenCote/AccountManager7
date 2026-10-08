@@ -20,7 +20,10 @@ import org.cote.accountmanager.record.BaseRecord;
  * request/response <b>verbatim</b> into a raw log (design §2.3 {@code rawLogRef}).
  *
  * <p>A run targets one endpoint (the {@code olio.llm.chatConfig} handed in). Running a "mix
- * of models" is multiple runs/configs — cross-model aggregation is Phase 5, not built here.</p>
+ * of models" is multiple runs/configs; cross-model aggregation happens at report time —
+ * {@code ReportGenerator.aggregate} accepts any number of runs, tags every result row with its run's
+ * {@code modelEndpoint}, and persists the distinct set as {@code iso42001.report.modelsEvaluated}
+ * (surfaced in the summary section). This class never aggregates.</p>
  *
  * <p>Isolation: each Tier-1 trial builds a fresh {@link OpenAIRequest}; each Tier-2 trial
  * builds a fresh request and walks its turns, with no carry-over between trials. The

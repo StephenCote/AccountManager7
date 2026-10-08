@@ -96,14 +96,12 @@ public class Sleep extends CommonAction implements IAction {
 	@Override
 	public List<BaseRecord> definePolicyFactParameters(OlioContext context, BaseRecord actionResult, BaseRecord actor,
 			BaseRecord interactor) throws OlioException {
-		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public boolean counterAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor)
 			throws OlioException {
-		// TODO Auto-generated method stub
 		return false;
 	}
 

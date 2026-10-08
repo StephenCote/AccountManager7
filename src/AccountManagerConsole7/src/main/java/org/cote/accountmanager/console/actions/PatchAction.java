@@ -19,13 +19,11 @@ public class PatchAction extends CommonAction implements IAction {
 
 	@Override
 	public void handleCommand(CommandLine cmd) {
-		// TODO Auto-generated method stub
 		
 	}
 
 	@Override
 	public void handleCommand(CommandLine cmd, BaseRecord user) {
-		// TODO Auto-generated method stub
 		if(cmd.hasOption("list")) {
 			if(cmd.hasOption(OlioFieldNames.FIELD_COLOR)) {
 				OlioContext octx = OlioContextUtil.getGridContext(user, getProperties().getProperty("test.datagen.path"), "My Grid Universe", "My Grid World", cmd.hasOption("reset"));

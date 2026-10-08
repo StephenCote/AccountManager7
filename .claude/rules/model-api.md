@@ -64,20 +64,31 @@ instinctPlan.planForCommonFields(true);
 Default GET returns minimal fields (`id, objectId, name, urn, organizationId, ownerId`); everything
 else is opt-in via `request` or `/full`.
 
-### `planMost(true)` can exceed PostgreSQL's 100-argument function limit
+### Nested plans are capped at 49 fields (PostgreSQL's 100-argument function limit)
 
-Recursive `planMost(true)` on a model whose nested foreign `MODEL` fields are themselves wide
-generates a `JSON_BUILD_OBJECT` sub-query per model field (`StatementUtil
-.getParticipationSelectTemplate`, `modelMode=true`). Recursion expands the nested model's own
-foreign fields transitively, and past 100 arguments PostgreSQL throws
-`PSQLException: cannot pass more than 100 arguments to a function`. `DBSearch` catches it and
-returns null, so the only surface is `AUDIT INVALID … No results` — it reads exactly like an
-authorization denial or an empty table.
+Every nested foreign `MODEL` field in a plan is materialized as one
+`JSON_BUILD_OBJECT('field', column, …, 'schema', model)` call (`StatementUtil.getInnerSelectTemplate`),
+so a nested model costs `2 × fields + 2` function arguments and PostgreSQL refuses more than 100
+(`PSQLException: cannot pass more than 100 arguments to a function`). `DBSearch` catches it and returns
+null, so the only surface is `AUDIT INVALID … No results` — it reads exactly like an authorization
+denial or an empty table. Until 2026-10-07 this made `GET /rest/model/{type}/{objectId}/full`
+(`ModelService.getFullModelByObjectId` → `planMost(true)`) 404 for any record whose nested model was
+wide: `olio.llm.chatConfig` (77 materialized fields) and `olio.sd.config` (87) break every parent that
+references them — `olio.llm.chatRequest`, `olio.pb.book`, `olio.pb.run`.
 
-Measured on `olio.pb.book` → `olio.world`. So **do not use `GET /rest/model/{type}/{objectId}/full`
-(`ModelService.getFullModelByObjectId`, which calls `planMost(true)`) for `olio.pb.book`, or any
-model whose nested foreign models are field-heavy.** Use `POST /rest/model/search` with an explicit
-`request` projection instead; the `findBookBySlug` path does this and works.
+**Now:** `QueryPlan.planForFields` applies a budget to every nested MOST plan. If the plan's
+materialized field count (`QueryPlan.countMaterializedFields`, which mirrors the StatementUtil filter)
+exceeds `QueryPlan.MAX_NESTED_PLAN_FIELDS` (49), that nested model is reduced to its *common* fields
+(`RecordUtil.getCommonFields` — the union of the inheritance chain's `query` arrays) and an INFO line
+`Reducing <path> to common fields: N nested fields exceed the limit of 49` is logged. Top-level plans
+are never reduced (top-level fields are SELECT columns, not function arguments), so `/full` directly on
+a chatConfig or sdConfig still returns everything. Consequence for consumers: `/full` on a parent gives
+you the wide child's identity + common fields only; fetch the child itself by id for the rest.
+Regression test: `TestQueryPlanNestedLimit` (fails with the PSQLException when the reduction is disabled).
+
+An explicit `request` projection (`POST /rest/model/search`, or `planMost(true, filter)` à la
+`OlioUtil.FULL_PLAN_FILTER`) is still the right tool when you need specific non-common fields of a
+wide nested model, as the `findBookBySlug` path does.
 
 ## Serialization: `toFullString()` vs `toString()`
 
@@ -182,20 +193,27 @@ accessPoint.update(user, patch);
 present fields are updated; omitted fields unchanged; foreign fields patch by ID reference; returns
 `true` on success.
 
-**…plus every field the model's validation requires — "identity + changed fields" alone is not enough.**
-The writer validates **the patch record itself**, not the merged result. So a model carrying a validated
-non-identity field rejects a patch that omits it, even though the stored record satisfies the rule. Most
-commonly this is `name`: anything inheriting `common.nameId` has a `\S` rule on it, so a patch without
-`name` fails with `Validation of <model>.name (null) failed pattern \S` → `WriterException: Record failed
-validation in IO DATABASE` → `AUDIT INVALID … Failed to modify record`.
+**…and every validated field the patch *carries* must carry a valid value.** The writer validates
+**the patch record itself**, not the merged result, but `RecordValidator` only inspects fields **present on
+the record** (`RecordValidator.java:55`, `for(FieldType f : record.getFields())`). Measured 2026-10-07 on
+Service7/H2 (`TestModelServicePatch`): a `data.note` patch of `id + objectId + text` with **no `name` field
+at all** validates, is written, and leaves the stored name intact. The trap is the field-name
+`newInstance(model, String[]{…, "name", …})` idiom: it **materialises** `name` as a present-but-null field,
+so forgetting to `set` it (or setting it from `AccessPoint.create`'s return, which carries **identity
+fields only**, so `created.get("name")` is null) ships a null `name` that fails `common.name`'s `\S` rule:
+`Validation of <model>.name (null) failed pattern \S` → `WriterException: Record failed validation in IO
+DATABASE` → `AUDIT INVALID … Failed to modify record`. A blank `"name":""` on the wire fails the same way
+(`TestModelServicePatch.TestValidationFailureIs422AndUnchanged`, now a 422 from `PATCH /rest/model`).
 
 This failure is quiet and easy to ship. It surfaces only in the log — the update call returns a value most
-callers discard, so the code path reports success while nothing was written. Two habits avoid it:
-- Include the model's validated fields (start with `name`) in every patch, taking the value from what you
-  already know rather than from a freshly-created record — `AccessPoint.create` returns **identity fields
-  only**, so `created.get("name")` is null.
+callers discard, so the code path reports success while nothing was written. Three habits avoid it:
+- Only materialise the fields you are actually setting; if a validated field (start with `name`) is in the
+  `newInstance` field list, set it from a value you already know, never from a create return.
 - **Never discard the update result.** `getAccessPoint().update(...)` returning false/null is the only
   signal you get; swallowing it converts a persistent failure into a silent no-op.
+- In tests, do not build a blank-field body with `JSONUtil.exportObject(map)`: the mapper is configured
+  `Include.NON_EMPTY` (`JSONUtil.java:159`) and silently drops `""`/empty values, so the "invalid" body
+  you think you sent arrives as a valid one.
 
 ### PATCH does not cascade — it writes only the model you called it on
 

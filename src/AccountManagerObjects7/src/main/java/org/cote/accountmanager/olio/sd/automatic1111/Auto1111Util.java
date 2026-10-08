@@ -13,9 +13,9 @@ public class Auto1111Util {
 	private static String refiner = "juggernautXL_juggXIByRundiffusion";
 	private static String scheduler = "Karras";
 	private static String sampler = "DPM++ SDE";
-	public static Auto1111Txt2Img newTxt2Img(BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType, String verb, int steps) {
+	public static Auto1111Txt2Img newTxt2Img(BaseRecord person, BaseRecord sdConfig, String setting, String bodyType, String verb, int steps) {
 		Auto1111Txt2Img s2i = new Auto1111Txt2Img();
-		s2i.setPrompt(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, sdConfig, setting, pictureType, bodyType, verb));
+		s2i.setPrompt(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, sdConfig, setting, bodyType, verb));
 		s2i.setNegative_prompt(NarrativeUtil.getSDNegativePrompt(person));
 		s2i.setSeed(Math.abs(rand.nextInt()));
 		s2i.setSteps(steps);

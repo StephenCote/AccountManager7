@@ -6,7 +6,7 @@ Running list of known issues and out-of-scope refactors surfaced during developm
 
 ## Ux752 — Cross-view consistency (2026-07-09, Stephen)
 
-### KI-13. Many Ux752 views are inconsistent — comprehensive refactor needed — OPEN
+### KI-13. Many Ux752 views are inconsistent — comprehensive refactor needed — OPEN (discovery inventory added 2026-10-07; refactor awaits Stephen's decisions, see list below)
 Stephen's assessment: a significant number of views across Ux752 have drifted inconsistent with each
 other — patterns, conventions, and behaviors that should be uniform across the object/list/form views
 have diverged view-by-view (see the KI-2/KI-3/KI-7/KI-9 series above for concrete examples of this class
@@ -20,6 +20,84 @@ implemented differently in different views, then converge on one shared implemen
 (likely consolidating into `views/list.js`/`components/pagination.js`/`components/picker.js` helpers that
 every view calls, rather than each view re-implementing its own variant). Scope and sequencing TBD —
 this is a backlog placeholder, not a plan.
+
+**Discovery pass done 2026-10-07 (ux-specialist; grep-based inventory of `src/views/*.js` +
+`src/components/*.js`, line numbers as of that date). One small item fixed; the rest need Stephen's call
+on the target shape before anything is converged.**
+
+1. *Query execution — three styles, one concern.* Callback `am7client.search(q, cb)`: `list.js:558`,
+   `object.js:178`, `object.js:1160`, `notifications.js:20`, `pagination.js:260`. Promise `page.search(q)`:
+   `list.js:286`, `object.js:681`, `objectViewRenderers.js:105/141/221`, `olio.js:167/195`,
+   `sdConfig.js:150/183/215`, `tableListEditor.js:140`, `tree.js:353`. Raw `am7client.list(...)`:
+   `tree.js:276`. Only `pagination.js:83-90` applies the KI-9 freshness pattern (local `clearCache(type,true)`
+   **and** `q.entity.cache=false`); none of the other 16 hand-built queries sets `cache` at all, so each reads
+   whatever the server's `/rest/model/search` cache holds for that key. DECISION: one `page.search(q, {fresh})`
+   helper that owns the cache flag, and whether the callback form is retired.
+2. *Cache invalidation — `am7client.clearCache(type, bLocalOnly, fH)` is called in four shapes.*
+   `(type,false)` server+local: `object.js:280/294/311/519/576`, `membership.js:401/436`,
+   `formFieldRenderers.js:750/764`. `(type,true)` local only: `object.js:744/745/822/823`,
+   `tree.js:87/104/121/126/141`, `pagination.js:89`, `pageClient.js:719`. `(type)` (2nd arg undefined →
+   a server round trip): `olio.js:123/163/274-276/294/388-390`, `sdConfig.js:249`, `object.js:364`,
+   `formFieldRenderers.js:1004`. Full wipe `(0,false)`/`(0,1)`: `sig.js:106`, `asideMenu.js:160`,
+   `topMenu.js:112`. A local-only clear followed by a query without `cache:false` is the KI-9 bug shape;
+   `tree.js` Add Child/Delete/Refresh do exactly that before `am7client.list(...)` (not verified whether
+   `/rest/list` is server-cached — check before "fixing"). DECISION: the one semantic a shared
+   `invalidate(type)` should have (local + `cache:false` on the next read, vs. always the server GET).
+3. *Container/path resolution.* FIXED (small): `page.findObject`/`page.makePath` callers spell the
+   sub-type as `"DATA"` (`list.js:699/709/772`, `picker.js:37-255`, `tree.js:349`, `sdConfig.js:141/205`),
+   `"data"` (`dnd.js:200`, `panel.js:38/74/270`, `picker.js:255`, `pageClient.js:649/702`,
+   `formDef.js:3785/3817`) or `"UNKNOWN"` (`pageClient.js:665`). `PathService.doMakeFind` upper-cases
+   server-side, but `am7client.makeFind` keyed its cache on the raw string (`FIND-data` ≠ `FIND-DATA`), so
+   the same path was fetched and cached once per spelling. `am7client.makeFind` now normalizes the sub-type
+   (`core/am7client.js`); `src/test/findPathSubtypeCase.test.js` (4 tests; all 4 fail with the normalization
+   line removed, pass with it). Still open: default paths are hard-coded per feature — `~/Gallery`
+   (`designer.js:81`, `pageClient.js:918`, `formDef.js:3817`), `~/Voices` (`formFieldRenderers.js:734`),
+   `~/Data/.preferences` (`sdConfig.js:140/204`), `~/.messages` (`panel.js:270`), `~/Characters`
+   (`formDef.js:3785`), `/Olio/Universes` (`list.js:699`, `tree.js:349`) — while `am7view.getPathForType`
+   (`view.js:267`, model `group` → `~/<group>`) has no caller outside `view.js`; and `page.user.homeDirectory`
+   is dereferenced directly at 9 sites (`explorer.js:82`, `navigator.js:105`, `asideMenu.js:27`,
+   `breadcrumb.js:66`, `panel.js:36-74/241`, `tree.js:190/381`, `pageClient.js:678/710`). DECISION:
+   whether the per-feature paths become model `group` metadata resolved through `getPathForType`.
+4. *List-vs-icon toggling.* One implementation (`list.js` `gridMode` 0/1/2, 15 sites; `decorator.js`
+   reads `ctl.gridMode` at 6). The page size is re-derived by hand at `list.js:837/885/1359` as
+   `gridMode === 1 ? defaultIconRecordCount : defaultRecordCount`, so large-grid mode (2) scrolls
+   infinitely at the table page size (10). Not changed — DECISION: intended, or should 2 use the icon count.
+5. *Embedded/picker-mode gating.* `list.js` keeps three independent booleans (`pickerMode`,
+   `embeddedMode`, `containerMode`, set at `:1402-1407`, mutated at `:1525/:1554`) and branches on a
+   per-site subset of them at 27 places (`:200-:1573` — e.g. `:393` next/prev uses `embedded||picker`,
+   `:550` navigation uses `embedded||picker||container`, `:1165` the group-contained check uses yet another
+   combination); `pagination.setEmbeddedMode(embedded||picker)` mirrors one of the subsets. Per-instance
+   state is already isolated (`newListControl()` factory; `picker.js` owns its own instance), so this is a
+   readability/consistency problem, not a leak. DECISION: collapse to one `mode` enum before touching the
+   27 sites.
+6. *Picker type resolution (enum → model).* Three parallel derivations that all end in
+   `am7view.typeToModel`: `object.js:425-451` (`useEntity[pickerType.slice(1)]` / sibling DOM field),
+   `membership.js:86-100/199` (`ctx.inst.api[field.foreignType]()` / `ctx.entity[typeAttribute]`),
+   `tableListEditor.js:170-171/530` (`ctx.entity[ctx.field.foreignType]`). Converging on one
+   `resolvePickerType(field, entity, inst)` is mechanical but touches the KI-1/KI-2 paths — do it with the
+   existing `e2e/groupMembers.spec.js`/`roleMembers.spec.js` as the gate.
+
+Related closeouts from the same audit (items 7-8 of the 2026-10-07 list), all comment- or port-level, no
+new KI numbers taken:
+- `views/object.js` `makeFact`/`startGameWithCharacter` stubs → real workflows (`src/workflows/makeFact.js`,
+  `src/workflows/startGameWithCharacter.js`; `e2e/makeFact.spec.js`, `e2e/startGameWithCharacter.spec.js`,
+  `src/test/makeFactStartGame.test.js`).
+- `core/pageClient.js` wssSend string recipient → Ux7 port (`src/test/wssSendRecipient.test.js`).
+- `cardGame/designer/exportPipeline.js` card-back rendering implemented (`src/test/exportPipelineBack.test.js`),
+  but the whole export stays disabled in Ux752 because `html2canvas`/`JSZip` are not shipped (Ux7 loaded them
+  from `node_modules` via `index.html`); adding the two deps is Stephen's call.
+- `test-harness/llmTestSuite.js` now imports `am7sd`/`am7imageTokens`/`am7audioTokens`; the Ux752 port of
+  `chat/ChatTokenRenderer.js` had dropped Ux7's `parseImageTokens`/`parseAudioTokens` — restored
+  (`e2e/llmTestSuiteTokenModules.spec.js`). Still failing in that harness and NOT fixed (out of scope):
+  102b "pruneForDisplay citations removed" — Ux752's `pruneForDisplay` lacks Ux7's
+  `pruneOut("--- CITATION", "END CITATIONS ---")` step.
+- `features/chapBook.js` `fetchSets()`: comment corrected (GET `/olio/chap-book/sets` + POST `/olio/chap-book/set`
+  exist; set membership would go through `am7client.member('olio.cb.set', id, 'poems', 'olio.cb.poem', poemId,
+  bool)`); no set-picker UI exists and nothing calls `fetchSets()` — product call.
+- `core/view.js` type-driven-picker note and `core/formDef.js` header / `promptRaceConfig.raceType` notes
+  rewritten to describe current behaviour (the dead `forms.races` stub, whose `form:` resolved to `undefined`,
+  removed). Observed, not changed: the race picker omits `V` (Vampire) and `O` (Custom) that
+  `PromptUtil.buildRaceReplacements` matches.
 
 ### KI-16. Range-slider handling is inconsistent (≥5 divergent implementations) and can show durably-wrong values on `olio.charPerson` statistics/personality — OPEN (2026-07-10, Stephen)
 
@@ -165,10 +243,40 @@ own routing).
   and `e2e/rangeSliderConverge.spec.js` (2 live Playwright tests — charPerson and apparel Reimage
   dialogs — dragging updates value+spinner live, min/max enforced by the real range input).
 
+**Edit + reload verification added (2026-10-07):** the one check the entry still lacked — that the value
+a slider SHOWS after a full reload is the value the backend STORED — is `e2e/rangeSliderPersist.spec.js`
+(live, `ensureSharedTestUser()`): creates an `olio.charPerson` with `statistics.physicalStrength=7`,
+opens Statistics in `/view/olio.charPerson/<id>`, asserts slider+spinner show 7, sets 13 via the real
+range input, saves, reads `olio.statistics` back over REST with `cache:false` (= 13), hard-reloads and
+asserts slider+spinner show 13. Result: `1 passed`. Re-audit of `type:"range"` in `src/` (2026-10-07):
+all `am7model`/SD-config sliders go through `formFieldRenderers.renderRange`/`renderers.range`; the
+remaining inline ranges are the deliberate exceptions already listed (`pdfViewer.js` onchange,
+`magic8/SessionConfigEditor.js`, `cardGame/designer/*`) plus **two newer compact toolbar sliders not
+in the original catalogue** — ChapBook page "Bg opacity" at `features/chapBook.js:3466` (per-scene)
+and `:3739` (book style), 0-100 step 5 with a `%` readout. Left as-is (toolbar-width controls in a
+lane another agent was active in); they are plain-value sliders with no model/decorator involvement, so
+they cannot exhibit the KI-16 display-vs-storage drift, but they are not on the canonical widget.
+Finding B (server `health`/`save` absent) is still a backend item.
+
 ## Ux752 — Role & Group membership
 
-### KI-1. `auth.group` needs a member picker + list for PERSON / ACCOUNT / USER (2026-06-24, Stephen)
-The group object view does not provide a member picker + list for its participant types (`identity.person`, `identity.account`, `system.user`). `auth.role` has a single `members` field driven by the role's `type` enum (`foreignType: "type"`, resolved `USER`→`system.user`, etc.); `auth.group` has no equivalent single discriminator — a group can hold members of all three types simultaneously — so the same single-field pattern does not map cleanly.
+### KI-1. `auth.group` needs a member picker + list for PERSON / ACCOUNT / USER — FIXED 2026-10-07 (2026-06-24, Stephen)
+
+**Fix (2026-10-07, client only, mirrors the KI-2/KI-3 role pattern):** the group object view now has a
+"Members" tab (`forms.groupmembers`, added to `forms.group.forms` in `core/formDef.js`) with one member
+table per participant type — **Users / Accounts / Persons** — each backed by a new virtual list field on
+`auth.group` (`userMembers` / `accountMembers` / `personMembers`, `baseModel` = `system.user` /
+`identity.account` / `identity.person`, `function:'objectMembers'`). Chosen over a type-selector because a
+group holds all three at once (⚠ judgment call, noted in the report). `components/membership.js
+objectMembers()` resolves the participant model from the field's `baseModel` when the field has no
+`typeAttribute`/`foreignType` (role fields keep the enum path). Add/remove go through the existing
+generic member-list editor (`views/object.js renderMemberListField` → `am7client.member()` with a null
+participation field, as KI-3 established). Verified by `src/test/groupMembers.test.js` (Vitest, 6) and
+live by `e2e/groupMembers.spec.js` as the shared user: Members tab → three tables → add a person via the
+picker → it lists ("1 item") and `GET /rest/authorization/auth.group/{id}/identity.person/0/100` returns
+it → Delete → "0 items" and the server no longer lists it. Result: `1 passed`.
+
+Original entry: the group object view does not provide a member picker + list for its participant types (`identity.person`, `identity.account`, `system.user`). `auth.role` has a single `members` field driven by the role's `type` enum (`foreignType: "type"`, resolved `USER`→`system.user`, etc.); `auth.group` has no equivalent single discriminator — a group can hold members of all three types simultaneously — so the same single-field pattern does not map cleanly.
 
 **Broader refactor needed (OUT OF SCOPE for the current ISO work):** the `auth.group` "type" handling needs to be reworked so the UI can present per-type member lists/pickers (e.g. three lists, or a type-selector that drives the picker/participant model). This touches the `$flex` + `foreignType` resolution in `membership.js`/`tableListEditor.js`, the group form definition in `formDef.js`, and likely the participation/type model for groups. Until that refactor lands, group membership management from the object view is not available.
 
@@ -211,7 +319,35 @@ Observed during UAT after KI-2: a member can be **added** via the picker, and ex
 - The members table (`tableListEditor.resolveTableValue`) reads `foreignData[name]` first; `objectMembers` populates it via `am7client.members(...)`. If that returns the (stale-empty) cached list, the table is empty even though the membership exists.
 **Diagnose with the new accessor (KI-5):** in the role view, run `__am7page.objectContext()` and inspect `.foreignData` / `.entity.members` — if it holds the members, it's a render/binding bug; if empty, it's the load/cache path. Likely fix: clear the members cache on add/remove (`membership.pickMember`/`deleteMember` → `am7client.clearCache(...)` for the role) and/or bypass cache for the members load.
 
-### KI-4. "View system roles" gating — verify RoleReader (likely already correct)
+### KI-4. "View system roles" gating — verify RoleReader — VERIFIED CORRECT 2026-10-07 (e2e)
+**Verified (2026-10-07):** `e2e/roleReaderGate.spec.js` builds the RoleReaders-only state the KI-7 note
+said was blocked: a persistent non-admin user `e2etest_rolereader` (`ensureSharedTestUser(request,
+{name})`) is added to `RoleReaders` by the admin provisioning helper, `GET /rest/cache/clearAll` is
+called, and the UI then runs as that user: `am7dbg.roles()` reports `roleReader:true, accountAdmin:false,
+admin:false`; `/list/auth.role` shows the `admin_panel_settings` toggle; clicking it lists the system
+roles (`AccountAdministrators`, `AccountUsers` visible); `/list/auth.permission` shows no toggle for a
+non-PermissionReader. The negative case runs as a second spec-private non-admin user `e2etest_plainuser`
+(AccountUsers only, `roleReader:false`) and asserts the toggle is absent. No code change was needed — the
+gate in `views/list.js getAdminButtons` is correct. Result: `2 passed (8.5s)`.
+
+**Correction, same day (the first write-up of this entry was wrong about the cache):** the KI-7 "profile
+doesn't reflect a just-added membership" behaviour is NOT the participation/search cache and
+`/rest/cache/clearAll` does NOT fix it. The negative case first ran as the shared e2e user and failed with
+`roleReader:true` after a `removeUserFromRole` that the server audited as a real change
+(`AUDIT PERMIT ... MODIFY auth.role RoleReaders`); the DB (`a7_auth_role_system_participation_0_1`) showed
+no RoleReaders row for the user, and the server log showed no `ApplicationUtil - Application profile for
+... e2etest_shared` line for any of the requests. Cause: Service7 `PrincipalService.profiles`
+(`PrincipalService.java:59`) is a static per-URN `Map` of the whole application profile; it is filled on
+the first `GET /rest/principal/application` after a Tomcat start and read from thereafter.
+`PrincipalService.clearCache()` (`:61`) exists but has **no callers** — `CacheService.clearCaches()` does
+not call it, nor does the `/rest/authorization/.../member/...` endpoint. So any role grant or removal made
+after a user's first profile fetch is invisible to the UI (`userRoles`, hence every `page.context().roles`
+gate) until Tomcat restarts. Other lanes' scripts (`e2e/_core_ws_tmp.mjs`) grant the shared user
+`RoleReaders`/`AccountUsersReaders`, which is how the stale `true` was pinned. Backend (Service7) — **fixed
+same day as KI-77** (`clearCaches()` now drops the profile map; the member route and access-request
+auto-provision evict the affected user). The spec uses a user nobody else touches so its precondition is
+real; it still asserts the live `am7dbg.roles()` rather than assuming it.
+
 Reported as gated on Admin; should be `RoleReaders`. `views/list.js` `getAdminButtons` (added 2026-05-11) already allows the system-list toggle for `rs.roleReader` on `auth.role` (and `permissionReader` on `auth.permission`). The ISO context roles were also added to `setContextRoles`. If viewing is still blocked for a RoleReader-only user, the gate is elsewhere (navigation/menu) — needs a RoleReader-only user in the harness to confirm.
 
 ---
@@ -1118,7 +1254,24 @@ Found while live-verifying the "Open Full Editor"/apparel new-tab links (below) 
 
 ## Service7 — Credential Service (2026-07-09, discovered during PageIndex REST verification)
 
-### KI-14. `CredentialService.newPrimaryCredential` hardcodes the password to the literal "password" — OPEN
+### KI-14. `CredentialService.newPrimaryCredential` hardcodes the password to the literal "password" — FIXED 2026-10-07
+**Fix (2026-10-07):** `newPrimaryCredential` now builds the credential with
+`CredentialUtil.newCredential(targetObject, authReq)` (Objects7), which hashes
+`auth.authenticationRequest.credential` from the request body — the `"password"` literal is gone. The
+body must deserialize as `auth.authenticationRequest`, carry a non-empty `credential`, and (if
+`credentialType` is given) be `hashed_password` — anything else is refused with an `AUDIT INVALID`
+and `false`, because `CredentialFactory` would otherwise persist an UNKNOWN-type row that can
+authenticate nobody. Also found and fixed in the same method: the non-admin "replace" branch read
+`checkCredential` from the **stored** `auth.credential` record (no such field there, so it logged a
+stack trace and NPE'd → `false`); it now reads `checkCredential` from the request, requires it, and
+verifies it against the current credential before replacing. Regression test:
+`AccountManagerService7` `TestCredentialService` (3 tests; non-admin user; asserts the requested
+password authenticates via the same `Factory.verify` call `AM7LoginModule.login` makes, that the
+literal `"password"` and the superseded password do not, and that replace without / with a wrong
+current credential is refused and leaves the old credential in force). Note the e2e helpers in
+`e2e/helpers/api.js` always requested `'password'`, so they were unaffected either way.
+
+Original report:
 `POST /rest/credential/{type}/{objectId}` (`CredentialService.java:82`) never reads the password actually
 sent in the request body. `authReq.get(FieldNames.FIELD_CREDENTIAL)` is parsed but discarded — the
 parameter list passed to the credential factory is hardcoded: `plist.parameter("password", "password")`.
@@ -1135,7 +1288,16 @@ actual submitted credential, e.g. `plist.parameter("password", new String((byte[
 that creates a credential with a specific password and asserts login succeeds with THAT password and fails
 with `"password"` (to catch a regression back to the hardcoded literal).
 
-### KI-15. Same method, `cred.set(FieldNames.FIELD_PRIMARY_KEY, false)` sets a field that doesn't exist on `auth.credential` — OPEN
+### KI-15. Same method, `cred.set(FieldNames.FIELD_PRIMARY_KEY, false)` sets a field that doesn't exist on `auth.credential` — FIXED 2026-10-07
+**Fix:** Stephen had already swapped the literal to `cred.set("primary", false)` on 2026-08-31
+(commit `0e043170`); on 2026-10-07 `FieldNames.FIELD_PRIMARY = "primary"` was added (Objects7
+`schema/FieldNames.java`) and the service uses it. The *other* nonexistent-field read in the same
+method (`cred.get(FIELD_CHECK_CREDENTIAL)` on the stored credential) is covered under KI-14 above.
+Verified by `TestCredentialService#TestNonAdminReplaceRequiresAndHonorsCurrentPassword`: the replace
+branch completes, no `ErrorUtil.printStackTrace()` output appears in the run, and the latest credential
+is the replacement row.
+
+Original report:
 `CredentialService.java:108` (the "replace active credential" branch, hit when a credential already exists
 and the caller is a model administrator) calls `cred.set(FieldNames.FIELD_PRIMARY_KEY, false)`.
 `FieldNames.FIELD_PRIMARY_KEY` = `"primaryKey"`, but `auth.credential`'s actual field
@@ -1179,6 +1341,21 @@ Surfaced during PageIndex work: a hosted (Azure OpenAI) chat connection was need
 - **Scope:** chat/LLM credentials. Embeddings currently use the **LOCAL** service (no key), so no embedding key is at risk today; if a hosted embedding is adopted later, route its credential through a connection the same way (embeddings currently read type/server/token from properties, not a connection — small refactor).
 - **Belt-and-suspenders:** add a pre-commit / CI guard rejecting a non-empty `test.*.authorizationToken` in any tracked `resource.properties`, so the plaintext path can't regress.
 - **Interim (today):** keys live only in the uncommitted working tree; never `git add -A`; commit `resource.properties` only with blank tokens.
+
+**Status 2026-10-07 — plaintext path closed for Objects7 (env / ignored-file resolver); encrypted-DB end state still open.**
+`SecretTestGate` (Objects7 `src/test/java/.../objects/tests/SecretTestGate.java`), called from `BaseTest.setup()`
+before `LlmTestGate.resolve`, fills `test.llm.openai.authorizationToken`, `test.embedding.authorizationToken`,
+`test.voice.authorizationToken` and `test.db.password` **under the same key names** (architecture.md
+"Test-config resolvers write back into the existing key") from, in order: `-D<key>`, env `AM7_<KEY>` (key
+upper-cased, `.`→`_`; `EMBEDDING_AUTH_TOKEN` also serves the embedding key so one variable covers the Docker
+stack too), then a gitignored `resource.local.properties` next to `resource.properties` (`-Dtest.secrets.file=`
+or `~/.am7/test-secrets.properties` as alternates). The tracked file stays blank; consumers are unchanged;
+values are never logged (one `[SECRET-GATE] key <- source` line). The belt-and-suspenders guard is
+`TestSecretTestGate.TestTrackedPropertiesCarryNoToken`, which fails when any token key in the test-classpath
+`resource.properties` is non-blank. Agent7 / ISO42001 / Console7 keep their own `resource.properties` copies
+and do **not** go through `BaseTest`, so they are not covered — wire the same gate (or extend their base
+tests) when those modules next need a hosted key. Stephen's encrypted `system.connection.apiKey` end state
+remains the target; this resolver is the interim that makes it unnecessary to ever put a key in a tracked file.
 
 ---
 
@@ -3055,7 +3232,21 @@ $//'`s the copied scripts and configs so the image builds correctly from a check
 with any `core.autocrlf` setting. **Verified:** stack rebuilt and came up on `:9443`, first-run setup
 completed, REST calls served.
 
-### KI-64. Chat scene generator's SD form mishandles sliders — defaults don't display correctly, and generation then fails with an imaging error — OPEN (2026-08-12, Stephen)
+### KI-64. Chat scene generator's SD form mishandles sliders — defaults don't display correctly, and generation then fails with an imaging error — RESOLVED 2026-10-07 (2026-08-12, Stephen)
+
+**Resolution (2026-10-07, verified by tests, not by reading):** the two pointers below were both real
+and both are fixed in committed code. (1) `SdConfigPanel.rangeInput` no longer displays `min` for an
+unset field — it displays the shared `RANGE_DEFAULTS` (`steps` 20, `refinerSteps` 20, `cfg` 7,
+`refinerCfg` 7, `denoisingStrength` 0.75) through `rangeValue()`, and the live-value label reads the
+same function, so label, slider and spinner can no longer disagree (`components/SdConfigPanel.js:149-178`).
+(2) `cfg`/`refinerCfg`/`steps`/`refinerSteps` sliders are integer-stepped within the model bounds
+(1-20 / 1-100), so a drag can no longer produce a value the model rejects. Verified by
+`src/test/sdConfigPanelDefaults.test.js` (3), `src/test/sdConfigSliderBounds.test.js`,
+`src/test/rangeSliderConverge.test.js`, and `src/test/sdConfigPanelLandscapeToggle.test.js`
+("KI-64 every range label shows the same number the slider and spinner carry": explicit config, empty
+config, and inst-driven config — 3 tests), plus the live chat round trip in
+`e2e/sdConfigLandscapePersist.spec.js` (steps edited to 13 through the panel's own `oninput`, persisted,
+reloaded = 13). Vitest line: `Tests 17 passed (17)` (with sceneGeneratorPersist); Playwright `1 passed`.
 
 Stephen's report: on the **chat** scene generator's SD config form, the sliders are not being used
 correctly — default values don't show correctly — **and the consequence is an imaging error**, i.e.
@@ -3086,7 +3277,23 @@ class), KI-51 (an int/double type trap on `cfg` that killed image requests befor
 KI-55 (a default that pointed at an uninstalled checkpoint, so every default composite was refused).
 KI-65 below is the other half of Stephen's report.
 
-### KI-65. Chat's SD config does not persist — it should, the same way reimage/reimageApparel do — OPEN (2026-08-12, Stephen)
+### KI-65. Chat's SD config does not persist — it should, the same way reimage/reimageApparel do — RESOLVED 2026-10-07 (2026-08-12, Stephen)
+
+**Resolution (2026-10-07):** chat persists server-side as `olio.sd.config` records via
+`am7sd.saveConfig/loadConfig` — per-chat `sdcfg-chat-<chatConfig objectId>` plus the optional
+chat-global `sharedChatSD.json` (`chat/SceneGenerator.js:25-33,103-158`); the `am7.sdConfig`
+localStorage key is gone. **One further defect was found and fixed on 2026-10-07 by the live test:**
+`overlaySaved` only copied a stored key when it was already `in` the template object, but
+`GET /olio/randomImageConfig` serializes only the fields the server explicitly set (measured: no
+`steps`/`cfg`/`refinerSteps`/`width`/`height`), so every saved numeric tweak was dropped on reload —
+"persisted" but never restored. Membership is now checked against the client `olio.sd.config` model
+(`isSdConfigField`, `chat/SceneGenerator.js`). Verified by `src/test/sceneGeneratorPersist.test.js`
+(8 tests, incl. "overlays saved MODEL fields the partial server template does not carry") and live by
+`e2e/sdConfigLandscapePersist.spec.js` as the shared user: toggle + steps=13 → `persistConfig()` → REST
+read of `sdcfg-chat-<key>` with `cache:false` shows `steps 13 / skipLandscape true /
+flux2IncludeLandscapeRef false` → module reset → `ensureSdConfig()` reloads those values while keeping
+the template's node-valid model (`juggernautXL_ragnarokBy.safetensors`); `localStorage.am7.sdConfig`
+is null. Result line: `1 passed (4.9s)`.
 
 Stephen's report: the SD config doesn't persist for chat, and it should.
 
@@ -3109,7 +3316,24 @@ persistence the rest of the SD surfaces already do, keeping the deliberate model
 intact. Overlapping with KI-64 — a persisted config that round-trips through the model is also the path
 that would stop unset slider fields from being invented at render time.
 
-### KI-66. Include/exclude landscape in composite creation must be a config option in the Ux — FEATURE REQUEST (2026-08-12, Stephen)
+### KI-66. Include/exclude landscape in composite creation must be a config option in the Ux — RESOLVED 2026-10-07 (FEATURE REQUEST 2026-08-12, Stephen)
+
+**Resolution (2026-10-07):** `SdConfigPanel` renders a "Skip landscape" checkbox next to `hires`
+(`components/SdConfigPanel.js:394-410`) whose handler writes `skipLandscape = checked` and
+`flux2IncludeLandscapeRef = !checked`. **It was non-functional in the inst-driven panels (pictureBook,
+chapBook) until 2026-10-07:** exactly as the "what's missing" paragraph below predicted, the client
+`olio.sd.config` block in `core/modelDef.js` had no `skipLandscape`/`flux2*`/`kontext*`/`compositeMode`
+fields, so the `instConfig` proxy had no property for them and the write landed on a throwaway object
+(chat, config-driven, was unaffected). The 22 missing server fields were added to `modelDef.js` with
+the server's types/bounds and **no client default** on `flux2IncludeLandscapeRef`, `flux2Cfg`,
+`flux2Steps`, `flux2ReferenceSize`, `flux2Width`, `flux2Height` (so the `flux2Defaults.json` fallback
+stays live; the server treats null/0 as unset, `SWUtil.java:208-217`, `SceneCompositeUtil.java:159-163`).
+Verified by `src/test/sdConfigPanelLandscapeToggle.test.js` (model parity, inst-driven toggle writes
+both fields to `inst.entity` and `inst.changes`, config-driven toggle — 6 tests) and live by
+`e2e/sdConfigLandscapePersist.spec.js` (the toggle round-trips through the server as a real
+`olio.sd.config` record; see KI-65). Open follow-up, not done here: `forms.sdConfig` (`core/formDef.js`)
+still does not list the new fields, so the generic `/view/olio.sd.config` editor does not show them —
+only `SdConfigPanel` does.
 
 Stephen: the include/exclude-landscape choice (boolean/checkbox) for composite creation needs to be a
 **config option exposed from the Ux**, not something only settable in code/config files.
@@ -3911,18 +4135,226 @@ notes and `olio.pb.scene` rows; they need re-extraction or the per-scene regener
 text. No migration was written — the scene notes hold whatever the LLM said at the time and the original
 `blurb` is gone from them.
 
-### KI-74. PictureBook cancel stops the loop, not the in-flight LLM call — `abort-all` stays user-reachable until it does — OPEN (2026-10-01, Stephen)
-KI-10's cancel token is checked at chunk/scene boundaries, so a cancel takes effect only after the LLM
-call that is already running returns; the call itself keeps consuming the model. The LLM Debug
-"Abort all" (`POST /rest/chat/llm/abort-all`) does terminate the active streams, which is why it works
-where cancel does not.
+### KI-74. PictureBook cancel stops the loop, not the in-flight LLM call — `abort-all` stays user-reachable until it does — **cancel now aborts the call (2026-10-07)**; abort-all/`/llm/active` gating unchanged
+KI-10's cancel token was checked at chunk/scene boundaries, so a cancel took effect only after the LLM
+call that was already running returned; the call itself kept consuming the model. The LLM Debug
+"Abort all" (`POST /rest/chat/llm/abort-all`) does terminate the active streams, which is why it worked
+where cancel did not.
 
 **Decision (Stephen, 2026-10-01).** `abort-all` and `GET /rest/chat/llm/active` remain
 `@RolesAllowed({"admin","user"})` and the App Panel (`#!/app`) exposes them to every user, even though
 abort-all stops *all* users' streams server-wide and `/llm/active` lists everyone's request/session ids.
 Do not restrict them to admin while any cancel path (PictureBook first) leaves its background LLM call
 running. When cancel genuinely aborts the call, revisit whether abort-all should become admin-only.
+**The PictureBook cancel path now does abort the call (below); the gating revisit is Stephen's, and it
+is deliberately left as-is here.**
 
-**Fix direction.** Give the cancel token a handle on the live LLM request (the same `ChatUtil` stream
-registry abort-all drains) so `cancel()` aborts the in-flight call rather than waiting for the next loop
-check.
+**Fix (2026-10-07).** The cancel token now has a handle on the live LLM request via a thread-local
+*cancel scope* in `LLMConnectionManager` (`bindCancelScope` / `currentCancelScope` /
+`unbindCancelScope` / `releaseCancelScope` / `abortCancelScope` / `getCancelScopeStreamCount`;
+`registerStream` attaches each new stream to the thread's bound scope, `unregisterStream` detaches it).
+`PictureBookCancelRegistry.register` binds the `SummarizeProgress` token as the worker thread's scope and
+`unregister` unbinds and releases it, so every stream `Chat` registers from that thread — chunked
+extraction, scene description, naming — belongs to the token. `PictureBookCancelRegistry.cancel` still
+sets the flag and now also calls `abortCancelScope(token)`, which closes the response body and cancels
+the request future (the same two primitives `abort-all` drains) for exactly that token's streams and no
+one else's. `AsyncJobRegistry.runJob` binds/unbinds the same way around a job's work and
+`AsyncJobRegistry.cancel` aborts the scope, so the `?async=true` routes get the same behaviour.
+`PictureBookUtil.attemptChunk` skips its retry when the token is cancelled and `extractChunkedInternal`
+stops at an aborted call without recording it as a chunk failure, so the loop unwinds instead of
+retrying the chunk it just tore down.
+
+**Follow-up defect, same day.** The first cut of that `extractChunkedInternal` guard `continue`d to the
+loop top (which saves the checkpoint and clears `reachedEnd`) — correct for every chunk except the LAST,
+where the `for` condition ends the loop before the top is reached. The aborted final chunk was neither
+merged nor recorded, `reachedEnd` stayed true, the post-loop block cleared the checkpoint and the result
+said `extractionComplete: true` for a run the user had just stopped. Seen live in A4: a 2-chunk run
+cancelled during chunk 2 came back `cancelled` + `extractionComplete=true`, chunk 1's five scenes gone
+from the checkpoint. The same `continue` also discarded a chunk whose reply had *completed* before the
+cancel landed (`TestResumeKeepsFailuresForChunksItDoesNotRevisit` went red). Now the guard distinguishes
+the two: a complete reply (terminator seen, parsed, scenes present) is merged and checkpointed and the
+loop stops at the next top-of-loop check; an aborted/cut-off reply saves the checkpoint with
+`chunksProcessed` unchanged, clears `reachedEnd`, and `break`s in place.
+
+Evidence: `TestPbCancelAbortsLlm` (Objects7) — `TestCancelAbortsScopedStreamOnly` (fake futures: owner's
+cancel aborts the scoped stream, leaves an unscoped stream alone, another principal's cancel misses) and
+`TestCancelAbortsInFlightLlmCall` (live: a 30-paragraph generation started on a worker thread, cancelled
+from the main thread; `chat()` returned 5 ms after the cancel against
+`[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr`). `Tests run: 2, Failures: 0, Errors: 0`.
+`TestExtractChunkLoop` (Objects7, scripted model, real checkpoint writes) —
+`TestCancelDuringTheFinalChunkKeepsTheCheckpointAndDoesNotReportReachedEnd` (new) plus the pre-existing
+cancel/resume tests: `Tests run: 32, Failures: 0, Errors: 0`. REST: `pictureBookAsyncJob.spec.js` A4
+(`PB_ASYNC_TESTS=1`; cancel must reach a terminal job state within 60 s, keep the partial scenes, and
+report `extractionComplete=false`) — `1 passed`, `A4 cancel -> terminal after 3019ms`, server log
+`stopping with 5 scenes and the checkpoint at 1/2` → `checkpoint kept for resume` → `Async job CANCELLED`.
+
+### KI-75. `GET /rest/model/{type}/{oid}/full` 404s when a nested foreign model has more than 49 fields — PostgreSQL's 100-argument function limit — **FIXED 2026-10-07**
+`ModelService.getFullModelByObjectId` calls `planMost(true)`. `StatementUtil.getInnerSelectTemplate` renders
+each planned nested MODEL field as one `JSON_BUILD_OBJECT(name, col, name, col, …)`, two arguments per field,
+so a nested model with more than 49 column-backed fields produces a call PostgreSQL rejects with
+`cannot pass more than 100 arguments to a function`. `DBSearch` catches it and returns null, and the route
+answers 404 — indistinguishable from "no such record" or a PBAC denial. `olio.sd.config` (87 materialized
+fields) and `olio.llm.chatConfig` (77) are over the cap, so every parent that references them was
+affected: `olio.pb.book` (IssueLog Issue 10), `olio.llm.chatRequest`, `olio.pb.run` (and transitively
+`olio.pb.workflow`). Plain by-id GET and top-level `planMost(true)` on the wide model itself always worked.
+
+**Fix (Stephen's direction: filter the plan, not the route).** `QueryPlan.planForFields`, MOST branch,
+nested plans only: `QueryPlan.countMaterializedFields(schema, fields, parentModel)` applies the same
+column filter StatementUtil uses, and when the count exceeds `QueryPlan.MAX_NESTED_PLAN_FIELDS` (49) the
+nested plan is replaced by `RecordUtil.getCommonFields(model)` and an INFO line is logged:
+`Reducing <parent> -> <model>.<field> to common fields: N nested fields exceed the limit of 49`.
+Top-level plans are untouched. Consequence for consumers: a wide child inside a `/full` response carries
+identity + common fields only; project a specific field explicitly (`request:["sdConfig.steps"]`) or fetch
+the child by its own id. Nothing in the PB2 reader depended on a non-common field of `sdConfig`/`chatConfig`
+through `/full`; `olio.world` (45) stays under the cap.
+
+**Verified.** `TestQueryPlanNestedLimit` (Objects7; non-admin `queryPlanLimitUser`): plan shape test and a
+live `planMost(true)` find of a `chatRequest` → `chatConfig` pair; 2/2, and the find test fails with the
+exact `PSQLException` when the reduction is disabled. REST on the rebuilt Docker stack as the shared user
+(2026-10-07): `/full` → 200 for `olio.pb.book`, `olio.llm.chatRequest`, `olio.pb.run`; server log shows the
+`Reducing …` lines for `sdConfig`, `compositeSdConfig` and `chatConfig` and no 100-argument errors.
+Documented in `.claude/rules/model-api.md` § "Nested plans are capped at 49 fields".
+
+### KI-76. Same-named users in different organizations were served as whichever one Service7 cached first — `UserPrincipal` identity was name-only — **FIXED 2026-10-07** (found 2026-10-05)
+`ServiceUtil.getPrincipalUser` memoizes resolved users in a static `principalCache` keyed by `UserPrincipal`.
+`UserPrincipal.equals`/`hashCode` compared **`name` alone**, so `/Development/admin` and `/System/admin`
+(or any two same-named users) were one cache key: after the first logged in, a login in the second org
+authenticated correctly (`AM7LoginModule` logged the right org) but every REST call was then answered as the
+first org's user — wrong `organizationPath`, wrong `id`, wrong home/library groups. It looked like "the record
+does not exist in this org", and it is a cross-tenant identity defect, not a cache-freshness nuisance.
+
+**Fix.** `UserPrincipal.equals`/`hashCode` are now `(organizationPath, name)` — `organizationPath` is what
+every constructor site (`AM7LoginModule`, `AM7RequestWrapper`) populates; `id` is optional there so it is not
+part of the identity. No cache-key change was needed in `ServiceUtil`.
+
+**Verified.** JUnit `TestUserPrincipalIdentity` (Service7) 3/3. Live on the Docker stack 2026-10-07 as the
+non-admin `e2etest_shared`, provisioned in both `/Development` (id 19) and `/Public` (id 24): three sequential
+logins Development → Public → Development each returned their own `organizationPath` and `id` from
+`GET /rest/principal/`, with no `/rest/cache/clearAll` between them. Before the fix the second and third
+would both have reported the Development user.
+
+### KI-77. Service7 application-profile cache was never evicted — a role grant/revoke after a user's first profile fetch stayed invisible to the UI until Tomcat restarted — **FIXED 2026-10-07** (found 2026-10-07 under KI-4)
+`PrincipalService.getApplicationProfile` memoizes the whole `ApplicationUtil.getApplicationProfile` result
+(`systemRoles`, `systemPermissions`, `user`, `person`, `userRoles` = the user's direct role participations)
+in a static per-URN map, filled on the first `GET /rest/principal/application` and read from thereafter.
+`PrincipalService.clearCache()` existed but had no callers: `CacheService.clearCaches()` did not reach it,
+and neither membership write path evicted the affected user. Every `page.context().roles` gate in Ux752
+derives from `userRoles`, so a `RoleReaders` grant or revoke made after login showed up only after a
+restart — and `GET /rest/cache/clearAll`, the documented remedy, did nothing for it. The full diagnosis
+(DB showed no participation row while the UI still reported `roleReader:true`, and no `Application profile
+for …` log line for any request) is the "Correction, same day" paragraph under KI-4.
+
+**Fix (Service7 only — transport-layer cache, no Objects7 change).**
+- `PrincipalService.evictProfile(BaseRecord user)` removes the user's URN entry; `isProfileCached(user)` is
+  the test accessor.
+- `CacheService.clearCaches()` now calls `PrincipalService.clearCache()`, so `/rest/cache/clearAll` is a
+  real remedy for grants made outside this JVM.
+- `AuthorizationService.enableMember` (`/rest/authorization/{type}/{objectId}/member/…/{enable}`) evicts the
+  actor after a successful `member()` when the actor is a `system.user`.
+- `AccessRequestService` auto-provision evicts the subject after it grants the requested membership.
+`ScimGroupService` writes `auth.group` membership only, which is not part of the cached profile, so it is
+unchanged. Propagation bound: **in-process.** A grant written by another JVM (Console7, a direct Objects7
+client) is seen only after `/rest/cache/clearAll` or a restart.
+
+**Verified.**
+- Playwright `e2e/principalProfileEviction.spec.js` (live Docker stack, API-only, spec-private non-admin
+  `e2etest_profilecache`; admin used only by the `addUserToRole`/`removeUserFromRole` provisioning helpers):
+  prime the profile → grant `RoleReaders` → the next `GET /rest/principal/application` lists it with **no
+  clearAll** → revoke → gone. Run against the pre-fix container it failed with
+  `Received array: ["AccountUsers","Requesters","e2etest_profilecache"]` after the grant; after the hot
+  redeploy it is `1 passed`.
+- JUnit `TestPrincipalProfileCache` (Service7, `-DskipTests=false`) 3/3: membership change through
+  `AuthorizationService.enableMember` as a non-admin role owner evicts and the refetch reflects grant and
+  removal; `CacheService.clearCaches()` drops the map; eviction of one user leaves another's entry intact
+  and `evictProfile(null)` is a no-op.
+
+---
+
+## Found 2026-10-07 while verifying the outstanding-issues audit (all OPEN; recorded, not fixed)
+
+### KI-78. `GameStreamHandler` cancel of a *running* action is best-effort — the handler can finish and still chirp its result after the client was told `cancelled:true` — OPEN, NEEDS DECISION
+`cancelAction` (`GameStreamHandler.java:149-162`) does `inFlight.remove(key)` + `Future.cancel(true)` and
+replies `{"cancelled":true,"known":true}` whenever the Future was not already done. For a *queued* task that
+is exact (it never runs). For a *running* task `cancel(true)` only sets the worker's interrupt flag;
+`executeAction` (`:201-262`) and the `handle*` bodies never check `Thread.currentThread().isInterrupted()`,
+and the work they do (JDBC through `AccessPoint`, Olio state updates) is not interruptible, so the body
+runs to completion and its `chirp(...)` results reach the client after the cancel reply. The only
+interruption-aware spot is the wrapper's catch (`:108-111`), which fires only if some call happened to throw
+`InterruptedException`. `TestGameStreamCancel` (6/6 green 2026-10-07) pins the queued-cancel and registry
+semantics; it does not cover a running body.
+**Recommendation (not applied):** make `chirp`/`chirpError` drop output when
+`Thread.currentThread().isInterrupted()` *and* the action is no longer in `inFlight`, and have the long
+handlers (`resolve`, `advance`, `interact`) poll `isInterrupted()` between steps. Whether a cancelled action
+should also roll back any state it already wrote is the real question and is Stephen's call.
+
+### KI-79. Audit rows for wide-projection reads are silently dropped — `system.audit.description` is capped at 2048 but `AuditUtil.closeAudit` writes the full query key into it — OPEN
+`AuditUtil.closeAudit` (`AuditUtil.java:182`) sets `description = getAuditString(audit)`, which is the
+full query key including every projected field name. `system.audit` inherits `common.description2K`
+(`maxLength` 2048) and `message` is also 2048; only `query` is unbounded. A `/full` or `planMost` read of a
+wide model therefore produces an audit record whose `description` exceeds the limit, `RecordValidator`
+fails it on the queue writer thread (`Thread-2`), and the row is **never written** — after the hash and
+signature were already computed. Nothing in the request path sees the failure; the only trace is the
+validator ERROR in the server log. Observed 2026-10-07 while running `chatChainSceneReimageRoutes.spec.js`
+against Docker (`olio.charPerson` full-projection reads).
+**Recommendation (not applied):** truncate the `description` written by `getAuditString` to the field's
+`maxLength` (or to a fixed summary: actor/action/type/objectId) and keep the complete key in the
+unbounded `query` field, which already exists for that purpose. No Objects7 change was made because the
+audit record's shape is a schema decision.
+
+### KI-80. Portraits created by `POST /rest/olio/olio.charPerson/{id}/reimage` are owned by the olio principal in the world gallery, so the acting user cannot read them back by id, `/media`, or `/thumbnail` — OPEN, NEEDS DECISION
+`OlioService.reimageWithConfig` (`OlioService.java:174-272`) resolves the owning book context
+(`PbOlioContextUtil.resolveOwningBookContext`, `:259-262`) and generates into
+`/Olio/Universes/Books/Worlds/<world>/Gallery/Characters/<name>`; the resulting `data.data` is owned by
+`olioUser`. Measured 2026-10-07 on the Docker stack as `e2etest_shared` (the user who issued the reimage):
+`GET /rest/model/data.data/{objectId}` → 404 with `AUDIT DENY … One or more query fields were not or could
+not be authorized`; `/media/{org}/data.data{groupPath}/{name}` and `/thumbnail/…/{WxH}` deny the same way.
+The reimage response body (`oi.toFullString()` of `profile.portrait`, including `dataBytesStore`) is the
+acting user's **only** read path. This is exactly the failure mode the 2026-09-14 comment at
+`OlioService.java:247-258` describes for the book's Writer role, and the Ux `chat.js:609/708` thumbnail
+URLs would 404 for such a portrait. `PbOlioContextUtil.verifyReadGrants` currently scopes read grants to
+the book flow, not to ad-hoc reimages.
+**Decision needed:** grant the acting user (or the world's reader role) read on the gallery group as part
+of `reimage`, or move ad-hoc reimages into the acting user's own gallery. Not changed — it is an
+entitlement-model decision.
+
+### KI-81. `Auto1111Util.newTxt2Img` ignores the `olio.sd.config` it is handed except for the prompt — OPEN (legacy path)
+`Auto1111Util.java:16-38` hardcodes 512×512, Karras, sampler `DPM++ 2M`, cfg 8 and takes only the prompt
+text from the config, so every width/height/steps/cfg/sampler/model value on the record is dropped on the
+AUTOMATIC1111 dialect. The Swarm path (`SWUtil.newSceneTxt2Img`, and since 2026-10-07 `SWUtil.newTxt2Img`
+for character portraits) honors them. Recorded for the SD-config-consistency thread; the Automatic1111
+dialect has no live server on the LAN to verify against (Swarm is on .39/.42), so no change was made.
+
+### KI-82. `AuthorizationSchema` effective-entitlement materialized views can take hours and hundreds of GB of temp space to build on a populated database — OPEN
+`AuthorizationUtil.createAuthorizationSchema()` (`AuthorizationUtil.java:60-70`, called by
+`TestAuthorization` and Console7 `admin -db -patch`, `AdminAction.java:178`) runs the whole script from
+`getEffectiveRoleSchemas()` as one `Statement.executeUpdate` (`AuthorizationSchema.java:214-226`). The
+`effectiveGroup<actor>ObjectEntitlements` views
+(`resources/sql/postgre/effectiveGroupObjectEntitlementTemplate.sql`) are
+`SELECT DISTINCT … FROM effective<actor>ActorRoles ⋈ a7_auth_role ×2 ⋈ <actor table> ⋈ effectiveRoles
+(model='auth.group') ⋈ a7_auth_permission ⋈ groupedObjects`, where `groupedObjects` is a `UNION ALL` over
+**every** non-abstract `data.directory`-derived table — i.e. one row per (actor, effective role,
+permission, grouped object). On a database with Olio worlds (thousands of gallery/location records per
+group) this is a multiplicative blow-up and the `DISTINCT` spills to disk. Measured 2026-10-07 on `am7db`
+(`am7-devpg-emulator`): `CREATE MATERIALIZED VIEW effectiveGroupsystemuserObjectEntitlements` (pid 1978)
+still running after **3 h 32 min** with `pgsql_tmp` at **394 GB** and growing ~1.6 GB/min on the shared
+Docker volume (`/dev/sde`, 482 GB free at 19:09). Because the script is one implicit transaction, none of
+the views are visible to other sessions until it commits — `relation "effectivesystemuseractorroles" does
+not exist` from a second connection — so every role/entitlement check that reads them fails for the
+duration. The `REFRESH MATERIALIZED VIEW` path (`refreshMaterializedViews`, Console7 `AdminAction.java:192`)
+rebuilds the same joins and has the same cost. The build was left running at Stephen's discretion; it was
+not cancelled.
+**Direction (not applied):** the per-object view should not exist as a materialized product — either scope
+it per group (join `groupedObjects` lazily at query time, which is what the group-only PBAC shortcut already
+does) or restrict `groupedObjects` to models that actually carry per-object entitlements. Also worth a look
+while in there: the template aliases `R` (joined on `EI.effectiveRoleId`) as `baseRole*` and `R2` (joined
+on `EI.baseRoleId`) as `effectiveRole*`, which reads as swapped; not verified against consumers.
+**Outcome (2026-10-07 20:03):** the build ran 4 h 25 min (`TestAuthorization` reported 1/1 pass, 15907 s)
+and then the Docker Desktop WSL2 VM died: `pgsql_tmp` had reached 465 GB, Docker's `ext4.vhdx` grew to
+613 GB and **filled the Windows `C:` drive** (1.9 GB free). `df` inside a container reports the sparse
+virtual disk (1 TB, "410 GB free"), not the host drive, so the in-container number is useless as a
+headroom gauge — check `C:` and the vhdx size on the host. The engine restarted with the `am7test` and
+`am7-pg` container records gone (images and volumes survived); every DB-backed test queued after
+`TestAuthorization` failed with `Could not retrieve connection info from pool`, and whether the view
+build's commit reached disk is unknown until `am7db` is back. Triggered by running `TestAuthorization`
+against a populated `am7db`; do not run it (or `admin -db -patch`) on a database with Olio worlds until the
+view is restructured.

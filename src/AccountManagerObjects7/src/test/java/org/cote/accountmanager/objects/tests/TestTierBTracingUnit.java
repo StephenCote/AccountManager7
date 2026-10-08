@@ -368,4 +368,97 @@ public class TestTierBTracingUnit extends BaseTest {
 			/* body already consumed / closed */
 		}
 	}
+
+	// ──────────── Tier B4 completion (2026-10-07): structured `metadata` body object ────────────
+
+	/// Invokes the REAL Chat.buildTracingMetadata(req) (package-visible) reflectively - the same idiom
+	/// as callBuildTracingHeaders, so the dialect gate and the Guardrail 3 drop under test are
+	/// production's, not a copy.
+	@SuppressWarnings("unchecked")
+	private Map<String, String> callBuildTracingMetadata(LLMServiceEnumType dialect, OpenAIRequest req) throws Exception {
+		Chat chat = new Chat();
+		chat.setServiceType(dialect);
+		Method m = Chat.class.getDeclaredMethod("buildTracingMetadata", OpenAIRequest.class);
+		m.setAccessible(true);
+		return (Map<String, String>) m.invoke(chat, req);
+	}
+
+	/// Invokes the REAL ChatUtil.injectTracingMetadata(ser, map) (package-visible static).
+	private static String callInjectTracingMetadata(String ser, Map<String, String> meta) throws Exception {
+		Method m = ChatUtil.class.getDeclaredMethod("injectTracingMetadata", String.class, Map.class);
+		m.setAccessible(true);
+		return (String) m.invoke(null, ser, meta);
+	}
+
+	/// (4) OPENAI_COMPAT with both tracing values opaque: the builder yields exactly
+	/// {session_id, trace_user_id} and the injector puts them on the wire body as a JSON OBJECT under
+	/// `metadata`, leaving every other key (model, messages, stream) and the top-level session_id prune
+	/// untouched.
+	@Test
+	public void metadata_openaiCompat_emitsStructuredObjectFromOpaqueValues() throws Exception {
+		OpenAIRequest req = baseReq();
+		Map<String, String> meta = callBuildTracingMetadata(LLMServiceEnumType.OPENAI_COMPAT, req);
+		assertNotNull("OPENAI_COMPAT with opaque values must produce a metadata map", meta);
+		assertEquals("exactly the two Langfuse-recognised keys", 2, meta.size());
+		assertEquals("metadata.session_id comes from session_id", S_VAL, meta.get("session_id"));
+		assertEquals("metadata.trace_user_id comes from user", U_VAL, meta.get("trace_user_id"));
+
+		OpenAIRequest pruned = ChatUtil.getPrunedRequest(req, tracingIgnoreFields(LLMServiceEnumType.OPENAI_COMPAT, req));
+		String before = wireBody(pruned);
+		String after = callInjectTracingMetadata(before, meta);
+		logger.info("[TierB-unit][B4] OPENAI_COMPAT wire body with metadata = " + after);
+
+		com.fasterxml.jackson.databind.JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(after);
+		assertTrue("`metadata` must be a JSON OBJECT - a string is silently dropped by Langfuse (P3-2)",
+			root.has("metadata") && root.get("metadata").isObject());
+		assertEquals(S_VAL, root.get("metadata").get("session_id").asText());
+		assertEquals(U_VAL, root.get("metadata").get("trace_user_id").asText());
+		/// Nothing else moved: the body is the pruned body plus one key.
+		assertEquals("model must be untouched", "gpt-5.6-terra", root.get("model").asText());
+		assertTrue("messages must be untouched", root.get("messages").isArray() && root.get("messages").size() == 1);
+		assertFalse("top-level session_id stays pruned (not a valid OpenAI parameter); only the"
+			+ " metadata object may carry it", root.has("session_id"));
+		assertEquals("body `user` is still kept on OPENAI_COMPAT", U_VAL, root.get("user").asText());
+	}
+
+	/// (5) GUARDRAIL 3 at the third emission point: a non-opaque `user` is dropped from the metadata
+	/// object too, per-field - the opaque session_id still goes through.
+	@Test
+	public void metadata_nonOpaqueUser_isDroppedPerField() throws Exception {
+		final String pii = "someone@example.com";
+		OpenAIRequest req = baseReq();
+		req.setValue("user", pii);
+		Map<String, String> meta = callBuildTracingMetadata(LLMServiceEnumType.OPENAI_COMPAT, req);
+		assertNotNull("the opaque session_id must still produce a map", meta);
+		assertEquals(S_VAL, meta.get("session_id"));
+		assertNull("GUARDRAIL 3: a non-opaque user must not become metadata.trace_user_id", meta.get("trace_user_id"));
+		assertFalse("the PII value must not appear anywhere in the map", meta.containsValue(pii));
+		assertEquals("DROP, not reject: the request is untouched", pii, (String) req.get("user"));
+	}
+
+	/// (6) GUARDRAIL 2: every other dialect gets null (no metadata object on Azure or native Ollama),
+	/// and a request with no tracing fields yields null even on OPENAI_COMPAT. The injector returns
+	/// the SAME string instance for a null map, so the no-tracing wire is byte-identical.
+	@Test
+	public void metadata_otherDialectsAndNoFields_emitNothing() throws Exception {
+		OpenAIRequest req = baseReq();
+		for (LLMServiceEnumType dialect : new LLMServiceEnumType[] { LLMServiceEnumType.OPENAI, LLMServiceEnumType.OLLAMA }) {
+			assertNull(dialect + " must produce NO metadata object", callBuildTracingMetadata(dialect, req));
+		}
+		OpenAIRequest bare = new OpenAIRequest();
+		bare.setModel("gpt-5.6-terra");
+		OpenAIMessage m = new OpenAIMessage();
+		m.setRole("user");
+		m.setContent("hello");
+		bare.addMessage(m);
+		assertNull("OPENAI_COMPAT with no tracing fields set must produce null, not an empty object",
+			callBuildTracingMetadata(LLMServiceEnumType.OPENAI_COMPAT, bare));
+
+		String ser = wireBody(ChatUtil.getPrunedRequest(bare, new ArrayList<>(ChatUtil.IGNORE_FIELDS)));
+		assertTrue("null map: injector must return the input unchanged (same instance)",
+			ser == callInjectTracingMetadata(ser, null));
+		assertTrue("empty map: injector must return the input unchanged (same instance)",
+			ser == callInjectTracingMetadata(ser, new HashMap<>()));
+		assertFalse(ser.contains("\"metadata\""));
+	}
 }

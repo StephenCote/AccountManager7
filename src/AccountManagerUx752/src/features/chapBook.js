@@ -119,8 +119,15 @@ async function startCreateChapBook(slug, title, poemObjectIds, maxLinesPerPage, 
     return resp.json();
 }
 
-// TODO(ChapBook Phase 2): set membership for ChapBook creation — select poems by set rather than individual checkbox.
-// Set creation and listing are in place (GET /sets, POST /set); add/remove poem endpoints and set-selection UI are deferred.
+// ChapBook poem sets (olio.cb.set) — status as of 2026-10-07, not a Phase 2 TODO any more:
+//   backend: GET /olio/chap-book/sets (list) and POST /olio/chap-book/set ({name, description, groupPath})
+//            exist (ChapBookService.java); there is NO add/remove-poem endpoint on the service, but
+//            olio.cb.set.poems is a participation list (participantModel cb.set.poem), so the generic
+//            membership route am7client.member('olio.cb.set', setObjectId, 'poems', 'olio.cb.poem',
+//            poemObjectId, true|false) (AuthorizationService.enableMember -> AccessPoint.member) is the
+//            intended way to add/remove poems — not exercised from this UI yet.
+//   UI:      nothing calls fetchSets() yet; the create dialog still selects poems one checkbox at a time.
+//            Whether a set picker belongs there is a product call (Stephen), not an omission.
 async function fetchSets() {
     let resp = await fetch(cbBase() + '/sets', { credentials: 'include' });
     if (!resp.ok) throw new Error('Failed to load sets: ' + resp.status);

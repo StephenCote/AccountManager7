@@ -1,7 +1,8 @@
 # Memory / Keyframe Decoupling Plan
 
-**Status:** Draft — awaiting approval
-**Date:** 2026-05-30
+**Status:** Implemented (schema, `Chat.java` pipeline, Ux752 mirror, pure-logic tests). Remaining
+test/doc items audited 2026-10-07 — see §8.
+**Date:** 2026-05-30 (audit 2026-10-07)
 **Author context:** Memory creation is currently gated on `keyframeEvery`. The
 keyframe pipeline was the original "memory" concept; it has since accreted a
 parallel multi-aspect memory extraction path, but the trigger and lifecycle
@@ -337,17 +338,48 @@ Suggested sequence: 1→2→3→4→5→6→7→8 (backend complete + tested) �
 
 ---
 
-## 8. Definition of done
+## 8. Definition of done — audited 2026-10-07
 
-- [ ] Schema fields shipped with new defaults + descriptions
-- [ ] Ux752 modelDef + formDef mirror with form fields visible in chatConfig editor
-- [ ] `Chat.shouldExtractMemory` + 12-15 unit tests passing
-- [ ] `TestChatMemoryPipelineMocked` 3-4 scenarios passing
-- [ ] Existing `TestChatDuelLong` updated; baseline re-run; results captured in Baseline doc
-- [ ] `memoryConfigForm.spec.js` (form field round-trip) passing
-- [ ] `memoryViewer.spec.js` (typed vs OUTCOME memory creation by config) passing
-- [ ] `chatFastDuelE2E.spec.js` (5-turn smoke) passing — wired into CI
-- [ ] `chatDuelE2E.spec.js` (20-turn × 2) passing — manual / nightly tag
-- [ ] No regressions in the 191 existing unit tests
-- [ ] No regressions in the 3-test chatConfigZeroValue spec
-- [ ] Release note draft covering the backward-compatibility points in §7
+Checked against the tree, not the plan. Line numbers drift.
+
+- [x] Schema fields shipped with new defaults + descriptions — `chatConfigModel.json` `lastMemoryExtractionAt` (:241), `memorySkipEchoThreshold` (:247), rewritten `keyframeEvery`/`extractMemories`/`memoryExtractionEvery` descriptions.
+- [x] Ux752 modelDef + formDef mirror — `modelDef.js:9165-9177`, `formDef.js:5515-5520` (`memoryExtractionEvery`, `memorySkipEchoThreshold`; `lastMemoryExtractionAt` is bookkeeping and intentionally not a form field).
+- [x] `Chat.shouldExtractMemory` + unit tests — `TestMemoryExtractionTrigger` (17 tests, pure). Pipeline in `Chat.java`: `checkMemoryExtractionTrigger`, `flushPendingMemory`, `extractMemoriesAsync`; auto-upgrade removed; `persistKeyframeAsMemory` OUTCOME-count gate removed; wired at `pruneCount` end + `continueChat`/`ChatListener.oncomplete`. The superseded keyframe-coupled `extractMemoriesIfEnabled` wrapper was dead (no callers) and was deleted 2026-10-07.
+- [x] `TestAsyncLLMSlotRegistry` `"memory"` label case — added 2026-10-07 (`memoryKindSharesSlotWithKeyframe`).
+- [x] `TestMemoryMarkerPatch` (new 2026-10-07, DB only, non-admin user) — pins that the identity+marker patch shape used by all three triggers (`copyRecord(id, ownerId, groupId, <marker>)`, no `name`) really persists and round-trips through an uncached read. The trigger code discards the update result, so this is the only place the bookkeeping is proven.
+- [x] Existing `TestChatDuelLong` updated — `-Dduel.memoryExtractionEvery` (default 5), `-Dduel.keyframeEvery` (default 0), `-Dduel.memorySkipEchoThreshold`.
+- [ ] `TestChatMemoryPipelineMocked` 3-4 scenarios — **not written.** See DECISION below.
+- [ ] `memoryConfigForm.spec.js` — **not written.**
+- [ ] `memoryViewer.spec.js` — **not written.**
+- [ ] `chatFastDuelE2E.spec.js` — **not written.** `e2e/chatDuel.spec.js` exists (one full duel + memories + gossip) and is the closest thing to the "20-turn" variant; nothing is wired as a CI smoke.
+- [ ] Baseline doc re-run / results captured — not found.
+- [ ] Release note draft for §7 items 4-5 — not written.
+
+### Remaining items — DECISION (2026-10-07, no behavior changed)
+
+1. **`TestChatMemoryPipelineMocked`.** The plan wants a 10-turn `Chat` drive with a canned
+   multi-aspect JSON response and four cadence assertions (3 triggers/3 calls; `keyframeEvery=0`
+   gives 0 OUTCOME; `keyframeEvery=5,memoryExtractionEvery=0` gives OUTCOME only; both on
+   independent cadences). The project rule is no mocking of transport layers; the sanctioned route
+   is the **`EMULATOR` dialect** (`ConnectionDialectEnumType.EMULATOR`, `serverUrl =
+   emulator://<set>`, `LlmEmulator` fixture replay — used by `TestDialectResolution`). Options:
+   (a) write it on the emulator with a small fixture set for the memory-extraction and keyframe
+   prompts — real `Chat` code path, deterministic, no LLM; (b) accept the live-LLM coverage already
+   in `TestKeyframeMemory` (4 tests) + `TestMemoryDuel` and drop this item. **Recommend (a)** — it
+   is the only way to assert the cadence counts exactly; the live tests cannot.
+2. **Playwright specs** (`memoryConfigForm`, `memoryViewer`, `chatFastDuelE2E`). UX-lane work; the
+   form round-trip is small (edit `memoryExtractionEvery`/`memorySkipEchoThreshold` in the chatConfig
+   editor, reload, assert). **Recommend** the form spec now, `memoryViewer` after (1) exists, and
+   tag `chatDuel.spec.js` as the nightly instead of writing a second 20-turn spec.
+3. **Deferred extraction = lost segment (interacts with `ConversationQualityPlan` §5.1).**
+   `checkMemoryExtractionTrigger` eagerly persists `lastMemoryExtractionAt = msgSize` *before*
+   the launch; `flushPendingMemory` then drops the snapshot on any of four gates (instance
+   in-progress, per-config lock, pressure deferral, unified slot). Under sustained pressure the
+   marker has already moved, so the segment is never extracted — a permanent memory gap, by
+   design ("chat responsiveness wins"). The minimal fix is to roll the marker back to
+   `pendingMemoryStartIdx` on deferral so the next trigger covers both segments in one call;
+   that is a behavior change to a deliberate cross-request guard and needs Stephen's call — see
+   `ConversationQualityPlan.md` §5.1 DECISION.
+4. **Release note.** Two lines, §7 items 4-5 (configs with `extractMemories=true && keyframeEvery=0`
+   no longer get keyframe summaries; `memoryExtractionEvery` now counts messages, not keyframes).
+   Not written here because there is no release-notes file in the tree to append to.

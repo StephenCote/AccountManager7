@@ -15,6 +15,9 @@ public interface IAction {
 	public long timeRemaining(BaseRecord actionResult, ChronoUnit unit);
 	public long calculateCostMS(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException;
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException;
+	/// Reserved hook: no engine path invokes counterAction or definePolicyFactParameters yet
+	/// (Actions drives configure -> begin -> execute -> conclude). Implementations return false / null
+	/// until the interaction and policy-fact passes that consume them exist.
 	public boolean counterAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException;
 	public ActionResultEnumType concludeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException;
 	public void configureAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException;

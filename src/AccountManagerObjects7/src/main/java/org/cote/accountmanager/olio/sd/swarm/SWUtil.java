@@ -23,13 +23,13 @@ import jakarta.ws.rs.core.MediaType;
 public class SWUtil {
 	public static final Logger logger = LogManager.getLogger(SWUtil.class);
 	private static SecureRandom rand = new SecureRandom();
-	public static SWTxt2Img newTxt2Img(BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType, String verb, int steps, int seed) {
+	public static SWTxt2Img newTxt2Img(BaseRecord person, BaseRecord sdConfig, String setting, String bodyType, String verb, int steps, int seed) {
 		SWTxt2Img s2i = new SWTxt2Img();
 
 		// Use provided config or create a random one if null
 		BaseRecord cfg = sdConfig != null ? sdConfig : org.cote.accountmanager.olio.sd.SDUtil.randomSDConfig();
 
-		s2i.setPrompt(org.cote.accountmanager.olio.sd.SDUtil.appendLoras(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, cfg, setting, pictureType, bodyType, verb), cfg));
+		s2i.setPrompt(org.cote.accountmanager.olio.sd.SDUtil.appendLoras(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, cfg, setting, bodyType, verb), cfg));
 		s2i.setNegativePrompt(NarrativeUtil.getSDNegativePrompt(person));
 		s2i.setSeed(Math.abs(rand.nextInt()));
 
@@ -40,6 +40,8 @@ public class SWUtil {
 		String cfgSampler = cfg.get("sampler");
 		Integer cfgCfg = cfg.get("cfg");
 		Integer cfgSeed = cfg.get("seed");
+		Integer cfgWidth = cfg.get("width");
+		Integer cfgHeight = cfg.get("height");
 		Boolean hires = cfg.get("hires");
 
 		s2i.setSteps(cfgSteps != null ? cfgSteps : 20);
@@ -49,6 +51,12 @@ public class SWUtil {
 		s2i.setCfgScale(cfgCfg != null ? cfgCfg : 7);
 		if(cfgSeed != null && cfgSeed > 0) {
 			s2i.setSeed(cfgSeed);
+		}
+		if(cfgWidth != null && cfgWidth > 0) {
+			s2i.setWidth(cfgWidth);
+		}
+		if(cfgHeight != null && cfgHeight > 0) {
+			s2i.setHeight(cfgHeight);
 		}
 
 		if(hires != null && hires == true) {

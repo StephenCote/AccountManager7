@@ -27,13 +27,11 @@ public class ExportAction extends CommonAction {
 	private String exportPath = "./export";
 	@Override
 	public void handleCommand(CommandLine cmd) {
-		// TODO Auto-generated method stub
 		
 	}
 
 	@Override
 	public void handleCommand(CommandLine cmd, BaseRecord user) {
-		// TODO Auto-generated method stub
 		if(cmd.hasOption("export") && cmd.hasOption(FieldNames.FIELD_TYPE)) {
 			int exp = 0;
 			ModelSchema ms = RecordFactory.getSchema(cmd.getOptionValue(FieldNames.FIELD_TYPE));
@@ -111,7 +109,6 @@ public class ExportAction extends CommonAction {
 
 	@Override
 	public void addOptions(Options options) {
-		// TODO Auto-generated method stub
 		options.addOption(FieldNames.FIELD_TYPE, true, "Model type");
 		options.addOption("extract", false, "Bit to indicate extracting contained data");
 		options.addOption("recurse", false, "Bit to indicate recursing through child groups");

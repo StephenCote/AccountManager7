@@ -87,7 +87,6 @@ public class ArenaEvolveRule extends CommonEvolveRule implements IOlioEvolveRule
 	
 	@Override
 	public void evaluateRealmIncrement(OlioContext context, BaseRecord realm) {
-		// TODO Auto-generated method stub
 		try {
 			List<BaseRecord> party1 = GroupDynamicUtil.getCreateParty(context, context.clock().realmClock(realm).getEvent(), party1Name, new ArrayList<>());
 			List<BaseRecord> party2 = GroupDynamicUtil.getCreateParty(context, context.clock().realmClock(realm).getEvent(), party2Name, party1);
@@ -122,7 +121,6 @@ public class ArenaEvolveRule extends CommonEvolveRule implements IOlioEvolveRule
 
 	@Override
 	public void beginEvolution(OlioContext context) {
-		// TODO Auto-generated method stub
 		IOSystem.getActiveContext().getMemberUtil().deleteMembers(OlioUtil.getCreatePopulationGroup(context, party1Name), null);
 		IOSystem.getActiveContext().getMemberUtil().deleteMembers(OlioUtil.getCreatePopulationGroup(context, party2Name), null);
 		IOSystem.getActiveContext().getMemberUtil().deleteMembers(OlioUtil.getCreatePopulationGroup(context, animalParty1Name), null);

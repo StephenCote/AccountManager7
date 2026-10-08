@@ -21,6 +21,8 @@
 		<sonar.jacoco.reportPath>${project.basedir}/../target/jacoco.exec</sonar.jacoco.reportPath>
 		<sonar.language>java</sonar.language>
 		<endorsed.dir>${project.build.directory}/endorsed</endorsed.dir>
+		<!-- Tests hit the live am7db; skipped by default, run with -DskipTests=false (same as Objects7). -->
+		<skipTests>true</skipTests>
 	</properties>
 	<repositories>
 		<repository>
@@ -120,7 +122,7 @@
 				</dependencies>
 
 				<configuration>
-					<skipTests>true</skipTests>
+					<skipTests>${skipTests}</skipTests>
 					<!--
 						Dead JVMCI/Graal flags removed 2026-08-07 (see AccountManagerObjects7/pom.xml for the
 						full write-up). They referenced ${compiler.dir}, which no pom defines, so the fork got
@@ -129,7 +131,7 @@
 						interpreter and ScriptUtil.getJavaScriptEngine sets engine.WarnInterpreterOnly=false,
 						so removing these changes nothing at runtime.
 					-->
-					<argLine>-Xmx4096m ${argLine}</argLine>
+					<argLine>-Xmx4096m</argLine>
 
 					<includes>
 						<include>**/Test*.java</include>
@@ -186,7 +188,9 @@
 		<dependency>
 			<groupId>org.bouncycastle</groupId>
 			<artifactId>bcprov-jdk18on</artifactId>
-			<version>1.76</version>
+			<!-- Must match Objects7 (1.80): bcpkix already resolved to 1.80 and a 1.76 bcprov on the same
+			     classpath fails org/cert creation with NoSuchFieldError BCObjectIdentifiers.xmss_SHAKE128_512ph. -->
+			<version>1.80</version>
 			<!--
 		    <scope>provided</scope>
 		    -->
@@ -195,7 +199,7 @@
 		<dependency>
 			<groupId>org.bouncycastle</groupId>
 			<artifactId>bcpkix-jdk18on</artifactId>
-			<version>1.76</version>
+			<version>1.80</version>
 			<!--
 		    <scope>provided</scope>
 		    -->

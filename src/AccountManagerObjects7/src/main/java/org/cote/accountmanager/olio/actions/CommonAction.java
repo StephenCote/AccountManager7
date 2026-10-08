@@ -58,7 +58,6 @@ public abstract class CommonAction implements IAction {
 	@Override
 	public List<BaseRecord> definePolicyFactParameters(OlioContext context, BaseRecord actionResult, BaseRecord actor,
 			BaseRecord interactor) throws OlioException {
-		// TODO Auto-generated method stub
 		return null;
 	}
 

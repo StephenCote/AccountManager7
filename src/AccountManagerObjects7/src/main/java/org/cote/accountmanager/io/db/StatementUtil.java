@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -772,12 +774,15 @@ public class StatementUtil {
 			}
 		}
 
+		/// Dotted request entries added directly to getRequest() bypass Query.setRequest; normalize them
+		/// into sub-plans here so the loop below only ever sees top-level field names.
+		query.expandRequestPaths();
 		List<String> oRequestFields = query.get(FieldNames.FIELD_REQUEST);
 		List<String> requestFields = new ArrayList<>(oRequestFields);
 		List<String> useFields = new ArrayList<>();
 
 		List<String> cols = new ArrayList<>();
-		
+
 		if(requestFields.size() == 0) {
 			// logger.warn("Unchecked query detected: " + query.key());
 			schema.getFields().forEach(f -> {
@@ -890,7 +895,111 @@ public class StatementUtil {
 		return joinBuff.toString();
 	}
 	
-	public static String getQueryString(String selectString, Query query, DBStatementMeta meta){
+	/// Grammar accepted for io.query.groupBy / io.query.having (see validateGroupAndHavingClauses).
+	/// Identifiers are restricted to [A-Za-z0-9_] - no quotes, spaces, parentheses, semicolons or comment tokens.
+	private static final Pattern CLAUSE_IDENTIFIER = Pattern.compile("^[A-Za-z0-9_]+$");
+	/// groupBy term:  [alias.]field
+	private static final Pattern GROUP_BY_TERM = Pattern.compile("^(?:([A-Za-z0-9_]+)\\.)?([A-Za-z0-9_]+)$");
+	/// having term:   AGG( [DISTINCT ][alias.]field ) <op> <integer>
+	private static final Pattern HAVING_TERM = Pattern.compile(
+		"^(COUNT|SUM|MIN|MAX|AVG)\\s*\\(\\s*(?:(DISTINCT)\\s+)?(?:([A-Za-z0-9_]+)\\.)?([A-Za-z0-9_]+)\\s*\\)\\s*(=|<>|!=|<=|>=|<|>)\\s*(-?[0-9]+)$",
+		Pattern.CASE_INSENSITIVE
+	);
+	/// having terms may be joined by AND / OR (whole-word, case-insensitive)
+	private static final Pattern HAVING_CONJUNCTION = Pattern.compile("\\s+(?:AND|OR)\\s+", Pattern.CASE_INSENSITIVE);
+
+	/**
+	 * Closes the long-standing "TODO: Fix SQL Injection point" in getQueryString.
+	 *
+	 * io.query.groupBy and io.query.having are free-form strings that are concatenated raw into the
+	 * statement. They cannot be bound as PreparedStatement parameters because they are SQL structure
+	 * (column references, aggregates), not values - and because ModelService.search deserializes the
+	 * whole io.query from the request body, a REST caller controls them. Rather than attempt to escape
+	 * arbitrary SQL, this accepts only the one grammar the legitimate producers (TagService, TestData)
+	 * emit and rejects anything else with a clear FieldException - the same stance as
+	 * rejectVirtualFieldConditions (KI-33): an invalid clause is an invalid query, not something to make
+	 * "work".
+	 *
+	 *   groupBy:  one or more comma-separated column references          [alias.]field
+	 *   having:   one or more aggregate comparisons joined by AND / OR    AGG([DISTINCT ][alias.]field) op integer
+	 *             AGG in {COUNT, SUM, MIN, MAX, AVG}; op in {=, <>, !=, <, >, <=, >=}
+	 *
+	 * where alias is the query's own alias or the alias of one of its joins (getAlias), and field is a
+	 * real, column-backed field of the model that alias refers to. A bare field (no alias) is resolved
+	 * against the query's own model.
+	 */
+	protected static void validateGroupAndHavingClauses(Query query, String groupClause, String havingClause) throws FieldException {
+		if(groupClause == null && havingClause == null) {
+			return;
+		}
+		/// alias -> schema for the query model and every join. All three callers (getSelectTemplate,
+		/// getCountTemplate, getDeleteTemplate) run getJoinStatement first, so the join aliases are already assigned.
+		Map<String, ModelSchema> aliases = new HashMap<>();
+		String model = query.get(FieldNames.FIELD_TYPE);
+		String alias = getAlias(query);
+		ModelSchema schema = RecordFactory.getSchema(model);
+		if(alias == null || schema == null) {
+			throw new FieldException("Cannot validate GROUP BY / HAVING clause: unresolved query model or alias");
+		}
+		aliases.put(alias, schema);
+		List<BaseRecord> joins = query.get(FieldNames.FIELD_JOINS);
+		if(joins != null) {
+			for(BaseRecord j : joins) {
+				String jmodel = j.get(FieldNames.FIELD_TYPE);
+				ModelSchema jschema = (jmodel != null ? RecordFactory.getSchema(jmodel) : null);
+				String jalias = getAlias(j, jmodel);
+				if(jalias != null && jschema != null) {
+					aliases.put(jalias, jschema);
+				}
+			}
+		}
+
+		if(groupClause != null) {
+			if(groupClause.isBlank()) {
+				throw new FieldException("Invalid GROUP BY clause: empty");
+			}
+			for(String rawTerm : groupClause.split(",")) {
+				String term = rawTerm.trim();
+				Matcher m = GROUP_BY_TERM.matcher(term);
+				if(!m.matches()) {
+					throw new FieldException("Invalid GROUP BY clause: '" + term + "' is not a column reference ([alias.]field)");
+				}
+				validateClauseColumn("GROUP BY", aliases, alias, m.group(1), m.group(2));
+			}
+		}
+
+		if(havingClause != null) {
+			if(havingClause.isBlank()) {
+				throw new FieldException("Invalid HAVING clause: empty");
+			}
+			for(String rawTerm : HAVING_CONJUNCTION.split(havingClause.trim())) {
+				String term = rawTerm.trim();
+				Matcher m = HAVING_TERM.matcher(term);
+				if(!m.matches()) {
+					throw new FieldException("Invalid HAVING clause: '" + term + "' is not an aggregate comparison (AGG([DISTINCT ][alias.]field) <op> <integer>)");
+				}
+				validateClauseColumn("HAVING", aliases, alias, m.group(3), m.group(4));
+			}
+		}
+	}
+
+	private static void validateClauseColumn(String clauseName, Map<String, ModelSchema> aliases, String defaultAlias, String termAlias, String field) throws FieldException {
+		String useAlias = (termAlias != null ? termAlias : defaultAlias);
+		if(!CLAUSE_IDENTIFIER.matcher(useAlias).matches() || !CLAUSE_IDENTIFIER.matcher(field).matches()) {
+			/// Belt and braces - the term patterns already restrict the character set.
+			throw new FieldException("Invalid " + clauseName + " clause: illegal identifier");
+		}
+		ModelSchema schema = aliases.get(useAlias);
+		if(schema == null) {
+			throw new FieldException("Invalid " + clauseName + " clause: '" + useAlias + "' is not the query alias or a join alias");
+		}
+		FieldSchema fs = schema.getFieldSchema(field);
+		if(fs == null || fs.isVirtual() || fs.isEphemeral()) {
+			throw new FieldException("Invalid " + clauseName + " clause: '" + field + "' is not a column of " + schema.getName());
+		}
+	}
+
+	public static String getQueryString(String selectString, Query query, DBStatementMeta meta) throws FieldException {
 		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
 		String pagePrefix = StatementUtil.getPaginationPrefix(query);
 		String pageSuffix = StatementUtil.getPaginationSuffix(meta, query);
@@ -901,10 +1010,10 @@ public class StatementUtil {
 		/// int topCount = query.get(FieldNames.FIELD_TOP_COUNT);
 		long organizationId = query.get(FieldNames.FIELD_ORGANIZATION_ID);
 		String alias = getAlias(query);
-		if(havingClause != null || groupClause != null) {
-			logger.error("**** TODO: Fix SQL Injection point");
-		}
-		
+		/// groupBy / having are concatenated raw below; they are caller-controlled via /rest/model/search,
+		/// so they are validated against a strict grammar and the schema first (throws on anything else).
+		validateGroupAndHavingClauses(query, groupClause, havingClause);
+
 		String modSelectString = selectString;
 		
 		/*

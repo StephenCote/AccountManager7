@@ -164,7 +164,7 @@ public class TestSDStyles extends BaseTest {
 
 			List<BaseRecord> bl = sdu.createPersonImage(testUser1, per, galleryPath, sdCfg,
 					"StyleTest-" + style + "-" + per.get(FieldNames.FIELD_NAME),
-					"random", "professional portrait", "full body", null, 20, 1, false, -1);
+					"random", "full body", null, 20, 1, false, -1);
 			assertTrue("Expected image for style: " + style, bl.size() > 0);
 			for(BaseRecord b1 : bl) {
 				FileUtil.emitFile("./img-style-" + style + "-" + b1.get(FieldNames.FIELD_NAME) + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));

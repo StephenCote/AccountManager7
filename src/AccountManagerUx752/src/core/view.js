@@ -368,8 +368,19 @@ import { am7model } from './model.js';
         return ot;
     }
 
-    /// TODO: There's currently a bug where if a picker is based on a type, and restricted by the type value, then if the type list displays initially without being redrawn, the type
-    /// value will still be the default - currently the work around is display these fields on a secondary tab
+    /// Type-driven pickers (Ux7 carry-over note, re-checked 2026-10-07; this function is NOT where the type is
+    /// resolved — it only applies requiredRoles/requiredAttributes gating):
+    /// - A picker whose `pickerType` starts with "." reads the type from the entity at CLICK time
+    ///   (views/object.js picker handler: `useEntity[pickerType.slice(1)]`, then am7view.typeToModel). The only
+    ///   such pickers are tool.memory `person1`/`person2` (".person1Model"/".person2Model" — stored strings set by
+    ///   chat/MemoryPanel.js, not form inputs). Group/role member pickers resolve the same way from the entity's
+    ///   `type` enum (components/membership.js). An empty/UNKNOWN type makes the picker a silent no-op.
+    /// - The select above (getField, `selected: o == inst.api[fld]()`) never writes a value back: when the entity
+    ///   value matches no option the browser shows the first option while the entity keeps its default until the
+    ///   user changes the select. So a type-driven picker on the SAME tab as its type select could read the stale
+    ///   default. That is why the group/role forms keep `groupmembers`/`rolemembers` on a secondary tab (formDef.js
+    ///   `forms.group`/`forms.role` → `forms:[...]`), where `type` has already been committed. Keep that layout;
+    ///   do not put a ".<field>"-typed picker beside its own type select.
     function showField(inst, ref, useName) {
         let show = true;
         let entity = inst?.entity;

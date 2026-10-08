@@ -21,15 +21,22 @@ let busy = false;
 let loadedKey = null;
 let msgText = '';
 
-// Reusable text/confirm modal. { title, label?, value, placeholder, confirmLabel, danger?, warning?, onConfirm }
-// If `label` is omitted the modal is a plain confirm (no input).
+// Reusable text/confirm modal. { title, label?, value, placeholder, confirmLabel, danger?, warning?, fields?, onConfirm }
+// If `label` is omitted the modal is a plain confirm (no input). `fields` is an optional list of extra inputs
+// [{ name, label, type:'text'|'select', value, options?:[{value,label}] }]; their current values are handed to
+// onConfirm(value, extraValues) keyed by name.
 let modal = null;
 
 function openModal(cfg) {
-    modal = Object.assign({ value: '', confirmLabel: 'OK' }, cfg);
+    modal = Object.assign({ value: '', confirmLabel: 'OK', fields: [] }, cfg);
     m.redraw();
 }
 function closeModal() { modal = null; m.redraw(); }
+function modalExtraValues() {
+    let out = {};
+    (modal && modal.fields ? modal.fields : []).forEach(f => { out[f.name] = f.value; });
+    return out;
+}
 
 /** Decode a message.spool entry's text (server stores FIELD_DATA as bytes → base64 on the wire). */
 function messageText(msg) {
@@ -66,23 +73,35 @@ async function loadCert(id) {
 
 // ── Actions ──────────────────────────────────────────────────────────────
 
+// Validity-period choices for Approve & Sign (months). The server caps at 60 (ISO42001CertificationFactory
+// .MAX_VALIDITY_MONTHS); the default is 12 (design §9A.8).
+const VALIDITY_OPTIONS = [6, 12, 24, 36, 60];
+
 function askApprove(id) {
     openModal({
         title: 'Approve & Sign',
         label: 'Your title for this certification',
         value: 'Compliance Officer',
         confirmLabel: 'Sign & Certify',
+        // Design §9A.8 dialog: title, validity period, notes — all sent to the server and stamped on the
+        // certification (certifierTitle / expiryDate / notes).
+        fields: [
+            { name: 'validityMonths', label: 'Validity period', type: 'select', value: '12',
+              options: VALIDITY_OPTIONS.map(n => ({ value: String(n), label: n + ' months' })) },
+            { name: 'notes', label: 'Notes (optional) — conditions or scope limitations', type: 'text', value: '' }
+        ],
         warning: 'This is irreversible. Your digital signature (SHA256WithRSA over the report hash) will be ' +
-            'permanently attached to the report. The certification is valid for 1 year.',
-        onConfirm: (note) => reallyApprove(id, note)
+            'permanently attached to the report.',
+        onConfirm: (title, extra) => reallyApprove(id, title, extra)
     });
 }
 
-async function reallyApprove(id, note) {
+async function reallyApprove(id, title, extra) {
     if (busy) return;
     busy = true; m.redraw();
     try {
-        let c = await iso42001Client.approve(id, note || 'Approved');
+        let terms = { title: title || '', validityMonths: (extra && extra.validityMonths) || '12', notes: (extra && extra.notes) || '' };
+        let c = await iso42001Client.approve(id, 'Approved' + (title ? ' by ' + title : ''), terms);
         if (c && c.objectId) {
             page.toast && page.toast('success', 'Approved & signed.');
             closeModal();
@@ -201,10 +220,26 @@ function modalView() {
                     oninput: e => { modal.value = e.target.value; }
                 })
             ]) : null,
+            (modal.fields || []).map(f => m('label', { key: f.name, class: 'flex flex-col gap-1 text-sm' }, [
+                m('span', { class: 'text-gray-600 dark:text-gray-300' }, f.label),
+                f.type === 'select'
+                    ? m('select', {
+                        name: 'modal_' + f.name,
+                        class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800',
+                        value: f.value,
+                        onchange: e => { f.value = e.target.value; }
+                    }, (f.options || []).map(o => m('option', { value: o.value, selected: o.value === f.value }, o.label)))
+                    : m('input', {
+                        name: 'modal_' + f.name, type: 'text',
+                        class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800',
+                        placeholder: f.placeholder || '', value: f.value,
+                        oninput: e => { f.value = e.target.value; }
+                    })
+            ])),
             m('div', { class: 'flex justify-end gap-2 pt-2' }, [
                 btn('Cancel', null, closeModal),
                 btn(busy ? '…' : modal.confirmLabel, modal.danger ? 'warning' : 'check',
-                    () => modal.onConfirm(modal.value), { primary: !modal.danger, danger: modal.danger, disabled: busy })
+                    () => modal.onConfirm(modal.value, modalExtraValues()), { primary: !modal.danger, danger: modal.danger, disabled: busy })
             ])
         ])
     ]);
@@ -313,8 +348,9 @@ function certDetail() {
             m('div', { class: 'rounded-lg bg-gray-50 dark:bg-gray-800 p-4 text-sm space-y-1' }, [
                 m('div', 'Certified by: ' + (cert.certifier && cert.certifier.name ? cert.certifier.name : '—') + (cert.certifierTitle ? ' (' + cert.certifierTitle + ')' : '')),
                 m('div', 'Signature algorithm: ' + (cert.signatureAlgorithm || '—')),
+                m('div', { name: 'cert_expiry' }, 'Valid until: ' + (cert.expiryDate ? new Date(cert.expiryDate).toLocaleDateString() : '—')),
                 m('div', { class: 'break-all' }, 'Report hash: ' + (cert.reportHash || '—')),
-                cert.notes ? m('div', 'Notes: ' + cert.notes) : null
+                cert.notes ? m('div', { name: 'cert_notes' }, 'Notes: ' + cert.notes) : null
             ]),
             m('div', { class: 'flex gap-2' }, [
                 btn(busy ? '…' : 'Verify Now', 'fingerprint', () => doVerify(cert.objectId), { disabled: busy }),

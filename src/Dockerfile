@@ -5,7 +5,10 @@
 # Before building with PREBUILT=1, run on the host:
 #   cd src && mvn -o -pl AccountManagerObjects7,AccountManagerISO42001 install -DskipTests
 #   cd src && mvn -o -pl AccountManagerService7 package -DskipTests
-# The bcprov jar must also be staged at docker/bcprov-jdk18on-1.76.jar (already done).
+# The bcprov jar must also be staged at docker/bcprov-jdk18on-1.80.jar (already done). Its version
+# MUST equal the bcprov-jdk18on version in AccountManagerObjects7/pom.xml: a skew against the
+# bcpkix/bcutil jars inside the WAR fails at the first certificate signing
+# (NoSuchFieldError: BCObjectIdentifiers.xmss_SHAKE128_512ph with 1.76 beside bcpkix 1.80).
 ARG PREBUILT=0
 
 ########################################
@@ -25,7 +28,7 @@ COPY AccountManagerISO42001 AccountManagerISO42001
 COPY AccountManagerConsole7 AccountManagerConsole7
 COPY AccountManagerService7 AccountManagerService7
 # bcprov staged for PREBUILT=1 path (no-op when PREBUILT=0; Maven resolves it instead)
-COPY docker/bcprov-jdk18on-1.76.jar /build/docker/bcprov-jdk18on-1.76.jar
+COPY docker/bcprov-jdk18on-1.80.jar /build/docker/bcprov-jdk18on-1.80.jar
 # The WAR marks bcprov-jdk18on as `provided` (AccountManagerService7/pom.xml) --
 # on the dev box BouncyCastle is a container/JVM-level security provider, so it
 # is deliberately excluded from WEB-INF/lib. The container has no such provider,
@@ -43,7 +46,7 @@ RUN mkdir -p /build/bclib && \
           -DincludeArtifactIds=bcprov-jdk18on \
           -DoutputDirectory=/build/bclib; \
     else \
-      cp /build/docker/bcprov-jdk18on-1.76.jar /build/bclib/; \
+      cp /build/docker/bcprov-jdk18on-1.80.jar /build/bclib/; \
     fi
 
 ########################################
@@ -54,10 +57,10 @@ RUN mkdir -p /build/bclib && \
 FROM node:24-alpine AS ux-build
 WORKDIR /build/AccountManagerUx752
 COPY AccountManagerUx752/package.json AccountManagerUx752/package-lock.json* ./
-# `npm ci` requires package-lock.json to exactly match package.json; the
-# repo's committed lock file is currently out of sync (e.g. vitest 2.1.9 in
-# the lock vs "^4.1.9" in package.json), so `npm install` is used instead of
-# `npm ci` here. Flagged separately -- the lock file should be regenerated.
+# The lock file is in sync (regenerated 2026-08-20; `npm ci --dry-run` passes), so `npm ci` is the
+# right command here. It stays `npm install` only because changing this RUN line invalidates the
+# cached layer, and re-running it needs registry access the corp TLS proxy blocks
+# (UNABLE_TO_GET_ISSUER_CERT_LOCALLY, measured 2026-10-07). Switch to `npm ci` when building off-proxy.
 RUN npm install
 COPY AccountManagerUx752/ ./
 RUN npx vite build
@@ -92,6 +95,12 @@ RUN apk add --no-cache bash curl gettext openssl nginx supervisor nodejs npm unz
     && rm -rf "$CATALINA_HOME"/webapps/* \
     && chmod +x "$CATALINA_HOME"/bin/*.sh
 
+# Tomcat, vite preview and nginx all run as this unprivileged user (supervisord.conf drops to it
+# per program; only the entrypoint and supervisord itself stay root). Fixed uid/gid so ownership
+# of a Linux bind mount is predictable across rebuilds. Created after the apk/Tomcat layer so that
+# layer stays cache-hot (it needs network the corp TLS proxy blocks), and before any COPY --chown.
+RUN addgroup -g 1000 am7 && adduser -D -u 1000 -G am7 -h /home/am7 -s /sbin/nologin am7
+
 # Explode the WAR (rather than deploy it packed) so the entrypoint can
 # envsubst context.xml/web.xml into the live webapp directory at container
 # start, before Tomcat reads them.
@@ -101,26 +110,31 @@ COPY --from=java-build /build/AccountManagerService7/target/AccountManagerServic
 # dev DB URL/creds, LAN server addresses, and the task.api.key default) so
 # only the .template files ship in the image; entrypoint.sh renders the real
 # ones into the container's writable layer at start, never at build time.
+# The chown is in the same layer as the unzip on purpose: a separate `RUN chown -R` would
+# re-copy the whole exploded WAR into a new layer.
 RUN unzip -q /tmp/app.war -d "$CATALINA_HOME/webapps/${APP_CONTEXT}" && rm /tmp/app.war \
     && rm -f "$CATALINA_HOME/webapps/${APP_CONTEXT}/META-INF/context.xml" \
-             "$CATALINA_HOME/webapps/${APP_CONTEXT}/WEB-INF/web.xml"
+             "$CATALINA_HOME/webapps/${APP_CONTEXT}/WEB-INF/web.xml" \
+    && chown -R am7:am7 "$CATALINA_HOME"
 
 # bcprov-jdk18on: excluded from the WAR by its `provided` scope; supplied here
 # so BouncyCastleProvider is on the webapp classpath (see java-build stage note).
 # Wildcard because the version is resolved from Objects7's dependency graph.
-COPY --from=java-build /build/bclib/bcprov-jdk18on-*.jar "$CATALINA_HOME/webapps/${APP_CONTEXT}/WEB-INF/lib/"
+COPY --chown=am7:am7 --from=java-build /build/bclib/bcprov-jdk18on-*.jar "$CATALINA_HOME/webapps/${APP_CONTEXT}/WEB-INF/lib/"
 
-COPY docker/context.xml.template "$CATALINA_HOME/webapps/${APP_CONTEXT}/META-INF/context.xml.template"
-COPY docker/web.xml.template "$CATALINA_HOME/webapps/${APP_CONTEXT}/WEB-INF/web.xml.template"
-COPY docker/server.xml "$CATALINA_HOME/conf/server.xml"
-COPY docker/setenv.sh "$CATALINA_HOME/bin/setenv.sh"
+COPY --chown=am7:am7 docker/context.xml.template "$CATALINA_HOME/webapps/${APP_CONTEXT}/META-INF/context.xml.template"
+COPY --chown=am7:am7 docker/web.xml.template "$CATALINA_HOME/webapps/${APP_CONTEXT}/WEB-INF/web.xml.template"
+COPY --chown=am7:am7 docker/server.xml "$CATALINA_HOME/conf/server.xml"
+COPY --chown=am7:am7 docker/setenv.sh "$CATALINA_HOME/bin/setenv.sh"
 
 # Ux752, run at runtime via `vite preview` (node/npm), proxied by nginx.
+# --chown rather than a later chown -R: node_modules is the largest tree in the image and a
+# post-hoc chown would duplicate it into another layer.
 WORKDIR /opt/ux752
-COPY --from=ux-build /build/AccountManagerUx752/node_modules ./node_modules
-COPY --from=ux-build /build/AccountManagerUx752/dist ./dist
-COPY --from=ux-build /build/AccountManagerUx752/package.json ./
-COPY --from=ux-build /build/AccountManagerUx752/vite.config.js ./
+COPY --chown=am7:am7 --from=ux-build /build/AccountManagerUx752/node_modules ./node_modules
+COPY --chown=am7:am7 --from=ux-build /build/AccountManagerUx752/dist ./dist
+COPY --chown=am7:am7 --from=ux-build /build/AccountManagerUx752/package.json ./
+COPY --chown=am7:am7 --from=ux-build /build/AccountManagerUx752/vite.config.js ./
 
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
@@ -131,12 +145,21 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 # exec with "no such file or directory", which is the kernel reporting that the interpreter
 # "/bin/bash\r" does not exist, NOT that the script is missing. Cheap, idempotent, and it makes the
 # image build correctly from a checkout with any core.autocrlf setting.
+#
+# The chown list is every path a dropped-privilege process writes: the data/cert roots (volumes
+# normally, but the image-time ownership is what a fresh named volume inherits), nginx's pid/temp/
+# log dirs (its master runs unprivileged too, so it cannot open /run/nginx.pid or
+# /var/lib/nginx/tmp as the package left them), and the app user's HOME for npm's cache.
 RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh "$CATALINA_HOME/bin/setenv.sh" \
         /etc/nginx/nginx.conf /etc/supervisord.conf "$CATALINA_HOME/conf/server.xml" \
         "$CATALINA_HOME/webapps/${APP_CONTEXT}/META-INF/context.xml.template" \
         "$CATALINA_HOME/webapps/${APP_CONTEXT}/WEB-INF/web.xml.template" \
     && chmod +x /usr/local/bin/entrypoint.sh "$CATALINA_HOME/bin/setenv.sh" \
-    && mkdir -p /data/am7/store /data/am7/vault/credentials /data/am7/datagen /data/am7/sessions /etc/am7/certs /run/nginx
+    && mkdir -p /data/am7/store /data/am7/vault/credentials /data/am7/datagen /data/am7/sessions /etc/am7/certs /run/nginx /home/am7 \
+    && chown -R am7:am7 /data/am7 /etc/am7/certs /run/nginx /var/lib/nginx /var/log/nginx /home/am7 \
+    && chown am7:am7 "$CATALINA_HOME/conf/server.xml" "$CATALINA_HOME/bin/setenv.sh" \
+        "$CATALINA_HOME/webapps/${APP_CONTEXT}/META-INF/context.xml.template" \
+        "$CATALINA_HOME/webapps/${APP_CONTEXT}/WEB-INF/web.xml.template"
 
 EXPOSE 8443
 

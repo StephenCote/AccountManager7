@@ -254,10 +254,15 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         	}
         	else {
         		FieldType fld = null;
+        		/// A foreign $flex field serialized as <name>_FK cannot be built here: its model comes from
+        		/// the sibling foreignType field, which may not have been read yet. It is deferred to the
+        		/// foreignFlex pass below and must NOT also be added now, or the record carries two fields
+        		/// of the same name (the writer then emits a duplicate column: "subject specified more than once").
+        		boolean deferredForeignFlex = false;
         		if(!ifld.getValueType().equals(FieldEnumType.FLEX)) {
         			fld = FieldFactory.fieldByType(ifld.getValueType(), fname, ifld.getValue());
         		}
-				
+
 				FieldSchema lft = ltype.getFieldSchema(fname);
 				if(lft == null) {
 					logger.error("Loose field " + fname + " could not be found");
@@ -267,6 +272,7 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
             		try {
             			if(possibleForeign && lft.getType().equals(ModelNames.MODEL_MODEL) && lft.getBaseModel() != null && lft.getBaseModel().equals(ModelNames.MODEL_FLEX) && lft.getForeignType() != null) {
             				foreignFlex.put(fname, value);
+            				deferredForeignFlex = true;
             			}
             			else if(ifld.getValueType().equals(FieldEnumType.FLEX)) {
             				fieldFlex.put(fname,  value);
@@ -284,7 +290,10 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
             			logger.error(e);
             		}
             	}
-				if(fld == null) {
+				if(deferredForeignFlex) {
+					/// Built once in the foreignFlex pass below.
+				}
+				else if(fld == null) {
 					if(ifld.getValueType().equals(FieldEnumType.FLEX)) {
 						fieldFlex.put(fname,  value);
 					}

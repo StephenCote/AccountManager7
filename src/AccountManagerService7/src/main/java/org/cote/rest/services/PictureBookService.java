@@ -1932,7 +1932,8 @@ public class PictureBookService {
     /**
      * POST /{bookObjectId}/health/heal
      * Repair one book (404 when not readable, 403 when the caller may not update it). Same body as
-     * POST /health/heal.
+     * POST /health/heal, except that {@code overwriteTemplates} has no meaning at book scope (prompt
+     * templates are organization-level) and is ignored if sent.
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -1947,8 +1948,7 @@ public class PictureBookService {
         Set<String> codeSet = (codes != null) ? new LinkedHashSet<>(codes) : null;
         try {
             return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.healBook(user,
-                context.getInitParameter("datagen.path"), bookObjectId, codeSet,
-                getFlag(params, "overwriteTemplates")))).build();
+                context.getInitParameter("datagen.path"), bookObjectId, codeSet))).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }

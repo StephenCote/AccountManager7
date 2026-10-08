@@ -58,7 +58,7 @@ CLAUDE.md; this file is the source of truth for design review.
 
 ## Conventions
 
-- Model names are fully-qualified `domain.name` (`auth.group`, `olio.llm.connection`). Constants in the
+- Model names are fully-qualified `domain.name` (`auth.group`, `system.connection`). Constants in the
   `schema/` package: `ModelNames.MODEL_*`, `FieldNames.FIELD_*`; enums `*EnumType` under `schema/type`.
 - Tables: `A7_<domain>_<name>_<version>` (verify with `DBUtil.getTableName(...)`).
 - Models must be registered at startup/test-setup (`OlioModelNames.use()`, `ISO42001ModelNames.use()`).

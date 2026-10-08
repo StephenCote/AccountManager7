@@ -183,6 +183,106 @@ public class TestPictureBookCharacterNames {
 		assertNull(r.resolve("!!!"));
 	}
 
+	// ── Rule 3: a name the LLM cut short ─────────────────────────────────────
+
+	/// IssueLog-2026-09-22 Issue 11: the extraction emitted "Braevar," (trailing list separator) in
+	/// one chunk and "Braevarn" in the rest, and both persisted as characters. The cut-short spelling
+	/// must join the full one, and the display name is never the punctuated one.
+	@Test
+	public void aCutShortNameJoinsTheFullNameItPrefixes() {
+		PictureBookUtil.CharacterNameResolver r = new PictureBookUtil.CharacterNameResolver();
+		assertEquals("Braevarn", r.resolve("Braevarn"));
+		assertEquals("Braevarn", r.resolve("Braevar,"));
+		assertEquals("Braevarn", r.resolve("Braevar."));
+		assertEquals(1, r.getCanonicalNames().size());
+		assertEquals("Braevarn", r.getAliases().get("Braevar,"));
+	}
+
+	/// ...in either order of arrival. When the cut-short spelling comes FIRST, the key it registered
+	/// is re-pointed at the full spelling, so canonical() for both reads the full name afterwards.
+	@Test
+	public void aFullNameArrivingLaterRepointsTheEarlierCutShortOne() {
+		PictureBookUtil.CharacterNameResolver r = new PictureBookUtil.CharacterNameResolver();
+		assertEquals("Trailing punctuation is never part of a display name", "Braevar", r.resolve("Braevar,"));
+		assertEquals("Braevarn", r.resolve("Braevarn"));
+		assertEquals("Braevarn", r.canonical("Braevar,"));
+		assertEquals("Braevarn", r.canonical("Braevar"));
+		assertEquals("Braevarn", r.resolve("Braevar,"));
+		assertEquals(List.of("Braevarn"), r.getCanonicalNames());
+		assertEquals("Braevarn", r.getAliases().get("Braevar,"));
+	}
+
+	/// The fold is gated on the punctuation evidence. A CLEAN "Braevar" is a legitimate different
+	/// name (Simon / Simone, Ann / Anne are real pairs) and stays its own character.
+	@Test
+	public void aCleanShorterNameIsNotTreatedAsATruncation() {
+		PictureBookUtil.CharacterNameResolver r = new PictureBookUtil.CharacterNameResolver();
+		assertEquals("Braevarn", r.resolve("Braevarn"));
+		assertEquals("Braevar", r.resolve("Braevar"));
+		assertEquals(2, r.getCanonicalNames().size());
+
+		PictureBookUtil.CharacterNameResolver r2 = new PictureBookUtil.CharacterNameResolver();
+		assertEquals("Braevar", r2.resolve("Braevar"));
+		assertEquals("Braevarn", r2.resolve("Braevarn"));
+		assertEquals("A clean earlier name is never re-pointed", "Braevar", r2.canonical("Braevar"));
+		assertEquals(2, r2.getCanonicalNames().size());
+	}
+
+	/// A clean arrival of the cut-short spelling confirms it as a real name: "Braevar," then
+	/// "Braevar" then "Braevarn" must NOT fold the first two onto the third.
+	@Test
+	public void aCleanArrivalConfirmsACutShortSpelling() {
+		PictureBookUtil.CharacterNameResolver r = new PictureBookUtil.CharacterNameResolver();
+		assertEquals("Braevar", r.resolve("Braevar,"));
+		assertEquals("Braevar", r.resolve("Braevar"));
+		assertEquals("Braevarn", r.resolve("Braevarn"));
+		assertEquals("Braevar", r.canonical("Braevar,"));
+		assertEquals(2, r.getCanonicalNames().size());
+	}
+
+	/// Guards on the fold: too short, too much missing, or a multi-word name — all left alone.
+	@Test
+	public void theTruncationFoldHasNarrowLimits() {
+		PictureBookUtil.CharacterNameResolver r = new PictureBookUtil.CharacterNameResolver();
+		r.resolve("Mia");
+		assertEquals("Too short to fold (Mi is 2 chars)", "Mi", r.resolve("Mi,"));
+		r.resolve("Braevarn");
+		assertEquals("Three missing characters is not a cut-short name", "Braev", r.resolve("Braev,"));
+		r.resolve("Darby's dad");
+		assertEquals("Multi-word names never fold by prefix", "Darby's da", r.resolve("Darby's da,"));
+	}
+
+	@Test
+	public void trailingPunctuationIsStrippedFromDisplayNames() {
+		assertEquals("Braevar", PictureBookUtil.stripTrailingPunctuation("Braevar,"));
+		assertEquals("Braevar", PictureBookUtil.stripTrailingPunctuation(" Braevar , "));
+		assertEquals("Braevar", PictureBookUtil.stripTrailingPunctuation("Braevar—"));
+		assertEquals("A trailing apostrophe is a plural possessive, not a cut", "the Joneses'", PictureBookUtil.stripTrailingPunctuation("the Joneses'"));
+		assertEquals("", PictureBookUtil.stripTrailingPunctuation(null));
+		assertEquals("", PictureBookUtil.stripTrailingPunctuation(",,,"));
+	}
+
+	/// The scene pass has to be two-pass for rule 3 to hold: with "Braevar," in scene 0 and
+	/// "Braevarn" in scene 1, a single pass would have already written "Braevar" into scene 0.
+	@Test
+	public void sceneRewriteUsesTheFinalResolutionForEarlyScenes() {
+		List<Map<String, Object>> scenes = new ArrayList<>();
+		scenes.add(scene("Braevar,", "Elara"));
+		scenes.add(scene("Braevarn"));
+		scenes.add(scene("Braevar,", "Elara"));
+		Map<String, String> aliases = PictureBookUtil.canonicalizeSceneCharacterNames(scenes, null);
+		assertEquals(List.of("Braevarn", "Elara"), namesOf(scenes.get(0)));
+		assertEquals(List.of("Braevarn"), namesOf(scenes.get(1)));
+		assertEquals(List.of("Braevarn", "Elara"), namesOf(scenes.get(2)));
+		assertEquals("Braevarn", aliases.get("Braevar,"));
+		Map<String, Integer> sceneCountByName = new LinkedHashMap<>();
+		for (Map<String, Object> s : scenes) {
+			for (String n : namesOf(s)) sceneCountByName.merge(n, 1, Integer::sum);
+		}
+		assertEquals("Braevarn and Elara, not Braevar as well", 2, sceneCountByName.size());
+		assertEquals(Integer.valueOf(3), sceneCountByName.get("Braevarn"));
+	}
+
 	// ── The in-place scene pass ──────────────────────────────────────────────
 
 	/// The whole point: the scene notes themselves must end up carrying the canonical name, because

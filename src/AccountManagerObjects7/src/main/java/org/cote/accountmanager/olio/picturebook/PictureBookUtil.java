@@ -184,6 +184,27 @@ public class PictureBookUtil {
     static final String CHARACTERS_DIR = "Characters";
 
     /**
+     * Name of the world group every CURRENT-pipeline (per-book-world) PB2 character is created in:
+     * {@code WorldFactory} makes {@code <world>/Population} and {@code createFromScenes} writes the
+     * book's charPersons there (see the population re-route in {@code createFromScenes}, which reads
+     * {@code world.population.path}). Series chapters use the sibling shadow group named by
+     * {@link PbBookUtil#chapterShadowCharGroupName}. Both carry the book's Writer/Admin role grants,
+     * so they are the authorization container for a PB2 character, exactly as {@code <book>} is for a
+     * legacy {@code <book>/Characters} one.
+     */
+    static final String POPULATION_DIR = "Population";
+
+    /**
+     * Is this group name one of the two PB2 character homes ({@code Population} or
+     * {@code Chapter Population <slug>})? Used by {@link #tagApparelSceneIndex}'s PB1 guard so a
+     * current-pipeline character is authorized instead of being silently skipped as "not in a book".
+     */
+    static boolean isPb2CharacterGroupName(String groupName) {
+        if (groupName == null) return false;
+        return POPULATION_DIR.equals(groupName) || groupName.startsWith(PbBookUtil.chapterShadowCharGroupName(""));
+    }
+
+    /**
      * Every PB2 graph model, ordered child→parent so a delete never precedes its referent:
      * binding→node/sourceNode, run→workflow, node→workflow, artifact→producedByNode (node), workflow→book,
      * scene→book, castGroup→book/series, book. Shared by {@link #deleteGroupRecursive},
@@ -400,7 +421,7 @@ public class PictureBookUtil {
      * Resolves each scene-character name the extraction produced to ONE canonical display name, so
      * the character loop creates one charPerson per person and every scene pins that same name.
      *
-     * <p>Two rules, in order:
+     * <p>Three rules, in order:
      * <ol>
      * <li><b>Same key, same character.</b> {@link #characterNameKey} folds case, accents,
      *     punctuation, possessives, articles, honorifics and kinship synonyms. Mechanical and safe.</li>
@@ -408,10 +429,20 @@ public class PictureBookUtil {
      *     {@code "Darby's dad"} when Darby's is the ONLY father in the book. When there are two
      *     fathers it stays separate — a book with two families must not have every "Dad" collapsed
      *     into one person, and guessing which family is meant is not something this can know.</li>
+     * <li><b>A name the LLM cut short joins the full one.</b> {@code "Braevar,"} — a trailing comma
+     *     is the extraction spilling a list separator into the name field — joins {@code "Braevarn"}
+     *     when a single-token name differs from it only by one or two trailing characters. Gated on
+     *     that punctuation evidence, in either order of arrival; a clean {@code "Braevar"} stays its
+     *     own character. Measured 2026-09-26 (IssueLog-2026-09-22): the junk {@code "Braevar,"}
+     *     (age 0, "translucent wings") persisted alongside the real {@code "Braevarn"}.</li>
      * </ol>
      *
      * <p>The FIRST spelling seen wins as the display name, which is what the user asked for: "there
-     * needs to be a way to move/remove a duplicate and use just the first version".
+     * needs to be a way to move/remove a duplicate and use just the first version". The one
+     * exception is rule 3: the cut-short spelling is never the display name, whichever arrived
+     * first — so when it arrived first, the key it registered is re-pointed at the full name. That
+     * is why {@link #canonicalizeSceneCharacterNames} resolves every name BEFORE it rewrites any
+     * scene ({@link #canonical}), and why display names are trimmed of trailing punctuation.
      *
      * <p>Order-dependent by construction, so feed it names in scene order. Anything it cannot decide
      * is left as a separate character for {@code mergeCharacters} to fix by hand.
@@ -421,19 +452,36 @@ public class PictureBookUtil {
         /// Key -> canonical display name, for keys that END in a relation word and have a possessor
         /// ("darby father"). Only these can absorb a bare relation.
         private final Map<String, List<String>> possessiveKeysByRelation = new LinkedHashMap<>();
-        private final Map<String, String> aliases = new LinkedHashMap<>();
+        /// Single-token keys registered from a name that carried trailing punctuation (rule 3's
+        /// evidence of truncation) and have not yet been joined to a full name.
+        private final Set<String> truncatedKeys = new LinkedHashSet<>();
+        /// Every raw (trimmed) name seen -> its key, in first-seen order. Aliases are derived from
+        /// this at read time so a rule-3 re-point can never leave a stale alias behind.
+        private final Map<String, String> keyByRaw = new LinkedHashMap<>();
+
+        /** Shortest single-token name rule 3 will join; shorter names are too easy to collide. */
+        static final int MIN_TRUNCATION_LENGTH = 4;
+        /** Most trailing characters rule 3 treats as "cut short". */
+        static final int MAX_TRUNCATION_DELTA = 2;
 
         /**
          * @return the canonical display name for {@code rawName}, or null when the name is unusable.
          */
         public String resolve(String rawName) {
             if (rawName == null || rawName.trim().isEmpty()) return null;
-            String key = characterNameKey(rawName);
+            String raw = rawName.trim();
+            boolean truncated = hasTrailingPunctuation(raw);
+            String display = stripTrailingPunctuation(raw);
+            if (display.isEmpty()) return null;
+            String key = characterNameKey(display);
             if (key.isEmpty()) return null;
+            keyByRaw.putIfAbsent(raw, key);
 
             String known = canonicalByKey.get(key);
             if (known != null) {
-                if (!known.equals(rawName.trim())) aliases.put(rawName.trim(), known);
+                /// A clean arrival of a key first registered from a cut-short name confirms the
+                /// spelling: drop the truncation mark so rule 3 cannot later re-point it.
+                if (!truncated) truncatedKeys.remove(key);
                 return known;
             }
 
@@ -443,13 +491,36 @@ public class PictureBookUtil {
                 if (candidates != null && candidates.size() == 1) {
                     String canonical = candidates.get(0);
                     canonicalByKey.put(key, canonical);
-                    aliases.put(rawName.trim(), canonical);
                     return canonical;
                 }
             }
 
-            String display = rawName.trim();
+            /// Rule 3, forward: this cut-short name is a prefix of an established full name.
+            if (truncated && isTruncationCandidate(key)) {
+                for (String fullKey : canonicalByKey.keySet()) {
+                    if (isTruncationOf(key, fullKey)) {
+                        String canonical = canonicalByKey.get(fullKey);
+                        canonicalByKey.put(key, canonical);
+                        return canonical;
+                    }
+                }
+            }
+            /// Rule 3, reverse: this full name extends a cut-short one seen earlier. The full
+            /// spelling becomes the display name for both keys.
+            if (!truncated && isTruncationCandidate(key)) {
+                for (String shortKey : new ArrayList<>(truncatedKeys)) {
+                    if (isTruncationOf(shortKey, key)) {
+                        String old = canonicalByKey.get(shortKey);
+                        for (Map.Entry<String, String> e : canonicalByKey.entrySet()) {
+                            if (e.getValue().equals(old)) e.setValue(display);
+                        }
+                        truncatedKeys.remove(shortKey);
+                    }
+                }
+            }
+
             canonicalByKey.put(key, display);
+            if (truncated && isTruncationCandidate(key)) truncatedKeys.add(key);
             /// Record the reverse direction too: a possessive form seen AFTER a bare relation must
             /// not retroactively steal it (the bare one already has its own entry), but it does
             /// become the anchor for any later bare mention.
@@ -462,8 +533,41 @@ public class PictureBookUtil {
             return display;
         }
 
+        /**
+         * Lookup only: the canonical display name {@code rawName} resolves to NOW, after every name
+         * has been fed through {@link #resolve}. Differs from {@code resolve}'s return value only
+         * when rule 3 re-pointed a cut-short spelling at a full name that arrived later.
+         *
+         * @return the canonical name, or null when the name is unusable or was never resolved.
+         */
+        public String canonical(String rawName) {
+            if (rawName == null || rawName.trim().isEmpty()) return null;
+            String display = stripTrailingPunctuation(rawName.trim());
+            if (display.isEmpty()) return null;
+            String key = characterNameKey(display);
+            if (key.isEmpty()) return null;
+            return canonicalByKey.get(key);
+        }
+
+        private static boolean isTruncationCandidate(String key) {
+            return key.length() >= MIN_TRUNCATION_LENGTH && key.indexOf(' ') < 0;
+        }
+
+        /// shortKey is fullKey cut short by 1..MAX_TRUNCATION_DELTA trailing characters; both single-token.
+        private static boolean isTruncationOf(String shortKey, String fullKey) {
+            if (fullKey.indexOf(' ') >= 0 || shortKey.indexOf(' ') >= 0) return false;
+            int delta = fullKey.length() - shortKey.length();
+            return delta >= 1 && delta <= MAX_TRUNCATION_DELTA && fullKey.startsWith(shortKey)
+                    && shortKey.length() >= MIN_TRUNCATION_LENGTH;
+        }
+
         /** Raw name -> canonical name, for every name that was folded into another. */
         public Map<String, String> getAliases() {
+            Map<String, String> aliases = new LinkedHashMap<>();
+            for (Map.Entry<String, String> e : keyByRaw.entrySet()) {
+                String canonical = canonicalByKey.get(e.getValue());
+                if (canonical != null && !canonical.equals(e.getKey())) aliases.put(e.getKey(), canonical);
+            }
             return aliases;
         }
 
@@ -471,6 +575,21 @@ public class PictureBookUtil {
         public List<String> getCanonicalNames() {
             return new ArrayList<>(new java.util.LinkedHashSet<>(canonicalByKey.values()));
         }
+    }
+
+    /// Trailing list separators, sentence punctuation, dashes and quotes - what an LLM spills into a
+    /// name field when it cuts a name short. An apostrophe is NOT included: a trailing one is a
+    /// plural possessive ("the Joneses'"), not a cut.
+    private static final Pattern NAME_TRAILING_PUNCTUATION = Pattern.compile("[\\s,;:.!?\\-–—\"“”]+$");
+
+    static boolean hasTrailingPunctuation(String name) {
+        return name != null && NAME_TRAILING_PUNCTUATION.matcher(name).find();
+    }
+
+    /** {@code "Braevar,"} to {@code "Braevar"}; trimmed. Never returns null. */
+    public static String stripTrailingPunctuation(String name) {
+        if (name == null) return "";
+        return NAME_TRAILING_PUNCTUATION.matcher(name.trim()).replaceFirst("").trim();
     }
 
     /**
@@ -1052,7 +1171,7 @@ public class PictureBookUtil {
                     .collect(java.util.stream.Collectors.joining(","));
             BaseRecord existing = AttributeUtil.getAttribute(keep, ATTR_SCENE_REFS);
             if (existing != null) {
-                existing.setFlex(FieldNames.FIELD_VALUE, csv);
+                setExistingAttributeValue(existing, csv);
                 if (!IOSystem.getActiveContext().getRecordUtil().updateRecord(existing)) {
                     logger.warn("mergeCharacters: failed to update " + ATTR_SCENE_REFS + " on "
                             + keep.get(FieldNames.FIELD_NAME));
@@ -1064,6 +1183,30 @@ public class PictureBookUtil {
             }
         } catch (Exception e) {
             logger.warn("mergeCharacters: failed to union " + ATTR_SCENE_REFS + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Overwrite the {@code value} of an EXISTING {@code common.attribute} record so the follow-on
+     * {@code updateRecord(attr)} actually persists the new value.
+     *
+     * <p>A freshly instantiated attribute carries {@code value} as a {@code FLEX} field, so
+     * {@code setFlex} is the right call and materializes the concrete type. An attribute READ BACK
+     * from the DB already has {@code value} materialized as its concrete type ({@code INT},
+     * {@code STRING}, ...), and {@code BaseRecord.updateField} refuses to overwrite a non-FLEX field
+     * ({@code NOT_ABSTRACT_FIELD}: "field value is not abstract and cannot be overwritten").
+     * {@code FieldUtil.setFlex} swallows that into an ERROR log, so the subsequent
+     * {@code updateRecord} re-persists the OLD value and still returns {@code true} — a silent no-op.
+     * Found 2026-10-07 by {@code TestPbApparelSceneTag} (a re-tag read back the first sceneIndex).
+     * The replacement value must be of the same type as the stored one (sceneIndex is always an
+     * int, sceneRefs always a CSV string).
+     */
+    static void setExistingAttributeValue(BaseRecord attr, Object val) throws Exception {
+        org.cote.accountmanager.model.field.FieldType f = attr.getField(FieldNames.FIELD_VALUE);
+        if (f != null && f.getValueType() != org.cote.accountmanager.model.field.FieldEnumType.FLEX) {
+            attr.set(FieldNames.FIELD_VALUE, val);
+        } else {
+            attr.setFlex(FieldNames.FIELD_VALUE, val);
         }
     }
 
@@ -1194,6 +1337,12 @@ public class PictureBookUtil {
      *
      * <p>Tolerates both persisted shapes ({@code {name:...}} map, bare string) exactly as the
      * readers around it do, and leaves any entry it cannot resolve untouched.
+     *
+     * <p>Two passes over the same list: every name is RESOLVED first, then every entry is REWRITTEN
+     * from the finished resolver ({@link CharacterNameResolver#canonical}). A single pass would
+     * write a cut-short spelling ({@code "Braevar,"}) into the early scenes and the full one into the
+     * late scenes when the full name arrives later — the resolver re-points the short key, but a
+     * scene already rewritten would not see it.
      */
     @SuppressWarnings("unchecked")
     public static Map<String, String> canonicalizeSceneCharacterNames(List<Map<String, Object>> sceneList,
@@ -1203,6 +1352,16 @@ public class PictureBookUtil {
             for (String seed : seedNames) resolver.resolve(seed);
         }
         if (sceneList == null) return resolver.getAliases();
+        /// Pass 1: resolve, in scene order.
+        for (Map<String, Object> scene : sceneList) {
+            Object charsObj = (scene != null) ? scene.get("characters") : null;
+            if (!(charsObj instanceof List)) continue;
+            for (Object sc : (List<Object>) charsObj) {
+                String raw = extractCharName(sc);
+                if (raw != null) resolver.resolve(raw);
+            }
+        }
+        /// Pass 2: rewrite from the finished resolver.
         for (Map<String, Object> scene : sceneList) {
             Object charsObj = (scene != null) ? scene.get("characters") : null;
             if (!(charsObj instanceof List)) continue;
@@ -1213,15 +1372,15 @@ public class PictureBookUtil {
                     Map<String, Object> cm = (Map<String, Object>) sc;
                     Object raw = cm.get("name");
                     if (!(raw instanceof String)) continue;
-                    String canonical = resolver.resolve((String) raw);
+                    String canonical = resolver.canonical((String) raw);
                     if (canonical != null) cm.put("name", canonical);
                 }
                 else if (sc instanceof String) {
                     /// A bare string entry is a NAME only in the pre-buildSceneEntry shape this
                     /// method runs against; an objectId string appears only in the persisted meta,
-                    /// which this never sees. Guarded anyway - a UUID keys to itself, so resolve()
+                    /// which this never sees. Guarded anyway - a UUID keys to itself, so canonical()
                     /// returns it unchanged and the entry is a no-op.
-                    String canonical = resolver.resolve((String) sc);
+                    String canonical = resolver.canonical((String) sc);
                     if (canonical != null) chars.set(i, canonical);
                 }
             }
@@ -3339,7 +3498,18 @@ public class PictureBookUtil {
      * <p><b>Why the apparel's own group cannot be the check.</b> {@code ApparelUtil.constructApparel}
      * creates apparel in the <i>world's</i> Apparel group, olio-owned and shared — so authorizing
      * the apparel's group would authorize the shared corpus, not the book. Authorization has to come
-     * from the character, which does live in {@code <book>/Characters}.
+     * from the character, which lives in {@code <book>/Characters} (legacy layout) or in the book
+     * world's {@code Population} / chapter {@code Chapter Population <slug>} group (current layout).
+     *
+     * <p><b>Current-layout characters were silently skipped until 2026-10-07.</b> The PB1 guard below
+     * treated "not in a {@code Characters} group" as "not in a book" and returned {@code false} without
+     * writing — but since the per-book-world change, {@code createFromScenes} puts EVERY PB2 character
+     * in the world's {@code Population} group (series chapters: the shadow group), so the scene-tag
+     * route was a no-op for every current-pipeline book while reporting nothing. A character in one of
+     * those groups now falls through to {@link #authorizeCharacterApparel}, which authorizes
+     * {@code WRITE} on the character's own group — the group that carries the book's Writer/Admin
+     * grants — so a book writer tags and a stranger gets 403. The silent {@code false} is kept only
+     * for a character in some other, non-book group (a user's own {@code ~/...} folder, a legacy sim).
      *
      * @param charObjectId the owning character; required, and the thing actually authorized
      * @throws PictureBookException 404 when the character or apparel is absent/unreadable, 403 when
@@ -3349,7 +3519,8 @@ public class PictureBookUtil {
             int sceneIndex) {
         // PB1 guard: identical pattern to persistBookSdConfigFk. Characters in a PB1 world have no
         // olio.pb.book row; those characters may live in a group other than a book's "Characters" folder.
-        // If the book-group lookup returns null, skip silently instead of throwing a 403.
+        // If the book-group lookup returns null, skip silently instead of throwing a 403. A current-layout
+        // PB2 character (Population / Chapter Population <slug>) is NOT a PB1 character and is authorized.
         Query guardCq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON,
                 FieldNames.FIELD_OBJECT_ID, charObjectId);
         guardCq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -3361,8 +3532,12 @@ public class PictureBookUtil {
             if (guardGroupId != null && guardGroupId > 0L) {
                 BaseRecord guardCharGroup = IOSystem.getActiveContext().getAccessPoint()
                         .findById(user, ModelNames.MODEL_GROUP, guardGroupId);
+                String guardGroupName = null;
+                if (guardCharGroup != null) {
+                    guardGroupName = guardCharGroup.get(FieldNames.FIELD_NAME);
+                }
                 Long bookGroupId = null;
-                if (guardCharGroup != null && CHARACTERS_DIR.equals(guardCharGroup.get(FieldNames.FIELD_NAME))) {
+                if (CHARACTERS_DIR.equals(guardGroupName)) {
                     bookGroupId = guardCharGroup.get(FieldNames.FIELD_PARENT_ID);
                 }
                 if (bookGroupId != null && bookGroupId > 0L) {
@@ -3375,8 +3550,8 @@ public class PictureBookUtil {
                     if (book == null) {
                         return false; // PB1 book — no olio.pb.book row
                     }
-                } else {
-                    return false; // Character not in a book's Characters group — PB1
+                } else if (!isPb2CharacterGroupName(guardGroupName)) {
+                    return false; // Character in neither a book's Characters group nor a PB2 world group — PB1
                 }
             }
         }
@@ -3397,7 +3572,9 @@ public class PictureBookUtil {
             BaseRecord existing = AttributeUtil.getAttribute(apparel, "sceneIndex");
             boolean ok;
             if (existing != null) {
-                existing.setFlex(FieldNames.FIELD_VALUE, sceneIndex);
+                // Typed set, not setFlex: the read-back attribute's value is already materialized as
+                // INT and setFlex silently refuses to overwrite it (see setExistingAttributeValue).
+                setExistingAttributeValue(existing, sceneIndex);
                 ok = IOSystem.getActiveContext().getRecordUtil().updateRecord(existing);
             } else {
                 BaseRecord newAttr = AttributeUtil.addAttribute(apparel, "sceneIndex", sceneIndex);
@@ -3821,8 +3998,36 @@ public class PictureBookUtil {
     /// Package-private (not private) for the same reason as parseLlmJsonObject below: same-package
     /// tests (TestLlmEmulator) feed synthesized emulator output through the REAL parser rather than
     /// a duplicate. Nothing production-side outside this package can reach it.
-    @SuppressWarnings("unchecked")
     static List<Map<String, Object>> parseLlmJsonArray(String response, String context, List<String> failedExtractions) {
+        return parseLlmJsonArray(response, context, failedExtractions, null);
+    }
+
+    /**
+     * Parse an LLM JSON array response, salvaging the elements that DO parse when the array as a
+     * whole does not.
+     *
+     * <p>Measured live 2026-10-07 (wizard spec, qwen3:8b-jos via LiteLLM, 191s generation): a
+     * 10-scene reply carried one corrupted token inside scene 4 — {@code "characters":[{"},{"name":
+     * ...}]} — and {@code JSONUtil.getList} rejected the whole 5.6KB array, so the extraction
+     * finished "COMPLETED" with ZERO scenes and the wizard showed nothing. Nine of the ten scenes
+     * were perfectly good. The object parser ({@link #parseLlmJsonObject}) already repairs a
+     * truncated reply; this is the array-side equivalent: walk the top-level elements with the
+     * string-aware {@link #findBalancedEnd}, bind each one on its own, keep what parses.
+     *
+     * <p>A stray quote flips the string/non-string parity for everything after it, so the walk is
+     * prefix-only: the elements BEFORE the corrupted one are recovered (4 of 10 on the measured
+     * reply) and the remainder reads as truncated. That is still the difference between a usable
+     * wizard step and an empty one; the single-shot caller additionally retries once with a
+     * corrective instruction (see {@link #extractScenesOnly}) before settling for a salvage.
+     *
+     * @param okOut optional single-element array: {@code true} only when the array parsed as a
+     *   whole; {@code false} on a salvage (partial) or a failure, so a caller can decide to retry
+     *   (same contract as {@link #parseLlmJsonObject(String, String, List, boolean[])})
+     */
+    @SuppressWarnings("unchecked")
+    static List<Map<String, Object>> parseLlmJsonArray(String response, String context, List<String> failedExtractions,
+            boolean[] okOut) {
+        if (okOut != null && okOut.length > 0) okOut[0] = false;
         if (response == null || response.isEmpty()) return new ArrayList<>();
         String trimmed = stripThink(response.trim());
         // Strip markdown code fences
@@ -3835,19 +4040,84 @@ public class PictureBookUtil {
         int start = trimmed.indexOf('[');
         int end = trimmed.lastIndexOf(']');
         if (start < 0 || end < 0 || end <= start) {
-            recordFailedExtraction(failedExtractions, context, "No JSON array ([...]) found in LLM response", response);
+            recordFailedExtraction(failedExtractions, context, KIND_NO_JSON,
+                "No JSON array ([...]) found in LLM response", response);
             return new ArrayList<>();
         }
         trimmed = trimmed.substring(start, end + 1);
+        String parseError;
         try {
             List<Map<String, Object>> parsed = JSONUtil.getList(trimmed, Map.class, null);
-            if (parsed != null) return parsed;
-            recordFailedExtraction(failedExtractions, context, "JSON array parse returned null", response);
+            if (parsed != null) {
+                if (okOut != null && okOut.length > 0) okOut[0] = true;
+                return parsed;
+            }
+            parseError = "JSON array parse returned null";
         } catch (Exception e) {
-            logger.warn("Failed to parse LLM JSON array: " + e.getMessage());
-            recordFailedExtraction(failedExtractions, context, e.getMessage(), response);
+            parseError = e.getMessage();
         }
+        logger.warn("Failed to parse LLM JSON array: " + parseError);
+        int[] dropped = new int[1];
+        List<Map<String, Object>> salvaged = salvageArrayElements(trimmed, dropped);
+        if (!salvaged.isEmpty()) {
+            String what = "Salvaged " + salvaged.size() + " element(s) from a malformed JSON array; "
+                + (dropped[0] > 0 ? dropped[0] + " element(s) could not be read" : "the remainder could not be read")
+                + " (" + parseError + ")";
+            logger.warn("Recovered " + (context != null ? context : "LLM JSON array") + ": " + what);
+            recordFailedExtraction(failedExtractions, context, KIND_PARSE, what, response);
+            return salvaged;
+        }
+        recordFailedExtraction(failedExtractions, context, KIND_PARSE, parseError, response);
         return new ArrayList<>();
+    }
+
+    /**
+     * Per-element salvage for a JSON array whose whole-text parse failed: bind each top-level
+     * {@code {...}} element independently and keep the ones that parse. Stops at the first element
+     * whose closing brace cannot be found (a truncated reply, or the parity damage a stray quote
+     * does to everything after it) after giving that trailing fragment one
+     * {@link #repairTruncatedJson} pass, so a reply cut off by the token ceiling still yields the
+     * scenes the model finished.
+     *
+     * @param arr the text from the opening {@code [} to the closing {@code ]} inclusive
+     * @param droppedOut optional single-element array receiving the number of elements that were
+     *   found but would not parse (a truncated tail counts as one)
+     */
+    static List<Map<String, Object>> salvageArrayElements(String arr, int[] droppedOut) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        int dropped = 0;
+        if (arr == null || arr.length() < 2) return out;
+        int i = 1;
+        int lastIdx = arr.length() - 1;
+        while (i < lastIdx) {
+            char c = arr.charAt(i);
+            if (c == ',' || Character.isWhitespace(c)) { i++; continue; }
+            if (c == ']') break;
+            if (c != '{') {
+                /// Not at an element boundary: whatever this is, the array is no longer walkable.
+                dropped++;
+                break;
+            }
+            int e = findBalancedEnd(arr, i);
+            String candidate;
+            boolean last = false;
+            if (e < 0 || e >= lastIdx) {
+                /// The element never closes inside the array: treat the rest as a truncated tail.
+                candidate = repairTruncatedJson(arr.substring(i, lastIdx));
+                last = true;
+            } else {
+                candidate = arr.substring(i, e + 1);
+            }
+            String[] err = new String[1];
+            Map<String, Object> m = JSONUtil.getLenientMap(candidate.getBytes(StandardCharsets.UTF_8),
+                String.class, Object.class, err);
+            if (m != null && !m.isEmpty()) out.add(m);
+            else dropped++;
+            if (last) break;
+            i = e + 1;
+        }
+        if (droppedOut != null && droppedOut.length > 0) droppedOut[0] = dropped;
+        return out;
     }
 
     /**
@@ -5533,6 +5803,15 @@ public class PictureBookUtil {
             SummarizeProgress cancelToken) {
         ChunkAttempt a = new ChunkAttempt();
         for (int attempt = 1; attempt <= 2; attempt++) {
+            /// KI-74: a cancel now ABORTS the in-flight call (PictureBookCancelRegistry.cancel ->
+            /// LLMConnectionManager.abortCancelScope), and an aborted attempt 1 comes back as an empty
+            /// reply with a generic error - which the classification below would retry. The caller's
+            /// loop checks the token only between chunks, so without this the cancel costs one more
+            /// full generation before it takes effect.
+            if (attempt > 1 && cancelToken != null && cancelToken.isCancelled()) {
+                logger.info("Chunk " + chunkCtx + ": cancelled — not retrying");
+                break;
+            }
             /// On the retry, TELL the model what went wrong. The previous version re-issued a
             /// byte-identical request — same template, same vars, same options — so its only
             /// mechanism was sampling luck, at ~90s a try. Truncation in particular will just
@@ -6027,6 +6306,47 @@ public class PictureBookUtil {
             // chunk leaves no spurious failedExtractions record; only the FINAL failure is recorded.
             String chunkCtx = "extract-scenes-chunk:" + (ci + 1) + "/" + chunks.size();
             ChunkAttempt a = attemptChunk(chunkLlm, vars, chunkCtx, cancelToken);
+            if (cancelToken != null && cancelToken.isCancelled()) {
+                /// KI-74: the cancel ABORTS the in-flight call. Two shapes come back:
+                ///
+                /// (a) The model had already FINISHED this passage when the cancel landed (terminator
+                ///     seen, JSON parsed, scenes present). That reply is paid-for, complete work:
+                ///     keep it. Fall through to the normal merge + checkpoint advance below; the
+                ///     top-of-loop check stops the NEXT iteration, or the loop ends here if this was
+                ///     the last chunk — in which case every passage was merged and reachedEnd is
+                ///     honestly true.
+                ///
+                /// (b) The call was cut off: nothing came back (CancellationException), or a stream
+                ///     without its terminator that salvage might parse into the FRONT half of the
+                ///     passage. Neither is a failure of the passage — recording it would show the
+                ///     user a "failed passage" for the one they stopped — and neither may be merged:
+                ///     merging a salvaged half would mark the chunk done and lose its tail for good.
+                ///     Stop HERE with chunksProcessed unchanged so the resume re-drives this chunk.
+                ///
+                /// (b) used to `continue` and rely on the top-of-loop cancel check to save the
+                /// checkpoint and clear reachedEnd — which it does for every chunk except the LAST:
+                /// there the for-condition ends the loop before the top is reached, reachedEnd stayed
+                /// true, and the post-loop block CLEARED the checkpoint and reported
+                /// extractionComplete=true for a run the user had just stopped. Measured 2026-10-07
+                /// (pictureBookAsyncJob A4): a 2-chunk run cancelled during chunk 2 came back
+                /// `cancelled` with extractionComplete=true and no checkpoint. Same shape as the
+                /// interrupt and unreachable-host final-chunk holes below.
+                boolean completeReply = a.parseOk && !a.lastAttemptStalled
+                        && a.result != null && !a.result.isEmpty();
+                if (!completeReply) {
+                    logger.info("Chunk " + chunkCtx + ": call aborted by cancel — not recorded as a failure;"
+                            + " stopping with " + sceneList.size() + " scenes and the checkpoint at "
+                            + checkpoint.chunksProcessed + "/" + chunks.size());
+                    if (groupPath != null) {
+                        /// chunksProcessed unchanged: this chunk was not merged. See the top-of-loop note.
+                        saveExtractCheckpoint(user, groupPath, workObjectId, checkpoint);
+                    }
+                    reachedEnd = false;
+                    break;
+                }
+                logger.info("Chunk " + chunkCtx + ": the model finished this passage before the cancel"
+                        + " took effect — keeping its scenes; stopping after this chunk");
+            }
             if (a.emptyReply()) {
                 lastChunkUnreachable = a.sawUnreachable;
                 if (a.sawUnreachable) {
@@ -8277,8 +8597,10 @@ public class PictureBookUtil {
         vars.put("count", String.valueOf(count));
         vars.put("text", text);
 
-        String llmResponse = callLlm(user, chatConfig, "pictureBook.extract-scenes", vars, promptTemplateOverride);
-        List<Map<String, Object>> scenes = parseLlmJsonArray(llmResponse, "extract-scenes:" + workObjectId, failedExtractions);
+        final BaseRecord cfg = chatConfig;
+        List<Map<String, Object>> scenes = extractSingleShot(
+                (attemptVars) -> callLlm(user, cfg, "pictureBook.extract-scenes", attemptVars, promptTemplateOverride),
+                vars, "extract-scenes:" + workObjectId, failedExtractions, cancelToken);
         // Normalize: LLM may return "summary" instead of "blurb"
         for (Map<String, Object> scene : scenes) {
             if (scene.get("blurb") == null && scene.get("summary") != null) {
@@ -8291,6 +8613,70 @@ public class PictureBookUtil {
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         OllamaModelUtil.unloadAll();
         return new ScenesOnlyResult(scenes, false, failedExtractions);
+    }
+
+    /**
+     * The single-shot (short text) scene extraction: one LLM call, parsed as a JSON array, with ONE
+     * corrective retry when the reply came back but would not parse as a whole.
+     *
+     * <p>Until 2026-10-07 this was a bare {@code callLlm} + {@code parseLlmJsonArray}: a reply with
+     * one corrupted token anywhere in it (measured live: {@code "characters":[{"},...} inside scene
+     * 4 of a 10-scene reply from qwen3:8b-jos via LiteLLM) discarded a 3-minute generation and
+     * completed the job with zero scenes. The chunked path ({@link #attemptChunk}) has retried
+     * malformed JSON once with a corrective instruction since the circuit-breaker work; the short
+     * path never got the same treatment because short documents "always worked" on .42. Same rules
+     * as the chunked path: retry MALFORMED JSON only — a null reply is a timeout, a refusal or an
+     * unreachable server, and re-issuing those just burns another request timeout; a cancel between
+     * the attempts stops the retry (KI-74: the cancel aborted attempt 1 mid-flight, which reads as a
+     * null reply, so it is covered by the null rule as well).
+     *
+     * <p>Outcome preference: a fully parsed reply from either attempt wins; otherwise the larger
+     * salvage ({@link #parseLlmJsonArray(String, String, List, boolean[])} keeps the elements that
+     * parse); the failure sink receives the record for the attempt whose result is returned, so a
+     * salvaged result still leaves a {@code parse} breadcrumb carrying the raw reply.
+     *
+     * @param llm the call to make; receives the vars for the attempt (attempt 2 carries the hint on
+     *   {@code text}) and returns the raw reply, or null when nothing usable came back
+     */
+    static List<Map<String, Object>> extractSingleShot(java.util.function.Function<Map<String, String>, String> llm,
+            Map<String, String> vars, String context, List<String> failedExtractions, SummarizeProgress cancelToken) {
+        boolean[] ok = new boolean[1];
+        String first = llm.apply(vars);
+        if (first == null) {
+            /// Timeout / refusal / unreachable / aborted: nothing to correct, nothing to salvage.
+            /// callLlm has already logged the cause. parseLlmJsonArray on null is an empty list
+            /// without a failure record, so leave a breadcrumb that says why there are no scenes.
+            recordFailedExtraction(failedExtractions, context, KIND_EMPTY,
+                "The model returned no usable reply (timed out, declined, or could not be reached)", null);
+            return new ArrayList<>();
+        }
+        List<String> firstFailures = new ArrayList<>();
+        List<Map<String, Object>> firstScenes = parseLlmJsonArray(first, context, firstFailures, ok);
+        if (ok[0]) return firstScenes;
+
+        if (cancelToken != null && cancelToken.isCancelled()) {
+            logger.info(context + ": cancelled — not retrying the malformed reply");
+            if (failedExtractions != null) failedExtractions.addAll(firstFailures);
+            return firstScenes;
+        }
+        logger.warn(context + ": reply could not be parsed as a whole (" + firstScenes.size()
+            + " scene(s) salvaged) — retrying once with a corrective instruction");
+        Map<String, String> retryVars = new LinkedHashMap<>(vars);
+        retryVars.put("text", vars.get("text")
+            + "\n\nIMPORTANT: your previous reply could not be parsed as JSON (it was truncated or"
+            + " malformed). Reply with ONLY a single complete, valid JSON array. Keep every field"
+            + " short so the whole array fits in one reply.");
+        String second = llm.apply(retryVars);
+        List<String> secondFailures = new ArrayList<>();
+        List<Map<String, Object>> secondScenes = second == null
+            ? new ArrayList<>()
+            : parseLlmJsonArray(second, context, secondFailures, ok);
+        if (second != null && ok[0]) return secondScenes;
+
+        /// Neither attempt parsed cleanly: keep whichever salvaged more, and its failure record.
+        boolean useSecond = secondScenes.size() > firstScenes.size();
+        if (failedExtractions != null) failedExtractions.addAll(useSecond ? secondFailures : firstFailures);
+        return useSecond ? secondScenes : firstScenes;
     }
 
     /**

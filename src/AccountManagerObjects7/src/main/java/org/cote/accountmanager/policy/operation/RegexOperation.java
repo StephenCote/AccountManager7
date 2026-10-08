@@ -67,13 +67,17 @@ public class RegexOperation implements IOperation {
 	*/
 	@Override
 	public <T> T read(BaseRecord sourceFact, BaseRecord referenceFact) {
-		// TODO Auto-generated method stub
 		return null;
 	}
+	/// NOT PORTED from AM6 (the original body is in the comment block above). Nothing references this
+	/// class - no pattern or policy resource names it, and it lacks the (IReader, ISearch) constructor
+	/// OperationUtil.getOperationInstance requires - so it cannot currently be reached by the engine.
+	/// If it is wired without being ported it answers ERROR rather than the null it returned before
+	/// 2026-10-07, which the evaluator would have propagated as a response of no type at all.
 	@Override
 	public OperationResponseEnumType operate(BaseRecord prt, BaseRecord prr, BaseRecord pattern, BaseRecord sourceFact,
 			BaseRecord referenceFact) {
-		// TODO Auto-generated method stub
-		return null;
+		logger.error("RegexOperation is not implemented for BaseRecord facts");
+		return OperationResponseEnumType.ERROR;
 	}
 }

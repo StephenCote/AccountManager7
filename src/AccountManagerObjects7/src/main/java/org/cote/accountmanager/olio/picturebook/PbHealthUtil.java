@@ -116,10 +116,12 @@ public class PbHealthUtil {
 	 * @param dataPath           the Olio data path ({@code test.datagen.path} / the service's configured path),
 	 *                           needed only when a world or its grants must be (re)created
 	 * @param codes              finding codes to heal, or null for all
-	 * @param overwriteTemplates unused at book scope; accepted for signature parity with {@link #healOrg}
 	 * @throws PictureBookException 404 when the book is not readable, 403 when the caller may not update it
+	 * <p>
+	 * There is deliberately no {@code overwriteTemplates} here: the prompt templates are organization-level
+	 * ({@link #auditPromptTemplates}), so a book-scope repair never touches them. Use {@link #healOrg}.
 	 */
-	public static Map<String, Object> healBook(BaseRecord user, String dataPath, String bookObjectId, Set<String> codes, boolean overwriteTemplates) {
+	public static Map<String, Object> healBook(BaseRecord user, String dataPath, String bookObjectId, Set<String> codes) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		if(!canHeal(user, book)) {
 			throw new PictureBookException(403, "Not authorized to repair this book");
@@ -140,8 +142,9 @@ public class PbHealthUtil {
 	public static Map<String, Object> checkOrg(BaseRecord user) {
 		List<Finding> findings = new ArrayList<>();
 		long orgId = orgOf(user);
+		PbOlioContextUtil.GrantAuditScan scan = new PbOlioContextUtil.GrantAuditScan();
 		for(BaseRecord book : readableBooks(user, orgId)) {
-			BookAudit a = auditBook(user, book);
+			BookAudit a = auditBook(user, book, scan);
 			findings.addAll(tagWithBook(a));
 		}
 		findings.addAll(auditCheckpoints(user));
@@ -162,8 +165,11 @@ public class PbHealthUtil {
 		List<Map<String, Object>> healed = new ArrayList<>();
 		List<Map<String, Object>> skipped = new ArrayList<>();
 		long orgId = orgOf(user);
+		/// The grant memo is only valid while nothing changes underneath it: a book whose heal pass applied
+		/// anything (grants included) invalidates it, and the post-heal audit below starts its own.
+		PbOlioContextUtil.GrantAuditScan scan = new PbOlioContextUtil.GrantAuditScan();
 		for(BaseRecord book : readableBooks(user, orgId)) {
-			BookAudit a = auditBook(user, book);
+			BookAudit a = auditBook(user, book, scan);
 			if(!canHeal(user, book)) {
 				for(Finding f : a.findings) {
 					if(f.healable) {
@@ -175,6 +181,9 @@ public class PbHealthUtil {
 			List<Map<String, Object>> bookHealed = new ArrayList<>();
 			List<Map<String, Object>> bookSkipped = new ArrayList<>();
 			applyBookHeals(a, dataPath, codes, bookHealed, bookSkipped);
+			if(!bookHealed.isEmpty()) {
+				scan = new PbOlioContextUtil.GrantAuditScan();
+			}
 			for(Map<String, Object> h : bookHealed) {
 				h.put("slug", a.slug);
 				h.put("bookObjectId", a.bookObjectId);
@@ -190,8 +199,9 @@ public class PbHealthUtil {
 		healPromptTemplates(user, orgId, codes, overwriteTemplates, healed, skipped);
 
 		List<Finding> after = new ArrayList<>();
+		PbOlioContextUtil.GrantAuditScan afterScan = new PbOlioContextUtil.GrantAuditScan();
 		for(BaseRecord book : readableBooks(user, orgId)) {
-			after.addAll(tagWithBook(auditBook(user, book)));
+			after.addAll(tagWithBook(auditBook(user, book, afterScan)));
 		}
 		after.addAll(auditCheckpoints(user));
 		after.addAll(auditPromptTemplates(user, orgId, overwriteTemplates));
@@ -347,6 +357,10 @@ public class PbHealthUtil {
 		String worldSlug;
 		BaseRecord olioUser;
 		BaseRecord world;
+		/** Assembled by {@link #auditWorld}; handed to the grant audit so the universe is not re-read per book. */
+		BookContext bctx;
+		/** Per-scan grant memo shared by every book of one organization scan; null for a single-book audit. */
+		PbOlioContextUtil.GrantAuditScan grantScan;
 		boolean worldLinkBroken;
 		final List<Finding> findings = new ArrayList<>();
 		final List<String> missingContainerPaths = new ArrayList<>();
@@ -374,10 +388,19 @@ public class PbHealthUtil {
 	// ─────────────────────────────── audit ───────────────────────────────
 
 	private static BookAudit auditBook(BaseRecord user, BaseRecord book) {
+		return auditBook(user, book, null);
+	}
+
+	/**
+	 * @param grantScan the per-scan grant memo for a multi-book scan ({@link #checkOrg} / {@link #healOrg}),
+	 *                  or null for a single-book audit
+	 */
+	private static BookAudit auditBook(BaseRecord user, BaseRecord book, PbOlioContextUtil.GrantAuditScan grantScan) {
 		IOContext ioContext = IOSystem.getActiveContext();
 		BookAudit a = new BookAudit();
 		a.user = user;
 		a.book = book;
+		a.grantScan = grantScan;
 		a.bookObjectId = book.get(FieldNames.FIELD_OBJECT_ID);
 		a.slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
 		a.octx = ioContext.findOrganizationContext(user);
@@ -432,7 +455,8 @@ public class PbHealthUtil {
 				.rec(a.book).ref("path", PbOlioContextUtil.bookWorldPath() + "/" + a.worldSlug));
 			return;
 		}
-		if(PbOlioContextUtil.assembleBookContext(a.world) == null) {
+		a.bctx = PbOlioContextUtil.assembleBookContext(a.world);
+		if(a.bctx == null) {
 			a.findings.add(new Finding(UNIVERSE_MISSING, SEV_ERROR,
 				"The " + PbOlioContextUtil.BOOKS_UNIVERSE + " universe cannot be assembled for world '" + a.worldSlug + "'", true)
 				.rec(a.world));
@@ -577,7 +601,7 @@ public class PbHealthUtil {
 	}
 
 	private static void auditGrants(BookAudit a) {
-		a.grants = PbOlioContextUtil.checkGrants(a.user, a.worldSlug, a.chapter);
+		a.grants = PbOlioContextUtil.checkGrants(a.user, a.worldSlug, a.chapter, a.bctx, a.grantScan);
 		if(a.grants.error != null) {
 			a.findings.add(new Finding(GRANTS_MISSING, SEV_ERROR, "Grant audit incomplete: " + a.grants.error, true).rec(a.book));
 		}

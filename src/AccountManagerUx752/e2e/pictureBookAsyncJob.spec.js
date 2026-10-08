@@ -303,12 +303,14 @@ test.describe('PictureBook async extraction jobs (LLM, gated)', () => {
             const jobId = await startAsyncExtract(request, workObjectId, chatConfigName, '&fresh=true');
 
             let cancelled = false;
+            let cancelledAt = 0;
             const job = await pollJob(request, jobId, {
                 onTick: async (j) => {
                     if (!cancelled && (j.current || 0) >= 1 && !j.terminal) {
                         const resp = await request.post(JOB + '/' + jobId + '/cancel');
                         expect(resp.status()).toBe(200);
                         cancelled = true;
+                        cancelledAt = Date.now();
                     }
                 }
             });
@@ -317,6 +319,14 @@ test.describe('PictureBook async extraction jobs (LLM, gated)', () => {
                 'the run finished before a cancel could be issued — inconclusive, not a failure');
 
             expect(job.status).toBe('cancelled');
+            // KI-74 (2026-10-07): cancel now ABORTS the LLM call in flight (AsyncJobRegistry.cancel ->
+            // LLMConnectionManager.abortCancelScope), so the job must reach its terminal state within
+            // seconds of the cancel - not after the running chunk's generation finishes. A chunk of
+            // AIME.pdf is minutes of generation; 60s is the discriminating bound (3s poll + teardown).
+            const settledAfterMs = Date.now() - cancelledAt;
+            console.log('[pbAsync] A4 cancel -> terminal after ' + settledAfterMs + 'ms');
+            expect(settledAfterMs, 'cancel must abort the in-flight LLM call, not wait for it (KI-74)')
+                .toBeLessThan(60000);
             // Cancellation is cooperative: the chunk loop breaks at a boundary and RETURNS what it
             // extracted. Discarding that would defeat the point of offering cancel at all.
             const partial = (job.result && job.result.sceneList) || [];

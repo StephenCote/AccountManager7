@@ -196,10 +196,15 @@ Done + genuinely verified (SD outcomes checked, not just JUnit exit codes):
   setup via `/AccountManagerService7/rest/setup/`, Vite dev `:8899`).
 
 Outstanding / not done:
-- **KI-39** — fix the fake-passing live test(s): `TestKontext#testKontextSceneWithOlioCharacters`
+- ~~**KI-39** — fix the fake-passing live test(s)~~ — **FIXED 2026-08-10 (KI-39 + KI-48, folded together
+  in `KnownIssues.md`):** the shared `SdTestGate` helper gates up front and skips *visibly* when the
+  checkpoint is not installed; `TestKontext#testKontextSceneWithOlioCharacters` resolves the Kontext
+  checkpoint from `test.swarm.kontextModel` and reports `Skipped: 1`, never a fake pass. Corrected
+  2026-10-07 (this bullet previously still read as open). Original text: `TestKontext#testKontextSceneWithOlioCharacters`
   silently returns green when SD refuses the uninstalled default model (bare `randomSDConfig()` with no
-  `model`). Must set `test.swarm.model` and `fail()` loudly instead of silent `return`. **Live FLUX-Kontext
-  generation is therefore NOT yet verified.**
+  `model`). Must set `test.swarm.model` and `fail()` loudly instead of silent `return`. Live FLUX-Kontext
+  generation with an installed checkpoint remains a separate open question — the gate skips, it does not
+  prove the generation path.
 - **Full catatone first-two-scenes real-content regression (Stephen):** run the picturebook backend
   pipeline on catatone.docx's first two scenes — composition = a dilapidated rental with Jideon
   (middle-aged Spanish man) and Duña (his drug-withdrawing teen daughter); fresh book (bump iter) to

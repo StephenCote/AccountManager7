@@ -28,7 +28,6 @@ public class Look  extends CommonAction implements IAction {
 	@Override
 	public BaseRecord beginAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor)
 			throws OlioException {
-		// TODO Auto-generated method stub
 		
 		BaseRecord cell = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		if(cell == null) {

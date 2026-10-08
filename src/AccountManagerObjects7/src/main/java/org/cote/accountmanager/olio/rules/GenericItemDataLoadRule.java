@@ -13,7 +13,7 @@ public class GenericItemDataLoadRule extends CommonContextRule implements IOlioC
 	
 	@Override
 	public void pregenerate(OlioContext context) {
-		// TODO Auto-generated method stub
+		/// Nothing to pre-generate: the item, animal and builder data loads below need the world already in place.
 		
 	}
 

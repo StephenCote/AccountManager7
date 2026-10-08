@@ -14,3 +14,5 @@ export { memberCloud } from './memberCloud.js';
 export { adoptCharacter } from './adoptCharacter.js';
 export { outfitBuilder } from './outfitBuilder.js';
 export { pictureBook } from './pictureBook.js';
+export { makeFact } from './makeFact.js';
+export { startGameWithCharacter } from './startGameWithCharacter.js';

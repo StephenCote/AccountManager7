@@ -65,7 +65,8 @@ public class ComputeProvider  implements IProvider {
 
 	@Override
 	public String describe(ModelSchema lmodel, BaseRecord model)  {
-		// TODO Auto-generated method stub
+		/// Nothing to describe: this provider computes or maintains fields, it does not carry content.
+		/// describe() is only meaningful for content providers (see PageIndexProvider).
 		return null;
 	}
 

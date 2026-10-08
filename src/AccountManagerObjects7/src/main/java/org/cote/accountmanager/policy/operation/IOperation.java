@@ -27,6 +27,9 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 
 public interface IOperation {
+	/// Not invoked by the policy engine: PolicyEvaluator.evaluateOperation calls operate() only, and
+	/// fact values are resolved through FactUtil. Every implementation returns null; implement it only
+	/// if an operation needs a typed read of its own facts outside operate().
 	public <T> T read(BaseRecord sourceFact,final BaseRecord referenceFact);
 	public OperationResponseEnumType operate(final BaseRecord prt,BaseRecord prr, final BaseRecord pattern, BaseRecord sourceFact,final BaseRecord referenceFact);
 }

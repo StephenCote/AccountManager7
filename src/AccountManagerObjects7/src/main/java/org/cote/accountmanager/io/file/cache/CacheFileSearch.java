@@ -75,9 +75,9 @@ public class CacheFileSearch extends FileSearch implements ICache {
 	
 	
 
+	/// Drops every cached query result that contains the record the index entry identifies.
 	@Override
 	public void clearCacheByIdx(IndexEntry idx) {
-		// TODO Auto-generated method stub
 		String type = idx.get(FieldNames.FIELD_TYPE);
 		cache.entrySet().removeIf(entry ->{
 			QueryResult mr = entry.getValue();

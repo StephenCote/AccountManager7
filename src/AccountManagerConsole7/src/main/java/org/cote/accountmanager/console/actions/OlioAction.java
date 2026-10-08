@@ -15,6 +15,8 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.InteractionUtil;
@@ -26,6 +28,7 @@ import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ChatLibraryUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
@@ -41,6 +44,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ConnectionDialectEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -104,20 +108,74 @@ public class OlioAction extends CommonAction implements IAction{
 		options.addOption("scan", false, "Bit indicating to perform a scan of the gallery");
 		options.addOption("verb", true, "Verb phrase to use when generating images");
 		
-		options.addOption("serviceType", true, "Type of LLM Service (Ollama, OpenAI)");
-		options.addOption("serverUrl", true, "Url to use for a specific LLM server");
-		options.addOption("apiVersion", true, "API Version to use with the serverURL");
-		options.addOption("apiKey", true, "Authorization key to use with the LLM server");
-		
+		options.addOption("serviceType", true, "Deprecated fallback LLM dialect on the chat config (OLLAMA, OPENAI, OPENAI_COMPAT); the connection's dialect wins when set");
+		options.addOption("connection", true, "Name of the system.connection in /Library/Connections to attach to -chatConfig (default '" + ChatLibraryUtil.DEFAULT_CONNECTION_NAME + "'); created if absent");
+		options.addOption("serverUrl", true, "LLM server URL written to the -connection record (created or updated)");
+		options.addOption("apiVersion", true, "API Version to use with the connection's server URL");
+		options.addOption("apiKey", true, "Authorization key written to the -connection record (created or updated)");
+
 	}
 	@Override
 	public void handleCommand(CommandLine cmd) {
-		// TODO Auto-generated method stub
-		
+
+	}
+
+	/// serverUrl/apiKey/requestTimeout live on system.connection, not olio.llm.chatConfig, so the
+	/// chat config is pointed at a library connection (the same /Library/Connections record the UI
+	/// and ChatLibraryUtil.populateDefaults use). An explicit -serverUrl/-apiKey updates that record.
+	BaseRecord resolveConnection(CommandLine cmd, BaseRecord user) {
+		String name = cmd.getOptionValue("connection", ChatLibraryUtil.DEFAULT_CONNECTION_NAME);
+		String serverUrl = cmd.getOptionValue("serverUrl");
+		String apiKey = cmd.getOptionValue("apiKey");
+		BaseRecord libDir = ChatLibraryUtil.getCreateConnectionLibrary(user);
+		if(libDir == null) {
+			logger.error("Unable to resolve the " + ChatLibraryUtil.LIBRARY_CONNECTIONS + " library");
+			return null;
+		}
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_CONNECTION, FieldNames.FIELD_NAME, name);
+		q.field(FieldNames.FIELD_GROUP_ID, libDir.get(FieldNames.FIELD_ID));
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, "serverUrl", "dialect"});
+		BaseRecord conn = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		if(conn == null) {
+			conn = ChatLibraryUtil.createLibraryConnection(user, libDir, name, serverUrl, 120);
+			if(conn == null) {
+				logger.error("Failed to create connection '" + name + "'");
+				return null;
+			}
+			logger.info("Created connection '" + name + "'" + (serverUrl != null ? " at " + serverUrl : ""));
+			serverUrl = null;
+		}
+		String dialect = null;
+		if(cmd.hasOption("serviceType")) {
+			String st = cmd.getOptionValue("serviceType").toUpperCase();
+			if(Arrays.stream(ConnectionDialectEnumType.values()).anyMatch(d -> d.name().equals(st))) {
+				dialect = st;
+			}
+		}
+		if(serverUrl == null && apiKey == null && dialect == null) {
+			return conn;
+		}
+		try {
+			BaseRecord patch = RecordFactory.newInstance(ModelNames.MODEL_CONNECTION, new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "serverUrl", "apiKey", "dialect"});
+			patch.set(FieldNames.FIELD_ID, conn.get(FieldNames.FIELD_ID));
+			patch.set(FieldNames.FIELD_OBJECT_ID, conn.get(FieldNames.FIELD_OBJECT_ID));
+			patch.set(FieldNames.FIELD_NAME, name);
+			if(serverUrl != null) patch.set("serverUrl", serverUrl);
+			if(apiKey != null) patch.set("apiKey", apiKey);
+			if(dialect != null) patch.set("dialect", ConnectionDialectEnumType.valueOf(dialect));
+			if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+				logger.error("Failed to update connection '" + name + "'");
+			}
+			else {
+				logger.info("Updated connection '" + name + "'" + (serverUrl != null ? " serverUrl=" + serverUrl : "") + (apiKey != null ? " (apiKey set)" : "") + (dialect != null ? " dialect=" + dialect : ""));
+			}
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error("Failed to patch connection '" + name + "': " + e.getMessage());
+		}
+		return conn;
 	}
 	@Override
 	public void handleCommand(CommandLine cmd, BaseRecord user) {
-		// TODO Auto-generated method stub
 
 		OlioContext octx = null;
 		BaseRecord epoch = null;
@@ -529,10 +587,14 @@ public class OlioAction extends CommonAction implements IAction{
 					if(cmd.hasOption("serviceType")) {
 						cfg.setValue("serviceType", LLMServiceEnumType.valueOf(cmd.getOptionValue("serviceType")));
 					}
-					cfg.setValue("serverUrl", cmd.getOptionValue("serverUrl"));
 					cfg.setValue("apiVersion", cmd.getOptionValue("apiVersion"));
-					cfg.setValue("apiKey", cmd.getOptionValue("apiKey"));
-					
+					if(cmd.hasOption("connection") || cmd.hasOption("serverUrl") || cmd.hasOption("apiKey")) {
+						BaseRecord conn = resolveConnection(cmd, user);
+						if(conn != null) {
+							cfg.set("connection", conn);
+						}
+					}
+
 					if(char1 != null && char2 != null) {
 						cfg.set("systemCharacter", char1);
 						cfg.set("userCharacter", char2);

@@ -569,17 +569,26 @@ public class SDUtil {
 		Queue.processQueue();
 	}
 
+	/// @deprecated The `style` argument has been dead for a long time: `NarrativeUtil.getSDPrompt` never
+	/// read it (OlioService passed the literal "((DEPRECATED))" with no effect). Removed end-to-end
+	/// 2026-10-07; this overload remains only because Console7 `OlioAction` still passes its `--style`
+	/// CLI option. Drop it together with that option.
+	@Deprecated
 	public void generateSDImages(OlioContext octx, List<BaseRecord> pop, String setting, String style, String bodyStyle, String verb, int batchSize, boolean export, boolean hires, int seed) {
-		generateSDImages(octx, pop, randomSDConfig(), setting, style, bodyStyle, verb, batchSize, export, hires, seed);
+		generateSDImages(octx, pop, randomSDConfig(), setting, bodyStyle, verb, batchSize, export, hires, seed);
 	}
+	/// @deprecated See the no-`style` overload; `style` is ignored.
+	@Deprecated
 	public void generateSDImages(OlioContext octx, List<BaseRecord> pop, BaseRecord sdConfig, String setting, String style, String bodyStyle, String verb, int batchSize, boolean export, boolean hires, int seed) {
+		generateSDImages(octx, pop, sdConfig, setting, bodyStyle, verb, batchSize, export, hires, seed);
+	}
+	public void generateSDImages(OlioContext octx, List<BaseRecord> pop, String setting, String bodyStyle, String verb, int batchSize, boolean export, boolean hires, int seed) {
+		generateSDImages(octx, pop, randomSDConfig(), setting, bodyStyle, verb, batchSize, export, hires, seed);
+	}
+	public void generateSDImages(OlioContext octx, List<BaseRecord> pop, BaseRecord sdConfig, String setting, String bodyStyle, String verb, int batchSize, boolean export, boolean hires, int seed) {
 
 		SecureRandom rand = new SecureRandom();
-		String useStyle = style;
 		String useBodyStyle = bodyStyle;
-		if(useStyle == null) {
-			useStyle = "professional photograph";
-		}
 		if(useBodyStyle == null) {
 			useBodyStyle = "full body";
 		}
@@ -590,11 +599,11 @@ public class SDUtil {
 			List<BaseRecord> nars = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(new BaseRecord[] {per}), setting);
 			BaseRecord nar = nars.get(0);
 			BaseRecord prof = per.get(FieldNames.FIELD_PROFILE);
-			
+
 			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
-			
+
 			String path = resolveCharacterImagePath(octx, per);
-			List<BaseRecord> bl = createPersonImage(octx.getOlioUser(), per, path, sdConfig,"Photo Op",  setting, useStyle, useBodyStyle, verb, steps, batchSize, hires, seed);
+			List<BaseRecord> bl = createPersonImage(octx.getOlioUser(), per, path, sdConfig,"Photo Op",  setting, useBodyStyle, verb, steps, batchSize, hires, seed);
 			/// makePath just created <gallery>/Characters/<name>; entitlements do not inherit,
 			/// so grant on it now or the images are invisible to the world role.
 			grantCharacterImagePath(octx, per);
@@ -614,17 +623,8 @@ public class SDUtil {
 		}
 		Queue.processQueue();
 	}
-	/*
-	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, String name) {
-		return createPersonImage(user, person, groupPath, name, null, "professional portrait", 50, 1);
-	}
-	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, String name, String setting, String pictureType, int steps, int batch) {
-		return createPersonImage(user, person, groupPath, randomSDConfig(), name, null, pictureType, "full body", null, steps, batch, false, 0);
-	}
-    */
-
 	public List<BaseRecord> createPersonFigurine(BaseRecord user, BaseRecord person, String groupPath, String name, int steps, int batch, boolean hires, int seed) {
-		Auto1111Txt2Img s2i = Auto1111Util.newTxt2Img(person, randomSDConfig(), "random", "professional portrait", "full body", null, steps);
+		Auto1111Txt2Img s2i = Auto1111Util.newTxt2Img(person, randomSDConfig(), "random", "full body", null, steps);
 		
 		s2i.setPrompt(NarrativeUtil.getSDFigurinePrompt(ProfileUtil.getProfile(null, person)));
 		if(seed > 0) {
@@ -664,10 +664,10 @@ public class SDUtil {
 		}
 		return oresp;
 	}
-	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, BaseRecord sdConfig, String name, String setting, String pictureType, String bodyType, String verb, int steps, int batch, boolean hires, int seed) {
+	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, BaseRecord sdConfig, String name, String setting, String bodyType, String verb, int steps, int batch, boolean hires, int seed) {
 		Object s2iObj = null;
 		if (apiType == SDAPIEnumType.AUTO1111) {
-			Auto1111Txt2Img s2i = Auto1111Util.newTxt2Img(person, sdConfig, setting, pictureType, bodyType, verb, steps);
+			Auto1111Txt2Img s2i = Auto1111Util.newTxt2Img(person, sdConfig, setting, bodyType, verb, steps);
 			if(seed > 0) {
 				s2i.setSeed(seed);
 			}
@@ -679,7 +679,7 @@ public class SDUtil {
 			s2iObj = s2i;
 		}
 		else if (apiType == SDAPIEnumType.SWARM) {
-			s2iObj = SWUtil.newTxt2Img(person, sdConfig, setting, pictureType, bodyType, verb, steps, seed);
+			s2iObj = SWUtil.newTxt2Img(person, sdConfig, setting, bodyType, verb, steps, seed);
 			applyImg2Img(user, sdConfig, (SWTxt2Img)s2iObj);
 		}
 		else if (apiType == SDAPIEnumType.UNKNOWN) {

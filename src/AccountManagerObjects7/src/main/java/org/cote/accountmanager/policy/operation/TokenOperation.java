@@ -39,7 +39,6 @@ public class TokenOperation extends Operation {
 		
 	@Override
 	public <T> T read(BaseRecord sourceFact, BaseRecord referenceFact) {
-		// TODO Auto-generated method stub
 		return null;
 	}
 	

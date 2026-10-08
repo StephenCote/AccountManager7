@@ -25,7 +25,6 @@ public class WalkTo extends CommonAction implements IAction {
 	
 	@Override
 	public void configureAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		// TODO Auto-generated method stub
 		/*
 		BaseRecord targ = getTarget(participants, influencers);
 
@@ -95,14 +94,12 @@ public class WalkTo extends CommonAction implements IAction {
 	@Override
 	public List<BaseRecord> definePolicyFactParameters(OlioContext context, BaseRecord actionResult, BaseRecord actor,
 			BaseRecord interactor) throws OlioException {
-		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public boolean counterAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor)
 			throws OlioException {
-		// TODO Auto-generated method stub
 		return false;
 	}
 

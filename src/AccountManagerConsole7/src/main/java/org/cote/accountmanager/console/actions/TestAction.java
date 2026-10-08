@@ -20,7 +20,6 @@ public class TestAction extends CommonAction {
 
 	@Override
 	public void handleCommand(CommandLine cmd, BaseRecord user) {
-		// TODO Auto-generated method stub
 		if(cmd.hasOption("test") && cmd.hasOption("vector")) {
 			logger.info("Testing vector store");
 			List<BaseRecord> store = new ArrayList<>();

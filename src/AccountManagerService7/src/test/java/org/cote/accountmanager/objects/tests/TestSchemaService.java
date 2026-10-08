@@ -6,6 +6,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import org.cote.accountmanager.io.IOContext;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelSchema;
@@ -121,18 +123,42 @@ public class TestSchemaService extends BaseTest {
 		ModelSchema created = RecordFactory.importSchemaFromUser("custom.removeFieldTest", schemaJson);
 		assertNotNull("Created schema is null", created);
 
-		/// Remove a field
-		boolean removed = RecordFactory.removeFieldFromSchema(created, "removeMe");
-		assertTrue("Expected field to be removed", removed);
+		IOContext ctx = IOSystem.getActiveContext();
+		try {
+			/// The column drop is gated on the off-by-default dropColumns property (database.dropColumns), which this test
+			/// context does not enable. With the gate closed the whole operation must be refused and nothing changed.
+			assertFalse("Test context must have dropColumns off", ctx.isDropColumns());
+			boolean refused = RecordFactory.removeFieldFromSchema(created, "removeMe");
+			assertFalse("Expected field removal to be refused while dropColumns is off", refused);
+			assertNotNull("Refused removal must not strip the field from the supplied schema", created.getFieldSchema("removeMe"));
+			RecordFactory.clearCache("custom.removeFieldTest");
+			ModelSchema stillThere = RecordFactory.getSchema("custom.removeFieldTest");
+			assertNotNull("Reloaded schema is null", stillThere);
+			assertNotNull("Refused removal must leave the persisted field in place", stillThere.getFieldSchema("removeMe"));
 
-		/// Reload and verify
-		ModelSchema reloaded = RecordFactory.getSchema("custom.removeFieldTest");
-		assertNotNull("Reloaded schema is null", reloaded);
-		assertNull("Removed field should not exist", reloaded.getFieldSchema("removeMe"));
-		assertNotNull("Kept field should still exist", reloaded.getFieldSchema("keepField"));
+			/// Opt in for exactly this call, then restore the default
+			ctx.setDropColumns(true);
+			boolean removed;
+			try {
+				removed = RecordFactory.removeFieldFromSchema(created, "removeMe");
+			}
+			finally {
+				ctx.setDropColumns(false);
+			}
+			assertTrue("Expected field to be removed once dropColumns is enabled", removed);
 
-		/// Cleanup
-		RecordFactory.releaseCustomSchema("custom.removeFieldTest");
+			/// Reload and verify
+			RecordFactory.clearCache("custom.removeFieldTest");
+			ModelSchema reloaded = RecordFactory.getSchema("custom.removeFieldTest");
+			assertNotNull("Reloaded schema is null", reloaded);
+			assertNull("Removed field should not exist", reloaded.getFieldSchema("removeMe"));
+			assertNotNull("Kept field should still exist", reloaded.getFieldSchema("keepField"));
+		}
+		finally {
+			ctx.setDropColumns(false);
+			/// Cleanup
+			RecordFactory.releaseCustomSchema("custom.removeFieldTest");
+		}
 	}
 
 	@Test

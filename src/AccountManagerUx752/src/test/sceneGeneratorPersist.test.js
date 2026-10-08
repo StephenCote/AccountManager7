@@ -61,7 +61,11 @@ vi.mock('../core/model.js', () => ({
         jsonModelKey: 'schema',
         forms: { sdConfig: {} },
         prepareInstance: mockPrepareInstance,
-        newPrimitive: vi.fn(() => ({}))
+        newPrimitive: vi.fn(() => ({})),
+        // The subset of olio.sd.config fields these tests touch. overlaySaved copies a stored key only
+        // when the MODEL declares it (or the template carries it) — see the KI-65 reload-gap test below.
+        getModelFields: () => ['model', 'refinerModel', 'steps', 'cfg', 'style', 'skipLandscape', 'flux2IncludeLandscapeRef']
+            .map((name) => ({ name }))
     }
 }));
 
@@ -159,6 +163,33 @@ describe('chat scene SD config — server-side per-chat persistence', () => {
         // real tweaks overlaid.
         expect(cfg.steps).toBe(30);
         expect(cfg.style).toBe('anime');
+    });
+
+    it('overlays saved MODEL fields the partial server template does not carry (KI-65 reload gap)', async () => {
+        __setChatConfigForTest('CHAT_A');
+        // What GET /olio/randomImageConfig really returns: only the fields the server explicitly set
+        // (measured 2026-10-07 — no steps/cfg at all), so `k in template` is false for every numeric tweak.
+        mockBuildEntity.mockImplementation(async () => ({
+            schema: 'olio.sd.config',
+            model: 'nodeValidModel.safetensors',
+            style: 'photograph',
+            skipLandscape: false,
+            flux2IncludeLandscapeRef: false
+        }));
+        mockLoadConfig.mockImplementation((name) =>
+            Promise.resolve(name === 'sdcfg-chat-CHAT_A'
+                ? { schema: 'olio.sd.config', steps: 13, cfg: 4, skipLandscape: true, flux2IncludeLandscapeRef: false, legacyGarbage: 'x' }
+                : null));
+
+        await ensureSdConfig();
+        let cfg = __getSdConfigForTest();
+
+        expect(cfg.steps).toBe(13);                       // declared by the model, absent from the template: restored
+        expect(cfg.cfg).toBe(4);
+        expect(cfg.skipLandscape).toBe(true);             // KI-66 toggle round-trips
+        expect(cfg.flux2IncludeLandscapeRef).toBe(false); // `false` is a real value, not "unset"
+        expect('legacyGarbage' in cfg).toBe(false);       // unknown legacy keys are still dropped
+        expect(cfg.model).toBe('nodeValidModel.safetensors');
     });
 
     it('persistConfig saves the per-chat record without model/refinerModel', async () => {

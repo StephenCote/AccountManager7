@@ -19,11 +19,14 @@ public class MemoryWriter extends RecordWriter {
 		this.recordIo = RecordIO.MEMORY;
 	}
 
+	/// Base implementation for every writer that does not override the batch form (FileWriter, JsonWriter):
+	/// each record is written in turn. Until 2026-10-07 this wrote recs[0] on every iteration, so a batch of
+	/// N distinct records translated the first one N times and never touched the rest (TestMemoryIO).
 	@Override
 	public int write(BaseRecord[] recs) throws WriterException {
 		int writeCount = 0;
 		for(int i = 0; i < recs.length; i++) {
-			if(write(recs[0])) {
+			if(write(recs[i])) {
 				writeCount++;
 			}
 		}
@@ -74,10 +77,11 @@ public class MemoryWriter extends RecordWriter {
 		throw new WriterException(WriterException.NOT_IMPLEMENTED);
 	}
 
+	/// The memory writer only runs record translation; it holds no store or stream, so there is nothing to close.
+	/// DBWriter and FileWriter inherit this: they open and close their connection/statement per call.
 	@Override
 	public void close() throws WriterException {
-		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override

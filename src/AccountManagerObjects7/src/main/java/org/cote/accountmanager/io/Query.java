@@ -10,12 +10,15 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
+import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.util.CryptoUtil;
@@ -56,6 +59,116 @@ public class Query extends LooseRecord{
 		this.setFields(query.getFields());
 		// logger.warn("Query Check: " + query.get(FieldNames.FIELD_TYPE));
 		// logger.warn(JSONUtil.exportObject(query, RecordSerializerConfig.getUnfilteredModule()));
+		expandRequestPaths();
+	}
+
+	/// Nested request paths ("connection.serverUrl", "profile.portrait.groupPath") are the documented
+	/// projection syntax for reaching into a foreign model, but StatementUtil.getSelectTemplate resolves
+	/// every request entry against the top-level schema and throws FieldException for a dotted name,
+	/// which DBSearch swallows into an empty result. Normalize them here instead: the root segment stays
+	/// in the top-level request and every following segment is added to the sub-plan of its parent field
+	/// (alongside that model's common fields so the nested record is still identifiable).
+	/// StatementUtil.getInnerSelectTemplate already projects nested models from getPlan(fieldName), so no
+	/// SQL change is involved. A path whose segments do not all resolve to a plannable field is left in
+	/// the request untouched so the existing "Field 'x.y' was not found" error still fires rather than
+	/// silently projecting something else. Idempotent; a no-op when no entry contains a dot.
+	/// Returns true when at least one path was expanded.
+	public boolean expandRequestPaths() {
+		List<String> request = getRequest();
+		if(request == null || request.stream().noneMatch(s -> s != null && s.contains("."))) {
+			return false;
+		}
+		String type = getType();
+		ModelSchema schema = (type != null ? RecordFactory.getSchema(type) : null);
+		if(schema == null) {
+			return false;
+		}
+		List<String> roots = new ArrayList<>();
+		List<String[]> paths = new ArrayList<>();
+		for(String s : request) {
+			if(s == null) {
+				continue;
+			}
+			if(!s.contains(".")) {
+				if(!roots.contains(s)) {
+					roots.add(s);
+				}
+				continue;
+			}
+			String[] segs = s.split("\\.");
+			if(validateRequestPath(schema, segs)) {
+				if(!roots.contains(segs[0])) {
+					roots.add(segs[0]);
+				}
+				paths.add(segs);
+			}
+			else {
+				/// Preserve the entry so the select template rejects it with the field-not-found error
+				roots.add(s);
+			}
+		}
+		if(paths.size() == 0) {
+			return false;
+		}
+		try {
+			set(FieldNames.FIELD_REQUEST, roots);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+			return false;
+		}
+		QueryPlan qp = plan(false);
+		for(String[] segs : paths) {
+			QueryPlan cur = qp;
+			ModelSchema cs = schema;
+			for(int i = 0; i < segs.length - 1; i++) {
+				FieldSchema fs = cs.getFieldSchema(segs[i]);
+				QueryPlan sub = cur.getSubPlan(segs[i]);
+				if(sub == null) {
+					sub = cur.plan(segs[i], RecordUtil.getCommonFields(fs.getBaseModel()));
+				}
+				if(sub == null) {
+					logger.error("Unable to plan request path '" + String.join(".", segs) + "' at segment '" + segs[i] + "' on model " + cs.getName());
+					break;
+				}
+				String leaf = segs[i + 1];
+				if(!sub.getPlanFields().contains(leaf)) {
+					sub.getPlanFields().add(leaf);
+				}
+				cur = sub;
+				cs = RecordFactory.getSchema(fs.getBaseModel());
+			}
+		}
+		releaseKey();
+		return true;
+	}
+
+	/// Every segment but the last must be a plannable foreign model field (MODEL or LIST of model with a
+	/// concrete base model); the last segment must exist on the model the path arrives at.
+	private static boolean validateRequestPath(ModelSchema schema, String[] segs) {
+		ModelSchema cs = schema;
+		for(int i = 0; i < segs.length; i++) {
+			if(cs == null || segs[i] == null || segs[i].length() == 0) {
+				return false;
+			}
+			FieldSchema fs = cs.getFieldSchema(segs[i]);
+			if(fs == null) {
+				return false;
+			}
+			if(i == segs.length - 1) {
+				return true;
+			}
+			boolean plannable = (
+				(fs.getFieldType() == FieldEnumType.MODEL || (fs.getFieldType() == FieldEnumType.LIST && ModelNames.MODEL_MODEL.equals(fs.getBaseType())))
+				&& fs.getBaseModel() != null
+				&& !ModelNames.MODEL_SELF.equals(fs.getBaseModel())
+				&& !ModelNames.MODEL_FLEX.equals(fs.getBaseModel())
+			);
+			if(!plannable) {
+				return false;
+			}
+			cs = RecordFactory.getSchema(fs.getBaseModel());
+		}
+		return false;
 	}
 	
 	public void setComparator(ComparatorEnumType comp) {
@@ -137,6 +250,8 @@ public class Query extends LooseRecord{
 				qp.getPlanFields().add(fieldName);
 			}
 			getRequest().add(fieldName);
+			/// The plan participates in the cache key; mutating it must drop the memoized key
+			releaseKey();
 		}
 		return qpf;
 	}
@@ -229,14 +344,16 @@ public class Query extends LooseRecord{
 	
 	public void setRequest(List<String> requestFields) {
 		setValue(FieldNames.FIELD_REQUEST, requestFields);
+		expandRequestPaths();
 	}
 	public void setRequest(String[] requestFields) {
 		try {
 			set(FieldNames.FIELD_REQUEST, new ArrayList<String>(Arrays.asList(requestFields)));
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
-			
+
 		}
+		expandRequestPaths();
 	}
 	
 	private BaseRecord getIRecord() {

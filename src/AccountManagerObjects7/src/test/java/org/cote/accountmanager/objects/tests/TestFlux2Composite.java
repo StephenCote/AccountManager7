@@ -407,6 +407,27 @@ public class TestFlux2Composite {
 			SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg, true));
 	}
 
+	/// isSupportedMode is the request-time gate ChatService.generateScene uses to answer 400 for a
+	/// mode it does not know, instead of letting resolveMode quietly downgrade it to classic
+	/// (2026-10-07). resolveMode's lenient fallback for already-saved configs is unchanged.
+	@Test
+	public void unsupportedCompositeModeIsRejectedByTheGateButStillResolvesLeniently() throws Exception {
+		assertTrue(SceneCompositeUtil.isSupportedMode("flux2"));
+		assertTrue(SceneCompositeUtil.isSupportedMode("kontext"));
+		assertTrue(SceneCompositeUtil.isSupportedMode("classic"));
+		assertTrue("the gate is case-insensitive, like resolveMode", SceneCompositeUtil.isSupportedMode(" KONTEXT "));
+		assertFalse(SceneCompositeUtil.isSupportedMode("bogus"));
+		assertFalse(SceneCompositeUtil.isSupportedMode("flux3"));
+		assertFalse(SceneCompositeUtil.isSupportedMode(""));
+		assertFalse(SceneCompositeUtil.isSupportedMode(null));
+		assertEquals("flux2|kontext|classic", SceneCompositeUtil.SUPPORTED_MODES);
+
+		BaseRecord cfg = sdConfig();
+		cfg.set("compositeMode", "bogus");
+		assertEquals("saved configs with a stale mode still resolve to classic rather than failing",
+			SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg, false));
+	}
+
 	/// A bare, schema-built config must resolve to FLUX.2 — the mode whose checkpoint actually ships.
 	///
 	/// History, because the trap is worth keeping: useKontext was declared `"default": true`, and a

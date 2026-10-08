@@ -477,14 +477,26 @@ public class PolicyEvaluator {
 		}
 		if(!g.inherits(ModelNames.MODEL_GROUP)){
 			logger.error("Match fact of group is expected");
-			return OperationResponseEnumType.ERROR;			
+			return OperationResponseEnumType.ERROR;
 		}
-		List<Long> perms = SoDPolicyUtil.getActivityPermissionsForType(g.get(FieldNames.FIELD_URN), p);
-
-		if(!perms.isEmpty()) outResponse = OperationResponseEnumType.SUCCEEDED;
+		/// ALL vs ANY is chosen by the pattern's comparator: ANY => the reference holds at least one of the
+		/// activity's permissions; anything else (the default) => it must hold every one of them.
+		/// SoDPolicyUtil is fail-closed when the activity defines no permissions.
+		ComparatorEnumType comp = pattern.getEnum(FieldNames.FIELD_COMPARATOR);
+		boolean matched = false;
+		if(comp == ComparatorEnumType.ANY) {
+			matched = SoDPolicyUtil.hasAnyActivityPermission(g, p);
+		}
+		else {
+			matched = SoDPolicyUtil.hasAllActivityPermissions(g, p);
+		}
+		if(trace) {
+			logger.info("SoD " + (comp == ComparatorEnumType.ANY ? "ANY" : "ALL") + " check for " + p.get(FieldNames.FIELD_URN) + " on activity " + g.get(FieldNames.FIELD_URN) + ": " + matched);
+		}
+		if(matched) outResponse = OperationResponseEnumType.SUCCEEDED;
 		else outResponse = OperationResponseEnumType.FAILED;
 		return outResponse;
-	}	
+	}
 	private OperationResponseEnumType evaluateAuthorization(BaseRecord prt, BaseRecord prr, BaseRecord pattern, BaseRecord fact, BaseRecord matchFact) throws NumberFormatException, ReaderException, IndexException {
 		OperationResponseEnumType outResponse = OperationResponseEnumType.UNKNOWN;
 		String ftype = fact.get(FieldNames.FIELD_MODEL_TYPE);

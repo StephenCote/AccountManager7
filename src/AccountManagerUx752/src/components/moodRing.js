@@ -79,6 +79,7 @@ async function initialize() {
     if (initializing || chatSession) return;
     initializing = true;
     try {
+        // Endpoint comes from the library system.connection (makeChat resolves it); no serverUrl here.
         chatConfig = await am7chat.makeChat("MoodRing", null, null, null);
         promptConfig = await am7chat.makePrompt("MoodRingObserver", MOOD_RING_SYSTEM_PROMPT);
         if (chatConfig && promptConfig) {

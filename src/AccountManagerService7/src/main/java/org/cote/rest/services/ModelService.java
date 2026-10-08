@@ -22,7 +22,10 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.schema.type.ResponseEnumType;
+import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.service.util.ServiceUtil;
@@ -162,28 +165,94 @@ public class ModelService {
 	@Path("/")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response patchModel(String json, @Context HttpServletRequest request, @Context HttpServletResponse response){
-		
+
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		if(user == null) {
+			return Response.status(401).entity(errorBody("Not authenticated")).build();
+		}
 		BaseRecord imp = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
-		boolean patched = false;
-		if(imp == null) {
-			return Response.status(404).entity(null).build();
+		if(imp == null || imp.getSchema() == null) {
+			return Response.status(400).entity(errorBody("Patch body could not be deserialized; the 'schema' field is required")).build();
 		}
 		ModelSchema ms = RecordFactory.getSchema(imp.getSchema());
-
-		if(IOSystem.getActiveContext().getAccessPoint().update(user, imp) != null) {
-			patched = true;
-			if(ms.isVectorize() && VectorUtil.isVectorSupported()) {
-				try {
-					IOSystem.getActiveContext().getVectorUtil().createVectorStore(imp, ChunkEnumType.WORD, 500);
-				} catch (FieldException e) {
-					logger.error(e);
-					e.printStackTrace();
-				}
-			}
-
+		if(ms == null) {
+			return Response.status(400).entity(errorBody("Unknown model '" + imp.getSchema() + "'")).build();
 		}
-		return Response.status(200).entity(patched).build();
+		/// A patch is identified by id, objectId or urn; without one AccessPoint.update would treat the
+		/// body as a CREATE, which is not what a PATCH caller asked for.
+		if(!RecordUtil.isIdentityRecord(imp)) {
+			return Response.status(400).entity(errorBody("Patch requires an identity field (id, objectId, or urn)")).build();
+		}
+		/// Same pre-flight deleteModel performs: a target that cannot be found (or read) is a 404, not a
+		/// policy failure on a phantom record.
+		Query iq = identityQuery(ms, imp);
+		if(iq == null || IOSystem.getActiveContext().getAccessPoint().find(user, iq) == null) {
+			return Response.status(404).entity(errorBody("Record not found")).build();
+		}
+
+		AuditUtil.clearLastAudit();
+		BaseRecord updated = IOSystem.getActiveContext().getAccessPoint().update(user, imp);
+		if(updated == null) {
+			/// The reason lives in the audit AccessPoint closed: DENY is an authorization outcome (403);
+			/// INVALID is a locked field or a writer/validation rejection of the patch itself (422).
+			ResponseEnumType ret = AuditUtil.getLastAuditResponse();
+			String msg = AuditUtil.getLastAuditMessage();
+			int status = (ret == ResponseEnumType.DENY ? 403 : 422);
+			logger.warn("PATCH " + imp.getSchema() + " rejected (" + ret + "): " + msg);
+			return Response.status(status).entity(errorBody((msg != null ? msg : "Update was not applied") + " (" + ret + ")")).build();
+		}
+		if(ms.isVectorize() && VectorUtil.isVectorSupported()) {
+			try {
+				IOSystem.getActiveContext().getVectorUtil().createVectorStore(imp, ChunkEnumType.WORD, 500);
+			} catch (FieldException e) {
+				logger.error(e);
+				e.printStackTrace();
+			}
+		}
+		return Response.status(200).entity(true).build();
+	}
+
+	private static String errorBody(String message) {
+		return "{\"error\":" + JSONUtil.exportObject(message) + "}";
+	}
+
+	/// Build the by-identity lookup for a patch body, preferring id, then objectId, then urn, and
+	/// projecting only the identity/ownership fields the model actually defines.
+	private static Query identityQuery(ModelSchema ms, BaseRecord imp) {
+		Query q = null;
+		Long id = (imp.hasField(FieldNames.FIELD_ID) ? imp.get(FieldNames.FIELD_ID) : null);
+		String objectId = (imp.hasField(FieldNames.FIELD_OBJECT_ID) ? imp.get(FieldNames.FIELD_OBJECT_ID) : null);
+		String urn = (imp.hasField(FieldNames.FIELD_URN) ? imp.get(FieldNames.FIELD_URN) : null);
+		if(id != null && id.longValue() > 0L) {
+			q = QueryUtil.createQuery(ms.getName(), FieldNames.FIELD_ID, id.longValue());
+		}
+		else if(objectId != null && objectId.length() > 0) {
+			q = QueryUtil.createQuery(ms.getName(), FieldNames.FIELD_OBJECT_ID, objectId);
+		}
+		else if(urn != null && urn.length() > 0) {
+			q = QueryUtil.createQuery(ms.getName(), FieldNames.FIELD_URN, urn);
+		}
+		if(q == null) {
+			return null;
+		}
+		String[] pfields = new String[] {
+			FieldNames.FIELD_ID,
+			FieldNames.FIELD_OWNER_ID,
+			FieldNames.FIELD_PARENT_ID,
+			FieldNames.FIELD_GROUP_ID,
+			FieldNames.FIELD_OBJECT_ID,
+			FieldNames.FIELD_URN,
+			FieldNames.FIELD_ORGANIZATION_ID
+		};
+		List<String> fields = new ArrayList<>();
+		for(String pf : pfields) {
+			if(ms.hasField(pf)) {
+				fields.add(pf);
+			}
+		}
+		q.setRequest(fields.toArray(new String[0]));
+		q.setCache(false);
+		return q;
 	}
 	
 	@RolesAllowed({"user"})

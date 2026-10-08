@@ -17,6 +17,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.util.LLMConnectionManager;
 
 /**
  * Principal-scoped registry and bounded executor for long-running background work.
@@ -183,6 +184,10 @@ public final class AsyncJobRegistry {
 		}
 		job.setStatus(AsyncJob.Status.RUNNING);
 		job.getProgress().setPhase("running");
+		/// KI-74: every LLM stream the work registers from this worker thread is attached to the
+		/// job's progress token, so cancel() can abort the call that is in flight instead of waiting
+		/// for it to finish before the loop notices the flag.
+		LLMConnectionManager.bindCancelScope(job.getProgress());
 		try {
 			String result = work.run(job);
 			/// Cancellation is cooperative: the work loops break and RETURN what they completed
@@ -204,6 +209,9 @@ public final class AsyncJobRegistry {
 			logger.error("Async job failed: kind=" + job.getKind() + " jobId=" + job.getJobId()
 				+ " — " + t, t);
 			finish(job, AsyncJob.Status.FAILED, null, t.getMessage() == null ? t.toString() : t.getMessage());
+		} finally {
+			LLMConnectionManager.unbindCancelScope(job.getProgress());
+			LLMConnectionManager.releaseCancelScope(job.getProgress());
 		}
 	}
 
@@ -248,7 +256,10 @@ public final class AsyncJobRegistry {
 			return false;
 		}
 		job.getProgress().cancel();
-		logger.info("Async job cancel requested: jobId=" + jobId + " kind=" + job.getKind());
+		/// KI-74: abort the LLM call the worker is blocked in right now, not just flag the loop.
+		int aborted = LLMConnectionManager.abortCancelScope(job.getProgress());
+		logger.info("Async job cancel requested: jobId=" + jobId + " kind=" + job.getKind()
+			+ " aborted " + aborted + " in-flight LLM call(s)");
 		return true;
 	}
 

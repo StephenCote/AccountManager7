@@ -37,7 +37,6 @@ public class RegionInterceptor implements IParseInterceptor {
 
 	@Override
 	public void filterParent(ParseConfiguration cfg, List<BaseRecord> parents, BaseRecord rec) {
-		// TODO Auto-generated method stub
 		String mapF = rec.get(cfg.getMapField());
 		try {
 

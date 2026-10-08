@@ -32,8 +32,11 @@ import com.lowagie.text.pdf.PdfWriter;
  * and stores the result as a {@code data.data} ({@code contentType=application/pdf}), setting
  * {@code report.exportedPdf} (design §4.1–§4.3, §11 Phase 4 / task Phase 5).
  *
- * <p>The certification block is rendered as <b>NOT CERTIFIED</b> — Phase 6 fills the signer/signature
- * fields. Access to the stored PDF via the stream/media servlets is out of scope for this phase.</p>
+ * <p>The certification block ({@link #certificationBlockLines}) renders the full signer / certificate /
+ * signature detail when the report is CERTIFIED and carries a {@code certification} (Phase 6, wired
+ * since 2026-06), and a <b>NOT CERTIFIED</b> notice otherwise. The exported PDF is served by
+ * {@code GET /rest/iso42001/report/{id}/pdf} ({@code ISO42001Service}), not by the generic
+ * stream/media servlets.</p>
  *
  * <p><b>⚠ Judgment call (§4.2 layout) — flagged.</b> The design gives a section ordering and a
  * certification-block field list but not exact typography/spacing. Section markdown content is

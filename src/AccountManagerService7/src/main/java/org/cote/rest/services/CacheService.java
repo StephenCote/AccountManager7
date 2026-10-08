@@ -71,6 +71,7 @@ public class CacheService {
 		StreamUtil.clearAllUnboxedStreams();
 		OlioUtil.clearCache();
 		VoiceService.clearCache();
+		PrincipalService.clearCache();
 	}
 	
 	public static void clearAuthorizationCache(HttpServletRequest request) {

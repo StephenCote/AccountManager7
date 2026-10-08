@@ -144,10 +144,18 @@ public class AccessPoint {
 		return outBool;
 	}
 
+	/// Update semantics: locked only if a locked field is PRESENT on the record being written.
 	public boolean isLocked(BaseRecord contextUser, BaseRecord object) {
 		List<String> fields = FieldLockUtil.getFieldLocks(contextUser, object);
 		List<FieldType> locked = object.getFields().stream().filter(f -> fields.contains(f.getName())).collect(Collectors.toList());
 		return (locked.size() > 0);
+	}
+	/// Delete semantics: locked if ANY enabled lock exists on the record, whatever the projection carries.
+	public boolean hasFieldLocks(BaseRecord contextUser, BaseRecord object) {
+		if(!object.hasField(FieldNames.FIELD_ID) || ((long)object.get(FieldNames.FIELD_ID)) <= 0L) {
+			return false;
+		}
+		return FieldLockUtil.getFieldLocks(contextUser, object).size() > 0;
 	}
 	public int create(BaseRecord contextUser, BaseRecord[] objects) {
 		return update(contextUser, objects);
@@ -328,7 +336,11 @@ public class AccessPoint {
 			return outBool;
 			
 		}
-		if(isLocked(contextUser, object)) {
+		/// Any enabled lock blocks deletion, not only locks on fields the caller's record happens to carry:
+		/// deletion destroys every field, and callers routinely pass identity-only records (REST DELETE
+		/// projects id/objectId/urn/groupId/organizationId - none of which can be locked), so the
+		/// present-fields check isLocked() uses for updates would never fire here.
+		if(hasFieldLocks(contextUser, object)) {
 			AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "One or more fields are locked");
 			return outBool;
 		}
@@ -374,35 +386,56 @@ public class AccessPoint {
 			return false;
 		}
 		
-		logger.warn("TODO: Check locks based on query");
-		
-		/// Need to add in the policy check for a variable delete request
-		///
-		AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Not implemented");
-		return false;
-		/*
-		if(isLocked(contextUser, object)) {
-			AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "One or more fields are locked");
-			return outBool;
+		/// Delete-by-query is all-or-nothing. The query shape above only proves the caller may SEARCH
+		/// this shape; deletion is decided per matched record, exactly as delete(user, object) does,
+		/// and a single locked or unauthorized match denies the whole batch so a query can never be used
+		/// to slip a record past the per-record gate. The matches are materialized with their common
+		/// fields (identity + owner/group/organization) so canDelete has a concrete record to evaluate,
+		/// and the writer is driven per record (not writer.delete(Query)) so nothing matched AFTER this
+		/// evaluation is deleted and the per-record cache invalidation still runs.
+		Query dq = new Query(query.copyRecord());
+		dq.setRequest(RecordUtil.getCommonFields(dq.getType()));
+		dq.setCache(false);
+		dq.setRequestRange(0L, 0);
+		QueryResult qr = search(contextUser, dq);
+		AuditUtil.query(audit, dq.key());
+		if(qr == null || qr.getCount() == 0) {
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "No records matched the query");
+			return false;
 		}
-		*/
-		/*
-		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canDelete(contextUser, contextUser, object);
-		if(prr.getType() == PolicyResponseEnumType.PERMIT) {
-			if(context.getRecordUtil().deleteRecord(object)) {
-				AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, null);
-				outBool = true;
+		BaseRecord[] matches = qr.getResults();
+		for(BaseRecord match : matches) {
+			/// Any enabled lock on the record blocks deletion: deleting destroys every field, including
+			/// the locked one, whether or not the projection happened to carry it.
+			if(FieldLockUtil.getFieldLocks(contextUser, match).size() > 0) {
+				AuditUtil.auditResource(audit, match);
+				AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "One or more fields are locked");
+				return false;
+			}
+			PolicyResponseType dprr = IOSystem.getActiveContext().getAuthorizationUtil().canDelete(contextUser, contextUser, match);
+			if(dprr == null || dprr.getType() != PolicyResponseEnumType.PERMIT) {
+				AuditUtil.auditResource(audit, match);
+				AuditUtil.closeAudit(audit, dprr, "Not authorized to delete one or more matched records");
+				return false;
+			}
+		}
+		int deleted = 0;
+		for(BaseRecord match : matches) {
+			if(context.getRecordUtil().deleteRecord(match)) {
+				deleted++;
 			}
 			else {
-				AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Failed to delete record");
+				logger.error("Failed to delete " + match.getSchema() + " #" + match.get(FieldNames.FIELD_ID));
 			}
 		}
+		if(deleted == matches.length) {
+			AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, "Deleted " + deleted + " record(s)");
+			outBool = true;
+		}
 		else {
-			AuditUtil.closeAudit(audit, prr, null);
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Deleted " + deleted + " of " + matches.length + " matched record(s)");
 		}
 		return outBool;
-		*/
-		
 	}
 	
 	/// KI-36: a caller-supplied model name that resolves to no schema (e.g. the literal string
@@ -696,9 +729,13 @@ public class AccessPoint {
 		}
 		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId);
 
-		/// TODO: There is an authorization gap where older style reference models like contactInformation are not correctly using the model level access binding
-		/// This results in an access failure in the dynamic policy for nested queries
-		///
+		/// contactInformation is left out of the projection because it is not content to vectorize (a contact /
+		/// address graph hanging off a person or account), not for authorization reasons. This filter, and its
+		/// five copies in the pageIndex* methods below, originally worked around a real gap: the nested dynamic
+		/// policy evaluated a populated contactInformation as its own resource instead of honouring its
+		/// access.policies.bind, so a reader entitled to the parent was denied the moment the field was planned.
+		/// That gap was closed on 2026-10-07 in PolicyUtil.getForeignPatterns / resolveBoundTarget (see
+		/// TestNestedBindAuthorization); planning the field would now authorize correctly.
 		q.planMost(false, Arrays.asList(new String[] {FieldNames.FIELD_CONTACT_INFORMATION}));
 		BaseRecord rec = find(user, q);
 		

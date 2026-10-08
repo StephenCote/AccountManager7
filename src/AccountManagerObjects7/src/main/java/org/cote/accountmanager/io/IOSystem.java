@@ -208,6 +208,7 @@ public class IOSystem {
 		activeContext = new IOContext(ioType, reader, writer, search);
 		activeContext.setIndexManager(fim);
 		activeContext.setDbUtil(dbUtil);
+		activeContext.setDropColumns(properties != null && properties.isDropColumns());
 		
 		if(ioType == RecordIO.FILE) {
 

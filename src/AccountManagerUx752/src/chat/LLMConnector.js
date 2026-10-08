@@ -33,6 +33,21 @@ let _activeConnections = new Map();
 let _connectionIdCounter = 0;
 const DEFAULT_HARD_TIMEOUT_MS = 300000; // 5 minutes hard limit
 
+// ── system.connection resolution ────────────────────────────────────
+// serverUrl / apiKey / requestTimeout live on a system.connection record referenced by
+// chatConfig.connection (foreign, followReference:false), so a chatConfig read returns only the
+// reference identity (id/objectId/name) and never the endpoint fields. ChatLibraryUtil seeds the
+// library connection under /Library/Connections as DEFAULT_CONNECTION_NAME.
+const DEFAULT_CONNECTION_NAME = "Local Ollama";
+const CONNECTION_FIELDS = ["id", "objectId", "name", "groupId", "serverUrl", "requestTimeout", "dialect", "upstream"];
+const CONNECTION_DEFAULT_TIMEOUT_S = 120; // system.connection.requestTimeout model default
+let _connectionCache = {};
+
+function connectionKey(ref) {
+    if (!ref) return null;
+    return ref.objectId || (ref.id ? String(ref.id) : null);
+}
+
 function trackConnection(sessionId, type) {
     let id = ++_connectionIdCounter;
     let conn = {
@@ -91,6 +106,100 @@ const LLMConnector = {
         return null;
     },
 
+    // ── Connection Resolution ────────────────────────────────────────
+
+    /// FK reference shape for chatConfig.connection (create and PATCH both take this form).
+    connectionRef: function(conn) {
+        if (!conn || (!conn.id && !conn.objectId)) return null;
+        let ref = { schema: "system.connection" };
+        if (conn.id) ref.id = conn.id;
+        if (conn.objectId) ref.objectId = conn.objectId;
+        return ref;
+    },
+
+    sameConnection: function(a, b) {
+        if (!a || !b) return false;
+        if (a.objectId && b.objectId) return a.objectId === b.objectId;
+        if (a.id && b.id) return a.id === b.id;
+        return false;
+    },
+
+    cachedConnection: function(ref) {
+        let key = connectionKey(ref);
+        return key ? (_connectionCache[key] || null) : null;
+    },
+
+    /// Resolve a connection reference to its endpoint fields. Nested-path projection on the chatConfig
+    /// search is rejected server-side, so this is a separate system.connection search with an explicit
+    /// request list. The serializer omits default-valued fields, so a missing requestTimeout means the
+    /// model default (120s), not "unset".
+    resolveConnection: async function(ref, noCache) {
+        let key = connectionKey(ref);
+        if (!key) return null;
+        if (!noCache && _connectionCache[key]) return _connectionCache[key];
+        try {
+            let q = am7client.newQuery("system.connection");
+            q.entity.request = CONNECTION_FIELDS.slice();
+            if (ref.objectId) q.field("objectId", ref.objectId);
+            else q.field("id", ref.id);
+            q.range(0, 1);
+            q.cache(false);
+            let qr = await page.search(q);
+            let conn = (qr && qr.results && qr.results.length > 0) ? qr.results[0] : null;
+            if (conn) {
+                if (conn.requestTimeout === undefined || conn.requestTimeout === null) conn.requestTimeout = CONNECTION_DEFAULT_TIMEOUT_S;
+                if (conn.objectId) _connectionCache[conn.objectId] = conn;
+                if (conn.id) _connectionCache[String(conn.id)] = conn;
+            }
+            return conn;
+        } catch (err) {
+            console.warn("[LLMConnector] resolveConnection failed:", err);
+            return null;
+        }
+    },
+
+    /// The library connection seeded by ChatLibraryUtil.populateDefaults (/Library/Connections,
+    /// DEFAULT_CONNECTION_NAME), falling back to the first connection in that directory.
+    getDefaultConnection: async function() {
+        try {
+            let dir = await LLMConnector.getLibraryGroup("connection");
+            if (!dir) dir = await page.systemLibrary("system.connection");
+            if (!dir) {
+                console.warn("[LLMConnector] /Library/Connections not found — chat library not initialized?");
+                return null;
+            }
+            let q = am7client.newQuery("system.connection");
+            q.entity.request = CONNECTION_FIELDS.slice();
+            q.field("groupId", dir.id);
+            q.sort("id");
+            q.order("ascending");
+            q.range(0, 50);
+            q.cache(false);
+            let qr = await page.search(q);
+            let list = (qr && qr.results) ? qr.results : [];
+            let conn = list.find(c => c.name === DEFAULT_CONNECTION_NAME) || list[0] || null;
+            if (conn) {
+                if (conn.requestTimeout === undefined || conn.requestTimeout === null) conn.requestTimeout = CONNECTION_DEFAULT_TIMEOUT_S;
+                if (conn.objectId) _connectionCache[conn.objectId] = conn;
+                if (conn.id) _connectionCache[String(conn.id)] = conn;
+            } else {
+                console.warn("[LLMConnector] No system.connection found in " + (dir.path || "/Library/Connections"));
+            }
+            return conn;
+        } catch (err) {
+            console.warn("[LLMConnector] getDefaultConnection failed:", err);
+            return null;
+        }
+    },
+
+    /// Request timeout (ms) for a chat call: the resolved connection's requestTimeout, else the
+    /// 300s client safety net. Synchronous (cache only) so streamChat can use it; chat() resolves first.
+    requestTimeoutMs: function(chatConfig) {
+        let conn = LLMConnector.cachedConnection(chatConfig && chatConfig.connection);
+        let secs = (conn && conn.requestTimeout) || (DEFAULT_HARD_TIMEOUT_MS / 1000);
+        return secs * 1000;
+    },
+
     ensurePrompt: async function(name, system, groupOverride) {
         try {
             let group = groupOverride || await LLMConnector.findChatDir();
@@ -138,15 +247,24 @@ const LLMConnector = {
             q.cache(false);
             let qr = await page.search(q);
 
+            // The endpoint (serverUrl/apiKey/requestTimeout) is the referenced system.connection, not a
+            // chatConfig field: follow the template's connection, else the library default connection.
+            let connRef = LLMConnector.connectionRef(template && template.connection);
+            if (!connRef) connRef = LLMConnector.connectionRef(await LLMConnector.getDefaultConnection());
+
             if (qr && qr.results && qr.results.length > 0) {
                 let existing = qr.results[0];
                 let needsPatch = false;
-                let syncFields = ["serverUrl", "serviceType", "model", "apiVersion"];
+                let syncFields = ["serviceType", "model", "apiVersion"];
                 for (let f of syncFields) {
                     if (template && template[f] && existing[f] !== template[f]) {
                         existing[f] = template[f];
                         needsPatch = true;
                     }
+                }
+                if (connRef && !LLMConnector.sameConnection(existing.connection, connRef)) {
+                    existing.connection = connRef;
+                    needsPatch = true;
                 }
                 if (overrides) {
                     for (let f in overrides) {
@@ -166,7 +284,6 @@ const LLMConnector = {
                     }
                 }
                 if (needsPatch) {
-                    delete existing.apiKey;
                     await page.patchObject(existing);
                 }
                 return existing;
@@ -179,13 +296,14 @@ const LLMConnector = {
                 groupPath: group.path,
                 name: name
             };
+            if (connRef) newCfg.connection = connRef;
             if (template) {
-                let cloneFields = ["model", "serverUrl", "serviceType", "apiVersion",
+                let cloneFields = ["model", "serviceType", "apiVersion",
                     "rating", "setting", "assist", "stream", "prune", "useNLP",
                     "messageTrim", "remindEvery", "keyframeEvery", "autoTitle",
                     "autoTunePrompts", "autoTuneChatOptions",
                     "extractMemories", "memoryBudget", "memoryExtractionEvery",
-                    "requestTimeout", "terrain", "populationDescription",
+                    "terrain", "populationDescription",
                     "animalDescription", "universeName", "worldName"];
                 for (let f of cloneFields) {
                     if (template[f] !== undefined) newCfg[f] = template[f];
@@ -242,7 +360,8 @@ const LLMConnector = {
         }
         session.message = message;
         session.uid = page.uid();
-        let timeoutMs = ((session.chatConfig && session.chatConfig.requestTimeout) || 300) * 1000;
+        await LLMConnector.resolveConnection(session.chatConfig.connection);
+        let timeoutMs = LLMConnector.requestTimeoutMs(session.chatConfig);
         let connId = trackConnection(session.objectId, "buffered");
         startHardTimeout(connId, timeoutMs);
         try {
@@ -279,8 +398,12 @@ const LLMConnector = {
             uid: page.uid(),
             message: message
         };
-        // Track this stream connection with hard timeout
-        let timeoutMs = ((session.chatConfig && session.chatConfig.requestTimeout) || 300) * 1000;
+        // Track this stream connection with hard timeout. streamChat is synchronous, so the timeout
+        // comes from the connection cache; warm it for the next call if this is the first stream.
+        if (session.chatConfig && session.chatConfig.connection && !LLMConnector.cachedConnection(session.chatConfig.connection)) {
+            LLMConnector.resolveConnection(session.chatConfig.connection);
+        }
+        let timeoutMs = LLMConnector.requestTimeoutMs(session.chatConfig);
         let connId = trackConnection(session.objectId, "stream");
         startHardTimeout(connId, timeoutMs, function(cid, conn) {
             // Auto-cancel on hard timeout
@@ -517,9 +640,9 @@ const LLMConnector = {
     pruneAll: function(cnt) {
         if (!cnt) return "";
         cnt = LLMConnector.pruneToMark(cnt, "<|reserved_special_token");
+        cnt = LLMConnector.pruneTag(cnt, "private");
         cnt = LLMConnector.pruneTag(cnt, "think");
         cnt = LLMConnector.pruneTag(cnt, "thought");
-        cnt = LLMConnector.pruneTag(cnt, "private");
         cnt = LLMConnector.pruneToMark(cnt, "(Metrics");
         cnt = LLMConnector.pruneToMark(cnt, "(Reminder");
         cnt = LLMConnector.pruneToMark(cnt, "(KeyFrame");

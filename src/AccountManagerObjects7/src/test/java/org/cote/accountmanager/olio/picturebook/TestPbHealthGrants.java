@@ -150,7 +150,7 @@ public class TestPbHealthGrants extends BaseTest {
 		assertFalse("checkBook granted nothing", ioContext.getAuthorizationUtil().checkEntitlement(writerRole, readPerm, wfGroup));
 
 		/// Repair.
-		Map<String, Object> healReport = PbHealthUtil.healBook(owner, dataPath, bookOid, null, false);
+		Map<String, Object> healReport = PbHealthUtil.healBook(owner, dataPath, bookOid, null);
 		assertTrue("GRANTS_MISSING healed: " + healReport.get("healed") + " skipped=" + healReport.get("skipped"),
 			healedCodes(healReport).contains(PbHealthUtil.GRANTS_MISSING));
 		assertTrue("post-heal audit clear of GRANTS_MISSING: " + findingsOf(healReport, PbHealthUtil.GRANTS_MISSING),
@@ -162,7 +162,7 @@ public class TestPbHealthGrants extends BaseTest {
 		assertFalse("re-check clean: " + findingCodes(again), findingCodes(again).contains(PbHealthUtil.GRANTS_MISSING));
 
 		/// Idempotent: a healthy book heals nothing.
-		Map<String, Object> idempotent = PbHealthUtil.healBook(owner, dataPath, bookOid, null, false);
+		Map<String, Object> idempotent = PbHealthUtil.healBook(owner, dataPath, bookOid, null);
 		assertFalse("nothing healed the second time: " + healedCodes(idempotent), healedCodes(idempotent).contains(PbHealthUtil.GRANTS_MISSING));
 
 		DeleteResult res = PbDeleteUtil.deleteBookComplete(owner, bookOid);

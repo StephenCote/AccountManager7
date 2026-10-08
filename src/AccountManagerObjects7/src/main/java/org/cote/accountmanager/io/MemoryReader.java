@@ -54,10 +54,11 @@ public class MemoryReader extends RecordReader {
 		throw new ReaderException(ReaderException.NOT_IMPLEMENTED);
 	}
 
+	/// The memory reader only runs record translation; it holds no store or stream, so there is nothing to close.
+	/// DBReader and FileReader inherit this: they open and close their connection per call.
 	@Override
 	public void close() throws ReaderException {
-		// TODO Auto-generated method stub
-		
+
 	}
 
 }

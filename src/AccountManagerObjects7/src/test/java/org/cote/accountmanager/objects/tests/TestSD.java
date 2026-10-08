@@ -187,10 +187,9 @@ public class TestSD extends BaseTest {
 		
 		logger.info("Creating image for " + per.get(FieldNames.FIELD_NAME));
 		BaseRecord sdCfg = getSwarmConfig();
-		//BaseRecord user, BaseRecord person, String groupPath, BaseRecord sdConfig, String name, String setting, String pictureType, String bodyType, String verb, int steps, int batch, boolean hires, int seed)
-	//public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, BaseRecord sdConfig, String name, String setting, String pictureType, String bodyType, String verb, int steps, int batch, boolean hires, int seed) {
+		/// createPersonImage(user, person, groupPath, sdConfig, name, setting, bodyType, verb, steps, batch, hires, seed)
 		
-		List<BaseRecord> bl = sdu.createPersonImage(testUser1, per, "~/Gallery", sdCfg, "Photo Op - " + per.get(FieldNames.FIELD_NAME) + " - " + UUID.randomUUID().toString(), "random", "professional portrait", "full body", "walking", 40, 3, false, -1);		
+		List<BaseRecord> bl = sdu.createPersonImage(testUser1, per, "~/Gallery", sdCfg, "Photo Op - " + per.get(FieldNames.FIELD_NAME) + " - " + UUID.randomUUID().toString(), "random", "full body", "walking", 40, 3, false, -1);
 		assertTrue("Expected images to be created", bl.size() > 0);
 		for(BaseRecord b1 : bl) {
 			FileUtil.emitFile("./img-" + b1.get(FieldNames.FIELD_NAME) + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));

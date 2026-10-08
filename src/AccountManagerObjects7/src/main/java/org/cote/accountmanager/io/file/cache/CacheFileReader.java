@@ -75,9 +75,9 @@ public class CacheFileReader extends FileReader implements ICache {
 		return rec;
 	}
 
+	/// Drops the cached record the index entry identifies.
 	@Override
 	public void clearCacheByIdx(IndexEntry idx) {
-		// TODO Auto-generated method stub
 		String type = idx.get(FieldNames.FIELD_TYPE);
 		cache.entrySet().removeIf(entry ->{
 			BaseRecord mr = entry.getValue();

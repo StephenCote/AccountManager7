@@ -173,7 +173,7 @@ public class TestPbScenePageBackfill extends BaseTest {
 		assertTrue("checkBook created no scene row", PbBookUtil.listScenes(owner, book).isEmpty());
 
 		/// Repair: the row is created from the saved image, nothing is rendered.
-		Map<String, Object> healReport = PbHealthUtil.healBook(owner, dataPath, bookOid, null, false);
+		Map<String, Object> healReport = PbHealthUtil.healBook(owner, dataPath, bookOid, null);
 		List<Map<String, Object>> healed = healedOf(healReport, PbHealthUtil.SCENE_ROW_MISSING);
 		assertEquals("one SCENE_ROW_MISSING heal: " + healReport.get("healed") + " skipped=" + healReport.get("skipped"), 1, healed.size());
 		assertEquals(OlioModelNames.MODEL_PB_SCENE, refs(healed.get(0)).get("model"));
@@ -197,7 +197,7 @@ public class TestPbScenePageBackfill extends BaseTest {
 		assertEquals("image/png", page.get("imageContentType"));
 
 		/// Idempotent: nothing left to backfill, no second row.
-		Map<String, Object> again = PbHealthUtil.healBook(owner, dataPath, bookOid, null, false);
+		Map<String, Object> again = PbHealthUtil.healBook(owner, dataPath, bookOid, null);
 		assertTrue("second heal backfills nothing", healedOf(again, PbHealthUtil.SCENE_ROW_MISSING).isEmpty());
 		assertFalse(findingCodes(again).contains(PbHealthUtil.SCENE_ROW_MISSING));
 		assertEquals("still one scene row", 1, PbBookUtil.listScenes(owner, book).size());

@@ -674,6 +674,37 @@ Cuts LLM calls by ~Nx for async work. Latency per extraction is roughly
 linear in input length, so batching has slight overhead but huge net
 savings.
 
+#### 5.1 status — DECISION (2026-10-07, no behavior changed)
+
+**The premise is gone.** "One extraction per keyframe" was true when this was written; after
+`MemoryKeyframeDecouplingPlan` the typed-memory extraction is its own pipeline
+(`Chat.checkMemoryExtractionTrigger` / `flushPendingMemory` / `extractMemoriesAsync`) firing every
+`memoryExtractionEvery` messages, and `extractMemoriesAsync(req, snapshot, previousMemAt)` already
+analyzes the whole span `[previousMemAt, msgSize)` in **one** call. So "N segments per call" is
+already expressible by setting `memoryExtractionEvery = N × (old cadence)`; a multi-segment prompt
+and a `{"segment_1":[...]}` response format would add a second parser for no additional saving.
+§5.2 (unified per-chatConfig slot: `AsyncLLMSlotRegistry`, kinds `compliance`/`autotune`/
+`keyframe`/`memory`/`interaction`) and §5.3 (`shouldDeferForPressure`, `deferralPressureThreshold`)
+are implemented.
+
+**What is still real is the loss on deferral.** `checkMemoryExtractionTrigger` persists
+`lastMemoryExtractionAt = msgSize` *before* launch (deliberately — each HTTP request is a new
+`Chat`, so the instance guard cannot stop a duplicate across requests). `flushPendingMemory` then
+drops the snapshot on any of four gates (instance in-progress, per-config lock, pressure
+deferral, slot busy). The marker has already moved, so that span is never extracted. The plan's
+"accumulate pending segments on a per-chatConfig queue" was the fix for exactly this; it was never
+built.
+
+| | Option | Pros | Cons |
+|---|---|---|---|
+| A | **Leave as is** — deferral = skip, documented. | Zero change; matches the §Risks line "chat responsiveness wins over memory coverage". | Permanent gaps under load; nothing in the UI says a span was skipped. |
+| B | **Roll the marker back on deferral** — in `flushPendingMemory`, on each early-return gate, re-persist `lastMemoryExtractionAt = pendingMemoryStartIdx` (the pre-trigger value the snapshot already carries). The next turn re-triggers (span ≥ `every`) and one call covers both spans — §5.1's batching, for free. ~15 lines + a DB-only test. | No new prompt/parser; no queue; self-healing when load eases. | Weakens the cross-request duplicate guard for the window between rollback and the next trigger (two concurrent requests on one chatConfig could both fire; the per-config `activeMemoryExtractions` CAS still stops the second launch). Unbounded span if pressure persists for many turns — bounded in practice by `prune`/`messageTrim`. |
+| C | **Build the queue as planned** — per-chatConfig list of `(snapshot, startIdx)`; flush drains up to N with the multi-segment prompt. | Exact segment boundaries preserved. | New prompt + parser + queue lifecycle; the queue is process-local, so a container restart loses it anyway (B's rollback survives because it is in the row). |
+
+**Recommendation (one line):** B — roll `lastMemoryExtractionAt` back to `pendingMemoryStartIdx`
+on every deferral gate; drop the multi-segment prompt (C) as superseded. Needs Stephen's call
+because it changes a deliberate eager-persist guard.
+
 ### 5.2 Single LLM-call lock per chatConfig (verify and extend)
 
 **File**: `Chat.java`. Already has `activeKeyframes` map ([Chat.java:2796-2814](../AccountManagerObjects7/src/main/java/org/cote/accountmanager/olio/llm/Chat.java#L2796)) for keyframes specifically.

@@ -27,7 +27,6 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 		@Override
 		public <T> T read(BaseRecord sourceFact, BaseRecord referenceFact) {
-			// TODO Auto-generated method stub
 			return null;
 		}
 

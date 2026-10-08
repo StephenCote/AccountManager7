@@ -201,7 +201,7 @@ export async function bookHealth(pb2BookObjectId) {
     return resp.json();
 }
 
-/** Repair one PB2 book. Body: { codes?: [], overwriteTemplates?: false }. 403 when not entitled. */
+/** Repair one PB2 book. Body: { codes?: [] } (prompt templates are org-level; see healOrg). 403 when not entitled. */
 export async function healBook(pb2BookObjectId, body) {
     let resp = await fetch(wfBase() + '/' + pb2BookObjectId + '/health/heal', {
         method: 'POST',

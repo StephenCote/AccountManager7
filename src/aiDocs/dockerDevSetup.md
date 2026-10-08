@@ -138,7 +138,12 @@ docker compose -p am7test -f docker-compose.test.yml up --build -d
 
 Build the WAR on the host first, then tell the image to reuse it. `.dockerignore` excludes
 `**/target/` but un-excludes exactly this one WAR (`.dockerignore:3-4`), and
-`docker/bcprov-jdk18on-1.76.jar` is already staged in the repo for this path.
+`docker/bcprov-jdk18on-1.80.jar` is already staged in the repo for this path. Its version must match
+`bcprov-jdk18on` in `AccountManagerObjects7/pom.xml` (1.80): until 2026-10-07 the staged jar was 1.76
+beside the WAR's `bcpkix 1.80`, and the first ISO certificate signing in the container failed with
+`NoSuchFieldError: BCObjectIdentifiers.xmss_SHAKE128_512ph` (`POST /rest/iso42001/certification/approve`
+→ 500) while every JUnit passed on Maven's consistent classpath. A container built before that date still
+carries 1.76 in `WEB-INF/lib` until the image is rebuilt.
 
 ```powershell
 Set-Location C:\Projects\GitHub\AccountManager7\src
@@ -162,7 +167,7 @@ One container running **three supervised processes** (`docker/supervisord.conf`)
 nginx routing (`docker/nginx.conf`):
 
 - `/AccountManagerService7/wss` → Tomcat (WebSocket upgrade, 3600s)
-- `/AccountManagerService7/` → Tomcat (`proxy_read_timeout 900s`)
+- `/AccountManagerService7/` → Tomcat (`proxy_read_timeout 3600s`; was 900s until 2026-09-13)
 - `/` → Vite preview
 
 **So every REST call through Docker is prefixed `/AccountManagerService7/rest/...`.** A URL like
@@ -641,12 +646,15 @@ carry no model provenance, so repointing the embedding server invalidates existi
 | `TASK_SERVER`, `TASK_API_KEY` | `task.server`, `task.api.key` | `task.poll.remote=false`, feature dormant |
 | `STORE_PATH`, `DATAGEN_PATH`, `VAULT_PATH`, `VAULT_CREDENTIAL_PATH`, `SESSION_STORE_PATH` | paths | all default under `/data/am7`; don't move them off the mount |
 
-Params with **no** env placeholder (change `docker/web.xml.template` and rebuild): `picturebook.v2`,
+Params with **no** env placeholder (change `docker/web.xml.template` and rebuild):
 `llm.ollama.unload`, `embedding.dimensions`, `vector.enabled`, `database.dropColumns`,
-`database.repairColumnTypes`.
+`database.repairColumnTypes`. (`picturebook.v2` was listed here until 2026-10-07; the flag and
+`PbFeatureFlag.java` were deleted by the W-series — graph recording is now unconditional — and the
+param no longer exists in `web.xml.template`.)
 
 **LLM connections are not env-configured at all.** There is no LLM server context-param; chat/LLM
-endpoints are `olio.llm.connection` records created in the app.
+endpoints are `system.connection` records created in the app (model name corrected 2026-10-07 — it was
+never `olio.llm.connection`; see `ConnectionRefactorPlan.md` "Status 2026-10-07").
 
 ### Storage map — what must persist
 
@@ -715,10 +723,10 @@ Port matters for `applicationPath` (`core/config.js:18-21`): port `8899` maps to
 | `HTTP 000` from Windows `curl` | schannel TLS renegotiation loop vs the self-signed cert | use a browser or WSL |
 | `Blocked request. This host is not allowed.` | Vite preview rejecting a real domain name in `Host` | already handled — nginx pins upstream `Host` to `localhost:8899` |
 | `Organization already exists` + `Failed to initialize key stores` | orphan state: `/data/am7` lost, DB intact | restore the keystores or reset both together (§7) |
-| Long SD render aborts around 15 min | `nginx.conf:58` caps `/AccountManagerService7/` at **900s** while `HTTP_READ_TIMEOUT` defaults to **1200s** — a FLUX.2 composite (~638s, can exceed 900s) can be cut off by nginx | known ceiling (audit item 2); raise the nginx cap if you need it. Docker does reach the SD host (§0), so this ceiling is real, not theoretical |
-| SD/LLM calls silently do nothing | **Not** a LAN-routing problem — Docker reaches `192.168.1.x` (§0). Check the `*_SERVER` values actually configured, and `SD_SERVER` in `docker-compose.yml:21` which defaults to the wrong host | fix the config; verify reachability with the `docker exec ... curl` one-liner in §0 |
+| Long SD render / extraction aborts around 60 min with a bare 504 | `nginx.conf` caps `/AccountManagerService7/` at **3600s** (raised from 900s on 2026-09-13); Tomcat keeps working and logs nothing | use the async job layer (`?async=true` + `GET /rest/job/{jobId}`, see `PictureBookAsyncJobDesign.md`) rather than raising the cap again |
+| SD/LLM calls silently do nothing | **Not** a LAN-routing problem — Docker reaches `192.168.1.x` (§0). Check the `*_SERVER` values actually configured (`SD_SERVER` in `docker-compose.yml` defaults to `.39:7801` since 2026-10-07) | fix the config; verify reachability with the `docker exec ... curl` one-liner in §0 |
 | Tomcat download 404s during build | `dlcdn.apache.org` only serves the current patch release; `TOMCAT_VERSION=11.0.25` (`Dockerfile:71`) will eventually be superseded | bump `TOMCAT_VERSION`. Do **not** add `curl -k` — that would MITM-expose the Tomcat binary |
-| Junk `c:/projects/logs/` dir inside the container | `log4j2.xml` hardcodes a Windows `log-path` | cosmetic; app logs still reach `docker logs` via the console appender |
+| Rolling log files not where you expect | `log4j2.xml` resolves `log-path` to `${sys:log.dir}`, falling back to `${catalina.base}/logs` (the Windows hardcode was removed 2026-10-07) | look under Tomcat's `logs/`; app logs also reach `docker logs` via the console appender |
 | `npm ci` / `EUSAGE` if you edit the Dockerfile | committed `package-lock.json` is out of sync with `package.json` | the Dockerfile uses `npm install` on purpose; regenerating the lock file is an open follow-up |
 
 ---
@@ -734,8 +742,8 @@ Port matters for `applicationPath` (`core/config.js:18-21`): port `8899` maps to
   confirmed with a wrong-password negative control, initial user restricted out of `/System`, all six
   `system.connection` records written, latch confirmed held across a restart).
 - **Not re-run for this document.** No container was built or started while writing it. The two
-  shipped-config defects called out inline (`SD_SERVER` host in `docker-compose.yml`, nginx 900s vs
-  the 1200s app default) are documented, **not fixed** — fixing config was outside this task.
+  shipped-config defects it originally called out (`SD_SERVER` host in `docker-compose.yml`, nginx
+  900s vs the 1200s app default) have since been fixed (`.39:7801` on 2026-10-07; 3600s on 2026-09-13).
 - **§12 (`llmproxy` profile) is different:** that profile was **actually run for the first time on
   2026-09-14**, and §12 plus the measurements in `LiteLLMLangfuseIntegrationDesign.md` §6 come from
   that run — including the LAN reachability numbers that retire the old §0 "hard constraint".

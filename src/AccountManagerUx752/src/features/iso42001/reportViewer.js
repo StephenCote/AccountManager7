@@ -210,7 +210,7 @@ export const reportView = {
         let roles = isoRoles();
         return m('div', { class: 'max-w-5xl mx-auto p-6 space-y-4' }, [
             sectionHeader('Compliance Reports',
-                (roles.reporter || roles.admin) ? m('span', { class: 'text-xs text-gray-400' }, 'Generate a report from the Test Runner') : null),
+                (roles.reporter || roles.admin) ? m('span', { class: 'text-xs text-gray-400' }, 'Generate a report from a campaign or from a run’s results') : null),
             loadingOrEmpty(loading, reports.length === 0, 'No reports yet.') ||
             m('table', { class: 'w-full' }, [
                 m('thead', m('tr', { class: 'text-left text-xs text-gray-400 border-b border-gray-200 dark:border-gray-700' }, [

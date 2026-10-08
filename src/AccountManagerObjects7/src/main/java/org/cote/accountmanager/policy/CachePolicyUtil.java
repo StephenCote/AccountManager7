@@ -198,29 +198,34 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 		}
 	}
 
+	/// Drops every cached decision. The resolved-policy cache (policyCache) holds policy definitions,
+	/// not decisions, and is never evicted by any path on this class; it lives as long as the instance.
 	@Override
 	public void clearCache() {
-		// TODO Auto-generated method stub
 		responseCache.clear();
 		actorCache.clear();
 		resourceCache.clear();
 	}
 
+	/// Intentional no-op. The keys CacheUtil.clearCache(String) is called with are query hashes
+	/// (MemberUtil, DBWriter) and file-path digests (CacheFileWriter); decision keys here are
+	/// digests of policy + context user + actor + resource and are never known to those callers.
 	@Override
 	public void clearCache(String key) {
-		// TODO Auto-generated method stub
-		
+
 	}
-	
+
+	/// Intentional no-op. Decisions are indexed by actor and resource urn, not by model, so there is
+	/// nothing to select on; a model-wide eviction is clearCache(). MemberUtil.clearParticipationQueryCache
+	/// documents that CacheUtil.clearCacheByModel therefore reaches only CacheDBSearch.
 	@Override
 	public void clearCacheByModel(String model) {
-		// TODO Auto-generated method stub
 
 	}
 
+	/// Evicts every decision in which rec was the actor or the resource, by urn.
 	@Override
 	public void clearCache(BaseRecord rec) {
-		// TODO Auto-generated method stub
 		String urn = null;
 		if(rec.hasField(FieldNames.FIELD_URN)) {
 			urn = rec.get(FieldNames.FIELD_URN);
@@ -254,10 +259,14 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 		cleanupCache();
 	}
 
+	/// No-op, and a known gap for FILE IO only. An IndexEntry is the file-IO index record and carries
+	/// no urn, so decisions cannot be selected by it. The sole caller is CacheFileWriter.prepareDelete,
+	/// and FileWriter.delete never calls CacheUtil.clearCache(BaseRecord), so decisions about a record
+	/// deleted through file IO survive until checkCache() ages the whole decision cache out
+	/// (maximumCacheAgeMS). DB IO is unaffected: DBWriter evicts by record on every update/delete.
 	@Override
 	public void clearCacheByIdx(IndexEntry idx) {
-		// TODO Auto-generated method stub
-		
+
 	}
 
 }

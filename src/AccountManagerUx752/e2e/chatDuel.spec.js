@@ -1,20 +1,26 @@
 /**
  * Chat duel — creates two characters, two chatConfigs (swapped), runs LLM conversation.
  * Tests: character creation, chat exchange, memory extraction, gossip.
- * Uses test user (not admin). Uses herm-local model from Ollama.
+ * Uses test user (not admin). The LLM endpoint is the ~/Chat system.connection that ensureChatConfig
+ * reconciles to the resolved route (resolveChatRoute: LiteLLM-first); chatConfigs reference it by FK
+ * (chatConfig.serverUrl no longer exists), and the model/dialect come from the same route.
  */
 import { test as base, expect } from '@playwright/test';
 import { login, screenshot } from './helpers/auth.js';
 import { captureConsole } from './helpers/console.js';
-import { ensureSharedTestUser } from './helpers/api.js';
+import { ensureSharedTestUser, ensureChatConfig, resolveChatRoute } from './helpers/api.js';
 
 const test = base;
+const DUEL_CONN_NAME = 'e2e-chapbook-conn';   // the ~/Chat connection ensureChatConfig maintains
 
 test.describe('Chat duel + memories + gossip', () => {
     let testInfo = {};
+    let llmRoute = null;
 
     test.beforeAll(async ({ request }) => {
         testInfo = await ensureSharedTestUser(request);
+        await ensureChatConfig(request, undefined);
+        llmRoute = await resolveChatRoute();
     });
 
     test('full duel: create chars, create configs, exchange messages, memories, gossip', async ({ page }) => {
@@ -33,7 +39,10 @@ test.describe('Chat duel + memories + gossip', () => {
             await expect(wizardTitle).not.toBeVisible({ timeout: 5000 });
         }
 
-        let result = await page.evaluate(async () => {
+        console.log('[e2e-llm] route=' + llmRoute.route + ' server=' + llmRoute.serverUrl
+            + ' pb=' + llmRoute.pbModel + ' dialect=' + llmRoute.dialect);
+
+        let result = await page.evaluate(async (args) => {
             let { am7client } = await import('/src/core/am7client.js');
             let { am7model } = await import('/src/core/model.js');
             let { am7view } = await import('/src/core/view.js');
@@ -118,10 +127,28 @@ test.describe('Chat duel + memories + gossip', () => {
             log.push('=== STEP 2: Create chat configs ===');
             // Ensure ~/Chat directory exists
             await page.makePath('auth.group', 'data', '~/Chat');
+            let chatDir = await page.findObject('auth.group', 'data', '~/Chat');
+            if (!chatDir) return { error: '~/Chat not found', log };
+            // The endpoint is the ~/Chat system.connection reconciled by ensureChatConfig (serverUrl,
+            // dialect, apiKey); makeChat stores it on chatConfig.connection.
+            let duelConn = null;
+            try {
+                let cq = am7client.newQuery('system.connection');
+                cq.entity.request = ['id', 'objectId', 'name', 'serverUrl', 'dialect', 'upstream', 'requestTimeout'];
+                cq.field('groupId', chatDir.id);
+                cq.field('name', args.connName);
+                cq.cache(false);
+                let cqr = await page.search(cq);
+                duelConn = (cqr && cqr.results && cqr.results.length) ? cqr.results[0] : null;
+            } catch (e) {
+                return { error: 'Connection lookup failed: ' + e.message, log };
+            }
+            if (!duelConn) return { error: 'system.connection ' + args.connName + ' not found in ~/Chat', log };
+            log.push('Connection: ' + duelConn.name + ' id=' + duelConn.id + ' serverUrl=' + duelConn.serverUrl + ' dialect=' + duelConn.dialect + ' model=' + args.model);
             let chatCfg1, chatCfg2;
             try {
                 // Config 1: char1=system, char2=user, startMode=system
-                chatCfg1 = await am7chat.makeChat('DuelTest1-' + ts, 'herm-local:latest', 'http://localhost:11434', 'OLLAMA');
+                chatCfg1 = await am7chat.makeChat('DuelTest1-' + ts, args.model, null, args.dialect, duelConn);
                 if (chatCfg1) {
                     await page.patchObject({
                         schema: 'olio.llm.chatConfig', id: chatCfg1.id,
@@ -135,7 +162,7 @@ test.describe('Chat duel + memories + gossip', () => {
                 }
 
                 // Config 2: char2=system, char1=user, startMode=user
-                chatCfg2 = await am7chat.makeChat('DuelTest2-' + ts, 'herm-local:latest', 'http://localhost:11434', 'OLLAMA');
+                chatCfg2 = await am7chat.makeChat('DuelTest2-' + ts, args.model, null, args.dialect, duelConn);
                 if (chatCfg2) {
                     await page.patchObject({
                         schema: 'olio.llm.chatConfig', id: chatCfg2.id,
@@ -287,7 +314,7 @@ test.describe('Chat duel + memories + gossip', () => {
             } catch(e) { log.push('Gossip error: ' + e.message); }
 
             return { allReplies: allReplies.length, memoryCount, gossipCount, char1Name: char1.name, char2Name: char2.name, log };
-        });
+        }, { connName: DUEL_CONN_NAME, model: llmRoute.pbModel, dialect: llmRoute.dialect });
 
         console.log('=== DUEL RESULT ===');
         result.log.forEach(l => console.log('  ' + l));

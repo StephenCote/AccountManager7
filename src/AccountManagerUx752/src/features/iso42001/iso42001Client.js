@@ -53,7 +53,17 @@ export const iso42001Client = {
     requestCertification: (reportId, certifierId, justification) =>
         req('POST', ISO + '/certification/request',
             { reportId: reportId, certifierId: certifierId, justification: justification }),
-    approve: (requestId, note) => req('POST', ISO + '/certification/approve/' + requestId, { note: note }),
+    // Approve & Sign terms (design §9A.8): `terms` = { title, validityMonths, notes } — all optional. The server
+    // defaults title/validity when absent and 400s on a validityMonths outside 1..60 (validation, not clamping).
+    approve: (requestId, note, terms) => {
+        let body = { note: note };
+        if (terms) {
+            if (terms.title) body.title = terms.title;
+            if (terms.validityMonths) body.validityMonths = parseInt(terms.validityMonths, 10);
+            if (terms.notes) body.notes = terms.notes;
+        }
+        return req('POST', ISO + '/certification/approve/' + requestId, body);
+    },
     deny: (requestId, reason) => req('POST', ISO + '/certification/deny/' + requestId, { reason: reason }),
     getRequest: (objectId) => req('GET', ISO + '/certification/request/' + objectId),
     appendMessage: (requestId, text) => req('POST', ISO + '/certification/request/' + requestId + '/message', { text: text }),

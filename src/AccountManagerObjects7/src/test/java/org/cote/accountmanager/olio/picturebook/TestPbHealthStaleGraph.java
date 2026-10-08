@@ -248,7 +248,7 @@ public class TestPbHealthStaleGraph extends BaseTest {
 			assertEquals(404, e.getStatus());
 		}
 		try {
-			PbHealthUtil.healBook(stranger, dataPath, bOid, null, false);
+			PbHealthUtil.healBook(stranger, dataPath, bOid, null);
 			fail("stranger should get 404 on heal");
 		}
 		catch (PictureBookException e) {
@@ -276,7 +276,7 @@ public class TestPbHealthStaleGraph extends BaseTest {
 		assertTrue("checkBook is read-only: stale node still there", rawRowById(ioContext, OlioModelNames.MODEL_PB_NODE, nodeBId, orgId) != null);
 
 		/// Repair.
-		Map<String, Object> healReport = PbHealthUtil.healBook(owner, dataPath, bOid, null, false);
+		Map<String, Object> healReport = PbHealthUtil.healBook(owner, dataPath, bOid, null);
 		Set<String> healed = healedCodes(healReport);
 		assertTrue("STALE_GRAPH healed: " + healed, healed.contains(PbHealthUtil.STALE_GRAPH));
 		Set<String> after = findingCodes(healReport);
@@ -297,7 +297,7 @@ public class TestPbHealthStaleGraph extends BaseTest {
 		assertFalse("re-check clean of WORKFLOW_MISSING: " + againCodes, againCodes.contains(PbHealthUtil.WORKFLOW_MISSING));
 
 		/// A heal on a healthy book is a no-op that reports nothing healed for this code.
-		Map<String, Object> idempotent = PbHealthUtil.healBook(owner, dataPath, bOid, null, false);
+		Map<String, Object> idempotent = PbHealthUtil.healBook(owner, dataPath, bOid, null);
 		assertFalse("nothing to heal second time: " + healedCodes(idempotent), healedCodes(idempotent).contains(PbHealthUtil.STALE_GRAPH));
 
 		DeleteResult res = PbDeleteUtil.deleteBookComplete(owner, bOid);

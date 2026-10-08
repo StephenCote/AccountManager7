@@ -87,10 +87,9 @@ public abstract class ISO42001BaseTest extends BaseTest {
 		assertNotNull("ISO org admin is null", adminUser);
 
 		/// Provision the 6 ISO roles + their PBAC wiring via the production-reusable utility (created at
-		/// the org role root "/Name" so the modelAccess pattern resolves them; Certifiers/Administrators
-		/// are wired into the system Approvers/RequestUpdaters roles so they may transition the inherited
-		/// access.accessRequest approvalStatus field). This is on-demand provisioning with the admin user,
-		/// exactly what a Service7 startup hook will call in Phase 7 — not test-only scaffolding.
+		/// the org role root "/Name" so the modelAccess pattern resolves them). This is on-demand
+		/// provisioning with the admin user, exactly what the Service7 startup hook
+		/// (RestServiceEventListener.provisionDefaultOrganizations) calls — not test-only scaffolding.
 		ISO42001Provisioning.ensureRoles(adminUser, orgId);
 
 		BaseRecord testersRole    = ensureRole("ISO42001Testers");
@@ -107,13 +106,19 @@ public abstract class ISO42001BaseTest extends BaseTest {
 		isoAdmin     = getCreateUser("isoAdmin", isoOrg);
 
 		/// Assign each non-admin role user to its ISO role (the operational membership — who is a tester,
-		/// reporter, certifier, etc.). The approval-capability wiring lives in ISO42001Provisioning at the
-		/// ROLE level, so no per-user system-role grants are needed here.
+		/// reporter, certifier, etc.).
 		ensureMember(testersRole, isoTester);
 		ensureMember(reportersRole, isoReporter);
 		ensureMember(certifiersRole, isoCertifier);
 		ensureMember(readersRole, isoReader);
 		ensureMember(adminsRole, isoAdmin);
+
+		/// The approval capability (inherited access.accessRequest.approvalStatus is field-gated to the
+		/// system Approvers/RequestUpdaters roles) is provisioned by ISO42001Provisioning: role-to-role
+		/// wiring in ensureRoles above, plus a direct per-user sync because PolicyEvaluator does not
+		/// unwind nested role membership (measured 2026-10-07 — see ISO42001Provisioning javadoc). The
+		/// sync has to run AFTER the users above are enrolled, exactly as a Service7 boot re-runs it.
+		ISO42001Provisioning.syncApproverEntitlements(adminUser, orgId);
 
 		/// A shared, ADMIN-owned data group. Role users are NOT owners, so the model-level
 		/// access.roles are the only permit path — making the negative RBAC checks genuine.

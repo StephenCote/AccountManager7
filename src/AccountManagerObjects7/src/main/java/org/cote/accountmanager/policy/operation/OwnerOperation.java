@@ -27,7 +27,6 @@ import org.cote.accountmanager.util.RecordUtil;
 		
 		@Override
 		public <T> T read(BaseRecord sourceFact, BaseRecord referenceFact) {
-			// TODO Auto-generated method stub
 			return null;
 		}
 		@Override

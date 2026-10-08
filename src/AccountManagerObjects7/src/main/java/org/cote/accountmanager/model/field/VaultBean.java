@@ -13,7 +13,11 @@ import org.cote.accountmanager.security.VaultService;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 public class VaultBean extends LooseRecord {
-	
+
+	/// The decrypted vault key lives ONLY on this transient Java field. It is deliberately never written into the
+	/// record's "vaultKey" model field: RecordSerializer walks getFields(), not bean getters, so a value stored
+	/// there is emitted - private key bytes included - by toString()/toFullString()/JSONUtil.exportObject() and is
+	/// reachable through get("vaultKey"). @JsonIgnore on the accessors below does not cover that path.
 	@JsonIgnore
 	private CryptoBean vaultKey = null;
 	
@@ -34,6 +38,18 @@ public class VaultBean extends LooseRecord {
 	public VaultBean(BaseRecord vault) {
 		this();
 		this.setFields(vault.getFields());
+		clearRecordVaultKey();
+	}
+
+	/// Defense in depth: never let a decrypted key ride along in the record's ephemeral "vaultKey" field.
+	private void clearRecordVaultKey() {
+		if(hasField(FieldNames.FIELD_VAULT_KEY) && get(FieldNames.FIELD_VAULT_KEY) != null) {
+			try {
+				set(FieldNames.FIELD_VAULT_KEY, null);
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+		}
 	}
 	
 	@JsonIgnore
@@ -116,22 +132,12 @@ public class VaultBean extends LooseRecord {
 		return get(FieldNames.FIELD_HAVE_CREDENTIAL);
 	}
 	
-	/*
-	@JsonIgnore
-	public BaseRecord getVaultKey() {
-		return get(FieldNames.FIELD_VAULT_KEY);
-	}
-	*/
-	
+	/// Holds the decrypted key on the transient field only - see the note on the field. The record's "vaultKey"
+	/// model field is kept null so no serializer or generic field walk can reach the private key.
 	@JsonIgnore
 	public void setVaultKey(CryptoBean prot) {
-		try {
-			set(FieldNames.FIELD_VAULT_KEY, prot);
-			vaultKey = prot;
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-			
-		}
+		vaultKey = prot;
+		clearRecordVaultKey();
 	}
 	
 	@JsonIgnore

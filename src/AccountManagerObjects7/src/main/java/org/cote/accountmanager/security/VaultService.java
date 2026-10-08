@@ -62,8 +62,11 @@ import org.cote.accountmanager.util.ZipUtil;
 /// Instead of storing the keys as serialized entities in DataType objects, the keysets, keys, hashes, and vaults all have their own model.
 /// There was also a fair amount of duplication in the original object members to differentiate between enciphered/encrypted values vs. temporarily decrypted values
 /// In the current version, values are left encrypted, and only temporarily decrypted to reconstitute the key/cipher.
-/// TODO: Currently, the private key is left exposed on the VaultBean instance once instantiated, so the public access methods need to only return sanitized versions
-/// TODO: Move read/search/delete to use AccessPoint 
+/// The decrypted vault private key is held only on VaultBean's transient Java field (VaultBean.getVaultKey()), never in the
+/// record's "vaultKey" model field, so toString()/toFullString()/JSONUtil.exportObject()/get("vaultKey") cannot emit it
+/// (see TestVaultKeyExposure). getVaultKey()/getVaultCipher() still hand the live CryptoBean to in-process callers
+/// (ByteModelUtil, StreamUtil, EncryptFieldProvider) - that is by design; never return a VaultBean or CryptoBean across a transport boundary.
+/// TODO: Move read/search/delete to use AccessPoint
 
 public class VaultService
 {
@@ -758,7 +761,8 @@ public class VaultService
 	
 
 	
-	/// TODO - change back to private
+	/// Public only because StreamUtil.getVaultCipher (org.cote.accountmanager.util) needs it in-process. The returned
+	/// CryptoBean carries the decrypted cipher key - it must never be serialized or returned across a transport boundary.
 	public CryptoBean getVaultCipher(VaultBean vault, String keyId) {
 		
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_KEY_SET, FieldNames.FIELD_OBJECT_ID, keyId);

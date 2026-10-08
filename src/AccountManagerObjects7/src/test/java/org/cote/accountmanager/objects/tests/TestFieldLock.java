@@ -79,5 +79,41 @@ public class TestFieldLock extends BaseTest {
 		unlocked = FieldLockUtil.unlockField(testUser1, data, FieldNames.FIELD_NAME);
 		assertTrue("Expected field to be unlocked", unlocked);
 	}
-	
+
+	/// Re-arming a released lock used to mutate the cached search result in place and discard the
+	/// update outcome. A denied re-lock by another user then reported "locked" and every subsequent
+	/// isFieldLocked read (any user) answered from the poisoned cache entry while the row said
+	/// enabled=false. The cache is consulted on every read here (getFieldLock does not disable it),
+	/// so this is observable without touching the cache directly.
+	@Test
+	public void TestDeniedRelockDoesNotPoisonTheCache() throws Exception {
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Field Lock");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		BaseRecord testUser2 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser2", testOrgContext.getOrganizationId());
+
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Locks/Data");
+		plist.parameter(FieldNames.FIELD_NAME, "Relock Data Test - " + UUID.randomUUID().toString());
+		BaseRecord data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);
+		data = ioContext.getAccessPoint().create(testUser1, data);
+		assertNotNull("Data is null", data);
+
+		assertTrue("Owner locks the field", FieldLockUtil.lockField(testUser1, data, FieldNames.FIELD_NAME));
+		assertTrue("Owner releases the field", FieldLockUtil.unlockField(testUser1, data, FieldNames.FIELD_NAME));
+		assertFalse("A released lock reads as unlocked", FieldLockUtil.isFieldLocked(testUser1, data, FieldNames.FIELD_NAME));
+
+		/// The lock row belongs to testUser1; testUser2's update is denied by PBAC.
+		assertFalse("A denied re-lock must report failure, not the bit it tried to set",
+			FieldLockUtil.lockField(testUser2, data, FieldNames.FIELD_NAME));
+		assertFalse("After a denied re-lock the field must still read as unlocked for the owner",
+			FieldLockUtil.isFieldLocked(testUser1, data, FieldNames.FIELD_NAME));
+		assertFalse("After a denied re-lock the field must still read as unlocked for the other user",
+			FieldLockUtil.isFieldLocked(testUser2, data, FieldNames.FIELD_NAME));
+
+		/// The owner can still re-arm it, and the re-armed state is what every reader sees.
+		assertTrue("Owner re-locks the field", FieldLockUtil.lockField(testUser1, data, FieldNames.FIELD_NAME));
+		assertTrue(FieldLockUtil.isFieldLocked(testUser2, data, FieldNames.FIELD_NAME));
+		assertTrue("Cleanup: owner releases the field", FieldLockUtil.unlockField(testUser1, data, FieldNames.FIELD_NAME));
+	}
+
 }

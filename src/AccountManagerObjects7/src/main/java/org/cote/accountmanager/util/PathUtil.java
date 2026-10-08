@@ -23,6 +23,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 
 /**
@@ -96,6 +97,18 @@ public abstract class PathUtil implements IPath {
 	public void setTrace(boolean trace) {
 		this.trace = trace;
 	}
+	/**
+	 * Resolve a path without creating anything along it.
+	 *
+	 * <p>Deliberately NOT synchronized, unlike {@link #makePath}: this overload never writes, so
+	 * two readers cannot race each other into a duplicate row, and serializing every read behind
+	 * every create would make the resolve path pay for the create path's monitor. What a concurrent
+	 * reader CAN observe is a path whose creation is still in progress on another thread, in which
+	 * case the missing segment is reported as exactly that - {@code null}, "not there (yet)" - and
+	 * never as a node of a different path. {@code TestPathUtilConcurrency} pins both properties
+	 * (one row per segment under concurrent makePath; concurrent findPath returns null or the real
+	 * node, never a phantom or a sibling).
+	 */
 	public BaseRecord findPath(BaseRecord owner, String model, String path, String type, long organizationId) {
 		return makePath(owner, model, path, type, organizationId, false);
 	}
@@ -173,11 +186,28 @@ public abstract class PathUtil implements IPath {
 					}
 				}
 
+				/// Per-segment shape. For a parentId-keyed model every segment is a node of THAT model.
+				/// For a groupId-keyed model (data.data, olio.*, ...) the path is a chain of auth.group
+				/// DATA containers ending in ONE leaf of the requested model, so the intermediate
+				/// segments are auth.group nodes (parent-keyed, type DATA) and only the last segment is
+				/// the model itself, keyed by groupId. Everything below - lookup, pre-create conflict
+				/// check, create, write-lost re-read - works on the SEGMENT's model, not the requested
+				/// one; before this the create branch instantiated the requested model for every
+				/// segment and set parentId on it, which a groupId model does not have (FieldException,
+				/// caught, null), so makePath could never create anything for such a model.
+				boolean groupWalkSegment = modelHasGroupId && !isLastSegment;
+				boolean groupKeyedLeaf = modelHasGroupId && isLastSegment;
+				String segModel = (groupWalkSegment ? ModelNames.MODEL_GROUP : model);
+				String segType = (groupWalkSegment ? GroupEnumType.DATA.toString() : utype);
+				boolean segParentKeyed = (groupWalkSegment || parentKeyed);
+				boolean segHasType = (groupWalkSegment ? true : modelHasType);
+				boolean segTypeInConstraint = (groupWalkSegment ? false : typeInConstraint);
+
 				BaseRecord[] nodes;
-				if(modelHasGroupId && !isLastSegment) {
+				if(groupWalkSegment) {
 					/// Intermediate segments: walk auth.group hierarchy to find the container group
-					nodes = search.findByNameInParent(ModelNames.MODEL_GROUP, parentId, e, "DATA", organizationId);
-				} else if(modelHasGroupId) {
+					nodes = search.findByNameInParent(ModelNames.MODEL_GROUP, parentId, e, segType, organizationId);
+				} else if(groupKeyedLeaf) {
 					/// Final segment: find the model object within the resolved group
 					nodes = search.findByNameInGroup(model, parentId, e, organizationId);
 				} else {
@@ -215,19 +245,26 @@ public abstract class PathUtil implements IPath {
 						/// type is legal, the insert below will not collide with it, and adopting it
 						/// would hand back an unrelated node.
 						BaseRecord conflict = null;
-						if(parentKeyed && modelHasType && utype != null && !typeInConstraint) {
-							conflict = findExistingNode(model, parentId, e, null, organizationId);
+						if(segParentKeyed && segHasType && segType != null && !segTypeInConstraint) {
+							conflict = findExistingNode(segModel, parentId, e, null, organizationId);
 						}
 						if(conflict != null) {
-							node = watchAndAdopt(TRIGGER_PRECREATE, model, path, si, e, parentId,
-								organizationId, type, utype, conflict);
+							node = watchAndAdopt(TRIGGER_PRECREATE, segModel, path, si, e, parentId,
+								organizationId, type, segType, conflict);
 							parentId = node.get(FieldNames.FIELD_ID);
 							continue;
 						}
 
-						node = RecordFactory.model(model).newInstance();
+						node = RecordFactory.model(segModel).newInstance();
 						node.set(FieldNames.FIELD_NAME, e);
-						node.set(FieldNames.FIELD_PARENT_ID, parentId);
+						if(segParentKeyed) {
+							node.set(FieldNames.FIELD_PARENT_ID, parentId);
+						}
+						else {
+							/// The leaf of a groupId-keyed model lives IN the container group the walk
+							/// just resolved; its unique key is (name, groupId, organizationId).
+							node.set(FieldNames.FIELD_GROUP_ID, parentId);
+						}
 						node.set(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
 						/// Write the EFFECTIVE type — the same one the lookup above used. When the
 						/// home/owner segment override at the top of this loop forces a structural type
@@ -235,8 +272,8 @@ public abstract class PathUtil implements IPath {
 						/// must carry that same type or this code can never find its own node again: the
 						/// next resolution looks for the override type, misses, and re-attempts an insert
 						/// that collides on (name, parentId, organizationId).
-						if(utype != null && node.hasField(FieldNames.FIELD_TYPE)) {
-							node.set(FieldNames.FIELD_TYPE, utype);
+						if(segType != null && node.hasField(FieldNames.FIELD_TYPE)) {
+							node.set(FieldNames.FIELD_TYPE, segType);
 						}
 						if(owner != null) {
 							node.set(FieldNames.FIELD_OWNER_ID, owner.get(FieldNames.FIELD_ID));
@@ -250,12 +287,27 @@ public abstract class PathUtil implements IPath {
 								||
 								(prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(owner, PolicyUtil.POLICY_SYSTEM_CREATE_OBJECT, owner, node)).getType() != PolicyResponseEnumType.PERMIT)
 						) {
-							logger.error("Not authorized to create " + model + " " + (type != null ? "of type (" + type + ") " : "") + "node " + e + " with parent #" + parentId + " in path " + path);
+							logger.error("Not authorized to create " + segModel + " " + (segType != null ? "of type (" + segType + ") " : "") + "node " + e + " with parent #" + parentId + " in path " + path + (prr != null ? " (" + prr.getType() + ")" : ""));
 							return null;
 						}
 
 						boolean wrote = writer.write(node);
 						writer.flush();
+						if(!wrote && groupKeyedLeaf) {
+							/// Same KI-42 reasoning as below, on the leaf's own key (name, groupId,
+							/// organizationId): adopt the row the insert lost to, or fail honestly.
+							BaseRecord[] lostLeaf = search.findByNameInGroup(model, parentId, e, organizationId);
+							if(lostLeaf.length != 1) {
+								logger.error("Failed to write " + model + " leaf " + e + " in group #" + parentId
+									+ " in path " + path + ", and " + lostLeaf.length + " existing record(s) could be resolved for it");
+								return null;
+							}
+							logger.warn("Write of " + model + " leaf " + e + " in group #" + parentId
+								+ " lost to an existing record (#" + lostLeaf[0].get(FieldNames.FIELD_ID)
+								+ "); adopting it rather than returning an unpersisted node");
+							node = lostLeaf[0];
+							wrote = true;
+						}
 						if(!wrote) {
 							/// KI-42. The write LOST — overwhelmingly because the row it was trying to
 							/// create already exists: the unique constraint is (name, parentId,
@@ -279,18 +331,18 @@ public abstract class PathUtil implements IPath {
 							/// the constraint (auth.group), type-filtered where it is (auth.role,
 							/// auth.permission) — otherwise the re-read can return a legal same-named
 							/// sibling of another type, or several of them.
-							BaseRecord lostTo = findExistingNode(model, parentId, e,
-								(typeInConstraint ? utype : null), organizationId);
+							BaseRecord lostTo = findExistingNode(segModel, parentId, e,
+								(segTypeInConstraint ? segType : null), organizationId);
 							if(lostTo == null) {
-								logger.error("Failed to write " + model + " node " + e + " with parent #" + parentId
+								logger.error("Failed to write " + segModel + " node " + e + " with parent #" + parentId
 									+ " in path " + path + ", and no existing record could be resolved for it");
 								return null;
 							}
-							logger.warn("Write of " + model + " node " + e + " in parent #" + parentId
+							logger.warn("Write of " + segModel + " node " + e + " in parent #" + parentId
 								+ " lost to an existing record (#" + lostTo.get(FieldNames.FIELD_ID)
 								+ "); adopting it rather than returning an unpersisted node");
-							node = watchAndAdopt(TRIGGER_WRITE_LOST, model, path, si, e, parentId,
-								organizationId, type, utype, lostTo);
+							node = watchAndAdopt(TRIGGER_WRITE_LOST, segModel, path, si, e, parentId,
+								organizationId, type, segType, lostTo);
 						}
 						parentId = node.get(FieldNames.FIELD_ID);
 					}
@@ -298,12 +350,35 @@ public abstract class PathUtil implements IPath {
 				else if(nodes.length == 1) {
 					node = nodes[0];
 					parentId = node.get(FieldNames.FIELD_ID);
-					if(type == null) {
+					if(type == null && !groupWalkSegment && node.hasField(FieldNames.FIELD_TYPE)) {
 						type = node.get(FieldNames.FIELD_TYPE);
 					}
 				}
 				else {
-					logger.error("Invalid search for " + model + " type " + type + " parent " + parentId + " org " + organizationId + " from '" + e + "' with " + nodes.length + " results");
+					/// AMBIGUOUS. More than one row answered a lookup that is supposed to name exactly
+					/// one node (a type-less auth.role/auth.permission lookup over same-named siblings of
+					/// different types, or a groupId leaf whose model allows duplicate names). This used
+					/// to log and FALL THROUGH, leaving node/parentId at the PREVIOUS segment: the caller
+					/// then got the parent handed back as if it were the requested path, and makePath
+					/// went on to resolve - or CREATE - the remaining segments under that wrong node.
+					/// Fail closed: null, with the candidates named so the call site can be fixed.
+					StringBuilder ids = new StringBuilder();
+					for(int ni = 0; ni < nodes.length; ni++) {
+						if(ni > 0) {
+							ids.append(",");
+						}
+						ids.append("#").append((Object) nodes[ni].get(FieldNames.FIELD_ID));
+						if(nodes[ni].hasField(FieldNames.FIELD_TYPE)) {
+							ids.append("(").append((Object) nodes[ni].get(FieldNames.FIELD_TYPE)).append(")");
+						}
+					}
+					logger.error("Ambiguous path segment '" + e + "' (" + (si + 1) + "/" + segments.length + ") in path ["
+						+ path + "]: " + nodes.length + " " + segModel + " rows match name=" + e
+						+ (segParentKeyed ? " parentId=" : " groupId=") + parentId + " organizationId=" + organizationId
+						+ " type=" + segType + " -> [" + ids + "]. Refusing to pick one; specify the type"
+						+ " or fix the call site. Returning null rather than the previous segment's node.");
+					node = null;
+					break;
 				}
 			}
 			if(doCreate) {

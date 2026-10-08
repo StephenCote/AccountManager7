@@ -48,6 +48,8 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.thread.AsyncJob;
+import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.VectorUtil;
@@ -61,6 +63,7 @@ import jakarta.annotation.security.RolesAllowed;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -1016,9 +1019,29 @@ public class ChatService {
 		}
 	}
 
+	/// Escape a string for embedding inside a hand-built JSON string literal. Control characters
+	/// (newline, tab, ...) MUST be escaped too: the chain result's mcpContext block carries literal
+	/// newlines, and emitting them raw produced an unparseable `{"status":"complete",...}` body
+	/// (found 2026-10-07 while adding /chain/status, which embeds that same result).
 	private static String escJson(String s) {
 		if (s == null) return "";
-		return s.replace("\\", "\\\\").replace("\"", "\\\"");
+		StringBuilder sb = new StringBuilder(s.length() + 16);
+		for (int i = 0; i < s.length(); i++) {
+			char c = s.charAt(i);
+			switch (c) {
+				case '\\': sb.append("\\\\"); break;
+				case '"': sb.append("\\\""); break;
+				case '\n': sb.append("\\n"); break;
+				case '\r': sb.append("\\r"); break;
+				case '\t': sb.append("\\t"); break;
+				case '\b': sb.append("\\b"); break;
+				case '\f': sb.append("\\f"); break;
+				default:
+					if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
+					else sb.append(c);
+			}
+		}
+		return sb.toString();
 	}
 
 	/// Build a contextResult response for attach/detach operations
@@ -1204,11 +1227,75 @@ public class ChatService {
 		}
 	}
 
+	/// Job-kind label for chain runs submitted to AsyncJobRegistry (visible on GET /rest/job).
+	private static final String CHAIN_JOB_KIND = "chat.chain";
+
+	/// A chain request that cannot be run, carrying the HTTP status the synchronous route should
+	/// answer with. In async mode the same message becomes the job's `error` instead.
+	private static final class ChainRequestException extends Exception {
+		private static final long serialVersionUID = 1L;
+		private final int status;
+		private ChainRequestException(int status, String message) {
+			super(message);
+			this.status = status;
+		}
+	}
+
+	/// Plan + execute one chain and return the response body the synchronous route has always
+	/// produced. Shared by the synchronous and async branches of `/chain` so the two cannot drift.
+	/// Transport only: planning and execution are Agent7's AgentToolManager / ChainExecutor.
+	private String runChain(BaseRecord user, BaseRecord chatConfig, String planQuery, String planJson) throws ChainRequestException {
+		try {
+			AM7AgentTool agentTool = new AM7AgentTool(user);
+			AgentToolManager toolMgr = new AgentToolManager(user, chatConfig, agentTool);
+			ChainExecutor executor = toolMgr.getChainExecutor();
+
+			BaseRecord plan;
+			if (planJson != null && !planJson.isEmpty()) {
+				/// Pre-built plan JSON
+				plan = JSONUtil.importObject(planJson, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+				if (plan == null) {
+					throw new ChainRequestException(400, "Invalid plan JSON");
+				}
+				toolMgr.preparePlanSteps(plan);
+			} else {
+				plan = toolMgr.createChainPlan(planQuery);
+				if (plan == null) {
+					throw new ChainRequestException(500, "Failed to create chain plan");
+				}
+			}
+
+			executor.executeChain(plan);
+
+			/// Build MCP context from chain results
+			java.util.Map<String, Object> ctx = executor.getChainContext();
+			McpContextBuilder mcpBuilder = new McpContextBuilder();
+			String planName = plan.get(FieldNames.FIELD_NAME);
+			mcpBuilder.addResource("am7://chain/" + (planName != null ? planName : "result"),
+				"urn:am7:agent:chain-result",
+				ctx, true);
+			String mcpResult = mcpBuilder.build();
+
+			return "{\"status\":\"complete\",\"planQuery\":\"" + escJson(planQuery) + "\",\"mcpContext\":\"" + escJson(mcpResult) + "\"}";
+		} catch (ChainRequestException e) {
+			throw e;
+		} catch (Exception e) {
+			logger.error("Chain execution failed for user " + user.get("name"), e);
+			throw new ChainRequestException(500, "Chain execution failed: " + e.getMessage());
+		}
+	}
+
+	/// POST /chat/chain — plan (or accept a pre-built `plan`) and execute an agent tool chain.
+	/// `?async=true` hands the run to AsyncJobRegistry and answers `202 {jobId,status}` at once;
+	/// poll `GET /chat/chain/status/{jobId}` (or the generic `GET /job/{jobId}`) for the outcome.
+	/// Planning is an LLM round-trip and each step may be another, so a chain can outlive a proxy
+	/// read timeout exactly like the PictureBook/ChapBook bulk operations; async is opt-in so the
+	/// synchronous shape existing callers depend on is untouched.
 	@RolesAllowed({"admin","user"})
 	@POST
 	@Path("/chain")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
-	public Response chain(String json, @Context HttpServletRequest request){
+	public Response chain(String json, @QueryParam("async") @DefaultValue("false") boolean async, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
 		String planQuery = null;
@@ -1232,53 +1319,40 @@ public class ChatService {
 			return Response.status(400).entity("{\"error\":\"planQuery is required\"}").build();
 		}
 
-		logger.info("Synchronous chain execution for user " + user.get("name") + ": " + planQuery);
-
 		/// Resolve chatConfig if provided (needed for AgentToolManager context)
 		BaseRecord chatConfig = null;
 		if (chatConfigObjectId != null && !chatConfigObjectId.isEmpty()) {
 			chatConfig = OlioUtil.getFullRecord(findByObjectId(user, "olio.llm.chatConfig", chatConfigObjectId));
 		}
 
-		/// Check for pre-built plan JSON
-
-		try {
-			AM7AgentTool agentTool = new AM7AgentTool(user);
-			AgentToolManager toolMgr = new AgentToolManager(user, chatConfig, agentTool);
-			ChainExecutor executor = toolMgr.getChainExecutor();
-
-			BaseRecord plan;
-			if (planJson != null && !planJson.isEmpty()) {
-				plan = JSONUtil.importObject(planJson, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-				if (plan == null) {
-					return Response.status(400).entity("{\"error\":\"Invalid plan JSON\"}").build();
-				}
-				toolMgr.preparePlanSteps(plan);
-			} else {
-				plan = toolMgr.createChainPlan(planQuery);
-				if (plan == null) {
-					return Response.status(500).entity("{\"error\":\"Failed to create chain plan\"}").build();
-				}
+		if (async) {
+			final BaseRecord fChatConfig = chatConfig;
+			final String fPlanQuery = planQuery;
+			final String fPlanJson = planJson;
+			AsyncJob job = AsyncJobRegistry.submit(user, CHAIN_JOB_KIND, planQuery, j -> runChain(user, fChatConfig, fPlanQuery, fPlanJson));
+			if (job != null) {
+				logger.info("Async chain execution submitted for user " + user.get("name") + ": " + planQuery + " jobId=" + job.getJobId());
+				return Response.status(202).entity("{\"jobId\":\"" + job.getJobId()
+					+ "\",\"status\":\"" + job.getStatus().name().toLowerCase() + "\"}").build();
 			}
+			/// Could not register a job (no usable principal). Run synchronously rather than
+			/// silently dropping the request — same fallback as ChapBookService.
+			logger.warn("Async chain execution requested but the job could not be submitted — running synchronously");
+		}
 
-			executor.executeChain(plan);
-
-			/// Build MCP context from chain results
-			java.util.Map<String, Object> ctx = executor.getChainContext();
-			McpContextBuilder mcpBuilder = new McpContextBuilder();
-			String planName = plan.get(FieldNames.FIELD_NAME);
-			mcpBuilder.addResource("am7://chain/" + (planName != null ? planName : "result"),
-				"urn:am7:agent:chain-result",
-				ctx, true);
-			String mcpResult = mcpBuilder.build();
-
-			return Response.status(200).entity("{\"status\":\"complete\",\"planQuery\":\"" + escJson(planQuery) + "\",\"mcpContext\":\"" + escJson(mcpResult) + "\"}").build();
-		} catch (Exception e) {
-			logger.error("Chain execution failed for user " + user.get("name"), e);
-			return Response.status(500).entity("{\"error\":\"Chain execution failed: " + escJson(e.getMessage()) + "\"}").build();
+		logger.info("Synchronous chain execution for user " + user.get("name") + ": " + planQuery);
+		try {
+			return Response.status(200).entity(runChain(user, chatConfig, planQuery, planJson)).build();
+		} catch (ChainRequestException e) {
+			return Response.status(e.status).entity("{\"error\":\"" + escJson(e.getMessage()) + "\"}").build();
 		}
 	}
 
+	/// GET /chat/chain/status/{planId} — status of a chain submitted with `POST /chat/chain?async=true`.
+	/// `planId` is the jobId that call returned (tool.plan is `ioConstraints: [undefined]`, i.e. never
+	/// persisted, so a plan has no objectId to resolve; the job registry is the only durable handle).
+	/// Ownership is enforced inside AsyncJobRegistry: another principal's job and an unknown id both
+	/// answer 404 with `status:"unknown"`, so this cannot probe other users' runs.
 	@RolesAllowed({"admin","user"})
 	@GET
 	@Path("/chain/status/{planId}")
@@ -1287,8 +1361,30 @@ public class ChatService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		logger.info("Chain status query for plan " + planId + " by user " + user.get("name"));
 
-		// Status query placeholder - will resolve plan by objectId once persistence is wired
-		return Response.status(200).entity("{\"planId\":\"" + planId + "\",\"status\":\"unknown\"}").build();
+		AsyncJob job = AsyncJobRegistry.get(user, planId);
+		/// The registry is shared with the PictureBook/ChapBook jobs; only a chain job's result is the JSON
+		/// object this route embeds raw below, so any other kind is "unknown" here rather than a malformed body.
+		if (job == null || !CHAIN_JOB_KIND.equals(job.getKind())) {
+			return Response.status(404).entity("{\"planId\":\"" + escJson(planId) + "\",\"status\":\"unknown\",\"error\":\"No chain job with this id is registered for this user\"}").build();
+		}
+		StringBuilder sb = new StringBuilder();
+		sb.append("{\"planId\":\"").append(escJson(planId)).append("\"");
+		sb.append(",\"jobId\":\"").append(escJson(job.getJobId())).append("\"");
+		sb.append(",\"kind\":\"").append(escJson(job.getKind())).append("\"");
+		sb.append(",\"status\":\"").append(job.getStatus().name().toLowerCase()).append("\"");
+		sb.append(",\"phase\":\"").append(escJson(job.getProgress().getPhase())).append("\"");
+		sb.append(",\"elapsed\":").append(job.getElapsedSeconds());
+		sb.append(",\"terminal\":").append(job.isTerminal());
+		sb.append(",\"cancelled\":").append(job.getProgress().isCancelled());
+		if (job.getError() != null) {
+			sb.append(",\"error\":\"").append(escJson(job.getError())).append("\"");
+		}
+		if (job.getResult() != null) {
+			/// The result is the same JSON object the synchronous route returns; embed it as an object.
+			sb.append(",\"result\":").append(job.getResult());
+		}
+		sb.append("}");
+		return Response.status(200).entity(sb.toString()).build();
 	}
 
 	/// Phase 15: 3-stage scene generation pipeline.
@@ -1302,6 +1398,30 @@ public class ChatService {
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response generateScene(String json, @PathParam("objectId") String objectId, @Context HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+
+		/// Stage 1: Parse SD config from request body. Done first because it needs no DB access and a
+		/// bad compositeMode must answer 400 before any session/config load or SD work is paid for.
+		BaseRecord sdConfig = null;
+		if (json != null && !json.isBlank()) {
+			sdConfig = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		}
+		if (sdConfig != null) {
+			/// Reject an unrecognized mode outright rather than letting resolveMode downgrade it to
+			/// classic: a caller who asked for "flux3" should be told, not silently given SDXL img2img.
+			String requestedMode = null;
+			try { requestedMode = sdConfig.get("compositeMode"); } catch (Exception e) { /* field may not exist */ }
+			if (requestedMode != null && !requestedMode.isBlank() && !SceneCompositeUtil.isSupportedMode(requestedMode)) {
+				logger.warn("generateScene: unsupported compositeMode '" + requestedMode + "' requested by " + user.get("name"));
+				return Response.status(400).entity("{\"error\":\"Unsupported composite mode '" + escJson(requestedMode.trim())
+					+ "'; expected " + SceneCompositeUtil.SUPPORTED_MODES + "\"}").build();
+			}
+			if (sdConfig.get("model") == null) {
+				sdConfig.setValue("model", context.getInitParameter("sd.model"));
+			}
+			if (sdConfig.get("refinerModel") == null) {
+				sdConfig.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
+			}
+		}
 
 		/// 1. Load chat request — planMost(false) avoids recursive foreign-ref expansion
 		/// which exceeds PostgreSQL's 100-argument limit on chatRequest → chatConfig → charPerson chains.
@@ -1340,19 +1460,7 @@ public class ChatService {
 			return Response.status(500).entity("{\"error\":\"Failed to load chat session\"}").build();
 		}
 
-		/// Stage 1: Parse SD config from request body
-		BaseRecord sdConfig = null;
-		if (json != null && !json.isBlank()) {
-			sdConfig = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
-		}
-		if (sdConfig != null) {
-			if (sdConfig.get("model") == null) {
-				sdConfig.setValue("model", context.getInitParameter("sd.model"));
-			}
-			if (sdConfig.get("refinerModel") == null) {
-				sdConfig.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
-			}
-		}
+		/// (Stage 1 — SD config parse — now happens at the top of this method.)
 
 		/// Create SDUtil early — needed for both landscape and scene stages
 		String apiType = context.getInitParameter("sd.server.apiType");
@@ -1442,8 +1550,13 @@ public class ChatService {
 			sceneResult.sysPortraitBytes, sceneResult.usrPortraitBytes, landscapeBytes,
 			sceneCreativity, sdConfig);
 		if (s2i == null) {
+			/// Unreachable for any mode resolveMode can return (it only yields the three supported
+			/// modes, and the request-level vocabulary check above already 400'd anything else); kept
+			/// as a defensive guard so a future mode added to resolveMode but not buildSceneRequest
+			/// fails loudly with the mode named instead of an NPE.
 			logger.error("generateScene: could not build a request for compositeMode=" + compositeMode);
-			return Response.status(500).entity("{\"error\":\"Unsupported composite mode\"}").build();
+			return Response.status(500).entity("{\"error\":\"No scene pipeline for composite mode '" + escJson(compositeMode)
+				+ "'; expected " + SceneCompositeUtil.SUPPORTED_MODES + "\"}").build();
 		}
 		images = sdu.createSceneImage(user, groupPath, name, s2i, sysOid, usrOid);
 

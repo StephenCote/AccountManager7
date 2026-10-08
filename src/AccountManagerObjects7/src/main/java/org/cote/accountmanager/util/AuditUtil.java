@@ -19,9 +19,40 @@ import org.cote.accountmanager.schema.type.ResponseEnumType;
 public class AuditUtil {
 	public static final Logger logger = LogManager.getLogger(AuditUtil.class);
 	private static boolean logToConsole = true;
-	
+
+	/// The most recently closed audit on the calling thread. AccessPoint's CRUD methods return only
+	/// null/false on failure while the reason (DENY vs. INVALID, locked field, validation message) lives
+	/// in the audit they close, so a transport layer that wants to answer 403 vs. 422 instead of a silent
+	/// "false" clears this before the call and reads it after. Diagnostic only; never consulted by PBAC.
+	private static final ThreadLocal<BaseRecord> lastAudit = new ThreadLocal<>();
+
 	public static void setLogToConsole(boolean b) {
 		logToConsole = b;
+	}
+
+	public static BaseRecord getLastAudit() {
+		return lastAudit.get();
+	}
+
+	public static void clearLastAudit() {
+		lastAudit.remove();
+	}
+
+	/// Convenience accessors over getLastAudit() for callers that only need the outcome.
+	public static ResponseEnumType getLastAuditResponse() {
+		BaseRecord audit = lastAudit.get();
+		if(audit == null || audit.get(FieldNames.FIELD_RESPONSE) == null) {
+			return ResponseEnumType.UNKNOWN;
+		}
+		return ResponseEnumType.valueOf(audit.get(FieldNames.FIELD_RESPONSE));
+	}
+
+	public static String getLastAuditMessage() {
+		BaseRecord audit = lastAudit.get();
+		if(audit == null) {
+			return null;
+		}
+		return audit.get(FieldNames.FIELD_MESSAGE);
 	}
 	
 	public static String getAuditString(BaseRecord audit) {
@@ -141,6 +172,11 @@ public class AuditUtil {
 		closeAudit(audit, ret, msg);
 	}
 	public static void closeAudit(BaseRecord audit, ResponseEnumType ret, String msg) {
+		if(audit == null) {
+			logger.error("Null audit (" + ret + "): " + msg);
+			return;
+		}
+		lastAudit.set(audit);
 		try {
 			audit.set(FieldNames.FIELD_RESPONSE, ret);
 			audit.set(FieldNames.FIELD_DESCRIPTION, getAuditString(audit));

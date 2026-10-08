@@ -54,6 +54,18 @@ public class TestISO42001CertificationRequest extends ISO42001BaseTest {
 		assertNotNull("appendMessage by certifier returned null", appended);
 		rr = findByObjectId(isoCertifier, ISO42001ModelNames.MODEL_CERTIFICATION_REQUEST, reqOid);
 		assertEquals("thread should now have 2 messages", 2, msgCount(rr));
+		/// Regression (2026-10-07): the minimal update must not blank the fields it does not carry. The bare
+		/// newInstance() overload materialized every field at default and the writer persisted them all, so
+		/// report/justification/approvalStatus/ownerId were wiped by the append and approve then failed with
+		/// "request has no report reference".
+		assertNotNull("appendMessage must NOT blank request.report", rr.get("report"));
+		assertEquals("appendMessage must NOT blank justification",
+			"Please certify the Q2 bias compliance report.", rr.get("justification"));
+		assertEquals("appendMessage must NOT reset approvalStatus",
+			ApprovalResponseEnumType.REQUEST, rr.getEnum(FieldNames.FIELD_APPROVAL_STATUS));
+		assertEquals("appendMessage must NOT change ownerId",
+			(long) isoReporter.get(FieldNames.FIELD_ID), (long) rr.get(FieldNames.FIELD_OWNER_ID));
+		assertNotNull("appendMessage must NOT blank requestedCertifier", rr.get("requestedCertifier"));
 
 		/// Approve → signing fires.
 		BaseRecord cert = rf.approveRequest(isoCertifier, request, "Approved for certification.");
@@ -78,6 +90,9 @@ public class TestISO42001CertificationRequest extends ISO42001BaseTest {
 		BaseRecord request2 = rf.createRequest(isoReporter, report2, isoCertifier,
 			"Please certify report 2.", sharedGroupId, orgId);
 		assertNotNull("createRequest (deny path) null", request2);
+		/// First MODIFY on this request carries approvalStatus, so the inherited field rule (system
+		/// Approvers/RequestUpdaters) is evaluated here with no cached policy to ride on — this is the
+		/// assertion that ISO42001Provisioning actually entitles a certifier to transition the status.
 		BaseRecord denied = rf.denyRequest(isoCertifier, request2, "Insufficient sample size for FIN module.");
 		assertNotNull("denyRequest returned null", denied);
 		BaseRecord rr2 = findByObjectId(isoCertifier, ISO42001ModelNames.MODEL_CERTIFICATION_REQUEST,

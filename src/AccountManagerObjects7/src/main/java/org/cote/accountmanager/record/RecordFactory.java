@@ -541,7 +541,12 @@ public class RecordFactory {
 		return updateSchemaDefinition(ms);
 	}
 
-	/// Remove a field from an existing schema, including the database column
+	/// Remove a field from an existing schema, including the database column.
+	///
+	/// The column drop is destructive and irreversible, so it is gated on the same off-by-default property that gates the
+	/// boot-time orphan-column cleanup (IOProperties.isDropColumns(): database.dropColumns in web.xml, db.schema.dropColumns in
+	/// resource.properties, mirrored onto IOContext by IOSystem.open()). With the property off this refuses the whole operation -
+	/// the schema definition is left untouched as well, so the persisted schema and the table stay consistent.
 	public static boolean removeFieldFromSchema(ModelSchema ms, String fieldName) {
 		if(ms == null || fieldName == null) return false;
 		FieldSchema fs = ms.getFieldSchema(fieldName);
@@ -554,7 +559,12 @@ public class RecordFactory {
 
 		/// Drop column from database table
 		if(ctx.getIoType() == RecordIO.DATABASE) {
+			if(!ctx.isDropColumns()) {
+				logger.error("Refusing to drop column " + ms.getName() + "." + fieldName + ": column drops are disabled (database.dropColumns / db.schema.dropColumns is off). The field was not removed.");
+				return false;
+			}
 			String table = ctx.getDbUtil().getTableName(ms.getName());
+			logger.warn("Schema drop: " + table + "." + fieldName);
 			String sql = "ALTER TABLE " + table + " DROP COLUMN IF EXISTS " + fieldName + ";";
 			try (Connection con = ctx.getDbUtil().getDataSource().getConnection(); Statement st = con.createStatement()) {
 				st.executeUpdate(sql);

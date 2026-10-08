@@ -13,6 +13,7 @@ import org.cote.accountmanager.data.security.UserPrincipal;
 import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.iso42001.certification.ISO42001CertificationFactory;
 import org.cote.accountmanager.iso42001.schema.ISO42001ModelNames;
 import org.cote.accountmanager.iso42001.schema.ISO42001Provisioning;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -223,5 +224,50 @@ public class TestISO42001Service extends BaseTest {
 	public void testReaderCannotCreateProfile() {
 		Response r = service.createProfile(profileJson(isoReader), requestAs("isoReader"));
 		assertEquals("isoReader create profile MUST be denied (403), got " + r.getStatus(), 403, r.getStatus());
+	}
+
+	// ── Approve & Sign terms: validityMonths range validation at the transport boundary ────────
+
+	private static final String VALIDITY_MESSAGE = "'validityMonths' must be an integer from 1 to "
+		+ ISO42001CertificationFactory.MAX_VALIDITY_MONTHS;
+
+	/**
+	 * An out-of-range or non-integer validityMonths is rejected before the facade is called. The request id
+	 * does not exist, so a 400 carrying the facade's "Approve failed" text would mean validation was skipped.
+	 */
+	@Test
+	public void testApproveRejectsInvalidValidityMonthsBeforeFacade() {
+		String missingRequest = UUID.randomUUID().toString();
+		String[] invalid = new String[] {
+			"{\"validityMonths\":" + (ISO42001CertificationFactory.MAX_VALIDITY_MONTHS + 1) + "}",
+			"{\"validityMonths\":-1}",
+			"{\"validityMonths\":\"twelve\"}",
+			"{\"validityMonths\":12.5}"
+		};
+		for (String body : invalid) {
+			Response r = service.approve(missingRequest, body, requestAs("isoTester"));
+			assertEquals("approve with " + body + " must be 400", 400, r.getStatus());
+			String entity = String.valueOf(r.getEntity());
+			assertTrue("approve with " + body + " must fail on validityMonths, got: " + entity,
+				entity.contains(VALIDITY_MESSAGE));
+		}
+	}
+
+	/** 0 and an in-range value pass validation and reach the facade (which 400s on the unknown request). */
+	@Test
+	public void testApproveAcceptsDefaultAndInRangeValidityMonths() {
+		String missingRequest = UUID.randomUUID().toString();
+		for (String body : new String[] {"{\"validityMonths\":0}", "{\"validityMonths\":36}", "{}"}) {
+			Response r = service.approve(missingRequest, body, requestAs("isoTester"));
+			assertEquals("approve with " + body + " on a missing request must be 400", 400, r.getStatus());
+			String entity = String.valueOf(r.getEntity());
+			assertTrue("approve with " + body + " must reach the facade, got: " + entity,
+				entity.contains("Approve failed") && !entity.contains(VALIDITY_MESSAGE));
+		}
+	}
+
+	@Test
+	public void testApproveNoPrincipalReturns401() {
+		assertEquals(401, service.approve(UUID.randomUUID().toString(), "{}", new HttpServletRequestMock()).getStatus());
 	}
 }

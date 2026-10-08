@@ -38,8 +38,12 @@ public class TestRandomPersonTermination extends BaseTest {
 	private BaseRecord emptyWordGroup(BaseRecord user, long orgId, String label) {
 		/// makePath creates an empty DATA group; no words are ever added, so every MODEL_WORD /
 		/// MODEL_CENSUS_WORD query against its id returns zero rows (randomSelectionName -> null).
+		/// Under the olio user's HOME (`~/`), not the org root: the olio user is not entitled to
+		/// create a root-level group, so a `/EmptyNames/...` path came back null with
+		/// `PathUtil - Not authorized to create auth.group ... parent #0 ... (DENY)` and the test
+		/// failed at the fixture, never reaching randomPerson (2026-10-07, am7db).
 		return ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP,
-				"/EmptyNames/" + label + "-" + UUID.randomUUID().toString(),
+				"~/EmptyNames/" + label + "-" + UUID.randomUUID().toString(),
 				GroupEnumType.DATA.toString(), orgId);
 	}
 

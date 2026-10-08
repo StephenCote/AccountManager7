@@ -35,7 +35,6 @@ public class AdminAction extends CommonAction implements IAction {
 	
 	@Override
 	public void addOptions(Options options) {
-		// TODO Auto-generated method stub
 		options.addOption("adminPassword",true,"AccountManager admin password");
 		options.addOption("addUser", false, "Add a new user");
 		options.addOption("setup", false, "Setup AM7");
@@ -197,7 +196,6 @@ public class AdminAction extends CommonAction implements IAction {
 
 	@Override
 	public void handleCommand(CommandLine cmd, BaseRecord user) {
-		// TODO Auto-generated method stub
 		
 	}
 

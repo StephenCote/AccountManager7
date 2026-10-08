@@ -167,10 +167,12 @@ public class CacheDBSearch extends DBSearch implements ICache {
 		cacheMap.remove(model);
 	}
 
+	/// Intentional no-op. An IndexEntry is the file-IO index record (io.file.IndexManager); nothing in
+	/// the DB result cache is keyed by one. The only caller is CacheFileWriter.prepareDelete, and the
+	/// DB-backed equivalent is clearCache(BaseRecord), which DBWriter invokes on every update/delete.
 	@Override
 	public void clearCacheByIdx(IndexEntry idx) {
-		// TODO Auto-generated method stub
-		
+
 	}
 
 

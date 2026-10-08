@@ -839,7 +839,7 @@ public class TestPictureBookCustom extends BaseTest {
 			sdConfig.set("seed", (random ? -1 : seed));
 			logger.info("****** generatePortrait: " + charPerson.get(FieldNames.FIELD_NAME) + " using seed " + seed);
 			logger.info(sdConfig.toFullString());
-			sdu.generateSDImages(octx, Arrays.asList(charPerson), sdConfig, null, "((DEPRECATED))", /*body*/ null, /*verb*/ null, 1, false, /*hires*/ true, /*seed*/ seed);
+			sdu.generateSDImages(octx, Arrays.asList(charPerson), sdConfig, null, /*body*/ null, /*verb*/ null, 1, false, /*hires*/ true, /*seed*/ seed);
 		}
 		catch(FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
@@ -1382,7 +1382,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 		//   sdConfig.set(OlioFieldNames.FIELD_HIRES, false);
 		//   sdConfig.set("seed", -1);
 		//   sdu.generateSDImages(octx, Arrays.asList(cp /* a charPerson from Step 3 */), sdConfig,
-		//       /*setting*/ null, "((DEPRECATED))", /*bodyStyle*/ null, /*verb*/ null, 1, false, /*hires*/ false, /*seed*/ -1L);
+		//       /*setting*/ null, /*bodyStyle*/ null, /*verb*/ null, 1, false, /*hires*/ false, /*seed*/ -1L);
 		//   BaseRecord newPortrait = cp.get("profile.portrait");
 		//
 		// Ux path (reimage.js / pictureBookCharacters.js's doReimage() + renderPortraitPanel()):

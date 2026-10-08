@@ -5,6 +5,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.LogManager;
@@ -43,11 +44,20 @@ public class GameStreamHandler implements IGameEventHandler {
     // Executor for async game operations
     private static ExecutorService executor = Executors.newCachedThreadPool();
 
+    /// In-flight actions, keyed by {@link #actionKey(Session, String)} (session id + actionId), so a
+    /// client's {@code {actionId, cancel:true}} can abort the task it refers to. The task removes its own
+    /// entry when it finishes, so the map only ever holds queued or running actions.
+    private static final Map<String, Future<?>> inFlight = new ConcurrentHashMap<>();
+
     /// Gracefully shut down the executor and clear subscription maps.
     public static void shutdown() {
         logger.info("GameStreamHandler shutdown: clearing subscriptions, shutting down executor");
         characterSubscriptions.clear();
         sessionSubscriptions.clear();
+        for (Future<?> f : inFlight.values()) {
+            f.cancel(true);
+        }
+        inFlight.clear();
         executor.shutdown();
         try {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -81,8 +91,7 @@ public class GameStreamHandler implements IGameEventHandler {
 
         // Handle cancel requests
         if (request.get("cancel") != null && (Boolean) request.get("cancel")) {
-            // TODO: Implement action cancellation
-            chirp(session, "game.action.cancel", actionId, "{}");
+            cancelAction(session, actionId);
             return;
         }
 
@@ -92,14 +101,93 @@ public class GameStreamHandler implements IGameEventHandler {
         }
 
         // Execute action asynchronously
-        executor.submit(() -> {
+        submitAction(session, actionId, () -> {
             try {
                 executeAction(session, user, actionId, actionType, params);
             } catch (Exception e) {
+                if (Thread.currentThread().isInterrupted() || e instanceof InterruptedException) {
+                    logger.info("Game action " + actionType + " [" + actionId + "] interrupted by cancel");
+                    return;
+                }
                 logger.error("Error executing game action: " + actionType, e);
                 chirpError(session, actionId, e.getMessage());
             }
         });
+    }
+
+    /// Key for {@link #inFlight}: the session id (null-safe, for unit tests with no container) plus the
+    /// client-chosen actionId, so two sessions reusing the same actionId cannot cancel each other.
+    static String actionKey(Session session, String actionId) {
+        return (session != null ? session.getId() : "-") + ":" + actionId;
+    }
+
+    /// Submit a game action and remember its Future under the session+actionId key until it finishes.
+    /// The task body is wrapped so the registry entry is removed in a finally, whether the action
+    /// completed, threw, or was interrupted by {@link #cancelAction}. Returns the tracked Future.
+    static Future<?> submitAction(Session session, String actionId, Runnable body) {
+        final String key = actionKey(session, actionId);
+        Future<?> f = executor.submit(() -> {
+            try {
+                body.run();
+            } finally {
+                inFlight.remove(key);
+            }
+        });
+        inFlight.put(key, f);
+        if (f.isDone()) {
+            // Finished before we registered it (tiny tasks): don't leave a stale entry.
+            inFlight.remove(key);
+        }
+        return f;
+    }
+
+    /// Cancel an in-flight action for this session: interrupt it if running, drop it if still queued,
+    /// and tell the client what happened. The reply is `{"cancelled":bool,"known":bool}` on
+    /// `game.action.cancel` - `known:false` means nothing was in flight under that actionId for this
+    /// session (already finished, never started, or belongs to another session), which the client treats
+    /// the same way: the action is no longer active. Returns true when a tracked task was cancelled.
+    static boolean cancelAction(Session session, String actionId) {
+        if (actionId == null) {
+            logger.warn("Game cancel request missing actionId");
+            chirp(session, "game.action.cancel", null, "{\"cancelled\":false,\"known\":false}");
+            return false;
+        }
+        Future<?> f = inFlight.remove(actionKey(session, actionId));
+        boolean known = (f != null);
+        boolean cancelled = known && f.cancel(true);
+        if (known) {
+            logger.info("Game action [" + actionId + "] cancel requested; cancelled=" + cancelled);
+        }
+        chirp(session, "game.action.cancel", actionId, "{\"cancelled\":" + cancelled + ",\"known\":" + known + "}");
+        return cancelled;
+    }
+
+    /// Number of actions currently tracked as in flight (all sessions). Test/diagnostic hook.
+    static int inFlightCount() {
+        return inFlight.size();
+    }
+
+    /// Whether an action is currently tracked as in flight for this session. Test/diagnostic hook.
+    static boolean isInFlight(Session session, String actionId) {
+        return inFlight.containsKey(actionKey(session, actionId));
+    }
+
+    /// Cancel every in-flight action that belongs to a session (used when the socket closes).
+    static int cancelSessionActions(Session session) {
+        String prefix = (session != null ? session.getId() : "-") + ":";
+        int count = 0;
+        for (Map.Entry<String, Future<?>> e : inFlight.entrySet()) {
+            if (e.getKey().startsWith(prefix)) {
+                if (inFlight.remove(e.getKey(), e.getValue())) {
+                    e.getValue().cancel(true);
+                    count++;
+                }
+            }
+        }
+        if (count > 0) {
+            logger.info("Cancelled " + count + " in-flight game action(s) for closed session");
+        }
+        return count;
     }
 
     /**
@@ -451,6 +539,7 @@ public class GameStreamHandler implements IGameEventHandler {
     }
 
     public static void cleanupSession(Session session) {
+        cancelSessionActions(session);
         Set<String> chars = sessionSubscriptions.remove(session);
         if (chars != null) {
             for (String charId : chars) {
