@@ -74,6 +74,10 @@ public class TestPictureBookRestContract extends BaseTest {
 	private static final List<Class<? extends java.lang.annotation.Annotation>> VERBS = Arrays.asList(
 		GET.class, POST.class, PUT.class, DELETE.class, HEAD.class, OPTIONS.class);
 
+	/// Org-wide operations that are deliberately admin-only at the transport layer. Anything added here
+	/// must still carry "admin" and must be justified in the service method's javadoc.
+	private static final List<String> ADMIN_ONLY = Arrays.asList("scanOrgOrphans", "purgeOrgOrphans");
+
 	private BaseRecord parseBody(String json) {
 		OlioModelNames.use();
 		/// Exactly what PictureBookService.parseParams does, including the schema injection its
@@ -112,8 +116,14 @@ public class TestPictureBookRestContract extends BaseTest {
 			List<String> roles = Arrays.asList(ra.value());
 			assertTrue(m.getName() + ": @RolesAllowed must include \"admin\" (got " + roles + ")",
 				roles.contains("admin"));
-			assertTrue(m.getName() + ": @RolesAllowed must include \"user\" (got " + roles + ")",
-				roles.contains("user"));
+			if(ADMIN_ONLY.contains(m.getName())) {
+				assertEquals(m.getName() + ": admin-only endpoint must carry exactly {\"admin\"} (got " + roles + ")",
+					Arrays.asList("admin"), roles);
+			}
+			else {
+				assertTrue(m.getName() + ": @RolesAllowed must include \"user\" (got " + roles + ")",
+					roles.contains("user"));
+			}
 		}
 		logger.info("Checked @RolesAllowed on " + checked + " PictureBookService resource methods");
 		/// The count matters as much as the emptiness: a reflection bug that matched nothing would report

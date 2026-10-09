@@ -15,6 +15,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.junit.Before;
 import org.junit.Test;
 
 /**
@@ -47,14 +48,21 @@ public class TestRandomPersonTermination extends BaseTest {
 				GroupEnumType.DATA.toString(), orgId);
 	}
 
-	@Test(timeout = 120000)
-	public void testRandomPersonTerminatesWithEmptyNameDirectory() {
+	private OlioContext octx = null;
+
+	/// The first-time Olio seed on an empty database (names/surnames/geo word loads) alone exceeds the
+	/// 120 s hang guard below, so it must run here, outside the timed method. JUnit 4 runs this after
+	/// BaseTest.setup(), so ioContext/testProperties are already initialized.
+	@Before
+	public void seedOlio() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		String dataPath = testProperties.getProperty("test.datagen.path");
-
-		OlioContext octx = OlioTestUtil.getContext(testOrgContext, dataPath);
+		octx = OlioTestUtil.getContext(testOrgContext, dataPath);
 		assertNotNull("Olio context is null", octx);
+	}
 
+	@Test(timeout = 120000)
+	public void testRandomPersonTerminatesWithEmptyNameDirectory() {
 		BaseRecord user = octx.getOlioUser();
 		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
 

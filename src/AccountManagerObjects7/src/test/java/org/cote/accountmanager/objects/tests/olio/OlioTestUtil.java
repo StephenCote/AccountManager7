@@ -497,10 +497,23 @@ public class OlioTestUtil {
 	public static final String PROP_MODEL_ANALYSIS = "test.llm.model.analysis";
 	public static final String PROP_MODEL_PB = "test.llm.model.pb";
 	public static final String PROP_ROUTE = "test.llm.route";
+	public static final String ROUTE_LITELLM = "litellm";
+	/// The LiteLLM alias of the Azure gpt-5 deployment (src/litellm/config.yaml model_list).
+	public static final String PROP_LITELLM_AZURE_MODEL = "test.llm.litellm.azure.model";
+	public static final String DEFAULT_AZURE_ALIAS = "gpt-5.6-terra";
 
 	/// requestTimeout for picture-book / chap-book configs: JOSIEFIED 8B extraction over a long passage
 	/// on a busy box legitimately runs past the 120s connection default.
 	public static final int PB_REQUEST_TIMEOUT = 300;
+
+	public static boolean isLitellmRoute(Properties props) {
+		return ROUTE_LITELLM.equalsIgnoreCase(props.getProperty(PROP_ROUTE));
+	}
+
+	public static String azureModel(Properties props) {
+		String m = props.getProperty(PROP_LITELLM_AZURE_MODEL);
+		return (m != null && !m.isBlank()) ? m.trim() : DEFAULT_AZURE_ALIAS;
+	}
 
 	/// Model for analysis-style tests (extraction, tagging, prompts): the gate's write-back, else the
 	/// pre-gate key so a caller that never ran BaseTest.setup still gets the configured name.
@@ -735,6 +748,24 @@ public class OlioTestUtil {
 		return getCreateTierChatConfig(user, name, testProperties, pbModel(testProperties), PB_REQUEST_TIMEOUT, true);
 	}
 
+	/// Azure gpt-5 chatConfig on its OWN connection row at this JVM's LiteLLM server (OPENAI_COMPAT +
+	/// master key per LlmTestGate's write-back) with upstream OPENAI - NOT the OLLAMA upstream the
+	/// gate resolves for the local-container alias. The upstream is what gates the Ollama extensions
+	/// (KI-72): with upstream OLLAMA, ChatUtil puts top_k/min_p/repeat_penalty/... on the wire and
+	/// Azure answers `400 Unknown parameter: 'min_p'` - measured 2026-10-08 through LiteLLM, whose
+	/// drop_params:true only drops OpenAI-standard params it recognises and passes unknown extras
+	/// straight through. Model = the alias in test.llm.litellm.azure.model (gpt-5.6-terra). Azure is
+	/// LiteLLM-only in this test tree - test.llm.openai.* is blank by design - so this is only
+	/// meaningful when isLitellmRoute(); on a direct route the config would name a model the native
+	/// Ollama does not have. Callers assume() on both that and the LITELLM_LIVE opt-in, because every
+	/// chat through it is a paid call. Same idempotent / reconcile behaviour as getOllamaOpenAIConfig.
+	public static BaseRecord getAzureChatConfig(BaseRecord user, String name, Properties testProperties) {
+		ConnectionTarget routed = ConnectionTarget.fromProperties(testProperties, 120);
+		ConnectionTarget azure = new ConnectionTarget(routed.serverUrl, routed.apiKey, routed.dialect,
+			ConnectionUpstreamEnumType.OPENAI, routed.requestTimeout);
+		return getCreateTierChatConfig(user, name, azure, azureModel(testProperties), 120, false);
+	}
+
 	/// serviceType is the deprecated fallback; keep it tracking the dialect so a connection row that
 	/// somehow reads UNKNOWN still resolves to the same transport.
 	private static LLMServiceEnumType serviceTypeFor(ConnectionDialectEnumType dialect) {
@@ -746,8 +777,26 @@ public class OlioTestUtil {
 		}
 	}
 
+	/// NATIVE Ollama chatConfig (dialect OLLAMA, no proxy) at test.llm.ollama.server - the direct URL of
+	/// whichever tier the gate resolved - with the real Ollama model name from test.llm.pb.model (the
+	/// gate leaves that key as the direct-endpoint input; test.llm.model.pb may be a LiteLLM alias the
+	/// native server does not know). For tests that must observe the native server itself (/api/ps,
+	/// keep_alive:0 unload) rather than go through the routed connection. Same idempotent / reconcile
+	/// behaviour as getOllamaOpenAIConfig.
+	public static BaseRecord getNativeOllamaPbConfig(BaseRecord user, String name, Properties testProperties, int requestTimeout) {
+		String server = testProperties.getProperty("test.llm.ollama.server");
+		String model = testProperties.getProperty("test.llm.pb.model");
+		if (model == null || model.isBlank()) model = testProperties.getProperty("test.llm.ollama.model");
+		ConnectionTarget target = new ConnectionTarget(server != null ? server.trim() : null, null,
+			ConnectionDialectEnumType.OLLAMA, ConnectionUpstreamEnumType.OLLAMA, requestTimeout);
+		return getCreateTierChatConfig(user, name, target, model != null ? model.trim() : null, requestTimeout, true);
+	}
+
 	private static BaseRecord getCreateTierChatConfig(BaseRecord user, String name, Properties testProperties, String model, int requestTimeout, boolean pbOptions) {
-		ConnectionTarget target = ConnectionTarget.fromProperties(testProperties, requestTimeout);
+		return getCreateTierChatConfig(user, name, ConnectionTarget.fromProperties(testProperties, requestTimeout), model, requestTimeout, pbOptions);
+	}
+
+	private static BaseRecord getCreateTierChatConfig(BaseRecord user, String name, ConnectionTarget target, String model, int requestTimeout, boolean pbOptions) {
 		LLMServiceEnumType serviceType = serviceTypeFor(target.dialect);
 		String connName = name + " Connection";
 		BaseRecord cfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, name, "~/Chat");

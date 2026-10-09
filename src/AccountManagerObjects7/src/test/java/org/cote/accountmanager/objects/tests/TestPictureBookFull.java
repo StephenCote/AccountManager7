@@ -1249,9 +1249,22 @@ public class TestPictureBookFull extends BaseTest {
 		BaseRecord createdWork = IOSystem.getActiveContext().getAccessPoint().create(testUser, work);
 		String workObjectId = createdWork.get(FieldNames.FIELD_OBJECT_ID);
 
-		BaseRecord meta = PictureBookUtil.extract(testUser, workObjectId, 3, chatConfigName, null,
-			"E2E Apparel Scene Test Book " + System.currentTimeMillis(), testProperties.getProperty("test.datagen.path"));
-		String bookObjectId = meta.get("bookObjectId");
+		// PB2 book, not the legacy all-in-one extract(): tagApparelSceneIndex's PB1 guard (2026-08-22)
+		// requires an olio.pb.book row in the character group's parent, which extract() never creates,
+		// so on the PB1 path the tag below returned false and this test has been red since the guard
+		// landed — not a DB-state issue. Same two steps the Ux flow runs.
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		long stamp = System.currentTimeMillis();
+		String slug = "apparelscene" + Long.toString(stamp, 36);
+		String bookName = "E2E Apparel Scene Test Book " + stamp;
+		BaseRecord pb2Book = PbBookUtil.createBook(testUser, dataPath, slug, bookName);
+		assertNotNull("PB2 book should be created", pb2Book);
+		String bookObjectId = pb2Book.get(FieldNames.FIELD_OBJECT_ID);
+		PictureBookUtil.ScenesOnlyResult extracted = PictureBookUtil.extractScenesOnly(testUser, workObjectId, 3, chatConfigName, null);
+		assertNotNull("extractScenesOnly should return a result", extracted);
+		BaseRecord meta = PictureBookUtil.createFromScenes(testUser, workObjectId, chatConfigName, null, bookName,
+			extracted.scenes, new ArrayList<>(), dataPath, bookObjectId);
+		assertNotNull("createFromScenes should return the book meta", meta);
 
 		List<Map<String, Object>> scenes = PictureBookUtil.listScenes(testUser, bookObjectId);
 		assertTrue("Need at least 3 scenes (index 0 and 2) for this test — got " + scenes.size(), scenes.size() >= 3);
@@ -1450,9 +1463,18 @@ public class TestPictureBookFull extends BaseTest {
 		String ollamaServer = testProperties.getProperty("test.llm.ollama.server");
 		assertNotNull("test.llm.ollama.server must be set", ollamaServer);
 
+		// The unload mechanism is the NATIVE keep_alive:0 route, so the call that loads the model must
+		// hit the native server directly under the real Ollama model name. The routed `chatConfig` may
+		// be LiteLLM (OPENAI_COMPAT + alias): /api/ps on the direct server then never lists the alias
+		// and unloadAll has no direct URL registered for the proxy (observed 2026-10-08, route=litellm).
+		BaseRecord nativeCfg = OlioTestUtil.getNativeOllamaPbConfig(testUser, "PictureBook Native Unload.chat", testProperties, 120);
+		assertNotNull("Native Ollama chatConfig should be created", nativeCfg);
+		String nativeModel = nativeCfg.get("model");
+		assertNotNull("Native chatConfig should carry a model", nativeModel);
+
 		// Force the model to load via a real, minimal chat call — mirrors the setLlmSystemPrompt
 		// -> newRequest -> newMessage -> chat pattern used elsewhere (e.g. ChatUtil.summarizeChunk).
-		Chat chat = new Chat(testUser, chatConfig, null);
+		Chat chat = new Chat(testUser, nativeCfg, null);
 		chat.setLlmSystemPrompt("You are a terse test assistant.");
 		OpenAIRequest req = chat.newRequest(chat.getModel());
 		req.setStream(false);
@@ -1460,7 +1482,7 @@ public class TestPictureBookFull extends BaseTest {
 		OpenAIResponse resp = chat.chat(req);
 		assertNotNull("Live chat call should succeed", resp);
 
-		assertTrue("Model should be loaded in Ollama after a live call", isModelLoaded(ollamaServer, pbLlmModel(testProperties)));
+		assertTrue("Model " + nativeModel + " should be loaded in Ollama @ " + ollamaServer + " after a live call", isModelLoaded(ollamaServer, nativeModel));
 
 		// force=true: this test verifies the unload MECHANISM, so it must not be silenced by the
 		// llm.ollama.unload switch (which defaults to false — see OllamaModelUtil). The opportunistic
@@ -1471,10 +1493,10 @@ public class TestPictureBookFull extends BaseTest {
 		// returns — poll briefly rather than asserting on a single immediate check.
 		boolean unloaded = false;
 		for (int i = 0; i < 10 && !unloaded; i++) {
-			if (!isModelLoaded(ollamaServer, pbLlmModel(testProperties))) { unloaded = true; break; }
+			if (!isModelLoaded(ollamaServer, nativeModel)) { unloaded = true; break; }
 			try { Thread.sleep(500); } catch (InterruptedException ignored) {}
 		}
-		assertTrue("Model should be unloaded from Ollama after unloadAll()", unloaded);
+		assertTrue("Model " + nativeModel + " should be unloaded from Ollama @ " + ollamaServer + " after unloadAll()", unloaded);
 
 		logger.info("Ollama unload verified against live server: " + ollamaServer);
 	}
@@ -1691,40 +1713,46 @@ public class TestPictureBookFull extends BaseTest {
 		assertNotNull("Should have name", fullPerson.get(FieldNames.FIELD_NAME));
 		assertNotNull("Should have gender", fullPerson.get("gender"));
 
-		// Narrative is lazily created — null on freshly generated population.
-		// PictureBookService.createCharPerson creates it in-memory if null — mirror that.
+		// Narrative is lazily created — null on freshly generated population. Mirror
+		// PictureBookUtil.ensureNarrative: create it through the canonical Olio utility (which also
+		// links it onto the person), then patch the narrative's own fields in a SEPARATE update.
+		// Attaching a new in-memory narrative to the person and updating the person does not
+		// cascade (model-api.md "PATCH does not cascade"); on the old populated DB this test only
+		// passed because an earlier run had already created the narrative (2026-10-08, fresh am7db).
 		BaseRecord narrative = fullPerson.get("narrative");
 		if (narrative == null) {
-			try {
-				narrative = RecordFactory.newInstance(OlioModelNames.MODEL_NARRATIVE);
-				fullPerson.set("narrative", narrative);
-			} catch (Exception e) {
-				fail("Failed to create narrative: " + e.getMessage());
-			}
+			List<BaseRecord> made = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(fullPerson), null);
+			assertTrue("getCreateNarrative should create a narrative", made != null && !made.isEmpty());
+			narrative = made.get(0);
 		}
+		Long narrativeId = narrative.get(FieldNames.FIELD_ID);
+		assertTrue("Narrative should be persisted with an id", narrativeId != null && narrativeId > 0L);
+
 		String sdPrompt = "portrait of " + fullPerson.get(FieldNames.FIELD_NAME)
 			+ ", " + fullPerson.get("gender")
 			+ ", detailed face, cinematic lighting, high quality";
+		BaseRecord narrativePatch = null;
 		try {
 			narrative.set("sdPrompt", sdPrompt);
 			narrative.set("physicalDescription", sdPrompt);
+			narrativePatch = narrative.copyRecord(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "sdPrompt", "physicalDescription" });
 		} catch (Exception e) {
 			fail("Failed to set narrative fields: " + e.getMessage());
 		}
-		IOSystem.getActiveContext().getAccessPoint().update(olioUser, fullPerson);
+		assertNotNull("narrative.sdPrompt update should succeed", IOSystem.getActiveContext().getAccessPoint().update(olioUser, narrativePatch));
 
-		// Verify update succeeded — re-fetch and check narrative
+		// Verify — fresh, uncached re-fetch (cache invalidation does not follow nested references)
 		Query verify = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, personOid);
 		verify.field(FieldNames.FIELD_ORGANIZATION_ID, olioUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 		verify.planMost(true);
+		verify.setCache(false);
 		BaseRecord verified = IOSystem.getActiveContext().getAccessPoint().find(olioUser, verify);
 		assertNotNull("Verified person after update", verified);
 		assertEquals("Name should match", (String) fullPerson.get(FieldNames.FIELD_NAME), (String) verified.get(FieldNames.FIELD_NAME));
 
-		// Populate narrative FK and verify sdPrompt round-trip
-		IOSystem.getActiveContext().getReader().populate(verified, new String[] {"narrative"});
 		BaseRecord verifiedNarr = verified.get("narrative");
 		assertNotNull("Narrative should persist after update", verifiedNarr);
+		assertEquals("Narrative FK should point at the created narrative", narrativeId, (Long) verifiedNarr.get(FieldNames.FIELD_ID));
 		String verifiedPrompt = verifiedNarr.get("sdPrompt");
 		assertEquals("sdPrompt should round-trip", sdPrompt, verifiedPrompt);
 
@@ -2048,6 +2076,16 @@ public class TestPictureBookFull extends BaseTest {
 		BaseRecord cfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
 		if (style != null) cfg.setValue("style", style);
 		SDUtil.fillStyleDefaults(cfg);
+		return cfg;
+	}
+
+	/// A bare sd.config resolves to compositeMode=flux2 with flux2IncludeLandscapeRef=false, and since
+	/// 2026-09-17 PictureBookUtil.landscapeEnabled() then skips the landscape prompt entirely
+	/// (SceneCompositeUtil.includesLandscapeReference). Tests that assert on the resolved
+	/// landscapePrompt must opt the reference in or the path under test never runs.
+	private BaseRecord newLandscapeSdConfig(String style) throws Exception {
+		BaseRecord cfg = newSdConfig(style);
+		cfg.setValue("flux2IncludeLandscapeRef", true);
 		return cfg;
 	}
 
@@ -2393,13 +2431,16 @@ public class TestPictureBookFull extends BaseTest {
 			+ "one chunk is proven to have actually run first");
 		setupTestContext();
 
-		// Build text long enough to force several chunks through the real auto-chunk path
-		// (extractScenesOnly auto-chunks above 8000 chars; chunkSize=2000/overlap=200 inside
-		// extractChunkedInternal works out to roughly text.length()/1800 chunks) so a background
-		// cancel fired after the first chunk completes still has more chunks left to skip.
+		// Build text long enough to force at least THREE chunks through the real auto-chunk path.
+		// extractChunkedInternal chunks at PictureBookUtil.EXTRACT_CHUNK_SIZE=8000 /
+		// EXTRACT_CHUNK_OVERLAP=400, and the cancel below fires once chunk 1 reports complete,
+		// which can race with the start of chunk 2 (the model may legitimately finish chunk 2
+		// before the flag is observed). With only two chunks that race decides the test
+		// (observed processed=2 total=2 on 2026-10-08); with three, chunk 3 can never start
+		// after a cancel that fired during chunk 1 or 2, so processed < total is guaranteed.
 		StringBuilder sb = new StringBuilder();
 		int chapter = 1;
-		while (sb.length() < 10000) {
+		while (sb.length() < 17000) {
 			sb.append("Chapter ").append(chapter++).append(": ").append(TEST_STORY).append("\n\n");
 		}
 		String longText = sb.toString();
@@ -2558,7 +2599,7 @@ public class TestPictureBookFull extends BaseTest {
 		// The actual misconfiguration: a template belonging to a DIFFERENT operation
 		// (extract-scenes needs {text}/{count}) applied here, where the real templates
 		// (scene-image-prompt/landscape-prompt) need setting/action/mood/charNarrations instead.
-		BaseRecord mismatchCfg = newSdConfig("art");
+		BaseRecord mismatchCfg = newLandscapeSdConfig("art");
 		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
 			mismatchCfg, "pictureBook.extract-scenes");
 
@@ -2751,7 +2792,7 @@ public class TestPictureBookFull extends BaseTest {
 		// the actual production call, no override, then read back exactly what got cached.
 		List<String> sceneOids = new ArrayList<>();
 		for (int i = 0; i < Math.min(2, scenes.size()); i++) sceneOids.add((String) scenes.get(i).get("objectId"));
-		PictureBookUtil.prepareSceneImagePrompts(testUser, sceneOids, chatConfigName, newSdConfig("art"), null);
+		PictureBookUtil.prepareSceneImagePrompts(testUser, sceneOids, chatConfigName, newLandscapeSdConfig("art"), null);
 
 		List<String> landscapePrompts = new ArrayList<>();
 		List<String> scenePrompts = new ArrayList<>();
@@ -2837,7 +2878,7 @@ public class TestPictureBookFull extends BaseTest {
 		assertNotNull("Scene note should be created", createdScene);
 		String sceneObjectId = createdScene.get(FieldNames.FIELD_OBJECT_ID);
 
-		BaseRecord blankCfg = newSdConfig("art");
+		BaseRecord blankCfg = newLandscapeSdConfig("art");
 		long start = System.currentTimeMillis();
 		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
 			blankCfg, null);
@@ -2902,7 +2943,7 @@ public class TestPictureBookFull extends BaseTest {
 		assertNotNull("Scene note should be created", createdScene);
 		String sceneObjectId = createdScene.get(FieldNames.FIELD_OBJECT_ID);
 
-		BaseRecord healCfg = newSdConfig("art");
+		BaseRecord healCfg = newLandscapeSdConfig("art");
 		PictureBookUtil.prepareSceneImagePrompts(testUser, Arrays.asList(sceneObjectId), chatConfigName,
 			healCfg, null);
 

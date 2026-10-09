@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Configuration status="INFO">
 <Properties>
-<Property name="log-path">WEB-INF/logs</Property>
+<Property name="log-path">${sys:log.dir:-${sys:catalina.base}/logs}</Property>
 </Properties>
 <Appenders>
 <Console name="console-log" target="SYSTEM_OUT">

@@ -24,6 +24,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.rest.services.ISO42001Service;
 import org.cote.service.util.ServiceUtil;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -48,6 +49,7 @@ import jakarta.ws.rs.core.Response;
 public class TestISO42001Service extends BaseTest {
 
 	private static Properties testProps = null;
+	private static String savedFileBase = null;
 	private static final ObjectMapper MAPPER = new ObjectMapper();
 	private final ISO42001Service service = new ISO42001Service();
 
@@ -72,6 +74,11 @@ public class TestISO42001Service extends BaseTest {
 		}
 		/// Point at the adjacent ISO module's am7 so the /ISO42001 org keystores (built in Phases 1-6,
 		/// module-local to am7isotestdb) resolve — the Agent7 BaseTest adjacent-module pattern.
+		/// Restored in teardown: it is process-global, and every other class in this module keys its
+		/// H2 org keystores off the default base.
+		if (savedFileBase == null) {
+			savedFileBase = IOFactory.DEFAULT_FILE_BASE;
+		}
 		IOFactory.DEFAULT_FILE_BASE = "../AccountManagerISO42001/am7";
 		OlioModelNames.use();
 		ISO42001ModelNames.use();
@@ -106,6 +113,13 @@ public class TestISO42001Service extends BaseTest {
 			"DATA", orgId);
 		assertNotNull("Shared group is null", g);
 		sharedGroupId = g.get(FieldNames.FIELD_ID);
+	}
+
+	@After
+	public void restoreFileBase() {
+		if (savedFileBase != null) {
+			IOFactory.DEFAULT_FILE_BASE = savedFileBase;
+		}
 	}
 
 	private BaseRecord ensureRole(String name) {

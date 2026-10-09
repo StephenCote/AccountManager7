@@ -317,6 +317,10 @@
 				</dependencies>
 				<configuration>
 					<skipTests>${skipTests}</skipTests>
+					<!-- One JVM per test class: DBUtil.getInstance() is a process singleton that IOSystem.close()
+					     never clears, so the first class to open IO pins every later class to its datasource.
+					     TestISO42001Service (PostgreSQL am7isotestdb) cannot share a JVM with the H2 classes. -->
+					<reuseForks>false</reuseForks>
 					<excludes>
 						</excludes>
 					<systemProperties>

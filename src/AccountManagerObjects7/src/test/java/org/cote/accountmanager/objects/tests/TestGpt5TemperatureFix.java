@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
 
 import java.util.UUID;
 
@@ -34,8 +35,9 @@ import org.junit.Test;
 ///      message that Chat surfaces via onerror/bufferError.
 ///
 /// The live test (TestGpt5ChatSucceedsWithStrippedTemperature) drives the real
-/// Chat pipeline against the Azure endpoint in resource.properties. It is the
-/// end-to-end proof; the others are fast, offline unit checks of the two helpers.
+/// Chat pipeline against the Azure deployment through the LiteLLM alias
+/// (test.llm.litellm.azure.model; see LlmTestGate). It is the end-to-end proof;
+/// the others are fast, offline unit checks of the two helpers.
 public class TestGpt5TemperatureFix extends BaseTest {
 
 	private static final String ORG_PATH = "/Development/Gpt5 Temperature Tests";
@@ -137,18 +139,37 @@ public class TestGpt5TemperatureFix extends BaseTest {
 		assertTrue("temperature must be kept for a non-reasoning model", wire2.hasField("temperature"));
 	}
 
+	/// Azure is reachable from the tests only through LiteLLM (test.llm.openai.* is blank by design,
+	/// KI-11), so the two live tests need the gate to have resolved route=litellm. Until 2026-10-08
+	/// they built an OPENAI config from the blank keys and only passed because a config row created
+	/// by hand on the old populated am7db already pointed at Azure; on a fresh DB the chat failed on
+	/// "URI with undefined scheme" before any request left the JVM.
+	private void assumeLitellmRoute() {
+		assumeTrue("Azure gpt-5 is LiteLLM-only; route=" + testProperties.getProperty(OlioTestUtil.PROP_ROUTE)
+			+ " - start the LiteLLM proxy (am7-docker-up --llmproxy) to run this test",
+			OlioTestUtil.isLitellmRoute(testProperties));
+	}
+
 	/// Fix 1 (LIVE end-to-end): a real chat against the Azure gpt-5 deployment with
 	/// a non-default temperature set. Before the fix this returned HTTP 400 and a
 	/// null message; after the fix temperature is stripped and Azure responds 200.
+	/// A PAID Azure call, so it also sits behind the LITELLM_LIVE=1 / -Dlitellm.live=1
+	/// opt-in shared with TestLiteLLMRoundTrip. Note LiteLLM itself runs with
+	/// drop_params:true, so a 200 here proves the end-to-end path, not AM7's strip on
+	/// its own - TestSamplingParamsStrippedFromWire pins that.
 	@Test
 	public void TestGpt5ChatSucceedsWithStrippedTemperature() {
+		assumeLitellmRoute();
+		assumeTrue("LITELLM_LIVE=1 (or -Dlitellm.live=1) not set; paid Azure call skipped",
+			TestLiteLLMOllamaProxy.liveEnabled());
 		BaseRecord testUser = getTestUser();
 		String cfgName = "GPT5 Live Temperature Test.chat";
-		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, LLMServiceEnumType.OPENAI, cfgName, testProperties);
+		BaseRecord cfg = OlioTestUtil.getAzureChatConfig(testUser, cfgName, testProperties);
 		assertNotNull("Chat config is null", cfg);
+		assertFalse("Azure alias " + cfg.get("model") + " must be a reasoning model (gpt-5*/o*) for this test to mean anything",
+			ChatUtil.supportsSamplingParams(cfg));
 
 		/// Reproduce the exact reported scenario: gpt-5.6-terra with temperature 0.9.
-		cfg.setValue("model", "gpt-5.6-terra");
 		cfg.setValue("stream", false);
 		BaseRecord opts = ensureChatOptions(cfg);
 		opts.setValue("temperature", 0.9);
@@ -184,13 +205,17 @@ public class TestGpt5TemperatureFix extends BaseTest {
 	/// turned into one message, and chat() returns null (buffer mode surfaces the error).
 	@Test
 	public void TestGpt5ChatFailsCleanlyOnError() {
+		/// Needs the OpenAI-dialect connection (that is the buffer-mode reader fix 2 changed), hence
+		/// the LiteLLM route; not LITELLM_LIVE, because LiteLLM rejects an unknown alias itself
+		/// (400 invalid_request_error) without contacting Azure - no paid call.
+		assumeLitellmRoute();
 		BaseRecord testUser = getTestUser();
 		String cfgName = "GPT5 Live Error Test.chat";
-		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser, LLMServiceEnumType.OPENAI, cfgName, testProperties);
+		BaseRecord cfg = OlioTestUtil.getAzureChatConfig(testUser, cfgName, testProperties);
 		assertNotNull("Chat config is null", cfg);
 
 		/// Invalid deployment — still gpt-5* so sampling params are stripped, isolating
-		/// the failure to a genuine provider error (DeploymentNotFound).
+		/// the failure to a genuine provider error (unknown model / DeploymentNotFound).
 		cfg.setValue("model", "gpt-5-nonexistent-deployment-" + UUID.randomUUID());
 		cfg.setValue("stream", false);
 		IOSystem.getActiveContext().getAccessPoint().update(testUser, cfg);
