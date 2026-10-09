@@ -7,6 +7,8 @@ import static org.junit.Assert.assertTrue;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.cote.accountmanager.data.security.UserPrincipal;
 import org.cote.accountmanager.record.BaseRecord;
@@ -101,5 +103,42 @@ public class TestChatChainStatus extends BaseTest {
 		Response r = service.chainStatus(UUID.randomUUID().toString(), requestAs(owner));
 		assertEquals(404, r.getStatus());
 		assertEquals("unknown", bodyOf(r).get("status"));
+	}
+
+	/// POST /chat/chain?async=true past the principal's active-job cap must be refused with 429 and
+	/// must not fall back to running the chain inline — that fallback is for "no usable principal",
+	/// and taking it here would hand the caller exactly the unbounded work the cap refuses. The held
+	/// jobs are plain registry submissions (no LLM); the chain body never reaches runChain.
+	@Test
+	public void TestChainPastTheActiveJobCapIs429() throws Exception {
+		final CountDownLatch release = new CountDownLatch(1);
+		AsyncJob[] held = new AsyncJob[AsyncJobRegistry.MAX_ACTIVE_JOBS_PER_PRINCIPAL];
+		try {
+			for (int i = 0; i < held.length; i++) {
+				held[i] = AsyncJobRegistry.submit(owner, "test.hold", "hold-" + i, j -> {
+					release.await(10000L, TimeUnit.MILLISECONDS);
+					return "{}";
+				});
+				assertNotNull(held[i]);
+			}
+			assertEquals(AsyncJobRegistry.MAX_ACTIVE_JOBS_PER_PRINCIPAL, AsyncJobRegistry.activeCount(owner));
+
+			Response r = service.chain("{\"planQuery\":\"cap probe\"}", true, requestAs(owner));
+			assertEquals("over-cap async chain: " + r.getEntity(), 429, r.getStatus());
+			Object err = bodyOf(r).get("error");
+			assertTrue("body must say why: " + r.getEntity(), err instanceof String && ((String) err).contains("Too many active async jobs"));
+			assertEquals("the refused chain must not have been registered",
+				AsyncJobRegistry.MAX_ACTIVE_JOBS_PER_PRINCIPAL, AsyncJobRegistry.activeCount(owner));
+			for (AsyncJob j : AsyncJobRegistry.list(owner)) {
+				assertTrue("no chain job may exist for the refused request: " + j.getKind(), !"chat.chain".equals(j.getKind()) || j.isTerminal());
+			}
+		} finally {
+			release.countDown();
+		}
+		long deadline = System.currentTimeMillis() + 10000L;
+		while (AsyncJobRegistry.activeCount(owner) > 0 && System.currentTimeMillis() < deadline) {
+			Thread.sleep(50L);
+		}
+		assertEquals("held jobs must drain so the cap lifts again", 0, AsyncJobRegistry.activeCount(owner));
 	}
 }

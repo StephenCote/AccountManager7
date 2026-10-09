@@ -29,6 +29,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.MemberUtil;
 import org.cote.accountmanager.util.RecordUtil;
@@ -158,40 +159,93 @@ public class AuthorizationUtil {
 		reader.conditionalPopulate(resource, RecordUtil.getPossibleFields(resource.getSchema(), new String[] {FieldNames.FIELD_URN, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ID, FieldNames.FIELD_REFERENCE_ID, FieldNames.FIELD_REFERENCE_TYPE}));
 		
 		if(bind != null) {
-			PolicyResponseType oprr = new PolicyResponseType();
-			FieldSchema fs = ms.getFieldSchema(bind.getObjectId());
-			String objId = null;
-			long lobjId = 0L;
-			if(fs.getType().equals("long")) {
-				lobjId = resource.get(bind.getObjectId());
+			/// A persisted record is authorized through the target it is bound to in storage, not the one
+			/// the caller's copy names: otherwise an update that re-points the bind at something the
+			/// caller controls authorizes itself and takes the record over. When the caller is asking to
+			/// re-bind, the new target must permit the action as well.
+			boolean persisted = RecordUtil.isIdentityRecord(resource);
+			BaseRecord stored = (persisted ? PolicyUtil.readStoredBindFields(resource, bind) : null);
+			if(persisted && stored == null) {
+				/// Identity fields that match no row (or contradict each other) carry no trustworthy bind;
+				/// the caller's values are never consulted for a record that claims to already exist.
+				logger.warn("Bound " + resource.getSchema() + " does not exist; evaluating the record's own policy");
 			}
 			else {
-				objId = resource.get(bind.getObjectId());
-			}
-			String model = bind.getSchema();
-			if(bind.getObjectSchema() != null && resource.get(bind.getObjectSchema()) != null) {
-				model = resource.get(bind.getObjectSchema());
-			}
-			BaseRecord refObj = null;
-			if(model != null && objId != null) {
-				refObj = IOSystem.getActiveContext().getAccessPoint().findByObjectId(contextUser, model, objId);
-			}
-			if(model != null && lobjId > 0L) {
-				refObj = IOSystem.getActiveContext().getAccessPoint().findById(contextUser, model, lobjId);
-			}
-			if(refObj != null) {
-				return canDo(contextUser, policyName, action, actor, token, refObj);
-			}
-			else {
-				logger.warn("Orphan binding for " + model + " " + objId);
+				BaseRecord refObj = resolveBindTarget(contextUser, bind, ms, (stored != null ? stored : resource));
+				if(refObj != null) {
+					PolicyResponseType prr = canDo(contextUser, policyName, action, actor, token, refObj);
+					if(stored != null && prr != null && prr.getType() == PolicyResponseEnumType.PERMIT && PolicyUtil.bindDiffers(bind, stored, resource)) {
+						BaseRecord requested = resolveBindTarget(contextUser, bind, ms, resource);
+						if(requested != null && !sameRecord(requested, refObj)) {
+							if(trace) {
+								logger.info("Re-bind requested from " + refObj.getSchema() + " " + refObj.get(FieldNames.FIELD_ID) + " to " + requested.getSchema() + " " + requested.get(FieldNames.FIELD_ID));
+							}
+							return canDo(contextUser, policyName, action, actor, token, requested);
+						}
+					}
+					return prr;
+				}
 			}
 		}
 		
 		PolicyResponseType prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(contextUser, policyName, actor, token, resource);
-		
+
 		return prr;
 	}
-	
+
+	/// The record a bind points at, taking the bind values from {@code source}; null when the bind is unset or
+	/// names a record the context user cannot read (including one that does not exist).
+	private BaseRecord resolveBindTarget(BaseRecord contextUser, ModelAccessPolicyBind bind, ModelSchema ms, BaseRecord source) {
+		FieldSchema fs = ms.getFieldSchema(bind.getObjectId());
+		if(fs == null) {
+			logger.warn("Bind on " + ms.getName() + " names unknown field " + bind.getObjectId());
+			return null;
+		}
+		String objId = null;
+		long lobjId = 0L;
+		Object idVal = (source.hasField(bind.getObjectId()) ? source.get(bind.getObjectId()) : null);
+		if(idVal == null) {
+			return null;
+		}
+		if(fs.getType().equals("long")) {
+			lobjId = (Long) idVal;
+		}
+		else {
+			objId = idVal.toString();
+		}
+		if(lobjId <= 0L && (objId == null || objId.isEmpty())) {
+			return null;
+		}
+		String model = bind.getSchema();
+		if(bind.getObjectSchema() != null && source.hasField(bind.getObjectSchema()) && source.get(bind.getObjectSchema()) != null) {
+			model = source.get(bind.getObjectSchema());
+		}
+		BaseRecord refObj = null;
+		if(model != null && objId != null) {
+			refObj = IOSystem.getActiveContext().getAccessPoint().findByObjectId(contextUser, model, objId);
+		}
+		if(model != null && lobjId > 0L) {
+			refObj = IOSystem.getActiveContext().getAccessPoint().findById(contextUser, model, lobjId);
+		}
+		if(refObj == null) {
+			logger.warn("Bound " + model + " " + (objId != null ? objId : Long.toString(lobjId)) + " is not readable by " + contextUser.get(FieldNames.FIELD_NAME) + " or does not exist; evaluating the record's own policy");
+		}
+		return refObj;
+	}
+
+	private static boolean sameRecord(BaseRecord a, BaseRecord b) {
+		if(!a.getSchema().equals(b.getSchema())) {
+			return false;
+		}
+		if(a.hasField(FieldNames.FIELD_ID) && b.hasField(FieldNames.FIELD_ID) && a.get(FieldNames.FIELD_ID) != null && b.get(FieldNames.FIELD_ID) != null) {
+			return ((long) a.get(FieldNames.FIELD_ID)) == ((long) b.get(FieldNames.FIELD_ID));
+		}
+		if(a.hasField(FieldNames.FIELD_OBJECT_ID) && b.hasField(FieldNames.FIELD_OBJECT_ID) && a.get(FieldNames.FIELD_OBJECT_ID) != null) {
+			return a.get(FieldNames.FIELD_OBJECT_ID).equals(b.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		return false;
+	}
+
 	public boolean checkEntitlement(BaseRecord actor, BaseRecord permission, BaseRecord object) {
 		
 		if(trace) {

@@ -100,6 +100,16 @@ public class CredentialService {
 				}
 				boolean verify = false;
 				if(cred == null) {
+					/// A credential-less user (freshly created, or a system principal such as the olio user) has no
+					/// current credential to prove, so this branch cannot fall back to checkCredential. Without an
+					/// identity check here, anyone able to READ the target user could set its first password and
+					/// then log in as it; the first credential is therefore the user's own or an administrator's to set.
+					long targetId = targetObject.get(FieldNames.FIELD_ID);
+					long callerId = user.get(FieldNames.FIELD_ID);
+					if(targetId != callerId && !IOSystem.getActiveContext().getAuthorizationUtil().isModelAdministrator(objectType, user)) {
+						AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "Only the user or a model administrator may create the first credential");
+						return outBool;
+					}
 					logger.info("Create new credential");
 					verify = true;
 				}

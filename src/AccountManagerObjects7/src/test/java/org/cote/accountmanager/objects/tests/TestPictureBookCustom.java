@@ -24,7 +24,7 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
-import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.picturebook.PbArtifactUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbConfigUtil;
@@ -42,6 +42,8 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ConnectionDialectEnumType;
+import org.cote.accountmanager.schema.type.ConnectionUpstreamEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
@@ -89,8 +91,15 @@ public class TestPictureBookCustom extends BaseTest {
 	// Where the chat config + source/cache notes live (must be a path getCreateUser's home resolves).
 	private static final String CHAT_PATH = "~/Chat";
 
+	// Preferred model. Used as-is when the gate-resolved DIRECT Ollama (test.llm.ollama.server after
+	// LlmTestGate's write-back) lists it; the connection is then native OLLAMA to that box with the
+	// custom chatOptions below. When that box does not have it (the local container only carries the
+	// two 8B models), the run falls back to the route's picture-book model on the routed connection —
+	// OlioTestUtil.pbModel / ConnectionTarget.fromProperties, exactly what TestPictureBookFull uses —
+	// rather than 404ing on every chunk. To force this model, pin a box that has it:
+	//   mvn -o -DskipTests=false -Dtest=TestPictureBookCustom -Dtest.llm.ollama.server=http://192.168.1.42:11434 test
 	private static final String PB_LLM_MODEL = "gpt-oss:120b";//"qwen3:8b";
-	private static int iter = 6;
+	private static int iter = 7;
 	private static final boolean REIMAGE_CHARS = false;
 	// If true, force a fresh LLM derivation of already-cached scene data: the .scenesCache note
 	// (Step 2 extraction) and the per-scene "scenePrompt"/"landscapePrompt" values (Step 4, via
@@ -110,7 +119,13 @@ public class TestPictureBookCustom extends BaseTest {
 	private static final boolean clearSceneCache = false;
 	// One-shot latch for clearSceneCache's Step 2 half — see getOrCreateCatatoneScenes.
 	private static boolean sceneCacheCleared = false;
-	private static final String PB_CHAT_CONFIG_NAME = "PictureBook " + PB_LLM_MODEL + " " + iter + ".chat";
+	// Config name embeds the model actually in use ("PictureBook <model> <iter>.chat"), so the pinned
+	// and fallback configs — different box, different model — never share one row. Set in setup.
+	private static String pbChatConfigName = null;
+	private static final int PB_REQUEST_TIMEOUT = 300;
+	// The route's fallback is the CPU-only local Ollama container (docker-compose.test.yml): a 6k-char
+	// extraction chunk there takes >300s, measured 2026-10-08 (3 of 5 chunks timed out at 300s).
+	private static final int PB_FALLBACK_REQUEST_TIMEOUT = 900;
 
 	// Source document + the exact substring that marks where Step 1 truncates it (see
 	// getOrCreateCatatoneOpeningWork's javadoc for why the cutoff exists at all).
@@ -156,35 +171,94 @@ public class TestPictureBookCustom extends BaseTest {
 		assertNotNull("test.llm.ollama.server must be set", ollamaServer);
 		chatConfig = getOrCreatePbChatConfig(testUser, ollamaServer);
 		assertNotNull("Chat config should be created", chatConfig);
+		pbChatConfigName = chatConfig.get(FieldNames.FIELD_NAME);
+		logger.info("[PB-CUSTOM] chatConfig '" + pbChatConfigName + "' model=" + chatConfig.get("model"));
 	}
 
-	private BaseRecord getOrCreatePbChatConfig(BaseRecord user, String serverUrl) {
-		BaseRecord existing = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, PB_CHAT_CONFIG_NAME, CHAT_PATH);
-		if (existing != null) return existing;
+	/**
+	 * Get-or-create the chat config for this run. The model/box decision is made HERE, once, from the
+	 * gate's write-back (see PB_LLM_MODEL): pinned model on the direct box when it is served there,
+	 * else the route's picture-book model on the routed connection. Either way an existing row is
+	 * RECONCILED (connection URL/dialect/upstream, model, serviceType, stream, think, temperature) —
+	 * a row left by an earlier run on another box must not silently redirect this one; that is exactly
+	 * how the 2026-10-08 run posted gpt-oss:120b at the local container and 404'd on every chunk.
+	 */
+	private BaseRecord getOrCreatePbChatConfig(BaseRecord user, String directServer) {
+		String model;
+		OlioTestUtil.ConnectionTarget target;
+		int requestTimeout;
+		boolean pinned = LlmTestGate.servesModel(directServer, PB_LLM_MODEL);
+		if (pinned) {
+			model = PB_LLM_MODEL;
+			requestTimeout = PB_REQUEST_TIMEOUT;
+			target = new OlioTestUtil.ConnectionTarget(directServer, null,
+				ConnectionDialectEnumType.OLLAMA, ConnectionUpstreamEnumType.OLLAMA, requestTimeout);
+			logger.info("[PB-CUSTOM] " + PB_LLM_MODEL + " is served by " + directServer + " - using it natively");
+		} else {
+			model = OlioTestUtil.pbModel(testProperties);
+			requestTimeout = PB_FALLBACK_REQUEST_TIMEOUT;
+			target = OlioTestUtil.ConnectionTarget.fromProperties(testProperties, requestTimeout);
+			logger.warn("[PB-CUSTOM] " + PB_LLM_MODEL + " is NOT served by " + directServer
+				+ " - falling back to the route's picture-book model " + model + " (" + target + ")");
+		}
+		assertNotNull("No picture-book model resolved (test.llm.model.pb / test.llm.pb.model / test.llm.ollama.model all blank)", model);
+		String name = "PictureBook " + OlioTestUtil.safeName(model) + " " + iter + ".chat";
+		BaseRecord cfg = OlioTestUtil.getCreateChatConfig(user, name, target, model, requestTimeout, true);
+		assertNotNull("chatConfig '" + name + "' could not be created", cfg);
+		// The custom sampling/context options were tuned for the pinned 120B model; the fallback keeps
+		// the standard PB options (think:false, temperature 0.3, model default num_ctx) that
+		// TestPictureBookFull runs green with.
+		return pinned ? ensureCustomChatOptions(user, cfg) : cfg;
+	}
+
+	private static final int CUSTOM_NUM_CTX = 16384 * 4;
+	private static final double CUSTOM_REPEAT_PENALTY = 1.05;
+	private static final double CUSTOM_TYPICAL_P = 0.0;
+
+	/**
+	 * Patch the three custom chatOptions onto the config when any differs from what is persisted.
+	 * chatOptions is an embedded model (no table of its own), so it rides on the parent patch as a
+	 * whole; the patch is built with the explicit-field newInstance idiom and carries `name` because
+	 * the writer validates the patch record itself (model-api.md).
+	 */
+	private BaseRecord ensureCustomChatOptions(BaseRecord user, BaseRecord cfg) {
 		try {
-			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, CHAT_PATH);
-			plist.parameter(FieldNames.FIELD_NAME, PB_CHAT_CONFIG_NAME);
-			BaseRecord cfg = IOSystem.getActiveContext().getFactory().newInstance(
-				OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
-			cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
-			cfg.set("connection", OlioTestUtil.getCreateConnection(user, PB_CHAT_CONFIG_NAME + " Connection", serverUrl, null, 300));
-			cfg.set("model", PB_LLM_MODEL);
-			cfg.set("stream", false);
 			BaseRecord opts = cfg.get("chatOptions");
 			if (opts == null) {
 				opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
-				cfg.set("chatOptions", opts);
+				opts.set("think", false);
+				opts.set("temperature", 0.3);
 			}
-			opts.set("think", false);
-			opts.set("num_ctx", (16384 * 4));
-			opts.set("repeat_penalty", 1.05);
-			opts.set("typical_p", 0.0);
-			opts.set("temperature", 0.3);
-			return IOSystem.getActiveContext().getAccessPoint().create(user, cfg);
-		} catch (Exception e) {
-			logger.error("Failed to create PB chat config: " + e.getMessage());
-			return null;
+			Integer numCtx = opts.get("num_ctx");
+			Double repeat = opts.get("repeat_penalty");
+			Double typical = opts.get("typical_p");
+			boolean diff = numCtx == null || numCtx.intValue() != CUSTOM_NUM_CTX
+				|| repeat == null || Math.abs(repeat - CUSTOM_REPEAT_PENALTY) > 1e-9
+				|| typical == null || Math.abs(typical - CUSTOM_TYPICAL_P) > 1e-9;
+			if (!diff) return cfg;
+			opts.set("num_ctx", CUSTOM_NUM_CTX);
+			opts.set("repeat_penalty", CUSTOM_REPEAT_PENALTY);
+			opts.set("typical_p", CUSTOM_TYPICAL_P);
+			logger.info("[PB-CUSTOM] applying custom chatOptions to '" + cfg.get(FieldNames.FIELD_NAME)
+				+ "' (num_ctx " + numCtx + "->" + CUSTOM_NUM_CTX + ", repeat_penalty " + repeat + "->" + CUSTOM_REPEAT_PENALTY
+				+ ", typical_p " + typical + "->" + CUSTOM_TYPICAL_P + ")");
+			BaseRecord patch = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_CONFIG,
+				new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "chatOptions"});
+			patch.set(FieldNames.FIELD_ID, cfg.get(FieldNames.FIELD_ID));
+			patch.set(FieldNames.FIELD_OBJECT_ID, cfg.get(FieldNames.FIELD_OBJECT_ID));
+			patch.set(FieldNames.FIELD_NAME, cfg.get(FieldNames.FIELD_NAME));
+			patch.set("chatOptions", opts);
+			BaseRecord updated = IOSystem.getActiveContext().getAccessPoint().update(user, patch);
+			assertNotNull("AccessPoint.update returned null applying custom chatOptions to '" + cfg.get(FieldNames.FIELD_NAME) + "'", updated);
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			throw new AssertionError("Failed to build the chatOptions patch: " + e.getMessage(), e);
 		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_ID, cfg.get(FieldNames.FIELD_ID));
+		q.setCache(false);
+		OlioUtil.planMost(q);
+		BaseRecord fresh = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		assertNotNull("chatConfig could not be re-read after the chatOptions patch", fresh);
+		return fresh;
 	}
 
 	/**
@@ -562,7 +636,7 @@ public class TestPictureBookCustom extends BaseTest {
 	 */
 	private PictureBookUtil.SceneGenerationParams buildSdConfigTemplate() {
 		PictureBookUtil.SceneGenerationParams params = new PictureBookUtil.SceneGenerationParams();
-		params.chatConfigName = PB_CHAT_CONFIG_NAME;
+		params.chatConfigName = pbChatConfigName;
 		params.isBookOverride = true;       // persist/reuse portraits under the book's Characters/ group
 		params.promptTemplateOverride = null;
 		params.sdConfig = buildCommonSdConfig();

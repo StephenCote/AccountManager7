@@ -2713,9 +2713,43 @@ public class PictureBookUtil {
         return null;
     }
 
-    private static BaseRecord findCharPersonByNameInGroup(BaseRecord user, String cname, BaseRecord grp) {
+    /**
+     * The single candidate whose {@code firstName} is {@code cname} (accent- and case-insensitive,
+     * whole-string), or null when none or MORE THAN ONE is.
+     *
+     * <p>Scene JSON carries the name the extractor saw, which for most manuscripts is a bare first
+     * name; the persisted record can since have been given a surname (the manage-characters form, or
+     * the custom-character imprint in TestPictureBookCustom: "Jideon" became "Jideon de Rosa"). The
+     * whole-string passes then miss and the render goes character-free. Matching on
+     * {@code firstName} — which createCharPerson sets to the leading token of the extracted name —
+     * reconnects them without reopening the substring collision above: "Darby's dad" has firstName
+     * "Darby's", not "Darby", and two records sharing a first name are AMBIGUOUS, so nothing is
+     * returned rather than an arbitrary row.
+     */
+    static BaseRecord uniqueFirstNameMatch(String cname, BaseRecord[] candidates) {
+        if (cname == null || candidates == null) return null;
+        BaseRecord found = null;
+        for (BaseRecord cand : candidates) {
+            String first = cand.hasField("firstName") ? cand.get("firstName") : null;
+            if (first == null || first.isBlank() || !namesMatchAccentInsensitive(cname, first)) continue;
+            if (found != null) {
+                logger.warn("Scene character '" + cname + "' matches the first name of more than one record ('"
+                        + found.get(FieldNames.FIELD_NAME) + "', '" + cand.get(FieldNames.FIELD_NAME)
+                        + "') — ambiguous, not resolving");
+                return null;
+            }
+            found = cand;
+        }
+        if (found != null) {
+            logger.info("Resolved scene character '" + cname + "' to persisted '"
+                    + found.get(FieldNames.FIELD_NAME) + "' via the first-name pass");
+        }
+        return found;
+    }
+
+    static BaseRecord findCharPersonByNameInGroup(BaseRecord user, String cname, BaseRecord grp) {
         if (grp == null || cname == null) return null;
-        String[] req = new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+        String[] req = new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "firstName",
             "narrative", "gender", "profile", FieldNames.FIELD_STORE, FieldNames.FIELD_ATTRIBUTES};
 
         /// Pass 1: EXACT. Index-friendly and unambiguous.
@@ -2761,8 +2795,13 @@ public class PictureBookUtil {
         allq.field(FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
         allq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
         allq.setRequest(req);
-        return firstExactNameMatch(cname, IOSystem.getActiveContext()
-                .getAccessPoint().list(user, allq).getResults(), "accent-insensitive");
+        BaseRecord[] all = IOSystem.getActiveContext().getAccessPoint().list(user, allq).getResults();
+        match = firstExactNameMatch(cname, all, "accent-insensitive");
+        if (match != null) return match;
+
+        /// Pass 4: the record was renamed since extraction (a surname added) \u2014 match its first name,
+        /// but only when exactly one record in the group has it.
+        return uniqueFirstNameMatch(cname, all);
     }
 
     /**

@@ -17,6 +17,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.thread.AsyncJob;
+import org.cote.accountmanager.thread.AsyncJobLimitException;
 import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.junit.Test;
 
@@ -235,6 +236,62 @@ public class TestAsyncJobRegistry extends BaseTest {
 		awaitTerminal(queued);
 		assertEquals(AsyncJob.Status.CANCELLED, queued.getStatus());
 		assertFalse("work cancelled before it started must never run", ran[0]);
+	}
+
+	// ── per-principal cap ─────────────────────────────────────────────────────
+
+	/// Live jobs are never swept and MAX_RETAINED_JOBS only counts finished work, so before the cap
+	/// one principal could queue an unbounded number of jobs behind the two-wide pool — each holding
+	/// its closure and registry entry for as long as it took the pool to drain them. The cap refuses
+	/// the submission outright (an exception, not the null that means "run synchronously"), applies
+	/// per principal so one user cannot starve another, and counts only queued/running jobs so a
+	/// principal whose work finished can submit again.
+	@Test
+	public void TestPrincipalCannotExceedTheActiveJobCap() throws Exception {
+		BaseRecord hog = user("owner-cap-hog");
+		BaseRecord other = user("owner-cap-other");
+		final CountDownLatch release = new CountDownLatch(1);
+		AsyncJob[] held = new AsyncJob[AsyncJobRegistry.MAX_ACTIVE_JOBS_PER_PRINCIPAL];
+		for (int i = 0; i < held.length; i++) {
+			held[i] = AsyncJobRegistry.submit(hog, "test.cap", "cap-" + i, j -> {
+				release.await(WAIT_MS, TimeUnit.MILLISECONDS);
+				return "{}";
+			});
+			assertNotNull("submission " + i + " is within the cap and must be accepted", held[i]);
+		}
+		assertEquals(AsyncJobRegistry.MAX_ACTIVE_JOBS_PER_PRINCIPAL, AsyncJobRegistry.activeCount(hog));
+
+		final boolean[] ran = new boolean[1];
+		try {
+			AsyncJobRegistry.submit(hog, "test.cap", "cap-over", j -> {
+				ran[0] = true;
+				return "{}";
+			});
+			release.countDown();
+			throw new AssertionError("the submission over the cap must be refused");
+		} catch (AsyncJobLimitException e) {
+			assertEquals(AsyncJobRegistry.MAX_ACTIVE_JOBS_PER_PRINCIPAL, e.getActive());
+			assertEquals(AsyncJobRegistry.MAX_ACTIVE_JOBS_PER_PRINCIPAL, e.getLimit());
+		}
+		assertEquals("a refused submission must not have been registered",
+			AsyncJobRegistry.MAX_ACTIVE_JOBS_PER_PRINCIPAL, AsyncJobRegistry.activeCount(hog));
+
+		/// The cap is per principal: the hog's backlog must not block anyone else.
+		AsyncJob othersJob = AsyncJobRegistry.submit(other, "test.cap", "other-1", j -> "{}");
+		assertNotNull("another principal must still be able to submit", othersJob);
+
+		release.countDown();
+		for (AsyncJob h : held) {
+			awaitTerminal(h);
+		}
+		awaitTerminal(othersJob);
+		assertFalse("the refused work must never have run", ran[0]);
+		assertEquals("finished jobs do not count toward the cap", 0, AsyncJobRegistry.activeCount(hog));
+
+		AsyncJob again = AsyncJobRegistry.submit(hog, "test.cap", "cap-after", j -> "{}");
+		assertNotNull("once its jobs have finished the principal can submit again", again);
+		awaitTerminal(again);
+		assertEquals(AsyncJob.Status.COMPLETED, again.getStatus());
 	}
 
 	// ── keying ────────────────────────────────────────────────────────────────

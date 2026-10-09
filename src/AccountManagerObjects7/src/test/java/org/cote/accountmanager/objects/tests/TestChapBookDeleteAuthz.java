@@ -59,8 +59,10 @@ import org.junit.Test;
  *   <li>User B is a second, distinct non-admin user in the same organization — the ACTOR whose delete is
  *       denied. B is enrolled in NO per-book role.</li>
  *   <li>The fixture grants B a {@code Read}-only entitlement (DATA + GROUP, never Delete) on the book's
- *       own group, via {@code AuthorizationUtil.setEntitlement} as the org admin. This is FIXTURE
- *       PROVISIONING of a read grant — it does not authorize B's delete.</li>
+ *       own group, plus {@code Read} (DATA) on the book's {@code olio.world} record - the same record
+ *       grant {@code configureWorldAuthorization} gives the per-book roles, which the foreign-read rule
+ *       on the book's {@code world} field demands - via {@code AuthorizationUtil.setEntitlement} as the
+ *       org admin. This is FIXTURE PROVISIONING of read grants — neither authorizes B's delete.</li>
  *   <li>POSITIVE CONTROL: {@code PbBookUtil.readBook(b, bookOid, orgId)} must resolve NON-NULL, proving
  *       the read grant is real — so {@code deleteChapBook}'s internal {@code readBook} succeeds and we hit
  *       the {@code canDelete} DENY branch, not the 404 not-found path. If the read grant does not take
@@ -185,7 +187,16 @@ public class TestChapBookDeleteAuthz extends BaseTest {
 			o.getAdminUser(), denied, new BaseRecord[] { bookGroup },
 			new String[] { "Read" },
 			new String[] { PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString() });
-		// Flush policy/authorization caches so the just-written grant is visible to canRead/canDelete.
+		// readBook projects the book's world, and the foreign-read rule on olio.pb.book.world therefore
+		// demands a read of the olio.world record, which lives in the universe's Worlds container and not
+		// in the book's own group. Production gives the per-book roles exactly this Read (DATA) on the
+		// record (configureWorldAuthorization); B holds no per-book role, so the fixture mirrors that one
+		// grant directly - Read only, on the single record, never Delete.
+		BaseRecord world = ownerBook.get(OlioFieldNames.FIELD_PB_WORLD);
+		assertNotNull("The owner's read must carry the book's world for the fixture grant", world);
+		IOSystem.getActiveContext().getAuthorizationUtil().setEntitlement(
+			o.getAdminUser(), denied, world, new String[] { "Read" }, PermissionEnumType.DATA.toString());
+		// Flush policy/authorization caches so the just-written grants are visible to canRead/canDelete.
 		CacheUtil.clearCache();
 
 		// ── 3. POSITIVE CONTROL: the denied user CAN read the book record via the Read grant ────────

@@ -29,6 +29,7 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.thread.AsyncJob;
+import org.cote.accountmanager.thread.AsyncJobLimitException;
 import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
@@ -310,31 +311,36 @@ public class PictureBookService {
             final String fSeriesObjectId = seriesObjectId;
             final Integer fStartOffset = startOffset;
             final Integer fEndOffset = endOffset;
-            AsyncJob job = AsyncJobRegistry.submit(user, "pb.extractScenes", workObjectId, j -> {
-                // The job's OWN progress token is the cancel signal, so POST /rest/job/{id}/cancel
-                // reaches the chunk loop's existing checkpoint. Do not reuse the
-                // PictureBookCancelRegistry token here: that one is keyed on workObjectId and is
-                // the sync path's mechanism.
-                PictureBookUtil.ScenesOnlyResult r = PictureBookUtil.extractScenesOnly(
-                        user, workObjectId, fCount, fChatConfig, fPromptTemplate, j.getProgress(),
-                        fSeriesObjectId, fStartOffset, fEndOffset);
-                BaseRecord out = PictureBookUtil.buildResult();
-                out.set("sceneList", r.scenes);
-                // "Complete" must mean the run reached the end of the text, not merely "nobody
-                // cancelled": it also stops early on thread interruption (shutdown) and on the
-                // unreachable-LLM circuit breaker. One observed run reported
-                // extractionComplete=true having extracted ZERO scenes because its chat config
-                // could not be resolved. ScenesOnlyResult.complete carries the chunk loop's own
-                // answer — deriving it here from current/total would put the determination in the
-                // transport layer, which architecture.md forbids.
-                out.set("extractionComplete", r.complete);
-                out.set("chunksProcessed", j.getProgress().getCurrent());
-                out.set("chunked", r.chunked);
-                if (r.failedExtractions != null && !r.failedExtractions.isEmpty()) {
-                    out.set("failedExtractions", r.failedExtractions);
-                }
-                return toJson(out);
-            });
+            AsyncJob job;
+            try {
+                job = AsyncJobRegistry.submit(user, "pb.extractScenes", workObjectId, j -> {
+                    // The job's OWN progress token is the cancel signal, so POST /rest/job/{id}/cancel
+                    // reaches the chunk loop's existing checkpoint. Do not reuse the
+                    // PictureBookCancelRegistry token here: that one is keyed on workObjectId and is
+                    // the sync path's mechanism.
+                    PictureBookUtil.ScenesOnlyResult r = PictureBookUtil.extractScenesOnly(
+                            user, workObjectId, fCount, fChatConfig, fPromptTemplate, j.getProgress(),
+                            fSeriesObjectId, fStartOffset, fEndOffset);
+                    BaseRecord out = PictureBookUtil.buildResult();
+                    out.set("sceneList", r.scenes);
+                    // "Complete" must mean the run reached the end of the text, not merely "nobody
+                    // cancelled": it also stops early on thread interruption (shutdown) and on the
+                    // unreachable-LLM circuit breaker. One observed run reported
+                    // extractionComplete=true having extracted ZERO scenes because its chat config
+                    // could not be resolved. ScenesOnlyResult.complete carries the chunk loop's own
+                    // answer — deriving it here from current/total would put the determination in the
+                    // transport layer, which architecture.md forbids.
+                    out.set("extractionComplete", r.complete);
+                    out.set("chunksProcessed", j.getProgress().getCurrent());
+                    out.set("chunked", r.chunked);
+                    if (r.failedExtractions != null && !r.failedExtractions.isEmpty()) {
+                        out.set("failedExtractions", r.failedExtractions);
+                    }
+                    return toJson(out);
+                });
+            } catch (AsyncJobLimitException e) {
+                return errorResponse(429, e.getMessage());
+            }
             if (job != null) {
                 return Response.status(202).entity("{\"jobId\":\"" + job.getJobId()
                         + "\",\"status\":\"" + job.getStatus().name().toLowerCase() + "\"}").build();
@@ -419,12 +425,17 @@ public class PictureBookService {
         if (async) {
             final String fChatConfig = chatConfigName;
             final String fSeriesObjectId = seriesObjectId;
-            AsyncJob job = AsyncJobRegistry.submit(user, "pb.retryFailedChunks", workObjectId, j -> {
-                PictureBookUtil.ScenesOnlyResult r = PictureBookUtil.retryFailedChunks(
-                        user, workObjectId, fChatConfig, j.getProgress(), fSeriesObjectId,
-                        startOffset, endOffset);
-                return toJson(retryResult(r, j.getProgress()));
-            });
+            AsyncJob job;
+            try {
+                job = AsyncJobRegistry.submit(user, "pb.retryFailedChunks", workObjectId, j -> {
+                    PictureBookUtil.ScenesOnlyResult r = PictureBookUtil.retryFailedChunks(
+                            user, workObjectId, fChatConfig, j.getProgress(), fSeriesObjectId,
+                            startOffset, endOffset);
+                    return toJson(retryResult(r, j.getProgress()));
+                });
+            } catch (AsyncJobLimitException e) {
+                return errorResponse(429, e.getMessage());
+            }
             if (job != null) {
                 return Response.status(202).entity("{\"jobId\":\"" + job.getJobId()
                         + "\",\"status\":\"" + job.getStatus().name().toLowerCase() + "\"}").build();

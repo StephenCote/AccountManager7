@@ -73,16 +73,15 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 		return CryptoUtil.getDigestAsString(getContextKey(contextUser, policyName, actorUrn, resourceUrn));
 	}
 	
+	/// Keyed by resource content, not identity. The resolved policy carries dynamic rules derived from
+	/// which fields the resource presents and which records its foreign fields link
+	/// (PolicyUtil.getSchemaRules), so two requests against the same urn can need different policies;
+	/// keyed by urn, the first request's rule set answered every later one on that record.
 	@Override
 	public BaseRecord getResourcePolicy(String name, BaseRecord actor, String token, BaseRecord resource) throws ReaderException {
 		String recId = null;
 		if(resource != null) {
-			if(resource.hasField(FieldNames.FIELD_URN)) {
-				recId = resource.get(FieldNames.FIELD_URN);
-			}
-			if(recId == null) {
-				recId = resource.hash();
-			}
+			recId = resource.hash();
 		}
 		String urn = "anonymous";
 		if (actor != null) {
@@ -172,6 +171,7 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 		){
 			logger.debug("Clearing policy cache");
 			cacheRefreshed = now;
+			policyCache.clear();
 			responseCache.clear();
 			actorCache.clear();
 			resourceCache.clear();
@@ -198,10 +198,12 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 		}
 	}
 
-	/// Drops every cached decision. The resolved-policy cache (policyCache) holds policy definitions,
-	/// not decisions, and is never evicted by any path on this class; it lives as long as the instance.
+	/// Drops every cached decision and every resolved policy. Resolved policies are keyed by resource
+	/// content, so a change in the stored state behind a linked record (its bind, owner or group) is not
+	/// observed by an existing entry until this or checkCache() (maximumCacheAgeMS) drops it.
 	@Override
 	public void clearCache() {
+		policyCache.clear();
 		responseCache.clear();
 		actorCache.clear();
 		resourceCache.clear();

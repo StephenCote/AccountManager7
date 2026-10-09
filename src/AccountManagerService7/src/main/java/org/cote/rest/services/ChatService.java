@@ -49,6 +49,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.thread.AsyncJob;
+import org.cote.accountmanager.thread.AsyncJobLimitException;
 import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -1329,7 +1330,12 @@ public class ChatService {
 			final BaseRecord fChatConfig = chatConfig;
 			final String fPlanQuery = planQuery;
 			final String fPlanJson = planJson;
-			AsyncJob job = AsyncJobRegistry.submit(user, CHAIN_JOB_KIND, planQuery, j -> runChain(user, fChatConfig, fPlanQuery, fPlanJson));
+			AsyncJob job;
+			try {
+				job = AsyncJobRegistry.submit(user, CHAIN_JOB_KIND, planQuery, j -> runChain(user, fChatConfig, fPlanQuery, fPlanJson));
+			} catch (AsyncJobLimitException e) {
+				return Response.status(429).entity("{\"error\":\"" + escJson(e.getMessage()) + "\"}").build();
+			}
 			if (job != null) {
 				logger.info("Async chain execution submitted for user " + user.get("name") + ": " + planQuery + " jobId=" + job.getJobId());
 				return Response.status(202).entity("{\"jobId\":\"" + job.getJobId()

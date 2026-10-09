@@ -273,6 +273,21 @@ public final class LlmTestGate {
 		if (r.pbModel != null) p.setProperty(PROP_MODEL_PB, r.pbModel);
 	}
 
+	/**
+	 * True when {@code ollamaBase}/api/tags lists {@code model} (same name tolerance as the tier probe).
+	 * For harnesses that pin a specific model: check the resolved direct server actually has it before
+	 * pointing a connection at it, instead of discovering the 404 one chunk at a time.
+	 */
+	public static boolean servesModel(String ollamaBase, String model) {
+		if (ollamaBase == null || ollamaBase.isBlank() || model == null || model.isBlank()) return false;
+		List<String> tags = probeListModels(ollamaBase.trim());
+		if (tags == null) {
+			logger.info("[LLM-GATE] " + ollamaBase + " did not answer /api/tags - treating " + model + " as unavailable");
+			return false;
+		}
+		return hasModel(tags, model.trim());
+	}
+
 	/** Exact name match, tolerating a trailing {@code :latest} on either side. */
 	static boolean hasModel(List<String> names, String model) {
 		if (names == null || model == null) return false;

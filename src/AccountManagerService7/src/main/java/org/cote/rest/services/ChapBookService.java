@@ -27,6 +27,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.thread.AsyncJob;
+import org.cote.accountmanager.thread.AsyncJobLimitException;
 import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.service.util.ServiceUtil;
 
@@ -233,11 +234,16 @@ public class ChapBookService {
             final List<String> fPoems = poemObjectIds;
             final int fMaxLines = maxLinesPerPage;
             final BaseRecord fChatConfig = chatConfig;
-            AsyncJob job = AsyncJobRegistry.submit(user, "cb.create", slug, j -> {
-                BaseRecord book = ChapBookUtil.createChapBook(user, fDataPath, fSlug, fTitle,
-                        fPoems, fMaxLines, fChatConfig, j.getProgress());
-                return book == null ? "{}" : book.toFullString();
-            });
+            AsyncJob job;
+            try {
+                job = AsyncJobRegistry.submit(user, "cb.create", slug, j -> {
+                    BaseRecord book = ChapBookUtil.createChapBook(user, fDataPath, fSlug, fTitle,
+                            fPoems, fMaxLines, fChatConfig, j.getProgress());
+                    return book == null ? "{}" : book.toFullString();
+                });
+            } catch (AsyncJobLimitException e) {
+                return errorResponse(429, e.getMessage());
+            }
             if (job != null) {
                 return Response.status(202).entity("{\"jobId\":\"" + job.getJobId()
                         + "\",\"status\":\"" + job.getStatus().name().toLowerCase() + "\"}").build();
@@ -324,23 +330,28 @@ public class ChapBookService {
             final String fSdServer = sdServer;
             final BaseRecord fChatConfig = chatConfig;
             final BaseRecord fSdConfig = sdConfig;
-            AsyncJob job = AsyncJobRegistry.submit(user, "cb.render", bookObjectId, j -> {
-                ChapBookUtil.ChapBookRenderSummary s = ChapBookUtil.renderChapBookSummary(
-                        user, bookObjectId, fSdApiType, fSdServer, fChatConfig, fSdConfig,
-                        j.getProgress());
-                // Report what happened, including that it stopped early: a cancelled bulk render
-                // keeps every image it already generated, so "rendered" is real work either way.
-                // "complete" means every scene was ATTEMPTED — the loop also breaks on thread
-                // interruption (a Tomcat stop), which no cancel flag reflects. The progress token
-                // counts attempted scenes, so current >= total is exactly that condition.
-                SummarizeProgress rp = j.getProgress();
-                boolean renderComplete = !rp.isCancelled()
-                    && (rp.getTotal() <= 0 || rp.getCurrent() >= rp.getTotal());
-                return "{\"rendered\":" + s.rendered
-                    + ",\"skipped\":" + s.skipped
-                    + ",\"llmUnavailable\":" + s.llmUnavailable
-                    + ",\"complete\":" + renderComplete + "}";
-            });
+            AsyncJob job;
+            try {
+                job = AsyncJobRegistry.submit(user, "cb.render", bookObjectId, j -> {
+                    ChapBookUtil.ChapBookRenderSummary s = ChapBookUtil.renderChapBookSummary(
+                            user, bookObjectId, fSdApiType, fSdServer, fChatConfig, fSdConfig,
+                            j.getProgress());
+                    // Report what happened, including that it stopped early: a cancelled bulk render
+                    // keeps every image it already generated, so "rendered" is real work either way.
+                    // "complete" means every scene was ATTEMPTED — the loop also breaks on thread
+                    // interruption (a Tomcat stop), which no cancel flag reflects. The progress token
+                    // counts attempted scenes, so current >= total is exactly that condition.
+                    SummarizeProgress rp = j.getProgress();
+                    boolean renderComplete = !rp.isCancelled()
+                        && (rp.getTotal() <= 0 || rp.getCurrent() >= rp.getTotal());
+                    return "{\"rendered\":" + s.rendered
+                        + ",\"skipped\":" + s.skipped
+                        + ",\"llmUnavailable\":" + s.llmUnavailable
+                        + ",\"complete\":" + renderComplete + "}";
+                });
+            } catch (AsyncJobLimitException e) {
+                return errorResponse(429, e.getMessage());
+            }
             if (job != null) {
                 return Response.status(202).entity("{\"jobId\":\"" + job.getJobId()
                         + "\",\"status\":\"" + job.getStatus().name().toLowerCase() + "\"}").build();

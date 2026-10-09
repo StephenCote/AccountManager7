@@ -482,6 +482,75 @@ public class PolicyUtil {
 	}
 
 	/**
+	 * The persisted values of a record's {@code access.policies.bind} fields, read fresh from storage
+	 * (uncached, no PBAC) so that an authorization decision is made against where the record IS bound
+	 * rather than where a caller's copy says it is bound.
+	 *
+	 * @return a record holding only the bind fields, or {@code null} when {@code rec} carries no usable
+	 *         identity or no such row exists
+	 */
+	public static BaseRecord readStoredBindFields(BaseRecord rec, ModelAccessPolicyBind bind) {
+		if(rec == null || bind == null || bind.getObjectId() == null) {
+			return null;
+		}
+		List<String> fields = new ArrayList<>();
+		fields.add(FieldNames.FIELD_ID);
+		fields.add(bind.getObjectId());
+		if(bind.getObjectSchema() != null) {
+			fields.add(bind.getObjectSchema());
+		}
+		/// Every identity the caller supplied must name the same row: the writer keys its WHERE on
+		/// whichever identity field it meets first, so a record carrying a bogus id and a real objectId
+		/// must not be authorized through one and written through the other.
+		Query q = null;
+		if(rec.hasField(FieldNames.FIELD_ID) && rec.get(FieldNames.FIELD_ID) != null && ((long) rec.get(FieldNames.FIELD_ID)) > 0L) {
+			q = QueryUtil.createQuery(rec.getSchema(), FieldNames.FIELD_ID, (long) rec.get(FieldNames.FIELD_ID));
+		}
+		if(rec.hasField(FieldNames.FIELD_OBJECT_ID) && rec.get(FieldNames.FIELD_OBJECT_ID) != null && !((String) rec.get(FieldNames.FIELD_OBJECT_ID)).isEmpty()) {
+			if(q == null) {
+				q = QueryUtil.createQuery(rec.getSchema(), FieldNames.FIELD_OBJECT_ID, (String) rec.get(FieldNames.FIELD_OBJECT_ID));
+			}
+			else {
+				q.field(FieldNames.FIELD_OBJECT_ID, (String) rec.get(FieldNames.FIELD_OBJECT_ID));
+			}
+		}
+		if(rec.hasField(FieldNames.FIELD_URN) && rec.get(FieldNames.FIELD_URN) != null && !((String) rec.get(FieldNames.FIELD_URN)).isEmpty()) {
+			if(q == null) {
+				q = QueryUtil.createQuery(rec.getSchema(), FieldNames.FIELD_URN, (String) rec.get(FieldNames.FIELD_URN));
+			}
+			else {
+				q.field(FieldNames.FIELD_URN, (String) rec.get(FieldNames.FIELD_URN));
+			}
+		}
+		if(q == null) {
+			return null;
+		}
+		q.setRequest(RecordUtil.getPossibleFields(rec.getSchema(), fields.toArray(new String[0])));
+		q.setCache(false);
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
+	}
+
+	/** True when {@code requested} carries a bind value (objectId or objectSchema field) that differs from {@code stored}. */
+	public static boolean bindDiffers(ModelAccessPolicyBind bind, BaseRecord stored, BaseRecord requested) {
+		if(bind == null || stored == null || requested == null) {
+			return false;
+		}
+		return fieldDiffers(bind.getObjectId(), stored, requested) || fieldDiffers(bind.getObjectSchema(), stored, requested);
+	}
+
+	private static boolean fieldDiffers(String fieldName, BaseRecord stored, BaseRecord requested) {
+		if(fieldName == null || !requested.hasField(fieldName)) {
+			return false;
+		}
+		Object req = requested.get(fieldName);
+		if(req == null || (req instanceof Long && ((Long) req) <= 0L) || (req instanceof String && ((String) req).isEmpty())) {
+			return false;
+		}
+		Object cur = (stored.hasField(fieldName) ? stored.get(fieldName) : null);
+		return !req.equals(cur);
+	}
+
+	/**
 	 * Apply a linked record's {@code access.policies.bind}, if it declares one, mirroring
 	 * {@code AuthorizationUtil.canDo}: resolve the record named by the bind's objectId / objectSchema fields.
 	 *
@@ -505,16 +574,21 @@ public class PolicyUtil {
 			logger.warn("Bind on " + linkedObj.getSchema() + " names unknown field " + bind.getObjectId());
 			return linkedObj;
 		}
-		List<String> bindFields = new ArrayList<>();
-		bindFields.add(bind.getObjectId());
-		if(bind.getObjectSchema() != null) {
-			bindFields.add(bind.getObjectSchema());
+		/// For a persisted record the bind values must come from the row, never from the caller's copy:
+		/// the caller may be the one asking to change them, and a patch that re-points referenceId at a
+		/// record the caller controls would otherwise authorize itself.
+		BaseRecord bindSource = linkedObj;
+		if(RecordUtil.isIdentityRecord(linkedObj)) {
+			bindSource = readStoredBindFields(linkedObj, bind);
+			if(bindSource == null) {
+				logger.warn("Bound " + linkedObj.getSchema() + " does not exist; no bind target to resolve");
+				return linkedObj;
+			}
 		}
-		reader.conditionalPopulate(linkedObj, RecordUtil.getPossibleFields(linkedObj.getSchema(), bindFields.toArray(new String[0])));
 
 		long lobjId = 0L;
 		String objId = null;
-		Object idVal = (linkedObj.hasField(bind.getObjectId()) ? linkedObj.get(bind.getObjectId()) : null);
+		Object idVal = (bindSource.hasField(bind.getObjectId()) ? bindSource.get(bind.getObjectId()) : null);
 		if(idVal == null) {
 			return linkedObj;
 		}
@@ -525,8 +599,8 @@ public class PolicyUtil {
 			objId = idVal.toString();
 		}
 		String model = bind.getSchema();
-		if(bind.getObjectSchema() != null && linkedObj.hasField(bind.getObjectSchema()) && linkedObj.get(bind.getObjectSchema()) != null) {
-			model = linkedObj.get(bind.getObjectSchema());
+		if(bind.getObjectSchema() != null && bindSource.hasField(bind.getObjectSchema()) && bindSource.get(bind.getObjectSchema()) != null) {
+			model = bindSource.get(bind.getObjectSchema());
 		}
 		if(model == null || (lobjId <= 0L && objId == null)) {
 			return linkedObj;
@@ -549,7 +623,9 @@ public class PolicyUtil {
 			ref = IOSystem.getActiveContext().getAccessPoint().findById(actor, model, lobjId);
 		}
 		if(ref == null) {
-			logger.warn("Orphan binding for " + model + " " + (objId != null ? objId : Long.toString(lobjId)) + " from nested " + linkedObj.getSchema());
+			if(trace) {
+				logger.info("Bound " + model + " " + (objId != null ? objId : Long.toString(lobjId)) + " behind nested " + linkedObj.getSchema() + " is not readable by the actor or does not exist; falling back to the nested record's own policy");
+			}
 			return linkedObj;
 		}
 		return ref;

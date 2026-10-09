@@ -77,6 +77,18 @@ public final class AsyncJobRegistry {
 	/** Hard cap on retained jobs, so a pathological client cannot grow the map without limit. */
 	private static final int MAX_RETAINED_JOBS = 200;
 
+	/**
+	 * Cap on one principal's jobs that are QUEUED or RUNNING at the same time. {@link #sweep} evicts
+	 * only terminal jobs and never evicts a live one (a legitimate run can take over an hour), so
+	 * without this a single authenticated caller could park an unbounded number of jobs behind the
+	 * {@link #MAX_CONCURRENT_JOBS}-wide pool: every one of them holds its closure, its progress token
+	 * and its registry entry, none of them are ever swept, and {@link #MAX_RETAINED_JOBS} does not
+	 * apply because it counts finished work. The pool runs two jobs at a time, so a user with more
+	 * than this many outstanding is not a workflow the UI can produce; a further submission is refused
+	 * with {@link AsyncJobLimitException} rather than queued.
+	 */
+	public static final int MAX_ACTIVE_JOBS_PER_PRINCIPAL = 4;
+
 	/** Composite-keyed {@code <principal objectId> <jobId>}; see class javadoc. */
 	private static final Map<String, AsyncJob> registry = new ConcurrentHashMap<>();
 
@@ -151,6 +163,9 @@ public final class AsyncJobRegistry {
 	 * @return the registered job, or null when the principal cannot be keyed (in which case nothing
 	 *         was submitted — the caller must fall back to running synchronously rather than
 	 *         silently dropping the request)
+	 * @throws AsyncJobLimitException when the principal already has
+	 *         {@link #MAX_ACTIVE_JOBS_PER_PRINCIPAL} jobs queued or running; nothing was submitted
+	 *         and the caller must refuse the request (429), not run it synchronously
 	 */
 	public static AsyncJob submit(BaseRecord user, String kind, String key, AsyncJobWork work) {
 		String owner = ownerOf(user);
@@ -162,7 +177,17 @@ public final class AsyncJobRegistry {
 		String jobId = UUID.randomUUID().toString();
 		String ck = compositeKey(owner, jobId);
 		final AsyncJob job = new AsyncJob(jobId, kind, key, owner, new SummarizeProgress());
-		registry.put(ck, job);
+		/// Count and register under one lock so two concurrent submissions from the same principal
+		/// cannot both pass the check and land one over the cap.
+		synchronized (registry) {
+			int active = activeCount(owner);
+			if (active >= MAX_ACTIVE_JOBS_PER_PRINCIPAL) {
+				logger.warn("Async job refused: kind=" + kind + " key=" + key + " — principal already has "
+					+ active + " of " + MAX_ACTIVE_JOBS_PER_PRINCIPAL + " jobs queued or running");
+				throw new AsyncJobLimitException(active, MAX_ACTIVE_JOBS_PER_PRINCIPAL);
+			}
+			registry.put(ck, job);
+		}
 
 		executor().submit(new Runnable() {
 			@Override
@@ -173,6 +198,25 @@ public final class AsyncJobRegistry {
 		logger.info("Async job submitted: kind=" + kind + " key=" + key + " jobId=" + jobId
 			+ " (live jobs: " + registry.size() + ")");
 		return job;
+	}
+
+	/** The principal's jobs that are QUEUED or RUNNING right now. */
+	public static int activeCount(BaseRecord user) {
+		String owner = ownerOf(user);
+		if (owner == null || owner.isEmpty()) {
+			return 0;
+		}
+		return activeCount(owner);
+	}
+
+	private static int activeCount(String owner) {
+		int n = 0;
+		for (AsyncJob job : registry.values()) {
+			if (!job.isTerminal() && owner.equals(job.getOwnerObjectId())) {
+				n++;
+			}
+		}
+		return n;
 	}
 
 	private static void runJob(AsyncJob job, AsyncJobWork work) {

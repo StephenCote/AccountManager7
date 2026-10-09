@@ -763,7 +763,7 @@ public class OlioTestUtil {
 		ConnectionTarget routed = ConnectionTarget.fromProperties(testProperties, 120);
 		ConnectionTarget azure = new ConnectionTarget(routed.serverUrl, routed.apiKey, routed.dialect,
 			ConnectionUpstreamEnumType.OPENAI, routed.requestTimeout);
-		return getCreateTierChatConfig(user, name, azure, azureModel(testProperties), 120, false);
+		return getCreateChatConfig(user, name, azure, azureModel(testProperties), 120, false);
 	}
 
 	/// serviceType is the deprecated fallback; keep it tracking the dialect so a connection row that
@@ -789,14 +789,18 @@ public class OlioTestUtil {
 		if (model == null || model.isBlank()) model = testProperties.getProperty("test.llm.ollama.model");
 		ConnectionTarget target = new ConnectionTarget(server != null ? server.trim() : null, null,
 			ConnectionDialectEnumType.OLLAMA, ConnectionUpstreamEnumType.OLLAMA, requestTimeout);
-		return getCreateTierChatConfig(user, name, target, model != null ? model.trim() : null, requestTimeout, true);
+		return getCreateChatConfig(user, name, target, model != null ? model.trim() : null, requestTimeout, true);
 	}
 
 	private static BaseRecord getCreateTierChatConfig(BaseRecord user, String name, Properties testProperties, String model, int requestTimeout, boolean pbOptions) {
-		return getCreateTierChatConfig(user, name, ConnectionTarget.fromProperties(testProperties, requestTimeout), model, requestTimeout, pbOptions);
+		return getCreateChatConfig(user, name, ConnectionTarget.fromProperties(testProperties, requestTimeout), model, requestTimeout, pbOptions);
 	}
 
-	private static BaseRecord getCreateTierChatConfig(BaseRecord user, String name, ConnectionTarget target, String model, int requestTimeout, boolean pbOptions) {
+	/// Get-or-create a chatConfig named `name` in ~/Chat on an EXPLICIT connection target and model,
+	/// reconciling an existing row (connection, model, serviceType, and the PB options when
+	/// `pbOptions`) rather than returning it as found. The routed helpers above all come through here;
+	/// it is public for harnesses that choose their own box/model (TestPictureBookCustom).
+	public static BaseRecord getCreateChatConfig(BaseRecord user, String name, ConnectionTarget target, String model, int requestTimeout, boolean pbOptions) {
 		LLMServiceEnumType serviceType = serviceTypeFor(target.dialect);
 		String connName = name + " Connection";
 		BaseRecord cfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, name, "~/Chat");

@@ -12,8 +12,10 @@ import org.cote.accountmanager.data.security.UserPrincipal;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
 import org.cote.accountmanager.security.CredentialUtil;
 import org.cote.accountmanager.util.BinaryUtil;
@@ -125,6 +127,43 @@ public class TestCredentialService extends BaseTest {
 		BaseRecord latest = CredentialUtil.getLatestCredential(user);
 		assertNotNull(latest);
 		assertTrue("Latest credential must be the replacement, not the original", (long)latest.get(FieldNames.FIELD_ID) != firstCredId);
+	}
+
+	/// A credential-less target has no current password to demand, so until 2026-10-08 the create branch
+	/// verified nothing at all: any principal who could READ the target user could set its first password
+	/// and then authenticate as it. system.user is readable only by its owner, AccountAdministrators and
+	/// AccountUsersReaders (userModel.json access.roles.read), so a plain non-admin cannot even resolve the
+	/// target by objectId; the reachable path was the READER role, which must not confer password control.
+	/// The attacker is therefore a fresh non-admin enrolled in AccountUsersReaders by the org admin as
+	/// fixture setup (the same setup TestPrincipalProfileCache uses), and the assertion is that the first
+	/// credential is the target's own (or an administrator's) to set.
+	@Test
+	public void TestAnotherUserCannotSetTheFirstCredential() throws FactoryException {
+		BaseRecord attacker = getCreateUser("credatk" + UUID.randomUUID().toString().replace("-", "").substring(0, 8));
+		assertNotNull(attacker);
+		assertTrue("Precondition: attacker and target must be different users",
+			(long)attacker.get(FieldNames.FIELD_ID) != (long)user.get(FieldNames.FIELD_ID));
+		BaseRecord readers = AccessSchema.getSystemRole(AccessSchema.ROLE_ACCOUNT_USERS_READERS, RoleEnumType.USER.toString(), orgContext.getOrganizationId());
+		assertNotNull("AccountUsersReaders is null", readers);
+		assertTrue("Failed to enrol the attacker in AccountUsersReaders",
+			ioContext.getMemberUtil().member(orgContext.getAdminUser(), readers, attacker, null, true));
+		ServiceUtil.clearCache();
+		assertFalse("Precondition: the attacker must not be a system.user administrator, or nothing here measures the guard",
+			IOSystem.getActiveContext().getAuthorizationUtil().isModelAdministrator(ModelNames.MODEL_USER, attacker));
+		String targetObjectId = user.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("Precondition: the attacker must be able to read the target user - that is the path the hole was reachable through",
+			IOSystem.getActiveContext().getAccessPoint().findByObjectId(attacker, ModelNames.MODEL_USER, targetObjectId));
+
+		String planted = "Planted-" + UUID.randomUUID().toString().substring(0, 6);
+		assertFalse("A different non-admin user must not be able to create the target's first credential",
+			service.newPrimaryCredential(ModelNames.MODEL_USER, targetObjectId, authRequestJson(planted, null), requestAs(attacker)));
+		assertNull("No credential may have been persisted for the target", CredentialUtil.getLatestCredential(user));
+
+		/// The target can still set their own first credential, and the planted value never authenticates.
+		String own = "Ownpw-" + UUID.randomUUID().toString().substring(0, 6);
+		assertTrue("The target must still be able to create their own first credential", call(own, null));
+		assertEquals(VerificationEnumType.VERIFIED, authenticate(own));
+		assertEquals("The attacker's planted password must not authenticate", VerificationEnumType.NOT_VERIFIED, authenticate(planted));
 	}
 
 	@Test

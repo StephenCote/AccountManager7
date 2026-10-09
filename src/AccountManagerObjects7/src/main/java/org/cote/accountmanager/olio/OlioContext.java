@@ -392,6 +392,13 @@ public class OlioContext {
 	 * entitlements; it never revokes. Organizations whose shared library groups already carry a
 	 * {@code Delete} grant for the Olio roles keep it until a separate revoke utility is written and
 	 * run. Only grants issued from here onward are narrowed.
+	 * <p>
+	 * <b>The record itself receives {@code Read} (DATA) for both roles.</b> {@code cfgWorld} does not
+	 * live in any of its own groups - a world sits in the universe's {@code Worlds} container - so the
+	 * group grants never reach it, and a record that links to it ({@code olio.pb.book.world}) could not
+	 * be read by a holder of this tier alone: the foreign-read rule on the link demands a read of the
+	 * world, which only the universe tier's grant on {@code Worlds} satisfied. The grant is on the one
+	 * record, never on the container, so it widens nothing else in the universe.
 	 *
 	 * @param cfgWorld the universe or world record whose groups are being granted on
 	 * @param cfgUserRole the role receiving read (or CRUD) access
@@ -438,6 +445,9 @@ public class OlioContext {
 			ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), cfgUserRole, new BaseRecord[] {group}, (userWrite ? crudperms : rperms), entTypes);
 			ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), cfgAdminRole, new BaseRecord[] {group}, crudperms, entTypes);
 		}
+		/// The world record is in the universe's Worlds container, not in any group granted above.
+		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), cfgUserRole, cfgWorld, rperms, PermissionEnumType.DATA.toString());
+		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), cfgAdminRole, cfgWorld, rperms, PermissionEnumType.DATA.toString());
 	}
 
 	/**
