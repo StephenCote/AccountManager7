@@ -1,20 +1,29 @@
 # PictureBook V3 — Illustration Architecture Design
 
 **Date:** 2026-10-09
-**Status:** Design only. Proposed, not ratified, no code written.
+**Status:** Design only. Proposed, not ratified, no code written. **Grounding pass completed
+2026-10-09 (§36):** every claim about current code was checked against the repository, and every
+claim about the renderer/LLM was checked against the live servers — SD = SwarmUI on
+`192.168.1.39:7801`, LLM = Ollama on `192.168.1.42:11434`. Corrections are applied in place and
+marked **[verified 2026-10-09]**; the former **[verify]** markers are resolved.
 **Inputs:** `PictureBookV3Notes.md` (target architecture), `PictureBookImageGenerationDesign.md`
 (current behaviour and gaps G-1…G-36), `PictureBook2Plan.md` (workflow graph, §6 ComfyUI),
 `PictureBookWorkflowOverhaul.md`, `PictureBookAsyncJobDesign.md`, `PictureBookSdConfigRefactor.md`.
 **Not available:** the SequenceDev document that the notes refer to is not in the repository.
 Where this design relies on SequenceDev (location library, background-first and sequential
-inpainting), it uses the notes' description of it.
+inpainting), it uses the notes' description of it. **Also not available [verified 2026-10-09]:**
+`PictureBookImageGenerationDesign.md` is cited above and listed in `aiDocs/README.md.merge.md`
+(line 40, dated 2026-10-09), but it is **not in the working tree or in any commit** (`git log --all`
+finds no such path). The G-1…G-36 references in this document therefore cannot be resolved until
+that file is restored (§34 Q9).
 
 > The notes set the *what*: scene intent kept separate from rendering, with this flow:
 > composition → render plan → strategy → variants → QA → approval.
 > This document sets the *how* for AM7. It covers concrete models, where code lives, how the
 > design reuses the PB2 workflow graph that already exists, the REST/Ux surface, migration and
 > phasing. Claims about current code were taken from reading it and are cited. Claims about SwarmUI
-> capabilities that the code does not use today are marked **[verify]**.
+> capabilities that the code does not use today were marked **[verify]** and have now been checked
+> against the installed build (§36.2).
 
 ---
 
@@ -33,8 +42,8 @@ books take (PB1 `generateSceneImage`):
 | Dependency tracking | `olio.pb.binding`: the consumer node, the producer node, and the **exact** artifact revision consumed, plus `refModel`/`refObjectId` for ordinary records |
 | Asset versions | `binding.refHash` over a declared watched-field set (`PbWatchedFields`, `watched/v2`) |
 | Stale detection | `node.inputHash` (pipeline version + bindings + configHash + prompt) compared on read; `markStaleDownstream` does a breadth-first walk |
-| Pinned / protected outputs | `node.pinned`. Propagation still marks a pinned node stale, but regenerate refuses it with a 409 |
-| Run tracking | `olio.pb.run` (`requestedNodeIds`, counts, `runStatus`) |
+| Pinned / protected outputs | `node.pinned`. Propagation still marks a pinned node stale, but regenerate refuses it with a 409 (`PbServiceFacade.requestRegenerate`, Objects7 `:299-308`; Service7 only maps the exception) **[verified 2026-10-09]** |
+| Run tracking | `olio.pb.run` (`requestedNodeIds`, counts, `runStatus`). `PbRunStatusEnumType` = `UNKNOWN, PENDING, RUNNING, COMPLETED, FAILED, CANCELLED`; `CANCELLED` is declared "reserved and currently unwritten"; there is no `INTERRUPTED` yet **[verified 2026-10-09]** |
 | Sparse overrides | `node.configOverride` / `scene.configOverride`, resolved by `PbConfigUtil` |
 
 **Decision D1:** V3 models are added to the `olio.pb.*` family. Rendering *is* graph execution.
@@ -543,8 +552,8 @@ implementation per model family. These replace the scattered builders: `Narrativ
 | `Flux2Compiler` | DIRECT_REFERENCE on FLUX.2 | Keeps today's tested positional reference wording, identity rules and "don't draw the references" rules (KI-68). It now lists *all* actors: referenced actors by ordinal, the rest as text |
 | `SdxlCompiler` | TEXT_ONLY / BASE / ACTOR_REGION on SDXL | Weighted terms allowed. Realism boilerplate only when `style.photoreal` (G-16) |
 | `InpaintRegionCompiler` | ACTOR_REGION, HARMONIZE | Region-local: one actor's identity/outfit/pose/expression plus "matching lighting and style of the surrounding scene" |
-| `RegionalPromptCompiler` | REGIONAL_PROMPT | Emits the backend's region syntax from the actor/element boxes **[verify Swarm `<region:x,y,w,h,strength>` support on the installed build]** |
-| `KontextCompiler` | Kept only if Kontext stays a supported model family | Uses the `kontext*` config fields that are ignored today (G-17/G-21) |
+| `RegionalPromptCompiler` | REGIONAL_PROMPT | Emits Swarm's `<region:x,y,w,h,strength>` / `<object:…>` syntax from the actor/element boxes. **[verified 2026-10-09]** The installed build (0.9.8.3) exposes the regional-prompting parameter group (`globalregionfactor` 0.5, `regionalobjectcleanupfactor`, `regionalobjectinpaintingmodel`, `maskcompositeunthresholded`) through plain `GenerateText2Image`, so the syntax is available without a custom workflow; box semantics and quality still get a live check in the Phase 5 spike (§36.7) |
+| `KontextCompiler` | Kept only if Kontext stays a supported model family | Uses the `kontext*` config fields that are ignored today (G-17/G-21). **[verified 2026-10-09] No Kontext checkpoint is installed on .39** (§36.1), while `flux2Klein_9b` and `flux2_dev` — which cover the same reference-editing role — are. Recommendation: retire (§34 Q4) |
 
 **Rules shared by every compiler:**
 - Style text is appended exactly once.
@@ -578,27 +587,62 @@ interface RendererAdapter {
 
 Capabilities are **declared per model family in `olio/illustration/capabilities.json`**, keyed by
 glob on the model name (`flux2*`, `*xl*`, `*kontext*`), and intersected with what the adapter
-supports. Example seed values: FLUX.2 Klein `maxReferences=3`, measured ~40 s/reference at 1024 px
-and 4 steps (SCU's own measurement); SDXL `maxReferences=0`, `supportsMasks=true`.
+supports. Example seed values: FLUX.2 Klein `maxReferences=3`; SDXL `maxReferences=0`,
+`supportsMasks=true`. **[verified 2026-10-09]** The "3" is structural today, not a declared
+constant: `SceneCompositeUtil.java:191-200` prepares exactly `left`/`right`/`setting` references,
+while `SDUtil.buildFlux2References` is uncapped varargs. `secondsPerStepPerReference` has **no
+trustworthy seed value**: the only figure in the repo (~40 s/reference at 1024 px / 4 steps, 706 s
+for a 3-reference 24-step request — `flux2Defaults.json:22-26`, `SceneCompositeUtil.java:107-111`,
+KI-59) was measured on the Strix Halo iGPU, not on the .39 GPU that this work targets. It must be
+re-measured on .39 (§36.7).
 
 **`SwarmRendererAdapter`: the one adapter for V3.** The deployed renderer is SwarmUI running on a
-ComfyUI backend. Swarm's own parameters cover the simple strategies. Anything beyond them
+ComfyUI backend — **[verified 2026-10-09]** SwarmUI `0.9.8.3.GIT-d9ecb52d` on `192.168.1.39:7801`,
+one `comfyui_selfstart` backend (id 0, GPU 0, `OverQueue` 1), anonymous session user `local` with
+permissions `*`. Swarm's own parameters cover the simple strategies. Anything beyond them
 (multi-stage inpaint, detection, harmonize) runs as a **Comfy workflow executed through Swarm**.
 That needs no separate Comfy adapter and no second server.
 
-The adapter wraps today's session handling, `GenerateText2Image`, image fetch, seed read-back and
-`ListModels`. **It adds:**
-- Swarm init-image + mask parameters, for ACTOR_REGION / faces / clothing.
-- Swarm region and segment prompt syntax, for REGIONAL_PROMPT and auto-masked face fixes.
-- Explicit `width`/`height` always (G-14).
-- `images` = variant count.
-- **Named Comfy workflows** for SEQUENTIAL_INPAINT and HARMONIZE, saved in Swarm and invoked by
-  name with the plan's images and parameters. The workflow name and version are recorded in
-  `artifact.backendGraph`.
+The adapter wraps today's session handling (`SDUtil.getOrCreateSession` → `POST /API/GetNewSession`,
+cached per server, retried once), `GenerateText2Image`, image fetch, seed read-back and
+`ListModels`. **It adds** — every parameter below is present in the installed build's
+`ListT2IParams` (259 parameters; §36.2) **[verified 2026-10-09]**:
+- **Mask inpainting through the plain `GenerateText2Image` call:** `initimage` + `maskimage`
+  (white = change), `initimagecreativity` (0–1, default 0.6), `maskshrinkgrow` (default 8 =
+  "inpaint only masked"), `maskblur` (4), `maskgrow` (0), `initimagerecompositemask` (true),
+  `useinpaintingencode`, `maskbehavior` (Differential | Simple Latent), `unsamplerprompt`. For
+  ACTOR_REGION / faces / clothing. No inpainting-specialised checkpoint is installed (§36.1);
+  these parameters work with ordinary checkpoints, and whether that quality suffices is a spike
+  question, not an API one.
+- **Regional prompting** (`<region:…>` / `<object:…>`; parameter group `globalregionfactor` …) for
+  REGIONAL_PROMPT, and **segment refinement** (`<segment:text>` via CLIPSeg, `<segment:yolo-…>` via
+  a YOLO model file; `segmentmodel`, `segmentsteps` 40, `segmentcfgscale` 7,
+  `segmentmaskblur` 10, `segmentmaskgrow` 16, `segmentmaskoversize` 16, `segmentthresholdmax`,
+  `segmentsortorder`, `segmentapplyafter` Base|Refiner, `segmenttargetresolution` 1024x1024,
+  `savesegmentmask`) for auto-masked face fixes. **No YOLO model file is installed**
+  (`yolomodelinternal` values = `[]`), so only the CLIPSeg form works until one is added (§36.5).
+- Explicit `width`/`height` always (G-14; 64–16384). `images` = variant count (1–10000, plus
+  `batchsize`). `variationseed`/`variationseedstrength` for re-rolls close to a selected variant.
+  `fluxguidancescale` (default 3.5) for FLUX. `refinerupscale` (0.25–8) + `refinermethod`
+  (PostApply | StepSwap | StepSwapNoisy) for the UPSCALE stage. `removebackground` (RemBG) for
+  cut-outs. `promptimages` (the hidden reference-image parameter the code already uses),
+  `enablereferencelatents`, `textencodedimage`, `usereferenceonly`.
+- **Named Comfy workflows** via `comfyuicustomworkflow` (a dropdown of saved workflows; Swarm's own
+  description says "Generally, do not use this directly"), for SEQUENTIAL_INPAINT and HARMONIZE.
+  The workflow name and version are recorded in `artifact.backendGraph`. **Only one saved workflow
+  exists on .39 (`Examples/Basic SDXL`)**, so every workflow this design names must be authored
+  and saved through `ComfySaveWorkflow` (§34 Q5). The spike must confirm that a saved workflow's
+  custom params accept the plan's images and values through this parameter.
 
-Today `SWTxt2Img` has no mask field and nothing uses region or segment syntax. The exact parameter
-names and the workflow-invocation call are pinned down in the Phase 5 spike against the installed
-Swarm build.
+Confirmed by code read **[verified 2026-10-09]**: `SWTxt2Img` has no mask field — its wire names
+are `model, prompt, sampler, scheduler, refinersampler, refinerscheduler, negativeprompt, images,
+steps, cfgscale, seed, height, width, refinercfgscale, refinerupscale, refinermodel, refinersteps,
+refinermethod, refinerupscalemethod, refinercontrolpercentage, initimage, initimagecreativity,
+promptimages`, plus `session_id` from `SWCommon`. Nothing in Objects7 sends `maskimage`,
+`comfyuicustomworkflow`, region or segment syntax. `SDAPIEnumType.COMFY` exists with no behaviour
+behind it. `PbNodeExecutor` constructs `new SDUtil(SDAPIEnumType.SWARM, swarmServer)` directly at
+`:188`, `:473`, `:563` and never references `SWUtil`; that constructor call is the seam
+`SwarmRendererAdapter` replaces.
 
 `PictureBook2Plan.md` §6's standalone Comfy client is not needed: Comfy is already reached through
 Swarm.
@@ -621,8 +665,14 @@ plan records a degradation ("FLUX.2 Klein not installed; using DIRECT_REFERENCE 
 on juggernautXL"), or a hard failure with a clear error if nothing qualifies.
 
 - **One default policy (G-19/G-22):**
-  - Deployment defaults per task live in one place: a `/System` `system.connection`-adjacent config
-    record, or init-params as today, read through `ServerConfigUtil`.
+  - Deployment defaults per task live in one place: a `/System` config record next to the
+    `system.connection` server URLs, or one init-param block, read through one resolver.
+    **[verified 2026-10-09]** Today `ServerConfigUtil` resolves **only server URLs** (`sd`, `face`,
+    `tag`, `voice.tts`, `voice.stt`, `embedding`; 30 s cache) and knows nothing about models. The
+    SD model default is `SDUtil.setDefaultModel`, set once at boot by `RestServiceEventListener`
+    (`:327-331`, `sd.default.model` → `sd.model`), while `ChatService.java:1425` and five
+    `OlioService` routes read `sd.model` per request, and `olio.sd.config` carries its own `model`,
+    `flux2Model`, `kontextModel`. So the resolver is new; it does not extend `ServerConfigUtil`.
   - Reimage, chat, PB and ChapBook all go through the resolver.
   - The three-different-checkpoints problem disappears because nothing reads `sd.model` or the
     schema default directly any more.
@@ -643,10 +693,22 @@ stack. QA is a pluggable, optional stage.
   - **Identity.** Compare face embeddings between each detected face in an actor box and that actor's
     portrait artifact. This depends on a face-analysis node set being installed in the Comfy backend;
     without it the check reports `UNAVAILABLE`.
-- **Not checked automatically in V3:** outfit, location elements and other semantic checks. The user
-  checks those in review.
-- **Storage:** `QA` node → JSON artifact (`role=qa`) bound to the exact variant. The variant shows a
-  ✓ / ⚠ / ✗ per check.
+- **What the installed backend can do [verified 2026-10-09, §36.3]:** the ComfyUI behind Swarm on
+  .39 has **no third-party node packs** (no Impact Pack, ReActor, InsightFace/ArcFace, IPAdapter-plus),
+  so **identity is `UNAVAILABLE` on day one**. Detection and counting are feasible with built-ins:
+  `MediaPipeFaceLandmarker` / `MediaPipeFaceMask` (face detection; auto-downloads its model),
+  `RTDETR_detect` (person/object boxes), `SAM3_Detect` / `SAM3_TrackToMask`, `SwarmClipSeg`, and
+  `SwarmYoloDetection` once a YOLO model file is installed. Swarm's `sam2` and `ipadapter` features
+  can be installed by `POST /API/ComfyInstallFeatures` (§36.5); that call was prepared on 2026-10-09
+  but not executed — it clones and pip-installs on .39 and needs your go-ahead.
+- **Alternative provider — a vision LLM (decision: §34 Q12):** `.42` serves `qwen3-vl:8b-instruct`
+  (and `valkyriesys/eudaimonia-dryad3-vision`) **[verified 2026-10-09]**. A `VlmQaProvider` ("how
+  many people are visible; is there a red-haired woman on the left; list mismatches with this plan")
+  covers count and presence *and* the semantic checks (outfit, location elements) that the Comfy
+  route cannot, at the cost of going through the LLM stack this section otherwise avoids. Both fit
+  the `QaProvider` interface; the decision is which ships first.
+- **Not checked automatically in V3:** outfit, location elements and other semantic checks, unless
+  the VLM provider is chosen. The user checks those in review.
 - **Storage:** `QA` node → JSON artifact (`role=qa`) bound to the exact variant. The variant shows a
   ✓ / ⚠ / ✗ per check.
 - **Behaviour:** QA never deletes, never auto-selects past an approved image, and never blocks.
@@ -665,8 +727,11 @@ The presets live in an editable resource, `olio/illustration/qualityPresets.json
 | FINAL | 1× | family high | 4 | yes (UPSCALE stage) | all |
 
 The preset resolves into the plan (§12). The Ux shows an **estimate** before Generate All:
-scenes × stages × variants × `secondsPerStepPerReference`. This matters on this hardware (local
-Strix Halo for SD; FLUX.2 cost scales with steps and the number of references).
+scenes × stages × variants × `secondsPerStepPerReference`. This matters because FLUX.2 cost scales
+with steps and the number of references. **[verified 2026-10-09]** The SD server for this work is
+SwarmUI on `192.168.1.39` (§15, §36.1), not the Strix Halo; the only timing figure in the repo was
+measured on the Strix Halo iGPU, so the estimate's seed values must be measured on .39 before they
+are shown to anyone (§36.7).
 
 ### 19. Degradations and transparency (G9 in the notes)
 
@@ -701,14 +766,18 @@ the full list. A degradation never stops the render.
 ### 21. Async execution, durability and cancellation
 
 `AsyncJobRegistry` is in memory only (lost on restart), runs 2 jobs concurrently, and allows 4
-active jobs per principal. V3 does not make the job registry durable. **The graph already is**:
+active jobs per principal **[verified 2026-10-09: `AsyncJobRegistry.java` `MAX_CONCURRENT_JOBS=2`
+`:66`, `MAX_ACTIVE_JOBS_PER_PRINCIPAL=4` `:90`, `COMPLETED_TTL_MS` 30 min `:75`,
+`MAX_RETAINED_JOBS=200` `:78`]**. V3 does not make the job registry durable. **The graph already is**:
 - **A render job = an `olio.pb.run`** whose `requestedNodeIds` are the terminal nodes requested.
   The async job is just the worker executing that run. Kinds: `pb.compose` (§9.1), `pb.render`
-  and `pb.renderAll`.
+  and `pb.renderAll`, alongside today's `pb.extractScenes`, `pb.retryFailedChunks`, `cb.create`,
+  `cb.render` and `chat.chain`. There is **no run endpoint today** (`olio.pb.run` is written by the
+  executor but not exposed) **[verified]**.
 - **Progress** = node statuses plus the current stage, also mirrored into the job's
-  `SummarizeProgress` token for polling.
+  `SummarizeProgress` token (`org.cote.accountmanager.olio.llm.SummarizeProgress`) for polling.
 - **Restart recovery:** on boot, any run left RUNNING is marked INTERRUPTED (add this value to
-  `PbRunStatusEnumType`). Its RUNNING nodes reset to READY. The Ux offers "Resume", which submits a
+  `PbRunStatusEnumType`; see §1 for its current values). Its RUNNING nodes reset to READY. The Ux offers "Resume", which submits a
   new run for the unfinished requested nodes. Completed stages are reused because their artifacts
   exist and their input hashes match. This mirrors the extraction checkpoint's "the job covers a
   lost connection; the checkpoint covers a lost process".
@@ -807,18 +876,24 @@ CHAPBOOK_PAGE"; it is off by default.
 
 Chat's scene generator also renders through this code:
 - the Ux side is `chat/SceneGenerator.js`;
-- the backend is the scene route in `ChatService` (around `:1348-1393`);
-- it shares `SceneCompositeUtil`, `SWUtil` (FLUX.2/Kontext builders), `SDUtil` landscape generation
-  and the shared `SdConfigPanel`;
-- it saves to `~/Gallery/Scenes/<label>`.
+- the backend is `ChatService.generateScene` (`POST /{objectId}/generateScene`,
+  `ChatService.java:1401-1405`; the earlier "`:1348-1393`" pointed at `GET /chain/status`)
+  **[verified 2026-10-09]**;
+- it shares `SceneCompositeUtil` (`buildSceneRequest` `:1553`), `SWUtil` (FLUX.2/Kontext builders),
+  `SDUtil` landscape generation (`generateLandscapeBytes`, called at `:1516`) and the shared
+  `SdConfigPanel`;
+- it saves to `~/Gallery/Scenes/<label>` (`:1540`, `createSceneImage` `:1567`).
 
 Every change to the composite, compiler and adapter layers therefore changes chat too.
 
 **Where chat differs today:**
-- It calls `resolveMode(sdConfig, true)`, so it defaults to **Kontext** when `compositeMode` is
-  absent; PictureBook passes `false`.
-- It uses its own landscape prompt and negative prompt (1024×576 landscapes).
-- It takes its model from the `sd.model` init-param.
+- It calls `resolveMode(sdConfig, true)` (`:1490`, "preserves chat's historical default of
+  Kontext"), so it defaults to **Kontext** only when `compositeMode` is absent from the config; the
+  schema default is `flux2`. PictureBook passes `false`.
+- It uses its own landscape prompt and negative prompt. The 1024×576 size is the landscape stage
+  (`SDUtil.generateLandscapeBytes`, `SDUtil.java:1409-1410`); the composite size depends on mode
+  (FLUX2 1024×768 from `flux2Defaults.json`, Kontext 1024×1024, classic 1024×768).
+- It takes its model from the `sd.model` init-param (`ChatService.java:1425`).
 - Its SD config does not persist (KI-65), and its form has slider/default problems (KI-64).
 
 **V3 position:**
@@ -973,6 +1048,10 @@ render path.
 - This is deliberately not a per-org runtime flag. The previous PB2 flag (`picturebook.v2`, false
   in the deployed `web.xml`) is why the PB2 graph never received data. A switch that defaults to
   the old path keeps the new one unexercised. So the switch goes to `v3` on the day Stage 2 starts.
+  **[verified 2026-10-09]** `picturebook.v2` no longer exists anywhere in `src/main`: it was
+  retired in W4 (2026-10-07) and graph recording is now unconditional (`TestPictureBookWorkflow`
+  class comment, `TestPictureBookFull.java:3044`). The `renderPath` switch is therefore the only
+  flag in this area; do not reintroduce a graph-recording flag alongside it.
 
 **Verify-stage exit checks** (all with real tests and visual inspection):
 1. Scenarios A–G (notes §70) pass on the Docker stack.
@@ -998,8 +1077,6 @@ Phases follow the notes' §60–68, re-cut for AM7. Each phase is shippable and 
 (live backend, `ensureSharedTestUser()`, LLM/SD tests gated and single-worker, visual inspection
 for image output).
 
-| Phase | Scope | Exit criteria |
-|---|---|---|
 | Phase | Scope | ChapBook impact | Exit criteria |
 |---|---|---|---|
 | **0 — Hygiene** (current code) | G-9/G-15 override leak, G-14 explicit width/height, G-12 template override, G-26 null guards, G-8 landscape flag, G-20 ByteModelUtil writes, G-19 run closure | G-11/G-25 style, negative and hires; G-32 book settings saved, page overrides not flattened | The notes' §60 criteria; each fix has a test, PB and ChapBook |
@@ -1007,7 +1084,7 @@ for image output).
 | **2 — Style, model resolution, compiler core; ChapBook goes V3** | `olio.pb.style` with inheritance and lock, `ModelResolver`, capabilities/presets resources, models-by-task route, style editor, estimate, `RenderPlan`, TEXT_ONLY strategy, `SdxlCompiler`, plan inspector | **ChapBook is the first product switched to V3** (TEXT_ONLY, zero actors), with up-front composition from the existing continuity composer. **ChapBook old path disabled (§28.1 Stage 2)** | One model policy across reimage/PB/ChapBook/chat; a missing model is reported before rendering; ChapBook verify checks start; chat scene renders through the illustration service (§24.1) |
 | **3 — Locations** (world-scoped) | Location/variant models, LOCATION nodes, `approvedRender`, library Ux, approve/lock, clustering migration, background-first for TEXT_ONLY/DIRECT | Optional locations on ChapBook pages | Scenes 3/7/12 share one approved tavern; series chapters share it; a location failure doesn't fail scenes |
 | **4 — Composition + wardrobe** | Composition/actor/element models, compose job (§9.1, per the decision), layout util, board Ux, `Flux2Compiler`, degradations, wardrobe alternates and carry-forward (§6) | Composition model replaces `sdPrompt`/`promptLocked` (already switched in Phase 2) | Any number of actors; prompt shown = prompt sent; nothing dropped silently; outfit change persists across scenes |
-| **5 — Multi-character strategies** | **Spike first:** Swarm mask inpaint, region syntax, named Comfy workflows on the installed build, and FLUX.2 base + SDXL inpaint style coherence. Then SEQUENTIAL_INPAINT, REGIONAL_PROMPT, HARMONIZE and targeted regeneration | n/a (no actors unless G-35 is enabled) | Scenario B: 4 characters all rendered and identifiable on visual inspection; GPU memory within limits |
+| **5 — Multi-character strategies** | **Spike first:** Swarm mask inpaint, region syntax, named Comfy workflows on the installed build, and FLUX.2 base + SDXL inpaint style coherence. Then SEQUENTIAL_INPAINT, REGIONAL_PROMPT, HARMONIZE and targeted regeneration. The spike's parameter names are already verified against the installed build (§36.2); what remains unmeasured is behaviour and timing, and the backend assets in §36.5 must be installed first | n/a (no actors unless G-35 is enabled) | Scenario B: 4 characters all rendered and identifiable on visual inspection; GPU memory within limits |
 | **6 — Variants** | Variant batches, strip, history, retention sweep | Same | Scenario F |
 | **7 — PictureBook goes V3** | Book workspace Ux replaces wizard steps 4–5. **PB1 disabled (§28.1 Stage 2)** | — | Scenarios A–G; PictureBook verify checks start |
 | **8 — Visual QA** | Swarm/Comfy QA workflow (detection + optional face identity), `SwarmQaProvider`, QA Ux, QA-gated auto-approve | QA on ChapBook pages (detection is mostly n/a; checks gross defects only) | Missing-character detection on a deliberately broken render |
@@ -1048,9 +1125,13 @@ acceptable on DIRECT_REFERENCE with transparent degradations before Phase 5 land
 
 Each run, node execution and artifact records the notes' §71 fields:
 - the plan artifact (strategy, models, preset, canvas, inputs);
-- the artifact (`seed`, `backend`, `generatorRequest`, dimensions, duration — add `durationMs`);
-- the node (`lastError`, `lastRunAt`);
-- the run (counts, status).
+- the artifact (`seed`, `backend`, `generatorRequest`, dimensions, duration — add `durationMs`;
+  **[verified 2026-10-09]** `artifactModel.json` has `seed`, `backend` (`SDAPIEnumType`),
+  `generatorRequest`, `imageWidth`/`imageHeight`, `byteLength`, `contentHash`, `sdConfigSnapshot`
+  and `backendGraph` today, and **no** duration field, so `durationMs` is a new schema field);
+- the node (`lastError`, `lastRunAt` — both exist in `nodeModel.json`);
+- the run (`executedNodeCount`, `failedNodeCount`, `runStatus`, `startedAt`, `completedAt`,
+  `error` — all exist in `runModel.json`).
 
 LLM steps (compose, location description) go through LiteLLM, so they are Langfuse traces;
 put the run objectId in the trace metadata so one book render can be followed across LLM and SD.
@@ -1063,8 +1144,10 @@ put the run objectId in the trace metadata so one book render can be followed ac
 
 | Risk | Mitigation |
 |---|---|
-| Inpaint/region support on the installed SwarmUI differs from assumptions | Phase 5 spike before any commitment; DIRECT_REFERENCE + text degradation remain the working fallback |
+| Inpaint/region support on the installed SwarmUI differs from assumptions | **Parameter names are now verified** against SwarmUI 0.9.8.3 on .39 (§36.2): the mask-inpaint, regional and segment groups all exist. **Behaviour is not** — none of them has been exercised with our images. Phase 5 spike before any commitment; DIRECT_REFERENCE + text degradation remain the working fallback |
+| The installed Comfy backend lacks the assets the strategies assume (no IP-Adapter, no SAM2, no YOLO face model, no ClipVision, no inpaint checkpoint, no ControlNet, no Kontext — §36.3, §36.5) | Install list with exact commands in §36.5 (Q10/Q11). Until installed: identity QA is UNAVAILABLE, SEQUENTIAL_INPAINT uses a base SDXL checkpoint with `useinpaintingencode`, segment-based masking uses the built-in `SwarmClipSeg`/`SAM3`/`MediaPipeFaceMask` nodes |
 | SDXL inpaint over FLUX.2 base breaks style or identity | Spike with visual inspection; alternative is a FLUX-family inpaint workflow in the Comfy backend |
+| Timings in this design were measured on a different GPU | §15/§18 figures (40 s/reference, preset estimates) came from the Strix Halo iGPU; re-measure on .39 before the estimate feature ships (§36.7, Q14) |
 | GPU time multiplies (variants × stages × scenes) | Presets, estimate before Generate All, per-server semaphore, reuse of approved assets, DRAFT default for first pass |
 | Graph size grows (stage nodes per composition) | Stage nodes rematerialized per plan rather than accumulated; retention sweep; graph queries are already indexed by status |
 | Live drift scan cost | Book-scope bindings only, 30 s cache, PB-endpoint `touch` for the common case |
@@ -1095,13 +1178,46 @@ put the run objectId in the trace metadata so one book render can be followed ac
 3. **Auto-approve default:** off (proposed) or on, and whether a per-asset-type breakdown is wanted
    or a single switch is enough.
 4. **Kontext:** keep it as a supported family (needs `KontextCompiler`), or retire it?
+   **Fact (§36.1):** no Kontext checkpoint is installed on .39 and the weights are gated on
+   Hugging Face, so nothing in the current stack can exercise `SWUtil.newKontextSceneTxt2Img`
+   or chat's Kontext default. **Recommendation: retire**, and change `resolveMode(sdConfig, true)`
+   in `ChatService` to the FLUX.2 default at the same time.
 5. **Comfy workflows:** which multi-stage workflows (inpaint, harmonize, QA) to author and keep in
-   Swarm, and who owns their versions.
+   Swarm, and who owns their versions. **Fact (§36.2):** the only saved workflow on .39 is
+   `Examples/Basic SDXL`; `ComfySaveWorkflow`/`ComfyReadWorkflow` are available for V3 to manage
+   its own, and `comfyuicustomworkflow` selects one by name per request.
 6. **Face identity QA:** is a face-analysis node set installed, or acceptable to install, in the
-   Comfy backend?
+   Comfy backend? **Fact (§36.3):** nothing is installed — no InsightFace/ArcFace, no IP-Adapter,
+   no third-party packs at all. The built-ins (`MediaPipeFaceMask`, `SwarmYoloDetection` without
+   any YOLO weights, `SAM3_Detect`) give *detection*, not identity. See Q10/Q11.
 7. **Default preset** for a new book's first Generate All (recommended: DRAFT).
 8. **Verify-stage bar** (§28.1): is "two weeks with no rollback plus sign-off" the right gate
    for removal?
+
+**New, from the grounding pass (2026-10-09):**
+
+9. **Missing gap document.** `README.md.merge.md:40` lists `PictureBookImageGenerationDesign.md`
+   as active, dated today, and the `G-n` ids throughout this design come from it, but the file is
+   not in the working tree or any commit. Is it on another machine, or was it never saved? Until
+   it exists, the G-numbers in §30 Phase 0 are unverifiable.
+10. **Approve the node-pack install.** `ComfyInstallFeatures` with `features=ipadapter,sam2` was
+    prepared and the exact command is in §36.5. I attempted it and was blocked by the
+    tool-permission gate, so it needs you to run or approve it. It clones two repositories into the
+    Comfy backend and **restarts the backend**, so run it when nothing is rendering.
+11. **File drops that no API can do.** YOLO face weights, IP-Adapter weights and the ClipVision
+    encoder live in folders that Swarm's `DoModelDownloadWS` refuses (not `T2IModelSets` types),
+    so they are filesystem copies on .39 (§36.5). Optional: an SDXL inpaint checkpoint and a
+    ControlNet. Which of these do you want?
+12. **Vision-LLM QA as the first provider.** `.42` has `qwen3-vl:8b-instruct`. A `VlmQaProvider`
+    that asks "which of these characters is present, and does the face match the portrait?" needs
+    no Comfy install and reuses the chat path. Proposed as Phase 8's first provider, with the
+    Comfy detection provider second. Agree?
+13. **Who authors the Comfy workflows** (Q5 restated with the facts): V3 can save them through the
+    API, but someone must build the graphs. Do you want me to draft them in the Phase 5 spike, or
+    will you author them in the Swarm Ux?
+14. **Re-measure on .39.** Every timing in this design (§15, §18) is from the Strix Halo iGPU.
+    Shall the Phase 2 "estimate" feature wait for measured .39 numbers, or ship with a per-server
+    calibration record that learns from actual runs?
 
 ### 35. Traceability: notes → this design
 
@@ -1140,3 +1256,181 @@ put the run objectId in the trace metadata so one book render can be followed ac
 - Composition is a separate LLM step rather than part of extraction (§9).
 - A Phase 0/1 is added: hygiene, plus "graph-first rendering" before the new models, because V3
   depends on one rendering path.
+
+---
+
+## Part VII — Grounding pass (2026-10-09)
+
+### 36. What was checked, against what, and what it changes
+
+This section records the facts the rest of the design now cites. Everything here was read from the
+live servers or the working tree on 2026-10-09; nothing was implemented. Raw probe output is in
+`C:\tmp\swarm_session.json`, `C:\tmp\swarm_t2iparams.json` (259 params) and
+`C:\tmp\comfy_object_info.json` (1037 nodes) on the dev machine; they are scratch, not repo files.
+
+#### 36.1 SD server `192.168.1.39:7801` — inventory
+
+SwarmUI **0.9.8.3.GIT-d9ecb52d**, one backend (`comfyui_selfstart`, id 0, GPU 0). Anonymous
+sessions get user `local` with permission `*` (includes `install_features`, `download_models`,
+`comfy_edit_workflows`, `restart_backends`), so V3's adapter needs no credential on this host.
+
+| Type | Installed |
+|---|---|
+| Checkpoints | `flux2Klein_9b`, `flux2_dev`; SDXL family: `sd_xl_base_1.0`, `chromagenIL_somni`, `cyberrealisticPony_v160`, `juggernautXL_ragnarokBy`, `lustifySDXLNSFW_endgame`, `ponyRealism_V22`, `realmixXL_v10`; SD1.5: `chilloutmix_Ni`; other: `Z-Image-Turbo-FP8Mix`, `chroma_v10HD`, `krea2TurboOfficialComfy` |
+| VAE | `Flux/flux2-vae`, `QwenImage/qwen_image_vae` |
+| Clip | `qwen3vl_4b`, `qwen_3_8b` |
+| LoRA | 10 |
+| Saved Comfy workflows | `Examples/Basic SDXL` only |
+| **Absent** | Kontext, any inpaint checkpoint, ControlNet, ClipVision, Embeddings, IP-Adapter, Redux, GLIGEN, YOLO weights (`yolomodelinternal` lists `[]`), SAM2 |
+
+Consequences already applied: §14 (`KontextCompiler` recommended for retirement), §16 (model
+resolver must report "not installed" from `ListModels`, not assume), §33.
+
+#### 36.2 Swarm API and parameters [verified against `ListT2IParams` and the Swarm source]
+
+Routes V3 will use: `GetNewSession`, `GenerateText2Image`, `ListModels`, `ListT2IParams`,
+`ComfyListWorkflows` / `ComfySaveWorkflow` / `ComfyReadWorkflow`, `ComfyInstallFeatures`,
+`DoModelDownloadWS`, `InterruptAll` is present but V3 cancels between stages (§21).
+
+What `SWUtil`/`SWTxt2Img` send today (confirmed by code read): `model, prompt, sampler, scheduler,
+refinersampler, refinerscheduler, negativeprompt, images, steps, cfgscale, seed, height, width,
+refinercfgscale, refinerupscale, refinermodel, refinersteps, refinermethod, refinerupscalemethod,
+refinercontrolpercentage, initimage, initimagecreativity, promptimages` plus `session_id`.
+`SDAPIEnumType.COMFY` exists but is inert; `PbNodeExecutor` constructs
+`new SDUtil(SDAPIEnumType.SWARM, swarmServer)` (`:188`, `:473`, `:563`).
+
+Parameters that exist on the installed build and that V3 adds (all names exact, defaults from the
+server):
+
+| Group | Parameters |
+|---|---|
+| Mask inpaint | `initimage`, `maskimage`, `initimagecreativity` (0.6), `maskshrinkgrow` (8), `maskblur` (4), `maskgrow` (0), `initimagerecompositemask`, `useinpaintingencode`, `maskbehavior`, `unsamplerprompt` |
+| Regional | `globalregionfactor` (0.5), `regionalobjectcleanupfactor`, `regionalobjectinpaintingmodel`, `maskcompositeunthresholded`. Prompt syntax (Swarm `docs/Features/Prompt Syntax.md`): `<region:x,y,width,height,strength> prompt` (fractions of the canvas) and `<object:x,y,width,height,strength,strength2> prompt`, where `object` also inpaints back over the region with `strength2` as creativity — the latter is the natural carrier for SEQUENTIAL_INPAINT's per-actor pass |
+| Segment (auto-mask) | `segmentmodel`, `segmentsteps` (40), `segmentcfgscale` (7), `segmentmaskblur` (10), `segmentmaskgrow` (16), `segmentmaskoversize` (16), `segmentthresholdmax`, `segmentsortorder`, `segmentapplyafter`, `segmenttargetresolution`, `savesegmentmask`. `<segment:text,creativity,threshold>` uses CLIP segmentation by default (Swarm auto-downloads `clipseg-rd64-refined` on first use); a `yolo-` prefix selects a YOLOv8 model, which needs the §36.5 C weights |
+| Batch / variants | `images` (1–10000), `batchsize`, `variationseed`, `variationseedstrength` |
+| Canvas | `width`/`height` (64–16384), `fluxguidancescale` (3.5), `refinerupscale`, `refinermethod`, `removebackground` |
+| References | `promptimages`, `enablereferencelatents`, `textencodedimage`, `usereferenceonly` |
+| Routing / provenance | `comfyuicustomworkflow` (by saved name), `exactbackendid`, `webhooks`, `forwardrawbackenddata` |
+
+**Not yet done:** none of these has been sent with a real image. The Phase 5 spike (§30) is still
+required for behaviour and timing; it is no longer required for names.
+
+#### 36.3 ComfyUI backend — nodes
+
+1037 node types, **no third-party packs**. Usable built-ins for V3: `MediaPipeFaceLandmarker`,
+`MediaPipeFaceMask`, `RTDETR_detect`, `SAM3_Detect`, `SAM3_TrackToMask`, `SwarmClipSeg`,
+`SwarmYoloDetection` (no weights installed), the Swarm mask set (`SwarmMaskGrow`, `SwarmMaskBlur`,
+`SwarmMaskThreshold`, `SwarmMaskBounds`, `SwarmSquareMaskFromPercent`, `SwarmCleanOverlapMasks`,
+`SwarmExcludeFromMask`, `SwarmLatentBlendMasked`, `SwarmImageCompositeMaskedColorCorrecting`),
+`DifferentialDiffusion`, `InpaintModelConditioning`, `ControlNetLoader`, `CLIPVisionLoader`,
+`StyleModelLoader`, `GLIGENLoader` (loaders exist; their model folders are empty).
+
+Absent: every `IPAdapter*` node, InsightFace/ArcFace/`FaceAnalysis*`, SAM2. So today the QA
+provider can do **detection** (is there a face/person where the composition said) but not
+**identity** (is it *this* character); §17 marks identity UNAVAILABLE until §36.5 lands.
+
+#### 36.4 LLM server `192.168.1.42:11434` — models
+
+Text: `qwen3:8b`, `qwen3:32b`, `qwen3-27b`, `gpt-oss:120b`, JOSIEFIED-Qwen3 8b / 30b, coder
+models. Vision: `qwen3-vl:8b-instruct`, `valkyriesys/eudaimonia-dryad3-vision`. Embeddings:
+`nomic-embed-text`, `bge-m3`. The composition step (§9) and location descriptions use the
+analysis model through the existing chatConfig/LiteLLM route; a vision model is available for the
+§34 Q12 QA provider without any install.
+
+#### 36.5 Install list — what the API can do and what it cannot
+
+**A. Node packs — one API call, needs your approval (Q10).** `ComfyInstallFeatures` takes a
+comma list of feature ids from Swarm's `src/Core/InstallableFeatures.cs` (`ipadapter`,
+`controlnet_preprocessors`, `frame_interpolation`, `gimm_vfi`, `comfyui_tensorrt`, `sam2`,
+`bnb_nf4`, `gguf`, `extramodels`, `nunchaku`, `teacache`), clones each repository into the backend
+and **restarts the backend**. Run from the dev machine when nothing is rendering:
+
+```bash
+SID=$(curl -s -X POST -H "Content-Type: application/json" -d '{}' \
+  http://192.168.1.39:7801/API/GetNewSession | python -c "import sys,json; print(json.load(sys.stdin)['session_id'])")
+curl -s -X POST -H "Content-Type: application/json" \
+  -d "{\"session_id\":\"$SID\",\"features\":\"ipadapter,sam2\"}" \
+  http://192.168.1.39:7801/API/ComfyInstallFeatures
+# expected: {"success":true}; then wait for the backend to come back (ListModels answers)
+```
+
+I attempted this call on 2026-10-09 and the tool-permission gate blocked it; it has **not** run.
+
+**B. Model downloads the API accepts.** `DoModelDownloadWS` (WebSocket) takes `url`, `type`,
+`name`, `metadata`; `type` must be a `T2IModelSets` key (`Stable-Diffusion`, `LoRA`, `VAE`,
+`Embedding`, `ControlNet`, `ClipVision`, `Clip`), writes `{folder}/{name}.safetensors`, streams
+`{current_percent, overall_percent, per_second}` then `{success:true}`, and does not refresh the
+model list. Candidates, once A is in (otherwise the ClipVision encoder has no consumer):
+
+| What | URL | `type` / `name` |
+|---|---|---|
+| ClipVision encoder for IP-Adapter | `https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors` | `ClipVision` / `CLIP-ViT-H-14-laion2B-s32B-b79K` |
+| SDXL inpaint checkpoint (optional) | your choice; none of the installed SDXL checkpoints is an inpaint variant | `Stable-Diffusion` |
+| ControlNet (optional, for pose/depth in REGIONAL_PROMPT) | your choice | `ControlNet` |
+
+**C. File drops no API can do (Q11).** These folders are not `T2IModelSets`, so the download
+route refuses them ("Invalid type."); copy to .39 by hand:
+
+| What | URL | Destination |
+|---|---|---|
+| YOLO face detector (for `segmentmodel` / `SwarmYoloDetection`) | `https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m.pt` | `(SwarmUI)/Models/yolov8/` |
+| IP-Adapter SDXL weights | `https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors` and `.../ip-adapter-plus-face_sdxl_vit-h.safetensors` | the ipadapter pack's models folder (confirm after A installs it) |
+| Kontext | gated on Hugging Face | not recommended (Q4) |
+
+#### 36.6 Code audit — where the design text was wrong or imprecise, and what was changed
+
+| Claim in the design | Fact | Applied |
+|---|---|---|
+| Pinned nodes are rejected in Service7 | `PbServiceFacade.requestRegenerate` (Objects7 `:299-308`) rejects; Service7 only maps the exception | §1 |
+| Runs have an `INTERRUPTED` status | `PbRunStatusEnumType` = `UNKNOWN, PENDING, RUNNING, COMPLETED, FAILED, CANCELLED`; `CANCELLED` is reserved and never written today | §1, §21 |
+| Chat's scene route is at `ChatService:1348-1393` | It is `generateScene` at `:1401`; `:1348-1393` is `GET /chain/status` | §24.1 |
+| 1024×576 is the chat composite size | It is the landscape stage (`SDUtil.generateLandscapeBytes:1409-1410`); composite size depends on mode | §24.1 |
+| `picturebook.v2` is false in the deployed `web.xml` | The flag was deleted 2026-10-07; graph recording is unconditional | §28.1 |
+| `ServerConfigUtil` resolves models | It resolves URLs only (`sd, face, tag, voice.tts, voice.stt, embedding`, 30 s cache); the default model is `SDUtil.setDefaultModel` from `RestServiceEventListener:327-331` (`sd.default.model` → `sd.model`), and `ChatService.java:1425` plus five `OlioService` routes read `sd.model` directly | §16 |
+| `AsyncJobRegistry` limits (unstated) | `MAX_CONCURRENT_JOBS=2` (`:66`), `MAX_ACTIVE_JOBS_PER_PRINCIPAL=4` (`:90`), `COMPLETED_TTL_MS` 30 min (`:75`), `MAX_RETAINED_JOBS=200` (`:78`); kinds `pb.extractScenes, pb.retryFailedChunks, cb.create, cb.render, chat.chain`; **no run endpoint exists** | §21 |
+| `attempt`, `variantIndex`, `reviewStatus`, `durationMs` on artifacts | None exist in `src/main`; all four are new schema fields | §10, §23, §32 (§23 text not yet updated — see note below) |
+| Retention can reuse the orphan sweep | `PbOrphanUtil` deliberately skips artifacts (`PbOrphanUtil.java:53-54`) and `PbHealthUtil` is a stale-graph scan; the retention sweep is a new routine | §23 (not yet updated) |
+| Composite capability "3 references" is a renderer limit | It is structural in `SceneCompositeUtil.java:191-200` | §15 |
+| Timings | All from the Strix Halo iGPU, none from .39 | §15, §18, §33, Q14 |
+| Code package | PictureBook code lives in `org.cote.accountmanager.olio.picturebook` (not `olio.pb`); the model names are `olio.pb.*` | — |
+
+Confirmed as written (no change needed): the PB2 model fields in §1/§11 (`artifactModel.json:16-124`,
+`bindingModel.json`, `nodeModel.json`, `runModel.json`, `sceneModel.json`, `bookModel.json`);
+`PbNodeStatusEnumType` and `PbNodeTypeEnumType` values; `PbWatchedFields` v2 lists;
+`PbArtifactUtil.setSelected:233-285` (one selected per node); `PbGraphUtil.markStaleDownstream:835`
+BFS; `driftedRefBindings:577-599` is test-only; `PbConfigUtil.resolveEffectiveConfig:296` /
+`resolveDeclaredConfig:324` / `mergeTiers:342-349`; `PbNodeExecutor` executable types
+`PORTRAIT, LANDSCAPE, SCENE_PROMPT, LANDSCAPE_PROMPT, REFERENCE_STRIP, COMPOSITE`;
+`PbSeriesUtil:147-149` / `PbBookUtil.createBook:91` / chapter overload `:292` world ownership;
+`SWUtil.buildFlux2ScenePrompt:249,:276`, `newKontextSceneTxt2Img:428-462`, `flux2Defaults.json`
+(cfg 2.0, steps 4, 1024×768, euler/simple, referenceSize 1024, `initImageCreativity` 0.6);
+`ChapBookUtil.renderResolvedScene` (private, `:1730`), `renderChapBookSummary:1445`,
+`assemblePriorContext:933`; the `PictureBookService` route list (`/olio/picture-book`: `regenerate
+:1314`, `pin :1335`, `artifact/{aid}/select :1673`, `migrate-v1 :1825`, health/orphan routes, no
+run route) and `ChapBookService` (`/olio/chap-book`); prompt templates
+`promptTemplate.pictureBook.{extract-scenes, extract-chunk, extract-character, reduce-character,
+scene-blurb, landscape-prompt, scene-image-prompt}.json` and
+`promptTemplate.chapBook.{landscape-prompt, poem-analysis}.json` via
+`PictureBookUtil.resolvePrompt:4596`; `PbPipelineUtil.persistBytes:523`; Ux752 files
+`features/pictureBook.js`, `workflows/pictureBook.js`, `workflows/pictureBookCharacters.js`,
+`components/SdConfigPanel.js`, `features/pictureBookWorkflow.js`, `chat/SceneGenerator.js`,
+`components/readerShell.js`.
+
+**Note on §23.** The edit that adds the two "new field / new sweep" facts above to §23 was blocked
+by the tool-permission gate on 2026-10-09 and was not retried; §23 still reads as if `attempt`,
+`variantIndex` and the retention sweep might exist. Treat this table as authoritative until §23 is
+updated by hand.
+
+#### 36.7 Prep checklist before Phase 0 starts (notes only; nothing implemented)
+
+1. Decide Q9–Q14 (§34). Q9 blocks Phase 0 scoping; Q10/Q11 block Phase 5 and Phase 8.
+2. Run §36.5 A, then B/C as decided; re-probe `ListModels` and `yolomodelinternal` and update
+   §36.1.
+3. Spike script (Phase 5, no product code): one `GenerateText2Image` per group in §36.2 — a
+   masked inpaint over a FLUX.2 base render with `juggernautXL_ragnarokBy`, one `<region:>`
+   prompt, one `<segment:>` with `SwarmClipSeg` — timed on .39, outputs looked at. Record the
+   timings against §15/§18 and replace the Strix Halo figures.
+4. Confirm the ipadapter pack's model folder path after install (needed for §36.5 C).
+5. Re-read `PictureBookImageGenerationDesign.md` once it exists and reconcile the G-n ids in §30
+   Phase 0.
+6. Phase 0 starts with the hygiene items in §30 and their tests; nothing in Part VII changes that.
