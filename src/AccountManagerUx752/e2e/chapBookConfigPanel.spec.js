@@ -162,7 +162,10 @@ test.describe('ChapBook shared config panel', () => {
         // round-trip plus UI navigation.
         test.setTimeout(300000);
         const { bookOid, organizationId } = await seedBook(request, 'e2e-cb-regen');
-        // resolveDefaultChatConfig filters by ownerId → the config must be owned by this user.
+        // ChapBookUtil.resolveDefaultChatConfig prefers the shared chat LIBRARY (contentAnalysis ->
+        // generalChat -> first library config) and only falls back to a user-owned config when the
+        // library has none. In a stack whose library was initialized, this user-owned config is NOT
+        // the one the render uses — the library connection must be usable (see tracking doc §6.G.4).
         const chatConfigName = await ensureChatConfig(request, organizationId);
         expect(chatConfigName, 'ensureChatConfig did not provision a chatConfig').toBeTruthy();
 

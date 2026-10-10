@@ -1485,9 +1485,11 @@ public class ChatService {
 			try { skipLandscape = (boolean) sdConfig.get("skipLandscape"); } catch (Exception e) { /* default false */ }
 		}
 		/// Pipeline selection lives in Objects7 (SceneCompositeUtil), not here — this endpoint is
-		/// transport. `true` preserves chat's historical default of Kontext for a config that carries
-		/// neither compositeMode nor useKontext; the picture book passes false for its own default.
-		String compositeMode = SceneCompositeUtil.resolveMode(sdConfig, true);
+		/// transport. `false`: chat's absent-field fallback is now classic, like every other caller
+		/// (V3 design §37.3 Deprecate, Phase 0). Chat historically passed `true` so a config carrying
+		/// neither compositeMode nor useKontext ran Kontext; Kontext is deprecated and that default
+		/// is gone. A config that explicitly asks for Kontext still gets it (resolveMode logs a WARN).
+		String compositeMode = SceneCompositeUtil.resolveMode(sdConfig, false);
 		double sceneCreativity = SceneCompositeUtil.defaultCreativity(compositeMode);
 		if (sdConfig != null) {
 			try {

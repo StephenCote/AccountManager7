@@ -9,7 +9,7 @@ import { test, expect, request as pwRequest } from '@playwright/test';
 import { login } from './helpers/auth.js';
 import { ensureIso42001TestUser, apiLogin, searchByField } from './helpers/api.js';
 
-const BASE_URL = 'https://localhost:8899';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 
 test('role members view loads + displays the existing member', async ({ page, request }) => {
     // Setup: ensure the ISO test user + its role memberships, then resolve the role objectId.

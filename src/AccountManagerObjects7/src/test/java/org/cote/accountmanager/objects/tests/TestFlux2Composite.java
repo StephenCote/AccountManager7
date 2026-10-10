@@ -765,37 +765,42 @@ public class TestFlux2Composite {
 		assertTrue("flux2IncludeLandscapeRef=true must keep the setting reference",
 			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_FLUX2, on));
 
-		/// A NULL config (no record at all) is the only input that actually reaches the resource -
-		/// see aBooleanWithNoSchemaDefaultStillReadsFalse for why a schema-built record never does.
+		/// A NULL config (no record at all) is the only input that reaches the resource; a schema-built
+		/// record carries the field's declared default (TRUE since V3 P0-5) - see
+		/// flux2IncludeLandscapeRefDefaultsTrue.
 		assertEquals("A null config must resolve from flux2Defaults.json, not a hardcoded literal",
 			Flux2Defaults.includeLandscapeRef(),
 			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_FLUX2, null));
 	}
 
-	/// THE ROOT CAUSE of "the landscape prompt gets created but isn't used with FLUX.2".
+	/// THE ROOT CAUSE of "the landscape prompt gets created but isn't used with FLUX.2", and its fix.
 	///
-	/// configModel.json leaves flux2IncludeLandscapeRef with no default deliberately, and its field
-	/// description asserts that a default "is never null and would make flux2Defaults.json's
-	/// includeLandscapeRef dead". The premise does not hold: a BOOLEAN with NO declared default is
-	/// still materialised as the Java primitive false, so the value is never null either way, the
-	/// resource is never consulted for a real config, and the setting reference was suppressed for
-	/// every picture-book composite.
-	///
-	/// Pinned as a test rather than repaired by adding a schema default: false is already the
-	/// effective value, and changing an existing field's shape is the blob-driven migration path.
-	/// If someone later gives this field a real default, this test is where the assumption lives.
+	/// configModel.json used to leave flux2IncludeLandscapeRef with no default on the premise that a
+	/// default would make flux2Defaults.json's includeLandscapeRef dead. A BOOLEAN with NO declared
+	/// default is still materialised as the Java primitive false, so the resource was never consulted
+	/// for a real config and the setting reference was silently suppressed for every picture-book
+	/// composite. V3 P0-5 (2026-10-09) gives the field a schema default of TRUE so a schema-built
+	/// record carries the intended value; the resource remains the answer for a NULL config only.
 	@Test
-	public void aBooleanWithNoSchemaDefaultStillReadsFalse() throws Exception {
-		BaseRecord cfg = sdConfig();
-		assertNull("The MODEL must declare no default for flux2IncludeLandscapeRef",
+	public void flux2IncludeLandscapeRefDefaultsTrue() throws Exception {
+		assertEquals("The MODEL must declare flux2IncludeLandscapeRef default TRUE",
+			Boolean.TRUE,
 			RecordFactory.getSchema(OlioModelNames.MODEL_SD_CONFIG)
 				.getFieldSchema("flux2IncludeLandscapeRef").getDefaultValue());
-		assertEquals("...yet a schema-built record reads FALSE, not null - so the resource is unreachable",
-			Boolean.FALSE, cfg.get("flux2IncludeLandscapeRef"));
-		assertFalse("...which is why the FLUX.2 setting reference was silently off everywhere",
+		BaseRecord cfg = sdConfig();
+		assertEquals("A schema-built record must read TRUE", Boolean.TRUE, cfg.get("flux2IncludeLandscapeRef"));
+		assertTrue("...so the FLUX.2 setting reference is on by default",
 			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_FLUX2, cfg));
-		assertTrue("Flux2Defaults still says true - it was simply never asked",
-			Flux2Defaults.includeLandscapeRef());
+		assertTrue("Flux2Defaults agrees with the schema default", Flux2Defaults.includeLandscapeRef());
+
+		BaseRecord fresh = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		assertEquals("A bare RecordFactory.newInstance config must read TRUE too",
+			Boolean.TRUE, fresh.get("flux2IncludeLandscapeRef"));
+		assertTrue(SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_FLUX2, fresh));
+
+		fresh.set("flux2IncludeLandscapeRef", Boolean.FALSE);
+		assertFalse("An explicit FALSE must still be honoured",
+			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_FLUX2, fresh));
 	}
 
 	/// A null config must still answer, and must answer the way buildSceneRequest would.

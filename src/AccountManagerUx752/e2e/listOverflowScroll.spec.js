@@ -28,7 +28,7 @@ import { login } from './helpers/auth.js';
 import { ensureSharedTestUser, apiLogin, ensurePath, createNote, apiLogout } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = 'https://localhost:8899';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 
 test.describe('List body scroll at constrained viewport height (KI-8)', () => {
     let testInfo = {};

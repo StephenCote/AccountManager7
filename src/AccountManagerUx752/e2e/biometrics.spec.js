@@ -12,7 +12,7 @@ import { login, screenshot } from './helpers/auth.js';
 import { ensureSharedTestUser, analyzeFace, apiLogin, apiLogout } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = 'https://localhost:8899';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 
 async function newApiContext() {
     return pwRequest.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });

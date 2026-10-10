@@ -12,18 +12,38 @@
  *       the live Swarm SD server configured on the stack and is gated behind E2E_SD_LIVE=1 because
  *       it generates a real image (30-120 s) and must run serially. Also asserts the rendered PNG is
  *       the 512x512 the posted sdConfig asked for (SWUtil.newTxt2Img now honors width/height).
+ *   14-live. POST /rest/chat/{objectId}/generateScene, the full live path as the shared user: own
+ *       connection+chatConfig (ensureChatConfig, LiteLLM route), two characters, a prompt config, a
+ *       session via /chat/new, two real chat turns via /chat/text so the scene-description LLM call
+ *       has history, then two renders against the stack SD server:
+ *         (a) compositeMode:'classic' — the classic img2img branch; the PNG is the posted 512x512 and
+ *             the container log shows `Scene composite [classic]`, no `[kontext]`/`[flux2]`.
+ *         (b) compositeMode and useKontext ABSENT — the olio.sd.config schema default (`flux2`,
+ *             configModel.json) is materialized by the deserializer, so the body resolves to FLUX2
+ *             at the flux2Defaults.json size (1024x768), not classic. The Phase 0
+ *             legacyKontextDefault=false flip (V3 design §37.3) is only reachable for hand-built
+ *             configs with a null compositeMode; a REST body is never one (design §1709-1716).
+ *       Gated behind E2E_SD_LIVE=1 like item 15.
+ *       Two turns, not one: Chat.generateSceneDescription formats history from index pruneSkip+2 = 3
+ *       (the assist-template layout: system, user-template, assistant-template). The chatConfig
+ *       schema default is assist=false, so the session is system(0)+user(1)+assistant(2) after one
+ *       turn and the first exchange is invisible — the description silently falls back to
+ *       "two people facing each other" with no LLM call. Measured 2026-10-10 on am7test.
  *
  * All calls run as the shared non-admin test user (ensureSharedTestUser), never admin.
  * Run: PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/chatChainSceneReimageRoutes.spec.js --project=chromium --workers=1
  */
 import { test, expect } from '@playwright/test';
 import { request as pwRequest } from '@playwright/test';
-import { ensureSharedTestUser, apiLogin, apiLogout } from './helpers/api.js';
+import { ensureSharedTestUser, apiLogin, apiLogout, ensurePath, ensureChatConfig, resolveChatRoute } from './helpers/api.js';
 import { randomUUID } from 'crypto';
 import { gunzipSync } from 'node:zlib';
+import { execSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
+const APP_CONTAINER = process.env.E2E_APP_CONTAINER || 'am7test-am7-1';
 
 async function userContext(request) {
     const shared = await ensureSharedTestUser(request);
@@ -224,8 +244,9 @@ test.describe('charPerson reimage without the deprecated prompt argument (item 1
             const principal = await princResp.json();
             expect(principal.name).toBe(shared.testUserName);
 
-            /// A character the shared user owns (its PictureBook/ChapBook test data) — reimage needs
-            /// a fully populated person (profile, narrative, apparel) for prompt assembly.
+            /// Any character the shared user owns (PictureBook/ChapBook test data, or the bare
+            /// "Mira SceneE2E"/"Theo SceneE2E" fixtures from item 14-live). A bare person still renders;
+            /// its prompt just carries the literal-null hair/eye tokens and the no-apparel clause.
             const search = await ctx.post(REST + '/model/search', {
                 data: {
                     schema: 'io.query',
@@ -286,11 +307,7 @@ test.describe('charPerson reimage without the deprecated prompt argument (item 1
             /// as the olio principal in the world gallery), so inspect the bytes here: a real PNG whose
             /// IHDR carries the 512x512 the posted sdConfig asked for. The Swarm portrait path used to
             /// drop width/height and render at the request object's 1024x1024 default.
-            let raw = Buffer.from(image.dataBytesStore || '', 'base64');
-            if (raw[0] === 0x1f && raw[1] === 0x8b) raw = gunzipSync(raw);
-            expect(raw.subarray(0, 8).toString('hex'), 'portrait bytes are a PNG').toBe('89504e470d0a1a0a');
-            const dims = [raw.readUInt32BE(16), raw.readUInt32BE(20)];
-            console.log('[item15] rendered ' + dims[0] + 'x' + dims[1]);
+            const { dims } = await capturePng(image, 'reimage-portrait.png', '[item15]');
             expect(dims, 'rendered dimensions follow the posted sdConfig width/height').toEqual([512, 512]);
         } finally {
             /// Put the character's portrait back the way we found it (reimage re-points profile.portrait).
@@ -299,6 +316,243 @@ test.describe('charPerson reimage without the deprecated prompt argument (item 1
                     data: { schema: 'identity.profile', id: profileId, portrait: { schema: 'data.data', id: originalPortraitId } }
                 }).catch(() => {});
             }
+            await apiLogout(ctx);
+            await ctx.dispose();
+        }
+    });
+});
+
+/// Name+org+group search with cache:false. Group-scoped on purpose: the same fixture names exist under
+/// several test users' home dirs, and a name+org query that also matches another user's record is
+/// DENIED as a whole by AccessPoint.find (looks like "no such record").
+async function findNamed(ctx, type, name, organizationId, groupId, fields) {
+    const resp = await ctx.post(REST + '/model/search', {
+        data: {
+            schema: 'io.query',
+            type: type,
+            fields: [
+                { name: 'name', comparator: 'equals', value: name },
+                { name: 'organizationId', comparator: 'equals', value: organizationId },
+                { name: 'groupId', comparator: 'equals', value: Number(groupId) }
+            ],
+            request: fields || ['id', 'objectId', 'name'],
+            recordCount: 1,
+            cache: false
+        }
+    });
+    expect(resp.ok(), 'search ' + type + ' ' + name).toBe(true);
+    const found = (await resp.json()).results || [];
+    return found.length ? found[0] : null;
+}
+
+async function findOrCreateNamed(ctx, type, name, organizationId, dir, body, fields) {
+    let rec = await findNamed(ctx, type, name, organizationId, dir.id, fields);
+    if (!rec) {
+        const create = await ctx.post(REST + '/model', {
+            data: Object.assign({ schema: type, name: name, groupId: dir.id, groupPath: dir.path }, body)
+        });
+        expect(create.ok(), 'create ' + type + ' ' + name + ' HTTP ' + create.status()).toBe(true);
+        rec = await findNamed(ctx, type, name, organizationId, dir.id, fields);
+    }
+    expect(rec && rec.objectId, type + ' ' + name + ' resolvable after create').toBeTruthy();
+    return rec;
+}
+
+/// Decode a generateScene response body into PNG bytes, write it to the test output dir and attach it,
+/// then return the bytes + IHDR dimensions. Written BEFORE any dimension assertion so the image is
+/// always captured for inspection.
+async function capturePng(image, fileName, logTag) {
+    let raw = Buffer.from(image.dataBytesStore || '', 'base64');
+    if (raw[0] === 0x1f && raw[1] === 0x8b) raw = gunzipSync(raw);
+    const pngPath = test.info().outputPath(fileName);
+    writeFileSync(pngPath, raw);
+    await test.info().attach(fileName, { path: pngPath, contentType: 'image/png' });
+    expect(raw.subarray(0, 8).toString('hex'), fileName + ' bytes are a PNG').toBe('89504e470d0a1a0a');
+    const dims = [raw.readUInt32BE(16), raw.readUInt32BE(20)];
+    console.log(logTag + ' ' + fileName + ' rendered ' + dims[0] + 'x' + dims[1] + ' (' + raw.length + ' bytes) -> ' + pngPath);
+    return { raw, dims };
+}
+
+async function chatTurn(ctx, session, message) {
+    const started = Date.now();
+    const turn = await ctx.post(REST + '/chat/text', {
+        data: Object.assign({}, session, { uid: randomUUID(), message: message }),
+        timeout: 400000
+    });
+    const ms = Date.now() - started;
+    const body = await turn.text();
+    console.log('[item14-live] chat turn HTTP ' + turn.status() + ' durationMs=' + ms
+        + ' body=' + body.slice(0, 300).replace(/\s+/g, ' '));
+    expect(turn.status(), 'chat turn must get a real LLM reply').toBe(200);
+    const rep = JSON.parse(body);
+    expect(Array.isArray(rep.messages) && rep.messages.length > 0, 'chat turn returned messages').toBe(true);
+    return rep;
+}
+
+function dockerLogsSince(sinceIso) {
+    return execSync('docker logs --since ' + sinceIso + ' ' + APP_CONTAINER + ' 2>&1',
+        { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+}
+
+async function generateScene(ctx, session, sdConfig, tag) {
+    /// Isolate this request's log lines by snapshotting the container log before and after with the
+    /// SAME absolute --since, then taking the suffix. A host-clock "--since now-5s" window is not
+    /// reliable here: the Docker VM clock is skewed from the host, so the previous render's lines leaked
+    /// into the next request's window (measured 2026-10-10: a 17:10:41 classic line appeared in a
+    /// window that opened at host 17:10:56).
+    const sinceAbs = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const before = dockerLogsSince(sinceAbs);
+    const started = Date.now();
+    const resp = await ctx.post(REST + '/chat/' + session.objectId + '/generateScene', {
+        data: sdConfig, timeout: 400000
+    });
+    const durationMs = Date.now() - started;
+    const text = await resp.text();
+    console.log('[item14-live] ' + tag + ' generateScene HTTP ' + resp.status() + ' durationMs=' + durationMs + ' body chars=' + text.length);
+    expect(resp.status(), tag + ' generateScene: ' + text.slice(0, 300)).toBe(200);
+    const image = JSON.parse(text);
+    expect(image.schema).toBe('data.data');
+    expect(image.objectId).toBeTruthy();
+    expect(image.contentType).toContain('image');
+    expect(image.name, 'scene label is "<system firstName> and <user firstName>"').toContain('Mira and Theo');
+    console.log('[item14-live] ' + tag + ' scene objectId=' + image.objectId + ' name=' + image.name + ' group=' + image.groupPath);
+    const png = await capturePng(image, 'scene-' + tag + '.png', '[item14-live]');
+    /// The pipeline choice is only visible in the server log.
+    const after = dockerLogsSince(sinceAbs);
+    expect(after.startsWith(before), tag + ': container log snapshot is a prefix of the later snapshot').toBe(true);
+    const log = after.slice(before.length);
+    const compositeLine = log.split('\n').find(l => l.includes('Scene composite ['));
+    console.log('[item14-live] ' + tag + ' ' + (compositeLine ? compositeLine.trim() : 'NO "Scene composite [" line found'));
+    const sceneDescLine = log.split('\n').find(l => l.includes('Scene description:'));
+    console.log('[item14-live] ' + tag + ' ' + (sceneDescLine ? sceneDescLine.trim() : 'NO scene description line found'));
+    return { image, raw: png.raw, dims: png.dims, log, compositeLine, sceneDescLine, durationMs };
+}
+
+test.describe('generateScene live composite modes (item 14 live)', () => {
+    test.skip(!process.env.E2E_SD_LIVE, 'set E2E_SD_LIVE=1 to generate a real scene on the stack SD server');
+
+    test('explicit classic honors the posted size; absent compositeMode resolves to the schema default flux2', async ({ request }) => {
+        /// Two real chat turns + two scene-description LLM calls + two SD renders. The container Ollama
+        /// may be CPU-only; timings are recorded, never asserted.
+        test.setTimeout(1500000);
+        const { ctx, shared } = await userContext(request);
+        try {
+            const princResp = await ctx.get(REST + '/principal');
+            expect(princResp.ok()).toBe(true);
+            const principal = await princResp.json();
+            expect(principal.name).toBe(shared.testUserName);
+            const orgId = principal.organizationId;
+
+            const route = await resolveChatRoute();
+            console.log('[item14-live] [e2e-llm] route=' + route.route + ' server=' + route.serverUrl
+                + ' analysis=' + route.analysisModel + ' pb=' + route.pbModel);
+
+            /// A connection + chatConfig the shared user OWNS. generateScene reads the chatRequest's own
+            /// chatConfig for the scene-description call (Chat.generateSceneDescription), so the library
+            /// contentAnalysis config is not involved here.
+            const cfgName = await ensureChatConfig(request, orgId, {
+                configName: 'e2e-scene-classic', connectionName: 'e2e-scene-classic-conn'
+            });
+            expect(cfgName, 'ensureChatConfig resolved a user-owned chatConfig').toBe('e2e-scene-classic');
+            const chatDir = await ensurePath(ctx, 'auth.group', 'data', '~/Chat');
+            expect(chatDir && chatDir.id, '~/Chat').toBeTruthy();
+            let cfg = await findNamed(ctx, 'olio.llm.chatConfig', cfgName, orgId, chatDir.id,
+                ['id', 'objectId', 'name', 'model', 'analyzeModel', 'systemCharacter', 'userCharacter']);
+            expect(cfg && cfg.objectId, 'chatConfig ' + cfgName).toBeTruthy();
+
+            /// Two characters in the shared user's ~/Characters (stable names, reused across runs).
+            const charDir = await ensurePath(ctx, 'auth.group', 'data', '~/Characters');
+            expect(charDir && charDir.id, '~/Characters').toBeTruthy();
+            const sysChar = await findOrCreateNamed(ctx, 'olio.charPerson', 'Mira SceneE2E', orgId, charDir,
+                { firstName: 'Mira', lastName: 'SceneE2E', gender: 'female', age: 30, race: ['E'] });
+            const usrChar = await findOrCreateNamed(ctx, 'olio.charPerson', 'Theo SceneE2E', orgId, charDir,
+                { firstName: 'Theo', lastName: 'SceneE2E', gender: 'male', age: 30, race: ['E'] });
+
+            const sysId = cfg.systemCharacter && cfg.systemCharacter.id;
+            const usrId = cfg.userCharacter && cfg.userCharacter.id;
+            if (sysId !== sysChar.id || usrId !== usrChar.id) {
+                const patch = await ctx.patch(REST + '/model', {
+                    data: {
+                        schema: 'olio.llm.chatConfig', id: cfg.id, objectId: cfg.objectId, name: cfg.name,
+                        systemCharacter: { schema: 'olio.charPerson', id: sysChar.id, objectId: sysChar.objectId },
+                        userCharacter: { schema: 'olio.charPerson', id: usrChar.id, objectId: usrChar.objectId }
+                    }
+                });
+                const patchText = (await patch.text()).trim();
+                expect(patch.ok() && patchText === 'true', 'PATCH chatConfig characters: HTTP ' + patch.status() + ' ' + patchText).toBe(true);
+                cfg = await findNamed(ctx, 'olio.llm.chatConfig', cfgName, orgId, chatDir.id,
+                    ['id', 'objectId', 'name', 'systemCharacter', 'userCharacter']);
+                expect(cfg.systemCharacter && cfg.systemCharacter.id, 'systemCharacter persisted').toBe(sysChar.id);
+                expect(cfg.userCharacter && cfg.userCharacter.id, 'userCharacter persisted').toBe(usrChar.id);
+            }
+
+            /// generateScene requires a promptConfig (promptTemplate alone is not accepted there).
+            const promptDir = await ensurePath(ctx, 'auth.group', 'data', '~/Prompts');
+            expect(promptDir && promptDir.id, '~/Prompts').toBeTruthy();
+            const promptCfg = await findOrCreateNamed(ctx, 'olio.llm.promptConfig', 'e2e-scene-classic-prompt', orgId, promptDir,
+                { system: ['You are a brief roleplay partner. Reply in one short sentence, in character, no preamble.'] });
+
+            /// Session via the chat service's own create route (puts it where the Ux expects it).
+            const sessionName = 'e2e-scene-classic-' + randomUUID().slice(0, 8);
+            const newResp = await ctx.post(REST + '/chat/new', {
+                data: {
+                    schema: 'olio.llm.chatRequest', name: sessionName,
+                    chatConfig: { schema: 'olio.llm.chatConfig', id: cfg.id, objectId: cfg.objectId },
+                    promptConfig: { schema: 'olio.llm.promptConfig', id: promptCfg.id, objectId: promptCfg.objectId }
+                }
+            });
+            expect(newResp.status(), '/chat/new').toBe(200);
+            const session = await newResp.json();
+            expect(session.objectId, 'session objectId').toBeTruthy();
+            console.log('[item14-live] session ' + sessionName + ' ' + session.objectId);
+
+            /// Two real turns (see the header: with assist=false the first exchange is below the
+            /// pruneSkip+2 start index, so one turn leaves generateSceneDescription with no history and
+            /// the LLM leg of this route unexercised).
+            await chatTurn(ctx, session, 'Walk with me along the harbor wall at sunset and tell me about the voyage.');
+            await chatTurn(ctx, session, 'Then let us climb the lighthouse stairs and watch the ships come in.');
+
+            /// Same template the Ux uses. Strip the mode fields and the optional refs so each case
+            /// below controls the mode explicitly.
+            const tmplResp = await ctx.get(REST + '/olio/randomImageConfig');
+            expect(tmplResp.ok()).toBe(true);
+            const template = await tmplResp.json();
+            delete template.compositeMode;
+            delete template.useKontext;
+            delete template.style;
+            delete template.landscapeSetting;
+            delete template.referenceImageId;
+            template.hires = false;
+            template.steps = 12;
+            template.width = 512;
+            template.height = 512;
+            template.seed = -1;
+            template.skipLandscape = true;
+
+            /// (a) explicit classic: img2img over a composited canvas; honors the posted width/height.
+            const classic = await generateScene(ctx, session, Object.assign({}, template, { compositeMode: 'classic' }), 'classic');
+            expect(classic.compositeLine, 'classic pipeline ran').toContain('Scene composite [classic]');
+            expect(classic.log, 'kontext pipeline must not run for compositeMode=classic').not.toContain('Scene composite [kontext]');
+            expect(classic.log, 'flux2 pipeline must not run for compositeMode=classic').not.toContain('Scene composite [flux2]');
+            expect(classic.log).toContain('generateScene Stage 2: Skipped (skipLandscape=true)');
+            expect(classic.dims, 'classic honors the posted sdConfig width/height').toEqual([512, 512]);
+            expect(classic.sceneDescLine, 'scene description was produced').toBeTruthy();
+            expect(classic.sceneDescLine, 'scene description came from the LLM, not the no-history fallback')
+                .not.toContain('two people facing each other');
+
+            /// (b) absent compositeMode/useKontext: the deserializer materializes the schema default
+            /// (compositeMode="flux2"), so this is the FLUX2 branch at the flux2Defaults.json size —
+            /// NOT classic. Pins the contract so a future "absent means classic" assumption fails here.
+            const dflt = await generateScene(ctx, session, Object.assign({}, template), 'schema-default');
+            expect(dflt.compositeLine, 'absent compositeMode resolves to the schema default flux2').toContain('Scene composite [flux2]');
+            expect(dflt.log, 'kontext pipeline must not run for an absent compositeMode').not.toContain('Scene composite [kontext]');
+            expect(dflt.log, 'classic pipeline must not run for an absent compositeMode').not.toContain('Scene composite [classic]');
+            expect(dflt.log).toContain('generateScene Stage 2: Skipped (skipLandscape=true)');
+            expect(dflt.dims, 'flux2 renders at the flux2Defaults.json size, overriding the posted 512x512').toEqual([1024, 768]);
+            expect(dflt.sceneDescLine, 'scene description was produced').toBeTruthy();
+            expect(dflt.sceneDescLine, 'scene description came from the LLM, not the no-history fallback')
+                .not.toContain('two people facing each other');
+        } finally {
             await apiLogout(ctx);
             await ctx.dispose();
         }

@@ -7,29 +7,41 @@
 #   Dev postgres owns host 15432 -> am7-pg publishes on host 15433 (inspect-only;
 #                                   the app reaches am7-pg internally on 5432)
 #
-# ALL persistent state (Postgres data, app keystores/vault/datagen/streams, and the shared TLS
-# pair) is bind-mounted to a concrete HOST directory — AM7_DATA_DIR, default ./docker-data
-# (relative to this file). This is deliberate: without a host mapping the data lives only in the
-# container's writable layer and is ENTIRELY EPHEMERAL (lost on recreate). Bind mounts make it
-# durable and inspectable, and keep the DB + keystores a matched pair with the same lifecycle.
+# App keystores/vault/datagen/streams and the shared TLS pair are bind-mounted to a concrete
+# HOST directory — AM7_DATA_DIR, default ./docker-data (relative to this file). This is
+# deliberate: without a host mapping the data lives only in the container's writable layer and
+# is ENTIRELY EPHEMERAL (lost on recreate). Bind mounts make it durable and inspectable.
+#
+# THE POSTGRES DATA DIRECTORY IS THE EXCEPTION: it lives in the NAMED volume `am7-test-pg`
+# (ext4 inside the Docker Desktop VM), not under AM7_DATA_DIR. Until 2026-10-10 it was the
+# bind `${AM7_DATA_DIR}/pg`, which Docker Desktop on Windows serves to the container over
+# 9p/drvfs (`mount` inside am7-pg showed `C:\ on /var/lib/postgresql/data type 9p`). Under a
+# 4-worker Playwright run plus a concurrent `vacuum(full)` that transport returned EINTR on a
+# WAL write and Postgres died twice in one gate run:
+#     PANIC:  could not write to file "pg_wal/xlogtemp.182248": Interrupted system call
+# followed by 6-8 minute crash recoveries. A named volume is a real ext4 filesystem and does
+# not do that. The DB and the keystores under ${AM7_DATA_DIR}/am7 are STILL a matched pair
+# (see "Never delete docker-data/am7 while keeping the DB" in aiDocs/dockerDevSetup.md) — a
+# full reset must now remove BOTH the host dir AND the volume, see below.
 #
 # Usage (explicit project name keeps its network separate from the main compose project):
 #   docker compose -p am7test -f docker-compose.test.yml up --build
-#   docker compose -p am7test -f docker-compose.test.yml down          # stop; data kept on host
-#   # full reset: stop, then delete the host data dir:
-#   docker compose -p am7test -f docker-compose.test.yml down; rm -rf ./docker-data
-#   # ...which covers the DEFAULT stack, where every path is a host bind mount.
-#   # The optional `llmproxy` profile is the ONE exception: langfuse-clickhouse
-#   # and langfuse-minio use NAMED volumes (they commit by atomic rename, which
-#   # fails on a Docker Desktop Windows bind mount). `rm -rf ./docker-data` does
-#   # NOT clear those; add -v:
+#   docker compose -p am7test -f docker-compose.test.yml down          # stop; data kept
+#   # full reset: stop, delete the host data dir AND the pg volume (matched pair):
+#   docker compose -p am7test -f docker-compose.test.yml down -v; rm -rf ./docker-data
+#   # `down -v` removes every named volume this project declares (am7-test-pg and, when the
+#   # profile is active, the llmproxy/ollama ones below). To reset ONLY the DB + keystores
+#   # and keep the Ollama model cache / Langfuse data: `down`, then
+#   #   docker volume rm am7test_am7-test-pg; rm -rf ./docker-data/am7
+#   # The `llmproxy` profile's langfuse-clickhouse and langfuse-minio are also NAMED volumes
+#   # (they commit by atomic rename, which fails on a Docker Desktop Windows bind mount):
 #   #   docker compose -p am7test -f docker-compose.test.yml --profile llmproxy down -v
 #   # ...but ANONYMOUS ones do accrue since the pg18 bump: the pg18 base declares
-#   # VOLUME /var/lib/postgresql (the PARENT of our bind), where pg17 declared the
-#   # bind path itself. Each am7-pg container therefore carries one anonymous
+#   # VOLUME /var/lib/postgresql (the PARENT of our data mount), where pg17 declared the
+#   # data path itself. Each am7-pg container therefore carries one anonymous
 #   # volume holding nothing but the mountpoint stub — no data risk, but one leaks
 #   # per down/up cycle. Sweep occasionally with `docker volume prune`.
-#   # to persist elsewhere: AM7_DATA_DIR=/abs/path docker compose -p am7test -f docker-compose.test.yml up --build
+#   # to persist the bind-mounted dirs elsewhere: AM7_DATA_DIR=/abs/path docker compose -p am7test -f docker-compose.test.yml up --build
 #
 # POSTGRES TUNING. am7-pg is BUILT (docker/postgres/Dockerfile), not pulled stock:
 # the memory / large-complex-query settings are baked into the image and can be
@@ -46,10 +58,11 @@
 #
 # PG MAJOR VERSION IS COUPLED TO THE DATA DIRECTORY. A cluster initialized by
 # one major will NOT start under another ("database files are incompatible").
-# Changing PG_IMAGE across majors therefore requires deleting
-# ${AM7_DATA_DIR}/pg — and ${AM7_DATA_DIR}/am7 WITH it, per the matched-pair
-# rule above — then redoing first-run setup. Within a major (e.g. a pgvector
-# patch bump) a plain rebuild is safe and keeps the data.
+# Changing PG_IMAGE across majors therefore requires removing the `am7-test-pg`
+# volume (`docker volume rm am7test_am7-test-pg` after `down`) — and
+# ${AM7_DATA_DIR}/am7 WITH it, per the matched-pair rule above — then redoing
+# first-run setup. Within a major (e.g. a pgvector patch bump) a plain rebuild is
+# safe and keeps the data.
 
 services:
   am7-pg:
@@ -126,10 +139,13 @@ services:
       # reaches am7-pg on the internal network. Avoids the dev 15432.
       - "15433:5432"
     volumes:
-      # Persistent host location for the DB (see AM7_DATA_DIR above). If Postgres fails to
-      # initialize on a Windows bind mount (rare on Docker Desktop/WSL2, possible on older setups),
-      # swap this one line for a named volume — `- am7-test-pg:/var/lib/postgresql/data` — and
-      # re-add a top-level `volumes:\n  am7-test-pg:` block at the end of this file.
+      # The DB lives in a NAMED volume, not under AM7_DATA_DIR — see the header for why
+      # (a Windows bind mount is served over 9p and PANICs Postgres on WAL writes under
+      # load). It was `${AM7_DATA_DIR:-./docker-data}/pg:/var/lib/postgresql/data` until
+      # 2026-10-10; the existing cluster was copied into the volume with
+      #   docker run --rm --volumes-from am7-pg -v am7test_am7-test-pg:/to alpine \
+      #     sh -c 'cp -a /var/lib/postgresql/data/. /to/'
+      # (am7-pg stopped first). The old ./docker-data/pg dir is no longer read.
       #
       # The container path is NOT arbitrary and must not be "modernised" to match
       # the pg18 base image's own PGDATA (/var/lib/postgresql/18/docker): our
@@ -137,7 +153,7 @@ services:
       # mount keeps working across majors. Change one without the other and
       # initdb writes OUTSIDE the mount — the database then lives in the
       # container layer and is destroyed on recreate, silently.
-      - ${AM7_DATA_DIR:-./docker-data}/pg:/var/lib/postgresql/data
+      - am7-test-pg:/var/lib/postgresql/data
       # Runtime tuning overrides; read after the baked defaults, so they win
       # over them. See docker/postgres/conf.d/README.md.
       #
@@ -231,7 +247,13 @@ services:
       # LAN IP in the file default (not only in am7-docker-up.bat) means a plain
       # `docker compose up -d` cannot silently drop it -- which is exactly what happened
       # while adding CATALINA_OPTS above.
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://localhost:9443,http://localhost:9443,https://127.0.0.1:9443,http://127.0.0.1:9443,http://localhost:8899,https://localhost:8899,https://192.168.1.39:9443,http://192.168.1.39:9443}
+      #
+      # Port 8898 is the Playwright "Vite-against-Docker" dev server (dockerDevSetup.md §9, Path C):
+      # `AM7_BACKEND=https://127.0.0.1:9443 npx vite --port 8898`. It must NOT be 8899, because
+      # core/config.js maps a page served from 8899 to the absolute https://localhost:8443 (the
+      # local Tomcat), bypassing the proxy; any other port keeps the API path relative so the Vite
+      # proxy forwards it here. The browser's Origin is the Vite origin, so it must be listed.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://localhost:9443,http://localhost:9443,https://127.0.0.1:9443,http://127.0.0.1:9443,http://localhost:8899,https://localhost:8899,https://localhost:8898,https://127.0.0.1:8898,https://192.168.1.39:9443,http://192.168.1.39:9443}
       # LLM emulator (system.connection.dialect = emulator, serverUrl = emulator://<set>). The TEST
       # stack enables it by default so Ux/Playwright can drive PictureBook without a live model
       # server: fixture sets live under the read-only mount below (one dir per set, see
@@ -962,9 +984,11 @@ services:
 
 
 volumes:
-  # Only the `llmproxy` (Langfuse v4) and `ollama` profiles use named volumes;
-  # everything else in this file is bind-mounted under AM7_DATA_DIR on purpose.
-  # See the comments on langfuse-clickhouse and ollama for why these are the exception.
+  # The am7-pg data directory plus the `llmproxy` (Langfuse v4) and `ollama`
+  # profiles use named volumes; everything else in this file is bind-mounted under
+  # AM7_DATA_DIR on purpose. See the header (am7-pg) and the comments on
+  # langfuse-clickhouse and ollama for why these are the exceptions.
+  am7-test-pg:
   langfuse-clickhouse-data:
   langfuse-clickhouse-logs:
   langfuse-minio-data:

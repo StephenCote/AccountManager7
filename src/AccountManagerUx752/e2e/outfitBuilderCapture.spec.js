@@ -11,7 +11,7 @@ import { login, screenshot } from './helpers/auth.js';
 import { ensureSharedTestUser } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = 'https://localhost:8899';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
 function b64(s) { return Buffer.from(s).toString('base64'); }
 
@@ -138,7 +138,7 @@ test.describe('Outfit Builder — capture failing queries', () => {
         // ── Diagnostics ──
         console.log('\n=== All POST/PATCH/PUT request bodies (' + posts.length + ') ===');
         posts.forEach((p, i) => {
-            let shortUrl = p.url.replace('https://localhost:8899/AccountManagerService7/rest', '');
+            let shortUrl = p.url.replace(BASE_URL + '/AccountManagerService7/rest', '');
             console.log('  [' + i + '] ' + p.method + ' ' + shortUrl);
             // For /model/search bodies, parse and show field types
             if (shortUrl.includes('/model/search')) {

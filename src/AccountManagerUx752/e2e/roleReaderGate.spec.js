@@ -28,7 +28,7 @@ import { login } from './helpers/auth.js';
 import { ensureSharedTestUser, addUserToRole, removeUserFromRole, apiLogin, apiLogout, ensurePath } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = 'https://localhost:8899';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
 
 const SYSTEM_TOGGLE = 'button:has(span.material-symbols-outlined:text-is("admin_panel_settings"))';

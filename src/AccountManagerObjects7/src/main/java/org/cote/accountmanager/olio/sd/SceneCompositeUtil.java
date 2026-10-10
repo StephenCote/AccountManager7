@@ -78,8 +78,23 @@ public class SceneCompositeUtil {
 	/// (Same schema-default trap as `steps`/`width`/`height`, which is why the flux2 params use
 	/// dedicated fields.)
 	///
+	/// DEPRECATED PATH (V3 design §37.3, Phase 0): Kontext is retired on the §28.1 lifecycle. Every
+	/// resolution that lands on KONTEXT — explicit compositeMode, useKontext=true, or the caller's
+	/// legacyKontextDefault — still returns it unchanged, but logs ONE WARN. No caller passes
+	/// legacyKontextDefault=true any more (ChatService flipped to false in Phase 0).
+	///
 	/// @param legacyKontextDefault what useKontext means when the field is genuinely absent
 	public static String resolveMode(BaseRecord sdConfig, boolean legacyKontextDefault) {
+		String result = resolveModeValue(sdConfig, legacyKontextDefault);
+		if (MODE_KONTEXT.equals(result)) {
+			logger.warn("compositeMode=kontext is deprecated (V3 design §37.3): FLUX.2 is the supported composite path; "
+				+ "Kontext is disabled in Phase 2 and removed in Phase 10");
+		}
+		return result;
+	}
+
+	/// The unchanged resolution rules; resolveMode wraps this so the deprecation WARN has one site.
+	private static String resolveModeValue(BaseRecord sdConfig, boolean legacyKontextDefault) {
 		if (sdConfig != null) {
 			String mode = null;
 			try { mode = sdConfig.get("compositeMode"); } catch (Exception e) { /* field may not exist */ }
@@ -115,24 +130,31 @@ public class SceneCompositeUtil {
 	/// resource. {@code buildSceneRequest} used to inline this and ignored the resource entirely,
 	/// hardcoding true as the fallback, so the resource's {@code includeLandscapeRef} was dead.
 	///
-	/// <b>...and the resource is STILL effectively dead, for a different reason. MEASURED
-	/// 2026-09-17 (TestFlux2Composite#aBooleanWithNoSchemaDefaultStillReadsFalse).</b>
-	/// {@code configModel.json} declares NO default on {@code flux2IncludeLandscapeRef} on purpose,
-	/// and its field description says a default "is never null and would make flux2Defaults.json's
-	/// includeLandscapeRef dead". The premise is wrong: {@code RecordFactory.newInstance} materialises
-	/// a BOOLEAN field with no declared default as Java's primitive {@code false}, NOT null. So
-	/// {@code get("flux2IncludeLandscapeRef")} returns {@code Boolean.FALSE} on every schema-built
-	/// config, this method never reaches {@code Flux2Defaults.includeLandscapeRef()} (which returns
-	/// true), and the FLUX.2 setting reference has been suppressed for every picture-book composite.
-	/// That is the reported "landscape prompt gets created, but isn't used w/ flux 2".
+	/// <b>The resource is still effectively dead for schema-built configs — and that is now fine,
+	/// because the schema default is {@code true} (V3 P0-5, G-8).</b> History: until 2026-10-09
+	/// {@code configModel.json} declared NO default on {@code flux2IncludeLandscapeRef}, on the stated
+	/// premise that a default "is never null and would make flux2Defaults.json's includeLandscapeRef
+	/// dead". The premise was wrong: {@code RecordFactory.newInstance} materialises a BOOLEAN field
+	/// with no declared default as Java's primitive {@code false}, NOT null (MEASURED 2026-09-17 by the
+	/// test now named TestFlux2Composite#flux2IncludeLandscapeRefDefaultsTrue). So the resource was already
+	/// unreachable from a schema-built config AND the FLUX.2 setting reference was silently suppressed
+	/// for every picture-book composite — the reported "landscape prompt gets created, but isn't used
+	/// w/ flux 2".
 	///
-	/// The INT/DOUBLE knobs beside it escape this because their call sites treat 0 as unset
-	/// ({@code refSizeV != null && refSizeV > 0}); a boolean has no such spare sentinel. Nothing here
-	/// tries to invent one — an explicit {@code true} is how you turn the reference on, and Ux752's
-	/// "Skip landscape" checkbox writes it alongside {@code skipLandscape} so one control governs the
-	/// whole route. Left as a measured fact rather than "fixed" by adding a schema default, because
-	/// changing an EXISTING field's shape is the blob-driven migration path in
-	/// .claude/rules/objects7-reference.md, and {@code false} is already the effective value.
+	/// Now: {@code configModel.json} declares {@code "default": true}, so a schema-built config carries
+	/// {@code Boolean.TRUE} and this method returns true unless a caller explicitly set {@code false}
+	/// (Ux752's "Skip landscape" checkbox writes it alongside {@code skipLandscape} so one control
+	/// governs the whole route). {@code Flux2Defaults.includeLandscapeRef()} remains ONLY the fallback
+	/// for a sparse/hand-built record that lacks the field entirely. Propagation: the model JSON is
+	/// read once into the schema cache at startup, so the new default takes effect on JVM restart for
+	/// every config instantiated from then on — it is NOT a blob-driven migration of stored rows (no
+	/// column shape changed; a persisted {@code false} stays {@code false}). Because a default change
+	/// does not enter the PB2 inputHash, {@code PbGraphUtil.PB_PIPELINE_VERSION} was bumped to
+	/// {@code pb2/3} alongside it so previously-cached composites are not reused as if unchanged.
+	///
+	/// The INT/DOUBLE knobs beside it never had this problem because their call sites treat 0 as unset
+	/// ({@code refSizeV != null && refSizeV > 0}); a boolean has no such spare sentinel, and nothing
+	/// here invents one.
 	///
 	/// Extracted so a CALLER can ask the question BEFORE paying for the landscape. PictureBookUtil
 	/// generated the landscape prompt (an LLM call) and the landscape image (a full SD pass) for every

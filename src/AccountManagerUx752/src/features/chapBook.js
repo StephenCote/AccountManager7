@@ -164,6 +164,38 @@ async function renderChapBook(bookObjectId, chatConfigName, sdConfig) {
     return resp.json();
 }
 
+// P0-10d (G-32): the book-level olio.sd.config row. GET returns the stored row (full JSON — schema,
+// objectId, name 'book-sdConfig', every field) or `{}` when the book has none yet; null is returned
+// for that empty case. Mirrors PB2's getBookSdConfig (workflows/sceneExtractor.js).
+async function getBookSettings(bookObjectId) {
+    let resp = await fetch(cbBase() + '/' + encodeURIComponent(bookObjectId) + '/settings', {
+        credentials: 'include'
+    });
+    if (!resp.ok) throw new Error('Failed to load book settings: ' + resp.status);
+    let row = await resp.json();
+    if (!row || typeof row !== 'object') return null;
+    if (!row[am7model.jsonModelKey] && !row.objectId) return null;
+    return row;
+}
+
+// PUT the SPARSE fields to merge into the book's stored olio.sd.config (the server sparse-merges:
+// unsent fields survive; identity / description / imagePath / imageName / tags / controls / attributes
+// and '' values are discarded server-side). Returns the stored row. Mirrors PB2's setBookSdConfig.
+async function putBookSettings(bookObjectId, sparse) {
+    let resp = await fetch(cbBase() + '/' + encodeURIComponent(bookObjectId) + '/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ schema: 'olio.pictureBookRequest', sdConfig: sparse })
+    });
+    if (!resp.ok) {
+        let text = '';
+        try { text = await resp.text(); } catch (_) {}
+        throw new Error('Failed to save book settings: ' + resp.status + (text ? ' ' + text : ''));
+    }
+    return resp.json();
+}
+
 // Gap 6: render ONE ChapBook scene via the new per-scene async endpoint. Mirrors PB2's
 // generateSceneImage (workflows/sceneExtractor.js): one HTTP call per scene, same
 // olio.pictureBookRequest body shape (chatConfig + sdConfig) the bulk /render path sent, so no
@@ -487,11 +519,25 @@ let pendingRenderCallback = null;
 // SD config — mirrors pictureBook.js: uses am7sd to load saved defaults and model list
 let renderSdCfg = {};
 let renderSdConfigInst = null;
+// P0-10d (G-32): the instance is keyed to ONE book. null = the create view (seeded from the user's
+// sdcfg-default preference); a book objectId = that book's stored olio.sd.config row, or the same
+// seed when the book has no row yet. Never shared across books, never carried back to create.
+let renderSdConfigBookId = null;
+// A server row exists for renderSdConfigBookId (→ Save sends only inst.changes; otherwise the whole
+// seeded entity is PUT on first save/render, because the server render path has no sdcfg-default tier).
+let renderSdConfigStored = false;
+// { key, message } when GET .../settings failed for a book: the panel shows the error + Retry instead
+// of seeding, because a seed published over an unknown server state would be PUT whole on first save.
+let renderSdConfigLoadError = null;
 let renderSdModelList = [];
 let renderSdLoraList = [];
 let _renderSdModelsLoaded = false;
 let _renderSdLorasFetched = false;
 let _renderSdConfigPromise = null;
+let _renderSdConfigPromiseKey = null;
+// Monotonic build token: only the newest build may publish or clear the in-flight promise. A key
+// cannot serve as that token because null is both the create-view key and "nothing in flight".
+let _renderSdConfigBuild = 0;
 // FIX A: user-selected (or auto-resolved) chat config for LLM landscape-prompt generation.
 // { name, objectId } once chosen/resolved; null until the auto-default resolves or the user picks.
 let renderChatConfigRef = null;
@@ -792,36 +838,176 @@ function loadRenderSdLoras() {
 //   2) Stuck "Loading SD configuration…" on retry: _renderSdConfigPromise cached a resolved-null
 //      promise on any failure, so a second open returned that null forever. Reset it to null when
 //      the attempt did not yield an instance, so the next open re-attempts.
-function ensureRenderSdConfig() {
-    if (renderSdConfigInst) return Promise.resolve(renderSdConfigInst);
-    if (_renderSdConfigPromise) return _renderSdConfigPromise;
-    _renderSdConfigPromise = (async function () {
+// P0-10d (G-32): the instance is now KEYED by book (renderSdConfigBookId). For a book key the entity
+// comes from the book's stored row (GET .../settings) when one exists; otherwise — and always for the
+// create view (key null) — from the user's sdcfg-default seed. A build for a different key than the
+// current instance replaces it; a build superseded by a newer build before it finishes is discarded.
+// A FAILED GET never seeds: the panel shows the error + Retry and renders use the server's stored row.
+
+// The user's default olio.sd.config entity: saved sdcfg-default preference → server template
+// (am7sd.buildEntity) → bare primitive. Identity stripped. Used ONLY by ensureRenderSdConfig.
+async function seedDefaultSdEntity() {
+    let savedConfig = null;
+    try {
+        savedConfig = await am7sd.loadConfig('sdcfg-default', '~/Data/.preferences');
+    } catch (e) { /* non-fatal — fall through to buildEntity */ }
+    let entity;
+    if (savedConfig) {
+        entity = Object.assign({}, savedConfig);
+    } else {
+        entity = await am7sd.buildEntity();
+        if (!entity) entity = am7model.newPrimitive('olio.sd.config');
+    }
+    SD_CONFIG_IDENTITY.forEach(function (k) { delete entity[k]; });
+    return entity;
+}
+
+function ensureRenderSdConfig(bookObjectId) {
+    let key = bookObjectId || null;
+    if (renderSdConfigInst && renderSdConfigBookId === key) return Promise.resolve(renderSdConfigInst);
+    if (_renderSdConfigPromise && _renderSdConfigPromiseKey === key) return _renderSdConfigPromise;
+    // A different key: drop the previous book's instance so the panels show the spinner (not another
+    // book's values) until this build lands, and so a stale Save cannot target the wrong book.
+    if (renderSdConfigInst && renderSdConfigBookId !== key) {
+        renderSdConfigInst = null;
+        renderSdConfigStored = false;
+    }
+    renderSdConfigLoadError = null;
+    _renderSdConfigPromiseKey = key;
+    let build = ++_renderSdConfigBuild;
+    let promise = (async function () {
+        let inst = null;
+        let loadError = null;
         try {
-            let savedConfig = null;
-            try {
-                savedConfig = await am7sd.loadConfig('sdcfg-default', '~/Data/.preferences');
-            } catch (e) { /* non-fatal — fall through to buildEntity */ }
-            let entity;
-            if (savedConfig) {
-                entity = Object.assign({}, savedConfig);
-                SD_CONFIG_IDENTITY.forEach(function (k) { delete entity[k]; });
-            } else {
-                entity = await am7sd.buildEntity();
-                if (!entity) entity = am7model.newPrimitive('olio.sd.config');
+            let entity = null;
+            let stored = false;
+            if (key) {
+                let row = null;
+                try {
+                    row = await getBookSettings(key);
+                } catch (e) {
+                    // A failed GET is NOT "no row": the server state is unknown, and seeding here would
+                    // let the next Save/Render PUT the whole seed over a real stored row.
+                    loadError = e;
+                }
+                if (row) {
+                    entity = Object.assign({}, row);
+                    SD_CONFIG_IDENTITY.concat(BOOK_SD_CONFIG_SKIP).forEach(function (k) { delete entity[k]; });
+                    stored = true;
+                }
             }
-            if (!entity[am7model.jsonModelKey]) entity[am7model.jsonModelKey] = 'olio.sd.config';
-            SD_CONFIG_IDENTITY.forEach(function (k) { delete entity[k]; });
-            renderSdConfigInst = am7model.prepareInstance(entity, am7model.forms.sdConfig);
+            if (!loadError) {
+                if (!entity) entity = await seedDefaultSdEntity();
+                if (!entity[am7model.jsonModelKey]) entity[am7model.jsonModelKey] = 'olio.sd.config';
+            }
+            // Only the newest build may publish; an older one that settles later is discarded.
+            if (build === _renderSdConfigBuild) {
+                if (loadError) {
+                    let message = loadError.message || String(loadError);
+                    console.warn('[ChapBook] Failed to load book image settings:', loadError);
+                    renderSdConfigLoadError = { key: key, message: message };
+                    page.toast('warn', 'Could not load book image settings: ' + message);
+                } else {
+                    inst = am7model.prepareInstance(entity, am7model.forms.sdConfig);
+                    inst.resetChanges();
+                    renderSdConfigInst = inst;
+                    renderSdConfigBookId = key;
+                    renderSdConfigStored = stored;
+                    renderSdConfigLoadError = null;
+                }
+            }
         } catch (e) {
             console.warn('[ChapBook] Failed to build SD config:', e);
         }
-        // Stuck-spinner fix: if we did not end up with an instance, clear the cached promise so a
-        // subsequent open re-attempts instead of returning this resolved-null promise forever.
-        if (!renderSdConfigInst) _renderSdConfigPromise = null;
+        // Stuck-spinner fix: the in-flight promise only dedupes concurrent callers. Once settled, the
+        // instance (when built) is the memo; when the attempt did not yield an instance, clearing the
+        // promise lets a subsequent open (or the panel's Retry) re-attempt instead of returning this
+        // resolved-null forever.
+        if (build === _renderSdConfigBuild) {
+            _renderSdConfigPromise = null;
+            _renderSdConfigPromiseKey = null;
+        }
         m.redraw();
-        return renderSdConfigInst;
+        return inst;
     })();
-    return _renderSdConfigPromise;
+    _renderSdConfigPromise = promise;
+    return promise;
+}
+
+// Placeholder for the three book-SD panel sites while no instance is published for `key`: the load
+// error with a Retry (which re-runs ensureRenderSdConfig, since a failed build leaves no memo), or the
+// loading spinner.
+function renderSdConfigPlaceholder(key, sizeClass) {
+    let err = renderSdConfigLoadError && renderSdConfigLoadError.key === (key || null) ? renderSdConfigLoadError : null;
+    if (err) {
+        return m('div', { class: 'flex items-center gap-2 ' + sizeClass + ' text-amber-700 dark:text-amber-400 py-2', 'data-testid': 'cb-book-sd-load-error' }, [
+            m('span', { class: 'material-symbols-outlined text-base' }, 'warning'),
+            m('span', 'Could not load book image settings: ' + err.message),
+            m('button', {
+                'data-testid': 'cb-book-sd-retry',
+                class: 'px-2 py-0.5 rounded border border-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30',
+                onclick: function () { ensureRenderSdConfig(key || null); m.redraw(); }
+            }, 'Retry')
+        ]);
+    }
+    return m('div', { class: 'flex items-center gap-2 ' + sizeClass + ' text-gray-500 py-4' }, [
+        m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
+        'Loading SD configuration…'
+    ]);
+}
+
+// The SPARSE book-level olio.sd.config to put on the wire. Unstored book (no server row yet): every
+// non-null entity field, so the seeded defaults the dialog SHOWS become what the server render USES.
+// Stored book: only the fields the user changed through inst.api (inst.changes). The skip list mirrors
+// PbBookUtil.BOOK_SD_CONFIG_SKIP + SDUtil.SD_OVERRIDE_SKIP and exists only to keep the wire sparse —
+// the server stays authoritative. Returns null when there is nothing to send. Pure; exported for tests.
+function computeBookSdDelta(inst, stored) {
+    if (!inst || !inst.entity) return null;
+    let skip = new Set(SD_CONFIG_IDENTITY.concat(BOOK_SD_CONFIG_SKIP, [am7model.jsonModelKey]));
+    let entity = inst.entity;
+    let keys = stored ? Array.from(new Set(inst.changes || [])) : Object.keys(entity);
+    let delta = {};
+    keys.forEach(function (k) {
+        if (skip.has(k)) return;
+        let v = entity[k];
+        if (v === undefined || v === null) return;
+        delta[k] = v;
+    });
+    if (!Object.keys(delta).length) return null;
+    delta[am7model.jsonModelKey] = 'olio.sd.config';
+    return delta;
+}
+
+// Persist the book-level SD config (explicit Save buttons + render sync). Resolves true when there was
+// nothing to send or the PUT succeeded; PUT errors propagate to the caller.
+async function saveBookSdConfig(bookObjectId) {
+    let key = bookObjectId || null;
+    let inst = await ensureRenderSdConfig(key);
+    let delta = computeBookSdDelta(inst, renderSdConfigStored && renderSdConfigBookId === key);
+    if (!delta) return true;
+    await putBookSettings(key, delta);
+    inst.resetChanges();
+    if (renderSdConfigBookId === key) renderSdConfigStored = true;
+    page.toast('success', 'Book image settings saved');
+    m.redraw();
+    return true;
+}
+
+// Before any render: persist pending book-level SD changes so the server render path (schema defaults →
+// stored book row → client overlay → scene override; NO sdcfg-default tier) uses what the dialog shows.
+// Returns { sdConfig }: null once saved (the stored row carries it), or the sparse delta as a one-shot
+// render overlay when the save failed (so the render still honours the dialog values).
+async function syncBookSdConfigForRender(bookObjectId) {
+    let inst = await ensureRenderSdConfig(bookObjectId);
+    let delta = computeBookSdDelta(inst, renderSdConfigStored);
+    if (!delta) return { sdConfig: null };
+    try {
+        await saveBookSdConfig(bookObjectId);
+        return { sdConfig: null };
+    } catch (e) {
+        page.toast('warn', 'Book image settings could not be saved; rendering with the dialog values: ' + (e.message || ''));
+        return { sdConfig: delta };
+    }
 }
 
 // FIX A: resolve the auto-default chat config for the render dialog, unless the user already
@@ -874,7 +1060,7 @@ function openRenderConfigDialog(bookObjectId, callback) {
     _renderChatConfigResolving = false;
     loadRenderSdModels();
     loadRenderSdLoras();
-    ensureRenderSdConfig();
+    ensureRenderSdConfig(bookObjectId);
     ensureRenderChatConfigDefault();
     m.redraw();
 }
@@ -884,11 +1070,14 @@ async function doRenderFromDialog() {
     if (!pendingRenderBookId) return;
     showRenderDialog = false;
     let bookId = pendingRenderBookId;
-    let sdCfg = renderSdConfigInst ? Object.assign({}, renderSdConfigInst.entity) : Object.assign({}, renderSdCfg);
     let cb = pendingRenderCallback;
     pendingRenderBookId = null;
     pendingRenderCallback = null;
     m.redraw();
+    // P0-10d: persist the dialog's book-level SD config to the book first (the server render reads the
+    // stored row); only when that save fails is the sparse delta sent as a one-shot render overlay.
+    let { sdConfig } = await syncBookSdConfigForRender(bookId);
+    let sdCfg = sdConfig || {};
     // FIX A: use the user's chosen config if any; otherwise the resolved system default; otherwise
     // resolve one now (the auto-default kickoff may not have finished when the user clicked Render).
     let chatConfigName = (renderChatConfigRef && renderChatConfigRef.name)
@@ -953,15 +1142,27 @@ function renderRenderDialog() {
                     loras: renderSdLoraList,
                     onChange: function () { m.redraw(); }
                 })
-                : m('div', { class: 'flex items-center gap-2 text-sm text-gray-500 py-4' }, [
-                    m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
-                    'Loading SD configuration…'
-                ]),
+                : renderSdConfigPlaceholder(pendingRenderBookId, 'text-sm'),
             m('div', { class: 'flex justify-end gap-2 mt-4' }, [
                 m('button', {
                     class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800',
                     onclick: function () { showRenderDialog = false; m.redraw(); }
                 }, 'Cancel'),
+                // P0-10d: explicit save of the book-level SD config (Render also saves it first).
+                m('button', {
+                    'data-testid': 'cb-dialog-save-book-sd',
+                    class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40 flex items-center gap-1',
+                    disabled: roleWarning || computeBookSdDelta(renderSdConfigInst, renderSdConfigStored) == null,
+                    onclick: function () {
+                        let id = pendingRenderBookId;
+                        saveBookSdConfig(id).catch(function (e) {
+                            page.toast('error', 'Failed to save book image settings: ' + (e.message || ''));
+                        });
+                    }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'save'),
+                    ' Save settings'
+                ]),
                 m('button', {
                     class: 'px-4 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1',
                     onclick: doRenderFromDialog
@@ -1246,6 +1447,23 @@ async function doCreateChapBook() {
         selectedIds = new Set();
         showCreateDialog = false;
         let navObjectId = result.objectId || result.bookObjectId;
+        // P0-10d: persist the create view's "Default image (SD) settings" to the NEW book as its stored
+        // olio.sd.config row, then re-key the instance to the book so the reader's render dialog
+        // memoizes it. A failed PUT only warns — the first render retries via syncBookSdConfigForRender.
+        if (navObjectId && renderSdConfigInst && renderSdConfigBookId === null) {
+            try {
+                let delta = computeBookSdDelta(renderSdConfigInst, false);
+                if (delta) {
+                    await putBookSettings(navObjectId, delta);
+                    renderSdConfigInst.resetChanges();
+                    renderSdConfigStored = true;
+                }
+            } catch (e) {
+                page.toast('warn', 'Book image settings were not saved to the new book: ' + (e.message || ''));
+                renderSdConfigStored = false;
+            }
+            renderSdConfigBookId = navObjectId;
+        }
         if (navObjectId) {
             // D5: persist durably (localStorage) so the reader's Analyze button survives a reload —
             // the book keeps no poem references, so the reader re-derives these ids on oninit.
@@ -1456,7 +1674,8 @@ async function doDeleteSelected() {
 
 // (1) design-time settings. `book` is the current review/reader book (null on the create/landing view);
 // the single working fixed-page-height toggle only renders when there is a book to bind it to.
-function renderConfigDesignSettings(book) {
+// `bookObjectId` is the panel mount's key for the book-level SD config instance (null on create).
+function renderConfigDesignSettings(book, bookObjectId) {
     return m('div', { class: 'space-y-3' }, [
         m('div', { class: 'flex flex-wrap items-end gap-4' }, [
             m('div', [
@@ -1517,7 +1736,7 @@ function renderConfigDesignSettings(book) {
                 class: 'flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white',
                 onclick: function () {
                     configSdExpanded = !configSdExpanded;
-                    if (configSdExpanded) { loadRenderSdModels(); loadRenderSdLoras(); ensureRenderSdConfig(); }
+                    if (configSdExpanded) { loadRenderSdModels(); loadRenderSdLoras(); ensureRenderSdConfig(bookObjectId || null); }
                     m.redraw();
                 }
             }, [
@@ -1526,10 +1745,7 @@ function renderConfigDesignSettings(book) {
             ]),
             configSdExpanded ? (renderSdConfigInst
                 ? m(SdConfigPanel, { inst: renderSdConfigInst, models: renderSdModelList, loras: renderSdLoraList, onChange: function () { m.redraw(); } })
-                : m('div', { class: 'flex items-center gap-2 text-sm text-gray-500 py-4' }, [
-                    m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
-                    'Loading SD configuration…'
-                ])) : null
+                : renderSdConfigPlaceholder(bookObjectId || null, 'text-sm')) : null
         ])
     ]);
 }
@@ -1870,18 +2086,20 @@ function renderAddPoemDialog() {
 }
 
 const ChapBookConfig = {
-    oninit: function () {
+    oninit: function (vnode) {
         // Ensure the queue + SD catalog/config + default chat config are loaded regardless of which
         // view mounted the panel. Guard loadPoems so a review/read remount doesn't clobber a fresh list.
         if (!poems.length && !loading) loadPoems();
         loadRenderSdModels();
         loadRenderSdLoras();
-        ensureRenderSdConfig();
+        // P0-10d: key the book-level SD config instance to the mounting view's book (null on create).
+        ensureRenderSdConfig((vnode.attrs && vnode.attrs.bookObjectId) || null);
         ensureConfigChatConfigDefault();
     },
     view: function (vnode) {
         let attrs = vnode.attrs || {};
         let book = attrs.book || null;
+        let bookObjectId = attrs.bookObjectId || null;
         return m('div', {
             'data-testid': 'cb-config-panel',
             class: 'mb-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40'
@@ -1897,7 +2115,7 @@ const ChapBookConfig = {
                 selectedIds.size > 0 ? m('span', { class: 'ml-2 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs' }, selectedIds.size + ' selected') : null
             ]),
             configPanelExpanded ? m('div', { class: 'p-3 space-y-4' }, [
-                renderConfigDesignSettings(book),
+                renderConfigDesignSettings(book, bookObjectId),
                 renderConfigPoemQueue(),
                 renderConfigActions(attrs)
             ]) : null,
@@ -1957,7 +2175,7 @@ const PoemLibrary = {
 
             // Shared config panel — design settings, poem queue, primary actions, and dialogs
             // (create / add-poem / note-order / render) all live here now, at the top of every view.
-            m(ChapBookConfig, { mode: 'create', book: null }),
+            m(ChapBookConfig, { mode: 'create', book: null, bookObjectId: null }),
 
             // Last created book — render + review buttons available when a book was just created
             lastCreatedBook ? m('div', { class: 'mt-4 p-3 rounded bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 flex items-center gap-3' }, [
@@ -2371,6 +2589,7 @@ const ChapBookReader = {
             m(ChapBookConfig, {
                 mode: 'read',
                 book: readerBook,
+                bookObjectId: readerBookObjectId,
                 onRender: renderReaderBook,
                 rendering: readerRendering
             }),
@@ -2481,6 +2700,9 @@ let sceneOverrideExpanded = {}; // objectId → bool (mount the override panel o
 
 // Identity/transient fields never diffed into a per-scene delta nor sent as part of the override.
 const SD_CONFIG_IDENTITY = ['id', 'objectId', 'urn', 'ownerId', 'groupId', 'organizationId', 'groupPath', 'organizationPath', 'narration'];
+// P0-10d: fields the server drops from a book-level SD config merge (PbBookUtil.BOOK_SD_CONFIG_SKIP);
+// stripped client-side too so neither the keyed instance nor the wire carries them.
+const BOOK_SD_CONFIG_SKIP = ['name', 'description', 'imagePath', 'imageName', 'tags', 'controls', 'attributes'];
 
 async function patchScene(sceneObjectId, changes) {
     let body = Object.assign({ schema: 'olio.pb.scene', objectId: sceneObjectId }, changes);
@@ -3240,11 +3462,15 @@ function isSceneUnprompted(scene) {
 async function doRegenerateScene(idx) {
     let scene = reviewScenes[idx];
     if (!scene || !scene.objectId) return;
+    // Captured before the awaits: a route change mid-call must not sync another book's config.
+    let bookObjectId = reviewBookObjectId;
     scene._saving = true;
     m.redraw();
     try {
         let chatConfigName = await fetchDefaultChatConfigName();
-        let result = await renderChapBookScene(scene.objectId, chatConfigName, {});
+        // P0-10d: book-level SD config is persisted first; the overlay is only the save-failed fallback.
+        let { sdConfig } = await syncBookSdConfigForRender(bookObjectId);
+        let result = await renderChapBookScene(scene.objectId, chatConfigName, sdConfig || {});
         let signal = sceneLlmSignal(result);
         if (result && result.rendered) {
             scene.imageObjectId = result.imageObjectId;
@@ -3280,12 +3506,16 @@ async function doRegenerateScene(idx) {
 async function doRerenderScene(idx) {
     let scene = reviewScenes[idx];
     if (!scene || !scene.objectId) return;
+    // Captured before the awaits: a route change mid-call must not sync another book's config.
+    let bookObjectId = reviewBookObjectId;
     scene._saving = true;
     m.redraw();
     try {
         let prompt = (scene.sdPrompt || '').trim();
         let chatConfigName = prompt ? null : await fetchDefaultChatConfigName();
-        let result = await renderChapBookScene(scene.objectId, chatConfigName, {}, scene.sdPrompt);
+        // P0-10d: book-level SD config is persisted first; the overlay is only the save-failed fallback.
+        let { sdConfig } = await syncBookSdConfigForRender(bookObjectId);
+        let result = await renderChapBookScene(scene.objectId, chatConfigName, sdConfig || {}, scene.sdPrompt);
         let signal = sceneLlmSignal(result);
         if (result && result.rendered) {
             scene.imageObjectId = result.imageObjectId;
@@ -3653,7 +3883,7 @@ const ChapBookReview = {
         // toolbar's "Book image settings" panel and the Render dialog show one consistent config.
         loadRenderSdModels();
         loadRenderSdLoras();
-        ensureRenderSdConfig();
+        ensureRenderSdConfig(reviewBookObjectId);
         if (reviewBookObjectId) loadReviewBook(reviewBookObjectId);
     },
     view: function () {
@@ -3689,6 +3919,7 @@ const ChapBookReview = {
             m(ChapBookConfig, {
                 mode: 'review',
                 book: reviewBook,
+                bookObjectId: reviewBookObjectId,
                 onRender: renderReviewBook,
                 rendering: reviewRendering,
                 onExport: exportReviewBook,
@@ -3796,16 +4027,30 @@ const ChapBookReview = {
                         m('span', 'Book image settings')
                     ]),
                     bookSdExpanded ? (renderSdConfigInst
-                        ? m('div', { class: 'mt-2' }, m(SdConfigPanel, {
-                            inst: renderSdConfigInst,
-                            models: renderSdModelList,
-                            loras: renderSdLoraList,
-                            onChange: function () { m.redraw(); }
-                        }))
-                        : m('div', { class: 'flex items-center gap-2 text-xs text-gray-500 py-2' }, [
-                            m('span', { class: 'material-symbols-outlined text-base animate-spin' }, 'progress_activity'),
-                            'Loading SD configuration…'
-                        ])) : null
+                        ? m('div', { class: 'mt-2' }, [
+                            m(SdConfigPanel, {
+                                inst: renderSdConfigInst,
+                                models: renderSdModelList,
+                                loras: renderSdLoraList,
+                                onChange: function () { m.redraw(); }
+                            }),
+                            // P0-10d: explicit save of the book-level SD config to the book's stored row.
+                            m('div', { class: 'flex justify-end mt-2' }, m('button', {
+                                'data-testid': 'cb-save-book-sd',
+                                class: 'px-3 py-1.5 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-40 flex items-center gap-1',
+                                title: 'Save the book image settings to this book',
+                                disabled: roleWarning || computeBookSdDelta(renderSdConfigInst, renderSdConfigStored) == null,
+                                onclick: function () {
+                                    saveBookSdConfig(reviewBookObjectId).catch(function (e) {
+                                        page.toast('error', 'Failed to save book image settings: ' + (e.message || ''));
+                                    });
+                                }
+                            }, [
+                                m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'save'),
+                                ' Save image settings'
+                            ]))
+                        ])
+                        : renderSdConfigPlaceholder(reviewBookObjectId, 'text-xs')) : null
                 ])
             ]) : null,
             // Body
@@ -3857,5 +4102,5 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, startCreateChapBook, createChapBookBody, renderChapBookBgActivity, reattachCreateChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, effectiveChatConfigName };
+export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, startCreateChapBook, createChapBookBody, renderChapBookBgActivity, reattachCreateChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, effectiveChatConfigName, computeBookSdDelta, getBookSettings, putBookSettings, saveBookSdConfig, syncBookSdConfigForRender, ensureRenderSdConfig };
 export default ChapBookFeature;

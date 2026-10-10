@@ -23,7 +23,7 @@ import { login } from './helpers/auth.js';
 import { ensureSharedTestUser, apiLogin, ensurePath, createObject, apiLogout } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = 'https://localhost:8899';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 
 test.describe('Converged range-slider widget — live dialog verification (KI-16 Finding C)', () => {
     let testInfo = {};

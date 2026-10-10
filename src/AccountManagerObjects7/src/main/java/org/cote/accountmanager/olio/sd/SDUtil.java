@@ -51,6 +51,7 @@ import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 
@@ -559,7 +560,7 @@ public class SDUtil {
 					IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), nar, "images", b1, null, true);
 					IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), prof, "album", b1, null, true);
 					if(export) {
-						FileUtil.emitFile("./img-" + b1.get(FieldNames.FIELD_NAME) + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
+						FileUtil.emitFile("./img-" + b1.get(FieldNames.FIELD_NAME) + ".png", getDataBytes(b1));
 					}
 				}
 			}
@@ -616,7 +617,7 @@ public class SDUtil {
 					IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), nar, "images", b1, null, true);
 					IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), prof, "album", b1, null, true);
 					if(export) {
-						FileUtil.emitFile("./img-" + b1.get(FieldNames.FIELD_NAME) + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
+						FileUtil.emitFile("./img-" + b1.get(FieldNames.FIELD_NAME) + ".png", getDataBytes(b1));
 					}
 				}
 			}
@@ -769,17 +770,16 @@ public class SDUtil {
 					return datas;
 				}
 				
-				Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 				String dname = person.get(FieldNames.FIELD_NAME) + " - " + name + " - " + counter + " - " + rando + " - " + seedl;
-				q.field(FieldNames.FIELD_NAME, dname);
+				Query q = newDataByNameQuery(dir.get(FieldNames.FIELD_ID), dname);
 				BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
 
 				if(data == null) {
 					ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 					clist.parameter(FieldNames.FIELD_NAME, dname);
 					data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
-					data.set(FieldNames.FIELD_BYTE_STORE, datab);
 					data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+					ByteModelUtil.setValue(data, datab);
 					AttributeUtil.addAttribute(data, "seed", seedl);
 					if(person.get(FieldNames.FIELD_OBJECT_ID) != null) {
 						AttributeUtil.addAttribute(data, "character", (String)person.get(FieldNames.FIELD_OBJECT_ID));
@@ -788,7 +788,7 @@ public class SDUtil {
 					IOSystem.getActiveContext().getAccessPoint().create(user, data);
 				}
 				else {
-					data.set(FieldNames.FIELD_BYTE_STORE, datab);
+					ByteModelUtil.setValue(data, datab);
 					IOSystem.getActiveContext().getAccessPoint().update(user, data);
 				}
 				datas.add(data);
@@ -1003,12 +1003,21 @@ public class SDUtil {
 	 * the base so a style change in the override pulls in that style's detail fields.
 	 */
 	public static void applyOverrides(BaseRecord base, BaseRecord override) {
+		applyOverrides(base, override, java.util.Collections.emptySet());
+	}
+
+	/**
+	 * {@link #applyOverrides(BaseRecord, BaseRecord)} with additional field names to leave untouched on
+	 * {@code base} even when present on {@code override} (e.g. per-render fields that must not reach a
+	 * stored config).
+	 */
+	public static void applyOverrides(BaseRecord base, BaseRecord override, java.util.Collection<String> alsoSkip) {
 		if(base == null || override == null) {
 			return;
 		}
 		for(FieldType f : override.getFields()) {
 			String n = f.getName();
-			if(SD_OVERRIDE_SKIP.contains(n)) {
+			if(SD_OVERRIDE_SKIP.contains(n) || (alsoSkip != null && alsoSkip.contains(n))) {
 				continue;
 			}
 			Object v = f.getValue();
@@ -1036,6 +1045,53 @@ public class SDUtil {
 			}
 		}
 		return value;
+	}
+
+	/**
+	 * The column-backed fields {@link ByteModelUtil#setValue(BaseRecord, byte[])} reads or writes on a
+	 * data.data record, beyond what the default (common-field) projection already carries.
+	 *
+	 * <p>Derived from the data.data inheritance chain (data/dataModel.json → crypto.cryptoByteStore →
+	 * data.byteStore + crypto.cipherExt + crypto.vaultExt; data.byteStore → data.compression +
+	 * data.contentType) and from what setValue touches: it requires {@code dataBytesStore} to be present
+	 * (throws otherwise), reads {@code vaulted}, {@code enciphered} and {@code contentType}, and writes
+	 * {@code size}, {@code compressionType} and {@code dataHash}. {@code keyId}/{@code vaultId} are the
+	 * rest of crypto.vaultExt and ride along so a vaulted row keeps its key provenance on update. The
+	 * ephemeral/virtual members of those models ({@code cipherKey}, {@code readDataBytes},
+	 * {@code vaultedFields}, {@code unvaultedFields}) have no column and are not requested.
+	 *
+	 * <p>Why this matters: every image writer below looks the record up by name first and, on a hit,
+	 * updates it in place. A record from {@code QueryUtil.createQuery}'s default projection carries none
+	 * of these, so {@code vaulted}/{@code enciphered} would evaluate against their defaults and plaintext
+	 * bytes could be written under a row flagged enciphered — or, now that the writes go through
+	 * ByteModelUtil directly, the call would simply throw "Missing dataBytesStore field".
+	 */
+	private static final String[] DATA_BYTE_STORE_WRITE_FIELDS = new String[] {
+		FieldNames.FIELD_BYTE_STORE,
+		FieldNames.FIELD_DATA_HASH,
+		FieldNames.FIELD_SIZE,
+		FieldNames.FIELD_COMPRESSION_TYPE,
+		FieldNames.FIELD_CONTENT_TYPE,
+		FieldNames.FIELD_ENCIPHERED,
+		FieldNames.FIELD_VAULTED,
+		FieldNames.FIELD_KEY_ID,
+		FieldNames.FIELD_VAULT_ID
+	};
+
+	/// Build the by-group-and-name lookup every image writer uses to decide create-vs-update, projecting
+	/// the common fields PLUS {@link #DATA_BYTE_STORE_WRITE_FIELDS} so a hit can be handed straight to
+	/// {@link ByteModelUtil#setValue(BaseRecord, byte[])} and then updated.
+	private static Query newDataByNameQuery(long groupId, String name) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, groupId);
+		q.field(FieldNames.FIELD_NAME, name);
+		List<String> request = new ArrayList<>(Arrays.asList(RecordUtil.getCommonFields(ModelNames.MODEL_DATA)));
+		for(String f : DATA_BYTE_STORE_WRITE_FIELDS) {
+			if(!request.contains(f)) {
+				request.add(f);
+			}
+		}
+		q.setRequest(request.toArray(new String[0]));
+		return q;
 	}
 
 	private void applyImg2Img(BaseRecord user, BaseRecord sdConfig, SWTxt2Img s2i) {
@@ -1087,6 +1143,54 @@ public class SDUtil {
 		}
 	}
 
+	/// Integer view of {@link #numberValue}: same null/box tolerance, truncated to int. Used for the
+	/// olio.sd.config INT fields (steps, seed, width, height) so a sparse config — a field present but
+	/// null, or absent on a loose record — never unboxes to a NullPointerException before the SD call.
+	private static int intValue(BaseRecord rec, String fieldName, int defaultValue) {
+		return (int) numberValue(rec, fieldName, defaultValue);
+	}
+
+	/// Null-safe read of an sd config's `hires` flag. A config without the field, or with the field
+	/// present but null, reads as false. Public so createImage callers can pass "the effective config's
+	/// hires" without each re-deriving the null handling.
+	public static boolean hiresOf(BaseRecord cfg) {
+		if(cfg == null || !cfg.hasField("hires")) {
+			return false;
+		}
+		Boolean b = cfg.get("hires");
+		return b != null && b;
+	}
+
+	/// Width/height as configured, or 0 when the field is absent / null / non-positive so the caller
+	/// leaves the request default in place. Mirrors SWUtil.newSceneTxt2Img's `cfgWidth != null && cfgWidth > 0`
+	/// resolution, guarded by hasField so a loose record without the field is not materialized or logged.
+	private static int dimensionOf(BaseRecord cfg, String fieldName) {
+		if(cfg == null || !cfg.hasField(fieldName)) {
+			return 0;
+		}
+		int v = intValue(cfg, fieldName, 0);
+		return v > 0 ? v : 0;
+	}
+
+	/**
+	 * Append the config's style clause ({@link #getSDConfigPrompt}) to a prompt exactly once.
+	 *
+	 * <p>Semantics (byte-for-byte those of PictureBookUtil's former private appendConfigStyleOnce, which
+	 * now delegates here): a null/blank prompt yields just the clause; a blank clause yields the trimmed
+	 * prompt; a prompt already containing the clause is returned trimmed and unchanged; otherwise the
+	 * clause is appended after ". " — or a single space when the prompt already ends in '.' or ','.
+	 * Hosted on SDUtil because this is the style seam every image path should share; ChapBook's render
+	 * path (which today sends its prompt as-is, bypassing getSDConfigPrompt) is meant to adopt it.
+	 */
+	public static String applyConfigStyle(String prompt, BaseRecord cfg) {
+		String clause = getSDConfigPrompt(cfg);
+		if (prompt == null || prompt.isBlank()) return clause;
+		String p = prompt.trim();
+		if (clause == null || clause.isBlank()) return p;
+		if (p.contains(clause)) return p;
+		return p + (p.endsWith(".") || p.endsWith(",") ? " " : ". ") + clause;
+	}
+
 	public List<BaseRecord> createImage(BaseRecord user, String groupPath, BaseRecord sdConfig, String name, int batch, boolean hires, int seed) {
 		if(apiType != SDAPIEnumType.SWARM) {
 			logger.error("createImage without charPerson is only supported for SWARM API type");
@@ -1107,18 +1211,43 @@ public class SDUtil {
 		if(negPrompt != null && negPrompt.length() > 0) {
 			s2i.setNegativePrompt(negPrompt);
 		}
-		s2i.setSteps(sdConfig.get("steps"));
+		/// Every INT/BOOLEAN read below goes through a null-safe helper: a sparse config (field present
+		/// but null) used to unbox to a NullPointerException here, outside the try, and callers such as
+		/// ChapBook's outer catch swallowed it as a generic render failure.
+		s2i.setSteps(intValue(sdConfig, "steps", 20));
 		s2i.setModel(sdConfig.get("model"));
 		s2i.setScheduler(sdConfig.get("scheduler"));
 		s2i.setSampler(sdConfig.get("sampler"));
 		s2i.setCfgScale(numberValue(sdConfig, "cfg", 7));
-		s2i.setSeed(sdConfig.get("seed"));
+		/// The seed ARGUMENT wins when it is a real seed; otherwise fall back to the config's seed
+		/// (schema default -1 = random). Previously the argument was ignored entirely.
+		s2i.setSeed(seed >= 0 ? seed : intValue(sdConfig, "seed", -1));
 		s2i.setImages(batch);
-		if((Boolean)sdConfig.get("hires") == true) {
+		/// Explicit dimensions from the config when it carries positive width/height; otherwise the
+		/// SWTxt2Img defaults (1024x1024) stand. Previously neither was ever set, so every image came
+		/// out square regardless of configuration (G-18).
+		int cfgWidth = dimensionOf(sdConfig, "width");
+		int cfgHeight = dimensionOf(sdConfig, "height");
+		if(cfgWidth > 0) {
+			s2i.setWidth(cfgWidth);
+		}
+		if(cfgHeight > 0) {
+			s2i.setHeight(cfgHeight);
+		}
+		/// The hires ARGUMENT now decides whether the refiner runs (it used to be ignored in favour of
+		/// the config flag), and the refiner block is only entered when there is actually a refiner
+		/// model to run — the olio.sd.config schema defaults hires to true, so a config that never
+		/// named a refinerModel used to send a refiner request with a null model.
+		String refinerModel = sdConfig.get("refinerModel");
+		boolean useRefiner = hires && refinerModel != null && !refinerModel.isBlank();
+		if(hires && !useRefiner) {
+			logger.warn("hires requested but no refinerModel configured; skipping refiner");
+		}
+		if(useRefiner) {
 			s2i.setRefinerScheduler(sdConfig.get("refinerScheduler"));
 			s2i.setRefinerSampler(sdConfig.get("refinerSampler"));
 			s2i.setRefinerMethod(sdConfig.get("refinerMethod"));
-			s2i.setRefinerModel(sdConfig.get("refinerModel"));
+			s2i.setRefinerModel(refinerModel);
 			s2i.setRefinerSteps(sdConfig.get("refinerSteps"));
 			s2i.setRefinerUpscale(sdConfig.get("refinerUpscale"));
 			s2i.setRefinerUpscaleMethod(sdConfig.get("refinerUpscaleMethod"));
@@ -1156,22 +1285,23 @@ public class SDUtil {
 				}
 
 				String dname = name + " - " + counter + " - " + rando + " - " + seedl;
-				Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-				q.field(FieldNames.FIELD_NAME, dname);
+				/// dname carries a random suffix, so the update branch is effectively unreachable; it is
+				/// still projected for ByteModelUtil so it behaves if a collision ever does occur.
+				Query q = newDataByNameQuery(dir.get(FieldNames.FIELD_ID), dname);
 				BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
 
 				if(data == null) {
 					ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 					clist.parameter(FieldNames.FIELD_NAME, dname);
 					data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
-					data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
 					data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+					ByteModelUtil.setValue(data, dataTest);
 					AttributeUtil.addAttribute(data, "seed", seedl);
 					AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i));
 					IOSystem.getActiveContext().getAccessPoint().create(user, data);
 				}
 				else {
-					data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+					ByteModelUtil.setValue(data, dataTest);
 					IOSystem.getActiveContext().getAccessPoint().update(user, data);
 				}
 				datas.add(data);
@@ -1228,16 +1358,15 @@ public class SDUtil {
 				}
 
 				String dname = name + " - scene - " + counter + " - " + rando + " - " + seedl;
-				Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-				q.field(FieldNames.FIELD_NAME, dname);
+				Query q = newDataByNameQuery(dir.get(FieldNames.FIELD_ID), dname);
 				BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
 
 				if (data == null) {
 					ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 					clist.parameter(FieldNames.FIELD_NAME, dname);
 					data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
-					data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
 					data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+					ByteModelUtil.setValue(data, dataTest);
 					AttributeUtil.addAttribute(data, "seed", seedl);
 					AttributeUtil.addAttribute(data, "imageType", "scene");
 					if (sysCharOid != null) AttributeUtil.addAttribute(data, "systemCharacter", sysCharOid);
@@ -1245,7 +1374,7 @@ public class SDUtil {
 					AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i));
 					IOSystem.getActiveContext().getAccessPoint().create(user, data);
 				} else {
-					data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+					ByteModelUtil.setValue(data, dataTest);
 					IOSystem.getActiveContext().getAccessPoint().update(user, data);
 				}
 				datas.add(data);
@@ -1355,16 +1484,15 @@ public class SDUtil {
 				return null;
 			}
 
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-			q.field(FieldNames.FIELD_NAME, name);
+			Query q = newDataByNameQuery(dir.get(FieldNames.FIELD_ID), name);
 			BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
 
 			if(data == null) {
 				ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 				clist.parameter(FieldNames.FIELD_NAME, name);
 				data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
-				data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
 				data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+				ByteModelUtil.setValue(data, dataTest);
 				AttributeUtil.addAttribute(data, "seed", seedl);
 				AttributeUtil.addAttribute(data, "terrain", terrain);
 				AttributeUtil.addAttribute(data, "imageType", "landscape");
@@ -1374,7 +1502,7 @@ public class SDUtil {
 				AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i));
 				IOSystem.getActiveContext().getAccessPoint().create(user, data);
 			} else {
-				data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+				ByteModelUtil.setValue(data, dataTest);
 				IOSystem.getActiveContext().getAccessPoint().update(user, data);
 			}
 			return data;
@@ -1711,16 +1839,15 @@ public class SDUtil {
 					continue;
 				}
 
-				Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-				q.field(FieldNames.FIELD_NAME, name);
+				Query q = newDataByNameQuery(dir.get(FieldNames.FIELD_ID), name);
 				BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
 
 				if(data == null) {
 					ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 					clist.parameter(FieldNames.FIELD_NAME, name);
 					data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
-					data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
 					data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+					ByteModelUtil.setValue(data, dataTest);
 					AttributeUtil.addAttribute(data, "seed", seedl);
 					AttributeUtil.addAttribute(data, "imageType", "animal");
 					if(animal.get(FieldNames.FIELD_OBJECT_ID) != null) {
@@ -1729,7 +1856,7 @@ public class SDUtil {
 					AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i));
 					IOSystem.getActiveContext().getAccessPoint().create(user, data);
 				} else {
-					data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+					ByteModelUtil.setValue(data, dataTest);
 					IOSystem.getActiveContext().getAccessPoint().update(user, data);
 				}
 				datas.add(data);
@@ -2194,22 +2321,21 @@ public class SDUtil {
 					}
 
 					String dname = name;
-					Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-					q.field(FieldNames.FIELD_NAME, dname);
+					Query q = newDataByNameQuery(dir.get(FieldNames.FIELD_ID), dname);
 					BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
 
 					if(data == null) {
 						ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 						clist.parameter(FieldNames.FIELD_NAME, dname);
 						data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
-						data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
 						data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+						ByteModelUtil.setValue(data, dataTest);
 						AttributeUtil.addAttribute(data, "seed", seedl);
 						AttributeUtil.addAttribute(data, "wearLevel", level.toString());
 						AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i));
 						IOSystem.getActiveContext().getAccessPoint().create(user, data);
 					} else {
-						data.set(FieldNames.FIELD_BYTE_STORE, dataTest);
+						ByteModelUtil.setValue(data, dataTest);
 						IOSystem.getActiveContext().getAccessPoint().update(user, data);
 					}
 					// Link the mannequin image into the apparel's own gallery (foreign list) so it

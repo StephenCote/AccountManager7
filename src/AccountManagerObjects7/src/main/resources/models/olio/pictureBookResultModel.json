@@ -37,6 +37,16 @@
 			"description": "Human-readable workflow-graph (olio.pb.*) write failures that were swallowed to keep them non-fatal to the image during scene generation — surfaced on the scene result (W2) so a lost node/binding/artifact write is not only in the log."
 		},
 		{
+			"name": "landscapeFailed",
+			"type": "boolean",
+			"description": "True when the landscape stage of generateSceneImage threw (SD error, empty result, persistence failure) and the scene was rendered WITHOUT a landscape reference instead of aborting (V3 P0-6, G-11). The LANDSCAPE workflow node is marked FAILED; the composite still completes."
+		},
+		{
+			"name": "landscapeError",
+			"type": "string",
+			"description": "The landscape-stage failure message when landscapeFailed is true; absent otherwise."
+		},
+		{
 			"name": "sceneList",
 			"type": "list",
 			"baseType": "model",

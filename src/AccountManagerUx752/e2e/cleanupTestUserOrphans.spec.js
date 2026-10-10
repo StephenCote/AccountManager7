@@ -7,8 +7,10 @@
  * now-dangling groupId. Those orphans later tripped PolicyUtil ("Group could not be found") and
  * PathProvider (groupPath degrading to "/" + name) when anything touched them — observed live via
  * leftover "LC4Note Note N" rows from listControl.spec.js runs, which called plain cleanupTestUser().
- * Fix: use cleanupTestUserFull(), which runs the existing server-side orphan sweep
- * (RecordFactory.cleanupOrphans via GET /rest/model/cleanup) after the group deletes.
+ * Fix: use cleanupTestUserFull(), which deletes the content records inside ~/Notes and ~/Data
+ * before the group deletes. (It previously ran the server-side sweep via GET /rest/model/cleanup
+ * instead; that route also runs a database-wide `vacuum(full)` and deadlocked parallel workers —
+ * see the helper's comment, 2026-10-10.)
  */
 import { test, expect } from '@playwright/test';
 import { setupTestUser, cleanupTestUserFull, apiLogin, searchByField } from './helpers/api.js';

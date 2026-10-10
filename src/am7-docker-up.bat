@@ -143,7 +143,7 @@ set "EMBED_MARKER=%SRC_DIR%docker-data\.embedding-provider"
 
 REM CORS_ALLOWED_ORIGINS REPLACES the compose default, so list every origin -
 REM appending is not a thing. localhost + 127.0.0.1 + the LAN IP, http and https.
-set "CORS_ALLOWED_ORIGINS=https://localhost:%APP_PORT%,http://localhost:%APP_PORT%,https://127.0.0.1:%APP_PORT%,http://127.0.0.1:%APP_PORT%,http://localhost:8899,https://localhost:8899,https://%LAN_IP%:%APP_PORT%,http://%LAN_IP%:%APP_PORT%"
+set "CORS_ALLOWED_ORIGINS=https://localhost:%APP_PORT%,http://localhost:%APP_PORT%,https://127.0.0.1:%APP_PORT%,http://127.0.0.1:%APP_PORT%,http://localhost:8899,https://localhost:8899,https://localhost:8898,https://127.0.0.1:8898,https://%LAN_IP%:%APP_PORT%,http://%LAN_IP%:%APP_PORT%"
 
 set "BUILD_FLAG=--build"
 set "BUILD_ARG="

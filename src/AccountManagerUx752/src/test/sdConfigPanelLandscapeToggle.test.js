@@ -61,7 +61,7 @@ function modelField(name) {
 }
 
 describe('KI-66 client olio.sd.config mirrors the server scene-composite fields', () => {
-    it('declares skipLandscape (boolean, default false) and flux2IncludeLandscapeRef (boolean, NO default)', () => {
+    it('declares skipLandscape (boolean, default false) and flux2IncludeLandscapeRef (boolean, default TRUE)', () => {
         let skip = modelField('skipLandscape');
         expect(skip).toBeDefined();
         expect(skip.type).toBe('boolean');
@@ -69,8 +69,11 @@ describe('KI-66 client olio.sd.config mirrors the server scene-composite fields'
         let inc = modelField('flux2IncludeLandscapeRef');
         expect(inc).toBeDefined();
         expect(inc.type).toBe('boolean');
-        // A client default here would make olio/sd/flux2Defaults.json's includeLandscapeRef dead (KI-66).
-        expect(inc.default).toBeUndefined();
+        // Server configModel.json declares "default": true since V3 P0-5 (G-8): a boolean with no declared
+        // default materialises as false on both sides, so "no default" never reached flux2Defaults.json
+        // anyway and silently suppressed the landscape reference. The mirror must carry the same default
+        // or am7model.newPrimitive('olio.sd.config') seeds false and a whole-entity save undoes G-8.
+        expect(inc.default).toBe(true);
     });
 
     it('declares the FLUX.2 knobs with the server bounds and no client default where the server has none', () => {

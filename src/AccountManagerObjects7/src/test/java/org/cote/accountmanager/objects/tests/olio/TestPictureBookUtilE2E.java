@@ -204,13 +204,13 @@ public class TestPictureBookUtilE2E extends BaseTest {
 		/// PictureBookUtil.landscapeEnabled: a landscape the composite will discard is no longer
 		/// generated, because that cost an LLM prompt call and a full SD pass per scene for nothing.
 		///
-		/// A bare schema-built config does NOT satisfy that gate. compositeMode defaults to "flux2",
-		/// and flux2IncludeLandscapeRef — which declares NO schema default — is still materialised
-		/// as the Java primitive FALSE rather than null, so the flux2Defaults.json resource is never
-		/// consulted (measured; see TestFlux2Composite#aBooleanWithNoSchemaDefaultStillReadsFalse).
-		/// So "unset" reads as "suppress the landscape reference", and the gate correctly skips
-		/// generating one. Saying so here rather than relaxing the assertions: the assertions are
-		/// right, they just now describe a configuration this test has to ask for.
+		/// Since V3 Phase 0 (G-8) a schema-built config already satisfies that gate: compositeMode
+		/// defaults to "flux2" and flux2IncludeLandscapeRef carries a schema default of true
+		/// (TestFlux2Composite#flux2IncludeLandscapeRefDefaultsTrue). Before that fix the field had no
+		/// schema default and materialised as the Java primitive FALSE, so the flux2Defaults.json
+		/// resource was never consulted and "unset" read as "suppress the landscape reference". The
+		/// explicit set is kept so this test states the configuration its Step 3/4 assertions depend on
+		/// rather than inheriting it from a default.
 		cfg.setValue("flux2IncludeLandscapeRef", true);
 		SDUtil.fillStyleDefaults(cfg);
 		return cfg;

@@ -7,6 +7,14 @@ docker/**       text eol=lf
 *.conf          text eol=lf
 Dockerfile      text eol=lf
 
+# docker/** above also matched the staged bcprov jar, so git LF-normalized a binary on commit
+# (2a13cf69): every 0x0D0A inside the zip was collapsed, the archive lost 134 bytes, and Tomcat
+# refused to deploy the WAR ("ZipException: invalid END header"). Found 2026-10-10. Later lines
+# win, so this must stay below the docker/** rule.
+docker/**/*.jar  binary
+*.jar            binary
+*.war            binary
+
 # The compose files and the LiteLLM proxy config are consumed INSIDE Linux
 # containers, and docker-compose.test.yml now embeds a /bin/sh entrypoint
 # script (the litellm config template render). A CRLF checkout puts \r into

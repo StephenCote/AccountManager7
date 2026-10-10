@@ -116,6 +116,9 @@ public class PbPipelineUtil {
 		private BaseRecord run;
 		private int executed = 0;
 		private int failed = 0;
+		/// V3 P0-8: set by closeRun (either overload) so generateSceneImage's finally can tell a run
+		/// that was closed on the normal path from one the pipeline abandoned mid-flight by throwing.
+		private boolean closed = false;
 
 		SceneGraph(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord sceneRow,
 				String workflowGroupPath, String artifactGroupPath, String galleryGroupPath,
@@ -145,6 +148,16 @@ public class PbPipelineUtil {
 
 		public BaseRecord getRun() {
 			return run;
+		}
+
+		/**
+		 * True once {@link PbPipelineUtil#closeRun(SceneGraph, PbRunStatusEnumType, String)} has been
+		 * invoked on this graph (whether or not the run-row write itself succeeded — closeRun is
+		 * best-effort and logs rather than throws). {@code generateSceneImage}'s finally consults this to
+		 * close a run the pipeline abandoned by throwing, and only that one.
+		 */
+		public boolean isRunClosed() {
+			return closed;
 		}
 
 		public String getArtifactGroupPath() {
@@ -602,9 +615,29 @@ public class PbPipelineUtil {
 		}
 	}
 
-	/** Close a node out as failed, recording the message on the node itself. */
+	/** Close a node out as failed, recording the message on the node itself, and count it on the run. */
 	public static void failNode(SceneGraph g, BaseRecord node, String error) {
 		if(g == null || node == null) {
+			return;
+		}
+		try {
+			failNode(g.user, node, error);
+			g.failed++;
+		}
+		catch(Exception e) {
+			logger.warn("Failed to fail node " + node.get(FieldNames.FIELD_NAME) + ": " + e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * Stamp {@code node} {@code FAILED} with {@code lastError}/{@code lastRunAt}, without a
+	 * {@link SceneGraph}. V3 P0-8: this is the write {@link #failNode(SceneGraph, BaseRecord, String)}
+	 * always did; split out so {@link PbNodeExecutor#executeNode} (single-node execution, no graph
+	 * handle, no run) can record a failure the same way the scene pipeline does. Best-effort: a failed
+	 * write is logged, never thrown — the caller is already propagating the real exception.
+	 */
+	static void failNode(BaseRecord user, BaseRecord node, String error) {
+		if(user == null || node == null) {
 			return;
 		}
 		try {
@@ -614,10 +647,9 @@ public class PbPipelineUtil {
 			patch.set(OlioFieldNames.FIELD_PB_NODE_STATUS, PbNodeStatusEnumType.FAILED.toString());
 			patch.set(OlioFieldNames.FIELD_PB_LAST_ERROR, error);
 			patch.set(OlioFieldNames.FIELD_PB_LAST_RUN_AT, ZonedDateTime.now());
-			if(IOSystem.getActiveContext().getAccessPoint().update(g.user, patch) == null) {
+			if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 				logger.error("Failed to record FAILED on node " + node.get(FieldNames.FIELD_NAME));
 			}
-			g.failed++;
 		}
 		catch(Exception e) {
 			logger.warn("Failed to fail node " + node.get(FieldNames.FIELD_NAME) + ": " + e.getMessage(), e);
@@ -658,11 +690,22 @@ public class PbPipelineUtil {
 	 * <p>Still best-effort: a failure to write the run row is logged, not thrown. That is a
 	 * deliberate carry-over — the graph row is bookkeeping alongside the authoritative PB1 records,
 	 * and losing the status stamp must not fail an operation whose real output already persisted.
-	 * It does mean a run row can be left RUNNING if the write fails, so the row is not a reliable
-	 * liveness signal; {@code GET /rest/job} is.
+	 * It does mean a run row can be left PENDING (the status {@code PbGraphUtil.startRun} writes —
+	 * nothing ever stamps RUNNING) if the write fails or if this is never called, so the row is not
+	 * a reliable liveness signal; {@code GET /rest/job} is. Since V3 P0-8 {@code generateSceneImage}
+	 * closes the run FAILED from its finally when the pipeline throws, so "never called" is now
+	 * limited to the write failing.
+	 *
+	 * <p>Marks the graph closed ({@link SceneGraph#isRunClosed}) whether or not the write succeeds,
+	 * and even when there is no run row to close — "closed" means closeRun has been invoked, so the
+	 * pipeline's finally does not retry it.
 	 */
 	public static void closeRun(SceneGraph g, PbRunStatusEnumType status, String error) {
-		if(g == null || g.run == null) {
+		if(g == null) {
+			return;
+		}
+		g.closed = true;
+		if(g.run == null) {
 			return;
 		}
 		try {

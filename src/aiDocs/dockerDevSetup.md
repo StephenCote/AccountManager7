@@ -554,7 +554,7 @@ function dc { docker compose -p am7test -f docker-compose.test.yml @args }
 dc logs -f am7            # app logs (log4j console appender -> docker logs)
 dc ps                     # process/health status
 dc restart am7            # bounce the app (re-renders web.xml from the template!)
-dc down                   # stop; data KEPT on the host in .\docker-data
+dc down                   # stop; data KEPT (.\docker-data + the am7test_am7-test-pg volume)
 dc up -d                  # start again
 
 docker exec -it am7test-am7-1 bash
@@ -564,7 +564,13 @@ psql -h localhost -p 15433 -U am7user -d am72db      # password: password
 ### Full reset (fresh install again)
 
 Disposable stack only. **This is not a schema `-Dreset`** — that is forbidden project-wide. This
-destroys a throwaway container plus its bind-mounted directory.
+destroys a throwaway container plus its bind-mounted directory and its Postgres volume.
+
+Since 2026-10-10 the **database is in the named volume `am7test_am7-test-pg`, not `docker-data/pg`**:
+a Docker Desktop for Windows bind mount is served over 9p and Postgres PANICs on WAL writes under
+load (`PANIC: could not write to file "pg_wal/xlogtemp.NN": Interrupted system call`, followed by
+6-8 minute crash recoveries — hit twice during the 2026-10-10 Playwright full gate). The old
+`docker-data/pg` directory is no longer read; migration recipe in the `docker-compose.test.yml` header.
 
 ```powershell
 Set-Location C:\Projects\GitHub\AccountManager7\src
@@ -572,20 +578,24 @@ docker compose -p am7test -f docker-compose.test.yml down
 
 # keep the old state rather than deleting it; docker-data* is git-ignored
 Move-Item docker-data ("docker-data.reset-" + (Get-Date -Format yyyyMMdd))
+# the DB volume has to go with it (keystores and DB org records are a matched pair, see below)
+docker volume rm am7test_am7-test-pg
 
 docker compose -p am7test -f docker-compose.test.yml up -d
 # then §3 and §4 again
 ```
 
-To discard instead of keeping: `Remove-Item docker-data -Recurse -Force` (not `rm -rf`).
+To discard everything instead of keeping the host dir: `docker compose -p am7test -f
+docker-compose.test.yml down -v` (removes every named volume the project declares — including
+`ollama-models` and the Langfuse volumes when those profiles are active) then
+`Remove-Item docker-data -Recurse -Force` (not `rm -rf`).
 
 Omit `--build` on the restart if the source tree is mid-change and you want the current image.
 
-**Never delete `docker-data/am7` while keeping `docker-data/pg`.** The org keystores under
-`store/.jks/{orgId}` and `store/.vault/{orgId}` and the DB org records are a **matched pair**. Keeping
-one without the other produces the orphan state: `Organization already exists` +
-`Failed to initialize key stores` + `Organizations are not configured`. Both live under one host dir
-precisely so they share a lifecycle.
+**Never delete `docker-data/am7` while keeping the `am7-test-pg` volume (or vice versa).** The org
+keystores under `store/.jks/{orgId}` and `store/.vault/{orgId}` and the DB org records are a
+**matched pair**. Keeping one without the other produces the orphan state: `Organization already
+exists` + `Failed to initialize key stores` + `Organizations are not configured`.
 
 ### Update the UI without rebuilding the image
 
@@ -660,7 +670,7 @@ never `olio.llm.connection`; see `ConnectionRefactorPlan.md` "Status 2026-10-07"
 
 | Path A host path | Container path | Holds |
 |---|---|---|
-| `docker-data/pg` | `/var/lib/postgresql/data` | the database |
+| named volume `am7test_am7-test-pg` (was `docker-data/pg` until 2026-10-10 — 9p bind mount PANICs Postgres, see §7) | `/var/lib/postgresql/data` | the database |
 | `docker-data/am7` | `/data/am7` | **org keystores** (`store/.jks/{orgId}`, `store/.vault/{orgId}`), `store/.streams`, `datagen/`, `sessions/`, setup sentinels |
 | `docker-data/certs` | `/etc/am7/certs` | the self-signed TLS pair nginx + Tomcat share |
 
@@ -703,6 +713,27 @@ Four things must all be true or tests fail in ways that look like application bu
 Port matters for `applicationPath` (`core/config.js:18-21`): port `8899` maps to the absolute
 `https://localhost:8443`; **any other port, including 9443, uses the relative
 `/AccountManagerService7`** — which is what nginx wants.
+
+### Vite-source specs: the `chromium-vite` project and the 8898 dev server ("Path C")
+
+Twenty-three specs `import('/src/...')` inside `page.evaluate` (`rg -l "import\(['\"]/src/" e2e/*.spec.js`).
+The baked `dist` has no `/src/`, so they can only run against a Vite dev server — and not the usual
+8899 one when the target is Docker, because of the `config.js` port rule above (a page on 8899 talks
+to the local Tomcat on 8443, not the stack under test). `playwright.config.js` therefore splits them
+into a `chromium-vite` project whose `baseURL` is `https://127.0.0.1:8898` whenever `PLAYWRIGHT_BASE_URL`
+is set (`PLAYWRIGHT_VITE_URL` overrides; with `PLAYWRIGHT_BASE_URL` unset both projects use 8899), and
+`testIgnore`s them in `chromium`. Start that second server before the run — it proxies to the stack:
+
+```powershell
+Set-Location C:\Projects\GitHub\AccountManager7\src\AccountManagerUx752
+$env:AM7_BACKEND = "https://127.0.0.1:9443"; npx vite --port 8898
+```
+
+`https://localhost:8898` and `https://127.0.0.1:8898` are in the Path A CORS default and in
+`am7-docker-up.bat`/`.sh` (added 2026-10-10). The gate's bare `npx playwright test` then covers both
+projects; `--project=chromium` alone silently skips the 23. Verified 2026-10-10: `charGallery`,
+`sdConfigLandscapePersist` (`chromium-vite`, 8898→9443) and `breadcrumbNav` (`chromium`, 9443) in one
+run, `8 passed (51.9s)`.
 
 **Never test as `admin`.** Use `ensureSharedTestUser()` / `ensureIso42001TestUser()` from
 `e2e/helpers/api.js`. Admin is only ever used to *provision* those users.

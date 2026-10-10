@@ -194,14 +194,31 @@ against the source; the rest are from reading the code.
   (:126). `flux2IncludeLandscapeRef` has no schema default and comes out `false`, so
   `flux2Defaults.json`'s `true` is never reached (documented at `SceneCompositeUtil:103-121`).
   The UI also pins `skipLandscape=true` (`AccountManagerUx752/src/workflows/pictureBook.js:240-248`).
-  KI-59's "candidate to check first" is superseded by this.
+  KI-59's "candidate to check first" is superseded by this. **[Fixed 2026-10-09, V3 Phase 0 P0-5:**
+  `configModel.json` `flux2IncludeLandscapeRef` carries `"default": true`; the `flux2Defaults.json`
+  fallback stays only for records lacking the field; `PbGraphUtil.PB_PIPELINE_VERSION` → `pb2/3` so
+  cached composites re-render (the schema default is not in the inputHash). The UI pin is untouched
+  (Phase 1+). Tests: `TestFlux2Composite#flux2IncludeLandscapeRefDefaultsTrue`,
+  `TestPbConfigPrecedence#effectiveConfigCarriesFlux2IncludeLandscapeRefTrueByDefault`.**]**
 - **G-9/G-11:** the landscape image is re-rendered every run (`landscapeObjectId` is written but never
-  read back), and a failure throws a 500 (`PictureBookUtil:9573-9579`).
+  read back), and a failure throws a 500 (`PictureBookUtil:9573-9579`). **[G-11 fixed 2026-10-09, V3
+  Phase 0 P0-6:** the landscape stage (`renderLandscapeStage`) is wrapped; a failure sets
+  `landscapeFailed`/`landscapeError` on `olio.pictureBookResult`, fails the LANDSCAPE node and
+  continues. Classic composite with neither landscape nor portraits falls back to text-only txt2img
+  (the black-canvas composite measured luminance 1); with portraits it draws them on a blank canvas as
+  it does when the landscape is skipped by config. G-9 (re-render every run) is unchanged — Phase 1.
+  Tests: `TestPbSceneGenerationGuards#testLandscapeFailureIsNonFatal` / `#testNoGraphClassicPathSurvivesLandscapeFailure`.**]**
 - **G-15 ✅:** `applyOverrides(common, sdConfigOverride)` runs at `:9042`, then
   `persistBookSdConfig(common)` at `:9072`. The book config is also stored in two places (meta vs.
-  `olio.pb.book.sdConfig`), and they drift.
+  `olio.pb.book.sdConfig`), and they drift. **[Fixed 2026-10-09, V3 Phase 0 P0-1:** `bookBase =
+  common.copyRecord()` is taken before `applyOverrides` and is what `persistBookSdConfig` writes; the
+  override lives only on the in-memory config for that render. The meta-vs-FK drift is not addressed
+  here (P0-10 / Phase 2 model resolution). Test: `TestPbSceneGenerationGuards#testSceneOverrideDoesNotLeakIntoBookConfig`.**]**
 - **G-18 ✅:** `sd/SDUtil.createImage` (:1090) sets no width or height, and ignores its own `hires` and
-  `seed` arguments.
+  `seed` arguments. **[Fixed 2026-10-09, V3 Phase 0 P0-2:** `createImage` applies `steps`, `seed`
+  (argument wins when `>= 0`), `width`/`height` (when the config value is `> 0`) and honours `hires`
+  (refiner only when `hires && refinerModel` is set; otherwise a WARN and `refinerControlPercentage=0`).
+  Callers pass `SDUtil.hiresOf(cfg)` instead of a literal `false`. Test: `TestSDUtilCreateImage` (6, live Swarm).**]**
 - **G-19:** reimage and chat use `sd.model`. PictureBook v1 uses the request/book/random config. v2
   and ChapBook end up on the schema default `OfficialStableDiffusion/sd_xl_base_1.0`, because
   `createImage` never calls `resolveModel`. FLUX.2 uses `flux2Klein_9b`.
@@ -211,22 +228,72 @@ against the source; the rest are from reading the code.
 - **G-23:** FLUX.2 and Kontext compose their prompts in `sd/swarm/SWUtil.java` (:268-410, :454-494).
   The LLM `scene-image-prompt` output only reaches the image server in classic mode.
 - **G-24 ✅ (mechanism):** `PictureBookUtil.callLlm(..., overrideName)` (:4181) swaps the template
-  name for whatever call it is handed.
+  name for whatever call it is handed. **[Corrected 2026-10-09, V3 Phase 0 planning:** `callLlm` is
+  now at `:4490`. The live leak is only in Ux752's per-prompt mode: `pictureBook.js:1352/:1411` and
+  `sceneExtractor.js:411` send `promptTemplates.landscapePrompt` as the single `promptTemplate` wire
+  parameter, and `PictureBookUtil` applies that one value to **both** the landscape call
+  (`:9557/:10512`) and the scene-prompt call (`:9599/:10526`). The landscape template's `{time}`/
+  `{style}` placeholders then trip the placeholder guard (`:4685-4693`) and the scene prompt degrades
+  to the raw-concatenation fallback. Single-prompt mode sends no override.**]** **[Fixed 2026-10-09,
+  V3 Phase 0 P0-3, Option A:** the override stays on the landscape and extract-scenes calls; the
+  scene-image prompt call receives `null` in both `generateSceneImage` and `prepareSceneImagePrompts`.
+  No second wire parameter was added. Test: `TestPbSceneGenerationGuards#testLandscapeTemplateOverrideDoesNotPoisonScenePrompt`.**]**
 - **G-25/G-32 ✅:** `picturebook/ChapBookUtil.java:1868-1876` sends the prompt as-is, applies the
   client config over the page override, and passes `hires=false`, which is ignored. The UI's book
-  panel is in memory only, and single-page Regenerate sends `{}`.
+  panel is in memory only, and single-page Regenerate sends `{}`. **[Corrected 2026-10-09:** the
+  "no negative prompt" half of G-25 is wrong as stated — `SDUtil.createImage` (`:1106-1109`) does
+  send `negativePrompt` whenever the config carries a non-empty one. The real G-25 gaps are: the
+  book style clause is never appended (only `SDUtil.getSDConfigPrompt` adds it, and ChapBook sets
+  `description` directly, bypassing it); `createImage` ignores its `hires` and `seed` arguments
+  (`:1115`, `:1117`); and `configModel.json`'s `hires` default `true` makes the refiner block run
+  with a null `refinerModel`. `createImage:1117` also NPEs on a sparse config (`(Boolean)get("hires")`
+  unboxing outside the try at `:1137`), which ChapBook's outer catch (`:1896`) swallows. For G-32,
+  ChapBook's book-level store is the `olio.pb.book.sdConfig` FK (not PB1's `pictureBookMeta`), and
+  `PUT /olio/picture-book/{id}/settings` 404s for a ChapBook; `ChapBookService` has no settings
+  endpoint.**]** **[Fixed 2026-10-09, V3 Phase 0 P0-9/P0-10a/b/c:** style clause + default negative +
+  `hires` from the effective config (`ChapBookUtil:1929-1942`); client config is a transient tier
+  **below** the page override (`PbConfigUtil.resolveEffectiveConfig` 4-arg); book-level `olio.sd.config`
+  persisted as the `book-sdConfig` row FK'd from `olio.pb.book.sdConfig`; `GET`/`PUT
+  /rest/olio/chap-book/{bookObjectId}/settings` in `ChapBookService`. **Transport fact found by P0-10c:**
+  `ChapBookService.ensureSchema` tested for `"schema"` by substring, so any body whose only `schema` key
+  was nested (`{"sdConfig":{"schema":"olio.sd.config",…}}` — the Ux752 dialog shape) failed to deserialize
+  and `/render` / `/scene/{id}/generate` silently dropped the client's `chatConfig` and `sdConfig`; fixed
+  (root-object check). `PictureBookService.ensureSchema:172-181` has the same defect, not yet fixed. UX
+  half (P0-10d: persisted book panel, sparse delta on Regenerate) pending. Tests: `TestChapBookRenderStyle`,
+  `TestChapBookBookSettings`, `TestChapBookRestContract`, `e2e/chapBookBookSettings.spec.js`.
+  **Security review 2026-10-09 (PASS, 3 Low):** the settings write also strips the lists
+  `olio.sd.config` inherits from `data.directory`'s ancestry — `tags`, `controls`, `attributes`
+  (`PbBookUtil.BOOK_SD_CONFIG_SKIP`) — after a test proved a tag on the sparse body was being attached to
+  the stored row; `ChapBookService.errorResponse` escapes via Jackson. `SDUtil.SD_OVERRIDE_SKIP`
+  (render overlays) unchanged.**]**
 - **G-5:** `describeOutfit` runs on an unpopulated store after `selectSceneApparel` changed a
   different copy, so it can fall through to `NarrativeUtil:345-347` ("naked/nude…"). Needs a live
   repro.
 - **G-26:** scene setting/action/mood aren't passed through `NarrativeUtil.isMeaningful`, and a null
-  setting can throw a NullPointerException (`PictureBookUtil:3629`).
+  setting can throw a NullPointerException (`PictureBookUtil:3629` — **[corrected 2026-10-09: the NPE
+  is in `resolveLandscapePrompt` at `:3845`, `setting.isEmpty()` on a key present with a JSON null]**).
+  **[Fixed 2026-10-09, V3 Phase 0 P0-4:** `sceneTextField(map, key)` (`NarrativeUtil.isMeaningful`)
+  at the three read sites; a non-meaningful setting takes the "A detailed environment." landscape
+  fallback. An all-null scene still yields a style-clause-only scene prompt (noted, Phase 2 compiler).
+  Test: `TestPbSceneGenerationGuards#testNullSceneFieldsDoNotNpeAndFallBack`.**]**
 - **G-27:** `/olio/picture-book/scene/{id}/generate` is synchronous with no job and no server cancel.
 - **G-30:** `PbServiceFacade.requestRegenerate` only marks nodes STALE. The workflow node runner
   (`picturebook/PbNodeExecutor.java`) also diverges from the main pipeline: different profile load,
   portrait not linked, and no SD-server fallback in `testNode`.
 - **Other:** every SD write path sets `FIELD_BYTE_STORE` directly instead of going through
   `ByteModelUtil` (`SDUtil` ~781–2205, `OlioService:690`). Graph runs are left RUNNING when a scene
-  throws.
+  throws. **[Corrected 2026-10-09:** (a) `BaseRecord.set(FIELD_BYTE_STORE, …)` already reaches
+  `ByteModelUtil.setValue` through `ByteArrayValueType.setValue` (`:49-61`), so the raw writes are
+  compressed/enciphered correctly today; the Phase 0 change is to the explicit, fail-loud call
+  (`ByteModelUtil.setValue` throws `FieldException` on a record missing `dataBytesStore`, where the
+  raw path auto-materialises it). (b) Orphaned runs are left **PENDING**: `PbGraphUtil.startRun`
+  (`:738`) writes PENDING and nothing stamps RUNNING.**]** **[Fixed 2026-10-09, V3 Phase 0 P0-7 /
+  P0-8:** (a) the 12 `SDUtil` writes and `OlioService:691` call `ByteModelUtil.setValue` explicitly,
+  with the by-name `data.data` lookups projecting the full byteStore field set. (b)
+  `PictureBookUtil.generateSceneImage` closes the run and the current node as FAILED in `finally`
+  (`SceneGraph.isRunClosed()` guard; `closeRun` marks closed even with no run row);
+  `PbNodeExecutor.executeNode` stamps the node FAILED + `lastError`/`lastRunAt` and rethrows. Tests:
+  `TestPbSceneGenerationGuards#testRunClosedFailedWhenSceneThrows`, `TestPbGraph#case16_runAndNodeClosedFailedOnException`.**]**
 - **Doc drift:** `PictureBookWorkflowOverhaul.md` ("not started", but W3/W4 are done),
   `AccountManagerUx752/aiDocs/ChapBookReviewRedesign.md` ("nothing implemented", but mostly done),
   `PictureBookUxAndOlioModelPlan.md` (A2.2/A2.3, B and C not done), and two field descriptions in

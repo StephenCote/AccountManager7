@@ -94,13 +94,17 @@ public class TestOllamaModelUnload {
 	}
 
 	/// Drain anything another test in this JVM left in the registry so counts below are exact.
-	private static void drainRegistry() {
-		OllamaModelUtil.unloadAll(true);
+	/// unloadAll(true) clears every NATIVE entry but RETAINS proxied entries with no direct URL (that
+	/// retention is itself pinned below), so when the suite's LLM route runs through LiteLLM the models
+	/// earlier tests used stay in the proxied registry for the life of the JVM. Returns how many such
+	/// entries are left so each case asserts a DELTA against that baseline, never an absolute count.
+	private static int drainRegistry() {
+		return OllamaModelUtil.unloadAll(true).skippedProxied;
 	}
 
 	@Test
 	public void nativeUnloadIsCountedOnlyOn200AndPostsKeepAliveZero() throws Exception {
-		drainRegistry();
+		int retained = drainRegistry();
 		nativeServer = startServer(200, nativeHits);
 		String url = base(nativeServer);
 		String model = "unload-test-native-" + System.nanoTime();
@@ -114,7 +118,7 @@ public class TestOllamaModelUnload {
 		assertTrue(r.attempted);
 		assertEquals("one model acknowledged", 1, r.unloaded);
 		assertEquals(0, r.failed);
-		assertEquals(0, r.skippedProxied);
+		assertEquals("no NEW proxied entry beyond the retained baseline", retained, r.skippedProxied);
 		assertEquals("exactly one POST to the native server", 1, nativeHits.size());
 
 		JsonNode body = new ObjectMapper().readTree(nativeHits.get(0));
@@ -143,7 +147,7 @@ public class TestOllamaModelUnload {
 
 	@Test
 	public void proxiedEntriesAreSkippedNotPostedToTheProxy() throws Exception {
-		drainRegistry();
+		int retained = drainRegistry();
 		proxyServer = startServer(404, proxyHits);
 		String proxyUrl = base(proxyServer);
 		String model = "unload-test-proxied-" + System.nanoTime();
@@ -157,7 +161,7 @@ public class TestOllamaModelUnload {
 		logger.info("proxied (no direct url) pass: " + r);
 		assertEquals("nothing may be reported unloaded", 0, r.unloaded);
 		assertEquals(0, r.failed);
-		assertEquals("the proxied model is reported as skipped", 1, r.skippedProxied);
+		assertEquals("the proxied model is reported as skipped", retained + 1, r.skippedProxied);
 		assertEquals("the proxy's /api/generate must never be called", 0, proxyHits.size());
 		assertTrue("a skipped entry is RETAINED so a later pass can act on it",
 			OllamaModelUtil.trackedProxiedModels(proxyUrl).contains(model));
@@ -170,7 +174,7 @@ public class TestOllamaModelUnload {
 			UnloadResult r2 = OllamaModelUtil.unloadAll(true);
 			logger.info("proxied (direct url registered) pass: " + r2);
 			assertEquals("routed to the direct server and acknowledged", 1, r2.unloaded);
-			assertEquals(0, r2.skippedProxied);
+			assertEquals("only the retained baseline (other proxies) is still skipped", retained, r2.skippedProxied);
 			assertEquals("still nothing posted to the proxy", 0, proxyHits.size());
 			assertEquals("one POST to the direct server", 1, nativeHits.size());
 			JsonNode body = new ObjectMapper().readTree(nativeHits.get(0));
@@ -183,14 +187,15 @@ public class TestOllamaModelUnload {
 
 	@Test
 	public void nonOllamaUpstreamRecordsNothing() {
-		drainRegistry();
+		int retained = drainRegistry();
 		String url = "http://127.0.0.1:1";
 		OllamaModelUtil.recordUsage(url, "gpt-5.6-terra", LLMServiceEnumType.OPENAI_COMPAT, ConnectionUpstreamEnumType.UNKNOWN);
 		OllamaModelUtil.recordUsage(url, "gpt-5.6-terra", LLMServiceEnumType.OPENAI, ConnectionUpstreamEnumType.UNKNOWN);
 		assertTrue(OllamaModelUtil.trackedNativeModels(url).isEmpty());
 		assertTrue(OllamaModelUtil.trackedProxiedModels(url).isEmpty());
 		UnloadResult r = OllamaModelUtil.unloadAll(true);
-		assertEquals(0, r.unloaded + r.failed + r.skippedProxied);
+		assertEquals(0, r.unloaded + r.failed);
+		assertEquals("nothing new was skipped either", retained, r.skippedProxied);
 	}
 
 	@Test

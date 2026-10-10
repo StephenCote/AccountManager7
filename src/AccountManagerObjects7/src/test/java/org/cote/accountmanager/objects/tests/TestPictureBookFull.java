@@ -3125,9 +3125,9 @@ public class TestPictureBookFull extends BaseTest {
 			logger.info("Portrait bytes on profile: " + portraitBytes.length + " bytes");
 
 			// ── Write portrait to disk for visual inspection ──────────────────────────────────────
-			java.io.File outDir = new java.io.File("./kontext-test-output");
+			java.io.File outDir = new java.io.File("./target/kontext-test-output");
 			if (!outDir.exists()) outDir.mkdirs();
-			String outputPath = "./kontext-test-output/portrait-fresh-render-" + charName + ".png";
+			String outputPath = "./target/kontext-test-output/portrait-fresh-render-" + charName + ".png";
 			FileUtil.emitFile(outputPath, portraitBytes);
 			logger.info("Portrait written to: " + outputPath);
 

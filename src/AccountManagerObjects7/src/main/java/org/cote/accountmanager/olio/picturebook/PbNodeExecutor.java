@@ -124,21 +124,33 @@ public class PbNodeExecutor {
 				"Single-node execution is not implemented for node type " + nodeType
 				+ "; executable types are " + String.join(", ", executableTypeNames()));
 		}
-		switch(nodeType) {
-			case PORTRAIT:
-				return executePortrait(user, book, workflow, node, swarmServer);
-			case LANDSCAPE:
-				return executeLandscape(user, book, workflow, node, swarmServer);
-			case SCENE_PROMPT:
-			case LANDSCAPE_PROMPT:
-				return executePromptNode(user, book, workflow, node, nodeType);
-			case REFERENCE_STRIP:
-				return executeReferenceStrip(user, book, workflow, node);
-			case COMPOSITE:
-				return executeComposite(user, book, workflow, node, swarmServer);
-			default:
-				throw new PictureBookException(501,
-					"Single-node execution is not yet implemented for node type " + nodeType);
+		try {
+			switch(nodeType) {
+				case PORTRAIT:
+					return executePortrait(user, book, workflow, node, swarmServer);
+				case LANDSCAPE:
+					return executeLandscape(user, book, workflow, node, swarmServer);
+				case SCENE_PROMPT:
+				case LANDSCAPE_PROMPT:
+					return executePromptNode(user, book, workflow, node, nodeType);
+				case REFERENCE_STRIP:
+					return executeReferenceStrip(user, book, workflow, node);
+				case COMPOSITE:
+					return executeComposite(user, book, workflow, node, swarmServer);
+				default:
+					throw new PictureBookException(501,
+						"Single-node execution is not yet implemented for node type " + nodeType);
+			}
+		}
+		catch(Exception e) {
+			/// V3 P0-8: a node that threw mid-execution (unreachable Swarm, empty image, a 4xx/5xx from
+			/// the per-type executor) used to keep whatever status it had — PENDING/STALE — with no
+			/// lastError, so the canvas showed a node that looked never-run after a run that failed.
+			/// Stamp FAILED + lastError + lastRunAt, then rethrow unchanged: the caller still gets the
+			/// real exception (and its HTTP status, for a PictureBookException).
+			String msg = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
+			PbPipelineUtil.failNode(user, node, msg);
+			throw e;
 		}
 	}
 
@@ -186,7 +198,7 @@ public class PbNodeExecutor {
 		String landscapeName = "landscape_" + System.currentTimeMillis();
 
 		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
-		List<BaseRecord> images = sdu.createImage(user, artifactPath, effectiveConfig, landscapeName, 1, false, -1);
+		List<BaseRecord> images = sdu.createImage(user, artifactPath, effectiveConfig, landscapeName, 1, SDUtil.hiresOf(effectiveConfig), -1);
 		if(images == null || images.isEmpty()) {
 			throw new PictureBookException(500, "SD backend returned no images for landscape of scene " + scopeRef);
 		}
@@ -561,7 +573,7 @@ public class PbNodeExecutor {
 		String portName = "portrait_" + charName.replace(" ", "_") + "_" + System.currentTimeMillis();
 
 		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
-		List<BaseRecord> portImages = sdu.createImage(user, artifactPath, effectiveConfig, portName, 1, false, -1);
+		List<BaseRecord> portImages = sdu.createImage(user, artifactPath, effectiveConfig, portName, 1, SDUtil.hiresOf(effectiveConfig), -1);
 		if(portImages == null || portImages.isEmpty()) {
 			throw new PictureBookException(500, "SD backend returned no images for portrait of " + charName);
 		}

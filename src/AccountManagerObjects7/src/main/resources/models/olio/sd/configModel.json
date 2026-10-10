@@ -312,7 +312,7 @@
 			"name": "useKontext",
 			"type": "boolean",
 			"default": false,
-			"description": "When true, use FLUX Kontext stitch-and-prompt pipeline for scene compositing instead of classic Graphics2D + SDXL img2img. Ignored when compositeMode is set."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): When true, use FLUX Kontext stitch-and-prompt pipeline for scene compositing instead of classic Graphics2D + SDXL img2img. Ignored when compositeMode is set."
 		},
 		{
 			"name": "compositeMode",
@@ -363,7 +363,8 @@
 		{
 			"name": "flux2IncludeLandscapeRef",
 			"type": "boolean",
-			"description": "NO SCHEMA DEFAULT ON PURPOSE - see flux2Cfg: a default is never null and would make flux2Defaults.json's includeLandscapeRef dead. Include the landscape/setting image as a FLUX.2 reference. TRUE keeps the strongest setting fidelity (the generated scene reuses the actual reference location). Set FALSE to cut generation cost: every reference is encoded into the model's context and attention cost grows faster than linearly in it, so dropping the third reference is real GPU time - and the setting still reaches the model as prompt text. This is the primary speed lever for picture-book runs, because moving the work to faster hardware is not an option: the DGX Spark generates ~3x faster for a single image but its thermal handling cannot sustain a book's worth of back-to-back generations without crashing, so sustained SD work belongs on the local Strix Halo box. Turn back on by setting this true - no code change."
+			"default": true,
+			"description": "Include the landscape/setting image as a FLUX.2 reference. SCHEMA DEFAULT TRUE (V3 P0-5, G-8): a schema-built config includes the landscape reference unless a caller opts out. Opt out by setting this FALSE (or skipLandscape=true, which also skips the landscape prompt/SD pass entirely - see PictureBookUtil.landscapeEnabled). flux2Defaults.json's includeLandscapeRef is NOT the default for this field: it is only the fallback SceneCompositeUtil.includesLandscapeReference uses for a sparse/hand-built record that lacks the field altogether (a schema-built record always carries it). History: this field deliberately had no default on the premise that a boolean default 'is never null' and would make the resource dead - but RecordFactory materialises an undefaulted boolean as primitive false, not null, so the resource was already dead AND the landscape reference was silently suppressed for every picture-book composite (measured 2026-09-17, TestFlux2Composite). TRUE keeps the strongest setting fidelity (the generated scene reuses the actual reference location). FALSE cuts generation cost: every reference is encoded into the model's context (measured ~40s per reference at 1024px/4 steps on the local Strix Halo iGPU, linear in reference count), so dropping the third reference is real GPU time - and the setting still reaches the model as prompt text. This is the primary speed lever for picture-book runs, because moving the work to faster hardware is not an option: the DGX Spark generates ~3x faster for a single image but its thermal handling cannot sustain a book's worth of back-to-back generations without crashing, so sustained SD work belongs on the local Strix Halo box. Default changes here are not in the PB2 inputHash - PbGraphUtil.PB_PIPELINE_VERSION was bumped to pb2/3 with this one."
 		},
 		{
 			"name": "flux2Steps",
@@ -389,7 +390,7 @@
 		{
 			"name": "kontextModel",
 			"type": "string",
-			"description": "FLUX Kontext model name for scene compositing. NO DEFAULT ON PURPOSE: the old default flux1Kontext_flux1KontextDev is not installed on the local Swarm, and because a default is never null it was sent on every kontext-mode request and refused with 'Invalid model value for param Model'. compositeMode now defaults to flux2 instead; set this explicitly (to a checkpoint the target node actually carries) if you opt into compositeMode=kontext."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): FLUX Kontext model name for scene compositing. NO DEFAULT ON PURPOSE: the old default flux1Kontext_flux1KontextDev is not installed on the local Swarm, and because a default is never null it was sent on every kontext-mode request and refused with 'Invalid model value for param Model'. compositeMode now defaults to flux2 instead; set this explicitly (to a checkpoint the target node actually carries) if you opt into compositeMode=kontext."
 		},
 		{
 			"name": "kontextSteps",
@@ -397,7 +398,7 @@
 			"minValue": 1,
 			"maxValue": 100,
 			"default": 28,
-			"description": "Sampling steps for FLUX Kontext generation."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Sampling steps for FLUX Kontext generation."
 		},
 		{
 			"name": "kontextCfg",
@@ -405,19 +406,19 @@
 			"minValue": 1,
 			"maxValue": 20,
 			"default": 1,
-			"description": "CFG scale for FLUX Kontext (FLUX uses internal guidance, typically 1)."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): CFG scale for FLUX Kontext (FLUX uses internal guidance, typically 1)."
 		},
 		{
 			"name": "kontextSampler",
 			"type": "string",
 			"default": "euler",
-			"description": "Sampler for FLUX Kontext generation."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Sampler for FLUX Kontext generation."
 		},
 		{
 			"name": "kontextScheduler",
 			"type": "string",
 			"default": "simple",
-			"description": "Scheduler for FLUX Kontext generation."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Scheduler for FLUX Kontext generation."
 		},
 		{
 			"name": "landscapeSetting",

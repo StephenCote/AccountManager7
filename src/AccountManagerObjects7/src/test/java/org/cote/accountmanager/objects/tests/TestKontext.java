@@ -39,7 +39,8 @@ import org.junit.Test;
 /// Includes prompt/config unit tests and a full integration test that calls SwarmUI with FLUX Kontext.
 public class TestKontext extends BaseTest {
 
-	private static final String OUTPUT_DIR = "./kontext-test-output";
+	/// Under target/ so the scratch output is build-local and gitignored (V3 design §37.3, Phase 0).
+	private static final String OUTPUT_DIR = "./target/kontext-test-output";
 
 	/// Export bytes to disk for review.
 	private void exportImage(String filename, byte[] data) {

@@ -21,6 +21,8 @@ import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.olio.rules.BookWorldInitializationRule;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.SDUtil;
+import org.cote.accountmanager.olio.sd.SdConfigUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -821,6 +823,169 @@ public class PbBookUtil {
 			return false;
 		}
 		return true;
+	}
+
+	// ─────────────────────────────── book sdConfig (V3 P0-10a) ───────────────────────────────
+
+	/**
+	 * Name of the {@code olio.sd.config} row that backs {@code olio.pb.book.sdConfig}. One row per book,
+	 * in the book group. Same literal PB1's {@code PictureBookUtil.persistBookSdConfigFk} writes, so a
+	 * PB1-saved config and a V3-saved one are the same row.
+	 */
+	public static final String BOOK_SD_CONFIG_NAME = "book-sdConfig";
+
+	/**
+	 * Fields a client overlay may carry that never belong on the stored book config. Per-render:
+	 * {@code description} is the positive prompt {@code SDUtil.createImage} uses verbatim, and the two
+	 * image fields name one output - persisting any of them would make the next render of a different
+	 * scene inherit this scene's prompt/output. Inherited non-SD lists: {@code tags} (participation),
+	 * {@code controls} and {@code attributes} come from {@code data.directory}'s ancestry, not from the SD
+	 * contract, and a settings write must not attach any of them as a side effect.
+	 */
+	private static final List<String> BOOK_SD_CONFIG_SKIP = Arrays.asList("description", "imagePath", "imageName",
+		FieldNames.FIELD_TAGS, FieldNames.FIELD_CONTROLS, FieldNames.FIELD_ATTRIBUTES);
+
+	/**
+	 * Read the book's stored {@code olio.sd.config} - the row {@code book.sdConfig} points at - fully
+	 * projected ({@code planMost}) and uncached, through {@code AccessPoint.find} so PBAC applies to the
+	 * config row itself and not only to the book. <b>Never writes.</b>
+	 *
+	 * @param book an {@code olio.pb.book} read with at least {@link PbConfigUtil#requestFields()} (the FK
+	 *             is not a default query field)
+	 * @return the stored config, or null when the book has none (or the FK target is not readable)
+	 */
+	public static BaseRecord getBookSdConfig(BaseRecord user, BaseRecord book) {
+		if(user == null || book == null) {
+			throw new PictureBookException(400, "user and book are required");
+		}
+		if(!book.hasField(OlioFieldNames.FIELD_PB_SD_CONFIG)) {
+			throw new PictureBookException(500, "Book " + book.get(FieldNames.FIELD_OBJECT_ID)
+				+ " was read without " + OlioFieldNames.FIELD_PB_SD_CONFIG + " projected - use PbConfigUtil.requestFields()");
+		}
+		BaseRecord fk = book.get(OlioFieldNames.FIELD_PB_SD_CONFIG);
+		if(fk == null) {
+			return null;
+		}
+		Long id = fk.get(FieldNames.FIELD_ID);
+		if(id == null || id <= 0L) {
+			return null;
+		}
+		return readSdConfigById(user, id, PbGraphUtil.orgId(book));
+	}
+
+	/**
+	 * Persist a book-level SD config from a <b>sparse</b> client record (V3 §30 P0-10a / G-26 for
+	 * ChapBook). The persistence shape is PB1's: exactly one {@code olio.sd.config} row named
+	 * {@link #BOOK_SD_CONFIG_NAME} in the book group, referenced from {@code olio.pb.book.sdConfig}.
+	 * <ol>
+	 * <li>If the book already points at a config row, that row is patched: a field-name-limited patch
+	 * carrying identity + {@code name} + only the fields present on {@code sparse}. Omitted fields are
+	 * untouched; null/blank values are skipped (same contract as {@link SDUtil#applyOverrides}), so this
+	 * path cannot clear a field to blank.</li>
+	 * <li>Otherwise, if an unlinked {@code book-sdConfig} row already exists in the book group (PB1 saved
+	 * it before the book row existed, or a previous FK patch failed), it is adopted - patched the same way
+	 * and linked - rather than a second row being created.</li>
+	 * <li>Otherwise a new row is created in the book group as {@code user}, {@code sparse} overlaid on the
+	 * schema defaults and {@link SDUtil#fillStyleDefaults} completing the style tier, and the book's FK
+	 * is patched to it.</li>
+	 * </ol>
+	 * The client record's own identity/location fields ({@code id}, {@code objectId}, {@code groupId},
+	 * ...) are discarded - {@code SD_OVERRIDE_SKIP} - so a client that sends some other config's identity
+	 * cannot redirect the write to it. Per-render fields and the inherited {@code tags}/{@code controls}/
+	 * {@code attributes} lists ({@link #BOOK_SD_CONFIG_SKIP}) are stripped. Every write goes through
+	 * {@code AccessPoint} as {@code user}; every result is asserted
+	 * and a failure is a 500, never a WARN.
+	 *
+	 * @param book   an {@code olio.pb.book} read with at least {@link PbConfigUtil#requestFields()}
+	 * @param sparse the client's partial {@code olio.sd.config}; only fields present on it are written
+	 * @return the stored config after the write, re-read fresh (uncached, fully projected)
+	 * @throws PictureBookException 400 on missing args, 500 when any write fails
+	 */
+	public static BaseRecord setBookSdConfig(BaseRecord user, BaseRecord book, BaseRecord sparse) {
+		if(user == null || book == null) {
+			throw new PictureBookException(400, "user and book are required");
+		}
+		if(sparse == null) {
+			throw new PictureBookException(400, "sdConfig is required");
+		}
+		if(sparse.getSchema() != null && !OlioModelNames.MODEL_SD_CONFIG.equals(sparse.getSchema())) {
+			throw new PictureBookException(400, "sdConfig must be " + OlioModelNames.MODEL_SD_CONFIG + ", got " + sparse.getSchema());
+		}
+		long orgId = PbGraphUtil.orgId(book);
+		Long groupIdVal = book.get(FieldNames.FIELD_GROUP_ID);
+		if(groupIdVal == null || groupIdVal <= 0L) {
+			throw new PictureBookException(500, "Book " + book.get(FieldNames.FIELD_OBJECT_ID) + " carries no groupId");
+		}
+		long bookGroupId = groupIdVal.longValue();
+		String bookOid = book.get(FieldNames.FIELD_OBJECT_ID);
+
+		BaseRecord existing = getBookSdConfig(user, book);
+		boolean linked = (existing != null);
+		if(existing == null) {
+			existing = SdConfigUtil.findConfig(user, BOOK_SD_CONFIG_NAME, bookGroupId, orgId);
+			if(existing != null) {
+				logger.info("setBookSdConfig: adopting unlinked " + BOOK_SD_CONFIG_NAME + " row " + existing.get(FieldNames.FIELD_OBJECT_ID)
+					+ " in group " + bookGroupId + " for book " + bookOid);
+			}
+		}
+
+		BaseRecord stored;
+		if(existing != null) {
+			BaseRecord patch = PbGraphUtil.patchOf(existing, OlioModelNames.MODEL_SD_CONFIG);
+			SDUtil.applyOverrides(patch, sparse, BOOK_SD_CONFIG_SKIP);
+			if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+				logger.error("setBookSdConfig: failed to update " + OlioModelNames.MODEL_SD_CONFIG + " " + existing.get(FieldNames.FIELD_OBJECT_ID) + " for book " + bookOid);
+				throw new PictureBookException(500, "Failed to update the book sdConfig");
+			}
+			stored = existing;
+		}
+		else {
+			BaseRecord cfg;
+			try {
+				cfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+				cfg.set(FieldNames.FIELD_NAME, BOOK_SD_CONFIG_NAME);
+				cfg.set(FieldNames.FIELD_GROUP_ID, bookGroupId);
+				cfg.set(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			}
+			catch(FieldException | ValueException | ModelNotFoundException e) {
+				throw new PictureBookException(500, "Failed to instantiate " + OlioModelNames.MODEL_SD_CONFIG + ": " + e.getMessage());
+			}
+			SDUtil.applyOverrides(cfg, sparse, BOOK_SD_CONFIG_SKIP);
+			SDUtil.fillStyleDefaults(cfg);
+			stored = SdConfigUtil.createOrUpdateConfig(user, cfg);
+			if(stored == null) {
+				throw new PictureBookException(500, "Failed to create the book sdConfig");
+			}
+		}
+
+		if(!linked) {
+			BaseRecord bookPatch = PbGraphUtil.patchOf(book, OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SD_CONFIG);
+			try {
+				bookPatch.set(OlioFieldNames.FIELD_PB_SD_CONFIG, stored);
+			}
+			catch(FieldException | ValueException | ModelNotFoundException e) {
+				throw new PictureBookException(500, "Failed to assemble a book sdConfig patch: " + e.getMessage());
+			}
+			if(IOSystem.getActiveContext().getAccessPoint().update(user, bookPatch) == null) {
+				logger.error("setBookSdConfig: failed to patch " + OlioFieldNames.FIELD_PB_SD_CONFIG + " on book " + bookOid);
+				throw new PictureBookException(500, "Failed to link the book sdConfig");
+			}
+		}
+
+		Long storedId = stored.get(FieldNames.FIELD_ID);
+		BaseRecord fresh = (storedId != null ? readSdConfigById(user, storedId, orgId) : null);
+		if(fresh == null) {
+			throw new PictureBookException(500, "Book sdConfig was written but could not be read back");
+		}
+		return fresh;
+	}
+
+	private static BaseRecord readSdConfigById(BaseRecord user, long id, long orgId) {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_SD_CONFIG, FieldNames.FIELD_ID, id);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.planMost(false);
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
 	}
 
 	// ─────────────────────────────── status ───────────────────────────────

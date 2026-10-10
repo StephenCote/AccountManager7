@@ -16,7 +16,7 @@ import { login } from './helpers/auth.js';
 import { ensureSharedTestUser, apiLogin, apiLogout, ensurePath, createObject, deleteObject } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = 'https://localhost:8899';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const KEY = 'olio_selected_character';
 // Scoped to the content region: the main nav toolbar's "Games" button uses the same sports_esports icon.
 const START_BTN = '[role="main"] button:has(span.material-symbols-outlined:text-is("sports_esports"))';

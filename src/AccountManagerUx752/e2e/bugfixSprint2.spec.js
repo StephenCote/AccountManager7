@@ -9,12 +9,9 @@ import { login, screenshot } from './helpers/auth.js';
 let testInfo;
 
 test.describe('Bug Fix Sprint 2', () => {
+    // The shared user is persistent and never torn down; only the per-test `wf` user below is cleaned.
     test.beforeAll(async ({ request }) => {
         testInfo = await ensureSharedTestUser(request);
-    });
-
-    test.afterAll(async ({ request }) => {
-        await cleanupTestUser(request, testInfo.user?.objectId, { userName: testInfo.testUserName });
     });
 
     test('data.data object view shows Tags tab', async ({ page }) => {

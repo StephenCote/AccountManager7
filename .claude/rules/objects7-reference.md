@@ -78,8 +78,9 @@ Live example, diagnosed and deliberately left unfixed: **`iso42001.certification
 impact table, and the recommended collector-level fix are in **`aiDocs/KnownIssues.md` KI-69**. Read
 that before touching either the model or the collector.
 
-**Related trap when fixing any of this: the persisted schema wins over the resource — but ONLY after
-`IOSystem.open()` has finished. Adding a NEW FIELD to a model JSON needs no migration at all.**
+**Related trap when fixing any of this: the persisted schema wins over the resource — but ONLY for a
+model whose schema is first loaded after `IOSystem.open()` has finished (see Path 2). Adding a NEW
+FIELD to a model JSON needs no migration at all.**
 
 Two paths, and conflating them wastes a lot of effort in both directions.
 
@@ -138,15 +139,36 @@ ZONETIME/TIMESTAMP), so a `"default"` in the JSON is an *instantiation-time* def
 pre-existing row reads SQL `NULL` — handle null as the primary path, never assume the default string
 is in the column. And because the `ALTER` is additive and nullable, it succeeds on a populated table.
 
-*Path 2 — runtime reads, blob-driven. This is the real trap.* Once `IOSystem` is initialized,
-`RecordFactory.getSchema()` (`:388-399`) → `getIOSchema()` (`:299-316`) reads the serialized
-`ModelSchema` from `a7_system_modelschema_0_1` and only falls back to the resource when there is no
-row. So **changing the shape of an EXISTING field** (type, `maxLength`, validation, `shortName`,
-access roles) on a provisioned deployment is not picked up by the boot patch — that loop only adds
-missing *columns*. For those, call `RecordFactory.updateSchemaDefinition(ModelSchema)` (`:475-507`),
-or start against a fresh database. Note `updateSchemaDefinition` ends at `unloadSchema` +
-`CacheUtil.clearCache()`, so its effect is **in-process only** — a second JVM (Console7) against the
-same DB keeps the stale schema until *it* restarts.
+*Path 2 — runtime reads, blob-driven. This is the real trap, but it is narrower than it reads.*
+`RecordFactory.getSchema()` (`:388-399`) consults the in-process `schemas` map first and only on a miss
+calls `getIOSchema()` (`:299-316`), which reads the serialized `ModelSchema` from
+`a7_system_modelschema_0_1` and falls back to the resource when there is no row. The blob is therefore
+consulted only for a model whose **first** `getSchema` happens **after** `IOSystem` is initialized —
+a model not in `ModelNames.MODELS` at `open()` time, or one evicted by `unloadSchema`/`clearCache`.
+Every model the boot loop touched is already cached resource-derived and stays so for the JVM's life.
+
+Two consequences, which pull in opposite directions:
+- **Non-DDL shape of an existing field (instantiation `default`, `description`, validation, `shortName`,
+  access roles) on a boot-registered model follows the resource on restart, blob or no blob.** Measured
+  2026-10-09 (V3 Phase 0 P0-5): `"default": true` was added to `olio.sd.config.flux2IncludeLandscapeRef`
+  in the JSON only; `am7db`'s persisted blob for `olio.sd.config` still carries **no** `default` and the
+  **old** description (`convert_from(schemadata,'UTF8')`), yet `TestFlux2Composite#flux2IncludeLandscapeRefDefaultsTrue`
+  and `TestPbConfigPrecedence#effectiveConfigCarriesFlux2IncludeLandscapeRefTrueByDefault` read `true`
+  with no `updateSchemaDefinition` call. Every JVM that registers the model before `open()` (Objects7
+  tests via `BaseTest`, Service7 via `RestServiceEventListener`) behaves this way.
+- **DDL shape of an existing column (type, `maxLength`) does not follow the resource** — the boot patch
+  loop only adds missing *columns*, so the table keeps the old definition even though the in-process
+  schema describes the new one. For those, call `RecordFactory.updateSchemaDefinition(ModelSchema)`
+  (`:475-507`) and handle the column yourself, or start against a fresh database. Note
+  `updateSchemaDefinition` ends at `unloadSchema` + `CacheUtil.clearCache()`, so its effect is
+  **in-process only** — a second JVM (Console7) against the same DB keeps the stale schema until *it*
+  restarts — and after the unload the **blob** answers until restart, so write the blob first (which
+  `updateSchemaDefinition` does).
+
+So "the persisted blob wins" is true only for lazily-loaded models and post-unload reads; the stale
+blob is otherwise inert, which is also why it is safe to leave stale (`system.connection.dialect` proof
+above). A `default` carried only by the resource is still an **instantiation-time** default — existing
+rows read SQL `NULL`/the DDL default, never the JSON one.
 
 **Never `RecordFactory.releaseCustomSchema(name)` to "refresh" a schema.** It is
 `DROP TABLE IF EXISTS <t> CASCADE` (`:594`) plus a delete of the modelschema row, and its

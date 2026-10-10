@@ -19,7 +19,7 @@ import { login, screenshot } from './helpers/auth.js';
 import { ensureIso42001TestUser, deleteObject, apiLogin, apiLogout } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const REST = 'https://localhost:8899/AccountManagerService7/rest';
+const REST = (process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899') + '/AccountManagerService7/rest';
 // The chatConfig (endpoint) name the launch test runs against — must resolve to a chatConfig pointing at the
 // DGX Spark (192.168.1.42) with model qwen3:8b. Override with ISO_LLM_ENDPOINT to match your test-org config.
 const LLM_ENDPOINT = process.env.ISO_LLM_ENDPOINT || 'generalChat';

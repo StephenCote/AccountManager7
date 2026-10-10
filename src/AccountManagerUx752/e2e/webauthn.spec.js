@@ -10,7 +10,7 @@ import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot, openAppTool } from './helpers/auth.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = 'https://localhost:8899';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
 
 async function newApiContext() {

@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser, createNote, searchByField } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = 'https://localhost:8899';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
 function b64(str) { return Buffer.from(str).toString('base64'); }
 async function newCtx() { return await pwRequest.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true }); }

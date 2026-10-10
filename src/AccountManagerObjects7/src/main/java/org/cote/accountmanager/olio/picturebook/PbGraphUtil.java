@@ -81,9 +81,10 @@ public class PbGraphUtil {
 	 * of a config-driven hash: a default change that alters output is silent until someone bumps it.
 	 * <p>
 	 * History: {@code pb2/1} hashed the fully materialised effective config (schema defaults included);
-	 * {@code pb2/2} switched to declared values only ({@code sdConfig/v2}).
+	 * {@code pb2/2} switched to declared values only ({@code sdConfig/v2});
+	 * {@code pb2/3} — flux2IncludeLandscapeRef schema default true (V3 P0-5).
 	 */
-	public static final String PB_PIPELINE_VERSION = "pb2/2";
+	public static final String PB_PIPELINE_VERSION = "pb2/3";
 
 	/**
 	 * Fields excluded from a {@code planMost(true)} on the two models that carry the

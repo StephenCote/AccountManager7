@@ -74,9 +74,10 @@
 #  publishes a linux/arm64 manifest - verified 2026-09-17 with
 #  `docker manifest inspect` on maven:3.9-eclipse-temurin-26, node:24-alpine,
 #  eclipse-temurin:26-jre-alpine and pgvector/pgvector:0.8.6-pg18-trixie - so a
-#  native build works with no --platform flag. Do NOT reuse a docker-data/pg
-#  directory that was initialised by an x86 Postgres: the data directory is not
-#  portable across architectures and Postgres will refuse to start on it.
+#  native build works with no --platform flag. Do NOT reuse an am7-test-pg
+#  volume (the Postgres data dir; a named volume since 2026-10-10, formerly
+#  docker-data/pg) that was initialised by an x86 Postgres: the data directory
+#  is not portable across architectures and Postgres will refuse to start on it.
 #
 #  ON THE DGX SPARK SPECIFICALLY: the compose defaults point the LLM/media
 #  sidecar URLs (OLLAMA_API_BASE, EMBEDDING_SERVER, FACE/TAG/VOICE_*) at
@@ -203,7 +204,7 @@ EMBED_MARKER="$AM7_DATA_ROOT/.embedding-provider"
 
 # CORS_ALLOWED_ORIGINS REPLACES the compose default, so list every origin -
 # appending is not a thing. localhost + 127.0.0.1 + the LAN IP, http and https.
-CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:-https://localhost:$APP_PORT,http://localhost:$APP_PORT,https://127.0.0.1:$APP_PORT,http://127.0.0.1:$APP_PORT,http://localhost:8899,https://localhost:8899,https://$LAN_IP:$APP_PORT,http://$LAN_IP:$APP_PORT}"
+CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:-https://localhost:$APP_PORT,http://localhost:$APP_PORT,https://127.0.0.1:$APP_PORT,http://127.0.0.1:$APP_PORT,http://localhost:8899,https://localhost:8899,https://localhost:8898,https://127.0.0.1:8898,https://$LAN_IP:$APP_PORT,http://$LAN_IP:$APP_PORT}"
 export CORS_ALLOWED_ORIGINS CATALINA_OPTS
 
 usage() {

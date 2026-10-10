@@ -29,6 +29,8 @@ import org.cote.accountmanager.olio.picturebook.PbArtifactUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbConfigUtil;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
+import org.cote.accountmanager.olio.picturebook.PbNodeExecutor;
+import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
 import org.cote.accountmanager.olio.picturebook.PbWatchedFields;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -209,20 +211,21 @@ public class TestPbGraph extends BaseTest {
 			+ " Records returned: workflow=" + (wfFull[0] != null) + " run=" + (runFull[0] != null)
 			+ " workflow+filter=" + (wfFiltered[0] != null) + "; explicit projection=" + true);
 
-		/// CHARACTERIZATION, measured 2026-08-16 - deliberately pinned rather than worked around.
-		/// planMost terminates but the read returns NOTHING, and the reason is not the cycle: the plan
-		/// lists the foreign 'book' field while the generated SELECT does not emit that column, so the
-		/// reader throws
-		///   ReaderException: PSQLException: The column name book was not found in this ResultSet
-		/// and AccessPoint.find reports "No results". Consequence to carry into phase 4: the generic
-		/// GET /rest/model/{type}/{objectId}/full route would return nothing for these models. That is a
-		/// safer failure than unbounded recursion, and it is why every PB2 utility uses an explicit
-		/// setRequest. If a future change makes planMost work here, this assertion fails and the
-		/// disposition gets revisited on purpose.
-		assertNull("planMost(true) on olio.pb.workflow is expected to return null today (the plan names the"
-			+ " foreign 'book' column, the SELECT omits it, the reader throws). If this now returns a record,"
-			+ " the platform was fixed - update this characterization deliberately.", wfFull[0]);
-		assertNull("Same for olio.pb.run", runFull[0]);
+		/// CHARACTERIZATION, re-measured 2026-10-09. From 2026-08-16 this leg pinned planMost returning
+		/// NOTHING: the plan listed the foreign 'book' field, the generated SELECT omitted that column, and
+		/// the reader threw "The column name book was not found in this ResultSet". The 2026-10-07 nested
+		/// plan budget (QueryPlan.planForFields reduces any nested MOST plan over MAX_NESTED_PLAN_FIELDS to
+		/// its common fields, see .claude/rules/model-api.md) fixed that: the wide olio.pb.book nested model
+		/// is now reduced instead of dropped, the column is emitted, and the read returns the record. So the
+		/// generic GET /rest/model/{type}/{objectId}/full route now answers for these models. Pinned the
+		/// other way round on purpose: if planMost goes back to returning null here, that is a regression of
+		/// the budget, not a return to a known-safe state.
+		assertNotNull("planMost(true) on olio.pb.workflow returns the record since the nested plan budget"
+			+ " (2026-10-07); null again means the SELECT dropped a planned foreign column - a regression", wfFull[0]);
+		assertEquals("...and it must be the workflow that was planned", (String) wf.get(FieldNames.FIELD_OBJECT_ID),
+			(String) wfFull[0].get(FieldNames.FIELD_OBJECT_ID));
+		assertNotNull("Same for olio.pb.run", runFull[0]);
+		assertNotNull("Same for olio.pb.workflow with FULL_PLAN_FILTER", wfFiltered[0]);
 	}
 
 	/** A {@code planMost(true)} read, optionally filtered, of one record by objectId. */
@@ -787,17 +790,21 @@ public class TestPbGraph extends BaseTest {
 
 	/**
 	 * Filled from the first run; see {@link #case09_computeInputHashGoldenVector()}. Updated after S6
-	 * (book.sdConfig/compositeSdConfig promoted to foreign FK) and again for {@code pb2/2} (2026-09-28:
-	 * configHash over the declared config, {@code sdConfig/v2}). Canonical form under pb2/2:
+	 * (book.sdConfig/compositeSdConfig promoted to foreign FK), again for {@code pb2/2} (2026-09-28:
+	 * configHash over the declared config, {@code sdConfig/v2}), and again for {@code pb2/3}
+	 * (2026-10-09, V3 P0-5: {@code flux2IncludeLandscapeRef} gained a schema default of TRUE, which
+	 * flips the FLUX.2 setting reference on for every composite, so the pipeline version was bumped to
+	 * mark existing nodes stale; the configHash and promptHash lines are unchanged, only the version
+	 * line moved). Canonical form under pb2/3:
 	 * <pre>
-	 * pb2/2
+	 * pb2/3
 	 * nodeType=COMPOSITE
 	 * configHash=b55b0563681f55e253dfe44f380834d720af8a9a512e15d9b9c780410647be48
 	 * promptHash=a30f62640fff29e1f4a99e07ddcd38a0db9b8840dcab47e329a9e10f782fd587
 	 * </pre>
 	 */
 	private static final String GOLDEN_INPUT_HASH =
-		"94c3415cde81d1874b5d52d0381529d9fac6ce93765b744f615f8aa177c84ff1";
+		"49cd69fcaa24fd8b11fc3268eaa095b2b7c7fdecb00b2999f2762d60f0ef915d";
 
 	// ───────── 10: recomputeStatus computes, it does not write ─────────
 
@@ -1110,6 +1117,72 @@ public class TestPbGraph extends BaseTest {
 			assertTrue("The message must explain the name requirement: " + e.getMessage(),
 				e.getMessage().contains("without a name"));
 		}
+	}
+
+	// ───────── 16: V3 P0-8 - a node that throws mid-execution is closed FAILED, not left PENDING ─────────
+
+	/**
+	 * Public-API-only: a LANDSCAPE node scoped to a real scene, executed against an SD server URL that
+	 * cannot answer ({@code http://127.0.0.1:1}). The exception must propagate unchanged AND a fresh read
+	 * of the node must show FAILED with a non-blank {@code lastError} and a {@code lastRunAt}. Before P0-8
+	 * the node kept its PENDING status and carried no error at all.
+	 */
+	@Test
+	public void case16_runAndNodeClosedFailedOnException() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = book(u);
+		BaseRecord wf = workflow(u, bk);
+		long orgId = orgOf(u);
+
+		/// A random, large sceneIndex: sceneName(book, index) must be unique in the shared book's group.
+		int sceneIndex = 100000 + Math.abs(UUID.randomUUID().hashCode() % 800000);
+		BaseRecord scene = PbBookUtil.createScene(u, bk, sceneIndex, "p08 scene", PbBookUtil.bookGroupPath(SLUG));
+		assertNotNull("Failed to create the P0-8 scene", scene);
+		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull(sceneOid);
+
+		BaseRecord n = node(u, wf, "p08-landscape", PbNodeTypeEnumType.LANDSCAPE, 30);
+		assertEquals("Precondition: a fresh node is PENDING", PbNodeStatusEnumType.PENDING, statusOf(u, n));
+
+		/// Scope the node to the scene (identity + name + the two scope fields; PbGraphUtil.patchOf is
+		/// package-private, so the patch is built the same way by hand).
+		BaseRecord scopePatch = RecordFactory.newInstance(OlioModelNames.MODEL_PB_NODE, new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			OlioFieldNames.FIELD_PB_SCOPE, OlioFieldNames.FIELD_PB_SCOPE_REF
+		});
+		scopePatch.set(FieldNames.FIELD_ID, n.get(FieldNames.FIELD_ID));
+		scopePatch.set(FieldNames.FIELD_OBJECT_ID, n.get(FieldNames.FIELD_OBJECT_ID));
+		scopePatch.set(FieldNames.FIELD_NAME, n.get(FieldNames.FIELD_NAME));
+		scopePatch.set(OlioFieldNames.FIELD_PB_SCOPE, PbPipelineUtil.SCOPE_SCENE);
+		scopePatch.set(OlioFieldNames.FIELD_PB_SCOPE_REF, sceneOid);
+		assertNotNull("Scope patch must be written", ioContext.getAccessPoint().update(u, scopePatch));
+
+		BaseRecord fresh = PbGraphUtil.readNode(u, n.get(FieldNames.FIELD_OBJECT_ID), orgId);
+		assertNotNull(fresh);
+		assertEquals("Precondition: scopeRef must be the scene objectId", sceneOid, fresh.get(OlioFieldNames.FIELD_PB_SCOPE_REF));
+		assertNull("Precondition: no lastError before execution", fresh.get(OlioFieldNames.FIELD_PB_LAST_ERROR));
+
+		long t0 = System.currentTimeMillis();
+		Exception thrown = null;
+		try {
+			PbNodeExecutor.executeNode(u, bk, wf, fresh, "http://127.0.0.1:1");
+			fail("executeNode against an unreachable SD server must throw");
+		}
+		catch(Exception e) {
+			thrown = e;
+		}
+		long durationMs = System.currentTimeMillis() - t0;
+		logger.info("case16 executeNode against http://127.0.0.1:1 threw " + thrown.getClass().getSimpleName()
+			+ ": " + thrown.getMessage() + " (durationMs=" + durationMs + ")");
+
+		BaseRecord after = PbGraphUtil.readNode(u, n.get(FieldNames.FIELD_OBJECT_ID), orgId);
+		assertNotNull(after);
+		assertEquals("P0-8: the node must be FAILED after an exception, never left PENDING",
+			PbNodeStatusEnumType.FAILED, after.getEnum(OlioFieldNames.FIELD_PB_NODE_STATUS));
+		String lastError = after.get(OlioFieldNames.FIELD_PB_LAST_ERROR);
+		assertNotNull("P0-8: lastError must be stamped", lastError);
+		assertFalse("P0-8: lastError must not be blank", lastError.isBlank());
+		assertNotNull("P0-8: lastRunAt must be stamped", after.get(OlioFieldNames.FIELD_PB_LAST_RUN_AT));
 	}
 
 	// ─────────────────────────────── helpers ───────────────────────────────

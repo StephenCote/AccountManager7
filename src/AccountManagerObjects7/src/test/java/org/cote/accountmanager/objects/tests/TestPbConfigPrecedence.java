@@ -88,4 +88,30 @@ public class TestPbConfigPrecedence extends BaseTest {
 		assertEquals("With no node override, the book sdConfig value (steps=11) must be effective",
 			BOOK_STEPS, bookOnlySteps);
 	}
+
+	/**
+	 * V3 P0-5: {@code flux2IncludeLandscapeRef} now carries a schema default of TRUE, so the effective
+	 * config must say TRUE with no book at all, with a schema-built book config that never touched the
+	 * field, and only an explicit FALSE on the book config may turn it off.
+	 */
+	@Test
+	public void effectiveConfigCarriesFlux2IncludeLandscapeRefTrueByDefault() throws Exception {
+		BaseRecord noBook = PbConfigUtil.resolveEffectiveConfig(null, null, false);
+		assertNotNull("resolveEffectiveConfig must never return null", noBook);
+		assertEquals("No book: the effective config must carry the schema default TRUE",
+			Boolean.TRUE, noBook.get("flux2IncludeLandscapeRef"));
+
+		BaseRecord bookCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		assertEquals("precondition: a schema-built book config reads TRUE", Boolean.TRUE, bookCfg.get("flux2IncludeLandscapeRef"));
+		BaseRecord book = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK);
+		book.set(OlioFieldNames.FIELD_PB_SD_CONFIG, bookCfg);
+		BaseRecord withBook = PbConfigUtil.resolveEffectiveConfig(book, null, false);
+		assertEquals("Schema-built book config: the effective config must still carry TRUE",
+			Boolean.TRUE, withBook.get("flux2IncludeLandscapeRef"));
+
+		bookCfg.set("flux2IncludeLandscapeRef", Boolean.FALSE);
+		BaseRecord explicitOff = PbConfigUtil.resolveEffectiveConfig(book, null, false);
+		assertEquals("An explicit FALSE on the book config must be honoured",
+			Boolean.FALSE, explicitOff.get("flux2IncludeLandscapeRef"));
+	}
 }

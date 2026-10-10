@@ -9,7 +9,8 @@
  * module is reset and re-loaded for the same chat key to prove the values came from the server, not
  * from the in-memory singleton or localStorage (the KI-65 defect).
  *
- * Needs the Vite dev server (:8899) — `import('/src/...')` is not available from the Docker dist.
+ * Needs a Vite dev server — `import('/src/...')` is not available from the Docker dist — so it runs in
+ * the `chromium-vite` project (playwright.config.js: 8899 locally, 8898 -> Docker when PLAYWRIGHT_BASE_URL is set).
  * Uses ensureSharedTestUser() (never admin).
  */
 import { test, expect } from './helpers/fixtures.js';
@@ -17,8 +18,9 @@ import { login } from './helpers/auth.js';
 import { ensureSharedTestUser, apiLogin, apiLogout, deleteObject } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = 'https://localhost:8899';
-const REST = BASE_URL + '/AccountManagerService7/rest';
+// Relative: resolved against the project's baseURL (8899 locally, 8898 -> Docker under the gate) so the
+// read-back and the cleanup hit the same backend the page logged in to.
+const REST = '/AccountManagerService7/rest';
 const EDITED_STEPS = 13;
 
 async function readSdConfig(ctx, name) {
@@ -48,7 +50,7 @@ test.describe('Chat SD config — server-side persistence + Skip-landscape round
 
     test.afterAll(async () => {
         if (!recordObjectId) return;
-        let ctx = await pwRequest.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
+        let ctx = await pwRequest.newContext({ baseURL: test.info().project.use.baseURL, ignoreHTTPSErrors: true });
         try {
             await apiLogin(ctx, { user: testInfo.testUserName, password: testInfo.testPassword });
             await deleteObject(ctx, 'olio.sd.config', recordObjectId);

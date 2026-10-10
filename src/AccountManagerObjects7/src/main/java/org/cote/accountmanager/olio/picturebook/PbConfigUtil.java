@@ -115,10 +115,12 @@ public class PbConfigUtil {
 	));
 
 	/**
-	 * The six FLUX.2 knobs {@code flux2Defaults.json} governs, paired with their resource key. Each
-	 * declares <b>no schema default on purpose</b>: a default is never null, so it would always beat the
-	 * resource and make the file dead (the {@code flux2Cfg} field's own description records that this
-	 * happened live once already).
+	 * The six FLUX.2 knobs {@code flux2Defaults.json} governs, paired with their resource key. The five
+	 * numeric ones declare <b>no schema default on purpose</b>: a default is never null, so it would always
+	 * beat the resource and make the file dead (the {@code flux2Cfg} field's own description records that
+	 * this happened live once already). {@code flux2IncludeLandscapeRef} is the exception since V3 Phase 0
+	 * (G-8): it carries a schema default of {@code true}, so for schema-built records the resource value is
+	 * only reached when the field is absent (a sparse record from a projection).
 	 */
 	private static final String[][] FLUX2_DEFAULTED_FIELDS = new String[][] {
 		{"flux2Cfg", "cfgScale"},
@@ -294,6 +296,32 @@ public class PbConfigUtil {
 	 * @return a new, fully merged {@code olio.sd.config}; never null
 	 */
 	public static BaseRecord resolveEffectiveConfig(BaseRecord book, BaseRecord node, boolean composite) {
+		return resolveEffectiveConfig(book, node, composite, null);
+	}
+
+	/**
+	 * {@link #resolveEffectiveConfig(BaseRecord, BaseRecord, boolean)} with an additional <b>client
+	 * overlay</b> tier (V3 §30 P0-10b / G-32) that sits <i>between</i> the book tier and the node's
+	 * {@code configOverride}:
+	 * <ol>
+	 * <li>schema defaults;</li>
+	 * <li>book tier;</li>
+	 * <li>{@code clientOverlay} - a sparse, per-request {@code olio.sd.config} supplied by an interactive
+	 * caller (the ChapBook render dialog). Applied with {@link SDUtil#applyOverrides}, so it is additive
+	 * and sparse-safe, and {@link SDUtil#SD_OVERRIDE_SKIP} keeps the overlay's identity/group fields
+	 * from leaking into the merged record;</li>
+	 * <li>the node's (or scene's) sparse {@code configOverride} - still highest precedence, so a per-page
+	 * override survives a client overlay;</li>
+	 * <li>{@link #applyFlux2Defaults}.</li>
+	 * </ol>
+	 * The overlay is <b>never hashed</b>: {@link #resolveDeclaredConfig} does not take one, so an
+	 * interactive overlay cannot change {@code configHash}/{@code inputHash}. For the same reason this
+	 * overload must <b>never be called from {@code PbNodeExecutor}</b> or any other graph executor - a
+	 * graph run's effective config has to be reproducible from persisted state alone.
+	 *
+	 * @param clientOverlay sparse per-request overrides - may be null (then identical to the 3-arg form)
+	 */
+	public static BaseRecord resolveEffectiveConfig(BaseRecord book, BaseRecord node, boolean composite, BaseRecord clientOverlay) {
 		BaseRecord effective = null;
 		try {
 			effective = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
@@ -302,7 +330,7 @@ public class PbConfigUtil {
 			logger.error("Failed to instantiate " + OlioModelNames.MODEL_SD_CONFIG + ": " + e.getMessage(), e);
 			throw new PictureBookException(500, "Failed to instantiate " + OlioModelNames.MODEL_SD_CONFIG);
 		}
-		return mergeTiers(effective, book, node, composite);
+		return mergeTiers(effective, book, clientOverlay, node, composite);
 	}
 
 	/**
@@ -325,7 +353,8 @@ public class PbConfigUtil {
 		BaseRecord declared = null;
 		try {
 			/// newInstance with an EMPTY field array materialises every field; the six FLUX.2 names give
-			/// applyFlux2Defaults something to fill (it skips fields the record lacks) and carry no default.
+			/// applyFlux2Defaults something to fill (it skips fields the record lacks). Five carry no default;
+			/// flux2IncludeLandscapeRef materialises as its schema default (true) and is left alone.
 			String[] flux2 = new String[FLUX2_DEFAULTED_FIELDS.length];
 			for(int i = 0; i < FLUX2_DEFAULTED_FIELDS.length; i++) {
 				flux2[i] = FLUX2_DEFAULTED_FIELDS[i][0];
@@ -336,11 +365,14 @@ public class PbConfigUtil {
 			logger.error("Failed to instantiate a sparse " + OlioModelNames.MODEL_SD_CONFIG + ": " + e.getMessage(), e);
 			throw new PictureBookException(500, "Failed to instantiate " + OlioModelNames.MODEL_SD_CONFIG);
 		}
-		return mergeTiers(declared, book, node, composite);
+		return mergeTiers(declared, book, null, node, composite);
 	}
 
-	private static BaseRecord mergeTiers(BaseRecord base, BaseRecord book, BaseRecord node, boolean composite) {
+	private static BaseRecord mergeTiers(BaseRecord base, BaseRecord book, BaseRecord clientOverlay, BaseRecord node, boolean composite) {
 		SDUtil.applyOverrides(base, bookConfig(book, composite));
+		if(clientOverlay != null) {
+			SDUtil.applyOverrides(base, clientOverlay);
+		}
 		if(node != null && node.hasField(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE)) {
 			SDUtil.applyOverrides(base, parseOverride(node.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE)));
 		}

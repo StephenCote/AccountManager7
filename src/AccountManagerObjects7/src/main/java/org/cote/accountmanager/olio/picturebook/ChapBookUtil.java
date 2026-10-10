@@ -1585,6 +1585,25 @@ public class ChapBookUtil {
 		if (sdApiType == null || sdServer == null) {
 			throw new PictureBookException(500, "SD server not configured");
 		}
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType.toUpperCase()), sdServer);
+		return renderChapBookScene(user, sceneObjectId, sdu, chatConfig, clientSdConfig, promptOverride);
+	}
+
+	/**
+	 * Per-scene render against a caller-supplied {@link SDUtil}. Package-private seam so a test can hand
+	 * in a capturing subclass and assert the exact config/prompt that reaches {@code createImage}
+	 * without a live SD server; the public overloads build the {@link SDUtil} from
+	 * {@code sdApiType}/{@code sdServer} and delegate here. Everything else - scene/book resolution,
+	 * CHAPBOOK check, prompt-override persistence - is identical.
+	 */
+	static SceneRenderResult renderChapBookScene(BaseRecord user, String sceneObjectId, SDUtil sdu,
+			BaseRecord chatConfig, BaseRecord clientSdConfig, String promptOverride) {
+		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
+			throw new PictureBookException(400, "user and sceneObjectId are required");
+		}
+		if (sdu == null) {
+			throw new PictureBookException(500, "SD server not configured");
+		}
 
 		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 
@@ -1632,7 +1651,6 @@ public class ChapBookUtil {
 			throw new PictureBookException(400, "Book " + bookObjectId + " is not a CHAPBOOK");
 		}
 
-		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType.toUpperCase()), sdServer);
 		// Single-scene render: the client drives one scene at a time, so the full running thread of
 		// sibling scenes is not reconstructed here (that would require loading and ordering every scene
 		// of the book on each per-scene call). The continuity context is derived from THIS scene's mood.
@@ -1712,6 +1730,48 @@ public class ChapBookUtil {
 		bq.setRequest(bookReq.toArray(new String[0]));
 		bq.setCache(false);
 		return IOSystem.getActiveContext().getAccessPoint().find(user, bq);
+	}
+
+	/**
+	 * Read a ChapBook's stored book-level SD config (V3 P0-10a). Resolves the book by objectId with the
+	 * render projection, requires it to be a CHAPBOOK, and delegates to
+	 * {@link PbBookUtil#getBookSdConfig}. Never writes.
+	 *
+	 * @return the stored {@code olio.sd.config}, or null when the book has none yet
+	 * @throws PictureBookException 400 for missing args, 404 when the book is not readable, 403 when it is
+	 *         not a CHAPBOOK
+	 */
+	public static BaseRecord getBookSdConfig(BaseRecord user, String bookObjectId) {
+		BaseRecord book = loadChapBookForConfig(user, bookObjectId);
+		return PbBookUtil.getBookSdConfig(user, book);
+	}
+
+	/**
+	 * Persist a ChapBook's book-level SD config from a sparse client record (V3 P0-10a / G-26 for
+	 * ChapBook) - see {@link PbBookUtil#setBookSdConfig} for the persistence contract. The next render
+	 * of any scene in the book picks the stored row up through the book tier of
+	 * {@link PbConfigUtil#resolveEffectiveConfig}.
+	 *
+	 * @return the stored config after the write, re-read fresh
+	 * @throws PictureBookException 400 for missing args, 404 when the book is not readable, 403 when it is
+	 *         not a CHAPBOOK, 500 when a write fails
+	 */
+	public static BaseRecord setBookSdConfig(BaseRecord user, String bookObjectId, BaseRecord sparse) {
+		BaseRecord book = loadChapBookForConfig(user, bookObjectId);
+		return PbBookUtil.setBookSdConfig(user, book, sparse);
+	}
+
+	private static BaseRecord loadChapBookForConfig(BaseRecord user, String bookObjectId) {
+		if (user == null || bookObjectId == null || bookObjectId.isBlank()) {
+			throw new PictureBookException(400, "user and bookObjectId are required");
+		}
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		BaseRecord book = loadRenderBook(user, bookObjectId, orgId);
+		if (book == null) {
+			throw new PictureBookException(404, "Book not found: " + bookObjectId);
+		}
+		requireChapBook(book);
+		return book;
 	}
 
 	/**
@@ -1859,21 +1919,27 @@ public class ChapBookUtil {
 		if (sceneGroupPath == null) sceneGroupPath = (bookGroupPath != null ? bookGroupPath + "/Scenes" : "~/Scenes");
 
 		try {
-			/// PB2 config precedence (§2.4): scene configOverride → book sdConfig → flux2Defaults →
-			/// Flux2Defaults constants. A ChapBook scene has no sceneNode, so the SCENE itself is the
-			/// override carrier — resolveEffectiveConfig duck-types the carrier via
+			/// PB2 config precedence (§2.4): scene configOverride → client overlay → book sdConfig →
+			/// flux2Defaults → Flux2Defaults constants. A ChapBook scene has no sceneNode, so the SCENE
+			/// itself is the override carrier — resolveEffectiveConfig duck-types the carrier via
 			/// node.hasField(configOverride)/node.get(configOverride), and listScenes() projects that
 			/// field (PbBookUtil.sceneRequest). The scene's configOverride stays a sparse JSON string;
-			/// it is never materialized from RecordFactory.newInstance(olio.sd.config).
-			BaseRecord sdConfig = PbConfigUtil.resolveEffectiveConfig(book, scene, false);
-			if (clientSdConfig != null) {
-				SDUtil.applyOverrides(sdConfig, clientSdConfig);
-			}
+			/// it is never materialized from RecordFactory.newInstance(olio.sd.config). The client
+			/// overlay (V3 P0-10b) is a tier BELOW the scene override, so a per-page override survives it.
+			BaseRecord sdConfig = PbConfigUtil.resolveEffectiveConfig(book, scene, false, clientSdConfig);
 			SDUtil.fillStyleDefaults(sdConfig);
-			sdConfig.set("description", sdPrompt);
+			/// V3 P0-9 (G-25): createImage uses `description` verbatim as the positive prompt and never
+			/// consults getSDConfigPrompt, so the style clause has to be appended here or the whole
+			/// style tier (style/photoStyle/artStyle/… that fillStyleDefaults just completed) is dead
+			/// weight on the ChapBook path. applyConfigStyle is idempotent on re-render.
+			sdConfig.set("description", SDUtil.applyConfigStyle(sdPrompt, sdConfig));
+			String negative = sdConfig.get("negativePrompt");
+			if (negative == null || negative.isBlank()) {
+				sdConfig.set("negativePrompt", NarrativeUtil.getDefaultNegativePrompt());
+			}
 
 			String imageName = "chapbook_" + sceneOid + "_" + System.currentTimeMillis();
-			List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, sdConfig, imageName, 1, false, -1);
+			List<BaseRecord> images = sdu.createImage(user, sceneGroupPath, sdConfig, imageName, 1, SDUtil.hiresOf(sdConfig), -1);
 			if (images == null || images.isEmpty()) {
 				logger.warn("renderChapBook: SD generation returned no images for scene " + sceneOid);
 				// SD failed, not the LLM: carry llmUnavailable if the LLM was in fact down, but never

@@ -143,19 +143,41 @@ async function createObjectCtx(ctx, schema, data) {
     return await safeJson(resp);
 }
 
-async function listObjectsCtx(ctx, type, groupId, count) {
-    let fields = [{ name: 'groupId', comparator: 'equals', value: String(groupId) }];
+async function listObjectsCtx(ctx, type, groupId, count, startRecord) {
+    // groupId is a long on the wire: a string value silently matches nothing (CLAUDE.md "typed query field values").
+    let fields = [{ name: 'groupId', comparator: 'equals', value: Number(groupId) }];
     let resp = await ctx.post(REST + '/model/search', {
         data: {
             schema: 'io.query',
             type: type,
             fields: fields,
             request: ['id', 'objectId', 'name', 'groupPath'],
-            recordCount: count || 10
+            startRecord: startRecord || 0,
+            recordCount: count || 10,
+            cache: false
         }
     });
     let result = await safeJson(resp);
     return (result && result.results) ? result.results : [];
+}
+
+/**
+ * Delete every record of `type` inside the group, in pages. Deleting a group never cascades to its
+ * contents (KnownIssues KI-20/21), so this is what keeps a teardown from leaving orphans behind.
+ * Returns the number of records whose DELETE was issued.
+ */
+async function deleteGroupContentsCtx(ctx, type, groupId) {
+    const PAGE = 200;
+    let all = [];
+    for (let start = 0; ; start += PAGE) {
+        let page = await listObjectsCtx(ctx, type, groupId, PAGE, start);
+        all.push(...page);
+        if (page.length < PAGE) break;
+    }
+    for (const rec of all) {
+        if (rec && rec.objectId) await deleteObjectCtx(ctx, type, rec.objectId).catch(() => {});
+    }
+    return all.length;
 }
 
 async function analyzeFaceCtx(ctx, imageDataUrl) {
@@ -247,6 +269,14 @@ export async function cleanupTestUser(request, userObjectId, opts = {}) {
     const org = opts.org || '/Development';
     const userName = opts.userName;
 
+    // The persistent fixture users are shared by every spec and are never torn down. Deleting one
+    // mid-suite orphans its ~/Poems, ~/Notes, ~/Chat groups under a dead ownerId; the next
+    // ensure*() recreates the user but not those groups, so every write into them is AUDIT DENY
+    // (bugfixSprint2.spec.js did exactly this during the 2026-10-10 full gate).
+    if (userName && PERSISTENT_USERS.has(userName)) {
+        throw new Error('cleanupTestUser: refusing to delete persistent fixture user ' + userName);
+    }
+
     let ctx = await newApiContext();
     try {
         await loginCtx(ctx, { org });
@@ -294,20 +324,37 @@ export async function cleanupTestUser(request, userObjectId, opts = {}) {
 }
 
 /**
- * Full cleanup including orphan pruning + Postgres VACUUM.
+ * Full cleanup: deletes the content records inside the user's ~/Notes and ~/Data first, so removing
+ * the group containers (cleanupTestUser) leaves no orphans behind.
+ *
+ * This used to call GET /rest/model/cleanup after the plain cleanup. That route is the server-side
+ * orphan sweep PLUS a database-wide `vacuum(full, analyze)`, which takes an ACCESS EXCLUSIVE lock on
+ * every table in turn. Under a multi-worker Playwright run it deadlocked against the other workers'
+ * sessions (`deadlock detected ... vacuum(full, analyze, verbose)`, am7-pg log, 2026-10-10 full gate).
+ * Deleting the contents client-side makes the sweep unnecessary, and the vacuum was never a test need.
  */
 export async function cleanupTestUserFull(request, userObjectId, opts = {}) {
-    await cleanupTestUser(request, userObjectId, opts);
+    const org = opts.org || '/Development';
+    const userName = opts.userName;
 
-    let ctx = await newApiContext();
-    try {
-        const org = opts.org || '/Development';
-        await loginCtx(ctx, { org });
-        await ctx.get(REST + '/model/cleanup').catch(() => {});
-        await logoutCtx(ctx);
-    } finally {
-        await ctx.dispose();
+    if (userName && !PERSISTENT_USERS.has(userName)) {
+        let ctx = await newApiContext();
+        try {
+            await loginCtx(ctx, { org });
+            const contentDirs = { Notes: 'data.note', Data: 'data.data' };
+            for (const [dir, type] of Object.entries(contentDirs)) {
+                let group = await findPathCtx(ctx, 'auth.group', 'data', '/home/' + userName + '/' + dir).catch(() => null);
+                if (group && group.id) {
+                    await deleteGroupContentsCtx(ctx, type, group.id);
+                }
+            }
+            await logoutCtx(ctx);
+        } finally {
+            await ctx.dispose();
+        }
     }
+
+    await cleanupTestUser(request, userObjectId, opts);
 }
 
 /**
@@ -539,16 +586,24 @@ async function patchModelCtx(ctx, schema, rec, changed, what) {
     }
 }
 
-/** Search a data.directory-derived model by name within an org (cache:false so freshly-created records are seen). */
-async function searchByNameOrgCtx(ctx, type, name, orgId, fields) {
+/**
+ * Search a data.directory-derived model by name within an org (cache:false so freshly-created records
+ * are seen). Pass the numeric groupId whenever the name is not unique across users in the org: the same
+ * default record names (e.g. 'e2e-chapbook-conn') are created under several test users' ~/Chat dirs, and
+ * a name+org query that also matches another user's record is DENIED as a whole by AccessPoint.find's
+ * per-record canRead — which looks exactly like "no such record" (2026-10-10, ensureChatConfig).
+ */
+async function searchByNameOrgCtx(ctx, type, name, orgId, fields, groupId) {
+    const conds = [
+        { name: 'name', comparator: 'equals', value: name },
+        { name: 'organizationId', comparator: 'equals', value: orgId }
+    ];
+    if (groupId) conds.push({ name: 'groupId', comparator: 'equals', value: Number(groupId) });
     let resp = await ctx.post(REST + '/model/search', {
         data: {
             schema: 'io.query',
             type: type,
-            fields: [
-                { name: 'name', comparator: 'equals', value: name },
-                { name: 'organizationId', comparator: 'equals', value: orgId }
-            ],
+            fields: conds,
             request: fields || ['id', 'objectId', 'name'],
             recordCount: 1,
             cache: false
@@ -626,7 +681,7 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
         // 1. system.connection holding the serverUrl (find-or-create-or-reconcile). `dialect` is what
         //    Chat keys the wire shape on (authoritative over chatConfig.serviceType); `upstream` keys
         //    the Ollama extension params when the dialect is a proxy (KI-72).
-        let conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId, CONN_FIELDS);
+        let conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId, CONN_FIELDS, groupId);
         if (!conn) {
             let connBody = {
                 schema: 'system.connection',
@@ -640,7 +695,7 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
             if (upstream) connBody.upstream = upstream;
             if (apiKey) connBody.apiKey = apiKey;
             await ctx.post(REST + '/model', { data: connBody });
-            conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId, CONN_FIELDS);
+            conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId, CONN_FIELDS, groupId);
         } else {
             let changed = {};
             if (conn.serverUrl !== serverUrl) changed.serverUrl = serverUrl;
@@ -654,7 +709,7 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
                     + conn.serverUrl + ' dialect=' + conn.dialect + ' upstream=' + conn.upstream + ') -> '
                     + serverUrl + ' dialect=' + dialect + ' upstream=' + upstream);
                 await patchModelCtx(ctx, 'system.connection', conn, changed, 'system.connection ' + connectionName);
-                conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId, CONN_FIELDS);
+                conn = await searchByNameOrgCtx(ctx, 'system.connection', connectionName, resolvedOrgId, CONN_FIELDS, groupId);
                 if (!conn || conn.serverUrl !== serverUrl
                     || (dialect && !enumEq(conn.dialect, dialect))
                     || (upstream && !enumEq(conn.upstream, upstream))
@@ -668,7 +723,7 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
 
         // 2. olio.llm.chatConfig referencing that connection by FK (find-or-create-or-reconcile).
         //    serviceType enum is lowercase on the wire ("ollama" → LLMServiceEnumType.OLLAMA).
-        let cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId, CFG_FIELDS);
+        let cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId, CFG_FIELDS, groupId);
         if (!cfg) {
             await ctx.post(REST + '/model', {
                 data: {
@@ -682,7 +737,7 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
                     connection: { schema: 'system.connection', id: conn.id, objectId: conn.objectId }
                 }
             });
-            cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId, CFG_FIELDS);
+            cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId, CFG_FIELDS, groupId);
         } else {
             let changed = {};
             if (cfg.model !== model) changed.model = model;
@@ -697,7 +752,7 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
                     + ' analyzeModel=' + cfg.analyzeModel + ' serviceType=' + cfg.serviceType
                     + ' connection=' + cfgConnId + ') -> ' + JSON.stringify(changed));
                 await patchModelCtx(ctx, 'olio.llm.chatConfig', cfg, changed, 'olio.llm.chatConfig ' + configName);
-                cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId, CFG_FIELDS);
+                cfg = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, resolvedOrgId, CFG_FIELDS, groupId);
                 if (!cfg || cfg.model !== model || cfg.analyzeModel !== analyzeModel
                     || !enumEq(cfg.serviceType, serviceType)
                     || (cfg.connection && cfg.connection.id) !== conn.id) {
@@ -874,6 +929,9 @@ function sAuthZ(containerType, containerObjectId, actorType, actorObjectId, enab
 const ISO_USER = 'e2etest_iso42001';
 const ISO_PASSWORD = 'password';
 const ISO_ROLES_DEFAULT = ['ISO42001Testers', 'ISO42001Reporters', 'ISO42001Certifiers', 'ISO42001Administrators'];
+
+// Provisioned once by the ensure*() helpers and reused by every spec; cleanupTestUser() refuses them.
+const PERSISTENT_USERS = new Set([SHARED_USER, NOROLE_USER, ADMIN_ROLE_USER, ISO_USER]);
 
 export async function ensureIso42001TestUser(request, opts = {}) {
     const org = opts.org || '/Development';

@@ -42,6 +42,7 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 import org.cote.accountmanager.util.ServerConfigUtil;
@@ -687,8 +688,8 @@ public class OlioService {
 			org.cote.accountmanager.io.ParameterList clist = org.cote.accountmanager.io.ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 			clist.parameter(FieldNames.FIELD_NAME, imageName);
 			BaseRecord data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
-			data.set(FieldNames.FIELD_BYTE_STORE, landscapeBytes);
 			data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+			ByteModelUtil.setValue(data, landscapeBytes);
 			IOSystem.getActiveContext().getAccessPoint().create(user, data);
 
 			String oid = data.get(FieldNames.FIELD_OBJECT_ID);

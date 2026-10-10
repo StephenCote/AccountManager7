@@ -115,11 +115,16 @@ Brings up the app **and** a dedicated `am7-pg` pgvector container on their own n
 non-colliding host ports (`9443` app, `15433` pg). Runs with an explicit project name so its network
 stays separate from the main compose project.
 
-**Persistence:** all durable state is **bind-mounted to a concrete host directory** —
+**Persistence:** app state is **bind-mounted to a concrete host directory** —
 `AM7_DATA_DIR`, default `./docker-data` (next to the compose file) — so nothing is ephemeral:
-`docker-data/pg` (Postgres data), `docker-data/am7` (app keystores/vault/datagen/streams), and
-`docker-data/certs` (the shared TLS pair). Without such a mapping this state would live only in the
-container's writable layer and be lost on every recreate. The dir is git-ignored (`src/.gitignore`).
+`docker-data/am7` (app keystores/vault/datagen/streams) and `docker-data/certs` (the shared TLS
+pair). Without such a mapping this state would live only in the container's writable layer and be
+lost on every recreate. The dir is git-ignored (`src/.gitignore`). **The Postgres data directory is
+the exception since 2026-10-10:** it lives in the named volume `am7-test-pg` (`am7test_am7-test-pg`),
+because a Docker Desktop for Windows bind mount is served over 9p and Postgres PANICs on WAL writes
+under load (`Interrupted system call`, then 6-8 minute crash recoveries — hit twice in one Playwright
+full gate). Consequence: a reset is `down` + `docker volume rm am7test_am7-test-pg` + move/delete
+`docker-data` (keystores and DB org records are a matched pair); recipes in `dockerDevSetup.md` §7.
 
 ```bash
 # build images + start the app and the dedicated am7-pg pgvector container
@@ -193,22 +198,20 @@ curl -k -X POST https://127.0.0.1:9443/AccountManagerService7/rest/setup/ \
 # CORS_ALLOWED_ORIGINS must then include https://127.0.0.1:9443 or the login POST is blocked.
 # ────────────────────────────────────────────────────────────────────────────────────────────────
 
-docker compose -p am7test -f docker-compose.test.yml down     # stop; data KEPT on the host (./docker-data)
-docker compose -p am7test -f docker-compose.test.yml down; rm -rf ./docker-data   # full reset (wipe host data)
+docker compose -p am7test -f docker-compose.test.yml down     # stop; data KEPT (./docker-data + am7test_am7-test-pg volume)
+docker compose -p am7test -f docker-compose.test.yml down; docker volume rm am7test_am7-test-pg; rm -rf ./docker-data   # full reset
 ```
 
 The bundled `am7-pg` seeds `am72db`/`am7user`/`password` on first boot (from `POSTGRES_*`), which is
 exactly what the app connects to over the private network — no manual DB/user creation. The app waits
-on `am7-pg`'s healthcheck before starting. In the **default** stack everything is a host bind mount, so `down` keeps the
-data and a full reset is just deleting `./docker-data` (the DB and the keystores share one lifecycle,
-so they can't desync into the orphaned-org state). **The optional profiles are the exception:**
-`langfuse-clickhouse` and `langfuse-minio` (`llmproxy`) use **named volumes**, because both commit by
-atomic rename and that fails on a Docker Desktop Windows bind mount, and the `ollama` profile's
-`ollama-models` volume is named too (multi-GB model blobs, same rename pattern during pulls).
-`rm -rf ./docker-data` therefore clears neither Langfuse trace data nor pulled models — use
-`--profile llmproxy --profile ollama down -v`. **Windows note:**
-if Postgres fails to initialize on the host bind mount (rare on Docker Desktop/WSL2), swap the `am7-pg`
-data mount for a named volume — see the inline comment in `docker-compose.test.yml`.
+on `am7-pg`'s healthcheck before starting. The app state is a host bind mount, so `down` keeps it;
+the DB is the named volume `am7-test-pg` (since 2026-10-10 — see "Persistence" above), so a full
+reset must remove **both** (keystores and DB org records share one lifecycle; dropping one without
+the other is the orphaned-org state). The optional profiles are named volumes too:
+`langfuse-clickhouse` and `langfuse-minio` (`llmproxy`), because both commit by atomic rename and that
+fails on a Docker Desktop Windows bind mount, and the `ollama` profile's `ollama-models` (multi-GB
+model blobs, same rename pattern during pulls). `rm -rf ./docker-data` therefore clears neither the DB,
+nor Langfuse trace data, nor pulled models — `down -v` (with the relevant `--profile`s) does.
 
 ### Option B — canonical stack (external Postgres) — `docker-compose.yml`
 

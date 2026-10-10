@@ -10057,7 +10057,7 @@
         {
           "name": "model",
           "type": "string",
-          "default": "sdXL_v10VAEFix.safetensors"
+          "default": "OfficialStableDiffusion/sd_xl_base_1.0.safetensors"
         },
         {
           "name": "scheduler",
@@ -10081,8 +10081,7 @@
         },
         {
           "name": "refinerModel",
-          "type": "string",
-          "default": "juggernautXL_ragnarokBy.safetensors"
+          "type": "string"
         },
         {
           "name": "refinerMethod",
@@ -10312,7 +10311,7 @@
 			"name": "useKontext",
 			"type": "boolean",
 			"default": false,
-			"description": "Legacy: use the FLUX Kontext stitch-and-prompt pipeline. Ignored when compositeMode is set."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Legacy: use the FLUX Kontext stitch-and-prompt pipeline. Ignored when compositeMode is set."
 		},
 		{
 			"name": "compositeMode",
@@ -10344,7 +10343,8 @@
 		{
 			"name": "flux2IncludeLandscapeRef",
 			"type": "boolean",
-			"description": "Include the landscape/setting image as a FLUX.2 reference. NO SCHEMA DEFAULT ON PURPOSE. Written alongside skipLandscape by SdConfigPanel's 'Skip landscape' checkbox."
+			"default": true,
+			"description": "Include the landscape/setting image as a FLUX.2 reference. Defaults to true (V3 P0-5, G-8) so flux2 composites carry the landscape reference unless explicitly disabled. Written alongside skipLandscape by SdConfigPanel's 'Skip landscape' checkbox."
 		},
 		{
 			"name": "flux2Steps",
@@ -10382,7 +10382,7 @@
 		{
 			"name": "kontextModel",
 			"type": "string",
-			"description": "FLUX Kontext model name for scene compositing. NO DEFAULT ON PURPOSE; set explicitly when opting into compositeMode=kontext."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): FLUX Kontext model name for scene compositing. NO DEFAULT ON PURPOSE; set explicitly when opting into compositeMode=kontext."
 		},
 		{
 			"name": "kontextSteps",
@@ -10390,7 +10390,7 @@
 			"minValue": 1,
 			"maxValue": 100,
 			"default": 28,
-			"description": "Sampling steps for FLUX Kontext generation."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Sampling steps for FLUX Kontext generation."
 		},
 		{
 			"name": "kontextCfg",
@@ -10398,19 +10398,19 @@
 			"minValue": 1,
 			"maxValue": 20,
 			"default": 1,
-			"description": "CFG scale for FLUX Kontext (FLUX uses internal guidance, typically 1)."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): CFG scale for FLUX Kontext (FLUX uses internal guidance, typically 1)."
 		},
 		{
 			"name": "kontextSampler",
 			"type": "string",
 			"default": "euler",
-			"description": "Sampler for FLUX Kontext generation."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Sampler for FLUX Kontext generation."
 		},
 		{
 			"name": "kontextScheduler",
 			"type": "string",
 			"default": "simple",
-			"description": "Scheduler for FLUX Kontext generation."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Scheduler for FLUX Kontext generation."
 		},
 		{
 			"name": "landscapeSetting",

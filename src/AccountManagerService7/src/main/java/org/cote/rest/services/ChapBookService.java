@@ -3,8 +3,10 @@ package org.cote.rest.services;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -65,6 +67,8 @@ import jakarta.ws.rs.core.Response;
  *   POST /poem                       — create a single olio.cb.poem record
  *   GET  /sets                       — list olio.cb.set records
  *   POST /set                        — create a poem set
+ *   GET  /{bookObjectId}/settings    — read the book-level olio.sd.config (V3 P0-10c)
+ *   PUT  /{bookObjectId}/settings    — persist the book-level olio.sd.config from a sparse record
  */
 @DeclareRoles({"admin", "user"})
 @Path("/olio/chap-book")
@@ -74,15 +78,28 @@ public class ChapBookService {
 
     private static final String CB_REQUEST_SCHEMA = "olio.pictureBookRequest";
 
+    private static final ObjectMapper SCHEMA_MAPPER = new ObjectMapper();
+
+    /**
+     * Inject the request schema when the TOP-LEVEL object has none. Decided on the parsed root, not by
+     * substring: a nested record such as {@code sdConfig: {schema: "olio.sd.config", ...}} (what the
+     * Ux752 render dialog and the /settings panel send) must not count as the request's own schema, or
+     * the deserializer rejects the body as "Invalid model name" and the caller sees an empty request.
+     */
     private String ensureSchema(String json) {
         if (json == null) return null;
         OlioModelNames.use();
         String trimmed = json.trim();
-        if (trimmed.contains("\"schema\"")) return json;
-        if (trimmed.startsWith("{")) {
-            return "{\"schema\":\"" + CB_REQUEST_SCHEMA + "\"," + trimmed.substring(1);
+        if (!trimmed.startsWith("{")) return json;
+        try {
+            JsonNode root = SCHEMA_MAPPER.readTree(trimmed);
+            if (!root.isObject() || root.hasNonNull("schema")) return json;
+            ((ObjectNode) root).put("schema", CB_REQUEST_SCHEMA);
+            return root.toString();
+        } catch (Exception e) {
+            logger.warn("ensureSchema: body is not parseable JSON: " + e.getMessage());
+            return json;
         }
-        return json;
     }
 
     private BaseRecord parseParams(String json) {
@@ -96,7 +113,18 @@ public class ChapBookService {
     }
 
     private Response errorResponse(int status, String message) {
-        return Response.status(status).entity("{\"error\":\"" + message + "\"}").build();
+        return Response.status(status).entity("{\"error\":" + escapeJson(message) + "}").build();
+    }
+
+    /** Serialize a Java String as a JSON string literal so an exception message with quotes, backslashes
+     *  or control characters (tabs in stack-trace text) cannot break the hand-built error body. */
+    private static String escapeJson(String s) {
+        if (s == null) return "null";
+        try {
+            return SCHEMA_MAPPER.writeValueAsString(s);
+        } catch (JsonProcessingException e) {
+            return "\"" + s.replaceAll("[\\\\\"\\p{Cntrl}]", "?") + "\"";
+        }
     }
 
     // ─────────────────────────────── Poem analysis ───────────────────────────────
@@ -986,6 +1014,70 @@ public class ChapBookService {
         } catch (Exception e) {
             logger.error("deleteChapBook failed for " + bookObjectId + ": " + e.getMessage(), e);
             return errorResponse(500, "Failed to delete chapbook: " + e.getMessage());
+        }
+    }
+
+    // ─────────────────────────────── Book-level SD settings (V3 P0-10c) ───────────────────────────────
+
+    /**
+     * GET /{bookObjectId}/settings
+     * Return the ChapBook's stored book-level {@code olio.sd.config} (the row every scene render reads
+     * as the book tier of PbConfigUtil.resolveEffectiveConfig), or {@code {}} when none has been saved
+     * yet. Never writes. 404 if the book is not readable, 403 if it is not a CHAPBOOK.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/settings")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getBookSdConfig(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Not authenticated");
+        if (bookObjectId == null || bookObjectId.isBlank()) return errorResponse(400, "bookObjectId is required");
+        try {
+            BaseRecord sdConfig = ChapBookUtil.getBookSdConfig(user, bookObjectId);
+            return Response.status(200).entity(sdConfig != null ? sdConfig.toFullString() : "{}").build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
+        } catch (Exception e) {
+            logger.error("getBookSdConfig failed for " + bookObjectId + ": " + e.getMessage(), e);
+            return errorResponse(500, "Failed to read chapbook settings: " + e.getMessage());
+        }
+    }
+
+    /**
+     * PUT /{bookObjectId}/settings
+     * Persist the ChapBook's book-level SD config from a sparse client record.
+     * Body: { sdConfig: { ...olio.sd.config fields to change... } } — only the fields present are
+     * written; identity fields on the client record are discarded and per-render fields
+     * (description/imagePath/imageName) are never stored (PbBookUtil.setBookSdConfig). Returns the
+     * stored config after the write. Transport only — adopt/create/merge lives in Objects7.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/settings")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response setBookSdConfig(@PathParam("bookObjectId") String bookObjectId,
+            String json, @Context HttpServletRequest request) {
+        OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Not authenticated");
+        if (bookObjectId == null || bookObjectId.isBlank()) return errorResponse(400, "bookObjectId is required");
+        BaseRecord params = parseParams(json);
+        if (params == null) return errorResponse(400, "Request body is required");
+        Object sdc = params.get("sdConfig");
+        if (!(sdc instanceof BaseRecord)) return errorResponse(400, "sdConfig is required");
+        try {
+            BaseRecord stored = ChapBookUtil.setBookSdConfig(user, bookObjectId, (BaseRecord) sdc);
+            if (stored == null) return errorResponse(500, "ChapBook settings write returned no record: " + bookObjectId);
+            return Response.status(200).entity(stored.toFullString()).build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
+        } catch (Exception e) {
+            logger.error("setBookSdConfig failed for " + bookObjectId + ": " + e.getMessage(), e);
+            return errorResponse(500, "Failed to save chapbook settings: " + e.getMessage());
         }
     }
 

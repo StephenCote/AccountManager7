@@ -26,7 +26,14 @@ from the working tree and every commit). Its G-1…G-36 numbering differs from w
 originally cited in eleven places; all G-n references below now match that file (§36.8 lists the
 corrections). Two items this design treats as Phase 0 hygiene — raw `FIELD_BYTE_STORE` writes and
 runs left RUNNING on exception — are not numbered gaps there but Appendix A "Other" items, and are
-cited as such.
+cited as such. **[Corrected 2026-10-09, Phase 0 planning:** orphaned runs are left **PENDING**, not
+RUNNING — `PbGraphUtil.startRun` (`:738`) writes PENDING and nothing stamps RUNNING today. The only
+run lifecycle is in `PictureBookUtil.generateSceneImage` (`openSceneGraph` `:9626`, `closeRun`
+`:10357/:10361`); `PbNodeExecutor.executeNode` and `PbServiceFacade.testNode` open no run. Phase 0's
+closure fix therefore lands in `PictureBookUtil` (finally-block) plus a FAILED stamp on the node in
+`PbNodeExecutor.executeNode`; PENDING semantics are left alone until Phase 1's RUNNING/INTERRUPTED
+work (§21). Line references in this document that the Phase 0 planner found stale:
+`PictureBookUtil.resolveLandscapePrompt` NPE is at `:3845` (gap doc said `:3629`).**]**
 
 > The notes set the *what*: scene intent kept separate from rendering, with this flow:
 > composition → render plan → strategy → variants → QA → approval.
@@ -865,7 +872,7 @@ the full list. A degradation never stops the render.
 | QA fails to run | Variant unaffected; QA artifact records `ERROR` |
 | The compiled Comfy graph fails local validation (§38.2) | `GRAPH_INVALID`: the stage node is FAILED with the offending node id and input in `lastError`; no request is sent, no GPU time is spent |
 | Swarm refuses the graph (`unsupported node type`) or Comfy reports an execution `error` | `RENDERER_REJECTED` with the node id; treated like BASE/COMPOSITE failure for the stage, and the node catalogue cache is invalidated so the next attempt re-validates against the live backend |
-| An exception anywhere | `run` and `node` are closed as FAILED in a `finally` block (gap doc Appendix A "Other": graph runs are left RUNNING when a scene throws) |
+| An exception anywhere | `run` and `node` are closed as FAILED in a `finally` block (gap doc Appendix A "Other": graph runs are left RUNNING when a scene throws — **[corrected 2026-10-09: left PENDING; see the note under the opening paragraph]**) |
 
 ### 21. Async execution, durability and cancellation
 
@@ -1189,7 +1196,7 @@ for image output).
 
 | Phase | Scope | ChapBook impact | Exit criteria |
 |---|---|---|---|
-| **0 — Hygiene** (current code) | G-15 override leak, G-18 explicit width/height, G-24 template override, G-26 null guards, G-8 landscape flag, G-11 landscape failure non-fatal; from the gap doc's Appendix A "Other": `ByteModelUtil` instead of raw `FIELD_BYTE_STORE` writes, and run closure on exception; **Kontext Deprecate stage** (§37.3, ratified) | G-25 style, negative and hires; G-32 book settings saved, page overrides not flattened | The gap doc's §4 step 1 plus the notes' §60 criteria; each fix has a test, PB and ChapBook |
+| **0 — Hygiene** (current code) | G-15 override leak, G-18 explicit width/height, G-24 template override, G-26 null guards, G-8 landscape flag, G-11 landscape failure non-fatal; from the gap doc's Appendix A "Other": `ByteModelUtil` instead of raw `FIELD_BYTE_STORE` writes, and run closure on exception; **Kontext Deprecate stage** (§37.3, ratified) **[Progress 2026-10-09, see `PictureBookV3Implementation.md` §2/§5.3: G-15, G-18, G-24 (Option A — override stays on the landscape slot), G-26, G-8, G-11, `ByteModelUtil`, run closure DONE with live tests. Additions not listed here: G-11 adds `landscapeFailed`/`landscapeError` to `olio.pictureBookResult` and a text-only txt2img fallback for a classic composite with neither landscape nor portraits; G-8 bumps `PB_PIPELINE_VERSION` to `pb2/3` because the schema default is outside the inputHash (§11.1 drift). Kontext Deprecate and the ChapBook column pending.]** | G-25 style, negative and hires; G-32 book settings saved, page overrides not flattened | The gap doc's §4 step 1 plus the notes' §60 criteria; each fix has a test, PB and ChapBook |
 | **1 — Graph-first rendering + review** | Rendering through graph execution (PbNodeExecutor converged with v1 behaviour, fixing the G-30 divergences), live drift detection (§11.1), review status, auto-approve toggle (§10), async render jobs, restart recovery. V3 runs behind the `renderPath` switch (§28.1 Stage 1) | ChapBook pages become graph nodes with artifacts; same jobs and review | Leave the page → render continues; restart → Resume; a charPerson edit shows the affected scenes |
 | **2 — Style, model resolution, compiler core; ChapBook goes V3** | `olio.pb.style` with inheritance and lock, `ModelResolver`, capabilities/presets resources, models-by-task route, style editor, estimate, `RenderPlan`, TEXT_ONLY strategy, `SdxlCompiler`, plan inspector; **Kontext Disable stage** (§37.3) | **ChapBook is the first product switched to V3** (TEXT_ONLY, zero actors), with up-front composition from the existing continuity composer. **ChapBook old path disabled (§28.1 Stage 2)** | One model policy across reimage/PB/ChapBook/chat; a missing model is reported before rendering; ChapBook verify checks start; chat scene renders through the illustration service (§24.1) |
 | **3 — Locations** (world-scoped) | Location/variant models, LOCATION nodes, `approvedRender`, library Ux, approve/lock, clustering migration, background-first for TEXT_ONLY/DIRECT; **POI link** (§7.2 rules 1–3, 5): map-free `olio.pointOfInterest` + `olio.store` per resolved location in book worlds, name-match in game worlds, `PointOfInterestUtil.findByName`, `PbOrphanUtil`/`PbHealthUtil` repair of a dangling `poi` | Optional locations on ChapBook pages | Scenes 3/7/12 share one approved tavern; series chapters share it; a location failure doesn't fail scenes; every resolved location has a POI with a store, and deleting the world removes both |

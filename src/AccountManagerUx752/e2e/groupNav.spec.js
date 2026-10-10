@@ -6,9 +6,10 @@ import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const REST = 'https://localhost:8899/AccountManagerService7/rest';
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
+const REST = BASE_URL + '/AccountManagerService7/rest';
 function b64(str) { return Buffer.from(str).toString('base64'); }
-async function newCtx() { return await pwRequest.newContext({ baseURL: 'https://localhost:8899', ignoreHTTPSErrors: true }); }
+async function newCtx() { return await pwRequest.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true }); }
 async function safeJson(resp) { if (!resp.ok()) return null; try { return JSON.parse(await resp.text()); } catch { return null; } }
 
 test.describe('Group Navigation', () => {

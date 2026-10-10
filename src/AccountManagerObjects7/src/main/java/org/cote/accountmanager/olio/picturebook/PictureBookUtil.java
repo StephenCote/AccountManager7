@@ -2250,6 +2250,27 @@ public class PictureBookUtil {
         }
     }
 
+    /**
+     * Read one of the LLM-extracted scene text fields ({@code setting} / {@code action} / {@code mood}
+     * / ...) out of a parsed scene map as a non-null, trimmed string. Returns {@code ""} when the key
+     * is absent, is not a string, or holds one of the LLM's literal "I don't know" tokens
+     * ({@code "null"}, {@code "n/a"}, {@code "none"}, ... — see {@link NarrativeUtil#isMeaningful}).
+     * <p>
+     * V3 P0-4 (G-26). The previous {@code (String) sceneData.getOrDefault(key, "")} idiom only
+     * defaulted an ABSENT key: a present key with a JSON {@code null} value came back as Java
+     * {@code null} and NPE'd in {@code resolveLandscapePrompt}'s fallback ({@code setting.isEmpty()}),
+     * and a present key holding the four-character string {@code "null"} sailed through every blank
+     * check into the SD prompt. Both are routine LLM output, not edge cases
+     * (.claude/rules/objects7-reference.md, "Consuming LLM-extracted fields").
+     */
+    private static String sceneTextField(Map<String, Object> sceneData, String key) {
+        if (sceneData == null || key == null) return "";
+        Object v = sceneData.get(key);
+        if (!(v instanceof String)) return "";
+        String s = (String) v;
+        return NarrativeUtil.isMeaningful(s) ? s.trim() : "";
+    }
+
     /// Opening tokens every machine-written portrait prompt in this pipeline carries —
     /// {@link #PORTRAIT_QUALITY_PREAMBLE}, {@code NarrativeUtil.buildPortraitPromptFromExtractedData}
     /// and {@code NarrativeUtil.getSDPrompt} all start with exactly this. Used to tell a GENERATED
@@ -3139,13 +3160,9 @@ public class PictureBookUtil {
      */
     private static final String BLANK_LANDSCAPE_FALLBACK = "A detailed environment";
 
+    /// P0-9: the style-append logic now lives on SDUtil.applyConfigStyle so every SD caller shares it.
     private static String appendConfigStyleOnce(String prompt, BaseRecord sdConfig) {
-        String clause = SDUtil.getSDConfigPrompt(sdConfig);
-        if (prompt == null || prompt.isBlank()) return clause;
-        String p = prompt.trim();
-        if (clause == null || clause.isBlank()) return p;
-        if (p.contains(clause)) return p;
-        return p + (p.endsWith(".") || p.endsWith(",") ? " " : ". ") + clause;
+        return SDUtil.applyConfigStyle(prompt, sdConfig);
     }
 
     /**
@@ -3842,7 +3859,9 @@ public class PictureBookUtil {
             landscapePrompt = callLlm(user, chatConfig, "pictureBook.landscape-prompt", landVars, promptTemplateOverride);
             if (isErrorOrEmptyPayload(landscapePrompt)) {
                 logger.warn("Landscape prompt failed — falling back to setting text");
-                landscapePrompt = setting.isEmpty() ? BLANK_LANDSCAPE_FALLBACK : setting;
+                // V3 P0-4: null-safe. hasRealInput above can be true on mood alone, in which case
+                // setting may legitimately be null here (an LLM-emitted JSON null; see sceneTextField).
+                landscapePrompt = (setting == null || setting.isBlank()) ? BLANK_LANDSCAPE_FALLBACK : setting;
             }
         }
         // Same discrete, code-owned facts as the scene prompt: the book-level composition anchor
@@ -4669,19 +4688,24 @@ public class PictureBookUtil {
         }
         // Guard: refuse to call the LLM if the resolved template still has unsubstituted
         // "{name}"-style placeholders after applying the caller's vars. Root cause this closes:
-        // promptTemplateOverride is a single field applied by the wizard's "single prompt
-        // template" mode to EVERY LLM call (extract-scenes, scene-image-prompt, landscape-prompt
-        // alike — see resolveScenePrompt/resolveLandscapePrompt/extractScenesOnly callers) — if a
-        // user picks a custom template meant for one purpose (e.g. pictureBook.extract-scenes,
-        // which expects {text}/{count}) it silently overrides an unrelated call (e.g.
-        // scene-image-prompt, whose vars are setting/action/mood/charNarrations). The unfilled
-        // template still gets sent to the LLM, which reasonably responds with a conversational
-        // clarifying question ("I need the actual story text and the number of scenes...") — prose,
-        // not JSON/empty, so isErrorOrEmptyPayload's shape check doesn't catch it, and it was
-        // getting cached and forwarded to SDUtil.txt2img as literal prompt text (confirmed live,
-        // 2026-07-23). Catching the malformed CONSTRUCTION here, before the network call, is more
-        // robust than trying to pattern-match every way a confused LLM might phrase "I don't have
-        // enough information" after the fact.
+        // promptTemplateOverride is a single field set by the wizard's "single prompt template"
+        // mode. It is applied to the LANDSCAPE-prompt call (resolveLandscapePrompt, from both
+        // generateSceneImage and prepareSceneImagePrompts) and to extract-scenes (extractScenesOnly)
+        // — and, since V3 P0-3 (G-24), deliberately NOT to the scene-image-prompt call
+        // (resolveScenePrompt), which always resolves its own pictureBook.scene-image-prompt
+        // template. Before P0-3 the same override reached every call, so a template written for
+        // one purpose (e.g. the landscape template, whose user section carries "{time}"/"{style}"
+        // lines the scene call never supplies, or pictureBook.extract-scenes, which expects
+        // {text}/{count}) silently overrode an unrelated call whose vars are
+        // setting/action/mood/charNarrations. The unfilled template still got sent to the LLM,
+        // which reasonably responded with a conversational clarifying question ("I need the actual
+        // story text and the number of scenes...") — prose, not JSON/empty, so
+        // isErrorOrEmptyPayload's shape check didn't catch it, and it was getting cached and
+        // forwarded to SDUtil.txt2img as literal prompt text (confirmed live, 2026-07-23).
+        // Catching the malformed CONSTRUCTION here, before the network call, is more robust than
+        // trying to pattern-match every way a confused LLM might phrase "I don't have enough
+        // information" after the fact — and it remains the backstop for the landscape/extract
+        // calls, where the override still applies.
         Matcher unresolved = UNSUBSTITUTED_PLACEHOLDER.matcher(userTpl);
         if (unresolved.find()) {
             logger.error("Refusing to call LLM for prompt '" + promptName + "' — template has unsubstituted "
@@ -9416,22 +9440,37 @@ public class PictureBookUtil {
      *                  production Service7, a plain test-config string in tests).
      * @param sdServer  the SD backend base URL — same resolution note as {@code sdApiType}.
      */
-    @SuppressWarnings("unchecked")
     public static BaseRecord generateSceneImage(BaseRecord user, String sceneObjectId, SceneGenerationParams params,
             String sdApiType, String sdServer) {
+        // A missing SD config is reported by the body AFTER authorization, so a denied caller still gets 403.
+        SDUtil sdu = (sdApiType == null || sdServer == null) ? null
+                : new SDUtil(SDAPIEnumType.valueOf(sdApiType), sdServer);
+        return generateSceneImage(user, sceneObjectId, params, sdu);
+    }
+
+    /**
+     * Body of {@link #generateSceneImage(BaseRecord, String, SceneGenerationParams, String, String)},
+     * taking an already-constructed {@link SDUtil}. Package-private so a test can drive the whole
+     * pipeline through an {@code SDUtil} subclass (e.g. one whose {@code createSceneImage} throws for
+     * {@code landscape_*} names) without a Swarm backend having to misbehave on cue. No other seam.
+     */
+    @SuppressWarnings("unchecked")
+    static BaseRecord generateSceneImage(BaseRecord user, String sceneObjectId, SceneGenerationParams params,
+            SDUtil sdu) {
         /// Resolves the scene AND authorizes the caller against the book that owns it. This runs
         /// BEFORE any SD/LLM work, so a denial costs nothing and generates nothing.
         BaseRecord scene = authorizeSceneAccess(user, sceneObjectId, SceneAccessType.WRITE);
 
-        if (sdApiType == null || sdServer == null) {
+        if (sdu == null) {
             throw new PictureBookException(500, "SD server not configured");
         }
 
         String sceneText = scene.get("text");
         Map<String, Object> sceneData = sceneText != null ? parseLlmJsonObject(sceneText) : new LinkedHashMap<>();
-        String setting = (String) sceneData.getOrDefault("setting", "");
-        String action  = (String) sceneData.getOrDefault("action", "");
-        String mood    = (String) sceneData.getOrDefault("mood", "");
+        // V3 P0-4: never null, never the LLM's literal "null"/"n/a"/... — see sceneTextField.
+        String setting = sceneTextField(sceneData, "setting");
+        String action  = sceneTextField(sceneData, "action");
+        String mood    = sceneTextField(sceneData, "mood");
 
         BaseRecord chatConfig = null;
         if (params.chatConfigName != null)
@@ -9453,6 +9492,14 @@ public class PictureBookUtil {
         if (common == null && bookGroupPath != null) common = getBookSdConfigByPath(user, bookGroupPath);
         if (common == null) common = SDUtil.randomSDConfig();
         SDUtil.fillStyleDefaults(common);
+        // V3 P0-1 (G-15): snapshot the BOOK-level config BEFORE the per-scene override is overlaid.
+        // applyOverrides mutates `common` in place, and `common` is what persistBookSdConfig below
+        // writes into .pictureBookMeta.sdConfig — so a one-scene override (steps=7 for a quick retry,
+        // say) was being promoted to the book-wide config and silently inherited by every later scene.
+        // bookBase is what gets persisted; `common` (with the override) is what this scene renders with.
+        // copyRecord() is SHALLOW (nested MODEL/LIST values are shared): it isolates bookBase only because
+        // applyOverrides/fillStyleDefaults replace values via setValue and never mutate `loras` in place.
+        BaseRecord bookBase = common.copyRecord();
         // A per-scene override's `description` is THIS scene's edited composite prompt (the wizard's
         // Scene Overrides "Prompt" field), not an SD config value: nothing in the pipeline reads
         // common.description, and letting it ride onto `common` would persist a single scene's prompt
@@ -9484,17 +9531,16 @@ public class PictureBookUtil {
         String sdSampler = common.get("sampler");
         String sdScheduler = common.get("scheduler");
 
-        SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType), sdServer);
-
         // Mark generation started — persisted so the wizard's progress survives a reload
         // (see listScenes()'s status/error merge and .claude/rules/model-api.md's PATCH pattern).
         updateSceneStatus(user, scene, "generating", null);
 
-        // Auto-capture the resolved common config on the book so images can be recreated with the
-        // same settings later (see persistBookSdConfig) — only for real book scenes (under
-        // .../Scenes), not the ~/Chat single-image fallback which has no book meta.
+        // Auto-capture the resolved BOOK config (bookBase — pre-override, see P0-1 above) on the book
+        // so images can be recreated with the same settings later (see persistBookSdConfig) — only
+        // for real book scenes (under .../Scenes), not the ~/Chat single-image fallback which has no
+        // book meta.
         if (bookGroupPath != null) {
-            persistBookSdConfig(user, bookGroupPath, common);
+            persistBookSdConfig(user, bookGroupPath, bookBase);
         }
 
         // promptOverride: skip pipeline, direct SDXL generation
@@ -9539,6 +9585,14 @@ public class PictureBookUtil {
             }
         }
 
+        // V3 P0-8: the graph handle, the node currently executing, and the last error are hoisted
+        // out of the try so the finally can close the run out as FAILED when the pipeline throws.
+        // Before this, an exception anywhere after openSceneGraph left the olio.pb.run row PENDING
+        // forever (startRun writes PENDING; only the composite block's closeRun ever stamped it),
+        // and the node that was mid-execution kept whatever status it had.
+        PbPipelineUtil.SceneGraph pbGraph = null;
+        BaseRecord currentNode = null;
+        String lastErrorMessage = "generateSceneImage aborted";
         try {
             // Stage 0: Resolve (and cache) the landscape prompt AND the scene-image (composite)
             // prompt BEFORE any SD calls — keeps every LLM call ahead of every GPU-heavy SD call
@@ -9595,8 +9649,16 @@ public class PictureBookUtil {
                 logger.info("Scene " + sceneObjectId + ": using caller-supplied scene prompt override ("
                         + scenePrompt.length() + " chars)");
             } else {
+                // V3 P0-3 (G-24, Option A): the caller's promptTemplateOverride is NOT applied to the
+                // scene-image prompt. It is the LANDSCAPE template override (the wizard's single
+                // "prompt template" field, applied to resolveLandscapePrompt above and to
+                // extract-scenes), and the landscape template's {time}/{style} placeholders are never
+                // supplied by this call — so applying it here tripped callLlmInternal's
+                // unsubstituted-placeholder guard and hard-failed every scene prompt, which then fell
+                // back to the raw setting/action/mood concatenation. The scene prompt always resolves
+                // its own pictureBook.scene-image-prompt template.
                 scenePrompt = resolveScenePrompt(user, scene, chatConfig, action, setting, mood, common,
-                        charNarrationsForPrompt, params.promptTemplateOverride);
+                        charNarrationsForPrompt, null);
             }
             OllamaModelUtil.unloadAll();
 
@@ -9614,8 +9676,8 @@ public class PictureBookUtil {
             // an unauthorized write) logs and returns null, in which case the nine downstream
             // `pbGraph != null` blocks all skip and the image pipeline runs without recording the
             // graph — the graph is PROVENANCE, and losing provenance must never lose an image the
-            // GPU spent ten minutes producing.
-            PbPipelineUtil.SceneGraph pbGraph = null;
+            // GPU spent ten minutes producing. (pbGraph itself is declared above the enclosing try —
+            // P0-8 — so the finally can close the run it opens.)
             String pbBookGroupName = null;
             try {
                 if (bookGroupPath != null) {
@@ -9851,7 +9913,7 @@ public class PictureBookUtil {
                         // Render book portraits into the book's Characters/ group (not the Scenes group);
                         // the fallback (~/Chat) renders in place and is deleted below.
                         String portraitGroupPath = isBook ? sceneGroupPath.replace("/Scenes", "/Characters") : sceneGroupPath;
-                        List<BaseRecord> portImages = sdu.createImage(user, portraitGroupPath, portCfg, portName, 1, false, -1);
+                        List<BaseRecord> portImages = sdu.createImage(user, portraitGroupPath, portCfg, portName, 1, SDUtil.hiresOf(portCfg), -1);
                         if (portImages == null || portImages.isEmpty()) { logger.warn("Portrait generation failed: " + cname); continue; }
                         // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption.
                         byte[] portBytes = ByteModelUtil.getValue(portImages.get(0));
@@ -9985,60 +10047,47 @@ public class PictureBookUtil {
             // FLUX.2 omits the setting reference, KONTEXT ships a shorter strip and CLASSIC degrades
             // to text-only txt2img. The stageCooldown that follows is skipped with it — there was no
             // GPU work to recover from.
+            //
+            // V3 P0-6 (G-11): a landscape FAILURE is non-fatal too. The landscape is one of three
+            // references; the composite already proceeds without it when it was skipped by config
+            // (the WARN just below this block names the degradation per mode), so a Swarm error on
+            // the landscape pass must take exactly that path rather than abort the scene after the
+            // portraits were already paid for. The failure is recorded on the LANDSCAPE node and
+            // surfaced on the result (landscapeFailed/landscapeError) — never silent.
             byte[] landscapeBytes = null;
             BaseRecord pbLandscapeNode = null;
             BaseRecord pbLandscapeArtifact = null;
+            boolean landscapeFailed = false;
+            String landscapeError = null;
             if (landscapePrompt != null) {
-                PictureBookProgressNotifier.getInstance().notifyProgress(user, "landscape", "Generating landscape...");
-                SWTxt2Img landReq = SWUtil.newSceneTxt2Img(landscapePrompt, NEG_PROMPT, common);
-                landReq.setWidth(1024);
-                landReq.setHeight(768);
-                List<BaseRecord> landImages = sdu.createSceneImage(user, sceneGroupPath,
-                        "landscape_" + sceneObjectId + "_" + System.currentTimeMillis(), landReq, null, null);
-                if (landImages == null || landImages.isEmpty())
-                    throw new PictureBookException(500, "Landscape generation failed");
-                BaseRecord landscapeImage = landImages.get(0);
-                // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption.
-                landscapeBytes = ByteModelUtil.getValue(landscapeImage);
-                if (landscapeBytes == null || landscapeBytes.length == 0)
-                    throw new PictureBookException(500, "Empty landscape image");
-                // Retain the persisted landscape record (previously deleted immediately after use,
-                // which meant only the final composite ever survived) and record its objectId on the
-                // scene so it is discoverable/reusable like the composite.
-                String landscapeOid = landscapeImage.get(FieldNames.FIELD_OBJECT_ID);
-                updateSceneLandscapeId(user, scene, landscapeOid);
-
-                // PB2 Stage 2: the LANDSCAPE node, bound to the landscape-prompt node's artifact so a
-                // prompt change propagates. The forced 1024x768 here is exactly what §9's level-1
-                // dimension assertion checks against — recordImage measures the DECODED bytes, not the
-                // request, so a hires/refiner pass that silently returns another size is caught.
-                if (pbGraph != null) {
-                    try {
-                        pbLandscapeNode = PbPipelineUtil.getCreateNode(pbGraph,
-                                PbPipelineUtil.landscapeHandle(sceneObjectId),
-                                PbNodeTypeEnumType.LANDSCAPE, 30, PbPipelineUtil.SCOPE_SCENE, sceneObjectId);
-                        BaseRecord lpNode = pbGraph.node(PbPipelineUtil.landscapePromptHandle(sceneObjectId));
-                        if (lpNode != null) {
-                            PbPipelineUtil.bindNode(pbGraph, pbLandscapeNode, PbPipelineUtil.ROLE_PROMPT, 0, lpNode,
-                                    PbArtifactUtil.findSelected(user, lpNode, PbPipelineUtil.ROLE_LANDSCAPE_PROMPT));
+                try {
+                    LandscapeStage ls = renderLandscapeStage(user, sdu, scene, sceneGroupPath, sceneObjectId,
+                            landscapePrompt, common, pbGraph);
+                    landscapeBytes = ls.bytes;
+                    pbLandscapeNode = ls.node;
+                    pbLandscapeArtifact = ls.artifact;
+                } catch (Exception le) {
+                    landscapeFailed = true;
+                    landscapeError = (le.getMessage() != null && !le.getMessage().isBlank())
+                            ? le.getMessage() : le.getClass().getSimpleName();
+                    landscapeBytes = null;
+                    pbLandscapeNode = null;
+                    pbLandscapeArtifact = null;
+                    logger.warn("Scene " + sceneObjectId + ": landscape generation FAILED (" + landscapeError
+                            + ") - continuing without a landscape reference; the composite degrades the same"
+                            + " way it does when the landscape is skipped by config", le);
+                    if (pbGraph != null) {
+                        try {
+                            BaseRecord failedLandscapeNode = PbPipelineUtil.getCreateNode(pbGraph,
+                                    PbPipelineUtil.landscapeHandle(sceneObjectId),
+                                    PbNodeTypeEnumType.LANDSCAPE, 30, PbPipelineUtil.SCOPE_SCENE, sceneObjectId);
+                            PbPipelineUtil.failNode(pbGraph, failedLandscapeNode, landscapeError);
+                        } catch (Exception pbe) {
+                            logger.warn("PB2: failed to record the landscape FAILURE on its node: " + pbe.getMessage(), pbe);
+                            pbGraph.addGraphWriteFailure("landscape node (FAILED): " + pbe.getMessage());
                         }
-                        pbLandscapeArtifact = PbPipelineUtil.recordImage(pbGraph, pbLandscapeNode,
-                                PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE, landscapeImage,
-                                landscapeBytes, "image/png",
-                                Long.valueOf(extractSeedFromImage(landscapeImage)), common,
-                                JSONUtil.exportObject(landReq), null);
-                        PbPipelineUtil.completeNode(pbGraph, pbLandscapeNode);
-                    } catch (Exception pbe) {
-                        logger.warn("PB2: failed to record the landscape node: " + pbe.getMessage(), pbe);
-                        pbGraph.addGraphWriteFailure("landscape node: " + pbe.getMessage());
                     }
                 }
-
-                // Landscape generation is a full hires/refiner pass when enabled — let the GPU
-                // recover before the composite stage, which is heavier still (img2img on top of its
-                // own base+refiner pass) and runs immediately after with zero gap otherwise. This is
-                // the specific back-to-back sequence implicated in a real thermal-critical event.
-                stageCooldown();
             }
 
             // Stage 3/4: Composite scene — branch between Kontext (stitch-and-prompt) and classic
@@ -10077,12 +10126,14 @@ public class PictureBookUtil {
             /// not a saving. landscapeEnabled never auto-skips them — this can only be reached by an
             /// explicit skipLandscape=true — so say so plainly rather than silently producing a
             /// setting-free composite that reads as a broken pipeline.
+            boolean classicHasPortraits = leftBytes != null || centerBytes != null;
             if (landscapeBytes == null && (useKontext || !useFlux2)) {
                 logger.warn("Scene " + sceneObjectId + ": compositeMode=" + (useKontext ? "kontext" : "classic")
                         + " CONSUMES the landscape image, but none was generated ("
-                        + landscapeSkipReason(common) + ") - "
+                        + (landscapeFailed ? "landscape generation failed: " + landscapeError : landscapeSkipReason(common)) + ") - "
                         + (useKontext ? "the reference strip will carry portraits only"
-                                      : "the classic pipeline degrades to text-only txt2img"));
+                                      : (classicHasPortraits ? "the classic pipeline draws the portraits onto a blank canvas"
+                                                             : "the classic pipeline degrades to text-only txt2img")));
             }
 
             // Kontext 2-pass needs moderate creativity — enough to restructure panels while
@@ -10135,6 +10186,11 @@ public class PictureBookUtil {
                     pbCompositeNode = null;
                     pbGraph.addGraphWriteFailure("reference/composite nodes: " + pbe.getMessage());
                 }
+                // P0-8: from here until the composite block closes the run, the COMPOSITE node is the
+                // one executing — every SD call below is on its behalf. If one of them throws, the
+                // finally stamps this node FAILED alongside the run. (The reference node is completed
+                // inside each branch before its SD call, so it is never the one left mid-flight.)
+                currentNode = pbCompositeNode;
             }
 
             if (useFlux2) {
@@ -10263,8 +10319,16 @@ public class PictureBookUtil {
                         + " (landscapeBytes=" + (landscapeBytes != null ? landscapeBytes.length : 0)
                         + " leftBytes=" + (leftBytes != null ? leftBytes.length : 0)
                         + " centerBytes=" + (centerBytes != null ? centerBytes.length : 0) + ")");
-                byte[] compositeBytes = SDUtil.compositeSceneCanvas(landscapeBytes, leftBytes, centerBytes,
-                        classicReq.getWidth(), classicReq.getHeight());
+                // G-11 text-only fallback: with neither a landscape nor a portrait there is nothing to
+                // draw, and compositeSceneCanvas would hand img2img an all-black canvas that the render
+                // never recovers from (measured: mean luminance 1/255). Send plain txt2img instead.
+                byte[] compositeBytes = (landscapeBytes == null && !classicHasPortraits) ? null
+                        : SDUtil.compositeSceneCanvas(landscapeBytes, leftBytes, centerBytes,
+                                classicReq.getWidth(), classicReq.getHeight());
+                if (compositeBytes == null) {
+                    logger.info("generateSceneImage: no landscape and no portraits for scene " + sceneObjectId
+                            + " - classic composite falls back to text-only txt2img");
+                }
                 if (compositeBytes != null) {
                     // PB2 §2.5: these two lines were the whole persistence story for the composite
                     // canvas and the landscape — a debug dump into the process working directory, where
@@ -10292,7 +10356,9 @@ public class PictureBookUtil {
                         }
                     } else {
                         FileUtil.emitFile("./comp-" + sceneObjectId + ".png", compositeBytes);
-                        FileUtil.emitFile("./land-" + sceneObjectId + ".png", landscapeBytes);
+                        if (landscapeBytes != null) {
+                            FileUtil.emitFile("./land-" + sceneObjectId + ".png", landscapeBytes);
+                        }
                     }
                     classicReq.setInitImage("data:image/png;base64," + Base64.getEncoder().encodeToString(compositeBytes));
                     classicReq.setInitImageCreativity(sceneCreativity);
@@ -10361,6 +10427,17 @@ public class PictureBookUtil {
                     PbPipelineUtil.closeRun(pbGraph, false, pbe.getMessage());
                 }
             }
+            // The composite node is no longer mid-flight: either completed+run closed above, or the
+            // record failed and the run was closed FAILED with that message. Either way the finally
+            // must not re-stamp it.
+            currentNode = null;
+            if (pbGraph != null && !pbGraph.isRunClosed()) {
+                // Reached only when the reference/composite node creation failed above (pbCompositeNode
+                // == null), so the closeRun in the composite block never ran. The image rendered; the
+                // graph did not finish. Say exactly that rather than the generic abort message.
+                lastErrorMessage = "Scene image rendered, but the composite node could not be recorded"
+                        + " (see graphWriteFailures); the run did not complete its graph";
+            }
 
             BaseRecord genResult = buildResult();
             genResult.set("imageObjectId", finalImageOid);
@@ -10371,6 +10448,12 @@ public class PictureBookUtil {
             if (!failedPortraits.isEmpty()) {
                 genResult.set("failedPortraits", failedPortraits);
             }
+            // V3 P0-6: a failed (not skipped) landscape is reported on the result, same as a failed
+            // portrait — the image exists, but without the setting reference the caller asked for.
+            if (landscapeFailed) {
+                genResult.set("landscapeFailed", true);
+                genResult.set("landscapeError", landscapeError);
+            }
             // W2: surface swallowed graph-write failures on the scene RESULT (not only the log), the
             // way failedPortraits/failedCharacters already are. Result-only: the render path does not
             // load/save .pictureBookMeta here, so attaching them to the meta would be dead code.
@@ -10379,15 +10462,114 @@ public class PictureBookUtil {
             }
             return genResult;
         } catch (PictureBookException pbe) {
+            lastErrorMessage = (pbe.getMessage() != null) ? pbe.getMessage() : lastErrorMessage;
             updateSceneStatus(user, scene, "error", pbe.getMessage());
             throw pbe;
         } catch (Exception e) {
+            lastErrorMessage = (e.getMessage() != null) ? e.getMessage() : e.getClass().getSimpleName();
             logger.error("Scene image generation pipeline failed: " + e.getMessage(), e);
             updateSceneStatus(user, scene, "error", e.getMessage());
             throw new PictureBookException(500, e.getMessage());
         } finally {
+            // P0-8: never leave the run row PENDING. If the pipeline threw (or the success path never
+            // reached the composite block's closeRun), stamp the node that was executing FAILED with
+            // the real message and close the run FAILED. Best-effort — closeRun/failNode log rather
+            // than throw — and guarded so an exception here can never mask the one being propagated.
+            if (pbGraph != null && !pbGraph.isRunClosed()) {
+                try {
+                    if (currentNode != null) {
+                        PbPipelineUtil.failNode(pbGraph, currentNode, lastErrorMessage);
+                    }
+                    PbPipelineUtil.closeRun(pbGraph, false, lastErrorMessage);
+                } catch (Exception closeEx) {
+                    logger.warn("PB2: failed to close the run as FAILED after a pipeline abort: " + closeEx.getMessage(), closeEx);
+                }
+            }
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         }
+    }
+
+    /** Outputs of {@link #renderLandscapeStage}: the landscape bytes plus its graph node/artifact (null when no graph). */
+    static final class LandscapeStage {
+        final byte[] bytes;
+        final BaseRecord node;
+        final BaseRecord artifact;
+        LandscapeStage(byte[] bytes, BaseRecord node, BaseRecord artifact) {
+            this.bytes = bytes;
+            this.node = node;
+            this.artifact = artifact;
+        }
+    }
+
+    /**
+     * Stage 2 of {@link #generateSceneImage}: render the landscape for {@code landscapePrompt}, record
+     * its objectId on the scene, record the LANDSCAPE graph node (when {@code pbGraph} is non-null),
+     * and cool the GPU down before the composite. Factored out (V3 P0-6, G-11) so the caller can treat
+     * the WHOLE stage as one non-fatal unit: anything thrown here — a Swarm error, an empty image —
+     * is caught by the caller, stamped on the LANDSCAPE node, and the composite proceeds without the
+     * setting reference, exactly as it does when the landscape is skipped by config.
+     * <p>
+     * Throws {@link PictureBookException} when the SD call returns no image or an empty one; lets any
+     * exception from {@code sdu.createSceneImage} or {@code ByteModelUtil.getValue} (checked
+     * {@code ValueException}/{@code FieldException}) propagate. The graph-node write inside is still
+     * its own best-effort try/catch (a provenance write failure is not a landscape failure).
+     */
+    static LandscapeStage renderLandscapeStage(BaseRecord user, SDUtil sdu, BaseRecord scene, String sceneGroupPath,
+            String sceneObjectId, String landscapePrompt, BaseRecord common, PbPipelineUtil.SceneGraph pbGraph)
+            throws org.cote.accountmanager.exceptions.ValueException, org.cote.accountmanager.exceptions.FieldException {
+        PictureBookProgressNotifier.getInstance().notifyProgress(user, "landscape", "Generating landscape...");
+        SWTxt2Img landReq = SWUtil.newSceneTxt2Img(landscapePrompt, NEG_PROMPT, common);
+        landReq.setWidth(1024);
+        landReq.setHeight(768);
+        List<BaseRecord> landImages = sdu.createSceneImage(user, sceneGroupPath,
+                "landscape_" + sceneObjectId + "_" + System.currentTimeMillis(), landReq, null, null);
+        if (landImages == null || landImages.isEmpty())
+            throw new PictureBookException(500, "Landscape generation failed");
+        BaseRecord landscapeImage = landImages.get(0);
+        // Must go through ByteModelUtil — raw .get() bypasses decompression/decryption.
+        byte[] landscapeBytes = ByteModelUtil.getValue(landscapeImage);
+        if (landscapeBytes == null || landscapeBytes.length == 0)
+            throw new PictureBookException(500, "Empty landscape image");
+        // Retain the persisted landscape record (previously deleted immediately after use,
+        // which meant only the final composite ever survived) and record its objectId on the
+        // scene so it is discoverable/reusable like the composite.
+        String landscapeOid = landscapeImage.get(FieldNames.FIELD_OBJECT_ID);
+        updateSceneLandscapeId(user, scene, landscapeOid);
+
+        // PB2 Stage 2: the LANDSCAPE node, bound to the landscape-prompt node's artifact so a
+        // prompt change propagates. The forced 1024x768 here is exactly what §9's level-1
+        // dimension assertion checks against — recordImage measures the DECODED bytes, not the
+        // request, so a hires/refiner pass that silently returns another size is caught.
+        BaseRecord pbLandscapeNode = null;
+        BaseRecord pbLandscapeArtifact = null;
+        if (pbGraph != null) {
+            try {
+                pbLandscapeNode = PbPipelineUtil.getCreateNode(pbGraph,
+                        PbPipelineUtil.landscapeHandle(sceneObjectId),
+                        PbNodeTypeEnumType.LANDSCAPE, 30, PbPipelineUtil.SCOPE_SCENE, sceneObjectId);
+                BaseRecord lpNode = pbGraph.node(PbPipelineUtil.landscapePromptHandle(sceneObjectId));
+                if (lpNode != null) {
+                    PbPipelineUtil.bindNode(pbGraph, pbLandscapeNode, PbPipelineUtil.ROLE_PROMPT, 0, lpNode,
+                            PbArtifactUtil.findSelected(user, lpNode, PbPipelineUtil.ROLE_LANDSCAPE_PROMPT));
+                }
+                pbLandscapeArtifact = PbPipelineUtil.recordImage(pbGraph, pbLandscapeNode,
+                        PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE, landscapeImage,
+                        landscapeBytes, "image/png",
+                        Long.valueOf(extractSeedFromImage(landscapeImage)), common,
+                        JSONUtil.exportObject(landReq), null);
+                PbPipelineUtil.completeNode(pbGraph, pbLandscapeNode);
+            } catch (Exception pbe) {
+                logger.warn("PB2: failed to record the landscape node: " + pbe.getMessage(), pbe);
+                pbGraph.addGraphWriteFailure("landscape node: " + pbe.getMessage());
+            }
+        }
+
+        // Landscape generation is a full hires/refiner pass when enabled — let the GPU
+        // recover before the composite stage, which is heavier still (img2img on top of its
+        // own base+refiner pass) and runs immediately after with zero gap otherwise. This is
+        // the specific back-to-back sequence implicated in a real thermal-critical event.
+        stageCooldown();
+        return new LandscapeStage(landscapeBytes, pbLandscapeNode, pbLandscapeArtifact);
     }
 
     /**
@@ -10505,9 +10687,10 @@ public class PictureBookUtil {
             try {
                 String sceneText = scene.get("text");
                 Map<String, Object> sceneData = sceneText != null ? parseLlmJsonObject(sceneText) : new LinkedHashMap<>();
-                String setting = (String) sceneData.getOrDefault("setting", "");
-                String action = (String) sceneData.getOrDefault("action", "");
-                String mood = (String) sceneData.getOrDefault("mood", "");
+                // V3 P0-4: never null, never the LLM's literal "null"/"n/a"/... — see sceneTextField.
+                String setting = sceneTextField(sceneData, "setting");
+                String action = sceneTextField(sceneData, "action");
+                String mood = sceneTextField(sceneData, "mood");
                 if (wantLandscape) {
                     resolveLandscapePrompt(user, scene, chatConfig, setting, mood, sdConfig, promptTemplateOverride);
                 }
@@ -10523,7 +10706,10 @@ public class PictureBookUtil {
                         if (rc != null) charNarrations.add(rc.name + ": " + SWUtil.stripSDXLWeighting(rc.sceneNarration));
                     }
                 }
-                resolveScenePrompt(user, scene, chatConfig, action, setting, mood, sdConfig, charNarrations, promptTemplateOverride);
+                // V3 P0-3 (G-24): the override is the landscape template's, not the scene prompt's —
+                // same rule as generateSceneImage (see the comment there). Passing it here poisoned
+                // the cached scenePrompt for every scene in the batch.
+                resolveScenePrompt(user, scene, chatConfig, action, setting, mood, sdConfig, charNarrations, null);
             } catch (Exception e) {
                 logger.warn("prepareSceneImagePrompts: failed for scene " + sceneObjectId + ": " + e.getMessage());
             }
@@ -10543,8 +10729,9 @@ public class PictureBookUtil {
         String sceneText = scene.get("text");
         Map<String, Object> sceneData = sceneText != null ? parseLlmJsonObject(sceneText) : new LinkedHashMap<>();
         String title = (String) sceneData.getOrDefault("title", scene.get(FieldNames.FIELD_NAME));
-        String setting = (String) sceneData.getOrDefault("setting", "");
-        String action = (String) sceneData.getOrDefault("action", "");
+        // V3 P0-4: never null, never the LLM's literal "null"/"n/a"/... — see sceneTextField.
+        String setting = sceneTextField(sceneData, "setting");
+        String action = sceneTextField(sceneData, "action");
         String charList = "";
         Object charsObj = sceneData.get("characters");
         if (charsObj instanceof List) {
