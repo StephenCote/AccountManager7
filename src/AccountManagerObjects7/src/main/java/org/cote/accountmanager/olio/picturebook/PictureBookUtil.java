@@ -868,6 +868,10 @@ public class PictureBookUtil {
                 + "' (" + result.scenesRepointed + " scene(s) repointed, meta "
                 + (result.metaUpdated ? "updated" : "unchanged")
                 + (result.failedDeletes.isEmpty() ? "" : ", FAILED to delete " + result.failedDeletes) + ")");
+        PbStaleUtil.touch(OlioModelNames.MODEL_CHAR_PERSON, keepObjectId);
+        for (String dropOid : dropObjectIds) {
+            PbStaleUtil.touch(OlioModelNames.MODEL_CHAR_PERSON, dropOid);
+        }
         return result;
     }
 
@@ -963,6 +967,7 @@ public class PictureBookUtil {
 
         /// 4. Only now the record itself.
         result.deleted = deleteBookCharacter(user, target);
+        PbStaleUtil.touch(OlioModelNames.MODEL_CHAR_PERSON, charObjectId);
 
         logger.info("deleteCharacter: '" + targetName + "' " + (result.deleted ? "deleted" : "NOT deleted")
                 + " (" + result.scenesDetached + " scene(s) detached, meta "
@@ -1062,6 +1067,7 @@ public class PictureBookUtil {
                         + ": " + e.getMessage());
             }
         }
+        PbGraphUtil.invalidateScan(workflow);
     }
 
     /**
@@ -1634,7 +1640,7 @@ public class PictureBookUtil {
      *
      * @return the fully-read record, or null when {@code objectId} is null or unreadable
      */
-    private static BaseRecord readDataRecord(BaseRecord user, String objectId) {
+    static BaseRecord readDataRecord(BaseRecord user, String objectId) {
         if (objectId == null) return null;
         Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, objectId);
         q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -2581,7 +2587,7 @@ public class PictureBookUtil {
      * SD call) and Stage 1 (actually rendering the portrait) resolve a character exactly once via
      * resolveSceneCharacter(), rather than duplicating the lookup/narrative-resolution logic twice.
      */
-    private static final class ResolvedCharacter {
+    static final class ResolvedCharacter {
         final BaseRecord charPerson;
         final String name;
         // Full narrative sdPrompt — used to actually RENDER this character's portrait (Stage 1).
@@ -2932,7 +2938,7 @@ public class PictureBookUtil {
      *                 ({@code SceneGenerationParams.bookSlug}); null falls back to deriving
      *                 candidates from {@code sceneGroupPath}.
      */
-    private static ResolvedCharacter resolveSceneCharacter(BaseRecord user, Object charItem, String sceneGroupPath,
+    static ResolvedCharacter resolveSceneCharacter(BaseRecord user, Object charItem, String sceneGroupPath,
             String bookSlug) {
         String cname = null;
         String charOid = null;
@@ -3479,7 +3485,7 @@ public class PictureBookUtil {
      * is the common case (untagged base outfit from the wizard) and must never regress existing
      * behavior for books/characters not using this feature.
      */
-    private static boolean selectSceneApparel(BaseRecord user, BaseRecord charPerson, int currentSceneIndex) {
+    static boolean selectSceneApparel(BaseRecord user, BaseRecord charPerson, int currentSceneIndex) {
         BaseRecord storeRef = charPerson.get(FieldNames.FIELD_STORE);
         Long storeId = (storeRef != null) ? storeRef.get(FieldNames.FIELD_ID) : null;
         if (storeId == null || storeId <= 0L) return false;
@@ -3635,6 +3641,10 @@ public class PictureBookUtil {
             } else {
                 BaseRecord newAttr = AttributeUtil.addAttribute(apparel, "sceneIndex", sceneIndex);
                 ok = IOSystem.getActiveContext().getRecordUtil().createRecord(newAttr);
+            }
+            if (ok) {
+                PbStaleUtil.touch(OlioModelNames.MODEL_CHAR_PERSON, charObjectId);
+                PbStaleUtil.touch(OlioModelNames.MODEL_APPAREL, apparelObjectId);
             }
             return ok;
         } catch (PictureBookException pbe) {
@@ -6594,7 +6604,7 @@ public class PictureBookUtil {
      * Extract the actual seed from a generated image record's attributes.
      * SDUtil stores it as AttributeUtil.addAttribute(data, "seed", seedl).
      */
-    private static int extractSeedFromImage(BaseRecord image) {
+    static int extractSeedFromImage(BaseRecord image) {
         try {
             int seedVal = AttributeUtil.getAttributeValue(image, "seed", -1);
             if (seedVal > 0) return seedVal;
@@ -7725,7 +7735,7 @@ public class PictureBookUtil {
         }
     }
 
-    private static BaseRecord patchCharPersonField(BaseRecord user, BaseRecord charPerson, String fieldName, BaseRecord value) {
+    static BaseRecord patchCharPersonField(BaseRecord user, BaseRecord charPerson, String fieldName, BaseRecord value) {
         try {
             charPerson.set(fieldName, value);
             BaseRecord patch = charPerson.copyRecord(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, fieldName });
@@ -7733,6 +7743,81 @@ public class PictureBookUtil {
         } catch (Exception e) {
             logger.error("Failed to PATCH charPerson." + fieldName + ": " + e.getMessage(), e);
             return null;
+        }
+    }
+
+    /**
+     * Persist+link a freshly rendered portrait to {@code charPerson} via a PBAC-safe partial
+     * {@code identity.profile} update (id + portrait only) — never re-persist the full charPerson
+     * graph (groupless denial). Shared by the v1 scene pipeline and {@link PbNodeExecutor} (V3 P1-3,
+     * G-30 "portrait not linked").
+     * <p>
+     * A character with no persisted profile (predating the {@code createCharPerson} fix that
+     * persists one up-front) gets one created and linked here rather than being left with a
+     * silently-unlinked portrait. Mirrors {@code SDUtil.generateSDImages}'s
+     * {@code prof.setValue("portrait", ...)}: mutate the loaded profile, derive the minimal patch via
+     * {@code copyRecord(fieldNames)}, and go through {@code AccessPoint.update()} directly so PBAC is
+     * respected and a null return is detectable. Never throws.
+     *
+     * @param profile the character's already-loaded {@code identity.profile}, or null to read it off
+     *        {@code charPerson} here
+     * @param newImage the rendered {@code data.data} (identity fields suffice for the FK)
+     * @return true when {@code profile.portrait} now points at {@code newImage}; false (logged at
+     *         ERROR) when the link could not be made
+     */
+    static boolean linkPortraitToProfile(BaseRecord user, BaseRecord charPerson, BaseRecord profile, BaseRecord newImage) {
+        String cname = (charPerson != null) ? charPerson.get(FieldNames.FIELD_NAME) : null;
+        if (user == null || charPerson == null || newImage == null) {
+            logger.error("Cannot link portrait to character " + cname + ": user, character and image are all required");
+            return false;
+        }
+        try {
+            if (profile == null) {
+                profile = charPerson.get("profile");
+                if (profile == null) {
+                    IOSystem.getActiveContext().getReader().populate(charPerson, new String[] { "profile" });
+                    profile = charPerson.get("profile");
+                }
+            }
+            Long profIdObj = (profile != null) ? profile.get(FieldNames.FIELD_ID) : null;
+            long profId = (profIdObj != null) ? profIdObj.longValue() : 0L;
+            BaseRecord effectiveProfile = profile;
+
+            if (profId <= 0L) {
+                BaseRecord newProfile = PbSubRecordUtil.createSubRecord(user, null, ModelNames.MODEL_PROFILE);
+                if (newProfile != null) {
+                    BaseRecord linked = patchCharPersonField(user, charPerson, "profile", newProfile);
+                    if (linked != null) {
+                        Long newIdObj = newProfile.get(FieldNames.FIELD_ID);
+                        profId = (newIdObj != null) ? newIdObj.longValue() : 0L;
+                        effectiveProfile = newProfile;
+                        logger.info("Resolved missing profile for " + cname + " (new profile id " + profId + ")");
+                    } else {
+                        logger.error("Failed to link newly-created profile to charPerson " + cname);
+                    }
+                } else {
+                    logger.error("Failed to create a replacement profile for " + cname);
+                }
+            }
+
+            if (profId > 0L && effectiveProfile != null) {
+                effectiveProfile.set("portrait", newImage);
+                BaseRecord profilePatch = effectiveProfile.copyRecord(
+                        new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "portrait" });
+                BaseRecord portraitLinked = IOSystem.getActiveContext().getAccessPoint().update(user, profilePatch);
+                if (portraitLinked == null) {
+                    logger.error("Failed to link portrait to character " + cname + " — AccessPoint.update denied or failed (profile id " + profId + ")");
+                    return false;
+                }
+                logger.info("Persisted+linked portrait for " + cname + " (profile id " + profId + ")");
+                return true;
+            }
+            logger.error("Character " + cname + " has no persisted profile id even after resolution — portrait kept in group but left unlinked",
+                    new IllegalStateException("unresolved profile for " + cname));
+            return false;
+        } catch (Exception e) {
+            logger.error("Failed to link portrait to character " + cname + ": " + e.getMessage(), e);
+            return false;
         }
     }
 
@@ -9959,67 +10044,7 @@ public class PictureBookUtil {
                         }
 
                         if (isBook) {
-                            // Persist+link: attach the rendered portrait to the character via a
-                            // PBAC-safe partial identity.profile update (id + portrait only) — do NOT
-                            // re-persist the full charPerson graph (avoids groupless denial).
-                            BaseRecord newImage = portImages.get(0);
-                            try {
-                                Long profIdObj = (profile != null) ? profile.get(FieldNames.FIELD_ID) : null;
-                                long profId = (profIdObj != null) ? profIdObj.longValue() : 0L;
-                                // Tracks whichever profile record is actually live/loaded and about to
-                                // receive the portrait FK — mirrors SDUtil.generateSDImages's `prof`
-                                // variable (the already-loaded profile fetched off the person).
-                                BaseRecord effectiveProfile = profile;
-
-                                if (profId <= 0L) {
-                                    // No usable profile id — this character predates the createCharPerson()
-                                    // fix that persists a real profile up-front. Resolve/create one now
-                                    // rather than leaving the rendered portrait silently unlinked.
-                                    BaseRecord newProfile = PbSubRecordUtil.createSubRecord(user, null, ModelNames.MODEL_PROFILE);
-                                    if (newProfile != null) {
-                                        BaseRecord linked = patchCharPersonField(user, cp, "profile", newProfile);
-                                        if (linked != null) {
-                                            Long newIdObj = newProfile.get(FieldNames.FIELD_ID);
-                                            profId = (newIdObj != null) ? newIdObj.longValue() : 0L;
-                                            effectiveProfile = newProfile;
-                                            logger.info("Resolved missing profile for " + cname + " (new profile id " + profId + ")");
-                                        } else {
-                                            logger.error("Failed to link newly-created profile to charPerson " + cname);
-                                        }
-                                    } else {
-                                        logger.error("Failed to create a replacement profile for " + cname);
-                                    }
-                                }
-
-                                if (profId > 0L && effectiveProfile != null) {
-                                    // Mirrors SDUtil.generateSDImages's `prof.setValue("portrait", ...)` —
-                                    // mutate the already-loaded profile record, then derive the minimal
-                                    // patch via copyRecord(fieldNames) (same idiom as
-                                    // NarrativeUtil.getCreateNarrative/RecordUtil.patch's
-                                    // targ.copyRecord(upf)) instead of hand-building a bare
-                                    // RecordFactory.newInstance(MODEL_PROFILE) patch. Still goes through
-                                    // AccessPoint.update() directly (not the shared static
-                                    // Queue/Queue.processQueue(user)) so PBAC is respected AND a
-                                    // null/failure return is directly detectable here for failedPortraits —
-                                    // see .claude/rules/model-api.md PATCH rules and this class's javadoc.
-                                    effectiveProfile.set("portrait", newImage);
-                                    BaseRecord profilePatch = effectiveProfile.copyRecord(
-                                            new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "portrait" });
-                                    BaseRecord portraitLinked = IOSystem.getActiveContext().getAccessPoint().update(user, profilePatch);
-                                    if (portraitLinked == null) {
-                                        logger.error("Failed to link portrait to character " + cname + " — AccessPoint.update denied or failed (profile id " + profId + ")");
-                                        failedPortraits.add(cname);
-                                    } else {
-                                        logger.info("Persisted+linked portrait for " + cname + " (profile id " + profId + ")");
-                                    }
-                                } else {
-                                    // Fail loudly rather than leave a silently-unlinked portrait.
-                                    logger.error("Character " + cname + " has no persisted profile id even after resolution — portrait kept in group but left unlinked",
-                                            new IllegalStateException("unresolved profile for " + cname));
-                                    failedPortraits.add(cname);
-                                }
-                            } catch (Exception e) {
-                                logger.error("Failed to link portrait to character " + cname + ": " + e.getMessage(), e);
+                            if (!linkPortraitToProfile(user, cp, profile, portImages.get(0))) {
                                 failedPortraits.add(cname);
                             }
                         } else {

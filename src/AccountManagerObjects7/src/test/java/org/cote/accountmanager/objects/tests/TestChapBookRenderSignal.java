@@ -16,6 +16,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.picturebook.ChapBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
+import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -77,6 +78,10 @@ public class TestChapBookRenderSignal extends BaseTest {
 	public void setUpChapBookSignal() {
 		// BaseTest.setup() (@Before) runs first and calls OlioModelNames.use(). Reuse the same stable
 		// non-admin test user the ChapBook suite uses.
+		// These cases assert the v1 SD block (client sdConfig overlay, synchronous image patch), which
+		// v3 replaces with a graph job that drops the overlay. BaseTest re-pins v3 on every @Before.
+		// v3 is covered by TestChapBookV3Render.
+		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
 		OrganizationContext ctx = getTestOrganization(ORG_PATH);
 		testUser = IOSystem.getActiveContext().getFactory()
 			.getCreateUser(ctx.getAdminUser(), "chapbookTestUser", ctx.getOrganizationId());

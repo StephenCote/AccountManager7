@@ -374,6 +374,13 @@ public class OlioFieldNames {
 	public static final String FIELD_PB_BYTE_LENGTH = "byteLength";
 	public static final String FIELD_PB_BACKEND = "backend";
 	public static final String FIELD_PB_BACKEND_GRAPH = "backendGraph";
+	/// olio.pb.artifact — V3 §10 review state (null reads as GENERATED), who/when approved, stage wall-clock.
+	public static final String FIELD_PB_REVIEW_STATUS = "reviewStatus";
+	public static final String FIELD_PB_APPROVED_BY = "approvedBy";
+	public static final String FIELD_PB_APPROVED_AT = "approvedAt";
+	public static final String FIELD_PB_DURATION_MS = "durationMs";
+	/// The approvedBy value written by the book's autoApprove switch, as opposed to a user objectId.
+	public static final String PB_APPROVED_BY_AUTO = "AUTO";
 
 	public static final String FIELD_PB_RUN_STATUS = "runStatus";
 	public static final String FIELD_PB_STARTED_AT = "startedAt";
@@ -398,6 +405,8 @@ public class OlioFieldNames {
 	public static final String FIELD_PB_OVERLAY_OPACITY = "overlayOpacity";
 	/// olio.pb.book — CHAPBOOK-only: clamp each rendered page to a fixed height (overflow hidden) instead of growing vertically
 	public static final String FIELD_PB_FIX_PAGE_HEIGHT = "fixPageHeight";
+	/// olio.pb.book — V3 §10 rule 5: one general switch, default false; first variant of a finished attempt is approved+pinned as AUTO
+	public static final String FIELD_PB_AUTO_APPROVE = "autoApprove";
 	/// olio.pb.scene — poemStanza holds the stanza text for ChapBook scenes
 	public static final String FIELD_CB_POEM_STANZA = "poemStanza";
 	/// olio.pb.scene — sdPrompt for ChapBook: landscape SD prompt derived from poemStanza + mood

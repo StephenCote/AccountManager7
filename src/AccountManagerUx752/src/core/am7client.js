@@ -740,6 +740,11 @@ import { cacheDb } from './cacheDb.js';
 		return get(sConfig + "/features/available");
 	}
 
+	/// Boot-pinned PictureBook V3 render-path switch per product: {picturebook:'v1'|'v3', chapbook:'v1'|'v3'}.
+	async function getRenderPath() {
+		return get(sConfig + "/render-path");
+	}
+
 	var sAccess = sBase + "/access";
 
 	async function accessRequestList(view, status, startIndex, count) {
@@ -1458,6 +1463,7 @@ import { cacheDb } from './cacheDb.js';
 		getFeatureConfig,
 		updateFeatureConfig,
 		getAvailableFeatures,
+		getRenderPath,
 		setupState,
 		runSetup,
 		base:function(){

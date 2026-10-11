@@ -111,6 +111,11 @@
 			"name": "fixPageHeight",
 			"type": "boolean",
 			"description": "CHAPBOOK only: clamp each rendered page to a fixed height with overflow hidden instead of growing vertically. Default false preserves existing grow behavior."
+		},
+		{
+			"name": "autoApprove",
+			"type": "boolean",
+			"description": "V3 §10 rule 5: when true, the first variant of each finished attempt is selected, APPROVED and pinned with approvedBy=AUTO. One general switch for the whole book; off by default without a schema default (PB2 convention rule 3, TestPbModelSchema): a boolean field materialises false and the DDL default is false. Switching it off un-approves nothing."
 		}
 	]
 }

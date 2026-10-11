@@ -838,7 +838,11 @@ a caller-supplied `groupId`/`organizationId`.
 **`regenerate` MARKS, it does not execute**, and its response says so (`executed:false`). Nothing in phases
 3-4 is a scheduler: a node runs when the pipeline next generates its scene. A **pinned** node is refused
 409 rather than silently marked. `listStale` uses compute-only `recomputeStatus` and returns the persisted
-status alongside it as `storedStatus`, so a read path acquires no write.
+status alongside it as `storedStatus`, so a read path acquires no write. *(Superseded 2026-10-10, V3
+Phase 1 P1-2: `listStale` / `workflowView` / `nodeView` now run `PbStaleUtil.scan`, which adds live
+ref-drift detection and persists `nodeStatus = STALE` — only STALE — as the viewing user through the
+PBAC-checked `persistStatus`; a denied write is reported as `markPersisted:false`, not thrown.
+`storedStatus` is still returned. Contract in `PictureBookV3Design.md` §11.1.)*
 **§5.6's last gap closed: `tagApparelSceneIndex` had no book check.** The REST route already carried the
 owning character objectId and **discarded** it. Now the character is the authorized root — read through
 `AccessPoint`, its book group authorized for WRITE by id-based hops only (§5.6b: no read-up), and the

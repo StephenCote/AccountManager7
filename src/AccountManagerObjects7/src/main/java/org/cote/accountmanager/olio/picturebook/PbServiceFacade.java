@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -26,6 +27,9 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
+import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
+import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
+import org.cote.accountmanager.schema.type.PbRunStatusEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 
 /**
@@ -116,6 +120,19 @@ public class PbServiceFacade {
 		return book;
 	}
 
+	/**
+	 * {@code canUpdate} on an already-read book, or a 403 - the gate every write-producing action must
+	 * pass <b>before</b> any SD/LLM work or privileged write is reached, so a denial costs nothing and
+	 * generates nothing (the v1 {@code authorizeSceneAccess(WRITE)} invariant). Reading the book, the
+	 * workflow and the node proves only that the caller may <i>see</i> them.
+	 */
+	private static void requireBookUpdate(BaseRecord user, BaseRecord book, String what) {
+		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, book);
+		if(prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+			throw new PictureBookException(403, "Not authorized to " + what + " in this book");
+		}
+	}
+
 	/** The book's workflow, or a 404 - a book with no workflow has never been generated. */
 	private static BaseRecord requireWorkflow(BaseRecord user, BaseRecord book) {
 		BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);
@@ -156,25 +173,49 @@ public class PbServiceFacade {
 		return node;
 	}
 
+	/**
+	 * An artifact addressed within a book: read by objectId (so {@code canRead} applies, with
+	 * {@code artifactRequest()} projected so its chain can be resolved), then its producing node confirmed
+	 * to belong to <b>this</b> book's workflow through {@link #requireNodeOfBook}. Cross-book addressing
+	 * is a 404 for the same reason a foreign node is.
+	 */
+	private static BaseRecord requireArtifactOfBook(BaseRecord user, BaseRecord workflow, String artifactObjectId) {
+		if(artifactObjectId == null || artifactObjectId.trim().length() == 0) {
+			throw new PictureBookException(400, "An artifact objectId is required");
+		}
+		BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactObjectId, (long) workflow.get(FieldNames.FIELD_ORGANIZATION_ID));
+		if(artifact == null) {
+			throw new PictureBookException(404, "Artifact not found");
+		}
+		BaseRecord producedBy = artifact.get(OlioFieldNames.FIELD_PB_PRODUCED_BY_NODE);
+		if(producedBy == null || producedBy.get(FieldNames.FIELD_OBJECT_ID) == null) {
+			throw new PictureBookException(404, "Artifact not found in this book");
+		}
+		requireNodeOfBook(user, workflow, (String) producedBy.get(FieldNames.FIELD_OBJECT_ID));
+		return artifact;
+	}
+
 	// ─────────────────────────────── reads ───────────────────────────────
 
 	/**
 	 * The whole graph for one book: the workflow, its nodes with a recomputed status, and the edges.
 	 * <p>
-	 * {@code recomputeStatus} is compute-only by ratification 2 - it returns a status and writes nothing.
-	 * The <b>persisted</b> status is returned alongside it as {@code storedStatus} so a client can see when
-	 * the two disagree (which is exactly what "this node is stale but has not been re-run" looks like)
-	 * without this read path acquiring a write.
+	 * Statuses come from one {@link PbStaleUtil#scan} per book (cached ~30 s, invalidated by every PB graph
+	 * write in this JVM), which also sees an edit to a <i>bound record</i> - a character's age - that
+	 * {@code recomputeStatus} alone cannot (V3 §11.1). The scan persists STALE, and only STALE, as the
+	 * viewer; a viewer who cannot update the nodes still gets the statuses, with {@code markPersisted=false}
+	 * on the stale entries. The <b>persisted</b> status is returned alongside as {@code storedStatus} so a
+	 * client can see when the two disagree.
 	 */
-	/// COST, stated rather than discovered later: this is O(nodes) queries, and each node costs TWO binding
-	/// reads - one from listBindings here and one inside recomputeStatus. At ~7 nodes per scene a 41-scene
-	/// book is ~287 nodes, so ~570 binding queries for one view. Fine for a chapter, not fine for a whole
-	/// long book, and the fix when it bites is to list the workflow's bindings ONCE
-	/// (PbGraphUtil.listWorkflowBindings) and hand recomputeStatus a prebuilt map. Not done here because it
-	/// changes recomputeStatus's signature, and no measurement yet says it is needed.
+	/// COST: one node list plus one binding read per node for the scan, then one more binding read per node
+	/// here for the edges (listBindings is uncached by design). At ~7 nodes per scene a 41-scene book is
+	/// ~287 nodes, so ~574 binding queries on a cold scan and ~287 within the TTL. The second read goes away
+	/// when the scan starts retaining its bindings, which it deliberately does not do yet (no BaseRecords
+	/// in the cache).
 	public static Map<String, Object> workflowView(BaseRecord user, String bookObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		BaseRecord workflow = requireWorkflow(user, book);
+		PbStaleUtil.Scan scan = PbStaleUtil.scan(user, book, workflow, false);
 
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
@@ -190,28 +231,40 @@ public class PbServiceFacade {
 		out.put("graphVersion", workflow.get(OlioFieldNames.FIELD_PB_GRAPH_VERSION));
 		out.put("graphStatus", enumString(workflow, OlioFieldNames.FIELD_PB_GRAPH_STATUS));
 		out.put("nodeCount", workflow.get(OlioFieldNames.FIELD_PB_NODE_COUNT));
+		out.put("autoApprove", autoApproveOf(book));
 
 		List<BaseRecord> nodes = PbGraphUtil.listNodes(user, workflow);
 		List<Map<String, Object>> nodeViews = new ArrayList<>();
 		List<Map<String, Object>> edges = new ArrayList<>();
 		for(BaseRecord n : nodes) {
-			nodeViews.add(nodeSummary(user, n, book));
+			nodeViews.add(nodeSummary(user, n, book, scan));
 			for(BaseRecord b : PbGraphUtil.listBindings(user, n)) {
 				edges.add(edgeSummary(b, n));
 			}
 		}
 		out.put("nodes", nodeViews);
 		out.put("edges", edges);
+		out.put("staleCount", scan.entries.size());
+		out.put("staleMarkPersisted", scan.markPersisted);
+		out.put("staleUndeterminedRefs", scan.undeterminedRefs.size());
+		out.put("scanComplete", scan.complete);
+		out.put("scanAt", scan.at);
 		return out;
 	}
 
-	/** One node in detail: its summary, its bindings, and the full artifact revision chain per role. */
+	/**
+	 * One node in detail: its summary, its bindings, and the full artifact revision chain per role.
+	 * <p>
+	 * The status comes from the book's cached drift scan, so a cold cache costs a whole-book scan here;
+	 * within the TTL it is one node read plus this node's own bindings and artifacts.
+	 */
 	public static Map<String, Object> nodeView(BaseRecord user, String bookObjectId, String nodeObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord node = requireNodeOfBook(user, workflow, nodeObjectId);
+		PbStaleUtil.Scan scan = PbStaleUtil.scan(user, book, workflow, false);
 
-		Map<String, Object> out = nodeSummary(user, node, book);
+		Map<String, Object> out = nodeSummary(user, node, book, scan);
 		List<Map<String, Object>> bindings = new ArrayList<>();
 		for(BaseRecord b : PbGraphUtil.sortedBindings(PbGraphUtil.listBindings(user, node))) {
 			bindings.add(edgeSummary(b, node));
@@ -241,19 +294,7 @@ public class PbServiceFacade {
 	public static Map<String, Object> artifactView(BaseRecord user, String bookObjectId, String artifactObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		BaseRecord workflow = requireWorkflow(user, book);
-		if(artifactObjectId == null || artifactObjectId.trim().length() == 0) {
-			throw new PictureBookException(400, "An artifact objectId is required");
-		}
-		BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactObjectId, orgOf(user));
-		if(artifact == null) {
-			throw new PictureBookException(404, "Artifact not found");
-		}
-		/// Same cross-book refusal as a node: resolve the producing node and require it to be in this book.
-		BaseRecord producedBy = artifact.get(OlioFieldNames.FIELD_PB_PRODUCED_BY_NODE);
-		if(producedBy == null || producedBy.get(FieldNames.FIELD_OBJECT_ID) == null) {
-			throw new PictureBookException(404, "Artifact not found in this book");
-		}
-		requireNodeOfBook(user, workflow, (String) producedBy.get(FieldNames.FIELD_OBJECT_ID));
+		BaseRecord artifact = requireArtifactOfBook(user, workflow, artifactObjectId);
 
 		Map<String, Object> out = artifactSummary(artifact);
 		out.put("generatorRequest", artifact.get(OlioFieldNames.FIELD_PB_GENERATOR_REQUEST));
@@ -263,41 +304,101 @@ public class PbServiceFacade {
 	}
 
 	/**
-	 * Every node of the book whose recomputed status is STALE, i.e. what a "regenerate what changed" run
-	 * would touch.
+	 * Every stale node of the book, i.e. what a "regenerate what changed" run would touch, from a
+	 * <b>fresh</b> {@link PbStaleUtil#scan} (never the cached one - this is the "re-check" call).
+	 * <p>
+	 * Each entry is the node summary plus {@code reason} ({@code hashChanged} / {@code refDrift} /
+	 * {@code marked} / {@code propagated}), {@code driftedBindings} (the bound records whose watched fields
+	 * changed), {@code affectedSceneIndexes} (the rendered scene-scope nodes downstream, itself included)
+	 * and {@code markPersisted}. The scan persists STALE on what it finds, as the caller, so the stored
+	 * status agrees with the report for everyone who views the book next - unless the caller cannot update
+	 * the nodes, in which case {@code markPersisted} is false and the stored status is untouched.
 	 * <p>
 	 * <b>A node that has never succeeded is not stale.</b> {@code inputHash} is null until a node's first
 	 * success, so such a node is PENDING/READY - reporting it as stale would tell a user that work needs
-	 * redoing when it has never been done.
+	 * redoing when it has never been done. FAILED, SKIPPED and RUNNING nodes are likewise never marked.
 	 */
 	public static List<Map<String, Object>> listStale(BaseRecord user, String bookObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		BaseRecord workflow = requireWorkflow(user, book);
+		PbStaleUtil.Scan scan = PbStaleUtil.scan(user, book, workflow, true);
 		List<Map<String, Object>> out = new ArrayList<>();
+		if(scan.entries.isEmpty()) {
+			return out;
+		}
+		/// Re-list after the scan so storedStatus reflects what it persisted.
 		for(BaseRecord n : PbGraphUtil.listNodes(user, workflow)) {
-			if(PbNodeStatusEnumType.STALE == PbGraphUtil.recomputeStatus(user, n, book)) {
-				out.add(nodeSummary(user, n, book));
+			Long id = n.get(FieldNames.FIELD_ID);
+			if(id != null && scan.entries.containsKey(id)) {
+				out.add(nodeSummary(user, n, book, scan));
 			}
 		}
+		return out;
+	}
+
+	/**
+	 * What an edit to one bound record ({@code refModel/refObjectId}, e.g. a charPerson) touches in this
+	 * book: the nodes bound to it, whether the scan currently sees it as drifted, and the rendered scenes
+	 * downstream of those nodes - the number behind "affected scenes: N". Always a fresh scan.
+	 */
+	public static Map<String, Object> affectedByRecord(BaseRecord user, String bookObjectId, String refModel, String refObjectId) {
+		if(refModel == null || refModel.trim().length() == 0 || refObjectId == null || refObjectId.trim().length() == 0) {
+			throw new PictureBookException(400, "A refModel and refObjectId are required");
+		}
+		BaseRecord book = requireBook(user, bookObjectId);
+		BaseRecord workflow = requireWorkflow(user, book);
+		PbStaleUtil.Scan scan = PbStaleUtil.scan(user, book, workflow, true);
+
+		Set<Long> bound = scan.boundNodes(refModel, refObjectId);
+		List<PbStaleUtil.Entry> drifted = scan.driftedEntriesFor(refModel, refObjectId);
+		Set<Integer> staleScenes = new java.util.TreeSet<>();
+		List<String> driftedHandles = new ArrayList<>();
+		for(PbStaleUtil.Entry e : drifted) {
+			staleScenes.addAll(e.affectedSceneIndexes);
+			driftedHandles.add(e.handle);
+		}
+
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("refModel", refModel);
+		out.put("refObjectId", refObjectId);
+		out.put("boundNodes", bound.size());
+		out.put("drifted", !drifted.isEmpty());
+		out.put("driftedHandles", driftedHandles);
+		out.put("affectedSceneIndexes", new ArrayList<>(scan.affectedScenes(bound)));
+		out.put("staleSceneIndexes", new ArrayList<>(staleScenes));
+		out.put("markPersisted", scan.markPersisted);
 		return out;
 	}
 
 	// ─────────────────────────────── writes ───────────────────────────────
 
 	/**
-	 * Request that a node be regenerated: persist STALE on it and propagate staleness downstream.
+	 * Regenerate a node: submit an {@code olio.pb.run} for exactly this node and execute it synchronously
+	 * through {@link PbNodeExecutor#executeNodeRun}, producing a new artifact revision (V3 §20, P1-3).
 	 * <p>
-	 * <b>This marks, it does not execute.</b> Nothing in phase 3 or 4 is a scheduler - a node runs when the
-	 * pipeline next generates the scene it belongs to
-	 * ({@code POST /olio/picture-book/scene/{sceneObjectId}/generate}). Saying "regenerated" and returning
-	 * without having produced anything would be the false claim; the response reports what was marked and
-	 * says so.
+	 * Until P1-3 this only marked the node STALE and relied on the next scene generation to do the work.
+	 * It now executes: the node is stamped RUNNING for the duration, closes DONE (PORTRAIT) or
+	 * DONE_UNVERIFIED (the other executable types) with its downstream marked STALE, or FAILED with
+	 * {@code lastError} when the executor throws — in which case the exception propagates with its own
+	 * status. There is no STALE pre-mark: a node that is about to be re-rendered does not need to be
+	 * declared out of date first, and a refused request (pinned, non-executable, no SD backend) leaves
+	 * the node exactly as it was.
 	 * <p>
-	 * A PINNED node is refused rather than silently marked, because pinning exists precisely to say "do not
-	 * replace this".
+	 * Gate order: 404 (book/workflow/node not readable), then <b>403 unless the caller may update the
+	 * book</b> - rendering writes a run, the node, an artifact and (as the olio principal) the character's
+	 * narrative, so read access alone must not reach it - then 409 PINNED, then the executor's own 501/500
+	 * gates. All of these fire before anything is written or any GPU time is spent. The SD backend is the
+	 * {@code (sdApiType, sdServer)} pair the transport resolved from its deployment config, the same way
+	 * {@code generateSceneImage} receives it; a missing server is a 500 for the SD-backed types.
+	 *
+	 * @return the executor's artifact + run DTO, plus {@code executed=true}
 	 */
-	public static Map<String, Object> requestRegenerate(BaseRecord user, String bookObjectId, String nodeObjectId) {
+	public static Map<String, Object> requestRegenerate(BaseRecord user, String bookObjectId, String nodeObjectId,
+			String sdApiType, String sdServer) {
 		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "regenerate a node");
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord node = requireNodeOfBook(user, workflow, nodeObjectId);
 
@@ -307,26 +408,456 @@ public class PbServiceFacade {
 				+ " is pinned. Unpin it first - pinning means do not replace this artifact.");
 		}
 
-		if(!PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.STALE)) {
-			throw new PictureBookException(500, "Failed to mark node "
-				+ node.get(OlioFieldNames.FIELD_PB_HANDLE) + " stale");
+		/// The synchronous path claims the node too (architect ruling Q4): an async run that already holds
+		/// it is a 409 here, and a sync regenerate holds it against async submits until it returns. The run
+		/// is opened inside executeNodeRun, so the claim is keyed by a request token rather than a run id.
+		List<Long> nodeIds = List.of((Long) node.get(FieldNames.FIELD_ID));
+		String claimKey = "sync:" + UUID.randomUUID();
+		Long conflict = PbNodeInflight.tryClaim(nodeIds, claimKey);
+		if(conflict != null) {
+			throw new PictureBookException(409, "Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE)
+				+ " is being rendered by run " + PbNodeInflight.runOf(conflict.longValue()));
 		}
-		List<BaseRecord> downstream = PbGraphUtil.markStaleDownstream(user, workflow, node);
+		try {
+			Map<String, Object> out = new LinkedHashMap<>(
+				PbNodeExecutor.executeNodeRun(user, book, workflow, node, sdApiType, sdServer));
+			out.put("executed", Boolean.TRUE);
+			return out;
+		}
+		finally {
+			PbNodeInflight.release(nodeIds, claimKey);
+		}
+	}
 
-		Map<String, Object> out = new LinkedHashMap<>();
-		out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
-		out.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
-		out.put("marked", "STALE");
-		out.put("downstreamMarked", downstream.size());
-		List<String> handles = new ArrayList<>();
-		for(BaseRecord d : downstream) {
-			handles.add((String) d.get(OlioFieldNames.FIELD_PB_HANDLE));
+	/**
+	 * Submit an asynchronous render of one scene (V3 §21, P1-6): the scene's graph node is the terminal,
+	 * its upstream closure the plan, and the request returns as soon as the run is opened and the job
+	 * queued. See {@link PbRenderJobUtil#submit} for what is planned, executed, reused and refused.
+	 * <p>
+	 * Gate order: 404 book / workflow / scene (a scene of another book is a 404, not a 403 - the book in the
+	 * path is the only compartment the caller addressed), 403 unless the caller may update the book, then
+	 * 409 when the scene has no graph node yet (it was extracted but never built into the workflow - run
+	 * the graph build first), then the planner's own 409 / 429 / 500.
+	 *
+	 * @return {@code jobId}, {@code runObjectId} and the plan summary; poll {@code GET /rest/job/{jobId}}
+	 *         or read the run
+	 */
+	public static Map<String, Object> requestSceneRender(BaseRecord user, String bookObjectId, String sceneObjectId,
+			String sdApiType, String sdServer) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "render a scene");
+		BaseRecord workflow = requireWorkflow(user, book);
+		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
+		BaseRecord sceneNode = scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE);
+		Long nodeId = (sceneNode != null ? sceneNode.get(FieldNames.FIELD_ID) : null);
+		if(nodeId == null || nodeId.longValue() <= 0L) {
+			throw new PictureBookException(409, "Scene " + scene.get(FieldNames.FIELD_NAME)
+				+ " has no graph node yet; build the book's graph before rendering it");
 		}
-		out.put("downstreamHandles", handles);
-		out.put("executed", Boolean.FALSE);
-		out.put("note", "Marked for regeneration. Execution happens on the next scene generation call;"
-			+ " this endpoint is not a scheduler.");
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("sceneIndex", scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
+		out.putAll(PbRenderJobUtil.submit(user, book, workflow, List.of(nodeId), sdApiType, sdServer,
+			PbRenderJobUtil.KIND_RENDER));
 		return out;
+	}
+
+	/**
+	 * Submit one asynchronous render run for every scene of the book that has a graph node (V3 §21,
+	 * P1-6). The terminals are the scenes' nodes; the upstream closure (portraits, prompts, strips) is
+	 * planned once and shared, so a character rendered for scene 1 is reused by scene 7 within the same
+	 * run. Scenes without a node are reported in {@code scenesWithoutNode} and skipped; a book where no
+	 * scene has a node is a 409.
+	 */
+	public static Map<String, Object> requestRenderAll(BaseRecord user, String bookObjectId, String sdApiType,
+			String sdServer) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "render the book");
+		BaseRecord workflow = requireWorkflow(user, book);
+		List<Long> terminals = new ArrayList<>();
+		List<String> withoutNode = new ArrayList<>();
+		for(BaseRecord scene : PbBookUtil.listScenes(user, book)) {
+			BaseRecord sceneNode = scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE);
+			Long nodeId = (sceneNode != null ? sceneNode.get(FieldNames.FIELD_ID) : null);
+			if(nodeId == null || nodeId.longValue() <= 0L) {
+				withoutNode.add(scene.get(FieldNames.FIELD_OBJECT_ID));
+				continue;
+			}
+			terminals.add(nodeId);
+		}
+		if(terminals.isEmpty()) {
+			throw new PictureBookException(409, "No scene of this book has a graph node yet; build the book's graph before rendering it");
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("sceneCount", Integer.valueOf(terminals.size()));
+		out.put("scenesWithoutNode", withoutNode);
+		out.putAll(PbRenderJobUtil.submit(user, book, workflow, terminals, sdApiType, sdServer,
+			PbRenderJobUtil.KIND_RENDER_ALL));
+		return out;
+	}
+
+	/*
+	 * ---------------------------------------------------------------------------------------------
+	 * ChapBook pages on the Phase 1 path (V3 §24, P1-9)
+	 * ---------------------------------------------------------------------------------------------
+	 * A ChapBook page is one olio.pb.scene whose prompt is the scene's own sdPrompt. On the v3 path the
+	 * page is a LANDSCAPE node of the book's workflow (handle landscapeHandle(sceneObjectId), scope
+	 * "scene"), its image a "landscape" artifact of that node, and the render the same pb.render /
+	 * pb.renderAll job the PictureBook scene path submits. The ChapBookUtil entry points call these; the
+	 * old render path is untouched and stays the v1 default.
+	 */
+
+	/**
+	 * The read-only gate of {@link #requestChapBookPageRender}: 404 book / page, 409 unless the book is on
+	 * the v3 path, 403 unless the caller may update the book, 403 unless the book is a ChapBook. Nothing is
+	 * written, so a refused request leaves no workflow or node behind (architect P1-9 B4).
+	 *
+	 * @return the scene, with its {@code book} FK confirmed to be the addressed book
+	 */
+	public static BaseRecord checkChapBookPageRender(BaseRecord user, String bookObjectId, String sceneObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireChapBook(book);
+		requireBookUpdate(user, book, "render a page");
+		return requireSceneOfBook(user, book, sceneObjectId);
+	}
+
+	/**
+	 * Submit an asynchronous render of one ChapBook page (V3 §24, P1-9).
+	 * <p>
+	 * Gates first ({@link #checkChapBookPageRender}), then the lazy writes: the book's workflow is created
+	 * if it has none (ChapBooks created before the workflow block existed have none), the page's LANDSCAPE
+	 * node is created if missing and linked as {@code scene.sceneNode}, and the scene's {@code sdPrompt} /
+	 * {@code configOverride} are mirrored onto the node. A page with no prompt is a 409 - there is nothing
+	 * to render and no node is created for it. A pinned node is a 409 (approved pages are not replaced
+	 * until unpinned). The job is submitted with {@code force=true}: a ChapBook page render is an explicit
+	 * "render this page" and re-rolls a current node too, exactly as the v1 path always re-rendered.
+	 *
+	 * @return {@code sceneObjectId}, {@code sceneIndex}, {@code nodeObjectId}, plus {@link PbRenderJobUtil#submit}'s
+	 *         {@code jobId} / {@code runObjectId} / plan summary
+	 */
+	public static Map<String, Object> requestChapBookPageRender(BaseRecord user, String bookObjectId,
+			String sceneObjectId, String sdApiType, String sdServer) {
+		return requestChapBookPageRender(user, bookObjectId, sceneObjectId,
+			PbNodeExecutor.toSdUtil(sdApiType, sdServer), sdServer);
+	}
+
+	/** {@link #requestChapBookPageRender} over an {@link org.cote.accountmanager.olio.sd.SDUtil} the caller built (test seam). */
+	static Map<String, Object> requestChapBookPageRender(BaseRecord user, String bookObjectId, String sceneObjectId,
+			org.cote.accountmanager.olio.sd.SDUtil sdu, String sdServer) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireChapBook(book);
+		requireBookUpdate(user, book, "render a page");
+		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
+		String prompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		if(prompt == null || prompt.isBlank()) {
+			throw new PictureBookException(409, "Page " + scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX)
+				+ " has no prompt; set or generate its landscape prompt before rendering it");
+		}
+		BaseRecord workflow = requireChapBookWorkflow(user, book);
+		BaseRecord node = ensureChapBookPageNode(user, book, workflow, scene);
+		Boolean pinned = node.get(OlioFieldNames.FIELD_PB_PINNED);
+		if(pinned != null && pinned.booleanValue()) {
+			throw new PictureBookException(409, "Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE)
+				+ " is pinned. Unpin it first - pinning means do not replace this artifact.");
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("sceneIndex", scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
+		out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
+		out.putAll(PbRenderJobUtil.submit(user, book, workflow, List.of((Long) node.get(FieldNames.FIELD_ID)),
+			sdu, sdServer, PbRenderJobUtil.KIND_RENDER, true));
+		return out;
+	}
+
+	/**
+	 * Submit one asynchronous {@code pb.renderAll} run for every prompted page of a ChapBook (V3 §24,
+	 * P1-9) - the bulk render as one job, never one job per page (architect P1-9 B1). Pages without a
+	 * prompt are reported in {@code scenesWithoutPrompt} and get no node; a book with no prompted page is
+	 * a 409. Submitted with {@code force=true} like the single-page render; pinned pages are skipped by the
+	 * planner and reported in {@code pinnedNodeCount}, and a book whose every prompted page is pinned is the
+	 * planner's 409.
+	 *
+	 * @return {@code sceneCount} (pages submitted), {@code scenesWithoutPrompt}, {@code nodeObjectIds} (in
+	 *         page order), plus {@link PbRenderJobUtil#submit}'s {@code jobId} / {@code runObjectId} / summary
+	 */
+	public static Map<String, Object> requestChapBookRenderAll(BaseRecord user, String bookObjectId,
+			String sdApiType, String sdServer) {
+		return requestChapBookRenderAll(user, bookObjectId, PbNodeExecutor.toSdUtil(sdApiType, sdServer), sdServer);
+	}
+
+	/** {@link #requestChapBookRenderAll} over an {@link org.cote.accountmanager.olio.sd.SDUtil} the caller built (test seam). */
+	static Map<String, Object> requestChapBookRenderAll(BaseRecord user, String bookObjectId,
+			org.cote.accountmanager.olio.sd.SDUtil sdu, String sdServer) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireChapBook(book);
+		requireBookUpdate(user, book, "render the book");
+		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
+		List<BaseRecord> prompted = new ArrayList<>();
+		List<String> withoutPrompt = new ArrayList<>();
+		for(BaseRecord scene : scenes) {
+			String prompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+			if(prompt == null || prompt.isBlank()) {
+				withoutPrompt.add(scene.get(FieldNames.FIELD_OBJECT_ID));
+				continue;
+			}
+			prompted.add(scene);
+		}
+		if(prompted.isEmpty()) {
+			throw new PictureBookException(409, "No page of this book has a prompt yet; set or generate the landscape prompts before rendering it");
+		}
+		BaseRecord workflow = requireChapBookWorkflow(user, book);
+		List<Long> terminals = new ArrayList<>();
+		List<String> nodeObjectIds = new ArrayList<>();
+		for(BaseRecord scene : prompted) {
+			BaseRecord node = ensureChapBookPageNode(user, book, workflow, scene);
+			terminals.add((Long) node.get(FieldNames.FIELD_ID));
+			nodeObjectIds.add(node.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("sceneCount", Integer.valueOf(terminals.size()));
+		out.put("scenesWithoutPrompt", withoutPrompt);
+		out.put("nodeObjectIds", nodeObjectIds);
+		out.putAll(PbRenderJobUtil.submit(user, book, workflow, terminals, sdu, sdServer,
+			PbRenderJobUtil.KIND_RENDER_ALL, true));
+		return out;
+	}
+
+	/** 403 unless the book is a ChapBook - same status and wording as {@code ChapBookUtil}'s guard. */
+	private static void requireChapBook(BaseRecord book) {
+		// Typed as Object on purpose: String.valueOf(record.get(..)) resolves to valueOf(char[]) and throws ClassCastException
+		Object rawType = (book.hasField(OlioFieldNames.FIELD_PB_BOOK_TYPE) ? book.get(OlioFieldNames.FIELD_PB_BOOK_TYPE) : null);
+		String bookType = (rawType != null ? rawType.toString() : null);
+		if(bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
+			throw new PictureBookException(403, "Book " + book.get(FieldNames.FIELD_OBJECT_ID) + " is not a CHAPBOOK");
+		}
+	}
+
+	/**
+	 * The ChapBook's workflow, created on first use: {@code createChapBook} has made one since the workflow
+	 * block was added, but older ChapBooks have none and a page render is the natural moment to add it.
+	 * Reached only after the gates, so the create is an authorized write by the book's updater.
+	 */
+	private static BaseRecord requireChapBookWorkflow(BaseRecord user, BaseRecord book) {
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+		if(slug == null || slug.isBlank()) {
+			throw new PictureBookException(500, "ChapBook " + book.get(FieldNames.FIELD_OBJECT_ID) + " carries no slug");
+		}
+		BaseRecord workflow = PbGraphUtil.getCreateWorkflow(user, book, PbBookUtil.workflowGroupPath(slug));
+		if(workflow == null) {
+			throw new PictureBookException(500, "Failed to create the workflow for ChapBook " + slug);
+		}
+		return workflow;
+	}
+
+	/**
+	 * The page's LANDSCAPE node, created and linked on first use and brought up to date after that:
+	 * <ol>
+	 * <li>found by handle ({@link PbPipelineUtil#landscapeHandle} of the scene objectId - deterministic, so
+	 *     this is idempotent) or created with {@code scope=scene}, {@code scopeRef=} the scene objectId and
+	 *     {@code sceneIndex} / ordinal = the page index;</li>
+	 * <li>{@code scene.sdPrompt} mirrored to {@code node.promptText} and {@code scene.configOverride} to
+	 *     {@code node.configOverride} when they differ - the scene stays the authority (the executor reads
+	 *     the scene), the node carries the copy the review views show;</li>
+	 * <li>{@code scene.sceneNode} patched to the node when it is not already that node.</li>
+	 * </ol>
+	 * Every write is a PATCH as the request user; a failed write is a 500 naming it, never silent.
+	 */
+	private static BaseRecord ensureChapBookPageNode(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord scene) {
+		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+		int idx = (sceneIndex != null ? sceneIndex.intValue() : 0);
+		String handle = PbPipelineUtil.landscapeHandle(sceneOid);
+		BaseRecord node = PbPipelineUtil.findNodeByHandle(user, workflow, handle);
+		if(node == null) {
+			String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+			node = PbGraphUtil.addNode(user, workflow, handle, PbNodeTypeEnumType.LANDSCAPE,
+				PbBookUtil.workflowGroupPath(slug), idx);
+			if(node == null) {
+				throw new PictureBookException(500, "Failed to create the page node " + handle);
+			}
+			if(!PbPipelineUtil.patchNodeScope(user, workflow, node, PbPipelineUtil.SCOPE_SCENE, sceneOid, idx)) {
+				throw new PictureBookException(500, "Failed to record the page scope on node " + handle);
+			}
+		}
+
+		if(!PbBookUtil.mirrorSceneOntoNode(user, scene, node)) {
+			throw new PictureBookException(500, "Failed to mirror the page prompt / config override onto node " + handle);
+		}
+
+		BaseRecord sceneNodeRef = scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE);
+		Long linked = (sceneNodeRef != null ? sceneNodeRef.get(FieldNames.FIELD_ID) : null);
+		Long nodeId = node.get(FieldNames.FIELD_ID);
+		if(linked == null || !linked.equals(nodeId)) {
+			BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_SCENE_NODE);
+			try {
+				patch.set(OlioFieldNames.FIELD_PB_SCENE_NODE, node);
+			}
+			catch(FieldException | ValueException | ModelNotFoundException e) {
+				throw new PictureBookException(500, "Failed to assemble the sceneNode patch: " + e.getMessage());
+			}
+			if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+				throw new PictureBookException(500, "Failed to link page " + idx + " to node " + handle);
+			}
+		}
+		/// Re-read so the caller sees the mirrored fields and the current status / pin, not the pre-patch copy.
+		BaseRecord fresh = PbGraphUtil.readNode(user, node.get(FieldNames.FIELD_OBJECT_ID), PbGraphUtil.orgId(node));
+		return (fresh != null ? fresh : node);
+	}
+
+	/**
+	 * Request cooperative cancellation of a render run (V3 §21, P1-6).
+	 * <p>
+	 * The run is addressed through the book: 404 unless the caller can read the book and the run is a run
+	 * of that book's workflow; 403 unless the caller may update the book (cancelling is a write to the run
+	 * and its nodes). The cancel flips the job's own token ({@link PbRunCancelRegistry}); an in-flight LLM
+	 * stream is aborted, an in-flight SD call runs to completion and its bytes are discarded, and the run
+	 * closes CANCELLED at the next stage boundary - this call returns before that happens, so the caller
+	 * reads the run (or polls the job) to see the terminal state.
+	 * <p>
+	 * A run this JVM is not executing cannot be cancelled from here: a run already terminal is a 409 naming
+	 * its status; a RUNNING / PENDING run with no in-flight job in this process (another JVM's, or one
+	 * orphaned by a restart) is a 409 too, telling the caller it is waiting on restart recovery (P1-7).
+	 *
+	 * @return {@code runObjectId}, {@code runStatus} as read before the cancel, {@code cancelRequested=true}
+	 */
+	public static Map<String, Object> cancelRun(BaseRecord user, String bookObjectId, String runObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "cancel a run");
+		BaseRecord workflow = requireWorkflow(user, book);
+		BaseRecord run = requireRunOfBook(user, workflow, runObjectId);
+		String runOid = run.get(FieldNames.FIELD_OBJECT_ID);
+		PbRunStatusEnumType status = run.getEnum(OlioFieldNames.FIELD_PB_RUN_STATUS);
+		boolean inFlight = (status == PbRunStatusEnumType.PENDING || status == PbRunStatusEnumType.RUNNING);
+		if(!inFlight) {
+			throw new PictureBookException(409, "Run " + run.get(FieldNames.FIELD_NAME) + " is " + status
+				+ " and cannot be cancelled");
+		}
+		if(!PbRunCancelRegistry.cancel(runOid)) {
+			if(PbRunCancelRegistry.peek(runOid) != null) {
+				throw new PictureBookException(409, "Run " + run.get(FieldNames.FIELD_NAME) + " is already being cancelled");
+			}
+			throw new PictureBookException(409, "Run " + run.get(FieldNames.FIELD_NAME) + " is " + status
+				+ " but no job for it is in flight in this process; it will be reconciled by restart recovery");
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("runObjectId", runOid);
+		out.put("runStatus", status.name());
+		out.put("cancelRequested", Boolean.TRUE);
+		return out;
+	}
+
+	/**
+	 * Read one run of a book (V3 §21, P1-7): the run row plus, per node of the workflow, its current
+	 * status - what the Ux needs to show stage progress after the submitting page is gone and to offer
+	 * "Resume" on an INTERRUPTED run.
+	 * <p>
+	 * 404 unless the caller can read the book and the run belongs to the book's workflow. No update grant
+	 * is needed: this is a read. {@code inFlightInThisProcess} says whether a job for the run exists in
+	 * this JVM right now; {@code resumable} is the exact predicate {@link #resumeRun} applies (INTERRUPTED
+	 * with a recorded execution set), so a client that keys "Resume" on it never gets a 409 it could have
+	 * predicted. The node list is one read ({@link PbGraphUtil#nodesById}), not one per requested id.
+	 */
+	public static Map<String, Object> getRun(BaseRecord user, String bookObjectId, String runObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		BaseRecord workflow = requireWorkflow(user, book);
+		BaseRecord run = requireRunOfBook(user, workflow, runObjectId);
+		return runDto(user, workflow, run);
+	}
+
+	/**
+	 * Resume an INTERRUPTED run (V3 §21, P1-7) by submitting a new one for its {@code requestedNodeIds};
+	 * see {@link PbRenderJobUtil#resume} for what is reused and refused.
+	 * <p>
+	 * Gate order: 404 book / workflow / run, 403 unless the caller may update the book (a resume renders),
+	 * then 409 unless the run is INTERRUPTED, 409 when it carries no execution set (opened before P1-6),
+	 * then the planner's own 409 (everything already current) / 429 / 500.
+	 */
+	public static Map<String, Object> resumeRun(BaseRecord user, String bookObjectId, String runObjectId,
+			String sdApiType, String sdServer) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "resume a run");
+		BaseRecord workflow = requireWorkflow(user, book);
+		BaseRecord run = requireRunOfBook(user, workflow, runObjectId);
+		return PbRenderJobUtil.resume(user, book, workflow, run, sdApiType, sdServer);
+	}
+
+	private static Map<String, Object> runDto(BaseRecord user, BaseRecord workflow, BaseRecord run) {
+		String runOid = run.get(FieldNames.FIELD_OBJECT_ID);
+		PbRunStatusEnumType status = run.getEnum(OlioFieldNames.FIELD_PB_RUN_STATUS);
+		List<Long> requested = PbRenderJobUtil.requestedNodeIdsOf(run);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("runObjectId", runOid);
+		out.put("name", run.get(FieldNames.FIELD_NAME));
+		out.put("runStatus", (status != null ? status.name() : null));
+		/// ZonedDateTime is not serializable by JSONUtil.exportObject (no JavaTimeModule): a raw value makes
+		/// the whole DTO export null and the route answer 200 with an empty body.
+		Object startedAt = run.get(OlioFieldNames.FIELD_PB_STARTED_AT);
+		Object completedAt = run.get(OlioFieldNames.FIELD_PB_COMPLETED_AT);
+		out.put("startedAt", (startedAt != null ? startedAt.toString() : null));
+		out.put("completedAt", (completedAt != null ? completedAt.toString() : null));
+		out.put("requestedNodeIds", requested);
+		out.put("executedNodeCount", run.get(OlioFieldNames.FIELD_PB_EXECUTED_NODE_COUNT));
+		out.put("failedNodeCount", run.get(OlioFieldNames.FIELD_PB_FAILED_NODE_COUNT));
+		out.put("error", run.get(OlioFieldNames.FIELD_PB_ERROR));
+		out.put("inFlightInThisProcess", Boolean.valueOf(runOid != null && PbRunCancelRegistry.peek(runOid) != null));
+		out.put("resumable", Boolean.valueOf(status == PbRunStatusEnumType.INTERRUPTED && !requested.isEmpty()));
+		List<Map<String, Object>> nodes = new ArrayList<>();
+		Map<Long, BaseRecord> byId = PbGraphUtil.nodesById(user, workflow);
+		for(Long id : requested) {
+			BaseRecord node = byId.get(id);
+			Map<String, Object> n = new LinkedHashMap<>();
+			n.put("nodeId", id);
+			if(node != null) {
+				n.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
+				n.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
+				Object ns = node.get(OlioFieldNames.FIELD_PB_NODE_STATUS);
+				n.put("nodeStatus", (ns != null ? String.valueOf(ns) : null));
+			}
+			else {
+				n.put("nodeStatus", "MISSING");
+			}
+			nodes.add(n);
+		}
+		out.put("nodes", nodes);
+		return out;
+	}
+
+	/** A scene readable by {@code user} that belongs to {@code book}; 404 otherwise. */
+	private static BaseRecord requireSceneOfBook(BaseRecord user, BaseRecord book, String sceneObjectId) {
+		if(sceneObjectId == null || sceneObjectId.isBlank()) {
+			throw new PictureBookException(400, "A scene objectId is required");
+		}
+		BaseRecord scene = PbBookUtil.readScene(user, sceneObjectId, orgOf(user));
+		BaseRecord sceneBook = (scene != null ? scene.get(OlioFieldNames.FIELD_PB_BOOK) : null);
+		Long sceneBookId = (sceneBook != null ? sceneBook.get(FieldNames.FIELD_ID) : null);
+		Long bookId = book.get(FieldNames.FIELD_ID);
+		if(scene == null || sceneBookId == null || !sceneBookId.equals(bookId)) {
+			throw new PictureBookException(404, "Scene " + sceneObjectId + " not found in this book");
+		}
+		return scene;
+	}
+
+	/** A run readable by {@code user} that belongs to {@code workflow}; 404 otherwise. */
+	private static BaseRecord requireRunOfBook(BaseRecord user, BaseRecord workflow, String runObjectId) {
+		if(runObjectId == null || runObjectId.isBlank()) {
+			throw new PictureBookException(400, "A run objectId is required");
+		}
+		BaseRecord run = PbGraphUtil.readRun(user, runObjectId, orgOf(user));
+		BaseRecord runWorkflow = (run != null ? run.get(OlioFieldNames.FIELD_PB_WORKFLOW) : null);
+		Long runWorkflowId = (runWorkflow != null ? runWorkflow.get(FieldNames.FIELD_ID) : null);
+		Long workflowId = workflow.get(FieldNames.FIELD_ID);
+		if(run == null || runWorkflowId == null || !runWorkflowId.equals(workflowId)) {
+			throw new PictureBookException(404, "Run " + runObjectId + " not found in this book");
+		}
+		return run;
 	}
 
 	/** Pin or unpin a node. A pinned node's artifact is not replaced by a regeneration. */
@@ -708,6 +1239,8 @@ public class PbServiceFacade {
 		BaseRecord newShadowCast = PbCastUtil.getCreateShadowCastGroup(user, book, scope.slug, scope.castGroupPath, orgId);
 		List<BaseRecord> copies = PbSharingUtil.copyToChapterShadow(user, toSeed, shadowCharGroup, newShadowCast,
 			null, null, null);
+		/// Shadows were deleted and re-created: whatever the book's scan knew about its bound records is gone.
+		PbStaleUtil.touchBook(user, book);
 
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
@@ -757,6 +1290,12 @@ public class PbServiceFacade {
 		List<BaseRecord> baselineMembers = PbCastUtil.listCastMembers(user, baselineCast);
 		List<BaseRecord> shadowMembers = PbCastUtil.listCastMembers(user, shadowCast);
 		int merged = PbSharingUtil.mergeChapterShadows(user, shadowMembers, baselineMembers);
+		if(merged > 0) {
+			/// List results may carry schema only on the first element; the members are charPersons by construction.
+			for(BaseRecord s : shadowMembers) {
+				PbStaleUtil.touch(OlioModelNames.MODEL_CHAR_PERSON, s.get(FieldNames.FIELD_OBJECT_ID));
+			}
+		}
 
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
@@ -942,7 +1481,13 @@ public class PbServiceFacade {
 
 	// ─────────────────────────────── DTO assembly ───────────────────────────────
 
-	private static Map<String, Object> nodeSummary(BaseRecord user, BaseRecord node, BaseRecord book) {
+	/**
+	 * Node summary with {@code status} taken from the book's drift scan (falling back to a per-node
+	 * recompute when the scan does not know the node), plus the scan's stale entry fields
+	 * ({@code reason}, {@code driftedBindings}, {@code affectedSceneIndexes}, {@code markPersisted}) when
+	 * the node is in it.
+	 */
+	private static Map<String, Object> nodeSummary(BaseRecord user, BaseRecord node, BaseRecord book, PbStaleUtil.Scan scan) {
 		Map<String, Object> m = new LinkedHashMap<>();
 		m.put("objectId", node.get(FieldNames.FIELD_OBJECT_ID));
 		m.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
@@ -951,7 +1496,31 @@ public class PbServiceFacade {
 		/// The canvas only offers "Test" when this is true; otherwise the route answers 501.
 		m.put("executable", Boolean.valueOf(PbNodeExecutor.isExecutable(node)));
 		m.put("storedStatus", enumString(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
-		m.put("status", String.valueOf(PbGraphUtil.recomputeStatus(user, node, book)));
+		Long nodeId = node.get(FieldNames.FIELD_ID);
+		PbNodeStatusEnumType status = (scan != null && nodeId != null ? scan.statuses.get(nodeId) : null);
+		PbStaleUtil.Entry stale = (scan != null && nodeId != null ? scan.entries.get(nodeId) : null);
+		if(stale != null) {
+			/// The scan's view: a drifted or propagated node is STALE whatever the hash says.
+			status = PbNodeStatusEnumType.STALE;
+		}
+		else if(status == null) {
+			status = PbGraphUtil.recomputeStatus(user, node, book);
+		}
+		m.put("status", String.valueOf(status));
+		if(stale != null) {
+			m.put("reason", stale.reason);
+			List<Map<String, Object>> drifted = new ArrayList<>();
+			for(PbStaleUtil.DriftedRef d : stale.driftedBindings) {
+				Map<String, Object> dm = new LinkedHashMap<>();
+				dm.put("role", d.role);
+				dm.put("refModel", d.refModel);
+				dm.put("refObjectId", d.refObjectId);
+				drifted.add(dm);
+			}
+			m.put("driftedBindings", drifted);
+			m.put("affectedSceneIndexes", new ArrayList<>(stale.affectedSceneIndexes));
+			m.put("markPersisted", Boolean.valueOf(stale.persisted));
+		}
 		m.put("pinned", node.get(OlioFieldNames.FIELD_PB_PINNED));
 		m.put("ordinal", node.get(OlioFieldNames.FIELD_PB_ORDINAL));
 		m.put("sceneIndex", node.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
@@ -1002,6 +1571,17 @@ public class PbServiceFacade {
 		m.put("dataObjectId", (data != null ? data.get(FieldNames.FIELD_OBJECT_ID) : null));
 		BaseRecord supersedes = artifact.get(OlioFieldNames.FIELD_PB_SUPERSEDES);
 		m.put("supersedesObjectId", (supersedes != null ? supersedes.get(FieldNames.FIELD_OBJECT_ID) : null));
+		PbReviewStatusEnumType rs = PbArtifactUtil.reviewStatusOf(artifact);
+		m.put("reviewStatus", rs.name());
+		/// approvedAt is never NULL in the column (DDL default now(); epoch-0 on a bare newInstance) and a
+		/// demoted/rejected artifact keeps its old stamp, so neither is emitted unless the status says APPROVED.
+		if(rs == PbReviewStatusEnumType.APPROVED) {
+			m.put("approvedBy", artifact.get(OlioFieldNames.FIELD_PB_APPROVED_BY));
+			Object at = artifact.get(OlioFieldNames.FIELD_PB_APPROVED_AT);
+			m.put("approvedAt", (at != null ? at.toString() : null));
+		}
+		Long duration = artifact.get(OlioFieldNames.FIELD_PB_DURATION_MS);
+		m.put("durationMs", (duration != null && duration.longValue() > 0 ? duration : null));
 		return m;
 	}
 
@@ -1281,7 +1861,7 @@ public class PbServiceFacade {
 					if(nodeId != null) {
 						BaseRecord node = nodeMap.get(nodeId);
 						if(node != null) {
-							BaseRecord artifact = PbArtifactUtil.findSelected(user, node, "composite");
+							BaseRecord artifact = PbArtifactUtil.findSelected(user, node, pageArtifactRole(node));
 							if(artifact != null) {
 								BaseRecord data = artifact.get(OlioFieldNames.FIELD_PB_DATA);
 								if(data != null) {
@@ -1324,6 +1904,20 @@ public class PbServiceFacade {
 	}
 
 	/**
+	 * The artifact role a page shows for its {@code sceneNode}: a PictureBook scene's node is the
+	 * COMPOSITE ({@code composite}); a ChapBook page's node (V3 P1-9) is a LANDSCAPE
+	 * ({@link PbPipelineUtil#ROLE_LANDSCAPE}). Anything else keeps the historical default.
+	 */
+	static String pageArtifactRole(BaseRecord node) {
+		PbNodeTypeEnumType t = (node != null && node.hasField(OlioFieldNames.FIELD_PB_NODE_TYPE)
+			? node.getEnum(OlioFieldNames.FIELD_PB_NODE_TYPE) : null);
+		if(t == PbNodeTypeEnumType.LANDSCAPE) {
+			return PbPipelineUtil.ROLE_LANDSCAPE;
+		}
+		return "composite";
+	}
+
+	/**
 	 * Load the {@code data.data} image record for a scene by objectId, projecting only the fields a
 	 * MediaServlet/ThumbnailServlet URL needs ({@code groupPath}, {@code name}, {@code contentType}).
 	 * <p>
@@ -1351,35 +1945,168 @@ public class PbServiceFacade {
 	// ─────────────────────────────── canvas writes ───────────────────────────────
 
 	/**
-	 * Mark an artifact as the selected revision in its (node, role) chain.
+	 * "Use this image" (V3 §10 rule 2): mark an artifact as the selected revision in its (node, role) chain.
 	 * <p>
-	 * Authorization: the artifact must belong to a node in this book's workflow (cross-book addressing
-	 * is a 404). {@code PbArtifactUtil.setSelected} then patches all siblings atomically.
+	 * Gate order: book 404 → {@link #requireBookUpdate} 403 → workflow 404 → artifact/cross-book 404 →
+	 * {@code PbArtifactUtil.select}, which refuses with 409 when the chain's current selection is APPROVED
+	 * (approve the other variant, or reject the approved one) and otherwise patches all siblings.
 	 */
 	public static Map<String, Object> selectArtifact(BaseRecord user, String bookObjectId, String artifactObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "select an artifact");
 		BaseRecord workflow = requireWorkflow(user, book);
-		if(artifactObjectId == null || artifactObjectId.trim().length() == 0) {
-			throw new PictureBookException(400, "An artifact objectId is required");
-		}
-		long orgId = PbGraphUtil.orgId(book);
-		BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactObjectId, orgId);
-		if(artifact == null) {
-			throw new PictureBookException(404, "Artifact not found");
-		}
-		// cross-book check: the artifact's producedByNode must be in this book's workflow
+		BaseRecord artifact = requireArtifactOfBook(user, workflow, artifactObjectId);
+		BaseRecord selected = PbArtifactUtil.select(user, artifact);
+		return reviewResult(selected);
+	}
+
+	/**
+	 * Approve (V3 §10 rule 2): the artifact ends selected, APPROVED with {@code approvedBy} = the caller's
+	 * objectId, and its node pinned. Same gate order as {@link #selectArtifact}; the state machine is
+	 * {@code PbArtifactUtil.approve}.
+	 */
+	public static Map<String, Object> approveArtifact(BaseRecord user, String bookObjectId, String artifactObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "approve an artifact");
+		BaseRecord workflow = requireWorkflow(user, book);
+		BaseRecord artifact = requireArtifactOfBook(user, workflow, artifactObjectId);
+		BaseRecord approved = PbArtifactUtil.approve(user, artifact, user.get(FieldNames.FIELD_OBJECT_ID));
+		return reviewResult(approved);
+	}
+
+	/**
+	 * Reject (V3 §10 rule 4): the artifact is marked REJECTED and kept; if it was the selection the newest
+	 * non-rejected sibling takes over. The node's pin is not touched. Same gate order as
+	 * {@link #selectArtifact}; the state machine is {@code PbArtifactUtil.reject}.
+	 */
+	public static Map<String, Object> rejectArtifact(BaseRecord user, String bookObjectId, String artifactObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "reject an artifact");
+		BaseRecord workflow = requireWorkflow(user, book);
+		BaseRecord artifact = requireArtifactOfBook(user, workflow, artifactObjectId);
+		BaseRecord rejected = PbArtifactUtil.reject(user, artifact);
+		return reviewResult(rejected);
+	}
+
+	/** The post-action state of the artifact (its summary) plus the node's current pin. */
+	private static Map<String, Object> reviewResult(BaseRecord artifact) {
+		Map<String, Object> out = artifactSummary(artifact);
 		BaseRecord producedBy = artifact.get(OlioFieldNames.FIELD_PB_PRODUCED_BY_NODE);
-		if(producedBy != null) {
-			String nodeOid = producedBy.get(FieldNames.FIELD_OBJECT_ID);
-			if(nodeOid != null) {
-				requireNodeOfBook(user, workflow, nodeOid);
-			}
-		}
-		BaseRecord selected = PbArtifactUtil.setSelected(user, artifact);
-		Map<String, Object> out = new LinkedHashMap<>();
-		out.put("artifactObjectId", selected.get(FieldNames.FIELD_OBJECT_ID));
-		out.put("selected", Boolean.TRUE);
+		out.put("nodeObjectId", (producedBy != null ? producedBy.get(FieldNames.FIELD_OBJECT_ID) : null));
 		return out;
+	}
+
+	/** Review-queue filters accepted by {@link #listReviewQueue}. */
+	public static final String REVIEW_FILTER_ALL = "all";
+	public static final String REVIEW_FILTER_AUTO_APPROVED = "auto-approved";
+
+	/**
+	 * The book's review queue: every artifact of every node, grouped by node, with its review state - what
+	 * the Ux review view and the "Auto-approved" filter (§10 rule 5) read.
+	 * <p>
+	 * {@code filter} is {@code all} (default; GENERATED, IN_REVIEW, APPROVED and REJECTED - ARCHIVED is
+	 * history and is left out) or {@code auto-approved} (only artifacts whose {@code approvedBy} is
+	 * {@link PbArtifactUtil#APPROVED_BY_AUTO}); anything else is a 400 here, so REST and MCP share one
+	 * validation. Nodes with no artifacts are omitted. One uncached chain read per (node, role).
+	 */
+	public static Map<String, Object> listReviewQueue(BaseRecord user, String bookObjectId, String filter) {
+		String f = (filter == null || filter.trim().length() == 0 ? REVIEW_FILTER_ALL : filter.trim().toLowerCase());
+		if(!REVIEW_FILTER_ALL.equals(f) && !REVIEW_FILTER_AUTO_APPROVED.equals(f)) {
+			/// The caller's value is deliberately not echoed (P1-4 security finding 4).
+			throw new PictureBookException(400, "Unknown review filter - use "
+				+ REVIEW_FILTER_ALL + " or " + REVIEW_FILTER_AUTO_APPROVED);
+		}
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		BaseRecord workflow = requireWorkflow(user, book);
+
+		List<Map<String, Object>> nodes = new ArrayList<>();
+		int artifactCount = 0;
+		int pendingCount = 0;
+		for(BaseRecord node : PbGraphUtil.listNodes(user, workflow)) {
+			List<Map<String, Object>> arts = new ArrayList<>();
+			for(String role : artifactRoles(user, node)) {
+				for(BaseRecord a : PbArtifactUtil.listChain(user, node, role)) {
+					PbReviewStatusEnumType rs = PbArtifactUtil.reviewStatusOf(a);
+					if(rs == PbReviewStatusEnumType.ARCHIVED) {
+						continue;
+					}
+					if(REVIEW_FILTER_AUTO_APPROVED.equals(f)
+							&& !(rs == PbReviewStatusEnumType.APPROVED
+								&& PbArtifactUtil.APPROVED_BY_AUTO.equals(a.get(OlioFieldNames.FIELD_PB_APPROVED_BY)))) {
+						continue;
+					}
+					arts.add(artifactSummary(a));
+					artifactCount++;
+					if(rs == PbReviewStatusEnumType.GENERATED || rs == PbReviewStatusEnumType.IN_REVIEW) {
+						pendingCount++;
+					}
+				}
+			}
+			if(arts.isEmpty()) {
+				continue;
+			}
+			Map<String, Object> n = new LinkedHashMap<>();
+			n.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
+			n.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
+			n.put("nodeType", enumString(node, OlioFieldNames.FIELD_PB_NODE_TYPE));
+			n.put("nodeStatus", enumString(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
+			n.put("sceneIndex", node.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
+			n.put("pinned", node.get(OlioFieldNames.FIELD_PB_PINNED));
+			n.put("artifacts", arts);
+			nodes.add(n);
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("filter", f);
+		out.put("autoApprove", autoApproveOf(book));
+		out.put("artifactCount", Integer.valueOf(artifactCount));
+		out.put("pendingCount", Integer.valueOf(pendingCount));
+		out.put("nodes", nodes);
+		return out;
+	}
+
+	// ─────────────────────────────── auto-approve (V3 §10 rule 5) ───────────────────────────────
+
+	/** The book's {@code autoApprove} switch with the null-means-off rule (a pre-Phase-1 row reads SQL NULL, the DDL default is false). */
+	private static Boolean autoApproveOf(BaseRecord book) {
+		Boolean on = (book != null && book.hasField(OlioFieldNames.FIELD_PB_AUTO_APPROVE)
+			? book.get(OlioFieldNames.FIELD_PB_AUTO_APPROVE) : null);
+		return Boolean.valueOf(on != null && on.booleanValue());
+	}
+
+	private static Map<String, Object> autoApproveResult(BaseRecord book) {
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("autoApprove", autoApproveOf(book));
+		return out;
+	}
+
+	/** Read the book's auto-approve switch: {@code {bookObjectId, autoApprove}}. Book 404 only - any reader of the book may see it. */
+	public static Map<String, Object> getAutoApprove(BaseRecord user, String bookObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		return autoApproveResult(book);
+	}
+
+	/**
+	 * Set the book's auto-approve switch (§10 rule 5) and return the re-read state. Gate order: book 404 →
+	 * {@link #requireBookUpdate} 403 → {@code PbBookUtil.setAutoApprove} (500 when the patch is refused).
+	 * Switching it off never un-approves anything; it governs future attempts only.
+	 */
+	public static Map<String, Object> setAutoApprove(BaseRecord user, String bookObjectId, boolean on) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "change auto-approve");
+		if(!PbBookUtil.setAutoApprove(user, book, on)) {
+			throw new PictureBookException(500, "Failed to persist autoApprove=" + on + " on book "
+				+ book.get(FieldNames.FIELD_NAME) + " - AccessPoint.update returned null (PBAC denial or validation failure; check the audit log)");
+		}
+		BaseRecord fresh = PbBookUtil.readBook(user, bookObjectId, orgOf(user));
+		return autoApproveResult(fresh != null ? fresh : book);
 	}
 
 	/**
@@ -1450,6 +2177,8 @@ public class PbServiceFacade {
 		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 			throw new PictureBookException(500, "Failed to rename handle for node " + nodeObjectId);
 		}
+		/// The scan carries handles; canvas geometry (saveCanvas) it does not, so that path leaves it alone.
+		PbGraphUtil.invalidateScan(workflow);
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("nodeObjectId", nodeObjectId);
 		out.put("handle", newHandle);
@@ -1458,24 +2187,33 @@ public class PbServiceFacade {
 	}
 
 	/**
-	 * Execute a single node synchronously against the SD backend and persist a new artifact revision.
+	 * Execute a single node synchronously against the SD backend and persist a new artifact revision,
+	 * <b>without</b> opening a run — the canvas "Test" action. Use {@link #requestRegenerate} when the
+	 * execution should be a tracked {@code olio.pb.run}.
 	 * <p>
-	 * The SD server URL is resolved from {@link org.cote.accountmanager.util.ServerConfigUtil#SERVER_SD}
-	 * (the DB-backed runtime-configurable connection), falling back to {@code null} if not configured. A
-	 * null server is a 503 at the executor rather than a silent no-op, so the error reaches the caller
-	 * clearly.
+	 * The SD backend is the {@code (sdApiType, sdServer)} pair the transport resolved from its deployment
+	 * config ({@code sd.server.apiType} + {@code ServerConfigUtil.SERVER_SD} with the {@code sd.server}
+	 * init-param as fallback — exactly what the v1 scene-generate route passes). Before P1-3 this method
+	 * resolved the server itself with a null fallback, which silently ignored the init-param tier and
+	 * assumed SWARM. A missing server is a 500 at the executor for the SD-backed types, before the graph
+	 * is touched.
 	 * <p>
 	 * Only the types in {@link PbNodeExecutor#EXECUTABLE_TYPES} are implemented; any other node type is a
 	 * 501 naming the supported types. The graph DTO's per-node {@code executable} flag tells the canvas
 	 * which nodes to offer "Test" on, so the 501 is reachable only by a hand-built request.
+	 * <p>
+	 * Same {@code canUpdate} gate as {@link #requestRegenerate}: "Test" opens no run but still renders,
+	 * writes an artifact and refreshes the character's narrative, so a reader of the book is refused (403)
+	 * before any of that.
 	 */
-	public static Map<String, Object> testNode(BaseRecord user, String bookObjectId, String nodeObjectId) {
+	public static Map<String, Object> testNode(BaseRecord user, String bookObjectId, String nodeObjectId,
+			String sdApiType, String sdServer) {
 		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "test a node");
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord node = requireNodeOfBook(user, workflow, nodeObjectId);
-		String swarmServer = org.cote.accountmanager.util.ServerConfigUtil.getServerUrl(
-			org.cote.accountmanager.util.ServerConfigUtil.SERVER_SD, null);
-		return PbNodeExecutor.executeNode(user, book, workflow, node, swarmServer);
+		return PbNodeExecutor.executeNode(user, book, workflow, node, sdApiType, sdServer);
 	}
 
 	// ─────────────────────────────── Phase D: binding writes ───────────────────────────────
@@ -1558,6 +2296,7 @@ public class PbServiceFacade {
 		if(!deleted) {
 			throw new PictureBookException(500, "Failed to delete binding " + bindingObjectId);
 		}
+		PbGraphUtil.invalidateScan(workflow);
 
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("deleted", Boolean.TRUE);

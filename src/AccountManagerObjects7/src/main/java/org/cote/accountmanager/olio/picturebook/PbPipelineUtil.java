@@ -16,8 +16,10 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
@@ -119,6 +121,9 @@ public class PbPipelineUtil {
 		/// V3 P0-8: set by closeRun (either overload) so generateSceneImage's finally can tell a run
 		/// that was closed on the normal path from one the pipeline abandoned mid-flight by throwing.
 		private boolean closed = false;
+		/// V3 P1-6: the async render job's own progress token, so a stage can notice a cancel that landed
+		/// while the backend call was in flight. Null on every other path (sync regenerate, PB1 mirror).
+		private SummarizeProgress cancelToken;
 
 		SceneGraph(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord sceneRow,
 				String workflowGroupPath, String artifactGroupPath, String galleryGroupPath,
@@ -132,6 +137,11 @@ public class PbPipelineUtil {
 			this.galleryGroupPath = galleryGroupPath;
 			this.sceneObjectId = sceneObjectId;
 			this.sceneIndex = sceneIndex;
+		}
+
+		/** The principal every write on this graph is made as. */
+		public BaseRecord getUser() {
+			return user;
 		}
 
 		public BaseRecord getBook() {
@@ -150,6 +160,16 @@ public class PbPipelineUtil {
 			return run;
 		}
 
+		/** Nodes completed on this graph so far ({@link PbPipelineUtil#completeNode}); copied onto the run by closeRun. */
+		public int getExecuted() {
+			return executed;
+		}
+
+		/** Nodes failed on this graph so far ({@link PbPipelineUtil#failNode}); copied onto the run by closeRun. */
+		public int getFailed() {
+			return failed;
+		}
+
 		/**
 		 * True once {@link PbPipelineUtil#closeRun(SceneGraph, PbRunStatusEnumType, String)} has been
 		 * invoked on this graph (whether or not the run-row write itself succeeded — closeRun is
@@ -158,6 +178,16 @@ public class PbPipelineUtil {
 		 */
 		public boolean isRunClosed() {
 			return closed;
+		}
+
+		/** The async job's cancel token, or null when this graph is not being executed by a render job. */
+		public SummarizeProgress getCancelToken() {
+			return cancelToken;
+		}
+
+		/** True only when a render job owns this graph and its cancel flag has been raised. */
+		public boolean isCancelRequested() {
+			return (cancelToken != null && cancelToken.isCancelled());
 		}
 
 		public String getArtifactGroupPath() {
@@ -272,6 +302,70 @@ public class PbPipelineUtil {
 	}
 
 	/**
+	 * Open a graph handle for executing one <b>existing</b> node directly - the V3 path where the graph
+	 * is the input rather than something recorded beside a PB1 render.
+	 * <p>
+	 * Unlike {@link #openSceneGraph} there is no PB1 scene to mirror, so {@code sceneRow} and
+	 * {@code sceneObjectId} are null and {@link #dualWriteScene} is a no-op; {@code sceneIndex} is the
+	 * node's own {@code sceneIndex} (0 when unset), which is what scene-tagged apparel selection keys on.
+	 * Bytes land in the artifact group - the graph is the canonical home here, not the PB1 gallery.
+	 * <p>
+	 * Nothing is created: the book, workflow and node must already exist. The {@code requestedNodeIds}
+	 * of the run names exactly this node.
+	 *
+	 * @param withRun when true an {@code olio.pb.run} is opened (PENDING; {@link PbGraphUtil#markRunning}
+	 *        stamps RUNNING) and pointed to by {@code workflow.lastRun}; when false no run row is written,
+	 *        which is the node-only execution mode that must not leak PENDING rows
+	 * @throws PictureBookException 400 when a required record is missing
+	 */
+	public static SceneGraph openNodeGraph(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord node,
+			boolean withRun) {
+		SceneGraph g = nodeGraph(user, book, workflow, node);
+		if(withRun) {
+			Long nodeId = node.get(FieldNames.FIELD_ID);
+			List<Long> requested = new ArrayList<>();
+			if(nodeId != null && nodeId.longValue() > 0L) {
+				requested.add(nodeId);
+			}
+			g.run = PbGraphUtil.startRun(user, workflow, g.workflowGroupPath, requested);
+			PbGraphUtil.persistLastRun(user, workflow, g.run);
+		}
+		return g;
+	}
+
+	/**
+	 * Open a graph handle for executing one stage of an <b>already-open</b> multi-node run (V3 §21, the
+	 * async render job). Nothing is created or written: the run row was opened by the submitter and is
+	 * closed by the job, so this handle carries it but never starts or closes it. {@code cancelToken} is
+	 * the job's own progress token, consulted by the executor after a backend call returns so a cancelled
+	 * stage discards its bytes instead of persisting them.
+	 *
+	 * @throws PictureBookException 400 when a required record is missing
+	 */
+	public static SceneGraph openNodeGraph(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord node,
+			BaseRecord run, SummarizeProgress cancelToken) {
+		SceneGraph g = nodeGraph(user, book, workflow, node);
+		g.run = run;
+		g.cancelToken = cancelToken;
+		return g;
+	}
+
+	private static SceneGraph nodeGraph(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord node) {
+		if(user == null || book == null || workflow == null || node == null) {
+			throw new PictureBookException(400, "A user, book, workflow and node are required to open a node graph");
+		}
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+		if(slug == null || slug.isBlank()) {
+			throw new PictureBookException(400, "Book " + book.get(FieldNames.FIELD_OBJECT_ID) + " has no slug");
+		}
+		String workflowPath = PbBookUtil.workflowGroupPath(slug);
+		String artifactPath = PbBookUtil.artifactGroupPath(slug);
+		Integer sceneIndex = node.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+		int useIndex = (sceneIndex != null && sceneIndex.intValue() > 0) ? sceneIndex.intValue() : 0;
+		return new SceneGraph(user, book, workflow, null, workflowPath, artifactPath, artifactPath, null, useIndex);
+	}
+
+	/**
 	 * A lowercase, {@code BOOK_SLUG_PATTERN}-legal slug derived from a PB1 book group name.
 	 * <p>
 	 * Deterministic, so the same PB1 book maps to the same PB2 book on every run - the mapping is the
@@ -349,6 +443,16 @@ public class PbPipelineUtil {
 	}
 
 	private static void patchNodeScope(SceneGraph g, BaseRecord node, String scope, String scopeRef) {
+		patchNodeScope(g.user, g.workflow, node, scope, scopeRef, g.sceneIndex);
+	}
+
+	/**
+	 * Record {@code scope}/{@code scopeRef}/{@code sceneIndex}/{@code createdByObjectId} on a node
+	 * without a {@link SceneGraph} (V3 P1-9: the ChapBook page node is created lazily at render time,
+	 * outside the scene pipeline). Returns whether the patch persisted; the failure is also logged.
+	 */
+	static boolean patchNodeScope(BaseRecord user, BaseRecord workflow, BaseRecord node, String scope,
+			String scopeRef, int sceneIndex) {
 		BaseRecord patch = PbGraphUtil.patchOf(node, OlioModelNames.MODEL_PB_NODE,
 			OlioFieldNames.FIELD_PB_SCOPE, OlioFieldNames.FIELD_PB_SCOPE_REF,
 			OlioFieldNames.FIELD_PB_SCENE_INDEX, OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID);
@@ -359,16 +463,19 @@ public class PbPipelineUtil {
 			if(scopeRef != null) {
 				patch.set(OlioFieldNames.FIELD_PB_SCOPE_REF, scopeRef);
 			}
-			patch.set(OlioFieldNames.FIELD_PB_SCENE_INDEX, Integer.valueOf(g.sceneIndex));
-			patch.set(OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID, g.user.get(FieldNames.FIELD_OBJECT_ID));
+			patch.set(OlioFieldNames.FIELD_PB_SCENE_INDEX, Integer.valueOf(sceneIndex));
+			patch.set(OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID, user.get(FieldNames.FIELD_OBJECT_ID));
 		}
 		catch(FieldException | ValueException | ModelNotFoundException e) {
 			throw new PictureBookException(500, "Failed to assemble a node scope patch: " + e.getMessage());
 		}
 		/// Never discard an update result - it is the only signal a persistent failure gives.
-		if(IOSystem.getActiveContext().getAccessPoint().update(g.user, patch) == null) {
+		boolean ok = (IOSystem.getActiveContext().getAccessPoint().update(user, patch) != null);
+		if(!ok) {
 			logger.error("Failed to record scope on node " + node.get(FieldNames.FIELD_NAME));
 		}
+		PbGraphUtil.invalidateScan(workflow);
+		return ok;
 	}
 
 	/**
@@ -424,6 +531,7 @@ public class PbPipelineUtil {
 					logger.error("Failed to repoint binding " + existing.get(FieldNames.FIELD_NAME)
 						+ " at the artifact revision consumed this run");
 				}
+				PbGraphUtil.invalidateScan(g.workflow);
 			}
 			return PbGraphUtil.readBinding(g.user, existing.get(FieldNames.FIELD_OBJECT_ID),
 				PbGraphUtil.orgId(consumer));
@@ -450,6 +558,7 @@ public class PbPipelineUtil {
 			/// Refresh the hash so the NEXT run compares against what this run actually consumed. Without
 			/// this a character edited between runs would stay stale forever.
 			PbGraphUtil.persistRefHashes(g.user, Collections.singletonList(existing));
+			PbGraphUtil.invalidateScan(g.workflow);
 			return PbGraphUtil.readBinding(g.user, existing.get(FieldNames.FIELD_OBJECT_ID),
 				PbGraphUtil.orgId(consumer));
 		}
@@ -505,6 +614,18 @@ public class PbPipelineUtil {
 	public static BaseRecord recordImage(SceneGraph g, BaseRecord node, String role,
 			PbArtifactTypeEnumType artifactType, BaseRecord data, byte[] bytes, String mimeType, Long seed,
 			BaseRecord sdConfigSnapshot, String rawRequestJson, List<String> referenceArtifactObjectIds) {
+		return recordImage(g, node, role, artifactType, data, bytes, mimeType, seed, sdConfigSnapshot, rawRequestJson,
+			referenceArtifactObjectIds, null, 0L);
+	}
+
+	/**
+	 * {@link #recordImage(SceneGraph, BaseRecord, String, PbArtifactTypeEnumType, BaseRecord, byte[], String, Long, BaseRecord, String, List)}
+	 * plus the backend that produced the bytes and the wall-clock of the call (V3 §21; recorded, never asserted).
+	 */
+	public static BaseRecord recordImage(SceneGraph g, BaseRecord node, String role,
+			PbArtifactTypeEnumType artifactType, BaseRecord data, byte[] bytes, String mimeType, Long seed,
+			BaseRecord sdConfigSnapshot, String rawRequestJson, List<String> referenceArtifactObjectIds,
+			SDAPIEnumType backend, long durationMs) {
 		if(g == null || node == null) {
 			return null;
 		}
@@ -512,7 +633,7 @@ public class PbPipelineUtil {
 		BaseRecord artifact = PbArtifactUtil.persistArtifact(g.user, node, role, artifactType,
 			g.artifactGroupPath, data, null, sdConfigSnapshot, sanitized);
 		int[] wh = decodeDimensions(bytes);
-		PbArtifactUtil.recordImageMetrics(g.user, artifact, bytes, mimeType, wh[0], wh[1], seed);
+		PbArtifactUtil.recordImageMetrics(g.user, artifact, bytes, mimeType, wh[0], wh[1], seed, backend, durationMs);
 		return PbArtifactUtil.readArtifact(g.user, artifact.get(FieldNames.FIELD_OBJECT_ID),
 			PbGraphUtil.orgId(node));
 	}
@@ -596,6 +717,15 @@ public class PbPipelineUtil {
 	 * a write path that knows the node just succeeded. {@code persistStatus} is the only writer.
 	 */
 	public static void completeNode(SceneGraph g, BaseRecord node) {
+		completeNode(g, node, PbNodeStatusEnumType.DONE);
+	}
+
+	/**
+	 * {@link #completeNode(SceneGraph, BaseRecord)} closing the node at {@code status} rather than DONE.
+	 * V3 P1-9: a reviewed node type (ChapBook page) completes at {@code DONE_UNVERIFIED} and still needs
+	 * its {@code inputHash}/{@code lastRunAt} so the drift scan can tell current from stale.
+	 */
+	public static void completeNode(SceneGraph g, BaseRecord node, PbNodeStatusEnumType status) {
 		if(g == null || node == null) {
 			return;
 		}
@@ -605,7 +735,7 @@ public class PbPipelineUtil {
 			BaseRecord target = (fresh != null ? fresh : node);
 			String inputHash = PbGraphUtil.computeInputHash(g.user, target, g.book);
 			PbGraphUtil.persistInputHash(g.user, target, inputHash);
-			PbGraphUtil.persistStatus(g.user, target, PbNodeStatusEnumType.DONE);
+			PbGraphUtil.persistStatus(g.user, target, (status != null ? status : PbNodeStatusEnumType.DONE));
 			stampLastRunAt(g, target);
 			PbGraphUtil.markStaleDownstream(g.user, g.workflow, target);
 			g.executed++;
@@ -632,9 +762,11 @@ public class PbPipelineUtil {
 	/**
 	 * Stamp {@code node} {@code FAILED} with {@code lastError}/{@code lastRunAt}, without a
 	 * {@link SceneGraph}. V3 P0-8: this is the write {@link #failNode(SceneGraph, BaseRecord, String)}
-	 * always did; split out so {@link PbNodeExecutor#executeNode} (single-node execution, no graph
-	 * handle, no run) can record a failure the same way the scene pipeline does. Best-effort: a failed
-	 * write is logged, never thrown — the caller is already propagating the real exception.
+	 * always did; split out so a caller with no graph handle can record a failure the same way the
+	 * scene pipeline does. Since V3 P1-3 {@link PbNodeExecutor} always holds a handle from
+	 * {@link #openNodeGraph} and goes through the graph overload (which counts the failure on the run);
+	 * this one remains for the pre-handle gates and for callers outside the executor. Best-effort: a
+	 * failed write is logged, never thrown — the caller is already propagating the real exception.
 	 */
 	static void failNode(BaseRecord user, BaseRecord node, String error) {
 		if(user == null || node == null) {
@@ -650,6 +782,7 @@ public class PbPipelineUtil {
 			if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 				logger.error("Failed to record FAILED on node " + node.get(FieldNames.FIELD_NAME));
 			}
+			PbGraphUtil.invalidateScanOfNode(node);
 		}
 		catch(Exception e) {
 			logger.warn("Failed to fail node " + node.get(FieldNames.FIELD_NAME) + ": " + e.getMessage(), e);
@@ -668,6 +801,7 @@ public class PbPipelineUtil {
 		if(IOSystem.getActiveContext().getAccessPoint().update(g.user, patch) == null) {
 			logger.error("Failed to stamp lastRunAt on node " + node.get(FieldNames.FIELD_NAME));
 		}
+		PbGraphUtil.invalidateScan(g.workflow);
 	}
 
 	/**
@@ -690,11 +824,14 @@ public class PbPipelineUtil {
 	 * <p>Still best-effort: a failure to write the run row is logged, not thrown. That is a
 	 * deliberate carry-over — the graph row is bookkeeping alongside the authoritative PB1 records,
 	 * and losing the status stamp must not fail an operation whose real output already persisted.
-	 * It does mean a run row can be left PENDING (the status {@code PbGraphUtil.startRun} writes —
-	 * nothing ever stamps RUNNING) if the write fails or if this is never called, so the row is not
-	 * a reliable liveness signal; {@code GET /rest/job} is. Since V3 P0-8 {@code generateSceneImage}
-	 * closes the run FAILED from its finally when the pipeline throws, so "never called" is now
-	 * limited to the write failing.
+	 * It does mean a run row can be left open if the write fails or if this is never called, so the
+	 * row is not a reliable liveness signal; {@code GET /rest/job} is. Since V3 P0-8
+	 * {@code generateSceneImage} closes the run FAILED from its finally when the pipeline throws, so
+	 * "never called" is now limited to the write failing. Which open status is left behind depends on
+	 * the path: {@link PbGraphUtil#startRun} writes PENDING, and since V3 P1-3
+	 * {@link PbNodeExecutor#executeNodeRun} stamps RUNNING ({@link PbGraphUtil#markRunning}) before
+	 * dispatch, so an abandoned executor run reads RUNNING (recoverable by the restart sweep) while an
+	 * abandoned PB1 scene run still reads PENDING (the PB1 pipeline does not stamp RUNNING).
 	 *
 	 * <p>Marks the graph closed ({@link SceneGraph#isRunClosed}) whether or not the write succeeds,
 	 * and even when there is no run row to close — "closed" means closeRun has been invoked, so the

@@ -5,8 +5,15 @@ import javax.xml.bind.annotation.XmlType;
 
 /// Status of one olio.pb.run.
 ///
-/// A run that finished with failures is COMPLETED with a non-zero failedNodeCount -- FAILED means
-/// the run itself could not proceed, not that some nodes failed.
+/// PENDING is what PbGraphUtil.startRun writes. RUNNING is stamped by PbGraphUtil.markRunning at
+/// execution start -- as of V3 P1-3 only by PbNodeExecutor.executeNodeRun (the single-node
+/// /regenerate path); the PB1 scene runs opened by PictureBookUtil.generateSceneImage still go
+/// PENDING -> COMPLETED/FAILED without passing through RUNNING, so the restart sweep (§21) cannot
+/// see them. That is a recorded Phase 1 gap (PictureBookV3Implementation.md §5.5), not a design.
+///
+/// A multi-node run that finished with failures is COMPLETED with a non-zero failedNodeCount --
+/// FAILED means the dispatch itself was aborted by an exception. With exactly one requested node
+/// (executeNodeRun) those coincide: that node's failure is the run's failure, so it closes FAILED.
 ///
 /// CANCELLED is RESERVED AND CURRENTLY UNWRITTEN.  Nothing in the codebase sets it yet -- grep
 /// confirms zero assignments -- so do not read its presence as evidence that a cancelled run is
@@ -16,13 +23,18 @@ import javax.xml.bind.annotation.XmlType;
 /// endpoint, so a value nothing can set would be a false affordance".  Half of that premise is now
 /// gone: the PictureBook and ChapBook bulk operations run on the async job layer and POST
 /// /rest/job/{jobId}/cancel genuinely reaches their loops' cooperative stop checks.  The other
-/// half still holds for the RUN GRAPH specifically -- the only closeRun call sites are in
-/// PictureBookUtil's single-scene image generation, and the ChapBook bulk paths never create an
-/// olio.pb.run row at all, so no cancellable loop currently owns a run to stamp.
+/// half still holds for the RUN GRAPH specifically -- the closeRun call sites are PictureBookUtil's
+/// single-scene image generation and PbNodeExecutor.executeNodeRun, both synchronous, and the
+/// ChapBook bulk paths never create an olio.pb.run row at all, so no cancellable loop currently
+/// owns a run to stamp. P1-6 (async pb.render jobs with a cooperative cancel) is where it gets written.
 ///
 /// The value exists so that when a cancellable path does own a run, it has a truthful terminal
 /// status to write instead of mislabelling a user's own cancel as COMPLETED or FAILED.  Wiring it
 /// means calling closeRun(graph, PbRunStatusEnumType.CANCELLED, ...) from that path.
+///
+/// INTERRUPTED (V3 Phase 1, §21): a run that was RUNNING when the server stopped. Stamped only by the
+/// boot-time recovery sweep, never by a request path; its RUNNING nodes go back to READY so that
+/// POST .../run/{runId}/resume can submit a fresh run for the unfinished nodes.
 ///
 /// The value is validated against THIS class, not against a list in runModel.json: the field
 /// declares baseClass=org.cote.accountmanager.schema.type.PbRunStatusEnumType, so adding it here
@@ -39,7 +51,8 @@ public enum PbRunStatusEnumType {
     RUNNING,
     COMPLETED,
     FAILED,
-    CANCELLED
+    CANCELLED,
+    INTERRUPTED
     ;
 
     public String value() {

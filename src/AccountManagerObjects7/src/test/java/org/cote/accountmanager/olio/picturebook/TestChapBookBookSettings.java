@@ -63,6 +63,9 @@ public class TestChapBookBookSettings extends BaseTest {
 
 	@Before
 	public void setUpChapBookSettings() {
+		/// renderDoesNotMutateStoredBookConfig asserts the v1 SD block (client sdConfig overlay), which
+		/// v3 drops. BaseTest re-pins v3 on every @Before. v3 is covered by TestChapBookV3Render.
+		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
 		OrganizationContext ctx = getTestOrganization(ORG_PATH);
 		testUser = IOSystem.getActiveContext().getFactory()
 			.getCreateUser(ctx.getAdminUser(), "chapbookTestUser", ctx.getOrganizationId());

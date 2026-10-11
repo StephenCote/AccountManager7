@@ -81,7 +81,16 @@ public class SDUtil {
 		this(type);
 		autoserver = server;
 	}
-	
+
+	public SDAPIEnumType getApiType() {
+		return apiType;
+	}
+
+	/** The backend base URL this instance talks to. */
+	public String getServer() {
+		return autoserver;
+	}
+
 
 	public boolean isDeferRemote() {
 		return deferRemote;

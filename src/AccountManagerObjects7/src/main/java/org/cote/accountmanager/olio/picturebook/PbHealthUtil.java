@@ -807,7 +807,10 @@ public class PbHealthUtil {
 					ok = false;
 				}
 				if(ok) {
-					healed.add(done(SCENE_IMAGE_DANGLING, row, "imageObjectId cleared, imageStale=true"));
+					/// imageStale maps to node STALE on the v3 page path (P1-9); no-op for a scene without a node.
+					boolean nodeStale = PbBookUtil.markSceneNodeStale(a.user, row);
+					healed.add(done(SCENE_IMAGE_DANGLING, row, "imageObjectId cleared, imageStale=true"
+						+ (nodeStale ? ", page node marked STALE" : "")));
 				}
 				else {
 					skipped.add(skipRaw(SCENE_IMAGE_DANGLING, row, "patch was not persisted"));

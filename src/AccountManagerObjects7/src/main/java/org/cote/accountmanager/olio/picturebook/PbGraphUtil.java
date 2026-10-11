@@ -5,6 +5,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
@@ -213,6 +214,7 @@ public class PbGraphUtil {
 			throw new PictureBookException(500, "Failed to create node " + handle
 				+ " - a duplicate handle in the same group is the usual cause, since the derived name is unique");
 		}
+		invalidateScan(workflow);
 		return readNode(user, created.get(FieldNames.FIELD_OBJECT_ID), orgId(workflow));
 	}
 
@@ -265,6 +267,7 @@ public class PbGraphUtil {
 			throw new PictureBookException(500, "Failed to create binding " + name
 				+ " - the unique (node, role, bindingOrdinal, organizationId) index rejects a duplicate edge");
 		}
+		invalidateScan(workflow);
 		return readBinding(user, created.get(FieldNames.FIELD_OBJECT_ID), orgId(workflow));
 	}
 
@@ -293,6 +296,7 @@ public class PbGraphUtil {
 		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 			throw new PictureBookException(500, "Failed to record the reference on binding " + binding.get(FieldNames.FIELD_NAME));
 		}
+		invalidateScan(workflow);
 		return readBinding(user, binding.get(FieldNames.FIELD_OBJECT_ID), orgId(workflow));
 	}
 
@@ -437,6 +441,11 @@ public class PbGraphUtil {
 		return PbConfigUtil.sha256Hex(canonicalInput(user, node, book));
 	}
 
+	/** {@link #computeInputHash(BaseRecord, BaseRecord, BaseRecord)} over bindings the caller already read. */
+	public static String computeInputHash(BaseRecord user, BaseRecord node, BaseRecord book, List<BaseRecord> bindings) {
+		return PbConfigUtil.sha256Hex(canonicalInput(user, node, book, bindings));
+	}
+
 	/**
 	 * The exact string {@link #computeInputHash} hashes. Public so a checked-in golden vector can pin it
 	 * and so a mismatch can be diagnosed by diffing two strings rather than two digests.
@@ -445,11 +454,23 @@ public class PbGraphUtil {
 		if(node == null) {
 			throw new PictureBookException(400, "Cannot hash the inputs of a null node");
 		}
+		return canonicalInput(user, node, book, listBindings(user, node));
+	}
+
+	/**
+	 * {@link #canonicalInput(BaseRecord, BaseRecord, BaseRecord)} over bindings the caller already read,
+	 * so a whole-workflow pass ({@link PbStaleUtil}) reads each node's bindings once instead of once per
+	 * recompute. {@code bindings} must be exactly {@code node}'s bindings; order is irrelevant.
+	 */
+	public static String canonicalInput(BaseRecord user, BaseRecord node, BaseRecord book, List<BaseRecord> bindings) {
+		if(node == null) {
+			throw new PictureBookException(400, "Cannot hash the inputs of a null node");
+		}
 		StringBuilder sb = new StringBuilder(PB_PIPELINE_VERSION);
 		sb.append(PbConfigUtil.PAIR_SEPARATOR).append("nodeType=")
 			.append(PbConfigUtil.token(node.hasField(OlioFieldNames.FIELD_PB_NODE_TYPE) ? node.get(OlioFieldNames.FIELD_PB_NODE_TYPE) : null));
 
-		for(BaseRecord b : sortedBindings(listBindings(user, node))) {
+		for(BaseRecord b : sortedBindings(bindings != null ? bindings : Collections.emptyList())) {
 			sb.append(PbConfigUtil.PAIR_SEPARATOR).append("binding")
 				.append(PbConfigUtil.PAIR_SEPARATOR).append("  role=").append(PbConfigUtil.token(b.get(OlioFieldNames.FIELD_PB_ROLE)))
 				.append(PbConfigUtil.PAIR_SEPARATOR).append("  ordinal=").append(PbConfigUtil.token(b.get(OlioFieldNames.FIELD_PB_BINDING_ORDINAL)))
@@ -545,15 +566,26 @@ public class PbGraphUtil {
 		if(node == null) {
 			return PbNodeStatusEnumType.UNKNOWN;
 		}
+		return recomputeStatus(user, node, book, listBindings(user, node));
+	}
+
+	/**
+	 * {@link #recomputeStatus(BaseRecord, BaseRecord, BaseRecord)} over bindings the caller already read.
+	 * Same rules, one fewer binding read per node - what a whole-workflow pass needs.
+	 */
+	public static PbNodeStatusEnumType recomputeStatus(BaseRecord user, BaseRecord node, BaseRecord book, List<BaseRecord> bindings) {
+		if(node == null) {
+			return PbNodeStatusEnumType.UNKNOWN;
+		}
 		PbNodeStatusEnumType stored = node.getEnum(OlioFieldNames.FIELD_PB_NODE_STATUS);
 		if(stored == PbNodeStatusEnumType.FAILED || stored == PbNodeStatusEnumType.SKIPPED) {
 			return stored;
 		}
 		String storedHash = node.get(OlioFieldNames.FIELD_PB_INPUT_HASH);
 		if(storedHash == null) {
-			return (requiredBindingsResolve(user, node) ? PbNodeStatusEnumType.READY : PbNodeStatusEnumType.PENDING);
+			return (requiredBindingsResolve(user, node, bindings) ? PbNodeStatusEnumType.READY : PbNodeStatusEnumType.PENDING);
 		}
-		String current = computeInputHash(user, node, book);
+		String current = computeInputHash(user, node, book, bindings);
 		if(!storedHash.equals(current)) {
 			return PbNodeStatusEnumType.STALE;
 		}
@@ -626,13 +658,20 @@ public class PbGraphUtil {
 				continue;
 			}
 			updated++;
+			invalidateScanOfBinding(b);
 		}
 		return updated;
 	}
 
 	/**
 	 * Persist a node's derived status. The <b>only</b> place {@code nodeStatus} is written from a
-	 * recompute, and an explicitly authorized write - never reached from a read path.
+	 * recompute, and always as the acting user through {@code AccessPoint.update}.
+	 * <p>
+	 * Until 2026-10-10 this was "never reached from a read path". {@link PbStaleUtil#scan} now calls it
+	 * from the drift scan that {@code listStale} / the workflow view run, to mark STALE - and only STALE -
+	 * so that an edit to a bound record is visible without waiting for a run (V3 §11.1). The write stays
+	 * PBAC-checked as the viewer, is idempotent, and a denied write is reported on the scan result rather
+	 * than thrown: a read-only viewer sees the stale set without persisting it.
 	 * <p>
 	 * PATCH-shaped: {@code schema} + {@code id} + {@code objectId} + <b>{@code name}</b> + the changed
 	 * field. {@code name} is mandatory even though it has not changed - the writer validates the patch
@@ -640,6 +679,14 @@ public class PbGraphUtil {
 	 * swallowed null is the difference between a persistent failure and a silent no-op.
 	 */
 	public static boolean persistStatus(BaseRecord user, BaseRecord node, PbNodeStatusEnumType status) {
+		return persistStatus(user, node, status, true);
+	}
+
+	/**
+	 * {@code invalidateScan=false} is for the drift scan persisting its own marks: its result already
+	 * reflects them, and counting them as foreign writes would stop it from ever being cached.
+	 */
+	static boolean persistStatus(BaseRecord user, BaseRecord node, PbNodeStatusEnumType status, boolean invalidateScan) {
 		if(node == null || status == null) {
 			return false;
 		}
@@ -653,6 +700,9 @@ public class PbGraphUtil {
 		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 			logger.error("Failed to persist nodeStatus=" + status + " on node " + node.get(FieldNames.FIELD_NAME));
 			return false;
+		}
+		if(invalidateScan) {
+			invalidateScanOfNode(node);
 		}
 		return true;
 	}
@@ -711,7 +761,63 @@ public class PbGraphUtil {
 			logger.error("Failed to persist " + model + "." + field + " on " + src.get(FieldNames.FIELD_NAME));
 			return false;
 		}
+		if(OlioModelNames.MODEL_PB_NODE.equals(model)) {
+			invalidateScanOfNode(src);
+		}
+		else if(OlioModelNames.MODEL_PB_BINDING.equals(model)) {
+			invalidateScanOfBinding(src);
+		}
 		return true;
+	}
+
+	// ─────────────────────────────── drift-scan cache ───────────────────────────────
+
+	/** The id of the workflow {@code node} belongs to, or null when the projection did not carry it. */
+	static Long workflowIdOf(BaseRecord node) {
+		if(node == null || !node.hasField(OlioFieldNames.FIELD_PB_WORKFLOW)) {
+			return null;
+		}
+		BaseRecord wf = node.get(OlioFieldNames.FIELD_PB_WORKFLOW);
+		return (wf != null ? wf.get(FieldNames.FIELD_ID) : null);
+	}
+
+	/**
+	 * Drop {@link PbStaleUtil}'s cached scan for the workflow a graph write just changed. Every node and
+	 * binding write in this class and in {@code PbPipelineUtil} calls one of these, so the cache is only
+	 * ever stale with respect to writes that did not pass through this JVM's PB code (bounded by the TTL).
+	 * When the workflow cannot be determined the whole cache is dropped rather than risk serving a scan
+	 * that predates the write.
+	 */
+	static void invalidateScan(BaseRecord workflow) {
+		Long id = (workflow != null ? workflow.get(FieldNames.FIELD_ID) : null);
+		if(id != null) {
+			PbStaleUtil.invalidate(id.longValue());
+		}
+		else {
+			PbStaleUtil.clear();
+		}
+	}
+
+	static void invalidateScanOfNode(BaseRecord node) {
+		Long wfId = workflowIdOf(node);
+		if(wfId != null) {
+			PbStaleUtil.invalidate(wfId.longValue());
+			return;
+		}
+		Long nodeId = (node != null ? node.get(FieldNames.FIELD_ID) : null);
+		if(nodeId != null) {
+			PbStaleUtil.invalidateByNode(nodeId.longValue());
+		}
+		else {
+			PbStaleUtil.clear();
+		}
+	}
+
+	static void invalidateScanOfBinding(BaseRecord binding) {
+		/// bindingRequest() projects the consuming node as an FK only, so its workflow is not present;
+		/// the scan's own node index resolves it without a read.
+		BaseRecord node = (binding != null && binding.hasField(OlioFieldNames.FIELD_PB_NODE) ? binding.get(OlioFieldNames.FIELD_PB_NODE) : null);
+		invalidateScanOfNode(node);
 	}
 
 	// ─────────────────────────────── runs ───────────────────────────────
@@ -723,6 +829,11 @@ public class PbGraphUtil {
 	 * {@code (name, groupId, organizationId)} index is the urn-collision guard, and every run of one
 	 * workflow would otherwise derive the same name. A UUID suffix is appended because two runs can start
 	 * inside the same millisecond.
+	 * <p>
+	 * The run is written {@code PENDING}. {@link #markRunning} stamps {@code RUNNING} at execution start
+	 * (a PENDING row that never reaches RUNNING is one that was opened and abandoned before dispatch);
+	 * {@link #completeRun} closes it. Restart recovery (design §21) keys on RUNNING, so an executor that
+	 * dispatches work without passing through {@code markRunning} leaves nothing for the sweep to find.
 	 */
 	public static BaseRecord startRun(BaseRecord user, BaseRecord workflow, String groupPath, List<Long> requestedNodeIds) {
 		if(workflow == null) {
@@ -765,18 +876,56 @@ public class PbGraphUtil {
 		return patchField(user, workflow, OlioModelNames.MODEL_PB_WORKFLOW, OlioFieldNames.FIELD_PB_LAST_RUN, run);
 	}
 
-	/** Close a run out. Result asserted; a discarded result would leave a run PENDING forever. */
+	/**
+	 * Stamp {@code run} {@code RUNNING} immediately before the first node is dispatched. Mutates the
+	 * in-memory {@code run} to match so a caller holding the handle sees the same status the row carries.
+	 * Result asserted; a discarded false here would leave a dispatched run looking undispatched, which is
+	 * exactly the state restart recovery cannot distinguish from "never started".
+	 */
+	public static boolean markRunning(BaseRecord user, BaseRecord run) {
+		if(run == null) {
+			return false;
+		}
+		BaseRecord patch = patchOf(run, OlioModelNames.MODEL_PB_RUN, OlioFieldNames.FIELD_PB_RUN_STATUS);
+		try {
+			patch.set(OlioFieldNames.FIELD_PB_RUN_STATUS, PbRunStatusEnumType.RUNNING.toString());
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble a run patch: " + e.getMessage());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			logger.error("Failed to mark run " + run.get(FieldNames.FIELD_NAME) + " RUNNING");
+			return false;
+		}
+		try {
+			run.set(OlioFieldNames.FIELD_PB_RUN_STATUS, PbRunStatusEnumType.RUNNING.toString());
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			logger.warn("Run " + run.get(FieldNames.FIELD_NAME) + " is RUNNING on disk but the handle could not be updated: " + e.getMessage());
+		}
+		return true;
+	}
+
+	/**
+	 * Close a run out. Result asserted; a discarded result would leave a run PENDING forever.
+	 * <p>
+	 * Like {@link #markRunning}, mutates the in-memory {@code run} to match the row once the write has
+	 * succeeded: {@code executeNodeRun} publishes {@code run.runStatus} on its DTO after closing, and
+	 * until 2026-10-10 that handle still read RUNNING for a run whose row said COMPLETED
+	 * ({@code TestPbNodeRun.case05}).
+	 */
 	public static boolean completeRun(BaseRecord user, BaseRecord run, PbRunStatusEnumType status,
 			int executed, int failed, String error) {
 		if(run == null || status == null) {
 			return false;
 		}
+		ZonedDateTime completedAt = ZonedDateTime.now();
 		BaseRecord patch = patchOf(run, OlioModelNames.MODEL_PB_RUN, OlioFieldNames.FIELD_PB_RUN_STATUS,
 			OlioFieldNames.FIELD_PB_COMPLETED_AT, OlioFieldNames.FIELD_PB_EXECUTED_NODE_COUNT,
 			OlioFieldNames.FIELD_PB_FAILED_NODE_COUNT, OlioFieldNames.FIELD_PB_ERROR);
 		try {
 			patch.set(OlioFieldNames.FIELD_PB_RUN_STATUS, status.toString());
-			patch.set(OlioFieldNames.FIELD_PB_COMPLETED_AT, ZonedDateTime.now());
+			patch.set(OlioFieldNames.FIELD_PB_COMPLETED_AT, completedAt);
 			patch.set(OlioFieldNames.FIELD_PB_EXECUTED_NODE_COUNT, Integer.valueOf(executed));
 			patch.set(OlioFieldNames.FIELD_PB_FAILED_NODE_COUNT, Integer.valueOf(failed));
 			if(error != null) {
@@ -789,6 +938,24 @@ public class PbGraphUtil {
 		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 			logger.error("Failed to complete run " + run.get(FieldNames.FIELD_NAME));
 			return false;
+		}
+		try {
+			run.set(OlioFieldNames.FIELD_PB_RUN_STATUS, status.toString());
+			if(run.hasField(OlioFieldNames.FIELD_PB_COMPLETED_AT)) {
+				run.set(OlioFieldNames.FIELD_PB_COMPLETED_AT, completedAt);
+			}
+			if(run.hasField(OlioFieldNames.FIELD_PB_EXECUTED_NODE_COUNT)) {
+				run.set(OlioFieldNames.FIELD_PB_EXECUTED_NODE_COUNT, Integer.valueOf(executed));
+			}
+			if(run.hasField(OlioFieldNames.FIELD_PB_FAILED_NODE_COUNT)) {
+				run.set(OlioFieldNames.FIELD_PB_FAILED_NODE_COUNT, Integer.valueOf(failed));
+			}
+			if(error != null && run.hasField(OlioFieldNames.FIELD_PB_ERROR)) {
+				run.set(OlioFieldNames.FIELD_PB_ERROR, error);
+			}
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			logger.warn("Run " + run.get(FieldNames.FIELD_NAME) + " is " + status + " on disk but the handle could not be updated: " + e.getMessage());
 		}
 		return true;
 	}
@@ -838,6 +1005,29 @@ public class PbGraphUtil {
 		if(changed == null) {
 			return marked;
 		}
+		for(BaseRecord n : downstreamOf(user, workflow, changed)) {
+			if(persistStatus(user, n, PbNodeStatusEnumType.STALE)) {
+				marked.add(n);
+			}
+		}
+		if(!marked.isEmpty()) {
+			logger.info("Marked " + marked.size() + " node(s) STALE downstream of " + changed.get(FieldNames.FIELD_NAME));
+		}
+		return marked;
+	}
+
+	/**
+	 * The transitive consumers of {@code changed}, breadth-first in the order they are reached, with
+	 * no writes. {@link #markStaleDownstream} is this walk plus a STALE write per node; the executor
+	 * reads it separately so it can report what {@code PbPipelineUtil.completeNode} marked without a
+	 * second write pass. {@code changed} itself is not included; an unreadable consumer is logged and
+	 * skipped.
+	 */
+	public static List<BaseRecord> downstreamOf(BaseRecord user, BaseRecord workflow, BaseRecord changed) {
+		List<BaseRecord> downstream = new ArrayList<>();
+		if(changed == null) {
+			return downstream;
+		}
 		Map<Long, BaseRecord> nodes = nodesById(user, workflow);
 		Map<Long, List<Long>> adjacency = adjacency(user, workflow);
 
@@ -859,15 +1049,10 @@ public class PbGraphUtil {
 					logger.warn("Downstream node #" + consumer + " is not readable; not marked");
 					continue;
 				}
-				if(persistStatus(user, n, PbNodeStatusEnumType.STALE)) {
-					marked.add(n);
-				}
+				downstream.add(n);
 			}
 		}
-		if(!marked.isEmpty()) {
-			logger.info("Marked " + marked.size() + " node(s) STALE downstream of " + changed.get(FieldNames.FIELD_NAME));
-		}
-		return marked;
+		return downstream;
 	}
 
 	/**
@@ -927,7 +1112,15 @@ public class PbGraphUtil {
 
 	/** Does every binding marked {@code required} have a resolved source? */
 	public static boolean requiredBindingsResolve(BaseRecord user, BaseRecord node) {
-		for(BaseRecord b : listBindings(user, node)) {
+		return requiredBindingsResolve(user, node, listBindings(user, node));
+	}
+
+	/** {@link #requiredBindingsResolve(BaseRecord, BaseRecord)} over bindings the caller already read. */
+	public static boolean requiredBindingsResolve(BaseRecord user, BaseRecord node, List<BaseRecord> bindings) {
+		if(bindings == null) {
+			return true;
+		}
+		for(BaseRecord b : bindings) {
 			Boolean required = b.get(OlioFieldNames.FIELD_PB_REQUIRED);
 			if(required == null || !required.booleanValue()) {
 				continue;
@@ -1003,6 +1196,18 @@ public class PbGraphUtil {
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
 	}
 
+	/** {@link #readNode} by numeric id - for callers holding only an id-only FK such as {@code scene.sceneNode}. */
+	public static BaseRecord readNodeById(BaseRecord user, long id, long organizationId) {
+		if(user == null || id <= 0L) {
+			return null;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_NODE, FieldNames.FIELD_ID, id);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
+		q.setRequest(nodeRequest());
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
 	public static BaseRecord readBinding(BaseRecord user, String objectId, long organizationId) {
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BINDING, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
@@ -1016,8 +1221,16 @@ public class PbGraphUtil {
 	 * external roots (a null {@code sourceNode}).
 	 */
 	private static Map<Long, List<Long>> adjacency(BaseRecord user, BaseRecord workflow) {
+		return adjacencyOf(listWorkflowBindings(user, workflow));
+	}
+
+	/** {@link #adjacency} over an edge set the caller already read. */
+	static Map<Long, List<Long>> adjacencyOf(List<BaseRecord> bindings) {
 		Map<Long, List<Long>> out = new HashMap<>();
-		for(BaseRecord b : listWorkflowBindings(user, workflow)) {
+		if(bindings == null) {
+			return out;
+		}
+		for(BaseRecord b : bindings) {
 			BaseRecord src = b.get(OlioFieldNames.FIELD_PB_SOURCE_NODE);
 			BaseRecord consumer = b.get(OlioFieldNames.FIELD_PB_NODE);
 			if(src == null || consumer == null) {
@@ -1031,6 +1244,44 @@ public class PbGraphUtil {
 			out.computeIfAbsent(from, k -> new ArrayList<>()).add(to);
 		}
 		return out;
+	}
+
+	/**
+	 * {@code terminals} plus every transitive producer of them, walking the persisted bindings backwards.
+	 * This is the set a render job must consider to bring {@code terminals} up to date: a scene's nodes
+	 * plus the book-scope portraits and prompts they consume. External roots (bindings with no
+	 * {@code sourceNode}) contribute nothing.
+	 */
+	static Set<Long> upstreamOf(List<BaseRecord> bindings, Collection<Long> terminals) {
+		Map<Long, List<Long>> producers = producersOf(bindings);
+		Set<Long> out = new LinkedHashSet<>();
+		Deque<Long> stack = new ArrayDeque<>();
+		if(terminals != null) {
+			for(Long t : terminals) {
+				if(t != null) {
+					stack.push(t);
+				}
+			}
+		}
+		while(!stack.isEmpty()) {
+			Long id = stack.pop();
+			if(!out.add(id)) {
+				continue;
+			}
+			for(Long p : producers.getOrDefault(id, Collections.emptyList())) {
+				if(!out.contains(p)) {
+					stack.push(p);
+				}
+			}
+		}
+		return out;
+	}
+
+	/** Edges reversed: {@code consumerNodeId -> [sourceNodeId]}, over an edge set the caller already read. */
+	static Map<Long, List<Long>> producersOf(List<BaseRecord> bindings) {
+		Map<Long, List<Long>> producers = new HashMap<>();
+		adjacencyOf(bindings).forEach((from, tos) -> tos.forEach(to -> producers.computeIfAbsent(to, k -> new ArrayList<>()).add(from)));
+		return producers;
 	}
 
 	private static Map<Long, String> nodeLabels(BaseRecord user, BaseRecord workflow) {

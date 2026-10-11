@@ -279,7 +279,21 @@ against the source; the rest are from reading the code.
 - **G-27:** `/olio/picture-book/scene/{id}/generate` is synchronous with no job and no server cancel.
 - **G-30:** `PbServiceFacade.requestRegenerate` only marks nodes STALE. The workflow node runner
   (`picturebook/PbNodeExecutor.java`) also diverges from the main pipeline: different profile load,
-  portrait not linked, and no SD-server fallback in `testNode`.
+  portrait not linked, and no SD-server fallback in `testNode`. **[Fixed 2026-10-10, V3 Phase 1 P1-3:**
+  (a) `requestRegenerate(user, book, node, sdApiType, sdServer)` keeps pinned → 409 first and then
+  calls `PbNodeExecutor.executeNodeRun`, which opens an `olio.pb.run`, stamps run + node RUNNING,
+  renders, and closes COMPLETED / FAILED (finally-guarded); it no longer pre-marks STALE. (b) The
+  PORTRAIT executor body resolves the character through `PictureBookUtil.resolveSceneCharacter` (the
+  v1 PBAC load with narrative / profile / store / attributes), applies `selectSceneApparel` +
+  `describeOutfit` + `resolveCharacterStyleConfig`, and links `profile.portrait` via the extracted
+  `PictureBookUtil.linkPortraitToProfile` (v1 Stage 1 now calls the same method). (c) `testNode` and
+  `regenerateNode` in `PictureBookService` resolve `sdApiType` / `sdServer` from the servlet context
+  exactly as the v1 `generate` route does, and the executor gates 400 → 501 → 500 "SD server not
+  configured" before any write. Still open from this item: no portrait-reuse branch in the executor
+  (deliberate, V3 reuse is the node's DONE + unchanged `inputHash`); LANDSCAPE / COMPOSITE / prompt /
+  strip bodies still close `DONE_UNVERIFIED` until Phases 2–4. Tests: `TestPbNodeRun` (5, live Swarm
+  `.39`), `TestPbCanvas#TestPortraitNodeExecution` (asserts DONE), Playwright
+  `pictureBookWorkflow.spec.js:696` (`[SD]`, shared user). `PictureBookV3Implementation.md` §8.3.**]**
 - **Other:** every SD write path sets `FIELD_BYTE_STORE` directly instead of going through
   `ByteModelUtil` (`SDUtil` ~781–2205, `OlioService:690`). Graph runs are left RUNNING when a scene
   throws. **[Corrected 2026-10-09:** (a) `BaseRecord.set(FIELD_BYTE_STORE, …)` already reaches

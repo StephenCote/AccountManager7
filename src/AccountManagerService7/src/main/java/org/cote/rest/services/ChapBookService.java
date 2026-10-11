@@ -116,6 +116,19 @@ public class ChapBookService {
         return Response.status(status).entity("{\"error\":" + escapeJson(message) + "}").build();
     }
 
+    /** The bulk-render summary body: the three v1 counts plus the v3 job/run identifiers (null on v1). */
+    private static String summaryJson(ChapBookUtil.ChapBookRenderSummary s) {
+        return "{\"rendered\":" + s.rendered
+            + ",\"skipped\":" + s.skipped
+            + ",\"llmUnavailable\":" + s.llmUnavailable
+            + ",\"failed\":" + s.failed
+            + ",\"pending\":" + s.pending
+            + ",\"renderPath\":" + escapeJson(s.renderPath)
+            + ",\"jobId\":" + escapeJson(s.jobId)
+            + ",\"runObjectId\":" + escapeJson(s.runObjectId)
+            + ",\"plannedNodeCount\":" + s.plannedNodeCount + "}";
+    }
+
     /** Serialize a Java String as a JSON string literal so an exception message with quotes, backslashes
      *  or control characters (tabs in stack-trace text) cannot break the hand-built error body. */
     private static String escapeJson(String s) {
@@ -354,6 +367,27 @@ public class ChapBookService {
         // still the preferred client-driven path; this makes the BULK route survivable too, with
         // progress and a cancel it never had.
         if (async) {
+            // V3 §24 (P1-9): on the v3 render path the bulk render IS a registry job already (pb.renderAll),
+            // so it is submitted directly and its own job id returned - never wrapped in a cb.render job
+            // that would sit awaiting another registry job. submitChapBookRender returns null on v1,
+            // which means "no detachable job here" and falls through to the existing wrapper below.
+            try {
+                ChapBookUtil.ChapBookRenderSummary sub = ChapBookUtil.submitChapBookRender(
+                        user, bookObjectId, sdApiType, sdServer, chatConfig, sdConfig);
+                if (sub != null) {
+                    if (sub.jobId != null) {
+                        return Response.status(202).entity(summaryJson(sub)).build();
+                    }
+                    return Response.status(200).entity(summaryJson(sub)).build();
+                }
+            } catch (AsyncJobLimitException e) {
+                return errorResponse(429, e.getMessage());
+            } catch (PictureBookException e) {
+                return errorResponse(e.getStatus(), e.getMessage());
+            } catch (Exception e) {
+                logger.error("renderChapBook (v3 submit) failed: " + e.getMessage(), e);
+                return errorResponse(500, "Render failed: " + e.getMessage());
+            }
             final String fSdApiType = sdApiType;
             final String fSdServer = sdServer;
             final BaseRecord fChatConfig = chatConfig;
@@ -393,9 +427,9 @@ public class ChapBookService {
             // single HTTP request runs long); this bulk /render/{bookObjectId} remains for small
             // books / backward compatibility.
             ChapBookUtil.ChapBookRenderSummary summary = ChapBookUtil.renderChapBookSummary(user, bookObjectId, sdApiType, sdServer, chatConfig, sdConfig);
-            return Response.status(200).entity("{\"rendered\":" + summary.rendered
-                + ",\"skipped\":" + summary.skipped
-                + ",\"llmUnavailable\":" + summary.llmUnavailable + "}").build();
+            // A v3 summary that is still pending (the synchronous wait reached its bound) is a 202 with
+            // the job identifiers, like the async branch; everything else is the 200 the v1 path returned.
+            return Response.status(summary.pending ? 202 : 200).entity(summaryJson(summary)).build();
         } catch (PictureBookException e) {
             return errorResponse(e.getStatus(), e.getMessage());
         } catch (Exception e) {
@@ -478,15 +512,26 @@ public class ChapBookService {
             ChapBookUtil.SceneRenderResult result = ChapBookUtil.renderChapBookScene(user, sceneObjectId, sdApiType, sdServer, chatConfig, sdConfig, promptOverride);
             boolean rendered = result.status == ChapBookUtil.SceneRenderStatus.RENDERED;
             boolean skipped = result.status == ChapBookUtil.SceneRenderStatus.SKIPPED_NO_PROMPT;
-            // Pure pass-through of the render's own signals (both computed in Objects7).
-            boolean llmUnavailable = result.llmUnavailable;
-            boolean llmDegraded = result.llmDegraded;
-            String oid = result.imageObjectId;
-            return Response.status(200).entity("{\"imageObjectId\":" + (oid == null ? "null" : "\"" + oid + "\"")
+            // V3 §24 (P1-9): PENDING means the page's pb.render job was submitted but did not finish within
+            // the synchronous bound - a 202 carrying the job identifiers for the client to poll.
+            boolean pending = result.status == ChapBookUtil.SceneRenderStatus.PENDING;
+            // Pure pass-through of the render's own signals (all computed in Objects7).
+            String body = "{\"imageObjectId\":" + escapeJson(result.imageObjectId)
                 + ",\"rendered\":" + rendered
                 + ",\"skipped\":" + skipped
-                + ",\"llmUnavailable\":" + llmUnavailable
-                + ",\"llmDegraded\":" + llmDegraded + "}").build();
+                + ",\"pending\":" + pending
+                + ",\"llmUnavailable\":" + result.llmUnavailable
+                + ",\"llmDegraded\":" + result.llmDegraded
+                + ",\"renderPath\":" + escapeJson(result.renderPath)
+                + ",\"jobId\":" + escapeJson(result.jobId)
+                + ",\"runObjectId\":" + escapeJson(result.runObjectId)
+                + ",\"nodeObjectId\":" + escapeJson(result.nodeObjectId)
+                + ",\"artifactObjectId\":" + escapeJson(result.artifactObjectId)
+                + ",\"nodeStatus\":" + escapeJson(result.nodeStatus)
+                + ",\"reviewStatus\":" + escapeJson(result.reviewStatus)
+                + ",\"autoApproved\":" + result.autoApproved
+                + ",\"autoApproveSkipped\":" + escapeJson(result.autoApproveSkipReason) + "}";
+            return Response.status(pending ? 202 : 200).entity(body).build();
         } catch (PictureBookException e) {
             return errorResponse(e.getStatus(), e.getMessage());
         } catch (Exception e) {

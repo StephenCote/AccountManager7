@@ -75,6 +75,12 @@ public class TestChapBook extends BaseTest {
 	@Before
 	public void setUpChapBook() {
 		// BaseTest.setup() is @Before too and runs first; OlioModelNames.use() is called there.
+		// The render cases assert the v1 SD block (client sdConfig overlay, synchronous image patch),
+		// which v3 replaces with a graph job that drops the overlay. BaseTest re-pins v3 on every
+		// @Before. v3 is covered by TestChapBookV3Render.
+		org.cote.accountmanager.olio.picturebook.PbRenderPath.configure(
+			org.cote.accountmanager.olio.picturebook.PbRenderPath.V3,
+			org.cote.accountmanager.olio.picturebook.PbRenderPath.V1);
 		// Create a stable test user for this suite.
 		org.cote.accountmanager.io.OrganizationContext ctx =
 			getTestOrganization(ORG_PATH);

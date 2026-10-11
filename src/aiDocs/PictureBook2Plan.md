@@ -2722,6 +2722,12 @@ update result — the `LibraryUtil` shape `architecture.md` warns about.
 **Disposition (approved):** split it. `recomputeStatus` **computes and returns** derived status; only an
 explicitly authorized write path persists. This is consistent with §2.3's own rule — *the hash is truth;
 the status is a repairable cache* — so nothing depends on the cache being written during a read.
+*Amended 2026-10-10 (V3 Phase 1, P1-2):* `recomputeStatus` is still compute-only. The read-path
+exception is now `PbStaleUtil.scan`, which `listStale` / `workflowView` / `nodeView` run: it persists
+**only** `nodeStatus = STALE`, through `PbGraphUtil.persistStatus` as the viewing user (PBAC-checked,
+idempotent, never admin, never a create); a denied write is reported as `markPersisted:false` on the
+result, never thrown, and never changes what the view shows. `binding.refHash` is never written from a
+read. See `PictureBookV3Design.md` §11.1 for the full contract.
 
 **3. The role split is not retroactive — accepted, no migration.** `setEntitlement` only adds, so per-book
 roles created before the two-tier split keep their universe grants on `am7db` permanently. Stephen's

@@ -263,6 +263,11 @@ services:
       # Neither is set in the main docker-compose.yml -- production stays inert.
       LLM_EMULATOR_FIXTURE_ROOT: ${LLM_EMULATOR_FIXTURE_ROOT:-/fixtures/llm}
       LLM_EMULATOR_RECORD_DIR: ${LLM_EMULATOR_RECORD_DIR:-}
+      # PictureBook V3 render-path switch per product (design §28.1 Stage 1). The TEST stack boots
+      # both on v3 so every Phase 1 Playwright spec exercises the graph render path; the production
+      # docker-compose.yml keeps v1. Boot-pinned: a change needs `up -d am7`, not `restart`.
+      PICTUREBOOK_RENDER_PATH: ${PICTUREBOOK_RENDER_PATH:-v3}
+      CHAPBOOK_RENDER_PATH: ${CHAPBOOK_RENDER_PATH:-v3}
     volumes:
       # Persistent host location (see AM7_DATA_DIR above): app keystores/vault/datagen/streams
       # (/data/am7) + the self-signed TLS pair nginx and Tomcat share (/etc/am7/certs). Losing

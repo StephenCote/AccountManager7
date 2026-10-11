@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio.picturebook;
 
 import java.nio.charset.StandardCharsets;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -18,6 +19,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -26,6 +28,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
+import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 
 /**
@@ -91,14 +94,17 @@ public class PbArtifactUtil {
 	// ─────────────────────────────── persist ───────────────────────────────
 
 	/**
-	 * Persist one artifact for {@code (node, role)}, at the next revision, and select it.
+	 * Persist one artifact for {@code (node, role)}, at the next revision, and select it unless the current
+	 * selection is APPROVED (V3 §10 rule 1).
 	 * <p>
 	 * Ordering, and it matters:
 	 * <ol>
 	 * <li>resolve the next revision from the persisted chain (never a cached count);</li>
 	 * <li>create the artifact with a revision-bearing derived name, {@code supersedes} pointing at the
-	 * previously selected revision, and {@code selected = false};</li>
-	 * <li>{@link #setSelected} it, which clears the sibling flags and re-reads to prove it.</li>
+	 * previously selected revision, {@code selected = false} and {@code reviewStatus = GENERATED};</li>
+	 * <li>{@link #setSelected} it, which clears the sibling flags and re-reads to prove it - <b>unless</b>
+	 * the previously selected revision is APPROVED, in which case the newcomer stays unselected and the
+	 * approved one keeps showing (rules 1 and 3).</li>
 	 * </ol>
 	 * Creating it already-selected would leave two selected rows for the window between the two writes,
 	 * and on a failure would leave two permanently.
@@ -133,6 +139,9 @@ public class PbArtifactUtil {
 			artifact.set(OlioFieldNames.FIELD_PB_ARTIFACT_TYPE,
 				(artifactType != null ? artifactType : PbArtifactTypeEnumType.UNKNOWN).toString());
 			artifact.set(OlioFieldNames.FIELD_PB_SELECTED, Boolean.FALSE);
+			/// Written here, not as a schema default: PB2 convention rule 3 forbids field defaults
+			/// on the PB models (TestPbModelSchema.TestPbModelsDeclareNoFieldDefaults).
+			artifact.set(OlioFieldNames.FIELD_PB_REVIEW_STATUS, PbReviewStatusEnumType.GENERATED.toString());
 			if(previous != null) {
 				artifact.set(OlioFieldNames.FIELD_PB_SUPERSEDES, previous);
 			}
@@ -171,7 +180,16 @@ public class PbArtifactUtil {
 				+ " revision. Revision resolved to " + revision + ".");
 		}
 		BaseRecord persisted = readArtifact(user, created.get(FieldNames.FIELD_OBJECT_ID), orgId);
-		setSelected(user, persisted);
+		/// V3 §10 rule 1: a new attempt never displaces an APPROVED selection. The newcomer arrives
+		/// GENERATED and unselected; downstream readers (findSelected) keep consuming the approved one. When
+		/// nothing is approved the newest attempt is auto-selected, so the book always has something to show.
+		if(previous == null || reviewStatusOf(previous) != PbReviewStatusEnumType.APPROVED) {
+			setSelected(user, persisted);
+		}
+		else {
+			logger.info("Artifact " + name + " recorded unselected: the current selection "
+				+ previous.get(FieldNames.FIELD_NAME) + " is APPROVED");
+		}
 		return readArtifact(user, created.get(FieldNames.FIELD_OBJECT_ID), orgId);
 	}
 
@@ -182,14 +200,38 @@ public class PbArtifactUtil {
 	 */
 	public static boolean recordImageMetrics(BaseRecord user, BaseRecord artifact, byte[] bytes, String mimeType,
 			int width, int height, Long seed) {
+		return recordImageMetrics(user, artifact, bytes, mimeType, width, height, seed, null, 0L);
+	}
+
+	/**
+	 * {@link #recordImageMetrics(BaseRecord, BaseRecord, byte[], String, int, int, Long)} plus the backend
+	 * that produced the bytes and how long it took (V3 §21). {@code durationMs} is recorded for display and
+	 * never asserted; 0 means unrecorded and is not written. The two fields are materialised on the patch
+	 * only when supplied, so the seven-argument form leaves them untouched.
+	 */
+	public static boolean recordImageMetrics(BaseRecord user, BaseRecord artifact, byte[] bytes, String mimeType,
+			int width, int height, Long seed, SDAPIEnumType backend, long durationMs) {
 		if(artifact == null) {
 			return false;
 		}
-		BaseRecord patch = PbGraphUtil.patchOf(artifact, OlioModelNames.MODEL_PB_ARTIFACT,
+		List<String> fields = new ArrayList<>(Arrays.asList(
 			OlioFieldNames.FIELD_PB_BYTE_LENGTH, OlioFieldNames.FIELD_PB_CONTENT_HASH,
 			OlioFieldNames.FIELD_PB_MIME_TYPE, OlioFieldNames.FIELD_PB_IMAGE_WIDTH,
-			OlioFieldNames.FIELD_PB_IMAGE_HEIGHT, OlioFieldNames.FIELD_PB_SEED);
+			OlioFieldNames.FIELD_PB_IMAGE_HEIGHT, OlioFieldNames.FIELD_PB_SEED));
+		if(backend != null) {
+			fields.add(OlioFieldNames.FIELD_PB_BACKEND);
+		}
+		if(durationMs > 0L) {
+			fields.add(OlioFieldNames.FIELD_PB_DURATION_MS);
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(artifact, OlioModelNames.MODEL_PB_ARTIFACT, fields.toArray(new String[0]));
 		try {
+			if(backend != null) {
+				patch.set(OlioFieldNames.FIELD_PB_BACKEND, backend.toString());
+			}
+			if(durationMs > 0L) {
+				patch.set(OlioFieldNames.FIELD_PB_DURATION_MS, Long.valueOf(durationMs));
+			}
 			if(bytes != null) {
 				patch.set(OlioFieldNames.FIELD_PB_BYTE_LENGTH, Long.valueOf(bytes.length));
 				patch.set(OlioFieldNames.FIELD_PB_CONTENT_HASH, sha256Bytes(bytes));
@@ -282,6 +324,221 @@ public class PbArtifactUtil {
 				+ keepId + ", found #" + selected.get(0).get(FieldNames.FIELD_ID));
 		}
 		return readArtifact(user, artifact.get(FieldNames.FIELD_OBJECT_ID), orgId);
+	}
+
+	// ─────────────────────────────── review (V3 §10) ───────────────────────────────
+
+	/** The {@code approvedBy} value recorded when the book's {@code autoApprove} switch approved (rule 5). */
+	public static final String APPROVED_BY_AUTO = OlioFieldNames.PB_APPROVED_BY_AUTO;
+
+	/**
+	 * "Use this image" (rule 2): make {@code artifact} the selected revision of its {@code (node, role)}.
+	 * <p>
+	 * Writes {@code selected} only - never {@code reviewStatus}, never the node's {@code pinned}. A chain whose
+	 * current selection is APPROVED refuses with 409: a selection click reads as "show this one" and must not
+	 * silently discard a human approval and its pin. Approve the other variant, or reject the approved one.
+	 */
+	public static BaseRecord select(BaseRecord user, BaseRecord artifact) {
+		BaseRecord node = chainNode(artifact);
+		String role = artifact.get(OlioFieldNames.FIELD_PB_ROLE);
+		BaseRecord current = findSelected(user, node, role);
+		if(current != null && !sameRecord(current, artifact) && reviewStatusOf(current) == PbReviewStatusEnumType.APPROVED) {
+			throw new PictureBookException(409, "The selected artifact " + current.get(FieldNames.FIELD_NAME)
+				+ " is APPROVED and is not displaced by a selection. Approve " + artifact.get(FieldNames.FIELD_NAME)
+				+ " instead, or reject the approved one.");
+		}
+		return setSelected(user, artifact);
+	}
+
+	/**
+	 * Approve (rule 2): {@code artifact} ends selected, APPROVED and with its node pinned. Approving a variant
+	 * that is not the current selection selects it first (approve implies select) and demotes any other
+	 * APPROVED sibling to GENERATED, so there is one APPROVED artifact per {@code (node, role)}.
+	 * <p>
+	 * Order: demote siblings, select, pin, stamp. A pinned-but-unapproved node is a legal user state while
+	 * APPROVED-but-unpinned is not, so the stamp comes last and a failure part-way is repaired by repeating.
+	 * Every step guards on its own terminal state rather than on "already APPROVED", so re-approving an
+	 * artifact whose node was unpinned re-pins it, and a human approval over {@link #APPROVED_BY_AUTO}
+	 * re-stamps {@code approvedBy}. Protecting a human approval from the auto-approver is the caller's guard
+	 * (rule 5), not this method's.
+	 *
+	 * @param approvedBy the approving user's objectId, or {@link #APPROVED_BY_AUTO}
+	 */
+	public static BaseRecord approve(BaseRecord user, BaseRecord artifact, String approvedBy) {
+		if(approvedBy == null || approvedBy.trim().length() == 0) {
+			throw new PictureBookException(400, "approvedBy is required: the approving user's objectId or " + APPROVED_BY_AUTO);
+		}
+		BaseRecord node = chainNode(artifact);
+		String role = artifact.get(OlioFieldNames.FIELD_PB_ROLE);
+		long orgId = PbGraphUtil.orgId(artifact);
+
+		for(BaseRecord sibling : listChain(user, node, role)) {
+			if(!sameRecord(sibling, artifact) && reviewStatusOf(sibling) == PbReviewStatusEnumType.APPROVED) {
+				writeReview(user, sibling, PbReviewStatusEnumType.GENERATED, null, null);
+			}
+		}
+		Boolean sel = artifact.get(OlioFieldNames.FIELD_PB_SELECTED);
+		if(sel == null || !sel.booleanValue()) {
+			setSelected(user, artifact);
+		}
+		BaseRecord fullNode = PbGraphUtil.readNode(user, node.get(FieldNames.FIELD_OBJECT_ID), orgId);
+		if(fullNode == null) {
+			throw new PictureBookException(500, "The producing node of " + artifact.get(FieldNames.FIELD_NAME) + " could not be re-read to pin it");
+		}
+		Boolean pinned = fullNode.get(OlioFieldNames.FIELD_PB_PINNED);
+		if(pinned == null || !pinned.booleanValue()) {
+			if(!PbGraphUtil.setPinned(user, fullNode, true)) {
+				throw new PictureBookException(500, "Failed to pin node " + fullNode.get(OlioFieldNames.FIELD_PB_HANDLE)
+					+ " for the approval of " + artifact.get(FieldNames.FIELD_NAME));
+			}
+		}
+		if(reviewStatusOf(artifact) != PbReviewStatusEnumType.APPROVED
+				|| !approvedBy.equals(artifact.get(OlioFieldNames.FIELD_PB_APPROVED_BY))) {
+			writeReview(user, artifact, PbReviewStatusEnumType.APPROVED, approvedBy, ZonedDateTime.now());
+		}
+		return readArtifact(user, artifact.get(FieldNames.FIELD_OBJECT_ID), orgId);
+	}
+
+	/**
+	 * Auto-approve (rule 5): the book's {@code autoApprove} switch is on and an attempt has just finished, so
+	 * {@code artifact} (the new revision) is approved via {@link #approve} with {@link #APPROVED_BY_AUTO} -
+	 * selected, APPROVED, node pinned - unless one of the guards holds. The guards, in order:
+	 * <ol>
+	 * <li><b>degraded</b>: the executor reported a degradation (an unresolved reference role, a fallback
+	 * prompt). A render that did not consume what the graph bound is not a result to pin.</li>
+	 * <li><b>existing-approved</b>: another revision of the same {@code (node, role)} is APPROVED. The auto-approver
+	 * never replaces an approval, human or auto; {@link #approve} would demote it, so this is checked first.</li>
+	 * </ol>
+	 * <b>Never throws.</b> A guard, or any {@link PictureBookException} from {@link #approve} (a PBAC-denied
+	 * review patch surfaces there as a 500), is returned as the skip reason: the attempt completed and the
+	 * artifact exists; auto-approval is a convenience layered on top of it, and a caller reports the reason on
+	 * its DTO rather than failing a finished run.
+	 * <p>
+	 * The existing-approved guard is a check-then-act over the chain: a human approving a sibling between the
+	 * {@link #listChain} read and the {@link #approve} write is demoted by it. Acceptable for a synchronous run
+	 * (the window is one query); the async job layer (P1-6) inherits it unchanged and it is recorded as such.
+	 *
+	 * @param degradations the executor's {@code degradations} list for this attempt; null reads as empty
+	 * @return null when the artifact was approved, else the skip reason ({@code "degraded: ..."},
+	 *         {@code "existing-approved: <name>"}, {@code "failed: <message>"})
+	 */
+	public static String autoApprove(BaseRecord user, BaseRecord artifact, List<String> degradations) {
+		if(artifact == null) {
+			return "failed: no artifact";
+		}
+		if(degradations != null && !degradations.isEmpty()) {
+			return "degraded: " + String.join("; ", degradations);
+		}
+		try {
+			BaseRecord node = chainNode(artifact);
+			String role = artifact.get(OlioFieldNames.FIELD_PB_ROLE);
+			for(BaseRecord sibling : listChain(user, node, role)) {
+				if(!sameRecord(sibling, artifact) && reviewStatusOf(sibling) == PbReviewStatusEnumType.APPROVED) {
+					return "existing-approved: " + sibling.get(FieldNames.FIELD_NAME);
+				}
+			}
+			approve(user, artifact, APPROVED_BY_AUTO);
+			return null;
+		}
+		catch(PictureBookException e) {
+			logger.error("Auto-approve of " + artifact.get(FieldNames.FIELD_NAME) + " failed: " + e.getMessage());
+			return "failed: " + e.getMessage();
+		}
+	}
+
+	/**
+	 * Reject (rule 4): the artifact is marked REJECTED (and kept - cleanup is §23's job), and
+	 * {@code approvedBy} is cleared. When it was the selection, the newest sibling that is neither REJECTED
+	 * nor ARCHIVED is selected in its place so the book still has something to show; when there is no such
+	 * sibling the selection stays where it is (exactly one selected per chain). The node's {@code pinned}
+	 * flag is <b>not</b> touched: a rejection is a verdict on one variant, not a regeneration request, and
+	 * only an explicit unpin releases a pin.
+	 */
+	public static BaseRecord reject(BaseRecord user, BaseRecord artifact) {
+		BaseRecord node = chainNode(artifact);
+		String role = artifact.get(OlioFieldNames.FIELD_PB_ROLE);
+		long orgId = PbGraphUtil.orgId(artifact);
+
+		Boolean sel = artifact.get(OlioFieldNames.FIELD_PB_SELECTED);
+		if(sel != null && sel.booleanValue()) {
+			BaseRecord fallback = null;
+			for(BaseRecord sibling : listChain(user, node, role)) {
+				if(sameRecord(sibling, artifact)) {
+					continue;
+				}
+				PbReviewStatusEnumType rs = reviewStatusOf(sibling);
+				if(rs == PbReviewStatusEnumType.REJECTED || rs == PbReviewStatusEnumType.ARCHIVED) {
+					continue;
+				}
+				/// listChain is ascending by revision, so the last survivor is the newest.
+				fallback = sibling;
+			}
+			if(fallback != null) {
+				setSelected(user, fallback);
+			}
+			else {
+				logger.info("Rejected artifact " + artifact.get(FieldNames.FIELD_NAME)
+					+ " stays selected: its chain has no other GENERATED/IN_REVIEW/APPROVED revision");
+			}
+		}
+		if(reviewStatusOf(artifact) != PbReviewStatusEnumType.REJECTED
+				|| artifact.get(OlioFieldNames.FIELD_PB_APPROVED_BY) != null) {
+			writeReview(user, artifact, PbReviewStatusEnumType.REJECTED, null, null);
+		}
+		return readArtifact(user, artifact.get(FieldNames.FIELD_OBJECT_ID), orgId);
+	}
+
+	/**
+	 * Patch the review fields. {@code approvedAt} is listed on the patch <b>only</b> when a stamp is supplied:
+	 * {@code patchOf} materialises a ZONETIME at epoch-0 (not null), so listing it on a demote or reject
+	 * would silently write 1970-01-01. A demoted or rejected artifact therefore keeps its old
+	 * {@code approvedAt}, which is harmless - approval is keyed on {@code reviewStatus}, and the facade emits
+	 * {@code approvedAt} only when the status is APPROVED. {@code reviewStatus} is always set because the
+	 * patch materialises it at the model default.
+	 */
+	private static void writeReview(BaseRecord user, BaseRecord artifact, PbReviewStatusEnumType status,
+			String approvedBy, ZonedDateTime approvedAt) {
+		List<String> fields = new ArrayList<>(Arrays.asList(OlioFieldNames.FIELD_PB_REVIEW_STATUS,
+			OlioFieldNames.FIELD_PB_APPROVED_BY));
+		if(approvedAt != null) {
+			fields.add(OlioFieldNames.FIELD_PB_APPROVED_AT);
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(artifact, OlioModelNames.MODEL_PB_ARTIFACT, fields.toArray(new String[0]));
+		try {
+			patch.set(OlioFieldNames.FIELD_PB_REVIEW_STATUS, status.toString());
+			patch.set(OlioFieldNames.FIELD_PB_APPROVED_BY, approvedBy);
+			if(approvedAt != null) {
+				patch.set(OlioFieldNames.FIELD_PB_APPROVED_AT, approvedAt);
+			}
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble a review patch: " + e.getMessage());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to mark artifact " + artifact.get(FieldNames.FIELD_NAME)
+				+ " " + status + " - AccessPoint.update returned null (PBAC denial or validation failure; check the audit log)");
+		}
+	}
+
+	/** The producing node of an artifact read with {@link #artifactRequest()}, or a 400 naming the projection. */
+	private static BaseRecord chainNode(BaseRecord artifact) {
+		if(artifact == null) {
+			throw new PictureBookException(400, "A review action needs an artifact");
+		}
+		BaseRecord node = artifact.get(OlioFieldNames.FIELD_PB_PRODUCED_BY_NODE);
+		String role = artifact.get(OlioFieldNames.FIELD_PB_ROLE);
+		if(node == null || role == null || node.get(FieldNames.FIELD_OBJECT_ID) == null) {
+			throw new PictureBookException(400, "Artifact " + artifact.get(FieldNames.FIELD_NAME)
+				+ " has no producedByNode/role, so its (node, role) chain cannot be resolved."
+				+ " Read it with PbArtifactUtil.artifactRequest() projected.");
+		}
+		return node;
+	}
+
+	private static boolean sameRecord(BaseRecord a, BaseRecord b) {
+		Long ia = a.get(FieldNames.FIELD_ID);
+		Long ib = b.get(FieldNames.FIELD_ID);
+		return ia != null && ia.equals(ib);
 	}
 
 	// ─────────────────────────────── sanitize ───────────────────────────────
@@ -468,8 +725,23 @@ public class PbArtifactUtil {
 			OlioFieldNames.FIELD_PB_CONTENT_HASH, OlioFieldNames.FIELD_PB_MIME_TYPE,
 			OlioFieldNames.FIELD_PB_IMAGE_WIDTH, OlioFieldNames.FIELD_PB_IMAGE_HEIGHT,
 			OlioFieldNames.FIELD_PB_BYTE_LENGTH, OlioFieldNames.FIELD_PB_BACKEND,
-			OlioFieldNames.FIELD_PB_BACKEND_GRAPH
+			OlioFieldNames.FIELD_PB_BACKEND_GRAPH,
+			OlioFieldNames.FIELD_PB_REVIEW_STATUS, OlioFieldNames.FIELD_PB_APPROVED_BY,
+			OlioFieldNames.FIELD_PB_APPROVED_AT, OlioFieldNames.FIELD_PB_DURATION_MS
 		};
+	}
+
+	/**
+	 * The review state of an artifact, with the null-means-GENERATED rule applied: the enum column carries no
+	 * DDL default, so every row written before V3 Phase 1 reads SQL NULL, which EnumValueType surfaces as
+	 * UNKNOWN. Absent, null and UNKNOWN all read as GENERATED.
+	 */
+	public static PbReviewStatusEnumType reviewStatusOf(BaseRecord artifact) {
+		if(artifact == null || !artifact.hasField(OlioFieldNames.FIELD_PB_REVIEW_STATUS)) {
+			return PbReviewStatusEnumType.GENERATED;
+		}
+		PbReviewStatusEnumType rs = artifact.getEnum(OlioFieldNames.FIELD_PB_REVIEW_STATUS);
+		return (rs == null || rs == PbReviewStatusEnumType.UNKNOWN ? PbReviewStatusEnumType.GENERATED : rs);
 	}
 
 	/** Deserialize a persisted {@code sdConfigSnapshot} string. Only needed when it arrives as text. */

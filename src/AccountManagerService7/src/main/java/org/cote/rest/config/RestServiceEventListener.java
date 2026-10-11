@@ -21,12 +21,14 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
+import org.cote.accountmanager.olio.picturebook.PbRecoveryUtil;
 import org.cote.accountmanager.iso42001.schema.ISO42001ModelNames;
 import org.cote.accountmanager.iso42001.schema.ISO42001Provisioning;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
+import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.thread.Threaded;
 import org.cote.accountmanager.tools.VoiceUtil;
 import org.cote.accountmanager.util.AuditUtil;
@@ -87,6 +89,10 @@ public class RestServiceEventListener implements ApplicationEventListener {
 	private List<Threaded> maintenanceThreads = new ArrayList<>();
 
 	public void shutdown() {
+
+		/// Phase 0: announce the stop before anything closes, so async render workers (PB V3 §21) can
+		/// return their node to READY and close their run as INTERRUPTED while the database is still up.
+		AsyncJobRegistry.beginShutdown();
 
 		int cleanup = 0;
 		try {
@@ -339,6 +345,25 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			context.getInitParameter("llm.emulator.fixtureRoot"),
 			context.getInitParameter("llm.emulator.recordDir"));
 
+		/// Concurrent SD generations per backend for PictureBook render runs (V3 §21). Boot-pinned, read
+		/// once; blank or unparseable keeps the default of 1 (a GPU serialises anyway, and parallel
+		/// Swarm requests only trade throughput for VRAM contention). Propagation bound is a restart.
+		String sdPermits = context.getInitParameter(org.cote.accountmanager.olio.picturebook.PbRenderLanes.CONFIG_KEY);
+		if(sdPermits != null && !sdPermits.isBlank()) {
+			try { org.cote.accountmanager.olio.picturebook.PbRenderLanes.configure(Integer.parseInt(sdPermits.trim())); }
+			catch(NumberFormatException nfe) {
+				logger.warn("Invalid " + org.cote.accountmanager.olio.picturebook.PbRenderLanes.CONFIG_KEY + "='" + sdPermits + "'; keeping default");
+			}
+		}
+
+		/// PictureBook V3 render-path switch (design §28.1 Stage 1, P1-8): v1 | v3 per product, default
+		/// v1. Boot-pinned, read once; on Docker web.xml is regenerated from the template at every boot,
+		/// so the Docker-side value is PICTUREBOOK_RENDER_PATH / CHAPBOOK_RENDER_PATH. Propagation bound
+		/// is a restart; exposed read-only through GET /rest/config/render-path.
+		org.cote.accountmanager.olio.picturebook.PbRenderPath.configure(
+			context.getInitParameter(org.cote.accountmanager.olio.picturebook.PbRenderPath.PICTUREBOOK_CONFIG_KEY),
+			context.getInitParameter(org.cote.accountmanager.olio.picturebook.PbRenderPath.CHAPBOOK_CONFIG_KEY));
+
 		/// Must run before any HTTP call - the shared Client caches the timeout at first use. Sized by
 		/// the slowest legitimate SD generation, which is GPU-dependent (see ClientUtil).
 		String readTo = context.getInitParameter(ClientUtil.READ_TIMEOUT_CONFIG_KEY);
@@ -428,6 +453,14 @@ public class RestServiceEventListener implements ApplicationEventListener {
 				if (probeOctx != null && probeOctx.isInitialized()) {
 					testVectorStore(ioContext, probeOctx);
 				}
+			}
+
+			/// PB V3 §21 restart recovery: runs this JVM left RUNNING/PENDING when it last stopped are closed
+			/// as INTERRUPTED and their RUNNING nodes returned to READY. Assumes one Service7 JVM per database.
+			try {
+				logger.info("PB restart recovery: " + PbRecoveryUtil.sweepInterrupted());
+			} catch (RuntimeException e) {
+				logger.error("PB restart recovery failed; interrupted runs stay RUNNING until the next boot", e);
 			}
 
 			int jobPeriod = 10000;

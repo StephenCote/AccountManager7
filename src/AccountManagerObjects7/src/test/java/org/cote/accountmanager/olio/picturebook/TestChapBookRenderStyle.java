@@ -73,6 +73,10 @@ public class TestChapBookRenderStyle extends BaseTest {
 
 	@Before
 	public void setUpChapBookStyle() {
+		/// These cases assert the v1 SD block (client sdConfig overlay, synchronous image patch), which
+		/// v3 replaces with a graph job that drops the overlay. BaseTest re-pins v3 on every @Before,
+		/// so this cannot leak. v3 is covered by TestChapBookV3Render.
+		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
 		OrganizationContext ctx = getTestOrganization(ORG_PATH);
 		testUser = IOSystem.getActiveContext().getFactory()
 			.getCreateUser(ctx.getAdminUser(), "chapbookTestUser", ctx.getOrganizationId());

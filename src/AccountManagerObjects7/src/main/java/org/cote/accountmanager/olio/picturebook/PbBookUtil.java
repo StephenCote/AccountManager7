@@ -31,6 +31,7 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
 import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
+import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 
@@ -822,7 +823,96 @@ public class PbBookUtil {
 			logger.error("Failed to persist configOverride on scene " + sceneObjectId);
 			return false;
 		}
+		markSceneNodeStale(user, scene);
 		return true;
+	}
+
+	// ─────────────────────────────── scene -> page node drift (V3 §24, P1-9) ───────────────────────────────
+
+	/**
+	 * A scene's own fields changed ({@code sdPrompt}, {@code configOverride}, {@code poemStanza}, its image
+	 * reference), so the graph node that renders it - a ChapBook page's LANDSCAPE node, linked as
+	 * {@code scene.sceneNode} - is out of date. This is the scene-field half of V3 §11.1 drift detection:
+	 * bound <i>records</i> are caught by the ref-hash scan, but a scene's text lives on the scene itself, so
+	 * the write sites mark it directly. The page's {@code imageStale} flag maps to node STALE this way.
+	 * <p>
+	 * Reads the scene back fresh (the caller holds the pre-write copy) and mirrors {@code sdPrompt} /
+	 * {@code configOverride} onto the node so the review views show what will render, then marks STALE.
+	 * Never throws and never writes anything but the mirror and the status: a scene with no node is a
+	 * no-op (the v1 path, or a page never rendered on v3), a RUNNING node is left alone (the run in flight
+	 * owns its status, as {@link PbStaleUtil#scan} also treats it), an already STALE node is not rewritten.
+	 * A denied or failed write is logged and reported as {@code false}; the scene write that preceded it has
+	 * already succeeded and this must not undo that report.
+	 *
+	 * @return true when the node is STALE on return (freshly marked or already so); false when there is no
+	 *         node, the node is RUNNING, or a write failed
+	 */
+	public static boolean markSceneNodeStale(BaseRecord user, BaseRecord scene) {
+		if(user == null || scene == null) {
+			return false;
+		}
+		try {
+			BaseRecord nodeRef = (scene.hasField(OlioFieldNames.FIELD_PB_SCENE_NODE) ? scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE) : null);
+			Long nodeId = (nodeRef != null ? nodeRef.get(FieldNames.FIELD_ID) : null);
+			if(nodeId == null || nodeId.longValue() <= 0L) {
+				return false;
+			}
+			long orgId = ((Number) scene.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+			BaseRecord fresh = readScene(user, scene.get(FieldNames.FIELD_OBJECT_ID), orgId);
+			if(fresh == null) {
+				fresh = scene;
+			}
+			BaseRecord node = PbGraphUtil.readNodeById(user, nodeId.longValue(), orgId);
+			if(node == null) {
+				logger.warn("Scene " + scene.get(FieldNames.FIELD_NAME) + " references node #" + nodeId + " which could not be read; not marked stale");
+				return false;
+			}
+			boolean ok = mirrorSceneOntoNode(user, fresh, node);
+			PbNodeStatusEnumType status = (node.hasField(OlioFieldNames.FIELD_PB_NODE_STATUS) ? node.getEnum(OlioFieldNames.FIELD_PB_NODE_STATUS) : null);
+			if(status == PbNodeStatusEnumType.RUNNING) {
+				logger.info("Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE) + " is RUNNING; the scene edit is not marked stale until the run closes");
+				return false;
+			}
+			if(status == PbNodeStatusEnumType.STALE) {
+				return ok;
+			}
+			return PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.STALE) && ok;
+		}
+		catch(Exception e) {
+			logger.error("markSceneNodeStale failed for scene " + scene.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+			return false;
+		}
+	}
+
+	/**
+	 * Copy {@code scene.sdPrompt} to {@code node.promptText} and {@code scene.configOverride} to
+	 * {@code node.configOverride} when they differ. The scene stays the authority (the ChapBook executor
+	 * reads the scene); the node carries the copy the graph / review views display. Each copy is one PATCH
+	 * as {@code user}; a failed copy is logged and makes the result {@code false}.
+	 */
+	static boolean mirrorSceneOntoNode(BaseRecord user, BaseRecord scene, BaseRecord node) {
+		boolean ok = true;
+		String prompt = (scene.hasField(OlioFieldNames.FIELD_CB_SD_PROMPT) ? scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT) : null);
+		String nodePrompt = (node.hasField(OlioFieldNames.FIELD_PB_PROMPT_TEXT) ? node.get(OlioFieldNames.FIELD_PB_PROMPT_TEXT) : null);
+		boolean promptBlank = (prompt == null || prompt.isBlank());
+		boolean nodePromptBlank = (nodePrompt == null || nodePrompt.isBlank());
+		if(!(promptBlank && nodePromptBlank) && (promptBlank || !prompt.equals(nodePrompt))) {
+			if(!PbGraphUtil.persistPromptText(user, node, (promptBlank ? null : prompt))) {
+				logger.error("Failed to mirror sdPrompt onto node " + node.get(OlioFieldNames.FIELD_PB_HANDLE));
+				ok = false;
+			}
+		}
+		String override = (scene.hasField(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) ? scene.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) : null);
+		String nodeOverride = (node.hasField(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) ? node.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) : null);
+		boolean overrideBlank = (override == null || override.isBlank());
+		boolean nodeOverrideBlank = (nodeOverride == null || nodeOverride.isBlank());
+		if(!(overrideBlank && nodeOverrideBlank) && (overrideBlank || !override.equals(nodeOverride))) {
+			if(!PbGraphUtil.persistConfigOverride(user, node, (overrideBlank ? null : override))) {
+				logger.error("Failed to mirror configOverride onto node " + node.get(OlioFieldNames.FIELD_PB_HANDLE));
+				ok = false;
+			}
+		}
+		return ok;
 	}
 
 	// ─────────────────────────────── book sdConfig (V3 P0-10a) ───────────────────────────────
@@ -1010,6 +1100,30 @@ public class PbBookUtil {
 		return true;
 	}
 
+	/**
+	 * Persist the book's {@code autoApprove} switch (V3 §10 rule 5). Same shape as {@link #setBookStatus}:
+	 * PATCH of the one field as the caller, result asserted. Switching it off un-approves nothing - the
+	 * switch governs future attempts only.
+	 */
+	public static boolean setAutoApprove(BaseRecord user, BaseRecord book, boolean on) {
+		if(book == null) {
+			return false;
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(book, OlioModelNames.MODEL_PB_BOOK,
+			OlioFieldNames.FIELD_PB_AUTO_APPROVE);
+		try {
+			patch.set(OlioFieldNames.FIELD_PB_AUTO_APPROVE, on);
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble an autoApprove patch: " + e.getMessage());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			logger.error("Failed to persist autoApprove=" + on + " on book " + book.get(FieldNames.FIELD_NAME));
+			return false;
+		}
+		return true;
+	}
+
 	// ─────────────────────────────── names & paths ───────────────────────────────
 
 	/** {@code /Olio/Universes/Books/Worlds/{slug}} - the book world's container group. */
@@ -1062,7 +1176,7 @@ public class PbBookUtil {
 			OlioFieldNames.FIELD_PB_SD_CONFIG, OlioFieldNames.FIELD_PB_COMPOSITE_SD_CONFIG,
 			OlioFieldNames.FIELD_PB_BOOK_STATUS, OlioFieldNames.FIELD_PB_COMPOSITION_CONTEXT,
 			OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID, OlioFieldNames.FIELD_PB_BOOK_TYPE,
-			OlioFieldNames.FIELD_PB_FIX_PAGE_HEIGHT
+			OlioFieldNames.FIELD_PB_FIX_PAGE_HEIGHT, OlioFieldNames.FIELD_PB_AUTO_APPROVE
 		};
 	}
 

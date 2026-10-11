@@ -18,6 +18,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.picturebook.ChapBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
+import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -72,6 +73,10 @@ public class TestChapBookSceneLandscapePrompt extends BaseTest {
 	public void setUpLandscapePrompt() {
 		// BaseTest.setup() (@Before) runs first and calls OlioModelNames.use(). Reuse the ChapBook suite's
 		// stable NON-ADMIN test user (admin only provisions it via getCreateUser).
+		// testRenderHonorsPromptOverrideVerbatim asserts the v1 SD block (synchronous image patch),
+		// which v3 replaces with a graph job. BaseTest re-pins v3 on every @Before. v3 is covered by
+		// TestChapBookV3Render.
+		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
 		OrganizationContext ctx = getTestOrganization(ORG_PATH);
 		testUser = IOSystem.getActiveContext().getFactory()
 			.getCreateUser(ctx.getAdminUser(), "chapbookLandscapePromptUser", ctx.getOrganizationId());

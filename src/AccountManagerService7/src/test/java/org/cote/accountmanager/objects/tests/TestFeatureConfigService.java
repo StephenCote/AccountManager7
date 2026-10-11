@@ -16,6 +16,7 @@ import org.cote.accountmanager.data.security.UserPrincipal;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
@@ -351,6 +352,45 @@ public class TestFeatureConfigService extends BaseTest {
 		}
 		finally {
 			IOSystem.getActiveContext().getAccessPoint().delete(writer, created);
+		}
+	}
+
+	/// P1-8: the read-only render-path route is principal-gated like its siblings.
+	@Test
+	public void TestRenderPathRequiresPrincipal() {
+		assertEquals("GET /render-path with no principal must be 401", 401,
+			service.getRenderPath(new HttpServletRequestMock()).getStatus());
+	}
+
+	/// P1-8: GET /render-path reports the process-global switch for BOTH products, as the resolver holds
+	/// it - a plain (non-admin) user may read it, and the body follows the resolver when it changes.
+	/// The switch is restored in finally because it is process-global and other classes in this JVM
+	/// (TestPbRenderPathRefusal) depend on it.
+	@Test
+	public void TestRenderPathReportsBothProducts() {
+		String pb0 = PbRenderPath.pictureBook();
+		String cb0 = PbRenderPath.chapBook();
+		try {
+			Response r = service.getRenderPath(requestAs(reader));
+			assertEquals(200, r.getStatus());
+			Map<String, Object> b = body(r);
+			assertEquals("picturebook must echo the resolver", pb0, b.get("picturebook"));
+			assertEquals("chapbook must echo the resolver", cb0, b.get("chapbook"));
+			assertTrue("picturebook must be v1 or v3", PbRenderPath.V1.equals(b.get("picturebook")) || PbRenderPath.V3.equals(b.get("picturebook")));
+			assertTrue("chapbook must be v1 or v3", PbRenderPath.V1.equals(b.get("chapbook")) || PbRenderPath.V3.equals(b.get("chapbook")));
+
+			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
+			Map<String, Object> b2 = body(service.getRenderPath(requestAs(reader)));
+			assertEquals(PbRenderPath.V3, b2.get("picturebook"));
+			assertEquals(PbRenderPath.V1, b2.get("chapbook"));
+
+			PbRenderPath.configure(null, "bogus");
+			Map<String, Object> b3 = body(service.getRenderPath(requestAs(reader)));
+			assertEquals("absent must read back as v1", PbRenderPath.V1, b3.get("picturebook"));
+			assertEquals("unrecognised must read back as v1", PbRenderPath.V1, b3.get("chapbook"));
+		}
+		finally {
+			PbRenderPath.configure(pb0, cb0);
 		}
 	}
 

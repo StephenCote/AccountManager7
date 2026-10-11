@@ -65,25 +65,28 @@ public class TestPbNodeExecutorTypes extends BaseTest {
 			assertEquals("isExecutable(record) agrees with isExecutable(type) for " + t,
 				PbNodeExecutor.isExecutable(t), PbNodeExecutor.isExecutable(node));
 			if(PbNodeExecutor.isExecutable(t)) {
-				/// Executable types proceed into their executor; with no server/scopeRef they fail on THEIR
-				/// own first guard (503 no SD server, 400 no scopeRef, 400 no bindings) - never a 501.
+				/// Executable types get past the 501 gate; with no server/book/user they fail on the NEXT gate
+				/// (500 "SD server not configured" for the SD-backed types, 400 from openNodeGraph for the
+				/// rest) - never a 501.
 				try {
-					PbNodeExecutor.executeNode(null, null, null, node, null);
+					PbNodeExecutor.executeNode(null, null, null, node, (String) null);
 					fail("an executable type with no inputs must still fail its own guard: " + t);
 				}
 				catch(PictureBookException pbe) {
 					assertTrue(t + " is executable, so its failure is its own guard, not the 501: " + pbe.getStatus()
 						+ " " + pbe.getMessage(), pbe.getStatus() != 501);
-				}
-				catch(NullPointerException npe) {
-					/// REFERENCE_STRIP has no pre-IO guard (it lists bindings first) - reaching IO with a null
-					/// user is still proof the 501 gate let it through.
-					assertEquals("only REFERENCE_STRIP reaches IO before a guard", PbNodeTypeEnumType.REFERENCE_STRIP, t);
+					if(PbNodeExecutor.SD_BACKED_TYPES.contains(t)) {
+						assertEquals("SD-backed " + t + " with no server is the SD gate", 500, pbe.getStatus());
+						assertTrue(pbe.getMessage(), pbe.getMessage().contains("SD server not configured"));
+					}
+					else {
+						assertEquals("non-SD " + t + " with no book/user is openNodeGraph's 400", 400, pbe.getStatus());
+					}
 				}
 			}
 			else {
 				try {
-					PbNodeExecutor.executeNode(null, null, null, node, null);
+					PbNodeExecutor.executeNode(null, null, null, node, (String) null);
 					fail("non-executable type must be refused: " + t);
 				}
 				catch(PictureBookException pbe) {
@@ -134,9 +137,10 @@ public class TestPbNodeExecutorTypes extends BaseTest {
 					executableCount++;
 				}
 				else {
-					/// And the route the flag protects really does answer 501 for that node.
+					/// And the route the flag protects really does answer 501 for that node - before the SD
+					/// gate, so a null backend is irrelevant here.
 					try {
-						PbServiceFacade.testNode(owner, bookOid, (String) n.get("objectId"));
+						PbServiceFacade.testNode(owner, bookOid, (String) n.get("objectId"), null, null);
 						fail("testNode on a non-executable node must be a 501: " + t);
 					}
 					catch(PictureBookException pbe) {

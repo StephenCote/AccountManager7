@@ -153,4 +153,23 @@ public class FeatureConfigService {
 		}
 		return Response.status(200).entity(manifest).build();
 	}
+
+	/// GET /rest/config/render-path - the boot-pinned PictureBook V3 render-path switch per product
+	/// (design §28.1 Stage 1), read-only: {"picturebook":"v1"|"v3","chapbook":"v1"|"v3"}. Kept beside the
+	/// manifest rather than spliced into its array so that endpoint stays verbatim. Process-global, not
+	/// per-organization; changing it is a deployment restart, so there is no PUT.
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/render-path")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getRenderPath(@Context HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		if (user == null) {
+			return Response.status(401).entity(null).build();
+		}
+		Map<String, Object> body = new LinkedHashMap<>();
+		body.put("picturebook", org.cote.accountmanager.olio.picturebook.PbRenderPath.pictureBook());
+		body.put("chapbook", org.cote.accountmanager.olio.picturebook.PbRenderPath.chapBook());
+		return Response.status(200).entity(JSONUtil.exportObject(body)).build();
+	}
 }

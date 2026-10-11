@@ -111,7 +111,28 @@ public final class AsyncJobRegistry {
 	 */
 	private static volatile ExecutorService executor;
 
+	/**
+	 * Raised by {@link #beginShutdown()} at the very start of a container stop, before the IO context
+	 * is closed, so a worker that checks it between stages can close its own records while the
+	 * database is still reachable. {@link #shutdown()} lowers it again because the context is
+	 * reopenable (tests, redeploys).
+	 */
+	private static volatile boolean shuttingDown = false;
+
 	private AsyncJobRegistry() {
+	}
+
+	/**
+	 * Announce an impending {@link #shutdown()}. Cheap, idempotent, and safe to call early - it only
+	 * flips a flag that cooperative workers poll; nothing is interrupted and nothing is refused.
+	 */
+	public static void beginShutdown() {
+		shuttingDown = true;
+	}
+
+	/** True between {@link #beginShutdown()} and the end of {@link #shutdown()}. */
+	public static boolean isShuttingDown() {
+		return shuttingDown;
 	}
 
 	private static final ThreadFactory THREAD_FACTORY = new ThreadFactory() {
@@ -223,6 +244,15 @@ public final class AsyncJobRegistry {
 		/// A cancel can land while the job is still QUEUED, before any work starts. Honour it
 		/// rather than running work the user already asked to stop.
 		if (job.getProgress().isCancelled()) {
+			/// The work never runs, so nothing it prepared on the submitting thread (a persisted run
+			/// row, a node claim) would be released without this hook. It must not throw; if it does
+			/// the job still finishes CANCELLED and the failure is logged.
+			try {
+				work.onCancelledBeforeStart(job);
+			} catch (Throwable t) {
+				logger.error("Async job onCancelledBeforeStart failed: kind=" + job.getKind() + " jobId="
+					+ job.getJobId() + " — " + t, t);
+			}
 			finish(job, AsyncJob.Status.CANCELLED, null, "Cancelled before starting");
 			return;
 		}
@@ -368,6 +398,7 @@ public final class AsyncJobRegistry {
 	 * restart-tolerant, so a slow LLM call must not delay shutdown.
 	 */
 	public static synchronized void shutdown() {
+		shuttingDown = true;
 		ExecutorService current = executor;
 		/// Null when nothing was ever submitted — a close with no jobs must not build a pool just
 		/// to tear it down.
@@ -382,6 +413,8 @@ public final class AsyncJobRegistry {
 			executor = null;
 		}
 		registry.clear();
+		/// Lowered again because the context is reopenable; a reopened registry is not shutting down.
+		shuttingDown = false;
 	}
 
 	/** Test/diagnostic accessor: number of retained jobs across all principals. */

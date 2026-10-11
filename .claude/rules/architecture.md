@@ -110,6 +110,31 @@ exist yet, so callers that grant *before* `getCreateSharedLibrary` (e.g. `ChatLi
 silently no-op the root grant on the first write in a fresh org. Grants are idempotent via
 `MemberUtil.member(..., true)`, so ordering them after creation is always safe.
 
+### The one permitted read-path write: a derived, repairable cache, as the caller, never thrown
+
+A read may persist a value only when all four hold: (1) the value is **derived** — recomputable from
+other persisted truth, so a wrong or missing write costs nothing but a recompute (`olio.pb.node.nodeStatus`
+is a cache of `inputHash` + bindings; the hash is truth); (2) it is written **as the requesting user
+through `AccessPoint`/PBAC**, never as the org admin or via `RecordUtil`, so a viewer who may not update
+the record simply does not write it; (3) the write is **idempotent and monotone** for the read (the PB
+drift scan writes only `STALE`, never DONE/READY, and never a create); (4) a denied or failed write is
+**reported on the result** (`markPersisted:false`) and never thrown or allowed to change what the read
+returns. `PbStaleUtil.scan` (2026-10-10) is the reference; `recomputeStatus` stays compute-only.
+
+An in-process cache of such derived state (`PbStaleUtil`'s per-workflow scan, ~30 s TTL) must be
+invalidated by **every write path in the same JVM** that changes its inputs, and its doc must state
+the cross-JVM bound (Console7, a second Service7, generic `PATCH /rest/model`): the TTL plus the next
+forced read. A TTL bounds staleness; it is not an invalidation strategy.
+
+Two more properties, from the P1-2 security/verifier reviews (2026-10-10): a result computed **as one
+user** is shaped by that user's read view (records PBAC hides from them are simply absent), so it may be
+shared across users only when it is **complete** — every input readable and every write permitted —
+otherwise a read-only collaborator's narrower view is served to the owner for a TTL. Cache only
+complete results, and expose the incompleteness (`scanComplete`, `undeterminedRefs`) rather than
+pretending "0 affected". And invalidate-then-put is a check-then-act race: capture a per-key
+invalidation epoch before computing and refuse to cache if it moved, excluding the computation's own
+writes from the epoch (`PbStaleUtil.put(scan, epoch)`, `persistStatus(…, invalidateScan=false)`).
+
 ## Config: DB-backed vs boot-pinned
 
 `docker/entrypoint.sh` regenerates `WEB-INF/web.xml` from a template via `envsubst` on **every** boot, so

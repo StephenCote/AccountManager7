@@ -139,14 +139,24 @@ public class TestPbCanvas extends BaseTest {
 		assertNotNull("Result must contain byteLength", byteLength);
 		assertTrue("byteLength must be > 0, got " + byteLength, byteLength.longValue() > 0);
 
+		/// V3 P1-3: the portrait executor is converged with the v1 Stage-1 path and closes the node DONE
+		/// through PbPipelineUtil.completeNode, which also records the inputHash the stale scan needs.
 		String nodeStatus = (String) result.get("nodeStatus");
-		assertEquals("Node status must be DONE_UNVERIFIED", "DONE_UNVERIFIED", nodeStatus);
+		assertEquals("Node status must be DONE", "DONE", nodeStatus);
 
 		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
 		BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactObjectId, orgId);
 		assertNotNull("Artifact must be readable after creation", artifact);
 		Boolean selected = artifact.get(OlioFieldNames.FIELD_PB_SELECTED);
 		assertTrue("Artifact must be marked selected", selected != null && selected.booleanValue());
+
+		BaseRecord fresh = PbGraphUtil.readNode(user, (String) node.get(FieldNames.FIELD_OBJECT_ID), orgId);
+		assertNotNull("node re-read", fresh);
+		Object persistedStatus = fresh.get(OlioFieldNames.FIELD_PB_NODE_STATUS);
+		assertEquals("persisted node status", "DONE", persistedStatus == null ? null : persistedStatus.toString().toUpperCase());
+		String inputHash = fresh.get(OlioFieldNames.FIELD_PB_INPUT_HASH);
+		assertTrue("a completed portrait node carries an inputHash", inputHash != null && !inputHash.isBlank());
+		assertTrue("the portrait was linked to the character profile: " + result, Boolean.TRUE.equals(result.get("portraitLinked")));
 
 		logger.info("Portrait node '{}' executed: artifact={}, bytes={}, downstream={}",
 			nodeHandle, artifactObjectId, byteLength, result.get("downstreamMarked"));

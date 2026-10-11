@@ -44,6 +44,13 @@ set -euo pipefail
 # legitimate SD generation -- a FLUX.2 multi-reference composite is ~638s on a Strix Halo iGPU, and
 # the previous hardcoded 360s aborted the client while the GPU was still working (the image was
 # produced on the SD server regardless; only the caller gave up).
+: "${PB_RENDER_SD_PERMITS:=}"
+# Concurrent SD generations per backend for PictureBook render runs; empty uses the code default of 1.
+: "${PICTUREBOOK_RENDER_PATH:=v1}"
+: "${CHAPBOOK_RENDER_PATH:=v1}"
+# PictureBook V3 render-path switch per product: v1 (legacy, the default) | v3 (graph rendering).
+# Boot-pinned: web.xml is regenerated from the template below on every start, so these variables are
+# the only place the value survives a restart on Docker. Rollback = v1 + restart.
 : "${LLM_EMULATOR_FIXTURE_ROOT:=}"
 # LLM emulator fixture root (system.connection.dialect = emulator). Empty = emulator inert. The test
 # compose mounts the repo's llm-fixtures directory read-only here; never set in production.
@@ -63,7 +70,8 @@ export DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD SESSION_STORE_PATH \
   STORE_PATH DATAGEN_PATH VAULT_PATH VAULT_CREDENTIAL_PATH \
   TASK_SERVER TASK_API_KEY SD_SERVER FACE_SERVER TAG_SERVER \
   VOICE_TTS_SERVER VOICE_STT_SERVER EMBEDDING_SERVER EMBEDDING_TYPE EMBEDDING_MODEL EMBEDDING_AUTH_TOKEN CORS_ALLOWED_ORIGINS \
-  SD_DEFAULT_MODEL HTTP_READ_TIMEOUT LLM_EMULATOR_FIXTURE_ROOT LLM_EMULATOR_RECORD_DIR
+  SD_DEFAULT_MODEL HTTP_READ_TIMEOUT PB_RENDER_SD_PERMITS PICTUREBOOK_RENDER_PATH CHAPBOOK_RENDER_PATH \
+  LLM_EMULATOR_FIXTURE_ROOT LLM_EMULATOR_RECORD_DIR
 
 APP_DIR="$CATALINA_HOME/webapps/${APP_CONTEXT}"
 # Unprivileged account every long-running process drops to (see supervisord.conf). Created in the
@@ -102,7 +110,7 @@ render_xml_template() {
 render_xml_template '$DB_HOST $DB_PORT $DB_NAME $DB_USER $DB_PASSWORD $SESSION_STORE_PATH' \
   "$APP_DIR/META-INF/context.xml.template" "$APP_DIR/META-INF/context.xml"
 
-render_xml_template '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SERVER $TASK_API_KEY $SD_SERVER $FACE_SERVER $TAG_SERVER $VOICE_TTS_SERVER $VOICE_STT_SERVER $EMBEDDING_SERVER $EMBEDDING_TYPE $EMBEDDING_MODEL $EMBEDDING_AUTH_TOKEN $CORS_ALLOWED_ORIGINS $SD_DEFAULT_MODEL $HTTP_READ_TIMEOUT $LLM_EMULATOR_FIXTURE_ROOT $LLM_EMULATOR_RECORD_DIR' \
+render_xml_template '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SERVER $TASK_API_KEY $SD_SERVER $FACE_SERVER $TAG_SERVER $VOICE_TTS_SERVER $VOICE_STT_SERVER $EMBEDDING_SERVER $EMBEDDING_TYPE $EMBEDDING_MODEL $EMBEDDING_AUTH_TOKEN $CORS_ALLOWED_ORIGINS $SD_DEFAULT_MODEL $HTTP_READ_TIMEOUT $PB_RENDER_SD_PERMITS $PICTUREBOOK_RENDER_PATH $CHAPBOOK_RENDER_PATH $LLM_EMULATOR_FIXTURE_ROOT $LLM_EMULATOR_RECORD_DIR' \
   "$APP_DIR/WEB-INF/web.xml.template" "$APP_DIR/WEB-INF/web.xml"
 
 # Both rendered files carry credentials (DB password, task/embedding tokens). Readable by the app

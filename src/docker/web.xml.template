@@ -59,6 +59,30 @@
 		<param-value>${HTTP_READ_TIMEOUT}</param-value>
 	</context-param>
 	<!--
+		Concurrent SD generations per backend for PictureBook render runs (V3 graph rendering). A GPU
+		serialises anyway; more than 1 only trades throughput for VRAM contention. Empty = 1.
+		Applied at startup only.
+	-->
+	<context-param>
+		<param-name>pb.render.sdPermits</param-name>
+		<param-value>${PB_RENDER_SD_PERMITS}</param-value>
+	</context-param>
+	<!--
+		PictureBook V3 render-path switch, one per product: v1 | v3. Empty = v1 (the legacy render
+		path). With v1 the V3 graph routes refuse with 409 "render path is v1". Set via the
+		PICTUREBOOK_RENDER_PATH / CHAPBOOK_RENDER_PATH environment variables - this file is regenerated
+		from the template on every boot, so an edit here is lost on restart. Rollback = v1 + restart.
+		Applied at startup only.
+	-->
+	<context-param>
+		<param-name>picturebook.renderPath</param-name>
+		<param-value>${PICTUREBOOK_RENDER_PATH}</param-value>
+	</context-param>
+	<context-param>
+		<param-name>chapbook.renderPath</param-name>
+		<param-value>${CHAPBOOK_RENDER_PATH}</param-value>
+	</context-param>
+	<!--
 		LLM emulator (system.connection.dialect = emulator, serverUrl = emulator://<set>). Directory that
 		holds one sub-directory per fixture set (<set>/manifest.json + <sha256>.json recordings). Empty
 		leaves the emulator inert: an EMULATOR connection then fails fast with a clear last-call error and

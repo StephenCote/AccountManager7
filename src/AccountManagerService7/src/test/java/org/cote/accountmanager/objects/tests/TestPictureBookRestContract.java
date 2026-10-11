@@ -156,7 +156,26 @@ public class TestPictureBookRestContract extends BaseTest {
 			{ "createChapter", "POST" },
 			/// Failed-passage retry (2026-10-01): re-runs only the chunks a completed extraction could not
 			/// read, so a refusal no longer forces the whole work to be resubmitted.
-			{ "extractRetryFailed", "POST" }
+			{ "extractRetryFailed", "POST" },
+			/// V3 Phase 1 review state machine (P1-3/P1-4, 2026-10-11): the Ux review surface. All four are
+			/// book-scoped and gated by PbServiceFacade.requireBookUpdate (writes) / requireBook (the queue).
+			{ "selectArtifact", "PUT" },
+			{ "approveArtifact", "PUT" },
+			{ "rejectArtifact", "PUT" },
+			{ "listReviewQueue", "GET" },
+			/// V3 Phase 1 auto-approve switch (P1-5, 2026-10-11): the book setting the review queue and the
+			/// executor read. The PUT refuses a non-boolean body itself (raw-body parse, not parseParams).
+			{ "getAutoApprove", "GET" },
+			{ "setAutoApprove", "PUT" },
+			/// V3 Phase 1 async render jobs (P1-6, 2026-10-11): 202 + {jobId, runObjectId} for the two
+			/// submits, 200 for the cooperative cancel; all three book-scoped behind requireBookUpdate.
+			{ "renderScene", "POST" },
+			{ "renderAll", "POST" },
+			{ "cancelRun", "POST" },
+			/// V3 Phase 1 restart recovery (P1-7, 2026-10-11): one run read (the Resume affordance's source of
+			/// truth) and the resume submit, which re-plans an INTERRUPTED run's execution set as a new run.
+			{ "readRun", "GET" },
+			{ "resumeRun", "POST" }
 		};
 		for(String[] e : expected) {
 			Method found = null;
@@ -167,11 +186,118 @@ public class TestPictureBookRestContract extends BaseTest {
 				}
 			}
 			assertNotNull("Phase-4 endpoint method " + e[0] + " must exist on PictureBookService", found);
-			Class<? extends java.lang.annotation.Annotation> verb = "GET".equals(e[1]) ? GET.class : POST.class;
+			Class<? extends java.lang.annotation.Annotation> verb = verbClass(e[1]);
 			assertNotNull(e[0] + " must be annotated @" + e[1], found.getAnnotation(verb));
 			assertNotNull(e[0] + " must carry @RolesAllowed", found.getAnnotation(RolesAllowed.class));
 			assertNotNull(e[0] + " must declare a @Path", found.getAnnotation(Path.class));
 		}
+	}
+
+	private static Class<? extends java.lang.annotation.Annotation> verbClass(String verb) {
+		switch(verb) {
+			case "GET": return GET.class;
+			case "PUT": return PUT.class;
+			case "DELETE": return DELETE.class;
+			default: return POST.class;
+		}
+	}
+
+	/**
+	 * The review routes' path contract, which the Ux and the Playwright suite address by literal path: one
+	 * book-scoped {@code /artifact/{id}/<action>} per write and {@code /review-queue?filter=} for the read.
+	 * A renamed segment would 404 from the client with nothing else failing, so the paths are pinned here.
+	 */
+	@Test
+	public void TestReviewRoutePaths() {
+		String[][] expected = new String[][] {
+			{ "selectArtifact", "/artifact/{artifactObjectId:[0-9A-Za-z\\-]+}/select" },
+			{ "approveArtifact", "/artifact/{artifactObjectId:[0-9A-Za-z\\-]+}/approve" },
+			{ "rejectArtifact", "/artifact/{artifactObjectId:[0-9A-Za-z\\-]+}/reject" },
+			{ "listReviewQueue", "/review-queue" },
+			{ "getAutoApprove", "/settings/auto-approve" },
+			{ "setAutoApprove", "/settings/auto-approve" },
+			/// P1-6 async render: the scene submit sits beside the synchronous /generate, the book-wide
+			/// submit is a flat segment, and cancel is addressed through the run so the book grant applies.
+			{ "renderScene", "/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/render" },
+			{ "renderAll", "/render-all" },
+			{ "cancelRun", "/run/{runObjectId:[0-9A-Za-z\\-]+}/cancel" },
+			/// P1-7: the run read is the bare run segment; resume hangs off it exactly as cancel does.
+			{ "readRun", "/run/{runObjectId:[0-9A-Za-z\\-]+}" },
+			{ "resumeRun", "/run/{runObjectId:[0-9A-Za-z\\-]+}/resume" }
+		};
+		for(String[] e : expected) {
+			Method found = null;
+			for(Method m : PictureBookService.class.getDeclaredMethods()) {
+				if(m.getName().equals(e[0])) {
+					found = m;
+					break;
+				}
+			}
+			assertNotNull(e[0] + " must exist", found);
+			String path = found.getAnnotation(Path.class).value();
+			assertTrue(e[0] + " must be book-scoped (path starts with /{bookObjectId...}): " + path,
+				path.startsWith("/{bookObjectId"));
+			assertTrue(e[0] + " path must end with " + e[1] + " (got " + path + ")", path.endsWith(e[1]));
+		}
+	}
+
+	/**
+	 * The async render routes take no body and must not: the SD backend comes from the servlet context
+	 * (boot-pinned {@code sd.*} init-params), never from the caller, so a client cannot point a render at a
+	 * server of its choosing. Pinned here because the synchronous {@code /generate} beside them DOES read a
+	 * nested {@code sdConfig} override, and the next copy-paste would carry that parameter across.
+	 */
+	@Test
+	public void TestAsyncRenderRoutesTakeNoBody() {
+		for(String name : new String[] { "renderScene", "renderAll", "cancelRun", "resumeRun", "readRun" }) {
+			Method found = null;
+			for(Method m : PictureBookService.class.getDeclaredMethods()) {
+				if(m.getName().equals(name)) {
+					found = m;
+					break;
+				}
+			}
+			assertNotNull(name + " must exist", found);
+			for(java.lang.reflect.Parameter p : found.getParameters()) {
+				boolean injected = p.getAnnotation(jakarta.ws.rs.PathParam.class) != null
+					|| p.getAnnotation(jakarta.ws.rs.core.Context.class) != null;
+				assertTrue(name + " must take only @PathParam/@Context parameters - a body parameter would let the"
+					+ " caller supply the SD server or config (got '" + p.getName() + "' of " + p.getType().getSimpleName() + ")",
+					injected);
+			}
+		}
+	}
+
+	/**
+	 * {@code PbRecoveryUtil.sweepInterrupted} reads raw (no principal) and then writes as each record's owner,
+	 * which is acceptable only because nothing a request can reach calls it. That is a convention, so pin it:
+	 * neither the REST resource nor the facade may reference the class. Checked on the compiled constant pool
+	 * (every class a method body touches lands there), with the boot listener as the positive control so the
+	 * scan cannot pass by seeing nothing.
+	 */
+	@Test
+	public void TestRecoverySweepNotRequestReachable() throws Exception {
+		final String sweep = "org/cote/accountmanager/olio/picturebook/PbRecoveryUtil";
+		assertTrue("positive control: RestServiceEventListener must reference the sweep (it is the one caller)",
+			referencesClass(classBytes(org.cote.rest.config.RestServiceEventListener.class), sweep));
+		assertFalse("PictureBookService must not reference PbRecoveryUtil - the sweep's principal-less reads are boot-only",
+			referencesClass(classBytes(PictureBookService.class), sweep));
+		assertFalse("PbServiceFacade must not reference PbRecoveryUtil - the sweep's principal-less reads are boot-only",
+			referencesClass(classBytes(org.cote.accountmanager.olio.picturebook.PbServiceFacade.class), sweep));
+	}
+
+	private static byte[] classBytes(Class<?> c) throws java.io.IOException {
+		String resource = c.getName().replace('.', '/') + ".class";
+		try(java.io.InputStream in = c.getClassLoader().getResourceAsStream(resource)) {
+			assertNotNull("class bytes for " + c.getName(), in);
+			return in.readAllBytes();
+		}
+	}
+
+	private static boolean referencesClass(byte[] classFile, String internalName) {
+		/// Constant-pool CONSTANT_Utf8 entries are modified UTF-8; for an ASCII internal name that is byte-identical
+		/// to ISO-8859-1, so a plain substring search over the raw bytes is exact.
+		return new String(classFile, java.nio.charset.StandardCharsets.ISO_8859_1).contains(internalName);
 	}
 
 	// ═══════════════════════════════════════════════════════════════════

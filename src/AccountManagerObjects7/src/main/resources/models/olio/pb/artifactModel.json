@@ -120,6 +120,29 @@
 		{
 			"name": "backendGraph",
 			"type": "string"
+		},
+		{
+			"name": "reviewStatus",
+			"baseClass": "org.cote.accountmanager.schema.type.PbReviewStatusEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"description": "V3 §10 review state of this variant. No schema default (PB2 convention rule 3, TestPbModelSchema): PbArtifactUtil.persistArtifact writes GENERATED on create. Enum columns get no DDL default, so rows written before the field existed read NULL, which the enum layer surfaces as UNKNOWN: every reader goes through PbArtifactUtil.reviewStatusOf, which folds null and UNKNOWN into GENERATED."
+		},
+		{
+			"name": "approvedBy",
+			"type": "string",
+			"maxLength": 64,
+			"description": "Who approved it: the approving user's objectId, or the literal AUTO when the book's autoApprove switch did. Null until approved."
+		},
+		{
+			"name": "approvedAt",
+			"type": "zonetime",
+			"description": "When it was approved. NOT a null test for approval: zonetime columns get 'default now()' on the boot patch and a bare newInstance writes epoch-0, so this is never NULL. Key approval on reviewStatus == APPROVED."
+		},
+		{
+			"name": "durationMs",
+			"type": "long",
+			"description": "Wall-clock milliseconds the producing stage took (V3 §32). Recorded for display and never asserted against a threshold. The DDL default is 0, which means unrecorded."
 		}
 	]
 }

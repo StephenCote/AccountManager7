@@ -14,7 +14,17 @@ package org.cote.accountmanager.thread;
  * {@code PictureBookUtil.extractChunkedInternal} already honours at the top of each chunk.
  *
  * <p>Throwing marks the job {@code FAILED} with the exception message; the registry logs it.
+ *
+ * <p>A job cancelled while still {@code QUEUED} never has {@link #run} invoked, so a {@code finally}
+ * inside it cannot release anything the submitter prepared on the HTTP thread (a persisted
+ * {@code olio.pb.run} row, an in-flight node claim). {@link #onCancelledBeforeStart} is the hook for
+ * exactly that case: the registry calls it, on the worker thread, instead of {@code run}. The default
+ * is a no-op so the existing lambda sites are unaffected.
  */
 public interface AsyncJobWork {
 	String run(AsyncJob job) throws Exception;
+
+	default void onCancelledBeforeStart(AsyncJob job) {
+		/// no-op by default
+	}
 }

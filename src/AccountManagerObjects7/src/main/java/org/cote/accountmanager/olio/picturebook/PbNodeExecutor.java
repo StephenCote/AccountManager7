@@ -18,10 +18,9 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.olio.GameUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
-import org.cote.accountmanager.olio.PersonalityProfile;
-import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.picturebook.PbPipelineUtil.SceneGraph;
+import org.cote.accountmanager.olio.picturebook.PictureBookUtil.ResolvedCharacter;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.Flux2Defaults;
@@ -35,7 +34,10 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
+import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
+import org.cote.accountmanager.schema.type.PbRunStatusEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
+import org.cote.accountmanager.util.JSONUtil;
 
 /**
  * Single-node executor for the PB2 canvas. Drives one node synchronously, persists a new artifact
@@ -44,6 +46,20 @@ import org.cote.accountmanager.util.ByteModelUtil;
  * PORTRAIT, LANDSCAPE, SCENE_PROMPT, LANDSCAPE_PROMPT, REFERENCE_STRIP, and COMPOSITE are
  * implemented. Callers discover unsupported types via a 501 {@link PictureBookException} so the
  * API can be extended incrementally without silent no-ops.
+ * <p>
+ * Two entry points (V3 P1-3):
+ * <ul>
+ * <li>{@link #executeNode(BaseRecord, BaseRecord, BaseRecord, BaseRecord, String, String)} runs the
+ * node <b>without</b> an {@code olio.pb.run} row — the canvas "Test" action and the single-node tests.
+ * The node is never stamped RUNNING on this path, so an abandoned call leaves nothing for the restart
+ * sweep (design §21) to find; that is correct for a synchronous call with no run to recover.</li>
+ * <li>{@link #executeNodeRun(BaseRecord, BaseRecord, BaseRecord, BaseRecord, String, String)} opens a
+ * run for the one node, stamps the run and the node RUNNING before dispatch, and closes the run
+ * COMPLETED or FAILED. This is what {@code PbServiceFacade.requestRegenerate} submits.</li>
+ * </ul>
+ * Both take the SD backend as the {@code (sdApiType, sdServer)} pair the caller resolved from its own
+ * deployment config, exactly as {@code PictureBookUtil.generateSceneImage} does; a null or blank server
+ * yields no {@link SDUtil} and the SD-backed types refuse with a 500 before touching the graph.
  */
 public class PbNodeExecutor {
 
@@ -64,6 +80,13 @@ public class PbNodeExecutor {
 		PbNodeTypeEnumType.SCENE_PROMPT,
 		PbNodeTypeEnumType.LANDSCAPE_PROMPT,
 		PbNodeTypeEnumType.REFERENCE_STRIP,
+		PbNodeTypeEnumType.COMPOSITE
+	));
+
+	/** The subset of {@link #EXECUTABLE_TYPES} that needs an SD backend; the rest are pure Java / DB work. */
+	public static final Set<PbNodeTypeEnumType> SD_BACKED_TYPES = Collections.unmodifiableSet(EnumSet.of(
+		PbNodeTypeEnumType.PORTRAIT,
+		PbNodeTypeEnumType.LANDSCAPE,
 		PbNodeTypeEnumType.COMPOSITE
 	));
 
@@ -96,8 +119,34 @@ public class PbNodeExecutor {
 	}
 
 	/**
-	 * Execute {@code node} against the SD backend at {@code swarmServer} and persist a new artifact
-	 * revision.
+	 * The {@link SDUtil} for a resolved {@code (sdApiType, sdServer)} pair, or null when either is
+	 * missing. Mirrors {@code PictureBookUtil.generateSceneImage(String, String)}: the executor never
+	 * assumes SWARM and never invents a server. A blank server is treated as missing — {@code SDUtil}'s
+	 * constructor accepts a null/blank server without complaint and the failure would otherwise surface
+	 * only as a connection error deep inside the render.
+	 */
+	static SDUtil toSdUtil(String sdApiType, String sdServer) {
+		if(sdApiType == null || sdApiType.isBlank() || sdServer == null || sdServer.isBlank()) {
+			return null;
+		}
+		return new SDUtil(SDAPIEnumType.valueOf(sdApiType), sdServer);
+	}
+
+	// ─── entry points ────────────────────────────────────────────────────────────
+
+	/**
+	 * Execute {@code node} against the SWARM backend at {@code swarmServer}. Retained for callers that
+	 * predate the {@code (sdApiType, sdServer)} form; it is exactly
+	 * {@code executeNode(user, book, workflow, node, "SWARM", swarmServer)}.
+	 */
+	public static Map<String, Object> executeNode(BaseRecord user, BaseRecord book,
+			BaseRecord workflow, BaseRecord node, String swarmServer) {
+		return executeNode(user, book, workflow, node, SDAPIEnumType.SWARM.name(), swarmServer);
+	}
+
+	/**
+	 * Execute {@code node} against the SD backend at {@code sdServer} and persist a new artifact
+	 * revision. <b>No run row is opened</b> — see the class comment.
 	 * <p>
 	 * {@code book} and {@code workflow} must be the fully-loaded records from
 	 * {@link PbServiceFacade#requireBook} / {@link PbServiceFacade#requireWorkflow} — not the shallow FK
@@ -105,13 +154,250 @@ public class PbNodeExecutor {
 	 * calls {@link PbGraphUtil#listNodes} which conditions on the workflow record and reads its {@code id}
 	 * via {@link org.cote.accountmanager.io.StatementUtil}.
 	 * <p>
-	 * A node whose type is not in {@link #EXECUTABLE_TYPES} is refused with a 501 before any IO; the
-	 * message names the supported types so the caller can tell a product gap from a broken request.
+	 * Gate order, before any IO: 400 for a null node; 501 for a type outside {@link #EXECUTABLE_TYPES}
+	 * (the message names the supported types so the caller can tell a product gap from a broken request);
+	 * 500 "SD server not configured" for an SD-backed type with no backend. Only then is the graph opened.
 	 *
+	 * @param sdApiType the {@code SDAPIEnumType} name (e.g. "SWARM") the caller resolved from its config
+	 * @param sdServer the SD backend base URL, same resolution; null/blank means "not configured"
 	 * @return DTO map describing the new artifact
 	 */
 	public static Map<String, Object> executeNode(BaseRecord user, BaseRecord book,
-			BaseRecord workflow, BaseRecord node, String swarmServer) {
+			BaseRecord workflow, BaseRecord node, String sdApiType, String sdServer) {
+		return executeNode(user, book, workflow, node, toSdUtil(sdApiType, sdServer));
+	}
+
+	/**
+	 * Body of {@link #executeNode(BaseRecord, BaseRecord, BaseRecord, BaseRecord, String, String)} taking
+	 * an already-constructed {@link SDUtil}. Package-private so a test can drive the executor through an
+	 * {@code SDUtil} subclass (one whose {@code createImage} throws, or observes state mid-call) without a
+	 * Swarm backend having to misbehave on cue.
+	 */
+	static Map<String, Object> executeNode(BaseRecord user, BaseRecord book,
+			BaseRecord workflow, BaseRecord node, SDUtil sdu) {
+		PbNodeTypeEnumType nodeType = gate(node, sdu);
+		SceneGraph g = PbPipelineUtil.openNodeGraph(user, book, workflow, node, false);
+		try {
+			return dispatch(g, node, nodeType, sdu);
+		}
+		catch(Exception e) {
+			/// V3 P0-8: a node that threw mid-execution (unreachable Swarm, empty image, a 4xx/5xx from
+			/// the per-type executor) used to keep whatever status it had — PENDING/STALE — with no
+			/// lastError, so the canvas showed a node that looked never-run after a run that failed.
+			/// Stamp FAILED + lastError + lastRunAt, then rethrow unchanged: the caller still gets the
+			/// real exception (and its HTTP status, for a PictureBookException).
+			PbPipelineUtil.failNode(g, node, errorMessage(e));
+			throw e;
+		}
+	}
+
+	/**
+	 * Execute {@code node} as its own {@code olio.pb.run} (V3 §20/§21): open a run requesting exactly this
+	 * node, stamp the run RUNNING ({@link PbGraphUtil#markRunning}) and the node RUNNING before dispatch,
+	 * then close the run COMPLETED on success or FAILED (with the node FAILED + {@code lastError}) when
+	 * the per-type executor throws. The exception is rethrown unchanged after the run is closed.
+	 * <p>
+	 * With one requested node, a node failure <i>is</i> the run failure — there is no partial outcome to
+	 * report as COMPLETED-with-failures. CANCELLED is not written here; that arrives with the async job
+	 * layer (P1-6). A JVM that dies between {@code markRunning} and {@code closeRun} leaves the run
+	 * RUNNING and the node RUNNING, which is precisely what the restart sweep (P1-7) looks for.
+	 * <p>
+	 * Same gate order as {@link #executeNode(BaseRecord, BaseRecord, BaseRecord, BaseRecord, String, String)}:
+	 * a refused request opens no run. Once the run is open, a RUNNING stamp (run or node) that cannot be
+	 * written aborts with 500 before any SD work - the run is closed FAILED with that reason rather than
+	 * left PENDING behind a render nobody authorized. Authorization itself is the facade's {@code canUpdate}
+	 * gate on the book; this is the backstop for a write that fails after it.
+	 *
+	 * @return the artifact DTO of {@code executeNode}, plus {@code runObjectId}, {@code runStatus},
+	 *         {@code executedNodeCount}, {@code failedNodeCount} and {@code durationMs} (informational —
+	 *         never a threshold)
+	 */
+	public static Map<String, Object> executeNodeRun(BaseRecord user, BaseRecord book,
+			BaseRecord workflow, BaseRecord node, String sdApiType, String sdServer) {
+		return executeNodeRun(user, book, workflow, node, toSdUtil(sdApiType, sdServer));
+	}
+
+	/** Body of {@link #executeNodeRun(BaseRecord, BaseRecord, BaseRecord, BaseRecord, String, String)}; see {@link #executeNode(BaseRecord, BaseRecord, BaseRecord, BaseRecord, SDUtil)}. */
+	static Map<String, Object> executeNodeRun(BaseRecord user, BaseRecord book,
+			BaseRecord workflow, BaseRecord node, SDUtil sdu) {
+		PbNodeTypeEnumType nodeType = gate(node, sdu);
+		long started = System.currentTimeMillis();
+		SceneGraph g = PbPipelineUtil.openNodeGraph(user, book, workflow, node, true);
+		Map<String, Object> out = null;
+		try {
+			/// Both stamps are writes the caller must be entitled to. A false here is not something to log
+			/// and render past: a run that never reads RUNNING is invisible to the restart sweep, and a
+			/// caller who cannot write the node must not be able to spend GPU time on it either. The
+			/// facade's canUpdate gate makes a denial here unlikely; whatever the cause, abort before any
+			/// SD work and let the catch below close the run FAILED with the reason.
+			if(!PbGraphUtil.markRunning(user, g.getRun())) {
+				throw new PictureBookException(500, "Run " + (g.getRun() != null ? g.getRun().get(FieldNames.FIELD_NAME) : "(none)")
+					+ " for node " + node.get(FieldNames.FIELD_NAME) + " could not be stamped RUNNING; nothing was rendered");
+			}
+			if(!PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.RUNNING)) {
+				throw new PictureBookException(500, "Node " + node.get(FieldNames.FIELD_NAME)
+					+ " could not be stamped RUNNING; nothing was rendered");
+			}
+			out = dispatch(g, node, nodeType, sdu);
+			PbPipelineUtil.closeRun(g, PbRunStatusEnumType.COMPLETED, null);
+		}
+		catch(Exception e) {
+			String msg = errorMessage(e);
+			PbPipelineUtil.failNode(g, node, msg);
+			PbPipelineUtil.closeRun(g, PbRunStatusEnumType.FAILED, msg);
+			throw e;
+		}
+		finally {
+			if(!g.isRunClosed()) {
+				/// Only an Error (OOM, a linkage failure) gets here: the catch above handles every Exception.
+				PbPipelineUtil.closeRun(g, PbRunStatusEnumType.FAILED, "Execution abandoned before the run could be closed");
+			}
+		}
+		/// V3 §10 rule 5 fires "when an attempt finishes", and §23 defines an attempt as a run - so the hook
+		/// sits here, after the run is closed COMPLETED and outside the try: nothing the auto-approver does can
+		/// turn a completed run FAILED, and the no-run "Test" path (executeNode) never auto-approves.
+		applyAutoApprove(g, out);
+		BaseRecord run = g.getRun();
+		if(run != null) {
+			out.put("runObjectId", run.get(FieldNames.FIELD_OBJECT_ID));
+			out.put("runStatus", run.get(OlioFieldNames.FIELD_PB_RUN_STATUS));
+		}
+		out.put("executedNodeCount", Integer.valueOf(g.getExecuted()));
+		out.put("failedNodeCount", Integer.valueOf(g.getFailed()));
+		out.put("durationMs", Long.valueOf(System.currentTimeMillis() - started));
+		return out;
+	}
+
+	/**
+	 * Execute one node as a <b>stage</b> of a run somebody else owns (V3 §21, the async render job): gate,
+	 * dispatch, and on a failure stamp the node FAILED + {@code lastError} and rethrow — exactly
+	 * {@link #executeNode(BaseRecord, BaseRecord, BaseRecord, BaseRecord, SDUtil)}'s contract, but on a
+	 * graph the caller opened with
+	 * {@link PbPipelineUtil#openNodeGraph(BaseRecord, BaseRecord, BaseRecord, BaseRecord, BaseRecord, org.cote.accountmanager.olio.llm.SummarizeProgress)}
+	 * so the stage sees the run and the job's cancel token. The caller stamps RUNNING, opens and closes the
+	 * run, and applies auto-approve; this method does none of that.
+	 * <p>
+	 * A {@link PbStageCancelledException} is <b>not</b> a failure: the stage noticed the cancel after its
+	 * backend call returned, discarded the bytes, and persisted nothing. It is rethrown without touching the
+	 * node, which the caller then returns to the status {@link PbGraphUtil#recomputeStatus} computes.
+	 */
+	static Map<String, Object> executeStage(SceneGraph g, BaseRecord node, SDUtil sdu) {
+		PbNodeTypeEnumType nodeType = gate(node, sdu);
+		try {
+			return dispatch(g, node, nodeType, sdu);
+		}
+		catch(PbStageCancelledException e) {
+			throw e;
+		}
+		catch(RuntimeException e) {
+			PbPipelineUtil.failNode(g, node, errorMessage(e));
+			throw e;
+		}
+	}
+
+	/**
+	 * Thrown by an SD-backed executor when the owning job's cancel flag was raised while the backend call
+	 * was in flight. The call itself was not interrupted — Phase 1 has no Swarm interrupt (design §21,
+	 * 2026-10-11) — but its bytes were discarded and no artifact or status was written.
+	 */
+	static final class PbStageCancelledException extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		PbStageCancelledException(String message) {
+			super(message);
+		}
+	}
+
+	/**
+	 * After a backend call returns: if the job was cancelled meanwhile, delete the {@code data.data} rows
+	 * the backend left behind (best-effort, as the user, through PBAC — a row that cannot be deleted is
+	 * logged and left) and abandon the stage. Every SD-backed executor calls this between the backend
+	 * returning and the artifact being persisted, which is the one point a late cancel can still discard
+	 * rather than record.
+	 */
+	private static void discardIfCancelled(SceneGraph g, List<BaseRecord> images, String what) {
+		if(g == null || !g.isCancelRequested()) {
+			return;
+		}
+		int discarded = 0;
+		if(images != null) {
+			for(BaseRecord img : images) {
+				if(img == null) {
+					continue;
+				}
+				try {
+					if(IOSystem.getActiveContext().getAccessPoint().delete(g.getUser(), img)) {
+						discarded++;
+					}
+					else {
+						logger.warn("Cancelled " + what + ": image " + img.get(FieldNames.FIELD_OBJECT_ID) + " could not be deleted and was left in place");
+					}
+				}
+				catch(RuntimeException e) {
+					logger.warn("Cancelled " + what + ": deleting image " + img.get(FieldNames.FIELD_OBJECT_ID) + " threw " + errorMessage(e));
+				}
+			}
+		}
+		throw new PbStageCancelledException("Cancelled " + what + " after the backend call returned; "
+			+ discarded + " image(s) discarded, nothing recorded");
+	}
+
+	/** The DTO keys {@link #applyAutoApprove} writes. */
+	public static final String KEY_AUTO_APPROVED = "autoApproved";
+	public static final String KEY_AUTO_APPROVE_SKIPPED = "autoApproveSkipped";
+	public static final String SKIP_OFF = "off";
+	/** Fixed text for an auto-approve failure; the exception detail goes to the log, never to the response. */
+	public static final String SKIP_FAILED_INTERNAL = "failed: internal error";
+
+	/**
+	 * Auto-approve (§10 rule 5) the attempt's new artifact when the book's {@code autoApprove} switch is on,
+	 * via {@link PbArtifactUtil#autoApprove}, and report the outcome on the DTO: {@code autoApproved}
+	 * (boolean, always) and {@code autoApproveSkipped} (the reason, when not approved — {@code "off"} when
+	 * the switch is off). When approved, {@code reviewStatus} is set to APPROVED so a caller need not re-read
+	 * the artifact to learn it. Never throws: the attempt is already complete and recorded.
+	 * <p>
+	 * The book is the one the facade loaded with {@code bookRequest()} (which projects {@code autoApprove});
+	 * a book handed in without the field reads as off. The artifact is re-read with
+	 * {@link PbArtifactUtil#artifactRequest()} because the executors' persisted records are not all projected
+	 * with {@code producedByNode}/{@code role}, which the chain walk needs.
+	 */
+	static void applyAutoApprove(SceneGraph g, Map<String, Object> out) {
+		BaseRecord book = g.getBook();
+		Boolean on = (book != null && book.hasField(OlioFieldNames.FIELD_PB_AUTO_APPROVE)
+			? book.get(OlioFieldNames.FIELD_PB_AUTO_APPROVE) : null);
+		if(on == null || !on.booleanValue()) {
+			out.put(KEY_AUTO_APPROVED, Boolean.FALSE);
+			out.put(KEY_AUTO_APPROVE_SKIPPED, SKIP_OFF);
+			return;
+		}
+		String skipped;
+		try {
+			BaseRecord user = g.getUser();
+			long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+			String artifactOid = (String) out.get("artifactObjectId");
+			BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactOid, orgId);
+			skipped = (artifact != null
+				? PbArtifactUtil.autoApprove(user, artifact, degradationsOf(out))
+				: "failed: artifact " + artifactOid + " could not be re-read");
+		}
+		catch(RuntimeException e) {
+			logger.error("Auto-approve threw after a completed run: " + errorMessage(e), e);
+			skipped = SKIP_FAILED_INTERNAL;
+		}
+		out.put(KEY_AUTO_APPROVED, Boolean.valueOf(skipped == null));
+		if(skipped != null) {
+			out.put(KEY_AUTO_APPROVE_SKIPPED, skipped);
+		}
+		else {
+			out.put("reviewStatus", PbReviewStatusEnumType.APPROVED.name());
+		}
+	}
+
+	/**
+	 * The pre-IO gates shared by both entry points, in order: 400 null node, 501 non-executable type,
+	 * 500 no SD backend for an SD-backed type. Returns the (non-null) node type on success.
+	 */
+	private static PbNodeTypeEnumType gate(BaseRecord node, SDUtil sdu) {
 		if(node == null) {
 			throw new PictureBookException(400, "A node is required");
 		}
@@ -124,43 +410,40 @@ public class PbNodeExecutor {
 				"Single-node execution is not implemented for node type " + nodeType
 				+ "; executable types are " + String.join(", ", executableTypeNames()));
 		}
-		try {
-			switch(nodeType) {
-				case PORTRAIT:
-					return executePortrait(user, book, workflow, node, swarmServer);
-				case LANDSCAPE:
-					return executeLandscape(user, book, workflow, node, swarmServer);
-				case SCENE_PROMPT:
-				case LANDSCAPE_PROMPT:
-					return executePromptNode(user, book, workflow, node, nodeType);
-				case REFERENCE_STRIP:
-					return executeReferenceStrip(user, book, workflow, node);
-				case COMPOSITE:
-					return executeComposite(user, book, workflow, node, swarmServer);
-				default:
-					throw new PictureBookException(501,
-						"Single-node execution is not yet implemented for node type " + nodeType);
-			}
+		if(sdu == null && SD_BACKED_TYPES.contains(nodeType)) {
+			throw new PictureBookException(500, "SD server not configured");
 		}
-		catch(Exception e) {
-			/// V3 P0-8: a node that threw mid-execution (unreachable Swarm, empty image, a 4xx/5xx from
-			/// the per-type executor) used to keep whatever status it had — PENDING/STALE — with no
-			/// lastError, so the canvas showed a node that looked never-run after a run that failed.
-			/// Stamp FAILED + lastError + lastRunAt, then rethrow unchanged: the caller still gets the
-			/// real exception (and its HTTP status, for a PictureBookException).
-			String msg = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
-			PbPipelineUtil.failNode(user, node, msg);
-			throw e;
+		return nodeType;
+	}
+
+	private static Map<String, Object> dispatch(SceneGraph g, BaseRecord node, PbNodeTypeEnumType nodeType, SDUtil sdu) {
+		switch(nodeType) {
+			case PORTRAIT:
+				return executePortrait(g, node, sdu);
+			case LANDSCAPE:
+				return (isChapBook(g.getBook()) ? executeChapBookPage(g, node, sdu) : executeLandscape(g, node, sdu));
+			case SCENE_PROMPT:
+			case LANDSCAPE_PROMPT:
+				return executePromptNode(g, node, nodeType);
+			case REFERENCE_STRIP:
+				return executeReferenceStrip(g, node);
+			case COMPOSITE:
+				return executeComposite(g, node, sdu);
+			default:
+				throw new PictureBookException(501,
+					"Single-node execution is not yet implemented for node type " + nodeType);
 		}
+	}
+
+	private static String errorMessage(Exception e) {
+		return (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
 	}
 
 	// ─── landscape ───────────────────────────────────────────────────────────────
 
-	private static Map<String, Object> executeLandscape(BaseRecord user, BaseRecord book,
-			BaseRecord workflow, BaseRecord node, String swarmServer) {
-		if(swarmServer == null || swarmServer.trim().isEmpty()) {
-			throw new PictureBookException(503, "No SD server URL available — configure it via ServerConfigUtil.SERVER_SD");
-		}
+	private static Map<String, Object> executeLandscape(SceneGraph g, BaseRecord node, SDUtil sdu) {
+		BaseRecord user = g.getUser();
+		BaseRecord book = g.getBook();
 		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
 		if(scopeRef == null || scopeRef.trim().isEmpty()) {
 			throw new PictureBookException(400, "Landscape node "
@@ -177,11 +460,13 @@ public class PbNodeExecutor {
 			throw new PictureBookException(404, "Scene " + scopeRef + " not found");
 		}
 
+		List<String> degradations = new ArrayList<>();
 		String sdPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
 		if(sdPrompt == null || sdPrompt.trim().isEmpty()) {
 			String mood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
 			sdPrompt = "landscape, scenic, painterly, soft light" + (mood != null ? ", " + mood + " atmosphere" : "");
 			logger.warn("executeLandscape: scene {} has no sdPrompt — using generic fallback", scopeRef);
+			degradations.add(PbPipelineUtil.ROLE_LANDSCAPE + ": scene has no sdPrompt; generic fallback prompt used");
 		}
 
 		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, false);
@@ -193,12 +478,13 @@ public class PbNodeExecutor {
 			throw new PictureBookException(500, "Failed to set description on effective landscape config: " + e.getMessage());
 		}
 
-		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
-		String artifactPath = PbBookUtil.artifactGroupPath(slug);
+		String artifactPath = g.getArtifactGroupPath();
 		String landscapeName = "landscape_" + System.currentTimeMillis();
 
-		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
+		long callStarted = System.currentTimeMillis();
 		List<BaseRecord> images = sdu.createImage(user, artifactPath, effectiveConfig, landscapeName, 1, SDUtil.hiresOf(effectiveConfig), -1);
+		long callMs = System.currentTimeMillis() - callStarted;
+		discardIfCancelled(g, images, "landscape of scene " + scopeRef);
 		if(images == null || images.isEmpty()) {
 			throw new PictureBookException(500, "SD backend returned no images for landscape of scene " + scopeRef);
 		}
@@ -216,30 +502,148 @@ public class PbNodeExecutor {
 
 		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_LANDSCAPE,
 			PbArtifactTypeEnumType.IMAGE, artifactPath, image, null, effectiveConfig, null);
+		int[] wh = PbPipelineUtil.decodeDimensions(bytes);
+		PbArtifactUtil.recordImageMetrics(user, artifact, bytes, "image/png", wh[0], wh[1], null, sdu.getApiType(), callMs);
 
-		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, workflow, node);
+		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, g.getWorkflow(), node);
 		PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
 
-		Map<String, Object> out = new LinkedHashMap<>();
-		out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
-		out.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
-		out.put("nodeStatus", "DONE_UNVERIFIED");
-		out.put("artifactObjectId", artifact.get(FieldNames.FIELD_OBJECT_ID));
-		out.put("artifactRevision", artifact.get(OlioFieldNames.FIELD_PB_REVISION));
-		out.put("byteLength", Long.valueOf(bytes.length));
-		out.put("downstreamMarked", Integer.valueOf(marked.size()));
-		List<String> downstreamHandles = new java.util.ArrayList<>();
-		for(BaseRecord d : marked) {
-			downstreamHandles.add((String) d.get(OlioFieldNames.FIELD_PB_HANDLE));
+		return artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(bytes.length), marked, degradations);
+	}
+
+	// ─── ChapBook page (LANDSCAPE node of a CHAPBOOK book; V3 §24, P1-9) ─────────
+
+	/** True when {@code book.bookType} is CHAPBOOK (enum compared case-insensitively: lowercase on the wire, UPPERCASE in Java). */
+	static boolean isChapBook(BaseRecord book) {
+		if(book == null || !book.hasField(OlioFieldNames.FIELD_PB_BOOK_TYPE)) {
+			return false;
 		}
-		out.put("downstreamHandles", downstreamHandles);
+		Object bt = book.get(OlioFieldNames.FIELD_PB_BOOK_TYPE);
+		return bt != null && "CHAPBOOK".equalsIgnoreCase(String.valueOf(bt));
+	}
+
+	/**
+	 * Render one ChapBook page as a LANDSCAPE node. Same artifact, metrics, downstream-stale and
+	 * DONE_UNVERIFIED closing as {@link #executeLandscape}, with the v1
+	 * ({@code ChapBookUtil.renderResolvedScene}) differences the page path needs:
+	 * <ul>
+	 * <li>no generic fallback prompt - the facade refuses an un-prompted page before a node exists, so a
+	 *     blank {@code sdPrompt} here is a 409, not a degraded render;</li>
+	 * <li>the style tier is applied exactly as v1 does (G-25): {@link SDUtil#fillStyleDefaults},
+	 *     {@link SDUtil#applyConfigStyle} on the positive prompt, default negative prompt when none;</li>
+	 * <li>the image is named {@code chapbook_<sceneOid>_<ts>} and, after the artifact exists, the page's
+	 *     {@code imageObjectId} is pointed at it and {@code imageStale} cleared, as the requesting user. A
+	 *     refused or failed scene write-back is logged and reported in {@code degradations}; it never fails
+	 *     the node, because the artifact is the record of truth on this path and {@code bookPageView}
+	 *     reads the selected artifact first.</li>
+	 * </ul>
+	 * The node is the config-override carrier: {@code PbServiceFacade.ensureChapBookPageNode} mirrors the
+	 * scene's {@code configOverride} and {@code sdPrompt} onto it before every submit, so
+	 * {@link PbConfigUtil#resolveEffectiveConfig(BaseRecord, BaseRecord, boolean)} with the node is the
+	 * same precedence v1 resolves with the scene - minus the per-request client overlay, which the v3 path
+	 * drops by design (§24).
+	 */
+	private static Map<String, Object> executeChapBookPage(SceneGraph g, BaseRecord node, SDUtil sdu) {
+		BaseRecord user = g.getUser();
+		BaseRecord book = g.getBook();
+		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
+		if(scopeRef == null || scopeRef.trim().isEmpty()) {
+			throw new PictureBookException(400, "ChapBook page node "
+				+ node.get(OlioFieldNames.FIELD_PB_HANDLE) + " carries no scopeRef (scene objectId)");
+		}
+
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		BaseRecord scene = findSceneByNodeRef(user, book, node, orgId, new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID,
+			OlioFieldNames.FIELD_PB_SCENE_INDEX, OlioFieldNames.FIELD_CB_SD_PROMPT
+		});
+		if(scene == null) {
+			throw new PictureBookException(404, "Page " + scopeRef + " not found");
+		}
+		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+		String sdPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		if(sdPrompt == null || sdPrompt.trim().isEmpty()) {
+			throw new PictureBookException(409, "Page " + scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX)
+				+ " has no prompt; set or generate its landscape prompt before rendering it");
+		}
+		sdPrompt = sdPrompt.trim();
+
+		List<String> degradations = new ArrayList<>();
+		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, false);
+		try {
+			SDUtil.fillStyleDefaults(effectiveConfig);
+			effectiveConfig.set("description", SDUtil.applyConfigStyle(sdPrompt, effectiveConfig));
+			String negative = effectiveConfig.get("negativePrompt");
+			if(negative == null || negative.isBlank()) {
+				effectiveConfig.set("negativePrompt", NarrativeUtil.getDefaultNegativePrompt());
+			}
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to set description on effective page config: " + e.getMessage());
+		}
+
+		String artifactPath = g.getArtifactGroupPath();
+		String imageName = "chapbook_" + sceneOid + "_" + System.currentTimeMillis();
+
+		long callStarted = System.currentTimeMillis();
+		List<BaseRecord> images = sdu.createImage(user, artifactPath, effectiveConfig, imageName, 1, SDUtil.hiresOf(effectiveConfig), -1);
+		long callMs = System.currentTimeMillis() - callStarted;
+		discardIfCancelled(g, images, "page " + sceneOid);
+		if(images == null || images.isEmpty()) {
+			throw new PictureBookException(500, "SD backend returned no images for page " + sceneOid);
+		}
+		BaseRecord image = images.get(0);
+		byte[] bytes;
+		try {
+			bytes = ByteModelUtil.getValue(image);
+		}
+		catch(FieldException | ValueException e) {
+			throw new PictureBookException(500, "Failed to read page image bytes for " + sceneOid + ": " + e.getMessage());
+		}
+		if(bytes == null || bytes.length == 0) {
+			throw new PictureBookException(500, "Page image for " + sceneOid + " decoded to empty bytes");
+		}
+
+		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_LANDSCAPE,
+			PbArtifactTypeEnumType.IMAGE, artifactPath, image, null, effectiveConfig, null);
+		int[] wh = PbPipelineUtil.decodeDimensions(bytes);
+		PbArtifactUtil.recordImageMetrics(user, artifact, bytes, "image/png", wh[0], wh[1], null, sdu.getApiType(), callMs);
+
+		/// The scene keeps pointing at the newest image so the v1 readers (bookPageView's fallback, the
+		/// health scan's SCENE_IMAGE_* findings) stay coherent; the artifact chain is what review acts on.
+		String imageOid = image.get(FieldNames.FIELD_OBJECT_ID);
+		try {
+			BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
+				OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID, OlioFieldNames.FIELD_PB_IMAGE_STALE);
+			patch.set(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID, imageOid);
+			patch.set(OlioFieldNames.FIELD_PB_IMAGE_STALE, false);
+			if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+				logger.warn("executeChapBookPage: failed to point page {} at image {}", sceneOid, imageOid);
+				degradations.add(PbPipelineUtil.ROLE_LANDSCAPE + ": page imageObjectId could not be updated; the artifact is selected but the page still points at its previous image");
+			}
+		}
+		catch(FieldException | ValueException | ModelNotFoundException | PictureBookException e) {
+			logger.warn("executeChapBookPage: could not assemble the page patch for {}: {}", sceneOid, e.getMessage());
+			degradations.add(PbPipelineUtil.ROLE_LANDSCAPE + ": page imageObjectId could not be updated: " + e.getMessage());
+		}
+
+		/// completeNode (not a bare persistStatus) so the page node gets its inputHash/lastRunAt: the drift
+		/// scan never marks a node with inputHash == null, and a page that cannot go STALE cannot be reviewed.
+		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
+		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
+
+		Map<String, Object> out = artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(bytes.length), downstream, degradations);
+		out.put("sceneObjectId", sceneOid);
+		out.put("imageObjectId", imageOid);
 		return out;
 	}
 
 	// ─── prompt nodes (SCENE_PROMPT / LANDSCAPE_PROMPT) ──────────────────────────
 
-	private static Map<String, Object> executePromptNode(BaseRecord user, BaseRecord book,
-			BaseRecord workflow, BaseRecord node, PbNodeTypeEnumType nodeType) {
+	private static Map<String, Object> executePromptNode(SceneGraph g, BaseRecord node, PbNodeTypeEnumType nodeType) {
+		BaseRecord user = g.getUser();
+		BaseRecord book = g.getBook();
 		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
 		if(scopeRef == null || scopeRef.trim().isEmpty()) {
 			throw new PictureBookException(400, "Prompt node "
@@ -263,40 +667,30 @@ public class PbNodeExecutor {
 		String promptText = (nodeType == PbNodeTypeEnumType.LANDSCAPE_PROMPT)
 			? scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT)
 			: scene.get(FieldNames.FIELD_DESCRIPTION);
-		if(promptText == null) promptText = "";
-
-		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
-		String artifactPath = PbBookUtil.artifactGroupPath(slug);
+		List<String> degradations = new ArrayList<>();
+		if(promptText == null || promptText.isBlank()) {
+			promptText = (promptText == null ? "" : promptText);
+			degradations.add(role + ": scene has no "
+				+ (nodeType == PbNodeTypeEnumType.LANDSCAPE_PROMPT ? "sdPrompt" : "description") + "; empty prompt recorded");
+		}
 
 		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, role,
-			PbArtifactTypeEnumType.TEXT, artifactPath, null, promptText, null, null);
+			PbArtifactTypeEnumType.TEXT, g.getArtifactGroupPath(), null, promptText, null, null);
 
-		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, workflow, node);
+		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, g.getWorkflow(), node);
 		PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
 
-		Map<String, Object> out = new LinkedHashMap<>();
-		out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
-		out.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
-		out.put("nodeStatus", "DONE_UNVERIFIED");
-		out.put("artifactObjectId", artifact.get(FieldNames.FIELD_OBJECT_ID));
-		out.put("artifactRevision", artifact.get(OlioFieldNames.FIELD_PB_REVISION));
-		out.put("downstreamMarked", Integer.valueOf(marked.size()));
-		List<String> downstreamHandles = new java.util.ArrayList<>();
-		for(BaseRecord d : marked) {
-			downstreamHandles.add((String) d.get(OlioFieldNames.FIELD_PB_HANDLE));
-		}
-		out.put("downstreamHandles", downstreamHandles);
-		return out;
+		return artifactDto(node, "DONE_UNVERIFIED", artifact, null, marked, degradations);
 	}
 
 	// ─── reference strip ─────────────────────────────────────────────────────────
 
 	/**
 	 * Stitch the source portrait and landscape artifacts side-by-side into an IMAGE_STRIP for use
-	 * as a Kontext/FLUX.2 reference image. Does NOT require a swarm server — pure Java 2D work.
+	 * as a Kontext/FLUX.2 reference image. Does NOT require an SD server — pure Java 2D work.
 	 */
-	private static Map<String, Object> executeReferenceStrip(BaseRecord user, BaseRecord book,
-			BaseRecord workflow, BaseRecord node) {
+	private static Map<String, Object> executeReferenceStrip(SceneGraph g, BaseRecord node) {
+		BaseRecord user = g.getUser();
 		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 
 		// Gather portrait and landscape bytes from bound source nodes (cache:false via listBindings)
@@ -304,23 +698,35 @@ public class PbNodeExecutor {
 		byte[] portrait0Bytes = null;
 		byte[] portrait1Bytes = null;
 		byte[] landscapeBytes = null;
+		List<String> degradations = new ArrayList<>();
 
 		for(BaseRecord binding : bindings) {
 			String role = binding.get(OlioFieldNames.FIELD_PB_ROLE);
 			if(role == null) continue;
+			if(!PbPipelineUtil.ROLE_PORTRAIT_0.equals(role) && !PbPipelineUtil.ROLE_PORTRAIT_1.equals(role)
+					&& !PbPipelineUtil.ROLE_LANDSCAPE.equals(role)) {
+				continue;
+			}
 			BaseRecord srcStub = binding.get(OlioFieldNames.FIELD_PB_SOURCE_NODE);
-			if(srcStub == null) continue;
-			String srcOid = srcStub.get(FieldNames.FIELD_OBJECT_ID);
-			if(srcOid == null) continue;
-			BaseRecord srcNode = PbGraphUtil.readNode(user, srcOid, orgId);
-			if(srcNode == null) continue;
+			String srcOid = (srcStub != null ? srcStub.get(FieldNames.FIELD_OBJECT_ID) : null);
+			BaseRecord srcNode = (srcOid != null ? PbGraphUtil.readNode(user, srcOid, orgId) : null);
+			if(srcNode == null) {
+				degradations.add(role + ": source node unreadable");
+				continue;
+			}
 
 			String imgRole = PbPipelineUtil.ROLE_LANDSCAPE.equals(role)
 				? PbPipelineUtil.ROLE_LANDSCAPE : PbPipelineUtil.ROLE_PORTRAIT;
 			BaseRecord sel = PbArtifactUtil.findSelected(user, srcNode, imgRole);
-			if(sel == null) continue;
+			if(sel == null) {
+				degradations.add(role + ": no selected artifact");
+				continue;
+			}
 			byte[] artifactBytes = readArtifactBytes(user, sel);
-			if(artifactBytes == null || artifactBytes.length == 0) continue;
+			if(artifactBytes == null || artifactBytes.length == 0) {
+				degradations.add(role + ": artifact has no image bytes");
+				continue;
+			}
 
 			if(PbPipelineUtil.ROLE_PORTRAIT_0.equals(role)) {
 				portrait0Bytes = artifactBytes;
@@ -343,8 +749,7 @@ public class PbNodeExecutor {
 			throw new PictureBookException(500, "stitchSceneImages returned empty bytes for reference strip");
 		}
 
-		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
-		String artifactPath = PbBookUtil.artifactGroupPath(slug);
+		String artifactPath = g.getArtifactGroupPath();
 		String stripName = "ref_strip_" + node.get(OlioFieldNames.FIELD_PB_HANDLE) + "_" + System.currentTimeMillis();
 
 		// Create and persist a data.data record for the stitched bytes (pattern from PbPipelineUtil.persistBytes)
@@ -367,34 +772,17 @@ public class PbNodeExecutor {
 		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_REFERENCE_STRIP,
 			PbArtifactTypeEnumType.IMAGE_STRIP, artifactPath, createdData, null, null, null);
 
-		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, workflow, node);
+		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, g.getWorkflow(), node);
 		PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
 
-		Map<String, Object> out = new LinkedHashMap<>();
-		out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
-		out.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
-		out.put("nodeStatus", "DONE_UNVERIFIED");
-		out.put("artifactObjectId", artifact.get(FieldNames.FIELD_OBJECT_ID));
-		out.put("artifactRevision", artifact.get(OlioFieldNames.FIELD_PB_REVISION));
-		out.put("byteLength", Long.valueOf(stripBytes.length));
-		out.put("downstreamMarked", Integer.valueOf(marked.size()));
-		List<String> downstreamHandles = new ArrayList<>();
-		for(BaseRecord d : marked) {
-			downstreamHandles.add((String) d.get(OlioFieldNames.FIELD_PB_HANDLE));
-		}
-		out.put("downstreamHandles", downstreamHandles);
-		return out;
+		return artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(stripBytes.length), marked, degradations);
 	}
 
 	// ─── composite ───────────────────────────────────────────────────────────────
 
-	private static Map<String, Object> executeComposite(BaseRecord user, BaseRecord book,
-			BaseRecord workflow, BaseRecord node, String swarmServer) {
-		// 503 guard MUST be first — before loading bindings, before any AccessPoint call
-		if(swarmServer == null || swarmServer.trim().isEmpty()) {
-			throw new PictureBookException(503, "No SD server URL available — configure it via ServerConfigUtil.SERVER_SD");
-		}
-
+	private static Map<String, Object> executeComposite(SceneGraph g, BaseRecord node, SDUtil sdu) {
+		BaseRecord user = g.getUser();
+		BaseRecord book = g.getBook();
 		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
 		if(scopeRef == null || scopeRef.trim().isEmpty()) {
 			throw new PictureBookException(400, "Composite node "
@@ -429,27 +817,35 @@ public class PbNodeExecutor {
 		byte[] landscapeBytes = null;
 		String leftDesc = "";
 		String rightDesc = "";
+		List<String> degradations = new ArrayList<>();
 
 		for(BaseRecord binding : bindings) {
 			String bRole = binding.get(OlioFieldNames.FIELD_PB_ROLE);
 			if(bRole == null) continue;
-			BaseRecord srcStub = binding.get(OlioFieldNames.FIELD_PB_SOURCE_NODE);
-			if(srcStub == null) continue;
-			String srcOid = srcStub.get(FieldNames.FIELD_OBJECT_ID);
-			if(srcOid == null) continue;
-			BaseRecord srcNode = PbGraphUtil.readNode(user, srcOid, orgId);
-			if(srcNode == null) continue;
-
 			boolean isPort0 = PbPipelineUtil.ROLE_PORTRAIT_0.equals(bRole);
 			boolean isPort1 = PbPipelineUtil.ROLE_PORTRAIT_1.equals(bRole);
 			boolean isLand  = PbPipelineUtil.ROLE_LANDSCAPE.equals(bRole);
 			if(!isPort0 && !isPort1 && !isLand) continue;
 
+			BaseRecord srcStub = binding.get(OlioFieldNames.FIELD_PB_SOURCE_NODE);
+			String srcOid = (srcStub != null ? srcStub.get(FieldNames.FIELD_OBJECT_ID) : null);
+			BaseRecord srcNode = (srcOid != null ? PbGraphUtil.readNode(user, srcOid, orgId) : null);
+			if(srcNode == null) {
+				degradations.add(bRole + ": source node unreadable");
+				continue;
+			}
+
 			String imgRole = isLand ? PbPipelineUtil.ROLE_LANDSCAPE : PbPipelineUtil.ROLE_PORTRAIT;
 			BaseRecord sel = PbArtifactUtil.findSelected(user, srcNode, imgRole);
-			if(sel == null) continue;
+			if(sel == null) {
+				degradations.add(bRole + ": no selected artifact");
+				continue;
+			}
 			byte[] artifactBytes = readArtifactBytes(user, sel);
-			if(artifactBytes == null || artifactBytes.length == 0) continue;
+			if(artifactBytes == null || artifactBytes.length == 0) {
+				degradations.add(bRole + ": artifact has no image bytes");
+				continue;
+			}
 
 			if(isPort0) {
 				leftBytes = artifactBytes;
@@ -478,12 +874,13 @@ public class PbNodeExecutor {
 				"Could not build a composite scene request for scene " + scopeRef + " mode=" + mode);
 		}
 
-		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
-		String artifactPath = PbBookUtil.artifactGroupPath(slug);
+		String artifactPath = g.getArtifactGroupPath();
 		String sceneName = "composite_" + scopeRef + "_" + System.currentTimeMillis();
 
-		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
+		long callStarted = System.currentTimeMillis();
 		List<BaseRecord> images = sdu.createSceneImage(user, artifactPath, sceneName, sceneRequest, null, null);
+		long callMs = System.currentTimeMillis() - callStarted;
+		discardIfCancelled(g, images, "composite of scene " + scopeRef);
 		if(images == null || images.isEmpty()) {
 			throw new PictureBookException(500, "SD backend returned no images for composite of scene " + scopeRef);
 		}
@@ -501,79 +898,96 @@ public class PbNodeExecutor {
 
 		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_COMPOSITE,
 			PbArtifactTypeEnumType.IMAGE, artifactPath, image, null, effectiveConfig, null);
+		int[] wh = PbPipelineUtil.decodeDimensions(bytes);
+		PbArtifactUtil.recordImageMetrics(user, artifact, bytes, "image/png", wh[0], wh[1], null, sdu.getApiType(), callMs);
 
-		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, workflow, node);
+		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, g.getWorkflow(), node);
 		PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
 
-		Map<String, Object> out = new LinkedHashMap<>();
-		out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
-		out.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
-		out.put("nodeStatus", "DONE_UNVERIFIED");
-		out.put("artifactObjectId", artifact.get(FieldNames.FIELD_OBJECT_ID));
-		out.put("artifactRevision", artifact.get(OlioFieldNames.FIELD_PB_REVISION));
-		out.put("byteLength", Long.valueOf(bytes.length));
-		out.put("downstreamMarked", Integer.valueOf(marked.size()));
-		List<String> downstreamHandles = new ArrayList<>();
-		for(BaseRecord d : marked) {
-			downstreamHandles.add((String) d.get(OlioFieldNames.FIELD_PB_HANDLE));
-		}
-		out.put("downstreamHandles", downstreamHandles);
-		return out;
+		return artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(bytes.length), marked, degradations);
 	}
 
 	// ─── portrait ────────────────────────────────────────────────────────────────
 
-	private static Map<String, Object> executePortrait(BaseRecord user, BaseRecord book,
-			BaseRecord workflow, BaseRecord node, String swarmServer) {
-		if(swarmServer == null || swarmServer.trim().isEmpty()) {
-			throw new PictureBookException(503, "No SD server URL available — configure it via ServerConfigUtil.SERVER_SD");
-		}
-
+	/**
+	 * Render a character portrait the way the v1 scene pipeline's Stage 1 does
+	 * ({@code PictureBookUtil.generateSceneImage}; gap doc G-30), so a portrait regenerated from the
+	 * canvas is the portrait the book would have rendered:
+	 * <ol>
+	 * <li>the character is resolved through {@code PictureBookUtil.resolveSceneCharacter} — a
+	 * PBAC-checked read as the caller, with the record-driven narrative refresh, the hand-written
+	 * {@code sdPrompt} rule and the frozen-description fallbacks — not a {@code GameUtil.findCharacter}
+	 * bypass of a bare {@code narrative.sdPrompt};</li>
+	 * <li>scene-tagged apparel is selected for the node's {@code sceneIndex} and the outfit folded into
+	 * the prompt ({@code selectSceneApparel} / {@code NarrativeUtil.describeOutfit});</li>
+	 * <li>the prompt is styled once, through {@code buildPortraitDescription} over the character's own
+	 * style config ({@code resolveCharacterStyleConfig}) on top of the node's effective config, with the
+	 * default negative prompt when no tier set one, and {@code hires=false};</li>
+	 * <li>the CHARACTER binding is (re)bound <b>after</b> the apparel flip so its {@code refHash} is
+	 * taken over what this render consumed; the resolved prompt is cached on the node; the image is
+	 * recorded with its seed and config snapshot; the node is completed DONE with an {@code inputHash};</li>
+	 * <li>the new image is linked as the character profile's portrait
+	 * ({@code PictureBookUtil.linkPortraitToProfile}) so the v1 reuse branch and the character screens see
+	 * it. A failed link is reported on the DTO ({@code portraitLinked=false}), never thrown — the artifact
+	 * already exists and the GPU has already been paid for.</li>
+	 * </ol>
+	 * Unlike v1 there is no reuse branch: a single-node execution is an explicit request for a <i>new</i>
+	 * attempt. And unlike the other executors the node closes DONE (not DONE_UNVERIFIED): the config, seed
+	 * and bindings that produced the image are all recorded, so there is nothing unverified about it.
+	 */
+	private static Map<String, Object> executePortrait(SceneGraph g, BaseRecord node, SDUtil sdu) {
+		BaseRecord user = g.getUser();
+		BaseRecord book = g.getBook();
 		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
 		if(scopeRef == null || scopeRef.trim().isEmpty()) {
 			throw new PictureBookException(400, "Portrait node "
 				+ node.get(OlioFieldNames.FIELD_PB_HANDLE) + " carries no scopeRef (charPerson objectId)");
 		}
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+		String bookGroupPath = PbBookUtil.bookGroupPath(slug);
 
-		BaseRecord charPerson = GameUtil.findCharacter(scopeRef);
-		if(charPerson == null) {
-			throw new PictureBookException(404, "Character " + scopeRef + " not found");
+		ResolvedCharacter rc = PictureBookUtil.resolveSceneCharacter(user, scopeRef, bookGroupPath, slug);
+		if(rc == null) {
+			throw new PictureBookException(404, "Character " + scopeRef + " not found or not readable");
+		}
+		BaseRecord charPerson = rc.charPerson;
+		String charName = (rc.name != null) ? rc.name : PbPipelineUtil.shortRef(scopeRef);
+		String cpOid = charPerson.get(FieldNames.FIELD_OBJECT_ID);
+		String portraitPrompt = rc.portraitPrompt;
+		if(portraitPrompt == null || portraitPrompt.isBlank()) {
+			throw new PictureBookException(500, "No portrait prompt could be resolved for character " + charName);
 		}
 
-		PersonalityProfile pp = ProfileUtil.getProfile(null, charPerson);
-		if(pp == null) {
-			throw new PictureBookException(500, "Failed to build personality profile for character " + scopeRef);
-		}
-
-		BaseRecord nar = NarrativeUtil.getNarrative(pp);
-		if(nar == null) {
-			throw new PictureBookException(500, "Failed to build narrative for character " + scopeRef);
-		}
-		String sdPrompt = nar.get("sdPrompt");
-		if(sdPrompt == null || sdPrompt.trim().isEmpty()) {
-			throw new PictureBookException(500, "Narrative sdPrompt is empty for character " + scopeRef);
+		boolean hasSceneApparel = PictureBookUtil.selectSceneApparel(user, charPerson, g.getSceneIndex());
+		if(hasSceneApparel) {
+			String outfitDesc = NarrativeUtil.describeOutfit(charPerson, false);
+			if(outfitDesc != null && !outfitDesc.isBlank()) {
+				portraitPrompt = portraitPrompt + ", " + outfitDesc;
+			}
 		}
 
 		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, false);
-		String description = PictureBookUtil.buildPortraitDescription(sdPrompt, effectiveConfig);
+		BaseRecord styleConfig = PictureBookUtil.resolveCharacterStyleConfig(user, bookGroupPath, cpOid, effectiveConfig);
+		String description = PictureBookUtil.buildPortraitDescription(portraitPrompt, styleConfig);
 		try {
 			effectiveConfig.set("description", description);
+			String negative = effectiveConfig.get("negativePrompt");
+			if(negative == null || negative.isBlank()) {
+				effectiveConfig.set("negativePrompt", PictureBookUtil.NEG_PROMPT);
+			}
 			effectiveConfig.set("hires", false);
 		}
 		catch(FieldException | ValueException | ModelNotFoundException e) {
 			throw new PictureBookException(500, "Failed to set description on effective config: " + e.getMessage());
 		}
 
-		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
-		String artifactPath = PbBookUtil.artifactGroupPath(slug);
-		String charName = charPerson.get(FieldNames.FIELD_NAME);
-		if(charName == null) {
-			charName = PbPipelineUtil.shortRef(scopeRef);
-		}
+		String artifactPath = g.getArtifactGroupPath();
 		String portName = "portrait_" + charName.replace(" ", "_") + "_" + System.currentTimeMillis();
 
-		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer);
+		long callStarted = System.currentTimeMillis();
 		List<BaseRecord> portImages = sdu.createImage(user, artifactPath, effectiveConfig, portName, 1, SDUtil.hiresOf(effectiveConfig), -1);
+		long callMs = System.currentTimeMillis() - callStarted;
+		discardIfCancelled(g, portImages, "portrait of " + charName);
 		if(portImages == null || portImages.isEmpty()) {
 			throw new PictureBookException(500, "SD backend returned no images for portrait of " + charName);
 		}
@@ -589,26 +1003,88 @@ public class PbNodeExecutor {
 			throw new PictureBookException(500, "Portrait image for " + charName + " decoded to empty bytes");
 		}
 
-		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_PORTRAIT,
-			PbArtifactTypeEnumType.IMAGE, artifactPath, portImage, null, effectiveConfig, null);
+		/// Bound after the apparel flip (inuse is a watched field) so the refHash matches what was rendered.
+		PbPipelineUtil.bindRecord(g, node, PbPipelineUtil.ROLE_CHARACTER, 0, OlioModelNames.MODEL_CHAR_PERSON, cpOid);
+		PbGraphUtil.persistPromptText(user, node, description);
+		/// Re-read as a top-level data.data: AccessPoint.create returns identity fields only, so the record
+		/// createImage handed back is not a usable foreign reference as-is (measured 2026-08-17, v1 reuse branch).
+		BaseRecord portraitRef = PictureBookUtil.readDataRecord(user, portImage.get(FieldNames.FIELD_OBJECT_ID));
+		if(portraitRef == null) {
+			throw new PictureBookException(500, "Portrait image for " + charName + " was created but could not be re-read");
+		}
+		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_PORTRAIT,
+			PbArtifactTypeEnumType.IMAGE, portraitRef, portBytes, "image/png",
+			Long.valueOf(PictureBookUtil.extractSeedFromImage(portImage)), effectiveConfig,
+			JSONUtil.exportObject(effectiveConfig), null, sdu.getApiType(), callMs);
+		if(artifact == null) {
+			throw new PictureBookException(500, "Portrait artifact for " + charName + " could not be recorded");
+		}
+		PbPipelineUtil.completeNode(g, node);
+		List<BaseRecord> marked = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
 
-		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, workflow, node);
-		PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
+		/// V3 §10 rules 1 and 3: when the chain's selection is APPROVED the newcomer is recorded unselected,
+		/// and the profile keeps the approved portrait - linking the unselected image would make the approved
+		/// one vanish from the character screens. Select/approve on a PORTRAIT node re-linking the profile is
+		/// a recorded follow-up, not part of this path.
+		Boolean artifactSelected = artifact.get(OlioFieldNames.FIELD_PB_SELECTED);
+		boolean selected = (artifactSelected != null && artifactSelected.booleanValue());
+		boolean linked = false;
+		if(selected) {
+			linked = PictureBookUtil.linkPortraitToProfile(user, charPerson, null, portImage);
+			if(!linked) {
+				logger.error("Portrait for " + charName + " was rendered and recorded but could not be linked to the character profile");
+			}
+		}
+		else {
+			logger.info("Portrait for " + charName + " was recorded unselected (an APPROVED revision is selected); the profile portrait is unchanged");
+		}
 
+		Map<String, Object> out = artifactDto(node, PbNodeStatusEnumType.DONE.name(), artifact, Long.valueOf(portBytes.length), marked, null);
+		out.put("characterObjectId", cpOid);
+		out.put("portraitLinked", Boolean.valueOf(linked));
+		out.put("artifactSelected", Boolean.valueOf(selected));
+		if(!selected) {
+			out.put("portraitLinkSkipped", "the selected revision is APPROVED");
+		}
+		out.put("sceneApparel", Boolean.valueOf(hasSceneApparel));
+		return out;
+	}
+
+	// ─── DTO ─────────────────────────────────────────────────────────────────────
+
+	/**
+	 * The DTO every executor returns. {@code degradations} is always present (empty when the attempt consumed
+	 * everything the graph bound): each entry names an input the executor went without — a bound reference
+	 * role whose source resolved to nothing, a scene with no prompt text so a generic fallback was rendered.
+	 * The §19 {@code degradations[]} precursor; the auto-approver (§10 rule 5) refuses to pin a degraded
+	 * attempt, since nothing on the v1 path's {@code landscapeFailed} flag exists here to key on.
+	 */
+	private static Map<String, Object> artifactDto(BaseRecord node, String nodeStatus, BaseRecord artifact,
+			Long byteLength, List<BaseRecord> downstream, List<String> degradations) {
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
 		out.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
-		out.put("nodeStatus", "DONE_UNVERIFIED");
+		out.put("nodeStatus", nodeStatus);
 		out.put("artifactObjectId", artifact.get(FieldNames.FIELD_OBJECT_ID));
 		out.put("artifactRevision", artifact.get(OlioFieldNames.FIELD_PB_REVISION));
-		out.put("byteLength", Long.valueOf(portBytes.length));
-		out.put("downstreamMarked", Integer.valueOf(marked.size()));
-		List<String> downstreamHandles = new java.util.ArrayList<>();
-		for(BaseRecord d : marked) {
+		if(byteLength != null) {
+			out.put("byteLength", byteLength);
+		}
+		out.put("downstreamMarked", Integer.valueOf(downstream.size()));
+		List<String> downstreamHandles = new ArrayList<>();
+		for(BaseRecord d : downstream) {
 			downstreamHandles.add((String) d.get(OlioFieldNames.FIELD_PB_HANDLE));
 		}
 		out.put("downstreamHandles", downstreamHandles);
+		out.put("degradations", new ArrayList<>(degradations != null ? degradations : Collections.emptyList()));
 		return out;
+	}
+
+	/** The {@code degradations} list an executor put on its DTO, never null. */
+	@SuppressWarnings("unchecked")
+	static List<String> degradationsOf(Map<String, Object> out) {
+		Object d = (out != null ? out.get("degradations") : null);
+		return (d instanceof List ? (List<String>) d : Collections.emptyList());
 	}
 
 	// ─── scene lookup helper ─────────────────────────────────────────────────────

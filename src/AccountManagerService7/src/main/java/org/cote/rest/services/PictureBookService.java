@@ -113,10 +113,17 @@ import jakarta.ws.rs.core.Response;
  *   GET  /{bookObjectId}/workflow/node/{nodeObjectId}          — one node: bindings + artifact revision chains
  *   GET  /{bookObjectId}/artifact/{artifactObjectId}           — one artifact's provenance (never the bytes)
  *   GET  /{bookObjectId}/stale                                 — nodes whose recomputed status is STALE
- *   POST /{bookObjectId}/node/{nodeObjectId}/regenerate        — MARK stale + downstream (does not execute)
+ *   POST /{bookObjectId}/node/{nodeObjectId}/regenerate        — execute the node as its own olio.pb.run (V3 P1-3); pinned → 409
+ *   POST /{bookObjectId}/node/{nodeObjectId}/test              — execute the node with no run row (canvas "Test")
  *   POST /{bookObjectId}/node/{nodeObjectId}/pin               — pin/unpin a node
  *   POST /{bookObjectId}/members                               — enrol users in both tiers
  *   POST /chapter                                              — create the next chapter, optionally copying records
+ *
+ * V3 Phase 1 review (design §10; P1-4). All through PbServiceFacade: book 404 → canUpdate 403 → artifact/cross-book 404:
+ *   PUT  /{bookObjectId}/artifact/{artifactObjectId}/select    — "Use this image"; 409 when the current selection is APPROVED
+ *   PUT  /{bookObjectId}/artifact/{artifactObjectId}/approve   — select + APPROVED (approvedBy = caller) + pin the node
+ *   PUT  /{bookObjectId}/artifact/{artifactObjectId}/reject    — REJECTED and kept; selection falls back to the newest sibling
+ *   GET  /{bookObjectId}/review-queue?filter=all|auto-approved — every artifact by node with its review state; bad filter → 400
  */
 @DeclareRoles({"admin", "user"})
 @Path("/olio/picture-book")
@@ -725,8 +732,8 @@ public class PictureBookService {
             if (osdc instanceof BaseRecord) sgp.sdConfigOverride = (BaseRecord) osdc;
         }
 
-        String sdApiType = context.getInitParameter("sd.server.apiType");
-        String sdServer  = ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server"));
+        String sdApiType = resolveSdApiType(context);
+        String sdServer  = resolveSdServer(context);
 
         try {
             BaseRecord genResult = PictureBookUtil.generateSceneImage(user, sceneObjectId, sgp, sdApiType, sdServer);
@@ -734,6 +741,20 @@ public class PictureBookService {
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }
+    }
+
+    /** The {@code SDAPIEnumType} name the deployment pins in the {@code sd.server.apiType} init-param. */
+    private static String resolveSdApiType(ServletContext context) {
+        return context.getInitParameter("sd.server.apiType");
+    }
+
+    /**
+     * The SD backend URL: the DB-backed {@code ServerConfigUtil.SERVER_SD} connection, falling back to
+     * the {@code sd.server} init-param. One resolution for every SD-touching route in this service, so
+     * the single-node executor renders against the same server as the scene pipeline.
+     */
+    private static String resolveSdServer(ServletContext context) {
+        return ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server"));
     }
 
     /**
@@ -1305,20 +1326,153 @@ public class PictureBookService {
 
     /**
      * POST /{bookObjectId}/node/{nodeObjectId}/regenerate
-     * MARK a node (and everything downstream of it) for regeneration. This is not a scheduler:
-     * execution happens on the next scene generation call, and the response says so
-     * ({@code executed:false}). A pinned node is refused with 409.
+     * Regenerate a node: opens an olio.pb.run for it and executes it synchronously against the SD
+     * backend resolved the same way as /scene/{id}/generate, producing a new artifact revision and
+     * marking downstream nodes STALE. Response is the executor DTO with the run's objectId/status and
+     * {@code executed:true}. A pinned node is refused with 409 before anything is written; a
+     * non-executable node type is 501; no SD backend configured is 500; an executor failure closes the
+     * run FAILED and returns the executor's own status. (Before V3 P1-3 this only marked STALE.)
      */
     @RolesAllowed({"admin", "user"})
     @POST
     @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/node/{nodeObjectId:[0-9A-Za-z\\-]+}/regenerate")
     @Produces(MediaType.APPLICATION_JSON)
     public Response regenerateNode(@PathParam("bookObjectId") String bookObjectId,
-            @PathParam("nodeObjectId") String nodeObjectId, @Context HttpServletRequest request) {
+            @PathParam("nodeObjectId") String nodeObjectId, @Context HttpServletRequest request,
+            @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
         try {
             return Response.status(200)
-                .entity(JSONUtil.exportObject(PbServiceFacade.requestRegenerate(user, bookObjectId, nodeObjectId)))
+                .entity(JSONUtil.exportObject(PbServiceFacade.requestRegenerate(user, bookObjectId, nodeObjectId,
+                    resolveSdApiType(context), resolveSdServer(context))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/scene/{sceneObjectId}/render
+     * Asynchronous render of one scene through the graph (V3 §21, P1-6). The scene's graph node is the
+     * terminal; its upstream closure (portraits, prompts, strips) is planned from a fresh drift scan and
+     * only the nodes that are PENDING/READY/STALE/FAILED and unpinned are executed. Opens an olio.pb.run
+     * (PENDING, pointed to by workflow.lastRun) and queues a {@code pb.render} job on the shared
+     * AsyncJobRegistry; returns 202 {jobId, runObjectId, planned...} immediately. Poll
+     * {@code GET /rest/job/{jobId}} for stage progress, or read the run. 404 book/scene, 403 no update
+     * grant, 409 scene has no graph node / nothing to render / a planned node is RUNNING, 429 the
+     * principal's concurrent-job cap, 500 no SD backend. Cancel through
+     * {@code POST /{book}/run/{runObjectId}/cancel} or {@code POST /rest/job/{jobId}/cancel}.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/render")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response renderScene(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("sceneObjectId") String sceneObjectId, @Context HttpServletRequest request,
+            @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(202)
+                .entity(JSONUtil.exportObject(PbServiceFacade.requestSceneRender(user, bookObjectId, sceneObjectId,
+                    resolveSdApiType(context), resolveSdServer(context))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/render-all
+     * Asynchronous render of every scene of the book that has a graph node, as one run and one
+     * {@code pb.renderAll} job (shared upstream nodes are rendered once). Same semantics and status
+     * codes as /scene/{id}/render; scenes without a node are listed in {@code scenesWithoutNode}.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/render-all")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response renderAll(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(202)
+                .entity(JSONUtil.exportObject(PbServiceFacade.requestRenderAll(user, bookObjectId,
+                    resolveSdApiType(context), resolveSdServer(context))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/run/{runObjectId}/cancel
+     * Cooperative cancel of an in-flight render run addressed through its book (404 unless the run
+     * belongs to the book's workflow; 403 without an update grant). An in-flight LLM stream is
+     * aborted; an in-flight SD call completes and its bytes are discarded; the run closes CANCELLED at
+     * the next stage boundary, after this call has returned. 409 when the run is already terminal,
+     * already being cancelled, or has no job in flight in this process (another JVM's or orphaned by
+     * a restart - restart recovery reconciles it).
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/run/{runObjectId:[0-9A-Za-z\\-]+}/cancel")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response cancelRun(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("runObjectId") String runObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.cancelRun(user, bookObjectId, runObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /{bookObjectId}/run/{runObjectId}
+     * One run of the book (V3 §21, P1-7): status, counters, error, the recorded execution set with each
+     * node's current status, {@code inFlightInThisProcess} and {@code resumable} (INTERRUPTED with an
+     * execution set - the exact predicate the resume route applies). 404 unless the caller can read the
+     * book and the run belongs to its workflow. A read: no update grant needed.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/run/{runObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response readRun(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("runObjectId") String runObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.getRun(user, bookObjectId, runObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/run/{runObjectId}/resume
+     * Resume an INTERRUPTED run (V3 §21, P1-7): a new {@code pb.resume} run and job are submitted for the
+     * interrupted run's recorded execution set, re-planned from a fresh drift scan so the stages that
+     * finished before the interruption are reused. Returns 202 with the same shape as /scene/{id}/render
+     * plus {@code resumedFromRunObjectId}. 404 book/run, 403 no update grant, 409 the run is not
+     * INTERRUPTED / has no execution set / every requested node is already current, 429 the principal's
+     * job cap, 500 no SD backend. The interrupted run itself is left as the record of what happened.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/run/{runObjectId:[0-9A-Za-z\\-]+}/resume")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response resumeRun(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("runObjectId") String runObjectId, @Context HttpServletRequest request,
+            @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(202)
+                .entity(JSONUtil.exportObject(PbServiceFacade.resumeRun(user, bookObjectId, runObjectId,
+                    resolveSdApiType(context), resolveSdServer(context))))
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
@@ -1686,6 +1840,130 @@ public class PictureBookService {
     }
 
     /**
+     * PUT /{bookObjectId}/artifact/{artifactObjectId}/approve
+     * Approve an artifact (V3 §10 rule 2): selects it, demotes any other APPROVED sibling,
+     * pins its node and stamps approvedBy/approvedAt with the caller.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/artifact/{artifactObjectId:[0-9A-Za-z\\-]+}/approve")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response approveArtifact(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("artifactObjectId") String artifactObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.approveArtifact(user, bookObjectId, artifactObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * PUT /{bookObjectId}/artifact/{artifactObjectId}/reject
+     * Reject an artifact (V3 §10 rule 3): if it was selected, selection falls back to the newest
+     * non-rejected sibling; the node's pin is never released by a reject.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/artifact/{artifactObjectId:[0-9A-Za-z\\-]+}/reject")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response rejectArtifact(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("artifactObjectId") String artifactObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.rejectArtifact(user, bookObjectId, artifactObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /{bookObjectId}/review-queue?filter=all|auto-approved
+     * Every non-archived artifact of the book grouped by node, with review state (V3 §10).
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/review-queue")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listReviewQueue(@PathParam("bookObjectId") String bookObjectId,
+            @QueryParam("filter") String filter,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.listReviewQueue(user, bookObjectId, filter)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /{bookObjectId}/settings/auto-approve
+     * The book's auto-approve switch (V3 §10 rule 5): { bookObjectId, autoApprove }.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/settings/auto-approve")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getAutoApprove(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.getAutoApprove(user, bookObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * PUT /{bookObjectId}/settings/auto-approve
+     * Body: { autoApprove: true|false } — a JSON boolean, nothing else. 400 for a missing or non-boolean value;
+     * 403 when the caller cannot update the book. Returns { bookObjectId, autoApprove } re-read after the write.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/settings/auto-approve")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response setAutoApprove(@PathParam("bookObjectId") String bookObjectId, String json,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Object value = null;
+        /// Read straight off the JSON, as mergeCharacters does: parseParams deserializes against
+        /// olio.pictureBookRequest, whose BOOLEAN handling is Boolean.parseBoolean(asText()), so a
+        /// body of {autoApprove:"yes"} would silently arrive as false. A switch that governs approvals
+        /// must refuse anything that is not a JSON boolean.
+        if (json != null && !json.isBlank()) {
+            /// JSONUtil.getMap logs and returns null on a parse error rather than throwing.
+            Map<String, Object> body = JSONUtil.getMap(json.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    String.class, Object.class);
+            if (body == null) {
+                return Response.status(400).entity("{\"error\":true,\"message\":\"Malformed request body\"}").build();
+            }
+            value = body.get("autoApprove");
+        }
+        if (!(value instanceof Boolean)) {
+            return Response.status(400).entity("{\"error\":true,\"message\":\"autoApprove must be a JSON boolean\"}").build();
+        }
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.setAutoApprove(user, bookObjectId, ((Boolean) value).booleanValue())))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
      * PUT /{bookObjectId}/node/{nodeObjectId}/canvas
      * Persist canvas geometry. Body: { x, y, w, h } — any subset accepted (absent keys are not touched).
      */
@@ -1740,8 +2018,9 @@ public class PictureBookService {
 
     /**
      * POST /{bookObjectId}/node/{nodeObjectId}/test
-     * Execute a single node synchronously: generate a new artifact revision from the SD backend.
-     * Returns the new artifact identity, byte length, and downstream staleness list.
+     * Execute a single node synchronously, without a run row: generate a new artifact revision from
+     * the SD backend resolved the same way as /scene/{id}/generate. Returns the new artifact identity,
+     * byte length, and downstream staleness list. Use /regenerate for a tracked olio.pb.run.
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -1749,11 +2028,12 @@ public class PictureBookService {
     @Produces(MediaType.APPLICATION_JSON)
     public Response testNode(@PathParam("bookObjectId") String bookObjectId,
             @PathParam("nodeObjectId") String nodeObjectId,
-            @Context HttpServletRequest request) {
+            @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
         try {
             return Response.status(200)
-                .entity(JSONUtil.exportObject(PbServiceFacade.testNode(user, bookObjectId, nodeObjectId)))
+                .entity(JSONUtil.exportObject(PbServiceFacade.testNode(user, bookObjectId, nodeObjectId,
+                    resolveSdApiType(context), resolveSdServer(context))))
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);

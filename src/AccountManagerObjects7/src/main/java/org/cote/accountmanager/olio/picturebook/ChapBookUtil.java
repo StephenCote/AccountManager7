@@ -25,9 +25,12 @@ import org.cote.accountmanager.olio.picturebook.PictureBookProgressNotifier;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
+import org.cote.accountmanager.thread.AsyncJob;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
+import org.cote.accountmanager.util.JSONUtil;
 
 /**
  * ChapBook utility — poem-library management and ChapBook (poetry picture book) creation.
@@ -59,20 +62,44 @@ public class ChapBookUtil {
 	 *       regeneration later. This is NOT a failure — a fallback/stanza image is never rendered.</li>
 	 *   <li>{@code FAILED} — a genuine prompt existed but SD returned no image, the persist patch failed,
 	 *       or an exception was thrown.</li>
+	 *   <li>{@code PENDING} — v3 path only: the page's {@code pb.render} job was submitted but had not
+	 *       reached a terminal state within the synchronous wait bound; the job keeps running and the
+	 *       result carries its {@code jobId} / {@code runObjectId} / {@code nodeObjectId} for polling.</li>
 	 * </ul>
 	 */
-	public enum SceneRenderStatus { RENDERED, SKIPPED_NO_PROMPT, FAILED }
+	public enum SceneRenderStatus { RENDERED, SKIPPED_NO_PROMPT, FAILED, PENDING }
 
 	/**
 	 * Immutable result of a single scene render. {@link #imageObjectId} is non-null only when
 	 * {@link #status} is {@link SceneRenderStatus#RENDERED}; it is null for both {@code SKIPPED_NO_PROMPT}
 	 * and {@code FAILED}.
+	 * <p>
+	 * The v3 fields ({@link #renderPath} onward) are populated only when the book is on the Phase 1 graph
+	 * path ({@code chapbook.renderPath=v3}, {@link PbRenderPath}); on the v1 path they are null / false.
 	 */
 	public static final class SceneRenderResult {
 		/** The generated image {@code objectId}; non-null only when {@link #status} is {@code RENDERED}. */
 		public final String imageObjectId;
 		/** The render outcome. */
 		public final SceneRenderStatus status;
+		/** {@code "v1"} or {@code "v3"} - which render path produced this result. */
+		public final String renderPath;
+		/** v3: the {@code pb.render} job id. */
+		public final String jobId;
+		/** v3: the {@code olio.pb.run} objectId. */
+		public final String runObjectId;
+		/** v3: the page's LANDSCAPE node objectId. */
+		public final String nodeObjectId;
+		/** v3: the selected {@code olio.pb.artifact} objectId; null when nothing was recorded. */
+		public final String artifactObjectId;
+		/** v3: the node's status name after the job ({@code DONE_UNVERIFIED}, {@code FAILED}, ...). */
+		public final String nodeStatus;
+		/** v3: the selected artifact's review status name ({@code GENERATED}, {@code APPROVED}, ...). */
+		public final String reviewStatus;
+		/** v3: true when the book's auto-approve switch approved and pinned the new artifact. */
+		public final boolean autoApproved;
+		/** v3: why auto-approve did not apply ({@code "off"}, a degradation, ...); null when it did. */
+		public final String autoApproveSkipReason;
 		/**
 		 * True when a HARD LLM/config failure occurred during THIS scene's landscape-prompt step —
 		 * i.e. the LLM genuinely could not be used (missing template/config, unreachable host, null
@@ -94,10 +121,26 @@ public class ChapBookUtil {
 		}
 
 		public SceneRenderResult(String imageObjectId, SceneRenderStatus status, boolean llmUnavailable, boolean llmDegraded) {
+			this(imageObjectId, status, llmUnavailable, llmDegraded, PbRenderPath.V1, null, null, null, null, null, null, false, null);
+		}
+
+		/** The v3 result: every field. {@code renderPath} is {@link PbRenderPath#V3}. */
+		public SceneRenderResult(String imageObjectId, SceneRenderStatus status, boolean llmUnavailable, boolean llmDegraded,
+				String renderPath, String jobId, String runObjectId, String nodeObjectId, String artifactObjectId,
+				String nodeStatus, String reviewStatus, boolean autoApproved, String autoApproveSkipReason) {
 			this.imageObjectId = imageObjectId;
 			this.status = status;
 			this.llmUnavailable = llmUnavailable;
 			this.llmDegraded = llmDegraded;
+			this.renderPath = renderPath;
+			this.jobId = jobId;
+			this.runObjectId = runObjectId;
+			this.nodeObjectId = nodeObjectId;
+			this.artifactObjectId = artifactObjectId;
+			this.nodeStatus = nodeStatus;
+			this.reviewStatus = reviewStatus;
+			this.autoApproved = autoApproved;
+			this.autoApproveSkipReason = autoApproveSkipReason;
 		}
 	}
 
@@ -110,16 +153,42 @@ public class ChapBookUtil {
 	 *       i.e. the count of scenes where the LLM was genuinely unavailable. This is the truthful
 	 *       "the LLM was down for N scenes" signal the bulk render previously swallowed.</li>
 	 * </ul>
+	 * The v3 fields ({@link #renderPath} onward) are populated only on the Phase 1 graph path; there
+	 * {@link #pending} means the single {@code pb.renderAll} job was submitted and is still running (the
+	 * caller detached, or the synchronous wait bound elapsed) and the counts describe only the pre-step.
 	 */
 	public static final class ChapBookRenderSummary {
 		public final int rendered;
 		public final int skipped;
 		public final int llmUnavailable;
+		/** {@code "v1"} or {@code "v3"}. */
+		public final String renderPath;
+		/** v3: the {@code pb.renderAll} job id; null when no job was submitted (nothing to render). */
+		public final String jobId;
+		/** v3: the {@code olio.pb.run} objectId. */
+		public final String runObjectId;
+		/** v3: pages whose node FAILED in the run. */
+		public final int failed;
+		/** v3: true while the job is still running - see the class javadoc. */
+		public final boolean pending;
+		/** v3: how many page nodes the run planned (pinned pages are left out). */
+		public final int plannedNodeCount;
 
 		public ChapBookRenderSummary(int rendered, int skipped, int llmUnavailable) {
+			this(rendered, skipped, llmUnavailable, PbRenderPath.V1, null, null, 0, false, 0);
+		}
+
+		public ChapBookRenderSummary(int rendered, int skipped, int llmUnavailable, String renderPath,
+				String jobId, String runObjectId, int failed, boolean pending, int plannedNodeCount) {
 			this.rendered = rendered;
 			this.skipped = skipped;
 			this.llmUnavailable = llmUnavailable;
+			this.renderPath = renderPath;
+			this.jobId = jobId;
+			this.runObjectId = runObjectId;
+			this.failed = failed;
+			this.pending = pending;
+			this.plannedNodeCount = plannedNodeCount;
 		}
 	}
 
@@ -1341,6 +1410,7 @@ public class ChapBookUtil {
 		if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 			throw new PictureBookException(500, "Failed to persist merged stanza on scene " + sceneObjectId);
 		}
+		PbBookUtil.markSceneNodeStale(user, absorbing);
 
 		if (!IOSystem.getActiveContext().getAccessPoint().delete(user, next)) {
 			throw new PictureBookException(500,
@@ -1459,6 +1529,30 @@ public class ChapBookUtil {
 	public static ChapBookRenderSummary renderChapBookSummary(BaseRecord user, String bookObjectId,
 			String sdApiType, String sdServer, BaseRecord chatConfig, BaseRecord clientSdConfig,
 			SummarizeProgress cancelToken) {
+		/// A non-null cancelToken means the caller is already inside a registry job (Service7's cb.render
+		/// wrapper); on the v3 path such a caller detaches, because a registry job must never await another.
+		return renderChapBookSummary(user, bookObjectId, sdApiType, sdServer, chatConfig, clientSdConfig,
+			cancelToken, cancelToken != null, false);
+	}
+
+	/**
+	 * V3 §24 (P1-9): submit a ChapBook bulk render as one {@code pb.renderAll} job and return immediately.
+	 * Runs the prompt pre-step for every page on the calling thread, then submits; the returned summary
+	 * carries {@code pending=true} and the job / run identifiers, which the caller polls through
+	 * {@code GET /rest/job/{jobId}}. Returns {@code null} when the book is on the {@code v1} render path,
+	 * meaning "there is no detachable job here - use {@link #renderChapBookSummary} as before".
+	 *
+	 * @throws PictureBookException 400/404 as {@link #renderChapBookSummary}; 409 from the planner when
+	 *         every page node is already current or pinned
+	 */
+	public static ChapBookRenderSummary submitChapBookRender(BaseRecord user, String bookObjectId,
+			String sdApiType, String sdServer, BaseRecord chatConfig, BaseRecord clientSdConfig) {
+		return renderChapBookSummary(user, bookObjectId, sdApiType, sdServer, chatConfig, clientSdConfig, null, true, true);
+	}
+
+	private static ChapBookRenderSummary renderChapBookSummary(BaseRecord user, String bookObjectId,
+			String sdApiType, String sdServer, BaseRecord chatConfig, BaseRecord clientSdConfig,
+			SummarizeProgress cancelToken, boolean detach, boolean v3Only) {
 		if (user == null || bookObjectId == null || bookObjectId.isBlank()) {
 			throw new PictureBookException(400, "user and bookObjectId are required");
 		}
@@ -1476,11 +1570,16 @@ public class ChapBookUtil {
 		if (bookType == null || !"CHAPBOOK".equalsIgnoreCase(bookType)) {
 			throw new PictureBookException(400, "Book " + bookObjectId + " is not a CHAPBOOK");
 		}
+		boolean v3 = PbRenderPath.isV3(book);
+		if (v3Only && !v3) {
+			return null;
+		}
 
 		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
 		if (scenes.isEmpty()) {
 			logger.info("renderChapBook: no scenes for book {}", bookObjectId);
-			return new ChapBookRenderSummary(0, 0, 0);
+			return (v3 ? new ChapBookRenderSummary(0, 0, 0, PbRenderPath.V3, null, null, 0, false, 0)
+				: new ChapBookRenderSummary(0, 0, 0));
 		}
 		PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_stories", "ChapBook render: " + scenes.size() + " scene(s)…");
 		if (cancelToken != null) {
@@ -1490,6 +1589,20 @@ public class ChapBookUtil {
 		}
 
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(sdApiType.toUpperCase()), sdServer);
+
+		/// V3 §24 (P1-9): on the graph path every prompted page renders as a LANDSCAPE node inside one
+		/// pb.renderAll job; the v1 per-scene SD loop below is not run.
+		if (v3) {
+			if (clientSdConfig != null) {
+				logger.warn("renderChapBook: book {} renders on the v3 path; the per-request sdConfig overlay is not applied"
+					+ " - persist it as a page configOverride instead", bookObjectId);
+			}
+			try {
+				return renderChapBookSummaryV3(user, book, scenes, sdu, chatConfig, detach);
+			} finally {
+				PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
+			}
+		}
 
 		int rendered = 0;
 		int skipped = 0;
@@ -1790,6 +1903,52 @@ public class ChapBookUtil {
 	private static SceneRenderResult renderResolvedScene(BaseRecord user, BaseRecord book, BaseRecord scene,
 			SDUtil sdu, BaseRecord chatConfig, BaseRecord clientSdConfig, String priorContext, String promptOverride) {
 		String sceneOid = (String) scene.get(FieldNames.FIELD_OBJECT_ID);
+		PromptPreStep pre = resolveAndPersistScenePrompt(user, scene, chatConfig, priorContext, promptOverride);
+		if (pre.sdPrompt == null) {
+			return new SceneRenderResult(null, SceneRenderStatus.SKIPPED_NO_PROMPT, pre.llmUnavailable, false,
+				PbRenderPath.valueFor(book), null, null, null, null, null, null, false, null);
+		}
+		String sdPrompt = pre.sdPrompt;
+		boolean llmUnavailable = pre.llmUnavailable;
+		boolean llmDegraded = pre.llmDegraded;
+		/// V3 §24 (P1-9): on the graph path the prompt pre-step above is all this method does for the page;
+		/// the image is produced by the page's LANDSCAPE node inside a pb.render job, from the prompt the
+		/// facade reads off the scene row. The two paths share the pre-step literally so v3 does the same,
+		/// not more. A recovered prompt whose persist failed is the one case where the two disagree.
+		if (PbRenderPath.isV3(book)) {
+			if (pre.recoveredPersistFailed) {
+				logger.warn("renderChapBook: scene {} — recovered prompt was not persisted; the v3 page render uses the stored prompt", sceneOid);
+			}
+			return renderResolvedSceneV3(user, book, scene, sdu, llmUnavailable, llmDegraded);
+		}
+		return renderResolvedSceneV1(user, book, scene, sdu, clientSdConfig, sdPrompt, llmUnavailable, llmDegraded);
+	}
+
+	/** What the prompt pre-step decided for one scene; {@code sdPrompt == null} means {@code SKIPPED_NO_PROMPT}. */
+	private static final class PromptPreStep {
+		final String sdPrompt;
+		final boolean llmUnavailable;
+		final boolean llmDegraded;
+		final boolean recoveredPersistFailed;
+
+		PromptPreStep(String sdPrompt, boolean llmUnavailable, boolean llmDegraded, boolean recoveredPersistFailed) {
+			this.sdPrompt = sdPrompt;
+			this.llmUnavailable = llmUnavailable;
+			this.llmDegraded = llmDegraded;
+			this.recoveredPersistFailed = recoveredPersistFailed;
+		}
+	}
+
+	/**
+	 * The prompt pre-step shared by both render paths: honor an explicit override, else prefer the stored
+	 * continuity prompt, else recover one from the LLM (when a chatConfig is given) and persist it back onto
+	 * the scene; decide degrade-render vs. honest skip when the LLM step was unavailable. Performs no SD
+	 * call. Extracted verbatim from the v1 render body so the v3 bulk path runs exactly this and nothing
+	 * more (V3 §24, P1-9).
+	 */
+	private static PromptPreStep resolveAndPersistScenePrompt(BaseRecord user, BaseRecord scene, BaseRecord chatConfig,
+			String priorContext, String promptOverride) {
+		String sceneOid = (String) scene.get(FieldNames.FIELD_OBJECT_ID);
 		String stanza = scene.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
 		String mood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
 		String sceneTitle = scene.get(OlioFieldNames.FIELD_PB_TITLE);
@@ -1876,14 +2035,14 @@ public class ChapBookUtil {
 					// fall through to the SD render block below with the degraded prompt
 				} else {
 					logger.warn("renderChapBook: scene {} — landscape LLM unavailable and no stored prompt to render on; skipping (llmUnavailable)", sceneOid);
-					return new SceneRenderResult(null, SceneRenderStatus.SKIPPED_NO_PROMPT, true, false);
+					return new PromptPreStep(null, true, false, false);
 				}
 			} else {
 				// The LLM WAS reachable (chatConfig != null) but recovery returned a soft blank/decline — a
 				// normal per-stanza conversational refusal, or simply nothing to generate from. This must
 				// stay benign: no false alarm.
 				logger.info("renderChapBook: scene {} un-prompted (LLM reachable but returned no prompt) — skipping, leaving for regeneration", sceneOid);
-				return new SceneRenderResult(null, SceneRenderStatus.SKIPPED_NO_PROMPT, false, false);
+				return new PromptPreStep(null, false, false, false);
 			}
 		}
 
@@ -1893,6 +2052,7 @@ public class ChapBookUtil {
 		// carries the recovered imagery forward. recoveredHolder[0] is set only when the recovery supplier
 		// actually ran and returned non-blank — i.e. exactly the recovery branch of resolveScenePrompt.
 		boolean recovered = recoveredHolder[0] != null && recoveredHolder[0].equals(sdPrompt);
+		boolean recoveredPersistFailed = false;
 		if (recovered) {
 			try {
 				scene.set(OlioFieldNames.FIELD_CB_SD_PROMPT, sdPrompt);
@@ -1907,13 +2067,26 @@ public class ChapBookUtil {
 				// render (the prompt is already resolved), so log and continue rather than abort the image.
 				if (IOSystem.getActiveContext().getAccessPoint().update(user, promptPatch) == null) {
 					logger.warn("renderChapBook: failed to persist recovered sdPrompt on scene " + sceneOid);
+					recoveredPersistFailed = true;
 				}
 			} catch (FieldException | ValueException | ModelNotFoundException | PictureBookException e) {
 				// patchOf throws the unchecked PictureBookException if name is unprojected; keep this
 				// persist-back non-fatal so a failed save never aborts the batch render.
 				logger.warn("renderChapBook: could not assemble/persist recovered sdPrompt patch for scene " + sceneOid + ": " + e.getMessage());
+				recoveredPersistFailed = true;
 			}
 		}
+		return new PromptPreStep(sdPrompt, llmUnavailable, llmDegraded, recoveredPersistFailed);
+	}
+
+	/**
+	 * The v1 (direct SD) tail of a page render: resolve the effective config, call SD once, and patch the
+	 * resulting {@code imageObjectId} onto the scene. Unchanged from before P1-9 - only moved out of
+	 * {@link #renderResolvedScene} so the prompt pre-step could be shared with the graph path.
+	 */
+	private static SceneRenderResult renderResolvedSceneV1(BaseRecord user, BaseRecord book, BaseRecord scene,
+			SDUtil sdu, BaseRecord clientSdConfig, String sdPrompt, boolean llmUnavailable, boolean llmDegraded) {
+		String sceneOid = (String) scene.get(FieldNames.FIELD_OBJECT_ID);
 		String bookGroupPath = book.get(FieldNames.FIELD_GROUP_PATH);
 		String sceneGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
 		if (sceneGroupPath == null) sceneGroupPath = (bookGroupPath != null ? bookGroupPath + "/Scenes" : "~/Scenes");
@@ -1963,6 +2136,202 @@ public class ChapBookUtil {
 			logger.warn("renderChapBook: error rendering scene " + sceneOid + ": " + e.getMessage());
 			return new SceneRenderResult(null, SceneRenderStatus.FAILED, llmUnavailable, false);
 		}
+	}
+
+	// ─────────────────────────────── v3 (graph) render path — V3 §24, P1-9 ───────────────────────────────
+
+	/**
+	 * Upper bound of the synchronous wait for a single page's {@code pb.render} job. Below nginx's
+	 * {@code proxy_read_timeout} (3600 s) so a caller that waits this long still gets a response - a
+	 * {@link SceneRenderStatus#PENDING} result with the job identifiers - instead of a proxy 504 with
+	 * nothing in the server log. A bound on the wait, never a judgment on how long a render may take.
+	 */
+	static final long V3_SYNC_PAGE_WAIT_MS = 30L * 60L * 1000L;
+
+	/** Same bound for the whole-book {@code pb.renderAll} job on the synchronous bulk path. */
+	static final long V3_SYNC_BOOK_WAIT_MS = 55L * 60L * 1000L;
+
+	/**
+	 * The v3 continuation of {@link #renderResolvedScene}: submit the page's {@code pb.render} job through
+	 * {@link PbServiceFacade#requestChapBookPageRender} (which creates the workflow / LANDSCAPE node when
+	 * missing, mirrors the scene's prompt and config override onto the node, and refuses a pinned page),
+	 * wait for it within {@link #V3_SYNC_PAGE_WAIT_MS}, and read the node and its selected artifact back.
+	 * <p>
+	 * The facade's 409 for a page with no prompt maps to {@link SceneRenderStatus#SKIPPED_NO_PROMPT} - the
+	 * v1 meaning of that outcome. Every other {@link PictureBookException} (pinned 409, 403, 404) propagates:
+	 * on the v1 path those conditions did not exist, and silently turning them into {@code FAILED} would
+	 * hide the one thing the caller has to act on (unpin first).
+	 */
+	private static SceneRenderResult renderResolvedSceneV3(BaseRecord user, BaseRecord book, BaseRecord scene,
+			SDUtil sdu, boolean llmUnavailable, boolean llmDegraded) {
+		String bookOid = book.get(FieldNames.FIELD_OBJECT_ID);
+		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+		Map<String, Object> submitted;
+		try {
+			submitted = PbServiceFacade.requestChapBookPageRender(user, bookOid, sceneOid, sdu, sdu.getServer());
+		} catch (PictureBookException e) {
+			if (e.getStatus() == 409 && e.getMessage() != null && e.getMessage().contains("has no prompt")) {
+				logger.info("renderChapBook: scene {} un-prompted on the v3 path — skipping, leaving for regeneration", sceneOid);
+				return new SceneRenderResult(null, SceneRenderStatus.SKIPPED_NO_PROMPT, llmUnavailable, false,
+					PbRenderPath.V3, null, null, null, null, null, null, false, null);
+			}
+			throw e;
+		}
+		String jobId = (String) submitted.get("jobId");
+		String runOid = (String) submitted.get("runObjectId");
+		String nodeOid = (String) submitted.get("nodeObjectId");
+		AsyncJob job = PbRenderJobUtil.awaitTerminal(user, jobId, V3_SYNC_PAGE_WAIT_MS);
+		if (job == null) {
+			logger.info("renderChapBook: scene {} page render job {} still running after the synchronous bound; returning PENDING", sceneOid, jobId);
+			return new SceneRenderResult(null, SceneRenderStatus.PENDING, llmUnavailable, false,
+				PbRenderPath.V3, jobId, runOid, nodeOid, null, null, null, false, null);
+		}
+		return v3PageResult(user, sceneOid, jobId, runOid, nodeOid, job, llmUnavailable, llmDegraded);
+	}
+
+	/**
+	 * Read a finished page job back into a {@link SceneRenderResult}: the node's status from the node row,
+	 * the image / review status from the node's selected {@code landscape} artifact, and the auto-approve
+	 * outcome from the job's per-node outcome. {@code RENDERED} requires a selected artifact whose
+	 * {@code data} is readable; a node that is not DONE/DONE_UNVERIFIED, or a job that failed before the
+	 * stage ran, is {@code FAILED}.
+	 */
+	private static SceneRenderResult v3PageResult(BaseRecord user, String sceneOid, String jobId, String runOid,
+			String nodeOid, AsyncJob job, boolean llmUnavailable, boolean llmDegraded) {
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		Map<?, ?> outcome = v3NodeOutcome(job, nodeOid);
+		boolean autoApproved = outcome != null && Boolean.TRUE.equals(outcome.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+		Object skipReason = (outcome != null ? outcome.get(PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED) : null);
+		BaseRecord node = (nodeOid != null ? PbGraphUtil.readNode(user, nodeOid, orgId) : null);
+		Object rawNodeStatus = (node != null ? node.get(OlioFieldNames.FIELD_PB_NODE_STATUS) : null);
+		String nodeStatus = (rawNodeStatus != null ? rawNodeStatus.toString() : null);
+		BaseRecord artifact = (node != null ? PbArtifactUtil.findSelected(user, node, PbPipelineUtil.ROLE_LANDSCAPE) : null);
+		String artifactOid = (artifact != null ? artifact.get(FieldNames.FIELD_OBJECT_ID) : null);
+		String reviewStatus = (artifact != null ? PbArtifactUtil.reviewStatusOf(artifact).name() : null);
+		BaseRecord data = (artifact != null ? artifact.get(OlioFieldNames.FIELD_PB_DATA) : null);
+		String imageOid = (data != null ? data.get(FieldNames.FIELD_OBJECT_ID) : null);
+		boolean done = nodeStatus != null && (PbNodeStatusEnumType.DONE.name().equalsIgnoreCase(nodeStatus)
+			|| PbNodeStatusEnumType.DONE_UNVERIFIED.name().equalsIgnoreCase(nodeStatus));
+		boolean jobOk = job.getStatus() == AsyncJob.Status.COMPLETED;
+		if (jobOk && done && imageOid != null) {
+			logger.info("renderChapBook: rendered scene {} on the v3 path (job {}, node {}, artifact {}, review {})",
+				sceneOid, jobId, nodeOid, artifactOid, reviewStatus);
+			return new SceneRenderResult(imageOid, SceneRenderStatus.RENDERED, llmUnavailable, llmDegraded,
+				PbRenderPath.V3, jobId, runOid, nodeOid, artifactOid, nodeStatus, reviewStatus, autoApproved,
+				(skipReason != null ? String.valueOf(skipReason) : null));
+		}
+		String why = (outcome != null && outcome.get("error") != null ? String.valueOf(outcome.get("error"))
+			: (job.getError() != null ? job.getError() : "job " + job.getStatus() + ", node " + nodeStatus));
+		logger.warn("renderChapBook: v3 page render of scene {} did not produce an image: {}", sceneOid, why);
+		return new SceneRenderResult(null, SceneRenderStatus.FAILED, llmUnavailable, false,
+			PbRenderPath.V3, jobId, runOid, nodeOid, artifactOid, nodeStatus, reviewStatus, false,
+			(skipReason != null ? String.valueOf(skipReason) : null));
+	}
+
+	/** The job result's per-node outcome for {@code nodeOid} ({@code result.nodes[]}), or null. */
+	private static Map<?, ?> v3NodeOutcome(AsyncJob job, String nodeOid) {
+		Map<?, ?> result = v3JobResult(job);
+		if (result == null || nodeOid == null || !(result.get("nodes") instanceof List)) {
+			return null;
+		}
+		for (Object o : (List<?>) result.get("nodes")) {
+			if (o instanceof Map && nodeOid.equals(((Map<?, ?>) o).get("nodeObjectId"))) {
+				return (Map<?, ?>) o;
+			}
+		}
+		return null;
+	}
+
+	/** The job's result JSON as a map, or null when the job has none (failed before it produced one). */
+	private static Map<?, ?> v3JobResult(AsyncJob job) {
+		if (job == null || job.getResult() == null || job.getResult().isBlank()) {
+			return null;
+		}
+		return JSONUtil.importObject(job.getResult(), Map.class);
+	}
+
+	private static int v3Count(Map<?, ?> result, String key) {
+		Object v = (result != null ? result.get(key) : null);
+		return (v instanceof Number ? ((Number) v).intValue() : 0);
+	}
+
+	/**
+	 * The v3 bulk render: run the v1 prompt pre-step over every scene on the calling thread - the same
+	 * per-poem continuity thread, stored-vs-recover resolution and recovered-prompt persist the v1 loop
+	 * performs, minus the SD call - then submit one {@code pb.renderAll} job for every prompted page through
+	 * {@link PbServiceFacade#requestChapBookRenderAll} (one job per book, never one per page).
+	 * <p>
+	 * With {@code detach} (an asynchronous caller, or a caller already inside a registry job - which must
+	 * never await another job) the summary returns as soon as the job is submitted, {@code pending=true}
+	 * with its identifiers. Otherwise the job is awaited within {@link #V3_SYNC_BOOK_WAIT_MS} and the counts
+	 * come from its result; a wait that reaches the bound also returns {@code pending=true}.
+	 * <p>
+	 * The planner's 409 ("every node is current / pinned") propagates. On the v1 path a bulk render of
+	 * all-pinned pages did not exist; here it is the honest answer and the caller sees it as a 409.
+	 */
+	private static ChapBookRenderSummary renderChapBookSummaryV3(BaseRecord user, BaseRecord book, List<BaseRecord> scenes,
+			SDUtil sdu, BaseRecord chatConfig, boolean detach) {
+		String bookOid = book.get(FieldNames.FIELD_OBJECT_ID);
+		int skipped = 0;
+		int llmUnavailable = 0;
+		List<String> priorScenePrompts = new ArrayList<>();
+		String priorSceneTitle = null;
+		for (BaseRecord scene : scenes) {
+			String sceneTitle = scene.get(OlioFieldNames.FIELD_PB_TITLE);
+			if (priorSceneTitle != null && !java.util.Objects.equals(priorSceneTitle, sceneTitle)) {
+				priorScenePrompts.clear();
+			}
+			priorSceneTitle = sceneTitle;
+			String sceneMood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
+			String priorContext = assemblePriorContext(null, null, sceneMood, priorScenePrompts);
+			PromptPreStep pre = resolveAndPersistScenePrompt(user, scene, chatConfig, priorContext, null);
+			String storedPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+			Boolean sceneLockedFlag = scene.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
+			boolean sceneLocked = (sceneLockedFlag != null && sceneLockedFlag.booleanValue());
+			if (isGenuineStoredPrompt(storedPrompt) || (sceneLocked && NarrativeUtil.isMeaningful(storedPrompt))) {
+				priorScenePrompts.add(storedPrompt);
+			}
+			if (pre.llmUnavailable) {
+				llmUnavailable++;
+			}
+			if (pre.sdPrompt == null) {
+				skipped++;
+			}
+		}
+		Map<String, Object> submitted;
+		try {
+			submitted = PbServiceFacade.requestChapBookRenderAll(user, bookOid, sdu, sdu.getServer());
+		} catch (PictureBookException e) {
+			if (e.getStatus() == 409 && e.getMessage() != null && e.getMessage().contains("has a prompt")) {
+				// Every page is un-prompted: v1 answered this with rendered=0 / skipped=N, not an error.
+				logger.info("renderChapBook: no page of book {} has a prompt; nothing submitted on the v3 path ({} skipped)", bookOid, skipped);
+				return new ChapBookRenderSummary(0, skipped, llmUnavailable, PbRenderPath.V3, null, null, 0, false, 0);
+			}
+			throw e;
+		}
+		String jobId = (String) submitted.get("jobId");
+		String runOid = (String) submitted.get("runObjectId");
+		int planned = (submitted.get("plannedNodeCount") instanceof Number ? ((Number) submitted.get("plannedNodeCount")).intValue() : 0);
+		if (detach) {
+			logger.info("renderChapBook: v3 bulk render of book {} submitted as job {} (run {}, {} page(s) planned); caller detached",
+				bookOid, jobId, runOid, planned);
+			return new ChapBookRenderSummary(0, skipped, llmUnavailable, PbRenderPath.V3, jobId, runOid, 0, true, planned);
+		}
+		AsyncJob job = PbRenderJobUtil.awaitTerminal(user, jobId, V3_SYNC_BOOK_WAIT_MS);
+		if (job == null) {
+			logger.info("renderChapBook: v3 bulk render job {} of book {} still running after the synchronous bound; returning pending", jobId, bookOid);
+			return new ChapBookRenderSummary(0, skipped, llmUnavailable, PbRenderPath.V3, jobId, runOid, 0, true, planned);
+		}
+		Map<?, ?> result = v3JobResult(job);
+		int rendered = v3Count(result, "executedNodeCount");
+		int failed = v3Count(result, "failedNodeCount");
+		if (job.getStatus() != AsyncJob.Status.COMPLETED) {
+			logger.warn("renderChapBook: v3 bulk render job {} of book {} ended {}: {}", jobId, bookOid, job.getStatus(),
+				(result != null && result.get("error") != null ? result.get("error") : job.getError()));
+		}
+		logger.info("renderChapBook: v3 rendered {}/{} page(s) for book {} ({} un-prompted, skipped; {} failed; {} llm-unavailable; job {})",
+			rendered, scenes.size(), bookOid, skipped, failed, llmUnavailable, jobId);
+		return new ChapBookRenderSummary(rendered, skipped, llmUnavailable, PbRenderPath.V3, jobId, runOid, failed, false, planned);
 	}
 
 	/**
@@ -2092,6 +2461,7 @@ public class ChapBookUtil {
 			logger.warn("Failed to persist landscape sdPrompt on scene " + sceneObjectId);
 			return false;
 		}
+		PbBookUtil.markSceneNodeStale(user, scene);
 		return true;
 	}
 
@@ -2162,6 +2532,7 @@ public class ChapBookUtil {
 		if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 			throw new PictureBookException(500, "Failed to persist regenerated sdPrompt on scene " + sceneObjectId);
 		}
+		PbBookUtil.markSceneNodeStale(user, scene);
 		return newPrompt;
 	}
 

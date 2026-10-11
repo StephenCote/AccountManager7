@@ -113,7 +113,14 @@ relying on this:**
    table**, and `dbUtil.execute` **swallows the `SQLException`** (logs ERROR, continues). The column
    then simply never exists and every access fails oddly. A `"default"` in the JSON is an
    *instantiation-time* default, not DDL — so every pre-existing row reads SQL `NULL`. Handle null
-   as the primary path.
+   as the primary path. The emitted DDL defaults are `0` for INT/DOUBLE/LONG, `false` for BOOLEAN
+   and **`now()` for ZONETIME/TIMESTAMP** (`DBUtil.generateSchemaLine`), so a timestamp column added
+   this way is never NULL and cannot serve as a "has this happened yet" test — key on a status enum
+   instead (measured 2026-10-10 on `olio.pb.artifact.approvedAt`, `TestPbV3Schema.case01`). And a
+   nullable **enum** column is read back through `EnumValueType.setValue(null)`, which rewrites null
+   to the literal `"UNKNOWN"` before validating it — so the enum class **must declare `UNKNOWN`** or
+   every pre-existing row throws `ValueException` inside `StatementUtil.populateRecord` and becomes
+   unreadable (`TestPbV3Schema.case02`, same date).
 3. **The patch branch requires `!dbUtil.isConstrained(schema)`.**
 4. **The model must be in `ModelNames.MODELS` at `IOSystem.open()` time.** True today for the Olio
    and ISO registrations (`RestServiceEventListener` registers them before `open`), but

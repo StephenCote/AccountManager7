@@ -27,17 +27,35 @@ let error = null;
 let successMsg = null;
 // D2: a client wiring id with no manifest entry is a hard error surfaced here, never a silent skip.
 let manifestErrors = [];
+// PictureBook V3 render-path switch per product (design §28.1 Stage 1). Boot-pinned on the server and
+// read-only here; a missing or failed GET means "v1" for both, which is also the server default.
+const RENDER_PATH_DEFAULT = Object.freeze({ picturebook: 'v1', chapbook: 'v1' });
+let renderPathState = RENDER_PATH_DEFAULT;
+
+function normalizeRenderPath(rp) {
+    if (!rp || typeof rp !== 'object') return RENDER_PATH_DEFAULT;
+    return {
+        picturebook: rp.picturebook === 'v3' ? 'v3' : 'v1',
+        chapbook: rp.chapbook === 'v3' ? 'v3' : 'v1'
+    };
+}
+
+export function renderPath() {
+    return renderPathState;
+}
 
 // ── API ─────────────────────────────────────────────────────────────
 
-async function loadConfig() {
+export async function loadConfig() {
     loading = true;
     error = null;
     try {
-        let [config, available] = await Promise.all([
+        let [config, available, rp] = await Promise.all([
             am7client.getFeatureConfig(),
-            am7client.getAvailableFeatures()
+            am7client.getAvailableFeatures(),
+            am7client.getRenderPath().catch(function () { return null; })
         ]);
+        renderPathState = normalizeRenderPath(rp);
         availableFeatures = available || [];
         // Server manifest data wins over the local src/features.manifest.json mirror (D2). This is
         // also where drift shows up: any client wiring id the server does not list becomes a
@@ -255,6 +273,18 @@ let featureConfigView = {
                 })
             ),
 
+            // Render path — deployment-wide, boot-pinned, read-only (no PUT exists; changing it is a
+            // restart with PICTUREBOOK_RENDER_PATH / CHAPBOOK_RENDER_PATH set).
+            m("div", { class: "mt-6 border-t border-gray-200 dark:border-gray-700 pt-4", "data-testid": "render-path" }, [
+                m("h3", { class: "field-label mb-2" }, "Render Path"),
+                m("p", { class: "text-sm text-gray-500 dark:text-gray-400 mb-2" },
+                    "PictureBook rendering engine per product. Set at deployment start-up (picturebook.renderPath / chapbook.renderPath); not editable here."),
+                m("div", { class: "flex gap-4 text-sm" }, [
+                    renderPathChip("PictureBook", renderPathState.picturebook, "render-path-picturebook"),
+                    renderPathChip("ChapBook", renderPathState.chapbook, "render-path-chapbook")
+                ])
+            ]),
+
             // Quick profile buttons
             m("div", { class: "mt-6 border-t border-gray-200 dark:border-gray-700 pt-4" }, [
                 m("h3", { class: "field-label mb-2" }, "Quick Profiles"),
@@ -273,6 +303,18 @@ let featureConfigView = {
 
 function profileLabel(name) {
     return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+function renderPathChip(label, value, testId) {
+    let v3 = value === 'v3';
+    return m("span", { "data-testid": testId, "data-value": value }, [
+        m("span", { class: "text-gray-700 dark:text-gray-300 mr-1" }, label + ":"),
+        m("span", {
+            class: "text-xs px-1.5 py-0.5 rounded font-mono " + (v3
+                ? "bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-300"
+                : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300")
+        }, value + (v3 ? " (graph)" : " (legacy)"))
+    ]);
 }
 
 function profileButton(label, featureList) {

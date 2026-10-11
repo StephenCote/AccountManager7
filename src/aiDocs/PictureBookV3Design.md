@@ -61,7 +61,7 @@ books take (PB1 `generateSceneImage`):
 | Asset versions | `binding.refHash` over a declared watched-field set (`PbWatchedFields`, `watched/v2`) |
 | Stale detection | `node.inputHash` (pipeline version + bindings + configHash + prompt) compared on read; `markStaleDownstream` does a breadth-first walk |
 | Pinned / protected outputs | `node.pinned`. Propagation still marks a pinned node stale, but regenerate refuses it with a 409 (`PbServiceFacade.requestRegenerate`, Objects7 `:299-308`; Service7 only maps the exception) **[verified 2026-10-09]** |
-| Run tracking | `olio.pb.run` (`requestedNodeIds`, counts, `runStatus`). `PbRunStatusEnumType` = `UNKNOWN, PENDING, RUNNING, COMPLETED, FAILED, CANCELLED`; `CANCELLED` is declared "reserved and currently unwritten"; there is no `INTERRUPTED` yet **[verified 2026-10-09]** |
+| Run tracking | `olio.pb.run` (`requestedNodeIds`, counts, `runStatus`). `PbRunStatusEnumType` = `UNKNOWN, PENDING, RUNNING, COMPLETED, FAILED, CANCELLED`; `CANCELLED` is declared "reserved and currently unwritten"; there is no `INTERRUPTED` yet **[verified 2026-10-09]**. **Updated 2026-10-10 (P1-1):** `INTERRUPTED` now exists after `CANCELLED`; only the P1-7 boot sweep stamps it |
 | Sparse overrides | `node.configOverride` / `scene.configOverride`, resolved by `PbConfigUtil` |
 
 **Decision D1:** V3 models are added to the `olio.pb.*` family. Rendering *is* graph execution.
@@ -491,7 +491,7 @@ different questions, so they are not one enum.
 | Axis | Where | Values |
 |---|---|---|
 | Freshness / execution | `node.nodeStatus` (exists) | PENDING, READY, RUNNING, DONE, STALE, FAILED, SKIPPED (+ DONE_UNVERIFIED for migrated items) |
-| Review | `artifact.reviewStatus` (**new** enum `PbReviewStatusEnumType`) | GENERATED, IN_REVIEW, APPROVED, REJECTED, ARCHIVED |
+| Review | `artifact.reviewStatus` (**new** enum `PbReviewStatusEnumType`) | GENERATED, IN_REVIEW, APPROVED, REJECTED, ARCHIVED (+ UNKNOWN as the first constant, **added 2026-10-10 in P1-1**: `EnumValueType.setValue` maps a SQL NULL to the literal `UNKNOWN` before validating against the class, so without it every pre-Phase-1 artifact row threw `ValueException` on read; it is never written on purpose and `PbArtifactUtil.reviewStatusOf` folds null/UNKNOWN into GENERATED — every reader goes through that helper. Also recorded 2026-10-10: `artifact.approvedAt` is a zonetime column with DDL `default now()`, so it is never NULL and is **not** an approval test; approval is `reviewStatus == APPROVED` only. `durationMs` 0 means unrecorded.) |
 | Canonical | `artifact.selected` (exists) | exactly one per (node, role) |
 
 Rules:
@@ -501,10 +501,27 @@ Rules:
 2. "Use this image" selects that variant. "Approve" marks the selected variant APPROVED and **pins
    the node**. That is the existing `pinned` semantics: propagation still marks it STALE, and
    regeneration needs an explicit unpin.
+   **Made precise 2026-10-11 in P1-4** (architect-ratified; `PbArtifactUtil.select/approve`,
+   `TestPbReview`): *approve implies select* — approving a variant that is not the selection selects
+   it, and any other APPROVED sibling is demoted to GENERATED with `approvedBy` cleared, so there is
+   exactly one APPROVED artifact per (node, role). "Use this image" writes `selected` **only** (never
+   `reviewStatus`, never `pinned`), and it is refused with **409** while the chain's selection is
+   APPROVED: a selection click reads as "show this one" and must not silently discard a human approval
+   and its pin — approve the other variant, or reject the approved one. Every approve step guards on
+   its own terminal state (demote → select → pin → stamp), so re-approving re-pins an unpinned node and
+   a human approval over `AUTO` re-stamps `approvedBy`; protecting a human approval from the
+   auto-approver is rule 5's caller guard, not approve's.
 3. A STALE node keeps showing its approved artifact. The reader shows a subtle stale badge; nothing
    disappears.
 4. REJECTED variants are kept until cleanup (§23). ARCHIVED is used for history beyond the
    retention window.
+   **Made precise 2026-10-11 in P1-4** (`PbArtifactUtil.reject`, `TestPbReview.case05`): rejecting
+   the selected variant clears `approvedBy` and hands the selection to the **newest** sibling that is
+   neither REJECTED nor ARCHIVED (never promoting it); with no such sibling the rejected artifact stays
+   selected so the chain keeps exactly one selection, and the next attempt then auto-selects (rule 1
+   only protects an APPROVED selection). **Reject does not unpin** — a rejection is a verdict on one
+   variant, not a regeneration request; only an explicit unpin releases a pin. *(Default chosen by
+   the implementation, not yet ratified by Stephen — `PictureBookV3Implementation.md` §6.C.)*
 5. **Auto-approve** (ratified 2026-10-09: auto-approve pins, and it has a clear on/off toggle;
    ratified later the same day: **it is one general switch** — no per-asset-type breakdown):
    - **Setting:** `olio.pb.book.autoApprove` (boolean). It applies to every asset kind the book
@@ -524,6 +541,48 @@ Rules:
      - Switching it off never un-approves anything.
    - **Audit:** the review queue's "Auto-approved" filter lists everything approved this way, so it
      can be checked afterwards.
+
+   **Made precise 2026-10-11 in P1-5** (architect-reviewed; `PbArtifactUtil.autoApprove`,
+   `PbNodeExecutor.applyAutoApprove`, `PbServiceFacade.get/setAutoApprove`, `TestPbAutoApprove`):
+   - **Default is off** (Phase 1 start prompt, decided default; closes §34 item 3 for Phase 1). It is
+     per-book state, nothing more — the one column `olio.pb.book.autoApprove`, read off the book record
+     the executor is handed (`bookRequest()` projects it), so a caller holding a stale book must re-read
+     it after `setAutoApprove`.
+   - **Hook point:** `executeNodeRun` only, after the run is closed COMPLETED. **Test mode**
+     (`PbServiceFacade.testNode` → `executeNode`, no run) is **excluded**: a test render is a look, not
+     a result. *(Default chosen by the implementation; Test-mode inclusion would be a one-line
+     ratification — `PictureBookV3Implementation.md` §6.C.)* The auto-approver **never throws**: a
+     guard or a failed approve is reported on the executor DTO as `autoApproveSkipped`
+     (`"off"`, `"degraded: …"`, `"existing-approved: <name>"`, `"failed: …"`) beside
+     `autoApproved:true|false`, and `/regenerate` returns both verbatim; on success the DTO's
+     `reviewStatus` is `APPROVED`.
+   - **The degraded guard keys on the executor's `degradations[]`**, which every V3 executor now emits
+     (empty when the attempt consumed everything the graph bound). On V3 the v1 `landscapeFailed` flag
+     is vacuous, so "QA FAIL / `ACTOR_FAILED` / `MODEL_SUBSTITUTED`" above are the §19 names for
+     entries in this list; Phase 1 emits `<role>: no selected artifact`, `<role>: source node
+     unreadable`, `<role>: artifact has no image bytes`, `scenePrompt|landscapePrompt: scene has no
+     description; empty prompt recorded`, `landscape: scene has no sdPrompt; generic fallback prompt
+     used`. **A skipped attempt stays GENERATED, not IN_REVIEW** —
+     `IN_REVIEW` is declared but nothing in Phase 1 writes it (the review queue lists GENERATED as
+     pending); *recorded, not ratified* (§6.C).
+   - **Existing-approved** is checked over the chain before `approve` (which would demote the
+     sibling); the window between that read and the write is one query and is inherited unchanged by
+     the async layer (P1-6). The skipped newcomer is left exactly as rule 1 left it (unselected behind
+     an APPROVED selection).
+   - **Transport:** `GET/PUT /{book}/settings/auto-approve` → `{bookObjectId, autoApprove}`; the PUT
+     body must be a JSON **boolean** (`Boolean.parseBoolean(asText())` in the generic deserializer would
+     read `"yes"` as false, so the route parses the raw body and 400s anything else); 403 under the same
+     `requireBookUpdate` gate as the review routes; `GET /workflow` and `/review-queue` carry
+     `autoApprove`.
+
+   **Amended 2026-10-11 in P1-6 planning** (architect ruling Q3, `PictureBookV3Implementation.md`
+   §8.6 / §6.C item 44 — *recorded deviation, not yet ratified*): the "hook point" above stays exact
+   for the synchronous `/regenerate` path (`executeNodeRun`, once, after `closeRun(COMPLETED)`). The
+   **async render worker** (§21, `PbRenderJobUtil`) instead applies the same `autoApprove` **after each
+   stage** that closes DONE/DONE_UNVERIFIED, while the node claim is still held — so a multi-stage
+   render-all approves and pins as it goes rather than leaving everything pending until the last stage,
+   and a cancel part-way leaves the finished stages approved. Never on a cancelled or failed stage;
+   Test mode still excluded; the three guards and the never-throws contract are unchanged.
 
 This replaces the PB1 note-status strings (`generating`/`done`/`error`/accepted/rejected).
 
@@ -565,6 +624,68 @@ Today a `charPerson` edit is invisible to `listStale` until a run re-binds the r
   is viewed". There are no hooks in generic `AccessPoint.update` (layering).
 - Cost: one projected, uncached read per bound record per scan. Book-scope bindings are tens of
   records, so this is fine. Cache the scan result per book for ~30 s.
+
+**As implemented 2026-10-10 (Phase 1, P1-2) — `PbStaleUtil` in `olio/picturebook/`.** The
+contract above holds with these bindings to the code:
+
+- **Why a separate scan.** `canonicalInput`'s ref token is `ref:<model>:<objectId>:<STORED refHash>`,
+  so `recomputeStatus` cannot see an edit until `binding.refHash` is re-persisted, and only
+  `PbPipelineUtil.bindRecord` (a run) does that. `PbStaleUtil.scan(user, book, workflow, force)`
+  recomputes each bound record's hash through `PbWatchedFields.computeRefHash` and compares it to the
+  stored `refHash`. **The scan never rewrites `refHash`** — that stays a run-time write — so a drifted
+  binding keeps reporting drift until the next run re-binds it. Only `nodeStatus = STALE` is persisted,
+  through `PbGraphUtil.persistStatus` as the viewing user (PBAC-checked, idempotent, never admin, never
+  a create). A viewer who may not update the nodes gets the same report with `markPersisted:false`;
+  nothing is thrown from a read.
+- **Eligibility.** Only nodes with `inputHash != null` whose stored status is not FAILED / SKIPPED /
+  RUNNING are ever marked. A node that has never run cannot be stale; a running node is left to its
+  run; terminal failures stay terminal.
+- **Reasons (per stale entry).** `hashChanged` (recomputeStatus says STALE), `refDrift` (a bound
+  record's live hash differs from the stored `refHash`; `driftedBindings[]` lists role/model/objectId),
+  `propagated` — any eligible non-root node downstream of a `hashChanged`/`refDrift` root in **this**
+  scan via the binding adjacency (`markStaleDownstream` semantics, applied as a closure) — and `marked`
+  (stored STALE that nothing in this scan explains: no live root upstream). Priority
+  `hashChanged` > `refDrift` > `propagated` > `marked`, so a stored STALE downstream of a still-drifted
+  root reads `propagated` on every scan, not `marked` on the second *(edited 2026-10-10 after the P1-2
+  verifier's Q4: the first implementation let a persisted mark outrank propagation, which flipped the
+  reason between scans; `TestPbStale.case02` pins `propagated` on both scans and `case09` pins
+  `marked` for a stored STALE with no live root)*. Every entry carries `affectedSceneIndexes`: the
+  `sceneIndex` of each eligible `scope == "scene"` node in its downstream closure.
+  `PbServiceFacade.affectedByRecord(user, book, refModel, refObjectId)` answers "which scenes does
+  this character touch / which are stale because of it" from the same scan.
+- **Undetermined.** If a bound record cannot be read (`computeRefHash` → null) its bindings are
+  skipped with one WARN per record; its nodes are *not* marked, and the ref key is recorded in
+  `Scan.undeterminedRefs` (surfaced as `staleUndeterminedRefs` on `GET /{book}/workflow`). Deleted
+  records are therefore caught by `touch` from the PB delete paths, not by the scan. Reading a bound
+  charPerson follows the dynamic foreign rule on `olio.charPerson.statistics` and reading the book
+  follows `olio.pb.book.world`, so a collaborator needs Read on those records too, not only on the
+  book/workflow groups (`TestPbStale.case07`).
+- **Cache + invalidation.** One in-process scan per workflow, TTL 30 s (`DEFAULT_SCAN_TTL_MS`), at most
+  256 cached. **Only a complete scan is cached** — `complete = markPersisted && undeterminedRefs.isEmpty()`
+  (surfaced as `scanComplete`) — so a read-only or partially-sighted viewer's narrower result is never
+  served to a user who could see or persist more; an incomplete scan is that caller's own view and is
+  recomputed by the next caller *(edited 2026-10-10, P1-2 security-reviewer Finding 1; `case07`/`case08`
+  assert `cached(wfId) == null` after the viewer's scan)*. Each workflow carries an invalidation
+  epoch: `scan` captures it before computing and `put` refuses the result if the epoch moved, so a
+  scan overtaken by a write is cached by nobody (`TestPbStaleCacheEpoch`). The scan's own STALE
+  marks are written through `persistStatus(user, node, STALE, invalidateScan=false)` — they are already
+  reflected in the result and do not count as foreign writes — and an incomplete scan that wrote any
+  mark invalidates the workflow so no older cached scan outlives it. Every other PB graph write in the
+  JVM invalidates its workflow's entry (`addNode`, `addBinding`, `addRecordBinding`, `persistRefHashes`,
+  `persistStatus`, `patchField`, `patchNodeScope`, `bindNode`, `bindRecord`, `failNode`,
+  `stampLastRunAt`, `renameHandle`, `detachCharacterFromGraph`, `deleteBinding` *(added 2026-10-10,
+  verifier must-fix)*; `saveCanvas` does not — the scan carries no geometry). `PbStaleUtil.touch(record)`
+  / `touch(model, objectId)` invalidates every workflow with a binding to that record and is called from
+  `mergeCharacters`, `deleteCharacter`, `tagApparelSceneIndex`, `mergeChapter` (each shadow, by model +
+  objectId) and `recopyChapter` (`touchBook`). `listStale` always forces a fresh scan; `workflowView` /
+  `nodeView` serve the cache.
+- **Propagation bound, stated.** `touch` is one-JVM. An edit through a generic `PATCH /rest/model`, the
+  Olio character editor, Console7, or a second Service7 instance is seen by the next `listStale`
+  (immediate — forced) or by `workflowView` after the TTL. There are no hooks in `AccessPoint.update`.
+- **Watched set unchanged (`watched/v2`).** `description`, `narrative.sdPrompt` and `statistics` are
+  not watched, so editing them never drifts a binding; the `pbDescription` attribute and apparel legs
+  of `computeRefHash` are present but currently dead (nothing writes them). Whether to widen to a
+  `watched/v3` is an open question for Stephen before P1-10 (tracking §6.C).
 
 ### 12. The render plan
 
@@ -872,7 +993,7 @@ the full list. A degradation never stops the render.
 | QA fails to run | Variant unaffected; QA artifact records `ERROR` |
 | The compiled Comfy graph fails local validation (§38.2) | `GRAPH_INVALID`: the stage node is FAILED with the offending node id and input in `lastError`; no request is sent, no GPU time is spent |
 | Swarm refuses the graph (`unsupported node type`) or Comfy reports an execution `error` | `RENDERER_REJECTED` with the node id; treated like BASE/COMPOSITE failure for the stage, and the node catalogue cache is invalidated so the next attempt re-validates against the live backend |
-| An exception anywhere | `run` and `node` are closed as FAILED in a `finally` block (gap doc Appendix A "Other": graph runs are left RUNNING when a scene throws — **[corrected 2026-10-09: left PENDING; see the note under the opening paragraph]**) |
+| An exception anywhere | `run` and `node` are closed as FAILED in a `finally` block (gap doc Appendix A "Other": graph runs are left RUNNING when a scene throws — **[corrected 2026-10-09: left PENDING; see the note under the opening paragraph]**) **[implemented 2026-10-10, Phase 1 P1-3, for executor runs: `PbNodeExecutor.executeNodeRun` stamps the run RUNNING (`PbGraphUtil.markRunning`) and the node RUNNING before dispatch, closes COMPLETED on success, FAILED + `error` in the catch, and a `finally` guard closes any run left open as FAILED ("Execution abandoned before the run could be closed"); `TestPbNodeRun.case01` observes RUNNING mid-call and FAILED after the throw. PB1 scene runs opened by `openSceneGraph` are still PENDING → closed, never RUNNING — recorded in the implementation state §5.5 item 25 / §6.C item 30]** |
 
 ### 21. Async execution, durability and cancellation
 
@@ -880,7 +1001,11 @@ the full list. A degradation never stops the render.
 active jobs per principal **[verified 2026-10-09: `AsyncJobRegistry.java` `MAX_CONCURRENT_JOBS=2`
 `:66`, `MAX_ACTIVE_JOBS_PER_PRINCIPAL=4` `:90`, `COMPLETED_TTL_MS` 30 min `:75`,
 `MAX_RETAINED_JOBS=200` `:78`]**. V3 does not make the job registry durable. **The graph already is**:
-- **A render job = an `olio.pb.run`** whose `requestedNodeIds` are the terminal nodes requested.
+- **A render job = an `olio.pb.run`** whose `requestedNodeIds` are the terminal nodes requested
+  **[2026-10-11 (P1-6): as built, `requestedNodeIds` is the execution set — the terminals' upstream
+  closure filtered to executable, unpinned, PENDING/READY/STALE/FAILED nodes, in topological order —
+  so a resume re-plans from exactly what this run was asked to execute; the terminals are in the
+  submit response, not on the run (Implementation §6.C item 49)]**.
   The async job is just the worker executing that run. Kinds: `pb.compose` (§9.1), `pb.render`
   and `pb.renderAll`, alongside today's `pb.extractScenes`, `pb.retryFailedChunks`, `cb.create`,
   `cb.render` and `chat.chain`. There is **no run endpoint today** (`olio.pb.run` is written by the
@@ -888,18 +1013,64 @@ active jobs per principal **[verified 2026-10-09: `AsyncJobRegistry.java` `MAX_C
 - **Progress** = node statuses plus the current stage, also mirrored into the job's
   `SummarizeProgress` token (`org.cote.accountmanager.olio.llm.SummarizeProgress`) for polling.
 - **Restart recovery:** on boot, any run left RUNNING is marked INTERRUPTED (add this value to
-  `PbRunStatusEnumType`; see §1 for its current values). Its RUNNING nodes reset to READY. The Ux offers "Resume", which submits a
+  `PbRunStatusEnumType`; see §1 for its current values) **[2026-10-10, Phase 1: `INTERRUPTED` added in P1-1; RUNNING is
+  now actually written — by `PbNodeExecutor.executeNodeRun` at execution start (P1-3), so a process lost mid-render
+  leaves a RUNNING run + RUNNING node for this sweep to find. Before P1-3 nothing wrote RUNNING (P0-8 finding) and the
+  sweep would have had nothing to recover]**. Its RUNNING nodes reset to READY. The Ux offers "Resume", which submits a
   new run for the unfinished requested nodes. Completed stages are reused because their artifacts
   exist and their input hashes match. This mirrors the extraction checkpoint's "the job covers a
   lost connection; the checkpoint covers a lost process".
+  **[2026-10-11 (P1-7), as built — five refinements:**
+  **(a) PENDING runs are swept too.** `PbRenderJobUtil.submit` writes the run PENDING before the job
+  is accepted, so a stop between those two writes (or a job still queued behind the 2-wide pool)
+  leaves a PENDING run that no worker will ever close; the sweep marks it INTERRUPTED with the text
+  "the server stopped before this run was dispatched". **(b) Workers close their own runs on a
+  graceful stop.** `RestServiceEventListener.shutdown` raises `AsyncJobRegistry.beginShutdown()` as
+  its first act; a worker that sees the flag at a stage boundary, while waiting for a render lane, or
+  as the cause of a thrown stage, returns the node to READY and closes the run INTERRUPTED
+  ("Interrupted by shutdown after N of M stage(s)") while the database is still reachable — shutdown
+  outranks cancel. The boot sweep is for the process that did **not** stop gracefully (`kill -9`,
+  `docker restart -t 0`, power loss) and for stages the flag could not interrupt (an in-flight SD
+  call is a blocking Jersey client). **(c) The sweep (`PbRecoveryUtil.sweepInterrupted`) runs after
+  `provisionDefaultOrganizations()` in the boot listener**, reads the RUNNING/PENDING runs and RUNNING
+  nodes with principal-less raw queries (the same idiom as `PbOrphanUtil.raw`), and writes each one
+  **as its owner through `AccessPoint`** — never as the org admin, never via `RecordUtil`; an owner it
+  cannot resolve, or a write PBAC refuses, is counted and reported, not forced. It skips any run or
+  node that is in flight in this JVM (`PbRunCancelRegistry` / `PbNodeInflight`), which makes it safe
+  to call from a test while jobs run. **It assumes exactly one Service7 JVM per database**: a second
+  JVM's live runs are indistinguishable from this JVM's dead ones, and a second sweep would interrupt
+  them. **(d) Resume is a new run of kind `pb.resume`** (`POST /{book}/run/{runId}/resume`, 202):
+  the interrupted run's recorded `requestedNodeIds` are re-planned by the same drift scan the
+  original submit used, so DONE stages are reused and only the unfinished ones execute; the
+  interrupted run is never rewritten — it stays as the record of what happened, and the response
+  carries `resumedFromRunObjectId`. Only an INTERRUPTED run with a recorded execution set is
+  resumable (409 otherwise; 409 "Nothing to resume" when every requested node is already current).
+  **(e) The run is now readable:** `GET /{book}/run/{runId}` (200) returns status, counters, error,
+  the execution set with each node's current status, `inFlightInThisProcess` and `resumable` — the
+  predicate the Ux's Resume affordance (P1-10) keys on.]**
 - **GPU serialization:** a per-SD-server render semaphore (permits from capabilities, default 1)
   inside the adapter, so two concurrent jobs never stack on one GPU. LLM steps (compose, location description) use a
-  separate lane.
+  separate lane. **[2026-10-11 (P1-6): built as `PbRenderLanes` — one fair semaphore per SD server
+  key, permits boot-pinned by `pb.render.sdPermits` (default 1) since there is no adapter/capabilities
+  object until Phase 2; acquired per SD-backed stage, not per run, so concurrent runs interleave;
+  the wait observes cancel. LLM stages take no permit. Per-JVM only — the DB's RUNNING run/node is
+  the cross-JVM signal, which P1-7's sweep reconciles.]**
 - **Cancellation** (cooperative, at stage boundaries):
   - stop scheduling stages;
-  - call `adapter.cancelActive` (Swarm's interrupt, which stops the Comfy backend job);
+  - call `adapter.cancelActive` (Swarm's interrupt, which stops the Comfy backend job)
+    **[2026-10-11 (P1-6): NOT in Phase 1 — there is no adapter yet and `InterruptAll` is not called
+    (architect ruling Q7, Implementation §8.6). An in-flight Swarm call runs to completion; the worker
+    discards its bytes on return (`PbNodeExecutor.discardIfCancelled`) and the stage throws
+    `PbStageCancelledException`. An in-flight LLM stream IS aborted through the job's
+    `LLMConnectionManager` cancel scope. Adapter-level interrupt is a Phase 2 item with the adapter.]**;
   - discard in-flight output;
-  - the run becomes CANCELLED (start writing this reserved value);
+  - the run becomes CANCELLED (start writing this reserved value) **[2026-10-11 (P1-6): written by
+    `PbRenderJobUtil` — at the pre-stage check, on a cancelled stage, and by
+    `AsyncJobWork.onCancelledBeforeStart` for a job cancelled while still queued. The node the
+    cancelled stage had stamped RUNNING is returned to the status `recomputeStatus` derives from its
+    pre-stamp handle. Cancel is reachable two ways that flip the same token:
+    `POST /{book}/run/{runId}/cancel` (book-gated, `PbRunCancelRegistry`) and
+    `POST /rest/job/{jobId}/cancel` (submitter only).]**;
   - **a cancelled attempt never changes `selected`.**
 - **All substantial generation is async:** scene, location and portrait renders, Generate All, and
   ChapBook render. The synchronous `/scene/{id}/generate` routes stay as thin wrappers only during
@@ -1100,8 +1271,9 @@ Ux implementation follows Ux752 patterns. Read `features/pictureBook.js`,
 | `GET/PATCH /composition/{id}`, `POST/PATCH/DELETE /composition/{id}/actor[/{aid}]`, same for `/element` | Composition editing |
 | `POST /composition/{id}/plan` | Dry-run: build and return the plan (strategy, models, compiled prompts, degradations, estimate) without rendering |
 | `POST /composition/{id}/render` → 202 `{jobId, runId}` | Render an attempt (`preset`, sparse `override`, `target`: scene \| actor:{id} \| region:{box} \| faces \| clothing \| background) |
-| `POST /{book}/render-all` → 202 | Render all stale/unrendered compositions |
-| `POST /{book}/run/{runId}/resume`, `/cancel` | Durable run control |
+| `POST /{book}/render-all` → 202 | Render all stale/unrendered compositions **[2026-10-11 (P1-6): built on `PictureBookService` — terminals are every scene's `sceneNode`; `scenesWithoutNode` lists the skipped ones; 409 when no scene has a node]** |
+| `POST /{book}/scene/{sceneId}/render` → 202 `{jobId, runObjectId}` | **[2026-10-11 (P1-6): the Phase 1 stand-in for `/composition/{id}/render` until compositions exist (Phase 4) — the scene's `sceneNode` is the terminal; same plan/claim/lane/cancel semantics]** |
+| `POST /{book}/run/{runId}/resume`, `/cancel` | Durable run control **[2026-10-11 (P1-6): `/cancel` built — 200 `{runObjectId, runStatus, cancelRequested}`; 404 unless the run is of the book's workflow; 409 when terminal, already cancelling, or no job in this JVM. `/resume` is P1-7]** |
 | `PUT /artifact/{id}/select`, `/approve`, `/reject` | Review |
 | `GET /{book}/stale` (with live drift), `GET /{book}/review-queue` | Staleness / review |
 | `POST /character/{id}/portrait/render` (async), `PUT .../portrait/{artifact}/select` | Book portraits |
@@ -1169,6 +1341,21 @@ render path.
   retired in W4 (2026-10-07) and graph recording is now unconditional (`TestPictureBookWorkflow`
   class comment, `TestPictureBookFull.java:3044`). The `renderPath` switch is therefore the only
   flag in this area; do not reintroduce a graph-recording flag alongside it.
+- **[2026-10-11 (P1-8), as built — `PbRenderPath`:** default `v1` at every surface (code, `WEB-INF/web.xml`,
+  `docker/web.xml.template` + `entrypoint.sh`, `docker-compose.yml`, Console7 `resource.properties`, Ux
+  fallback); the test stack (`docker-compose.test.yml`) and the Objects7 test properties pin `v3`/`v3` so
+  Phase 1 tests exercise V3. Absent/blank/unrecognised values pin `v1` (INFO/WARN, never a boot failure).
+  The product is chosen by `olio.pb.book.bookType` — `CHAPBOOK` → `chapbook.renderPath`, anything else
+  (including SQL-NULL rows from before `bookType` existed) → `picturebook.renderPath`. The gate is
+  `PbRenderPath.requireV3(book)` in the facade, immediately after `requireBook`, on the thirteen Phase 1
+  entry points (regenerate, scene/render-all render, cancel, run read, resume, select/approve/reject,
+  review queue, auto-approve get/set, test-node) — a **409** `{"error":"render path is v1 …"}` naming the
+  key to set; the Phase 0/P1-2 views (`workflow`, `node`, `artifact`, `stale`, canvas authoring) stay
+  readable under either value and the boot recovery sweep runs regardless. It is a facade feature gate,
+  not an authorization boundary — PBAC is unchanged on every record. **The Ux is told through a dedicated
+  read-only `GET /rest/config/render-path` → `{"picturebook","chapbook"}` rather than through the feature
+  manifest** (architect ruling: the manifest is a static array meaning "flags an admin may toggle"; a
+  boot value does not belong in it) — `PictureBookV3Implementation.md` §5.5 item 42, §8.8.]**
 
 **Verify-stage exit checks** (all with real tests and visual inspection):
 1. Scenarios A–G (notes §70) pass on the Docker stack.
@@ -1197,7 +1384,7 @@ for image output).
 | Phase | Scope | ChapBook impact | Exit criteria |
 |---|---|---|---|
 | **0 — Hygiene** (current code) | G-15 override leak, G-18 explicit width/height, G-24 template override, G-26 null guards, G-8 landscape flag, G-11 landscape failure non-fatal; from the gap doc's Appendix A "Other": `ByteModelUtil` instead of raw `FIELD_BYTE_STORE` writes, and run closure on exception; **Kontext Deprecate stage** (§37.3, ratified) **[Progress 2026-10-09, see `PictureBookV3Implementation.md` §2/§5.3: G-15, G-18, G-24 (Option A — override stays on the landscape slot), G-26, G-8, G-11, `ByteModelUtil`, run closure DONE with live tests. Additions not listed here: G-11 adds `landscapeFailed`/`landscapeError` to `olio.pictureBookResult` and a text-only txt2img fallback for a classic composite with neither landscape nor portraits; G-8 bumps `PB_PIPELINE_VERSION` to `pb2/3` because the schema default is outside the inputHash (§11.1 drift). Kontext Deprecate and the ChapBook column pending.]** | G-25 style, negative and hires; G-32 book settings saved, page overrides not flattened | The gap doc's §4 step 1 plus the notes' §60 criteria; each fix has a test, PB and ChapBook |
-| **1 — Graph-first rendering + review** | Rendering through graph execution (PbNodeExecutor converged with v1 behaviour, fixing the G-30 divergences), live drift detection (§11.1), review status, auto-approve toggle (§10), async render jobs, restart recovery. V3 runs behind the `renderPath` switch (§28.1 Stage 1) | ChapBook pages become graph nodes with artifacts; same jobs and review | Leave the page → render continues; restart → Resume; a charPerson edit shows the affected scenes |
+| **1 — Graph-first rendering + review** | Rendering through graph execution (PbNodeExecutor converged with v1 behaviour, fixing the G-30 divergences) **[done 2026-10-10, P1-3: PORTRAIT resolves the character through the v1 `resolveSceneCharacter` (PBAC), applies apparel + style tiers, links `profile.portrait`, SD server resolved by the route like v1 `generate`; `requestRegenerate` opens a run and renders (pinned → 409 first, no STALE pre-mark); only PORTRAIT closes DONE, the other node types stay `DONE_UNVERIFIED` until their phases — implementation state §8.3, §5.5 items 18–27]**, live drift detection (§11.1) **[done 2026-10-10, P1-2]**, review status, auto-approve toggle (§10), async render jobs, restart recovery. V3 runs behind the `renderPath` switch (§28.1 Stage 1) | ChapBook pages become graph nodes with artifacts; same jobs and review | Leave the page → render continues; restart → Resume; a charPerson edit shows the affected scenes |
 | **2 — Style, model resolution, compiler core; ChapBook goes V3** | `olio.pb.style` with inheritance and lock, `ModelResolver`, capabilities/presets resources, models-by-task route, style editor, estimate, `RenderPlan`, TEXT_ONLY strategy, `SdxlCompiler`, plan inspector; **Kontext Disable stage** (§37.3) | **ChapBook is the first product switched to V3** (TEXT_ONLY, zero actors), with up-front composition from the existing continuity composer. **ChapBook old path disabled (§28.1 Stage 2)** | One model policy across reimage/PB/ChapBook/chat; a missing model is reported before rendering; ChapBook verify checks start; chat scene renders through the illustration service (§24.1) |
 | **3 — Locations** (world-scoped) | Location/variant models, LOCATION nodes, `approvedRender`, library Ux, approve/lock, clustering migration, background-first for TEXT_ONLY/DIRECT; **POI link** (§7.2 rules 1–3, 5): map-free `olio.pointOfInterest` + `olio.store` per resolved location in book worlds, name-match in game worlds, `PointOfInterestUtil.findByName`, `PbOrphanUtil`/`PbHealthUtil` repair of a dangling `poi` | Optional locations on ChapBook pages | Scenes 3/7/12 share one approved tavern; series chapters share it; a location failure doesn't fail scenes; every resolved location has a POI with a store, and deleting the world removes both |
 | **4 — Composition + wardrobe** | Composition/actor/element models (`sceneElement.item` FK, §7.2 rule 4), up-front `pb.compose` job in story order with lazy per-scene fallback and "Quick start" (§9.1, ratified) fed the location's POI store items (§9), layout util, board Ux, `Flux2Compiler`, degradations, wardrobe alternates and carry-forward (§6) | Composition model replaces `sdPrompt`/`promptLocked` (already switched in Phase 2) | Any number of actors; prompt shown = prompt sent; nothing dropped silently; outfit change persists across scenes; a promoted element is an `olio.item` in the POI store and is reused by name in a later scene at the same location |
@@ -1607,7 +1794,7 @@ Nothing in this table has been rendered with yet. The first `GenerateText2Image`
 | Claim in the design | Fact | Applied |
 |---|---|---|
 | Pinned nodes are rejected in Service7 | `PbServiceFacade.requestRegenerate` (Objects7 `:299-308`) rejects; Service7 only maps the exception | §1 |
-| Runs have an `INTERRUPTED` status | `PbRunStatusEnumType` = `UNKNOWN, PENDING, RUNNING, COMPLETED, FAILED, CANCELLED`; `CANCELLED` is reserved and never written today | §1, §21 |
+| Runs have an `INTERRUPTED` status | `PbRunStatusEnumType` = `UNKNOWN, PENDING, RUNNING, COMPLETED, FAILED, CANCELLED`; `CANCELLED` is reserved and never written today. **2026-10-10 (P1-1):** `INTERRUPTED` added; written only by the P1-7 boot sweep | §1, §21 |
 | Chat's scene route is at `ChatService:1348-1393` | It is `generateScene` at `:1401`; `:1348-1393` is `GET /chain/status` | §24.1 |
 | 1024×576 is the chat composite size | It is the landscape stage (`SDUtil.generateLandscapeBytes:1409-1410`); composite size depends on mode | §24.1 |
 | `picturebook.v2` is false in the deployed `web.xml` | The flag was deleted 2026-10-07; graph recording is unconditional | §28.1 |
