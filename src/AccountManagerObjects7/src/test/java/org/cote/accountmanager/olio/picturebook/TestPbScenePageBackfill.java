@@ -3,6 +3,7 @@ package org.cote.accountmanager.olio.picturebook;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.awt.image.BufferedImage;
@@ -195,6 +196,14 @@ public class TestPbScenePageBackfill extends BaseTest {
 		assertEquals(0, ((Number) page.get("sceneIndex")).intValue());
 		assertNotNull("page resolves the image record: " + page, page.get("imageName"));
 		assertEquals("image/png", page.get("imageContentType"));
+		/// V3 P1-10 S0(c): a backfilled row has no sceneNode, so the per-page node/artifact fields are
+		/// null and pinned is an explicit false (a boolean survives the NON_EMPTY mapper; a null vanishes).
+		assertTrue("sceneNodeObjectId key present", page.containsKey("sceneNodeObjectId"));
+		assertNull("no node: sceneNodeObjectId", page.get("sceneNodeObjectId"));
+		assertNull("no node: nodeStatus", page.get("nodeStatus"));
+		assertEquals("no node: pinned is an explicit false", Boolean.FALSE, page.get("pinned"));
+		assertNull("no node: reviewStatus", page.get("reviewStatus"));
+		assertNull("no node: artifactObjectId", page.get("artifactObjectId"));
 
 		/// Idempotent: nothing left to backfill, no second row.
 		Map<String, Object> again = PbHealthUtil.healBook(owner, dataPath, bookOid, null);

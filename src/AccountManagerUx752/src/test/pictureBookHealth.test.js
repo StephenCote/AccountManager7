@@ -242,6 +242,8 @@ describe('renderPb2HealthBanner', () => {
         }));
         vi.spyOn(am7client, 'search').mockResolvedValue({ results: [] });
         vi.spyOn(am7client, 'clearCache').mockImplementation(() => {});
+        // loadPb2Pages now also reads the render path (v1/v3 gate) through am7client (XHR).
+        vi.spyOn(am7client, 'getRenderPath').mockResolvedValue(null);
     }
 
     it('repairPb2Book: confirm → POST /{id}/health/heal → toast → pages reloaded', async () => {

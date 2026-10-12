@@ -8,7 +8,10 @@ import static org.junit.Assert.assertTrue;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -20,6 +23,7 @@ import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.rest.services.PictureBookService;
+import org.glassfish.jersey.uri.UriTemplate;
 import org.junit.Test;
 
 import jakarta.annotation.security.RolesAllowed;
@@ -175,7 +179,10 @@ public class TestPictureBookRestContract extends BaseTest {
 			/// V3 Phase 1 restart recovery (P1-7, 2026-10-11): one run read (the Resume affordance's source of
 			/// truth) and the resume submit, which re-plans an INTERRUPTED run's execution set as a new run.
 			{ "readRun", "GET" },
-			{ "resumeRun", "POST" }
+			{ "resumeRun", "POST" },
+			/// V3 Phase 1 impact read (P1-10 S0, 2026-10-11): what an edit to one bound record touches in a
+			/// book. A read behind requireBook, on the listStale pattern; not gated by the render-path switch.
+			{ "affectedByRecord", "GET" }
 		};
 		for(String[] e : expected) {
 			Method found = null;
@@ -223,7 +230,9 @@ public class TestPictureBookRestContract extends BaseTest {
 			{ "cancelRun", "/run/{runObjectId:[0-9A-Za-z\\-]+}/cancel" },
 			/// P1-7: the run read is the bare run segment; resume hangs off it exactly as cancel does.
 			{ "readRun", "/run/{runObjectId:[0-9A-Za-z\\-]+}" },
-			{ "resumeRun", "/run/{runObjectId:[0-9A-Za-z\\-]+}/resume" }
+			{ "resumeRun", "/run/{runObjectId:[0-9A-Za-z\\-]+}/resume" },
+			/// P1-10 S0(d): the impact read is addressed by model name then objectId under the book.
+			{ "affectedByRecord", "/affected-by/{refModel:[a-z]+(\\.[A-Za-z0-9]+)+}/{refObjectId:[0-9A-Za-z\\-]+}" }
 		};
 		for(String[] e : expected) {
 			Method found = null;
@@ -242,13 +251,76 @@ public class TestPictureBookRestContract extends BaseTest {
 	}
 
 	/**
+	 * P1-10 S0(d): the {@code affected-by} route's exact template, and what its {@code refModel} segment
+	 * admits. The segment regex is the first line of defence against an arbitrary string reaching the stale
+	 * scan (the facade refuses an unregistered model name as the second), so it is pinned here and exercised
+	 * both as a bare {@link Pattern} on the segment and through Jersey's own {@link UriTemplate} matcher,
+	 * which is what parses the nested {@code (\.[A-Za-z0-9]+)+} group at runtime. This is template-level
+	 * matching, not a live request: a rejected segment is a Jersey 404 in production, and that is proven
+	 * against the container separately.
+	 */
+	@Test
+	public void TestAffectedByRouteTemplateAndRefModelSegment() {
+		final String template = "/{bookObjectId:[0-9A-Za-z\\-]+}/affected-by/{refModel:[a-z]+(\\.[A-Za-z0-9]+)+}/{refObjectId:[0-9A-Za-z\\-]+}";
+		final String segmentRegex = "[a-z]+(\\.[A-Za-z0-9]+)+";
+		Method found = null;
+		for(Method m : PictureBookService.class.getDeclaredMethods()) {
+			if(m.getName().equals("affectedByRecord")) {
+				found = m;
+				break;
+			}
+		}
+		assertNotNull("affectedByRecord must exist", found);
+		assertNotNull("affectedByRecord must be @GET", found.getAnnotation(GET.class));
+		assertEquals("the exact @Path template is the client contract", template, found.getAnnotation(Path.class).value());
+		assertEquals("@RolesAllowed admits user as well as admin", Arrays.asList("admin", "user"),
+			Arrays.asList(found.getAnnotation(RolesAllowed.class).value()));
+		for(java.lang.reflect.Parameter p : found.getParameters()) {
+			boolean injected = p.getAnnotation(jakarta.ws.rs.PathParam.class) != null
+				|| p.getAnnotation(jakarta.ws.rs.core.Context.class) != null;
+			assertTrue("affectedByRecord is a read and takes no body (got '" + p.getName() + "')", injected);
+		}
+
+		Pattern segment = Pattern.compile(segmentRegex);
+		String[] accepted = new String[] { "olio.charPerson", "olio.pb.node", "data.data", "system.user" };
+		String[] rejected = new String[] { "olio", "Olio.Foo", "olio..x", "olio.", ".olio", "olio.char-Person", "olio/charPerson" };
+		for(String s : accepted) {
+			assertTrue("segment regex must accept a registered-style model name: " + s, segment.matcher(s).matches());
+		}
+		for(String s : rejected) {
+			assertFalse("segment regex must reject: " + s, segment.matcher(s).matches());
+		}
+
+		/// Jersey's matcher, on the whole template, so the nested group inside the segment is parsed the way
+		/// the runtime parses it - a Pattern on the segment alone would not catch a group-counting defect.
+		UriTemplate ut = new UriTemplate(template);
+		Map<String, String> vars = new HashMap<>();
+		assertTrue("Jersey must match a well-formed path", ut.match("/book-1/affected-by/olio.charPerson/abc-123", vars));
+		assertEquals("book-1", vars.get("bookObjectId"));
+		assertEquals("olio.charPerson", vars.get("refModel"));
+		assertEquals("abc-123", vars.get("refObjectId"));
+		for(String s : rejected) {
+			vars.clear();
+			assertFalse("Jersey must reject the refModel segment: " + s, ut.match("/book-1/affected-by/" + s + "/abc-123", vars));
+		}
+		/// Noted, not a change: a digit-bearing FIRST segment (iso42001.x) is outside the regex. No olio.pb
+		/// binding targets such a model, and the generic /rest/model routes are the place that admits them.
+		assertFalse(ut.match("/book-1/affected-by/iso42001.testConfig/abc-123", vars));
+	}
+
+	/**
 	 * The async render routes take no body and must not: the SD backend comes from the servlet context
 	 * (boot-pinned {@code sd.*} init-params), never from the caller, so a client cannot point a render at a
 	 * server of its choosing. Pinned here because the synchronous {@code /generate} beside them DOES read a
 	 * nested {@code sdConfig} override, and the next copy-paste would carry that parameter across.
+	 * <p>
+	 * The one admitted extra is a primitive-boolean {@code @QueryParam} ({@code renderScene}'s
+	 * {@code ?force=true}): a flag cannot name a server or carry a config. A String/record query parameter
+	 * is refused for the same reason a body is.
 	 */
 	@Test
 	public void TestAsyncRenderRoutesTakeNoBody() {
+		boolean sawForce = false;
 		for(String name : new String[] { "renderScene", "renderAll", "cancelRun", "resumeRun", "readRun" }) {
 			Method found = null;
 			for(Method m : PictureBookService.class.getDeclaredMethods()) {
@@ -259,13 +331,21 @@ public class TestPictureBookRestContract extends BaseTest {
 			}
 			assertNotNull(name + " must exist", found);
 			for(java.lang.reflect.Parameter p : found.getParameters()) {
+				jakarta.ws.rs.QueryParam qp = p.getAnnotation(jakarta.ws.rs.QueryParam.class);
+				boolean booleanFlag = qp != null && p.getType() == boolean.class;
+				if(booleanFlag && "force".equals(qp.value()) && "renderScene".equals(name)) {
+					sawForce = true;
+				}
 				boolean injected = p.getAnnotation(jakarta.ws.rs.PathParam.class) != null
-					|| p.getAnnotation(jakarta.ws.rs.core.Context.class) != null;
-				assertTrue(name + " must take only @PathParam/@Context parameters - a body parameter would let the"
-					+ " caller supply the SD server or config (got '" + p.getName() + "' of " + p.getType().getSimpleName() + ")",
+					|| p.getAnnotation(jakarta.ws.rs.core.Context.class) != null
+					|| booleanFlag;
+				assertTrue(name + " must take only @PathParam/@Context parameters (or a primitive-boolean @QueryParam flag)"
+					+ " - a body or a String query parameter would let the caller supply the SD server or config (got '"
+					+ p.getName() + "' of " + p.getType().getSimpleName() + ")",
 					injected);
 			}
 		}
+		assertTrue("renderScene must declare the @QueryParam(\"force\") boolean flag (explicit per-scene re-render)", sawForce);
 	}
 
 	/**

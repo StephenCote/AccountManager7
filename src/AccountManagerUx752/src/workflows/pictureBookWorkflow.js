@@ -80,13 +80,226 @@ export async function listStale(pb2BookObjectId) {
     return resp.json();
 }
 
+/**
+ * One non-2xx pattern for every V3 helper (the testNode pattern): the thrown Error's message is
+ * '(' + status + ') ' + body, where body is the server's {error} message when the body is that JSON
+ * shape, else the raw text. `status` and the raw `body` ride on the Error so callers can branch on a
+ * 409 (pinned / in-flight) or 429 without re-parsing the message.
+ */
+async function throwNon2xx(resp, fallback) {
+    let raw = '';
+    try { raw = await resp.text(); } catch (_) {}
+    let msg = raw;
+    if (raw) {
+        try {
+            let j = JSON.parse(raw);
+            if (j && typeof j === 'object') {
+                if (typeof j.error === 'string') msg = j.error;
+                else if (typeof j.message === 'string') msg = j.message;
+            }
+        } catch (_) {}
+    }
+    let err = new Error('(' + resp.status + ') ' + (msg || fallback));
+    err.status = resp.status;
+    err.body = raw;
+    throw err;
+}
+
+async function wfFetch(path, opts, fallback) {
+    let o = Object.assign({ credentials: 'include' }, opts || {});
+    if (o.body !== undefined && typeof o.body !== 'string') {
+        o.headers = Object.assign({ 'Content-Type': 'application/json' }, o.headers || {});
+        o.body = JSON.stringify(o.body);
+    }
+    let resp = await fetch(wfBase() + path, o);
+    if (!resp.ok) await throwNon2xx(resp, fallback);
+    if (resp.status === 204) return null;
+    return resp.json();
+}
+
 /** Mark a node (and its downstream) STALE so it will be re-run on next generation. */
 export async function regenerateNode(pb2BookObjectId, nodeObjectId) {
-    let resp = await fetch(wfBase() + '/' + pb2BookObjectId + '/node/' + nodeObjectId + '/regenerate', {
-        method: 'POST', credentials: 'include'
+    return wfFetch('/' + pb2BookObjectId + '/node/' + nodeObjectId + '/regenerate',
+        { method: 'POST' }, 'regenerateNode failed');
+}
+
+// ── V3 render / run / review helpers (P1-10 S1) ───────────────────────
+// The server serializes with Include.NON_EMPTY, so absent lists and nulls vanish from the wire.
+// Every helper below normalizes those once here so views never test for a missing array.
+
+function normalizeSubmit(r) {
+    r = r || {};
+    return Object.assign({}, r, {
+        jobId: r.jobId != null ? r.jobId : null,
+        runObjectId: r.runObjectId != null ? r.runObjectId : null,
+        runStatus: r.runStatus != null ? r.runStatus : null,
+        planned: Array.isArray(r.planned) ? r.planned : [],
+        plannedNodeCount: r.plannedNodeCount != null ? r.plannedNodeCount : 0,
+        reusedNodeCount: r.reusedNodeCount != null ? r.reusedNodeCount : 0,
+        pinnedNodeCount: r.pinnedNodeCount != null ? r.pinnedNodeCount : 0,
+        scenesWithoutNode: Array.isArray(r.scenesWithoutNode) ? r.scenesWithoutNode : []
     });
-    if (!resp.ok) throw new Error('regenerateNode failed: ' + resp.status);
-    return resp.json();
+}
+
+export function normalizeRun(r) {
+    r = r || {};
+    return Object.assign({}, r, {
+        runObjectId: r.runObjectId != null ? r.runObjectId : null,
+        runStatus: r.runStatus != null ? r.runStatus : null,
+        jobId: r.jobId != null ? r.jobId : null,
+        error: r.error != null ? r.error : null,
+        resumable: !!r.resumable,
+        inFlightInThisProcess: !!r.inFlightInThisProcess,
+        requestedNodeIds: Array.isArray(r.requestedNodeIds) ? r.requestedNodeIds : [],
+        executedNodeCount: r.executedNodeCount != null ? r.executedNodeCount : 0,
+        failedNodeCount: r.failedNodeCount != null ? r.failedNodeCount : 0,
+        nodes: Array.isArray(r.nodes) ? r.nodes : []
+    });
+}
+
+function normalizeArtifact(a) {
+    a = a || {};
+    return Object.assign({}, a, {
+        reviewStatus: a.reviewStatus != null ? a.reviewStatus : null,
+        selected: !!a.selected,
+        dataObjectId: a.dataObjectId != null ? a.dataObjectId : null,
+        nodeObjectId: a.nodeObjectId != null ? a.nodeObjectId : null
+    });
+}
+
+export function normalizeReviewQueue(r) {
+    r = r || {};
+    return Object.assign({}, r, {
+        filter: r.filter != null ? r.filter : 'all',
+        autoApprove: !!r.autoApprove,
+        artifactCount: r.artifactCount != null ? r.artifactCount : 0,
+        pendingCount: r.pendingCount != null ? r.pendingCount : 0,
+        nodes: (Array.isArray(r.nodes) ? r.nodes : []).map(function (n) {
+            n = n || {};
+            return Object.assign({}, n, {
+                pinned: !!n.pinned,
+                sceneIndex: n.sceneIndex != null ? n.sceneIndex : null,
+                artifacts: (Array.isArray(n.artifacts) ? n.artifacts : []).map(normalizeArtifact)
+            });
+        })
+    });
+}
+
+export function normalizeAffected(r) {
+    r = r || {};
+    return Object.assign({}, r, {
+        boundNodes: r.boundNodes != null ? r.boundNodes : 0,
+        drifted: !!r.drifted,
+        markPersisted: !!r.markPersisted,
+        driftedHandles: Array.isArray(r.driftedHandles) ? r.driftedHandles : [],
+        affectedSceneIndexes: Array.isArray(r.affectedSceneIndexes) ? r.affectedSceneIndexes : [],
+        staleSceneIndexes: Array.isArray(r.staleSceneIndexes) ? r.staleSceneIndexes : []
+    });
+}
+
+/**
+ * POST /{book}/scene/{scene}/render[?force=true] → 202 {sceneObjectId, sceneIndex, jobId, runObjectId, planned[], ...}
+ * opts.force re-rolls the scene's node even when it is current (an explicit per-scene re-render); without it
+ * a current node is reused and the planner answers 409 "(1 reused, 0 pinned)". A pinned node is a 409 either
+ * way — force never overrides a pin (isPinnedRefusal → the unpin confirmation).
+ */
+export async function renderScene(pb2BookObjectId, sceneObjectId, opts) {
+    let q = (opts && opts.force) ? '?force=true' : '';
+    return normalizeSubmit(await wfFetch('/' + pb2BookObjectId + '/scene/' + sceneObjectId + '/render' + q,
+        { method: 'POST' }, 'renderScene failed'));
+}
+
+/** POST /{book}/render-all → 202 {sceneCount, scenesWithoutNode[], jobId, runObjectId, planned[], ...} */
+export async function renderAll(pb2BookObjectId) {
+    return normalizeSubmit(await wfFetch('/' + pb2BookObjectId + '/render-all',
+        { method: 'POST' }, 'renderAll failed'));
+}
+
+/** GET /{book}/run/{run} → runDto (runStatus, resumable, jobId when the job is still retained, nodes[]) */
+export async function getRun(pb2BookObjectId, runObjectId) {
+    return normalizeRun(await wfFetch('/' + pb2BookObjectId + '/run/' + runObjectId, {}, 'getRun failed'));
+}
+
+/** POST /{book}/run/{run}/resume → 202 on an INTERRUPTED run; 409 otherwise (body says why). */
+export async function resumeRun(pb2BookObjectId, runObjectId) {
+    return normalizeSubmit(await wfFetch('/' + pb2BookObjectId + '/run/' + runObjectId + '/resume',
+        { method: 'POST' }, 'resumeRun failed'));
+}
+
+/** POST /{book}/run/{run}/cancel → {runObjectId, runStatus, cancelRequested} */
+export async function cancelRun(pb2BookObjectId, runObjectId) {
+    return wfFetch('/' + pb2BookObjectId + '/run/' + runObjectId + '/cancel', { method: 'POST' }, 'cancelRun failed');
+}
+
+/** PUT /{book}/artifact/{artifact}/select — make this revision the node's current artifact. */
+export async function selectArtifact(pb2BookObjectId, artifactObjectId) {
+    return normalizeArtifact(await wfFetch('/' + pb2BookObjectId + '/artifact/' + artifactObjectId + '/select',
+        { method: 'PUT' }, 'selectArtifact failed'));
+}
+
+/** PUT /{book}/artifact/{artifact}/approve */
+export async function approveArtifact(pb2BookObjectId, artifactObjectId) {
+    return normalizeArtifact(await wfFetch('/' + pb2BookObjectId + '/artifact/' + artifactObjectId + '/approve',
+        { method: 'PUT' }, 'approveArtifact failed'));
+}
+
+/** PUT /{book}/artifact/{artifact}/reject */
+export async function rejectArtifact(pb2BookObjectId, artifactObjectId) {
+    return normalizeArtifact(await wfFetch('/' + pb2BookObjectId + '/artifact/' + artifactObjectId + '/reject',
+        { method: 'PUT' }, 'rejectArtifact failed'));
+}
+
+/** GET /{book}/review-queue?filter=all|auto-approved → {autoApprove, artifactCount, pendingCount, nodes[]} */
+export async function getReviewQueue(pb2BookObjectId, filter) {
+    let f = filter === 'auto-approved' ? 'auto-approved' : 'all';
+    return normalizeReviewQueue(await wfFetch('/' + pb2BookObjectId + '/review-queue?filter=' + f, {}, 'getReviewQueue failed'));
+}
+
+/** GET /{book}/settings/auto-approve → {bookObjectId, autoApprove} */
+export async function getAutoApprove(pb2BookObjectId) {
+    let r = await wfFetch('/' + pb2BookObjectId + '/settings/auto-approve', {}, 'getAutoApprove failed');
+    return Object.assign({}, r || {}, { autoApprove: !!(r && r.autoApprove) });
+}
+
+/** PUT /{book}/settings/auto-approve body {autoApprove: bool} (a JSON boolean; anything else is a 400). */
+export async function setAutoApprove(pb2BookObjectId, autoApprove) {
+    let r = await wfFetch('/' + pb2BookObjectId + '/settings/auto-approve',
+        { method: 'PUT', body: { autoApprove: !!autoApprove } }, 'setAutoApprove failed');
+    return Object.assign({}, r || {}, { autoApprove: !!(r && r.autoApprove) });
+}
+
+/**
+ * GET /{book}/affected-by/{refModel}/{refObjectId} → {boundNodes, drifted, driftedHandles[],
+ * affectedSceneIndexes[], staleSceneIndexes[], markPersisted}. A read that may persist STALE as the
+ * caller (markPersisted reports whether it did) — call it once per open, never per row or per poll.
+ */
+export async function getAffectedBy(pb2BookObjectId, refModel, refObjectId) {
+    return normalizeAffected(await wfFetch('/' + pb2BookObjectId + '/affected-by/'
+        + encodeURIComponent(refModel) + '/' + encodeURIComponent(refObjectId), {}, 'getAffectedBy failed'));
+}
+
+/** GET /{book}/stale → [nodeSummary] (same route as listStale, with the uniform error pattern). */
+export async function getStale(pb2BookObjectId) {
+    let r = await wfFetch('/' + pb2BookObjectId + '/stale', {}, 'getStale failed');
+    return Array.isArray(r) ? r : [];
+}
+
+/** POST /{book}/node/{node}/pin {pinned:false} — only ever called after the user's explicit confirmation. */
+export async function unpinNode(pb2BookObjectId, nodeObjectId) {
+    return wfFetch('/' + pb2BookObjectId + '/node/' + nodeObjectId + '/pin',
+        { method: 'POST', body: { pinned: false } }, 'unpinNode failed');
+}
+
+/**
+ * Pure: does a render-submit failure mean "every target is pinned"? The planner's 409 reads
+ * "Nothing to render: every node of scene 3 is current (0 reused, 1 pinned)". Only that shape with a
+ * non-zero pinned count qualifies — an in-flight-node 409 or a 429 does not.
+ */
+export function isPinnedRefusal(err) {
+    if (!err || err.status !== 409) return false;
+    let text = String(err.message || '') + ' ' + String(err.body || '');
+    let mt = /\((\d+) reused, (\d+) pinned\)/.exec(text);
+    return !!(mt && parseInt(mt[2], 10) > 0);
 }
 
 /** Pin or unpin a node. Pinned nodes are not replaced by regeneration. */

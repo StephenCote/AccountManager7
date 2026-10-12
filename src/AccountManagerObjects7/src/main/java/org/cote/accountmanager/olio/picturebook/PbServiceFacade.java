@@ -11,6 +11,7 @@ import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.client.AccessPoint;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -232,6 +233,7 @@ public class PbServiceFacade {
 		out.put("graphStatus", enumString(workflow, OlioFieldNames.FIELD_PB_GRAPH_STATUS));
 		out.put("nodeCount", workflow.get(OlioFieldNames.FIELD_PB_NODE_COUNT));
 		out.put("autoApprove", autoApproveOf(book));
+		out.put("lastRunObjectId", lastRunObjectIdOf(user, workflow));
 
 		List<BaseRecord> nodes = PbGraphUtil.listNodes(user, workflow);
 		List<Map<String, Object>> nodeViews = new ArrayList<>();
@@ -342,8 +344,20 @@ public class PbServiceFacade {
 	 * downstream of those nodes - the number behind "affected scenes: N". Always a fresh scan.
 	 */
 	public static Map<String, Object> affectedByRecord(BaseRecord user, String bookObjectId, String refModel, String refObjectId) {
+		/// Principal first, so an unauthenticated caller learns nothing about model registration.
+		if(user == null) {
+			throw new PictureBookException(401, "No authenticated principal");
+		}
 		if(refModel == null || refModel.trim().length() == 0 || refObjectId == null || refObjectId.trim().length() == 0) {
 			throw new PictureBookException(400, "A refModel and refObjectId are required");
+		}
+		/// The route's path regex only shapes the segment; an unregistered model name must not reach the
+		/// scan (a fresh scan is the one permitted read-path write), so it is refused here as well. The
+		/// registered-name set is consulted before the schema resolver: a miss in RecordFactory.getSchema
+		/// is a DB query plus a classpath probe plus a logged stack trace, repeatable per request.
+		String model = refModel.trim();
+		if(!ModelNames.MODELS.contains(model) || !AccessPoint.isResolvableModel(model)) {
+			throw new PictureBookException(400, "Unknown refModel " + refModel);
 		}
 		BaseRecord book = requireBook(user, bookObjectId);
 		BaseRecord workflow = requireWorkflow(user, book);
@@ -444,6 +458,19 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> requestSceneRender(BaseRecord user, String bookObjectId, String sceneObjectId,
 			String sdApiType, String sdServer) {
+		return requestSceneRender(user, bookObjectId, sceneObjectId, sdApiType, sdServer, false);
+	}
+
+	/**
+	 * {@link #requestSceneRender(BaseRecord, String, String, String, String)} with the planner's
+	 * {@code force} flag. An explicit per-scene (re-)render from the reader is a re-roll of that scene's
+	 * node even when it is current (the same contract the ChapBook page path uses, §21); without
+	 * {@code force} a current node is reused and the planner refuses with a 409. {@code force} never
+	 * overrides a pin: a pinned terminal is still reported as {@code pinned} and the request is still a
+	 * 409 until the caller unpins it (§10). The bulk {@link #requestRenderAll} does not force.
+	 */
+	public static Map<String, Object> requestSceneRender(BaseRecord user, String bookObjectId, String sceneObjectId,
+			String sdApiType, String sdServer, boolean force) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "render a scene");
@@ -459,7 +486,7 @@ public class PbServiceFacade {
 		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
 		out.put("sceneIndex", scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
 		out.putAll(PbRenderJobUtil.submit(user, book, workflow, List.of(nodeId), sdApiType, sdServer,
-			PbRenderJobUtil.KIND_RENDER));
+			PbRenderJobUtil.KIND_RENDER, force));
 		return out;
 	}
 
@@ -808,6 +835,7 @@ public class PbServiceFacade {
 		out.put("failedNodeCount", run.get(OlioFieldNames.FIELD_PB_FAILED_NODE_COUNT));
 		out.put("error", run.get(OlioFieldNames.FIELD_PB_ERROR));
 		out.put("inFlightInThisProcess", Boolean.valueOf(runOid != null && PbRunCancelRegistry.peek(runOid) != null));
+		out.put("jobId", (runOid != null ? PbRunCancelRegistry.jobIdOf(runOid) : null));
 		out.put("resumable", Boolean.valueOf(status == PbRunStatusEnumType.INTERRUPTED && !requested.isEmpty()));
 		List<Map<String, Object>> nodes = new ArrayList<>();
 		Map<Long, BaseRecord> byId = PbGraphUtil.nodesById(user, workflow);
@@ -1531,6 +1559,12 @@ public class PbServiceFacade {
 		m.put("inputHash", node.get(OlioFieldNames.FIELD_PB_INPUT_HASH));
 		m.put("configHash", node.get(OlioFieldNames.FIELD_PB_CONFIG_HASH));
 		m.put("lastError", node.get(OlioFieldNames.FIELD_PB_LAST_ERROR));
+		/// The int columns carry DDL default 0 and are read without wasNull (StatementUtil), so "never
+		/// placed" is 0 on the wire, not null; null only when the node was projected without them.
+		m.put("canvasX", node.get(OlioFieldNames.FIELD_PB_CANVAS_X, null));
+		m.put("canvasY", node.get(OlioFieldNames.FIELD_PB_CANVAS_Y, null));
+		m.put("canvasW", node.get(OlioFieldNames.FIELD_PB_CANVAS_W, null));
+		m.put("canvasH", node.get(OlioFieldNames.FIELD_PB_CANVAS_H, null));
 		return m;
 	}
 
@@ -1806,6 +1840,52 @@ public class PbServiceFacade {
 	}
 
 	/**
+	 * The objectId of {@code workflow.lastRun}, or null when no run has ever been submitted.
+	 * <p>
+	 * {@code PbGraphUtil.workflowRequest()} deliberately omits {@code lastRun} (one half of the
+	 * workflow <-> run cycle), so the record {@code requireWorkflow} hands out never carries it and
+	 * {@link #fkObjectId} on it would always be null. The pointer is re-read here, as the caller, with a
+	 * projection that names {@code lastRun}; the nested run arrives with its common fields (which include
+	 * {@code objectId}), and if a build ever trims that to the bare id the run is read by id instead.
+	 */
+	private static String lastRunObjectIdOf(BaseRecord user, BaseRecord workflow) {
+		String wfOid = workflow.get(FieldNames.FIELD_OBJECT_ID);
+		if(wfOid == null) {
+			return null;
+		}
+		long orgId = (long) workflow.get(FieldNames.FIELD_ORGANIZATION_ID);
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_WORKFLOW, FieldNames.FIELD_OBJECT_ID, wfOid);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
+			OlioFieldNames.FIELD_PB_LAST_RUN });
+		q.setCache(false);
+		BaseRecord fresh = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		if(fresh == null || !fresh.hasField(OlioFieldNames.FIELD_PB_LAST_RUN)) {
+			return null;
+		}
+		BaseRecord lastRun = fresh.get(OlioFieldNames.FIELD_PB_LAST_RUN);
+		if(lastRun == null) {
+			return null;
+		}
+		String oid = (lastRun.hasField(FieldNames.FIELD_OBJECT_ID) ? lastRun.get(FieldNames.FIELD_OBJECT_ID) : null);
+		if(oid != null) {
+			return oid;
+		}
+		Object id = (lastRun.hasField(FieldNames.FIELD_ID) ? lastRun.get(FieldNames.FIELD_ID) : null);
+		if(!(id instanceof Number) || ((Number) id).longValue() <= 0L) {
+			return null;
+		}
+		Query rq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_RUN, FieldNames.FIELD_ID, ((Number) id).longValue());
+		rq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		rq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID });
+		rq.setCache(false);
+		BaseRecord run = IOSystem.getActiveContext().getAccessPoint().find(user, rq);
+		return (run != null ? run.get(FieldNames.FIELD_OBJECT_ID) : null);
+	}
+
+	/**
 	 * Ordered scene pages for a PB2 book, each with scene metadata and the composite artifact's
 	 * data objectId (or null when no composite has been generated yet).
 	 * <p>
@@ -1853,15 +1933,17 @@ public class PbServiceFacade {
 			p.put("imageStale", scene.get(OlioFieldNames.FIELD_PB_IMAGE_STALE));
 
 			String dataObjectId = null;
+			BaseRecord node = null;
+			BaseRecord artifact = null;
 			if(!nodeMap.isEmpty()) {
 				BaseRecord sceneNodeRef = scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE);
 				if(sceneNodeRef != null) {
 					Object nodeIdObj = sceneNodeRef.get(FieldNames.FIELD_ID);
 					Long nodeId = (nodeIdObj instanceof Number) ? ((Number) nodeIdObj).longValue() : null;
 					if(nodeId != null) {
-						BaseRecord node = nodeMap.get(nodeId);
+						node = nodeMap.get(nodeId);
 						if(node != null) {
-							BaseRecord artifact = PbArtifactUtil.findSelected(user, node, pageArtifactRole(node));
+							artifact = PbArtifactUtil.findSelected(user, node, pageArtifactRole(node));
 							if(artifact != null) {
 								BaseRecord data = artifact.get(OlioFieldNames.FIELD_PB_DATA);
 								if(data != null) {
@@ -1877,6 +1959,14 @@ public class PbServiceFacade {
 				dataObjectId = (String) scene.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID);
 			}
 			p.put("dataObjectId", dataObjectId);
+			/// Phase-1 per-page controls (V3 P1-10): the node this page shows, its STORED status (no scan
+			/// here - the page list must stay one read per page), and the selected artifact's review state.
+			/// reviewStatusOf folds a null artifact to GENERATED, so "no artifact" is emitted as null here.
+			p.put("sceneNodeObjectId", (node != null ? node.get(FieldNames.FIELD_OBJECT_ID) : null));
+			p.put("nodeStatus", (node != null ? enumString(node, OlioFieldNames.FIELD_PB_NODE_STATUS) : null));
+			p.put("pinned", Boolean.valueOf(node != null && Boolean.TRUE.equals(node.get(OlioFieldNames.FIELD_PB_PINNED, null))));
+			p.put("reviewStatus", (artifact != null ? PbArtifactUtil.reviewStatusOf(artifact).name() : null));
+			p.put("artifactObjectId", (artifact != null ? artifact.get(FieldNames.FIELD_OBJECT_ID) : null));
 
 			// The viewer builds a MediaServlet URL (/media/{dotPath}/data.data{groupPath}/{name}),
 			// which is path-based, not objectId-based. Neither path above yields those fields: the

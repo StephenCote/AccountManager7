@@ -11,7 +11,7 @@ import { applicationPath } from '../core/config.js';
 import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
 import { ObjectPicker } from '../components/picker.js';
-import { bookPages } from '../workflows/pictureBookWorkflow.js';
+import { bookPages, unpinNode } from '../workflows/pictureBookWorkflow.js';
 import { resolveImageUrl, pollJob, cancelJob, listJobs } from '../workflows/sceneExtractor.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
@@ -213,10 +213,46 @@ async function putBookSettings(bookObjectId, sparse) {
 //   llmDegraded:true         → the scene DID render (rendered:true) but on the STORED prompt because
 //                              the LLM prompt step was unavailable (implies llmUnavailable:true).
 // A benign un-prompted skip is skipped:true && llmUnavailable:false (poem just needs Analyze).
-async function renderChapBookScene(sceneObjectId, chatConfigName, sdConfig, sdPrompt) {
+//
+// V3 (P1-10 S8): on the graph render path (chapbook.renderPath=v3) the same call submits the page's
+// pb.render job. The server waits a bounded time; a job that finishes inside it answers 200 exactly as
+// v1 does (plus the v3 keys below), one that does not answers 202 { pending:true, jobId, nodeObjectId }
+// and this function polls GET /rest/job/{jobId} to the terminal job, reads the page's outcome off
+// result.nodes[] and re-reads the scene row for the new imageObjectId (the job outcome carries the
+// artifact, not the image). Every response now carries renderPath ('v1'|'v3'); the v3 keys
+// (renderPath, pending, jobId, runObjectId, nodeObjectId, artifactObjectId, nodeStatus, reviewStatus)
+// are attached to the result only when the server sent renderPath, so v1 callers see the 5-key shape.
+//   opts.renderPath          'v3'|'v1' — the chapbook render path (chapBookRenderPath()); resolved ONCE
+//                            per action by the caller, never per scene.
+//   opts.sceneConfigOverride the scene's persisted configOverride when the caller already has it; absent
+//                            or blank → re-read before the overlay merge (null is ambiguous on the review
+//                            page: "no override" vs "backfill failed").
+//   opts.pollIntervalMs / opts.pollDeadlineMs / opts.onJobProgress / opts.signal → pollJob.
+// The per-request sdConfig overlay is only ever the save-failed fallback from syncBookSdConfigForRender
+// (the book row carries the dialog values otherwise). The v3 page node renders from the stored book row
+// + scene.configOverride and IGNORES the request's sdConfig (ChapBookUtil.renderResolvedScene hands
+// clientSdConfig only to the v1 branch), so on v3 the overlay is persisted as the scene's sparse
+// configOverride FIRST — merged UNDER any existing scene override (the scene's own override wins, G-32
+// precedence) — and the result carries `overridePersisted` so the caller can mirror it on its scene.
+async function renderChapBookScene(sceneObjectId, chatConfigName, sdConfig, sdPrompt, opts) {
+    let o = opts || {};
+    let overlay = (sdConfig && Object.keys(sdConfig).length > 0) ? sdConfig : null;
+    let overridePersisted;
+    if (overlay && o.renderPath === 'v3') {
+        let existing = (typeof o.sceneConfigOverride === 'string' && o.sceneConfigOverride.trim()) ? o.sceneConfigOverride : null;
+        if (existing == null) {
+            let cur = await loadSceneRenderFields(sceneObjectId);
+            existing = cur ? cur.configOverride : null;
+        }
+        let merged = mergeSceneOverlay(overlay, existing);
+        if (merged != null) {
+            await putSceneConfigOverride(sceneObjectId, merged);
+            overridePersisted = merged;
+        }
+    }
     let body = { schema: 'olio.pictureBookRequest' };
     if (chatConfigName) body.chatConfig = chatConfigName;
-    if (sdConfig && Object.keys(sdConfig).length > 0) body.sdConfig = sdConfig;
+    if (overlay) body.sdConfig = overlay;
     // Per-scene landscape-prompt override: when a non-blank prompt is supplied the backend persists it
     // AND renders it verbatim (no LLM regeneration). Omitted / blank → the body carries no sdPrompt and
     // the call behaves exactly as before (backend resolves a landscape prompt itself). Sent verbatim
@@ -228,19 +264,178 @@ async function renderChapBookScene(sceneObjectId, chatConfigName, sdConfig, sdPr
         credentials: 'include',
         body: JSON.stringify(body)
     });
-    if (!resp.ok) {
-        let err = null;
-        try { err = await resp.json(); } catch (_) {}
-        throw new Error('Scene render failed: ' + ((err && err.error) || resp.status));
+    if (!resp.ok) throw await sceneRenderError(resp);
+    let result = coerceSceneRenderResult((await resp.json()) || {});
+    if (resp.status === 202 || result.pending) {
+        if (!result.jobId) throw new Error('Scene render failed: the page render is pending but the server sent no jobId');
+        let job = await pollJob(result.jobId, {
+            intervalMs: o.pollIntervalMs, deadlineMs: o.pollDeadlineMs, onProgress: o.onJobProgress, signal: o.signal
+        });
+        let outcome = v3JobOutcome(job, result.nodeObjectId);
+        if (outcome.pinnedSkipped) {
+            // The job ran into a pin the planner did not refuse (pinned between submit and execution). Same
+            // shape as the 409 so the caller's confirm flow applies; never unpinned here.
+            let err = new Error('Scene render failed: ' + outcome.error);
+            err.pinned = true;
+            err.error = outcome.error;
+            throw err;
+        }
+        result.pending = false;
+        result.nodeStatus = outcome.nodeStatus || result.nodeStatus;
+        result.artifactObjectId = outcome.artifactObjectId;
+        result.reviewStatus = outcome.reviewStatus;
+        result.rendered = outcome.ok;
+        result.skipped = false;
+        if (outcome.ok) {
+            let fresh = null;
+            try { fresh = await loadSceneRenderFields(sceneObjectId); } catch (_) {}
+            result.imageObjectId = (fresh && fresh.imageObjectId) ? fresh.imageObjectId : null;
+        } else {
+            result.llmDegraded = false;   // degraded only ever accompanies a render (ChapBookUtil.v3PageResult)
+            result.error = outcome.error;
+        }
     }
-    let result = (await resp.json()) || {};
-    return {
-        imageObjectId: result.imageObjectId != null ? result.imageObjectId : null,
-        rendered: !!result.rendered,
-        skipped: !!result.skipped,
-        llmUnavailable: !!result.llmUnavailable,
-        llmDegraded: !!result.llmDegraded
+    if (overridePersisted !== undefined) result.overridePersisted = overridePersisted;
+    return result;
+}
+
+// Uniform non-2xx error for the per-scene generate call. Keeps the "Scene render failed: <server error>"
+// message the callers toast, and rides `status`, `error` (the server's {error} text) and the raw `body`
+// on the Error so a 409 can be classified (pinned vs un-prompted) without re-parsing the message.
+// Tolerates a Response (or test stub) that exposes only json() or only text().
+async function sceneRenderError(resp) {
+    let raw = '';
+    try {
+        if (typeof resp.text === 'function') raw = await resp.text();
+        else if (typeof resp.json === 'function') { let j = await resp.json(); raw = (j == null) ? '' : JSON.stringify(j); }
+    } catch (_) {}
+    let msg = '';
+    if (raw) {
+        try {
+            let j = JSON.parse(raw);
+            if (j && typeof j === 'object') {
+                if (typeof j.error === 'string') msg = j.error;
+                else if (typeof j.message === 'string') msg = j.message;
+            }
+        } catch (_) {}
+    }
+    let err = new Error('Scene render failed: ' + (msg || resp.status));
+    err.status = resp.status;
+    err.error = msg || null;
+    err.body = raw;
+    return err;
+}
+
+// Pure: is a per-scene render failure the v3 "page node is pinned" refusal? The facade's 409 reads
+// "Node <handle> is pinned. Unpin it first - pinning means do not replace this artifact." (a different
+// shape from the planner's "(N reused, M pinned)" that workflows/pictureBookWorkflow.isPinnedRefusal
+// matches), and a job that met the pin after submit surfaces with err.pinned. The un-prompted 409
+// ("Page N has no prompt") is NOT a pinned refusal. Exported for tests.
+function isChapBookPinnedRefusal(err) {
+    if (!err) return false;
+    if (err.pinned === true) return true;
+    if (err.status !== 409) return false;
+    let text = String(err.error || '') + ' ' + String(err.message || '') + ' ' + String(err.body || '');
+    return /\bis pinned\b/i.test(text);
+}
+
+// Pure: the per-scene generate response → the documented result. The five v1 keys are always present;
+// the v3 keys only when the server sent renderPath (every current server response does; older bodies and
+// the v1 unit fixtures do not). Enum-ish strings are upper-cased (list projections may read lowercase).
+function coerceSceneRenderResult(body) {
+    let r = body || {};
+    let out = {
+        imageObjectId: r.imageObjectId != null ? r.imageObjectId : null,
+        rendered: !!r.rendered,
+        skipped: !!r.skipped,
+        llmUnavailable: !!r.llmUnavailable,
+        llmDegraded: !!r.llmDegraded
     };
+    if (r.renderPath != null) {
+        out.renderPath = String(r.renderPath).toLowerCase();
+        out.pending = !!r.pending;
+        out.jobId = r.jobId != null ? r.jobId : null;
+        out.runObjectId = r.runObjectId != null ? r.runObjectId : null;
+        out.nodeObjectId = r.nodeObjectId != null ? r.nodeObjectId : null;
+        out.artifactObjectId = r.artifactObjectId != null ? r.artifactObjectId : null;
+        out.nodeStatus = r.nodeStatus != null ? String(r.nodeStatus).toUpperCase() : null;
+        out.reviewStatus = r.reviewStatus != null ? String(r.reviewStatus).toUpperCase() : null;
+    }
+    return out;
+}
+
+// Pure: read a terminal pb.render job back into the page's outcome, mirroring ChapBookUtil.v3PageResult:
+// the node's entry in result.nodes[] (by nodeObjectId; the page job plans exactly one node, so a lone
+// entry is accepted when the id is unknown), ok only when the job COMPLETED (lowercase on the wire —
+// JobService.describe) AND the node is DONE / DONE_UNVERIFIED AND an artifact was recorded. The image
+// objectId is NOT in the outcome (PbRenderJobUtil copies nodeStatus/artifactObjectId/review fields only);
+// the caller re-reads the scene row for it. Exported for tests.
+function v3JobOutcome(job, nodeObjectId) {
+    let j = job || {};
+    let res = (j.result && typeof j.result === 'object') ? j.result : {};
+    let nodes = Array.isArray(res.nodes) ? res.nodes : [];
+    let outcome = null;
+    if (nodeObjectId) outcome = nodes.find(function (n) { return n && n.nodeObjectId === nodeObjectId; }) || null;
+    if (!outcome && !nodeObjectId && nodes.length === 1) outcome = nodes[0];
+    let jobStatus = String(j.status || '').toLowerCase();
+    let nodeStatus = (outcome && outcome.status != null) ? String(outcome.status).toUpperCase() : null;
+    let done = nodeStatus === 'DONE' || nodeStatus === 'DONE_UNVERIFIED';
+    let artifactObjectId = (outcome && outcome.artifactObjectId != null) ? outcome.artifactObjectId : null;
+    let ok = jobStatus === 'completed' && done && artifactObjectId != null;
+    let pinnedSkipped = nodeStatus === 'SKIPPED_PINNED';
+    let error = null;
+    if (pinnedSkipped) error = 'Page node ' + ((outcome && outcome.handle) || '') + ' is pinned. Unpin it first - pinning means do not replace this artifact.';
+    else if (!ok) {
+        error = (outcome && outcome.error) || j.error || res.error
+            || ('job ' + (jobStatus || 'unknown') + ', node ' + (nodeStatus || 'unknown'));
+    }
+    return {
+        ok: ok,
+        pinnedSkipped: pinnedSkipped,
+        nodeStatus: nodeStatus,
+        artifactObjectId: artifactObjectId,
+        reviewStatus: (outcome && outcome.reviewStatus != null) ? String(outcome.reviewStatus).toUpperCase() : null,
+        autoApproved: !!(outcome && outcome.autoApproved),
+        error: error
+    };
+}
+
+// The chapbook render path from GET /rest/config/render-path ({ picturebook, chapbook }, each 'v1'|'v3'),
+// normalised to 'v3' | 'v1'; any failure or odd shape is 'v1' (the server's own default). Resolved once
+// per action (one bulk render, one per-page click) — not cached across actions, so an admin change to
+// the setting is picked up without a reload, and never per scene or per poll.
+async function chapBookRenderPath() {
+    try {
+        let rp = await am7client.getRenderPath();
+        return (rp && typeof rp === 'object' && String(rp.chapbook || '').toLowerCase() === 'v3') ? 'v3' : 'v1';
+    } catch (_) {
+        return 'v1';
+    }
+}
+
+// Pure: the sparse scene override to persist before a v3 render when a one-shot sdConfig overlay is in
+// play — overlay fields first, then the scene's existing override on top (the scene's own override wins).
+// Identity / schema keys are dropped and the schema key re-added so the backend's parseOverride accepts
+// it. Returns the JSON string, or null when there is nothing to persist. Exported for tests.
+function mergeSceneOverlay(overlay, existingOverride) {
+    let skip = new Set(SD_CONFIG_IDENTITY.concat([am7model.jsonModelKey]));
+    let out = {};
+    Object.keys(overlay || {}).forEach(function (k) {
+        if (skip.has(k)) return;
+        let v = overlay[k];
+        if (v === undefined || v === null) return;
+        out[k] = v;
+    });
+    let prev = parseConfigOverride(existingOverride);
+    if (prev) {
+        Object.keys(prev).forEach(function (k) {
+            if (skip.has(k) || prev[k] === undefined) return;
+            out[k] = prev[k];
+        });
+    }
+    if (!Object.keys(out).length) return null;
+    out[am7model.jsonModelKey] = 'olio.sd.config';
+    return JSON.stringify(out);
 }
 
 // ── Per-scene prompt / analysis (prompt & analysis ONLY — neither renders an SD image) ─────────
@@ -1189,7 +1384,7 @@ async function renderScenesSerially(sceneOids, generateOne, hooks) {
     hooks = hooks || {};
     let sleepFn = hooks.sleep || function () { return Promise.resolve(); };
     let total = sceneOids.length;
-    let rendered = 0, skipped = 0, failed = 0, llmUnavailable = 0, llmDegraded = 0, done = 0;
+    let rendered = 0, skipped = 0, failed = 0, llmUnavailable = 0, llmDegraded = 0, pinnedLeft = 0, done = 0;
     let firstGeneration = true;
     for (let i = 0; i < sceneOids.length; i++) {
         let oid = sceneOids[i];
@@ -1204,11 +1399,14 @@ async function renderScenesSerially(sceneOids, generateOne, hooks) {
             // benign "need prompts" skip — so the bulk summary can flag it separately. Only a BENIGN
             // skip (skipped && !llmUnavailable) counts toward `skipped`; a hard skip counts only under
             // llmUnavailable, and a degraded render counts under BOTH rendered and llmUnavailable.
+            // S8 (v3): a page left pinned (result.pinned) is neither rendered, skipped nor failed — the
+            // bulk path NEVER unpins (mirrors the server's bulk SKIPPED_PINNED) and reports the count.
             if (result && result.rendered) rendered++;
+            else if (result && result.pinned) pinnedLeft++;
             else if (result && result.skipped && !result.llmUnavailable) skipped++;
             if (result && result.llmUnavailable) llmUnavailable++;
             if (result && result.llmDegraded) llmDegraded++;
-            if (hooks.onProgress) hooks.onProgress(oid, 'done', done + 1, total);
+            if (hooks.onProgress) hooks.onProgress(oid, (result && result.pinned) ? 'pinned' : 'done', done + 1, total);
             if (result && result.imageObjectId && hooks.onImage) hooks.onImage(oid, result.imageObjectId);
         } catch (e) {
             failed++;
@@ -1216,24 +1414,47 @@ async function renderScenesSerially(sceneOids, generateOne, hooks) {
         }
         done++;
     }
-    return { rendered: rendered, failed: failed, skipped: skipped, llmUnavailable: llmUnavailable, llmDegraded: llmDegraded, total: total };
+    let out = { rendered: rendered, failed: failed, skipped: skipped, llmUnavailable: llmUnavailable, llmDegraded: llmDegraded, total: total };
+    if (pinnedLeft > 0) out.pinnedLeft = pinnedLeft;
+    return out;
+}
+
+// The bulk-path result for a page that stays pinned: no image, not a failure, counted as pinnedLeft.
+function pinnedSceneResult(message) {
+    return { imageObjectId: null, rendered: false, skipped: false, llmUnavailable: false, llmDegraded: false, pinned: true, error: message || null };
 }
 
 // Gap 6: fetch the book's scenes then drive the per-scene endpoint serially. Replaces the single
 // bulk /render/{bookObjectId} call (which renders every scene on one server thread and times out at
 // the gateway for multi-page books). onSceneImage(oid, url) lets a view refresh a page's image in
 // place as each scene completes.
+// S8 (v3): the render path is resolved once here and handed to every scene call; each v3 scene is
+// submit → poll → next (the server's per-page job is awaited before the cooldown, so the shared SD
+// server still sees one page at a time). A page whose node is pinned (bookPages' `pinned`, always a
+// boolean) is not submitted — it would 409 — and a pinned refusal from the server is folded to the same
+// "left pinned" outcome. The bulk path never unpins and never asks: the per-page Re-render / Regenerate
+// buttons on the review page are where the explicit "Unpin and re-render" confirmation lives.
 async function renderChapBookScenes(bookObjectId, chatConfigName, sdConfig, onSceneImage) {
     let pages = await bookPages(bookObjectId);
     pages = Array.isArray(pages) ? pages : [];
+    let renderPath = await chapBookRenderPath();
     let sceneOids = pages.map(function (p) { return p.objectId; }).filter(Boolean);
+    let pinnedByScene = {};
+    pages.forEach(function (p) { if (p && p.objectId && p.pinned === true) pinnedByScene[p.objectId] = true; });
     renderProgress = {};
     renderSceneUrls = {};
     renderTotal = sceneOids.length;
     renderDone = 0;
     m.redraw();
     return renderScenesSerially(sceneOids, function (oid) {
-        return renderChapBookScene(oid, chatConfigName, sdConfig);
+        if (renderPath === 'v3' && pinnedByScene[oid]) {
+            return Promise.resolve(pinnedSceneResult('page node is pinned'));
+        }
+        return renderChapBookScene(oid, chatConfigName, sdConfig, undefined, { renderPath: renderPath, bookObjectId: bookObjectId })
+            .catch(function (e) {
+                if (isChapBookPinnedRefusal(e)) return pinnedSceneResult(e.error || e.message);
+                throw e;
+            });
     }, {
         sleep: sleep,
         onProgress: function (oid, status, done, total) {
@@ -1302,23 +1523,26 @@ function renderResultMessage(result) {
     let skipped = r.skipped || 0;
     let failed = r.failed || 0;
     let llmUnavailable = r.llmUnavailable || 0;
-    if (!skipped && !failed && !llmUnavailable) {
+    let pinnedLeft = r.pinnedLeft || 0;
+    if (!skipped && !failed && !llmUnavailable && !pinnedLeft) {
         return 'Render complete: ' + rendered + ' scene(s) generated';
     }
     let msg = 'Render complete: ' + rendered + ' generated';
     if (skipped > 0) msg += ', ' + skipped + ' skipped (need prompts)';
     if (failed > 0) msg += ', ' + failed + ' failed';
+    // S8 (v3): pinned pages are left as they are by a bulk render — say so, and where to act on it.
+    if (pinnedLeft > 0) msg += ', ' + pinnedLeft + ' left pinned (unpin from the page\'s Re-render to replace)';
     if (llmUnavailable > 0) msg += ' — ' + llmUnavailable + ' scene(s) affected by an unavailable LLM/chat config';
     return msg;
 }
 
 // Severity for the render-complete toast. Escalate to 'error' when any scene hit a hard LLM/chat-config
 // fault (llmUnavailable) — that is an infra/config problem the user must act on, not a benign skip.
-// Otherwise warn when anything was skipped or failed, else success. Pure — unit-tested.
+// Otherwise warn when anything was skipped, failed or left pinned, else success. Pure — unit-tested.
 function renderResultLevel(result) {
     let r = result || {};
     if ((r.llmUnavailable || 0) > 0) return 'error';
-    if ((r.failed || 0) > 0 || (r.skipped || 0) > 0) return 'warn';
+    if ((r.failed || 0) > 0 || (r.skipped || 0) > 0 || (r.pinnedLeft || 0) > 0) return 'warn';
     return 'success';
 }
 
@@ -2836,6 +3060,37 @@ async function loadSceneFields(sceneObjectId) {
     return null;
 }
 
+// S8: the three scene fields a v3 page render reads back — the image the page node pointed the scene at
+// (PbNodeExecutor.executeChapBookPage patches imageObjectId + imageStale; the job outcome carries only the
+// artifact) and the persisted override the one-shot overlay is merged under. Same by-objectId, cache:false
+// search idiom as loadSceneFields (never /full: planMost chains through sceneNode → workflow → run and
+// exceeds the depth limit; never nodeView: it runs the drift scan). Returns null when the scene is gone.
+async function loadSceneRenderFields(sceneObjectId) {
+    let resp = await fetch(applicationPath + '/rest/model/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+            schema: 'io.query',
+            type: 'olio.pb.scene',
+            cache: false,
+            request: ['id', 'objectId', 'configOverride', 'imageObjectId', 'imageStale'],
+            fields: [{ name: 'objectId', comparator: 'EQUALS', value: sceneObjectId }],
+            recordCount: 1
+        })
+    });
+    if (!resp.ok) throw new Error('Load scene failed: ' + resp.status);
+    let body = await resp.json();
+    let row = Array.isArray(body) ? body[0] : (body && body.results) ? body.results[0] : null;
+    if (!row) return null;
+    return {
+        objectId: row.objectId,
+        configOverride: row.configOverride || null,
+        imageObjectId: row.imageObjectId || null,
+        imageStale: !!row.imageStale
+    };
+}
+
 // Gap 8 + skip-render + toolbar: batch-read every scene's persisted per-page fields in one query.
 // bookPages()/pages projects none of these, so they are fetched here scoped by groupId + organizationId
 // (both NUMBERS — a data.directory-derived list query needs an explicit organizationId or PBAC denies),
@@ -2984,6 +3239,10 @@ async function loadReviewBook(bookObjectId) {
                 sdPrompt: pg.sdPrompt || '',
                 imageObjectId: pg.imageObjectId || pg.dataObjectId || null,
                 imageStale: !!pg.imageStale,
+                // S8 (v3): the page's graph node (absent on v1 / before the first v3 render) and its pin
+                // state (always a boolean on the wire) — what the "Unpin and re-render" confirm acts on.
+                sceneNodeObjectId: pg.sceneNodeObjectId || null,
+                pinned: pg.pinned === true,
                 // Per-page mood (bookPages does not project it; backfilled from the override batch-read
                 // below and refreshed by the per-page Analyze button).
                 mood: pg.mood || '',
@@ -3470,28 +3729,92 @@ async function doRegenerateScene(idx) {
         let chatConfigName = await fetchDefaultChatConfigName();
         // P0-10d: book-level SD config is persisted first; the overlay is only the save-failed fallback.
         let { sdConfig } = await syncBookSdConfigForRender(bookObjectId);
-        let result = await renderChapBookScene(scene.objectId, chatConfigName, sdConfig || {});
-        let signal = sceneLlmSignal(result);
-        if (result && result.rendered) {
-            scene.imageObjectId = result.imageObjectId;
-            // A degraded render (rendered on the STORED prompt because the LLM step was down) still
-            // produced an image, but the user must know it did NOT use a fresh prompt — warn distinctly.
-            if (signal) page.toast(signal.level, signal.message);
-            else page.toast('success', 'Scene regenerated');
-        } else if (signal) {
-            // llmUnavailable && skipped: the LLM step could not run AND there was no usable stored
-            // prompt, so nothing was rendered — a distinct hard error, NOT the benign "run Analyze".
-            page.toast(signal.level, signal.message);
-        } else if (result && result.skipped) {
-            page.toast('warn', 'Still no usable prompt — Analyze the poem or edit the stanza, then regenerate');
+        let renderPath = await chapBookRenderPath();
+        let result = await renderPageWithPinConfirm(scene, bookObjectId, function () {
+            return renderChapBookScene(scene.objectId, chatConfigName, sdConfig || {}, undefined,
+                { renderPath: renderPath, bookObjectId: bookObjectId, sceneConfigOverride: scene.configOverride });
+        });
+        if (result === null) {
+            // Pinned and the user kept it pinned (or the node could not be resolved) — already toasted.
         } else {
-            page.toast('error', 'Regenerate failed');
+            applyPageRenderResult(scene, result);
+            let signal = sceneLlmSignal(result);
+            if (result && result.rendered) {
+                // A degraded render (rendered on the STORED prompt because the LLM step was down) still
+                // produced an image, but the user must know it did NOT use a fresh prompt — warn distinctly.
+                if (signal) page.toast(signal.level, signal.message);
+                else page.toast('success', 'Scene regenerated');
+            } else if (signal) {
+                // llmUnavailable && skipped: the LLM step could not run AND there was no usable stored
+                // prompt, so nothing was rendered — a distinct hard error, NOT the benign "run Analyze".
+                page.toast(signal.level, signal.message);
+            } else if (result && result.skipped) {
+                page.toast('warn', 'Still no usable prompt — Analyze the poem or edit the stanza, then regenerate');
+            } else {
+                page.toast('error', 'Regenerate failed' + (result && result.error ? ': ' + result.error : ''));
+            }
         }
     } catch (e) {
         page.toast('error', 'Regenerate failed: ' + (e.message || ''));
     }
     scene._saving = false;
     m.redraw();
+}
+
+// S8 (v3): mirror a per-page render result onto the review card. The image id is only taken when the
+// result carries one (a v3 page whose image could not be read back keeps its previous preview rather
+// than losing it), and an overlay the render persisted as the scene's override is reflected so the
+// card's override editor shows what the server will now use.
+function applyPageRenderResult(scene, result) {
+    if (!scene || !result) return;
+    if (result.imageObjectId) scene.imageObjectId = result.imageObjectId;
+    if (result.overridePersisted !== undefined) {
+        scene.configOverride = result.overridePersisted;
+        resetSceneOverride(scene.objectId);
+        if (scene._dirty) scene._dirty.delete('override');
+    }
+}
+
+// S8 (v3): run one per-page render. A pinned refusal (the facade's 409, or a job that met the pin) is
+// never acted on silently: the server's own message is shown and the ONLY thing that unpins is the
+// user's explicit "Unpin and re-render" confirmation, after which the same render is run once more.
+// Resolves to the render result, or null when the page stays pinned (declined, or no node to unpin —
+// both toasted here). Any other error propagates to the caller's catch. Exported for tests.
+async function renderPageWithPinConfirm(scene, bookObjectId, runRender) {
+    try {
+        return await runRender();
+    } catch (e) {
+        if (!isChapBookPinnedRefusal(e)) throw e;
+        let nodeOid = scene.sceneNodeObjectId || null;
+        if (!nodeOid) {
+            // Older review state (loaded before the page had a node) — read the page list fresh.
+            let pages = await bookPages(bookObjectId);
+            let pg = (Array.isArray(pages) ? pages : []).find(function (p) { return p && p.objectId === scene.objectId; });
+            nodeOid = (pg && pg.sceneNodeObjectId) || null;
+            if (nodeOid) scene.sceneNodeObjectId = nodeOid;
+        }
+        scene.pinned = true;
+        let serverMsg = e.error || e.message || 'This page is pinned.';
+        if (!nodeOid) {
+            page.toast('error', serverMsg + ' The page\'s node could not be found, so it cannot be unpinned from here.');
+            return null;
+        }
+        let label = (scene.sceneIndex != null) ? 'Page ' + scene.sceneIndex : 'This page';
+        let ok = await Dialog.confirm({
+            title: label + ' is pinned',
+            message: serverMsg + ' Unpin this page\'s node and re-render it? The pinned image stays in the page\'s artifact history.',
+            confirmLabel: 'Unpin and re-render',
+            confirmIcon: 'push_pin',
+            destructive: true
+        });
+        if (!ok) {
+            page.toast('info', label + ' left pinned');
+            return null;
+        }
+        await unpinNode(bookObjectId, nodeOid);
+        scene.pinned = false;
+        return await runRender();
+    }
 }
 
 // Landscape-prompt save is folded into the per-card Save (saveSceneRecord PUTs .../scene/{oid}/prompt
@@ -3515,22 +3838,30 @@ async function doRerenderScene(idx) {
         let chatConfigName = prompt ? null : await fetchDefaultChatConfigName();
         // P0-10d: book-level SD config is persisted first; the overlay is only the save-failed fallback.
         let { sdConfig } = await syncBookSdConfigForRender(bookObjectId);
-        let result = await renderChapBookScene(scene.objectId, chatConfigName, sdConfig || {}, scene.sdPrompt);
-        let signal = sceneLlmSignal(result);
-        if (result && result.rendered) {
-            scene.imageObjectId = result.imageObjectId;
-            await refreshSceneImage(scene);
-            // A degraded render (rendered on the stored prompt because the LLM step was down) still
-            // produced an image, but the user must know it did NOT use a fresh prompt — warn distinctly.
-            if (signal) page.toast(signal.level, signal.message);
-            else page.toast('success', 'Page re-rendered');
-        } else if (signal) {
-            // llmUnavailable && skipped: the LLM step could not run AND there was no usable prompt.
-            page.toast(signal.level, signal.message);
-        } else if (result && result.skipped) {
-            page.toast('warn', 'Still no usable prompt — edit the landscape prompt above, then re-render');
+        let renderPath = await chapBookRenderPath();
+        let result = await renderPageWithPinConfirm(scene, bookObjectId, function () {
+            return renderChapBookScene(scene.objectId, chatConfigName, sdConfig || {}, scene.sdPrompt,
+                { renderPath: renderPath, bookObjectId: bookObjectId, sceneConfigOverride: scene.configOverride });
+        });
+        if (result === null) {
+            // Pinned and the user kept it pinned (or the node could not be resolved) — already toasted.
         } else {
-            page.toast('error', 'Re-render failed');
+            applyPageRenderResult(scene, result);
+            let signal = sceneLlmSignal(result);
+            if (result && result.rendered) {
+                if (result.imageObjectId) await refreshSceneImage(scene);
+                // A degraded render (rendered on the stored prompt because the LLM step was down) still
+                // produced an image, but the user must know it did NOT use a fresh prompt — warn distinctly.
+                if (signal) page.toast(signal.level, signal.message);
+                else page.toast('success', 'Page re-rendered');
+            } else if (signal) {
+                // llmUnavailable && skipped: the LLM step could not run AND there was no usable prompt.
+                page.toast(signal.level, signal.message);
+            } else if (result && result.skipped) {
+                page.toast('warn', 'Still no usable prompt — edit the landscape prompt above, then re-render');
+            } else {
+                page.toast('error', 'Re-render failed' + (result && result.error ? ': ' + result.error : ''));
+            }
         }
     } catch (e) {
         page.toast('error', 'Re-render failed: ' + (e.message || ''));
@@ -3607,6 +3938,8 @@ function renderSceneCard(scene, idx) {
                     ]),
                     m('button', {
                         class: 'px-2 py-1 rounded bg-orange-600 text-white text-xs hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1',
+                        'data-testid': 'cb-page-regenerate',
+                        'data-scene-oid': scene.objectId,
                         title: 'Regenerate this page — resolves a landscape prompt via the LLM, then renders an image',
                         disabled: scene._saving || roleWarning,
                         onclick: function () { doRegenerateScene(idx); }
@@ -3806,7 +4139,9 @@ function renderSceneCard(scene, idx) {
                 ]),
                 m('button', {
                     class: 'cb-rerender-page px-2 py-0.5 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1',
+                    'data-testid': 'cb-page-rerender',
                     'data-scene-oid': oid,
+                    'data-pinned': scene.pinned === true ? '1' : '0',
                     title: 'Re-render just this page using the prompt above — no need to re-render the whole book',
                     disabled: scene._saving || roleWarning,
                     onclick: function () { doRerenderScene(idx); }
@@ -4102,5 +4437,5 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, startCreateChapBook, createChapBookBody, renderChapBookBgActivity, reattachCreateChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, effectiveChatConfigName, computeBookSdDelta, getBookSettings, putBookSettings, saveBookSdConfig, syncBookSdConfigForRender, ensureRenderSdConfig };
+export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, startCreateChapBook, createChapBookBody, renderChapBookBgActivity, reattachCreateChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, effectiveChatConfigName, computeBookSdDelta, getBookSettings, putBookSettings, saveBookSdConfig, syncBookSdConfigForRender, ensureRenderSdConfig, isChapBookPinnedRefusal, coerceSceneRenderResult, v3JobOutcome, mergeSceneOverlay, chapBookRenderPath, renderPageWithPinConfirm, applyPageRenderResult, loadSceneRenderFields };
 export default ChapBookFeature;

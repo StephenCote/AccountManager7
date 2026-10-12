@@ -234,7 +234,7 @@ public final class PbRenderJobUtil {
 		}
 		/// Register on this thread, with the job's own token, then re-check: a job that already finished
 		/// (or was cancelled while QUEUED and swept through onCancelledBeforeStart) must not leave an entry.
-		PbRunCancelRegistry.register(runOid, job.getProgress());
+		PbRunCancelRegistry.register(runOid, job.getProgress(), job.getJobId());
 		if(job.isTerminal()) {
 			PbRunCancelRegistry.unregister(runOid, job.getProgress());
 		}

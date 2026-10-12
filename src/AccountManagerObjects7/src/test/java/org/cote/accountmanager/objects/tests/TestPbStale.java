@@ -7,6 +7,7 @@ import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -14,6 +15,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.appender.AbstractAppender;
+import org.apache.logging.log4j.core.config.LoggerConfig;
+import org.apache.logging.log4j.core.config.Property;
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
@@ -25,6 +33,7 @@ import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
 import org.cote.accountmanager.olio.picturebook.PbServiceFacade;
 import org.cote.accountmanager.olio.picturebook.PbStaleUtil;
 import org.cote.accountmanager.olio.picturebook.PbWatchedFields;
+import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.io.Query;
@@ -37,6 +46,8 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
+import org.cote.accountmanager.util.ErrorUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -506,6 +517,76 @@ public class TestPbStale extends BaseTest {
 		assertEquals(PbNodeStatusEnumType.STALE, statusOf(u, p));
 		assertEquals(PbNodeStatusEnumType.STALE, statusOf(u, s));
 		assertEquals(PbNodeStatusEnumType.STALE, statusOf(u, s2));
+	}
+
+	/**
+	 * V3 P1-10 S0(d): an unregistered {@code refModel} is refused with 400 BEFORE the scan runs. The
+	 * setup is one that a scan would visibly act on - a rendered node whose bound charPerson has since
+	 * been edited - so "no scan ran" is proven by the node still reading DONE and nothing being cached,
+	 * and the same call with the real model name is then shown to mark it STALE.
+	 */
+	@Test
+	public void case06b_affectedByRecordRefusesUnregisteredModelWithoutScanning() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = book(u);
+		BaseRecord wf = workflow(u, bk);
+		String bookOid = bookObjectId(bk);
+
+		BaseRecord p = node(u, wf, "c06b-portrait", PbNodeTypeEnumType.PORTRAIT, 0);
+		BaseRecord c = createCharPerson(u, "c06b-char");
+		String cOid = c.get(FieldNames.FIELD_OBJECT_ID);
+		bindCharacter(u, wf, p, c);
+		markRendered(u, p, bk);
+		patchCharPerson(u, c, "firstName", "After");
+		PbStaleUtil.clear();
+		assertNull("precondition: nothing cached after clear", PbStaleUtil.cached(idOf(wf)));
+
+		/// The refusal must be side-effect-free: a miss in RecordFactory.getSchema runs a DB query, a
+		/// classpath probe and logs a stack trace through ResourceUtil/ErrorUtil, so those loggers are
+		/// captured (TestKontextDeprecation's LoggerConfig pattern) across the refusing call alone.
+		LoggerContext lctx = (LoggerContext) LogManager.getContext(false);
+		LoggerConfig rootCfg = lctx.getConfiguration().getLoggerConfig(ResourceUtil.class.getName());
+		final List<String> resolverLines = java.util.Collections.synchronizedList(new ArrayList<>());
+		final List<String> watched = Arrays.asList(ResourceUtil.class.getName(), ErrorUtil.class.getName(), RecordFactory.class.getName());
+		AbstractAppender capture = new AbstractAppender("c06bResolverCapture", null, null, true, Property.EMPTY_ARRAY) {
+			@Override
+			public void append(LogEvent event) {
+				if(watched.contains(event.getLoggerName()) && event.getLevel().isMoreSpecificThan(Level.WARN)) {
+					resolverLines.add(event.getLoggerName() + ": " + event.getMessage().getFormattedMessage());
+				}
+			}
+		};
+		capture.start();
+		rootCfg.addAppender(capture, Level.WARN, null);
+		try {
+			PbServiceFacade.affectedByRecord(u, bookOid, "no.such.model", cOid);
+			fail("An unregistered refModel must be refused");
+		}
+		catch(PictureBookException e) {
+			assertEquals("unregistered refModel is a 400: " + e.getMessage(), 400, e.getStatus());
+			assertTrue("400 names the refusal: " + e.getMessage(), e.getMessage().startsWith("Unknown refModel"));
+		}
+		finally {
+			rootCfg.removeAppender("c06bResolverCapture");
+			capture.stop();
+		}
+		assertTrue("the refusal must not reach the schema resolver (no ResourceUtil/ErrorUtil/RecordFactory WARN+ lines): " + resolverLines,
+			resolverLines.isEmpty());
+		try {
+			PbServiceFacade.affectedByRecord(null, bookOid, "no.such.model", cOid);
+			fail("No principal must be refused before the model check");
+		}
+		catch(PictureBookException e) {
+			assertEquals("no principal is 401, not a model-registration oracle: " + e.getMessage(), 401, e.getStatus());
+		}
+		assertNull("the refusal must not have run (and cached) a scan", PbStaleUtil.cached(idOf(wf)));
+		assertEquals("the refusal must not have persisted STALE on the drifted node",
+			PbNodeStatusEnumType.DONE, statusOf(u, p));
+
+		/// The same setup through the registered model name proves the scan WOULD have acted.
+		Map<String, Object> real = PbServiceFacade.affectedByRecord(u, bookOid, OlioModelNames.MODEL_CHAR_PERSON, cOid);
+		assertEquals("drifted via the real model: " + real, Boolean.TRUE, real.get("drifted"));
+		assertEquals(PbNodeStatusEnumType.STALE, statusOf(u, p));
 	}
 
 	@Test

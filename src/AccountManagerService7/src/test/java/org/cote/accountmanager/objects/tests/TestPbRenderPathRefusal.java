@@ -245,4 +245,46 @@ public class TestPbRenderPathRefusal extends BaseTest {
 			deleteBareBook(book);
 		}
 	}
+
+	/// P1-10 S0(d): the impact read is NOT behind the render-path switch (it sits on the listStale pattern),
+	/// so under v1 it still reaches the workflow gate on the bare fixture; and an unregistered refModel is
+	/// refused 400 by the facade before any book or workflow read, under either switch setting.
+	@Test
+	public void TestAffectedByIsUngatedAndRefusesAnUnknownRefModel() throws Exception {
+		BaseRecord book = createBareBook(PbBookTypeEnumType.STORY);
+		String bid = book.get(FieldNames.FIELD_OBJECT_ID);
+		try {
+			PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1);
+			Response r1 = service.affectedByRecord(bid, OlioModelNames.MODEL_CHAR_PERSON, "no-such-record", requestAs(user));
+			assertNotEquals("affected-by under v1 must not be refused by the switch", 409, r1.getStatus());
+			assertEquals("the bare fixture has no workflow, so the read 404s at the workflow gate", 404, r1.getStatus());
+			assertTrue(String.valueOf(body(r1).get("error")).contains("no workflow"));
+
+			Response bad = service.affectedByRecord(bid, "no.such.model", "no-such-record", requestAs(user));
+			assertEquals("an unregistered refModel is 400", 400, bad.getStatus());
+			String msg = String.valueOf(body(bad).get("error"));
+			assertTrue("400 names the refusal: " + msg, msg.contains("Unknown refModel"));
+
+			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
+			assertEquals(404, service.affectedByRecord(bid, OlioModelNames.MODEL_CHAR_PERSON, "no-such-record", requestAs(user)).getStatus());
+			assertEquals(400, service.affectedByRecord(bid, "no.such.model", "no-such-record", requestAs(user)).getStatus());
+			assertEquals("no principal is 401", 401,
+				service.affectedByRecord(bid, OlioModelNames.MODEL_CHAR_PERSON, "x", new HttpServletRequestMock()).getStatus());
+
+			/// Gate order. The model check precedes the book read (an unknown book with an unknown model is
+			/// 400, not 404), and the principal check precedes both: no principal is 401 even with an unknown
+			/// model, so an unauthenticated caller cannot use the route as a model-registration oracle.
+			Response unknownBoth = service.affectedByRecord("00000000-0000-0000-0000-000000000000", "no.such.model", "x", requestAs(user));
+			assertEquals("unknown book + unknown model is 400 (model check before requireBook)", 400, unknownBoth.getStatus());
+			assertTrue(String.valueOf(body(unknownBoth).get("error")).contains("Unknown refModel"));
+			Response anon = service.affectedByRecord(bid, "no.such.model", "x", new HttpServletRequestMock());
+			assertEquals("no principal + unknown model is 401 (principal check first)", 401, anon.getStatus());
+			assertTrue("401 body must not name the model check: " + body(anon),
+				!String.valueOf(body(anon).get("error")).contains("refModel"));
+		}
+		finally {
+			PbRenderPath.configure(pb0, cb0);
+			deleteBareBook(book);
+		}
+	}
 }

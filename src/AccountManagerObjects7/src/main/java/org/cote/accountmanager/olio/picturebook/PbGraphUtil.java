@@ -1331,7 +1331,9 @@ public class PbGraphUtil {
 			OlioFieldNames.FIELD_PB_PROMPT_TEMPLATE_NAME, OlioFieldNames.FIELD_PB_PROMPT_TEXT,
 			OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, OlioFieldNames.FIELD_PB_INPUT_HASH,
 			OlioFieldNames.FIELD_PB_CONFIG_HASH, OlioFieldNames.FIELD_PB_LAST_ERROR,
-			OlioFieldNames.FIELD_PB_LAST_RUN_AT
+			OlioFieldNames.FIELD_PB_LAST_RUN_AT,
+			OlioFieldNames.FIELD_PB_CANVAS_X, OlioFieldNames.FIELD_PB_CANVAS_Y,
+			OlioFieldNames.FIELD_PB_CANVAS_W, OlioFieldNames.FIELD_PB_CANVAS_H
 		};
 	}
 

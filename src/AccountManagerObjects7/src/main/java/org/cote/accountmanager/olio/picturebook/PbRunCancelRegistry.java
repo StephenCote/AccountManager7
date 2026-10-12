@@ -39,15 +39,30 @@ public final class PbRunCancelRegistry {
 
 	private static final Map<String, SummarizeProgress> registry = new ConcurrentHashMap<>();
 
+	/// The AsyncJobRegistry job id of each in-flight run, under the same key and with the same lifetime as
+	/// its cancel token, so a client holding only the run objectId can find the job to poll.
+	private static final Map<String, String> jobIds = new ConcurrentHashMap<>();
+
 	private PbRunCancelRegistry() {
 	}
 
 	/** Publish {@code progress} as the cancel token for {@code runObjectId}. */
 	public static void register(String runObjectId, SummarizeProgress progress) {
+		register(runObjectId, progress, null);
+	}
+
+	/** Publish {@code progress} as the cancel token for {@code runObjectId}, and {@code jobId} alongside it. */
+	public static void register(String runObjectId, SummarizeProgress progress, String jobId) {
 		if(runObjectId == null || progress == null) {
 			return;
 		}
 		registry.put(runObjectId, progress);
+		if(jobId != null) {
+			jobIds.put(runObjectId, jobId);
+		}
+		else {
+			jobIds.remove(runObjectId);
+		}
 	}
 
 	/** Remove the entry only if it still maps to {@code progress}. */
@@ -55,7 +70,17 @@ public final class PbRunCancelRegistry {
 		if(runObjectId == null || progress == null) {
 			return;
 		}
-		registry.remove(runObjectId, progress);
+		if(registry.remove(runObjectId, progress)) {
+			jobIds.remove(runObjectId);
+		}
+	}
+
+	/** The job id registered alongside the cancel token for {@code runObjectId}, or null once terminal. */
+	public static String jobIdOf(String runObjectId) {
+		if(runObjectId == null || !registry.containsKey(runObjectId)) {
+			return null;
+		}
+		return jobIds.get(runObjectId);
 	}
 
 	/**

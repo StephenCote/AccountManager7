@@ -4,7 +4,8 @@ import { am7model } from '../core/model.js';
 import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import { renderRange } from '../components/formFieldRenderers.js';
-import { listCharacters, tagApparelSceneIndex, mergeCharacters, deleteCharacter, resolveImageUrl } from './sceneExtractor.js';
+import { listCharacters, tagApparelSceneIndex, mergeCharacters, deleteCharacter, resolveImageUrl, pollJob } from './sceneExtractor.js';
+import { getAffectedBy, bookPages, renderScene, unpinNode, isPinnedRefusal } from './pictureBookWorkflow.js';
 import { reimage } from './reimage.js';
 import { outfitBuilder } from './outfitBuilder.js';
 
@@ -51,6 +52,15 @@ let savingIdentity = false;
 // underneath whose in-progress state a route change would discard. Set ONLY from the explicit
 // {standalone: true} option passed by the launch site — never inferred from the dialog stack.
 let standalone = false;
+// V3 (P1-10 S5): "affected scenes" for the selected character. Only in standalone mode (where
+// bookObjectId IS the olio.pb.book objectId the V3 routes take) and only on the v3 render path.
+// getAffectedBy is called once per character-detail open and once after saveIdentity - never per
+// row, never on a poll.
+let renderPath = 'v1';
+let affected = null;          // { forObjectId, loading, data, error }
+let lastSaveKind = null;      // 'watched' | 'unwatched' | 'none' after the last saveIdentity (caveat text)
+let regen = null;             // { total, done, current, aborted } while "Regenerate" runs
+let regenPollIntervalMs = undefined; // pollJob default; Vitest shortens it through the test seam
 
 function resetState() {
     bookObjectId = null;
@@ -68,6 +78,211 @@ function resetState() {
     editDescription = '';
     savingIdentity = false;
     standalone = false;
+    renderPath = 'v1';
+    affected = null;
+    lastSaveKind = null;
+    regen = null;
+}
+
+// ── V3 affected-scenes: pure helpers (exported for Vitest) ──────────────
+
+/** charPerson fields in PbWatchedFields.CHAR_PERSON (watched/v2) - an edit to any of these stales bound nodes. */
+const WATCHED_CHAR_FIELDS = ['name', 'firstName', 'lastName', 'gender', 'age', 'race', 'raceLabel', 'ethnicity', 'hairColor', 'eyeColor', 'hairStyle', 'alignment'];
+
+/**
+ * What the inline identity editor is about to change: 'watched' (name differs - a watched field),
+ * 'unwatched' (only description differs - common.description is NOT in the watched set, nor are
+ * narrative.sdPrompt or statistics), or 'none'.
+ */
+function identityChangeKind(entity, name, description) {
+    let ent = entity || {};
+    let nameChanged = String(name || '').trim() !== String(ent.name || '');
+    let descChanged = String(description || '') !== String(ent.description || '');
+    if (nameChanged) return 'watched';
+    if (descChanged) return 'unwatched';
+    return 'none';
+}
+
+/** Caveat line for the affected panel after a save that touched only unwatched fields; null otherwise. */
+function affectedCaveat(kind) {
+    if (kind !== 'unwatched') return null;
+    return 'Description is not a watched field, so this edit does not mark any scene stale. Watched: '
+        + WATCHED_CHAR_FIELDS.join(', ') + ' (and the pbDescription attribute). narrative.sdPrompt and statistics are not watched.';
+}
+
+/** Normalized GET affected-by result → the numbers the panel shows. */
+function affectedSummary(a) {
+    a = a || {};
+    let idx = Array.isArray(a.affectedSceneIndexes) ? a.affectedSceneIndexes.slice() : [];
+    let stale = Array.isArray(a.staleSceneIndexes) ? a.staleSceneIndexes.slice() : [];
+    return {
+        count: idx.length,
+        sceneIndexes: idx,
+        staleCount: stale.length,
+        boundNodes: a.boundNodes || 0,
+        drifted: !!a.drifted,
+        driftedHandles: Array.isArray(a.driftedHandles) ? a.driftedHandles : []
+    };
+}
+
+/** /pages entries for the given scene indexes, in ascending sceneIndex order (missing indexes dropped). */
+function scenesForIndexes(pages, indexes) {
+    let want = {};
+    (Array.isArray(indexes) ? indexes : []).forEach(function (i) { want[Number(i)] = true; });
+    return (Array.isArray(pages) ? pages : [])
+        .filter(function (p) { return p && p.objectId && want[Number(p.sceneIndex)]; })
+        .sort(function (a, b) { return Number(a.sceneIndex) - Number(b.sceneIndex); });
+}
+
+function v3Enabled() {
+    return standalone && renderPath === 'v3' && !!bookObjectId;
+}
+
+/** The ONE affected-by read for a character detail (open, or post-save re-open). */
+async function loadAffected(charObjectId) {
+    if (!v3Enabled() || !charObjectId) { affected = null; return; }
+    affected = { forObjectId: charObjectId, loading: true, data: null, error: null };
+    m.redraw();
+    try {
+        let data = await getAffectedBy(bookObjectId, 'olio.charPerson', charObjectId);
+        if (!affected || affected.forObjectId !== charObjectId) return;
+        affected.data = data;
+    } catch (e) {
+        if (!affected || affected.forObjectId !== charObjectId) return;
+        affected.error = (e && e.message) || 'Could not load affected scenes';
+    }
+    affected.loading = false;
+    m.redraw();
+}
+
+/** Review → the book's review queue. Standalone only (the manager is the only Dialog open), as openFullEditor. */
+function openReviewQueue() {
+    if (!v3Enabled()) return;
+    Dialog.closeAll();
+    m.route.set('/picture-book/' + bookObjectId + '/review');
+}
+
+/**
+ * Regenerate = serial renderScene over the affected scenes: each POST .../scene/{id}/render?force=true
+ * is a 202 + job, and the next scene is submitted only after that job is terminal (the server caps
+ * in-flight runs per principal). Force: an affected scene whose node is still current (a
+ * description-only edit) is re-rolled rather than refused as "nothing to render". A pinned 409 is
+ * shown verbatim with an explicit "Unpin and re-render" confirmation; declining skips that scene. Any
+ * other non-2xx (429, in-flight 409, ...) is toasted verbatim and stops the loop - never silently
+ * unpins, never retries.
+ */
+async function regenerateAffected() {
+    if (!v3Enabled() || regen || !affected || !affected.data) return;
+    let charId = affected.forObjectId;
+    let s = affectedSummary(affected.data);
+    if (!s.count) return;
+    let book = bookObjectId;
+    regen = { total: s.count, done: 0, current: null, aborted: false, skipped: 0, failed: 0 };
+    m.redraw();
+    let scenes = [];
+    try {
+        scenes = scenesForIndexes(await bookPages(book), s.sceneIndexes);
+    } catch (e) {
+        page.toast('error', (e && e.message) || 'Could not read the book pages');
+        regen = null;
+        m.redraw();
+        return;
+    }
+    if (scenes.length !== s.count) {
+        page.toast('warning', (s.count - scenes.length) + ' affected scene' + (s.count - scenes.length !== 1 ? 's have' : ' has') + ' no page row and will be skipped');
+    }
+    regen.total = scenes.length;
+    for (let i = 0; i < scenes.length; i++) {
+        let pg = scenes[i];
+        if (!regen || regen.aborted) break;
+        regen.current = pg.sceneIndex;
+        m.redraw();
+        let submit;
+        try {
+            submit = await renderScene(book, pg.objectId, { force: true });
+        } catch (e) {
+            if (!(isPinnedRefusal(e) && pg.sceneNodeObjectId)) {
+                page.toast('error', (e && e.message) || 'Render failed');
+                regen.aborted = true;
+                break;
+            }
+            let ok = await Dialog.confirm({
+                title: 'Scene ' + pg.sceneIndex + ' is pinned',
+                message: (e.message || '') + ' — Unpin this scene\'s node and re-render it? The pinned image stays in the artifact history.',
+                confirmLabel: 'Unpin and re-render', confirmIcon: 'push_pin'
+            });
+            if (!ok) { regen.skipped++; regen.done++; continue; }
+            try {
+                await unpinNode(book, pg.sceneNodeObjectId);
+                submit = await renderScene(book, pg.objectId, { force: true });
+            } catch (e2) {
+                page.toast('error', (e2 && e2.message) || 'Render failed');
+                regen.aborted = true;
+                break;
+            }
+        }
+        if (!submit || !submit.jobId) { regen.failed++; regen.done++; continue; }
+        try {
+            let job = await pollJob(submit.jobId, { intervalMs: regenPollIntervalMs });
+            let r = job && job.result;
+            if (job.error || (r && (r.failedNodeCount || String(r.runStatus || '').toUpperCase() === 'FAILED'))) regen.failed++;
+        } catch (e3) {
+            page.toast('error', (e3 && e3.message) || 'Render polling failed');
+            regen.aborted = true;
+            break;
+        }
+        regen.done++;
+        m.redraw();
+    }
+    let r = regen;
+    regen = null;
+    am7client.clearCache('olio.pb.scene', true);
+    if (r && !r.aborted) {
+        page.toast(r.failed ? 'warning' : 'success', 'Regenerated ' + (r.done - r.skipped - r.failed) + ' of ' + r.total + ' scene' + (r.total !== 1 ? 's' : '')
+            + (r.skipped ? ', ' + r.skipped + ' skipped (pinned)' : '') + (r.failed ? ', ' + r.failed + ' failed' : ''));
+    }
+    // The run just changed what the scan sees for this character: one re-read, on completion of the
+    // user's action (not a poll).
+    if (selectedObjectId === charId) await loadAffected(charId);
+    m.redraw();
+}
+
+/** "Affected scenes: N [Review] [Regenerate]" - V3 + standalone only; null otherwise. */
+function renderAffectedPanel() {
+    if (!v3Enabled() || !selectedInst) return null;
+    let a = affected && affected.forObjectId === selectedInst.entity.objectId ? affected : null;
+    let caveat = affectedCaveat(lastSaveKind);
+    let body;
+    if (!a || a.loading) {
+        body = m('span', { class: 'text-xs text-gray-500' }, 'Checking affected scenes…');
+    } else if (a.error) {
+        body = m('span', { 'data-testid': 'pbchar-affected-error', class: 'text-xs text-red-500' }, a.error);
+    } else {
+        let s = affectedSummary(a.data);
+        body = m('div', { class: 'flex items-center gap-2 flex-wrap text-sm' }, [
+            m('span', { 'data-testid': 'pbchar-affected-count', 'data-count': String(s.count) },
+                'Affected scenes: ' + s.count + (s.count ? ' (' + s.sceneIndexes.join(', ') + ')' : '')),
+            s.drifted ? m('span', { 'data-testid': 'pbchar-affected-drifted', class: 'text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200', title: 'Nodes: ' + s.driftedHandles.join(', ') },
+                s.staleCount + ' stale') : null,
+            m('button', {
+                'data-testid': 'pbchar-affected-review',
+                class: 'button text-xs',
+                disabled: !!regen,
+                onclick: openReviewQueue
+            }, 'Review'),
+            m('button', {
+                'data-testid': 'pbchar-affected-regenerate',
+                class: 'button text-xs',
+                disabled: !!regen || !s.count,
+                title: s.count ? 'Re-render every affected scene, one at a time' : 'No scene binds this character',
+                onclick: regenerateAffected
+            }, regen ? ('Regenerating ' + (regen.done + 1) + ' of ' + regen.total + (regen.current != null ? ' (scene ' + regen.current + ')' : '') + '…') : 'Regenerate')
+        ]);
+    }
+    return m('div', { 'data-testid': 'pbchar-affected', class: 'p-2 rounded border border-gray-200 dark:border-gray-700' }, [
+        body,
+        caveat ? m('div', { 'data-testid': 'pbchar-affected-caveat', class: 'text-xs text-gray-500 mt-1' }, caveat) : null
+    ]);
 }
 
 async function refreshList() {
@@ -76,9 +291,11 @@ async function refreshList() {
 }
 
 async function selectCharacter(objectId) {
+    if (objectId !== selectedObjectId) lastSaveKind = null;   // the caveat belongs to the character just saved
     selectedObjectId = objectId;
     selectedInst = null;
     editingIdentity = false;
+    affected = null;
     m.redraw();
     let entity = await am7client.getFull('olio.charPerson', objectId);
     if (!entity) {
@@ -87,6 +304,8 @@ async function selectCharacter(objectId) {
     }
     selectedInst = am7model.prepareInstance(entity, am7model.forms.charPerson);
     m.redraw();
+    // Once per detail open (saveIdentity re-opens the detail, which is its one post-save read).
+    await loadAffected(objectId);
 }
 
 async function patchStatField(statistics, field, value) {
@@ -128,6 +347,7 @@ async function saveIdentity() {
     let desc = editDescription || '';
     let patch = { schema: 'olio.charPerson', id: ent.id, objectId: ent.objectId, name: name };
     if (desc !== (ent.description || '')) patch.description = desc;
+    let changeKind = identityChangeKind(ent, name, desc);
     savingIdentity = true;
     m.redraw();
     try {
@@ -138,6 +358,10 @@ async function saveIdentity() {
         am7client.clearCache('olio.charPerson', true);
         editingIdentity = false;
         page.toast('success', 'Character saved');
+        // selectCharacter re-reads the detail and makes the ONE post-save affected-by call; the
+        // caveat is kept for its panel when only unwatched fields changed.
+        affected = null;
+        lastSaveKind = changeKind;
         await selectCharacter(ent.objectId);
         await refreshList();
     } catch (e) {
@@ -523,6 +747,7 @@ function renderDetail() {
                 }, deleting ? 'Deleting…' : 'Delete character')
             ])
         ]),
+        renderAffectedPanel(),
         m('div', [
             m('div', { class: 'font-medium mb-1' }, 'Portrait'),
             renderPortraitPanel()
@@ -599,7 +824,16 @@ async function initCharacterManager(theBookObjectId, opts) {
     standalone = !!(opts && opts.standalone);
     loading = true;
     m.redraw();
-    await refreshList();
+    let work = [refreshList()];
+    if (standalone) {
+        // Standalone = launched with the olio.pb.book objectId (PB2), the id the V3 routes take; the
+        // wizard passes the data.group id, so the affected panel never applies there. Missing/failed
+        // render-path read = v1 (same rule as pictureBook.js pb2IsV3).
+        work.push(Promise.resolve().then(function () { return am7client.getRenderPath(); })
+            .then(function (rp) { renderPath = (rp && typeof rp === 'object' && rp.picturebook === 'v3') ? 'v3' : 'v1'; })
+            .catch(function () { renderPath = 'v1'; }));
+    }
+    await Promise.all(work);
     loading = false;
     m.redraw();
 }
@@ -629,5 +863,38 @@ async function openCharacterManager(theBookObjectId, opts) {
     await initCharacterManager(theBookObjectId, opts);
 }
 
-export { openCharacterManager, initCharacterManager, renderCharacterManagerContent };
+// ── Vitest seams (P1-10 S5) — not for production callers ─────────────
+export function __pbCharStateForTest() {
+    return {
+        bookObjectId: bookObjectId, standalone: standalone, renderPath: renderPath,
+        selectedObjectId: selectedObjectId, selectedInst: selectedInst,
+        affected: affected, lastSaveKind: lastSaveKind, regen: regen,
+        editingIdentity: editingIdentity, editName: editName, editDescription: editDescription
+    };
+}
+export function __setPbCharStateForTest(patch) {
+    patch = patch || {};
+    if ('bookObjectId' in patch) bookObjectId = patch.bookObjectId;
+    if ('standalone' in patch) standalone = patch.standalone;
+    if ('renderPath' in patch) renderPath = patch.renderPath;
+    if ('selectedObjectId' in patch) selectedObjectId = patch.selectedObjectId;
+    if ('selectedInst' in patch) selectedInst = patch.selectedInst;
+    if ('affected' in patch) affected = patch.affected;
+    if ('lastSaveKind' in patch) lastSaveKind = patch.lastSaveKind;
+    if ('regen' in patch) regen = patch.regen;
+    if ('editingIdentity' in patch) editingIdentity = patch.editingIdentity;
+    if ('editName' in patch) editName = patch.editName;
+    if ('editDescription' in patch) editDescription = patch.editDescription;
+    if ('regenPollIntervalMs' in patch) regenPollIntervalMs = patch.regenPollIntervalMs;
+}
+export const __pbCharSelectCharacterForTest = selectCharacter;
+export const __pbCharSaveIdentityForTest = saveIdentity;
+export const __pbCharRegenerateAffectedForTest = regenerateAffected;
+
+export {
+    openCharacterManager, initCharacterManager, renderCharacterManagerContent,
+    // V3 affected-scenes (pure helpers + panel), exported for Vitest
+    WATCHED_CHAR_FIELDS, identityChangeKind, affectedCaveat, affectedSummary, scenesForIndexes,
+    renderAffectedPanel
+};
 export default openCharacterManager;

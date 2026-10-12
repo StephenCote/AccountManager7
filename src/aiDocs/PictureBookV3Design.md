@@ -1160,6 +1160,44 @@ CHAPBOOK_PAGE"; it is off by default.
 - **Old path:** ChapBook's current render path (`ChapBookUtil.renderResolvedScene` /
   `renderChapBookSummary`) follows the same disable → verify → remove lifecycle as PB1 (§28.1).
 
+**[2026-10-11 (P1-9), as built — the Phase 1 subset of this section.** Phase 1 puts ChapBook *rendering*
+on the graph; the composer / `CHAPBOOK_PAGE` composition / `settingText` mapping above are Phase 2
+(§30) and are unchanged by P1-9. What runs today when `chapbook.renderPath=v3`:
+- **One LANDSCAPE node per page**, created on first render by `PbServiceFacade.ensureChapBookPageNode`
+  with the deterministic handle `PbPipelineUtil.landscapeHandle(sceneObjectId)`, `scope=scene`,
+  `scopeRef=` the scene objectId, `sceneIndex` = the page index, in the book's existing workflow
+  (`/…/Worlds/<slug>/Workflow`, which `/chap-book/create` already builds). The **scene stays the
+  authority**: `scene.sdPrompt` is mirrored to `node.promptText` and `scene.configOverride` to
+  `node.configOverride` (`PbBookUtil.mirrorSceneOntoNode`) so the review views show the page's own
+  prompt, and `scene.sceneNode` is linked to the node. `sdPrompt`/`promptLocked` are the Phase 1 stand-in
+  for `promptOverride`/`promptLocked`.
+- **Same job, same executor.** A page render is `PbRenderJobUtil.submit(KIND_RENDER, force=true)` and a
+  bulk render one `KIND_RENDER_ALL` job (`PbServiceFacade.requestChapBookPageRender` /
+  `requestChapBookRenderAll`); `PbNodeExecutor.executeChapBookPage` renders the page from
+  `scene.configOverride → book sdConfig → defaults` with no actors, writes the artifact into the node's
+  version chain (`PbArtifactUtil`, role `landscape`, `supersedes` the previous selection), then points
+  `scene.imageObjectId` at it and **clears `scene.imageStale`** as the requesting user. Review
+  (select/approve/reject), auto-approve (`APPROVED_BY_AUTO` + pin) and the review queue apply unchanged.
+- **`imageStale` ↔ node STALE, both directions.** A prompt edit (`ChapBookUtil.setSceneLandscapePrompt`
+  → `PbBookUtil.markSceneNodeStale`) or a config-override write re-mirrors the scene onto the node and
+  persists `STALE`; a successful render clears both the node status and `imageStale`. The v1 merge-up
+  still writes `imageStale=true` on text edits; on v3 that flag is also what the stale scan reads.
+- **The old entry points are the v3 front door, not a parallel path.** `POST /chap-book/scene/{id}/generate`
+  and `POST /chap-book/render/{book}` keep their URLs; on v3 `ChapBookUtil.renderResolvedSceneV3` /
+  `renderChapBookSummaryV3` submit the job and either wait (page ≤ 30 min, book ≤ 55 min — both under
+  nginx's 3600 s) and answer 200 with the settled result, or answer **202 `PENDING`** with
+  `jobId`/`runObjectId` for the client to poll `GET /rest/job/{jobId}`; `?async=true` on the bulk route
+  answers 202 immediately. The prompt pre-step (`resolveAndPersistScenePrompt`: locked → stored → LLM
+  recovery) runs before the submit, so an un-prompted page is `SKIPPED_NO_PROMPT` (409 inside the facade,
+  mapped to the skip) and never gets a node; a bulk request with no prompted page at all is a 409.
+- **Not on v3 (carried to P1-10):** the per-request client `sdConfig` overlay (dropped with a WARN; persist
+  it as `scene.configOverride` or the book sdConfig instead), and a re-render of a pinned (approved) page
+  (409 — unpin first). With `chapbook.renderPath=v1` (the production default) nothing above runs and
+  `renderResolvedScene` / `renderChapBookSummary` behave exactly as before.
+Verified by `TestChapBookV3Render` (8 cases, SD-live on `.39`), `TestChapBookServiceRenderPath` (Service7
+H2 contract) and `e2e/chapBookRenderPathV3.spec.js` (Docker stack) — `PictureBookV3Implementation.md`
+§5.5 items 43–47, §6.C 85–99, §8.9.]**
+
 ### 24.1 Chat scene renderer: a third consumer of the same code
 
 Chat's scene generator also renders through this code:
@@ -1356,6 +1394,12 @@ render path.
   read-only `GET /rest/config/render-path` → `{"picturebook","chapbook"}` rather than through the feature
   manifest** (architect ruling: the manifest is a static array meaning "flags an admin may toggle"; a
   boot value does not belong in it) — `PictureBookV3Implementation.md` §5.5 item 42, §8.8.]**
+- **[2026-10-11 (P1-9), ChapBook under the switch:** for ChapBook the two Stage 2 entry points named in the
+  table (`chap-book/render`, `scene/{id}/generate`) are **not** disabled at `v3` — they are the v3 front
+  door (§24 as-built block): the same URLs submit the graph job and answer 200/202. `chapbook.renderPath`
+  is read by `PbRenderPath.isV3(book)` per call on a `bookType=CHAPBOOK` book; `v1` keeps
+  `renderResolvedScene` / `renderChapBookSummary` byte-for-byte. So "Disable" for ChapBook means the
+  v1 branch inside those routes goes unreachable, not that the routes return "replaced by V3".]**
 
 **Verify-stage exit checks** (all with real tests and visual inspection):
 1. Scenarios A–G (notes §70) pass on the Docker stack.

@@ -7,6 +7,7 @@
  *   /picture-book                        — Work selector (PB1 books + PB2 books + create new)
  *   /picture-book/:bookObjectId          — PB1 book viewer (bookObjectId = PB1 book group objectId)
  *   /picture-book/v2/:pb2BookObjectId    — PB2 scene page reader (pb2BookObjectId = olio.pb.book objectId)
+ *   /picture-book/:bookObjectId/review   — V3 review queue (features/pictureBookReview.js; spread in below)
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
@@ -19,15 +20,18 @@ import {
     loadPictureBook, reorderScenes, resetPictureBook, deletePictureBookSeries,
     resolveImageUrl, resolveAllImageUrls, clearImageCache,
     resolveCharacterNames, sceneCharacterLabels,
-    listExtractCheckpoints, discardExtractCheckpoints
+    listExtractCheckpoints, discardExtractCheckpoints, pollJob
 } from '../workflows/sceneExtractor.js';
 import { pictureBookFromId, describeCheckpointRow } from '../workflows/pictureBook.js';
 import { openCharacterManager } from '../workflows/pictureBookCharacters.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
+import { routes as reviewRoutes } from './pictureBookReview.js';
 import {
     listPb2Books, listSeriesBooks, bookPages,
     bookHealth, healBook, orgHealth, healOrg, summarizeHealth,
-    listOrphans, purgeOrphans, countOrphans
+    listOrphans, purgeOrphans, countOrphans,
+    workflowView, renderScene, renderAll, getRun, resumeRun, cancelRun,
+    getAutoApprove, setAutoApprove, unpinNode, isPinnedRefusal
 } from '../workflows/pictureBookWorkflow.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
 import { am7olio } from '../components/olio.js';
@@ -1118,8 +1122,473 @@ let pb2SeriesName = null;
 let pb2SceneTotal = null;      // GET /{id}/scenes count (all extracted scenes); null = unknown
 let pb2Health = null;          // GET /{id}/health report; null = not checked or the check failed
 let pb2HealthRepairing = false;
+// V3 P1-10 (S2): the picturebook render-path switch (GET /rest/config/render-path) gates every V3
+// control in the reader; nothing below is rendered or requested under 'v1'.
+let pb2RenderPath = 'v1';
+let pb2AutoApprove = false;
+let pb2AutoApproveSaving = false;
+let pb2Run = null;             // the render job this reader is watching: {jobId, runObjectId, planned[], job, label, error}
+let pb2RunAbort = null;        // stops WATCHING only - the server job keeps going (pollJob contract)
+let pb2ResumeRun = null;       // normalized run DTO when the book's last run is INTERRUPTED and resumable
+let pb2Submitting = false;
+let pb2PollIntervalMs = undefined; // pollJob default (3s); Vitest shortens it through the test seam
 
 function pb2TotalPages() { return pb2Pages.length + 1; } // cover + scenes
+
+// ── V3 pure helpers (exported for Vitest) ───────────────────────────────
+
+/** GET /rest/config/render-path → is the picturebook product on the V3 graph path? Missing/failed = v1. */
+export function pb2IsV3(rp) {
+    return !!(rp && typeof rp === 'object' && rp.picturebook === 'v3');
+}
+
+/**
+ * Scene status chip from the bookPageView fields (sceneNodeObjectId, nodeStatus, pinned, reviewStatus,
+ * artifactObjectId, imageStale): 'stale' when the node is STALE or the page flags imageStale (an
+ * approved image stays drawn - the badge overlays it); under v3, 'approved' when the selected
+ * artifact is APPROVED, else 'review' when a selected artifact exists (GENERATED/REJECTED); under
+ * v1 only 'stale' or nothing. sceneNodeObjectId/nodeStatus/reviewStatus/artifactObjectId are ABSENT
+ * (not null) when the page has no node / no selected artifact; reviewStatus is pre-folded by the
+ * server to GENERATED|APPROVED|REJECTED. Enums arrive in either case. A legacy dataObjectId with no
+ * artifact has nothing in the review queue, so it gets no chip.
+ */
+export function sceneChip(page, isV3) {
+    if (!page) return null;
+    let ns = String(page.nodeStatus || '').toUpperCase();
+    let stale = ns === 'STALE' || page.imageStale === true;
+    if (stale) return 'stale';
+    if (!isV3) return null;
+    let rs = String(page.reviewStatus || '').toUpperCase();
+    if (rs === 'APPROVED') return 'approved';
+    if (page.artifactObjectId) return 'review';
+    return null;
+}
+
+/**
+ * Stage list for the run progress panel. `planned` is the 202 body's planned[] (handles, in execution
+ * order; objects with a handle are tolerated); `job` is the latest /rest/job payload (phase = the
+ * handle being rendered, current = nodes finished, result.nodes[] at terminal) or null before the
+ * first poll. States: pending | running | done | failed | skipped | unrun.
+ */
+export function deriveStageList(planned, job) {
+    let handles = (Array.isArray(planned) ? planned : []).map(function (p) {
+        if (typeof p === 'string') return p;
+        return (p && (p.handle || p.nodeObjectId)) || '';
+    }).filter(Boolean);
+    let result = job && job.result && typeof job.result === 'object' ? job.result : null;
+    let outcomes = {};
+    (result && Array.isArray(result.nodes) ? result.nodes : []).forEach(function (n) {
+        if (n && n.handle) outcomes[n.handle] = n;
+    });
+    let current = job && typeof job.current === 'number' ? job.current : 0;
+    let phase = job && job.phase ? String(job.phase) : null;
+    let terminal = !!(job && job.terminal);
+    return handles.map(function (h, i) {
+        let o = outcomes[h];
+        if (o) {
+            let st = String(o.status || '').toUpperCase();
+            let state = 'done';
+            if (st === 'FAILED') state = 'failed';
+            else if (st.indexOf('SKIPPED') === 0) state = 'skipped';
+            return {
+                handle: h, state: state,
+                error: o.error || null,
+                artifactObjectId: o.artifactObjectId || null,
+                autoApproved: !!o.autoApproved,
+                reviewStatus: o.reviewStatus || null
+            };
+        }
+        if (!job) return { handle: h, state: 'pending' };
+        if (terminal) return { handle: h, state: 'unrun' };
+        if (phase && h === phase) return { handle: h, state: 'running' };
+        if (i < current) return { handle: h, state: 'done' };
+        return { handle: h, state: 'pending' };
+    });
+}
+
+/** Resume banner: shown only for an INTERRUPTED run the server says is resumable (runDto.resumable). */
+export function resumeBannerState(run) {
+    if (!run || typeof run !== 'object') return { show: false, reason: null };
+    let st = String(run.runStatus || '').toUpperCase();
+    if (st !== 'INTERRUPTED') return { show: false, reason: null };
+    if (!run.resumable) return { show: false, reason: 'not-resumable' };
+    let requested = Array.isArray(run.requestedNodeIds) ? run.requestedNodeIds.length : 0;
+    return {
+        show: true, reason: null,
+        runObjectId: run.runObjectId || null,
+        name: run.name || null,
+        executed: run.executedNodeCount || 0,
+        failed: run.failedNodeCount || 0,
+        requested: requested,
+        error: run.error || null
+    };
+}
+
+/** One-line outcome of a terminal render job for the toast + progress panel. */
+export function runSummaryText(job) {
+    if (!job) return '';
+    let r = job.result && typeof job.result === 'object' ? job.result : null;
+    let st = String(job.status || '').toLowerCase();
+    if (job.error && !r) return 'Render failed: ' + job.error;
+    if (!r) return job.cancelled ? 'Render cancelled' : ('Render ' + (st || 'finished'));
+    let runStatus = String(r.runStatus || '').toUpperCase();
+    let parts = [];
+    parts.push((r.executedNodeCount || 0) + ' rendered');
+    if (r.failedNodeCount) parts.push(r.failedNodeCount + ' failed');
+    if (r.skippedNodeCount) parts.push(r.skippedNodeCount + ' skipped');
+    let head = runStatus === 'INTERRUPTED' ? 'Render interrupted' : runStatus === 'CANCELLED' ? 'Render cancelled' : runStatus === 'FAILED' ? 'Render failed' : 'Render complete';
+    let text = head + ': ' + parts.join(', ');
+    if (r.error) text += ' — ' + r.error;
+    return text;
+}
+
+// ── V3 run watching / submit ─────────────────────────────────────────────
+
+function pb2StopWatching() {
+    if (pb2RunAbort) {
+        try { pb2RunAbort.abort(); } catch (_) {}
+    }
+    pb2RunAbort = null;
+}
+
+// Re-read /pages (+ health) without resetting the reader to the cover. Scene/artifact caches are
+// cleared first so a projected read elsewhere cannot serve the pre-render page.
+async function pb2RefreshPages(bookId) {
+    am7client.clearCache('olio.pb.scene', true);
+    am7client.clearCache('olio.pb.artifact', true);
+    am7client.clearCache('olio.pb.node', true);
+    if (!bookId || bookId !== pb2BookObjectId) return;
+    try {
+        let loaded = await Promise.all([
+            bookPages(bookId),
+            bookHealth(bookId).catch(function () { return null; })
+        ]);
+        if (bookId !== pb2BookObjectId) return;
+        pb2Pages = Array.isArray(loaded[0]) ? loaded[0] : [];
+        pb2Health = loaded[1] || null;
+        pb2CurrentPage = Math.max(0, Math.min(pb2CurrentPage, pb2TotalPages() - 1));
+    } catch (e) {
+        page.toast('error', 'Failed to reload pages: ' + ((e && e.message) || ''));
+    }
+    m.redraw();
+}
+
+async function pb2AfterTerminal(bookId, job) {
+    let text = runSummaryText(job);
+    let r = job && job.result;
+    let failed = !!(job && (job.error || job.cancelled)) || !!(r && (r.failedNodeCount || String(r.runStatus || '').toUpperCase() === 'FAILED'));
+    page.toast(failed ? 'warning' : 'success', text);
+    await pb2RefreshPages(bookId);
+    if (bookId !== pb2BookObjectId) return;
+    let runOid = (r && r.runObjectId) || (pb2Run && pb2Run.runObjectId) || null;
+    if (runOid && r && String(r.runStatus || '').toUpperCase() === 'INTERRUPTED') {
+        try { pb2ResumeRun = await getRun(bookId, runOid); } catch (_) { pb2ResumeRun = null; }
+    }
+    m.redraw();
+}
+
+/** Watch one submitted render job (202 body) until terminal; progress drives the stage list. */
+async function pb2WatchJob(submit, label) {
+    pb2StopWatching();
+    let jobId = submit && submit.jobId;
+    if (!jobId) {
+        page.toast('error', 'Render was accepted but no job id was returned');
+        return;
+    }
+    let ctl = new AbortController();
+    pb2RunAbort = ctl;
+    pb2ResumeRun = null;
+    pb2Run = { jobId: jobId, runObjectId: submit.runObjectId || null, planned: submit.planned || [], job: null, label: label || 'Render', error: null };
+    let bookId = pb2BookObjectId;
+    m.redraw();
+    try {
+        let job = await pollJob(jobId, {
+            signal: ctl.signal,
+            intervalMs: pb2PollIntervalMs,
+            onProgress: function (j) {
+                if (pb2Run && pb2Run.jobId === jobId) { pb2Run.job = j; m.redraw(); }
+            }
+        });
+        if (pb2Run && pb2Run.jobId === jobId) pb2Run.job = job;
+        await pb2AfterTerminal(bookId, job);
+    } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        if (pb2Run && pb2Run.jobId === jobId) pb2Run.error = (e && e.message) || String(e);
+        page.toast('error', (e && e.message) || 'Render polling failed');
+    }
+    if (pb2RunAbort === ctl) pb2RunAbort = null;
+    m.redraw();
+}
+
+/**
+ * Re-attach from SERVER state only (no localStorage): the workflow's lastRunObjectId → GET run. A run
+ * with a jobId is still in flight in this process → resume polling; an INTERRUPTED + resumable run →
+ * Resume banner. Anything else (DONE, CANCELLED, a job no longer retained) shows nothing.
+ */
+async function pb2ReattachRun(bookId, wf) {
+    pb2ResumeRun = null;
+    let runOid = wf && wf.lastRunObjectId;
+    if (!runOid) return;
+    let run;
+    try { run = await getRun(bookId, runOid); } catch (_) { return; }
+    if (bookId !== pb2BookObjectId) return;
+    if (run.jobId) {
+        let planned = run.nodes.map(function (n) { return n && n.handle; }).filter(Boolean);
+        pb2WatchJob({ jobId: run.jobId, runObjectId: run.runObjectId, planned: planned }, 'Render (resumed watching)');
+        return;
+    }
+    if (resumeBannerState(run).show) pb2ResumeRun = run;
+}
+
+async function pb2SubmitRenderAll() {
+    if (!pb2BookObjectId || pb2Submitting) return;
+    pb2Submitting = true;
+    m.redraw();
+    let bookId = pb2BookObjectId;
+    try {
+        let submit = await renderAll(bookId);
+        if (submit.scenesWithoutNode.length) {
+            page.toast('warning', submit.scenesWithoutNode.length + ' scene' + (submit.scenesWithoutNode.length !== 1 ? 's have' : ' has') + ' no graph node yet and will not render');
+        }
+        pb2Submitting = false;
+        Dialog.close();
+        pb2WatchJob(submit, 'Render all');
+    } catch (e) {
+        pb2Submitting = false;
+        page.toast('error', (e && e.message) || 'Render failed');
+        m.redraw();
+    }
+}
+
+/**
+ * Per-scene render. An explicit Render/Re-render on one scene is a re-roll of that scene's node even
+ * when it is current, so both submits pass force (the same contract as the ChapBook page path);
+ * "Render all" does not. A pinned-node 409 ("... (N reused, M pinned)") is shown verbatim and the user
+ * is offered an explicit "Unpin and re-render"; only that confirmation sends pin {pinned:false} and
+ * re-submits. Every other non-2xx (in-flight 409, 429, ...) is toasted verbatim. Never silently unpins.
+ */
+async function pb2SubmitRenderScene(pg) {
+    if (!pb2BookObjectId || !pg || !pg.objectId || pb2Submitting) return;
+    pb2Submitting = true;
+    m.redraw();
+    let bookId = pb2BookObjectId;
+    let label = 'Render scene ' + (pg.sceneIndex != null ? pg.sceneIndex : '');
+    try {
+        let submit = await renderScene(bookId, pg.objectId, { force: true });
+        pb2Submitting = false;
+        pb2WatchJob(submit, label);
+        return;
+    } catch (e) {
+        pb2Submitting = false;
+        if (!(isPinnedRefusal(e) && pg.sceneNodeObjectId)) {
+            page.toast('error', (e && e.message) || 'Render failed');
+            m.redraw();
+            return;
+        }
+        m.redraw();
+        let ok = await Dialog.confirm({
+            title: 'Scene is pinned',
+            message: (e.message || '') + ' — Unpin this scene\'s node and re-render it? The pinned image stays in the artifact history.',
+            confirmLabel: 'Unpin and re-render', confirmIcon: 'push_pin'
+        });
+        if (!ok || bookId !== pb2BookObjectId) return;
+        pb2Submitting = true;
+        m.redraw();
+        try {
+            await unpinNode(bookId, pg.sceneNodeObjectId);
+            let submit = await renderScene(bookId, pg.objectId, { force: true });
+            pb2Submitting = false;
+            pb2WatchJob(submit, label);
+        } catch (e2) {
+            pb2Submitting = false;
+            page.toast('error', (e2 && e2.message) || 'Render failed');
+            m.redraw();
+        }
+    }
+}
+
+async function pb2ResumeInterrupted() {
+    let run = pb2ResumeRun;
+    if (!pb2BookObjectId || !run || !run.runObjectId || pb2Submitting) return;
+    pb2Submitting = true;
+    m.redraw();
+    let bookId = pb2BookObjectId;
+    try {
+        let submit = await resumeRun(bookId, run.runObjectId);
+        pb2Submitting = false;
+        pb2ResumeRun = null;
+        pb2WatchJob(submit, 'Resume ' + (run.name || 'run'));
+    } catch (e) {
+        pb2Submitting = false;
+        page.toast('error', (e && e.message) || 'Resume failed');
+        // The server said why (e.g. the run is no longer INTERRUPTED): drop the banner on a 409.
+        if (e && e.status === 409) pb2ResumeRun = null;
+        m.redraw();
+    }
+}
+
+async function pb2CancelRun() {
+    if (!pb2BookObjectId || !pb2Run || !pb2Run.runObjectId) return;
+    try {
+        await cancelRun(pb2BookObjectId, pb2Run.runObjectId);
+        page.toast('info', 'Cancel requested; the node in flight finishes first');
+    } catch (e) {
+        page.toast('error', (e && e.message) || 'Cancel failed');
+    }
+}
+
+async function pb2ToggleAutoApprove(on) {
+    if (!pb2BookObjectId || pb2AutoApproveSaving) return;
+    pb2AutoApproveSaving = true;
+    m.redraw();
+    try {
+        let r = await setAutoApprove(pb2BookObjectId, on);
+        pb2AutoApprove = !!r.autoApprove;
+    } catch (e) {
+        page.toast('error', (e && e.message) || 'Could not change auto-approve');
+    }
+    pb2AutoApproveSaving = false;
+    m.redraw();
+}
+
+// Render dialog on the showGenerationErrorDialog pattern (workflows/pictureBook.js): Dialog.open with a
+// live component body so the auto-approve toggle re-renders in place.
+const pb2RenderDialogBody = {
+    view: function () {
+        let n = pb2Pages.length;
+        return m('div', { 'data-testid': 'pb2-render-dialog', class: 'space-y-3 text-sm' }, [
+            m('p', 'Render every scene whose image is missing or stale. Current and pinned scenes are reused.'),
+            m('p', { class: 'text-xs text-gray-500' }, n + ' page' + (n !== 1 ? 's' : '') + ' in this book.'),
+            m('label', { class: 'flex items-center gap-2 cursor-pointer' }, [
+                m('input', {
+                    type: 'checkbox',
+                    'data-testid': 'pb2-auto-approve-toggle',
+                    checked: pb2AutoApprove,
+                    disabled: pb2AutoApproveSaving,
+                    onchange: function (e) { pb2ToggleAutoApprove(!!e.target.checked); }
+                }),
+                m('span', 'Auto-approve results')
+            ]),
+            pb2AutoApprove
+                ? m('p', { 'data-testid': 'pb2-auto-approve-note', class: 'text-xs text-green-700 dark:text-green-300' },
+                    'Auto-approve: ON — results will be approved and pinned')
+                : m('p', { class: 'text-xs text-gray-500' }, 'Results wait in the review queue until approved.')
+        ]);
+    }
+};
+
+function pb2OpenRenderDialog() {
+    if (!pb2BookObjectId) return;
+    Dialog.open({
+        title: 'Render Picture Book',
+        size: 'sm',
+        content: pb2RenderDialogBody,
+        actions: [
+            { label: 'Cancel', icon: 'close', attrs: { 'data-testid': 'pb2-render-dialog-cancel' }, onclick: function () { Dialog.close(); } },
+            { label: 'Start', icon: 'play_arrow', primary: true, attrs: { 'data-testid': 'pb2-render-all-start' }, onclick: function () { pb2SubmitRenderAll(); } }
+        ]
+    });
+}
+
+export function renderPb2ResumeBanner() {
+    let s = resumeBannerState(pb2ResumeRun);
+    if (!s.show) return null;
+    if (pb2Run && !(pb2Run.job && pb2Run.job.terminal) && !pb2Run.error) return null;
+    return m('div', {
+        'data-testid': 'pb2-resume-banner',
+        class: 'mb-4 p-3 rounded bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-700 text-sm text-blue-800 dark:text-blue-200 flex items-center gap-2'
+    }, [
+        m('span', { class: 'material-symbols-outlined text-blue-500' }, 'pause_circle'),
+        m('span', { class: 'flex-1' }, 'The last render' + (s.name ? ' (' + s.name + ')' : '') + ' was interrupted after '
+            + s.executed + ' of ' + s.requested + ' node' + (s.requested !== 1 ? 's' : '')
+            + (s.failed ? ' (' + s.failed + ' failed)' : '') + '. Resume to finish the rest.'),
+        m('button', {
+            'data-testid': 'pb2-resume-run',
+            class: 'flex items-center gap-1 rounded px-3 py-1 text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50',
+            disabled: pb2Submitting,
+            onclick: pb2ResumeInterrupted
+        }, [m('span', { class: 'material-symbols-outlined text-lg' }, 'play_arrow'), 'Resume'])
+    ]);
+}
+
+function stageIcon(state) {
+    switch (state) {
+        case 'running': return 'progress_activity';
+        case 'done': return 'check_circle';
+        case 'failed': return 'error';
+        case 'skipped': return 'push_pin';
+        case 'unrun': return 'remove_circle_outline';
+        default: return 'radio_button_unchecked';
+    }
+}
+
+export function renderPb2RunProgress() {
+    if (!pb2Run) return null;
+    let job = pb2Run.job;
+    let terminal = !!(job && job.terminal);
+    let stages = deriveStageList(pb2Run.planned, job);
+    let total = job && typeof job.total === 'number' ? job.total : stages.length;
+    let current = job && typeof job.current === 'number' ? job.current : 0;
+    return m('div', {
+        'data-testid': 'pb2-run-progress',
+        'data-run-terminal': terminal ? '1' : '0',
+        class: 'mb-4 p-3 rounded border dark:border-gray-700 bg-white dark:bg-gray-900 text-sm'
+    }, [
+        m('div', { class: 'flex items-center gap-2 mb-2' }, [
+            m('span', { class: 'material-symbols-outlined ' + (terminal ? 'text-gray-500' : 'text-purple-500 animate-spin') }, terminal ? 'task_alt' : 'progress_activity'),
+            m('span', { class: 'font-semibold' }, pb2Run.label),
+            m('span', { 'data-testid': 'pb2-run-counter', class: 'text-xs text-gray-500' },
+                terminal ? runSummaryText(job) : (current + ' of ' + total + (job && job.phase ? ' · ' + job.phase : ''))),
+            m('span', { class: 'flex-1' }),
+            !terminal && pb2Run.runObjectId ? m('button', {
+                'data-testid': 'pb2-run-cancel',
+                class: 'text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700',
+                onclick: pb2CancelRun
+            }, 'Cancel') : null,
+            terminal ? m('button', {
+                'data-testid': 'pb2-run-dismiss',
+                class: 'text-gray-400 hover:text-gray-600',
+                title: 'Dismiss',
+                onclick: function () { pb2Run = null; }
+            }, m('span', { class: 'material-symbols-outlined text-lg' }, 'close')) : null
+        ]),
+        pb2Run.error ? m('div', { class: 'text-xs text-red-500 mb-2' }, pb2Run.error) : null,
+        stages.length ? m('ul', { class: 'text-xs space-y-0.5' }, stages.map(function (s) {
+            return m('li', {
+                key: s.handle,
+                'data-testid': 'pb2-run-stage',
+                'data-stage-state': s.state,
+                class: 'flex items-center gap-1 ' + (s.state === 'failed' ? 'text-red-600' : s.state === 'running' ? 'text-purple-600' : s.state === 'done' ? 'text-green-700' : 'text-gray-500')
+            }, [
+                m('span', { class: 'material-symbols-outlined text-sm' + (s.state === 'running' ? ' animate-spin' : '') }, stageIcon(s.state)),
+                m('span', { class: 'font-mono' }, s.handle),
+                s.error ? m('span', { class: 'ml-1 truncate' }, '— ' + s.error) : null,
+                s.autoApproved ? m('span', { class: 'ml-1 text-gray-400' }, 'auto-approved') : null
+            ]);
+        })) : m('div', { class: 'text-xs text-gray-500' }, 'Nothing planned.')
+    ]);
+}
+
+export function __pb2V3StateForTest() {
+    return { pb2RenderPath, pb2AutoApprove, pb2AutoApproveSaving, pb2Run, pb2ResumeRun, pb2Submitting, pb2CurrentPage, pb2Pages, pb2BookObjectId };
+}
+export function __setPb2V3StateForTest(patch) {
+    patch = patch || {};
+    if ('pb2RenderPath' in patch) pb2RenderPath = patch.pb2RenderPath === 'v3' ? 'v3' : 'v1';
+    if ('pb2AutoApprove' in patch) pb2AutoApprove = !!patch.pb2AutoApprove;
+    if ('pb2AutoApproveSaving' in patch) pb2AutoApproveSaving = !!patch.pb2AutoApproveSaving;
+    if ('pb2Run' in patch) pb2Run = patch.pb2Run;
+    if ('pb2ResumeRun' in patch) pb2ResumeRun = patch.pb2ResumeRun;
+    if ('pb2Submitting' in patch) pb2Submitting = !!patch.pb2Submitting;
+    if ('pb2CurrentPage' in patch) pb2CurrentPage = patch.pb2CurrentPage | 0;
+    if ('pb2Pages' in patch) pb2Pages = Array.isArray(patch.pb2Pages) ? patch.pb2Pages : [];
+    if ('pb2BookObjectId' in patch) pb2BookObjectId = patch.pb2BookObjectId;
+    if ('pb2BookName' in patch) pb2BookName = patch.pb2BookName;
+    if ('pb2PollIntervalMs' in patch) pb2PollIntervalMs = patch.pb2PollIntervalMs;
+}
+export { pb2SubmitRenderScene as __pb2SubmitRenderSceneForTest, pb2SubmitRenderAll as __pb2SubmitRenderAllForTest,
+    pb2ResumeInterrupted as __pb2ResumeInterruptedForTest, pb2ReattachRun as __pb2ReattachRunForTest,
+    pb2ToggleAutoApprove as __pb2ToggleAutoApproveForTest, pb2StopWatching as __pb2StopWatchingForTest };
 
 // Pages that actually have a rendered composite image: /pages returns one entry per olio.pb.scene
 // row, and dataObjectId is null until a composite artifact exists for it (PbServiceFacade.bookPageView).
@@ -1216,6 +1685,10 @@ async function loadPb2BookContext(pb2ObjId) {
 
 async function loadPb2Pages(pb2ObjId) {
     if (!pb2ObjId || pb2ObjId === 'undefined') return;
+    pb2StopWatching();
+    pb2Run = null;
+    pb2ResumeRun = null;
+    pb2AutoApprove = false;
     pb2PageLoading = true;
     pb2PageError = null;
     pb2Pages = [];
@@ -1245,15 +1718,31 @@ async function loadPb2Pages(pb2ObjId) {
         // name — never the first page's scene title.)
         // The read-only health report rides along so the reader can explain an empty/short page list
         // (e.g. a stale workflow blocking rendering) and offer Repair. Its failure never blocks the pages.
+        // The render-path switch rides along: it decides whether any V3 control exists on this page.
         let loaded = await Promise.all([
             bookPages(pb2ObjId),
             loadPictureBook(pb2ObjId).catch(function () { return null; }),
-            bookHealth(pb2ObjId).catch(function () { return null; })
+            bookHealth(pb2ObjId).catch(function () { return null; }),
+            Promise.resolve().then(function () { return am7client.getRenderPath(); }).catch(function () { return null; })
         ]);
         pb2Pages = Array.isArray(loaded[0]) ? loaded[0] : [];
         pb2SceneTotal = Array.isArray(loaded[1]) ? loaded[1].length : null;
         pb2Health = loaded[2] || null;
+        pb2RenderPath = pb2IsV3(loaded[3]) ? 'v3' : 'v1';
         await loadPb2Chapters(pb2ObjId, bookFull);
+        if (pb2RenderPath === 'v3' && pb2ObjId === pb2BookObjectId) {
+            // v3 only: the auto-approve setting for the header badge + Render dialog, and the workflow's
+            // last run so an in-flight or interrupted render re-attaches from server state. Neither
+            // failure blocks the pages (a book with no workflow yet has no run to re-attach).
+            let v3 = await Promise.all([
+                getAutoApprove(pb2ObjId).catch(function () { return null; }),
+                workflowView(pb2ObjId).catch(function () { return null; })
+            ]);
+            if (pb2ObjId === pb2BookObjectId) {
+                pb2AutoApprove = !!(v3[0] && v3[0].autoApprove);
+                await pb2ReattachRun(pb2ObjId, v3[1]);
+            }
+        }
     } catch (e) {
         pb2PageError = 'Failed to load pages: ' + (e.message || '');
     }
@@ -1320,27 +1809,66 @@ function renderPb2Cover() {
     ]);
 }
 
-function renderPb2ScenePage() {
+const PB2_CHIP_CLASS = {
+    stale: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 border-amber-300',
+    approved: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200 border-green-300',
+    review: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200 border-blue-300'
+};
+const PB2_CHIP_LABEL = { stale: 'Stale', approved: 'Approved', review: 'Review' };
+
+/** The status chip for the open scene page (S3). Null when there is nothing to say. */
+export function renderPb2SceneChip(scene) {
+    let chip = sceneChip(scene, pb2RenderPath === 'v3');
+    if (!chip) return null;
+    return m('span', {
+        'data-testid': 'pb2-scene-chip',
+        'data-chip': chip,
+        class: 'text-xs px-2 py-0.5 rounded-full border ' + PB2_CHIP_CLASS[chip]
+    }, PB2_CHIP_LABEL[chip] + (scene && scene.pinned ? ' · pinned' : ''));
+}
+
+export function renderPb2ScenePage() {
     let scene = pb2CurrentScene();
     if (!scene) return m('div', { class: 'text-sm text-gray-500 italic p-4' }, 'No scene data.');
     let imgUrl = pb2ImageUrl(scene);
     let text = scene.poemStanza || scene.blurb || scene.summary || '';
+    let chip = sceneChip(scene, pb2RenderPath === 'v3');
+    let v3 = pb2RenderPath === 'v3';
+    let watching = !!(pb2Run && !(pb2Run.job && pb2Run.job.terminal) && !pb2Run.error);
     return m('div', { class: 'flex flex-col items-center' }, [
-        imgUrl
-            ? m('img', {
-                src: imgUrl,
-                class: 'w-full rounded-lg mb-4',
-                style: 'max-height: 55vh; object-fit: contain;'
-            })
-            : m('div', {
-                class: 'w-full rounded-lg mb-4 bg-gray-100 dark:bg-gray-800 flex items-center justify-center',
-                style: 'height: 240px;'
-            }, m('span', { class: 'material-symbols-outlined text-gray-400 text-5xl' }, 'image')),
+        // The image (approved or not) is always drawn; the stale badge overlays it and never replaces it.
+        m('div', { class: 'relative w-full mb-4' }, [
+            imgUrl
+                ? m('img', {
+                    'data-testid': 'pb2-scene-image',
+                    src: imgUrl,
+                    class: 'w-full rounded-lg',
+                    style: 'max-height: 55vh; object-fit: contain;'
+                })
+                : m('div', {
+                    class: 'w-full rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center',
+                    style: 'height: 240px;'
+                }, m('span', { class: 'material-symbols-outlined text-gray-400 text-5xl' }, 'image')),
+            chip === 'stale' ? m('div', {
+                'data-testid': 'pb2-stale-badge',
+                class: 'absolute top-2 left-2 flex items-center gap-1 text-xs px-2 py-1 rounded bg-amber-500/90 text-white shadow'
+            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'update'), imgUrl ? 'Image is stale' : 'Needs render']) : null
+        ]),
 
-        m('h2', {
-            class: 'text-2xl font-semibold mb-3 text-center',
-            style: 'font-family: Georgia, serif;'
-        }, scene.title || 'Scene ' + (pb2CurrentPage)),
+        m('div', { class: 'flex items-center justify-center gap-2 mb-3 flex-wrap' }, [
+            m('h2', {
+                class: 'text-2xl font-semibold text-center',
+                style: 'font-family: Georgia, serif;'
+            }, scene.title || 'Scene ' + (pb2CurrentPage)),
+            renderPb2SceneChip(scene),
+            v3 ? m('button', {
+                'data-testid': 'pb2-scene-render',
+                class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed',
+                disabled: pb2Submitting || watching,
+                title: watching ? 'A render is already running' : (chip === 'stale' ? 'Re-render this scene' : 'Render this scene'),
+                onclick: function () { pb2SubmitRenderScene(scene); }
+            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'brush'), chip === 'stale' || imgUrl ? 'Re-render' : 'Render']) : null
+        ]),
 
         m('div', { class: 'max-w-2xl w-full px-4' },
             m('p', {
@@ -1354,11 +1882,13 @@ function renderPb2ScenePage() {
     ]);
 }
 
-function renderPb2Header() {
+export function renderPb2Header() {
     let total = pb2TotalPages();
     let pageLabel = pb2CurrentPage === 0
         ? 'Cover'
         : 'Page ' + pb2CurrentPage + ' of ' + pb2Pages.length;
+    let v3 = pb2RenderPath === 'v3' && !!pb2BookObjectId;
+    let watching = !!(pb2Run && !(pb2Run.job && pb2Run.job.terminal) && !pb2Run.error);
     return m('div', { class: 'flex items-center gap-3 mb-4' }, [
         m('button', {
             class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
@@ -1386,6 +1916,29 @@ function renderPb2Header() {
             disabled: pb2CurrentPage >= total - 1,
             onclick: function () { pb2GoToPage(pb2CurrentPage + 1); }
         }, m('span', { class: 'material-symbols-outlined' }, 'chevron_right')),
+
+        // V3 only (render-path 'v3'): auto-approve badge, Render (async run), Review queue link.
+        v3 ? m('span', {
+            'data-testid': 'pb2-auto-approve-badge',
+            'data-on': pb2AutoApprove ? '1' : '0',
+            class: 'text-xs px-2 py-0.5 rounded-full ' + (pb2AutoApprove
+                ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'
+                : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'),
+            title: 'Auto-approve rendered results' + (pb2AutoApprove ? ': on (results are approved and pinned)' : ': off (results wait in the review queue)')
+        }, 'Auto-approve: ' + (pb2AutoApprove ? 'ON' : 'OFF')) : null,
+        v3 ? m('button', {
+            'data-testid': 'pb2-render-all',
+            class: 'text-gray-500 hover:text-purple-600 disabled:opacity-30',
+            disabled: pb2Submitting || watching,
+            title: watching ? 'A render is already running' : 'Render all scenes',
+            onclick: pb2OpenRenderDialog
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'brush')) : null,
+        v3 ? m('button', {
+            'data-testid': 'pb2-review-link',
+            class: 'text-gray-500 hover:text-purple-600',
+            title: 'Review queue',
+            onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/review'); }
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'rate_review')) : null,
 
         // Edit (wizard) and Characters — same pair the book list rows offer.
         pb2BookObjectId ? renderPb2EditButton(
@@ -1542,12 +2095,17 @@ var pb2PageReaderView = {
     onremove: function () {
         document.removeEventListener('keydown', pb2OnKeyDown);
         am7olio.setCurrentBook(null);
+        // Leaving the page stops WATCHING the run; the server job continues and re-attaches on return.
+        pb2StopWatching();
+        pb2Run = null;
     },
     view: function () {
         let emptyStale = pb2SceneTotal > 0 && summarizeHealth(pb2Health).hasStaleGraph;
         return m('div', { class: 'p-4 flex flex-col h-full' }, [
             renderPb2Header(),
             pb2PageLoading ? null : renderPb2HealthBanner(),
+            pb2PageLoading ? null : renderPb2ResumeBanner(),
+            renderPb2RunProgress(),
             pb2PageLoading
                 ? m('div', { class: 'text-sm text-gray-500 text-center py-12' }, 'Loading scenes...')
                 : pb2PageError
@@ -1585,6 +2143,7 @@ var pb2PageReaderView = {
 
 export const routes = {
     ...wfRoutes,
+    ...reviewRoutes,
     '/picture-book': {
         oninit: function () { workSelectorView.oninit(); },
         view: function () { return layout(pageLayout(workSelectorView.view())); }

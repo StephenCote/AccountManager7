@@ -1325,6 +1325,30 @@ public class PictureBookService {
     }
 
     /**
+     * GET /{bookObjectId}/affected-by/{refModel}/{refObjectId}
+     * What an edit to one bound record (e.g. olio.charPerson/{objectId}) touches in this book: bound
+     * nodes, whether the scan sees it as drifted, and the scene indexes downstream (V3 P1-10). The
+     * refModel segment is shaped by the path regex; the facade additionally refuses an unregistered
+     * model name with 400 before any scan runs.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/affected-by/{refModel:[a-z]+(\\.[A-Za-z0-9]+)+}/{refObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response affectedByRecord(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("refModel") String refModel,
+            @PathParam("refObjectId") String refObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.affectedByRecord(user, bookObjectId, refModel, refObjectId))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
      * POST /{bookObjectId}/node/{nodeObjectId}/regenerate
      * Regenerate a node: opens an olio.pb.run for it and executes it synchronously against the SD
      * backend resolved the same way as /scene/{id}/generate, producing a new artifact revision and
@@ -1362,19 +1386,25 @@ public class PictureBookService {
      * grant, 409 scene has no graph node / nothing to render / a planned node is RUNNING, 429 the
      * principal's concurrent-job cap, 500 no SD backend. Cancel through
      * {@code POST /{book}/run/{runObjectId}/cancel} or {@code POST /rest/job/{jobId}/cancel}.
+     * <p>
+     * {@code ?force=true}: re-roll the scene's node even when it is current (an explicit per-scene
+     * re-render from the reader, the same contract as the ChapBook page path). A pinned node is still a
+     * 409 ({@code pinned} count) until it is unpinned; force never overrides a pin. The flag is the only
+     * input besides the path — the SD backend and config still come from the server, never the caller.
      */
     @RolesAllowed({"admin", "user"})
     @POST
     @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/render")
     @Produces(MediaType.APPLICATION_JSON)
     public Response renderScene(@PathParam("bookObjectId") String bookObjectId,
-            @PathParam("sceneObjectId") String sceneObjectId, @Context HttpServletRequest request,
-            @Context ServletContext context) {
+            @PathParam("sceneObjectId") String sceneObjectId,
+            @QueryParam("force") @DefaultValue("false") boolean force,
+            @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
         try {
             return Response.status(202)
                 .entity(JSONUtil.exportObject(PbServiceFacade.requestSceneRender(user, bookObjectId, sceneObjectId,
-                    resolveSdApiType(context), resolveSdServer(context))))
+                    resolveSdApiType(context), resolveSdServer(context), force)))
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);

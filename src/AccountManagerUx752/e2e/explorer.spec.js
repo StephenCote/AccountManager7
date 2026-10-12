@@ -126,10 +126,13 @@ test.describe('Explorer view', () => {
 test.describe('Explorer Olio branch', () => {
     const OLIO_USER_ROLE = 'Olio User';
     const treePanel = 'div[style*="width:250px"], div[style*="width: 250px"]';
+    // A dedicated persistent user: this test toggles Olio User membership and must never touch the
+    // shared user's roles (every Olio-grid spec — apparel, reimage, characters — needs e2etest_shared enrolled).
+    const EXPLORER_USER = 'e2etest_explorer';
 
     test('Universes node follows Olio User membership and reappears on Refresh', async ({ page, request }) => {
-        const { user, testUserName, testPassword } = await ensureSharedTestUser(request);
-        expect(user && user.objectId, 'shared test user must exist').toBeTruthy();
+        const { user, testUserName, testPassword } = await ensureSharedTestUser(request, { name: EXPLORER_USER });
+        expect(user && user.objectId, 'explorer test user must exist').toBeTruthy();
 
         // Precondition: the org actually has Olio data. Checked with an admin session on the test's own
         // request context (provisioning only — the UI runs as the shared user) so a missing

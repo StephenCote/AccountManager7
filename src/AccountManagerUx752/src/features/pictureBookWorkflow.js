@@ -45,6 +45,7 @@ const STATUS_COLOR = {
     STALE: '#d97706',
     PENDING: '#6b7280',
     READY: '#3b82f6',
+    RUNNING: '#0ea5e9',       // V3: node currently executing in a render run
     FAILED: '#dc2626',
     UNKNOWN: '#9ca3af',
 };
@@ -163,6 +164,21 @@ function resetChapterDialogState() {
 
 // ── Layout calculation ────────────────────────────────────────────────
 
+/**
+ * Stored canvas geometry of a nodeSummary, or null when the node was never placed. The four
+ * canvas* columns are INT with DDL default 0 and are read without wasNull, so "never placed" is
+ * 0 on the wire (null only when projected without them); a stored position is honoured only when
+ * W and H are both positive (all-zero = unplaced).
+ */
+function storedPosition(n) {
+    if (!n) return null;
+    let w = Number(n.canvasW), h = Number(n.canvasH);
+    if (!(w > 0) || !(h > 0)) return null;
+    let x = Number(n.canvasX), y = Number(n.canvasY);
+    if (!isFinite(x) || !isFinite(y)) return null;
+    return { x: x, y: y, w: w, h: h };
+}
+
 function computePositions(nodes) {
     if (!nodes || !nodes.length) return {};
     // Group by sceneIndex, then by nodeTypeRank within each column
@@ -185,7 +201,9 @@ function computePositions(nodes) {
     let pos = {};
     colKeys.forEach(function (col, ci) {
         cols[col].forEach(function (n, ri) {
-            pos[n.objectId] = {
+            // A node the user placed (saved canvasX/Y with positive W/H) keeps its position;
+            // everything else takes the computed grid slot.
+            pos[n.objectId] = storedPosition(n) || {
                 x: CANVAS_PAD + ci * COL_GAP,
                 y: CANVAS_PAD + ri * ROW_GAP,
             };
@@ -628,12 +646,32 @@ function renderEdges() {
 
 // ── Node cards ────────────────────────────────────────────────────────
 
+/**
+ * Which artifact of a role list the card thumbnail shows: the selected one, else the newest. The
+ * node view lists a role's chain ascending by revision (PbArtifactUtil.listChain), and V3 keeps
+ * every revision as history, so list[0] would show the OLDEST render when nothing is selected yet.
+ * Newest = highest `revision` when the entries carry one, else the last element.
+ */
+function pickThumbArtifact(list) {
+    if (!Array.isArray(list) || !list.length) return null;
+    let sel = list.find(function (a) { return a && a.selected; });
+    if (sel) return sel;
+    let best = null;
+    list.forEach(function (a) {
+        if (!a) return;
+        if (!best) { best = a; return; }
+        let ra = Number(a.revision), rb = Number(best.revision);
+        if (isFinite(ra) && isFinite(rb) ? ra >= rb : true) best = a;
+    });
+    return best;
+}
+
 function renderArtifactThumb(artifacts) {
     if (!artifacts) return null;
     for (let role of Object.keys(artifacts)) {
         let list = artifacts[role];
         if (!list || !list.length) continue;
-        let art = list.find(function (a) { return a.selected; }) || list[0];
+        let art = pickThumbArtifact(list);
         if (!art) continue;
         if (art.dataObjectId && art.mimeType && art.mimeType.startsWith('image/')) {
             return m('img', {
@@ -1132,7 +1170,19 @@ function onCanvasMouseUp() {
         dragStartClient = null;
         dragStartPos = null;
         if (pb2BookObjectId && pos) {
-            saveCanvas(pb2BookObjectId, nodeId, pos).catch(function (err) {
+            // The server writes all four canvas columns from the body (an absent key clears it), and
+            // computePositions honours a stored position only when W and H are positive - so the
+            // card size travels with every drop or the node would read back as never placed.
+            let geom = { x: pos.x, y: pos.y, w: CARD_W, h: CARD_H };
+            saveCanvas(pb2BookObjectId, nodeId, geom).then(function (saved) {
+                let n = graphData && Array.isArray(graphData.nodes) ? graphData.nodes.find(function (k) { return k.objectId === nodeId; }) : null;
+                if (n) {
+                    n.canvasX = saved && saved.canvasX != null ? saved.canvasX : Math.round(geom.x);
+                    n.canvasY = saved && saved.canvasY != null ? saved.canvasY : Math.round(geom.y);
+                    n.canvasW = saved && saved.canvasW != null ? saved.canvasW : geom.w;
+                    n.canvasH = saved && saved.canvasH != null ? saved.canvasH : geom.h;
+                }
+            }).catch(function (err) {
                 page.toast('error', 'Save position failed: ' + err.message);
             });
         }
@@ -1454,6 +1504,20 @@ var pictureBookWorkflowView = {
 // Exported for unit tests (src/test/overlayDialogFixes.test.js) — they open the dialogs
 // onto the shared dialogCore stack without needing the route/canvas to be mounted.
 export { openMemberDialog, openChapterDialog };
+
+// Exported for Vitest (P1-10 S6): pure layout/colour helpers plus a seam for the drag-drop save.
+export { computePositions, storedPosition, pickThumbArtifact, statusColor, STATUS_COLOR, onCanvasMouseUp };
+export const CANVAS_GEOMETRY = { CARD_W, CARD_H, COL_GAP, ROW_GAP, CANVAS_PAD };
+export function __canvasStateForTest() {
+    return { graphData, positions, draggingNodeId, pb2BookObjectId };
+}
+export function __setCanvasStateForTest(patch) {
+    patch = patch || {};
+    if ('graphData' in patch) graphData = patch.graphData;
+    if ('positions' in patch) positions = patch.positions;
+    if ('draggingNodeId' in patch) draggingNodeId = patch.draggingNodeId;
+    if ('pb2BookObjectId' in patch) pb2BookObjectId = patch.pb2BookObjectId;
+}
 
 // ── Routes ────────────────────────────────────────────────────────────
 

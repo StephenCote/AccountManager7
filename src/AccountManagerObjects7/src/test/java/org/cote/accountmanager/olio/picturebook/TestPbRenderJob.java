@@ -483,7 +483,14 @@ public class TestPbRenderJob extends BaseTest {
 				observed.put("nodeStatus", String.valueOf((Object) status(PbGraphUtil.readNode(u, nodeOid, orgId), OlioFieldNames.FIELD_PB_NODE_STATUS)));
 				observed.put("cancelAccepted", Boolean.valueOf(PbRunCancelRegistry.cancel(runOid)));
 				long t0 = System.currentTimeMillis();
-				List<BaseRecord> images = super.createImage(user, groupPath, sdConfig, name, batch, hires, seed);
+				List<BaseRecord> images;
+				try {
+					images = super.createImage(user, groupPath, sdConfig, name, batch, hires, seed);
+				}
+				catch(RuntimeException e) {
+					observed.put("backendError", String.valueOf(e));
+					throw e;
+				}
 				observed.put("backendDurationMs", Long.valueOf(System.currentTimeMillis() - t0));
 				observed.put("imagesReturned", Integer.valueOf(images != null ? images.size() : -1));
 				return images;
@@ -502,7 +509,10 @@ public class TestPbRenderJob extends BaseTest {
 		assertEquals("the backend was reached", Boolean.TRUE, observed.get("cancelAccepted"));
 		assertEquals(PbRunStatusEnumType.RUNNING.name(), observed.get("runStatus"));
 		assertEquals(PbNodeStatusEnumType.RUNNING.name(), observed.get("nodeStatus"));
-		assertTrue("the real render returned image(s): " + observed.get("imagesReturned"), ((Integer) observed.get("imagesReturned")).intValue() > 0);
+		Object imagesReturned = observed.get("imagesReturned");
+		assertNotNull("createImage never returned - backendError=" + observed.get("backendError") + " job=" + job.getStatus()
+			+ " error=" + job.getError() + " result=" + job.getResult(), imagesReturned);
+		assertTrue("the real render returned image(s): " + imagesReturned, ((Integer) imagesReturned).intValue() > 0);
 
 		assertEquals(AsyncJob.Status.CANCELLED, job.getStatus());
 		Map<?, ?> result = JSONUtil.importObject(job.getResult(), Map.class);
@@ -555,7 +565,17 @@ public class TestPbRenderJob extends BaseTest {
 		/// With a free pool the worker may already have started by the time the DTO is built, so the
 		/// accepted states are queued|running; only the filler-held cases (03, 05) can assert queued.
 		assertTrue("accepted job at submit: " + dto.get("jobStatus"), Arrays.asList("queued", "running").contains(dto.get("jobStatus")));
-		assertEquals(PbRunStatusEnumType.PENDING.name(), String.valueOf((Object) dto.get("runStatus")).toUpperCase());
+		/// The DTO reads runStatus off the run handle the worker stamps RUNNING in place (PbGraphUtil.markRunning)
+		/// as it dispatches, so the same race applies: a queued job's run must still read PENDING, a job
+		/// already running may have reached the stamp (RUNNING) or not yet (PENDING).
+		String submitRunStatus = String.valueOf((Object) dto.get("runStatus")).toUpperCase();
+		if("queued".equals(dto.get("jobStatus"))) {
+			assertEquals("a queued job's run is still PENDING", PbRunStatusEnumType.PENDING.name(), submitRunStatus);
+		}
+		else {
+			assertTrue("a running job's run is PENDING or RUNNING at submit: " + submitRunStatus,
+				Arrays.asList(PbRunStatusEnumType.PENDING.name(), PbRunStatusEnumType.RUNNING.name()).contains(submitRunStatus));
+		}
 		String runOid = (String) dto.get("runObjectId");
 		AsyncJob job = awaitTerminal(u, (String) dto.get("jobId"), RENDER_TIMEOUT_MS);
 		long durationMs = System.currentTimeMillis() - t0;
@@ -682,6 +702,18 @@ public class TestPbRenderJob extends BaseTest {
 			assertEquals("A holds the claim while queued", runA, PbNodeInflight.runOf(nodeId));
 			long newestAfterA = newestRunId(u, wf);
 
+			/// P1-10 S0(b): the workflow view names the submitted run (lastRun is re-read through a
+			/// projection that carries it; workflowRequest() omits it), and the run DTO carries the job id
+			/// for as long as the token is registered - QUEUED counts, the token is published at submit.
+			Map<String, Object> wv = PbServiceFacade.workflowView(u, bookOid);
+			assertNotNull("workflowView.lastRunObjectId must be set after a submit: " + wv.get("lastRunObjectId"), wv.get("lastRunObjectId"));
+			assertEquals("workflowView.lastRunObjectId must be the submitted run", runA, wv.get("lastRunObjectId"));
+			Map<String, Object> inFlight = PbServiceFacade.getRun(u, bookOid, runA);
+			logger.info("P1-10 case08 in-flight run dto=" + inFlight);
+			assertEquals(Boolean.TRUE, inFlight.get("inFlightInThisProcess"));
+			assertNotNull("runDto.jobId must be present while in flight", inFlight.get("jobId"));
+			assertEquals("runDto.jobId must be the submitted job", jobA, inFlight.get("jobId"));
+
 			/// A second submit for the claimed node: refused by the pre-check, so no run row is written.
 			try {
 				PbRenderJobUtil.submit(u, bk, wf, Collections.singletonList(nodeId), never, swarmServer(), PbRenderJobUtil.KIND_RENDER);
@@ -744,6 +776,9 @@ public class TestPbRenderJob extends BaseTest {
 			assertEquals(PbRunStatusEnumType.CANCELLED.name(), status(run, OlioFieldNames.FIELD_PB_RUN_STATUS));
 			assertNull("the claim is released", PbNodeInflight.runOf(nodeId));
 			assertNull("the cancel entry is gone", PbRunCancelRegistry.peek(runA));
+			Map<String, Object> terminal = PbServiceFacade.getRun(u, bookOid, runA);
+			assertEquals(Boolean.FALSE, terminal.get("inFlightInThisProcess"));
+			assertNull("runDto.jobId is null once the run is terminal", terminal.get("jobId"));
 
 			/// Terminal: 409 naming the status.
 			try {

@@ -575,7 +575,14 @@ public class TestPbRecovery extends BaseTest {
 				observed.put("nodeStatus", String.valueOf((Object) status(PbGraphUtil.readNode(u, nodeOid, orgId), OlioFieldNames.FIELD_PB_NODE_STATUS)));
 				observed.put("cancelAccepted", Boolean.valueOf(PbRunCancelRegistry.cancel(runOid)));
 				long t0 = System.currentTimeMillis();
-				List<BaseRecord> images = super.createImage(user, groupPath, sdConfig, name, batch, hires, seed);
+				List<BaseRecord> images;
+				try {
+					images = super.createImage(user, groupPath, sdConfig, name, batch, hires, seed);
+				}
+				catch(RuntimeException e) {
+					observed.put("backendError", String.valueOf(e));
+					throw e;
+				}
 				observed.put("backendDurationMs", Long.valueOf(System.currentTimeMillis() - t0));
 				observed.put("imagesReturned", Integer.valueOf(images != null ? images.size() : -1));
 				return images;
@@ -594,7 +601,10 @@ public class TestPbRecovery extends BaseTest {
 		assertEquals("the backend was reached", Boolean.TRUE, observed.get("cancelAccepted"));
 		assertEquals(PbRunStatusEnumType.RUNNING.name(), observed.get("runStatus"));
 		assertEquals(PbNodeStatusEnumType.RUNNING.name(), observed.get("nodeStatus"));
-		assertTrue("the real render returned image(s): " + observed.get("imagesReturned"), ((Integer) observed.get("imagesReturned")).intValue() > 0);
+		Object imagesReturned = observed.get("imagesReturned");
+		assertNotNull("createImage never returned - backendError=" + observed.get("backendError") + " job=" + job.getStatus()
+			+ " error=" + job.getError() + " result=" + job.getResult(), imagesReturned);
+		assertTrue("the real render returned image(s): " + imagesReturned, ((Integer) imagesReturned).intValue() > 0);
 		assertEquals(AsyncJob.Status.CANCELLED, job.getStatus());
 		Map<?, ?> result = JSONUtil.importObject(job.getResult(), Map.class);
 		assertNotNull("the cancelled job keeps its summary", result);

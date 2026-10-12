@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -31,6 +32,7 @@ import org.cote.accountmanager.olio.picturebook.PbConfigUtil;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
 import org.cote.accountmanager.olio.picturebook.PbNodeExecutor;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
+import org.cote.accountmanager.olio.picturebook.PbServiceFacade;
 import org.cote.accountmanager.olio.picturebook.PbWatchedFields;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -1185,7 +1187,125 @@ public class TestPbGraph extends BaseTest {
 		assertNotNull("P0-8: lastRunAt must be stamped", after.get(OlioFieldNames.FIELD_PB_LAST_RUN_AT));
 	}
 
+	// ───────── 17: V3 P1-10 S0(a) - canvas geometry round-trips through the workflow view ─────────
+
+	/**
+	 * {@code saveCanvas} writes the four int columns; the workflow view's node summary must hand the same
+	 * four values back. Non-zero values, because the int columns read 0 (not null) when never placed, so a
+	 * zero would pass vacuously. Asserted equal, not merely non-null.
+	 */
+	@Test
+	public void case17_saveCanvasRoundTripsThroughWorkflowView() {
+		BaseRecord u = user();
+		BaseRecord bk = book(u);
+		BaseRecord wf = workflow(u, bk);
+		String bookOid = bk.get(FieldNames.FIELD_OBJECT_ID);
+
+		BaseRecord n = node(u, wf, "canvas-n", PbNodeTypeEnumType.SCENE_PROMPT, 40);
+		String nodeOid = n.get(FieldNames.FIELD_OBJECT_ID);
+		int x = 120 + Math.abs(UUID.randomUUID().hashCode() % 500);
+		int y = 340 + Math.abs(UUID.randomUUID().hashCode() % 500);
+		int w = 260;
+		int h = 180;
+
+		Map<String, Object> saved = PbServiceFacade.saveCanvas(u, bookOid, nodeOid, x, y, w, h);
+		assertEquals(nodeOid, saved.get("nodeObjectId"));
+
+		BaseRecord fresh = PbGraphUtil.readNode(u, nodeOid, orgOf(u));
+		assertNotNull(fresh);
+		assertEquals("readNode must project canvasX", Integer.valueOf(x), fresh.get(OlioFieldNames.FIELD_PB_CANVAS_X));
+		assertEquals("readNode must project canvasY", Integer.valueOf(y), fresh.get(OlioFieldNames.FIELD_PB_CANVAS_Y));
+		assertEquals("readNode must project canvasW", Integer.valueOf(w), fresh.get(OlioFieldNames.FIELD_PB_CANVAS_W));
+		assertEquals("readNode must project canvasH", Integer.valueOf(h), fresh.get(OlioFieldNames.FIELD_PB_CANVAS_H));
+
+		Map<String, Object> view = PbServiceFacade.workflowView(u, bookOid);
+		Map<String, Object> summary = nodeSummaryOf(view, nodeOid);
+		assertNotNull("workflowView must list the node " + nodeOid, summary);
+		assertEquals("canvasX must round-trip", Integer.valueOf(x), summary.get("canvasX"));
+		assertEquals("canvasY must round-trip", Integer.valueOf(y), summary.get("canvasY"));
+		assertEquals("canvasW must round-trip", Integer.valueOf(w), summary.get("canvasW"));
+		assertEquals("canvasH must round-trip", Integer.valueOf(h), summary.get("canvasH"));
+	}
+
+	// ───────── 18: V3 P1-10 S0(c) - the page view carries its node, stored status and review state ─────────
+
+	/**
+	 * A scene linked to a COMPOSITE node with one selected artifact: the page must name the node, its
+	 * STORED status (PENDING - no scan runs here), {@code pinned=false} emitted as a boolean, the selected
+	 * artifact's objectId and {@code reviewStatus=GENERATED}. After {@code approve} the same page reads
+	 * APPROVED and {@code pinned=true}, proving the fields are read fresh rather than from the create.
+	 */
+	@Test
+	public void case18_bookPageViewCarriesNodeStatusPinnedAndReviewState() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = book(u);
+		BaseRecord wf = workflow(u, bk);
+		String bookOid = bk.get(FieldNames.FIELD_OBJECT_ID);
+
+		int sceneIndex = 100000 + Math.abs(UUID.randomUUID().hashCode() % 800000);
+		BaseRecord scene = PbBookUtil.createScene(u, bk, sceneIndex, "p110 page", PbBookUtil.bookGroupPath(SLUG));
+		assertNotNull("Failed to create the P1-10 scene", scene);
+		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+
+		BaseRecord n = node(u, wf, "p110-composite", PbNodeTypeEnumType.COMPOSITE, 50);
+		String nodeOid = n.get(FieldNames.FIELD_OBJECT_ID);
+		assertEquals("Precondition: a fresh node is PENDING", PbNodeStatusEnumType.PENDING, statusOf(u, n));
+
+		BaseRecord link = RecordFactory.newInstance(OlioModelNames.MODEL_PB_SCENE, new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, OlioFieldNames.FIELD_PB_SCENE_NODE
+		});
+		link.set(FieldNames.FIELD_ID, scene.get(FieldNames.FIELD_ID));
+		link.set(FieldNames.FIELD_OBJECT_ID, sceneOid);
+		link.set(FieldNames.FIELD_NAME, scene.get(FieldNames.FIELD_NAME));
+		link.set(OlioFieldNames.FIELD_PB_SCENE_NODE, n);
+		assertNotNull("sceneNode link patch must be written", ioContext.getAccessPoint().update(u, link));
+
+		BaseRecord artifact = PbArtifactUtil.persistArtifact(u, n, "composite", PbArtifactTypeEnumType.TEXT,
+			PbBookUtil.artifactGroupPath(SLUG), null, "p110 composite stand-in", null, null);
+		assertNotNull(artifact);
+		String artifactOid = artifact.get(FieldNames.FIELD_OBJECT_ID);
+		assertEquals("Precondition: the only revision is selected", Boolean.TRUE, artifact.get(OlioFieldNames.FIELD_PB_SELECTED));
+
+		Map<String, Object> page = pageOf(PbServiceFacade.bookPageView(u, bookOid), sceneOid);
+		assertNotNull("bookPageView must list the scene " + sceneOid, page);
+		assertEquals(nodeOid, page.get("sceneNodeObjectId"));
+		assertEquals("stored status, no scan", "PENDING", page.get("nodeStatus"));
+		assertEquals("pinned must be emitted as a boolean even when false", Boolean.FALSE, page.get("pinned"));
+		assertEquals(artifactOid, page.get("artifactObjectId"));
+		assertEquals("GENERATED", page.get("reviewStatus"));
+
+		assertNotNull(PbArtifactUtil.approve(u, artifact, u.get(FieldNames.FIELD_OBJECT_ID)));
+		Map<String, Object> approved = pageOf(PbServiceFacade.bookPageView(u, bookOid), sceneOid);
+		assertNotNull(approved);
+		assertEquals(nodeOid, approved.get("sceneNodeObjectId"));
+		assertEquals(artifactOid, approved.get("artifactObjectId"));
+		assertEquals("approve stamps APPROVED", "APPROVED", approved.get("reviewStatus"));
+		assertEquals("approve pins the node", Boolean.TRUE, approved.get("pinned"));
+	}
+
 	// ─────────────────────────────── helpers ───────────────────────────────
+
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> nodeSummaryOf(Map<String, Object> workflowView, String nodeObjectId) {
+		List<Map<String, Object>> nodes = (List<Map<String, Object>>) workflowView.get("nodes");
+		assertNotNull("workflowView.nodes", nodes);
+		for(Map<String, Object> n : nodes) {
+			if(nodeObjectId.equals(n.get("objectId"))) {
+				return n;
+			}
+		}
+		return null;
+	}
+
+	private Map<String, Object> pageOf(List<Map<String, Object>> pages, String sceneObjectId) {
+		assertNotNull("bookPageView pages", pages);
+		for(Map<String, Object> p : pages) {
+			if(sceneObjectId.equals(p.get("objectId"))) {
+				return p;
+			}
+		}
+		return null;
+	}
 
 	private long orgOf(BaseRecord u) {
 		return (long) u.get(FieldNames.FIELD_ORGANIZATION_ID);

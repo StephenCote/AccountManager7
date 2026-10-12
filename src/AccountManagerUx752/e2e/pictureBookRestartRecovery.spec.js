@@ -25,6 +25,7 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { ensureSharedTestUser } from './helpers/api.js';
+import { captureConsole, assertNoConsoleErrors } from './helpers/console.js';
 import { execSync } from 'child_process';
 import { gunzipSync } from 'zlib';
 import { mkdirSync, writeFileSync } from 'fs';
@@ -44,17 +45,23 @@ function b64(str) { return Buffer.from(str).toString('base64'); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function upper(v) { return (v == null ? null : String(v).toUpperCase()); }
 
+// The only credential source: what ensureSharedTestUser() returns (set in each beforeAll), never a literal.
+let shared = null;
+
+function sharedCredential() {
+    if (!shared) throw new Error('login before ensureSharedTestUser() — the beforeAll must set the shared user first');
+    return {
+        schema: 'auth.credential',
+        organizationPath: '/Development',
+        name: shared.testUserName,
+        credential: b64(shared.testPassword),
+        type: 'hashed_password'
+    };
+}
+
 async function login(request) {
-    const resp = await request.post(REST + '/login', {
-        data: {
-            schema: 'auth.credential',
-            organizationPath: '/Development',
-            name: 'e2etest_shared',
-            credential: b64('password'),
-            type: 'hashed_password'
-        }
-    });
-    expect(resp.ok() || resp.status() === 204, 'login as e2etest_shared: HTTP ' + resp.status()).toBe(true);
+    const resp = await request.post(REST + '/login', { data: sharedCredential() });
+    expect(resp.ok() || resp.status() === 204, 'login as ' + shared.testUserName + ': HTTP ' + resp.status()).toBe(true);
 }
 
 async function search(request, type, fields, requestFields) {
@@ -131,7 +138,7 @@ test.describe('PictureBook V3 P1-7 restart recovery + resume (Docker stack)', ()
         if (/:8899(\/|$)/.test(BASE_URL)) {
             throw new Error('PB_RESTART_TESTS=1 needs PLAYWRIGHT_BASE_URL pointing at the Docker stack (https://127.0.0.1:9443), not the Vite dev server on :8899 — the spec restarts ' + CONTAINER);
         }
-        await ensureSharedTestUser(request);
+        shared = await ensureSharedTestUser(request);
         await login(request);
 
         // There is no /login/principal route; the path/make response carries organizationId.
@@ -505,6 +512,375 @@ test.describe('PictureBook V3 P1-7 restart recovery + resume (Docker stack)', ()
 
         console.log('[p17-timing] submit->inStage ' + (restartAt - submittedAt) + 'ms; restart->up ' + (upAt - restartAt)
             + 'ms; resume->terminal ' + (Date.now() - resumeAt) + 'ms (logged, never asserted)');
+        await request.get(REST + '/logout');
+    });
+});
+
+/**
+ * P1-10 criterion 2 (design §30 row 1), through the reader UI this time: a render started by clicking
+ * "Render" in the PB2 reader is caught RUNNING by a hard container restart; when the reader is reopened
+ * it shows the "interrupted after 0 of 1 node" banner, and clicking its Resume button completes the run
+ * to a real PNG that the page then displays.
+ *
+ * Own ChapBook (slug p110-restart-ux-*), one LANDSCAPE node as the first page's sceneNode (the ChapBook
+ * page path with a hand-written scene sdPrompt: no LLM, no character). The browser side uses its own
+ * contexts (not the shared `page` fixture) because the first page is closed BEFORE the container is
+ * killed and a fresh one opened after it is back; console errors are still captured and asserted on both.
+ *
+ * Gated on PB_RESTART_TESTS=1 (the restart) AND PB_SD_TESTS=1 (the live SD render):
+ *
+ *   PB_RESTART_TESTS=1 PB_SD_TESTS=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 \
+ *     npx playwright test e2e/pictureBookRestartRecovery.spec.js --workers=1 --project=chromium
+ */
+const UX_ENABLED = ENABLED && process.env.PB_SD_TESTS === '1';
+const UX_OUT_DIR = 'test-results/p110';
+
+async function loginAsSharedUser(page) {
+    const resp = await page.request.post(REST + '/login', { data: sharedCredential() });
+    if (!resp.ok() && resp.status() !== 204) throw new Error('API login as ' + shared.testUserName + ' failed: HTTP ' + resp.status());
+    // Docker nginx drops the session cookie on the WS upgrade → pageClient reconnect → forceLogin → #!/sig.
+    await page.addInitScript(() => {
+        window.WebSocket = class StubWS {
+            constructor(url) {
+                this.url = url;
+                this.readyState = 0;
+                this.onopen = null; this.onclose = null;
+                this.onmessage = null; this.onerror = null;
+                this.bufferedAmount = 0; this.extensions = ''; this.protocol = '';
+                setTimeout(() => {
+                    this.readyState = 1;
+                    if (this.onopen) this.onopen({ type: 'open', target: this });
+                }, 50);
+            }
+            send() {}
+            close() { this.readyState = 3; }
+            addEventListener() {} removeEventListener() {} dispatchEvent() { return true; }
+        };
+        window.WebSocket.CONNECTING = 0;
+        window.WebSocket.OPEN = 1;
+        window.WebSocket.CLOSING = 2;
+        window.WebSocket.CLOSED = 3;
+    });
+    await page.goto('/', { timeout: 30000 });
+    await page.waitForFunction(
+        () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
+        { timeout: 30000 }
+    );
+}
+
+async function openReaderFirstPage(page, bookOid) {
+    await page.goto('/#!/picture-book/v2/' + bookOid, { timeout: 30000 });
+    await expect(page.locator('button', { hasText: 'Begin' })).toBeVisible({ timeout: 30000 });
+    await page.locator('button', { hasText: 'Begin' }).click();
+    await expect(page.getByText(/^Page 1 of \d+$/).first()).toBeVisible();
+}
+
+let uxBookObjectId = null;
+let uxSlug = null;
+let uxScene = null;              // { id, objectId, sceneIndex, sceneNodeBefore }
+let uxNode = null;               // { id, objectId, handle }
+
+test.describe('PictureBook V3 P1-10 criterion 2 — restart → Resume through the reader (Docker stack)', () => {
+    // A .39 landscape twice plus a container restart. Never a threshold.
+    test.describe.configure({ timeout: 900000, retries: 0 });
+
+    test.beforeAll(async ({ request }) => {
+        if (!UX_ENABLED) return;
+        if (/:8899(\/|$)/.test(BASE_URL)) {
+            throw new Error('PB_RESTART_TESTS=1 needs PLAYWRIGHT_BASE_URL pointing at the Docker stack (https://127.0.0.1:9443), not the Vite dev server on :8899 — the spec restarts ' + CONTAINER);
+        }
+        shared = await ensureSharedTestUser(request);
+        await login(request);
+
+        const poemsDir = await request.get(REST + '/path/make/auth.group/data/B64-' + b64('~/Poems').replace(/=/g, '%3D'));
+        expect(poemsDir.ok(), 'ensure ~/Poems: HTTP ' + poemsDir.status()).toBe(true);
+        const poemsGroup = await poemsDir.json();
+        expect(poemsGroup && poemsGroup.id && poemsGroup.organizationId, '~/Poems group').toBeTruthy();
+        const poemOid = await findOrCreatePoem(request, poemsGroup.organizationId, poemsGroup.id, 'p110-restart-ux-poem', 'Winter (P110)', POEM_B);
+
+        uxSlug = 'p110-restart-ux-' + Date.now().toString(36);
+        const createResp = await request.post(CB_REST + '/create', {
+            data: { slug: uxSlug, title: 'P1-10 Restart Resume (reader) ChapBook', poemObjectIds: [poemOid], maxLinesPerPage: 20 }
+        });
+        const createText = await createResp.text();
+        expect(createResp.ok(), 'ChapBook create: HTTP ' + createResp.status() + ' ' + createText.slice(0, 300)).toBe(true);
+        uxBookObjectId = JSON.parse(createText).objectId;
+        expect(uxBookObjectId, 'seeded ChapBook objectId').toBeTruthy();
+        const PB = REST + '/olio/picture-book/' + uxBookObjectId;
+
+        const bookFull = await (await request.get(REST + '/model/olio.pb.book/' + uxBookObjectId + '/full')).json();
+        expect(upper(bookFull.bookType), 'seeded book is a CHAPBOOK').toBe('CHAPBOOK');
+
+        // First page's scene: hand-written landscape prompt (executeChapBookPage refuses a scene without one).
+        const pages = await (await request.get(PB + '/pages')).json();
+        expect(Array.isArray(pages) && pages.length > 0, 'seeded ChapBook has pages').toBe(true);
+        const scene = await search(request, 'olio.pb.scene',
+            [{ name: 'objectId', comparator: 'equals', value: pages[0].objectId }], ['id', 'objectId', 'sceneIndex', 'sceneNode']);
+        expect(scene && scene.id, 'scene record: ' + JSON.stringify(scene)).toBeTruthy();
+        uxScene = {
+            id: scene.id, objectId: scene.objectId, sceneIndex: scene.sceneIndex,
+            sceneNodeBefore: (scene.sceneNode && scene.sceneNode.id ? { id: scene.sceneNode.id, objectId: scene.sceneNode.objectId } : null)
+        };
+        const promptResp = await request.patch(REST + '/model', {
+            data: { schema: 'olio.pb.scene', id: scene.id, objectId: scene.objectId,
+                sdPrompt: 'a snowbound pine valley under a cobalt dusk sky, a frozen river threading silver through the trees, no people, painterly, wide vista' }
+        });
+        expect(promptResp.ok(), 'PATCH scene.sdPrompt: HTTP ' + promptResp.status()).toBe(true);
+
+        // One LANDSCAPE node, scene scope, as the page's sceneNode.
+        const wfv = await (await request.get(PB + '/workflow')).json();
+        expect(wfv && wfv.workflowObjectId, 'workflow view').toBeTruthy();
+        const wf = await search(request, 'olio.pb.workflow',
+            [{ name: 'objectId', comparator: 'equals', value: wfv.workflowObjectId }], ['id', 'objectId', 'groupId', 'groupPath']);
+        expect(wf && wf.id && wf.groupId, 'workflow record').toBeTruthy();
+        const handle = 'landscape@' + String(scene.objectId).replace(/-/g, '').slice(0, 8);
+        const nodeResp = await request.post(REST + '/model', {
+            data: { schema: 'olio.pb.node', name: handle, groupId: wf.groupId, groupPath: wf.groupPath,
+                workflow: { schema: 'olio.pb.workflow', id: wf.id, objectId: wf.objectId },
+                handle, nodeType: 'landscape', nodeStatus: 'pending', ordinal: scene.sceneIndex, scope: 'scene', scopeRef: scene.objectId, sceneIndex: scene.sceneIndex }
+        });
+        expect(nodeResp.ok(), 'create node L: HTTP ' + nodeResp.status()).toBe(true);
+        const node = await nodeResp.json();
+        expect(node && node.id && node.objectId, 'node identity').toBeTruthy();
+        uxNode = { id: node.id, objectId: node.objectId, handle };
+
+        const linkResp = await request.patch(REST + '/model', {
+            data: { schema: 'olio.pb.scene', id: scene.id, objectId: scene.objectId, sceneNode: { schema: 'olio.pb.node', id: node.id, objectId: node.objectId } }
+        });
+        expect(linkResp.ok(), 'PATCH scene.sceneNode: HTTP ' + linkResp.status()).toBe(true);
+        const pg = (await (await request.get(PB + '/pages')).json()).find(p => p.objectId === scene.objectId);
+        expect(pg && pg.sceneNodeObjectId, 'page carries sceneNodeObjectId: ' + JSON.stringify(pg)).toBe(node.objectId);
+        expect(pg.dataObjectId == null, 'page has no image before the render').toBe(true);
+        console.log('[p110-c2-seed] ' + JSON.stringify({ book: uxBookObjectId, slug: uxSlug, scene: uxScene, node: uxNode }));
+        await request.get(REST + '/logout');
+    });
+
+    test.afterAll(async ({ request }) => {
+        if (!UX_ENABLED || !uxBookObjectId) return;
+        try {
+            await login(request);
+            if (uxScene && uxScene.id) {
+                const before = uxScene.sceneNodeBefore;
+                const restoreResp = await request.patch(REST + '/model', {
+                    data: { schema: 'olio.pb.scene', id: uxScene.id, objectId: uxScene.objectId,
+                        sceneNode: (before && before.id ? { schema: 'olio.pb.node', id: before.id, objectId: before.objectId } : null) }
+                });
+                console.log('[p110-c2-cleanup] restore scene.sceneNode -> ' + (before && before.id ? before.id : 'null') + ': PATCH HTTP ' + restoreResp.status());
+            }
+            console.log('[p110-c2-cleanup] left in place (run rows + artifact reference it): ' + JSON.stringify({ book: uxBookObjectId, slug: uxSlug, node: uxNode }));
+            await request.get(REST + '/logout');
+        } catch (e) {
+            console.warn('[p110-c2-cleanup] ' + (e && e.message ? e.message : e));
+        }
+    });
+
+    test('[SD] P1-10 criterion 2: a render clicked in the reader survives a hard restart; the reopened reader offers Resume and the resumed run puts the image on the page', async ({ browser, request }) => {
+        test.skip(!UX_ENABLED, 'needs PB_RESTART_TESTS=1 (container restart) and PB_SD_TESTS=1 (live SD render)');
+        expect(uxBookObjectId && uxNode, 'ChapBook + node seeded in beforeAll').toBeTruthy();
+        const PB = REST + '/olio/picture-book/' + uxBookObjectId;
+
+        // 1. Reader, page 1: click Render; the 202 body is what the reader watches.
+        const ctx1 = await browser.newContext({ ignoreHTTPSErrors: true, baseURL: BASE_URL });
+        const page1 = await ctx1.newPage();
+        const cap1 = captureConsole(page1);
+        await loginAsSharedUser(page1);
+        await openReaderFirstPage(page1, uxBookObjectId);
+        await expect(page1.getByTestId('pb2-scene-image')).toHaveCount(0);
+        await expect(page1.getByTestId('pb2-resume-banner')).toHaveCount(0);
+        const renderBtn = page1.getByTestId('pb2-scene-render');
+        await expect(renderBtn).toHaveText(/Render$/);
+        await expect(renderBtn).toBeEnabled();
+
+        const submittedAt = Date.now();
+        const respPromise = page1.waitForResponse(r => r.request().method() === 'POST' && r.url().includes('/scene/' + uxScene.objectId + '/render'), { timeout: 60000 });
+        await renderBtn.click();
+        const submitResp = await respPromise;
+        const submitText = await submitResp.text();
+        failIfRenderPathRefusal(submitResp.status(), submitText, 'POST /scene/{id}/render (reader click)');
+        console.log('[p110-c2-submit] HTTP ' + submitResp.status() + ' ' + submitText.slice(0, 600));
+        expect(submitResp.status(), 'POST /scene/{id}/render: ' + submitText.slice(0, 400)).toBe(202);
+        const dto = JSON.parse(submitText);
+        expect(dto.jobId && dto.runObjectId, 'jobId + runObjectId').toBeTruthy();
+        expect(dto.kind).toBe('pb.render');
+        expect(dto.plannedNodeCount).toBe(1);
+        expect(dto.planned).toEqual([uxNode.handle]);
+        const runOid = dto.runObjectId;
+        const progress1 = page1.getByTestId('pb2-run-progress');
+        await expect(progress1).toHaveAttribute('data-run-terminal', '0');
+        await expect(page1.getByTestId('pb2-run-stage')).toHaveCount(1);
+        await expect(renderBtn).toBeDisabled();
+
+        // 2. Wait (over REST) until the run and the node are both RUNNING: the worker is inside the SD stage.
+        await login(request);
+        let runBefore = null;
+        let inStage = false;
+        const stageDeadline = Date.now() + 180000;
+        while (Date.now() < stageDeadline) {
+            runBefore = await getRun(request, PB, runOid);
+            const n0 = (runBefore.nodes || [])[0];
+            if (upper(runBefore.runStatus) === 'RUNNING' && n0 && upper(n0.nodeStatus) === 'RUNNING') { inStage = true; break; }
+            if (['COMPLETED', 'FAILED', 'CANCELLED', 'INTERRUPTED'].includes(upper(runBefore.runStatus))) break;
+            await sleep(250);
+        }
+        console.log('[p110-c2-stage] +' + (Date.now() - submittedAt) + 'ms before restart: ' + JSON.stringify({ runStatus: runBefore && runBefore.runStatus, nodes: runBefore && runBefore.nodes }));
+        expect(inStage, 'run and node both RUNNING before the restart (the render finished or failed first?): ' + JSON.stringify(runBefore)).toBe(true);
+        await expect(page1.getByTestId('pb2-run-stage')).toHaveAttribute('data-stage-state', 'running', { timeout: 30000 });
+        mkdirSync(UX_OUT_DIR, { recursive: true });
+        await page1.screenshot({ path: UX_OUT_DIR + '/c2-reader-running.png', fullPage: true });
+
+        // 3. The browser is gone before the container is. (Closing first keeps the console clean of the
+        //    poll failures the stub-free reconnect would log while the stack is down.)
+        assertNoConsoleErrors(cap1);
+        await page1.close();
+        await ctx1.close();
+
+        const restartAt = Date.now();
+        const sinceIso = new Date(restartAt - 5000).toISOString();
+        const restartOut = execSync('docker restart -t 0 ' + CONTAINER, { encoding: 'utf8', timeout: 180000, stdio: ['ignore', 'pipe', 'pipe'] });
+        console.log('[p110-c2-restart] docker restart -t 0 ' + CONTAINER + ' -> ' + restartOut.trim() + ' (' + (Date.now() - restartAt) + 'ms)');
+        let up = false;
+        let lastProbe = null;
+        const upDeadline = Date.now() + 360000;
+        while (Date.now() < upDeadline) {
+            try {
+                const r = await request.get(REST + '/setup/state', { timeout: 10000 });
+                const body = r.status() === 200 ? await r.json().catch(() => null) : null;
+                lastProbe = 'HTTP ' + r.status() + (body ? ' ' + JSON.stringify(body) : '');
+                if (r.status() === 200 && body && body.initialized === true) { up = true; break; }
+            } catch (e) {
+                lastProbe = String(e && e.message ? e.message : e).split('\n')[0].slice(0, 160);
+            }
+            await sleep(3000);
+        }
+        const upAt = Date.now();
+        console.log('[p110-c2-restart] stack ' + (up ? 'back' : 'NOT back') + ' after ' + (upAt - restartAt) + 'ms; last probe: ' + lastProbe);
+        expect(up, 'Service7 answered /rest/setup/state initialized:true after the restart; last probe: ' + lastProbe).toBe(true);
+
+        // 4. The durable rows were swept (what the reopened reader will read).
+        await login(request);
+        const jobGone = await request.get(REST + '/job/' + dto.jobId);
+        expect(jobGone.status(), 'GET /rest/job/{id} after restart').toBe(404);
+        const runAfter = await getRun(request, PB, runOid);
+        console.log('[p110-c2-swept] ' + JSON.stringify(runAfter));
+        expect(upper(runAfter.runStatus)).toBe('INTERRUPTED');
+        expect(runAfter.resumable).toBe(true);
+        expect(runAfter.executedNodeCount).toBe(0);
+        expect(upper(runAfter.nodes[0].nodeStatus)).toBe('READY');
+        const wfAfter = await (await request.get(PB + '/workflow')).json();
+        expect(wfAfter.lastRunObjectId, 'workflow.lastRunObjectId is the interrupted run (what pb2ReattachRun reads)').toBe(runOid);
+
+        // 5. A fresh browser: the reopened reader shows the Resume banner on the cover already.
+        const ctx2 = await browser.newContext({ ignoreHTTPSErrors: true, baseURL: BASE_URL });
+        const page2 = await ctx2.newPage();
+        const cap2 = captureConsole(page2);
+        let resumed = null;
+        try {
+            await loginAsSharedUser(page2);
+            await page2.goto('/#!/picture-book/v2/' + uxBookObjectId, { timeout: 30000 });
+            const banner = page2.getByTestId('pb2-resume-banner');
+            await expect(banner).toBeVisible({ timeout: 30000 });
+            const bannerText = await banner.innerText();
+            console.log('[p110-c2-banner] ' + bannerText.replace(/\s+/g, ' ').trim());
+            expect(bannerText).toMatch(/The last render(?: \(.+\))? was interrupted after 0 of 1 node\. Resume to finish the rest\./);
+            await expect(page2.getByTestId('pb2-run-progress')).toHaveCount(0);
+            await page2.screenshot({ path: UX_OUT_DIR + '/c2-reader-resume-banner.png', fullPage: true });
+
+            // 6. Resume from the banner: a pb.resume job the reader watches to terminal.
+            const resumeAt = Date.now();
+            const resumePromise = page2.waitForResponse(r => r.request().method() === 'POST' && r.url().includes('/run/' + runOid + '/resume'), { timeout: 60000 });
+            await page2.getByTestId('pb2-resume-run').click();
+            const resumeResp = await resumePromise;
+            const resumeText = await resumeResp.text();
+            console.log('[p110-c2-resume] HTTP ' + resumeResp.status() + ' ' + resumeText.slice(0, 600));
+            expect(resumeResp.status(), 'POST /run/{id}/resume (banner click): ' + resumeText.slice(0, 400)).toBe(202);
+            resumed = JSON.parse(resumeText);
+            expect(resumed.kind).toBe('pb.resume');
+            expect(resumed.resumedFromRunObjectId).toBe(runOid);
+            expect(resumed.runObjectId && resumed.runObjectId !== runOid, 'a NEW run').toBe(true);
+            expect(resumed.plannedNodeCount).toBe(1);
+            expect(resumed.planned).toEqual([uxNode.handle]);
+
+            await expect(banner).toHaveCount(0);
+            const progress2 = page2.getByTestId('pb2-run-progress');
+            await expect(progress2).toBeVisible();
+            await expect(progress2).toHaveAttribute('data-run-terminal', '0');
+            await expect(page2.getByTestId('pb2-run-stage')).toHaveCount(1);
+            // The reader polls the job itself; wait for its own terminal state (no threshold, just the test budget).
+            await expect(progress2).toHaveAttribute('data-run-terminal', '1', { timeout: 600000 });
+            const terminalAt = Date.now();
+            await expect(page2.getByTestId('pb2-run-stage')).toHaveAttribute('data-stage-state', 'done');
+            await expect(page2.getByTestId('pb2-run-counter')).toHaveText('Render complete: 1 rendered');
+            await expect(page2.getByTestId('pb2-run-dismiss')).toBeVisible();
+            console.log('[p110-c2-timing] submit->inStage ' + (restartAt - submittedAt) + 'ms; restart->up ' + (upAt - restartAt) + 'ms; resume->terminal(in reader) ' + (terminalAt - resumeAt) + 'ms (logged, never asserted)');
+
+            // 7. The page shows the resumed image (the reader re-read /pages after the terminal poll).
+            await expect(page2.locator('[data-pb2-cover-count]')).toHaveText(/^1 rendered of \d+ scene/);
+            await page2.locator('button', { hasText: 'Begin' }).click();
+            await expect(page2.getByText(/^Page 1 of \d+$/).first()).toBeVisible();
+            const img = page2.getByTestId('pb2-scene-image');
+            await expect(img).toBeVisible();
+            await expect.poll(async () => img.evaluate(el => el.complete && el.naturalWidth > 0), { timeout: 60000, message: 'scene image decoded in the browser' }).toBe(true);
+            await expect(page2.getByTestId('pb2-scene-chip')).toHaveAttribute('data-chip', 'review');
+            await expect(page2.getByTestId('pb2-scene-render')).toHaveText(/Re-render$/);
+            await page2.screenshot({ path: UX_OUT_DIR + '/c2-reader-resumed.png', fullPage: true });
+            assertNoConsoleErrors(cap2);
+        } finally {
+            await page2.close().catch(() => {});
+            await ctx2.close().catch(() => {});
+        }
+
+        // 8. Durable state + the PNG itself.
+        expect(resumed && resumed.runObjectId, 'resume 202 captured from the banner click').toBeTruthy();
+        const wfDone = await (await request.get(PB + '/workflow')).json();
+        expect(wfDone.lastRunObjectId, 'workflow.lastRunObjectId moved to the resumed run').toBe(resumed.runObjectId);
+        const newRun = await getRun(request, PB, resumed.runObjectId);
+        console.log('[p110-c2-newrun] ' + JSON.stringify(newRun));
+        expect(upper(newRun.runStatus)).toBe('COMPLETED');
+        expect(newRun.executedNodeCount).toBe(1);
+        expect(newRun.failedNodeCount).toBe(0);
+        const oldRun = await getRun(request, PB, runOid);
+        expect(upper(oldRun.runStatus), 'interrupted run left as the record').toBe('INTERRUPTED');
+        const nodeDone = await search(request, 'olio.pb.node',
+            [{ name: 'objectId', comparator: 'equals', value: uxNode.objectId }], ['id', 'objectId', 'nodeStatus', 'inputHash']);
+        console.log('[p110-c2-node] ' + JSON.stringify(nodeDone));
+        expect(['DONE', 'DONE_UNVERIFIED']).toContain(upper(nodeDone.nodeStatus));
+        expect(nodeDone.inputHash, 'inputHash stamped').toBeTruthy();
+        const pg = (await (await request.get(PB + '/pages')).json()).find(p => p.objectId === uxScene.objectId);
+        console.log('[p110-c2-page] ' + JSON.stringify(pg));
+        expect(pg.artifactObjectId && pg.dataObjectId, 'page carries the resumed artifact').toBeTruthy();
+        expect(pg.imageStale).toBe(false);
+
+        const artResp = await request.get(PB + '/artifact/' + pg.artifactObjectId);
+        expect(artResp.ok(), 'GET artifact: HTTP ' + artResp.status()).toBe(true);
+        const art = await artResp.json();
+        expect(upper(art.role)).toBe('LANDSCAPE');
+        expect(art.dataObjectId).toBe(pg.dataObjectId);
+        const dataRec = await (await request.get(REST + '/model/data.data/' + art.dataObjectId)).json();
+        expect(dataRec && dataRec.groupPath && dataRec.name, 'data.data carries groupPath + name').toBeTruthy();
+        const mediaUrl = BASE_URL + '/AccountManagerService7/media/Development/data.data' + dataRec.groupPath + '/' + encodeURIComponent(dataRec.name);
+        const media = await request.get(mediaUrl);
+        expect(media.ok(), 'GET media ' + mediaUrl + ' HTTP ' + media.status()).toBe(true);
+        let raw = await media.body();
+        if (raw[0] === 0x1f && raw[1] === 0x8b) raw = gunzipSync(raw);
+        expect(raw.subarray(0, 8).toString('hex'), 'artifact bytes are a PNG').toBe('89504e470d0a1a0a');
+        const dims = [raw.readUInt32BE(16), raw.readUInt32BE(20)];
+        expect(dims[0] > 0 && dims[1] > 0, 'PNG has dimensions').toBe(true);
+        const pngPath = UX_OUT_DIR + '/c2-resumed-landscape.png';
+        writeFileSync(pngPath, raw);
+        await test.info().attach('c2-resumed-landscape.png', { path: pngPath, contentType: 'image/png' });
+        console.log('[p110-c2-png] ' + dims[0] + 'x' + dims[1] + ' (' + raw.length + ' bytes) seed=' + art.seed + ' backend=' + art.backend + ' durationMs=' + art.durationMs + ' -> ' + pngPath);
+
+        // 9. The restarted container's boot log carries the recovery line.
+        const logs = execSync('docker logs --since ' + sinceIso + ' ' + CONTAINER + ' 2>&1',
+            { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] });
+        let match = null;
+        let m;
+        RECOVERY_LINE.lastIndex = 0;
+        while ((m = RECOVERY_LINE.exec(logs)) !== null) match = m;
+        expect(match, 'recovery line in docker logs since ' + sinceIso + ' (' + logs.length + ' chars)').toBeTruthy();
+        console.log('[p110-c2-log] ' + match[0]);
+        expect(Number(match[1]), 'at least our RUNNING run was closed INTERRUPTED').toBeGreaterThanOrEqual(1);
+        expect(Number(match[3]), 'at least our RUNNING node was returned to READY').toBeGreaterThanOrEqual(1);
         await request.get(REST + '/logout');
     });
 });
