@@ -15,6 +15,45 @@ function testLogin(page) {
     return login(page, { user: _testUser.testUserName, password: _testUser.testPassword });
 }
 
+/**
+ * Open the chat sidebar's conversations panel (it starts collapsed to the icon strip) and
+ * return the "add New" button that lives at the top of that panel.
+ */
+async function openSessionsPanel(page) {
+    let sessionsBtn = page.locator('button[title="Sessions"]');
+    await expect(sessionsBtn).toBeVisible({ timeout: 15000 });
+    await sessionsBtn.click();
+    let newBtn = page.locator('div.w-64 button').filter({ hasText: /^\s*add\s*New\s*$/ });
+    await expect(newBtn).toBeVisible({ timeout: 15000 });
+    return newBtn;
+}
+
+/**
+ * Select the first session row in the (already open) sessions panel. Session rows are
+ * `div.group.cursor-pointer` items (ConversationManager.sessionItemView), not buttons.
+ * If the user has no sessions, create one through the "New Chat Session" dialog so the
+ * test is self-sufficient on a fresh stack.
+ */
+async function selectFirstSession(page) {
+    let sessionRow = page.locator('div.w-64 div.group.cursor-pointer');
+    let noSessions = page.locator('div.w-64 div:text-is("No sessions")');
+    await expect(sessionRow.or(noSessions).first()).toBeVisible({ timeout: 15000 });
+    if (await sessionRow.count() === 0) {
+        await page.locator('div.w-64 button').filter({ hasText: /^\s*add\s*New\s*$/ }).click();
+        let dialog = page.locator('h3:has-text("New Chat Session")');
+        await expect(dialog).toBeVisible({ timeout: 10000 });
+        await expect(page.locator('input[placeholder="Session name"]')).not.toHaveValue('', { timeout: 15000 });
+        let createBtn = page.locator('button:has-text("Create")');
+        await expect(createBtn).toBeEnabled({ timeout: 15000 });
+        await createBtn.click();
+        await expect(dialog).not.toBeVisible({ timeout: 10000 });
+        await expect(sessionRow.first()).toBeVisible({ timeout: 30000 });
+    }
+    await sessionRow.first().click();
+    // Selection is reflected by the toolbar h2 (renderToolbar) no longer reading "No session"
+    await expect(page.locator('h2').first()).not.toHaveText('No session', { timeout: 15000 });
+}
+
 // ── Test 9: Clear Cache / Cleanup toasts (#33) ─────────────────────
 
 test.describe('Issue #33: Clear Cache and Cleanup toasts', () => {
@@ -102,13 +141,15 @@ test.describe('Issue #32: Picker field labels in new session dialog', () => {
             await expect(wizardTitle).not.toBeVisible({ timeout: 5000 });
         }
 
-        // Open "New Session" dialog
-        let newBtn = page.locator('button:has-text("New Session")').or(page.locator('button:has-text("New")'));
-        await expect(newBtn.first()).toBeVisible({ timeout: 15000 });
-        await newBtn.first().click();
+        // Open the "New Chat Session" dialog. The sidebar starts collapsed to its icon strip and
+        // the first session is auto-selected (chat.js initChatView -> autoSelectFirst), so the
+        // empty-state "New Session" button is not rendered; the current affordance is the
+        // "Sessions" icon -> conversations panel -> "add New" button.
+        let newBtn = await openSessionsPanel(page);
+        await newBtn.click();
 
         // Wait for dialog
-        let dialog = page.locator('text=New Chat Session');
+        let dialog = page.locator('h3:has-text("New Chat Session")');
         await expect(dialog).toBeVisible({ timeout: 10000 });
         await page.waitForTimeout(2000);
 
@@ -224,48 +265,35 @@ test.describe('Issue #28: Sidebar config picker click', () => {
             await expect(wizardTitle).not.toBeVisible({ timeout: 5000 });
         }
 
-        // Open sessions sidebar
-        let sessionsBtn = page.locator('button[title="Sessions"]');
-        if (await sessionsBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-            await sessionsBtn.click();
-            await page.waitForTimeout(1000);
-        }
+        // Open the sessions panel (sidebar starts collapsed to the icon strip)
+        await openSessionsPanel(page);
 
-        // Need a session open for config accordion to appear
-        // Try to select first available session
-        let sessionItem = page.locator('.overflow-y-auto button').first();
-        if (await sessionItem.isVisible({ timeout: 3000 }).catch(() => false)) {
-            await sessionItem.click();
-            await page.waitForTimeout(2000);
-        }
+        // The config accordion only renders with an active session. Session rows are
+        // `div.group.cursor-pointer` items (not buttons) in the sessions panel; select the first.
+        await selectFirstSession(page);
 
-        // Look for config accordion toggle
-        let configToggle = page.locator('button:has-text("Config")');
-        if (await configToggle.isVisible({ timeout: 5000 }).catch(() => false)) {
-            // Click to expand
-            await configToggle.click();
+        // Config accordion toggle (renderConfigAccordion: "settings Config" button under the list)
+        let configToggle = page.locator('div.w-64 button').filter({ hasText: /^\s*settings\s*Config\s*/ });
+        await expect(configToggle).toBeVisible({ timeout: 10000 });
+        await configToggle.click();
 
-            // Look for "Chat Config:" label
-            let chatConfigRow = page.locator('text=Chat Config:');
-            await expect(chatConfigRow).toBeVisible({ timeout: 5000 });
+        // "Chat Config:" row (configRow) appears when expanded
+        let chatConfigRow = page.locator('div.w-64 div.cursor-pointer').filter({ hasText: 'Chat Config:' });
+        await expect(chatConfigRow).toBeVisible({ timeout: 5000 });
 
-            // Click on the Chat Config row to open picker
-            await chatConfigRow.click();
+        // Click on the Chat Config row to open the library picker (Issue #28)
+        await chatConfigRow.click();
 
-            // Picker should open (fixed inset-0 overlay)
-            let pickerModal = page.locator('div.fixed.inset-0').filter({
-                has: page.locator('h3:has-text("Select")')
-            });
+        // Picker opens as a fixed inset-0 overlay titled "Select Chat Config"
+        let pickerModal = page.locator('div.fixed.inset-0').filter({
+            has: page.locator('h3:has-text("Select Chat Config")')
+        });
+        await expect(pickerModal).toBeVisible({ timeout: 15000 });
+        await screenshot(page, 'bugfix3-config-accordion');
 
-            // If picker opened, close it; if not, that's the known issue to debug
-            let pickerOpened = await pickerModal.isVisible({ timeout: 5000 }).catch(() => false);
-            if (pickerOpened) {
-                let closeBtn = pickerModal.locator('button:has(span:text("close"))');
-                await closeBtn.click();
-            }
-
-            await screenshot(page, 'bugfix3-config-accordion');
-        }
+        let closeBtn = pickerModal.locator('button:has(span:text("close"))');
+        await closeBtn.click();
+        await expect(pickerModal).not.toBeVisible({ timeout: 5000 });
     });
 });
 
@@ -290,39 +318,29 @@ test.describe('Issue #24: Edit mode save', () => {
             await expect(wizardTitle).not.toBeVisible({ timeout: 5000 });
         }
 
-        // Open sessions sidebar and select a session
-        let sessionsBtn = page.locator('button[title="Sessions"]');
-        if (await sessionsBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-            await sessionsBtn.click();
-            await page.waitForTimeout(1000);
-        }
+        // Open the sessions panel and select the first session row (rows are divs, not buttons)
+        await openSessionsPanel(page);
+        await selectFirstSession(page);
 
-        // Select first session
-        let sessionItem = page.locator('.overflow-y-auto button').first();
-        if (await sessionItem.isVisible({ timeout: 3000 }).catch(() => false)) {
-            await sessionItem.click();
-            await page.waitForTimeout(2000);
-        }
-
-        // Check for edit button in toolbar
+        // Edit toggle renders in the toolbar whenever a session is active (chat.js renderToolbar)
         let editBtn = page.locator('button[title="Edit messages"]');
-        if (await editBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await editBtn.click();
+        await expect(editBtn).toBeVisible({ timeout: 10000 });
+        await editBtn.click();
 
-            // After clicking, button title changes to "Exit edit mode"
-            let exitEditBtn = page.locator('button[title="Exit edit mode"]');
-            await expect(exitEditBtn).toBeVisible({ timeout: 3000 });
+        // After clicking, button title changes to "Exit edit mode"
+        let exitEditBtn = page.locator('button[title="Exit edit mode"]');
+        await expect(exitEditBtn).toBeVisible({ timeout: 5000 });
 
-            // Save button should be visible
-            let saveBtn = page.locator('button[title="Save edits"]');
-            await expect(saveBtn).toBeVisible({ timeout: 3000 });
+        // Save button should be visible
+        let saveBtn = page.locator('button[title="Save edits"]');
+        await expect(saveBtn).toBeVisible({ timeout: 5000 });
 
-            await screenshot(page, 'bugfix3-edit-mode');
+        await screenshot(page, 'bugfix3-edit-mode');
 
-            // Toggle back to normal mode
-            await exitEditBtn.click();
-            await expect(page.locator('button[title="Edit messages"]')).toBeVisible({ timeout: 3000 });
-        }
+        // Toggle back to normal mode
+        await exitEditBtn.click();
+        await expect(page.locator('button[title="Edit messages"]')).toBeVisible({ timeout: 5000 });
+        await expect(saveBtn).not.toBeVisible({ timeout: 5000 });
     });
 });
 
@@ -426,20 +444,32 @@ test.describe('Issue #30: Audio token rendering', () => {
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
-        // Test audio token processing from console
+        // Test audio token processing from console. The backend emits ${audio.TEXT} where TEXT is
+        // the spoken text itself (prompt.sms.json: "audio via ${audio.hello} tokens"); audioTokens.js
+        // TOKEN_REGEX captures everything after "audio." up to the closing brace as `text`.
         let result = await page.evaluate(() => {
             if (window.am7audioTokens) {
-                let tokens = window.am7audioTokens.parse('Hello ${audio.text "greeting"} world');
-                return { hasParse: true, tokenCount: tokens.length, firstText: tokens.length > 0 ? tokens[0].text : null };
+                let input = 'Hello ${audio.Good morning, friend} world ${audio.See you soon!}';
+                let tokens = window.am7audioTokens.parse(input);
+                return {
+                    hasParse: true,
+                    tokenCount: tokens.length,
+                    firstText: tokens.length > 0 ? tokens[0].text : null,
+                    firstFull: tokens.length > 0 ? tokens[0].full : null,
+                    firstSpan: tokens.length > 0 ? input.slice(tokens[0].start, tokens[0].end) : null,
+                    secondText: tokens.length > 1 ? tokens[1].text : null
+                };
             }
             return { hasParse: false };
         });
 
         // am7audioTokens should be loaded on the chat page
         expect(result.hasParse).toBe(true);
-        if (result.tokenCount > 0) {
-            expect(result.firstText).toBe('greeting');
-        }
+        expect(result.tokenCount).toBe(2);
+        expect(result.firstText).toBe('Good morning, friend');
+        expect(result.firstFull).toBe('${audio.Good morning, friend}');
+        expect(result.firstSpan).toBe(result.firstFull);
+        expect(result.secondText).toBe('See you soon!');
 
         await screenshot(page, 'bugfix3-audio-tokens');
     });

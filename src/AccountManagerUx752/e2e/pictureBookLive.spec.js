@@ -5,6 +5,14 @@
  * Every bug found here was introduced by a previous Claude session.
  * Uses setupWorkflowTestData — NEVER admin for testing.
  * Screenshots saved to e2e/screenshots/ as proof.
+ *
+ * Env gates (the default multi-worker suite must never fire LLM/SD work in parallel):
+ *   PB_LLM_TESTS=1  — beforeAll runs the real LLM extraction (DGX at 192.168.1.42, --workers=1) and the
+ *                     scene-dependent phases (D–I, H.1) get data. Without it the extraction is NOT run and
+ *                     every scene-dependent test skips with NO_SCENES_REASON. B.1/B.2 (extract from the page)
+ *                     are gated the same way.
+ *   E2E_SD_LIVE=1   — B.4 (POST .../scene/{id}/generate, a real Stable Diffusion render) is allowed to run.
+ * The selector/picker/wizard/reimage-dialog tests (C.*, L.*) make no LLM or SD call and always run.
  */
 import { test as base, expect } from '@playwright/test';
 import { login } from './helpers/auth.js';
@@ -27,6 +35,13 @@ function saveScreenshot(pg, name) {
     return pg.screenshot({ path: path.join(SCREENSHOT_DIR, 'pb-' + name + '.png'), fullPage: true });
 }
 
+const PB_LLM = !!process.env.PB_LLM_TESTS;
+const SD_LIVE = !!process.env.E2E_SD_LIVE;
+const NO_SCENES_REASON = PB_LLM
+    ? 'No scenes from extraction'
+    : 'LLM extraction gated: set PB_LLM_TESTS=1 and run with --workers=1';
+const NO_SD_REASON = 'SD generation gated: set E2E_SD_LIVE=1 (serial SD slot)';
+
 // Shared state across all tests in this describe block
 let testInfo = {};
 let workObjectId = null;     // Source document objectId (for extract API)
@@ -34,6 +49,10 @@ let bookObjectId = null;     // Book group objectId (for scenes/viewer/reset API
 let chatConfigName = null;
 let extractedScenes = [];  // populated by Phase B
 let generatedImageId = null;
+let pickNoteName = null;     // a second AIME note in ~/Notes, never extracted — what "Browse Notes" must list (C.2/C.3)
+let pickNoteObjectId = null;
+let apparelObj = null;       // olio.apparel owned by the test user (L.1); createObject returns identity only
+let apparelName = null;
 
 const AIME_TEXT = `AIME
 
@@ -78,6 +97,32 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             console.log('=== Setup: FAILED to create AIME note ===');
         }
 
+        // Second AIME note in ~/Notes: the selector's "Browse Notes" picker opens on the user's
+        // data.note default path (view.js getBasePathByType -> ~/Notes), so this is what C.2 must find.
+        // It is never extracted, so C.3's wizard opens at step 1 rather than resuming a book.
+        pickNoteName = 'AIME-pick-' + ts;
+        let pickNote = await createNote(request, '~/Notes', pickNoteName, AIME_TEXT);
+        if (pickNote && pickNote.objectId) {
+            pickNoteObjectId = pickNote.objectId;
+            console.log('=== Setup: picker note created: ' + pickNoteObjectId + ' name=' + pickNoteName + ' ===');
+        } else {
+            console.log('=== Setup: FAILED to create picker note in ~/Notes ===');
+        }
+
+        // Owned olio.apparel for L.1 (the reimage dialog must open on a record the test user can read;
+        // cleanupTestUser removes ~/Apparel).
+        {
+            let apparelDir = await ensurePath(request, 'auth.group', 'data', '~/Apparel');
+            apparelName = testInfo.testUserName + '_pbapparel';
+            if (apparelDir && apparelDir.id) {
+                apparelObj = await createObject(request, 'olio.apparel', {
+                    name: apparelName,
+                    groupId: apparelDir.id, groupPath: apparelDir.path
+                });
+            }
+            console.log('=== Setup: apparel ' + (apparelObj && apparelObj.objectId ? apparelObj.objectId : 'FAILED') + ' ===');
+        }
+
         // Create chatConfig as test user (must be owned by requesting user for PBAC).
         // olio.llm.chatConfig.serverUrl doesn't exist — URL goes on a system.connection FK.
         {
@@ -114,9 +159,12 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             }
         }
 
-        // Run full extraction in beforeAll so all tests have scene data
+        // Run full extraction in beforeAll so all tests have scene data — only when PB_LLM_TESTS is set
+        // (real LLM call against the DGX; must be serial).
         await apiLogout(request);
-        if (workObjectId && chatConfigName) {
+        if (!PB_LLM) {
+            console.log('=== Setup: PB_LLM_TESTS not set — skipping LLM extraction; scene-dependent tests will skip ===');
+        } else if (workObjectId && chatConfigName) {
             await apiLogin(request, { user: testInfo.testUserName, password: testInfo.testPassword });
 
             // Reset any previous extraction (bookObjectId not yet known — reset by workObjectId if legacy)
@@ -164,7 +212,10 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
                 'silently skip without this guard. Check login session and /rest/model POST.'
             );
         }
-        if (!extractedScenes.length) {
+        if (!pickNoteObjectId) {
+            throw new Error('beforeAll: picker note creation in ~/Notes failed — C.2/C.3 would silently skip.');
+        }
+        if (PB_LLM && !extractedScenes.length) {
             throw new Error(
                 'beforeAll: LLM extraction returned no scenes. ' +
                 'Verify the LLM at 192.168.1.42:11434 is reachable from the stack under test ' +
@@ -182,6 +233,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
         test('B.1 Extract scenes only', async ({ page }) => {
             test.setTimeout(300000);
+            test.skip(!PB_LLM, NO_SCENES_REASON);
             test.skip(!workObjectId, 'No work created in setup');
 
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
@@ -216,6 +268,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
         test('B.2 Full extraction (reset + extract)', async ({ page }) => {
             test.setTimeout(600000);
+            test.skip(!PB_LLM, NO_SCENES_REASON);
             test.skip(!workObjectId, 'No work created');
 
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
@@ -351,8 +404,9 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
         test('B.4 Generate scene image', async ({ page }) => {
             test.setTimeout(300000);
+            test.skip(!SD_LIVE, NO_SD_REASON);
             test.skip(!workObjectId, 'No work created');
-            test.skip(!extractedScenes.length, 'No scenes from B.2');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
@@ -611,51 +665,74 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             expect(state.heading).toContain('Picture Book');
         });
 
+        // The selector no longer lists source documents inline (features/pictureBook.js:706-768 lists PB2
+        // books + "Browse Notes"/"Browse Documents" buttons). "Browse Notes" opens the shared ObjectPicker
+        // (components/picker.js: `.am7-picker-overlay`, h3 title 'Select Note') on the user's ~/Notes path
+        // (view.js getBasePathByType), embedding the list control in table mode (list.js:1538 gridMode=0,
+        // rows `tr.tabular-row`, decorator.js:333). A single row click only toggles selection
+        // (decorator.js:355); the toolbar "check" button (list.js:972) confirms and fires onSelect.
+        const PICKER = '.am7-picker-overlay';
+        async function openNotesPicker(page) {
+            await page.evaluate(() => { window.location.hash = '#!/picture-book'; });
+            await expect(page.locator('h2', { hasText: 'Picture Book' }).first()).toBeVisible({ timeout: 15000 });
+            await page.locator('button', { hasText: 'Browse Notes' }).first().click();
+            let picker = page.locator(PICKER);
+            await expect(picker, 'Browse Notes must open the object picker').toBeVisible({ timeout: 10000 });
+            await expect(picker.locator('h3')).toHaveText('Select Note');
+            await expect(picker.locator('.result-nav-outer').first(), 'embedded list toolbar').toBeVisible({ timeout: 15000 });
+            return picker;
+        }
+
         test('C.2 Lists test user documents (AIME visible)', async ({ page }) => {
-            test.skip(!workObjectId, 'No work created');
+            test.skip(!pickNoteObjectId, 'No picker note created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            await page.evaluate(() => { window.location.hash = '#!/picture-book'; });
-            await page.waitForTimeout(3000);
+            let picker = await openNotesPicker(page);
+            // The picker header shows the container path it landed on (picker.js:431-436): ~/Notes of this user.
+            await expect(picker.locator('p.text-xs').first()).toHaveText(new RegExp('/home/' + testInfo.testUserName + '/Notes$'), { timeout: 10000 });
 
-            let items = await page.evaluate(() => {
-                let divs = document.querySelectorAll('.cursor-pointer .font-medium');
-                return Array.from(divs).map(d => d.textContent);
-            });
+            let rows = picker.locator('tr.tabular-row');
+            let aimeRow = rows.filter({ hasText: pickNoteName });
+            await expect(aimeRow, 'the AIME note created in ~/Notes must be listed').toHaveCount(1, { timeout: 15000 });
+            let names = await rows.allTextContents();
+            console.log('=== C.2 Browse Notes picker rows: ' + names.length + ' ===');
+            names.forEach(n => console.log('    ' + n.replace(/\s+/g, ' ').trim()));
+            await saveScreenshot(page, 'C2-notesPicker');
 
-            console.log('=== C.2 Document List ===');
-            console.log('  Items: ' + items.length);
-            items.forEach(n => console.log('    ' + n));
-
-            expect(items.length).toBeGreaterThanOrEqual(1);
-            let hasAime = items.some(n => n.includes('AIME'));
-            expect(hasAime).toBe(true);
+            // Header close (picker.js:438-441) dismisses it.
+            await picker.locator('button:has(span:text-is("close"))').first().click();
+            await expect(picker).not.toBeVisible({ timeout: 5000 });
         });
 
         test('C.3 Click navigates to viewer', async ({ page }) => {
-            test.skip(!workObjectId, 'No work created');
+            test.skip(!pickNoteObjectId, 'No picker note created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            await page.evaluate(() => { window.location.hash = '#!/picture-book'; });
-            await page.waitForTimeout(3000);
+            let picker = await openNotesPicker(page);
+            let aimeRow = picker.locator('tr.tabular-row').filter({ hasText: pickNoteName });
+            await expect(aimeRow).toHaveCount(1, { timeout: 15000 });
+            await aimeRow.click();
+            await expect(aimeRow, 'row click must mark the note selected').toHaveClass(/tabular-row-active/);
+            await picker.locator('button:has(span:text-is("check"))').first().click();
+            await expect(picker, 'confirming the pick closes the picker').not.toBeVisible({ timeout: 5000 });
 
-            // Click the AIME item
-            await page.evaluate(() => {
-                let items = document.querySelectorAll('.cursor-pointer');
-                for (let item of items) {
-                    if (item.textContent.includes('AIME')) {
-                        item.click();
-                        break;
-                    }
-                }
-            });
-            await page.waitForTimeout(2000);
-            await saveScreenshot(page, 'C3-navigated');
+            // onSelect -> pictureBookFromId -> wizard dialog titled 'Picture Book — <name>' (workflows/pictureBook.js:2832),
+            // at step 1 for a never-extracted note: 'Source: <name>', footer Cancel + Extract (:2410-2426).
+            let dialog = page.locator('[role="dialog"]').filter({ hasText: 'Picture Book — ' + pickNoteName });
+            await expect(dialog, 'the Picture Book wizard must open for the picked note').toBeVisible({ timeout: 15000 });
+            await expect(dialog.locator('.am7-dialog-title')).toHaveText('Picture Book — ' + pickNoteName);
+            await expect(dialog.getByText('Source: ' + pickNoteName)).toBeVisible();
+            let extractBtn = dialog.locator('.am7-dialog-footer button', { hasText: 'Extract' });
+            await expect(extractBtn, 'step 1 primary action is Extract').toBeVisible();
+            await expect(extractBtn).toHaveClass(/am7-dialog-btn-primary/);
+            await saveScreenshot(page, 'C3-wizardOpen');
 
+            // Never click Extract here (it would launch a real LLM extraction). Cancel must close the wizard.
+            await dialog.locator('.am7-dialog-footer button', { hasText: 'Cancel' }).click();
+            await expect(dialog).not.toBeVisible({ timeout: 5000 });
             let hash = await page.evaluate(() => window.location.hash);
-            console.log('=== C.3 Navigation ===');
-            console.log('  Hash: ' + hash);
-            expect(hash).toContain('/picture-book/');
+            console.log('=== C.3 wizard opened + cancelled; hash=' + hash + ' ===');
+            expect(hash).toContain('/picture-book');
         });
 
         test('C.4 No network errors on selector', async ({ page }) => {
@@ -691,7 +768,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.setTimeout(60000);
             console.log('=== D.1 DEBUG: workObjectId=' + workObjectId + ' extractedScenes.length=' + extractedScenes.length);
             test.skip(!workObjectId, 'No work created');
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
@@ -730,7 +807,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -750,7 +827,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -796,7 +873,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -837,7 +914,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -865,7 +942,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             await page.waitForFunction(() => {
                 let text = document.body.innerText;
                 return !text.includes('Loading') && (text.includes('Begin') || text.includes('Page '));
-            }, { timeout: 15000 }).catch(() => {});
+            }, null, { timeout: 15000 }).catch(() => {});
             await page.waitForTimeout(2000);
 
             // Navigate through ALL pages looking for an image (B.4 only generates for one scene)
@@ -909,7 +986,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -951,7 +1028,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -990,7 +1067,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -1019,7 +1096,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -1050,7 +1127,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -1081,7 +1158,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             let errors = [];
             page.on('pageerror', err => errors.push(err.message));
@@ -1103,7 +1180,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             let errors = [];
             page.on('pageerror', err => errors.push(err.message));
@@ -1137,7 +1214,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -1165,7 +1242,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -1192,7 +1269,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -1228,30 +1305,36 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
     test.describe('H. Blurb Editing', () => {
 
-        test('H.1 Edit button shows textarea', async ({ page }) => {
-            test.setTimeout(60000);
+        // Blurb editing was removed from the viewer (features/pictureBook.js:866 — "viewer is read-only; use
+        // 'Edit Book' to reopen wizard"). The viewer's edit affordance is now `button[title="Edit Book"]`
+        // (:1030-1037, rendered once scenes are loaded), which reopens the wizard on the existing book:
+        // tryResumeExistingBook (workflows/pictureBook.js:2737-2789) lands on step 4 "Image Generation"
+        // (:2148-2152) listing every scene, until all images are accepted/skipped.
+        test('H.1 Edit Book reopens the wizard on the existing book', async ({ page }) => {
+            test.setTimeout(120000);
             test.skip(!workObjectId, 'No work created');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
-
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
-            await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(1000);
+            let editBtn = page.locator('button[title="Edit Book"]');
+            await expect(editBtn, 'Edit Book renders once the viewer has scenes').toBeVisible({ timeout: 30000 });
+            await editBtn.click();
 
-            // Click edit (pencil) icon
-            await page.evaluate(() => {
-                let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
-                let edit = icons.find(i => i.textContent.trim() === 'edit');
-                if (edit) edit.closest('button').click();
-            });
-            await page.waitForTimeout(500);
-            await saveScreenshot(page, 'H1-editing');
+            let dialog = page.locator('[role="dialog"]').filter({ hasText: 'Picture Book — ' });
+            await expect(dialog, 'Edit Book must open the wizard dialog').toBeVisible({ timeout: 30000 });
+            await expect(dialog.locator('h3', { hasText: 'Image Generation' }), 'resumed book opens at step 4').toBeVisible({ timeout: 30000 });
+            for (let s of extractedScenes) {
+                await expect(dialog.locator('div.font-medium.text-sm.truncate', { hasText: s.title }),
+                    'step 4 must list scene "' + s.title + '"').toBeVisible({ timeout: 10000 });
+            }
+            await saveScreenshot(page, 'H1-editBookWizard');
 
-            let hasTextarea = await page.evaluate(() => !!document.querySelector('textarea'));
-            expect(hasTextarea).toBe(true);
-            console.log('VERIFIED: Edit shows textarea');
+            // Cancel closes the wizard without generating anything; the viewer is still underneath.
+            await dialog.locator('.am7-dialog-footer button', { hasText: 'Cancel' }).click();
+            await expect(dialog).not.toBeVisible({ timeout: 5000 });
+            await expect(editBtn).toBeVisible();
+            console.log('VERIFIED: Edit Book reopened the wizard at Image Generation with ' + extractedScenes.length + ' scenes');
         });
 
         test('H.2 Cancel reverts', async ({ page }) => {
@@ -1259,7 +1342,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -1304,7 +1387,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             let errors = [];
             page.on('pageerror', err => errors.push(err.message));
@@ -1354,7 +1437,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -1377,7 +1460,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, 'No scenes from extraction');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
             await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
             await page.waitForTimeout(5000);
@@ -1745,67 +1828,62 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             console.log('VERIFIED: Reimage present on charPerson');
         });
 
+        // forms.apparel.commands.reimage (core/formDef.js:4279-4286, icon auto_awesome) runs
+        // workflows/reimageApparel.js, NOT the charPerson reimage.js: its dialog is titled
+        // 'Mannequin Images: <name>' (reimageApparel.js:157) and renders `label.field-label`s with live
+        // values — "Steps: N", "Refiner Steps: N", "CFG: N", "Mannequin Creativity: N" (KI-43 replaced the
+        // old "Denoising Strength" slider, :73-89), "Model", "Refiner Model", "Sampler", "Scheduler",
+        // "Refiner Sampler", "Refiner Scheduler", "Style", "Seed" — plus #hires-cb / #shared-cb checkboxes
+        // (:146-151) and actions Cancel / Load Shared / Generate(primary) (:160-230). 'Generate' POSTs
+        // /olio/apparel/{id}/reimage (a real SD mannequin render) and is never clicked.
         test('L.1 Apparel reimage dialog shows all fields', async ({ page }) => {
             test.setTimeout(60000);
-            // This test requires an apparel object — check if one exists
+            test.skip(!apparelObj || !apparelObj.objectId, 'beforeAll could not create the owned olio.apparel');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            // Search for any apparel object
-            let apparel = await page.evaluate(async () => {
-                let { am7client } = await import('/src/core/am7client.js');
-                let q = am7client.newQuery('olio.apparel');
-                q.range(0, 1);
-                let qr = await am7client.search(q);
-                return (qr && qr.results && qr.results.length > 0) ? qr.results[0] : null;
-            });
+            await page.evaluate((oid) => { window.location.hash = '#!/view/olio.apparel/' + oid; }, apparelObj.objectId);
+            let reimageBtn = page.locator('button:has(span.material-symbols-outlined:text("auto_awesome"))').first();
+            await expect(reimageBtn, 'Reimage command must render on the owned apparel').toBeVisible({ timeout: 20000 });
+            await reimageBtn.click();
 
-            if (!apparel || !apparel.objectId) {
-                console.log('  No apparel objects available — test cannot proceed');
-                test.skip(true, 'No apparel objects available');
-                return;
-            }
-
-            await page.evaluate((oid) => {
-                window.location.hash = '#!/view/olio.apparel/' + oid;
-            }, apparel.objectId);
-            await page.waitForTimeout(5000);
-
-            // Verify the page actually loaded (not stuck on "Loading...")
-            let pageLoaded = await page.evaluate(() => {
-                return !document.body.innerText.includes('Loading...');
-            });
-            if (!pageLoaded) {
-                console.log('  Apparel page stuck on Loading... — user likely lacks permission');
-                test.skip(true, 'Apparel record not accessible to test user');
-                return;
-            }
-
-            // Click Reimage button (auto_awesome icon)
-            await page.evaluate(() => {
-                let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
-                let icon = icons.find(i => i.textContent.trim() === 'auto_awesome');
-                if (icon) icon.closest('button').click();
-            });
-            await page.waitForTimeout(2000);
+            let dialog = page.locator('.am7-dialog-backdrop .am7-dialog').first();
+            await expect(dialog).toBeVisible({ timeout: 15000 });
+            await expect(dialog.locator('.am7-dialog-title')).toHaveText('Mannequin Images: ' + apparelName);
             await saveScreenshot(page, 'L1-apparelReimage');
 
-            let fields = await page.evaluate(() => {
-                let labels = Array.from(document.querySelectorAll('.field-label'));
-                return labels.map(l => l.textContent.trim());
-            });
+            let labels = (await dialog.locator('label.field-label').allTextContents()).map(t => t.replace(/\s+/g, ' ').trim());
+            console.log('=== L.1 Apparel Reimage Dialog labels: ' + labels.join(' | '));
 
-            console.log('=== L.1 Apparel Reimage Dialog ===');
-            console.log('  Fields: ' + fields.join(', '));
-
-            let expected = ['Steps', 'Refiner Steps', 'CFG Scale', 'Denoising Strength', 'Model', 'Refiner Model', 'Style', 'Seed'];
-            for (let f of expected) {
-                expect(fields).toContain(f);
+            let expected = [
+                /^Steps: \d+$/, /^Refiner Steps: \d+$/, /^CFG: [\d.]+$/, /^Mannequin Creativity: \d+$/,
+                /^Model$/, /^Refiner Model$/, /^Sampler$/, /^Scheduler$/, /^Refiner Sampler$/, /^Refiner Scheduler$/,
+                /^Style$/, /^Seed$/
+            ];
+            for (let re of expected) {
+                expect(labels.some(l => re.test(l)), 'mannequin dialog must render a field-label matching ' + re).toBe(true);
             }
+            // The test-quality defaults the workflow applies (reimageApparel.js:29-30) must reach the labels.
+            expect(labels).toContain('Steps: 20');
+            expect(labels).toContain('Refiner Steps: 20');
+            // Each live-value label sits above a formFieldRenderers.renderRange pair (range + number input).
+            for (let re of [/^Steps: \d+$/, /^Refiner Steps: \d+$/, /^CFG: [\d.]+$/, /^Mannequin Creativity: \d+$/]) {
+                let lbl = dialog.locator('label.field-label', { hasText: re }).first();
+                await expect(lbl.locator('xpath=..').locator('input[type="range"]'), 'range input under ' + re).toHaveCount(1);
+                await expect(lbl.locator('xpath=..').locator('input[type="number"]'), 'number input under ' + re).toHaveCount(1);
+            }
+            // Style default 'photograph' (reimageApparel.js:31) lands in the Style input.
+            await expect(dialog.locator('label.field-label', { hasText: /^Style$/ }).locator('xpath=..').locator('input')).toHaveValue('photograph');
+            // HiRes (forced off, :32) and "Save as shared config" checkboxes
+            await expect(dialog.locator('#hires-cb'), 'HiRes checkbox').toHaveCount(1);
+            await expect(dialog.locator('#hires-cb')).not.toBeChecked();
+            await expect(dialog.locator('#shared-cb'), 'Save as shared config checkbox').toHaveCount(1);
+            // Footer actions: Cancel, Load Shared, Generate (primary — never clicked: real SD render).
+            await expect(dialog.locator('.am7-dialog-footer button', { hasText: 'Load Shared' })).toBeVisible();
+            await expect(dialog.locator('.am7-dialog-footer button', { hasText: 'Generate' })).toHaveClass(/am7-dialog-btn-primary/);
 
-            // Check HiRes checkbox
-            let hasHires = await page.evaluate(() => !!document.querySelector('#hires-cb'));
-            expect(hasHires).toBe(true);
-            console.log('VERIFIED: All reimage fields present');
+            await dialog.locator('.am7-dialog-footer button', { hasText: 'Cancel' }).click();
+            await expect(dialog).not.toBeVisible({ timeout: 5000 });
+            console.log('VERIFIED: All mannequin reimage fields present');
         });
     });
 });

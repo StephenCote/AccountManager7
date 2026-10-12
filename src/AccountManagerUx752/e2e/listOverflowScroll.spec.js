@@ -102,9 +102,13 @@ test.describe('List body scroll at constrained viewport height (KI-8)', () => {
         await page.goto('/#!/list/data.note/' + notesGroup.objectId);
         await page.locator('.tabular-results-table').waitFor({ state: 'visible', timeout: 20000 });
 
-        let gridBtn = page.locator('button:has(span:text("apps")), button:has(span:text("grid_view"))').first();
+        // The list toolbar's table<->gallery toggle (list.js toggleGrid: two modes, always the `apps`
+        // icon). Scope to the toolbar — the aside "App Panel" button also carries an `apps` icon and
+        // sits outside the 400px-tall viewport.
+        let gridBtn = page.locator('.result-nav-outer .result-nav button:has(span:text-is("apps"))').first();
         await expect(gridBtn).toBeVisible({ timeout: 5000 });
         await gridBtn.click();
+        await expect(page.locator('.grid-preview-container')).toBeVisible({ timeout: 15000 });
 
         let scrollBox = page.locator('.grid-preview-container .flex-1.overflow-y-auto');
         await expect(scrollBox).toBeVisible({ timeout: 15000 });

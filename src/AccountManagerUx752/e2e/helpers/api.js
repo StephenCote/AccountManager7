@@ -770,6 +770,128 @@ export async function ensureChatConfig(request, orgId, opts = {}) {
 }
 
 /**
+ * The dedicated persistent NON-ADMIN user whose ~/Chat holds a `contentAnalysis` chatConfig pointing at
+ * an address that can never answer. ChatUtil.resolveConfig consults the caller's OWN ~/Chat (by owner +
+ * name) before the shared library, and the ChapBook/PictureBook clients resolve the default chat config
+ * BY NAME ('contentAnalysis') with no per-call selection on the per-scene Regenerate path — so the only
+ * way to put a browser-driven flow deterministically into the "LLM unavailable" condition, without
+ * mutating anything e2etest_shared owns, is to run it as a user who owns an unreachable config of that
+ * name. Introduced by pictureBookUnreachableLlmUx.spec.js; shared here so other specs reuse the same
+ * record instead of each inventing a fixture. RFC 5737 TEST-NET-1 (192.0.2.1) is guaranteed unroutable,
+ * so a connect to it can only time out or be rejected — it is never a real host.
+ */
+export const UNREACHABLE_LLM_USER = 'e2etest_pbdown';
+export const UNREACHABLE_LLM_PASSWORD = 'password';
+export const UNREACHABLE_LLM_URL = 'http://192.0.2.1:11434';
+const UNREACHABLE_LLM_CONFIG_NAME = 'contentAnalysis';
+
+/**
+ * Ensure `user` (default e2etest_pbdown) exists and owns a chatConfig named `configName` (default
+ * 'contentAnalysis') in its ~/Chat whose system.connection points at `serverUrl` (default
+ * UNREACHABLE_LLM_URL). Provisioning of the user goes through ensureSharedTestUser (admin only creates
+ * the user + credential); the config is created in the user's OWN session, never as admin.
+ *
+ * Idempotent. REFUSES (throws) when a same-named config already exists for the user but points
+ * elsewhere, rather than silently re-pointing it: a chatConfig the backend has cached with its old
+ * connection would not see a connection PATCH, so a re-point can look applied while the old host is
+ * still being called. Delete the stale record and re-run instead.
+ *
+ * @returns { orgId, chatGroupId, configId, connectionId, serverUrl }
+ */
+export async function ensureUnreachableChatConfig(request, opts = {}) {
+    const org = opts.org || '/Development';
+    const user = opts.user || UNREACHABLE_LLM_USER;
+    const password = opts.password || UNREACHABLE_LLM_PASSWORD;
+    const configName = opts.configName || UNREACHABLE_LLM_CONFIG_NAME;
+    const serverUrl = opts.serverUrl || UNREACHABLE_LLM_URL;
+    const model = opts.model || PB_MODEL_REAL;
+
+    await ensureSharedTestUser(request, { org, name: user, password });
+
+    const ctx = await newApiContext();
+    try {
+        await loginCtx(ctx, { org, user, password });
+        const chatDir = await ensurePathCtx(ctx, 'auth.group', 'data', '~/Chat');
+        if (!chatDir || !chatDir.id) {
+            throw new Error('[e2e-llm-down] could not ensure ~/Chat for ' + user + ': ' + JSON.stringify(chatDir));
+        }
+        const orgId = chatDir.organizationId;
+        if (typeof orgId !== 'number') {
+            throw new Error('[e2e-llm-down] ~/Chat for ' + user + ' returned no numeric organizationId');
+        }
+
+        // A nested-path projection ("connection.serverUrl") is rejected server-side and the search then
+        // answers 200 with an EMPTY body, which reads exactly like "no such record" — so project the
+        // foreign record and resolve its serverUrl with a second search.
+        const existing = await searchByNameOrgCtx(ctx, 'olio.llm.chatConfig', configName, orgId,
+            ['id', 'objectId', 'name', 'model', 'connection'], chatDir.id);
+        if (existing) {
+            const connId = existing.connection && existing.connection.id;
+            let conn = null;
+            if (connId) {
+                const resp = await ctx.post(REST + '/model/search', {
+                    data: {
+                        schema: 'io.query', type: 'system.connection', cache: false, recordCount: 1,
+                        fields: [
+                            { name: 'id', comparator: 'equals', value: Number(connId) },
+                            { name: 'organizationId', comparator: 'equals', value: orgId }
+                        ],
+                        request: ['id', 'objectId', 'name', 'serverUrl']
+                    }
+                });
+                const body = await safeJson(resp);
+                conn = (body && body.results && body.results.length) ? body.results[0] : null;
+            }
+            const url = conn && conn.serverUrl;
+            if (url !== serverUrl) {
+                throw new Error('[e2e-llm-down] ' + user + "'s " + configName + ' chatConfig (id=' + existing.id
+                    + ') must point at ' + serverUrl + ' but points at ' + url + ' — delete it and re-run');
+            }
+            console.log('[e2e-llm-down] reusing ' + user + ' ' + configName + ' chatConfig id=' + existing.id + ' -> ' + url);
+            await logoutCtx(ctx);
+            return { orgId, chatGroupId: chatDir.id, configId: existing.id, connectionId: conn.id, serverUrl: url };
+        }
+
+        const connResp = await ctx.post(REST + '/model', {
+            data: {
+                schema: 'system.connection',
+                name: configName + ' Connection (unreachable)',
+                groupId: chatDir.id,
+                groupPath: chatDir.path,
+                serverUrl: serverUrl,
+                requestTimeout: 60
+            }
+        });
+        const conn = await safeJson(connResp);
+        if (!conn || !conn.objectId) {
+            throw new Error('[e2e-llm-down] system.connection create failed for ' + user + ': HTTP ' + connResp.status());
+        }
+        const cfgResp = await ctx.post(REST + '/model', {
+            data: {
+                schema: 'olio.llm.chatConfig',
+                name: configName,
+                groupId: chatDir.id,
+                groupPath: chatDir.path,
+                model: model,
+                analyzeModel: model,
+                serviceType: 'ollama',
+                stream: false,
+                connection: { schema: 'system.connection', id: conn.id, objectId: conn.objectId }
+            }
+        });
+        const cfg = await safeJson(cfgResp);
+        if (!cfg || !cfg.objectId) {
+            throw new Error('[e2e-llm-down] chatConfig create failed for ' + user + ': HTTP ' + cfgResp.status());
+        }
+        console.log('[e2e-llm-down] created ' + user + ' ' + configName + ' chatConfig -> ' + serverUrl);
+        await logoutCtx(ctx);
+        return { orgId, chatGroupId: chatDir.id, configId: cfg.id, connectionId: conn.id, serverUrl };
+    } finally {
+        await ctx.dispose();
+    }
+}
+
+/**
  * Ensure a persistent test user that holds the AccountAdministrators role, so tests can exercise
  * @RolesAllowed({"admin"}) endpoints WITHOUT ever logging in as `admin`.
  *

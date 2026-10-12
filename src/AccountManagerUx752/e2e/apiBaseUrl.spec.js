@@ -1,14 +1,25 @@
 /**
- * E2E test: when the UX is served from the Vite dev port (8899), API requests
- * should target the app server (8443) directly via absolute URLs.
+ * E2E test: the SPA's REST base resolves to the right origin for the topology it is served from.
  *
- * Regression: am7client.base() returned only `/AccountManagerService7/rest`
- * (path-relative), so requests like /olio/.../narrate went to 8899 and either
- * relied on the Vite proxy or 404'd entirely depending on the dev setup.
+ * core/config.js defaultServer(): when the page is served from the Vite dev port (8899) the API base
+ * is an absolute URL to the app server on 8443; from any other origin (the Docker nginx on 9443, the
+ * second Vite on 8898 that proxies to it) it is '' and REST calls are same-origin. This spec derives
+ * the expected API origin from the project's baseURL and asserts every observed REST request targets
+ * it, so it is correct under both Playwright projects without naming any port.
+ *
+ * Regression guarded: am7client.base() returned only `/AccountManagerService7/rest` (path-relative)
+ * in the split dev pairing, so requests like /olio/.../narrate bounced off the Ux server.
  */
 import { test, expect } from '@playwright/test';
 import { login } from './helpers/auth.js';
 import { ensureSharedTestUser } from './helpers/api.js';
+
+// Mirror of config.js defaultServer(): same-origin unless served from the Vite dev port 8899.
+function expectedApiOrigin(baseURL) {
+    const u = new URL(baseURL);
+    if (u.port === '8899') return u.protocol + '//' + u.hostname + ':8443';
+    return u.origin;
+}
 
 test.describe('API base URL resolution', () => {
     let testInfo = {};
@@ -17,8 +28,10 @@ test.describe('API base URL resolution', () => {
         testInfo = await ensureSharedTestUser(request);
     });
 
-    test('REST calls from page on 8899 target app server on 8443', async ({ page }) => {
+    test('REST calls from the page target the API origin derived from baseURL', async ({ page, baseURL }) => {
         test.setTimeout(60000);
+        const apiOrigin = expectedApiOrigin(baseURL);
+        console.log('[apiBaseUrl] baseURL=' + baseURL + ' expected API origin=' + apiOrigin);
 
         let restCalls = [];
         page.on('request', (req) => {
@@ -36,28 +49,27 @@ test.describe('API base URL resolution', () => {
 
         expect(restCalls.length, 'should have observed some REST traffic').toBeGreaterThan(0);
 
-        // After the config.js change, every REST call should be absolute to 8443.
-        let toUx = restCalls.filter(u => u.startsWith('https://localhost:8899/AccountManagerService7/'));
-        let toApp = restCalls.filter(u => u.startsWith('https://localhost:8443/AccountManagerService7/'));
+        const onApi = restCalls.filter(u => new URL(u).origin === apiOrigin);
+        const offApi = restCalls.filter(u => new URL(u).origin !== apiOrigin);
 
         // For diagnostics, log what we saw
-        if (toUx.length || toApp.length === 0) {
+        if (offApi.length || onApi.length === 0) {
             console.log('REST calls observed:\n' + restCalls.join('\n'));
         }
 
-        expect(toApp.length, 'all REST calls should target the app server on 8443').toBeGreaterThan(0);
-        expect(toUx.length, 'no REST calls should target the Ux dev server on 8899').toBe(0);
+        expect(onApi.length, 'REST calls should target ' + apiOrigin).toBeGreaterThan(0);
+        expect(offApi, 'no REST call may target any other origin than ' + apiOrigin).toEqual([]);
     });
 
-    test('am7client.base() returns absolute URL to app server', async ({ page }) => {
+    test('am7client.base() resolves to the API origin derived from baseURL', async ({ page, baseURL }) => {
         test.setTimeout(30000);
+        const apiOrigin = expectedApiOrigin(baseURL);
         await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
         await page.goto('/#!/main');
         await page.waitForTimeout(1000);
 
+        // main.js:80-88 exposes window.am7client; am7model._client is the older bridge.
         let base = await page.evaluate(() => {
-            // am7client is exposed via the global page object's _client reference,
-            // or through the am7model bridge. Try both.
             if (typeof window.am7client !== 'undefined' && typeof window.am7client.base === 'function') {
                 return window.am7client.base();
             }
@@ -66,12 +78,13 @@ test.describe('API base URL resolution', () => {
             }
             return null;
         });
+        console.log('[apiBaseUrl] am7client.base()=' + base);
+        expect(base, 'am7client must be reachable on window (main.js exposes it)').not.toBeNull();
 
-        // If am7client isn't on window, fall back to inspecting a tracked request URL.
-        // The previous test already covers the network path; this is the direct
-        // module check when possible.
-        if (base !== null) {
-            expect(base, 'base() should include the app server host:port').toMatch(/https?:\/\/[^/]+:8443\/AccountManagerService7\/rest/);
-        }
+        // base() is absolute in the split pairing and path-relative when same-origin; resolve it
+        // against the page's own location the way the browser does and compare origins.
+        const resolved = new URL(base, page.url());
+        expect(resolved.origin, 'base() must resolve to the API origin').toBe(apiOrigin);
+        expect(resolved.pathname).toBe('/AccountManagerService7/rest');
     });
 });

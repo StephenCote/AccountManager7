@@ -4,6 +4,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -31,13 +32,55 @@ import org.junit.Test;
 public class TestMannequinBaseImage {
 	public static final Logger logger = LogManager.getLogger(TestMannequinBaseImage.class);
 
-	/// Tests run with the module directory as CWD, so Ux752 is a sibling of AccountManagerObjects7.
-	private static final String UX752_MEDIA = "../AccountManagerUx752/public/media/";
+	/// Tests run with the module directory as CWD, so Ux752 is normally a sibling of
+	/// AccountManagerObjects7. That is not true everywhere the module is tested: the loop gate runs
+	/// Objects7 from an isolated rsync'd copy (`LOOP_ROOT=C:/tmp/o7verify`, src/pom.xml plus `am7`/`media`
+	/// symlinks, no Ux752 beside it), where the sibling path does not exist and this guard went red for
+	/// a reason that had nothing to do with drift. So the Ux752 media directory is resolved in this
+	/// order, first existing directory wins:
+	///   1. system property `am7.ux752.media`   (e.g. mvn -Dam7.ux752.media=C:/.../AccountManagerUx752/public/media)
+	///   2. environment variable `AM7_UX752_MEDIA`  (what the gate sets when it runs from an isolated copy)
+	///   3. the sibling path `../AccountManagerUx752/public/media/` relative to the CWD
+	/// and if none of them is a directory the test FAILS LOUDLY naming all three, so a real tree that
+	/// has lost Ux752 is still a failure rather than a skip. The override only moves WHERE the real
+	/// Ux752 file is read from; the byte comparison itself is unchanged.
+	static final String UX752_MEDIA_PROPERTY = "am7.ux752.media";
+	static final String UX752_MEDIA_ENV = "AM7_UX752_MEDIA";
+	static final String UX752_MEDIA_SIBLING = "../AccountManagerUx752/public/media/";
+
+	static File resolveUx752MediaDir() {
+		String[][] candidates = new String[][] {
+			{ "system property " + UX752_MEDIA_PROPERTY, System.getProperty(UX752_MEDIA_PROPERTY) },
+			{ "environment variable " + UX752_MEDIA_ENV, System.getenv(UX752_MEDIA_ENV) },
+			{ "sibling path (relative to CWD " + new File(".").getAbsoluteFile().getParent() + ")", UX752_MEDIA_SIBLING }
+		};
+		StringBuilder tried = new StringBuilder();
+		for(String[] c : candidates) {
+			String source = c[0];
+			String value = c[1];
+			if(value == null || value.isBlank()) {
+				tried.append("\n  - ").append(source).append(": not set");
+				continue;
+			}
+			File dir = new File(value);
+			if(dir.isDirectory()) {
+				logger.info("Ux752 media dir resolved via " + source + ": " + dir.getAbsolutePath());
+				return dir;
+			}
+			tried.append("\n  - ").append(source).append(": ").append(dir.getAbsolutePath()).append(" is not a directory");
+		}
+		fail("Could not find Ux752's public/media directory, so the Objects7-vs-Ux752 drift guard cannot run."
+			+ " If Ux752 moved, Objects7's copies under olio/media/ have to move with it; if this is an isolated"
+			+ " copy of the module (the loop gate's LOOP_ROOT), point " + UX752_MEDIA_ENV + " or -D"
+			+ UX752_MEDIA_PROPERTY + " at the real tree's AccountManagerUx752/public/media. Tried:" + tried);
+		return null; // unreachable - fail() throws
+	}
 
 	private static byte[] ux752Copy(String fileName) throws Exception {
-		File f = new File(UX752_MEDIA + fileName);
-		assertTrue("Ux752's copy of " + fileName + " must exist at " + UX752_MEDIA
-			+ " — if it moved, Objects7's copy under olio/media/ has to move with it", f.exists());
+		File dir = resolveUx752MediaDir();
+		File f = new File(dir, fileName);
+		assertTrue("Ux752's copy of " + fileName + " must exist at " + dir.getAbsolutePath()
+			+ " — if it moved, Objects7's copy under olio/media/ has to move with it", f.isFile());
 		return Files.readAllBytes(f.toPath());
 	}
 

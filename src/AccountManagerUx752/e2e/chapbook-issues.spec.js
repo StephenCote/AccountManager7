@@ -91,7 +91,7 @@ async function loginAsSharedUser(page) {
     await page.goto('/', { timeout: 30000 });
     await page.waitForFunction(
         () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
-        { timeout: 30000 }
+        null, { timeout: 30000 }
     );
 }
 
@@ -176,42 +176,115 @@ test.describe('ChapBook/PictureBook — Issues 1, 3, 4, 8, 9, 12', () => {
         await request.get(REST + '/logout');
     });
 
-    // ── Issue 3 — Clear button clears poem checkbox selections ───────────────
+    // ── Issue 3 — selection control clears poem checkbox selections ──────────
     //
-    // The Clear button only appears when selectedIds.size > 0 (code: selectedIds.size > 0 ? button : null).
-    // Fix: the row key includes selection state (objectId + '-' + sel) so Mithril recreates the
-    // row's checkbox DOM node when Clear fires — avoids stale checked state on reused DOM.
-    test('Issue 3 — Clear button clears poem checkbox selections', async ({ page }) => {
-        await loginAsSharedUser(page);
-        await page.evaluate(() => { window.location.hash = '!/chap-book'; });
-        await expect(page.getByText('ChapBook — Poem Library')).toBeVisible({ timeout: 20000 });
+    // The selection-count button only appears when selectedIds.size > 0 (code:
+    // selectedIds.size > 0 ? button : null). It was "Clear (N)" (deselect icon, selectedIds = new Set())
+    // until 171b94bd (2026-08-31) replaced it in place with "Remove from Queue (N)" (playlist_remove
+    // icon), which confirms via Dialog.confirm, DELETES the selected olio.cb.poem records, then clears
+    // selectedIds and re-fetches. Cancel leaves the selection intact.
+    // The Issue 3 fix under test is unchanged: the row key includes selection state
+    // (objectId + '-' + sel) so Mithril recreates the row's checkbox DOM node when the selection is
+    // cleared — no stale checked state on reused DOM.
+    // Because the control now deletes, this test seeds its OWN two poems and selects ONLY those
+    // (never a first-row poem some other spec seeded). "AAA…" names sort first so both are on the
+    // library's first page. chapBook.spec.js "Bug A" covers the delete/backend half; this test covers
+    // the selection-state half (count, uncheck, cancel-keeps, confirm-clears, no stale checked DOM).
+    test('Issue 3 — Remove from Queue clears poem checkbox selections (cancel keeps them)', async ({ page, request }) => {
+        const uniq = Date.now().toString(36);
+        const nameA = 'AAAISS3-a-' + uniq, titleA = 'AAA Issue3 A ' + uniq;
+        const nameB = 'AAAISS3-b-' + uniq, titleB = 'AAA Issue3 B ' + uniq;
+        const created = [];
 
-        // Wait for at least one poem row
-        const rows = page.locator('tbody tr');
-        await expect.poll(async () => rows.count(), { timeout: 15000 }).toBeGreaterThan(0);
+        await restLoginShared(request);
+        // Clean leftovers from prior runs so the two seeded here stay on page 1.
+        const stale = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query', type: 'olio.cb.poem',
+                fields: [
+                    { name: 'name', comparator: 'like', value: 'AAAISS3-%' },
+                    { name: 'organizationId', comparator: 'equals', value: orgId }
+                ],
+                request: ['id', 'objectId'], recordCount: 200, cache: false
+            }
+        });
+        const staleBody = await stale.json().catch(() => null);
+        for (const r of (staleBody && staleBody.results ? staleBody.results : [])) {
+            await request.delete(REST + '/model/olio.cb.poem/' + r.objectId);
+        }
+        for (const [name, title] of [[nameA, titleA], [nameB, titleB]]) {
+            const resp = await request.post(REST + '/model', {
+                data: { schema: 'olio.cb.poem', name, title, author: 'E2E Issue3', groupId: poemsGroupId, text: POEM_TEXT }
+            });
+            expect(resp.ok(), 'create poem failed: ' + resp.status() + ' ' + await resp.text()).toBe(true);
+            const rec = await resp.json();
+            expect(rec && rec.objectId, 'poem create returned no objectId').toBeTruthy();
+            created.push(rec.objectId);
+        }
+        await request.get(REST + '/logout');
 
-        // Check the first row's checkbox (clicking the checkbox directly, not the row)
-        const firstCheckbox = rows.first().locator('input[type="checkbox"]');
-        await expect(firstCheckbox).toBeVisible({ timeout: 5000 });
-        await firstCheckbox.check();
-        await expect(firstCheckbox).toBeChecked();
+        try {
+            await loginAsSharedUser(page);
+            await page.evaluate(() => { window.location.hash = '!/chap-book'; });
+            await expect(page.getByText('ChapBook — Poem Library')).toBeVisible({ timeout: 20000 });
 
-        // The Clear button (deselect icon) must now be visible
-        // Code: selectedIds.size > 0 ? m('button', { onclick: () => selectedIds = new Set() }) : null
-        const clearBtn = page.locator('button').filter({ has: page.locator('span:text-is("deselect")') }).first();
-        await expect(clearBtn).toBeVisible({ timeout: 5000 });
+            const rowA = page.locator('tbody tr').filter({ hasText: titleA });
+            const rowB = page.locator('tbody tr').filter({ hasText: titleB });
+            await expect(rowA, 'poem A row not in library').toBeVisible({ timeout: 20000 });
+            await expect(rowB, 'poem B row not in library').toBeVisible({ timeout: 10000 });
+            const cbA = () => rowA.locator('input[type="checkbox"]');
+            const cbB = () => rowB.locator('input[type="checkbox"]');
+            const removeBtn = page.getByRole('button', { name: /Remove from Queue/ });
 
-        // Click Clear
-        await clearBtn.click();
-        await page.waitForTimeout(600); // Mithril redraw
+            // No selection → no selection button at all.
+            await expect(removeBtn).toHaveCount(0);
 
-        // After Clear: Clear button gone (selectedIds.size === 0 → button not rendered)
-        await expect(clearBtn).toBeHidden({ timeout: 5000 });
+            // Check BOTH own rows via their checkboxes (the td stops propagation, so this is the
+            // checkbox onchange path, not the row-click path). Count reflects the selection.
+            await cbA().check();
+            await expect(cbA()).toBeChecked();
+            await expect(removeBtn, 'selection button did not appear after one selection').toBeVisible({ timeout: 5000 });
+            await expect(removeBtn).toHaveText(/Remove from Queue \(1\)/);
+            await cbB().check();
+            await expect(cbB()).toBeChecked();
+            await expect(removeBtn).toHaveText(/Remove from Queue \(2\)/);
 
-        // The first checkbox must be unchecked.
-        // Issue 3 fix verifies: key change forces DOM recreation so stale checked state is gone.
-        const firstCheckboxAfter = rows.first().locator('input[type="checkbox"]');
-        await expect(firstCheckboxAfter).not.toBeChecked();
+            // Uncheck B → count drops to 1, A still checked, B unchecked (checkbox ↔ selectedIds sync).
+            await cbB().uncheck();
+            await expect(cbB()).not.toBeChecked();
+            await expect(cbA()).toBeChecked();
+            await expect(removeBtn).toHaveText(/Remove from Queue \(1\)/);
+
+            // Cancel the confirm → selection is KEPT: button still shows (1), A still checked.
+            await removeBtn.click();
+            const backdrop = page.locator('.am7-dialog-backdrop');
+            await expect(backdrop, 'confirm dialog did not open').toBeVisible({ timeout: 5000 });
+            await backdrop.locator('button.am7-dialog-btn-secondary', { hasText: 'Cancel' }).click();
+            await expect(backdrop).toBeHidden({ timeout: 5000 });
+            await expect(removeBtn, 'Cancel must not clear the selection').toBeVisible();
+            await expect(removeBtn).toHaveText(/Remove from Queue \(1\)/);
+            await expect(cbA(), 'Cancel must not uncheck the selected row').toBeChecked();
+
+            // Confirm → selectedIds cleared: button gone, A's row gone from the re-fetched list,
+            // B's row still present and NOT checked, and no checkbox anywhere in the table is still
+            // checked (the Issue 3 stale-DOM regression this test exists for).
+            await removeBtn.click();
+            await expect(backdrop, 'confirm dialog did not open').toBeVisible({ timeout: 5000 });
+            await backdrop.locator('button.am7-dialog-btn-destructive').click();
+            await expect(removeBtn, 'selection button still present after confirm').toHaveCount(0, { timeout: 15000 });
+            await expect(rowA, 'removed poem A still listed after re-fetch').toHaveCount(0, { timeout: 15000 });
+            await expect(rowB, 'poem B wrongly removed').toBeVisible({ timeout: 5000 });
+            await expect(cbB()).not.toBeChecked();
+            await expect(page.locator('tbody input[type="checkbox"]:checked'),
+                'a row checkbox is still checked after the selection was cleared').toHaveCount(0);
+            await expect(page.locator('thead input[type="checkbox"]')).not.toBeChecked();
+        } finally {
+            await restLoginShared(request);
+            for (const oid of created) {
+                await request.delete(REST + '/model/olio.cb.poem/' + oid).catch(() => {});
+            }
+            await request.get(REST + '/logout');
+        }
     });
 
     // ── Issue 4 — List refreshes after navigating back from /new/ ─────────────
@@ -366,7 +439,7 @@ test.describe('ChapBook/PictureBook — Issues 1, 3, 4, 8, 9, 12', () => {
             await page.goto('/', { timeout: 30000 });
             await page.waitForFunction(
                 () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
-                { timeout: 30000 }
+                null, { timeout: 30000 }
             );
 
             // Navigate to PictureBook work selector

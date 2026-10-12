@@ -100,8 +100,18 @@ async function loginAsSharedUser(page) {
     await page.goto('/', { timeout: 30000 });
     await page.waitForFunction(
         () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
-        { timeout: 30000 }
+        null, { timeout: 30000 }
     );
+}
+
+// The reader opens on a Cover slot (title, "N Pages", Begin) since af5e3ff5 (2026-09-06); the stanza
+// <p> and the "Page N of M" footer render only after Begin (renderReaderPage). Same pattern as
+// chapBookReader.spec.js. Call this after navigating to #!/chap-book/read/{oid} and before asserting
+// on page content.
+async function beginReader(page) {
+    const begin = page.locator('button:has-text("Begin")');
+    await expect(begin, 'reader Cover "Begin" button not visible').toBeVisible({ timeout: 30000 });
+    await begin.click();
 }
 
 // ── Setup: create shared user and seed poems via REST ─────────────────────────
@@ -906,6 +916,8 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
 
         await loginAsSharedUser(page);
         await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookObjectId);
+        // Cover → Begin → page 1 (the reader opens on the Cover slot; stanzas render after Begin).
+        await beginReader(page);
 
         // The stanza text must be visible without any Render step.
         const stanza = page.locator('p').filter({ hasText: /pristine|cobalt|sorcery|charcoal/i }).first();
@@ -981,6 +993,8 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
             localStorage.setItem('cb-poemids-' + bookObjectId, JSON.stringify(poemObjectIds));
         }, { bookObjectId, poemObjectIds });
         await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookObjectId);
+        // Cover → Begin → page 1 (the reader opens on the Cover slot; stanzas render after Begin).
+        await beginReader(page);
 
         // 4. Stanza text visible WITHOUT clicking Render. Regex derived from the real
         //    seeded winter_1 text (distinctive long words).
@@ -1657,6 +1671,8 @@ test.describe('ChapBook — fixed page height clamp (workstream C)', () => {
         // 2. Open the dedicated reader route.
         await loginAsSharedUser(page);
         await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookObjectId);
+        // Cover → Begin → page 1 (the reader opens on the Cover slot; stanzas render after Begin).
+        await beginReader(page);
 
         // Stanza is visible immediately (no Render). Distinctive words from the two seeded poems.
         const stanzaRe = /Memory|pristine|cobalt|sorcery|leaves/i;
@@ -1693,8 +1709,10 @@ test.describe('ChapBook — fixed page height clamp (workstream C)', () => {
 
         // 6. Fresh reader load must render the persisted clamp (proves it drives render, not just memory).
         await page.evaluate(() => { window.location.hash = '!/main'; });
-        await page.waitForFunction(() => window.location.hash.includes('/main'), { timeout: 15000 });
+        await page.waitForFunction(() => window.location.hash.includes('/main'), null, { timeout: 15000 });
         await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookObjectId);
+        // oninit resets the reader to the Cover on every open — Begin again to reach page 1.
+        await beginReader(page);
         await expect(page.locator('p').filter({ hasText: stanzaRe }).first(),
             'reader stanza not visible after reload').toBeVisible({ timeout: 20000 });
         await expect(pageWrapper(), 'persisted clamp not rendered on fresh load')

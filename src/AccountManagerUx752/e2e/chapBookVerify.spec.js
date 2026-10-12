@@ -8,8 +8,13 @@
  *       server (192.168.1.39), so /rest/olio/sdModels returns the true model catalog (13 models here).
  *       The seeded default (a real model from that catalog, distinct from the schema default) must be
  *       the <select>'s selected value: proves "loaded my saved default", not blank/random/schema.
- *   #5  Analyze control survives a FRESH page reload (new JS VM) of the reader route — restored from
- *       localStorage persistence, not module memory. Negative control: clearing the key removes it.
+ *   #5  The READER's Analyze control (reader toolbar, targeted by title — the Poem queue rendered above
+ *       the reader carries a per-poem "Analyze" button on every row) survives a FRESH page reload (new
+ *       JS VM) of the reader route — restored from localStorage persistence, not module memory. Its
+ *       poem ids are the UNION of server-scoped poems (FIX C, GET /poems?bookObjectId) and localStorage;
+ *       the create flow does not stamp the book FK, so for a create-flow book the server source is
+ *       empty (asserted on the raw path) and the negative control — clearing the key removes the
+ *       reader control — remains meaningful. #C covers the server-derived source.
  *   #6  A user WITHOUT the AccountUsers role gets create/import/render buttons that are actually DOM
  *       disabled (not merely a warning banner). Contrast: the shared user (has the role) can click them.
  *
@@ -113,11 +118,23 @@ async function loginAndLoad(page, name, password) {
     // goto('/') is cross-document and re-runs refreshApplication()/setContextRoles() for the new session.
     await page.goto('about:blank');
     await page.goto('/', { timeout: 30000 });
+    // waitForFunction(fn, arg, options): the options object is the THIRD argument.
     await page.waitForFunction(
         () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
+        null,
         { timeout: 30000 }
     );
 }
+
+// The READER's own Analyze / chat-config controls (renderReaderActionsLeft, chapBook.js) — rendered
+// only while readerPoemIds is non-empty. They must be targeted by their titles: the ChapBookConfig
+// panel above the reader (mode 'read') hosts the full Poem queue, whose EVERY row carries its own
+// per-poem "Analyze" button, so a bare button:has-text("Analyze") matches dozens of queue rows and
+// says nothing about the reader control.
+const READER_ANALYZE_TITLE = 'Re-analyze poem themes with the selected chat config';
+const READER_ANALYZE_CFG_TITLE = 'Choose the chat config used to re-analyze poem themes';
+function readerAnalyzeBtn(page) { return page.locator('button[title="' + READER_ANALYZE_TITLE + '"]'); }
+function readerAnalyzeCfgBtn(page) { return page.locator('button[title="' + READER_ANALYZE_CFG_TITLE + '"]'); }
 
 test.describe('ChapBook — UX verification', () => {
     test.describe.configure({ timeout: 120000 });
@@ -322,14 +339,17 @@ test.describe('ChapBook — UX verification', () => {
         await titleInput.fill(uiTitle);
         await page.locator('div.fixed button:has-text("Create")').last().click();
 
-        // Navigation to the reader route.
-        await page.waitForFunction(() => /#!\/chap-book\/read\//.test(window.location.hash), { timeout: 20000 });
+        // Navigation to the reader route (creation runs as an async job; allow ample time).
+        await page.waitForFunction(() => /#!\/chap-book\/read\//.test(window.location.hash), null, { timeout: 120000 });
         const readerHash = await page.evaluate(() => window.location.hash);
         const readerOid = readerHash.split('/chap-book/read/')[1];
         expect(readerOid, 'could not capture reader objectId from hash').toBeTruthy();
 
-        // In-memory state right after creation: Analyze present.
-        await expect(page.locator('button:has-text("Analyze")').first(), 'Analyze absent right after creation').toBeVisible({ timeout: 15000 });
+        // In-memory state right after creation: the READER's Analyze + its chat-config picker are present
+        // (exactly one each — the reader toolbar, not a Poem-queue row).
+        await expect(readerAnalyzeBtn(page), 'reader Analyze absent right after creation').toBeVisible({ timeout: 15000 });
+        await expect(readerAnalyzeBtn(page)).toHaveCount(1);
+        await expect(readerAnalyzeCfgBtn(page)).toHaveCount(1);
 
         // The REAL persist path wrote localStorage (this is what a reload will restore from).
         const persisted = await page.evaluate((oid) => localStorage.getItem('cb-poemids-' + oid), readerOid);
@@ -337,28 +357,52 @@ test.describe('ChapBook — UX verification', () => {
         const persistedIds = JSON.parse(persisted);
         expect(Array.isArray(persistedIds) && persistedIds.length).toBe(2);
 
+        // Precondition for the negative control below, proven on the raw path: the create flow does NOT
+        // stamp the source poems with this book's `book` FK (chapBook.js readerPoemIds comment; C3), so the
+        // server-derived source (FIX C, GET /poems?bookObjectId) is EMPTY for this book and localStorage is
+        // the ONLY source of the reader's poem ids. Test C covers the server-derived source with an
+        // explicitly FK-stamped poem. If the backend ever starts stamping the FK on create, this fails
+        // loudly here instead of silently changing what the negative control proves.
+        const scopedResp = await page.request.get(CB_REST + '/poems?bookObjectId=' + encodeURIComponent(readerOid));
+        expect(scopedResp.ok(), 'GET /poems?bookObjectId failed: ' + scopedResp.status()).toBe(true);
+        const scopedPoems = await scopedResp.json();
+        expect(Array.isArray(scopedPoems) ? scopedPoems.length : -1,
+            'expected NO server-scoped poems for a create-flow book (the create flow does not stamp the book FK) — ' +
+            'got: ' + JSON.stringify(scopedPoems).slice(0, 300)).toBe(0);
+
         // FULL PAGE RELOAD → brand-new JS VM; all module-level state (readerPoemIds, etc.) is wiped.
         await page.reload({ timeout: 30000 });
-        await page.waitForFunction(() => /#!\/chap-book\/read\//.test(window.location.hash), { timeout: 20000 });
+        await page.waitForFunction(() => /#!\/chap-book\/read\//.test(window.location.hash), null, { timeout: 30000 });
 
-        // Analyze STILL present — it can only be here if oninit re-derived readerPoemIds from localStorage.
+        // Reader Analyze STILL present — it can only be here if oninit re-derived readerPoemIds from
+        // localStorage (the server-scoped list for this book is empty, proven above).
         await expect(
-            page.locator('button:has-text("Analyze")').first(),
-            'Analyze NOT restored after full reload — persistence broken'
-        ).toBeVisible({ timeout: 20000 });
+            readerAnalyzeBtn(page),
+            'reader Analyze NOT restored after full reload — persistence broken'
+        ).toBeVisible({ timeout: 30000 });
+        await expect(readerAnalyzeBtn(page)).toHaveCount(1);
         await page.screenshot({ path: path.join(RESULTS, 'verify-5-analyze-after-reload.png'), fullPage: true });
 
-        // Negative control: remove the persisted key, reload → Analyze must disappear (proves the button
-        // is driven by that localStorage entry, not by some other always-on condition).
+        // Negative control: remove the persisted key, reload → the READER's Analyze must disappear (with
+        // no server-scoped poems, the union readerPoemIds is empty and renderReaderActionsLeft omits the
+        // control). The Poem-queue rows' own per-poem Analyze buttons are unaffected and must still be
+        // there — that is exactly why the bare text locator could never prove this.
         await page.evaluate((oid) => localStorage.removeItem('cb-poemids-' + oid), readerOid);
         await page.reload({ timeout: 30000 });
-        await page.waitForFunction(() => /#!\/chap-book\/read\//.test(window.location.hash), { timeout: 20000 });
-        // Give the reader time to settle, then assert Analyze is gone.
-        await expect(page.locator('text=ChapBook').first()).toBeVisible({ timeout: 15000 });
+        await page.waitForFunction(() => /#!\/chap-book\/read\//.test(window.location.hash), null, { timeout: 30000 });
+        // Reader settled on the Cover (title + Begin), i.e. loadReaderBook finished and the toolbar is final.
+        await expect(page.locator('button:has-text("Begin")'), 'reader Cover did not render').toBeVisible({ timeout: 30000 });
+        await expect(page.locator('button:has-text("Review")').first()).toBeVisible({ timeout: 15000 });
+        const stillCleared = await page.evaluate((oid) => localStorage.getItem('cb-poemids-' + oid), readerOid);
+        expect(stillCleared, 'reader re-wrote cb-poemids-<oid> on open — the negative control would be moot').toBeNull();
         await expect(
-            page.locator('button:has-text("Analyze")'),
-            'Analyze STILL present after clearing persistence — not actually persistence-driven'
+            readerAnalyzeBtn(page),
+            'reader Analyze STILL present after clearing persistence (and no server-scoped poems) — not actually persistence-driven'
         ).toHaveCount(0, { timeout: 15000 });
+        await expect(readerAnalyzeCfgBtn(page)).toHaveCount(0);
+        // The queue rows' per-poem Analyze buttons remain (they are poem-level, not reader-level).
+        expect(await page.locator('tbody tr button:has-text("Analyze")').count(),
+            'Poem-queue per-poem Analyze buttons unexpectedly absent').toBeGreaterThan(0);
     });
 
     // ── #C (FIX C): Analyze available from SERVER-derived poems, with NO localStorage ────────────────
@@ -428,10 +472,13 @@ test.describe('ChapBook — UX verification', () => {
         const localState = await page.evaluate((oid) => localStorage.getItem('cb-poemids-' + oid), bookOidC);
         expect(localState, 'unexpected localStorage for the fresh book — test would not prove server derivation').toBeFalsy();
 
+        // The READER's own control (by title) — the Poem queue above the reader has a per-poem Analyze
+        // button on every row, so a bare text locator would be satisfied regardless of FIX C.
         await expect(
-            page.locator('button:has-text("Analyze")').first(),
-            'Analyze NOT shown from server-derived poems (FIX C broken)'
+            readerAnalyzeBtn(page),
+            'reader Analyze NOT shown from server-derived poems (FIX C broken)'
         ).toBeVisible({ timeout: 20000 });
+        await expect(readerAnalyzeBtn(page)).toHaveCount(1);
         await page.screenshot({ path: path.join(RESULTS, 'verify-C-analyze-server-derived.png'), fullPage: true });
     });
 

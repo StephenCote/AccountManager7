@@ -39,6 +39,9 @@ const VITE_SOURCE_SPECS = [
   'chatDeleteMsgUI', 'chatDuel', 'chatEditSave', 'magic8Connection', 'pendingAnimation',
   'pictureBookLive', 'portraitsAndGallery', 'sdConfigFlow', 'sdConfigLandscapePersist',
   'storyImagingSummarization', 'tagDisplay', 'verifyFixes', 'worldGroupPicker.e2e',
+  // testHarness drives the devOnly harness (pageClient.js devMode = import.meta.env.DEV), which the
+  // production dist served by Docker nginx does not build in — it only exists on a Vite dev server.
+  'testHarness',
 ].map(n => `**/${n}.spec.js`);
 const VITE_URL = process.env.PLAYWRIGHT_VITE_URL
   || (USE_EXTERNAL_SERVER ? 'https://127.0.0.1:8898' : BASE_URL);

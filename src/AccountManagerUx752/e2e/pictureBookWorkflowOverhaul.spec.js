@@ -1,7 +1,14 @@
 /**
  * pictureBookWorkflowOverhaul.spec.js — end-to-end proof of the "PictureBook Workflow Overhaul"
- * W-series through the real REST + UX stack, against the live LLM (Ollama qwen3:8b @ 192.168.1.42)
- * and live SD (Swarm @ 192.168.1.39) via the Docker stack on https://127.0.0.1:9443.
+ * W-series through the real REST + UX stack, against a live LLM (whichever tier
+ * helpers/api.js resolveChatRoute() answers — local Ollama container via LiteLLM, Azure, or the
+ * DGX at 192.168.1.42; the `[e2e-llm] route=… ` line in the run log says which) and live SD
+ * (Swarm @ 192.168.1.39) via the Docker stack on https://127.0.0.1:9443.
+ *
+ * Gating (a skipped gated test is NOT a pass — run it with the flag set and read the summary line):
+ *   PB_SD_TESTS=1   runs everything (CORE + W2 need a real SD render; W5 needs only the LLM).
+ *   PB_LLM_TESTS=1  runs W5 alone (LLM extraction, no SD) when PB_SD_TESTS is unset.
+ *   Both tests are LLM-touching: always --workers=1.
  *
  * This exercises the EXACT wizard Step-2 Continue sequence (pictureBook.js:1544-1578):
  *     createChapBookRecord(slug, title)  -> pb2BookObjectId
@@ -17,11 +24,16 @@
  *   W2:           the scene-generation result JSON carries a `graphWriteFailures` array; on the
  *                 happy path it is EMPTY (no swallowed graph writes). A NON-empty array is a real
  *                 defect and FAILS the test with the failures printed — it is not hidden.
- *   W5:          best-effort — a freshly-created book that has NOT been rendered is navigated to the
- *                 canvas and whichever honest empty-state message legitimately appears is reported.
+ *   W5:           a freshly-created book that has NOT been rendered (its own source note, its own
+ *                 extraction — it does not depend on CORE having run) is navigated to the canvas:
+ *                 zero [data-node-id] cards and one of the canvas's own empty-state titles
+ *                 (src/features/pictureBookWorkflow.js: noWorkflowYetState "No workflow graph yet",
+ *                 "No workflow graph for this book", "Nothing rendered yet", "Workflow was not
+ *                 recorded"). Which one appears is reported, not asserted.
  *
  * Rules honored: shared test user only (never admin as actor); no DB reset; app writes/reads only;
- * a fresh book version is created (no reuse of pre-existing books); single-threaded LLM/SD path.
+ * a fresh book version is created (no reuse of pre-existing books); single-threaded LLM/SD path;
+ * durations are recorded (durationMs) and never used as pass/fail thresholds.
  */
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
@@ -36,8 +48,14 @@ const REST = BASE + '/AccountManagerService7/rest';
 const PB = REST + '/olio/picture-book';
 const JOB = REST + '/job';
 
+// Same flag conventions as pictureBook.spec.js / pictureBookV3Ux.spec.js (PB_SD_TESTS) and the
+// LLM-only PictureBook Ux specs (PB_LLM_TESTS). Visible test.skip() below, never a silent return.
+const SD_ENABLED = process.env.PB_SD_TESTS === '1';
+const LLM_ENABLED = SD_ENABLED || process.env.PB_LLM_TESTS === '1';
+
 const SHOTS = path.resolve(__dirname, 'screenshots');
 function shot(name) { fs.mkdirSync(SHOTS, { recursive: true }); return path.join(SHOTS, name + '.png'); }
+function fmtMs(ms) { return ms + 'ms (' + (ms / 60000).toFixed(1) + ' min)'; }
 
 // Verbatim excerpt of Stephen's "The Big Way Out" (src/AccountManagerObjects7/media/The Big Way Out.doc),
 // extracted with antiword. Real document content — NOT synthetic filler.
@@ -83,10 +101,45 @@ async function loginSharedUser(page, creds) {
     if (!resp.ok() && resp.status() !== 204) throw new Error('Shared-user REST login failed: HTTP ' + resp.status());
     await installWsStub(page);
     await page.goto('/', { timeout: 45000 });
+    // page.waitForFunction(fn, arg, options): the options object is the THIRD argument. Passing it
+    // second makes it the page-function argument and the wait unbounded (the W5 20-minute hang).
     await page.waitForFunction(
         () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
+        null,
         { timeout: 45000 }
     );
+}
+
+// Create a fresh data.note under the shared user's ~/Notes from the real BWO text and run one LLM
+// scene extraction on it (async job, exactly as the wizard does). Returns { workObjectId, scenes }.
+async function createSourceAndExtract(page, tag, count) {
+    const dir = await ensurePath(page.request, 'auth.group', 'data', '~/Notes');
+    expect(dir && dir.id, 'resolved ~/Notes group').toBeTruthy();
+    const noteName = 'BWO Overhaul Source ' + tag + ' ' + RUN;
+    const noteResp = await page.request.post(REST + '/model', {
+        data: { schema: 'data.note', groupId: dir.id, groupPath: dir.path, name: noteName, text: BWO_TEXT }
+    });
+    expect(noteResp.ok(), 'create source note (' + tag + ')').toBeTruthy();
+    const note = await noteResp.json();
+    expect(note.objectId, 'source note objectId (' + tag + ')').toBeTruthy();
+    console.log('[' + tag + '] source note =', note.objectId, '(' + BWO_TEXT.length + ' chars)');
+
+    const t0 = Date.now();
+    const startResp = await page.request.post(PB + '/' + note.objectId + '/extract-scenes-only?async=true', {
+        data: { schema: 'olio.pictureBookRequest', chatConfig: chatConfigName, count },
+        timeout: 60000
+    });
+    expect(startResp.status(), 'extract-scenes-only returns 202 (' + tag + ')').toBe(202);
+    const started = await startResp.json();
+    expect(started.jobId, 'extraction jobId (' + tag + ')').toBeTruthy();
+    console.log('[' + tag + '] extraction jobId =', started.jobId);
+    const extractJob = await pollJob(page, started.jobId, 20 * 60 * 1000);
+    const extractMs = Date.now() - t0;
+    expect(extractJob.status, 'extraction job status (' + tag + ')').not.toBe('failed');
+    const scenes = scenesFromResult(extractJob.result);
+    console.log('[' + tag + '] extracted scenes =', scenes.length, '| extraction durationMs =', fmtMs(extractMs));
+    expect(scenes.length, 'at least one scene extracted from the LLM (' + tag + ')').toBeGreaterThanOrEqual(1);
+    return { workObjectId: note.objectId, scenes, extractMs };
 }
 
 // Inline reimplementation of sceneExtractor.pollJob (deadline-bounded), using page.request.
@@ -112,8 +165,12 @@ function scenesFromResult(result) {
 test.describe.serial('PictureBook Workflow Overhaul (W-series) — live LLM+SD end-to-end', () => {
 
     test.beforeAll(async () => {
-        // Provision the shared test user + an Ollama-backed chatConfig it owns. These use their own
-        // isolated API contexts internally (admin only to create the user/credential; never as actor).
+        if (!LLM_ENABLED) return; // the tests below skip visibly; do not provision for a skipped run
+        // Provision the shared test user + a chatConfig it owns whose connection is whichever LLM tier
+        // resolveChatRoute() finds (prints "[e2e-llm] route=… server=… analysis=… pb=…"). These use
+        // their own isolated API contexts internally (admin only to create the user/credential; never
+        // as actor). The shared user's default contentAnalysis config is NOT used: on this stack it
+        // points at an LLM the container cannot reach.
         const req = await (await import('@playwright/test')).request.newContext({ baseURL: BASE, ignoreHTTPSErrors: true });
         try {
             sharedCreds = await ensureSharedTestUser(req);
@@ -122,42 +179,21 @@ test.describe.serial('PictureBook Workflow Overhaul (W-series) — live LLM+SD e
             await req.dispose();
         }
         expect(sharedCreds && sharedCreds.testUserName, 'shared test user provisioned').toBeTruthy();
-        expect(chatConfigName, 'chatConfig provisioned (Ollama qwen3:8b)').toBeTruthy();
+        expect(chatConfigName, 'chatConfig provisioned via resolveChatRoute()').toBeTruthy();
         console.log('[setup] shared user =', sharedCreds.testUserName, '| chatConfig =', chatConfigName);
     });
 
     test('CORE + W2: extract -> create PB2 book -> render scene -> workflow graph populates', async ({ page }) => {
-        test.setTimeout(35 * 60 * 1000); // live LLM extraction + SD render
+        test.skip(!SD_ENABLED, 'PB_SD_TESTS!=1 — skips the live LLM extraction + SD render (W1/W2/W4)');
+        test.setTimeout(35 * 60 * 1000); // live LLM extraction + SD render (budget, not a threshold)
+        const testStart = Date.now();
 
         await loginSharedUser(page, sharedCreds);
 
-        // 1) Create the FRESH source document (data.note) owned by the shared user, from real BWO text.
-        const dir = await ensurePath(page.request, 'auth.group', 'data', '~/Notes');
-        expect(dir && dir.id, 'resolved ~/Notes group').toBeTruthy();
-        const noteName = 'BWO Overhaul Source ' + RUN;
-        const noteResp = await page.request.post(REST + '/model', {
-            data: { schema: 'data.note', groupId: dir.id, groupPath: dir.path, name: noteName, text: BWO_TEXT }
-        });
-        expect(noteResp.ok(), 'create source note').toBeTruthy();
-        const note = await noteResp.json();
-        workObjectId = note.objectId;
-        expect(workObjectId, 'source note objectId').toBeTruthy();
-        console.log('[step1] source note =', workObjectId, '(' + BWO_TEXT.length + ' chars)');
-
-        // 2) Extract scenes via the LLM (async job, exactly as the wizard does).
-        const startResp = await page.request.post(PB + '/' + workObjectId + '/extract-scenes-only?async=true', {
-            data: { schema: 'olio.pictureBookRequest', chatConfig: chatConfigName, count: 6 },
-            timeout: 60000
-        });
-        expect(startResp.status(), 'extract-scenes-only returns 202').toBe(202);
-        const started = await startResp.json();
-        expect(started.jobId, 'extraction jobId').toBeTruthy();
-        console.log('[step2] extraction jobId =', started.jobId);
-        const extractJob = await pollJob(page, started.jobId, 20 * 60 * 1000);
-        expect(extractJob.status, 'extraction job status').not.toBe('failed');
-        const scenes = scenesFromResult(extractJob.result);
-        console.log('[step2] extracted scenes =', scenes.length);
-        expect(scenes.length, 'at least one scene extracted from the LLM').toBeGreaterThanOrEqual(1);
+        // 1+2) FRESH source document (data.note) from the real BWO text, then LLM scene extraction.
+        const src = await createSourceAndExtract(page, 'CORE', 6);
+        workObjectId = src.workObjectId;
+        const scenes = src.scenes;
 
         // 3) Create the PB2 book first (this is what makes the graph populate on render).
         const slug = 'bwo-overhaul-' + RUN;
@@ -196,6 +232,7 @@ test.describe.serial('PictureBook Workflow Overhaul (W-series) — live LLM+SD e
             '| scenes =', metaScenes.length);
 
         // 5) Render the first scene via SD (4-stage pipeline). W1/W4: this is what writes the graph.
+        const genStart = Date.now();
         const genResp = await page.request.post(PB + '/scene/' + firstSceneObjectId + '/generate', {
             data: {
                 schema: 'olio.pictureBookRequest',
@@ -204,14 +241,41 @@ test.describe.serial('PictureBook Workflow Overhaul (W-series) — live LLM+SD e
             },
             timeout: 15 * 60 * 1000
         });
+        const genMs = Date.now() - genStart;
         if (!genResp.ok()) {
             console.error('[step5] scene generate body:', await genResp.text());
         }
         expect(genResp.ok(), 'scene image generation succeeds').toBeTruthy();
         genResult = await genResp.json();
         console.log('[step5] genResult.imageObjectId =', genResult.imageObjectId,
-            '| graphWriteFailures =', JSON.stringify(genResult.graphWriteFailures));
+            '| graphWriteFailures =', JSON.stringify(genResult.graphWriteFailures),
+            '| render durationMs =', fmtMs(genMs));
         expect(genResult.imageObjectId, 'a real image was rendered (imageObjectId present)').toBeTruthy();
+
+        // Save the rendered image next to the screenshots so a human (or the Read tool) can look at it,
+        // fetched from the MediaServlet exactly as pictureBook.spec.js does. Evidence only: nothing is
+        // asserted about image content.
+        const dataResp = await page.request.get(REST + '/model/data.data/' + genResult.imageObjectId + '/full', { timeout: 60000 });
+        if (dataResp.ok()) {
+            const dataRec = await dataResp.json();
+            if (dataRec && dataRec.groupPath && dataRec.name) {
+                const mediaUrl = '/AccountManagerService7/media/Development/data.data'
+                    + encodeURI(dataRec.groupPath) + '/' + encodeURIComponent(dataRec.name);
+                const imgResp = await page.request.get(mediaUrl, { timeout: 60000 });
+                if (imgResp.ok()) {
+                    const buf = Buffer.from(await imgResp.body());
+                    const out = shot('pb-overhaul-CORE-rendered-scene');
+                    fs.writeFileSync(out, buf);
+                    console.log('[step5] rendered image ->', out, '(' + buf.length + ' bytes, contentType=' + dataRec.contentType + ')');
+                } else {
+                    console.log('[step5] media fetch failed: HTTP ' + imgResp.status() + ' for ' + mediaUrl);
+                }
+            } else {
+                console.log('[step5] image data.data missing groupPath/name: ' + JSON.stringify(dataRec).substring(0, 300));
+            }
+        } else {
+            console.log('[step5] could not read rendered image record: HTTP ' + dataResp.status());
+        }
 
         // ── CORE (priority assertion — evaluated FIRST): workflow graph populated after the render.
         const wfResp = await page.request.get(PB + '/' + pb2BookObjectId + '/workflow', { timeout: 60000 });
@@ -264,63 +328,74 @@ test.describe.serial('PictureBook Workflow Overhaul (W-series) — live LLM+SD e
             expect(gwf, 'W2: no swallowed graph-write failures on the happy path — got: '
                 + JSON.stringify(gwf)).toHaveLength(0);
         }
+        console.log('[CORE] durationMs =', fmtMs(Date.now() - testStart));
     });
 
-    test('W5 (best-effort): a freshly-created, un-rendered book shows an honest empty state', async ({ page }) => {
-        test.setTimeout(20 * 60 * 1000);
-        expect(workObjectId, 'source note exists from the CORE test').toBeTruthy();
+    // The canvas's own empty-state titles (src/features/pictureBookWorkflow.js). A PB2 book that has
+    // scenes but was never rendered has no olio.pb.workflow row, so the view renders
+    // noWorkflowYetState() -> "No workflow graph yet" (:236-245, used at :282/:300/:321). The other three
+    // are the legacy no-scenes state (:305), the zero-node workflow row (:334) and the not-recorded
+    // banner. Which one appears is reported; the assertion is "one of the UI's own empty states, and
+    // zero node cards".
+    const EMPTY_STATES = ['No workflow graph yet', 'Nothing rendered yet', 'Workflow was not recorded', 'No workflow graph for this book'];
+
+    test('W5: a freshly-created, un-rendered book shows an honest empty state', async ({ page }) => {
+        test.skip(!LLM_ENABLED, 'PB_SD_TESTS!=1 and PB_LLM_TESTS!=1 — skips the live LLM extraction behind W5');
+        test.setTimeout(30 * 60 * 1000); // one LLM extraction (budget, not a threshold)
+        const testStart = Date.now();
 
         await loginSharedUser(page, sharedCreds);
 
-        // Create a SECOND fresh PB2 book from the same scenes but DO NOT render any scene.
+        // Self-contained: W5 provisions its OWN source note + extraction so it does not depend on CORE
+        // having run (CORE is SD-gated; W5 is not). The book is created and populated but NOT rendered.
+        const src = await createSourceAndExtract(page, 'W5', 6);
+        const scenes = src.scenes;
+
         const slug2 = 'bwo-overhaul-empty-' + RUN;
         const bookName2 = 'BWO Overhaul Empty ' + RUN;
         const chapterResp = await page.request.post(PB + '/chapter', { data: { slug: slug2, title: bookName2 }, timeout: 120000 });
-        expect(chapterResp.ok(), 'POST /chapter (2nd book)').toBeTruthy();
+        expect(chapterResp.ok(), 'POST /chapter (un-rendered book)').toBeTruthy();
         const chapter = await chapterResp.json();
         const pb2Empty = chapter.bookObjectId || chapter.objectId;
-        expect(pb2Empty, '2nd PB2 book objectId').toBeTruthy();
+        expect(pb2Empty, 'un-rendered PB2 book objectId').toBeTruthy();
 
-        // Re-extract quickly (short text -> fast) so create-from-scenes has a real scene list.
-        const startResp = await page.request.post(PB + '/' + workObjectId + '/extract-scenes-only?async=true', {
-            data: { schema: 'olio.pictureBookRequest', chatConfig: chatConfigName, count: 6 }, timeout: 60000
-        });
-        expect(startResp.status(), 'extract (2nd) 202').toBe(202);
-        const started = await startResp.json();
-        const job = await pollJob(page, started.jobId, 20 * 60 * 1000);
-        const scenes = scenesFromResult(job.result);
-        expect(scenes.length, '2nd extraction produced scenes').toBeGreaterThanOrEqual(1);
-
-        const cfsResp = await page.request.post(PB + '/' + workObjectId + '/create-from-scenes', {
+        const cfsResp = await page.request.post(PB + '/' + src.workObjectId + '/create-from-scenes', {
             data: {
                 schema: 'olio.pictureBookRequest', sceneList: scenes, chatConfig: chatConfigName,
                 bookName: bookName2, pb2BookObjectId: pb2Empty
             },
             timeout: 20 * 60 * 1000
         });
-        expect(cfsResp.ok(), 'create-from-scenes (2nd, un-rendered)').toBeTruthy();
+        if (!cfsResp.ok()) console.error('[W5] create-from-scenes body:', await cfsResp.text());
+        expect(cfsResp.ok(), 'create-from-scenes (un-rendered book)').toBeTruthy();
+        const meta = await cfsResp.json();
+        console.log('[W5] book =', pb2Empty, '| persisted scenes =', (meta.scenes || []).length);
+
+        // REST view of the same fact: no workflow row exists until first render (404 + error text).
+        const wfResp = await page.request.get(PB + '/' + pb2Empty + '/workflow', { timeout: 60000 });
+        const wfText = await wfResp.text();
+        console.log('[W5] GET /workflow ->', wfResp.status(), wfText.substring(0, 200));
 
         // Navigate to the canvas of the un-rendered book. It must NOT show node cards; it must show
-        // one of the honest empty-state messages. Report whichever legitimately appears.
+        // one of the canvas's honest empty-state titles. Report whichever legitimately appears.
         await page.goto('/#!/picture-book/' + pb2Empty + '/workflow', { timeout: 45000 });
         // Wait for the route to settle: either an empty-state title or (unexpectedly) a node card.
-        await page.waitForFunction(() => {
+        // waitForFunction(fn, arg, options) — the timeout goes in the THIRD argument.
+        await page.waitForFunction((states) => {
             const t = document.body.innerText || '';
-            return t.includes('Nothing rendered yet')
-                || t.includes('Workflow was not recorded')
-                || t.includes('No workflow graph for this book')
-                || document.querySelector('[data-node-id]') !== null;
-        }, { timeout: 60000 });
+            return states.some((s) => t.includes(s)) || document.querySelector('[data-node-id]') !== null;
+        }, EMPTY_STATES, { timeout: 120000 });
 
         const nodeCards = await page.locator('[data-node-id]').count();
         const bodyText = await page.evaluate(() => document.body.innerText || '');
-        const states = ['Nothing rendered yet', 'Workflow was not recorded', 'No workflow graph for this book'];
-        const shown = states.find((s) => bodyText.includes(s)) || null;
+        const shown = EMPTY_STATES.find((s) => bodyText.includes(s)) || null;
         console.log('[W5] un-rendered book: nodeCards =', nodeCards, '| empty-state shown =', JSON.stringify(shown));
         await page.screenshot({ path: shot('pb-overhaul-W5-empty-state'), fullPage: true });
         console.log('[W5] screenshot ->', shot('pb-overhaul-W5-empty-state'));
 
         expect(nodeCards, 'W5: un-rendered book shows NO node cards').toBe(0);
-        expect(shown, 'W5: an honest empty-state message is shown for an un-rendered book').toBeTruthy();
+        expect(shown, 'W5: one of the canvas empty-state titles ' + JSON.stringify(EMPTY_STATES)
+            + ' is shown for an un-rendered book; body was: ' + bodyText.substring(0, 400)).toBeTruthy();
+        console.log('[W5] durationMs =', fmtMs(Date.now() - testStart));
     });
 });

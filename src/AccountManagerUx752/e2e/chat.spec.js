@@ -2,6 +2,46 @@ import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
 import { ensureSharedTestUser } from './helpers/api.js';
 
+/**
+ * The chat sidebar starts collapsed to its icon strip (chat.js `sidebarCollapsed = true`) and
+ * `initChatView` auto-selects the first session, so the empty-state "New Session" button only
+ * renders for a user with zero sessions. The current affordance is: click the "Sessions" icon
+ * to open the conversations panel, which renders the "add New" button above the session list.
+ * Returns the "New" button locator (scoped to the sessions panel).
+ */
+async function openSessionsPanel(page) {
+    let sessionsBtn = page.locator('button[title="Sessions"]');
+    await expect(sessionsBtn).toBeVisible({ timeout: 15000 });
+    await sessionsBtn.click();
+    // The sessions panel is the w-64 column beside the icon strip; the New button is its first control
+    let newBtn = page.locator('div.w-64 button').filter({ hasText: /^\s*add\s*New\s*$/ });
+    await expect(newBtn).toBeVisible({ timeout: 15000 });
+    return newBtn;
+}
+
+/**
+ * Open the "New Chat Session" dialog through the sessions panel and wait for its defaults
+ * (chat config, prompt config/template) to load.
+ */
+async function openNewSessionDialogViaPanel(page) {
+    let newBtn = await openSessionsPanel(page);
+    await newBtn.click();
+    let dialog = page.locator('h3:has-text("New Chat Session")');
+    await expect(dialog).toBeVisible({ timeout: 10000 });
+    // Defaults load asynchronously (loadNewSessionDefaults + updateNewSessionDefaultName)
+    await expect(page.locator('input[placeholder="Session name"]')).not.toHaveValue('', { timeout: 15000 });
+    return dialog;
+}
+
+async function dismissSetupWizard(page) {
+    let wizardTitle = page.locator('text=Chat Library Setup');
+    let hasWizard = await wizardTitle.isVisible({ timeout: 3000 }).catch(() => false);
+    if (hasWizard) {
+        await page.locator('button:has-text("Cancel")').click();
+        await expect(wizardTitle).not.toBeVisible({ timeout: 5000 });
+    }
+}
+
 test.describe('Chat feature', () => {
     let testInfo = {};
 
@@ -24,11 +64,23 @@ test.describe('Chat feature', () => {
     test('chat page renders content', async ({ page }) => {
         await page.locator('button[title="Chat"]').click();
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
-        // Either the empty state message or a session list should be visible
+        await dismissSetupWizard(page);
+        // The toolbar always renders an h2: the auto-selected session title, or "No session"
+        let toolbarTitle = page.locator('h2').first();
+        await expect(toolbarTitle).toBeVisible({ timeout: 15000 });
+        await expect(toolbarTitle).not.toBeEmpty();
+        // The message composer renders in both the empty and session-selected states
+        await expect(page.locator('[name="chatmessage"]')).toBeVisible({ timeout: 15000 });
+        // Either the empty state (zero sessions) or the auto-selected session's message area
         let emptyState = page.locator('text=Select a conversation');
-        let sessionList = page.locator('text=New Session');
-        let either = emptyState.or(sessionList);
-        await expect(either.first()).toBeVisible({ timeout: 15000 });
+        let messageArea = page.locator('div.flex-1.overflow-y-auto.p-4');
+        await expect(emptyState.or(messageArea).first()).toBeVisible({ timeout: 15000 });
+        // The sessions panel opens from the icon strip and exposes the New control plus the list
+        await openSessionsPanel(page);
+        // Session rows are `div.group.cursor-pointer` items; a user with none sees "No sessions"
+        let sessionRow = page.locator('div.w-64 div.group.cursor-pointer');
+        let noSessions = page.locator('div.w-64 div:text-is("No sessions")');
+        await expect(sessionRow.or(noSessions).first()).toBeVisible({ timeout: 15000 });
         await screenshot(page, 'chat-state');
     });
 
@@ -43,37 +95,28 @@ test.describe('Chat feature', () => {
     });
 });
 
-test.describe('Chat session creation (admin)', () => {
+test.describe('Chat session creation', () => {
+    let testInfo = {};
+
+    test.beforeAll(async ({ request }) => {
+        testInfo = await ensureSharedTestUser(request);
+    });
+
     test.beforeEach(async ({ page }) => {
-        await login(page, { user: 'admin', password: 'password' });
+        await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
     });
 
     test('create session via new session dialog against live backend', async ({ page }) => {
+        test.setTimeout(90000);
         await page.locator('button[title="Chat"]').click();
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
-        await page.waitForTimeout(3000);
+        await dismissSetupWizard(page);
 
-        // Dismiss ChatSetupWizard if it appears
-        let wizardTitle = page.locator('text=Chat Library Setup');
-        let hasWizard = await wizardTitle.isVisible({ timeout: 3000 }).catch(() => false);
-        if (hasWizard) {
-            await page.locator('button:has-text("Cancel")').click();
-            await expect(wizardTitle).not.toBeVisible({ timeout: 5000 });
-        }
+        // Open the dialog through the sessions panel (the sidebar starts collapsed and a
+        // session is auto-selected, so the empty-state "New Session" button is not rendered)
+        let dialog = await openNewSessionDialogViaPanel(page);
 
-        // Click "New Session" button
-        let newBtn = page.locator('button:has-text("New Session")').or(page.locator('button:has-text("New")'));
-        await expect(newBtn.first()).toBeVisible({ timeout: 15000 });
-        await newBtn.first().click();
-
-        // New session dialog should appear
-        let dialog = page.locator('text=New Chat Session');
-        await expect(dialog).toBeVisible({ timeout: 10000 });
-
-        // Wait for defaults to load (chat config, prompt config/template)
-        await page.waitForTimeout(3000);
-
-        // Session name should be auto-populated
+        // Session name is auto-populated from the defaults
         let nameInput = page.locator('input[placeholder="Session name"]');
         await expect(nameInput).toBeVisible({ timeout: 5000 });
         let nameVal = await nameInput.inputValue();
@@ -83,31 +126,25 @@ test.describe('Chat session creation (admin)', () => {
         let testSessionName = 'E2E Test Session ' + Date.now();
         await nameInput.fill(testSessionName);
 
-        // Create button should be enabled (defaults loaded)
+        // Create button is enabled once a chat config and a prompt config/template are selected
         let createBtn = page.locator('button:has-text("Create")');
-        await expect(createBtn).toBeEnabled({ timeout: 5000 });
+        await expect(createBtn).toBeEnabled({ timeout: 15000 });
         await createBtn.click();
 
-        // Dialog should close
+        // Dialog closes immediately; the session is created, the list refreshed and the new one picked
         await expect(dialog).not.toBeVisible({ timeout: 10000 });
 
-        // Wait for session to load
-        await page.waitForTimeout(2000);
-
-        // Open sidebar conversations panel to verify session appears
-        let sessionsBtn = page.locator('button[title="Sessions"]');
-        await expect(sessionsBtn).toBeVisible({ timeout: 5000 });
-        await sessionsBtn.click();
-
-        // Session should appear in the sidebar list
-        let sessionItem = page.locator('text=' + testSessionName);
-        await expect(sessionItem.first()).toBeVisible({ timeout: 10000 });
-
-        // Toolbar should show the session name
-        let toolbar = page.locator('h2');
-        await expect(toolbar.filter({ hasText: testSessionName })).toBeVisible({ timeout: 5000 });
+        // The sessions panel is still open from openNewSessionDialogViaPanel; after
+        // ConversationManager.refresh() the new session is in the list
+        let sessionItem = page.locator('div.w-64 div.group.cursor-pointer').filter({ hasText: testSessionName });
+        await expect(sessionItem.first()).toBeVisible({ timeout: 30000 });
 
         await screenshot(page, 'chat-session-created');
+
+        // pickSession(req) makes the new session the active chat, so the toolbar h2
+        // (renderToolbar: selected session's chatTitle || name) must show its name
+        let toolbar = page.locator('h2');
+        await expect(toolbar.filter({ hasText: testSessionName })).toBeVisible({ timeout: 15000 });
     });
 });
 

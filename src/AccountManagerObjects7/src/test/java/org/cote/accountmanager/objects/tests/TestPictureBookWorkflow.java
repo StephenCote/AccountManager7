@@ -19,8 +19,10 @@ import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.picturebook.BookContext;
 import org.cote.accountmanager.olio.picturebook.PbArtifactUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
+import org.cote.accountmanager.olio.picturebook.PbDeleteUtil;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
 import org.cote.accountmanager.olio.picturebook.PbSubRecordUtil;
@@ -591,8 +593,18 @@ public class TestPictureBookWorkflow extends BaseTest {
 	 * the waiting cab in the rain - reused verbatim from the note {@code TestPictureBookCustom} caches.
 	 * One scene, not three: fewer characters to LLM-extract, and it is the known two-character scene.
 	 * <p>
-	 * <b>This test's own PB1 book group is deleted at the start of each run</b> if a previous run left one,
-	 * because "from scratch" is the whole point. That is this test's artifact, never the catatone fixture.
+	 * <b>This test's own book is deleted at the start of each run</b> if a previous run left one, because
+	 * "from scratch" is the whole point: the PB2 book, its world (whose {@code Population} holds the cast and
+	 * their portraits), the slug-keyed {@code ~/Data/PictureBooks/<slug>} tree, and the legacy title-keyed
+	 * group runs of this case before W3 left behind. That is this test's artifact, never the catatone fixture.
+	 * <p>
+	 * <b>Built through the 9-arg PB2 {@code createFromScenes(..., pb2BookObjectId)}</b>, exactly as
+	 * {@code TestPictureBookCustom} builds the catatone book. Since W3 the render's
+	 * {@code resolveSceneCharacter} looks for a scene's characters ONLY in the book world's
+	 * {@code Population} group; the 8-arg legacy overload still writes them to {@code <book>/Characters},
+	 * so a book built that way renders ZERO portraits (measured 2026-10-12: "Could not resolve scene
+	 * character 'Jideon' to a charPerson record", {@code Stage 1 complete: 0 portraits generated}) and this
+	 * case failed at its final count without ever reaching the render branch it exists to prove.
 	 */
 	@Test
 	public void TestFreshCharacterSubRecordsAndPortraitRender() throws Exception {
@@ -600,41 +612,65 @@ public class TestPictureBookWorkflow extends BaseTest {
 		setupContext();
 		String swarmServer = testProperties.getProperty("test.swarm.server");
 		assertNotNull("test.swarm.server must be set", swarmServer);
-		assertNotNull("An OlioContext is required - the world-group destination and the random baseline"
-			+ " (which is what creates instinct/personality/state at all) both depend on it", olioCtx);
 		long orgId = (long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be set - the book world (the sub-record destination AND the"
+			+ " random baseline that creates instinct/personality/state at all) is resolved from it", dataPath);
 
-		// ── a genuinely fresh PB1 book ──
+		// ── a genuinely fresh book: PB2 row + world + slug tree, and the pre-W3 title-keyed group ──
+		String slug = PbPipelineUtil.deriveSlug(FRESH_BOOK_NAME);
+		assertNotNull("A slug must derive from '" + FRESH_BOOK_NAME + "'", slug);
+		deleteFreshPb2BookIfPresent(slug, orgId);
 		deleteBookGroupIfPresent(FRESH_BOOK_NAME, orgId);
+		deleteBookGroupIfPresent(slug, orgId);
+
 		List<Map<String, Object>> cached = cachedCatatoneScenes();
 		List<Map<String, Object>> oneScene = new ArrayList<>();
 		oneScene.add(cached.get(0));
 		logger.info("Building '" + FRESH_BOOK_NAME + "' from catatone scene 1: "
 			+ oneScene.get(0).get("title") + " / characters=" + oneScene.get(0).get("characters"));
 
+		/// The PB2 book (and its world) must exist BEFORE createFromScenes so the 9-arg overload can
+		/// re-route the charPerson writes into that world's Population group.
+		BaseRecord book = createFreshPb2Book(slug);
+		String pb2BookOid = book.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("The fresh PB2 book must carry an objectId", pb2BookOid);
+
 		BaseRecord meta = PictureBookUtil.createFromScenes(testUser,
 			cachedCatatoneWorkObjectId(), chatConfig.get(FieldNames.FIELD_NAME), "dystopian sci-fi",
-			FRESH_BOOK_NAME, oneScene, new ArrayList<>(),
-			testProperties.getProperty("test.datagen.path"));
+			FRESH_BOOK_NAME, oneScene, new ArrayList<>(), dataPath, pb2BookOid);
 		assertNotNull("createFromScenes must return book meta", meta);
 		List<Object> failedCharacters = meta.get("failedCharacters");
 		assertTrue("createFromScenes must not have failed any character: " + failedCharacters,
 			failedCharacters == null || failedCharacters.isEmpty());
 		String pb1BookOid = meta.get("bookObjectId");
 		assertNotNull("The fresh book meta must carry a bookObjectId", pb1BookOid);
+		/// The W3 read/write contract this case depends on: the characters were written to the world
+		/// Population group the render reads from. A regression to legacy <book>/Characters routing fails
+		/// HERE, by name, rather than as a vacuous "0 portrait nodes" at the end.
+		assertEquals("createFromScenes(pb2) meta must carry the pb2BookObjectId", pb2BookOid,
+			meta.get("pb2BookObjectId"));
+		String charsGroupPath = meta.get("charsGroupPath");
+		assertNotNull("createFromScenes(pb2) must record the charsGroupPath it wrote to", charsGroupPath);
+		assertTrue("The characters must have been written to the book world's Population group - the only"
+			+ " place resolveSceneCharacter looks since W3 - not the legacy <book>/Characters (was '"
+			+ charsGroupPath + "')", charsGroupPath.endsWith("/" + slug + "/Population"));
 
-		// ── gap 2: the seven sub-records landed, in the world groups, with real ids ──
+		/// The BOOK world is where the sub-records (and the random baseline) now go, not the user's default
+		/// grid world: createFromScenes(pb2) hands its book OlioContext to createCharPerson as octxHint.
+		BookContext bookCtx = PbBookUtil.openBookContext(testUser, book);
+		assertNotNull("The fresh PB2 book must open a BookContext (book.world must be set)", bookCtx);
+		assertNotNull("The BookContext must carry the book world", bookCtx.getWorld());
+
+		// ── gap 2: the seven sub-records landed, in the BOOK world's groups, with real ids ──
 		List<Map<String, Object>> chars = PictureBookUtil.listCharacters(testUser, pb1BookOid);
 		assertFalse("The fresh book must have characters - createCharPerson ran or it did not", chars.isEmpty());
 		logger.info("createFromScenes created " + chars.size() + " character(s) from scratch");
 		for(Map<String, Object> c : chars) {
-			assertSubRecordsPersisted((String) c.get("objectId"), (String) c.get("name"), orgId);
+			assertSubRecordsPersisted((String) c.get("objectId"), (String) c.get("name"), orgId, bookCtx);
 		}
 
 		// ── gap 1: render scene 1. Fresh characters have no portrait, so the RENDER branch must run. ──
-		String slug = PbPipelineUtil.deriveSlug(FRESH_BOOK_NAME);
-		assertNotNull("A slug must derive from '" + FRESH_BOOK_NAME + "'", slug);
-		BaseRecord book = freshPb2Book(slug);
 		String sceneOid = firstSceneObjectId(pb1BookOid);
 
 		long t0 = System.currentTimeMillis();
@@ -767,8 +803,13 @@ public class TestPictureBookWorkflow extends BaseTest {
 	 * {@code buildRandomBaseline} produced a baseline, i.e. only when an {@code OlioContext} was
 	 * available - so they are asserted here (this test supplies a {@code dataPath}) and are legitimately
 	 * absent on the contextless path. Stated rather than silently skipped.
+	 * <p>
+	 * The expected destination is the <b>book world's</b> groups ({@code bookCtx}): the PB2
+	 * {@code createFromScenes} threads the book's OlioContext into {@code createCharPerson} as
+	 * {@code octxHint}, so neither the acting user's home nor their default grid world is the right answer.
 	 */
-	private void assertSubRecordsPersisted(String charObjectId, String name, long orgId) throws Exception {
+	private void assertSubRecordsPersisted(String charObjectId, String name, long orgId, BookContext bookCtx)
+			throws Exception {
 		org.cote.accountmanager.io.Query q = org.cote.accountmanager.io.QueryUtil.createQuery(
 			OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, charObjectId);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
@@ -795,9 +836,11 @@ public class TestPictureBookWorkflow extends BaseTest {
 			assertTrue(name + ": charPerson." + sub[0] + " must carry a real id (got " + id + ")",
 				id != null && id.longValue() > 0L);
 			String worldField = PbSubRecordUtil.WORLD_GROUP_FIELD.get(sub[1]);
-			String expectPath = olioCtx.getWorld().get(worldField + ".path");
-			assertEquals(name + ": " + sub[1] + " must live in the world's '" + worldField + "' group, not"
-				+ " the acting user's home", groupIdOfPath(expectPath, orgId),
+			String expectPath = bookCtx.getGroupPath(worldField);
+			assertNotNull(name + ": the book world must declare a '" + worldField + "' group for " + sub[1],
+				expectPath);
+			assertEquals(name + ": " + sub[1] + " must live in the BOOK world's '" + worldField + "' group,"
+				+ " not the acting user's home or default grid world", groupIdOfPath(expectPath, orgId),
 				((Number) rec.get(FieldNames.FIELD_GROUP_ID)).longValue());
 			logger.info(name + ": " + sub[0] + " id=" + id + " groupId=" + rec.get(FieldNames.FIELD_GROUP_ID)
 				+ " (" + expectPath + ")");
@@ -864,12 +907,15 @@ public class TestPictureBookWorkflow extends BaseTest {
 	}
 
 	/**
-	 * Delete a PB1 book group this test previously created, so "from scratch" means it. The TITLE path is
-	 * correct here: the fresh-character case uses the 8-arg legacy {@code createFromScenes}, which keys
-	 * the PB1 group on the book name (only the 9-arg PB2 overload keys it on the slug).
+	 * Delete a PB1 book group this test previously created, so "from scratch" means it. Called for BOTH
+	 * names this case has ever keyed its group on: the SLUG, which is what the 9-arg PB2
+	 * {@code createFromScenes} keys the PB1 group on ({@code pb2GroupName = bookSlug}), and the TITLE,
+	 * which the 8-arg legacy overload this case used before W3 keyed it on. The slug tree is normally
+	 * removed by {@link #deleteFreshPb2BookIfPresent} as part of the PB2 book's footprint; the explicit
+	 * call covers a run that was interrupted after the group was made but before the PB2 row existed.
 	 */
-	private void deleteBookGroupIfPresent(String bookName, long orgId) {
-		String path = "~/Data/PictureBooks/" + bookName;
+	private void deleteBookGroupIfPresent(String groupName, long orgId) {
+		String path = "~/Data/PictureBooks/" + groupName;
 		BaseRecord grp = IOSystem.getActiveContext().getPathUtil().findPath(testUser,
 			org.cote.accountmanager.schema.ModelNames.MODEL_GROUP, path,
 			org.cote.accountmanager.schema.type.GroupEnumType.DATA.toString(), orgId);
@@ -907,14 +953,43 @@ public class TestPictureBookWorkflow extends BaseTest {
 		return scenes;
 	}
 
-	/** Get-or-create the PB2 book for this case's fresh PB1 book. */
-	private BaseRecord freshPb2Book(String slug) {
-		long orgId = (long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
-		BaseRecord book = PbBookUtil.findBookBySlug(testUser, slug, orgId);
-		if(book != null) {
-			return book;
+	/**
+	 * Remove this case's own PB2 book from a previous run - the row, its world (the {@code Population}
+	 * cast and their portraits, which is exactly what would otherwise make the render take the REUSE
+	 * branch), the workflow graph, and the slug-keyed {@code ~/Data/PictureBooks/<slug>} tree - through the
+	 * one complete delete path ({@link PbDeleteUtil#deleteBookComplete}), as the acting user. The world is
+	 * olio-principal-owned, and that path is what resolves the principal for the physical deletes.
+	 * A no-op when no such book exists; a failed or partial delete fails the case, because a run that
+	 * silently reused last run's cast would prove nothing about the render branch.
+	 */
+	private void deleteFreshPb2BookIfPresent(String slug, long orgId) {
+		BaseRecord previous = PbBookUtil.findBookBySlug(testUser, slug, orgId);
+		if(previous == null) {
+			return;
 		}
-		book = PbBookUtil.createBook(testUser, testProperties.getProperty("test.datagen.path"), slug,
+		String previousOid = previous.get(FieldNames.FIELD_OBJECT_ID);
+		PictureBookUtil.DeleteResult res = PbDeleteUtil.deleteBookComplete(testUser, previousOid);
+		logger.info("Deleted this test's previous PB2 book '" + slug + "' (" + previousOid + ") and its world so"
+			+ " character creation runs from scratch: deleted=" + res.deleted + " steps=" + res.steps);
+		assertTrue("This test's own previous PB2 book '" + slug + "' must be fully deletable (reason: "
+			+ res.reason + "; steps: " + res.steps + "), otherwise the run would reuse its characters and"
+			+ " portraits and the render branch would never fire", res.deleted);
+		assertTrue("The PB2 book '" + slug + "' must be gone after deleteBookComplete",
+			PbBookUtil.findBookBySlug(testUser, slug, orgId) == null);
+	}
+
+	/**
+	 * Create this case's PB2 book - never get-or-create: {@link #deleteFreshPb2BookIfPresent} has just
+	 * run, so a book still present here means the wipe did not take and "from scratch" would be a lie.
+	 * {@code createBook} is the ONE authorized creation path (a render never creates a book/world as a
+	 * side effect), and it is what makes the world whose {@code Population} group the 9-arg
+	 * {@code createFromScenes} writes the cast into.
+	 */
+	private BaseRecord createFreshPb2Book(String slug) {
+		long orgId = (long) testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		assertTrue("No PB2 book '" + slug + "' may exist before this case creates its own - a leftover here"
+			+ " means the from-scratch wipe did not take", PbBookUtil.findBookBySlug(testUser, slug, orgId) == null);
+		BaseRecord book = PbBookUtil.createBook(testUser, testProperties.getProperty("test.datagen.path"), slug,
 			FRESH_BOOK_NAME);
 		assertNotNull("PB2 book creation must return a book readable by its creator", book);
 		return book;

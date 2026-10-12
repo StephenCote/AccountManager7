@@ -3,8 +3,10 @@
  * end to end in the two dialog-based workflows that were previously bespoke, schema-blind, single-
  * input-with-no-spinner sliders: workflows/reimage.js (olio.charPerson "Reimage" command) and
  * workflows/reimageApparel.js (olio.apparel "Reimage" command). Both now render their Steps/Refiner
- * Steps/CFG/Refiner CFG/Denoising fields via the same `formFieldRenderers.renderRange` plain-contract
- * helper that backs the canonical schema-driven `renderers.range` (components/formFieldRenderers.js).
+ * Steps/CFG/Refiner CFG/Denoising (charPerson, via components/SdConfigPanel.js) and Steps/Refiner
+ * Steps/CFG/Mannequin Creativity (apparel, KI-43) fields via the same `formFieldRenderers.renderRange`
+ * plain-contract helper that backs the canonical schema-driven `renderers.range`
+ * (components/formFieldRenderers.js).
  *
  * workflows/pictureBook.js's scene-image SD panel and components/SdConfigPanel.js's own `rangeInput()`
  * helper were also ported onto the identical shared function (verified directly by code inspection —
@@ -80,13 +82,22 @@ test.describe('Converged range-slider widget — live dialog verification (KI-16
 
         // Steps: label shows "Steps: <value>" live; the range input + its companion spinner both carry
         // the same value and the same min/max/step bounds (formFieldRenderers.renderRange contract).
-        let stepsLabel = dialog.locator('.field-label', { hasText: 'Steps:' }).first();
+        // reimage.js now renders the SD fields through components/SdConfigPanel.js, whose stacked
+        // `field()` helper emits a plain <label> (Tailwind classes, no `field-label`) above the
+        // renderRange slider+spinner pair; Steps is `rangeInput(config, "steps", 1, 100, 1, ...)`.
+        // Anchor the match so "Refiner Steps: N" (same panel) cannot be picked up.
+        let stepsLabel = dialog.locator('label', { hasText: /^Steps: \d+$/ }).first();
         await expect(stepsLabel).toBeVisible({ timeout: 10000 });
         let stepsRow = stepsLabel.locator('xpath=..');
         let stepsRange = stepsRow.locator('input[type="range"]');
         let stepsSpinner = stepsRow.locator('input[type="number"]');
         await expect(stepsRange).toHaveAttribute('min', '1');
         await expect(stepsRange).toHaveAttribute('max', '100');
+        await expect(stepsRange).toHaveAttribute('step', '1');
+        // Slider and spinner start in agreement with the label
+        let initial = await stepsRange.inputValue();
+        await expect(stepsSpinner).toHaveValue(initial);
+        await expect(stepsLabel).toHaveText('Steps: ' + initial);
 
         let before = await stepsRange.inputValue();
 
@@ -119,7 +130,7 @@ test.describe('Converged range-slider widget — live dialog verification (KI-16
         expect(Number(clamped)).toBeLessThanOrEqual(100);
     });
 
-    test('apparel Reimage dialog: CFG and Denoising sliders both update live via the same widget', async ({ page }) => {
+    test('apparel Reimage dialog: CFG and Mannequin Creativity sliders both update live via the same widget', async ({ page }) => {
         test.skip(!apparel || !apparel.objectId, 'Could not create test apparel');
 
         await page.goto('/#!/view/olio.apparel/' + apparel.objectId);
@@ -132,22 +143,44 @@ test.describe('Converged range-slider widget — live dialog verification (KI-16
         let dialog = page.locator('.am7-dialog-backdrop .am7-dialog').first();
         await expect(dialog).toBeVisible({ timeout: 15000 });
 
-        let cfgLabel = dialog.locator('.field-label', { hasText: 'CFG:' }).first();
+        // reimageApparel.js: "CFG: <v>" (min 1, max 30, step 0.5). Anchor so "Refiner CFG:" is excluded.
+        let cfgLabel = dialog.locator('label.field-label', { hasText: /^CFG: / }).first();
         await expect(cfgLabel).toBeVisible({ timeout: 10000 });
-        let cfgRange = cfgLabel.locator('xpath=..').locator('input[type="range"]');
+        let cfgRow = cfgLabel.locator('xpath=..');
+        let cfgRange = cfgRow.locator('input[type="range"]');
+        let cfgSpinner = cfgRow.locator('input[type="number"]');
+        await expect(cfgRange).toHaveAttribute('min', '1');
+        await expect(cfgRange).toHaveAttribute('max', '30');
+        await expect(cfgRange).toHaveAttribute('step', '0.5');
         await cfgRange.fill('12.5');
         await page.waitForTimeout(300);
         expect(await cfgRange.inputValue()).toBe('12.5');
+        await expect(cfgSpinner).toHaveValue('12.5');
         await expect(cfgLabel).toHaveText('CFG: 12.5');
 
-        let denoiseLabel = dialog.locator('.field-label', { hasText: 'Denoising:' }).first();
-        await expect(denoiseLabel).toBeVisible({ timeout: 10000 });
-        let denoiseRange = denoiseLabel.locator('xpath=..').locator('input[type="range"]');
-        await expect(denoiseRange).toHaveAttribute('min', '0');
-        await expect(denoiseRange).toHaveAttribute('max', '1');
-        await denoiseRange.fill('0.4');
+        // KI-43: the former "Denoising" slider (denoisingStrength, which the mannequin pass never read)
+        // is now "Mannequin Creativity" — a 0-100 UI slider (step 5) that writes mannequinCreativity
+        // (0-1 on the wire) through cinst.api so the forms' range decorator does the ×100/÷100
+        // conversion; the label re-renders from the entity value, so it proves the round trip.
+        let creativityLabel = dialog.locator('label.field-label', { hasText: /^Mannequin Creativity: / }).first();
+        await expect(creativityLabel).toBeVisible({ timeout: 10000 });
+        let creativityRow = creativityLabel.locator('xpath=..');
+        let creativityRange = creativityRow.locator('input[type="range"]');
+        let creativitySpinner = creativityRow.locator('input[type="number"]');
+        await expect(creativityRange).toHaveAttribute('min', '0');
+        await expect(creativityRange).toHaveAttribute('max', '100');
+        await expect(creativityRange).toHaveAttribute('step', '5');
+        // Untouched: shows the server default (0.85 -> 85) rather than a literal 0
+        await expect(creativityLabel).toHaveText('Mannequin Creativity: 85');
+        await expect(creativityRange).toHaveValue('85');
+
+        await creativityRange.fill('40');
         await page.waitForTimeout(300);
-        expect(await denoiseRange.inputValue()).toBe('0.4');
-        await expect(denoiseLabel).toHaveText('Denoising: 0.4');
+        expect(await creativityRange.inputValue()).toBe('40');
+        await expect(creativitySpinner).toHaveValue('40');
+        await expect(creativityLabel).toHaveText('Mannequin Creativity: 40');
+
+        // No stale "Denoising" slider remains in the apparel dialog
+        await expect(dialog.locator('label.field-label', { hasText: /^Denoising/ })).toHaveCount(0);
     });
 });

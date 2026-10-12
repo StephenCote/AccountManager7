@@ -14,6 +14,10 @@ test.describe('Workflow runtime validation', () => {
     let td = {};
 
     test.beforeAll(async ({ request }) => {
+        // setupWorkflowTestData creates a data.note; ModelService.create (ModelService.java:298-309)
+        // embeds it synchronously before answering, so the POST blocks on the shared Ollama for as
+        // long as a concurrent LLM generation holds it. Timings are never thresholds -- ample time.
+        test.setTimeout(300000);
         td = await setupWorkflowTestData(request, { suffix: 'wfrt' + Date.now().toString(36).slice(-4) });
     });
 
@@ -136,12 +140,16 @@ test.describe('Workflow runtime validation', () => {
 
     // ── C. Command buttons render on data.data ────────────────────────────
 
-    test('data.data shows reimage command button', async ({ page }) => {
+    test('data.data shows fact command button', async ({ page }) => {
         test.skip(!td.dataObject?.objectId, 'No data.data test data created');
 
         await navigateToObject(page, 'data.data', td.dataObject.objectId);
 
-        expect(await hasCommandButton(page, 'auto_awesome')).toBe(true);   // reimage
+        // forms.data.commands (core/formDef.js:649-658) carries only `fact` (icon fact_check) — the
+        // data.data reimage command was removed in d6374c40, so auto_awesome must NOT render here.
+        expect(await hasCommandButton(page, 'fact_check')).toBe(true);     // makeFact
+        expect(await page.locator('button:has(span.material-symbols-outlined:text("auto_awesome"))').count(),
+            'data.data no longer has a reimage command').toBe(0);
 
         await screenshot(page, 'data-buttons');
     });
@@ -234,17 +242,25 @@ test.describe('Workflow runtime validation', () => {
         await btn.click();
         await page.waitForTimeout(2000);
 
+        // The dialog opening IS the behavior under test — a closed dialog is a failure, not a skip.
         let dialog = page.locator('.am7-dialog-backdrop .am7-dialog').first();
-        let dialogVisible = await dialog.isVisible({ timeout: 5000 }).catch(() => false);
-        if (!dialogVisible) {
-            test.skip(true, 'Reimage dialog did not open');
-            return;
-        }
+        await expect(dialog, 'Reimage dialog must open').toBeVisible({ timeout: 10000 });
 
-        // Check Steps field has a value (default is 40, may vary with saved config)
-        let stepsInput = dialog.locator('input[type="number"]').first();
+        // Check Steps field has a value (default is 40, may vary with saved config).
+        // SdConfigPanel renders the slider+spinner pair under a "Steps: <n>" label (SdConfigPanel.js:336);
+        // the first number input in the dialog is no longer Steps, so target the field by its label.
+        // field() is m("div", [m("label", ...), rangeNode]) (SdConfigPanel.js:49-54): find the label,
+        // then step up to its parent div (`..` = xpath parent) to scope the slider + number input.
+        // (A `div:has(> label:text-matches(...))` form did not resolve under Playwright's CSS engine.)
+        let stepsLabel = dialog.locator('label', { hasText: /^Steps:\s*\d+$/ }).first();
+        await expect(stepsLabel, 'Steps label must render in the reimage dialog').toBeVisible({ timeout: 5000 });
+        let stepsField = stepsLabel.locator('..');
+        let stepsInput = stepsField.locator('input[type="number"]').first();
         let stepsVal = await stepsInput.inputValue();
+        console.log('[workflowRuntime] Steps value: ' + stepsVal);
         expect(parseInt(stepsVal)).toBeGreaterThan(0);
+        // The slider next to it carries the same value.
+        expect(await stepsField.locator('input[type="range"]').first().inputValue()).toBe(stepsVal);
 
         // Check Dress Down / Dress Up buttons are present (charPerson only)
         let dressDown = dialog.locator('button:has-text("Dress Down")');

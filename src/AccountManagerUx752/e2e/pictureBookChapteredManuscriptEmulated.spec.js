@@ -29,6 +29,15 @@
  *   extract-chunk SYNTH count must equal Σ(K − fromChunk) over the gap chapters actually processed, with
  *   K the chapter's chunk count. With no gap declared for any processed chapter, replay demands synth == 0.
  *
+ *   REPLAY PRE-CHECK (replay mode) — the request key is byte-exact, so the recording is only usable
+ *   while the product still builds the same extract-chunk request. Before the wizard runs, the spec
+ *   profiles the recorded extract-chunk fixtures on the host (longest TEXT SEGMENT, model string,
+ *   Patch 3's "Add at most {maxNew}" sentence) against PictureBookUtil's current chunking
+ *   (EXTRACT_CHUNK_SIZE/OVERLAP 8000/400 since 2026-10-05) and fails immediately, naming the drift
+ *   and the re-record procedure, when no recorded key can possibly match. The emulator counters are
+ *   read right after the run lands (hit>0 in replay) for the same reason. Nothing is skipped: the
+ *   parity and stats assertions that would have caught it 10 chapters later are unchanged.
+ *
  *   SYNTH MODE (manifest only) — the emulator's synthesized first scene title for a passage begins with
  *   the passage's first non-blank line, so "first scene of chapter N starts with 'Chapter N'" proves
  *   chapter N's own text reached the extraction prompt.
@@ -103,6 +112,17 @@ const HARLOTS_CHAPTERS = 21;
 // 192.168.1.42 with this exact model name; a different string here replays nothing (all synth).
 const EMU_MODEL = process.env.PB_EMU_MODEL || 'goekdenizguelmez/JOSIEFIED-Qwen3:8b';
 const MAIN_SET = 'harlots-eight';
+// Product chunking the recording must have been made under: PictureBookUtil.EXTRACT_CHUNK_SIZE /
+// EXTRACT_CHUNK_OVERLAP (PictureBookUtil.java:6147-6148) are 8000/400 since commit ab382e71 "Patch 3"
+// (2026-10-05); they were 2000/200 before. chunkText() breaks a chunk early only when the break lands
+// past HALF the chunk size, so every non-final chunk of a chapter longer than EXTRACT_CHUNK_SIZE is
+// more than EXTRACT_CHUNK_SIZE/2 chars. Because the emulator key hashes the model + every message
+// verbatim, a set recorded under the old chunking cannot match ONE extract-chunk request the current
+// product sends — every answer is synthesized and the parity proof fails 100+ titles later. The
+// replay-mode pre-check below turns that into an immediate, named failure instead.
+const EXTRACT_CHUNK_SIZE = 8000;
+const EXTRACT_CHUNK_OVERLAP = 400;
+const EXTRACT_SEGMENT_MARKER = 'TEXT SEGMENT:'; // last line of the extract-chunk user prompt before {chunk}
 // Fixture sets are bind-mounted read-only into the container from this repo directory, so the host-side
 // spec can see whether the main set holds real recordings or only its manifest. Recordings are the
 // `<sha256>.json` entries of <set>/fixtures.zip plus any loose `<sha256>.json` recorder drops (loose
@@ -256,6 +276,41 @@ function recordedSceneTitles(set) {
         }
     }
     return titles;
+}
+
+/**
+ * Host-side profile of the set's recorded extract-chunk requests: how long each recorded TEXT SEGMENT
+ * was, which model string the recording run sent, and whether the recorded user prompt carries the
+ * current template's per-chunk budget sentence ("Add at most {maxNew} new scenes", added by Patch 3 to
+ * templates/promptTemplate.pictureBook.extract-chunk.json). All three are stale-recording tells — the
+ * emulator serves only an exact request-key match — and all are readable from the host in well under a
+ * second, so the replay pre-check can name the cause BEFORE a long wizard run proves it the slow way.
+ */
+function recordedExtractProfile(set) {
+    const setDir = path.join(FIXTURE_ROOT, set);
+    const prof = { extractChunk: 0, maxSegmentChars: 0, minSegmentChars: null, withBudgetSentence: 0, models: [], recordedAt: [] };
+    const models = new Set();
+    for (const f of realFixtureFiles(set)) {
+        let fx;
+        try { fx = JSON.parse(readFixture(setDir, f, 'utf8')); } catch (_) { continue; }
+        const msgs = (fx.request && Array.isArray(fx.request.messages)) ? fx.request.messages : [];
+        const user = msgs.filter(m => m && m.role === 'user').map(m => String(m.content || '')).join('\n');
+        const idx = user.lastIndexOf(EXTRACT_SEGMENT_MARKER);
+        if (fx.kind !== 'extract-chunk' && idx < 0) continue;
+        prof.extractChunk++;
+        if (fx.model) models.add(String(fx.model));
+        if (fx.recordedAt) prof.recordedAt.push(String(fx.recordedAt));
+        if (/Add at most \d+ new scenes/.test(user)) prof.withBudgetSentence++;
+        if (idx >= 0) {
+            const seg = user.substring(idx + EXTRACT_SEGMENT_MARKER.length).trim().length;
+            prof.maxSegmentChars = Math.max(prof.maxSegmentChars, seg);
+            prof.minSegmentChars = prof.minSegmentChars === null ? seg : Math.min(prof.minSegmentChars, seg);
+        }
+    }
+    prof.models = [...models].sort();
+    prof.recordedAt.sort();
+    prof.recordedAt = prof.recordedAt.length ? [prof.recordedAt[0], prof.recordedAt[prof.recordedAt.length - 1]] : [];
+    return prof;
 }
 
 /**
@@ -640,6 +695,39 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         console.log('[pb-emu] wizard will be handed ' + N + ' of ' + ranges.length + ' chapters; per-chapter chars: '
             + JSON.stringify(handed.map(r => r.endOffset - r.startOffset)));
 
+        // ── Replay-mode pre-check: CAN the recording match what the product is about to send? ──
+        // Fails in seconds with the cause named, instead of a 10-chapter wizard run that ends in a
+        // 100-title "unrecorded" dump. Nothing here is skipped or loosened — the same run would fail the
+        // parity + hit>0 assertions below; this only moves the failure to where it is explainable.
+        if (REPLAY) {
+            const prof = recordedExtractProfile(MAIN_SET);
+            const longestHanded = Math.max(...handed.map(r => r.endOffset - r.startOffset));
+            console.log('[pb-emu] recorded extract-chunk profile: ' + JSON.stringify(prof)
+                + '; longest handed chapter ' + longestHanded + ' chars; product EXTRACT_CHUNK_SIZE=' + EXTRACT_CHUNK_SIZE
+                + ' OVERLAP=' + EXTRACT_CHUNK_OVERLAP);
+            expect(prof.extractChunk, MAIN_SET + ' carries recorded extract-chunk completions').toBeGreaterThan(0);
+            expect(prof.models, 'recorded model string(s) == PB_EMU_MODEL "' + EMU_MODEL
+                + '" (the model is part of the emulator request key)').toEqual([EMU_MODEL]);
+            if (longestHanded > EXTRACT_CHUNK_SIZE) {
+                expect(prof.maxSegmentChars, 'STALE RECORDING — ' + MAIN_SET + ': the longest recorded TEXT SEGMENT is '
+                    + prof.maxSegmentChars + ' chars (recorded ' + prof.recordedAt.join(' .. ') + '), but PictureBookUtil.chunkText '
+                    + '(EXTRACT_CHUNK_SIZE=' + EXTRACT_CHUNK_SIZE + '/' + EXTRACT_CHUNK_OVERLAP + ' since commit ab382e71 "Patch 3", 2026-10-05; '
+                    + '2000/200 before) cuts a ' + longestHanded + '-char chapter into chunks longer than ' + (EXTRACT_CHUNK_SIZE / 2)
+                    + ' chars, so NO extract-chunk request key can match and every answer would be synthesized. Re-record the set: '
+                    + 'recreate the container with LLM_EMULATOR_RECORD_DIR set, run pictureBookChapteredManuscriptUx.spec.js over all '
+                    + HARLOTS_CHAPTERS + ' chapters against the live LLM with model "' + EMU_MODEL + '", repackage the drops into '
+                    + MAIN_SET + '/fixtures.zip and update manifest.json.').toBeGreaterThan(EXTRACT_CHUNK_SIZE / 2);
+            }
+            if (prof.withBudgetSentence !== prof.extractChunk) {
+                // Evidence, not an assertion: the product resolves the template from the DB first
+                // (PictureBookUtil.resolvePrompt), and the host cannot see whether the DB copy carries
+                // Patch 3's sentence. If it does, these recordings cannot match for this reason either.
+                console.log('[pb-emu] NOTE: ' + (prof.extractChunk - prof.withBudgetSentence) + ' of ' + prof.extractChunk
+                    + ' recorded extract-chunk prompts lack the "Add at most {maxNew} new scenes" sentence that the current '
+                    + 'templates/promptTemplate.pictureBook.extract-chunk.json resource carries (Patch 3).');
+            }
+        }
+
         // ── Emulator: reset counters, confirm configured ────────────────────────────────────
         const stats0 = await emulatorStats(request, true);
         console.log('[pb-emu] emulator stats after reset: ' + JSON.stringify(stats0));
@@ -662,8 +750,32 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         await expect(page.locator('[data-view-mode-toggle]')).toBeVisible({ timeout: 30000 });
         await screenshot(page, 'pb-emu-workflow-landing');
 
-        // ── REST truth (assertion 3) ─────────────────────────────────────────────────────────
+        // ── Emulator stats (assertion 8): configured, no misses, cache hit / synthesis by mode ──
+        // Read right after the run lands — nothing between here and the per-chapter checks calls the
+        // LLM — so a replay run that was answered entirely by the synthesizer fails HERE with the
+        // counters in the message, not 100 scene titles later in the parity block.
         await restLogin(request);
+        const stats1 = await emulatorStats(request, false);
+        console.log('[pb-emu] emulator stats after run1: ' + JSON.stringify(stats1));
+        const missLines = dockerLogLines(runStartedIso, ['LLM emulator MISS', 'LLM emulator: invalid emulator set',
+            'resolves outside the fixture root', 'No LLM content for', 'LLM emulator not configured']);
+        if (stats1.miss !== 0 || missLines.length) {
+            console.log('[pb-emu] docker log evidence:\n' + missLines.join('\n'));
+        }
+        const kindTally = emulatorKindTally(runStartedIso, MAIN_SET);
+        console.log('[pb-emu] emulator answers by kind: ' + JSON.stringify(kindTally));
+        expect(stats1.miss, 'emulator fixture misses (docker logs: ' + missLines.slice(0, 5).join(' || ') + ')').toBe(0);
+        if (REPLAY) {
+            expect(stats1.hit, 'replay mode: recorded completions were served — hit=' + stats1.hit + ' synth=' + stats1.synth
+                + ' fixtures=' + stats1.fixtures + '. hit=0 with synth>0 means NO request key matched the recording: the '
+                + MAIN_SET + ' set is stale relative to the product (chunking / prompt template / model drift; see the '
+                + 'replay pre-check log line above) and must be re-recorded.').toBeGreaterThan(0);
+        } else {
+            expect(stats1.synth, 'synth mode: emulator synthesized at least one response').toBeGreaterThan(0);
+        }
+        expect(stats1.fault, 'no faults in the ' + MAIN_SET + ' set').toBe(0);
+
+        // ── REST truth (assertion 3) ─────────────────────────────────────────────────────────
         const allBooks1 = await getJson(request, PB_REST + '/books');
         const mine1 = allBooks1.filter(b => b.seriesName === docFileName);
         expect(mine1.length, 'chapter books in series "' + docFileName + '" (series seen: '
@@ -786,24 +898,6 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         expect(unrecorded, 'scene titles not found in any recorded completion and not covered by a declared recordingGap '
             + '(request key drifted from the recording run)').toEqual([]);
         expect(crossChapter, 'scene titles that begin with a DIFFERENT chapter heading').toEqual([]);
-
-        // ── Emulator stats (assertion 8): configured, no misses, cache hit / synthesis by mode ──
-        const stats1 = await emulatorStats(request, false);
-        console.log('[pb-emu] emulator stats after run1: ' + JSON.stringify(stats1));
-        const missLines = dockerLogLines(runStartedIso, ['LLM emulator MISS', 'LLM emulator: invalid emulator set',
-            'resolves outside the fixture root', 'No LLM content for', 'LLM emulator not configured']);
-        if (stats1.miss !== 0 || missLines.length) {
-            console.log('[pb-emu] docker log evidence:\n' + missLines.join('\n'));
-        }
-        const kindTally = emulatorKindTally(runStartedIso, MAIN_SET);
-        console.log('[pb-emu] emulator answers by kind: ' + JSON.stringify(kindTally));
-        expect(stats1.miss, 'emulator fixture misses (docker logs: ' + missLines.slice(0, 5).join(' || ') + ')').toBe(0);
-        if (REPLAY) {
-            expect(stats1.hit, 'replay mode: recorded completions were served').toBeGreaterThan(0);
-        } else {
-            expect(stats1.synth, 'synth mode: emulator synthesized at least one response').toBeGreaterThan(0);
-        }
-        expect(stats1.fault, 'no faults in the ' + MAIN_SET + ' set').toBe(0);
 
         // ── Pin the recording gap (replay mode) ─────────────────────────────────────────────
         // fanOutChaptersExtract is sequential — one POST /extract-scenes-only job per chapter, awaited
@@ -991,10 +1085,10 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         // yields at least 1 + ceil((len - 8000) / 7600) chunk calls (break-on-period only shortens
         // chunks, so this is a floor). Hand the wizard enough leading chapters that the chunked
         // ones add up to >= 3 calls, or the fault never fires.
-        const CHUNK_SIZE = 8000, CHUNK_OVERLAP = 400;
+        const CHUNK_SIZE = EXTRACT_CHUNK_SIZE, CHUNK_OVERLAP = EXTRACT_CHUNK_OVERLAP;
         const chunkCalls = r => {
             const len = r.endOffset - r.startOffset;
-            return len > 8000 ? 1 + Math.ceil((len - CHUNK_SIZE) / (CHUNK_SIZE - CHUNK_OVERLAP)) : 0;
+            return len > CHUNK_SIZE ? 1 + Math.ceil((len - CHUNK_SIZE) / (CHUNK_SIZE - CHUNK_OVERLAP)) : 0;
         };
         let N = FAULT_CHAPTERS;
         while (N < ranges.length && ranges.slice(0, N).reduce((a, r) => a + chunkCalls(r), 0) < 3) N++;

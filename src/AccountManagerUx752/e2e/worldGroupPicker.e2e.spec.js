@@ -12,24 +12,22 @@
  * with a REAL book-world apparel loaded via getFull — the exact object the Add-button onclick in
  * views/object.js hands to preparePicker.
  *
- * Runs as the shared test user (never admin). Requires the Docker Service7 stack (:9443) and the Vite
- * dev server (:8899, proxying to it) both live:
- *   PLAYWRIGHT_BASE_URL=https://localhost:8899 npx playwright test e2e/worldGroupPicker.e2e.spec.js \
- *     --workers=1 --project=chromium
+ * Runs as the shared test user (never admin). Topology comes from PLAYWRIGHT_BASE_URL (mandatory):
+ * the Docker stack at https://127.0.0.1:9443 (project `chromium`) or the Vite dev server at
+ * https://127.0.0.1:8898 proxying to it (project `chromium-vite`; this spec is in VITE_SOURCE_SPECS
+ * because it imports /src modules). In both, config.js defaultServer() yields '' (the port is not
+ * 8899), so every REST call is same-origin and no request rewriting is needed.
+ *   PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/worldGroupPicker.e2e.spec.js \
+ *     --workers=1 --project=chromium-vite
+ *
+ * Data: needs at least one olio.apparel in a book world (groupPath …/Worlds/<slug>/Apparel) that the
+ * shared user can read. The test fails loudly (does not skip) when none exists.
  */
 import { test as base, expect } from '@playwright/test';
 import { ensureSharedTestUser } from './helpers/api.js';
+import { login } from './helpers/auth.js';
 
 const test = base;
-
-// NOTE: do NOT force --host-resolver-rules=MAP localhost 127.0.0.1 here. That mapping is a DOCKER-only
-// workaround (the Docker publish is IPv4-only). In the LOCAL dev pairing this test targets — Vite dev
-// server :8899 + local Tomcat :8443 — `config.js` defaultServer() makes am7client talk DIRECTLY to
-// https://localhost:8443 (not through the Vite proxy). Both the Vite server and the local backend
-// listen on IPv6 ::1, so forcing localhost->127.0.0.1 made every browser XHR to :8443 fail with
-// ERR_CONNECTION_REFUSED (nothing on 127.0.0.1:8443) and the SPA bounced to #!/sig. Natural resolution
-// (localhost -> ::1) reaches both. The document Origin stays https://localhost:8899, which the :8443
-// backend allows for cross-origin XHR in the standard dev setup.
 
 test.describe('KI-35 world-group picker (real backend)', () => {
     let info = {};
@@ -40,99 +38,98 @@ test.describe('KI-35 world-group picker (real backend)', () => {
 
     test('Apparel.wearables picker lands on the world Wearables group, not the user path', async ({ page }) => {
         test.setTimeout(120000);
-
-        // Stub the WebSocket BEFORE any navigation — the Vite(:8899)->backend proxy drops the session
-        // cookie on the WS upgrade, so Tomcat closes it and pageClient.reconnect() would forceLogin() ->
-        // #!/sig after ~1s. The stub fires onopen and never onclose.
-        await page.addInitScript(() => {
-            window.WebSocket = class StubWS {
-                constructor(url) {
-                    this.url = url; this.readyState = 0;
-                    this.onopen = null; this.onclose = null; this.onmessage = null; this.onerror = null;
-                    this.bufferedAmount = 0; this.extensions = ''; this.protocol = '';
-                    setTimeout(() => { this.readyState = 1; if (this.onopen) this.onopen({ type: 'open', target: this }); }, 50);
-                }
-                send() {} close() { this.readyState = 3; }
-                addEventListener() {} removeEventListener() {} dispatchEvent() { return true; }
-            };
-            window.WebSocket.CONNECTING = 0; window.WebSocket.OPEN = 1;
-            window.WebSocket.CLOSING = 2; window.WebSocket.CLOSED = 3;
-        });
-
-        // First load: the app boots unauthenticated and routes to #!/sig — that's expected. We only need
-        // the ES modules loaded so we can drive a BROWSER-NATIVE login. Logging in from inside the page
-        // (rather than page.request.post) guarantees the session cookie is set for the browser's exact
-        // origin/resolution, which is what the SPA's am7client.principal() reads on the next load. The
-        // cross-context cookie from page.request.post is not reliably seen through the Vite->backend proxy.
         page.on('pageerror', err => console.log('  [pageerror] ' + err.message));
 
-        // config.js defaultServer() hardcodes the API base to https://localhost:8443 whenever the SPA is
-        // served from :8899. In this environment nothing listens on :8443 — the only live backend is the
-        // one the Vite dev-server proxy reaches. Rewrite the browser's direct :8443 REST calls onto the
-        // working :8899 proxy origin. Cookies are host-based (port-agnostic), so a JSESSIONID set on
-        // localhost via :8899 is still sent to localhost:8443 requests, and same-origin :8899 avoids CORS.
-        await page.route('**', async (route) => {
-            const u = route.request().url();
-            if (u.indexOf('://localhost:8443/') !== -1) {
-                await route.continue({ url: u.replace('://localhost:8443/', '://localhost:8899/') });
-            } else {
-                await route.continue();
-            }
-        });
-
-        // BROWSER-NATIVE login: log in from inside the page (not page.request.post) so the session cookie
-        // is set for the browser's exact origin, which is what the SPA's am7client.principal() reads on
-        // the next load. The first goto boots unauthenticated (routes to #!/sig) — that only loads the ES
-        // modules we then drive.
-        await page.goto('/', { timeout: 30000 });
-        const principalName = await page.evaluate(async (creds) => {
-            const { am7client } = await import('/src/core/am7client.js');
-            await am7client.loginWithPassword(creds.org, creds.user, creds.pass);
-            const usr = await am7client.principal();
-            return usr ? (usr.name || true) : null;
-        }, { org: '/Development', user: info.testUserName, pass: info.testPassword });
-        expect(principalName, 'browser-native login did not establish a session').toBeTruthy();
-
-        // Reload so the SPA bootstraps as the authenticated user and routes to #!/main.
-        await page.goto('/', { timeout: 30000 });
-        await page.waitForFunction(
-            () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
-            { timeout: 30000 }
-        );
-        await page.waitForTimeout(1500);
+        // login() establishes the session via the REST API on the page's own request context, stubs the
+        // WebSocket BEFORE page.goto (nginx drops the session cookie on the WS upgrade, which would
+        // otherwise forceLogin() -> #!/sig after ~1s), and waits for #!/main.
+        await login(page, { user: info.testUserName, password: info.testPassword });
+        await expect(page.locator('[role="main"]')).toBeVisible({ timeout: 15000 });
 
         const result = await page.evaluate(async () => {
             const log = [];
-            const { am7client } = await import('/src/core/am7client.js');
-            const { am7model } = await import('/src/core/model.js');
-            const { page } = await import('/src/core/pageClient.js');
-            const picker = await import('/src/components/picker.js');
-            const { resolveWorldContainer, isWorldGroupPicker } = picker;
+            // Use the LIVE singletons main.js publishes on window (window.am7page / am7model / am7client).
+            // A bare `import('/src/core/pageClient.js')` is NOT the app's instance once Vite HMR has
+            // stamped main.js's imports with `?t=<timestamp>` (it does so after any product-file edit
+            // while the dev server is up): the bare URL instantiates a second module whose page.user and
+            // page.components.picker are null — measured here before this was switched.
+            const am7client = window.am7client;
+            const am7model = window.am7model;
+            const page = window.am7page;
+            if (!am7client || !am7model || !page) {
+                return { noPrincipal: true, log: ['window.am7page/am7model/am7client not published by main.js'] };
+            }
+            // picker.js's module-level helpers are not on the ObjectPicker object main.js wires into
+            // page.components.picker, so import the module for those two pure functions. They only use
+            // page.findObject (REST + session cookie), so a second instance behaves identically.
+            const { resolveWorldContainer, isWorldGroupPicker } = await import('/src/components/picker.js');
 
-            const orgId = (page.user && page.user.organizationId) || 2;
-            const userId = page.user ? page.user.id : null;
-            log.push('acting user id=' + userId + ' name=' + (page.user ? page.user.name : '?'));
+            // Identity of the acting principal (router.js refreshApplication() sets page.user from
+            // am7client.principal()).
+            const princ = page.user;
+            if (!princ || !princ.id || !princ.objectId) {
+                return { noPrincipal: true, log: log.concat(['page.user unresolved: ' + JSON.stringify(princ)]) };
+            }
+            const orgId = princ.organizationId;
+            const userId = princ.id;
+            log.push('acting user id=' + userId + ' name=' + princ.name + ' org=' + orgId);
 
-            // 1) Discover a REAL book-world apparel readable by the shared user.
-            //    NOTE: `groupPath` is a VIRTUAL provider-computed field (PathProvider walks the parent
-            //    chain) — it is projectable but NOT a SQL column, so a `groupPath LIKE …` condition
-            //    silently matches nothing. Query org-scoped and filter on the PROJECTED groupPath
-            //    client-side instead.
-            const q = am7client.newQuery('olio.apparel');
-            q.field('organizationId', orgId);
-            q.entity.request = ['id', 'objectId', 'name', 'groupId', 'groupPath', 'ownerId'];
-            q.cache(false);
-            q.range(0, 100);
-            const qr = await page.search(q);
-            const rows = (qr && qr.results) ? qr.results : [];
-            const worldRows = rows.filter(r => r.groupPath && /\/Worlds\/[^/]+\/Apparel$/.test(r.groupPath));
-            log.push('olio.apparel readable=' + rows.length + ', in a book world=' + worldRows.length);
-            const apparelLite = worldRows[0];
-            if (!apparelLite) return { noData: true, log, rowCount: rows.length };
-            log.push('chosen apparel groupPath=' + apparelLite.groupPath + ' ownerId=' + apparelLite.ownerId);
+            // 1) Discover a REAL book-world apparel the shared user can READ.
+            //    Book worlds and everything in them are owned by the Olio principal; the acting user's
+            //    read grants come from having created the book. And AccessPoint.list is NOT a per-record
+            //    authorization boundary (model-api.md): an org-wide olio.apparel list happily returns
+            //    thousands of rows from OTHER users' book worlds whose by-id read is AUDIT DENY. So walk
+            //    the user's own books (olio.pb.book.createdByObjectId) -> world (/full carries the
+            //    per-world `apparel`/`wearables` groups) -> olio.apparel in that world's Apparel group,
+            //    and confirm readability with the same GET .../full views/object.js performs.
+            const bq = am7client.newQuery('olio.pb.book');
+            bq.field('organizationId', orgId);
+            bq.field('createdByObjectId', princ.objectId);
+            bq.entity.request = ['id', 'objectId', 'name', 'slug', 'world'];
+            bq.sort('id');
+            bq.order('descending');
+            bq.cache(false);
+            bq.range(0, 50);
+            const bqr = await page.search(bq);
+            const books = (bqr && bqr.results) ? bqr.results.filter(b => b.world && b.world.objectId) : [];
+            log.push('olio.pb.book created by the acting user (with a world): ' + books.length);
 
-            // 2) Load it fully (exactly as views/object.js does before opening the picker).
-            const apparel = await am7client.getFull('olio.apparel', apparelLite.objectId);
+            let apparelLite = null;
+            let apparel = null;
+            let worldRec = null;
+            const probes = [];
+            const seenWorlds = {};
+            for (const b of books) {
+                if (seenWorlds[b.world.objectId]) continue;
+                seenWorlds[b.world.objectId] = true;
+                const w = await am7client.getFull('olio.world', b.world.objectId);
+                if (!w || !w.apparel || !w.apparel.id) { probes.push(b.slug + ':world-unreadable'); continue; }
+                const aq = am7client.newQuery('olio.apparel');
+                aq.field('organizationId', orgId);
+                aq.field('groupId', w.apparel.id);
+                aq.entity.request = ['id', 'objectId', 'name', 'groupId', 'groupPath', 'ownerId'];
+                aq.cache(false);
+                aq.range(0, 5);
+                const aqr = await page.search(aq);
+                const rows = (aqr && aqr.results) ? aqr.results : [];
+                if (!rows.length) { probes.push(b.slug + ':0 apparel'); continue; }
+                const r = rows[0];
+                const resp = await fetch('/AccountManagerService7/rest/model/olio.apparel/' + r.objectId + '/full',
+                    { credentials: 'include', headers: { 'Accept': 'application/json' } });
+                probes.push(b.slug + ':' + rows.length + ' apparel, GET /full=' + resp.status);
+                if (resp.status === 200) {
+                    apparel = await resp.json();
+                    apparelLite = r;
+                    worldRec = w;
+                    break;
+                }
+            }
+            log.push('book-world probes: ' + (probes.length ? probes.join(' | ') : '(none)'));
+            if (!apparelLite || !apparel) return { noData: true, log, bookCount: books.length, probes };
+            log.push('chosen apparel ' + apparelLite.objectId + ' groupPath=' + apparelLite.groupPath + ' ownerId=' + apparelLite.ownerId
+                + '; world.wearables=' + worldRec.wearables.objectId + ' (' + worldRec.wearables.path + ')');
+
+            // 2) The full record is exactly what views/object.js hands to preparePicker.
             const parentModel = apparel[am7model.jsonModelKey] || 'olio.apparel';
             log.push('parentModel=' + parentModel + ' groupId=' + apparel.groupId + ' groupPath=' + apparel.groupPath);
             log.push('isWorldGroupPicker=' + isWorldGroupPicker(parentModel, 'wearables'));
@@ -181,6 +178,7 @@ test.describe('KI-35 world-group picker (real backend)', () => {
                 apparelOwnerId: apparelLite.ownerId,
                 worldGroupOwnerId: wgrp ? wgrp.ownerId : null,
                 worldOid,
+                worldRecordWearablesOid: worldRec.wearables.objectId,
                 expectedWearablesOid: wgrp ? wgrp.objectId : null,
                 expectedWearablesPath: wgrp ? wgrp.path : null,
                 oldCount,
@@ -191,16 +189,23 @@ test.describe('KI-35 world-group picker (real backend)', () => {
 
         result.log.forEach(l => console.log('  ' + l));
 
+        if (result.noPrincipal) {
+            throw new Error('Could not resolve the acting principal after login: ' + result.log.join('; '));
+        }
         if (result.noData) {
-            throw new Error('No book-world apparel (groupPath …/Worlds/<slug>/Apparel) readable by the shared '
-                + 'user was found (rows=' + result.rowCount + '). Cannot verify the fix without book-world data. '
-                + 'Create a book via the PictureBook/ChapBook flow, then re-run.');
+            throw new Error('No book-world apparel readable by the shared user was found (books created by the '
+                + 'user with a world=' + result.bookCount + '; probes=' + JSON.stringify(result.probes) + '). '
+                + 'Cannot verify the fix without a book world holding apparel. Create a book via the '
+                + 'PictureBook/ChapBook flow as the shared user (with scenes/cast so apparel is generated), then re-run.');
         }
 
-        // THE FIX: resolveWorldContainer resolves to a real world Wearables group, not null.
+        // THE FIX: resolveWorldContainer resolves to a real world Wearables group, not null — and it is
+        // the very group the olio.world record itself points at as `wearables` (independent of the
+        // path-derivation the fix uses).
         expect(result.worldOid, 'resolveWorldContainer returned null (the bug)').toBeTruthy();
         expect(result.expectedWearablesOid, 'world Wearables group not resolvable via path/find').toBeTruthy();
         expect(result.worldOid).toBe(result.expectedWearablesOid);
+        expect(result.worldOid).toBe(result.worldRecordWearablesOid);
         expect(result.expectedWearablesPath).toMatch(/\/Worlds\/[^/]+\/Wearables$/);
 
         // ROOT CAUSE: the acting user is a genuine NON-OWNER of the world apparel/group (owned by the

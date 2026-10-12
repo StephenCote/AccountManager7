@@ -6,13 +6,17 @@
  * since automated browsers cannot access the webcam.
  */
 import fs from 'fs';
-import path from 'path';
+import { fileURLToPath } from 'url';
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
-import { ensureSharedTestUser, analyzeFace, apiLogin, apiLogout } from './helpers/api.js';
+import { ensureSharedTestUser, apiLogin, apiLogout } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
+// PLAYWRIGHT_BASE_URL is mandatory for every run; no local-dev fallback.
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL;
+const REST = BASE_URL + '/AccountManagerService7/rest';
+// Fixture resolved relative to this spec, not the process cwd (e2e/media/faceTest.jpg).
+const FACE_FIXTURE = fileURLToPath(new URL('./media/faceTest.jpg', import.meta.url));
 
 async function newApiContext() {
     return pwRequest.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
@@ -85,18 +89,28 @@ test.describe('Magic 8 (Biometrics) feature', () => {
 
     test('face analysis endpoint accepts image and returns result', async () => {
         // Load the static test image and convert to data URL
-        let imgPath = path.resolve('media/faceTest.jpg');
-        let imgBuffer = fs.readFileSync(imgPath);
+        let imgBuffer = fs.readFileSync(FACE_FIXTURE);
+        expect(imgBuffer.length, 'fixture ' + FACE_FIXTURE + ' must be non-empty').toBeGreaterThan(0);
         let imageDataUrl = 'data:image/jpeg;base64,' + imgBuffer.toString('base64');
 
-        // POST to /rest/face/analyze via API context
+        // POST to /rest/face/analyze via API context. The raw response is captured (not the
+        // null-on-error helper) so a missing/unreachable face backend is reported verbatim.
         let ctx = await newApiContext();
         try {
-            await apiLogin(ctx, { user: testInfo.testUserName, password: testInfo.testPassword });
+            let lr = await apiLogin(ctx, { user: testInfo.testUserName, password: testInfo.testPassword });
+            expect(lr.ok() || lr.status() === 204, 'login as ' + testInfo.testUserName).toBe(true);
 
-            let result = await analyzeFace(ctx, imageDataUrl);
-            // The endpoint should return some result (not null/error)
-            expect(result).not.toBeNull();
+            let resp = await ctx.post(REST + '/face/analyze', {
+                headers: { 'Content-Type': 'application/json' },
+                data: { image_data: imageDataUrl }
+            });
+            let text = await resp.text();
+            console.log('[biometrics] POST /face/analyze -> HTTP ' + resp.status() + ' body=' + text.slice(0, 500));
+
+            expect(resp.status(), '/face/analyze must succeed (face backend reachable); body=' + text.slice(0, 300)).toBe(200);
+            let result = null;
+            try { result = JSON.parse(text); } catch (e) { /* asserted below */ }
+            expect(result, '/face/analyze must return a JSON result, got: ' + text.slice(0, 300)).not.toBeNull();
 
             await apiLogout(ctx);
         } finally {

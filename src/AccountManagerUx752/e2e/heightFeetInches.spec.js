@@ -11,62 +11,54 @@
  * with proper carry. This test verifies both inputs are visible on a real
  * character's statistics tab and that they hold the decoded values.
  *
- * Uses the SHARED TEST USER per project rules.
+ * Fixture: the SHARED TEST USER creates its own olio.charPerson (with a nested
+ * olio.statistics carrying a deliberately non-default height) in ~/HeightFeetInchesE2E
+ * and views that record. An unfiltered org-wide charPerson search used to pick records
+ * owned by other users, whose by-id view the shared user is (correctly) denied, so the
+ * editor never rendered. Self-cleaning: the charPerson is deleted in afterAll.
+ *
+ * Uses the SHARED TEST USER per project rules (never admin).
  */
 import { test, expect } from '@playwright/test';
 import { login, screenshot } from './helpers/auth.js';
-import { ensureSharedTestUser } from './helpers/api.js';
+import { ensureSharedTestUser, apiLogin, apiLogout, ensurePath, deleteObject } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
-function b64(s) { return Buffer.from(s).toString('base64'); }
+
+// 5'7" — not the olio.statistics schema default (5.10), so a form that fell back to a fresh
+// default statistics record instead of the persisted one cannot pass.
+const HEIGHT = 5.07;
+const EXPECTED_FEET = 5;
+const EXPECTED_INCHES = 7;
 
 async function asUser(user, password, fn) {
     let ctx = await pwRequest.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
     try {
-        let resp = await ctx.post(REST + '/login', {
-            data: {
-                schema: 'auth.credential',
-                organizationPath: '/Development',
-                name: user,
-                credential: b64(password),
-                type: 'hashed_password'
-            }
-        });
-        if (!resp.ok()) throw new Error('login failed (status ' + resp.status() + ')');
+        let resp = await apiLogin(ctx, { user, password });
+        if (!resp.ok() && resp.status() !== 204) throw new Error('login failed (status ' + resp.status() + ')');
         return await fn(ctx);
     } finally {
-        await ctx.get(REST + '/logout').catch(() => {});
+        await apiLogout(ctx).catch(() => {});
         await ctx.dispose();
     }
 }
 
-async function findCharacterWithHeight(user, password) {
-    return await asUser(user, password, async (ctx) => {
-        let resp = await ctx.post(REST + '/model/search', {
-            data: {
-                schema: 'io.query',
-                type: 'olio.charPerson',
-                fields: [],
-                request: ['objectId', 'name', 'statistics'],
-                recordCount: 5
-            }
-        });
-        if (!resp.ok()) return null;
-        let text = await resp.text();
-        if (!text) return null;
-        let body;
-        try { body = JSON.parse(text); } catch (e) { return null; }
-        let results = (body && body.results) || [];
-        // Pick the first character with a usable height value
-        for (let r of results) {
-            if (r.statistics && typeof r.statistics.height === 'number' && r.statistics.height > 0) {
-                return r;
-            }
+async function findOwnCharacter(ctx, objectId) {
+    let resp = await ctx.post(REST + '/model/search', {
+        data: {
+            schema: 'io.query',
+            type: 'olio.charPerson',
+            fields: [{ name: 'objectId', comparator: 'equals', value: objectId }],
+            request: ['id', 'objectId', 'name', 'ownerId', 'statistics'],
+            recordCount: 1,
+            cache: false
         }
-        return results[0] || null;
     });
+    if (!resp.ok()) return null;
+    let body = await resp.json().catch(() => null);
+    return (body && body.results && body.results.length) ? body.results[0] : null;
 }
 
 test.describe('Height field feet+inches renderer', () => {
@@ -75,48 +67,72 @@ test.describe('Height field feet+inches renderer', () => {
 
     test.beforeAll(async ({ request }) => {
         testInfo = await ensureSharedTestUser(request);
-        target = await findCharacterWithHeight(testInfo.testUserName, testInfo.testPassword);
-        // If the shared test user has no characters yet, fall back to looking
-        // across organization characters via admin context — but per project
-        // rules we don't use admin. So just skip in that case.
-        test.skip(!target, 'no charPerson available for shared test user');
+        expect(testInfo && testInfo.testUserName).toBe('e2etest_shared');
+
+        target = await asUser(testInfo.testUserName, testInfo.testPassword, async (ctx) => {
+            let dir = await ensurePath(ctx, 'auth.group', 'data', '~/HeightFeetInchesE2E');
+            expect(dir && dir.id, 'ensurePath(~/HeightFeetInchesE2E) must return the group').toBeTruthy();
+
+            let name = testInfo.testUserName + '_heightfi_' + Date.now().toString(36);
+            let resp = await ctx.post(REST + '/model', {
+                data: {
+                    schema: 'olio.charPerson',
+                    name,
+                    firstName: 'Height', middleName: 'FeetInches', lastName: 'Test',
+                    gender: 'female', alignment: 'neutralgood',
+                    groupId: dir.id, groupPath: dir.path,
+                    statistics: { schema: 'olio.statistics', groupId: dir.id, height: HEIGHT }
+                }
+            });
+            expect(resp.ok(), 'POST /rest/model olio.charPerson must succeed (HTTP ' + resp.status() + ')').toBe(true);
+            let created = await resp.json();
+            expect(created && created.objectId, 'create must return the charPerson identity').toBeTruthy();
+
+            // Create returns identity only; prove the nested statistics.height persisted so a UI
+            // mismatch below is a rendering failure, not a data-never-arrived failure.
+            let rec = await findOwnCharacter(ctx, created.objectId);
+            expect(rec && rec.objectId, 'created charPerson must be readable by the shared user').toBeTruthy();
+            expect(rec.statistics && typeof rec.statistics.height === 'number', 'statistics must round-trip').toBe(true);
+            expect(rec.statistics.height).toBeCloseTo(HEIGHT, 5);
+            return rec;
+        });
     });
+
+    test.afterAll(async () => {
+        if (!target || !target.objectId) return;
+        await asUser(testInfo.testUserName, testInfo.testPassword, async (ctx) => {
+            await deleteObject(ctx, 'olio.charPerson', target.objectId);
+            let gone = await findOwnCharacter(ctx, target.objectId);
+            expect(gone, 'cleanup: charPerson ' + target.name + ' must be deleted').toBeNull();
+        });
+    });
+
+    async function openStatisticsTab(page) {
+        await page.goto('/#!/view/olio.charPerson/' + target.objectId);
+        await page.waitForFunction(() => window.location.hash.includes('/view/olio.charPerson/'), { timeout: 15000 });
+
+        // Click the Statistics tab — its label comes from forms.statisticsRef.label
+        let statsTab = page.locator('button:has-text("Statistics")').first();
+        await expect(statsTab).toBeVisible({ timeout: 15000 });
+        await statsTab.click();
+
+        // The renderer creates inputs named `${useName}_feet` and `${useName}_inches`
+        let feetInput = page.locator('input[name="height_feet"]');
+        let inchesInput = page.locator('input[name="height_inches"]');
+        await expect(feetInput).toBeVisible({ timeout: 10000 });
+        await expect(inchesInput).toBeVisible({ timeout: 10000 });
+        return { feetInput, inchesInput };
+    }
 
     test('Statistics tab renders feet + inches inputs with decoded values', async ({ page }) => {
         test.setTimeout(60000);
         await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-        // Open the character editor
-        await page.goto('/#!/view/olio.charPerson/' + target.objectId);
-        await page.waitForTimeout(2500);
+        let { feetInput, inchesInput } = await openStatisticsTab(page);
 
-        // Click the Statistics tab — its label comes from forms.statisticsRef.label
-        let statsTab = page.locator('button:has-text("Statistics")').first();
-        await expect(statsTab).toBeVisible({ timeout: 10000 });
-        await statsTab.click();
-        await page.waitForTimeout(1500);
-
-        // The new renderer creates inputs named `${useName}_feet` and `${useName}_inches`
-        let feetInput = page.locator('input[name="height_feet"]');
-        let inchesInput = page.locator('input[name="height_inches"]');
-
-        await expect(feetInput).toBeVisible({ timeout: 10000 });
-        await expect(inchesInput).toBeVisible({ timeout: 10000 });
-
-        let storedHeight = (target.statistics && target.statistics.height) || 0;
-        let expectedFeet = Math.floor(storedHeight);
-        let expectedInches = Math.round((storedHeight - expectedFeet) * 100);
-        // Normalize carry the same way the renderer does
-        if (expectedInches >= 12) {
-            expectedFeet += Math.floor(expectedInches / 12);
-            expectedInches = expectedInches % 12;
-        }
-
-        let feetVal = await feetInput.inputValue();
-        let inchesVal = await inchesInput.inputValue();
-
-        expect(Number(feetVal), 'feet input reflects stored height').toBe(expectedFeet);
-        expect(Number(inchesVal), 'inches input reflects stored height').toBe(expectedInches);
+        // Decoded from the persisted 5.07 (feet + inches/100), not from the schema default 5.10.
+        await expect(feetInput, 'feet input reflects stored height').toHaveValue(String(EXPECTED_FEET));
+        await expect(inchesInput, 'inches input reflects stored height').toHaveValue(String(EXPECTED_INCHES));
 
         await screenshot(page, 'height-feet-inches');
     });
@@ -125,32 +141,17 @@ test.describe('Height field feet+inches renderer', () => {
         test.setTimeout(60000);
         await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-        await page.goto('/#!/view/olio.charPerson/' + target.objectId);
-        await page.waitForTimeout(2500);
+        let { feetInput, inchesInput } = await openStatisticsTab(page);
+        await expect(feetInput).toHaveValue(String(EXPECTED_FEET));
+        await expect(inchesInput).toHaveValue(String(EXPECTED_INCHES));
 
-        let statsTab = page.locator('button:has-text("Statistics")').first();
-        await expect(statsTab).toBeVisible({ timeout: 10000 });
-        await statsTab.click();
-        await page.waitForTimeout(1500);
-
-        let feetInput = page.locator('input[name="height_feet"]');
-        let inchesInput = page.locator('input[name="height_inches"]');
-        await expect(inchesInput).toBeVisible({ timeout: 10000 });
-
-        let feetBefore = Number(await feetInput.inputValue());
-        let inchesBefore = Number(await inchesInput.inputValue());
-
-        // Pick a target inches value that won't cause a carry (stay below 12)
-        let targetInches = inchesBefore < 11 ? inchesBefore + 1 : inchesBefore - 1;
-
+        // 7 -> 8 inches: no carry, so the feet field must stay exactly where it was. (This is the
+        // regression: the old single number input stepped 5.07 -> 6.07.)
+        let targetInches = EXPECTED_INCHES + 1;
         await inchesInput.fill(String(targetInches));
         await inchesInput.blur();
-        await page.waitForTimeout(500);
 
-        let feetAfter = Number(await feetInput.inputValue());
-        let inchesAfter = Number(await inchesInput.inputValue());
-
-        expect(feetAfter, 'feet field should not change when only inches changed').toBe(feetBefore);
-        expect(inchesAfter, 'inches reflects the user edit').toBe(targetInches);
+        await expect(inchesInput, 'inches reflects the user edit').toHaveValue(String(targetInches));
+        await expect(feetInput, 'feet field should not change when only inches changed').toHaveValue(String(EXPECTED_FEET));
     });
 });

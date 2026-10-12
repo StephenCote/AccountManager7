@@ -64,6 +64,31 @@ async function resolveGroupPath(testInfo, relPath, absPath) {
     }
 }
 
+/**
+ * Opening a non-group item from the list (file_open / dblclick / context Open) goes through
+ * list.js openItem() -> gridMode=1 + gridFullView=true -> FullCanvasViewer, which is a portal
+ * appended to document.body (imageViewer.js). It renders a position:fixed div (tabindex=0,
+ * focused on create, handles Escape/ArrowLeft/ArrowRight itself), a "Close (Esc)" button and a
+ * bottom "N / M" counter. The legacy `.carousel` DOM is no longer used by the list flow.
+ */
+function fullViewer(page) {
+    // The browser normalises Mithril's style string ("position:fixed" -> "position: fixed"), so match
+    // the viewer by structure: the focusable div that directly owns the "Close (Esc)" control.
+    return page.locator('div[tabindex="0"]:has(> button[title="Close (Esc)"])');
+}
+
+/** Parse the FullCanvasViewer "N / M" counter into {index, total}. */
+async function viewerCounter(page) {
+    let text = await fullViewer(page).locator('div').filter({ hasText: /^\s*\d+ \/ \d+/ }).first().textContent();
+    let mt = (text || '').match(/(\d+) \/ (\d+)/);
+    return mt ? { index: parseInt(mt[1], 10), total: parseInt(mt[2], 10) } : null;
+}
+
+/** The list toolbar's table<->gallery toggle (list.js:1156 — always the `apps` icon, `active` when gridMode>0). */
+function gridToggle(page) {
+    return page.locator('.result-nav-outer .result-nav button:has(span:text-is("apps"))').first();
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Test suite — all tests use setupTestUser(), NEVER admin
 // ═══════════════════════════════════════════════════════════════════════
@@ -178,8 +203,8 @@ test.describe('List control — Phase 4 behavioral tests', () => {
         await screenshot(page, 'lc4-data-item-carousel');
     });
 
-    // ── 3. Carousel arrow key navigation changes item index ──────────
-    test('ArrowRight in carousel advances to next item', async ({ page }) => {
+    // ── 3. Full viewer arrow key navigation changes item index ───────
+    test('ArrowRight in full viewer advances to next item', async ({ page }) => {
         test.skip(!notesGroup, 'Could not resolve Notes group');
 
         await page.evaluate((oid) => {
@@ -196,48 +221,34 @@ test.describe('List control — Phase 4 behavioral tests', () => {
         let openBtn = page.locator('button:has(span:text("file_open"))').first();
         await expect(openBtn).toBeVisible({ timeout: 5000 });
         await openBtn.click();
-        await page.waitForTimeout(1000);
 
-        // Carousel must be visible
-        let carousel = page.locator('.carousel');
-        await expect(carousel.first()).toBeVisible({ timeout: 10000 });
+        // openItem() -> FullCanvasViewer portal on document.body
+        let viewer = fullViewer(page);
+        await expect(viewer).toBeVisible({ timeout: 10000 });
 
-        // Find active indicator bullet (radio_button_checked)
-        let activeBefore = await page.locator('.carousel-bullet-active').count();
-        expect(activeBefore).toBe(1);
+        // Counter shows the opened (first) item: "1 / N", N >= 2 (fixture creates 15 notes)
+        let before = await viewerCounter(page);
+        expect(before).not.toBeNull();
+        expect(before.index).toBe(1);
+        expect(before.total).toBeGreaterThanOrEqual(2);
 
-        // Get the index of the active bullet before pressing arrow
-        let indexBefore = await page.evaluate(() => {
-            let bullets = document.querySelectorAll('.carousel-indicator');
-            for (let i = 0; i < bullets.length; i++) {
-                if (bullets[i].querySelector('.carousel-bullet-active')) return i;
-            }
-            return -1;
-        });
-
-        // Press ArrowRight
+        // The portal div focuses itself on create and handles ArrowRight -> onIndexChange(idx+1)
         await page.keyboard.press('ArrowRight');
-        await page.waitForTimeout(800);
 
-        // Carousel should still be visible
-        await expect(carousel.first()).toBeVisible({ timeout: 5000 });
-
-        // Active bullet index should have changed (advanced by 1)
-        let indexAfter = await page.evaluate(() => {
-            let bullets = document.querySelectorAll('.carousel-indicator');
-            for (let i = 0; i < bullets.length; i++) {
-                if (bullets[i].querySelector('.carousel-bullet-active')) return i;
-            }
-            return -1;
-        });
-
-        // Should have advanced (or wrapped to next page)
-        expect(indexAfter).not.toBe(indexBefore);
+        // Viewer stays open and the counter advances by one
+        await expect(viewer).toBeVisible({ timeout: 5000 });
+        await expect(viewer.locator('div').filter({ hasText: /^\s*\d+ \/ \d+/ }).first())
+            .toHaveText(new RegExp('^\\s*' + (before.index + 1) + ' / ' + before.total), { timeout: 5000 });
+        let after = await viewerCounter(page);
+        expect(after.index).toBe(before.index + 1);
+        expect(after.total).toBe(before.total);
         await screenshot(page, 'lc4-carousel-arrow');
     });
 
-    // ── 4. Grid mode cycling: table → small → large → table ─────────
-    test('grid toggle cycles through 3 modes with distinct layouts', async ({ page }) => {
+    // ── 4. Grid toggle: table(0) ↔ gallery(1) ────────────────────────
+    // list.js toggleGrid() has exactly two modes (commit 25e07e45): the toolbar button is
+    // always the `apps` icon and gains the `active` class while in gallery mode.
+    test('grid toggle switches table to gallery and back', async ({ page }) => {
         test.skip(!notesGroup, 'Could not resolve Notes group');
 
         await page.evaluate((oid) => {
@@ -246,32 +257,32 @@ test.describe('List control — Phase 4 behavioral tests', () => {
 
         // Wait for toolbar AND table to both render (route load takes time)
         await page.locator('.result-nav-outer').first().waitFor({ state: 'visible', timeout: 20000 });
-        await page.locator('.tabular-results-table').waitFor({ state: 'visible', timeout: 15000 });
+        let table = page.locator('.tabular-results-table');
+        await expect(table).toBeVisible({ timeout: 15000 });
 
-        // Mode 0: table confirmed
-        let hasTable = await page.locator('.tabular-results-table').isVisible();
-        expect(hasTable).toBe(true);
+        // Mode 0: table, toggle not active. Scope to the list toolbar — the aside "App Panel"
+        // button also uses the `apps` icon.
+        let gridBtn = gridToggle(page);
+        await expect(gridBtn).toBeVisible({ timeout: 5000 });
+        await expect(gridBtn).not.toHaveClass(/\bactive\b/);
+        let gallery = page.locator('.grid-preview-container');
+        await expect(gallery).toHaveCount(0);
 
-        // Track icon text through 3 clicks to verify mode cycling
-        let icons = [];
-        for (let i = 0; i < 3; i++) {
-            let gridBtn = page.locator('button:has(span:text("apps")), button:has(span:text("grid_view"))').first();
-            if (await gridBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-                let iconSpan = gridBtn.locator('span.material-symbols-outlined');
-                let iconText = await iconSpan.textContent().catch(() => '');
-                icons.push(iconText.trim());
-                await gridBtn.click();
-                // toggleGrid triggers m.route.set — wait for navigation + re-render
-                await page.waitForTimeout(2000);
-                // Wait for either grid or table content to appear
-                await page.locator('.tabular-results-table, .image-grid-tile, .image-grid-5, .result-nav-outer').first().waitFor({ state: 'visible', timeout: 15000 });
-            }
-        }
-
-        // Should have cycled through at least 2 distinct icon states
-        let unique = [...new Set(icons)];
-        expect(unique.length).toBeGreaterThanOrEqual(2);
+        // Click -> mode 1: GridPreview gallery replaces the table; toggle shows active
+        await gridBtn.click();
+        await expect(gallery).toBeVisible({ timeout: 15000 });
+        await expect(table).toHaveCount(0);
+        await expect(gridToggle(page)).toHaveClass(/\bactive\b/, { timeout: 5000 });
+        // Gallery renders the result set as thumbnail tiles (GridPreview `data-grid-thumb`)
+        await expect(gallery.locator('[data-grid-thumb]').first()).toBeVisible({ timeout: 10000 });
         await screenshot(page, 'lc4-grid-cycle');
+
+        // Click again -> mode 0: table returns, toggle no longer active
+        await gridToggle(page).click();
+        await expect(table).toBeVisible({ timeout: 15000 });
+        await expect(gallery).toHaveCount(0);
+        await expect(gridToggle(page)).not.toHaveClass(/\bactive\b/, { timeout: 5000 });
+        expect(await table.locator('tbody .tabular-row').count()).toBeGreaterThanOrEqual(1);
     });
 
     // ── 5. Column sort — click header, verify reorder ────────────────
@@ -445,44 +456,53 @@ test.describe('List control — Phase 4 behavioral tests', () => {
             window.location.hash = '!/list/data.note/' + oid;
         }, notesGroup.objectId);
 
-        // Wait for the list's own breadcrumb (rendered by list.js renderGroupBreadcrumb)
-        // There may be two .breadcrumb-bar elements: one from router nav, one from list
-        // The list's breadcrumb is inside .list-results
-        let breadcrumb = page.locator('.list-results .breadcrumb-bar').first();
-        // Fall back to any breadcrumb if the list-scoped one isn't found
-        if (!await breadcrumb.isVisible({ timeout: 5000 }).catch(() => false)) {
-            breadcrumb = page.locator('.breadcrumb-bar').first();
-        }
+        // Breadcrumb is rendered by components/breadcrumb.js as nav.breadcrumb-bar > ol#listBreadcrumb.
+        // Each path segment is an <li> holding a segment button (id "<segId>Nav", text = segment name)
+        // plus an expand_more dropdown button whose context-menu <div> contains HIDDEN
+        // button.context-menu-item entries — so "breadcrumb button" must be narrowed to the
+        // visible segment buttons or nth() lands on a hidden menu item.
+        let breadcrumb = page.locator('nav.breadcrumb-bar').first();
         await expect(breadcrumb).toBeVisible({ timeout: 20000 });
 
-        // Should contain multiple segments (at least: org / home / username / Notes)
-        let segments = breadcrumb.locator('button, span');
-        let count = await segments.count();
-        expect(count).toBeGreaterThanOrEqual(3);
+        // Path for the fixture notes group is /home/<user>/Notes -> three segments
+        let segmentButtons = breadcrumb.locator('ol#listBreadcrumb > li button[id$="Nav"]');
+        await expect(segmentButtons).toHaveCount(3, { timeout: 20000 });
+        await expect(segmentButtons.nth(0)).toHaveText('home');
+        await expect(segmentButtons.nth(1)).toHaveText(testInfo.testUserName);
+        await expect(segmentButtons.nth(2)).toHaveText('Notes');
 
-        // Breadcrumb text should contain recognizable path parts
-        let text = await breadcrumb.textContent();
-        expect(text.length).toBeGreaterThan(5);
+        // "/home" is disabled for non-admin users; the user's home and Notes segments are live
+        await expect(segmentButtons.nth(0)).toBeDisabled();
+        await expect(segmentButtons.nth(1)).toBeEnabled();
+        await expect(segmentButtons.nth(2)).toBeEnabled();
 
-        // Find clickable segments (buttons — last segment is a non-clickable span)
-        let clickableSegments = breadcrumb.locator('button');
-        let clickableCount = await clickableSegments.count();
-
-        if (clickableCount > 1) {
-            // Click the last clickable button — it's the parent of current directory
-            // Avoid clicking the first (org-root) which may redirect to /main
-            let targetSegment = clickableSegments.nth(clickableCount - 1);
-            await targetSegment.click();
-            await page.waitForTimeout(3000);
-
-            // Should navigate to a list route for the parent group
-            let hashAfter = await page.evaluate(() => window.location.hash);
-            expect(hashAfter).toContain('/list/');
-        } else if (clickableCount === 1) {
-            // Only one clickable segment — verify it's a real button
-            let tagName = await clickableSegments.first().evaluate(el => el.tagName);
-            expect(tagName.toLowerCase()).toBe('button');
+        // Hidden context-menu entries must not be counted as segments
+        let hiddenMenuItems = breadcrumb.locator('button.context-menu-item');
+        for (let i = 0; i < await hiddenMenuItems.count(); i++) {
+            await expect(hiddenMenuItems.nth(i)).toBeHidden();
         }
+
+        // Clicking the parent segment (the user's home dir) re-lists the same type in that group:
+        // breadcrumb.js handler -> page.navigateToPath(type, modType, "/home/<user>") resolves the
+        // auth.group objectId -> page.listByType(type, oid) -> route /list/data.note/<homeOid>.
+        expect(homeGroup && homeGroup.objectId, 'fixture: home group resolved').toBeTruthy();
+        let hashBefore = await page.evaluate(() => window.location.hash);
+        expect(hashBefore).toContain('/list/data.note/' + notesGroup.objectId);
+        await segmentButtons.nth(1).click();
+        await expect.poll(async () => page.evaluate(() => window.location.hash), { timeout: 15000 })
+            .toContain('/list/data.note/' + homeGroup.objectId);
+
+        // List re-mounts for the new container and the breadcrumb now ends at the home segment.
+        // NOTE (2026-10-12): this last step is RED against the live stack — the breadcrumb keeps
+        // showing "home / <user> / Notes" after the route and list have moved to the home group.
+        // breadcrumb.js fetches the new container's context and calls setTimeout(m.redraw, 0),
+        // but router.js NavGuard.onbeforeupdate returns false while the route is unchanged since
+        // its last pass, so the post-fetch redraw never reaches the breadcrumb. Any in-list hop to
+        // a container not already in page.context().contextObjects shows the previous path.
+        await expect(page.locator('.result-nav-outer').first()).toBeVisible({ timeout: 20000 });
+        let afterSegments = breadcrumb.locator('ol#listBreadcrumb > li button[id$="Nav"]');
+        await expect(afterSegments).toHaveCount(2, { timeout: 20000 });
+        await expect(afterSegments.nth(1)).toHaveText(testInfo.testUserName);
         await screenshot(page, 'lc4-breadcrumb-nav');
     });
 
@@ -615,17 +635,23 @@ test.describe('List control — Phase 4 behavioral tests', () => {
         await screenshot(page, 'lc4-context-menu');
     });
 
-    // ── 13. Escape key closes carousel ───────────────────────────────
-    test('Escape key closes carousel and returns to table', async ({ page }) => {
+    // ── 13. Escape key closes the full viewer ────────────────────────
+    // Current contract (list.js openItem / navListKey, commit 03e1d697): file_open puts the list in
+    // gallery mode (gridMode=1) AND opens the FullCanvasViewer (gridFullView=true). Escape is handled
+    // by the viewer itself (onClose -> gridFullView=false) and drops back to the GridPreview gallery;
+    // the page-level key handler deliberately ignores keys while gridMode>0, so Escape does NOT
+    // return to the table — the toolbar `apps` toggle does.
+    test('Escape key closes full viewer back to gallery; grid toggle returns to table', async ({ page }) => {
         test.skip(!notesGroup, 'Could not resolve Notes group');
 
         await page.evaluate((oid) => {
             window.location.hash = '!/list/data.note/' + oid;
         }, notesGroup.objectId);
 
-        await page.locator('.tabular-results-table').waitFor({ state: 'visible', timeout: 20000 });
+        let table = page.locator('.tabular-results-table');
+        await table.waitFor({ state: 'visible', timeout: 20000 });
 
-        // Open carousel via file_open
+        // Open the full viewer via file_open
         let firstRow = page.locator('.tabular-row').first();
         await firstRow.click();
         await page.waitForTimeout(300);
@@ -633,23 +659,28 @@ test.describe('List control — Phase 4 behavioral tests', () => {
         let openBtn = page.locator('button:has(span:text("file_open"))').first();
         await expect(openBtn).toBeVisible({ timeout: 5000 });
         await openBtn.click();
-        await page.waitForTimeout(1000);
 
-        let carousel = page.locator('.carousel');
-        await expect(carousel.first()).toBeVisible({ timeout: 10000 });
+        let viewer = fullViewer(page);
+        await expect(viewer).toBeVisible({ timeout: 10000 });
+        await expect(table).toHaveCount(0);
 
-        // Press Escape
+        // Press Escape — the focused portal div handles it and calls onClose
         await page.keyboard.press('Escape');
-        await page.waitForTimeout(1000);
 
-        // Carousel should be gone, table should be back
-        let carouselGone = await carousel.first().isVisible({ timeout: 2000 }).catch(() => false);
-        expect(carouselGone).toBe(false);
-
-        // Table should be visible again
-        let tableBack = page.locator('.tabular-results-table');
-        await expect(tableBack).toBeVisible({ timeout: 10000 });
-
+        // Viewer portal is removed; the list is now in gallery mode with the toggle active
+        await expect(viewer).toHaveCount(0, { timeout: 10000 });
+        let gallery = page.locator('.grid-preview-container');
+        await expect(gallery).toBeVisible({ timeout: 10000 });
+        await expect(gallery.locator('[data-grid-thumb]').first()).toBeVisible({ timeout: 10000 });
+        await expect(gridToggle(page)).toHaveClass(/\bactive\b/, { timeout: 5000 });
+        await expect(table).toHaveCount(0);
         await screenshot(page, 'lc4-escape-carousel');
+
+        // The toolbar toggle takes the list back to the table
+        await gridToggle(page).click();
+        await expect(table).toBeVisible({ timeout: 15000 });
+        await expect(gallery).toHaveCount(0);
+        await expect(gridToggle(page)).not.toHaveClass(/\bactive\b/, { timeout: 5000 });
+        expect(await table.locator('tbody .tabular-row').count()).toBeGreaterThanOrEqual(1);
     });
 });

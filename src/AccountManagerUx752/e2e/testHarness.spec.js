@@ -1,3 +1,12 @@
+/**
+ * devOnly test harness (#!/test) — the "Tests" button in the top menu and the harness view.
+ *
+ * The harness is gated on page.devMode = !!import.meta.env.DEV (core/pageClient.js:887), which is
+ * false in the production dist that the Docker nginx serves. It exists only on a Vite dev server, so
+ * this spec is listed in VITE_SOURCE_SPECS (playwright.config.js) and runs under the `chromium-vite`
+ * project. If it is ever pointed at a production build, the guard below skips with the reason
+ * rather than failing on a button the build does not contain.
+ */
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
 import { ensureSharedTestUser } from './helpers/api.js';
@@ -11,10 +20,14 @@ test.describe('Test Harness feature', () => {
 
     test.beforeEach(async ({ page }) => {
         await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
+        // window.am7page is exposed by main.js:85; devMode is the single definition of "dev build".
+        const devMode = await page.evaluate(() => !!(window.am7page && window.am7page.devMode));
+        console.log('[testHarness] page.devMode=' + devMode + ' at ' + page.url());
+        test.skip(!devMode, 'devOnly test harness is not built into the production dist');
     });
 
     test('test button in top menu navigates to test page', async ({ page }) => {
-        // Tests button is devOnly — should be visible in dev mode
+        // Tests button is devOnly — visible in dev mode (guarded in beforeEach)
         let testBtn = page.locator('button[title="Tests"]');
         await expect(testBtn).toBeVisible({ timeout: 5000 });
         await testBtn.click();

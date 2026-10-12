@@ -28,10 +28,13 @@ const ORG = '/Development';
 // Deliberately NOT the schema defaults (num_ctx default 8192, max_tokens default 4096): if the
 // Options form silently fell back to olio.llm.chatOptions defaults instead of the persisted record,
 // a test using the default values would pass for the wrong reason. Both exceed the browser's
-// default range max of 100 (the pre-fix clamp target) and sit inside the schema maxValue 120000.
+// default range max of 100 (the pre-fix clamp target) and sit inside the schema maxValue.
 const NUM_CTX = 16384;
 const MAX_TOKENS = 6144;
-const SCHEMA_MAX = 120000;
+// olio.llm.chatOptions maxValue per field (Objects7 chatOptionsModel.json, mirrored in
+// src/core/modelDef.js): num_ctx was raised to 131072 (128k context) in 194110d7 (2026-10-05);
+// max_tokens remains 120000. The rendered `max` must track the schema, not a single shared number.
+const SCHEMA_MAX = { num_ctx: 131072, max_tokens: 120000 };
 
 // ── UI login as the shared user + WebSocket stub (pattern from chapBook.spec.js loginAsSharedUser) ──
 async function loginAsSharedUser(page, creds) {
@@ -207,10 +210,10 @@ test.describe('Chat config Options tab — range slider renders large persisted 
             await expect(range, field + ' slider value').toHaveValue(want);
             await expect(spinner, field + ' spinner value').toHaveValue(want);
 
-            // Bounds must actually admit the value (schema maxValue 120000 for both fields).
+            // Bounds must actually admit the value (schema maxValue: num_ctx 131072, max_tokens 120000).
             let rangeMax = Number(await range.getAttribute('max'));
             expect(rangeMax, field + ' range max attr').toBeGreaterThanOrEqual(expected[field]);
-            expect(rangeMax, field + ' range max attr equals schema maxValue').toBe(SCHEMA_MAX);
+            expect(rangeMax, field + ' range max attr equals schema maxValue').toBe(SCHEMA_MAX[field]);
             let spinnerMax = Number(await spinner.getAttribute('max'));
             expect(spinnerMax, field + ' spinner max attr').toBeGreaterThanOrEqual(expected[field]);
 

@@ -24,6 +24,14 @@
  * Honest-verdict rule: if the controls are NOT clipped even at 56rem, this test SAYS SO and asserts the
  * hypothesis is false — it does not force a "clipping proven" conclusion.
  *
+ * Status 2026-10-12: the 80vw width was a width-DEPENDENT fix; the follow-up in the same commit
+ * (bb50edba, main.css `.result-nav-inner` -> `sm:flex-wrap ... gap-y-1`, verified by e2e/pickerWrap.spec.js)
+ * makes the pagination bar WRAP onto its own row whenever toolbar + pager cannot share one. So the
+ * 56rem state no longer clips — it wraps. The assertions below reflect that: at 56rem the pager must
+ * be fully inside the dialog on a second row (not clipped), and at 80vw/1536 it must sit on the same
+ * row as the toolbar, with every control reachable in both states. Either regression (dropping the
+ * wrap, or shrinking the dialog) fails this spec.
+ *
  * Requires the Docker test stack (am7test-am7-1) live on host :9443. Run:
  *   PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/pickerClip.spec.js \
  *       --project=chromium --workers=1
@@ -218,34 +226,51 @@ test.describe('Object picker — width/clipping measurement (56rem vs 80vw)', ()
         // 56rem = 896px; allow a little slack for borders.
         expect(before.box.width, 'box width ≈ 56rem').toBeLessThan(920);
 
-        // BEFORE (56rem) — the measured regression: the right-aligned pagination bar overflows the
-        // narrow dialog. Its Next/Last page buttons fall OUTSIDE the box and are not reachable. This is
-        // asserted from measurement (not forced) so this spec is a real before/after width proof — if a
-        // future change shrinks the dialog back, this fails. (Toolbar + up/down stay left-aligned and
-        // in-box even at 56rem — the clip is specifically the pagination controls.)
+        // BEFORE (56rem) — the toolbar (~714px) and the pagination bar (~494px) cannot share the 896px
+        // row. Pre-wrap this is exactly where the right-aligned pager overflowed the dialog and its
+        // Next/Last buttons were unreachable. With `.result-nav-inner` flex-wrap the pager must instead
+        // drop to its OWN row, fully inside the box, with every control reachable. (Toolbar + up/down
+        // stay left-aligned on row 1.)
+        expect(before.toolbar, 'toolbar present at 56rem').toBeTruthy();
         expect(before.pager, 'pagination bar present at 56rem').toBeTruthy();
-        expect(before.pager.clippedRight, 'pagination bar IS clipped past dialog right edge at 56rem').toBeTruthy();
-        expect(before.pager.centerReachable, 'pagination bar center NOT reachable at 56rem').toBeFalsy();
-        expect(before.controls.pgLast.present && before.controls.pgLast.clippedRight,
-            'LAST-page button clipped off-dialog at 56rem').toBeTruthy();
-        expect(before.controls.pgNext.present && before.controls.pgNext.clippedRight,
-            'NEXT-page button clipped off-dialog at 56rem').toBeTruthy();
-
-        // The AFTER (80vw) state MUST have the toolbar + pagination fully inside the dialog and reachable —
-        // this is the state we ship, and it is the actual assertion of the fix.
-        expect(after.toolbar, 'toolbar present at 80vw').toBeTruthy();
-        expect(after.toolbar.clippedRight, 'toolbar NOT clipped at 80vw').toBeFalsy();
-        if (after.pager) {
-            expect(after.pager.clippedRight, 'pagination bar NOT clipped at 80vw').toBeFalsy();
+        expect(before.toolbar.rect.width + before.pager.rect.width,
+            'toolbar + pager wider than the 56rem box (the wrap case is genuinely exercised)')
+            .toBeGreaterThan(before.box.width);
+        expect(before.pager.rect.top, 'pager wrapped BELOW the toolbar row at 56rem')
+            .toBeGreaterThanOrEqual(before.toolbar.rect.bottom - 1);
+        expect(before.pager.clippedRight, 'pagination bar NOT clipped past dialog right edge at 56rem').toBeFalsy();
+        expect(before.pager.rect.right, 'pager right edge inside the 56rem box').toBeLessThanOrEqual(before.box.right + 1);
+        expect(before.pager.centerReachable, 'pagination bar center reachable at 56rem').toBeTruthy();
+        expect(before.content.horizontalOverflowPx, 'no horizontal overflow in picker content at 56rem')
+            .toBeLessThanOrEqual(2);
+        for (const k of ['upBtn', 'downBtn', 'pgFirst', 'pgPrev', 'pgNext', 'pgLast']) {
+            const c = before.controls[k];
+            expect(c.present, `control ${k} present at 56rem`).toBeTruthy();
+            expect(c.clippedRight, `control ${k} NOT clipped at 56rem`).toBeFalsy();
+            expect(c.rect.right, `control ${k} inside the box at 56rem`).toBeLessThanOrEqual(before.box.right + 1);
+            expect(c.centerReachable, `control ${k} center reachable at 56rem`).toBeTruthy();
         }
+
+        // AFTER (80vw @ 1536 => ~1229px box) — this is the state we ship: toolbar + pagination fit on ONE
+        // row, fully inside the dialog, every control reachable. A change that shrinks the dialog back
+        // (or widens the toolbar past the row) pushes the pager down/out and fails here.
+        expect(after.toolbar, 'toolbar present at 80vw').toBeTruthy();
+        expect(after.pager, 'pagination bar present at 80vw').toBeTruthy();
+        expect(after.toolbar.clippedRight, 'toolbar NOT clipped at 80vw').toBeFalsy();
+        expect(after.pager.clippedRight, 'pagination bar NOT clipped at 80vw').toBeFalsy();
+        expect(after.pager.rect.right, 'pager right edge inside the 80vw box').toBeLessThanOrEqual(after.box.right + 1);
+        expect(Math.abs(after.pager.rect.top - after.toolbar.rect.top), 'pager on the SAME row as the toolbar at 80vw')
+            .toBeLessThanOrEqual(2);
+        expect(after.pager.centerReachable, 'pagination bar center reachable at 80vw').toBeTruthy();
         expect(after.content.horizontalOverflowPx, 'no horizontal overflow in picker content at 80vw')
             .toBeLessThanOrEqual(2);
-        // Every present nav/pagination control must be reachable (center hits itself) at 80vw.
-        for (const [k, c] of Object.entries(after.controls)) {
-            if (c.present) {
-                expect(c.clippedRight, `control ${k} NOT clipped at 80vw`).toBeFalsy();
-                expect(c.centerReachable, `control ${k} center reachable at 80vw`).toBeTruthy();
-            }
+        // Every nav/pagination control must be present, in-box and reachable (center hits itself) at 80vw.
+        for (const k of ['upBtn', 'downBtn', 'pgFirst', 'pgPrev', 'pgNext', 'pgLast']) {
+            const c = after.controls[k];
+            expect(c.present, `control ${k} present at 80vw`).toBeTruthy();
+            expect(c.clippedRight, `control ${k} NOT clipped at 80vw`).toBeFalsy();
+            expect(c.rect.right, `control ${k} inside the box at 80vw`).toBeLessThanOrEqual(after.box.right + 1);
+            expect(c.centerReachable, `control ${k} center reachable at 80vw`).toBeTruthy();
         }
     });
 });

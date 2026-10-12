@@ -216,8 +216,10 @@ async function loginAsSharedUser(page) {
     });
 
     await page.goto('/', { timeout: 30000 });
+    // waitForFunction(fn, arg, options): the options object is the THIRD argument.
     await page.waitForFunction(
         () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
+        null,
         { timeout: 30000 }
     );
 }
@@ -228,13 +230,33 @@ async function gotoReview(page, oid) {
     await page.evaluate(() => { window.location.hash = '!/main'; });
     await page.waitForFunction(
         () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
-        { timeout: 30000 });
+        null, { timeout: 30000 });
     await page.evaluate((o) => { window.location.hash = '!/chap-book/review/' + o; }, oid);
     await page.waitForFunction(
-        () => window.location.hash.includes('/chap-book/review'), { timeout: 30000 });
+        () => window.location.hash.includes('/chap-book/review'), null, { timeout: 30000 });
     // Scene cards carry the "Image config overrides" toggle.
     await expect(page.locator('button:has-text("Image config overrides")').first())
         .toBeVisible({ timeout: 20000 });
+}
+
+// The FIRST scene card on the review page (the card root is the rounded-border div that carries
+// the "Image config overrides" toggle). All per-scene controls are scoped to it so the assertions
+// cannot be satisfied by a sibling card's Save/Clear/steps control.
+function firstSceneCard(page) {
+    return page.locator('div.rounded-lg.border')
+        .filter({ has: page.locator('button:has-text("Image config overrides")') })
+        .first();
+}
+
+// The per-scene override editor is the shared SdConfigPanel (src/components/SdConfigPanel.js); its
+// range widgets (formFieldRenderers.renderRange) carry NO name attribute — each is an sr-only
+// <label> holding the field key ("steps") followed by an <input type=range> and an
+// <input type=number> sibling. Target the number spinner that follows the exact "steps" label
+// (NOT "refinerSteps").
+function stepsSpinner(card) {
+    return card.locator('label.sr-only:text-is("steps")')
+        .locator('xpath=following-sibling::input[@type="number"]')
+        .first();
 }
 
 test.describe('C5 — per-scene SD-config override editor (UI)', () => {
@@ -260,78 +282,96 @@ test.describe('C5 — per-scene SD-config override editor (UI)', () => {
         // Enter review.
         await gotoReview(page, bookObjectId);
 
-        const firstToggle = page.locator('button:has-text("Image config overrides")').first();
-        // No override yet → no "set" badge.
+        const card = firstSceneCard(page);
+        const firstToggle = card.locator('button:has-text("Image config overrides")');
+        // No override yet → no "set" badge, and no Clear button (it only renders when overridden).
         await expect(firstToggle.getByText('set', { exact: true })).toHaveCount(0);
+        await expect(card.locator('button[title*="Clear this page"]')).toHaveCount(0);
 
-        // Expand the overrides section on the first scene.
+        // The card's single Save (D1) is disabled while the card is clean.
+        const saveBtn = card.locator('button[title="Save unsaved changes on this page"], button[title="No unsaved changes"]');
+        await expect(saveBtn).toHaveCount(1);
+        await expect(saveBtn).toBeDisabled();
+        await expect(saveBtn).toHaveText(/Saved/);
+
+        // Expand the overrides section on the first scene → the shared SdConfigPanel mounts in
+        // override mode (chapBook.js renderSceneCard → m(SdConfigPanel, { inst: getSceneOverrideInst }).
         await firstToggle.click();
-
-        // The override editor must actually mount. Wait for the expanded region to settle (the form
-        // OR the fallback text), then require the form. chapBook.js renderSceneCard guards the generic
-        // object view with `typeof ovView.view !== 'function'`, but page.views.object().view is a
-        // Mithril COMPONENT OBJECT (views/object.js:1302), so that guard is ALWAYS true and the UI
-        // shows the "Config editor unavailable." fallback instead — the editor never renders. PB2's
-        // pictureBook.js:1137 renders `m(ovView.view, ...)` with no such guard and works.
-        await page.waitForFunction(
-            () => !!document.querySelector('input[name="steps_num"]') ||
-                  /Config editor unavailable/i.test(document.body.textContent || ''),
-            { timeout: 10000 });
-        const unavailableCount = await page.getByText('Config editor unavailable', { exact: false }).count();
-        expect(unavailableCount,
-            'ChapBook per-scene override editor did not mount — renderSceneCard guard ' +
-            '`typeof ovView.view !== "function"` rejects the page.views.object() component object ' +
-            '(chapBook.js ~L1896); PB2 pictureBook.js:1137 renders m(ovView.view,...) with no guard ' +
-            'and works.').toBe(0);
-
-        const stepsInput = page.locator('input[name="steps_num"]').first();
-        await expect(stepsInput).toBeVisible({ timeout: 10000 });
-
-        // Change the numeric "steps" field to a distinct value.
+        const stepsInput = stepsSpinner(card);
+        await expect(stepsInput, 'SdConfigPanel steps spinner did not mount in the first scene card')
+            .toBeVisible({ timeout: 10000 });
+        // Unset override → the panel shows the shared RANGE_DEFAULTS.steps (20), not the new value.
         const NEW_VAL = '37';
+        await expect(stepsInput).not.toHaveValue(NEW_VAL);
+
+        // Change the numeric "steps" field to a distinct value. SdConfigPanel.rangeInput writes it to
+        // the override inst (inst.changes grows) and fires onChange → markSceneDirty(scene,'override'),
+        // so the card's Save flips to enabled and the toggle shows the "set" badge (unsaved edits count).
         await stepsInput.fill(NEW_VAL);
         await expect(stepsInput).toHaveValue(NEW_VAL);
+        await expect(saveBtn).toBeEnabled({ timeout: 10000 });
+        await expect(saveBtn).toHaveText(/Save$/);
+        await expect(firstToggle.getByText('set', { exact: true })).toBeVisible();
 
-        // Save → PUT /rest/olio/picture-book/scene/{oid}/config-override.
-        const saveBtn = page.locator('button[title*="Save this page"]').first();
-        await expect(saveBtn).toBeEnabled();
+        // Save → the card's Save issues PUT /rest/olio/picture-book/scene/{oid}/config-override with
+        // the SPARSE delta.
         const savePut = page.waitForResponse(r =>
-            r.url().includes('/config-override') && r.request().method() === 'PUT', { timeout: 15000 });
+            r.url().includes('/config-override') && r.request().method() === 'PUT', { timeout: 30000 });
         await saveBtn.click();
         const saveResp = await savePut;
         expect(saveResp.status(), 'PUT config-override (save) must be 200').toBe(200);
+        // Body shape: { configOverride: "<sparse olio.sd.config JSON string>" } (putSceneConfigOverride).
+        const savedBody = JSON.parse(saveResp.request().postData() || '{}');
+        const savedDelta = JSON.parse(savedBody.configOverride || 'null');
+        expect(savedDelta, 'config-override PUT must carry a sparse override object').toBeTruthy();
+        expect(savedDelta.steps, 'sparse override must carry the edited steps value').toBe(parseInt(NEW_VAL, 10));
+        expect(Object.keys(savedDelta).filter(k => k !== 'schema').sort(),
+            'sparse override must carry ONLY the edited field (no materialized defaults)').toEqual(['steps']);
+        await expect(saveBtn, 'card Save must return to the clean/disabled state after a successful save')
+            .toBeDisabled({ timeout: 10000 });
 
         // Reload the whole page (clears all in-memory JS state) then re-enter review — proves the
         // override was persisted server-side, not just held in the client.
         await page.reload({ timeout: 30000 });
-        await page.waitForFunction(() => document.querySelector('[role="main"]'), { timeout: 30000 });
+        await page.waitForFunction(() => document.querySelector('[role="main"]'), null, { timeout: 30000 });
         await gotoReview(page, bookObjectId);
 
         // (a) "set" badge is present after reload.
-        const toggleAfter = page.locator('button:has-text("Image config overrides")').first();
+        const cardAfter = firstSceneCard(page);
+        const toggleAfter = cardAfter.locator('button:has-text("Image config overrides")');
         await expect(toggleAfter.getByText('set', { exact: true })).toBeVisible({ timeout: 10000 });
 
         // (b) Persisted value reads back.
         await toggleAfter.click();
-        const stepsAfter = page.locator('input[name="steps_num"]').first();
+        const stepsAfter = stepsSpinner(cardAfter);
         await expect(stepsAfter).toBeVisible({ timeout: 10000 });
         await expect(stepsAfter).toHaveValue(NEW_VAL);
 
-        // Clear the override.
-        const clearBtn = page.locator('button[title*="Clear this page"]').first();
+        // Clear the override (explicit per-scene Clear, only rendered while overridden).
+        const clearBtn = cardAfter.locator('button[title*="Clear this page"]');
         await expect(clearBtn).toBeEnabled();
         const clearPut = page.waitForResponse(r =>
-            r.url().includes('/config-override') && r.request().method() === 'PUT', { timeout: 15000 });
+            r.url().includes('/config-override') && r.request().method() === 'PUT', { timeout: 30000 });
         await clearBtn.click();
         const clearResp = await clearPut;
         expect(clearResp.status(), 'PUT config-override (clear) must be 200').toBe(200);
+        // Clear rebuilds the panel from the (now empty) override → badge and Clear button vanish, and
+        // the steps spinner falls back to the shared default rather than the cleared value.
+        await expect(toggleAfter.getByText('set', { exact: true })).toHaveCount(0, { timeout: 10000 });
+        await expect(cardAfter.locator('button[title*="Clear this page"]')).toHaveCount(0);
+        await expect(stepsSpinner(cardAfter)).not.toHaveValue(NEW_VAL);
 
-        // Reload again → override removed (no "set" badge).
+        // Reload again → override removed server-side (no "set" badge, no Clear button).
         await page.reload({ timeout: 30000 });
-        await page.waitForFunction(() => document.querySelector('[role="main"]'), { timeout: 30000 });
+        await page.waitForFunction(() => document.querySelector('[role="main"]'), null, { timeout: 30000 });
         await gotoReview(page, bookObjectId);
-        const toggleCleared = page.locator('button:has-text("Image config overrides")').first();
+        const cardCleared = firstSceneCard(page);
+        const toggleCleared = cardCleared.locator('button:has-text("Image config overrides")');
         await expect(toggleCleared.getByText('set', { exact: true })).toHaveCount(0);
+        await expect(cardCleared.locator('button[title*="Clear this page"]')).toHaveCount(0);
+        await toggleCleared.click();
+        await expect(stepsSpinner(cardCleared)).toBeVisible({ timeout: 10000 });
+        await expect(stepsSpinner(cardCleared)).not.toHaveValue(NEW_VAL);
 
         await page.request.get(REST + '/logout');
     });

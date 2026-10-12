@@ -8,10 +8,27 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot, openAppTool } from './helpers/auth.js';
+import { ensureSharedTestUser } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
+// PLAYWRIGHT_BASE_URL is mandatory for every run (the only valid bases are the Docker stack on 9443
+// and the second Vite on 8898); there is deliberately no fallback here.
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL;
 const REST = BASE_URL + '/AccountManagerService7/rest';
+
+// The server's WebAuthn RP id is 'localhost' (asserted by the 15a API tests below). The browser
+// refuses navigator.credentials.create() when the page origin's host does not match the RP id
+// (`SecurityError: invalid domain`), so the virtual-authenticator registration test must be served
+// from https://localhost:<port> — the same deployment the project's baseURL points at, host-renamed.
+// The Docker publish is IPv4-only and `localhost` resolves to ::1 first, so this spec (and only this
+// spec) pins localhost -> 127.0.0.1 in chromium; the global config origin is untouched.
+test.use({ launchOptions: { args: ['--host-resolver-rules=MAP localhost 127.0.0.1'] } });
+
+function localhostOrigin(baseURL) {
+    const u = new URL(baseURL);
+    u.hostname = 'localhost';
+    return u.origin;
+}
 
 async function newApiContext() {
     return pwRequest.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
@@ -21,8 +38,8 @@ function b64(str) { return Buffer.from(str).toString('base64'); }
 
 async function apiLogin(ctx, opts = {}) {
     const org = opts.org || '/Development';
-    const user = opts.user || 'admin';
-    const password = opts.password || 'password';
+    const user = opts.user;
+    const password = opts.password;
     return ctx.post(REST + '/login', {
         data: { schema: 'auth.credential', organizationPath: org, name: user, credential: b64(password), type: 'hashed_password' }
     });
@@ -34,6 +51,49 @@ async function apiLogin(ctx, opts = {}) {
 async function goToWebauthn(page) {
     await openAppTool(page, '/webauthn');
 }
+
+/**
+ * Spec-local login against an explicit origin. helpers/auth.js login() posts to PLAYWRIGHT_BASE_URL
+ * (127.0.0.1) and the session cookie is host-scoped, so a page served from https://localhost:<port>
+ * would not carry it. This posts the login to the same origin the page is then loaded from.
+ */
+async function loginAtOrigin(page, origin, creds) {
+    const resp = await page.request.post(origin + '/AccountManagerService7/rest/login', {
+        data: {
+            schema: 'auth.credential', organizationPath: '/Development',
+            name: creds.user, credential: b64(creds.password), type: 'hashed_password'
+        }
+    });
+    if (!resp.ok() && resp.status() !== 204) {
+        throw new Error('API login failed for ' + creds.user + ' at ' + origin + ': HTTP ' + resp.status());
+    }
+    // Stub the WebSocket before any navigation (Docker nginx drops the cookie on the WS upgrade and
+    // pageClient.reconnect() would forceLogin() -> #!/sig after ~1s).
+    await page.addInitScript(() => {
+        window.WebSocket = class StubWS {
+            constructor(url) {
+                this.url = url; this.readyState = 0;
+                this.onopen = null; this.onclose = null; this.onmessage = null; this.onerror = null;
+                this.bufferedAmount = 0; this.extensions = ''; this.protocol = '';
+                setTimeout(() => { this.readyState = 1; if (this.onopen) this.onopen({ type: 'open', target: this }); }, 50);
+            }
+            send() {} close() { this.readyState = 3; }
+            addEventListener() {} removeEventListener() {} dispatchEvent() { return true; }
+        };
+        window.WebSocket.CONNECTING = 0; window.WebSocket.OPEN = 1;
+        window.WebSocket.CLOSING = 2; window.WebSocket.CLOSED = 3;
+    });
+    await page.goto(origin + '/', { timeout: 30000 });
+    await page.waitForFunction(
+        () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
+        null, { timeout: 30000 }
+    );
+}
+
+let shared = {};
+test.beforeAll(async ({ request }) => {
+    shared = await ensureSharedTestUser(request);
+});
 
 test.describe('WebAuthn passkey flow', () => {
 
@@ -60,7 +120,7 @@ test.describe('WebAuthn passkey flow', () => {
     });
 
     test('webauthn settings page loads after login', async ({ page }) => {
-        await login(page);
+        await login(page, { user: shared.testUserName, password: shared.testPassword });
         await goToWebauthn(page);
 
         // Should see the passkey management heading
@@ -71,7 +131,7 @@ test.describe('WebAuthn passkey flow', () => {
     });
 
     test('webauthn settings shows register button and name input', async ({ page }) => {
-        await login(page);
+        await login(page, { user: shared.testUserName, password: shared.testPassword });
         await goToWebauthn(page);
 
         // Name input
@@ -87,7 +147,7 @@ test.describe('WebAuthn passkey flow', () => {
     });
 
     test('webauthn client API methods are available on am7client', async ({ page }) => {
-        await login(page);
+        await login(page, { user: shared.testUserName, password: shared.testPassword });
 
         // Verify the am7client WebAuthn methods exist in the browser context
         let methods = await page.evaluate(() => {
@@ -109,7 +169,7 @@ test.describe('WebAuthn passkey flow', () => {
         await expect(page.locator('text=Passkey Management')).toBeVisible({ timeout: 10000 });
     });
 
-    test('webauthn registration flow with virtual authenticator', async ({ page, context, browserName }) => {
+    test('webauthn registration flow with virtual authenticator', async ({ page, context, browserName, baseURL }) => {
         // CDP virtual authenticator is Chromium-only
         test.skip(browserName !== 'chromium', 'CDP WebAuthn virtual authenticator is Chromium-only');
 
@@ -126,8 +186,16 @@ test.describe('WebAuthn passkey flow', () => {
             }
         });
 
+        // Surface the browser-side failure (e.g. `SecurityError: invalid domain`) in the log.
+        const consoleErrors = [];
+        page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+        page.on('pageerror', err => consoleErrors.push(err.message));
+
         try {
-            await login(page);
+            // Served from https://localhost:<port> so the page origin matches the RP id 'localhost'.
+            const origin = localhostOrigin(baseURL);
+            console.log('[webauthn] registration test origin=' + origin);
+            await loginAtOrigin(page, origin, { user: shared.testUserName, password: shared.testPassword });
             await goToWebauthn(page);
 
             // Fill in passkey name
@@ -135,37 +203,36 @@ test.describe('WebAuthn passkey flow', () => {
             await nameInput.clear();
             await nameInput.fill('Test Virtual Key');
 
-            // Click register
+            // Click register — the virtual authenticator auto-approves.
             await page.locator('button:has-text("Register Passkey")').click();
 
-            // Wait for registration to complete — should show success toast or the credential in the list
-            // The virtual authenticator will auto-approve
-            await page.waitForTimeout(3000);
-
-            // Check for success: either a success toast or the credential appears in the table
-            let successToast = page.locator('.toast-box:has-text("registered")');
+            // Registration must round-trip: browser -> WebAuthn API -> backend -> credential storage,
+            // after which features/webauthn.js reloads the list and renders the credential row.
             let credRow = page.locator('td:has-text("Test Virtual Key")');
-
-            // At least one of these should be visible
-            let hasSuccess = await successToast.isVisible().catch(() => false);
-            let hasCred = await credRow.isVisible().catch(() => false);
-
+            try {
+                await expect(credRow, 'registered passkey must appear in the Registered Passkeys table').toBeVisible({ timeout: 15000 });
+            } catch (e) {
+                const toasts = await page.locator('.toast-box').allTextContents().catch(() => []);
+                console.log('[webauthn] registration did not land. toasts=' + JSON.stringify(toasts)
+                    + ' consoleErrors=' + JSON.stringify(consoleErrors));
+                await screenshot(page, 'webauthn-registration-failed');
+                throw e;
+            }
             await screenshot(page, 'webauthn-after-registration');
 
-            // If the backend is running, we should see the credential
-            // If not, the test still validates the full client-side flow worked
-            if (hasCred) {
-                await expect(credRow).toBeVisible();
-
-                // Test deletion
-                let deleteBtn = page.locator('tr:has-text("Test Virtual Key") button:has-text("Delete")');
-                if (await deleteBtn.isVisible()) {
-                    page.on('dialog', dialog => dialog.accept());
-                    await deleteBtn.click();
-                    await page.waitForTimeout(2000);
-                    await screenshot(page, 'webauthn-after-deletion');
-                }
+            // Delete it again so the shared user does not accumulate virtual keys across runs (an
+            // earlier aborted run may have left more than one, so drain every row with that name).
+            page.on('dialog', dialog => dialog.accept());
+            let remaining = await credRow.count();
+            console.log('[webauthn] "Test Virtual Key" rows before delete=' + remaining);
+            while (remaining > 0) {
+                let deleteBtn = page.locator('tr:has-text("Test Virtual Key") button:has-text("Delete")').first();
+                await expect(deleteBtn).toBeVisible({ timeout: 5000 });
+                await deleteBtn.click();
+                await expect(credRow, 'deleting a passkey must remove its row').toHaveCount(remaining - 1, { timeout: 15000 });
+                remaining = await credRow.count();
             }
+            await screenshot(page, 'webauthn-after-deletion');
         } finally {
             try {
                 await cdpSession.send('WebAuthn.removeVirtualAuthenticator', { authenticatorId });
@@ -175,7 +242,7 @@ test.describe('WebAuthn passkey flow', () => {
     });
 
     test('webauthn base64url encoding roundtrip is correct', async ({ page }) => {
-        await login(page);
+        await login(page, { user: shared.testUserName, password: shared.testPassword });
 
         // Test the base64url encoding/decoding functions used for key transfer
         let roundtripResult = await page.evaluate(() => {
@@ -271,10 +338,9 @@ test.describe('WebAuthn backend API integration (15a)', () => {
     test('GET /rest/credential/webauthn/register returns valid options JSON', async () => {
         let ctx = await newApiContext();
         try {
-            let loginResp = await apiLogin(ctx);
+            let loginResp = await apiLogin(ctx, { user: shared.testUserName, password: shared.testPassword });
             if (!loginResp.ok()) {
-                test.skip(true, 'Backend not available — skipping live API test');
-                return;
+                throw new Error('login as ' + shared.testUserName + ' failed: HTTP ' + loginResp.status());
             }
 
             let resp = await ctx.get(REST + '/credential/webauthn/register');
@@ -318,10 +384,9 @@ test.describe('WebAuthn backend API integration (15a)', () => {
         let ctx = await newApiContext();
         try {
             // Auth endpoint is public (no login required) — used for passkey login
-            let resp = await ctx.get(REST + '/credential/webauthn/auth?user=/Development/admin');
+            let resp = await ctx.get(REST + '/credential/webauthn/auth?user=/Development/' + shared.testUserName);
             if (!resp.ok()) {
-                test.skip(true, 'Backend not available — skipping live API test');
-                return;
+                throw new Error('GET /credential/webauthn/auth for ' + shared.testUserName + ' failed: HTTP ' + resp.status() + ' ' + (await resp.text()).slice(0, 300));
             }
 
             let text = await resp.text();
@@ -339,7 +404,7 @@ test.describe('WebAuthn backend API integration (15a)', () => {
             expect(Array.isArray(json.allowCredentials)).toBe(true);
 
             // Two consecutive calls must return different challenges (replay protection)
-            let resp2 = await ctx.get(REST + '/credential/webauthn/auth?user=/Development/admin');
+            let resp2 = await ctx.get(REST + '/credential/webauthn/auth?user=/Development/' + shared.testUserName);
             let json2 = JSON.parse(await resp2.text());
             expect(json2.challenge).not.toBe(json.challenge);
 
@@ -366,10 +431,9 @@ test.describe('WebAuthn backend API integration (15a)', () => {
     test('GET /rest/credential/webauthn/credentials returns list after login', async () => {
         let ctx = await newApiContext();
         try {
-            let loginResp = await apiLogin(ctx);
+            let loginResp = await apiLogin(ctx, { user: shared.testUserName, password: shared.testPassword });
             if (!loginResp.ok()) {
-                test.skip(true, 'Backend not available — skipping live API test');
-                return;
+                throw new Error('login as ' + shared.testUserName + ' failed: HTTP ' + loginResp.status());
             }
 
             let resp = await ctx.get(REST + '/credential/webauthn/credentials');
@@ -389,15 +453,15 @@ test.describe('WebAuthn backend API integration (15a)', () => {
     test('GET /rest/credential/webauthn/register issues new challenge each call', async () => {
         let ctx = await newApiContext();
         try {
-            let loginResp = await apiLogin(ctx);
+            let loginResp = await apiLogin(ctx, { user: shared.testUserName, password: shared.testPassword });
             if (!loginResp.ok()) {
-                test.skip(true, 'Backend not available — skipping live API test');
-                return;
+                throw new Error('login as ' + shared.testUserName + ' failed: HTTP ' + loginResp.status());
             }
 
             let resp1 = await ctx.get(REST + '/credential/webauthn/register');
             let resp2 = await ctx.get(REST + '/credential/webauthn/register');
-            if (!resp1.ok() || !resp2.ok()) return;
+            expect(resp1.ok(), 'first /register GET ok').toBe(true);
+            expect(resp2.ok(), 'second /register GET ok').toBe(true);
 
             let j1 = JSON.parse(await resp1.text());
             let j2 = JSON.parse(await resp2.text());
@@ -415,10 +479,9 @@ test.describe('WebAuthn backend API integration (15a)', () => {
     test('POST /rest/credential/webauthn/register rejects missing fields', async () => {
         let ctx = await newApiContext();
         try {
-            let loginResp = await apiLogin(ctx);
+            let loginResp = await apiLogin(ctx, { user: shared.testUserName, password: shared.testPassword });
             if (!loginResp.ok()) {
-                test.skip(true, 'Backend not available — skipping live API test');
-                return;
+                throw new Error('login as ' + shared.testUserName + ' failed: HTTP ' + loginResp.status());
             }
 
             // First get options to get the session challenge

@@ -10,7 +10,8 @@ import { login, screenshot } from './helpers/auth.js';
 import { setupWorkflowTestData, cleanupTestUser, apiLogin, apiLogout } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
+// PLAYWRIGHT_BASE_URL is mandatory for every run; no local-dev fallback.
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL;
 const REST = BASE_URL + '/AccountManagerService7/rest';
 
 async function newApiContext() {
@@ -21,6 +22,12 @@ test.describe('charPerson features', () => {
     let testInfo = {};
 
     test.beforeAll(async ({ request }) => {
+        // setupWorkflowTestData creates a data.note; ModelService.create (ModelService.java:298-309)
+        // runs createVectorStore() synchronously before answering, so the POST blocks on the shared
+        // Ollama embedding server for as long as any concurrent LLM generation holds it (measured
+        // 2026-10-12: a 70 s chat generation held the note POST past the default 60 s hook limit,
+        // nginx logged 499). Timings are never pass/fail thresholds -- give the hook ample time.
+        test.setTimeout(300000);
         testInfo = await setupWorkflowTestData(request, { suffix: 'cp' + Date.now().toString(36) });
     });
 
@@ -40,7 +47,7 @@ test.describe('charPerson features', () => {
         await page.goto('/#!/view/olio.charPerson/' + testInfo.charPerson.objectId);
         await page.waitForFunction(
             () => window.location.hash.includes('/view/olio.charPerson/'),
-            { timeout: 15000 }
+            null, { timeout: 15000 }
         );
         // Wait for form to render
         let inputs = page.locator('input, select, textarea');
@@ -57,14 +64,17 @@ test.describe('charPerson features', () => {
         await page.goto('/#!/view/olio.charPerson/' + testInfo.charPerson.objectId);
         await page.waitForFunction(
             () => window.location.hash.includes('/view/olio.charPerson/'),
-            { timeout: 15000 }
+            null, { timeout: 15000 }
         );
         let inputs = page.locator('input, select, textarea');
         await expect(inputs.first()).toBeVisible({ timeout: 30000 });
 
-        // Look for Find buttons — color picker fields should have them
-        let findBtns = page.locator('button:has-text("Find")');
+        // Picker fields render icon buttons with title="Find" (formFieldRenderers.js:836), not a
+        // text label — View/Clear only appear once the field holds a value.
+        let findBtns = page.locator('button[title="Find"]');
+        await expect(findBtns.first()).toBeVisible({ timeout: 10000 });
         let findCount = await findBtns.count();
+        console.log('[charPerson] Find picker buttons on form: ' + findCount);
         expect(findCount).toBeGreaterThan(0);
         await screenshot(page, 'charperson-picker-buttons');
     });
@@ -78,33 +88,32 @@ test.describe('charPerson features', () => {
         await page.goto('/#!/view/olio.charPerson/' + testInfo.charPerson.objectId);
         await page.waitForFunction(
             () => window.location.hash.includes('/view/olio.charPerson/'),
-            { timeout: 15000 }
+            null, { timeout: 15000 }
         );
         let inputs = page.locator('input, select, textarea');
         await expect(inputs.first()).toBeVisible({ timeout: 30000 });
 
-        let findBtn = page.locator('button:has-text("Find")').first();
-        let hasFindBtn = await findBtn.isVisible({ timeout: 5000 }).catch(() => false);
-        if (hasFindBtn) {
-            await findBtn.click();
+        // Find is an icon button (title="Find"); the form must have at least one picker field.
+        let findBtn = page.locator('button[title="Find"]').first();
+        await expect(findBtn).toBeVisible({ timeout: 10000 });
+        await findBtn.click();
 
-            // Picker modal should appear
-            let modal = page.locator('.fixed.inset-0.z-50');
-            await expect(modal).toBeVisible({ timeout: 10000 });
+        // doFieldPicker -> ObjectPicker.open renders the .am7-picker-overlay (components/picker.js:419)
+        // with an h3 title and an embedded list control; there is no "Search..." input.
+        let modal = page.locator('.am7-picker-overlay');
+        await expect(modal).toBeVisible({ timeout: 10000 });
+        let title = await modal.locator('h3').first().textContent();
+        console.log('[charPerson] picker overlay title: ' + title);
+        expect((title || '').trim().length, 'picker overlay must carry a title').toBeGreaterThan(0);
 
-            // Should have search input and item list
-            let searchInput = modal.locator('input[placeholder="Search..."]');
-            await expect(searchInput).toBeVisible({ timeout: 5000 });
+        // The embedded list renders its toolbar (result-nav) even before rows arrive.
+        await expect(modal.locator('.result-nav').first()).toBeVisible({ timeout: 15000 });
+        await screenshot(page, 'charperson-color-picker-modal');
 
-            // Wait for items to load
-            await page.waitForTimeout(3000);
-            await screenshot(page, 'charperson-color-picker-modal');
-
-            // Close modal
-            let closeBtn = modal.locator('button:has(span:text("close"))');
-            await closeBtn.click();
-            await expect(modal).not.toBeVisible({ timeout: 5000 });
-        }
+        // Close via the header close button (picker.js:438-441)
+        let closeBtn = modal.locator('button:has(span:text-is("close"))').first();
+        await closeBtn.click();
+        await expect(modal).not.toBeVisible({ timeout: 5000 });
     });
 
     test('outfit builder button exists on charPerson form', async ({ page, browserName }) => {
@@ -116,7 +125,7 @@ test.describe('charPerson features', () => {
         await page.goto('/#!/view/olio.charPerson/' + testInfo.charPerson.objectId);
         await page.waitForFunction(
             () => window.location.hash.includes('/view/olio.charPerson/'),
-            { timeout: 15000 }
+            null, { timeout: 15000 }
         );
         let inputs = page.locator('input, select, textarea');
         await expect(inputs.first()).toBeVisible({ timeout: 30000 });
@@ -139,7 +148,7 @@ test.describe('charPerson features', () => {
         await page.goto('/#!/view/olio.charPerson/' + testInfo.charPerson.objectId);
         await page.waitForFunction(
             () => window.location.hash.includes('/view/olio.charPerson/'),
-            { timeout: 15000 }
+            null, { timeout: 15000 }
         );
         let inputs = page.locator('input, select, textarea');
         await expect(inputs.first()).toBeVisible({ timeout: 30000 });
@@ -178,7 +187,7 @@ test.describe('charPerson features', () => {
         await page.goto('/#!/view/olio.charPerson/' + testInfo.charPerson.objectId);
         await page.waitForFunction(
             () => window.location.hash.includes('/view/olio.charPerson/'),
-            { timeout: 15000 }
+            null, { timeout: 15000 }
         );
         let inputs = page.locator('input, select, textarea');
         await expect(inputs.first()).toBeVisible({ timeout: 30000 });
@@ -255,12 +264,17 @@ test.describe('charPerson features', () => {
         }
     });
 
-    test('reimageApparel API accepts schema-free body', async () => {
+    // SD-TRIGGERING: /olio/apparel/{id}/reimage renders on the SwarmUI server. Run only in the serial
+    // SD slot (--workers=1), never in the default suite:
+    //   E2E_SD_LIVE=1 PLAYWRIGHT_BASE_URL=... npx playwright test e2e/charPerson.spec.js -g "reimageApparel" --workers=1
+    test('reimageApparel API accepts an olio.sd.config body for an apparel the caller owns', async () => {
+        test.skip(!process.env.E2E_SD_LIVE, 'set E2E_SD_LIVE=1 to run the SD-rendering reimage test (serial slot only)');
         if (!testInfo.charPerson || !testInfo.charPerson.objectId) {
             test.skip(true, 'No charPerson created');
             return;
         }
-        test.setTimeout(120000);
+        // Timeout is a generous ceiling for a live SD render, never a pass/fail threshold.
+        test.setTimeout(600000);
 
         let ctx = await newApiContext();
         try {
@@ -284,10 +298,14 @@ test.describe('charPerson features', () => {
             let checkResp = await ctx.get(REST + '/model/olio.apparel/' + apparel.objectId + '/full');
             console.log('Apparel lookup status:', checkResp.status());
 
-            // Now call reimageApparel with schema-free body (the fix)
+            // The apparel must be owned by the asserting user (generated under their login above);
+            // the reimage body is an olio.sd.config and MUST carry `schema` — the deserializer needs
+            // it to type the fields (model-api.md), otherwise the route answers 400 "Invalid JSON".
+            // The UI sends exactly this shape (components/outfitBuilder -> olio.sd.config).
             let reimageResp = await ctx.post(REST + '/olio/apparel/' + apparel.objectId + '/reimage', {
                 headers: { 'Content-Type': 'application/json' },
                 data: {
+                    schema: 'olio.sd.config',
                     hires: false,
                     style: '',
                     seed: 0
@@ -298,8 +316,12 @@ test.describe('charPerson features', () => {
             let reimageBody = await reimageResp.text();
             console.log('Reimage status:', reimageStatus, 'body:', reimageBody.substring(0, 500));
 
-            // Must NOT be 400 (invalid config) — that means deserializer failed
-            expect(reimageStatus, 'reimageApparel must not return 400 (invalid config): ' + reimageBody).not.toBe(400);
+            expect(reimageStatus, 'reimageApparel must succeed for an owned apparel: HTTP ' + reimageStatus + ' ' + reimageBody.substring(0, 300)).toBe(200);
+            // OlioService.reimageApparel returns a JSON array of the generated image records.
+            let reimaged = JSON.parse(reimageBody);
+            expect(Array.isArray(reimaged), 'reimage must return a JSON array of images').toBe(true);
+            expect(reimaged.length, 'reimage must produce at least one image').toBeGreaterThan(0);
+            expect(reimaged[0].objectId, 'generated image must carry objectId').toBeTruthy();
 
             await apiLogout(ctx);
         } finally {
@@ -318,7 +340,7 @@ test.describe('charPerson features', () => {
         await page.goto('/#!/view/olio.charPerson/' + testInfo.charPerson.objectId);
         await page.waitForFunction(
             () => window.location.hash.includes('/view/olio.charPerson/'),
-            { timeout: 15000 }
+            null, { timeout: 15000 }
         );
         let inputs = page.locator('input, select, textarea');
         await expect(inputs.first()).toBeVisible({ timeout: 30000 });
