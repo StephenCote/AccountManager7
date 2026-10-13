@@ -2,12 +2,14 @@ package org.cote.accountmanager.olio.picturebook;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.File;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -40,6 +42,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
+import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.schema.type.PbRunStatusEnumType;
 import org.cote.accountmanager.thread.AsyncJob;
 import org.cote.accountmanager.thread.AsyncJobRegistry;
@@ -1149,6 +1152,145 @@ public class TestPbRenderJob extends BaseTest {
 		assertEquals("lastRun is still run N once everything has drained", Long.valueOf(runNId), lastRunIdOf(u, wf));
 	}
 
+	/**
+	 * PF-9 (PictureBookV3Implementation §9): a plain-PB node closed by one of the four executors that used a
+	 * bare {@code persistStatus} (LANDSCAPE here) must complete the way the portrait and ChapBook-page closings
+	 * do - {@code inputHash} and {@code lastRunAt} stamped, counted on the run - so that the planner sees it as
+	 * current. Live {@code .39}: render 1 through the job → DONE_UNVERIFIED with an inputHash and
+	 * {@code executedNodeCount} 1 (was 0); an un-forced re-submit is the 409 "(1 reused, 0 pinned)" and opens
+	 * no run (was accepted and re-rendered); a forced re-submit renders revision 2, selected, superseding 1.
+	 */
+	@Test(timeout = RENDER_TIMEOUT_MS)
+	public void case11_plainPbNodeIsCurrentAfterRenderAndOnlyForceRerolls() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = book(u);
+		BaseRecord wf = workflow(u, bk);
+		long orgId = orgOf(u);
+		String server = swarmServer();
+		BaseRecord renderCfg = SdTestGate.requireRenderConfig(testProperties, server, "PF-9 plain-PB landscape through the job");
+		Boolean bookAuto = (bk.hasField(OlioFieldNames.FIELD_PB_AUTO_APPROVE) ? bk.get(OlioFieldNames.FIELD_PB_AUTO_APPROVE) : null);
+		assertFalse("precondition: the shared fixture book's autoApprove switch is off (TestPbAutoApprove.resetAutoApprove), else the render would pin",
+			bookAuto != null && bookAuto.booleanValue());
+
+		BaseRecord node = landscapeNode(u, bk, wf, "pf9-c11", fastOverride(renderCfg));
+		String nodeOid = node.get(FieldNames.FIELD_OBJECT_ID);
+		long nodeId = idOf(node);
+		String handle = handleOf(node);
+		assertNull("precondition: no inputHash before the first render", node.get(OlioFieldNames.FIELD_PB_INPUT_HASH));
+		ZonedDateTime createdAt = node.get(OlioFieldNames.FIELD_PB_LAST_RUN_AT);
+		assertNotNull("precondition: lastRunAt is a zonetime column with a DDL default (objects7-reference), so it is never null", createdAt);
+
+		/// 1. Render 1 through the job: DONE_UNVERIFIED, hashed, stamped, counted.
+		long t0 = System.currentTimeMillis();
+		Map<String, Object> dto1 = PbRenderJobUtil.submit(u, bk, wf, Collections.singletonList(nodeId), SDAPIEnumType.SWARM.name(), server, PbRenderJobUtil.KIND_RENDER);
+		logger.info("PF-9 case11 render 1 dto=" + dto1);
+		assertEquals(Arrays.asList(handle), dto1.get("planned"));
+		assertEquals(Integer.valueOf(0), dto1.get("reusedNodeCount"));
+		String run1Oid = (String) dto1.get("runObjectId");
+		AsyncJob job1 = awaitTerminal(u, (String) dto1.get("jobId"), RENDER_TIMEOUT_MS);
+		logger.info("PF-9 case11 render 1 durationMs=" + (System.currentTimeMillis() - t0) + " job=" + job1.getStatus() + " result=" + job1.getResult());
+		assertEquals("job error: " + job1.getError(), AsyncJob.Status.COMPLETED, job1.getStatus());
+		Map<?, ?> result1 = JSONUtil.importObject(job1.getResult(), Map.class);
+		assertEquals(PbRunStatusEnumType.COMPLETED.name(), result1.get("runStatus"));
+		assertEquals("the landscape counts on its run (was 0 with the bare persistStatus)", Integer.valueOf(1), result1.get("executedNodeCount"));
+		Map<?, ?> outcome1 = (Map<?, ?>) ((List<?>) result1.get("nodes")).get(0);
+		assertEquals(handle, outcome1.get("handle"));
+		assertEquals(PbNodeStatusEnumType.DONE_UNVERIFIED.name(), outcome1.get("status"));
+		String artifact1Oid = (String) outcome1.get("artifactObjectId");
+		assertNotNull(artifact1Oid);
+
+		BaseRecord run1 = PbGraphUtil.readRun(u, run1Oid, orgId);
+		assertEquals(PbRunStatusEnumType.COMPLETED.name(), status(run1, OlioFieldNames.FIELD_PB_RUN_STATUS));
+		assertEquals(Integer.valueOf(1), run1.get(OlioFieldNames.FIELD_PB_EXECUTED_NODE_COUNT));
+		assertEquals(Integer.valueOf(0), run1.get(OlioFieldNames.FIELD_PB_FAILED_NODE_COUNT));
+
+		BaseRecord fresh = PbGraphUtil.readNode(u, nodeOid, orgId);
+		assertEquals(PbNodeStatusEnumType.DONE_UNVERIFIED.name(), status(fresh, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		String inputHash = fresh.get(OlioFieldNames.FIELD_PB_INPUT_HASH);
+		assertTrue("the landscape carries its inputHash after completion (was null)", inputHash != null && !inputHash.isBlank());
+		ZonedDateTime lastRunAt = fresh.get(OlioFieldNames.FIELD_PB_LAST_RUN_AT);
+		assertNotNull(lastRunAt);
+		assertTrue("lastRunAt was stamped by the render (" + lastRunAt + " after the creation default " + createdAt + ")", lastRunAt.isAfter(createdAt));
+		assertFalse("not pinned (autoApprove off)", Boolean.TRUE.equals(fresh.get(OlioFieldNames.FIELD_PB_PINNED)));
+		BaseRecord revision1 = PbArtifactUtil.readArtifact(u, artifact1Oid, orgId);
+		assertNotNull(revision1);
+		assertEquals(Integer.valueOf(1), revision1.get(OlioFieldNames.FIELD_PB_REVISION));
+		assertEquals(Boolean.TRUE, revision1.get(OlioFieldNames.FIELD_PB_SELECTED));
+
+		/// 2. Un-forced: the node is current, so the submit is refused and opens no run.
+		long runsBefore = newestRunId(u, wf);
+		try {
+			PbRenderJobUtil.submit(u, bk, wf, Collections.singletonList(nodeId), SDAPIEnumType.SWARM.name(), server, PbRenderJobUtil.KIND_RENDER);
+			fail("an un-forced render of a current landscape must be refused");
+		}
+		catch(PictureBookException e) {
+			logger.info("PF-9 case11 un-forced refusal: " + e.getStatus() + " " + e.getMessage());
+			assertEquals(409, e.getStatus());
+			assertEquals("Nothing to render: every node of this scene is current (1 reused, 0 pinned)", e.getMessage());
+		}
+		assertEquals("the refusal opens no run", runsBefore, newestRunId(u, wf));
+		assertNull(PbNodeInflight.runOf(nodeId));
+
+		/// 3. Forced: a new run re-rolls the current landscape into revision 2.
+		t0 = System.currentTimeMillis();
+		Map<String, Object> dto2 = PbRenderJobUtil.submit(u, bk, wf, Collections.singletonList(nodeId), SDAPIEnumType.SWARM.name(), server, PbRenderJobUtil.KIND_RENDER, true);
+		logger.info("PF-9 case11 forced render 2 dto=" + dto2);
+		assertEquals(Arrays.asList(handle), dto2.get("planned"));
+		assertEquals(Integer.valueOf(1), dto2.get("plannedNodeCount"));
+		assertEquals(Integer.valueOf(0), dto2.get("reusedNodeCount"));
+		assertEquals(Integer.valueOf(0), dto2.get("pinnedNodeCount"));
+		String run2Oid = (String) dto2.get("runObjectId");
+		assertNotEquals("the forced render is a new run", run1Oid, run2Oid);
+		AsyncJob job2 = awaitTerminal(u, (String) dto2.get("jobId"), RENDER_TIMEOUT_MS);
+		logger.info("PF-9 case11 forced render 2 durationMs=" + (System.currentTimeMillis() - t0) + " job=" + job2.getStatus() + " result=" + job2.getResult());
+		assertEquals("job error: " + job2.getError(), AsyncJob.Status.COMPLETED, job2.getStatus());
+		Map<?, ?> result2 = JSONUtil.importObject(job2.getResult(), Map.class);
+		assertEquals(PbRunStatusEnumType.COMPLETED.name(), result2.get("runStatus"));
+		assertEquals(Integer.valueOf(1), result2.get("executedNodeCount"));
+		Map<?, ?> outcome2 = (Map<?, ?>) ((List<?>) result2.get("nodes")).get(0);
+		assertEquals(PbNodeStatusEnumType.DONE_UNVERIFIED.name(), outcome2.get("status"));
+		String artifact2Oid = (String) outcome2.get("artifactObjectId");
+		assertNotNull(artifact2Oid);
+		assertNotEquals("the forced render produces a new artifact", artifact1Oid, artifact2Oid);
+
+		BaseRecord revision2 = PbArtifactUtil.readArtifact(u, artifact2Oid, orgId);
+		assertNotNull(revision2);
+		assertEquals(Integer.valueOf(2), revision2.get(OlioFieldNames.FIELD_PB_REVISION));
+		assertEquals(Boolean.TRUE, revision2.get(OlioFieldNames.FIELD_PB_SELECTED));
+		assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(revision2));
+		BaseRecord supersedes = revision2.get(OlioFieldNames.FIELD_PB_SUPERSEDES);
+		assertNotNull("revision 2 supersedes revision 1", supersedes);
+		assertEquals(artifact1Oid, supersedes.get(FieldNames.FIELD_OBJECT_ID));
+		revision1 = PbArtifactUtil.readArtifact(u, artifact1Oid, orgId);
+		assertNotNull("revision 1 is kept", revision1);
+		assertFalse("revision 1 is no longer selected", Boolean.TRUE.equals(revision1.get(OlioFieldNames.FIELD_PB_SELECTED)));
+
+		fresh = PbGraphUtil.readNode(u, nodeOid, orgId);
+		assertEquals(PbNodeStatusEnumType.DONE_UNVERIFIED.name(), status(fresh, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		assertEquals("two renders, two artifacts", 2, PbArtifactUtil.listChain(u, fresh, PbPipelineUtil.ROLE_LANDSCAPE).size());
+		assertEquals("the newest artifact is selected", artifact2Oid,
+			PbArtifactUtil.findSelected(u, fresh, PbPipelineUtil.ROLE_LANDSCAPE).get(FieldNames.FIELD_OBJECT_ID));
+		assertNull(PbNodeInflight.runOf(nodeId));
+		assertNull(PbRunCancelRegistry.peek(run2Oid));
+
+		BaseRecord dataRef = revision2.get(OlioFieldNames.FIELD_PB_DATA);
+		assertNotNull(dataRef);
+		String dataOid = dataRef.get(FieldNames.FIELD_OBJECT_ID);
+		if(dataOid == null) {
+			IOSystem.getActiveContext().getReader().populate(dataRef, new String[] { FieldNames.FIELD_OBJECT_ID });
+			dataOid = dataRef.get(FieldNames.FIELD_OBJECT_ID);
+		}
+		byte[] bytes = ByteModelUtil.getValue(freshReadData(u, dataOid));
+		assertTrue("real image bytes (was " + (bytes != null ? bytes.length : -1) + ")", bytes != null && bytes.length > 1024);
+		for(int i = 0; i < PNG_MAGIC.length; i++) {
+			assertEquals("PNG magic byte " + i, PNG_MAGIC[i], bytes[i]);
+		}
+		File png = new File("target/pf9-landscape-rev2-" + System.currentTimeMillis() + ".png");
+		FileUtil.emitFile(png.getPath(), bytes);
+		assertTrue(png.exists() && png.length() == bytes.length);
+		logger.info("PF-9 case11 PNG written: " + png.getAbsolutePath() + " (" + bytes.length + " bytes)");
+	}
+
 	// ─────────────────────────────── fixture ───────────────────────────────
 
 	private BaseRecord user() {
@@ -1228,6 +1370,47 @@ public class TestPbRenderJob extends BaseTest {
 		BaseRecord fresh = PbGraphUtil.readNode(u, n.get(FieldNames.FIELD_OBJECT_ID), orgOf(u));
 		assertNotNull(fresh);
 		assertEquals("precondition: scopeRef", cpOid, fresh.get(OlioFieldNames.FIELD_PB_SCOPE_REF));
+		assertEquals("precondition: PENDING", PbNodeStatusEnumType.PENDING.name(), status(fresh, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		return fresh;
+	}
+
+	/**
+	 * A LANDSCAPE node scoped to a fresh {@code olio.pb.scene} of the fixture book that carries a hand-written
+	 * {@code sdPrompt} (no LLM in the loop), so {@code executeLandscape} renders the scene prompt itself rather
+	 * than the no-prompt fallback. Scene creation copies TestPbAutoApprove.promptNode; the prompt patch copies
+	 * TestChapBookRenderStyle.patchScenePrompt.
+	 */
+	private BaseRecord landscapeNode(BaseRecord u, BaseRecord bk, BaseRecord wf, String prefix, String configOverride) throws Exception {
+		int sceneIndex = 100000 + Math.abs(UUID.randomUUID().hashCode() % 800000);
+		BaseRecord scene = PbBookUtil.createScene(u, bk, sceneIndex, prefix + " scene", PbBookUtil.bookGroupPath(SLUG));
+		assertNotNull("scene " + sceneIndex, scene);
+		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord scenePatch = RecordFactory.newInstance(OlioModelNames.MODEL_PB_SCENE,
+			new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, OlioFieldNames.FIELD_CB_SD_PROMPT });
+		scenePatch.set(FieldNames.FIELD_ID, scene.get(FieldNames.FIELD_ID));
+		scenePatch.set(FieldNames.FIELD_OBJECT_ID, sceneOid);
+		scenePatch.set(FieldNames.FIELD_NAME, scene.get(FieldNames.FIELD_NAME));
+		scenePatch.set(OlioFieldNames.FIELD_CB_SD_PROMPT,
+			"a small stone harbour at dusk, fishing boats moored along the quay, lanterns reflected in still water, gulls, distant headland, painterly, soft light");
+		assertNotNull("scene sdPrompt patch must be written", ioContext.getAccessPoint().update(u, scenePatch));
+
+		String handle = prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord n = PbGraphUtil.addNode(u, wf, handle, PbNodeTypeEnumType.LANDSCAPE, PbBookUtil.workflowGroupPath(SLUG), 0);
+		assertNotNull("node " + handle, n);
+		List<String> changed = new ArrayList<>(Arrays.asList(OlioFieldNames.FIELD_PB_SCOPE, OlioFieldNames.FIELD_PB_SCOPE_REF));
+		if(configOverride != null) {
+			changed.add(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE);
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(n, OlioModelNames.MODEL_PB_NODE, changed.toArray(new String[0]));
+		patch.set(OlioFieldNames.FIELD_PB_SCOPE, PbPipelineUtil.SCOPE_SCENE);
+		patch.set(OlioFieldNames.FIELD_PB_SCOPE_REF, sceneOid);
+		if(configOverride != null) {
+			patch.set(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, configOverride);
+		}
+		assertNotNull("scope patch must be written", ioContext.getAccessPoint().update(u, patch));
+		BaseRecord fresh = PbGraphUtil.readNode(u, n.get(FieldNames.FIELD_OBJECT_ID), orgOf(u));
+		assertNotNull(fresh);
+		assertEquals("precondition: scopeRef", sceneOid, fresh.get(OlioFieldNames.FIELD_PB_SCOPE_REF));
 		assertEquals("precondition: PENDING", PbNodeStatusEnumType.PENDING.name(), status(fresh, OlioFieldNames.FIELD_PB_NODE_STATUS));
 		return fresh;
 	}

@@ -101,7 +101,8 @@ async function doPasskeyLogin() {
 
     try {
         let result = await am7client.webauthnAuthenticate(org, userName);
-        if (result && result.response === "AUTHENTICATED" && result.tokens && result.tokens.length > 0) {
+        // auth.authenticationResponse.response is an enum: lowercase on the wire, so compare case-insensitively.
+        if (result && String(result.response).toUpperCase() === "AUTHENTICATED" && result.tokens && result.tokens.length > 0) {
             am7client.currentOrganization = org;
             am7client.clearCache(0, 1);
             let oU2 = await uwm.getUser();

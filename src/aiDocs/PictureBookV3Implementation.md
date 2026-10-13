@@ -1,6 +1,6 @@
 # PictureBook V3 — Implementation State
 
-**As of:** 2026-10-11 07:15 local · **Phase 1 in progress — P1-1…P1-8 DONE, P1-9 (ChapBook on the Phase 1 path) next.** P1-6 closed 06:42 (`TestPbRenderJob` 10/10 run 2 with `case10`, the racy `queued` assertion corrected to `queued|running` — §5.5 item 39 — and the L4 Playwright re-run green; §8.6 closeout). P1-7 closed 07:00: test-author found one product defect (`runDto` carried a `ZonedDateTime` → `JSONUtil.exportObject` null → `GET /{book}/run/{id}` answered 200 with an empty body; fixed, §5.5 item 40), `TestPbRecovery` 8/8 (two live `.39` cases), `pictureBookRestartRecovery.spec.js` `1 passed (46.2s)` across a real `docker restart`, verifier PASS (re-ran 8/8 in 38.19 s + Service7 119/0/1; §8.7). P1-8 closed 06:48: `PbRenderPath` switch (`picturebook.renderPath` / `chapbook.renderPath`, default v1, 13 facade gates answer 409 with the enable instructions, views ungated), `GET /rest/config/render-path`, Ux `renderPathConfig`; architect CHANGES-NEEDED adopted, security PASS-WITH-NOTES, verifier PASS-WITH-NOTES; `TestPbRenderPath` 9/9, `TestPbRenderPathRefusal` 6/6, `TestFeatureConfigService` 2/2, Vitest, Playwright 4/4 (§8.8; §5.5 items 41–42; §6.C items 72–84). Objects7 quick gate run 3 of the copy `VERIFY_FAILED` on exactly the §4.2 baseline (949/6/0/15 incl. the mannequin copy artefact, §4.4 row 3); run 4 (copy refreshed to include `TestPbRenderPath`, `TestPbRecovery`, `case10`) queued now. The Phase 0 header text below is historical.**
+**As of:** 2026-10-13 12:40 local · **12:40 update: Objects7 quick gate run 6 is VOID, not a result (§4.4 row 6; §3 12:05:14 event) — at 12:05:14 Windows stopped the WSL Service and installed WSL 3.0.3.0, Docker Desktop's engine shut down (`StopReason: WslUpdateReq`, `engine stopped` 12:05:48) and every container vanished mid-run: `am7-devpg-emulator` (the JUnit `am7db`), the in-stack Ollama/LiteLLM and the `am7test` stack. `TestChapBookDeleteRecreate` hung 1046 s, every later class failed in `BaseTest.resetIO:216` → `Tests run: 991, Failures: 589, Errors: 1, Skipped: 5`, `VERIFY_FAILED`. One real new red before the outage: `TestGameUtil.TestMoveTowardsPositionAcrossCells:964` (green in run 5, not in any PF diff). `size_vram` read 12:01:38 = `5988784536` (GPU). The Docker engine is still stopped (`docker ps` → "Docker Desktop is unable to start"); my `docker desktop restart` was denied by the permission classifier (⚠ §6.C 148) — **waiting on Stephen to restart Docker Desktop**, then gate run 7 on the unchanged copy, then (B). Nothing changed in the tree; nothing committed.** · **11:52 update: end-of-(A) hand-offs — the three module verifiers Stephen approved at 17:25 all returned PASS-WITH-NOTES (Objects7 re-ran `TestPbRenderJob`/`TestPbNodeRun`/`TestWebAuthnUtil` live on `.39`: `Tests run: 26, Failures: 0, Errors: 0, Skipped: 0`, `[LLM-GATE] route=litellm tier=local`; Service7 and Ux752 read-only re-reads, Ux752 Vitest `90 passed (90)` / `1160 passed (1160)`), so **PF-1, PF-9 and PF-15b are DONE** (§9.3.6, §9.4.2, §9.2.3; §6.C 147). Objects7 quick gate **run 6** launched 11:47:25 on the refreshed `o7verify` copy (§3 11:46:51 probe; result → §4.4 row 6). Nothing committed.** · **11:25 update: PF-5b + PF-5c LANDED (live) — passkey assertion verification (ES256/RS256 over `authenticatorData ‖ SHA-256(clientDataJSON)`, type / challenge equality / origin / `rpIdHash` / UP / monotonic counter) in a new Objects7 `security.WebAuthnUtil` + `WebAuthnService`, JAAS session login after the passkey, and the `/credentials` list cache (PF-5c) — §9.3.5: `TestWebAuthnUtil` 8/8, `TestWebAuthnServiceAssertion` red 2/5 → green 5/5, `TestWebAuthnServiceDto` red → green 5/5, deployed (jar + class md5 equal, restart ≈11:00:30), `webauthn.spec.js` `2 failed / 14 passed` → `16 passed (13.5s)` with a real virtual-authenticator login, replay 401 and forgery 401; Vitest 90/1160; Service7 quick gate `VERIFY_OK` 142/0/0/0; verifier PASS; security-reviewer PASS (two MEDIUM hardening items → §9.5). Two product fixes applied without asking, both one-liners adjacent to PF-5 (§6.C 146 (k) `setCache(false)`, (l) `sig.js` enum case). Left for (A): Objects7 verifier + quick gate, the Service7/Ux752 verifier re-reads, then the end-of-(A) report.** **10:20 update: PF-1(a) redeployed to the Docker Tomcat (single `OlioService.class`, md5 equal, restart 10:14:54) and re-proven live — `worldDeleteBreadcrumb.spec.js` `3 passed (37.2s)`, both re-finds visible in the server log (§9.3.4) → PF-1 LANDED (live). PF-5b next on the H2 slot.** **Also 10:20: the §4.6 full Ux752 re-gate run 2 finished 09:26:03 — `VERIFY_FAILED` on e2e only (build/test/lint PASS): `518 passed / 10 failed / 3 flaky / 92 skipped / 7 did not run (37.4m)` against run 1's `495 / 61 / 4 / 58 / 5`. All 10 reds triaged from their traces, the server log, the DB and read-only REST checks (§4.6): none is a PF regression and none shares an id with run 1's 61 — two are test gating left open by P1-12's `PB_LLM_TESTS` flag (`pictureBookLive` B.3/J.4 fall back to the `data.note` id and get a correct 404), two are test-side defects (`chatDeleteE2E` clicks the toolbar title instead of the sidebar row; `chatLabelBleed` reads a stale server list cache), two are environment scale (`pictureBookHealth` heal and `pictureBookSeriesDelete` list refresh against the 350 e2e-litter books of `e2etest_shared` — the series DELETE itself answered 200 and the rows are gone), one is pre-existing flaky (`pictureBookCheckpoints:284`, identical error in run 1), three are expected (§6.C 131 `listControl:207`, `worldGroupPicker` fixture, the emulator STALE-RECORDING guard). Nothing fixed, no serial re-run; candidate test fixes and proposals are ⚠ §6.C 145 / §9.5. Next on the stack: PF-1(a) Service7 redeploy + `worldDeleteBreadcrumb.spec.js`, then PF-5b. Earlier as-of (09:25):** PF-15b `SAVE_EXCLUDE` hardening landed and proven (new Vitest `sdConfigSavePlacement.test.js` red `3 failed | 1 passed (4)` → `13 passed (13)` with the parity file; `vite build` bundle `index-BtMyBqO3.js`, container md5 equal) — PF-15b DONE pending the module verifier re-read; PF-1 re-find fix landed as a both-principals recheck (`OlioService.java:782-800`) and proven on H2 by the new JUnit `TestOlioServiceDeleteWorld` (red `{deleted=false}` with the recheck disabled → 4/4; the four Service7 H2 suites `Tests run: 16, Failures: 0, Errors: 0`) — NOT yet redeployed; redeploy + `worldDeleteBreadcrumb.spec.js` re-run wait for the §4.6 Ux752 re-gate (running since 08:48:11, in the Playwright phase). PF-5b next on the H2 slot (§6.C 144, §9.2.2, §9.3.3). Earlier as-of (08:45):** **Phase 1 at phase end — P1-1…P1-12 executed (§8); the Phase 1 follow-up product fixes (A) are implemented and proven (§9): the Ux752 batch PF-2/3/4/6/7/15a/15b/15d, the Service7 batch PF-1/5/8 and the Objects7 batch PF-9 are landed, built, deployed and proven live; PF-9 is now also proven through REST on the Docker stack as `e2etest_shared` — new `pictureBookV3PlainPb.spec.js` (STORY book, two `.39` renders) `4 passed (1.1m)`, 20:11–20:13, §9.4.1 / §6.C 141. **PF-5 was BLOCKED by the 20:27 security review (sign-in as any passkey user with no signature check, §6.C 142, §9.3.1); Stephen's answer 2026-10-13 08:40: implement assertion verification → row PF-5b, IN PROGRESS.** Both module verifiers back PASS-WITH-NOTES (§9.2.1, §9.3.2): PF-2/3/4/6/7/8/15a DONE; PF-1 and PF-15b carry one note each, being fixed (§6.C 143a/b). Next: PF-15b hardening → container dist → §4.6 full Ux752 re-gate (~2 h) in parallel with the PF-1/PF-5b Service7 work on H2; then redeploy + Playwright proofs; then Objects7 verifier + quick gate. Stephen's 17:25 answer: write that proof (done), then run the three module verifiers, the PF-5 security review, the Objects7 module quick gate (~2 h, not "20+ min" — §4.4) and the §4.6 full Ux752 re-gate (~2 h), in sequence with one LLM/SD consumer and one Maven run at a time; PF-10–14, PF-15c, PF-16 and the other §9.5 proposals are deferred by Stephen. Phase 2 (B) starts when those launches are back and recorded; rows stay LANDED until the verifiers PASS.** Earlier "as of" text, kept for the record: 2026-10-11 07:15 — Phase 1 in progress, P1-1…P1-8 DONE, P1-9 next. P1-6 closed 06:42 (`TestPbRenderJob` 10/10 run 2 with `case10`, the racy `queued` assertion corrected to `queued|running` — §5.5 item 39 — and the L4 Playwright re-run green; §8.6 closeout). P1-7 closed 07:00: test-author found one product defect (`runDto` carried a `ZonedDateTime` → `JSONUtil.exportObject` null → `GET /{book}/run/{id}` answered 200 with an empty body; fixed, §5.5 item 40), `TestPbRecovery` 8/8 (two live `.39` cases), `pictureBookRestartRecovery.spec.js` `1 passed (46.2s)` across a real `docker restart`, verifier PASS (re-ran 8/8 in 38.19 s + Service7 119/0/1; §8.7). P1-8 closed 06:48: `PbRenderPath` switch (`picturebook.renderPath` / `chapbook.renderPath`, default v1, 13 facade gates answer 409 with the enable instructions, views ungated), `GET /rest/config/render-path`, Ux `renderPathConfig`; architect CHANGES-NEEDED adopted, security PASS-WITH-NOTES, verifier PASS-WITH-NOTES; `TestPbRenderPath` 9/9, `TestPbRenderPathRefusal` 6/6, `TestFeatureConfigService` 2/2, Vitest, Playwright 4/4 (§8.8; §5.5 items 41–42; §6.C items 72–84). Objects7 quick gate run 3 of the copy `VERIFY_FAILED` on exactly the §4.2 baseline (949/6/0/15 incl. the mannequin copy artefact, §4.4 row 3); run 4 (copy refreshed to include `TestPbRenderPath`, `TestPbRecovery`, `case10`) queued now. The Phase 0 header text below is historical.**
 (§4.2) on exactly the pre-existing backend items that are Stephen's (§6.A ×3 / §6.B / §6.F / §6.H) plus 75 e2e
 failures that the §4.3 triage traces to one environmental cause (fixed, §6.C item 20) and 16 + 6 + 3 residuals that
 are each environmental, a missing fixture, a stale test, or an "any record" fixture pick — every one classified
@@ -46,7 +46,7 @@ bar **two weeks + sign-off**; estimate source **(b) seeded by (a)**.
 | Phase | State | Tests |
 |---|---|---|
 | **0 — Hygiene + Kontext Deprecate** | **AT PHASE END — gate red only on Stephen's items** (started 2026-10-09; all 15 task rows DONE except P0-12, the gate itself; every review verdict in incl. the phase-level verifier pass, every cheap finding fixed and re-proven with logs; first full `verify.sh` 2026-10-10 01:50–04:23 `VERIFY_FAILED` on environmental causes (§4.1) that Stephen's 2026-10-10 instructions then had me fix — §6.I/§6.J/§6.K RESOLVED, fixture repaired, named Postgres volume, chromium-only gate + `chromium-vite` project; **second full gate 12:38–16:22 `VERIFY_FAILED`** (§4.2): backend red only on the pre-existing §6.A ×3 / §6.B / §6.F / §6.H, e2e 75 failed → §4.3 triage finds one environmental cause (hardcoded `:8899` fixture base, fixed §6.C item 20) and 16 + 6 + 3 residuals, all environmental / missing fixture / stale tests / "any record" fixture picks, **none a Phase 0 regression**; Ux752 quick gate after the fix `VERIFY_OK`; §6.M SDXL model-ref defect fixed and proven live) | 136 green in the task runs (Slice A 6 + Slice B 30 + P0-5's `TestFlux2Composite` 36 / `TestPbConfigPrecedence` 2 + Slice C backend 8 + Slice C transport `TestChapBookRestContract` 8 + P0-10d Vitest 13 + Playwright `chapBookBookSettings` 8 (3 REST + 5 UI) + P0-11 `TestKontextDeprecation` 7 + Playwright `chatChainSceneReimageRoutes` 8 regression + 2 live (§2.8) — `TestFlux2Composite` counted once, regression specs of other features not counted); module gates: Objects7 RED on §6.A/B/F, Service7 `108 run, 1 error` on the §6.H fixture (§4.1); Ux752 e2e re-verified serially after the environment fixes (§4.2) |
-| 1 — Graph-first rendering + review | **IN PROGRESS — every task P1-1…P1-11 executed; phase gate `VERIFY_FAILED` on e2e 2026-10-11 22:30; P1-12 test-repair 2026-10-12 08:45 → 14:03, STOPPED at Stephen's instruction after the in-flight agents reported (§8.12; started on my misread of a Q&A remark — §6.C 126); test files only, nothing committed; the §4.6 re-gate, the verifier hand-off and the three SD-serial tests are NOT run and wait on Stephen** (started 2026-10-10 18:13 local; **P1-1…P1-9 DONE** — §8.1–§8.9, every task through planner → architect → implement → test-author → verifier, security-reviewer on every new route; P1-1 schema, P1-2 drift/stale, P1-3 executor converged with v1 + runs, P1-4 review state machine, P1-5 auto-approve, P1-6 async `pb.render` jobs + cancel + 429 cap, P1-7 restart recovery (boot sweep → INTERRUPTED, `resumable`, `POST /{book}/run/{id}/resume`), P1-8 `renderPath` switch (default v1; 13 facade gates 409; `GET /rest/config/render-path`). Objects7 quick gate of the copy: run 2 924/6/0/15 after the P1-1 fix, run 3 949/6/0/15 (§4.4) — both red only on the §4.2 baseline + the mannequin copy artefact; run 4 queued with the three new classes. Defects found by review and fixed: P1-6 verifier M1 (`workflow.lastRun` displaced by a refused run → `case10`), P1-7 test-author (`runDto` `ZonedDateTime` → empty 200 body). **P1-9 ChapBook on the Phase 1 path DONE 13:00 (§8.9) — code, JUnit, Service7 contract, new Playwright spec, suite-on-v3 run, security-reviewer PASS, test-author pass (three real gaps closed, no product defects) and an independent verifier PASS (11/11 · 6/6 · 5/5 re-run live; four non-blocking observations §6.C 104); the suite's 8 reds are classified pre-existing stale specs (§6.C 102), none v3.** **P1-10 Ux752 subset DONE 17:05 — planned + architect-corrected (§8.10, §6.C 103); S0 backend (`affected-by` route, `lastRunObjectId`, `runDto.jobId`, `nodeSummary` canvas geometry, `bookPageView` node/review fields) DONE 13:30 + security PASS-WITH-NOTES 13:42 + S0b hardening DONE 13:54 (notes 1/2/6 closed, redeployed, jar md5 `66ef41fb…`); Ux S1–S8 DONE 14:08 (6 files + new `features/pictureBookReview.js` + 6 Vitest files; suite 89/1151 green; S7 skipped §6.C 103(j); dist copied 14:08); **Playwright exit criteria 1–4 ALL GREEN 15:07** (test-author; new `pictureBookV3Ux.spec.js` + criterion 2 in `pictureBookRestartRecovery.spec.js` across a real `docker restart`; no product defects, observations §6.C 107(i)–(m)); Ux752 quick gate `VERIFY_OK` 14:17; Service7 quick gate `127/0/1` red only on §6.H 15:18; **independent verifier CHANGES-NEEDED ~15:50** — one MUST-FIX proven live over REST (the reader's "Unpin and re-render" unpins, then re-submits without `force` → 409 "(1 reused, 0 pinned)": pin lost, no render) plus two SHOULD-FIX with the same root; **fixed as the ⚠ default §6.C 109 and verified live 16:00–16:47** (explicit per-scene renders pass `force`, mirroring the ratified ChapBook pattern §6.C 98; "Render all" unchanged; pin still wins): JUnit re-homed to `TestChapBookV3Render` 1/1 live `.39` (the plain-PictureBook `case11` could never pass — `executeLandscape` never stamps `inputHash`, the §8.9 gap, left alone), Service7 contract 25/0/0, Vitest 89/1152, Playwright `pictureBookV3Ux.spec.js` `4 passed (2.2m)` with the new criterion 1b through the reader's "Scene is pinned" confirm (every PNG opened), Ux752 gate `VERIFY_OK`; **independent re-verify PASS 17:05** (every test re-run by the verifier itself, md5s matched, force-caller grep clean, three non-blocking observations §6.C 111) — **P1-10 DONE 17:05**.** **P1-11 17:09 → 22:30, CLOSED `VERIFY_FAILED`:** Objects7 gate run 5 done 19:13 (§4.4 row 5: 982/7/0/15 — the six expected reds plus one new, `TestPbRenderJob.case07`, a race in the P1-6 test's own assertion, fixed in the test ⚠ §6.C 113 and the class 10/10 green on the working tree); §6.C 76 login alignment edited in both Phase-1 specs (§8.11, ⚠ §6.C 112) and proven live 19:23–19:28 — `pictureBookV3Ux.spec.js` `4 passed (2.3m)`, `pictureBookRestartRecovery.spec.js` `2 passed (1.8m)`; **full Ux752 gate 19:33→21:42 `VERIFY_FAILED` on e2e (§4.5)** — 623 tests, `495 passed / 61 failed / 4 flaky / 58 skipped / 5 did not run`: the 28 expected §4.3 reds all present and unchanged, plus 33 unexpected = 8 stale ChapBook specs (§6.C 102), 4 gate-2 PictureBook fixture/stale reds, 1 stack-PBAC red (`apparelSequence:29`: `e2etest_shared` dropped from `Olio User` by `explorer.spec.js`; repair denied by the permission classifier → ⚠ §6.C 114, **waiting on Stephen**), 20 generic-UI reds re-run serially — **all 20 red again, deterministic, none in the Phase 1 diff, 8 already red in gate 2** (§4.5.1; couplings → ⚠ §6.C 114 (g)); **Phase 1 is NOT declared done**; no product code changed at phase end.) | `TestPbV3Schema` 5/5, `TestPbModelSchema` 19/19, `TestPbStale` 9/9, `TestPbStaleCacheEpoch` 3/3, `TestPbNodeRun` 7/7 (live `.39`), `TestPbReview` 7/7, `TestPbAutoApprove` 7/7, `TestPbRenderJob` 10/10 (live `.39`; run 2 191.8 s), `TestPbRecovery` 8/8 (live `.39`; 38.19 s verifier re-run), `TestPbRenderPath` 9/9, `TestPbCanvas#TestPortraitNodeExecution` 1/1, `TestPbNodeExecutorTypes` 2/2, `TestPbSceneGenerationGuards` 6/6, `TestPbGraph` 18/18 (§8.1–§8.8); Service7 `TestPictureBookRestContract` 17/17, `TestPbRenderPathRefusal` 6/6, `TestFeatureConfigService` 2/2, full Service7 119/0/1 (§6.H only); Vitest `renderPathConfig.test.js`; Playwright `pictureBookWorkflow.spec.js` `:615` stale / `:697` review / `:900` auto-approve / `:1094` live-SD / `:1292` leave-the-page (L4) all 1/1, `pictureBookRestartRecovery.spec.js` `1 passed (46.2s)` across a real `docker restart`, render-path spec 4/4 — all on the Docker stack; §6.F re-run still red, unchanged; P1-9: `TestChapBookV3Render` 11/11 live `.39` + LLM (241.4 s, test-author run; earlier 8/8 + tightened render-all 1/1), Service7 `TestChapBookServiceRenderPath` 6/6 (9.304 s), Playwright `chapBookRenderPathV3.spec.js` `5 passed (2.4m)` live single run (`CB_LIVE_GEN=1`), ChapBook suite on v3 `60 passed / 8 failed / 13 skipped (11.8m)` — the 8 reds pre-existing stale specs (§8.9 table) |
+| 1 — Graph-first rendering + review | **IN PROGRESS — end-of-(A) verifiers 2026-10-13 11:39 → 11:48: three PASS-WITH-NOTES, PF-1 / PF-9 / PF-15b DONE (§9.3.6 / §9.4.2 / §9.2.3), Objects7 quick gate run 6 11:47:25 → 12:23:01 **VOID** (§4.4 row 6: Docker Desktop's engine stopped 12:05:14 under the WSL 3.0.3.0 update mid-run — 991/589/1/5 is the outage, not a result; one real pre-outage red `TestGameUtil:964` to classify; engine still down, restart denied to me ⚠ §6.C 148 — **waiting on Stephen**, then run 7) · PF-5b/PF-5c LANDED (live) 2026-10-13 11:14: passkey assertion verification + list cache, JUnit 8/8 + 10/10 (both red → green), `webauthn.spec.js` `16 passed`, Service7 gate `VERIFY_OK` 142/0/0/0, verifier PASS, security PASS (§9.3.5, §6.C 146); follow-up product fixes (A) under way 2026-10-12 from 14:40 (§9): Ux752 batch PF-2/3/4/6/7/15a/15b/15d landed + proven live (Vitest 89/1156 green, 7 Playwright specs green, PF-7 gated `.42` run `1 passed (12.5m)` with the new PF-15d teardown proven), Service7 PF-1/5/8 landed + proven live 16:05–16:50 (JUnit 18/18 on H2 incl. the two new contract classes, `worldDeleteBreadcrumb` `3 passed`, `webauthn` `13 passed`, `bugfix3-live:211` `1 passed (1.6m)` with a real `.39` render, Service7 quick gate `VERIFY_OK` after the H2 fixture repair §6.C 137) — **but PF-5 is BLOCKED by the 20:27 security review FAIL: the parse fix makes the never-verified passkey login reachable (sign-in as any passkey user without the key; §6.C 142, §9.3.1) — decision asked, nothing changed, the test stack still runs the PF-5 bytes**, **2026-10-13 08:40 Stephen: implement assertion verification → PF-5b IN PROGRESS; 09:25: PF-15b hardening landed + proven (Vitest `sdConfigSavePlacement.test.js` `3 failed` → `13 passed (13)`, built, container md5 equal), PF-1 re-find fix landed (`OlioService.java:786`, both-principals recheck) + new H2 JUnit `TestOlioServiceDeleteWorld` red `{deleted=false}` → 4/4, Service7 H2 suites 16/16 — redeploy + Playwright re-proof waited for the §4.6 re-gate (§6.C 144, §9.2.2, §9.3.3); **§4.6 run 2 is back (08:48:11 → 09:26:03): `VERIFY_FAILED` on e2e only — `518 passed / 10 failed / 3 flaky / 92 skipped / 7 did not run (37.4m)` vs run 1 `495 / 61 / 4 / 58 / 5`; the 10 reds are triaged in §4.6 — none a PF regression, none fixed, candidates ⚠ §6.C 145**, Objects7 PF-9 landed + proven live 17:07–17:15 (`mvn-o7-pf9.log` `Tests run: 18, Failures: 0, Errors: 0` / `BUILD SUCCESS`, the new `TestPbRenderJob.case11` 409 `(1 reused, 0 pinned)` then forced revision 2 on `.39`, jar `416f5714…` deployed; REST-level proof on the Docker stack 20:11–20:13 — `pictureBookV3PlainPb.spec.js` `4 passed (1.1m)` as `e2etest_shared`, STORY book, un-forced 409 `(1 reused, 0 pinned)`, pinned+forced 409 `(0 reused, 1 pinned)`, forced 202 → revision 2 supersedes 1, reader shows it — §9.4.1), Stephen 17:25: three module verifiers + PF-5 security review + Objects7 quick gate (~2 h) + §4.6 re-gate (~2 h) all approved and run in sequence (§6.C 141), §9.5 proposals deferred, (B) after the launches are back; every task P1-1…P1-11 executed; phase gate `VERIFY_FAILED` on e2e 2026-10-11 22:30; P1-12 test-repair 2026-10-12 08:45 → 14:03, STOPPED at Stephen's instruction after the in-flight agents reported (§8.12; started on my misread of a Q&A remark — §6.C 126); test files only, nothing committed; the §4.6 re-gate, the verifier hand-off and the three SD-serial tests are NOT run and wait on Stephen** (started 2026-10-10 18:13 local; **P1-1…P1-9 DONE** — §8.1–§8.9, every task through planner → architect → implement → test-author → verifier, security-reviewer on every new route; P1-1 schema, P1-2 drift/stale, P1-3 executor converged with v1 + runs, P1-4 review state machine, P1-5 auto-approve, P1-6 async `pb.render` jobs + cancel + 429 cap, P1-7 restart recovery (boot sweep → INTERRUPTED, `resumable`, `POST /{book}/run/{id}/resume`), P1-8 `renderPath` switch (default v1; 13 facade gates 409; `GET /rest/config/render-path`). Objects7 quick gate of the copy: run 2 924/6/0/15 after the P1-1 fix, run 3 949/6/0/15 (§4.4) — both red only on the §4.2 baseline + the mannequin copy artefact; run 4 queued with the three new classes. Defects found by review and fixed: P1-6 verifier M1 (`workflow.lastRun` displaced by a refused run → `case10`), P1-7 test-author (`runDto` `ZonedDateTime` → empty 200 body). **P1-9 ChapBook on the Phase 1 path DONE 13:00 (§8.9) — code, JUnit, Service7 contract, new Playwright spec, suite-on-v3 run, security-reviewer PASS, test-author pass (three real gaps closed, no product defects) and an independent verifier PASS (11/11 · 6/6 · 5/5 re-run live; four non-blocking observations §6.C 104); the suite's 8 reds are classified pre-existing stale specs (§6.C 102), none v3.** **P1-10 Ux752 subset DONE 17:05 — planned + architect-corrected (§8.10, §6.C 103); S0 backend (`affected-by` route, `lastRunObjectId`, `runDto.jobId`, `nodeSummary` canvas geometry, `bookPageView` node/review fields) DONE 13:30 + security PASS-WITH-NOTES 13:42 + S0b hardening DONE 13:54 (notes 1/2/6 closed, redeployed, jar md5 `66ef41fb…`); Ux S1–S8 DONE 14:08 (6 files + new `features/pictureBookReview.js` + 6 Vitest files; suite 89/1151 green; S7 skipped §6.C 103(j); dist copied 14:08); **Playwright exit criteria 1–4 ALL GREEN 15:07** (test-author; new `pictureBookV3Ux.spec.js` + criterion 2 in `pictureBookRestartRecovery.spec.js` across a real `docker restart`; no product defects, observations §6.C 107(i)–(m)); Ux752 quick gate `VERIFY_OK` 14:17; Service7 quick gate `127/0/1` red only on §6.H 15:18; **independent verifier CHANGES-NEEDED ~15:50** — one MUST-FIX proven live over REST (the reader's "Unpin and re-render" unpins, then re-submits without `force` → 409 "(1 reused, 0 pinned)": pin lost, no render) plus two SHOULD-FIX with the same root; **fixed as the ⚠ default §6.C 109 and verified live 16:00–16:47** (explicit per-scene renders pass `force`, mirroring the ratified ChapBook pattern §6.C 98; "Render all" unchanged; pin still wins): JUnit re-homed to `TestChapBookV3Render` 1/1 live `.39` (the plain-PictureBook `case11` could never pass — `executeLandscape` never stamps `inputHash`, the §8.9 gap, left alone), Service7 contract 25/0/0, Vitest 89/1152, Playwright `pictureBookV3Ux.spec.js` `4 passed (2.2m)` with the new criterion 1b through the reader's "Scene is pinned" confirm (every PNG opened), Ux752 gate `VERIFY_OK`; **independent re-verify PASS 17:05** (every test re-run by the verifier itself, md5s matched, force-caller grep clean, three non-blocking observations §6.C 111) — **P1-10 DONE 17:05**.** **P1-11 17:09 → 22:30, CLOSED `VERIFY_FAILED`:** Objects7 gate run 5 done 19:13 (§4.4 row 5: 982/7/0/15 — the six expected reds plus one new, `TestPbRenderJob.case07`, a race in the P1-6 test's own assertion, fixed in the test ⚠ §6.C 113 and the class 10/10 green on the working tree); §6.C 76 login alignment edited in both Phase-1 specs (§8.11, ⚠ §6.C 112) and proven live 19:23–19:28 — `pictureBookV3Ux.spec.js` `4 passed (2.3m)`, `pictureBookRestartRecovery.spec.js` `2 passed (1.8m)`; **full Ux752 gate 19:33→21:42 `VERIFY_FAILED` on e2e (§4.5)** — 623 tests, `495 passed / 61 failed / 4 flaky / 58 skipped / 5 did not run`: the 28 expected §4.3 reds all present and unchanged, plus 33 unexpected = 8 stale ChapBook specs (§6.C 102), 4 gate-2 PictureBook fixture/stale reds, 1 stack-PBAC red (`apparelSequence:29`: `e2etest_shared` dropped from `Olio User` by `explorer.spec.js`; repair denied by the permission classifier → ⚠ §6.C 114, **waiting on Stephen**), 20 generic-UI reds re-run serially — **all 20 red again, deterministic, none in the Phase 1 diff, 8 already red in gate 2** (§4.5.1; couplings → ⚠ §6.C 114 (g)); **Phase 1 is NOT declared done**; no product code changed at phase end.) | `TestPbV3Schema` 5/5, `TestPbModelSchema` 19/19, `TestPbStale` 9/9, `TestPbStaleCacheEpoch` 3/3, `TestPbNodeRun` 7/7 (live `.39`), `TestPbReview` 7/7, `TestPbAutoApprove` 7/7, `TestPbRenderJob` 10/10 (live `.39`; run 2 191.8 s), `TestPbRecovery` 8/8 (live `.39`; 38.19 s verifier re-run), `TestPbRenderPath` 9/9, `TestPbCanvas#TestPortraitNodeExecution` 1/1, `TestPbNodeExecutorTypes` 2/2, `TestPbSceneGenerationGuards` 6/6, `TestPbGraph` 18/18 (§8.1–§8.8); Service7 `TestPictureBookRestContract` 17/17, `TestPbRenderPathRefusal` 6/6, `TestFeatureConfigService` 2/2, full Service7 119/0/1 (§6.H only); Vitest `renderPathConfig.test.js`; Playwright `pictureBookWorkflow.spec.js` `:615` stale / `:697` review / `:900` auto-approve / `:1094` live-SD / `:1292` leave-the-page (L4) all 1/1, `pictureBookRestartRecovery.spec.js` `1 passed (46.2s)` across a real `docker restart`, render-path spec 4/4 — all on the Docker stack; §6.F re-run still red, unchanged; P1-9: `TestChapBookV3Render` 11/11 live `.39` + LLM (241.4 s, test-author run; earlier 8/8 + tightened render-all 1/1), Service7 `TestChapBookServiceRenderPath` 6/6 (9.304 s), Playwright `chapBookRenderPathV3.spec.js` `5 passed (2.4m)` live single run (`CB_LIVE_GEN=1`), ChapBook suite on v3 `60 passed / 8 failed / 13 skipped (11.8m)` — the 8 reds pre-existing stale specs (§8.9 table) |
 | 2 — Style, model resolution, compiler core; ChapBook goes V3; Kontext Disable | TODO | — |
 | 3 — Locations + POI link | TODO | — |
 | 4 — Composition + wardrobe | TODO | — |
@@ -2164,6 +2164,311 @@ C:              944G  499G  446G  53% /c
 C:              944G  500G  445G  53% /c
 ```
 
+### Re-probes 2026-10-12 15:03:00 / 15:20:37 / 15:43:26 local — Phase 1 follow-ups (A), Ux752 batch (§9.2) — all GREEN
+
+Vite dev servers on `:8899`/`:8898` were down for all three (http=0) — deliberately: every run in this batch targets the Docker
+stack at `https://127.0.0.1:9443` directly and nothing is pointed at `:8899`. `tasklist` at each probe: `java.exe 23524`
+(the `redhat.java` language server, not Maven) and no `mvn`/`surefire`. 15:03:00 was taken before the Vitest/Vite build and
+the first Playwright proofs; 15:20:37 before the Ux752 Playwright proofs (`pw-pf2-chat`, `pw-pf4-objectLinkFix`,
+`pw-pf3-breadcrumb`, `pw-pf15a-pickerNav`, `pw-pf6-chapBookLlmUnavailable`); 15:43:26 (`C:/tmp/probe-pf7.log`) before the
+single gated `.42` LLM run (`pw-pf7-chaptered`), with nothing else in flight. The in-stack Ollama was not used by any of them
+(the PF-7 run was pinned to `.42` per §6.C 126).
+
+```
+--- 2026-10-12 15:03:00 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 20 hours;am7-pg Up 2 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  503G  441G  54% /c
+```
+
+```
+--- 2026-10-12 15:20:37 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 20 hours;am7-pg Up 2 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  504G  441G  54% /c
+```
+
+```
+--- 2026-10-12 15:43:26 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 20 hours;am7-pg Up 2 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  504G  441G  54% /c
+```
+
+### Re-probe 2026-10-12 16:21:29 local — Phase 1 follow-ups (A), Service7 batch (§9.3) — GREEN
+
+Taken after the Service7 jar/classes were redeployed (`docker restart am7test-am7-1` — hence `Up 32 seconds`) and before the
+three live Playwright proofs (`pw-pf1-worldDelete`, `pw-pf5-webauthn`, `pw-pf8-bugfix3-reimage`). `tasklist`: `java.exe 23524`
+(the `redhat.java` language server) and no `mvn`/`surefire`; the only Maven runs of the batch (`mvn-service7-pf-tests`,
+16:18–16:19, and the two quick gates 16:28–16:32 / 16:38–16:41) ran with nothing else in flight. Vite `:8898` was started
+*after* this probe (16:24, `C:/tmp/vite-8898-pf.log`, `AM7_BACKEND=https://127.0.0.1:9443`) for the one `chromium-vite` spec
+and is still up; nothing was pointed at `:8899`. No LLM call was made in this batch, so no `[e2e-llm]`/`[LLM-GATE]` line
+applies; the one SD call (PF-8 positive path) went to Swarm `.39` with nothing else on SD.
+
+```
+--- 2026-10-12 16:21:29 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 32 seconds;am7-pg Up 2 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  503G  441G  54% /c
+```
+
+### Re-probe 2026-10-12 17:07:12 and 17:15:21 local — Phase 1 follow-ups (A), Objects7 batch (§9.4) — GREEN
+
+17:07:12: taken immediately before the one Maven run of the batch (`mvn-o7-pf9`, 17:07–17:13, `TestPbRenderJob,TestPbNodeRun` on
+`am7db` + Swarm `.39`); `tasklist`: `java.exe 23524` (the `redhat.java` language server), the three idle `node.exe` (VS Code Playwright
+extension `60672`, Vite `:8898` `9344`/`56636`), no `mvn`/`surefire`; nothing else on SD, no Playwright. The run's
+`[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` is `BaseTest.setup()`'s
+resolution; neither class calls an LLM. 17:15:21: after the jar redeploy + `docker restart am7test-am7-1` (hence `Up 56 seconds`).
+
+```
+--- 2026-10-12 17:07:12 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 46 minutes;am7-pg Up 2 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=200  8898-proxy setup/state=200
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  503G  441G  54% /c
+--- 2026-10-12 17:15:21 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 56 seconds;am7-pg Up 2 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=200  8898-proxy setup/state=200
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  504G  441G  54% /c
+```
+
+### Re-probe 2026-10-12 20:11:07 local — Phase 1 follow-ups (A), PF-9 REST-level proof (§9.4.1) — GREEN
+
+Taken immediately before the one Playwright run of the slice (`pw-pf9-rest`, 20:11–20:13, `pictureBookV3PlainPb.spec.js`,
+`PB_SD_TESTS=1`, two Swarm `.39` renders, no LLM call); `tasklist`: `java.exe 23524` (the `redhat.java` language server) only, no
+`mvn`/`surefire`, no other Playwright, nothing else on SD. The spec never resolves a chat route, so there is no `[e2e-llm]` line to
+quote. Console output; column spacing as in the blocks above.
+
+```
+--- 2026-10-12 20:11:07 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 3 hours;am7-pg Up 2 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=200  8898-proxy setup/state=200
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  506G  439G  54% /c
+```
+
+
+### Re-probe 2026-10-13 08:46:39 local — Phase 1 follow-ups (A), PF-15b container dist + §4.6 full Ux752 re-gate run 2 — GREEN
+
+Taken after the PF-15b `vite build` + `docker cp` and immediately before launching the §4.6 full Ux752 re-gate run 2
+(`LOOP_MODULE=AccountManagerUx752 PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 bash .claude/loop/verify.sh`, started 08:48:11 per
+`C:/tmp/ux752-full-gate-run2.start`, log `C:/tmp/ux752-full-gate-run2.log`); `tasklist`: `java.exe 23524` (the `redhat.java`
+language server) only, no `mvn`/`surefire`, no other Playwright. The PF-1/PF-5b Service7 work that followed on the Maven slot
+is H2-only (no LLM, no SD, no stack) per §6.C 143d, so the gate is the sole LLM/SD consumer. The `[e2e-llm]` lines belong to
+the gate log and are quoted with its triage in §4.6. Console output (`C:/tmp/probe-2026-10-13-0847.log`); column spacing as
+in the blocks above.
+
+```
+--- 2026-10-13 08:46:39 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 16 hours;am7-pg Up 2 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=200  8898-proxy setup/state=200
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  506G  439G  54% /c
+```
+
+### Re-probe 2026-10-13 09:51:47 local — after §4.6 run 2 (finished 09:26:03), before its triage — GREEN
+
+Taken after `GATE_EXIT=1` and before any triage read; the gate's `e2e/results` were first copied to
+`C:/tmp/pw-run2-gate-results/e2e-results/` (311 entries) so the triage could not be wiped by a later run. `tasklist`: one
+`java.exe` (23524, the `redhat.java` language server), three `node.exe` (56636, 60672, 9344 — the Vite 8898 server among them), no
+`mvn`/`surefire`, no Playwright. The console output of this probe was **not** saved to a file (the block below is copied from the
+console); column spacing as in the blocks above. Correction to the 08:46:39 paragraph: the `[e2e-llm]` lines are **not** in
+`C:/tmp/ux752-full-gate-run2.log` — `verify.sh` keeps only the last 60 lines of the Playwright phase and deletes its temp log on
+exit — so no route line is recoverable for run 2 (§4.6).
+
+```
+--- 2026-10-13 09:51:47 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 17 hours;am7-pg Up 2 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=200  8898-proxy setup/state=200
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  507G  438G  54% /c
+```
+### Re-probe 2026-10-13 10:15:24 local — PF-1(a) `OlioService` redeploy, before `worldDeleteBreadcrumb.spec.js` — GREEN
+
+Taken 31 s after `docker restart am7test-am7-1` (10:14:54) for the PF-1(a) class copy (§9.3.4); `tasklist` before the compile:
+`java.exe 23524` (the `redhat.java` language server) only, no `mvn`/`surefire`, no Playwright. Console output
+`C:/tmp/probe-2026-10-13-1017.log`; column spacing as in the blocks above.
+
+```
+--- 2026-10-13 10:15:24 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 31 seconds;am7-pg Up 2 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=200  8898-proxy setup/state=200
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  507G  438G  54% /c
+```
+### Re-probe 2026-10-13 10:44:31 local — before the PF-5b Objects7 install / Service7 JUnit / Docker redeploy — GREEN
+
+Taken before the PF-5b/PF-5c slice (§9.3.5) touched anything: `tasklist` showed the `redhat.java` language server only, no
+`mvn`/`surefire`, no Playwright. Console output `C:/tmp/probe-20261013-1044.log`; column spacing as in the blocks above.
+
+```
+--- 2026-10-13 10:44:31 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 29 minutes;am7-pg Up 3 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=200  8898-proxy setup/state=200
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  507G  438G  54% /c
+```
+
+### Re-probe 2026-10-13 11:00:52 local — PF-5b/PF-5c jar + class redeploy, before `webauthn.spec.js` — GREEN
+
+Taken 22 s after `docker restart am7test-am7-1` (≈11:00:30) for the PF-5b/PF-5c copy — `AccountManagerObjects7-7.0.0-SNAPSHOT.jar`
+md5 `91b7f64672ebe66ed0c45d8bd78404a2` into `WEB-INF/lib/` and `WebAuthnService.class` md5 `521c01cf3c314f703d17f91542412172`
+into `WEB-INF/classes/…`, both equal local == container, `javap` Unresolved 0 (§9.3.5). The Ux752 `dist` copy for the `sig.js`
+fix (11:04, `index.html` md5 `b252da2c1c49168d537629f46c1a2212` local == container) came after this probe, so line 6's
+"identical" refers to the previous build; the PF-5b red-first at 11:20 touched `target/classes` only and never the container.
+Console output `C:/tmp/probe-20261013-1100.log`.
+
+```
+--- 2026-10-13 11:00:52 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 22 seconds;am7-pg Up 3 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=200  8898-proxy setup/state=200
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  507G  438G  54% /c
+```
+
+### Re-probe 2026-10-13 11:37:12 local — end-of-(A) launches: Objects7 verifier (one Maven slot, live `.39`), Service7 + Ux752 read-only re-reads — GREEN
+
+Taken after the PF-5b/PF-5c tracking-doc update (§9.3.5) and before the three module verifiers Stephen approved at 17:25
+(§6.C 127b) were launched: `tasklist` showed only the JDT language server `java.exe 23524` and the VS Code `node.exe`/`chrome.exe`
+processes — no `mvn`/`surefire`, no Playwright. The Objects7 verifier owns the single Maven slot (`TestPbRenderJob`,
+`TestPbNodeRun`, `TestWebAuthnUtil`, one run, live `.39`); the Service7 and Ux752 verifiers are read-only (Ux752 may run `npx vitest`
+once — node only). The container Ollama (`am7test-ollama-1`, Up 22 h) has the nvidia device request (`docker inspect …
+DeviceRequests` → `Driver nvidia, Capabilities [[gpu]]`); `/api/ps` is empty (no model loaded), so `size_vram` is re-checked when
+the Objects7 gate's first LLM class loads one. The `o7verify` gate copy is refreshed and the ~2 h Objects7 quick gate launched only
+after the Objects7 verifier releases the Maven slot. Console output `C:/tmp/probe-20261013-1137.log`.
+
+```
+--- 2026-10-13 11:37:12 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 36 minutes;am7-pg Up 3 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=200  8898-proxy setup/state=200
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  507G  438G  54% /c
+```
+
+
+### Re-probe 2026-10-13 11:46:51 local — Objects7 verifier released the Maven slot; before Objects7 quick gate run 6 — GREEN
+
+Taken after the Objects7 verifier's single Maven run finished (`C:/tmp/o7-verifier-pfA.log` mtime 11:46:04, `BUILD SUCCESS`,
+`Total time: 06:10 min`) and `tasklist` showed only the JDT language server `java.exe 23524` — no `mvn`/`surefire`, no
+Playwright; the Service7 and Ux752 verifiers had already handed back (read-only; the Ux752 one ran `npx vitest` once,
+`C:/tmp/vitest-ux752-verifier.log`, 11:42:18). The container Ollama `/api/ps` is empty again (the verifier run's `qwen3:8b-ctr`
+calls went through LiteLLM to it and the model has since unloaded), so `size_vram` is still to be read while the gate's first
+LLM class holds a model. Gate run 6 was launched at **11:47:25** (`C:/tmp/o7verify-gate-pfA-run6.start`) as
+`LOOP_ROOT=C:/tmp/o7verify LOOP_MODULE=AccountManagerObjects7 MAVEN_ARGS=-o bash .claude/loop/verify.sh --quick >
+C:/tmp/o7verify-gate-pfA-run6.log`; `PASS (build)` was logged at ~11:48 and the test phase (`mvn -q -B -DskipTests=false test`,
+JVM `java.exe 59768`) is running on the copy — nothing else Maven/SD/LLM until it finishes. Console output
+`C:/tmp/probe-20261013-gate6.log`.
+
+```
+--- 2026-10-13 11:46:51 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 46 minutes;am7-pg Up 3 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=200  8898-proxy setup/state=200
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  507G  438G  54% /c
+```
+
+
+### Event 2026-10-13 12:05:14 local — Docker Desktop engine stopped under a Windows WSL update; gate run 6 VOID — RED (no probe possible)
+
+Not a probe — the probe script cannot run (`docker` answers "Docker Desktop is unable to start"). Reconstructed from logs, read-only:
+
+- **Windows System log**: 12:05:14 Service Control Manager 7040 "The start type of the WSL Service service was changed from auto
+  start to disabled"; 12:06:14 Kernel-General 16 hive `MicrosoftCorporationII.WindowsSubsystemForLinux_3.0.3.0_x64__8wekyb3d8bbw`;
+  12:06:16 SCM 7045 "A service was installed … WSL Service … C:\Program Files\WSL\wslservice.exe".
+- **Docker Desktop backend log** (`%LOCALAPPDATA%\Docker\log\host\com.docker.backend.exe.log`, UTC 17:05:14–15): `vpnkit-bridge`
+  wslexec failed; `received state {… State:running StopReason: WslUpdateReq}`; `engine linux/wsl shutdown requested (cancel cause:
+  starting WSL engine: bootstrapping main distribution: running wslexec … DockerDesktop/Wsl/ExecError)`; `engine stopping` 12:05:15 →
+  `engine stopped` 12:05:48; a second `stopping` 12:05:53 → `stopped` 12:05:54; `monitor.log.20261013-120515.005` rotated.
+- **Now** (12:33): `wsl --version` → WSL 3.0.3.0, kernel 6.18.54.1-1; `sc query WslService` → RUNNING, AUTO_START; `wsl -l -v` →
+  Ubuntu Stopped, docker-desktop Stopped; `wsl -d docker-desktop` boots but prints "wsl: Failed to configure network (networkingMode
+  Nat), falling back to networkingMode Consomme"; `docker version` client 29.8.2, `docker ps` → "Error response from daemon: Docker
+  Desktop is unable to start"; Docker Desktop 4.94.0 host processes are up (`Docker Desktop.exe` ×6, `com.docker.backend.exe` ×2,
+  `com.docker.build.exe`, `docker-agent.exe`), no `vmmemWSL`. Host disk is not the cause: `df /c` 944G / 507G used / 438G free (54%);
+  `docker_data.vhdx` 67,039,657,984 B, mtime 12:05.
+- **Effect**: every container — `am7-devpg-emulator` (`postgres3:15432`, the Objects7 JUnit `am7db`), `am7test-am7-1`/`am7-pg`/
+  `am7test-ollama-1`/LiteLLM/Langfuse — is gone until the engine is restarted. Gate run 6 (§4.4 row 6) ran normally through
+  `TestChapBookDeleteAuthz` (12:04:36) and is void from 12:05.
+- **Cause**: nothing the gate or I ran — during the run I issued one `curl -s http://127.0.0.1:11435/api/ps` (12:01:38) and read files.
+- **Recovery**: `"/c/Program Files/Docker/Docker/resources/bin/docker.exe" desktop restart` was **denied by the permission
+  classifier** ("Interfere With Workloads"); the denial covers the outcome, so no `wsl --shutdown`, no relaunch of `Docker
+  Desktop.exe`, no other route — **Stephen restarts Docker Desktop** (⚠ §6.C 148). After it is back: probe, confirm `am7-devpg-
+  emulator` + `am7test-*` + Ollama/LiteLLM/Langfuse are up, re-check `size_vram` and the NAT→Consomme warning (port forwarding to
+  `:9443`/`:15432`/`:11435`), then gate run 7 on the unchanged `o7verify` copy (refreshed 11:41:34, `diff -rq` 0).
 
 ## 4. Verification per phase
 
@@ -2709,6 +3014,7 @@ Same command and rsync'd `C:/tmp/o7verify` copy as §4.1; live `am7db` on `postg
 | 4 | P1-1…P1-8 (copy refreshed 07:11 — adds `TestPbRenderPath` ×9, `TestPbRecovery` ×8, `TestPbRenderJob.case10`; `diff -rq` 0) | 2026-10-11 07:12 → 09:06:09 (`C:\tmp\o7verify-gate-p18-run4.log`; probe 07:10:13 in §3) | `VERIFY_FAILED`, `GATE_EXIT=1` — `[ERROR] Tests run: 967, Failures: 8, Errors: 8, Skipped: 16` | **+18 tests as expected; 16 reds = the six baseline + 10 SD-connectivity reds, zero Phase 1 logic regressions found so far — but the 10 are NOT closed until re-run.** The six: §6.A ×3 (`TestPbDeleteSeries`, `TestPbListSeriesBooks`, `TestPbSeriesCast`), §6.B (`TestUpstreamResolution`), §6.F (`TestPictureBookWorkflow.TestFreshCharacterSubRecordsAndPortraitRender` — this time it died at 1235 s on `SocketTimeoutException: Read timed out` inside the FLUX.2 txt2img sent at 08:06:07, i.e. the .39 loss below, not its §6.F cause), mannequin copy artefact. The 10 others all carry `java.net.ConnectException: Connection timed out: getsockopt` to `192.168.1.39:7801` or its direct consequence (09:10:45 probe in §3 — `.39 http=0` host and container, `ping` 100 % loss): `TestPictureBookWorkflow.TestStepBudgetComparison`; `TestSDUtilCreateImage` ×3 (`createImageSparseConfigDoesNotThrow`, `createImageHonoursWidthHeightAndSeed`, `createImageHiresWithoutRefinerModelSkipsRefiner`); `TestChapBookRenderStyle.liveRenderUsesStyledPromptAndDefaultNegative` (`expected:<RENDERED> but was:<FAILED>`); `TestPbNodeRun.case05_livePortraitRunThenCharacterEditDrifts`; `TestPbSceneGenerationGuards.testLandscapeFailureIsNonFatal`; `TestPbRenderJob.case07_liveRenderThroughTheJobCompletes` (`expected:<[COMPLET]ED> but was:<[FAIL]ED>`); and two `NullPointerException: … Map.get(Object) is null` at `Integer.intValue()` in `TestPbRenderJob.case06_liveCancelMidStageDiscardsTheRenderAndRevertsTheNode` and `TestPbRecovery.case07_liveCancelLeavesThePreviouslySelectedArtifactUntouched` (the job failed before any stage, so the result map the test reads a stage count from was never written — the test assumes the render reached a stage; same root cause, and a robustness gap in those two tests to fix when they are re-run: fail with the job's `error` instead of an NPE). `Skipped: 16` (was 15): `TestSDUtilCreateImage` skipped 1 via `SdTestGate.requireSwarmReachable`. The Phase 1 classes that do not touch SD were green inside the run: `TestPbRenderPath 9/9 (21.7 s)`, `TestPbReview 7/7 (19.8 s)`, `TestPbAutoApprove 7/7 (48.7 s)`, `TestPbNodeExecutorTypes 2/2 (17.7 s)`, `TestPbRecovery` 7/8, `TestPbRenderJob` 8/10, `TestPbNodeRun` 6/7. **Open: the 10 SD reds must be re-run (targeted, working tree) once a §3 probe shows `.39 http=200` — §6.N.** |
 | 4-rerun (targeted, working tree) | the §6.N SD reds from run 4 + the P1-9 class, one Maven run at a time after a §3 probe showing `.39 http=200` (09:56:50 / 10:32:06) | 2026-10-11 09:58 → (in progress) | `TestChapBookV3Render` (P1-9, slice 5 run 4): `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 223.9 s` `BUILD SUCCESS` (`C:/tmp/o7-p19-v3render4.log`); render-all case tightened, run 5 `Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 16.06 s` (`C:/tmp/o7-p19-v3render5-renderall.log`). The ten §6.N reds, one class per Maven run: **(1) `TestPbRenderJob`** 10:40 → `Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 209.4 s` `BUILD SUCCESS` (`C:/tmp/o7-p19-rerun-TestPbRenderJob.log` L71335/71342) — case06 `live cancel durationMs=37735 job=CANCELLED observed={backendDurationMs=30838, cancelAccepted=true, nodeStatus=RUNNING, imagesReturned=1, runStatus=RUNNING}` (L6524), case07 `live render durationMs=29882 job=COMPLETED` / `artifact.durationMs=16488 seed=1598257345 byteLength=1781771 reviewStatus=GENERATED` (L51483/51505); the case06 NPE guard (§6.N) is in place and was not needed this run. **(2) `TestPbRecovery`** 10:45 → `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 38.44 s` `BUILD SUCCESS` (`C:/tmp/o7-p19-rerun-TestPbRecovery.log` L2202/2209) — case07 `live cancel durationMs=13721 job=CANCELLED observed={backendDurationMs=12223, cancelAccepted=true, nodeStatus=RUNNING, imagesReturned=1, runStatus=RUNNING}` (L1620); case07 NPE guard in place, not needed. **(3) `TestPbNodeRun`** 10:46 → `Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 49.13 s` `BUILD SUCCESS` (`C:/tmp/o7-p19-rerun-TestPbNodeRun.log` L8790/8797) — case05 `live portrait executeNodeRun durationMs=20828 … nodeStatus=DONE, artifactObjectId=718a7ef8-…, artifactRevision=1, byteLength=1714301` / `artifact.durationMs=12517 seed=1969750303` (L5294/5301). **(4) `TestPbSceneGenerationGuards`** 10:48 → `Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 130.6 s` `BUILD SUCCESS` (`C:/tmp/o7-p19-rerun-TestPbSceneGenerationGuards.log` L1409/1416) — `testLandscapeFailureIsNonFatal`: `P0-6 generateSceneImage durationMs=11097`, `PNG written: …\target\pb-v3-p0-6-landscape-failed.png (1648567 bytes)`, `mean luminance … = 80`, `run 8255ddc6-… status=COMPLETED failedNodeCount=1` (L301-316); PNG opened: a real 1024×1024 txt2img render (foggy harbour at dusk, a woman in a white robe holding a paper lantern beside moored boats strung with lanterns) — the classic pipeline degraded to text-only as the WARN at L216 says. **(5) `TestChapBookRenderStyle`** 10:51 → `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 66.25 s` `BUILD SUCCESS` (`C:/tmp/o7-p19-rerun-TestChapBookRenderStyle.log` L303/310) — `liveRenderUsesStyledPromptAndDefaultNegative`: `P0-9 live render durationMs=17633`, `PNG written: …\target\chapbook-v3-p0-9-style.png (1712159 bytes)` (L172/174); PNG opened: a real 1024×1024 render, six figures in long coats walking in profile across snow before a mirror-still lake and a snow-covered mountain under a deep blue sky, vintage fashion-photograph look (the styled prompt took). **(6) `TestSDUtilCreateImage`** 10:53 → `Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 47.93 s` `BUILD SUCCESS` (`C:/tmp/o7-p19-rerun-TestSDUtilCreateImage.log` L102/109) — the three former reds all rendered live: `createImage[HiresRefiner] hires=true seed=777 -> 1 record(s), durationMs=18310` (refiner `juggernautXL_ragnarokBy.safetensors` listed by `.39`, L57/62), `sparse createImage -> 1 record(s), durationMs=15666` (L72), `createImage[DimsSeed] hires=false seed=12345 -> 1 record(s), durationMs=3270` (L82), plus `createImage[HiresNoRefiner] … durationMs=2523` (L97); four PNGs under `target/sdutil-test-output/`; the refiner PNG opened: a real 1024×1024 8-step graphic-style sunset over water with dark cliffs right and a palm left — crude at 8 steps, not blank. **(7) `TestPictureBookWorkflow`** 10:55 → 11:35 → `[ERROR] Tests run: 5, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 2376 s <<< FAILURE! -- in org.cote.accountmanager.objects.tests.TestPictureBookWorkflow` `BUILD FAILURE` `Total time:  39:39 min` (`C:/tmp/o7-p19-rerun-TestPictureBookWorkflow.log` L3185/3240/3242) — the one red is the pre-existing **§6.F** case, unchanged: `TestPictureBookWorkflow.TestFreshCharacterSubRecordsAndPortraitRender:710 At least one PORTRAIT node must have been asserted, or this case proved nothing about the render branch` (L3235; `-- Time elapsed: 111.3 s <<< FAILURE!` L3186) — **not fixed, report only** (the brief: "expected still red — report only"). The other four are green, including the two that were SD reds in run 4: `***** PB2 level-1 structural verification PASSED` (L655), `***** PB2 level-2 differential verification PASSED` (L1156), `***** PB2 phase-3 gap 2 (destination matrix) PASSED` (L2311), and `TestStepBudgetComparison` (KI-68) rendered all three FLUX.2 budgets live on `.39`: `KI-68 steps=4: generated in 164876ms` (L2643), `KI-68 steps=20: generated in 569124ms` (L2943), `KI-68 steps=40: generated in 1087664ms` (L3181) — `export/ki68_step4_9fe73406-….png`, `ki68_step20_e63b305a-….png`, `ki68_step40_4b6fc7c6-….png` (this run held `.39` for ~30 min of the 39; no timing is asserted). **All ten §4.4 row-4 SD reds have now been re-run, one class per Maven run: nine are green, one is the §6.F red.** | `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` on both P1-9 runs and on `TestPbRenderJob` (L55); `SdTestGate - http://192.168.1.39:7801 answered HTTP 302`. |
 | 5 | P1-1…P1-10 (copy refreshed 17:07 — adds the P1-9/P1-10 classes: `TestChapBookV3Render` ×12 incl. `facadeForceRerendersACurrentPageAndPinStillWins`, `TestPbGraph` 20, `TestPbStale` 10, `TestPbRenderJob` 10 (case11 removed), `TestPbScenePageBackfill`, `TestPbRecovery`; `diff -rq` 0, `POM_SAME`; probe 17:08:32 §3) | 2026-10-11 17:09 → 19:13 (`C:/tmp/o7verify-gate-p110-run5.log`) | `PASS (build)`; `FAIL (test)`; `[ERROR] Tests run: 982, Failures: 7, Errors: 0, Skipped: 15`; `VERIFY_FAILED`; `GATE_EXIT=1` | the six expected reds — §6.A ×3 (`TestPbDeleteSeries:119`, `TestPbListSeriesBooks:138`, `TestPbSeriesCast:532`), §6.B (`TestUpstreamResolution:247`), §6.F (`TestPictureBookWorkflow:710`), `TestMannequinBaseImage:71` (copy artefact) — **and one new red, `TestPbRenderJob.case07_liveRenderThroughTheJobCompletes:568 expected:<[PEND]ING> but was:<[RUNN]ING>`**: a race in the P1-6 test's own assertion (the submit DTO reads `runStatus` off the run handle the worker stamps RUNNING in place), reproduced 2/2 unchanged on the working tree, fixed in the test (state-coupled: queued → PENDING, running → PENDING|RUNNING; ⚠ §6.C 113) and the class re-run **`Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 213.5 s` `BUILD SUCCESS`** on the working tree (`C:/tmp/o7-p111-TestPbRenderJob.log`, 19:17–19:21, live `.39`, PNG opened — §8.11). No §6.N SD red this run. With that fix the red set is the §4.2 baseline; the 2 h copy was not re-run in full. |
+| 6 | (A) PF-9 + PF-5b (copy refreshed 11:41:34 — adds `security/WebAuthnUtil` + `TestWebAuthnUtil` ×8, `TestPbRenderJob` 11 incl. case11; `diff -rq` 0, `cmp pom.xml` same; probe 11:46:51 §3) | 2026-10-13 11:47:25 → 12:23:01 (`C:/tmp/o7verify-gate-pfA-run6.log`; start stamp `C:/tmp/o7verify-gate-pfA-run6.start`) | `PASS (build)`; `FAIL (test)`; `[ERROR] Tests run: 991, Failures: 589, Errors: 1, Skipped: 5`; `VERIFY_FAILED`; `GATE_EXIT=1` — **VOID (environmental), not a result** | **Docker Desktop's engine stopped at 12:05:14 under the Windows WSL 3.0.3.0 update** (§3 event block: `StopReason: WslUpdateReq`, `engine stopped` 12:05:48) and took the JUnit DB (`am7-devpg-emulator`), the in-stack Ollama/LiteLLM and the `am7test` stack with it mid-run. Surefire timeline (`C:/tmp/o7verify/AccountManagerObjects7/target/surefire-reports/`): every class through `TestChapBookDeleteAuthz` (12:04:36) ran normally; `TestChapBookDeleteRecreate` 12:04:36 → 12:22:02 — `Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 1046 s` — `java.lang.RuntimeException: OlioContext.initialize() failed before authorization was configured` at `OlioContext.initialize(OlioContext.java:992)` ← `PbOlioContextUtil.lambda$getCreateBookContext$0(PbOlioContextUtil.java:342)` ← `PbBookUtil.linkBookToWorld:167` ← `ChapBookUtil.createChapBook:757` ← test `:119` (the 1 error); then every DB-touching class from 12:22:03 to 12:23:00 failed in `BaseTest.setup:141->BaseTest.resetIO:179->BaseTest.resetIO:216 Error encountered` (46 such lines in the log; the 589 failures — e.g. `TestPbRenderJob` `Tests run: 11, Failures: 11` in 0.039 s), only pure-unit classes stayed green (`TestWebAuthnUtil` `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s`, `TestBookPopulationPath`, `TestLlmJsonSalvage`, `TestPbStaleCacheEpoch`); `TestMannequinBaseImage` 10/1 is the known copy artefact (`classpathCopiesAreByteIdenticalToUx752`). The §6.A/§6.B/§6.F baseline reds and `TestPbRenderJob` 11/11 were never reached on a live DB — **unknown, not green**. **One real red before the outage**: `olio.TestGameUtil` 11:53:14 `Tests run: 25, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 216.2 s` — `TestMoveTowardsPositionAcrossCells(TestGameUtil.java:964)` `java.lang.AssertionError: Distance should not increase significantly (was 160.0, now 1150.0)`; green in run 5 (0 mentions in `C:/tmp/o7verify-gate-p110-run5.log`), not in any PF diff (`PbNodeExecutor`, `TestPbRenderJob`, `WebAuthnUtil`) — flaky vs regression to be classified by run 7, not fixed. **`size_vram` reading (§4.4 row 6 obligation) taken 12:01:38** while the gate held a model: `curl -s http://127.0.0.1:11435/api/ps` → `goekdenizguelmez/JOSIEFIED-Qwen3:8b`, `size 5988784536`, **`size_vram 5988784536`** (≠ 0, on the GPU), `context_length 8192`, `expires_at 2026-10-13T17:06:34Z`. Not caused by the gate or by me; disk fine (438 G free; vhdx 67 GB). Docker engine still stopped at 12:40; `docker desktop restart` denied by the permission classifier → **waiting on Stephen** (⚠ §6.C 148); **run 7** on the unchanged copy afterwards. |
 
 A **full** gate (Playwright included) runs once before Phase 1 is declared done (P1-11); its Playwright
 counts will be compared against the §4.2/§4.3 list in the brief.
@@ -2881,6 +3187,119 @@ PictureBook/ChapBook/aiDocs except `OlioFieldNames.java` +9, `SDUtil.java` +11 (
 `PictureBookService`, the PB Ux files and their tests). **No Phase 1 regression found among the 20.** None was fixed, re-selected,
 skipped or weakened (scope discipline; they are Stephen's call — §6.C 114 (g)).
 
+
+### 4.6 Phase 1 full Ux752 re-gate — run 2 (2026-10-13 08:48:11 → 09:26:03 local) — `VERIFY_FAILED` on e2e; 10 reds, none a PF regression
+
+Command (git root): `date "+%Y-%m-%d %H:%M:%S" > C:/tmp/ux752-full-gate-run2.start && LOOP_MODULE=AccountManagerUx752
+PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 bash .claude/loop/verify.sh > C:/tmp/ux752-full-gate-run2.log 2>&1; echo
+"GATE_EXIT=$?" >> …; date … >> …` — chromium + chromium-vite, 2 workers, `retries: 1`, **no** `PB_LLM_TESTS` / `E2E_SD_LIVE` /
+`PB_SD_TESTS` in the environment (same as run 1's environment, but see red 9/10 below for why that matters now). Start
+`2026-10-13 08:48:11` (`C:/tmp/ux752-full-gate-run2.start`), end `2026-10-13 09:26:03` (last line of the log). Probe 08:46:39
+before (§3), 09:51:47 after (§3). Artefacts copied to `C:/tmp/pw-run2-gate-results/e2e-results/` before any triage. Deployed
+state under test: the PF-15b dist (`index-BtMyBqO3.js`, container md5 equal), the PF-9 Objects7 jar and the PF-8 Service7 classes;
+PF-1(a) is **not** deployed (H2-only until this gate finished — §6.C 143d).
+
+Phase lines and tail, verbatim from `C:/tmp/ux752-full-gate-run2.log` (the per-test error block the gate prints belongs to the
+flaky `bugfix3-live:562` first attempt and is quoted under "flaky" below):
+
+```
+==> [AccountManagerUx752] build: npm run --if-present build
+    PASS (build)
+==> [AccountManagerUx752] test: npx vitest run
+    PASS (test)
+==> [AccountManagerUx752] lint: npm run --if-present lint
+    PASS (lint)
+==> [AccountManagerUx752] e2e: npx playwright test
+    FAIL (e2e) in AccountManagerUx752
+----- last 60 lines -----
+…
+  10 failed
+    [chromium] › e2e\chatLabelBleed.spec.js:167:5 › Chat conversation labels do not bleed between sessions › switching from sessionB back to sessionA shows sessionA characters
+    [chromium] › e2e\listControl.spec.js:207:5 › List control — Phase 4 behavioral tests › ArrowRight in full viewer advances to next item
+    [chromium] › e2e\pictureBookChapteredManuscriptEmulated.spec.js:650:5 › PictureBook chaptered manuscript — emulated LLM, real Ux + Docker stack › N chapters through the wizard: parity, bundling, reader, cast, re-run reuse, emulator stats
+    [chromium] › e2e\pictureBookCheckpoints.spec.js:284:5 › PictureBook — unfinished extractions (checkpoints with no book) › UI: opening the document from the list shows the Step 1 banner, and its Discard clears the last checkpoint
+    [chromium] › e2e\pictureBookHealth.spec.js:249:5 › PictureBook — health check, repair, orphan cleanup, complete delete › Check health lists a dangling checkpoint and Repair discards it through the server
+    [chromium] › e2e\pictureBookSeriesDelete.spec.js:136:5 › PictureBook — delete a chaptered book from its series card › owner deletes the whole series from the series card; per-chapter delete remains
+    [chromium-vite] › e2e\chatDeleteE2E.spec.js:14:5 › Chat message delete E2E › delete a message via edit mode UI
+    [chromium-vite] › e2e\pictureBookLive.spec.js:364:9 › Picture Book — Comprehensive E2E (Phases A–L) › B. Backend Pipeline › B.3 GET /scenes returns valid data
+    [chromium-vite] › e2e\pictureBookLive.spec.js:1632:9 › Picture Book — Comprehensive E2E (Phases A–L) › J. Negative Tests › J.4 Zero 400/500 during normal flow
+    [chromium-vite] › e2e\worldGroupPicker.e2e.spec.js:39:5 › KI-35 world-group picker (real backend) › Apparel.wearables picker lands on the world Wearables group, not the user path
+  3 flaky
+    [chromium] › e2e\pictureBookListKeyedFragment.spec.js:126:5 › PictureBook selector — series + standalone PB2 books render together › list renders both, delete-confirm redraws cleanly, standalone deletes
+    [chromium] › e2e\pictureBookReaderParity.spec.js:100:5 › Shared ReaderShell parity (the reader PictureBook and ChapBook both mount) › export produces a self-contained HTML download
+    [chromium-vite] › e2e\bugfix3-live.spec.js:562:5 › Pending indicator during a streamed reply › Thinking... shows until the first chatUpdate token, then the stream renders and chatComplete re-enables input
+  92 skipped
+  7 did not run
+  518 passed (37.4m)
+-------------------------
+VERIFY_FAILED
+GATE_EXIT=1
+2026-10-13 09:26:03
+```
+
+**No `[e2e-llm] route=…` line is recoverable for this run.** `verify.sh` writes each phase to a temp log it deletes on exit and
+keeps only the last 60 lines of the failing phase, and `playwright.config.js` has no reporter configured, so neither the route
+line nor the list of the 92 skipped / 7 did-not-run tests survives. The LLM-touching specs that ran (`bugfix3-live`,
+`chatDeleteE2E`, `chatLabelBleed`, …) used `resolveChatRoute()` with its default order; the only evidence of the tier is the
+server log, which shows the chat requests of the run going to LiteLLM (`qwen3-vl:8b-instruct` for the PB extraction in run 1,
+§4.6 red 9/10) — I am not quoting a route line I do not have. The reporter proposal is in §9.5.
+
+#### 4.6.1 Run 1 (§4.5, 2026-10-11 19:33 → 21:42) → run 2
+
+| | run 1 | run 2 |
+|---|---|---|
+| listed | 623 | 630 |
+| failed | 61 | **10** |
+| flaky | 4 (`games:18`, `infiniteScroll:186`, `pictureBookCheckpoints:284`, `chatDuel:26`) | 3 (above) |
+| skipped | 58 | 92 |
+| did not run | 5 | 7 |
+| passed | 495 | 518 |
+| wall | 2 h 09 m | 37.4 m |
+
+**No run-2 red shares an exact `file:line` id with any of run 1's 61** (`C:/tmp/pw-p111-gate-failed-list.txt`, compared by
+`grep`). Two are the same test under a shifted line: `worldGroupPicker.e2e:41` → `:39` and
+`pictureBookChapteredManuscriptEmulated:595` → `:650` (both edited by P1-12 / PF-15d). Run 1's `listControl` reds were
+`:182/:240/:441/:619` (all green now; `:207` is new-red, §6.C 131); run 1's `pictureBookLive` reds were C.2 `:614`, C.3 `:635`,
+H.1 `:1231`, L.1 `:1748` (all green now; B.3/J.4 are new-red for the reason in red 9/10). The 51 run-1 reds that are not in
+run 2's list are green or skipped now; which of the two cannot be told apart for the ones inside the 92 skipped (no reporter).
+The skipped count rose 58 → 92 mostly by design: P1-12 group 4 gated the LLM-heavy `pictureBookLive` phases behind
+`PB_LLM_TESTS` (§6.C 123a) and PF-15d gated SD renders behind `PB_SD_TESTS`.
+
+#### 4.6.2 The ten reds — classification from traces, server log (`/opt/tomcat/logs/accountManagerService.log`, UTC), DB (read-only) and read-only REST
+
+Nothing below was fixed, re-selected, skipped or weakened; each candidate is in §6.C 145 and §9.5. Artefact dirs:
+`C:/tmp/pw-run2-gate-results/e2e-results/<name>[-retry1]/{trace.zip,error-context.md,test-failed-1.png}`; the
+`pictureBookChapteredManuscriptEmulated` red has no artefact dir at all (its describe sets `retries: 0` and the guard throws
+before a page exists).
+
+| # | test (both attempts red unless stated) | verbatim error (ANSI stripped) | evidence | classification |
+|---|---|---|---|---|
+| 1 | `listControl.spec.js:207` ArrowRight in full viewer | `expect(locator).toHaveText(expected) failed · Locator: locator('div[tabindex="0"]:has(> button[title="Close (Esc)"])').locator('div').filter({ hasText: /^\s*\d+ \/ \d+/ }).first() · Expected pattern: /^\s*2 \/ 10/ · Received string: "2 / 15" · Timeout: 5000ms` (identical on retry) | the viewer shows the page count of the list before the test's fixture page is selected; mechanism read from `list.js` `openItem`/`update` + `pagination.updateList` in §6.C 131 | **§6.C 131, expected** (viewer-index race proposed in §9.5; product-side if anything, not a PF regression) |
+| 2 | `worldGroupPicker.e2e.spec.js:39` KI-35 picker | `Error: No book-world apparel readable by the shared user was found (books created by the user with a world=50; probes=["issues-spec-mv6rjyi3:0 apparel","wdel3-mv6rjjo8:0 apparel","sdcfgpbmv6rhz91:0 apparel",…` (identical on retry) | same test red in run 1 at `:41` with the same message; the fixture needs a book whose world carries apparel, and none of the 50 books the shared user created has any | **§4.5 expected residual**, unchanged |
+| 3 | `pictureBookSeriesDelete.spec.js:136` owner deletes the series from its card | `Error: series card still present after delete · expect(locator).toHaveCount(expected) failed · Locator: locator('[data-pb2-book-list]').locator(':scope > [data-pb2-series="4be4a1a5-e9bd-441b-a090-d3d9cb144c03"]') · Expected: 0` (retry: series `dbab76b8-1551-4e29-ab4a-2d053c207b4b`) | trace network (`C:/tmp/pw_trace_net.py`): `DELETE …/series/4be4a1a5-…` → **200** after 4 531 ms, the `:165` "Series deleted" toast passed; the page's `GET …/picture-book/books` took **10 376 ms** on first load and the post-delete re-fetch was still pending (`-1`) when the `:166` `toHaveCount(0, {timeout: 15000})` window closed; `afterAll` `DELETE …/series/4be4a1a5-…` → 404 (already gone); `a7_olio_pb_book_0_1` has **no row** for either series id | **environment scale**: the delete worked and the rows are gone; the list refresh for `e2etest_shared` (350 e2e-litter books) outruns the 15 s assertion. **Not PF-16** (that is a 500 on wizard-built series; this series was REST-built and returned 200) and not a PF regression |
+| 4 | `pictureBookChapteredManuscriptEmulated.spec.js:650` N chapters through the wizard | `STALE RECORDING — harlots-eight: the longest recorded TEXT SEGMENT is … chars …, but PictureBookUtil.chunkText (EXTRACT_CHUNK_SIZE=…) cuts a …-char chapter into chunks longer than …` (spec `:712-715`; no artefact dir) | deliberate guard: the emulator fixture predates the `chunkText` change (commit `ab382e71`) and the spec refuses to run against a stale recording; same test red in run 1 at `:595` | **expected** (fixture re-record is Stephen's — `project-llm-emulator-recording-status`) |
+| 5 | `pictureBookCheckpoints.spec.js:284` opening the document shows the Step 1 banner | `Test timeout of 120000ms exceeded. · Error: locator.scrollIntoViewIfNeeded: Test timeout of 120000ms exceeded. · waiting for locator('[data-pb-checkpoint-list]').first()` at `:327` (identical on retry) | the `[data-pb-checkpoint-list]` div renders only when `pendingExtractions` is non-empty (`features/pictureBook.js:414`, loaded by `loadPendingExtractions()` `:312-321` from `GET /rest/olio/picture-book/extract-checkpoints`); `:327` has no timeout and its `.catch` cannot pre-empt the test timeout; the spec's `:323-324` comment assumes the shared user "may legitimately have other unfinished extractions" — a read-only session login as `e2etest_shared` (`POST /rest/login` → cookie → `GET …/extract-checkpoints` → 200) returned **0 pending checkpoints**; the **same test was flaky in run 1 with the identical error** (first attempt red, retry green — before PF-15d touched anything) | **pre-existing intermittent test defect** depending on whether any leftover checkpoint exists at that moment; not a PF regression and not product |
+| 6 | `pictureBookHealth.spec.js:249` Check health lists a dangling checkpoint and Repair discards it | `Error: no "N repairs applied" toast · expect(locator).toBeVisible() failed · Locator: locator('.toast-box').filter({ hasText: /\d+ repairs? applied/ }) · Expected: visible`; retry additionally `Test timeout of 120000ms exceeded.` | measured live: the UI's `GET …/picture-book/health` took 26 630 ms, the same call via REST as `e2etest_shared` 26–70 s, and `POST …/health/heal` never answered within the 120 s test timeout; the server log shows the heal thread doing 1 156 `AUDIT PERMIT … READ … olio.pb.book` reads — it audits all ~350 books the shared user created, twice (check, then heal) | **environment scale** (e2e litter on `e2etest_shared`), not a PF regression; performance + litter-cleanup proposals in §9.5 |
+| 7 | `chatLabelBleed.spec.js:167` switching back to sessionA shows sessionA characters | `expect(locator).toBeVisible() failed · Locator: locator('text=SessA_mv6qvlwl9rkt').first() · Expected: visible · Timeout: 10000ms · Error: element(s) not found` (retry: `SessA_mv6qw0520tf7`) | trace network: the spec creates both sessions through REST, then the UI's `GET /rest/list/olio.llm.chatRequest/cfdb49f6-…` 0.7 s later returned 187 names **without** the new session — the server-side list cache keyed on that query had not been invalidated for a record created by a different route; the PF-2 code (`chat.js` session select/history load) was never reached | **stale server list cache exposed by a test that creates via REST and reads via the cached list route**; test-side (clear the `olio.llm.chatRequest` cache after the REST creations) — not a PF-2 regression |
+| 8 | `chatDeleteE2E.spec.js:14` delete a message via edit-mode UI | `expect(received).toBe(expected) // Object.is equality · Expected: true · Received: false` (identical on retry) | trace actions: the spec's `page.locator('div').filter({ hasText: sessionName }).last()` resolves to the toolbar title container `div.flex.items-center.gap-3` (click at 374.38, 143.29) — **zero** network after the clicks, so the session was never opened and the edit-mode toggle it then asserts is `false`. A temporary diagnostic spec (created under `e2e/zz_tmp_diag/`, run once against the stack, log `C:/tmp/pw-run2-triage-chatDeleteE2E-diag.log`, then deleted with its screenshot; its `DiagDel-mv6sw90u` session removed via REST) clicked the real sidebar row `div.cursor-pointer.group` instead: history loaded and `KEEP-MSG-1` rendered under the PF-2 build | **test-locator defect**, not a PF-2 regression; candidate locator in §6.C 145 |
+| 9 | `pictureBookLive.spec.js:364` B.3 GET /scenes returns valid data | `expect(received).toBe(expected) // Object.is equality · Expected: 200 · Received: 404` (identical on retry; trace stdout `=== B.3 GET /scenes ===`) | see 10 | **test gating left open by P1-12 group 4 (§6.C 123a)** — not product |
+| 10 | `pictureBookLive.spec.js:1632` J.4 Zero 400/500 during normal flow | `expect(received).toHaveLength(expected) · Expected length: 0 · Received length: 1 · Received array: ["404 https://127.0.0.1:8898/AccountManagerService7/rest/olio/picture-book/5312cd41-dc21-4d78-915b-29830f7476c3/scenes"]` (retry: `cafc0acd-4f3d-4aa1-9eaf-f965d89085c7`) | `5312cd41-…` is the `data.note` `AIME-pb-mv6rsm6z` and `cafc0acd-…` the `data.note` `AIME-pb-mv6rvgjo` (`a7_data_note_0_1`; neither id is in `a7_olio_pb_book_0_1`; 35 `AIME-pb-%` notes exist). Server: `AUDIT INVALID system.user e2etest_pbmv6rsd6n to READ … olio.pb.book … (objectId = "5312cd41-…" && organizationId = 2) … No results` (14:24:06/18/26 UTC) → `PictureBookUtil.listScenes` `:11164-11172` → `PictureBookException(404, "Book not found")` — **correct**. Cause: the `PB_LLM_TESTS` gate added by P1-12 group 4 (`:38`, `:162-200`) skips the `beforeAll` extraction and B.1/B.2 when unset, so `bookObjectId` stays null, while B.3 (`:364`) and J.4 (`:1632`) are gated only on `!workObjectId` and fall back to `bookObjectId \|\| workObjectId` — the note id. Run 1 passed because the flag did not exist yet: its user `e2etest_pbmv4my24m` ran the real extraction (server log 02:31:09–02:32:58 UTC: chatConfig `PB-cfg-mv4my2ke`, LiteLLM chat `qwen3-vl:8b-instruct`, six `olio.charPerson` ADDs, three scene notes, `.pictureBookMeta`; run 1's H.1 error-context shows `AIME Test Book Page 1 of 3`) | **confirmed test-gating defect from P1-12 group 4**, not product; candidate `test.skip(!PB_LLM \|\| !bookObjectId, …)` on both in §6.C 145 |
+
+Observation only, not a red: `RecordDeserializer - Invalid field: olio.pictureBookRequest.model qwen3-vl:8b-instruct` /
+`… .serverUrl http://192.168.1.42:11434` ERROR lines (14:23:39 UTC) come from `e2etest_shared` requests of another spec sending
+stale fields; unrelated to the ten.
+
+**Flaky (passed on retry; first-attempt artefacts only):** `pictureBookListKeyedFragment:126`, `pictureBookReaderParity:100`,
+and `bugfix3-live:562` whose first-attempt error is the block the gate printed: `expect(locator).toBeVisible() failed · Locator:
+locator('div.flex.mb-3.justify-end').filter({ hasText: 'Pending indicator check mv6rl289' }) · Expected: visible · Timeout: 10000ms
+· Error: element(s) not found` at `:599` (the user bubble not yet rendered 10 s after send under 2-worker load; the retry passed
+with the stream rendering and `chatComplete` re-enabling input).
+
+**Outcome for (A):** the re-gate confirms the Ux752 batch (PF-2/3/4/6/7/15a/15b/15d) and the deployed PF-8/PF-9 against the
+full suite — 51 of run 1's reds are gone and the 10 that remain are attributable without touching product code. No serial
+re-run was made: `chatDeleteE2E` was settled by the diagnostic, `pictureBookHealth` and `pictureBookSeriesDelete` were measured
+live, B.3/J.4 and `pictureBookCheckpoints` were explained from the code, the DB and the server log (§6.C 145 (e)). The gate
+stays `VERIFY_FAILED` on the record; nothing was re-selected to make it green.
 
 ---
 
@@ -4583,8 +5002,8 @@ blocking item), 12, 13 and 15 are ⚠ MY JUDGMENT.
     header icons (`c4-review-rendered.png`).
 
 111. **P1-10 fix re-verifier observations (2026-10-11 17:05, PASS; none blocking, none acted on):** (a) every live proof of "current →
-    409 → forced 202 → pin wins" (JUnit and Playwright) runs on a ChapBook-typed book, because on a PICTUREBOOK-typed book a LANDSCAPE
-    node never carries `inputHash` (`PbNodeExecutor.executeLandscape`, the §8.9 gap) and so is never "current" — the fix is
+    409 → forced 202 → pin wins" (JUnit and Playwright) runs on a ChapBook-typed book, because on a PICTUREBOOK-typed book [sic — `bookType` is
+    `UNKNOWN`/`STORY`/`CHAPBOOK`; a plain PB is `STORY`] a LANDSCAPE node never carries `inputHash` (`PbNodeExecutor.executeLandscape`, the §8.9 gap) and so is never "current" — the fix is
     behaviourally a no-op there; the reader code path is identical regardless of `bookType`, and §6.C 109 already says so. Closing the
     `executeLandscape` hash gap would make the scenario reachable on plain books too — same decision as §6.C 109's last line.
     (b) `TestAsyncRenderRoutesTakeNoBody` (`TestPictureBookRestContract`) proves the `@QueryParam("force")` by annotation reflection
@@ -4824,6 +5243,383 @@ blocking item), 12, 13 and 15 are ⚠ MY JUDGMENT.
      Also his standing rule from then on: **only one LLM call in flight at a time** — one Playwright process, no probes beside it.
      Note for the next stack start: the wrapper default is CPU-only on purpose (AMD dev box), so `am7-docker-up --ollama` on this
      machine needs `AM7_OLLAMA_GPU=nvidia` or the container silently reverts to CPU.
+127. ⚠ **(A) Phase 1 follow-ups — process defaults (2026-10-12, §9).** (a) The fifteen defects were read and tabled in
+     one pass (§9.1) and Stephen chose the groups to take in an AskUserQuestion; the rows he did not pick (PF-10–14, PF-15c)
+     are recorded as proposals, not worked. (b) **One verifier per module batch** (Ux752 / Service7 / Objects7) rather than one
+     per PF: the eight Ux752 fixes are one-site changes in one `git diff`, and the brief's "ask before spawning agents" rule
+     means the hand-off is asked for at the end of (A) together with the §4.6 re-gate — so every §9.1 row is at most
+     "landed + proven live", never DONE, until that verifier returns PASS. (c) The one-off litter cleanup (PF-15d) and the
+     PF-7 gated `.42` run (~12 min, the only LLM call in flight) were launched without a separate question: the test litter
+     is mine to remove ("these are your tests and you control them", §8.12) and the PF-7 option text in the question already
+     said it "needs one gated .42 LLM run".
+128. ⚠ **PF-7 implementation choices (`src/workflows/pictureBook.js`).** (a) The Step-4 chat-config picker is a new boxed row
+     above the SD-config controls, bound to the same `chatConfigRef` as Step 1 and the failed-passage retry (one config drives
+     every LLM call the wizard makes), and the three copies of the `ObjectPicker.openLibrary({libraryType:'chatConfig'})` block
+     were folded into one `openChatConfigPicker()` + `chatConfigLabel()` — a de-duplication the brief did not ask for, done
+     because a fourth copy would have been the alternative. (b) The chapter summary now computes its state from the summary
+     as it is NOW (`chapterSummaryState(s)`, pure, exported for Vitest): after a clean retry it stays visible, turns green
+     (`check_circle`, "Extraction finished: N of N chapters saved.") and carries `data-pb-chapter-summary-clean="true"`,
+     instead of disappearing — the user can still see what was recovered. The default when unset is unchanged
+     (`contentAnalysis`). The Playwright spec never reaches Step 4 (it stops at the series/reader views), so (a) is proven by
+     the Vitest + the live wizard run only as "nothing else broke"; (b) is proven by Vitest (the live run had no failed
+     passages to retry — `problems` empty — so the clean headline path was exercised only in Vitest).
+129. ⚠ **PF-6 proof uses a structural selector, not a new `data-testid`:** the new `chapBookLlmUnavailable.spec.js:315` test
+     locates the Review-tab chat-config picker by its existing label/row markup and intercepts the per-scene generate POST
+     to assert the picked name is carried. No product markup was added for the test.
+130. ⚠ **PF-15a scope:** `decorator.js` picker double-click now treats only `auth.group` as a navigable folder (both the
+     tabular row and the grid item); `am7model.isGroup` is true for every `data.directory`-derived record, so the old test
+     navigated into notes/data/people instead of selecting them. `am7model.isParent` was not used — nothing else in the
+     picker tree is navigable today, and `auth.group` is the one type the picker's `ctl.down` knows how to enter.
+131. **`listControl.spec.js:207` ("ArrowRight in full viewer advances to next item") is a timing race in the viewer, not a
+     PF regression — left unfixed, proposed (§9.5).** Seen twice during the PF-3 proofs: run 1 (16-test file, `pw-pf3-breadcrumb.log`)
+     `Expected pattern: /^\s*2 \/ 10/  Received string: "2 / 15"`; alone, run 1 (`pw-pf3-listControl207-run1.log`) failed the
+     same way, run 2 (`pw-pf3-listControl207-run2.log`) `1 passed (5.6s)`. Mechanism from the code (not yet proven live):
+     `openItem` (`list.js:305-333`) → `update()` (`list.js:1345-1371`) → `pagination.updateList` (`pagination.js:313-335`) resets
+     the page set when `recordCount` changes from `defaultRecordCount = 10` to `defaultIconRecordCount = 40` (`list.js:86-87`),
+     and the viewer's counter (`imageViewer.js:222`, `(idx+1)+' / '+images.length`) reads whichever list is loaded when the
+     assertion fires. The PF-3 breadcrumb change does not touch any of this; the pre-PF-3 §4.5 gate had the same test green
+     and red in different runs.
+132. ⚠ **PF-15d — the litter was removed with per-chapter `DELETE /{bookObjectId}/reset` + `DELETE /series/{id}`, not by
+     fixing `deleteSeries`, and the new `afterAll` mirrors that two-step.** `DELETE /rest/olio/picture-book/series/{oid}`
+     500s on every wizard-built chaptered series (`{"error":"Chapter … could not be read as the olio principal"}`,
+     `PbSeriesUtil.deleteSeries` `:392-395` reads each chapter via `PbBookUtil.readBook(olioUser, …)` = `AccessPoint.find`
+     as the olio principal, which is `AUDIT DENY` on these `olio.pb.book` rows — owner 20 = olioUser, group
+     `/Olio/Universes/Books/Worlds/<slug>-chN/Book` owner 20 — while `e2etest_shared` reads them `AUDIT PERMIT` with the
+     same projection). That is a product defect outside the accepted set → **PF-16, proposed, not fixed** (§9.5); the
+     mechanism of the DENY is not established and is not stated. The REST-built series of `pictureBookSeriesDelete.spec.js`
+     (`POST /series` + `POST /chapter`, no `sourceData`) does not hit it — the visible difference, not a proven cause.
+     The cleanup ran as `e2etest_shared` only (no admin): 3 extraction checkpoints discarded, 7 `HarlotsEight-UX-*.docx`
+     `data.data` records deleted (incl. the orphan `mv5fm02g`), 6 series removed via 20 chapter resets (`reset: True`) + 6
+     series DELETEs (`{deleted:True, chapters:0}`); final survey `books total 18 | litter books 0 | litter checkpoints 0 |
+     litter docs 0` (`C:/tmp/pb-litter-cleanup.log`, `pb-litter-cleanup2-first.log`, `pb-litter-cleanup2-rest.log`).
+133. **Process record (2026-10-12 ~15:50).** While the PF-7 run was in flight I found a second Playwright `test-server` node
+     process beside the run's own three; Stephen: "You're running all of these so stop whichever". It is the VS Code
+     `ms-playwright.playwright` extension's server (parent `Code.exe --type=utility --utility-sub-type=node.mojom.NodeService`);
+     I stopped it (`Stop-Process`) and the extension respawned it at once (PID 60672). It is idle and runs nothing unless
+     triggered from Test Explorer; a lasting stop means disabling that extension in this window, which I have not done — his
+     call. `java.exe 23524` is the `redhat.java` language server, not a Maven run; no Maven ran during the batch.
+134. ⚠ **PF-8 — the charPerson find moved ahead of `resolveOlioContext` (`OlioService.reimageWithConfig`, now `:240-246`).**
+     The tabled fix was "move `:266-272` inside `if(a1 != null)`". I also moved the `find` + 404 ahead of
+     `resolveOlioContext(user, request)`, so an unknown or unreadable character answers 404 before any Olio context is
+     initialized. Why: with the context resolved first the 404 was unreachable on the Service7 H2 harness (no `datagen.path`,
+     no Olio seed, so `resolveOlioContext` fails before the find) and the contract test `TestOlioServiceReimageNotFound` could
+     not exist; and resolving a context for a request about to 404 was wasted work in production too. The existing-character
+     path is unchanged — same context resolution, same `resolveOwningBookContext`, same `generateSDImages` — proven by
+     `bugfix3-live.spec.js:211` with a real `.39` render (§9.3). The 404 body is JSON (`{"error":"Character not found or not
+     readable"}`) like the route's other refusals; "not readable" because `AccessPoint.find` returns null for both cases.
+135. ⚠ **PF-1 proven by the live Playwright spec only — no Service7 JUnit case.** `DELETE /rest/olio/world/{id}` needs a
+     PictureBook-built world; on the H2 harness a plain user cannot create `/Olio`, and `PictureBookUtil.reset` /
+     `cleanupWorld` NPE on a bare `olio.world` with no book, so a JUnit case would have to seed the whole PB footprint.
+     `worldDeleteBreadcrumb.spec.js:176` builds a real book through the REST routes, deletes the world and asserts
+     `{"deleted":true}` plus the world's absence — the defect exactly as reported. Recorded as the gap it is; the Service7
+     verifier may ask for the JUnit case.
+136. ⚠ **Deployed the ECJ-compiled class bytes, after `javap`.** The VS Code `redhat.java` language server recompiles
+     `target/classes` about a second after every save, ahead of Maven's staleness check, so `mvn -o -pl AccountManagerService7
+     compile` (`C:/tmp/mvn-service7-compile-pf2.log`, `BUILD SUCCESS`) left the JDT-written `OlioService.class` /
+     `WebAuthnService.class` in place — the exact bytes surefire ran 18/18. Verified with `javap -p -c -constants` (no
+     `Unresolved compilation`; the new `"Character not found or not readable"`, `parseDto` and `dtoString` constants present)
+     before `docker cp`; md5 local == container: `OlioService.class` `32b60578cd49cceb6f21b8dbebeac3ec`,
+     `WebAuthnService.class` `c15a4e7d3a00686d51aa589315355a2c`; `docker restart am7test-am7-1` 16:21.
+137. ⚠ **Service7 H2 fixture `am7/` corrupted by H2's close-time compaction; renamed, not deleted (§6.C 117 order).** The
+     first Service7 quick gate (16:28→16:32, `C:/tmp/verify-service7-pf.log`) was `VERIFY_FAILED`, `Tests run: 132, Failures:
+     0, Errors: 45`: the seven classes after `TestOlioServiceReimageNotFound` in surefire's (alphabetical) order —
+     `TestPbRenderPathRefusal` 7, `TestPictureBookRestContract` 18, `TestPrincipalProfileCache` 3, `TestResources` 3,
+     `TestSchemaService` 7, `TestUserPrincipalIdentity` 3, `TestWebAuthnServiceDto` 4 — every one at
+     `BaseTest.resetIO:82` (`ioContext` null because `IOSystem.open` threw `Failed to establish database connection`); the 13
+     classes before them, `TestOlioServiceReimageNotFound` 1/1 included, passed. A single-class re-run
+     (`C:/tmp/mvn-service7-pf8-order.log`) showed the cause: `File corrupted while reading record: ".../am7/h2.mv.db" [90030-232]`,
+     then `File is corrupted - unable to recover a valid set of chunks [2.3.232/6]`. `h2.trace.db`: `MVStoreException:
+     java.lang.AssertionError [2.3.232/3]` ← `RandomAccessStore.moveChunkInside:630` ← `compactMoveChunks` ←
+     `OnExitDatabaseCloser.onShutdown:85` — H2 2.3.232's move-chunks compaction inside its JVM-exit shutdown hook, which
+     `<reuseForks>false</reuseForks>` runs once per test class. It threw at 09:16:03 and 09:17:24 (before any of today's edits),
+     at 16:19:02 (during the green 18/18 run) and at 16:31:38 — the exit of the JVM before `TestPbRenderPathRefusal`, i.e.
+     `TestOlioServiceReimageNotFound`'s, the one that left the file unrecoverable; the fresh fixture's trace already shows two
+     more (16:40:01 after `TestFeatureConfigService`, 16:41:22 after `TestResources`) in the green gate. The trigger is the hook,
+     not a class: the two new classes start no threads and register no hooks and both passed in every run; which exit kills the
+     file is the luck of the chunk layout. Repair, ⚠ MY JUDGMENT under §6.C 117 (the module-local gitignored fixture "is mine";
+     sanctioned path first, destructive last and reversible; never delete, never raw-SQL): `mv am7 am7.corrupt-2026-10-12-1632`
+     (kept — untracked, outside the `.gitignore` pattern, keep out of any staging), gate re-run 16:38→16:41 → `VERIFY_OK`
+     (`C:/tmp/verify-service7-pf-2.log`), `am7/` self-provisioned by `BaseTest` (`/System`, `/Development`, `/Public`; orgs 4/5 by
+     their own classes). `am7.stale-2026-10-12/` from the P1-12 rename (§8.12) no longer exists on disk — not mine, not
+     recreated. Mitigation NOT applied (test infra, Stephen's call, §9.5): `;MAX_COMPACT_TIME=0` or `;AUTO_COMPACT_FILL_RATE=0`
+     on the `BaseTest` H2 URL — both are H2 2.3.232 `DbSettings` (checked in the jar) and either disables the close-time
+     move-chunks pass.
+138. ⚠ **PF-9 proven on one executor (LANDSCAPE) as the representative of the four.** The accepted fix touches `executeLandscape`,
+     `executePromptNode`, `executeReferenceStrip` and `executeComposite`; all four now end in the identical two lines
+     (`downstreamOf` + `completeNode(g, node, DONE_UNVERIFIED)`), confirmed by `javap` (6 `completeNode` sites, 0
+     `markStaleDownstream`). The restored case (`TestPbRenderJob.case11`, §9.4) drives the landscape path live through the job;
+     the other three are covered by compile + bytecode inspection only — a reference strip and a composite need multi-node
+     fixtures with rendered upstream portraits (two or more extra SD renders each), and a prompt node needs an LLM call. The
+     case is on the shared plain-PB fixture book (`pb2c-graph`) with autoApprove asserted off as a precondition (the switch rests
+     off; a non-degraded render with it on would auto-approve → pin → forced 409 "(0 reused, 1 pinned)"), and it leaves its
+     scene, node and two artifacts behind on that book as every other case in the class does. The verifier may ask for the
+     other three paths.
+139. ⚠ **`completeNode` swallows its own exceptions — inherited, unchanged.** `PbPipelineUtil.completeNode` (`:728-746`) wraps
+     the re-read / hash / status / stamp / mark-stale sequence in a catch that logs a WARN and continues, so a failed hash or
+     stamp leaves a DONE_UNVERIFIED node without an `inputHash` and the planner treats it as not current (the pre-fix behaviour,
+     now for that one node only). The portrait and ChapBook-page closings have always had this property; the four executors
+     now share it rather than the bare `persistStatus`. Not changed — outside PF-9, and the portrait/page precedent is
+     Stephen's.
+140. ⚠ **Objects7 module quick gate NOT run; no REST-level plain-PB Playwright proof; PF-9 recorded LANDED, not DONE.**
+     `LOOP_MODULE=AccountManagerObjects7 bash .claude/loop/verify.sh --quick` runs the whole Objects7 suite (902 tests on
+     2026-10-10, ~2 h per §4.4 — "20+ min" here was my understatement, corrected 20:20 — with the LLM and SD classes), which is
+     "more than a few minutes" and so is asked for, not launched;
+     the §9.1 legend's LANDED (code in tree, built, deployed, proof green live) holds without it, DONE needs it plus the verifier.
+     The deployed jar is verified by md5 (local == container `416f5714…`), `docker restart` and the 17:15:21 probe; no
+     Playwright spec exercises the plain-PB render route un-forced then forced against the Docker stack —
+     `pictureBookV3Ux.spec.js` 1b does exactly that shape but on a CHAPBOOK fixture, whose LANDSCAPE node is dispatched to
+     `executeChapBookPage` (`PbNodeExecutor.java:425`), the closing that was already correct. A plain-PB variant (bookType
+     STORY fixture — the enum is `UNKNOWN`/`STORY`/`CHAPBOOK`, there is no PICTUREBOOK value; two `.39` renders, ~2 min,
+     `PB_SD_TESTS=1`) would prove the deployed bytes through REST; offered, not written. **Resolved 20:13:** Stephen answered
+     "Yes, write and run it" (17:25) — `pictureBookV3PlainPb.spec.js` `4 passed (1.1m)`, §9.4.1 / 141 below; the quick gate was
+     approved in the same answer and runs after the verifiers (§4.4 when it lands).
+141. ✓ **PF-9 REST-level plain-PB proof written and run on Stephen's answer; two ⚠ fixture choices inside it.** Per the 17:25
+     answer ("Yes, write and run it"): new `e2e/pictureBookV3PlainPb.spec.js`, `PB_SD_TESTS=1`, Docker stack, `e2etest_shared`,
+     `4 passed (1.1m)` (`C:/tmp/pw-pf9-rest.log`, §9.4.1). ⚠ (a) No non-LLM REST route creates a workflow, scene or node for a
+     STORY book (`/chapter` makes the book + world + groups only; `GET /{book}/workflow` is 404 `This book has no workflow yet -
+     generate a scene first`; scene generation is the LLM path), so the spec seeds `olio.pb.workflow` (Workflow group),
+     `olio.pb.scene` (Book group, hand-written `sdPrompt`) and one LANDSCAPE `olio.pb.node` over `POST /rest/model` as
+     `e2etest_shared`, then `PATCH`es `scene.sceneNode` — the same shape `TestPbRenderJob`'s fixture builds in Java, now proven
+     writable through REST by the shared user into groups the olio user created (`BookWorldInitializationRule.java:95-102`).
+     ⚠ (b) The Workflow group is located by an `auth.group` search (`name = 'Workflow'`, `parentId` = the Book group's
+     `parentId`, `organizationId`) rather than `GET /rest/path/find/auth.group/…/B64-<path>`: `PathService`'s route regex
+     `[@\.~\/%\sa-zA-Z_0-9\-]+` excludes `+`, so a base64 path containing `+` would 404 — the search has no such gap. Neither
+     choice touches product code. The spec asserts `bookType === 'STORY'` on the `/chapter` book (via `/full`) so a change to
+     what `/chapter` stamps fails loudly instead of silently proving the ChapBook path again.
+142. ⚠ **PF-5 security review FAIL (20:27): the parse fix makes a pre-existing, never-verified passkey login live — STOPPED,
+     asked.** Verified by reading `WebAuthnService.java:233-325` myself, not from the report: `completeAuthentication` reads
+     `authenticatorData` and `signature` (`:252-253`) and never uses them; the only check before the credential lookup is
+     `clientDataStr.contains(storedChallenge)` (`:262-265` — `contains`, not equality; no `type == "webauthn.get"`, no origin, no
+     `rpIdHash`, no user-presence flag); the counter is incremented blindly (`:295-298`) and a one-week JWT is minted for the
+     credential's owner (`:306`). `GET /auth?user=<path>` (`:192-227`, pre-auth by design) returns that user's `credentialId`s and
+     seeds the session challenge. So, with PF-5 deployed, anyone who can reach the stack signs in as any passkey user: fetch the
+     ids, post `{credentialId, clientDataJSON: b64url('{"challenge":"<c>"}'), authenticatorData: anything, signature: anything}`.
+     Before PF-5 that code was unreachable — every body parsed to null → 400 (the defect PF-5 fixed) — so the logic is
+     pre-existing but the exposure is new, and my `TestWebAuthnServiceDto.TestAuthenticationAcceptsTheBrowserDto` (`:207-230`)
+     proves exactly that a garbage signature reaches the lookup. I did not read `:260-320` when fixing the parse; the review
+     did. Client facts for the fix: `am7client.js:813` posts `publicKey` = `credential.response.getPublicKey()` (SPKI DER,
+     base64url), `:826-850` posts the assertion's `clientDataJSON`/`authenticatorData`/`signature`; `webauthn.spec.js` never
+     exercises `POST /auth` (registration only, `:172`), so no E2E proves login. **Nothing changed; the Docker test stack
+     (`am7test-am7-1`, `:9443`) still runs the PF-5 bytes deployed 16:4x** — flagged, not redeployed (the Ux752 verifier's
+     Playwright runs are on it). Options put to Stephen: (1) implement real assertion verification (ES256/RS256 over
+     `authenticatorData || SHA-256(clientDataJSON)` with the stored SPKI key; `type`, challenge equality, origin, `rpIdHash`, UP
+     flag, counter) + JUnit with a generated keypair + Playwright login through the virtual authenticator — a new row; (2) gate
+     now: `completeAuthentication` refuses to issue a JWT until (1) lands (register/list/delete keep working), redeploy, update
+     the JUnit; (3) revert the auth-side parse only. Also from the review, pre-existing, recorded in §9.5: `credentialId`
+     unescaped into hand-built JSON (`:87`, `:184`, `:212`); `organizationPath` dead (`:313`, the `:311` comment claims a session
+     login that does not happen); `findCredentialById` (`:390-392`) not org-scoped though uniqueness is per-org; `rpId`/origin
+     hard-coded `localhost` (`:93`, `:161`, `:221`); register-side `Base64.getUrlDecoder().decode(publicKeyB64)` (`:159`) throws
+     `IllegalArgumentException` outside the `:186` catch → 500 (authenticated caller only, challenge already burned).
+143. ✓/⚠ **2026-10-13 08:40 — Stephen's answer on PF-5: "Implement assertion verification" (option 1).** Taken as a new §9.1 row
+     PF-5b. Four defaults made while acting on the two module verifier reports (both PASS-WITH-NOTES, §9.2.1 / §9.3.2; every
+     count re-read from the logs, every cited line re-read in the file):
+     (a) ⚠ **PF-1 re-find hole — fixing it inside PF-1.** The Service7 verifier is right (confirmed at `OlioService.java:776-783`,
+     `PbDeleteUtil.java:127-133`, `PbOlioContextUtil.java:262`): my PF-1 recheck re-finds the world **as the request user**
+     after `deleteBookComplete` has already removed the per-book Writer/Admin roles (step 2) — if the footprint teardown (step 3)
+     then fails, the user's re-find denies-as-miss and the route answers `{"deleted":true}` for a world that still exists, and
+     the old `WorldUtil.deleteWorld(deleteAs, …)` second chance never runs. Fix: re-find **as `deleteAs`** (the olio principal —
+     the owner of every Books-universe world, so its read does not depend on the roles step 2 removed), scoped to the Books
+     path, and log the discarded `DeleteResult.reason` when `reset` reports `deleted=false`. This is the fix I wrote, so it is
+     mine to close; it is not a new task. The step-3-fails branch cannot be induced live without breaking a fixture, so the proof
+     is the H2 JUnit (new) plus the happy-path `worldDeleteBreadcrumb.spec.js` re-run after redeploy — stated as such in §9.3.
+     (b) ⚠ **PF-15b side effect — hardening `saveConfig`.** With the client `olio.sd.config` now inheriting `data.directory`,
+     `am7model.newPrimitive('olio.sd.config')` seeds `name:null, groupId:0, organizationId:0, groupPath, ownerId:0` (+ empty
+     lists). `sdConfig.js saveConfig` (`:224-245`) copies every non-`SAVE_EXCLUDE` key **after** setting `obj.name/groupId/
+     groupPath`, and `SAVE_EXCLUDE` (`:77`) excludes only `narration,id,objectId,ownerId` — so on the sites that do not strip
+     `SD_CONFIG_IDENTITY` (`reimage.js:124`, `reimageApparel.js:24`, `chat/imageTokens.js:169`, `cardGame/…/artPipeline.js:257`)
+     a `newPrimitive` fallback entity (template fetch failed) would now overwrite the target name/group with `null`/`0`. The
+     primary path already carries `name:null` from `/olio/randomImageConfig` (verifier's live probe), so the exposure is the
+     fallback only, but it is PF-15b's. Fix: add `name, groupId, organizationId, groupPath, organizationPath` to `SAVE_EXCLUDE`
+     (`saveConfig` sets name/group from its own arguments; `APPLY_EXCLUDE` already lists them) + Vitest proving a
+     `newPrimitive` config saves under the given name/group. One-line product change, flagged.
+     (c) ✓ **PF-15a behaviour change accepted as is.** Picker double-click now descends only for `auth.group`; a picker listing
+     `isParent` types (e.g. `olio.world`) no longer descends on double-click — it selects, which is what a picker is for. Toolbar
+     navigation (`list.js:1142`) and non-picker `navigateDown` (`list.js:608-612`) are unchanged. Recorded, not reverted.
+     (d) ⚠ **Ordering.** The §4.6 full Ux752 re-gate (~2 h, Playwright slot, hits the stack) runs **now**, after (b) is built and
+     copied into the container, and **in parallel** with the PF-1(a)/PF-5b Service7 work on the Maven slot (compile + JUnit on
+     H2 only — no LLM, no Playwright, no redeploy while the gate runs). Rationale: PF-5b touches only `completeAuthentication`,
+     which no Ux752 spec calls, so the gate's verdict on the Ux752 bytes is unaffected; after the gate ends the Service7 WAR is
+     redeployed and the PF-1/PF-5b Playwright proofs run alone, then the Objects7 verifier and the ~2 h Objects7 quick gate (LLM
+     rule: never beside the Ux752 gate). If Stephen wants the full re-gate repeated after the Service7 redeploy, say so.
+144. ✓/⚠ **2026-10-13 08:48 → 09:25 — the two verifier notes closed at code level (§9.2.2, §9.3.3); §4.6 run 2 launched.**
+     ✓ The §4.6 full Ux752 re-gate run 2 started 08:48:11 after the PF-15b dist copy and the 08:46:39 probe (§3), as approved
+     17:25 and ordered in 143d; the Service7 work since then is H2-only. Three defaults inside the slice:
+     (a) ⚠ **PF-1 recheck requires "gone" for BOTH principals, not only `deleteAs`.** 143a said "re-find as `deleteAs`". The
+     landed rule (`OlioService.java:786`) is `bookWorld && worldGone(deleteAs) && worldGone(user)`: the olio re-find is the one
+     that does not depend on the roles `reset` step 2 removed, and the user re-find is kept so the route can never report
+     `deleted:true` for a world the request user still reads. It is also by objectId + `organizationId`, cache off, rather than
+     "scoped to the Books path" — the identity find is exact, and a Books-path scope would have re-introduced the misplaced-
+     world blind spot the second H2 case guards. Strictly more conservative than 143a; one `find` more per delete.
+     (b) ⚠ **Fixture shape: production bootstrap mirrored, olio-owned worlds, admin used for fixture only.** The H2 fixture
+     creates `/Olio` as the org admin and grants `olioUser` `Read/Update/Create` (`DATA`+`GROUP`) exactly as
+     `OlioContext.configureEnvironment` `:798-810` does, then creates every world as `olioUser`. The first draft also deleted
+     a **user-owned** world and got `{deleted=false}`: the route deletes as the olio principal whenever it exists (`:747`),
+     and olio is `AUDIT DENY`'d on a user-owned world. Every production world is olio-created (`OlioContext.java:854/867`,
+     `WorldUtil.java:472/477`), so I dropped that case as not-a-product-scenario rather than change the route's `deleteAs`
+     choice. If a user-created world IS a scenario Stephen wants `DELETE /rest/olio/world/{id}` to handle, the route needs
+     `deleteAs = owner` and the case comes back — say so. The admin is the asserting principal nowhere; the route is always
+     called as `deleteworlduser` (a fresh H2 user; no shared-stack user is involved on H2).
+     (c) ⚠ **Red proof by a temporary product edit, reverted.** HEAD never had the recheck, so "red" was produced by
+     `if (false && bookWorld …)` for one run (`C:/tmp/mvn-pf1a-deleteworld-red.log`), restored immediately
+     (`grep -c RED-PROOF` = 0, diff re-read). Same technique as the PF-9 red proof; stated so nobody takes the red log as a
+     second code state.
+
+145. ✓/⚠ **2026-10-13 09:26 → 10:20 — §4.6 run 2 triage: read-only, nothing fixed, four candidate test fixes NOT applied.**
+     ✓ Triage as approved 17:25 (the re-gate was one of the launches; triaging its reds is part of reporting it). Defaults:
+     (a) ⚠ **One temporary diagnostic Playwright spec was created, run once and deleted** (`e2e/zz_tmp_diag/chatDeleteE2E.spec.js`,
+     placed under a `zz_tmp_diag` dir so the `chromium-vite` name list matched it; log
+     `C:/tmp/pw-run2-triage-chatDeleteE2E-diag.log`; its screenshot deleted with it). It created a chat session `DiagDel-mv6sw90u`
+     as `e2etest_shared`, which I removed through REST afterwards. This is test-only instrumentation outside the product
+     (`feedback-test-only-instrumentation`); it was the fastest way to tell "the PF-2 UI is broken" from "the locator is wrong",
+     and it showed the latter. No product file was touched.
+     (b) ⚠ **Read-only checks as `e2etest_shared` and against the stack DB.** `POST /rest/login` (session cookie) →
+     `GET /rest/olio/picture-book/extract-checkpoints` → `GET /rest/olio/picture-book/health` (timed) → logout; `psql` reads on
+     `am7-pg`/`am72db` (`a7_data_note_0_1`, `a7_olio_pb_book_0_1`) and `grep` of the in-container Tomcat log. No write, no DDL,
+     no admin principal.
+     (c) ⚠ **Four candidate test fixes identified and NOT applied** (P1-12 test repair is STOPPED, §6.C 126; they are listed so
+     Stephen can accept them as one batch): (1) `chatDeleteE2E.spec.js` — select the sidebar row with
+     `page.locator('div.cursor-pointer.group').filter({ hasText: sessionName }).first()` instead of
+     `page.locator('div').filter({ hasText: sessionName }).last()`; (2) `chatLabelBleed.spec.js` — clear the server-side
+     `olio.llm.chatRequest` list cache (or reload the sidebar with `cache:false`) after the two REST session creations before
+     asserting the sidebar; (3) `pictureBookLive.spec.js` B.3 `:364` and J.4 `:1632` — `test.skip(!PB_LLM || !bookObjectId,
+     NO_SCENES_REASON)` so the two tests that need a book skip with the rest when `PB_LLM_TESTS` is unset (they were left on the
+     `!workObjectId` gate by P1-12 group 4, §6.C 123a — **my omission in that slice**); (4) `pictureBookCheckpoints.spec.js:327` —
+     guard the `scrollIntoViewIfNeeded` on `count() > 0` or give it a short `timeout`, since `e2etest_shared` has no leftover
+     checkpoints any more and the `.catch` cannot pre-empt the 120 s test timeout.
+     (d) ⚠ **`pictureBookSeriesDelete:136` re-classified away from PF-16.** My first reading (before the trace network was read)
+     had put it next to PF-16; the trace shows `DELETE /series/{id}` → 200 in 4.5 s and the DB has no row for either series —
+     it is the `GET /books` refresh (10.4 s for the shared user's ~350 books) outrunning the 15 s assertion. PF-16 (the 500 on
+     wizard-built series) is unchanged and still proposed.
+     (e) ⚠ **No serial re-run of the ten.** Each red is attributed from artefacts that cannot change on re-run (code, DB rows,
+     server log, measured latencies); a `--workers=1` re-run would cost ~40 min of the only Playwright slot and would not add
+     evidence for any of the ten (the two scale reds and the two gating reds are deterministic; the cache and locator reds were
+     reproduced from the traces of both attempts).
+     (f) ⚠ **Two proposals recorded for Stephen, not worked** (§9.5): a Playwright reporter (`reporter: [['list'], ['json',
+     { outputFile: 'e2e/results/report.json' }]]`) so the `[e2e-llm]` line, the skipped list and per-test durations survive a
+     gate run — twice now the triage had to reconstruct them from traces; and the `e2etest_shared` e2e-litter / health-scale
+     problem (`/health` 26–70 s, `/heal` > 120 s, `/books` 10 s), which is the single cause of reds 3 and 6 and will recur on
+     every gate until the litter is cleaned or the health audit is bounded.
+     (g) ⚠ **The 08:46:39 §3 paragraph promised the `[e2e-llm]` lines "with its triage in §4.6"; they are not recoverable** (the
+     gate deletes its phase logs). Corrected in the 09:51:47 §3 block and stated in §4.6 rather than silently dropped.
+146. ✓/⚠ **2026-10-13 10:44 → 11:22 — PF-5b/PF-5c (passkey assertion verification, session login, list cache), §9.3.5.**
+     Stephen's 08:40 answer ("Implement assertion verification", §6.C 143) fixed the scope; the items below are how it was done.
+     (a) ⚠ **Verifier placed in Objects7 as `org.cote.accountmanager.security.WebAuthnUtil`**, not inside `WebAuthnService`:
+     pure parsing + JCA, no I/O, unit-testable without H2, keeps Service7 transport-only (architecture.md), reusable from
+     Console7. `WebAuthnService` keeps the lookup, counter write, JWT and session.
+     (b) ⚠ **Origin is compared by strict equality with the credential's stored `origin`** (the `Origin` header at
+     registration): a key registered at `https://localhost:9443` is refused through the `:8899` Vite proxy. Spec-correct and
+     stricter than before (no origin check existed at all).
+     (c) ⚠ **Registration now refuses an unparseable `publicKey` with 400 "Unsupported public key"** (before: whatever bytes
+     arrived were stored, and a malformed key 500'd on decode) and stores `algorithm` from the parsed key (`-7`/`-257`) rather
+     than the client's claim; it also checks `clientData.type == "webauthn.create"` and challenge **equality** (was `contains`).
+     The `TestWebAuthnServiceDto` fixture therefore carries a real SPKI key; `am7client.js:813`'s empty-`publicKey` fallback is
+     now a 400 instead of a silently useless row.
+     (d) ⚠ **Session established with `request.getSession(true); request.login(orgPath + "/${jwt}", jwt)`**, the JAAS path
+     `LoginService` uses, so the SPA continues on its session cookie; a `ServletException`/`IllegalStateException` is logged and
+     the 200 + JWT still returned (the token is valid on its own). Not fatal because `login()` on an already-authenticated
+     session throws (verifier finding 2, §9.3.5) and must not turn a correct verification into a 500.
+     (e) ⚠ **Generic 401 body `{"error":"Assertion verification failed"}`**; the reason (`signature`, `challenge`, `origin`,
+     `counter`, …) is logged server-side only: `WebAuthnService - WebAuthn assertion rejected for credential …: <reason>`.
+     (f) ⚠ **Counter persisted from the authenticator's value** (`assertion.counter`); a failed counter write is now a 500
+     "Failed to update credential" instead of a logged-and-ignored success — a replay window must not open silently.
+     (g) ⚠ **The DTO's `organizationPath` is kept only as the session-login fallback** when the owner record carries no
+     `organizationPath`; verifier and security-reviewer both flagged that this lets the client pick the JAAS org in that (today
+     unreachable) case — recorded in §9.5, not changed.
+     (h) ⚠ **`HttpServletRequestMock.login` records its arguments** instead of throwing, so the H2 JUnit can assert the JAAS
+     call shape (`login("/Development/${jwt}", <jwt>)`); the real JAAS login is proven by Playwright (`GET /principal/` on the
+     session cookie after the passkey), not JUnit.
+     (i) ⚠ **Deployed a javac-built Objects7 jar** whose `olio/picturebook` classes differ byte-wise from the ecj-built ones in
+     the previous container jar — sources identical (`git diff` clean for those files), only the compiler differs.
+     (j) ⚠ **`findStoredCredential` treats a missing `counter` as 0** (older rows); the first genuine assertion then sets it.
+     (k) ⚠ **PF-5c product fix applied without asking**: `q.setCache(false)` on the `/credentials` list query
+     (`WebAuthnService.java:411-417`). Found while writing the PF-5b second-key proof — `CacheDBSearch` keeps a non-empty
+     result for 6 min and `DBWriter` evicts on UPDATE only, never CREATE, so a second passkey was invisible to `GET /auth`
+     (`allowCredentials`) and the settings list until the TTL expired. One line, adjacent to PF-5, blocked the proof; red → green
+     in §9.3.5.
+     (l) ⚠ **`sig.js` fix applied without asking** (`views/sig.js:104-105`): `result.response === "AUTHENTICATED"` never
+     matched the wire value `"authenticated"` (enum — lowercase on the wire, the CLAUDE.md gotcha), so a verified passkey login
+     toasted "Passkey authentication failed" after the server had already issued the JWT and logged the session in. Found by the
+     11:01 Playwright run (§9.3.5 run 2); case-insensitive compare, no other client change.
+     (m) ⚠ **`purgePasskeysViaRest`** deletes every `PF-5*`-named passkey of the shared user at the start of the three new
+     tests, through the page session (`GET /credentials` + `DELETE /{id}`, owner-checked server-side at `:395-399`) — never admin.
+     (n) ⚠ **PF-5c registers the second key from a swapped virtual authenticator** (`authenticator.swap()`): the CDP
+     authenticator refuses a second `create()` for the same user on one device (`InvalidStateError` via `excludeCredentials`),
+     which is correct WebAuthn behaviour, not a product defect.
+     (o) ⚠ **Red-first for PF-5c by temporarily removing the one-line fix** (10:57; restored, `git diff` + md5 re-checked), and
+     **red-first for PF-5b by temporarily neutralising the `if (!assertion.verified)` branch** (11:20:49 → 11:21:07; restored,
+     `grep -c PF-5B-RED-FIRST` → 0, CR count 475 unchanged, class md5 back to `521c01cf…` == container). The PF-5b one was
+     added after the verifier PASS because `TestWebAuthnServiceAssertion` had been written against the fixed service and so had
+     never been red. Neither temporary edit reached the container. Both runs verbatim in §9.3.5.
+     (p) ⚠ **`createdDate` sort defect left unfixed** (scope): `getCredentialsForUser` sorts on `createdDate`, which lives in
+     `common.dateTime` and is not inherited by `auth.webauthnCredential`, so every list call logs `[ERROR] StatementUtil - Sort
+     field is not defined on model - createdDate` and the Passkey settings "Created" column (`features/webauthn.js:130`) shows
+     "—". Root-caused, recorded in §9.5, not changed.
+     (q) ⚠ **The verifier's five low findings and the security-reviewer's two MEDIUM hardening items are recorded in
+     §9.3.5/§9.5, not fixed** — all pre-existing shape or deliberate choices ((b), (d), (g)); your call on each.
+     (r) ✓ **Only one Maven run at a time, no LLM, no SD** — every JUnit and Playwright run of the slice was serial
+     (`tasklist` before each), and nothing in it touches `.42`/`.39`, so no `[LLM-GATE]`/`[e2e-llm]` line exists for it.
+
+147. ✓/⚠ **2026-10-13 11:37 → 11:52 — end-of-(A) hand-offs: three module verifiers (Stephen's 17:25 "Three module verifiers"),
+     gate copy refresh, Objects7 quick gate run 6 (Stephen's 17:25 "Objects7 quick gate").**
+     (a) ✓ **Three verifiers launched in parallel, one Maven slot**: the Objects7 verifier owned the only Maven run
+     (`-Dtest=TestPbRenderJob,TestPbNodeRun,TestWebAuthnUtil`, live `.39`, LLM through LiteLLM → container Ollama); the Service7
+     and Ux752 verifiers were briefed read-only (Ux752: one `npx vitest run`, node only). `tasklist` before and after showed only
+     `java.exe 23524`. Every claim in the three hand-backs that is recorded below was re-checked against the log, the surefire
+     XML, `javap`, `md5sum` or the PNG before being written down (agent reports are model output).
+     (b) ⚠ **Verdicts adopted as DONE for PF-1, PF-9, PF-15b** (§9.1): each verifier returned PASS-WITH-NOTES with no blocking
+     finding; the notes are recorded verbatim in §9.3.6 / §9.4.2 / §9.2.3 and the actionable ones in §9.5 — none acted on
+     (scope: no product fix outside the accepted PF rows without asking).
+     (c) ⚠ **Two §9.2.2 sentences corrected in place** on the Ux752 verifier's reading (marked `[corrected 2026-10-13 11:52]`):
+     "the four sites that hand a `newPrimitive` fallback to `saveConfig`" is two (`reimage.js`, `reimageApparel.js`;
+     `imageTokens.js` never calls `saveConfig`, `artPipeline.js` goes through `applyOverrides`), and "`APPLY_EXCLUDE` already
+     did" is 4 of 5 (`APPLY_EXCLUDE` lacks `name`; harmless now that `SAVE_EXCLUDE` strips it on the way out). The fix and the
+     proof are unchanged.
+     (d) ✓ **`o7verify` gate copy refreshed 11:41:34** (`src` + `pom.xml` recopied, `target/classes`, `test-classes`,
+     `surefire-reports`, `maven-status` removed, `am7`/`media` symlinks kept; `diff -rq` → 0, `cmp pom.xml` → same) so run 6 is on
+     the current tree incl. `WebAuthnUtil`/`TestWebAuthnUtil` and case11; **launched 11:47:25 only after the Objects7 verifier's
+     Maven JVM exited** (never two Maven runs). Result and the `size_vram` reading → §4.4 row 6 when it finishes (~2 h).
+     (e) ⚠ **Local `OlioService.class` md5 (`8617388a…`, JDT recompile 10:48:11) differs from the deployed `8c9b7f78…`** while
+     the source is unchanged since 09:16:31 — the deployed bytes are Maven's 10:14 compile of the same source (§9.3.4). Noted by
+     the Service7 verifier; not a redeploy trigger (the md5 rule compares the bytes that were copied, and `javap` of both shows
+     `worldGone` declared + invoked twice, `Unresolved compilation` 0).
+     (f) ✓ **Nothing fixed, nothing committed**; the four candidate §4.6 test fixes (§6.C 145), the §9.5 proposals and
+     Stephen's items stay as they were.
+148. ⚠ **2026-10-13 12:05 → 12:40 — Objects7 gate run 6 VOID under the WSL 3.0.3.0 update; Docker restart attempted and
+     DENIED; (B) read-only preparation during the gate.**
+     (a) ✓ **Run 6 recorded as VOID, not as 589 reds** (§4.4 row 6, §3 12:05:14 event block): the collapse is environmental
+     (`StopReason: WslUpdateReq` in Docker's backend log; the WSL Service was disabled, updated to 3.0.3.0 and reinstalled by
+     Windows at 12:05:14–12:06:16) and no test after 12:05 saw a database. The one real red that predates the outage
+     (`TestGameUtil.TestMoveTowardsPositionAcrossCells:964`, green in run 5, outside every PF diff) is recorded, not fixed
+     and not explained away — run 7 classifies it.
+     (b) ⚠ **Attempted `docker desktop restart` on my own judgment** under the standing "the Docker test stack is mine to
+     reset/repair" rule, reasoning that the engine was already down and nothing was running on it. **The permission classifier
+     denied it ("Interfere With Workloads")**, and the denial applies to the outcome: I will not restart the Docker engine
+     through any other route (`wsl --shutdown`, killing or relaunching `Docker Desktop.exe`, a sub-agent, a later turn).
+     Restarting Docker Desktop is Stephen's action; the `am7-devpg-emulator` + `am7test-*` + Ollama/LiteLLM/Langfuse
+     check, the `size_vram` re-read and the NAT→Consomme port-forwarding check (§3) follow once it is back.
+     (c) ✓ **Gate run 7 is required before any Objects7 result is claimed for (A)**: same copy (refreshed 11:41:34, `diff -rq`
+     0, no source change since), same command, ~2 h, launched only when `tasklist` shows no other Maven JVM.
+     (d) ⚠ **Read-only (B) preparation during the gate** — while run 6 held the Maven/DB/LLM slot I read every design section
+     the brief lists for Phase 2 (§4/§4.1, §12–§16, §18, §19, §24/§24.1, §26–§29, §31, §34, §36.1/§36.5, §37.3, §38–§38.2) and the
+     code the P2 planner briefs need (`SDUtil` default-model chain, `RestServiceEventListener`, `PbRenderPath`,
+     `SceneCompositeUtil`, `SdTestGate`, `Flux2Defaults`, `PbNodeExecutor`, `ChapBookService`/`ChapBookUtil` v1/v3 branches,
+     `TestKontextDeprecation`, `TestChapBookRestContract`, the `models/olio/pb/` set, the `olio.pb.book` schema). No agent was
+     launched, no file written, no §10 created: the brief says (B) starts after the launches are back and (A) is reported, and
+     run 6 is not back in any usable sense. Findings that shape the P2 plans and need a decision or an architect ruling, so
+     they are not lost: (i) `docker/web.xml.template:165` hardcodes `sd.model = juggernautXL_ragnarokBy.safetensors` while
+     `sd.default.model` (`:50`) is templated and empty — the "one model policy" resolver (P2-2/P2-3) has to say which of the
+     two is the deployment default; (ii) the callers that must share that policy are `ChatService.java:1425`, the five
+     `OlioService` `sd.model` reads (`:185, :294, :477, :551, :624`), `SDUtil.setDefaultModel` via
+     `RestServiceEventListener:330-337`, and the PB paths in `PbNodeExecutor` (`toSdUtil` :127, `executeLandscape` :473,
+     `executeComposite` :867, `executePortrait` :973, `executeChapBookPage` :577) plus `ChapBookService` (`sd.server.apiType`
+     + `ServerConfigUtil.getServerUrl`); (iii) §28.1 Stage 2 "ChapBook old path disabled" = the v1 branches inside
+     `ChapBookService.renderChapBook` (the `AsyncJobRegistry "cb.render"` wrapper and the sync `renderChapBookSummary` v1
+     loop, `ChapBookUtil:1633`) and `renderChapBookScene` → `renderResolvedSceneV1` (`:1924`) become unreachable, rollback
+     `chapbook.renderPath=v1` + restart; (iv) P2-8 flips `TestKontextDeprecation` `:143`/`:152` ("…StillResolvesToKontext")
+     to refusal and drops `MODE_KONTEXT` from `SceneCompositeUtil.SUPPORTED_MODES`/`isSupportedMode` (`:39`, `:52-55`) while
+     `resolveMode(…, legacyKontextDefault)` (`:87`) survives for Remove; (v) §34 still-open items 7 (default preset — DRAFT
+     recommended by the design, STANDARD by §29) and 14 (estimate source) need a ⚠ default each when P2-1/P2-4 are planned;
+     (vi) `SdxlCompiler` emits Swarm parameters this phase (§38.2 — Comfy graphs are Phase 5). None of these is acted on.
 
 ### 6.G Found in Slice C transport (P0-10c), left alone under scope discipline — your call on each
 
@@ -8289,7 +9085,7 @@ first …"}`; rev 2 after unpin + prompt edit; review queue `artifactCount 2`; a
         force check (`:441`), force applies to terminals only. Route still `@RolesAllowed({"admin","user"})`, transport only; no
         debug output / commented code / removed assertions in any diff.
       - Non-blocking observations (→ §6.C 111): (1) every live proof of "current → 409 → forced 202 → pin wins" is on a ChapBook-typed
-        book — on a PICTUREBOOK-typed book a LANDSCAPE node never carries `inputHash` (§8.9 gap), so the fix is behaviourally a no-op
+        book — on a PICTUREBOOK-typed [sic: `STORY`] book a LANDSCAPE node never carries `inputHash` (§8.9 gap), so the fix is behaviourally a no-op
         there and the pin-loss scenario was only ever reachable on ChapBook pages and PORTRAIT nodes; the reader code path is
         identical regardless of `bookType`, and §6.C 109 states it; (2) `TestAsyncRenderRoutesTakeNoBody` is reflection-only — the
         live Jersey pass-through is covered by Playwright, not Service7, and a wrong `@DefaultValue` would not be caught there;
@@ -8657,3 +9453,1012 @@ group 4 13/15 green + 2 product reds (§6.C 122a/b) + 3 SD tests repaired-not-ru
 reimage, `bugfix3-live` reimage, `workflowRuntime:222`); `explorer.spec.js` as `e2etest_explorer`; the suite-wide `waitForFunction`
 sweep (74 sites / 28 files); re-recording `harlots-eight`; the §6.A / §6.G 4 / Olio-User items; the product defects in §6.C 120,
 122, 125; the two new env flags (`E2E_SD_LIVE`, `PB_LLM_TESTS`) and the untracked `e2e/media/faceTest.jpg`.
+---
+
+## 9. Phase 1 follow-ups — product defects (2026-10-12, from 14:40 local)
+
+**Brief.** Stephen's single brief has two jobs in order: **(A)** fix the product defects surfaced by P1-12 — one table
+(defect, file:line, proposed fix, proof, blast radius), he picks, each accepted fix becomes its own row here with the
+previously-red test turned green as proof, root cause not assertion, redeploy + re-prove live after every Service7/Objects7
+fix; then **ask** before the §4.6 full Ux752 re-gate and the verifier hand-off — and **(B)** Phase 2 (§10, not started;
+does not start until (A) is closed or Stephen has explicitly deferred the remainder). Standing rules as in §7.
+
+**Decision (Stephen, AskUserQuestion, 2026-10-12 ~14:55):** take all four offered groups — *Ux752 client: PF-2, 3, 4, 6, 7*;
+*Service7: PF-1, 5, 8*; *Objects7: PF-9 (all four executors)*; *PF-15a/b/d: picker dblclick, modelDef inherits, test
+litter*. No decision on the propose-only rows PF-10, 11, 12, 13, 14 and PF-15c → §9.5.
+
+**Premise corrections found while reading, before the table (facts, not design changes):**
+- **PF-8** — the NPE trigger is `a1 == null` (not-found *or* PBAC-denied `planMost` read), not "no `profile.portrait`": a null
+  `profile` already returns null through `BaseRecord.getEmbedded`.
+- **PF-9** — wider than `executeLandscape`: `executePromptNode` (`:681`), `executeReferenceStrip` (`:776`) and `executeComposite`
+  (`:905`) close with the same bare `markStaleDownstream + persistStatus` and never stamp `inputHash`; only portrait (`:1022`)
+  and the ChapBook page (`:634`) use `PbPipelineUtil.completeNode`. Stephen's pick names all four.
+- **PF-15e dropped** — `chat.js:985-1020` is documented intent ("allow typing while streaming, will interrupt" + Stop button);
+  `SceneGenerator.js:118-153` already POSTs a full `olio.sd.config` built from `/olio/randomImageConfig` (KI-65 resolved
+  2026-10-07); the `chat.js:133-137` note had no stated symptom (doPeek replaces local history with the server's).
+
+### 9.1 Task rows
+
+State legend: **LANDED** = code in the working tree, built, deployed to `am7test-am7-1`, proof test green live; **DONE** needs
+the module verifier PASS on top (not yet launched — asked for at the end of (A), §6.C 127b); **PENDING** = not started;
+**PROPOSED** = awaiting Stephen (§9.5).
+
+| Id | Defect | file:line | Fix | Proof (verbatim in §9.2–§9.4) | Blast radius | State |
+|---|---|---|---|---|---|---|
+| PF-1 | `deleted:false` after a world that WAS deleted | Service7 `OlioService.java:760-776` (recheck now `:782-788` + `worldGone` `:795-800`) | after `PictureBookUtil.reset`, re-find the world by objectId cache-off as **both** `deleteAs` (the olio principal) **and** the request user; gone for both ⇒ `deleted=true`; otherwise fall through to `WorldUtil.deleteWorld(deleteAs, …)`; `reset`'s discarded `DeleteResult.reason`/`steps` now logged (`:764-767`) | live: `worldDeleteBreadcrumb.spec.js:176` `ok` — `3 passed (26.5s)`, `Test 1 DELETE status=200 body={"deleted":true}` (pre-refinement bytes, §6.C 135); **new H2 JUnit `TestOlioServiceDeleteWorld` 4/4** — red with the recheck disabled: `deleteWorld must report deleted:true for a book world (PF-1): {deleted=false} expected:<true> but was:<false>` (`C:/tmp/mvn-pf1a-deleteworld-red.log`), green `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 27.75 s` in the 16/16 Service7 H2 run (`C:/tmp/mvn-pf1a-deleteworld-green.log`, §9.3.3) | `DELETE /rest/olio/world/{id}` response only | **LANDED (live)** — class redeployed 10:14:54 (md5 equal) and `worldDeleteBreadcrumb.spec.js` `3 passed (37.2s)` with both re-finds visible in the server log (§9.3.4); **DONE** — Service7 verifier re-read PASS-WITH-NOTES 2026-10-13 11:39 → 11:43 (§9.3.6, §6.C 147b) |
+| PF-2 | New chat session not current after create | Ux752 `features/chat.js:1213-1216` | `pickSession(req)` → `ConversationManager.selectSession(req)` (records `selectedObjectId`, which the toolbar title and sidebar highlight read) | `chat.spec.js:109` `ok` — `7 passed (37.7s)` | chat create flow | DONE (verifier PASS 20:25, §9.2.1) |
+| PF-3 | Breadcrumb stale after a segment click (NavGuard swallows the post-fetch redraw) | `components/breadcrumb.js` (`contextVersion`, `_resolveContext`), `router.js` NavGuard (`_navCrumbVersion`) | monotonic `contextVersion` bumped at the five context-resolution branches, exposed as `breadCrumb.contextVersion()`, compared in `NavGuard.onbeforeupdate` beside route/hide/crumbVisible | `listControl.spec.js:452` `ok`, `breadcrumb.spec.js:100` `ok` — `15 passed` of 16 (the one red is `:207`, §6.C 131) | one redraw per breadcrumb context fetch; perf guard otherwise unchanged | DONE (verifier PASS 20:27, §9.2.1) |
+| PF-4 | Export-tab foreign-summary hrefs `about:blank` | `components/formFieldRenderers.js:703` | `modelKey = fk[am7model.jsonModelKey] \|\| (ctx.field && ctx.field.baseModel)` (nested records in a `/full` response omit the schema key) | `objectLinkFix.spec.js:125` `ok` — `2 passed (5.7s)` | foreign-summary renderer | DONE (verifier PASS 20:26, §9.2.1) |
+| PF-5 | WebAuthn register/auth always 400 (client posts no `schema`) | Service7 `WebAuthnService.java:131,245` (+ `parseDto`/`dtoString` `:423-434`) | parse the two DTOs as `Map` via `JSONUtil.importObject(json, Map.class)`; client untouched; **security-reviewer FAIL 20:27 (§6.C 142, §9.3.1): the now-reachable `completeAuthentication` never verifies the assertion signature** | new `TestWebAuthnServiceDto` 4/4 on H2 (register 200 → row → list → delete 200 → gone; 400/401 refusals) + `webauthn.spec.js:172` `ok` — `13 passed (8.4s)`; no proof of the login path exists | the two WebAuthn POSTs — and, as landed, **sign-in as any passkey user without the key** | **BLOCKED → superseded by PF-5b** (Stephen 2026-10-13: implement assertion verification, §6.C 143) — **closed by PF-5b/PF-5c, §9.3.5** |
+| PF-5b | `completeAuthentication` never verifies the passkey assertion — with PF-5's parse live, any known `credentialId` + the session challenge in `clientDataJSON` mints a one-week JWT (§6.C 142, §9.3.1) | Service7 `WebAuthnService.java:229-324` | verify `signature` (ES256/RS256 from the stored SPKI `publicKey`) over `authenticatorData ‖ SHA-256(clientDataJSON)`; `clientDataJSON.type == "webauthn.get"`, challenge **equality**, origin, `rpIdHash`, UP flag, monotonic counter; refuse the JWT otherwise | new Objects7 `TestWebAuthnUtil` 8/8 (generated ES256 + RS256 keys, real `Signature`); new Service7 `TestWebAuthnServiceAssertion` on H2 **red 2/5 → green 5/5** (genuine ES256/RS256 → 200 + JWT + `login("/Development/${jwt}", jwt)`; wrong key / tampered clientData / tampered authenticatorData / `webauthn.create` / wrong origin / wrong rpId / no UP / other challenge / garbage signature → 401 with the counter untouched; replay same/lower counter → 401, higher accepted; bad key / wrong type at registration → 400); `webauthn.spec.js:350` real CDP virtual-authenticator login → `#!/main`, `GET /principal/` = shared user, counter > 0, replay 401; `:450` forged assertion 401 — `16 passed (13.5s)`; Service7 gate `VERIFY_OK` 142/0/0/0; verifier PASS; security-reviewer PASS | passkey sign-in | **DONE — LANDED (live) 2026-10-13 11:14 (§9.3.5, §6.C 146)** |
+| PF-5c | A second passkey is invisible to `GET /credentials` and to `GET /auth`'s `allowCredentials` for up to 6 min after registration — `CacheDBSearch` caches the non-empty list and `DBWriter` evicts on UPDATE only, never CREATE (found 2026-10-13 10:5x writing the PF-5b second-key proof) | Service7 `WebAuthnService.java:411-417` (`getCredentialsForUser`) | `q.setCache(false)` on the list query (§6.C 146 (k)) | `TestWebAuthnServiceDto.TestSecondRegistrationIsListedAndAllowedImmediately` **red → green** (`second key must be listed immediately after registration, got [Zmlyc3Qt…]` → 5/5); `webauthn.spec.js:506` second key from a swapped virtual authenticator listed + offered immediately — `ok 9` | registering a second device | **DONE — LANDED (live) 2026-10-13 11:14 (§9.3.5)** |
+| PF-6 | Per-scene Regenerate/Re-render ignore both chat-config pickers | `features/chapBook.js:3729`, `:3838` | `effectiveChatConfigName() \|\| await fetchDefaultChatConfigName()` (what `regenerateScenePrompt`/`analyzeScene` already do) | new `chapBookLlmUnavailable.spec.js:315` `ok` — `4 passed (2.5m)` | ChapBook per-scene render | DONE (verifier PASS on the 16:xx log — not re-run, SD; §9.2.1) |
+| PF-7 | PB resume path: (a) no chat-config picker on Step 4; (b) "finished with problems" headline when none remain | `workflows/pictureBook.js` (`openChatConfigPicker`, `chatConfigLabel`, Step-4 `data-pb-step4-chatconfig` row, `chapterSummaryState`, `data-pb-chapter-summary-clean`) | (a) Step-4 picker bound to the shared `chatConfigRef`; (b) pure `chapterSummaryState(s)` → green "Extraction finished: N of N chapters saved." when `!cancelled && !missing && !problems` (§6.C 128) | (b) Vitest `pictureBookExtractState.test.js:1188` — `2 passed (2)` files / `44 passed (44)`; (a)+(b) gated `pictureBookChapteredManuscriptUx.spec.js:320` on `.42` — `1 passed (12.5m)` | PB wizard Step 4 + summary | DONE (verifier PASS; Step-4 picker Vitest-only, §6.C 128) |
+| PF-8 | `reimageWithConfig` NPE → 500 when the find returns null | Service7 `OlioService.java:266-272` (find + 404 now `:240-246`, ahead of `resolveOlioContext` — §6.C 134) | `a1 == null` ⇒ 404 `{"error":"Character not found or not readable"}` before any Olio context is resolved; the generate block no longer nested | new `TestOlioServiceReimageNotFound` 1/1 on H2 (unknown objectId → 404, no SD, no Olio context) + `bugfix3-live.spec.js:211` `ok` — `1 passed (1.6m)`, real `.39` render `e59494d9-…` (thumbnail opened) | reimage route | DONE (verifier PASS 20:25, §9.3.2) |
+| PF-9 | Four executors never stamp `inputHash` ⇒ an un-forced re-render of a current node is accepted | Objects7 `PbNodeExecutor.java:508-509, 680-681, 775-776, 904-905` (closings now `:512-513`, `:684-685`, `:779-780`, `:908-909`) | replace each `markStaleDownstream + persistStatus(DONE_UNVERIFIED)` with `downstreamOf(...)` + `PbPipelineUtil.completeNode(g, node, DONE_UNVERIFIED)` (the ChapBook-page closing `:633-634`) | new `TestPbRenderJob.case11_plainPbNodeIsCurrentAfterRenderAndOnlyForceRerolls` (`:1164`, plain-PB fixture, live `.39`): render 1 `executedNodeCount 1`, `inputHash` set, `lastRunAt` advanced; un-forced ⇒ `409 Nothing to render: every node of this scene is current (1 reused, 0 pinned)`, no run; forced ⇒ revision 2 selected/GENERATED superseding 1 — `Tests run: 11, Failures: 0, Errors: 0 … TestPbRenderJob` + `Tests run: 7 … TestPbNodeRun`, `BUILD SUCCESS` (`C:/tmp/mvn-o7-pf9.log`, §9.4) **+ REST-level on the Docker stack as `e2etest_shared`**: new `pictureBookV3PlainPb.spec.js` (STORY book over `/chapter`, workflow/scene/node seeded over `/rest/model`, two `.39` renders, `PB_SD_TESTS=1`) `4 passed (1.1m)` — render 1 → `DONE_UNVERIFIED` + `inputHash`, un-forced → 409 `(1 reused, 0 pinned)`, pinned + forced → 409 `(0 reused, 1 pinned)`, forced → 202 → revision 2 `supersedes` revision 1, reader shows it (`C:/tmp/pw-pf9-rest.log`, §9.4.1) | every plain-PB render writes `inputHash`/`lastRunAt`, counts on the run, enters the drift scan (intended, §2.3) | **DONE** — Objects7 verifier PASS-WITH-NOTES 2026-10-13 11:39 → 11:47: re-run `TestPbRenderJob` 11/11 + `TestPbNodeRun` 7/7 + `TestWebAuthnUtil` 8/8 = `Tests run: 26, Failures: 0, Errors: 0, Skipped: 0` live on `.39`, `[LLM-GATE] route=litellm tier=local` (`C:/tmp/o7-verifier-pfA.log`, §9.4.2, §6.C 147b) |
+| PF-10 | Sync embedding on `data.note` POST blocks the request thread behind the LLM | Service7 `ModelService.java:299-306` | hand `createVectorStore` to the §21 job layer after the create returns | Service7 test: POST returns before the vector rows exist, then they appear | every vectorizable-model create | PROPOSED |
+| PF-11 | `crypto.keyStore.store` never persisted (`readOnly:true`; update template skips readOnly) | `keyStoreModel.json:19`, `StatementUtil.java:436-444`, `KeyStoreUtil.java:305-306` | drop `readOnly` on `store` (writer at `:306` then works), or keep it and accept the `.jks` file as the sole copy | JUnit: `getCreateStore` then re-read `store` non-empty | every org's keystore row; security-relevant | PROPOSED |
+| PF-12 | Audit `description` > 2048 ⇒ `WriterException`, audit row lost | `AuditUtil.closeAudit:182`, `common.description2K` | truncate `description`/`message` to `maxLength` in `closeAudit` before hashing/signing | JUnit: audit a >2048 query → row written, `length()==2048` | audit text only | PROPOSED |
+| PF-13 | `RunawayDetector` verbatim-only; a paraphrased loop ran to the 900 s latch | `Chat.java:278-364` | second text-only signal: word-shingle (5-gram) Jaccard of each new window tail vs the prior reply; conservative thresholds, same kill switch; golden vector would be synthetic (no sample captured) | `TestRunawayDetector` + paraphrased-loop vector | all buffer-mode LLM replies | PROPOSED |
+| PF-14 | `pictureBookLive` H.2/H.3 test a removed inline blurb editor | `features/pictureBook.js:866` | (i) retire H.2/H.3 (H.1 covers "Edit Book → wizard") or (ii) reinstate a blurb editor in the viewer | (i) spec edit / (ii) new Playwright | none / viewer | PROPOSED |
+| PF-15a | Picker double-click on any `data.directory`-derived item navigates instead of selecting | `components/decorator.js` `getTabularRow` + `getGridListItem` | in picker mode only `auth.group` navigates (`ctl.down`); everything else selects + confirms (§6.C 130) | new `pickerNav.spec.js:223` `ok` — `2 passed (30.1s)` | all pickers' double-click | DONE — behaviour change noted and accepted (§6.C 143c) |
+| PF-15b | client `olio.sd.config` lacks `"inherits":["data.directory"]` (server has it); side effect: `newPrimitive('olio.sd.config')` then seeds `name:null, groupId:0, …` that `saveConfig` copied over its own name/group | `core/modelDef.js:9995`; `components/sdConfig.js:76-78` (`SAVE_EXCLUDE`) | add the `inherits` line; `SAVE_EXCLUDE` += `name, groupId, organizationId, groupPath, organizationPath` (the record is placed by `saveConfig`'s own arguments) | `sdConfigModelParity.test.js` "inherits what the server inherits … `isGroup` true" — in the `44 passed (44)` run; **new `sdConfigSavePlacement.test.js`** red `Tests  3 failed | 1 passed (4)` (`expected null to be 'myConfig'` ×2, `expected 'sourceCfg' to be 'copyCfg'`; `C:/tmp/vitest-pf15b-red.log`) → `Test Files  3 passed (3)` / `Tests  13 passed (13)` (`C:/tmp/vitest-pf15b-green.log`); `vite build` `index-BtMyBqO3.js` `✓ built in 5.62s`, container md5 `126849e6…` equal (§9.2.2) | sd.config list projections gain `groupId/groupPath`; `saveConfig` never writes directory fields from the config object | **DONE** — Ux752 verifier re-read PASS-WITH-NOTES 2026-10-13 11:39 → 11:42, Vitest `90 passed (90)` / `1160 passed (1160)` (`C:/tmp/vitest-ux752-verifier.log`, §9.2.3, §6.C 147b); the §4.6 run-2 gate exercised the deployed bytes |
+| PF-15c | ChapBook `pageBgOpacity` renders 0 where the settings dialog says 40 % | `sceneModel.json:107`, `PbServiceFacade.java:1930` | `int` cannot be "unset"; options: JSON default 40 (conflicts with PB-model rule 3), nullable field, or facade emits null for never-edited `0` (not distinguishable) | Vitest on the reader + REST read of a fresh scene | every ChapBook page | PROPOSED |
+| PF-15d | Test litter: six `HarlotsEight-UX-*` series + checkpoints + manuscripts on `e2etest_shared` | `e2e/pictureBookChapteredManuscriptUx.spec.js` | one-off cleanup as the shared user (§6.C 132) + new `test.afterAll` that resets each chapter book, deletes the series, discards the run's checkpoints, deletes the manuscript, then re-lists and asserts nothing is left | PF-7 run: `[ux-chapters] cleanup complete for HarlotsEight-UX-mv5pznv7.docx`; independent re-survey `books total 18 \| HarlotsEight-UX-* books 0`, `checkpoints 200 []` | none (test) | LANDED |
+| PF-15e | `chat.js:133-137`, `chat.js:985-1020`, `SceneGenerator.js:118-153` | — | dropped — documented intent / already fixed (see premise corrections) | — | — | DROPPED |
+| PF-16 | `DELETE /series/{id}` 500s on every wizard-built chaptered series: `deleteSeries` reads each chapter as the olio principal and is PBAC-denied | Objects7 `PbSeriesUtil.java:392-395` (`PbBookUtil.readBook(olioUser, …)`) | candidate: read each chapter as the caller with the olio principal as fallback, or reuse the unauthorised `findRecords` rows only for `canDelete`; mechanism of the DENY not yet established | Playwright: build a series via the wizard/`extract-scenes-only` route, then `DELETE /series/{id}` → `{deleted:true, chapters:N}` | series delete | PROPOSED (new, §6.C 132) |
+
+### 9.2 Ux752 batch results (2026-10-12 15:03 → 15:57 local)
+
+**Scope.** PF-2, PF-3, PF-4, PF-6, PF-7, PF-15a, PF-15b, PF-15d. `git diff --stat` (Ux752 only, 13 files, 438+/61−): product
+`features/chat.js` 6, `components/breadcrumb.js` 28, `router.js` 12, `components/formFieldRenderers.js` 3, `features/chapBook.js`
+4, `workflows/pictureBook.js` 103, `components/decorator.js` 11, `core/modelDef.js` 3; tests `src/test/pictureBookExtractState.test.js`
+113, `src/test/sdConfigModelParity.test.js` 11, `e2e/chapBookLlmUnavailable.spec.js` 92, `e2e/pickerNav.spec.js` 47,
+`e2e/pictureBookChapteredManuscriptUx.spec.js` 66. Nothing outside Ux752 touched; nothing committed.
+
+**Build + unit (15:19–15:20).** `npx vite build` → `✓ built in 5.80s` (`C:/tmp/vite-build-pf.log`); `npx vitest run` →
+`Test Files  89 passed (89)` / `Tests  1156 passed (1156)` / `Duration  10.64s` (`C:/tmp/vitest-pf.log`). The two PF proof files
+alone (16:00:22, `C:/tmp/vitest-pf7b-pf15b.log`): `Test Files  2 passed (2)` / `Tests  44 passed (44)` / `Duration  7.63s`.
+`dist` copied into `am7test-am7-1:/opt/ux752/dist/`; every §3 probe from 15:03:00 on reports `container dist index.html identical
+to local build`.
+
+**Playwright proofs** (`PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 … --workers=1 --project=chromium --retries=0`, principal
+`e2etest_shared`, one process at a time; nothing at `:8899`):
+
+| PF | Spec | Verbatim (log) |
+|---|---|---|
+| PF-2 | `chat.spec.js` | `ok 4 [chromium] › e2e\chat.spec.js:109:5 › Chat session creation › create session via new session dialog against live backend (2.2s)` … `7 passed (37.7s)` (`C:/tmp/pw-pf2-chat.log`) |
+| PF-4 | `objectLinkFix.spec.js` | `ok 2 [chromium] › e2e\objectLinkFix.spec.js:125:5 › object-link field fix (KI-19) › Export tab foreign-summary links resolve to the referenced records (/full), not about:blank (689ms)` … `2 passed (5.7s)` (`C:/tmp/pw-pf4-objectLinkFix.log`) |
+| PF-3 | `breadcrumb.spec.js` + `listControl.spec.js` | `ok 2 [chromium] › e2e\breadcrumb.spec.js:100:5 › Breadcrumb navigation › breadcrumb has multiple path segments (871ms)`; `ok 12 [chromium] › e2e\listControl.spec.js:452:5 › List control — Phase 4 behavioral tests › breadcrumb shows path segments and clicking navigates (965ms)`; file total `1 failed` (`listControl.spec.js:207`, the viewer race — §6.C 131) / `15 passed (1.2m)` (`C:/tmp/pw-pf3-breadcrumb.log`); `:207` alone: run 1 `1 failed` (`pw-pf3-listControl207-run1.log`), run 2 `1 passed (5.6s)` (`pw-pf3-listControl207-run2.log`) |
+| PF-15a | `pickerNav.spec.js` | `ok 2 [chromium] › e2e\pickerNav.spec.js:223:5 › Object picker — up/down navigation (regression) › picker double-click on a NOTE selects and confirms it; double-click on a FOLDER still navigates (4.1s)` … `2 passed (30.1s)` (`C:/tmp/pw-pf15a-pickerNav.log`) |
+| PF-6 | `chapBookLlmUnavailable.spec.js` | `ok 3 [chromium] › e2e\chapBookLlmUnavailable.spec.js:315:5 › ChapBook — LLM-unavailable client signal › UI per-scene: Regenerate sends the chat config picked on the Review tab, not the by-name default (34.0s)` … `4 passed (2.5m)` (`C:/tmp/pw-pf6-chapBookLlmUnavailable.log`) — the spec's seeded unreachable chatConfig means no LLM call is made (§8.12 group 2 design) |
+| PF-7 + PF-15d | `pictureBookChapteredManuscriptUx.spec.js` (gated) | below |
+
+**PF-7 / PF-15d gated run (15:44 → 15:56, `C:/tmp/pw-pf7-chaptered.log`).** `PB_LLM_TESTS=1 E2E_LLM_SERVER=http://192.168.1.42:11434
+PB_UX_MAX_CHAPTERS=2`, after the 15:43:26 probe, the only LLM call in flight on the machine:
+```
+[e2e-llm] route=direct server=http://192.168.1.42:11434 analysis=qwen3:8b pb=goekdenizguelmez/JOSIEFIED-Qwen3:8b
+[ux-chapters] connection 000-pbux-conn requestTimeout=900s
+[ux-chapters] shared user = e2etest_shared | chatConfig = 000-pbux-llm | orgId = 2
+[ux-chapters] manuscript=HarlotsEight-UX-mv5pznv7 oid=d47af794-f4aa-410c-a857-40caadb4f75d detected=21 chapters; wizard will process 2
+[ux-chapters] Step 1 default chatConfig field: "contentAnalysissearch"
+[ux-chapters] wizard POST d47af794-f4aa-410c-a857-40caadb4f75d/extract-scenes-only chatConfig=000-pbux-llm
+…
+[ux-chapters] +10.3 min Chapter 2/2 — Extracting scenes 4/4Source: HarlotsEight-UX-mv5pznv7
+[ux-chapters] series card header: menu_bookHarlotsEight-UX-mv5pznv7.docx2 chapterseditgroupsaccount_treedeleteexpand_more
+[ux-chapters] chapter rows: ["Chapter 1","Chapter 2"]
+[ux-chapters] chapter select: ["Chapter 1 — Book harlotseight-ux-mv5pznv7-docx-ch1","Chapter 2 — Book harlotseight-ux-mv5pznv7-docx-ch2"]
+[ux-chapters] distinct characters across 2 chapter(s): 10
+[ux-chapters] race tally: {"(none stated)":10} (which labels the live LLM chose is logged for inspection, not asserted)
+[ux-chapters] total durationMs = 734196ms (12.2 min)
+[ux-chapters] cleanup: chapter 1 book b5d9fde6-71bd-4b34-938e-f9b992263756 deleted
+[ux-chapters] cleanup: chapter 2 book febeac0a-2f4a-4e5b-b130-31c9460e7031 deleted
+[ux-chapters] cleanup: series e4a63fb4-2781-4eb0-a7a2-3660d1f6facd deleted (0 chapter book(s) remained)
+[ux-chapters] cleanup: manuscript HarlotsEight-UX-mv5pznv7.docx deleted
+[ux-chapters] cleanup complete for HarlotsEight-UX-mv5pznv7.docx
+  ok 1 [chromium] › e2e\pictureBookChapteredManuscriptUx.spec.js:320:5 › PictureBook chaptered manuscript — real browser flow on Docker › wizard extracts every chapter, list bundles them, reader selects chapters, cast persisted with valid races (12.2m)
+  1 passed (12.5m)
+```
+`durationMs` 734196 (trend only; §8.12 group 3 on `.42` was 9.1 min for the same two chapters). The six `[NETWORK 404]` lines
+in the log are the wizard's expected probes (`/scenes` before the book exists, `/workflow` before any scene is generated), the
+same as in §8.12. Screenshots opened and checked (`e2e/screenshots/`, 15:44–15:56): `ux-chapters-step1.png` (Step 1 with
+Chat Config `000-pbux-llm`, template `pictureBook.extract-scenes`), `ux-chapters-workflow-landing.png` and
+`ux-chapters-workflow-series-view.png` (Workflow Graph, Chapter/Series toggles), `ux-chapters-book-list-collapsed.png` and
+`ux-chapters-book-list-bundled.png` (series card `HarlotsEight-UX-mv5pznv7.docx · 2 chapters` expanded to Chapter 1 · 12 scenes,
+Chapter 2 · 7 scenes), `ux-chapters-reader-chapter2.png` (reader on `Chapter 2 — Book harlotseight-ux-mv5pznv7-docx-ch2`).
+Independent re-survey after the run, as `e2etest_shared` (`C:/tmp/pb-ckpt-survey.py`, `pb-books-survey.py`):
+`checkpoints 200 []`, no `HarlotsEight-UX-%` `data.data` rows, `books total 18 | HarlotsEight-UX-* books 0` — the same 18
+books as before the run; the teardown left nothing. **Not proven by this run:** the Step-4 picker (the spec never reaches Step 4)
+and the green clean headline (the run had no failed passages) — both covered by Vitest only, §6.C 128.
+
+**Also in this batch (test-only, PF-15d one-off):** 3 checkpoints, 7 manuscripts and 6 series (20 chapter books) removed from
+`e2etest_shared` — §6.C 132 has the counts and logs. The `deleteSeries` 500 found while doing it is PF-16.
+
+**Module quick gate (16:08, after the last edit — the `afterAll` comment correction):** `LOOP_MODULE=AccountManagerUx752 bash
+.claude/loop/verify.sh --quick` → `PASS (build)` / `PASS (test)` / `PASS (lint)` / **`VERIFY_OK`** (`C:/tmp/verify-quick-ux752-pf.log`).
+**Still to do for this batch (at 16:08):** the Ux752 verifier (asked for at the end of (A), §6.C 127b; approved 17:25, launched
+20:21).
+
+#### 9.2.1 Ux752 verifier — PASS-WITH-NOTES (2026-10-12 20:21 → 20:31 local)
+
+Independent verifier (read-only; no gate env vars, no `docker cp`, no mvn; Playwright at `https://127.0.0.1:9443`,
+`--workers=1 --project=chromium --retries=0`). Every line below re-read from the named log by me:
+- `npx vite build` → `✓ built in 5.77s` (`C:/tmp/verify-ux752-vite.log`); container `/opt/ux752/dist` carries the same asset hashes.
+- `npx vitest run` → `Test Files  89 passed (89)` / `Tests  1156 passed (1156)`, no `Errors` line (`C:/tmp/verify-ux752-vitest.log`).
+- `chat.spec.js` `7 passed (37.7s)` · `objectLinkFix.spec.js` `2 passed (6.6s)` · `breadcrumb.spec.js` `3 passed (10.0s)` ·
+  `listControl.spec.js` `13 passed (41.3s)` (incl. the `:207` race, green this run) · `pickerNav.spec.js` `2 passed (29.8s)` ·
+  `webauthn.spec.js` `13 passed (10.2s)` · `worldDeleteBreadcrumb.spec.js` `3 passed (35.1s)` — `C:/tmp/pw-verify-ux752-<spec>.log`.
+- `chapBookLlmUnavailable.spec.js` **not re-run** (every case ends in a real `.39` render; the one-SD-run rule) — PF-6 rests on
+  the 16:xx `4 passed (2.5m)` log (`C:/tmp/pw-pf6-chapBookLlmUnavailable.log`).
+- Screenshots opened by the verifier: `chat-session-created.png`, `breadcrumb-segments.png`, `lc4-breadcrumb-nav.png`,
+  `worlddelete-breadcrumb-after-click.png` — consistent with the assertions.
+
+Per-fix: PF-2/3/4 confirmed root-cause fixes (`chat.js:1213-1217`; `breadcrumb.js:53-67` + `router.js:39-58`;
+`formFieldRenderers.js:703-704`). PF-6 `chapBook.js:3729,3838` precedence confirmed. PF-7 tests walk real vnodes. Tests judged
+real (no typeof/parse assertions, no skips, no admin). **Notes acted on:** PF-15a narrows picker double-click descent to
+`auth.group` (accepted, §6.C 143c); PF-15b `newPrimitive('olio.sd.config')` now seeds directory fields that `saveConfig` would
+copy over its own name/group on the non-stripping sites (fixed in this session, §6.C 143b). Doc nits left as found: stale
+"left red deliberately" comments at `objectLinkFix.spec.js:136-141` / `listControl.spec.js:496-501`, and the
+`chapBookLlmUnavailable.spec.js:19-27` header describing the old by-name behaviour.
+
+#### 9.2.2 PF-15b `saveConfig` placement hardening — red → green, deployed (2026-10-13 08:20 → 08:48 local)
+
+**Defect (verifier note, §9.2.1 / §6.C 143b).** `am7sd.saveConfig(name, config)` (`sdConfig.js:224-245`) sets `obj.name`,
+`obj.groupId`, `obj.groupPath` from its arguments and then copies every key of `config` that is not in `SAVE_EXCLUDE`
+(`:76-78`, previously `narration,id,objectId,ownerId`). With PF-15b's `inherits` line the client primitive now carries
+`name:null, groupId:0, organizationId:0, groupPath, ownerId:0`, so the sites that hand a `newPrimitive` fallback to
+`saveConfig` without stripping identity would save `name:null` in group `0` **[corrected 2026-10-13 11:52 on the verifier
+re-read, §9.2.3: of the four `newPrimitive('olio.sd.config')` sites (`reimage.js:124`, `reimageApparel.js:24`,
+`chat/imageTokens.js:169`, `cardGame/…/artPipeline.js:257`) only the first two reach `saveConfig` (`reimage.js:311/:313/:645/:647`,
+`reimageApparel.js:216`); `imageTokens.js` never calls it and `artPipeline.js` goes through `am7sd.applyOverrides`, which
+`_set`s named SD fields only]**; the primary path already carried `name:null` from `/olio/randomImageConfig`. **Fix:**
+`SAVE_EXCLUDE` now also lists `name, groupId, organizationId, groupPath, organizationPath` (`APPLY_EXCLUDE` already listed four
+of the five — it lacks `name` **[corrected 2026-10-13 11:52]**; harmless, since `SAVE_EXCLUDE` now strips a copied `name` on
+the way out). One product line; no site changed.
+
+**Proof — new Vitest `src/test/sdConfigSavePlacement.test.js` (4 cases, real `saveConfig` with a stub page/client, asserting
+on the exact object posted):** premise (`newPrimitive('olio.sd.config')` seeds `name`/`groupId`/`organizationId`); CREATE
+lands under the given name + group and carries no `organizationId`/`organizationPath`/`ownerId`; PATCH keeps `id`/`objectId`/
+`name` and carries no `groupId`/`organizationId`/`groupPath`; a config loaded from another group and saved under a new name
+lands in the requested group without its source `id`/`objectId`. Run together with `sdConfigModelParity.test.js` +
+`pictureBookExtractState.test.js`.
+
+- Red, against the pre-fix `SAVE_EXCLUDE` (`C:/tmp/vitest-pf15b-red.log`): `× CREATE: a newPrimitive config is created under
+  the given name and group, not name:null in group 0` — `AssertionError: expected null to be 'myConfig'`; `× PATCH: …` —
+  `expected null to be 'myConfig'`; `× a config loaded from ANOTHER group …` — `expected 'sourceCfg' to be 'copyCfg'`;
+  `Test Files  1 failed (1)` / `Tests  3 failed | 1 passed (4)`.
+- Green (`C:/tmp/vitest-pf15b-green.log`): `Test Files  3 passed (3)` / `Tests  13 passed (13)` / `Duration  396ms`.
+- Build + deploy (`C:/tmp/vite-build-pf15b.log`): `dist/assets/index-BtMyBqO3.js 761.74 kB` / `✓ built in 5.62s`;
+  `docker cp ./dist/. am7test-am7-1:/opt/ux752/dist/`; md5 `126849e60df3f9d44ab6d925aa770b52` local == container; the
+  08:46:39 probe (§3) reports `container dist index.html identical to local build`.
+
+**Not done here:** no Playwright drives a `newPrimitive` fallback save (it needs the template fetch to fail); the §4.6 run-2
+gate runs every existing sd-config spec against these bytes and is the live regression check. Module verifier re-read of this
+note: with the end-of-(A) hand-off (§6.C 144).
+
+#### 9.2.3 Ux752 verifier re-read of PF-15b — PASS-WITH-NOTES, PF-15b → DONE (2026-10-13 11:39 → 11:42 local)
+
+**Brief.** Read-only re-read of §9.2.2 plus one `npx vitest run`; no `vite build`, no Docker, no Playwright, no edits. The
+hand-back was checked here against the two files, the three Vitest logs and the local `dist` before anything below was recorded.
+
+**What it confirmed.**
+- `components/sdConfig.js:78` `SAVE_EXCLUDE = ["narration","id","objectId","ownerId","name","groupId","organizationId","groupPath","organizationPath"]`;
+  `saveConfig` (`:202-252`) sets `obj.name`/`obj.groupId`/`obj.groupPath` (CREATE, `:227-229`) and `patch.id/objectId/name`
+  (PATCH, `:240-242`) by plain assignment **before** the copy loops (`:230-234`, `:243-247`), and the exclusion governs only the
+  loops — so the intended placement is never stripped.
+- Server `models/olio/sd/configModel.json:3` is exactly `"inherits": ["data.directory"]`; `core/modelDef.js:9996-9998` adds the
+  identical array; `sdConfigModelParity.test.js:40-50` asserts `client.inherits` == `server.inherits` and `isGroup` true against
+  the server file.
+- `src/test/sdConfigSavePlacement.test.js` is real: it calls the real `am7sd.saveConfig` (`:56,:73,:89`) with stubs installed on
+  `am7model._page/_client` (`:37-38`) — exactly what `sdConfig.js:12-13` `getPage()/getClient()` read — and asserts on the object
+  handed to `createObject`/`patchObject` (`:25-26`). No re-implementation, no `typeof`/`parse`-only check, no admin, no skip.
+- Red/green logs re-read: `C:/tmp/vitest-pf15b-red.log` (08:45:40) `Test Files  1 failed (1)` / `Tests  3 failed | 1 passed (4)`
+  with `AssertionError: expected null to be 'myConfig'` (`:12`, `:31`) and `expected 'sourceCfg' to be 'copyCfg'` (`:50`);
+  `C:/tmp/vitest-pf15b-green.log` (08:46:00) `Test Files  3 passed (3)` / `Tests  13 passed (13)` / `Duration  396ms`; build log
+  08:46:21 — ordering consistent.
+- Deployed bytes (local side): `dist/index.html` md5 `b252da2c1c49168d537629f46c1a2212`, bundle `assets/index-Bnuy-GaJ.js`
+  (written 11:04:08; `find src -newer dist/index.html` → nothing); the bundle contains the new list verbatim. The 11:37 and 11:46
+  probes (§3) report `container dist index.html identical to local build`.
+- The ten §4.6.2 reds re-read: none touches `saveConfig`/sd.config placement — consistent with the triage.
+
+**Verifier's own Vitest run** (`C:/tmp/vitest-ux752-verifier.log`, EXIT 0):
+```
+ Test Files  90 passed (90)
+      Tests  1160 passed (1160)
+   Start at  11:42:18
+   Duration  10.59s (transform 12.32s, setup 1.31s, import 14.36s, tests 35.93s, environment 62.34s)
+```
+No `Errors` line, no unhandled rejection; +1 file / +4 tests versus the previous verifier run (89/1156) is exactly the new file.
+
+**Notes (doc precision, no code finding).** (1) §9.2.2's "the four sites that hand a `newPrimitive` fallback to `saveConfig`"
+overstated: of the four `newPrimitive('olio.sd.config')` sites only `reimage.js` (`:311/:313/:645/:647`) and `reimageApparel.js`
+(`:216`) route through `saveConfig`; `chat/imageTokens.js` never calls it (its `patchObject` calls at `:216/:268/:277` are
+wear-state patches) and `cardGame/…/artPipeline.js` feeds `newSdOverride()` into `am7sd.applyOverrides` (`sdConfig.js:353+`),
+which `_set`s named SD fields only. The fix still covers every real `saveConfig` caller (incl. `SceneGenerator.js:166-167`, which
+also strips `SD_CONFIG_IDENTITY`). (2) "`APPLY_EXCLUDE` already did" is 4 of 5 — `APPLY_EXCLUDE` (`:79`) lacks `name`; harmless
+now. Both corrected in §9.2.2 in place (§6.C 147c). Coverage caveat unchanged and already stated: no Playwright drives a
+`newPrimitive`-fallback save (it needs the template fetch to fail); the proof is Vitest on the real function plus the §4.6 run-2
+suite on these bytes.
+
+**Not done by the verifier:** no Maven, Playwright, `vite build`, Docker or `docker cp`; container bytes not inspected (the probe
+covers `index.html`); PF-5b's `sig.js` not re-verified (separate verifier, §9.3.5).
+
+**Row status:** PF-15b **DONE** (§9.1). Nothing committed.
+
+### 9.3 Service7 batch results — PF-1, PF-5, PF-8 (2026-10-12 16:05 → 16:50 local)
+
+**Scope.** `git diff --stat` (Service7 only): product `OlioService.java` 54 (+31/−23), `WebAuthnService.java` 39 (+21/−18);
+harness `src/test/.../HttpServletRequestMock.java` 10 (+8/−2: `setSession(HttpSession)`, `getSession()`/`getSession(boolean)`
+return it — null by default, as before); two new test classes `TestOlioServiceReimageNotFound.java` (PF-8 contract) and
+`TestWebAuthnServiceDto.java` (PF-5 contract). Nothing committed. Each fix is the root cause, not the assertion:
+
+- **PF-1** (`OlioService.java:776-783`): after `PictureBookUtil.reset`, a cache-off `AccessPoint.find` of the world by
+  `objectId` + `organizationId` as the caller; absent ⇒ `{"deleted":true}` and `WorldUtil.deleteWorld` is skipped (reset tears
+  the book's world down itself, `teardownBookFootprintAsOlio` step 3, so "already gone" was being reported as "failed").
+- **PF-5** (`WebAuthnService.java:131-139`, `:245-253`, `:423-434`): the browser posts the registration/assertion results as
+  plain DTOs with no `schema` (`am7client.webauthnRegister/webauthnAuthenticate`), so both POST routes now parse `Map` via
+  `JSONUtil.importObject(json, Map.class)` (`parseDto`) and read strings with `dtoString`; the `LooseRecord` +
+  `RecordDeserializerConfig` imports are gone; every refusal and status is unchanged. Client untouched.
+- **PF-8** (`OlioService.java:240-246`): the charPerson `find` + 404 moved ahead of `resolveOlioContext`; the generate block
+  is no longer nested in `if(a1 != null)` (⚠ §6.C 134).
+
+**JUnit on the Service7 H2 harness (16:18 → 16:19, `C:/tmp/mvn-service7-pf-tests.log`;** `mvn -o -pl AccountManagerService7
+-Dtest=TestChapBookServiceRenderPath,TestOlioServiceReimageNotFound,TestPbRenderPathRefusal,TestWebAuthnServiceDto
+-DskipTests=false test`**):**
+```
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 9.332 s -- in org.cote.accountmanager.objects.tests.TestChapBookServiceRenderPath
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 8.109 s -- in org.cote.accountmanager.objects.tests.TestOlioServiceReimageNotFound
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 8.990 s -- in org.cote.accountmanager.objects.tests.TestPbRenderPathRefusal
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.821 s -- in org.cote.accountmanager.objects.tests.TestWebAuthnServiceDto
+[INFO] Tests run: 18, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+[INFO] Total time:  44.792 s
+```
+`TestWebAuthnServiceDto` posts the exact DTO shapes `am7client.js` builds (asserted to carry no `schema`) through the real
+`WebAuthnService` methods against the real database: register 200 `{success:true, credentialId}`, the `auth.webauthnCredential`
+row read back cache-off with the posted name and `referenceId` = the user, `listCredentials` contains it, `deleteCredential`
+200 and the row gone; then the refusals 400 `Missing required fields…` (after parsing), 400 `Invalid registration data` (non-JSON),
+400 `Challenge mismatch`, 400 `No active session`, and on the auth route 401 `Unknown credential` with an unknown id (past the
+parse, where the old code 400'd) and 400 `Missing required fields`. `TestOlioServiceReimageNotFound` drives the real
+`reimageWithConfig` with a `ServletContext` proxy answering only the SD init-params (`SWARM`, `http://127.0.0.1:1`, placeholder
+model names — a closed loopback port that must never be contacted on this path) and an all-zero objectId: 404
+`{"error":"Character not found or not readable"}`, no SD call, no Olio context. Both classes are real-DB contract tests in the
+`TestPbRenderPathRefusal` pattern; the two classes already covering these routes (`TestChapBookServiceRenderPath`,
+`TestPbRenderPathRefusal`) re-ran green beside them.
+
+**Deploy (16:20 → 16:21).** `mvn -o -pl AccountManagerService7 compile` `BUILD SUCCESS` (`C:/tmp/mvn-service7-compile-pf2.log`);
+`javap -p -c -constants` on both classes clean (⚠ §6.C 136); `docker cp` into
+`am7test-am7-1:/opt/tomcat/webapps/AccountManagerService7/WEB-INF/classes/org/cote/rest/services/`; md5 local == container
+`OlioService.class` `32b60578cd49cceb6f21b8dbebeac3ec`, `WebAuthnService.class` `c15a4e7d3a00686d51aa589315355a2c`;
+`docker restart am7test-am7-1`; §3 probe 16:21:29 (`am7test-am7-1 Up 32 seconds`, everything green).
+
+**Playwright proofs** (`PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 … --workers=1 --project=<project> --retries=0`, principal
+`e2etest_shared`, one process at a time, nothing at `:8899`):
+
+| PF | Spec | Verbatim (log) |
+|---|---|---|
+| PF-1 | `worldDeleteBreadcrumb.spec.js` | `[worldDeleteBreadcrumb] Test 1 DELETE status=200 body={"deleted":true}` / `[worldDeleteBreadcrumb] Test 1 PASS — world deleted and confirmed gone` / `ok 1 [chromium] › e2e\worldDeleteBreadcrumb.spec.js:176:5 › World delete endpoint and breadcrumb type resolution › Test 1: DELETE /olio/world/{objectId} returns {"deleted":true} and removes the world (8.4s)` … `1 passed (10.4s)` (`C:/tmp/pw-pf1-worldDelete.log`, 16:22); whole file `3 passed (26.5s)` with Test 2 also `DELETE status=200 body={"deleted":true}` (`C:/tmp/pw-pf1-worldDelete-full.log`, 16:23). Before the fix this test was red on `deleted:false` (§8.12 group 4). |
+| PF-5 | `webauthn.spec.js` | `[webauthn] registration test origin=https://localhost:9443` / `[webauthn] "Test Virtual Key" rows before delete=1` / `ok 6 [chromium] › e2e\webauthn.spec.js:172:5 › WebAuthn passkey flow › webauthn registration flow with virtual authenticator (1.2s)` … `13 passed (8.4s)` (`C:/tmp/pw-pf5-webauthn.log`, 16:23). Screenshots opened (`e2e/screenshots/`, 16:23): `webauthn-register-form.png`, `webauthn-after-registration.png` (the "Test Virtual Key" row present), `webauthn-after-deletion.png` (row gone). Before the fix `:172` was red on the 400 (`webauthn-registration-failed.png`, 12:22, is the earlier red). |
+| PF-8 | `bugfix3-live.spec.js:211` (`E2E_SD_LIVE=1`, SD-serial, `chromium-vite` on Vite `:8898` → Docker `:9443`) | `[bugfix3] fixture image /home/e2etest_shared/Gallery/Bugfix3E2E/bugfix3-e2e-mv5rft7a.png = 5cd7df25-8f3f-4ab4-b3cd-66c49ae63479` / `[bugfix3] reimage: {"generated":true,"imageObjectId":"e59494d9-0933-4e42-862a-704d19e0de0c","imageName":"Bugfix3E2E_mv5rft7a - Photo Op - 1 - 945374010 - 1252380760","ms":90242}` / `ok 1 [chromium-vite] › e2e\bugfix3-live.spec.js:211:5 › Image token pipeline (live backend) › am7imageTokens.resolve() generates image via /reimage for character (1.5m)` / `1 passed (1.6m)` (`C:/tmp/pw-pf8-bugfix3-reimage.log`, 16:24 → 16:26). The rendered image was fetched afterwards as `e2etest_shared` (`GET …/thumbnail`, 200 `image/png`, 693318 bytes, `C:/tmp/pf8-reimage-thumb.png`) and opened: a real SD render of a full-body figure in a neon-lit interior — the positive path still produces an image after the reorder. Screenshot `bugfix3-live-image-generate.png` (16:26) shows the chat session with the "Image generated" toast; the spec calls `am7imageTokens.resolve()` directly, so no message carrying the image is posted and the pane is empty. |
+
+**Module quick gate.** First run 16:28→16:32 `VERIFY_FAILED` — `Tests run: 132, Failures: 0, Errors: 45` — every error the H2
+fixture, corrupted by H2's close-time compaction at a per-class JVM exit (`C:/tmp/verify-service7-pf.log`,
+`C:/tmp/mvn-service7-pf8-order.log`; full diagnosis and the repair ⚠ §6.C 137). After `mv am7 am7.corrupt-2026-10-12-1632`,
+run 2 16:38→16:41 (`C:/tmp/verify-service7-pf-2.log`):
+```
+==> [AccountManagerService7] build: mvn -q -B -DskipTests test-compile
+    PASS (build)
+==> [AccountManagerService7] test: mvn -q -B -DskipTests=false test
+    PASS (test)
+VERIFY_OK
+```
+20 classes, 132 tests, 0 failures, 0 errors (`target/surefire-reports/`, 16:39:07 → 16:41:52): TestAccessRequestService 7,
+TestChapBookRestContract 8, TestChapBookServiceRenderPath 6, TestChatChainStatus 5, TestCredentialService 4,
+TestEmbeddingTypeUrlMismatchWarning 7, TestEscapeJson 9, TestFeatureConfigService 12, TestISO42001Service 10,
+TestMediaUtilStreaming 3, TestModelServicePatch 9, TestOlioServiceReimageNotFound 1, TestPbRenderPathRefusal 7,
+TestPictureBookRestContract 18, TestPrincipalProfileCache 3, TestResources 3, TestSchemaService 7, TestUserPrincipalIdentity 3,
+TestWebAuthnServiceDto 4, TestGameStreamCancel 6. (§6.H's 127/0/1 of 2026-10-11 is now 132/0/0: the fixture is fresh and the
+five tests are the two new classes.)
+
+**Observations, not worked (scope discipline):** (a) the Passkey settings table's "Created" column renders "—" for the row
+the test registers (`webauthn-after-registration.png`) — display only, not in PF-5; (b) the PF-8 positive render for
+`imageAction=portrait` on the spec's fixture character came back as a full-body nude figure — the prompt/content path is not in
+PF-8, recorded for Stephen; (c) the H2 compaction defect above (§6.C 137) — mitigation proposal in §9.5.
+
+**Still to do for this batch (at 16:50):** the Service7 verifier and the PF-5 security review (both spawn agents — asked for at
+the end of (A), §6.C 127b; approved 17:25, launched 20:24). Points for the security review, from reading the route while fixing
+it: `completeRegistration` / `deleteCredential` write through `RecordUtil` (pre-existing), `findCredentialById` has no
+organization filter (pre-existing), `completeAuthentication` has no `@RolesAllowed` by design (pre-auth surface,
+`architecture.md`).
+
+### 9.3.1 PF-5 security review — FAIL (2026-10-12 20:24 → 20:27 local)
+
+Read-only security-reviewer on the `WebAuthnService.java` diff. **Verdict FAIL** — the parse change itself is judged correct
+(the Map path never lets the caller choose a model or field name; `:156-171` fixed model and fields before the raw
+`RecordUtil.createRecord` at `:179`; the old unfiltered-module path was not load-bearing), but it makes a pre-existing
+unverified login reachable. Each finding below was re-read in the file before being recorded.
+
+| # | Severity | Where | Finding | Introduced by PF-5? |
+|---|---|---|---|---|
+| 1 | **CRITICAL** | `:250-320` | `signature`/`authenticatorData` read and never used; only `clientDataStr.contains(storedChallenge)` (`:263`) guards the lookup; no signature over `authenticatorData ‖ SHA-256(clientDataJSON)` against the stored `publicKey`, no `type`/origin/`rpIdHash`/UP check; counter incremented blindly (`:295-298`); `TokenService.createJWTToken(owner, …, TOKEN_EXPIRY_1_WEEK)` (`:306`). With `GET /auth?user=` (`:192-227`, no `@RolesAllowed`; `web.xml` constrains only `/Protected/*`) handing out `credentialId`s, this is unauthenticated sign-in as any passkey user. | Logic pre-existing; **exposure new** — before the diff no body reached `:271` (`RecordDeserializer.java:183-190` null → 400). `TestWebAuthnServiceDto.java:207-230` demonstrates a garbage signature reaching the lookup. |
+| 2 | low | `:159` | `Base64.getUrlDecoder().decode(publicKeyB64)` throws `IllegalArgumentException`, not in the `:186` catch (`FieldException \| ValueException \| ModelNotFoundException`), no `ExceptionMapper` → 500 with the challenge already burned. Authenticated caller only. | New reachability, same reason. |
+| 3 | info | Jackson 2.18.3 (`pom.xml:124`) | nesting > 1000 or string > 20 M chars → `StreamConstraintsException` → `JSONUtil.java:137` catch → null → 400; no document-size cap on either path; Jersey materialises the `String json` first (unchanged). | No. |
+| 4 | info | parse | non-string values → `dtoString` null → the existing "Missing required fields" 400 (`:141`, `:256`); no NPE path. Challenge still removed before parse (`:127-128`, `:243`), single-use, a parse failure burns it as before. | No. |
+| 5 | info (improved) | logging | the old path logged the whole body (publicKey, signature) at ERROR on every real POST (`RecordDeserializer.java:184` `"Current node: " + node`); now `JSONUtil.java:138` logs Jackson's message on malformed input (offending token ≤ 256 chars) and `RecordValidator.java:63` logs an oversize `name`/`credentialId`. | Improved. |
+| 6 | pre-existing hardening | `:87`, `:184`, `:212`; `:313`; `:390-392`; `:93`, `:161`, `:221` | `credentialId` unvalidated and unescaped into hand-built JSON; `organizationPath` dead (`:311` comment claims a session login that does not happen); `findCredentialById` not org-scoped though uniqueness is per-org (`webauthnCredentialModel.json:9`); `rpId`/origin hard-coded `localhost`. | No — recorded in §9.5. |
+
+Tests: no admin user, no schema reset; `webauthn.spec.js` unchanged by PF-5; `resources/olio/llm/` untouched. Reviewer's suggested
+rule (not applied — rules are Stephen's): a pre-auth route must verify a cryptographic proof before `TokenService.createJWTToken`;
+"reaches the lookup" tests do not test authentication. **Action: none taken — §6.C 142, decision asked.** The PF-5 row is BLOCKED.
+**Stephen's answer (2026-10-13 08:40): implement assertion verification** → row PF-5b, §6.C 143.
+
+### 9.3.2 Service7 verifier — PASS-WITH-NOTES (2026-10-12 20:24 → 20:31 local)
+
+Independent verifier on the one Maven slot (no Playwright/Docker/LLM/SD; `am7/` and `am7.corrupt-…/` untouched). Re-read by me:
+- Targeted: `mvn -o -pl AccountManagerService7 -Dtest=TestWebAuthnServiceDto,TestOlioServiceReimageNotFound,TestPictureBookRestContract
+  -DskipTests=false test` → `Tests run: 1 … TestOlioServiceReimageNotFound`, `Tests run: 18 … TestPictureBookRestContract`,
+  `Tests run: 4 … TestWebAuthnServiceDto`, `Tests run: 23, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`
+  (`C:/tmp/mvn-verify-s7-targeted.log`, 48.9 s). The contract class is 18 cases, not the 17 I wrote in §9.3.
+- Quick gate: `LOOP_MODULE=AccountManagerService7 bash .claude/loop/verify.sh --quick` → `PASS (build)` / `PASS (test)` /
+  **`VERIFY_OK`** (`C:/tmp/verify-s7-quick.log`); surefire reports: 132 run, 0 failures/errors/skipped, all rewritten during the
+  run. The H2 shutdown-hook `MVStoreException: java.lang.AssertionError [2.3.232/3]` (§6.C 137) fired 4× in `am7/h2.trace.db`
+  (16:40, 16:41, 20:25, 20:29) — each after the class had written its result; no result affected.
+
+Per-fix: PF-8 real fix (404 before `resolveOlioContext`, so an unreadable id no longer initialises a grid world; log shows the
+`AUDIT INVALID … No results` with no SD/OlioContext lines after it). PF-5 parse: `JSONUtil.importObject` null → 400 preserved;
+non-string values → "Missing required fields" 400. **PF-1 note (acted on, §6.C 143a):** the recheck at `OlioService.java:776-783`
+re-finds as the request user after `PbDeleteUtil` step 2 removed that user's per-book roles, so a step-3 failure reads as
+"deleted"; and PF-1 has **no Service7 JUnit** — its only proofs are Playwright. Routes/layering: no `@RolesAllowed` changed; no
+business logic moved. Test soft spots named: `TestWebAuthnServiceDto:208-230` proves the DTO parses, not authentication (now
+PF-5b's job); `findStored` reads via `getSearch()` (fine as a DB probe); "no SD call" in `TestOlioServiceReimageNotFound` is
+indirect. Pre-existing, outside the diff: `[ERROR] StatementUtil - Sort field is not defined on model - createdDate` during the
+WebAuthn class.
+
+### 9.3.3 PF-1 re-find principal fix — new H2 JUnit `TestOlioServiceDeleteWorld`, red → green (2026-10-13 08:50 → 09:19 local)
+
+**Defect (verifier note, §9.3.2 / §6.C 143a).** The 16:xx PF-1 recheck re-found the world **as the request user** after
+`PbDeleteUtil.deleteBookComplete` step 2 had removed that user's per-book Writer/Admin roles, so a step-3 footprint failure read
+as "gone" and the route answered `{"deleted":true}` for a world that still existed. **Fix (`OlioService.java:782-800`):** the
+early return now requires the world to be absent for **both** `deleteAs` (the olio principal, owner of every Books-universe
+world — its read never depended on the removed roles) **and** the request user (`worldGone(principal, objectId, orgId)`:
+by-objectId find, `organizationId` condition, `setCache(false)`); otherwise the route falls through to
+`WorldUtil.deleteWorld(deleteAs, world)` as before. `reset`'s `DeleteResult.reason`/`steps` are logged when it reports
+`deleted=false` (`:764-767`). Refinement of 143a (which said "re-find as `deleteAs`" only): the user-side re-find is kept so
+a world the olio principal cannot see but the user still can (not a product shape today — every world is olio-created,
+`OlioContext.java:854/867`, `WorldUtil.java:472/477`) is never reported deleted; recorded as §6.C 144a.
+
+**Fixture (`TestOlioServiceDeleteWorld`, Service7 H2 harness `BaseTest`).** Mirrors the production Olio bootstrap
+(`OlioContext.configureEnvironment` `:798-810`): the org admin creates `/Olio` (DATA group) and grants `olioUser`
+`Read/Update/Create` on it for `DATA`+`GROUP`; `olioUser` then creates `/Olio/Universes`; worlds are created **as `olioUser`**
+with `WorldUtil.getCreateWorld` (as production does); a book world additionally gets an `olio.pb.book` (`DRAFT`/`STORY`,
+`createdByObjectId` = the test user) under `PbBookUtil.bookGroupPath(slug)`, the per-book Writer role
+(`PbOlioContextUtil.writerRolePath(slug)`) with the test user enrolled and `Read/Update/Create/Delete` on the book group plus
+`Read` on the world — the shape `configureWorldAuthorization` gives a real book. The admin is used for fixture bootstrap only;
+every route call is made as `deleteworlduser` through the real `OlioService.deleteWorld(ServletContext, HttpServletRequest,
+objectId)` with the request/context injected as in `TestOlioServiceReimageNotFound`. Four cases:
+`TestBookWorldInBooksUniverseIsReportedDeleted` (world under `/Olio/Universes/Books/Worlds` — `reset` step 3 tears it down,
+route must answer `deleted:true`; raw `findRecord` cache-off proves world + book rows gone),
+`TestBookWorldOutsideBooksUniverseIsActuallyDeleted` (book world under `/Olio/Universes/PfOneMisplaced/Worlds` — `reset`
+cannot find it under the Books path, so the recheck must **not** short-circuit and `WorldUtil.deleteWorld(olio, …)` must run),
+`TestPlainOlioWorldIsDeleted` (no book; user reads through a `Reader` role), `TestUnknownWorldIs404`.
+
+- **Run 1** (`C:/tmp/mvn-pf1a-deleteworld.log`): `Tests run: 4, Failures: 2, Errors: 1` — fixture, not product: `PathUtil - Not
+  authorized to create auth.group of type (DATA) node Olio with parent #0 in path /Olio/Universes/Books/Worlds (DENY)` + NPE
+  `"dir" is null` inside `WorldUtil.getCreateWorld` (the olio principal cannot create `/Olio` itself — hence the admin
+  bootstrap above), and a fourth case that created a **user-owned** world got `{deleted=false}` because the route always
+  deletes as the olio principal when it exists and olio was `AUDIT DENY … to DELETE olio.world` on it. A user-owned world is
+  not a product scenario (grep above), so that case was replaced by `TestPlainOlioWorldIsDeleted`; no product code changed for
+  it (§6.C 144b).
+- **Run 2, green** (`C:/tmp/mvn-pf1a-deleteworld-run2.log`): `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed:
+  21.98 s` / `BUILD SUCCESS` / `Finished at: 2026-10-13T09:14:59-05:00`. Discriminating evidence for the misplaced case from
+  its `AUDIT` lines: `olioUser to ADD olio.world pf1-c317d96d-92a` (`:311`) → the route's olio re-find `AUDIT PERMIT … olioUser
+  to READ … olio.world` (`:329`, world still present after `reset`) → the full `WorldUtil.deleteWorld` wipe → `AUDIT PERMIT
+  system.user olioUser to DELETE olio.world pf1-c317d96d-92a` (`:1480`) → the test's post-delete olio re-find `AUDIT INVALID …
+  No results` (`:1482`). For the Books-path case the route's re-finds are already `INVALID` (gone) and no `DELETE olio.world`
+  line follows.
+- **Red proof** (`C:/tmp/mvn-pf1a-deleteworld-red.log`): the recheck temporarily disabled (`if (false && bookWorld …)`,
+  i.e. HEAD's behaviour with the second-chance wipe) → exactly one failure, the PF-1 symptom:
+  `TestBookWorldInBooksUniverseIsReportedDeleted … java.lang.AssertionError: deleteWorld must report deleted:true for a book
+  world (PF-1): {deleted=false} expected:<true> but was:<false>`; `Tests run: 4, Failures: 1, Errors: 0, Skipped: 0, Time
+  elapsed: 23.95 s` / `BUILD FAILURE` / `Finished at: 2026-10-13T09:16:25-05:00`. Edit reverted; `grep -c RED-PROOF` = 0.
+- **Green, all four Service7 H2 suites of (A)** (`C:/tmp/mvn-pf1a-deleteworld-green.log`, `-Dtest=TestOlioServiceDeleteWorld+
+  TestOlioServiceReimageNotFound+TestPbRenderPathRefusal+TestWebAuthnServiceDto`): `TestOlioServiceDeleteWorld` `Tests run: 4,
+  Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 27.75 s`; `TestOlioServiceReimageNotFound` `Tests run: 1 … 18.15 s`;
+  `TestPbRenderPathRefusal` `Tests run: 7 … 23.53 s`; `TestWebAuthnServiceDto` `Tests run: 4 … 20.92 s`; `Tests run: 16,
+  Failures: 0, Errors: 0, Skipped: 0` / `BUILD SUCCESS` / `Finished at: 2026-10-13T09:18:46-05:00`.
+
+**Caveats, stated.** (1) The "step 3 fails on a Books-path world" branch itself cannot be induced without fault injection in
+`PbDeleteUtil`; the misplaced-world case exercises the same route decision (world still present after `reset` ⇒ no
+short-circuit ⇒ wipe) and is the discriminating test. (2) Harness noise, pre-existing and not mine: H2 cannot create the
+vector-typed tables (`Unknown data type: "VECTOR"` ×64 at startup) and `RecordFactory - Orphan cleanup batch failed
+(model=all): Table "A7_DATA_PAGEINDEXNODE_0_1" not found` ×3 from `WorldUtil.deleteWorld`'s orphan sweep — logged at ERROR,
+non-fatal, no assertion depends on it. (3) **Not deployed:** the fix is compiled (`C:/tmp/mvn-pf1a-compile.log`, EXIT 0) and
+proven on H2 only; the Docker Tomcat still runs the 16:xx PF-1 bytes. Jar/WAR install + `docker cp` + restart + the
+`worldDeleteBreadcrumb.spec.js` re-run follow the §4.6 gate (§6.C 143d), then the Service7 verifier re-reads this note.
+
+### 9.3.4 PF-1 re-find fix deployed to the Docker Tomcat and re-proven live (2026-10-13 10:14 → 10:17 local)
+
+**Deploy.** `mvn -o -q -pl AccountManagerService7 compile` (`C:/tmp/mvn-pf1a-compile.log`, EXIT 0; source `OlioService.java`
+09:16:31 → class 09:16:55, i.e. the class already reflected the 09:16 source); `javap` on `target/classes` shows
+`deleteWorld(String, HttpServletRequest)` and `private static boolean worldGone(BaseRecord, String, long)` with **0**
+`Unresolved compilation` hits; `grep -c "RED-PROOF\|if (false"` on the source = 0. Local md5 `8c9b7f7871e6da74f163ad80e8860c0f`
+vs container `32b60578cd49cceb6f21b8dbebeac3ec` (the 16:xx PF-1/PF-8 bytes) → `docker cp` of the single `OlioService.class`
+into `/opt/tomcat/webapps/AccountManagerService7/WEB-INF/classes/org/cote/rest/services/` → container md5
+`8c9b7f7871e6da74f163ad80e8860c0f` (equal) → `docker restart am7test-am7-1` at 10:14:54; `GET /rest/setup/state` 200 after
+15 s; probe 10:15:24 GREEN (§3). No other Service7 class differs from the deployed set (PF-8's `PictureBookService`/`PbServiceFacade`
+bytes and the 16:xx `WebAuthnService` were already in the container; PF-5b is not implemented yet).
+
+**Proof.** `PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/worldDeleteBreadcrumb.spec.js --workers=1
+--project=chromium --retries=0` from `src/AccountManagerUx752`, 10:16:03 → 10:16:43, `C:/tmp/pw-pf1a-worlddelete.log`, EXIT 0 —
+no LLM/SD call in this spec (no `[e2e-llm]` line exists):
+
+```
+Running 3 tests using 1 worker
+
+[worldDeleteBreadcrumb] orgId=2
+[worldDeleteBreadcrumb] Test 1 book=30c32748-bf27-4f72-ab8d-b32b50789d54 slug=wdel1-mv6tpq7i
+[worldDeleteBreadcrumb] Test 1 world=ba7883d9-5610-4f67-a9cf-48549685ae73
+[worldDeleteBreadcrumb] Test 1 DELETE status=200 body={"deleted":true}
+[worldDeleteBreadcrumb] Test 1 PASS — world deleted and confirmed gone
+  ok 1 [chromium] › e2e\worldDeleteBreadcrumb.spec.js:176:5 › World delete endpoint and breadcrumb type resolution › Test 1: DELETE /olio/world/{objectId} returns {"deleted":true} and removes the world (13.0s)
+[worldDeleteBreadcrumb] Test 2 book=50960f88-0470-419c-970f-5c44c2194d93 slug=wdel2-mv6tq0fx
+[worldDeleteBreadcrumb] Test 2 world=04f49295-df50-4a5c-99da-507483782564
+[worldDeleteBreadcrumb] Test 2 DELETE status=200 body={"deleted":true}
+[worldDeleteBreadcrumb] Test 2 PASS — PB2 book also cleaned up
+  ok 2 [chromium] › e2e\worldDeleteBreadcrumb.spec.js:225:5 › World delete endpoint and breadcrumb type resolution › Test 2: Deleting the world also wipes the associated PB2 book record (9.3s)
+…
+[worldDeleteBreadcrumb] Test 3 PASS — breadcrumb rendered correctly
+  ok 3 [chromium] › e2e\worldDeleteBreadcrumb.spec.js:299:5 › World delete endpoint and breadcrumb type resolution › Test 3: Breadcrumb shows "Universes" on olio.world list; clicking it stays on olio.world route (…)
+
+  3 passed (37.2s)
+```
+
+**The both-principals recheck is visible in the server log** for Test 1's world `ba7883d9-…` (in-container
+`/opt/tomcat/logs/accountManagerService.log`, UTC): `15:16:21.679 OlioContextUtil - Evicted Olio context
+2/e2etest_shared/Books/wdel1-mv6tpq7i for world ba7883d9-…` → `15:16:21.707 AUDIT INVALID system.user olioUser to READ … olio.world
+…` (the `deleteAs` re-find, no row) → `15:16:21.710 AUDIT INVALID system.user e2etest_shared to READ … olio.world …` (the
+request-user re-find, no row) → `{"deleted":true}`; the spec's own confirm-gone read follows at `15:16:21.730`. Both re-finds
+return nothing because the world is really gone — the `deleted:true` is now backed by two absent rows, not by a role that
+`reset` step 2 had just removed (§9.3.3).
+
+**Row status:** PF-1 → **LANDED (live)**; DONE after the Service7 verifier re-read (§9.3.3 + this section) at the end of (A).
+### 9.3.5 PF-5b / PF-5c — passkey assertion verification, session login, list cache: red → green, deployed, proven live (2026-10-13 10:44 → 11:22 local)
+
+**Scope (Stephen 08:40, §6.C 143):** verify the WebAuthn assertion that `POST /rest/credential/webauthn/auth` had been
+accepting on nothing more than `clientDataJSON.contains(challenge)` (§9.3.1, §6.C 142). Probes §3 10:44:31 (before) and
+11:00:52 (after the redeploy). No LLM and no SD anywhere in this slice — **no `[e2e-llm]` / `[LLM-GATE]` line exists for it.**
+Defaults in §6.C 146.
+
+**What changed** (`git diff --stat`, all uncommitted):
+- NEW Objects7 `security/WebAuthnUtil.java` (216 lines): `parseClientData`, `decodePublicKey` (EC then RSA
+  `X509EncodedKeySpec`), `algorithmFor` (`-7`/`-257`), `challengeMatches` (decoded bytes, `MessageDigest.isEqual`),
+  `counterOf` (bytes 33-36), and `verifyAssertion(spki, rpId, origin, challenge, authenticatorData, clientDataJSON, signature,
+  storedCounter)` in spec order — length ≥ 37 → clientData parse → `type == "webauthn.get"` → challenge equality → origin
+  equality → `rpIdHash == SHA-256(rpId)` → UP flag → counter (`(counter != 0 || stored != 0) && counter <= stored` refused) →
+  key decode → `SHA256withECDSA` / `SHA256withRSA` over `authenticatorData ‖ SHA-256(clientDataJSON)`; returns
+  `AssertionResult{verified, reason, counter, flags}`.
+- Service7 `WebAuthnService.java` +95/−41: `RP_ID = "localhost"` used for the register/auth options and the stored `rpId`;
+  registration parses `clientDataJSON` (400 "Failed to parse clientDataJSON" / "Unexpected clientData type" / "Challenge
+  mismatch"), decodes the key (400 "Unsupported public key") and stores `algorithm` from the parsed key; authentication
+  decodes the three base64url fields (400 "Failed to parse assertion"), calls `WebAuthnUtil.verifyAssertion` with the stored
+  key / rpId / origin / counter, **401 `{"error":"Assertion verification failed"}`** on any failure (reason in the log),
+  persists `counter` + `lastUsed` (500 if that write fails), mints the JWT, then `request.getSession(true);
+  request.login(orgPath + "/${jwt}", jwt)` so the SPA's session cookie is logged in the way `LoginService` does; PF-5c:
+  `getCredentialsForUser` `q.setCache(false)` (`:411-417`).
+- Service7 test `HttpServletRequestMock.java` +23: `login()` records its arguments.
+- NEW Objects7 `TestWebAuthnUtil.java` (217 lines, 8 tests); NEW Service7 `TestWebAuthnServiceAssertion.java` (408 lines,
+  5 tests); Service7 `TestWebAuthnServiceDto.java` (PF-5's class) + `TestSecondRegistrationIsListedAndAllowedImmediately`
+  (292 lines, 5 tests).
+- Ux752 `views/sig.js` +2/−1 (case-insensitive `response` compare, §6.C 146 (l)); `e2e/webauthn.spec.js` +307
+  (`addVirtualAuthenticator` → `{swap(), remove()}`, `purgePasskeysViaRest`, three new tests `:350` / `:450` / `:506`).
+
+**JUnit — Objects7** (`cd src && mvn -o -pl AccountManagerObjects7 -Dtest=TestWebAuthnUtil -DskipTests=false test`,
+`C:/tmp/mvn-pf5b-o7-test.log`; pure JCA, no DB): `[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed:
+0.900 s -- in org.cote.accountmanager.objects.tests.TestWebAuthnUtil` / `BUILD SUCCESS`. Cases: genuine ES256 and RS256
+assertions verify (`KeyPairGenerator` keys, real `Signature`); wrong key, tampered `clientDataJSON` and tampered
+`authenticatorData` fail on `signature`; wrong type / challenge / origin / rpId / missing UP / replayed counter each fail
+with their own reason; key decoding (EC, RSA, garbage → null); challenge comparison ignores base64url padding. The jar was
+installed first (`C:/tmp/mvn-pf5b-o7-install.log`, 10:46).
+
+**JUnit — Service7 on H2** (`mvn -o -pl AccountManagerService7 -Dtest=TestWebAuthnServiceAssertion,TestWebAuthnServiceDto
+-DskipTests=false test`, `C:/tmp/mvn-pf5b-s7-test.log`, 10:49): `[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time
+elapsed: 12.83 s -- in …TestWebAuthnServiceAssertion` / `[INFO] Tests run: 4 … 11.43 s -- in …TestWebAuthnServiceDto` /
+`[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0` / `BUILD SUCCESS`. `TestWebAuthnServiceAssertion` drives the real
+service methods with a `HttpServletRequestMock` session carrying the challenge the service itself issued (`GET /auth`), a
+`getCreateUser("webauthn…")` owner (never admin) and an in-test authenticator (generated keypair, hand-built
+`authenticatorData` with the `localhost` rpIdHash, flags and counter): `TestGenuineEs256AssertionAuthenticates` /
+`…Rs256…` → 200, `"response":"authenticated"`, one JWT, `login("/Development/${jwt}", jwt)` recorded on the mock, counter
+persisted; `TestForgedAssertionsAreRefusedAndLeaveTheCounterAlone` (`:307-353`) → wrong key, tampered `clientDataJSON`
+(`crossOrigin` flip), tampered `authenticatorData` byte 36, type `webauthn.create`, origin `https://evil.example:9443`, rpId
+`evil.example`, no UP flag, a different challenge, garbage signature — each 401 with the stored counter still 0, then the
+genuine assertion 200 → counter 3; `TestReplayedCounterIsRefused` (`:358-382`) → counter 5 accepted, 5 and 4 refused, 6
+accepted; `TestRegistrationRefusesBadKeyAndWrongType` (`:387-407`) → an 8-byte `publicKey` is 400 "Unsupported public key"
+and stores nothing, `type: webauthn.get` at registration is 400 "Unexpected clientData type".
+
+**PF-5b red-first (added 11:20, after the verifier PASS — §6.C 146 (o)).** The assertion class was written against the fixed
+service, so no red run existed for it. To show that the tests discriminate, `WebAuthnService.java:310` was temporarily
+changed to `if (false && !assertion.verified) { // PF-5B-RED-FIRST TEMPORARY` (accept every assertion that carries the session
+challenge — the pre-fix behaviour), the class re-run, the line restored (`grep -c PF-5B-RED-FIRST` → 0, CR count 475 unchanged):
+- red `C:/tmp/mvn-pf5b-s7-red.log` (11:20:49 → 11:21:07): `[ERROR] Tests run: 5, Failures: 2, Errors: 0, Skipped: 0, Time
+  elapsed: 12.11 s <<< FAILURE! -- in org.cote.accountmanager.objects.tests.TestWebAuthnServiceAssertion` —
+  `TestReplayedCounterIsRefused` `java.lang.AssertionError: same counter must be 401, body={ "schema" :
+  "auth.authenticationResponse", …` and `TestForgedAssertionsAreRefusedAndLeaveTheCounterAlone` `java.lang.AssertionError:
+  wrong key must be 401, body={ "schema" : "auth.authenticationResponse", …`; the two genuine cases and the registration case
+  still pass, as they should. `BUILD FAILURE`.
+- green `C:/tmp/mvn-pf5b-s7-green2.log` (11:21:26 → 11:21:44): `[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time
+  elapsed: 12.01 s -- in org.cote.accountmanager.objects.tests.TestWebAuthnServiceAssertion` / `BUILD SUCCESS`;
+  `target/classes/…/WebAuthnService.class` md5 `521c01cf3c314f703d17f91542412172` == container, `javap` Unresolved 0,
+  `git diff --stat` for the file unchanged (`136 ++++++---`). Both Maven logs say `Nothing to compile - all classes are up to
+  date.` — the JDT language server compiled on save, as on every Service7 run today; the red result is the proof that the
+  disabled class was the one under test.
+
+**PF-5c red → green** (`C:/tmp/mvn-pf5c-s7-red.log`, 10:57, the one-line fix temporarily removed): `[ERROR] Tests run: 1,
+Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 10.67 s <<< FAILURE! -- in …TestWebAuthnServiceDto` /
+`java.lang.AssertionError: second key must be listed immediately after registration, got
+[Zmlyc3QtNDgxOWVmNmEtZjc4NC00MGFlLWJjYjItN2JlZGZiZjljZDJm]` / `BUILD FAILURE`. Fix restored, both classes
+(`C:/tmp/mvn-pf5c-s7-green.log`, 10:58): `[INFO] Tests run: 5 … 11.73 s -- in …TestWebAuthnServiceAssertion` / `[INFO] Tests
+run: 5 … 11.36 s -- in …TestWebAuthnServiceDto` / `[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0` / `BUILD SUCCESS`.
+Root cause: `IOFactory.getSearch` is a `CacheDBSearch` for DB IO; `addToCache` keeps a non-empty result for 6 min and
+`DBWriter.write` clears entries on UPDATE only, never on CREATE — so the first list (one key) stayed the answer for
+`GET /credentials` and for `GET /auth`'s `allowCredentials` after the second registration.
+
+**Deploy** (≈11:00:30; container `Up 22 seconds` at the 11:00:52 probe): `docker cp` of the installed
+`AccountManagerObjects7-7.0.0-SNAPSHOT.jar` (md5 `91b7f64672ebe66ed0c45d8bd78404a2`, contains `security/WebAuthnUtil*` incl.
+`$AssertionResult` / `$ClientData`) to `WEB-INF/lib/` and of `WebAuthnService.class` (md5 `521c01cf3c314f703d17f91542412172`,
+`javap` Unresolved 0) to `WEB-INF/classes/org/cote/rest/services/`, then `docker restart am7test-am7-1`; both md5s equal
+local == container (`MSYS_NO_PATHCONV=1 docker exec … md5sum`). Ux752 `dist` after the `sig.js` fix: `npx vite build`
+(`C:/tmp/vite-pf5b.log`, `✓ built in 6.06s`) + `docker cp ./dist/. am7test-am7-1:/opt/ux752/dist/`, `index.html` md5
+`b252da2c1c49168d537629f46c1a2212` local == container, bundle `assets/index-Bnuy-GaJ.js` (11:04).
+
+**Playwright, three runs** (`PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/webauthn.spec.js --workers=1
+--project=chromium --retries=0`, shared user via `ensureSharedTestUser()`, WebSocket stubbed before `goto`, no LLM):
+1. **10:49, `-g "PF-5b"`, pre-deploy bytes** (`C:/tmp/pw-pf5b-webauthn-red.log`): `Running 2 tests using 1 worker` /
+   `[webauthn] passkey login did not reach #!/main. toasts=[] consoleErrors=[] assertionPosted=true` /
+   `[webauthn] registration of "PF-5b Forgery Key" did not land. toasts=[] consoleErrors=[]` / `TimeoutError:
+   page.waitForFunction: Timeout 30000ms exceeded.` / `Error: registered passkey must appear in the Registered Passkeys
+   table` / `2 failed`. What it proves: with the old server the POST established no session (no `request.login` existed) and
+   with the old `sig.js` the SPA never left `#!/sig`; the forgery test's own registration — the run's second key — was hidden
+   by the PF-5c cache, so it **never reached its forged POST**. This run therefore does not show "a forged assertion was
+   accepted"; that defect is evidenced by the pre-fix code (`clientDataStr.contains(storedChallenge)` was the only check,
+   §9.3.1) and by the JUnit red-first above.
+2. **11:01, full spec, server + jar deployed, old `dist`** (its log was overwritten by run 3; the result below is recovered from
+   the session transcript; screenshot `webauthn-passkey-login-failed.png` 11:02:06): `2 failed` / `14 passed (1.0m)`.
+   `[webauthn] passkey login did not reach #!/main. toasts=[] consoleErrors=[] assertionPosted=true assertionResponse="200 {
+   "schema" : "auth.authenticationResponse", "response" : "authenticated", "tokens" : [ "eyJ…` — the server verified the
+   genuine assertion, minted the JWT and (Tomcat log, UTC) `16:01:36.369 AM7LoginModule - Login: /Development/e2etest_shared`
+   logged the session in, but `sig.js:104` compared `=== "AUTHENTICATED"` against the lowercase wire enum and toasted a
+   failure → the `sig.js` fix (§6.C 146 (l)). `[webauthn] forged assertion status=401 body={"error":"Assertion verification
+   failed"}` — **PF-5b's live refusal was already green in this run** (Tomcat: `16:02:09.518 WebAuthnUtil - Assertion
+   signature check failed: Invalid encoding for signature` + `WebAuthnService - WebAuthn assertion rejected for credential
+   0OviuGChMUvsYSco0pFUF6bL3WG84mG-6zd_8GCok94: signature`). PF-5c's second registration failed on `[error] WebAuthn create
+   failed InvalidStateError: The user attempted to register an authenticator that contains one of the credentials already
+   registered with the relying party.` → `authenticator.swap()` in the spec (§6.C 146 (n)).
+3. **11:04, full spec, everything deployed** (`C:/tmp/pw-pf5b-webauthn.log`, exit 0): `Running 16 tests using 1 worker` …
+   `[webauthn] passkey login test origin=https://localhost:9443` / `[webauthn] purged leftover passkey "PF-5c First Key"
+   status=200` / `[webauthn] logout status=200` / `[webauthn] POST /auth response="200 { "schema" :
+   "auth.authenticationResponse", "response" : "authenticated", "tokens" : [ "eyJraWQiOiJhbTY6…` / `[webauthn] replay
+   status=401 body={"error":"Assertion verification failed"}` / `ok 7 [chromium] › e2e\webauthn.spec.js:350:5 › WebAuthn
+   passkey flow › passkey login with virtual authenticator establishes a session (PF-5b) (2.0s)` / `[webauthn] forged
+   assertion status=401 body={"error":"Assertion verification failed"}` / `ok 8 … :450:5 › … forged passkey assertion is
+   refused by the server (PF-5b) (1.2s)` / `[webauthn] allowCredentials after second
+   registration=["2LYqwTO0DyygCg2qg4cZtuOhroQi-yjvmH9nfh9yXHQ","UfpSBGugYFsuP7MHarCnVdoCJpNjAztJcfk7Re9KpzA"]` / `ok 9 …
+   :506:5 › … a second passkey is listed and allowed immediately after registration (PF-5c) (1.5s)` / **`16 passed (13.5s)`**.
+   The login test (`:350`) registers a key through the UI, logs the password session out (`GET /principal/` → empty), clicks
+   "Sign in with Passkey" with the CDP virtual authenticator, waits for `#!/main`, then asserts `GET /principal/` on the
+   session cookie returns `e2etest_shared`, the stored `counter` > 0, a replay of the captured assertion from a fresh request
+   context → 401 with no `"tokens":[` and no principal, and the counter unchanged by the replay. The forgery test (`:450`)
+   registers a key, then posts the server's own `GET /auth` challenge with a random-bytes signature from an attacker context →
+   401, no `AUTHENTICATED`, no principal, counter unchanged. Screenshots opened and checked: `webauthn-passkey-login-main.png`
+   (11:04:36, the dashboard after the passkey login), `webauthn-second-passkey-listed.png` (11:04:39, both `PF-5c` rows),
+   `webauthn-passkey-login-cleanup.png` (11:04:37). Tomcat log for this run (UTC): `16:04:36.249 LogoutService - Logging out
+   session 774389F3…` → `16:04:36.569 AM7LoginModule - Login: /Development/e2etest_shared` **with no `LoginService - Cred
+   Name:` line before it** (the password path always logs one — `16:04:35.460 LoginService - Cred Name: e2etest_shared` is
+   the password login 1.1 s earlier), i.e. the `${jwt}` JAAS login issued by `WebAuthnService`; `16:04:36.858 WebAuthnService
+   - WebAuthn assertion rejected for credential RF7enBMEWwhU0aSxOKjAUm3qXsBn4_83AFRxACOfE_s: challenge` (the replay — the
+   session challenge had been consumed); `16:04:38.309 WebAuthnUtil - Assertion signature check failed: Invalid encoding for
+   signature` + `16:04:38.310 WebAuthnService - WebAuthn assertion rejected for credential
+   Fgy6boAUA1YrLmq7iv027jhBAxgZ84q7kIiuMh572fw: signature` (the forgery). On every `/credentials` call: `[ERROR] StatementUtil
+   - Sort field is not defined on model - createdDate` — pre-existing, root-caused in §9.5, not changed. The passkey rows the
+   run created were deleted by the specs' own cleanup; `a7_auth_webauthncredential_0_1` in `am7-pg` is empty afterwards.
+
+**Ux752 unit** (`npx vitest run`, `C:/tmp/vitest-pf5b.log`): `Test Files  90 passed (90)` / `Tests  1160 passed (1160)` /
+`Duration  10.84s`, no unhandled errors.
+
+**Service7 quick gate** (`LOOP_MODULE=AccountManagerService7 bash .claude/loop/verify.sh --quick`, `C:/tmp/verify-s7-pf5b.log`,
+11:09:07 → 11:13:31, exit 0): `==> [AccountManagerService7] build: mvn -q -B -DskipTests test-compile` / `PASS (build)` /
+`==> [AccountManagerService7] test: mvn -q -B -DskipTests=false test` / `PASS (test)` / **`VERIFY_OK`**. Surefire: 22 classes,
+`142 run / 0 failures / 0 errors / 0 skipped`, incl. `TestWebAuthnServiceAssertion` 5 (13.02 s), `TestWebAuthnServiceDto` 5
+(11.94 s), `TestOlioServiceDeleteWorld` 4 (14.70 s), `TestOlioServiceReimageNotFound` 1 (11.96 s). Local `WebAuthnService.class`
+md5 unchanged by the gate's recompile.
+
+**Verifier — PASS (PF-5b and PF-5c).** Re-read every log above against the sources (8/8 evidence items with line refs), no fake
+tests, no admin principal, `purgePasskeysViaRest` scoped to the shared user, wire contract in `am7client.js:811-817` / `:842-848`
+matches `parseDto`. Five non-blocking findings, all recorded, none fixed (§6.C 146 (q)); findings 1 and 4 re-verified here
+against `WebAuthnService.java`, `AM7LoginModule.java`, `webauthnCredentialModel.json` and `RecordUtil.getRecordByQuery`:
+1. Low — `WebAuthnService.java:347-349`: `orgPath` falls back to the client DTO's `organizationPath` when the owner record lacks
+   the virtual field; `AM7LoginModule.java:128-137` resolves the `${jwt}` subject **by name in that org**. Derive the org from
+   `owner.organizationId`, never from the DTO.
+2. Low — `request.login()` on an already-authenticated session throws `ServletException` (swallowed, `:350-352`): user B gets
+   200 + JWT while the session stays user A. Invalidate first, or fail closed.
+3. Low — no test for `POST /auth` with no pending session challenge (`:261-262`); the challenge has no server-side TTL.
+4. Low, pre-existing — `RP_ID = "localhost"` (`:61`) is now a hard failure on any other host via `rpIdHash`;
+   `findCredentialById` (`:429-438`) has no `organizationId` condition.
+5. Info — registration stores `origin` from the `Origin` header (`:183`) without comparing it to `clientData.origin`.
+Deliberate tightenings it confirmed: an empty `publicKey` (the `am7client.js:813` fallback) is now 400 instead of a silently
+stored useless row; origin is enforced, so a key registered at `:9443` will not log in through the `:8899` Vite proxy. Caveat it
+raised: all four PF-5 Maven logs say `Nothing to compile` (classes came from the JDT language server); the timeline is
+consistent (source 10:58:00.70 → class 10:58:01.32 → green run) and the PF-5b red-first above re-proves the point.
+
+**Security-reviewer — PASS** (no blocking issue; crypto, checks, challenge handling, public-surface exposure, counter
+persistence, ownership and test genuineness all clean). Two MEDIUM hardening items, both pre-existing shape rather than
+introduced by PF-5b, verified here against the code and recorded in §9.5:
+- **Cross-org `credentialId` collision (DoS, not takeover):** `webauthnCredentialModel.json:9` is unique per
+  `(credentialId, organizationId)`, `credentialId` is client-supplied at registration, and `findCredentialById` returns
+  `results[0]` of a credentialId-only query (`RecordUtil.getRecordByQuery`, undefined order). A user in another org who registers
+  a victim's credentialId (public via `GET /auth`) can make the victim's genuine assertion fail on `signature` and their `DELETE`
+  403. Fix: org-scope the lookup (or make the constraint global) and validate `credentialId` as base64url at registration (it is
+  also interpolated unescaped into hand-built JSON).
+- **Client-supplied `organizationPath` can select the JAAS org** — the same site as verifier finding 1; not reachable today
+  because `PathProvider` populates `organizationPath` on every read (`RecordReader.java:248-252`), so it fires only if the
+  provider throws. Fix: drop the fallback and fail closed; have `AM7LoginModule` compare the token's org claim to `orgPath`.
+Low/Info: registration does not validate `clientData.origin` (stores the `Origin` header; `CorsFilter` mitigates); `POST /auth`
+does not bind to the user named in `GET /auth?user=` (the owner comes from the credential and the signer must hold the key —
+no bypass); `RP_ID` hard-coded; EC curve / RSA size not checked (self-harm only); `GET /auth` creates a session per anonymous
+call; the service uses `RecordUtil` directly (pre-existing) with an explicit ownership check at `:395-399`; a Console7-side
+delete can leave `findCredentialById` cached for up to 6 min.
+
+**Row status:** PF-5b **DONE — LANDED (live)**; PF-5c **DONE — LANDED (live)**; PF-5 closed by them. Nothing committed.
+
+### 9.3.6 Service7 verifier re-read of PF-1(a) — PASS-WITH-NOTES, PF-1 → DONE (2026-10-13 11:39 → 11:43 local)
+
+**Brief.** Read-only re-read of §9.3.3 / §9.3.4 / §9.3.5: the `OlioService.java` diff, the two new H2 test classes, the logs, the
+surefire XML of the 11:09 gate, `javap`, and one `docker exec md5sum` (read). No Maven, Playwright, Docker restart/cp or edits.
+Checked here before recording: surefire XML sum, XML mtimes, container md5s, local `javap`.
+
+**What it confirmed.**
+- `OlioService.java`: `:752,:760` `bookWorld`; `:763-767` logs `reset`'s `DeleteResult.reason/steps` on `deleted=false`; `:786`
+  `if (bookWorld && worldGone(deleteAs, …) && worldGone(user, …)) return deleted:true;` then `:791` `WorldUtil.deleteWorld(deleteAs,
+  world)` intact; `worldGone` (`:795-800`) is a by-objectId `Query` with `q.field(FIELD_ORGANIZATION_ID, orgId)` (`orgId` a
+  primitive `long`, `:715`), `setCache(false)`, read through `getAccessPoint().find(principal, q)` — PBAC-wrapped, no
+  `RecordUtil`/`getSearch()` bypass; the user's read was authorized at `:720` before any elevation; no `@RolesAllowed` change.
+  PF-8 guard present (`:240-245` find → 404 `Character not found or not readable` before `resolveOlioContext` at `:246`). No
+  `RED-PROOF` / `if (false` / `@Ignore` / `Assume.` anywhere in Service7 `src` (0 hits).
+- `TestOlioServiceDeleteWorld` is genuine: real `OlioService.deleteWorld(ServletContext, HttpServletRequest)` → real
+  `PictureBookUtil.reset` → `PbDeleteUtil` → `WorldUtil` on H2; principal `deleteworlduser` via `getCreateUser` (`:79`); admin only
+  bootstraps `/Olio` and grants (`:93-96,:198-199,:212`), mirroring `OlioContext.configureEnvironment`; assertions are status +
+  `deleted` + raw ISearch cache-off rows (`:216-222`) + olio re-find; `skipped="0"`. It constructs the defect condition:
+  `PbDeleteUtil.java:127-129` deletes the Writer role (the user's only read grant) and `:133` →
+  `teardownBookFootprintAsOlio` resolves the world only under `bookWorldPath()` (`PictureBookUtil.java:11694`), so the misplaced-
+  world case (`:264-281`) leaves the world present after `reset` and asserts the raw row is gone.
+  `TestOlioServiceReimageNotFound`: real method, real `AccessPoint.find` as `reimagenotfounduser`, SD pointed at `127.0.0.1:1`;
+  asserts 404 + the exact error body.
+- Logs verbatim (all under `C:/tmp/`, mtimes 09:11–09:18): `mvn-pf1a-deleteworld.log:1711` `Tests run: 4, Failures: 2, Errors: 1`
+  (fixture: `:437` `PathUtil - Not authorized to create auth.group … /Olio/Universes/Books/Worlds (DENY)`, `:1759` `"dir" is null`);
+  `-run2.log:4073` `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 21.98 s`, `:4080 BUILD SUCCESS`; `-red.log:5177`
+  `java.lang.AssertionError: deleteWorld must report deleted:true for a book world (PF-1): {deleted=false} expected:<true> but
+  was:<false>`, `:5175` `Failures: 1`, `:5230 BUILD FAILURE`; `-green.log:4076` `Tests run: 4 … 27.75 s`, `:5769` `Tests run: 16,
+  Failures: 0, Errors: 0, Skipped: 0`, `:5772 BUILD SUCCESS`; `pw-pf1a-worlddelete.log:7,:12` `DELETE status=200
+  body={"deleted":true}`, `:34` `3 passed (37.2s)`.
+- Gate: `C:/tmp/verify-s7-pf5b.log` `PASS (build)` / `PASS (test)` / `VERIFY_OK` (11:13:31); surefire **22 XMLs = 142 tests, 0
+  errors / 0 failures / 0 skipped** (re-summed here), incl. `TestOlioServiceDeleteWorld tests="4" time="14.699"`,
+  `TestOlioServiceReimageNotFound tests="1" time="11.959"`, `TestWebAuthnServiceDto tests="5" time="11.935"`,
+  `TestWebAuthnServiceAssertion tests="5" time="12.006"`.
+- Bytes: `javap -p -c -constants` on `OlioService.class` → `Unresolved compilation` 0, `worldGone` declared and invoked twice
+  (re-checked here: 3 matches). Container `OlioService.class` md5 **`8c9b7f7871e6da74f163ad80e8860c0f`** (= §9.3.4; re-read here
+  together with `WebAuthnService.class` `521c01cf3c314f703d17f91542412172`).
+
+**Notes (non-blocking).**
+1. `TEST-…TestWebAuthnServiceAssertion.xml` is dated 11:21:44 — rewritten by the PF-5b red-first green-2 run
+   (`mvn-pf5b-s7-green2.log:700`, 12.01 s), not by the 11:09 gate; §9.3.5's "13.02 s" for that class is no longer on disk. The
+   gate ran `-q`, so no Maven log carries the 142 total — it is reconstructed from the XML (21 of 22 in the gate window).
+2. The user-only-vs-both discrimination is argued from `PbDeleteUtil`, not observed in a log: the red proof disabled the whole
+   recheck, and `&&` short-circuits after the olio re-find in the misplaced case, so the user's post-reset blindness never appears.
+   The Books-path case does show both re-finds `AUDIT INVALID` (`run2.log:4068,:4070`).
+3. If the olio principal is missing, `deleteAs == user` (`:747`) and the check degenerates to user-only — not a product shape.
+4. Pre-existing shape: the reset + re-find + wipe orchestration lives in Service7; the increment is small, but architecture.md's
+   "transport only" would place it in `WorldUtil`/`PbDeleteUtil`.
+5. `reset` partially failing after step 3 removed the world still yields `deleted:true` (the warn at `:765` is the only trace).
+6. Local `target/classes/…/OlioService.class` md5 is now `8617388a886918c84fec743e4e7c3bce` (JDT recompile 10:48:11; source unchanged
+   since 09:16:31, before the 10:14 deploy) — note, not a failure (§6.C 147e).
+Items 2–5 are recorded in §9.5; nothing changed.
+
+**Not done by the verifier:** no test re-run; Tomcat log for the §9.3.4 15:16 lines not re-read; PF-5b/5c logic not re-reviewed
+(counts only — §9.3.5 has its own verifier + security review).
+
+**Row status:** PF-1 **DONE** (§9.1). Nothing committed.
+
+### 9.4 Objects7 batch results — PF-9 (2026-10-12 16:55 → 17:15 local)
+
+**Scope.** `git diff --stat` (Objects7 only): product `PbNodeExecutor.java` 30 (+17/−13); test `TestPbRenderJob.java` (+183: the
+restored case, a `landscapeNode` helper, three imports). Nothing committed. The fix is the root cause, not the assertion: the four
+executor closings that ended `markStaleDownstream(user, g.getWorkflow(), node)` + bare `persistStatus(user, node, DONE_UNVERIFIED)`
+— `executeLandscape` (now `:512-513`), `executePromptNode` (`:684-685`), `executeReferenceStrip` (`:779-780`), `executeComposite`
+(`:908-909`) — now read `List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);` +
+`PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);`, the closing the ChapBook page (`:637-638`) and the
+portrait already used. `completeNode` (`PbPipelineUtil.java:728-746`) re-reads the node, computes and persists `inputHash`,
+persists the status, stamps `lastRunAt`, marks the downstream STALE (the same `downstreamOf` BFS, so no double pass) and counts
+`g.executed++` — the only place that counter moves, which is why a landscape run reported `executedNodeCount 0` before. The
+`downstream` list is still passed to `artifactDto` so the DTO's `markedStale` is unchanged. `:153-156` javadoc updated to name
+`downstreamOf`. `javap -p -c -constants` on `target/classes/.../PbNodeExecutor.class`: 0 `Unresolved compilation`, 6
+`PbPipelineUtil.completeNode` call sites (portrait + ChapBook page + the four), 0 `markStaleDownstream`.
+
+**The restored case** (`TestPbRenderJob.case11_plainPbNodeIsCurrentAfterRenderAndOnlyForceRerolls`, `:1164`): on the shared plain-PB
+fixture book (`pb2c-graph`, autoApprove asserted off as a precondition), `landscapeNode` (`:1383`) creates a fresh `olio.pb.scene`
+(random `sceneIndex` 100000–899999, the `TestPbAutoApprove.promptNode` idiom), patches a hand-written `sdPrompt` onto it (harbour at
+dusk — no LLM in the loop, the `TestChapBookRenderStyle.patchScenePrompt` idiom), adds a LANDSCAPE node scoped to it with the
+`fastOverride` (installed checkpoint, 12 steps, no hires) and asserts `inputHash` null before the first render. Then, all through
+`PbRenderJobUtil.submit` and the real job on `.39`: render 1 → `executedNodeCount 1`, outcome `DONE_UNVERIFIED` + artifact, run row
+`executedNodeCount 1 / failedNodeCount 0`, fresh node `DONE_UNVERIFIED` with a non-blank `inputHash` and `lastRunAt.isAfter(createdAt)`
+(the column has a DDL `now()` default, so "stamped" is proven by the advance, not by non-null), revision 1 selected; un-forced
+re-submit → `PictureBookException` 409 with the exact message and `newestRunId` unchanged, nothing inflight; forced re-submit (the
+`force=true` overload) → new run, `planned [handle]`, 1/0/0, `executedNodeCount 1`, revision 2 selected `GENERATED` with
+`supersedes` → revision 1 (kept, unselected), `listChain` size 2, `findSelected` = revision 2, PNG magic on the bytes, emitted to
+`target/pf9-landscape-rev2-<ts>.png`. Timings logged, never asserted.
+
+**JUnit on `am7db` + Swarm `.39` (17:07 → 17:13, `C:/tmp/mvn-o7-pf9.log`;** `mvn -o -pl AccountManagerObjects7
+-Dtest=TestPbRenderJob,TestPbNodeRun -DskipTests=false test`**, one Maven run, nothing else on SD, `tasklist` showed only the JDT LS
+`java.exe 23524` beforehand):**
+```
+[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 64.86 s -- in org.cote.accountmanager.olio.picturebook.TestPbNodeRun
+PF-9 case11 render 1 dto={jobId=d1753892-f0f0-4ff5-a117-51991b9c391e, jobStatus=running, kind=pb.render, runObjectId=19a889d4-cb30-460d-adff-81576da12f54, runStatus=RUNNING, plannedNodeCount=1, planned=[pf9-c11-e63897f0], reusedNodeCount=0, pinnedNodeCount=0, lastRunUpdated=true}
+PF-9 case11 render 1 durationMs=26018 job=COMPLETED result={ "runObjectId" : "19a889d4-…", "runStatus" : "COMPLETED", "executedNodeCount" : 1, "failedNodeCount" : 0, "skippedNodeCount" : 0, "plannedNodeCount" : 1, "nodes" : [ { "nodeObjectId" : "b00fd289-…", "handle" : "pf9-c11-e63897f0", "status" : "DONE_UNVERIFIED", "artifactObjectId" : "ca63670d-…", "autoApproved" : false, "autoApproveSkipped" : "off", "durationMs" : 16862 } ], "durationMs" : 16896 }
+PF-9 case11 un-forced refusal: 409 Nothing to render: every node of this scene is current (1 reused, 0 pinned)
+PF-9 case11 forced render 2 dto={jobId=e9f46d47-637c-4cda-a4da-c75341cabad7, jobStatus=running, kind=pb.render, runObjectId=6a7e0769-7132-4e39-83ac-52737864c5e8, runStatus=RUNNING, plannedNodeCount=1, planned=[pf9-c11-e63897f0], reusedNodeCount=0, pinnedNodeCount=0, lastRunUpdated=true}
+PF-9 case11 forced render 2 durationMs=22147 job=COMPLETED result={ "runObjectId" : "6a7e0769-…", "runStatus" : "COMPLETED", "executedNodeCount" : 1, … }
+PF-9 case11 PNG written: C:\Projects\GitHub\AccountManager7\src\AccountManagerObjects7\target\pf9-landscape-rev2-1791843054766.png (1688889 bytes)
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 269.7 s -- in org.cote.accountmanager.olio.picturebook.TestPbRenderJob
+[INFO] Tests run: 18, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+[INFO] Total time:  05:38 min
+```
+(The JSON lines are the log's pretty-printed objects joined onto one line, ids shortened; everything else verbatim. The `[LLM-GATE]`
+line is `BaseTest.setup()`'s once-per-run resolution — neither class makes an LLM call.) The PNG was opened: a painterly harbour at
+dusk, moored fishing boats, lanterns reflected in still water, gulls, a headland — the scene's hand-written prompt, rendered. The
+other ten `TestPbRenderJob` cases (plan shape, 409 opens no run, cancel-before-start, cancel-mid-run, the live portrait happy path
+case07, …) and the seven `TestPbNodeRun` cases re-ran green beside it.
+
+**Deploy (17:13 → 17:15).** `mvn -o -q -pl AccountManagerObjects7 install -DskipTests` exit 0 (`C:/tmp/mvn-o7-pf9-install.log`); the
+jar's `PbNodeExecutor.class` entry md5 == `target/classes` (`8b7186731f7db59ba885ebac91c0ea41`, the bytes surefire ran); `docker cp`
+over `/opt/tomcat/webapps/AccountManagerService7/WEB-INF/lib/AccountManagerObjects7-7.0.0-SNAPSHOT.jar` (was `73e37dd2…` of
+Oct 11 21:32); md5 local == container `416f5714c731855e3a9a45a09b39698f`; `docker restart am7test-am7-1`; §3 probe 17:15:21
+(`am7test-am7-1 Up 56 seconds`, setup state 200, everything green).
+
+**Not done for this batch at 17:15 (each ⚠ in §6.C):** the Objects7 module quick gate (§6.C 140 — the whole suite, ~2 h with LLM
+and SD classes, needs the go-ahead — approved 17:25, runs after the verifiers); a REST-level Playwright proof on the Docker stack
+(§6.C 140 — `pictureBookV3Ux.spec.js` 1b is a CHAPBOOK fixture, so its LANDSCAPE node runs `executeChapBookPage`
+(`PbNodeExecutor.java:425`), not the changed path; the deployed jar was verified by md5 + restart + probe only — **done 20:11–20:13,
+§9.4.1 below**); the Objects7 verifier (asked for at the end of (A), §6.C 127b — approved 17:25).
+
+**Observations, not worked (scope discipline):** (a) the run's log carries ~15 `RecordValidator - description value 'PERMIT
+system.user testUser1 to READ … olio.charPerson …' … WriterException: Record failed validation in IO DATABASE` lines from
+`TestPbNodeRun`'s wide charPerson reads — the audit row is lost on every one; that is PF-12 (§9.1, PROPOSED) seen live; (b) the
+case leaves its scene + node + two artifacts on the fixture book, as every other `TestPbRenderJob`/`TestPbAutoApprove` case does
+(§6.C 138).
+
+### 9.4.1 PF-9 REST-level plain-PB proof on the Docker stack (2026-10-12 20:11 → 20:13 local)
+
+**Why.** §6.C 140: every Playwright proof of "current → 409 → forced" ran on a CHAPBOOK fixture, whose LANDSCAPE node is
+dispatched to `executeChapBookPage` (`PbNodeExecutor.java:425`); the four PF-9 closings were proven only by JUnit on `am7db`
+(§9.4) and by md5 on the deployed jar. Stephen's 17:25 answer: "Yes, write and run it."
+
+**What.** New `src/AccountManagerUx752/e2e/pictureBookV3PlainPb.spec.js` (gated `PB_SD_TESTS=1`; serial; `OUT_DIR
+test-results/pf9-plain`); principal `ensureSharedTestUser()` throughout; no LLM call anywhere (no chat route is resolved, so no
+`[e2e-llm]` line exists); two Swarm `.39` renders. Fixture seeded in `beforeAll` (§6.C 141 for the two ⚠ choices):
+`POST /rest/olio/picture-book/chapter {slug:'pf9-plain-<ts>'}` → book `/full` asserts `bookType === 'STORY'` and `groupPath` ends
+`/Book`; `GET /{book}/workflow` asserted 404 and `GET /{book}/pages` `[]` before seeding; Workflow group found by `auth.group`
+search (`name='Workflow'`, `parentId` = Book group's parent, `organizationId`), path asserted `…/Workflow`; `POST /rest/model`
+`olio.pb.workflow` (graphVersion 1, `dirty`, nodeCount 0) → `GET /{book}/workflow` now answers with it; `POST /rest/model`
+`olio.pb.scene` (sceneIndex 0, title "The lake at dawn", hand-written `sdPrompt`) → `/pages` lists it with no node/artifact;
+`POST /rest/model` `olio.pb.node` (`landscape@<scene8>`, `nodeType landscape`, `pending`, `scope scene`, `scopeRef`
+scene.objectId) + `PATCH` `scene.sceneNode` → `/pages` shows `sceneNodeObjectId`, `nodeStatus PENDING`, no image; node row has no
+`inputHash`. Four cases:
+
+1. `[SD] render 1` — un-forced `POST /{book}/scene/{scene}/render` → 202; job polled to terminal; node row `DONE_UNVERIFIED` with
+   `inputHash`; page carries the artifact, `imageStale false`; run `COMPLETED`, `jobId null`; PNG saved and checked (role
+   LANDSCAPE, `revision 1`, `selected true`, no `supersedesObjectId`).
+2. `PF-9 proof` (no SD) — un-forced again → **409** `(1 reused, 0 pinned)` and the node row/page are unchanged; `POST
+   /{book}/node/{node}/pin {pinned:true}` → forced → **409** `(0 reused, 1 pinned)`, page `pinned true`; unpin → node `pinned false`.
+3. `[SD] render 2` — `?force=true` → 202, new run; new artifact ≠ revision 1; page shows it, `imageStale false`; PNG `revision 2`,
+   `supersedesObjectId` = revision 1's id, `selected true`; revision 1 now `selected false`; un-forced once more → 409
+   `(1 reused, 0 pinned)`.
+4. `reader` — browser login as the shared user (WebSocket stubbed via `addInitScript` before `goto`), `/#!/picture-book/v2/<book>`
+   → `[data-pb2-cover-count]` `1 rendered of 1 scene`, first page: `pb2-scene-image` visible and decoded (1024×1024), chip
+   `data-chip="review"`, no `pb2-stale-badge`, `Re-render` enabled, no `pb2-run-progress`; screenshot saved.
+
+**Run** (`PB_SD_TESTS=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/pictureBookV3PlainPb.spec.js
+--workers=1 --project=chromium --retries=0`, log `C:/tmp/pw-pf9-rest.log`, exit 0; §3 probe 20:11:07 green). Verbatim lines
+(the JSON objects are the log's pretty-printed bodies joined onto one line, ids shortened where marked `…`):
+
+```
+[pf9-seed] GET /workflow before seeding: HTTP 404 {"error":"This book has no workflow yet - generate a scene first"}
+book id 896 / 10390db6-5bc3-4023-b8a8-a44b45c8f099 / Book pf9-plain-mv5zjv7t / groupId 27894 / /Olio/Universes/Books/Worlds/pf9-plain-mv5zjv7t/Book / orgId 2 / bookType STORY
+workflow id 410 / a1ce995a-c0cc-49a2-b9df-0f34d31c3a28 / groupId 27931 / …/pf9-plain-mv5zjv7t/Workflow
+scene id 2648 / 7626b359-3324-4a5c-aa68-cd968275dc3e ; nodeL id 2820 / b15ba527-dc5c-40ed-a535-4e7b6afb265a / landscape@7626b359
+[pf9-r1-submit] HTTP 202 … "jobId":"808aaeb9-d966-48ee-9963-63e649844246" … "runObjectId":"5d9ed4f9-c3cb-4cf7-a3c5-359fd8aa0ed9" … "plannedNodeCount":1, "planned":["landscape@7626b359"], "reusedNodeCount":0, "pinnedNodeCount":0
+[pf9-r1-job] terminal after 27291ms: {"status":"completed" … "runStatus":"COMPLETED","executedNodeCount":1,"failedNodeCount":0 … "status":"DONE_UNVERIFIED","artifactObjectId":"2abe3cd8-c444-4c51-a22d-8548e1300b21" … "durationMs":24495}
+[pf9-r1-node] {… "inputHash":"fb3670d29924a8d7251c218af8c9032492a77173303a3cdc5e00e05bbbe4c810","nodeStatus":"done_unverified" … "pinned":false}
+[pf9-png] r1-landscape.png 1024x1024 (1554401 bytes) role=landscape revision=1 selected=true supersedes=undefined backend=SWARM seed=0 durationMs=24256 reviewStatus=GENERATED
+  ok 1 … [SD] render 1 (27.6s)
+[pf9-409-unforced] HTTP 409 {"error":"Nothing to render: every node of this scene is current (1 reused, 0 pinned)"}
+[pf9-409-pinned] HTTP 409 {"error":"Nothing to render: every node of this scene is current (0 reused, 1 pinned)"}
+  ok 2 … PF-9 proof (226ms)
+[pf9-r2-submit] HTTP 202 … "jobId":"8c6a1a2a-8cec-44a7-a8a3-5a8f0e3f2134" … "runObjectId":"8c6036e3-f24b-4a9d-8f05-ee95992d4871" … "planned":["landscape@7626b359"], "reusedNodeCount":0, "pinnedNodeCount":0
+[pf9-r2-job] terminal after 18183ms … "artifactObjectId":"1a36e8e4-9200-4b81-89a8-6dff5adffbaf" … "durationMs":15120
+[pf9-png] r2-landscape-forced.png 1024x1024 (1416778 bytes) role=landscape revision=2 selected=true supersedes=2abe3cd8-c444-4c51-a22d-8548e1300b21 backend=SWARM seed=0 durationMs=14940 reviewStatus=GENERATED
+[pf9-r2-revision] prior=1 selected=false reviewStatus=GENERATED -> forced=2 selected=true supersedes=2abe3cd8-…
+[pf9-r2-unforced-again] HTTP 409 … (1 reused, 0 pinned)
+  ok 3 … [SD] render 2 (18.4s)
+[pf9-reader] reader shows the scene image 1024x1024 -> test-results/pf9-plain/reader-forced.png
+  ok 4 … reader (10.2s)
+  4 passed (1.1m)
+```
+
+**Images opened (Read), all three:** `test-results/pf9-plain/r1-landscape.png` (1,554,401 B) — a misty lake at dawn, pines on
+the far shore, a single rowing boat, soft painterly light; `r2-landscape-forced.png` (1,416,778 B) — the same prompt, a different
+composition (the forced reroll); `reader-forced.png` (197,428 B) — "Book pf9-plain-mv5zjv7t · Page 1 of 1", the revision-2 image,
+title "The lake at dawn", chip "Review", button "Re-render", "No text yet.", "Auto-approve: OFF".
+
+**What this proves that §9.4 did not:** the deployed jar (`416f5714…`) runs the PF-9 `executeLandscape` closing for a STORY
+book through REST: the first render stamps `inputHash`, the planner then refuses an un-forced re-render of that node as current,
+pin beats force, and only a forced run rerolls (revision 2 superseding 1). The reader renders the plain-PB page from the same
+`bookPageView`. The fixture (book 896 + world `pf9-plain-mv5zjv7t`, workflow 410, scene 2648, node 2820, two artifacts) is left in
+place, as the other PF proofs leave theirs (§6.C 138); `DELETE /rest/olio/world/{id}` removes it when wanted.
+
+### 9.4.2 Objects7 verifier — PF-9 + `WebAuthnUtil`: PASS-WITH-NOTES, one live Maven run, PF-9 → DONE (2026-10-13 11:39 → 11:47 local)
+
+**Brief.** The verifier owned the single Maven slot (slot checked before/after: only `java.exe 23524`), ran exactly one
+command, reviewed the PF-9 diff/root cause, the `completeNode` double-mark question, case11's genuineness and litter, the
+`pictureBookV3PlainPb.spec.js` hygiene, the fake-test check, `javap`, and opened the emitted PNG. No edits, no Playwright, no
+Docker, no `install`, no DB reset. Checked here before recording: every quoted log line (by line number), `javap` counts, class/
+source mtimes, the PNG (opened).
+
+**The run** — `cd src && mvn -o -pl AccountManagerObjects7 -Dtest=TestPbRenderJob,TestPbNodeRun,TestWebAuthnUtil -DskipTests=false test
+> C:/tmp/o7-verifier-pfA.log 2>&1` (11:39 → 11:46:04), verbatim with log line numbers:
+```
+:109    [INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.774 s -- in org.cote.accountmanager.objects.tests.TestWebAuthnUtil
+:117    [INFO ] 2026-10-13 11:39:59.520 [main] LlmTestGate - [LLM-GATE] http://127.0.0.1:4000/health/liveliness answered HTTP 200
+:118    [INFO ] 2026-10-13 11:39:59.534 [main] LlmTestGate - [LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000
+:6926   … BaseTest - P1-3 case05 PNG written: …\target\p13-portrait-1791909655894.png (1559855 bytes)
+:11615  [INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 69.05 s -- in org.cote.accountmanager.olio.picturebook.TestPbNodeRun
+:43070  … BaseTest - PF-9 case11 render 1 dto={jobId=5e765724-c7a2-4914-b5c6-1b1d40b7b3f4, jobStatus=running, kind=pb.render, runObjectId=adc8be2f-6b1e-41cf-844a-d1299f7e6538, runStatus=PENDING, plannedNodeCount=1, planned=[pf9-c11-6e4f58d1], reusedNodeCount=0, pinnedNodeCount=0, lastRunUpdated=true}
+:47247  … BaseTest - PF-9 case11 render 1 durationMs=34380 job=COMPLETED result={   ("runStatus" : "COMPLETED", "executedNodeCount" : 1, "failedNodeCount" : 0, "status" : "DONE_UNVERIFIED" on the following lines)
+:51700  … BaseTest - PF-9 case11 un-forced refusal: 409 Nothing to render: every node of this scene is current (1 reused, 0 pinned)
+:56138  … BaseTest - PF-9 case11 forced render 2 dto={jobId=c74a301a-1303-40d0-bf3f-a54632a493a8, jobStatus=running, kind=pb.render, runObjectId=5279785b-6d94-4257-843c-79d759cbd7f4, runStatus=RUNNING, plannedNodeCount=1, planned=[pf9-c11-6e4f58d1], reusedNodeCount=0, pinnedNodeCount=0, lastRunUpdated=true}
+:60315  … BaseTest - PF-9 case11 forced render 2 durationMs=23564 job=COMPLETED result={
+:60341  … BaseTest - PF-9 case11 PNG written: …\target\pf9-landscape-rev2-1791909804499.png (1463748 bytes)
+:104415 … BaseTest - P1-6 case07 PNG written: …\target\p16-portrait-1791909902399.png (1637499 bytes)
+:133857 [INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 295.7 s -- in org.cote.accountmanager.olio.picturebook.TestPbRenderJob
+:133861 [INFO] Tests run: 26, Failures: 0, Errors: 0, Skipped: 0
+:133864 [INFO] BUILD SUCCESS
+:133866 [INFO] Total time:  06:10 min
+```
+`Failed to complete node` warnings: 0. The LLM tier was the **in-stack container Ollama through LiteLLM** (`route=litellm
+tier=local`); `/api/ps` on `:11435` was empty again by 11:46:51, so `size_vram` is read during gate run 6 instead (read 12:01:38:
+`size_vram 5988784536` for `goekdenizguelmez/JOSIEFIED-Qwen3:8b` — on the GPU; §4.4 row 6).
+
+**PNG** `target/pf9-landscape-rev2-1791909804499.png` (1,463,748 B, 11:43:24; opened here as well): a painterly stone harbour at
+dusk — moored fishing boats with red hulls, lit cottages along the quay reflected in still water, gulls, a headland under a grey-
+pink sky. The hand-written prompt, rendered; not blank/noise.
+
+**`javap`** on `target/classes/…/PbNodeExecutor.class` (class 10:47:37, after the 10:46:42 source edit; the Maven log says `Nothing
+to compile - all classes are up to date`, so surefire ran the working-tree bytes): `Unresolved compilation` 0,
+`PbPipelineUtil.completeNode` 6, `markStaleDownstream` 0, `PbGraphUtil.downstreamOf` 6 (re-run here: identical counts,
+`C:/tmp/javap-pbnodeexec-pfA.txt`).
+
+**Answers to the five questions.**
+1. **Root cause, not assertion-side.** All four closings (`PbNodeExecutor.java:512-513, 684-685, 779-780, 908-909`) now go through
+   `PbPipelineUtil.completeNode`, matching the ChapBook page (`:637-638`) and portrait (`:1026`). `executeLandscape` (`:445-516`) has
+   exactly one success exit; every other exit throws, and the three wrappers all route to `PbPipelineUtil.failNode`
+   (`executeNode :190`, `executeNodeRun :247-248` + `closeRun FAILED`, `executeStage :294`); `PbStageCancelledException` is rethrown
+   untouched by design (`:290-291`).
+2. **No double-marking, no double-count.** `completeNode` (`PbPipelineUtil.java:728-746`) is the only STALE writer (`:740`) and the
+   only `g.executed++` (`:741`). The caller's `downstreamOf` (`PbGraphUtil.java:1026`) is write-free and feeds only `artifactDto`
+   (`:1077-1082`) — a second BFS read, not a second write pass.
+3. **case11 is genuine** (`TestPbRenderJob.java:1164-1292`): drives the real `PbRenderJobUtil.submit` + `AsyncJobRegistry` job twice
+   on live Swarm, asserts on persisted rows re-read via `PbGraphUtil.readNode`/`readRun`/`PbArtifactUtil.readArtifact`, checks PNG
+   magic on the stored bytes; user `testUser1` (`:1296-1302`; admin only as creator-principal, the standard idiom). The 20-min
+   `@Test(timeout)` and `awaitTerminal` deadline are liveness guards shared by every case, not speed thresholds.
+4. **`pictureBookV3PlainPb.spec.js`** (not run): `ensureSharedTestUser` (`:34, :202`), credential built only from its return
+   (`:49-61`); WebSocket stub in `addInitScript` before `goto` (`:73-93`); `/chapter`-created fixture with `bookType` asserted
+   `STORY` (`:218`) so LANDSCAPE dispatches to `executeLandscape` (`PbNodeExecutor.java:425`). Prior run evidence is real:
+   `C:/tmp/pw-pf9-rest.log` (Oct 12 20:12) `4 passed (1.1m)` with the 409 lines; all three PNGs exist in `test-results/pf9-plain/`
+   at the cited sizes.
+5. **No fake tests.** `TestWebAuthnUtil` uses real `KeyPairGenerator` (secp256r1, RSA-2048) and real `Signature`; each negative case
+   re-signs the tampered artifact so only the targeted check fails (`:150-185`). `WebAuthnUtil.java` imports only `java.security`,
+   log4j and `JSONUtil` — no ISO/Service knowledge. The spec's `JSON.parse` calls parse REST bodies before asserting on values.
+
+**Findings (none blocking; recorded in §9.5, not acted on).**
+- Low `PbNodeExecutor.java:1077` — `downstreamMarked` now counts `downstreamOf` results, not nodes whose STALE write succeeded (the
+  old `marked` list); can overstate if a STALE persist fails. Pre-existing for portrait (`:1026-1027`), now uniform; `completeNode`
+  logs the real count.
+- Low `PbPipelineUtil.java:743-745` — `completeNode` swallows its own exceptions, so a failed `persistInputHash`/`persistStatus` still
+  returns a DTO stating `DONE_UNVERIFIED` with `executed` not incremented. Pre-existing contract; 0 occurrences in this run.
+- Low `TestWebAuthnUtil.java:157, 212` — the "contains" challenge cases (`challenge + "AA"`) fail via base64url decode error (45
+  chars), not via a length/byte mismatch; `+ "AAAA"` would exercise `MessageDigest.isEqual`'s length path. Outcome still correct.
+- Note `pictureBookV3PlainPb.spec.js:316, 371, 418, 476` — all four cases `test.skip` unless `PB_SD_TESTS=1`; a default run is 4
+  skipped, not a pass (the §9.4.1 run set the flag). `BASE_URL` defaults to `https://localhost:8899` when `PLAYWRIGHT_BASE_URL` is
+  unset (`:39`), like ~40 sibling specs; the documented command sets `:9443`.
+- Note fixture litter per case11 run on `pb2c-graph` (scene, node, 2 artifacts) and a `target/pf9-landscape-rev2-*.png` per run —
+  same as the sibling cases; §9.4 already says so.
+
+**Not done by the verifier:** no second Maven command; deployed jar md5 and the Service7-side WebAuthn wiring not re-verified
+(separate verifiers); the Oct 12 `test-results/pf9-plain/*.png` files not re-opened (existence/sizes only).
+
+**Row status:** PF-9 **DONE** (§9.1). Nothing committed.
+
+### 9.5 Proposals awaiting Stephen (not worked)
+
+- **End-of-(A) verifier notes (2026-10-13, §9.2.3 / §9.3.6 / §9.4.2) — none acted on:** (a) `PbNodeExecutor.java:1077`
+  `downstreamMarked` counts `downstreamOf` results, not successful STALE writes (overstates on a failed persist; portrait was
+  already so); (b) `PbPipelineUtil.completeNode` (`:743-745`) swallows its own persist exceptions and still returns a
+  `DONE_UNVERIFIED` DTO; (c) `TestWebAuthnUtil.java:157, 212` challenge-mismatch cases fail on base64url decode, not on
+  `MessageDigest.isEqual` — `+ "AAAA"` would hit the length path; (d) `pictureBookV3PlainPb.spec.js:39` `BASE_URL` default
+  `https://localhost:8899` like ~40 sibling specs; (e) `OlioService.deleteWorld`: the reset + re-find + wipe orchestration sits
+  in Service7 (architecture.md would place it in `WorldUtil`/`PbDeleteUtil`), a missing olio principal degrades the recheck to
+  user-only (`deleteAs == user`, `:747`), and a `reset` that fails after step 3 removed the world still answers `deleted:true`
+  (warn at `:765` only); (f) `components/sdConfig.js:79` `APPLY_EXCLUDE` lacks `name` (harmless since `SAVE_EXCLUDE` strips it).
+- **PF-10, PF-11, PF-12, PF-13, PF-14, PF-15c** — as tabled in §9.1; no decision received in the AskUserQuestion.
+- **PF-16 (new, found 2026-10-12 15:38 during PF-15d)** — `DELETE /rest/olio/picture-book/series/{id}` → 500
+  `{"error":"Chapter <oid> of series '<slug>' could not be read as the olio principal"}` for every wizard-built chaptered
+  series: `PbSeriesUtil.deleteSeries` (`PbSeriesUtil.java:355-425`) reads the series as the olio principal (PERMIT), enumerates
+  chapters with `findRecords` (no PBAC), then `PbBookUtil.readBook(olioUser, oid, orgId)` (`:392`, `AccessPoint.find`) and throws at
+  `:393-395` when that is null. Server log: `AUDIT DENY system.user olioUser to READ … olio.pb.book … (objectId = "19a19bc0-…" &&
+  organizationId = 2) (via: system.user olioUser)` right after `AUDIT PERMIT system.user olioUser to READ … olio.pb.series`.
+  The chapter rows are owned by olioUser (id 20) in `/Olio/Universes/Books/Worlds/<series-slug>-chN/Book` (group owner 20) and
+  the caller `e2etest_shared` reads them PERMIT with the same projection. Why the owner is denied is **not established** — the
+  PBAC trace (`getPolicyUtil().setTrace(true)` around that one `find`) has not been run. The REST-built series of
+  `pictureBookSeriesDelete.spec.js` (`POST /series` + `POST /chapter`, no manuscript/`sourceData`) deletes fine — the visible
+  difference, not a proven cause. Per-chapter `DELETE /{bookObjectId}/reset` as the caller followed by `DELETE /series/{id}` on
+  the emptied series works (`{deleted:true, chapters:0}`) and is what the PF-15d cleanup and `afterAll` use. Candidate fix and
+  proof in §9.1.
+- **`listControl.spec.js:207` viewer-index race** — §6.C 131; mechanism from the code, not proven live; fix would be in the
+  viewer/list (`list.js` `openItem`/`update`, `pagination.updateList`), not in the test.
+- **Service7 H2 fixture: disable H2's close-time compaction (found 2026-10-12 16:32, §6.C 137)** — H2 2.3.232 runs a
+  move-chunks compaction in its `OnExitDatabaseCloser` shutdown hook; with `<reuseForks>false</reuseForks>` that is once per
+  test class, it throws `AssertionError [2.3.232/3]` at `RandomAccessStore.moveChunkInside:630` several times a day (six
+  today across two fixtures) and one of them left `am7/h2.mv.db` unrecoverable (`[2.3.232/6]`), turning the module gate red
+  on 45 unrelated tests. Candidate: append `;MAX_COMPACT_TIME=0` (or `;AUTO_COMPACT_FILL_RATE=0`) to the `BaseTest` H2 URL
+  (`jdbc:h2:./am7/h2`), both `DbSettings` in the shipped jar; alternatively `reuseForks=true` so the hook runs once per
+  module. Test infrastructure, not product — not applied.
+- **Passkey settings "Created" column shows "—" — root-caused 2026-10-13 (§6.C 146 (p)), not fixed:** `createdDate` is a
+  `common.dateTime` field that `auth.webauthnCredential` (inherits `data.directory` only) does not carry, so
+  `features/webauthn.js:130` has nothing to format, and `WebAuthnService.getCredentialsForUser` (`:411`) sorts on it anyway,
+  logging `[ERROR] StatementUtil - Sort field is not defined on model - createdDate` on every `/credentials` call (5× in the
+  11:04 Playwright run). Candidate: sort on `id` and either drop the column or add `common.dateTime` to the model's `inherits`
+  (Path 1 boot patch — check how `createdDate` is populated on create before relying on it). Say the word.
+- **`/reimage` `imageAction=portrait` produced a full-body nude render** for the `bugfix3-live` fixture character
+  (`C:/tmp/pf8-reimage-thumb.png`, §9.3) — the prompt/content path is outside PF-8; recorded for Stephen.
+- **WebAuthn hardening — refreshed after PF-5b/PF-5c (§9.3.5; the blocking finding of §9.3.1 is closed).** Fixed by PF-5b:
+  the malformed-`publicKey` 500 (now 400); `organizationPath` is no longer dead (it is the session-login fallback — see below).
+  Still open, pre-existing, not worked — your call on each: (1) **MEDIUM, security-reviewer** — cross-org `credentialId`
+  collision: `(credentialId, organizationId)` uniqueness + a credentialId-only `findCredentialById` (`:429-438`) returning
+  `results[0]` lets a user in another org shadow a victim's passkey (genuine assertion fails on `signature`, `DELETE` 403) —
+  org-scope the lookup or make the constraint global, and validate `credentialId` as base64url (it is also unescaped into
+  hand-built JSON at `:91`, `:205`, `:233`); (2) **MEDIUM, security-reviewer + verifier** — the DTO `organizationPath` fallback
+  at `:347-349` lets the client pick the JAAS org for the `${jwt}` login when the owner record lacks `organizationPath`
+  (unreachable today; `PathProvider` fills it) — derive from `owner.organizationId`, fail closed, and have `AM7LoginModule`
+  compare the token's org claim; (3) `request.login()` on an already-authenticated session is swallowed (`:350-352`) — invalidate
+  first; (4) `RP_ID = "localhost"` (`:61`) is now a hard failure elsewhere via `rpIdHash` — needs config; (5) registration stores
+  the `Origin` header (`:183`) without comparing to `clientData.origin`, and never parses the attestation object (acceptable for
+  `attestation:"none"`); (6) `POST /auth` does not bind to the user named in `GET /auth?user=`, the session challenge has no
+  TTL, and `GET /auth` creates a session per anonymous call; (7) no JUnit for `POST /auth` with no pending challenge.
+- ~~**PF-9 REST-level proof on the Docker stack (§6.C 140)**~~ — **resolved 20:13**: Stephen answered "Yes, write and run it"
+  (17:25); `pictureBookV3PlainPb.spec.js` (STORY fixture — the enum has no PICTUREBOOK value — two `.39` renders) `4 passed (1.1m)`,
+  §9.4.1 / §6.C 141.
+- **PF-12 seen live in the PF-9 run** (`C:/tmp/mvn-o7-pf9.log`, §9.4): ~15 `RecordValidator - description value 'PERMIT system.user
+  testUser1 to READ … olio.charPerson …'` > 2048 → `WriterException: Record failed validation in IO DATABASE` from
+  `TestPbNodeRun`'s wide charPerson reads — the audit row is dropped each time. Evidence for the PF-12 row, nothing changed.
+- **§4.6 run-2 candidate test fixes, not applied (§6.C 145 (c))** — `chatDeleteE2E` sidebar-row locator; `chatLabelBleed`
+  `olio.llm.chatRequest` cache clear after REST creations; `pictureBookLive` B.3/J.4 `!PB_LLM || !bookObjectId` gate (left open
+  by P1-12 group 4); `pictureBookCheckpoints:327` count guard / short timeout. One batch, test files only; say the word.
+- **Playwright reporter for gate runs (§6.C 145 (f))** — `playwright.config.js` has no `reporter`, and `verify.sh` keeps only
+  the last 60 lines of the e2e phase, so the `[e2e-llm] route=…` line, the skipped list and per-test timings are lost after
+  every gate. Candidate: `reporter: [['list'], ['json', { outputFile: 'e2e/results/report.json' }]]` (the results dir is
+  already copied aside before triage). Test infrastructure, not product.
+- **`e2etest_shared` e2e litter makes the PB health/heal and book-list routes slow enough to fail tests (§4.6 reds 3 and 6)** —
+  `GET /rest/olio/picture-book/health` 26–70 s, `POST …/health/heal` > 120 s (1 156 `olio.pb.book` audit reads for one heal),
+  `GET …/books` 10.4 s, against ~350 books the shared user created across sessions. Two parts, both Stephen's call: (1) a
+  one-off cleanup of the litter (the PF-15d-style per-spec `afterAll` deletes are in place for new runs; the backlog predates
+  them), and (2) product-side, bound or page the health audit (`PbHealthUtil`) instead of reading every book twice — this is a
+  performance observation, not an accepted defect.

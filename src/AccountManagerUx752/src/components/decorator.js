@@ -340,10 +340,11 @@ function getTabularRow(ctl, p, idx, map) {
         onselectstart: function () { return false; },
         ondblclick: function () {
             if (ctl.pickerMode) {
-                // In picker mode: double-click groups to navigate, items to select+confirm
+                // In picker mode: double-click a folder to navigate into it, anything else to select+confirm.
+                // am7model.isGroup is true for every data.directory-derived record (notes, data, people),
+                // so it cannot be used to tell a folder from a pickable item.
                 let objType = p[am7model.jsonModelKey] || ctl.listType;
-                let objModel = am7model.getModel(objType);
-                if (objModel && (am7model.isGroup(objModel) || objType === 'auth.group')) {
+                if (objType === 'auth.group') {
                     ctl.down(p);
                 } else {
                     ctl.select(p);
@@ -485,9 +486,9 @@ function getGridListItem(ctl, p) {
     let props = Object.assign(dndDragProps(p), {
         ondblclick: function () {
             if (ctl.pickerMode) {
+                // See getTabularRow: only auth.group is a navigable folder in picker mode.
                 let objType = p[am7model.jsonModelKey] || ctl.listType;
-                let objModel = am7model.getModel(objType);
-                if (objModel && (am7model.isGroup(objModel) || objType === 'auth.group')) {
+                if (objType === 'auth.group') {
                     ctl.down(p);
                 } else {
                     ctl.select(p);

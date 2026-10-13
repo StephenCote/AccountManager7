@@ -3726,7 +3726,7 @@ async function doRegenerateScene(idx) {
     scene._saving = true;
     m.redraw();
     try {
-        let chatConfigName = await fetchDefaultChatConfigName();
+        let chatConfigName = effectiveChatConfigName() || await fetchDefaultChatConfigName();
         // P0-10d: book-level SD config is persisted first; the overlay is only the save-failed fallback.
         let { sdConfig } = await syncBookSdConfigForRender(bookObjectId);
         let renderPath = await chapBookRenderPath();
@@ -3835,7 +3835,7 @@ async function doRerenderScene(idx) {
     m.redraw();
     try {
         let prompt = (scene.sdPrompt || '').trim();
-        let chatConfigName = prompt ? null : await fetchDefaultChatConfigName();
+        let chatConfigName = prompt ? null : (effectiveChatConfigName() || await fetchDefaultChatConfigName());
         // P0-10d: book-level SD config is persisted first; the overlay is only the save-failed fallback.
         let { sdConfig } = await syncBookSdConfigForRender(bookObjectId);
         let renderPath = await chapBookRenderPath();

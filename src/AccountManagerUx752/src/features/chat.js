@@ -1210,9 +1210,11 @@ function renderNewSessionDialog() {
                                 newSessionSelectedPromptTemplate
                             );
                             if (req) {
-                                // Refresh list and select new session — single redraw at end
+                                // Refresh list and select new session — single redraw at end.
+                                // selectSession (not a bare pickSession) also records the selected
+                                // objectId, which the toolbar title and the sidebar highlight read.
                                 await ConversationManager.refresh();
-                                pickSession(req);
+                                ConversationManager.selectSession(req);
                             }
                         } catch(e) {
                             page.toast("error", "Failed to create session");

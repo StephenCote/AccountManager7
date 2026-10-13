@@ -215,4 +215,51 @@ test.describe('Object picker — up/down navigation (regression)', () => {
         await expect(pickerRow(page, FOLDER), 'FOLDER visible again after UP from child group')
             .toBeVisible({ timeout: 15000 });
     });
+
+    // PF-15a (P1-12): decorator.js's picker double-click used am7model.isGroup(objModel) to decide
+    // "folder → navigate in" vs "item → select+confirm". isGroup is true for EVERY data.directory-derived
+    // model (data.note, data.data, olio.charPerson, ...), so double-clicking a note navigated the picker
+    // INTO the note (an empty "container") instead of picking it. Only auth.group is a navigable folder.
+    test('picker double-click on a NOTE selects and confirms it; double-click on a FOLDER still navigates', async ({ page }) => {
+        await loginBrowser(page);
+        await page.waitForFunction(
+            () => window.am7page && window.am7page.components && window.am7page.components.picker,
+            { timeout: 15000 }
+        );
+        await page.evaluate(() => {
+            window.__pickerSelected = null;
+            window.am7page.components.picker.open({
+                type: 'data.note',
+                title: 'Pick one note',
+                multiSelect: false,
+                onSelect: function (item) { window.__pickerSelected = item; }
+            });
+        });
+        const overlay = page.locator('.am7-picker-overlay');
+        await expect(overlay).toBeVisible({ timeout: 15000 });
+
+        // A folder (auth.group row, reached via UP into home group-browse) still navigates on double-click.
+        const upBtn = overlay.locator('button:has(span.material-symbols-outlined:text-is("north_west"))');
+        await expect(upBtn, 'up button present').toBeVisible();
+        await upBtn.click();
+        await settleNav(page);
+        await filterPicker(page, FOLDER);
+        await expect(pickerRow(page, FOLDER)).toBeVisible({ timeout: 15000 });
+        await pickerRow(page, FOLDER).first().dblclick();
+        await settleNav(page);
+        await expect(overlay, 'folder double-click navigates — picker stays open').toBeVisible();
+        expect(await page.evaluate(() => window.__pickerSelected), 'folder double-click must not confirm a pick').toBeNull();
+        await filterPicker(page, CHILD_NOTE);
+        await expect(pickerRow(page, CHILD_NOTE), 'navigated into the folder').toBeVisible({ timeout: 15000 });
+
+        // A note row: double-click = select + confirm → onSelect fires with that note and the picker closes.
+        await pickerRow(page, CHILD_NOTE).first().dblclick();
+        await expect.poll(async () => page.evaluate(() => window.__pickerSelected && window.__pickerSelected.name), {
+            message: 'double-clicking a note must confirm the pick with that note',
+            timeout: 15000
+        }).toBe(CHILD_NOTE);
+        await expect(overlay, 'picker closes after the confirmed pick').toBeHidden({ timeout: 15000 });
+        const picked = await page.evaluate(() => window.__pickerSelected);
+        expect(picked.objectId, 'the confirmed pick is the note record itself').toBeTruthy();
+    });
 });

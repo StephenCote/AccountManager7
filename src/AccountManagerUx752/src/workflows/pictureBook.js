@@ -370,6 +370,25 @@ function chatConfigName() {
     return chatConfigRef ? chatConfigRef.name : null;
 }
 
+// One chat config drives every LLM call the wizard makes (extraction, retries, per-scene image
+// prompts), so every picker in the wizard binds to the same chatConfigRef.
+function openChatConfigPicker() {
+    ObjectPicker.openLibrary({
+        libraryType: 'chatConfig',
+        title: 'Select Chat Config',
+        onSelect: function (item) {
+            if (item && item.name) {
+                chatConfigRef = { name: item.name, objectId: item.objectId };
+                m.redraw();
+            }
+        }
+    });
+}
+
+function chatConfigLabel() {
+    return chatConfigRef ? chatConfigRef.name : (defaultsLoading ? 'Loading default...' : '(click to select)');
+}
+
 /**
  * Minimal client-side character hints for createFromScenes — {name, gender, role} only. No
  * appearance/outfit/portraitPrompt: those were dead weight (createCharPerson never read them in
@@ -1725,18 +1744,7 @@ function renderFailedPassages() {
                 'data-pb-retry-chatconfig': '1',
                 disabled: extracting,
                 title: 'Change the chat config (model) the retry will use — a refused passage usually needs a different model',
-                onclick: function () {
-                    ObjectPicker.openLibrary({
-                        libraryType: 'chatConfig',
-                        title: 'Select Chat Config',
-                        onSelect: function (item) {
-                            if (item && item.name) {
-                                chatConfigRef = { name: item.name, objectId: item.objectId };
-                                m.redraw();
-                            }
-                        }
-                    });
-                }
+                onclick: openChatConfigPicker
             }, [
                 chatConfigRef ? chatConfigRef.name : '(default chat config)',
                 m('span', { class: 'material-symbols-outlined text-xs ml-1' }, 'search')
@@ -1749,28 +1757,43 @@ function renderFailedPassages() {
  * Persistent end-of-fan-out report for a chaptered manuscript whose run did not finish cleanly.
  * Stays on screen until the user acts on it: open the series as it is, or re-run to resume.
  */
+/**
+ * The report's state, computed from the summary as it is NOW — a retry that recovers every failed
+ * passage mutates `saved`/`problems` in place, and the headline must follow. Pure; exported for tests.
+ * @returns {{clean: boolean, headline: string}}
+ */
+function chapterSummaryState(s) {
+    let missing = Math.max(0, s.total - s.saved);
+    let problems = (s.problems || []).length;
+    let clean = !s.cancelled && !missing && !problems;
+    let headline = (s.cancelled
+        ? 'Extraction was cancelled: '
+        : (clean ? 'Extraction finished: ' : 'Extraction finished with problems: '))
+        + s.saved + ' of ' + s.total + ' chapters saved'
+        + (missing ? ', ' + missing + ' missing' : '')
+        + (problems ? ', ' + problems + ' issue' + (problems === 1 ? '' : 's') : '')
+        + '.';
+    return { clean: clean, headline: headline };
+}
+
 function renderChapterSummary() {
     let s = extractChapterSummary;
     if (!s) return null;
-    let missing = Math.max(0, s.total - s.saved);
     let retryable = (s.chapters || []).reduce(function (n, c) {
         return n + (c.bookOid ? Object.keys(retryablePassages(c.failed)).length : 0);
     }, 0);
-    let headline = (s.cancelled
-        ? 'Extraction was cancelled: '
-        : 'Extraction finished with problems: ')
-        + s.saved + ' of ' + s.total + ' chapters saved'
-        + (missing ? ', ' + missing + ' missing' : '')
-        + (s.problems.length ? ', ' + s.problems.length + ' issue' + (s.problems.length === 1 ? '' : 's') : '')
-        + '.';
+    let state = chapterSummaryState(s);
     return m('div', {
         'data-pb-chapter-summary': '1',
-        class: 'p-3 rounded bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 text-xs text-orange-900 dark:text-orange-100 space-y-2',
+        'data-pb-chapter-summary-clean': state.clean ? 'true' : 'false',
+        class: 'p-3 rounded border text-xs space-y-2 ' + (state.clean
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 text-green-900 dark:text-green-100'
+            : 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700 text-orange-900 dark:text-orange-100'),
         oncreate: revealOnCreate
     }, [
         m('div', { class: 'flex items-center gap-2 font-medium' }, [
-            m('span', { class: 'material-symbols-outlined text-sm' }, 'report'),
-            m('span', { 'data-pb-chapter-summary-headline': '1' }, headline)
+            m('span', { class: 'material-symbols-outlined text-sm' }, state.clean ? 'check_circle' : 'report'),
+            m('span', { 'data-pb-chapter-summary-headline': '1' }, state.headline)
         ]),
         s.problems.length
             ? m('ul', { class: 'list-disc pl-5 space-y-1 max-h-48 overflow-y-auto' },
@@ -1852,21 +1875,9 @@ function renderStep1() {
                 m('label', { class: 'field-label' }, 'Chat Config'),
                 m('div', {
                     class: 'text-field-full text-sm cursor-pointer flex items-center justify-between',
-                    onclick: function () {
-                        ObjectPicker.openLibrary({
-                            libraryType: 'chatConfig',
-                            title: 'Select Chat Config',
-                            onSelect: function (item) {
-                                if (item && item.name) {
-                                    chatConfigRef = { name: item.name, objectId: item.objectId };
-                                    m.redraw();
-                                }
-                            }
-                        });
-                    }
+                    onclick: openChatConfigPicker
                 }, [
-                    m('span', { class: chatConfigRef ? '' : 'text-gray-400' },
-                        chatConfigRef ? chatConfigRef.name : (defaultsLoading ? 'Loading default...' : '(click to select)')),
+                    m('span', { class: chatConfigRef ? '' : 'text-gray-400' }, chatConfigLabel()),
                     m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
                 ])
             ]),
@@ -2151,6 +2162,21 @@ function renderStep4() {
         m('div', { class: 'flex justify-between items-center mb-2' }, [
             m('h3', { class: 'font-medium' }, 'Image Generation'),
             generating ? m('span', { class: 'text-xs text-blue-500' }, 'Generating...') : null
+        ]),
+
+        // The per-scene image prompt is written by the LLM, so the chat config is as much an image
+        // setting as the SD config — and a resumed book arrives here without passing Step 1.
+        m('div', { class: 'border dark:border-gray-700 rounded p-3 mb-3' }, [
+            m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'Chat Config'),
+            m('div', {
+                class: 'text-field-full text-sm cursor-pointer flex items-center justify-between',
+                'data-pb-step4-chatconfig': '1',
+                title: 'The chat config (model) that writes each scene\'s image prompt',
+                onclick: openChatConfigPicker
+            }, [
+                m('span', { class: chatConfigRef ? '' : 'text-gray-400' }, chatConfigLabel()),
+                m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
+            ])
         ]),
 
         renderSdConfig(),
@@ -2928,7 +2954,8 @@ export function __resetSdConfigForTest() {
 // defects before they had tests; this is the client half of that lesson.
 export { doExtract, applyExtractJob, reattachExtractJob, cancelExtract, stoppedEarlyReason,
     describeFailedPassage, mergeRecoveredScenes, doRetryFailed, doRetryFailedChapters,
-    loadPendingCheckpoints, discardPendingCheckpoint, describeCheckpointRow, renderCheckpointBanner };
+    loadPendingCheckpoints, discardPendingCheckpoint, describeCheckpointRow, renderCheckpointBanner,
+    chapterSummaryState, renderChapterSummary, renderStep4 };
 export function __extractStateForTest() {
     return {
         step, workObjectId, extracting, retryingFailed, extractChaptered, extractError, extractJobId, extractProgress,

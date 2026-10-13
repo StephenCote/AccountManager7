@@ -10,6 +10,7 @@ import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot, openAppTool } from './helpers/auth.js';
 import { ensureSharedTestUser } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
+import { createHash, randomBytes } from 'crypto';
 
 // PLAYWRIGHT_BASE_URL is mandatory for every run (the only valid bases are the Docker stack on 9443
 // and the second Vite on 8898); there is deliberately no fallback here.
@@ -88,6 +89,104 @@ async function loginAtOrigin(page, origin, creds) {
         () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
         null, { timeout: 30000 }
     );
+}
+
+async function addVirtualAuthenticator(page, context) {
+    const cdpSession = await context.newCDPSession(page);
+    await cdpSession.send('WebAuthn.enable');
+    const options = { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true };
+    let { authenticatorId } = await cdpSession.send('WebAuthn.addVirtualAuthenticator', { options });
+    return {
+        /** Replace the device with an empty one (a device holding a key for this user refuses a second registration via excludeCredentials). */
+        async swap() {
+            await cdpSession.send('WebAuthn.removeVirtualAuthenticator', { authenticatorId });
+            ({ authenticatorId } = await cdpSession.send('WebAuthn.addVirtualAuthenticator', { options }));
+        },
+        async remove() {
+            try {
+                await cdpSession.send('WebAuthn.removeVirtualAuthenticator', { authenticatorId });
+                await cdpSession.send('WebAuthn.disable');
+            } catch (e) { /* page may already be closed on timeout */ }
+        }
+    };
+}
+
+/** Register a passkey through the Passkeys page (the page must already be on #!/webauthn). */
+async function registerPasskeyViaUi(page, name, consoleErrors) {
+    const nameInput = page.locator('input[placeholder="e.g. Windows Hello, YubiKey"]');
+    await nameInput.clear();
+    await nameInput.fill(name);
+    await page.locator('button:has-text("Register Passkey")').click();
+    const credRow = page.locator('td:has-text("' + name + '")');
+    try {
+        await expect(credRow, 'registered passkey must appear in the Registered Passkeys table').toBeVisible({ timeout: 15000 });
+    } catch (e) {
+        const toasts = await page.locator('.toast-box').allTextContents().catch(() => []);
+        console.log('[webauthn] registration of "' + name + '" did not land. toasts=' + JSON.stringify(toasts)
+            + ' consoleErrors=' + JSON.stringify(consoleErrors || []));
+        await screenshot(page, 'webauthn-registration-failed');
+        throw e;
+    }
+}
+
+/** Delete every row named `name` on the Passkeys page (the page must already be on #!/webauthn). */
+const dialogAcceptingPages = new WeakSet();
+async function deletePasskeysViaUi(page, name) {
+    if (!dialogAcceptingPages.has(page)) {
+        dialogAcceptingPages.add(page);
+        page.on('dialog', dialog => dialog.accept().catch(() => {}));
+    }
+    const credRow = page.locator('td:has-text("' + name + '")');
+    let remaining = await credRow.count();
+    console.log('[webauthn] "' + name + '" rows before delete=' + remaining);
+    while (remaining > 0) {
+        const deleteBtn = page.locator('tr:has-text("' + name + '") button:has-text("Delete")').first();
+        await expect(deleteBtn).toBeVisible({ timeout: 5000 });
+        await deleteBtn.click();
+        await expect(credRow, 'deleting a passkey must remove its row').toHaveCount(remaining - 1, { timeout: 15000 });
+        remaining = await credRow.count();
+    }
+}
+
+/** The stored credential (as the list route returns it) whose name is `name`, read on the page's session. */
+async function findStoredCredential(page, origin, name) {
+    const resp = await page.request.get(origin + '/AccountManagerService7/rest/credential/webauthn/credentials');
+    expect(resp.status(), 'GET /credential/webauthn/credentials on the page session').toBe(200);
+    const creds = JSON.parse(await resp.text());
+    expect(Array.isArray(creds)).toBe(true);
+    const cred = creds.find(c => c.name === name);
+    expect(cred, 'credential "' + name + '" must be in the list').toBeTruthy();
+    // The record serializer omits unset/default-valued fields, so a never-used key may carry no counter.
+    cred.counter = (typeof cred.counter === 'number') ? cred.counter : 0;
+    return cred;
+}
+
+/** Delete, on the page's session, every stored passkey whose name starts with `prefix` (litter from an earlier failed run). */
+async function purgePasskeysViaRest(page, origin, prefix) {
+    const rest = origin + '/AccountManagerService7/rest/credential/webauthn';
+    const resp = await page.request.get(rest + '/credentials');
+    expect(resp.status(), 'GET /credential/webauthn/credentials on the page session').toBe(200);
+    const creds = JSON.parse(await resp.text());
+    const litter = (Array.isArray(creds) ? creds : []).filter(c => typeof c.name === 'string' && c.name.startsWith(prefix));
+    for (const c of litter) {
+        const del = await page.request.delete(rest + '/' + encodeURIComponent(c.credentialId));
+        console.log('[webauthn] purged leftover passkey "' + c.name + '" status=' + del.status());
+        expect(del.status()).toBe(200);
+    }
+    return litter.length;
+}
+
+function b64url(buf) {
+    return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** A 37-byte authenticatorData: SHA-256(rpId) || flags || big-endian counter. */
+function authenticatorData(rpId, flags, counter) {
+    const out = Buffer.alloc(37);
+    createHash('sha256').update(rpId).digest().copy(out, 0);
+    out[32] = flags;
+    out.writeUInt32BE(counter, 33);
+    return out;
 }
 
 let shared = {};
@@ -238,6 +337,214 @@ test.describe('WebAuthn passkey flow', () => {
                 await cdpSession.send('WebAuthn.removeVirtualAuthenticator', { authenticatorId });
                 await cdpSession.send('WebAuthn.disable');
             } catch (e) { /* page may already be closed on timeout */ }
+        }
+    });
+
+    // PF-5b (PictureBookV3Implementation §9): the "Sign in with Passkey" button must log the user in
+    // end to end. The server verifies the authenticator's signature over
+    // authenticatorData || SHA-256(clientDataJSON) with the stored public key and then establishes the
+    // same JAAS session LoginService does, so sig.js's follow-up uwm.getUser() (session cookie, no
+    // token) resolves the user and the SPA lands on #!/main. Before the fix the POST answered
+    // AUTHENTICATED without a session and the UI toasted "Passkey authentication succeeded but session
+    // failed". A replay of the browser's real assertion against a fresh challenge must be refused.
+    test('passkey login with virtual authenticator establishes a session (PF-5b)', async ({ page, context, browserName, baseURL }) => {
+        test.skip(browserName !== 'chromium', 'CDP WebAuthn virtual authenticator is Chromium-only');
+        const KEY_NAME = 'PF-5b Login Key';
+        const authenticator = await addVirtualAuthenticator(page, context);
+        const consoleErrors = [];
+        page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+        page.on('pageerror', err => consoleErrors.push(err.message));
+        let assertionBody = null;
+        let assertionResponse = null;
+        page.on('request', req => {
+            if (req.method() === 'POST' && /\/credential\/webauthn\/auth$/.test(req.url())) {
+                assertionBody = req.postData();
+            }
+        });
+        page.on('response', async resp => {
+            if (resp.request().method() === 'POST' && /\/credential\/webauthn\/auth$/.test(resp.url())) {
+                assertionResponse = resp.status() + ' ' + (await resp.text().catch(() => '')).slice(0, 200);
+            }
+        });
+
+        try {
+            const origin = localhostOrigin(baseURL);
+            const rest = origin + '/AccountManagerService7/rest';
+            console.log('[webauthn] passkey login test origin=' + origin);
+            await loginAtOrigin(page, origin, { user: shared.testUserName, password: shared.testPassword });
+            await purgePasskeysViaRest(page, origin, 'PF-5');
+            await goToWebauthn(page);
+            await registerPasskeyViaUi(page, KEY_NAME, consoleErrors);
+            const stored = await findStoredCredential(page, origin, KEY_NAME);
+            expect(stored.counter, 'a freshly registered key starts at counter 0').toBe(0);
+
+            // Drop the password session, reload: the SPA must be back on the login form.
+            const logout = await page.request.get(rest + '/logout/');
+            console.log('[webauthn] logout status=' + logout.status());
+            await page.goto(origin + '/', { timeout: 30000 });
+            await page.locator('select#selOrganizationList').waitFor({ state: 'visible', timeout: 15000 });
+            const whoBefore = await page.request.get(rest + '/principal/');
+            expect((await whoBefore.text()).trim(), 'no principal after logout').toMatch(/^(null)?$/);
+
+            await page.locator('select#selOrganizationList').selectOption('/Development');
+            await page.locator('input[name="userName"]').fill(shared.testUserName);
+            await page.locator('button:has-text("Sign in with Passkey")').click();
+            try {
+                await page.waitForFunction(
+                    () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
+                    null, { timeout: 30000 }
+                );
+            } catch (e) {
+                const toasts = await page.locator('.toast-box').allTextContents().catch(() => []);
+                console.log('[webauthn] passkey login did not reach #!/main. toasts=' + JSON.stringify(toasts)
+                    + ' consoleErrors=' + JSON.stringify(consoleErrors) + ' assertionPosted=' + (assertionBody != null)
+                    + ' assertionResponse=' + JSON.stringify(assertionResponse));
+                await screenshot(page, 'webauthn-passkey-login-failed');
+                throw e;
+            }
+            await screenshot(page, 'webauthn-passkey-login-main');
+            console.log('[webauthn] POST /auth response=' + JSON.stringify(assertionResponse));
+            expect(assertionBody, 'the browser must have posted an assertion').toBeTruthy();
+
+            // The session the UI continues on is the passkey-authenticated one.
+            const whoAfter = await page.request.get(rest + '/principal/');
+            expect(whoAfter.status()).toBe(200);
+            const me = JSON.parse(await whoAfter.text());
+            expect(me && me.name, 'GET /principal/ on the session cookie after passkey login').toBe(shared.testUserName);
+            const used = await findStoredCredential(page, origin, KEY_NAME);
+            expect(used.counter, 'the authenticator counter must be persisted from the assertion').toBeGreaterThan(0);
+
+            // Replaying the captured assertion against a fresh challenge must be refused.
+            const replay = await pwRequest.newContext({ baseURL: origin, ignoreHTTPSErrors: true });
+            try {
+                const opts = await replay.get(rest + '/credential/webauthn/auth?user=/Development/' + shared.testUserName);
+                expect(opts.status()).toBe(200);
+                const r = await replay.post(rest + '/credential/webauthn/auth', {
+                    headers: { 'Content-Type': 'application/json' }, data: assertionBody
+                });
+                const text = await r.text();
+                console.log('[webauthn] replay status=' + r.status() + ' body=' + text.slice(0, 200));
+                expect(r.status(), 'replayed assertion').toBe(401);
+                expect(text).not.toContain('"tokens":[');
+                const whoReplay = await replay.get(rest + '/principal/');
+                expect((await whoReplay.text()).trim(), 'no principal on the replay session').toMatch(/^(null)?$/);
+            } finally {
+                await replay.dispose();
+            }
+            const unchanged = await findStoredCredential(page, origin, KEY_NAME);
+            expect(unchanged.counter, 'a refused replay must not move the counter').toBe(used.counter);
+
+            // The passkey session drives the UI: open the Passkeys page and clean up.
+            await goToWebauthn(page);
+            await expect(page.locator('td:has-text("' + KEY_NAME + '")')).toBeVisible({ timeout: 15000 });
+            await deletePasskeysViaUi(page, KEY_NAME);
+            await screenshot(page, 'webauthn-passkey-login-cleanup');
+        } finally {
+            await authenticator.remove();
+        }
+    });
+
+    // PF-5b: an assertion whose signature was not produced by the registered key must be refused,
+    // issue no token and leave the stored counter alone. Before the fix the server never checked the
+    // signature, so any caller who knew a credentialId could log in as its owner.
+    test('forged passkey assertion is refused by the server (PF-5b)', async ({ page, context, browserName, baseURL }) => {
+        test.skip(browserName !== 'chromium', 'CDP WebAuthn virtual authenticator is Chromium-only');
+        const KEY_NAME = 'PF-5b Forgery Key';
+        const authenticator = await addVirtualAuthenticator(page, context);
+        const consoleErrors = [];
+        page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+        page.on('pageerror', err => consoleErrors.push(err.message));
+
+        try {
+            const origin = localhostOrigin(baseURL);
+            const rest = origin + '/AccountManagerService7/rest';
+            await loginAtOrigin(page, origin, { user: shared.testUserName, password: shared.testPassword });
+            await purgePasskeysViaRest(page, origin, 'PF-5');
+            await goToWebauthn(page);
+            await registerPasskeyViaUi(page, KEY_NAME, consoleErrors);
+            const stored = await findStoredCredential(page, origin, KEY_NAME);
+            expect(stored.credentialId).toBeTruthy();
+
+            const attacker = await pwRequest.newContext({ baseURL: origin, ignoreHTTPSErrors: true });
+            try {
+                const opts = await attacker.get(rest + '/credential/webauthn/auth?user=/Development/' + shared.testUserName);
+                expect(opts.status()).toBe(200);
+                const options = JSON.parse(await opts.text());
+                expect(options.allowCredentials.map(c => c.id)).toContain(stored.credentialId);
+
+                const forged = {
+                    credentialId: stored.credentialId,
+                    clientDataJSON: b64url(JSON.stringify({ type: 'webauthn.get', challenge: options.challenge, origin: origin, crossOrigin: false })),
+                    authenticatorData: b64url(authenticatorData('localhost', 0x05, 99)),
+                    signature: b64url(randomBytes(64)),
+                    organizationPath: '/Development'
+                };
+                const r = await attacker.post(rest + '/credential/webauthn/auth', { data: forged });
+                const text = await r.text();
+                console.log('[webauthn] forged assertion status=' + r.status() + ' body=' + text.slice(0, 200));
+                expect(r.status(), 'forged assertion must be 401').toBe(401);
+                expect(text).not.toContain('"tokens":[');
+                expect(text).not.toContain('AUTHENTICATED');
+                const who = await attacker.get(rest + '/principal/');
+                expect((await who.text()).trim(), 'no principal on the attacker session').toMatch(/^(null)?$/);
+            } finally {
+                await attacker.dispose();
+            }
+            const after = await findStoredCredential(page, origin, KEY_NAME);
+            expect(after.counter, 'a refused assertion must not move the counter').toBe(stored.counter);
+
+            await deletePasskeysViaUi(page, KEY_NAME);
+        } finally {
+            await authenticator.remove();
+        }
+    });
+
+    // PF-5c: the credential list and the allowCredentials of GET /auth are read through the server's
+    // query cache, which caches any non-empty result for minutes and is never invalidated by a create.
+    // With one passkey already registered, a second one therefore did not appear in the Passkeys table
+    // and could not be used to sign in until the cache expired. Both must reflect it immediately.
+    test('a second passkey is listed and allowed immediately after registration (PF-5c)', async ({ page, context, browserName, baseURL }) => {
+        test.skip(browserName !== 'chromium', 'CDP WebAuthn virtual authenticator is Chromium-only');
+        const FIRST = 'PF-5c First Key';
+        const SECOND = 'PF-5c Second Key';
+        const authenticator = await addVirtualAuthenticator(page, context);
+        const consoleErrors = [];
+        page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
+        page.on('pageerror', err => consoleErrors.push(err.message));
+
+        try {
+            const origin = localhostOrigin(baseURL);
+            const rest = origin + '/AccountManagerService7/rest';
+            await loginAtOrigin(page, origin, { user: shared.testUserName, password: shared.testPassword });
+            await purgePasskeysViaRest(page, origin, 'PF-5');
+            await goToWebauthn(page);
+            await registerPasskeyViaUi(page, FIRST, consoleErrors);
+            const first = await findStoredCredential(page, origin, FIRST);
+
+            // The page has now listed a non-empty result; register the second key, from a second device, on top of it.
+            await authenticator.swap();
+            await registerPasskeyViaUi(page, SECOND, consoleErrors);
+            await expect(page.locator('td:has-text("' + FIRST + '")'), 'the first key must still be listed').toBeVisible({ timeout: 5000 });
+            await screenshot(page, 'webauthn-second-passkey-listed');
+            const second = await findStoredCredential(page, origin, SECOND);
+            expect(second.credentialId).not.toBe(first.credentialId);
+
+            const anonymous = await pwRequest.newContext({ baseURL: origin, ignoreHTTPSErrors: true });
+            try {
+                const opts = await anonymous.get(rest + '/credential/webauthn/auth?user=/Development/' + shared.testUserName);
+                expect(opts.status()).toBe(200);
+                const ids = JSON.parse(await opts.text()).allowCredentials.map(c => c.id);
+                console.log('[webauthn] allowCredentials after second registration=' + JSON.stringify(ids));
+                expect(ids, 'GET /auth must offer the second key immediately').toContain(second.credentialId);
+                expect(ids, 'GET /auth must still offer the first key').toContain(first.credentialId);
+            } finally {
+                await anonymous.dispose();
+            }
+
+            await deletePasskeysViaUi(page, SECOND);
+            await deletePasskeysViaUi(page, FIRST);
+        } finally {
+            await authenticator.remove();
         }
     });
 

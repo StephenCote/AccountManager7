@@ -34,16 +34,22 @@ let _navHide = undefined;
 
 let _navCrumbVisible = undefined;
 
+let _navCrumbVersion = undefined;
+
 const NavGuard = {
     onbeforeupdate(vnode) {
         let route = m.route.get();
         let hide = vnode.attrs.hideBreadcrumb;
-        // The breadcrumb bar renders inside the nav subtree, so its toggle (App Panel) must get through the guard.
-        let crumbVisible = page.components.breadCrumb ? page.components.breadCrumb.isVisible() : undefined;
-        if (route === _navRoute && hide === _navHide && crumbVisible === _navCrumbVisible) return false;
+        // The breadcrumb bar renders inside the nav subtree, so its toggle (App Panel) and its
+        // async group-context fetches (which complete after the route has settled) must get through the guard.
+        let crumb = page.components.breadCrumb;
+        let crumbVisible = crumb ? crumb.isVisible() : undefined;
+        let crumbVersion = crumb ? crumb.contextVersion() : undefined;
+        if (route === _navRoute && hide === _navHide && crumbVisible === _navCrumbVisible && crumbVersion === _navCrumbVersion) return false;
         _navRoute = route;
         _navHide = hide;
         _navCrumbVisible = crumbVisible;
+        _navCrumbVersion = crumbVersion;
         return true;
     },
     view(vnode) {

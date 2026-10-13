@@ -306,6 +306,98 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
         await page.screenshot({ path: path.join(OUT_DIR, 'llmUnavail-perscene-degraded-warning.png'), fullPage: true });
     });
 
+    // ── PF-6: per-scene Regenerate honours the Review tab's "Default chat config" pick ───────────
+    // Before the fix doRegenerateScene always resolved the config by name ('contentAnalysis') and
+    // ignored the Review tab's picker, so a user whose default pointed at a live LLM could never
+    // regenerate a scene with a different (here: unreachable) config. Proven as e2etest_shared, whose
+    // 'contentAnalysis' points at the REAL LLM: the only way the throw-away config can reach the wire
+    // is through the picker.
+    test('UI per-scene: Regenerate sends the chat config picked on the Review tab, not the by-name default', async ({ page, request }) => {
+        test.setTimeout(300000);
+
+        await restLoginAs(request, SHARED_USER, SHARED_PASSWORD);
+        const chatDirResp = await request.get(REST + '/path/make/auth.group/data/' + encodePath('~/Chat'));
+        const chatDir = await chatDirResp.json().catch(() => null);
+        expect(chatDir && chatDir.id, 'could not ensure ~/Chat for ' + SHARED_USER).toBeTruthy();
+        const chatGroupId = chatDir.id;
+
+        let cleanupError = null;
+        try {
+            const cfgName = await ensureChatConfig(request, orgId, {
+                configName: THROWAWAY_CFG, connectionName: THROWAWAY_CONN,
+                serverUrl: THROWAWAY_URL, dialect: 'ollama', upstream: 'ollama', requestTimeout: 30
+            });
+            expect(cfgName, 'throw-away unreachable chatConfig was not created').toBe(THROWAWAY_CFG);
+            const cfgRec = await findInChat(request, 'olio.llm.chatConfig', THROWAWAY_CFG, orgId, chatGroupId);
+            expect(cfgRec && cfgRec.objectId, 'throw-away chatConfig not found in ~/Chat after create').toBeTruthy();
+            console.log('[llmUnavail] pick fixture: chatConfig ' + THROWAWAY_CFG + ' id=' + cfgRec.id + ' -> ' + THROWAWAY_URL);
+
+            const bookOid = await createFreshBook(request, poemsGroupId, orgId, 'pick');
+            await request.get(REST + '/logout');
+
+            await loginAsUser(page, SHARED_USER, SHARED_PASSWORD);
+            const getPosts = captureGeneratePosts(page);
+            await page.evaluate((oid) => { window.location.hash = '!/chap-book/review/' + oid; }, bookOid);
+
+            const regenBtn = page.locator('button[data-testid="cb-page-regenerate"]').first();
+            await expect(regenBtn, 'Regenerate button not visible on a fresh un-prompted scene').toBeVisible({ timeout: 30000 });
+
+            // Pick the throw-away config in the Review tab's "Default chat config" control: single-click
+            // the row (a double-click descends into it), then the picker's confirm (check) button.
+            const cfgControl = page.locator('div:has(> label:text-is("Default chat config")) > div.cursor-pointer').first();
+            await expect(cfgControl, 'Review tab "Default chat config" control missing').toBeVisible({ timeout: 10000 });
+            await cfgControl.click();
+            const overlay = page.locator('.am7-picker-overlay');
+            await expect(overlay, 'chat-config picker overlay did not open').toBeVisible({ timeout: 15000 });
+            const row = overlay.locator('tr.tabular-row', { hasText: THROWAWAY_CFG });
+            await expect(row.first(), 'throw-away config row not visible in picker (page-1 placement?)').toBeVisible({ timeout: 20000 });
+            await row.first().click();
+            await expect(row.first(), 'row did not register as selected').toHaveClass(/tabular-row-active/, { timeout: 5000 });
+            const confirmBtn = overlay.locator('button:has(span.material-symbols-outlined:text-is("check"))').first();
+            await expect(confirmBtn, 'picker confirm (check) button missing').toBeVisible({ timeout: 5000 });
+            await confirmBtn.click();
+            await expect(overlay, 'picker did not close after confirm').toBeHidden({ timeout: 10000 });
+            await expect(cfgControl, 'control did not show the selected throw-away config').toContainText(THROWAWAY_CFG, { timeout: 10000 });
+
+            await expect(regenBtn, 'Regenerate button is disabled (role warning or scene saving)').toBeEnabled({ timeout: 10000 });
+            await regenBtn.click();
+
+            // The picked config can never answer, so the scene renders degraded on its stored prompt.
+            await expect.poll(async () => await capturedToasts(page), {
+                message: 'degraded WARNING toast never appeared',
+                timeout: 240000, intervals: [1000]
+            }).toContain(DEGRADED_MSG);
+
+            const posts = getPosts();
+            expect(posts.length, 'no per-scene generate POST was sent').toBeGreaterThan(0);
+            expect(posts[0].body && posts[0].body.chatConfig,
+                'Regenerate ignored the Review tab pick: ' + JSON.stringify(posts[0].body)).toBe(THROWAWAY_CFG);
+            console.log('[llmUnavail] pick generate body:', JSON.stringify(posts[0].body));
+
+            fs.mkdirSync(OUT_DIR, { recursive: true });
+            await page.screenshot({ path: path.join(OUT_DIR, 'llmUnavail-perscene-picked-config.png'), fullPage: true });
+        } finally {
+            try {
+                await restLoginAs(request, SHARED_USER, SHARED_PASSWORD);
+                for (const [type, name] of [['olio.llm.chatConfig', THROWAWAY_CFG], ['system.connection', THROWAWAY_CONN]]) {
+                    const rec = await findInChat(request, type, name, orgId, chatGroupId);
+                    if (rec && rec.objectId) {
+                        await deleteObject(request, type, rec.objectId);
+                        const after = await findInChat(request, type, name, orgId, chatGroupId);
+                        if (after) throw new Error(type + ' ' + name + ' (id=' + rec.id + ') still present after DELETE');
+                        console.log('[llmUnavail] cleanup: deleted ' + type + ' ' + name + ' id=' + rec.id);
+                    } else {
+                        console.log('[llmUnavail] cleanup: ' + type + ' ' + name + ' not present (nothing to delete)');
+                    }
+                }
+                await request.get(REST + '/logout');
+            } catch (e) {
+                cleanupError = e;
+            }
+        }
+        expect(cleanupError, 'throw-away fixture cleanup failed: ' + (cleanupError && cleanupError.message)).toBeNull();
+    });
+
     // ── Bulk distinct signal: Reader → Render raises the ERROR summary toast ─────────────────────
     test('UI bulk: Reader Render raises the distinct ERROR summary toast (affected by unavailable LLM/chat config)', async ({ page, request }) => {
         test.setTimeout(420000);

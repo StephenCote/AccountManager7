@@ -700,7 +700,8 @@ renderers["foreign-summary"] = function(ctx) {
         return [m("span", { class: "text-gray-400 italic" }, "(none)")];
     }
 
-    let modelKey = fk[am7model.jsonModelKey];
+    // Nested records inside a /full response omit the schema key; the field's baseModel is the type.
+    let modelKey = fk[am7model.jsonModelKey] || (ctx.field && ctx.field.baseModel);
     let label = fk.name || fk.objectId;
     let uri = "about:blank";
     if (client && modelKey) {

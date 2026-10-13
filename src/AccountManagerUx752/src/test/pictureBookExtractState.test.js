@@ -1159,3 +1159,116 @@ describe('reattachExtractJob — must not start a second run', () => {
         await first;
     });
 });
+
+// P1-12 §6.C 125b: the chapter report's headline is computed from the summary as it is NOW.
+// doRetryFailedChapters mutates `saved`/`problems` in place, and the old headline hard-coded
+// "finished with problems" regardless — so a fully recovered run still read as a broken one.
+describe('chapter report headline follows the report state', () => {
+    function findAttr(vnode, attr) {
+        let out = [];
+        (function walk(n) {
+            if (Array.isArray(n)) { n.forEach(walk); return; }
+            if (!n || typeof n !== 'object') return;
+            if (n.attrs && n.attrs[attr] !== undefined) out.push(n);
+            if (n.children) walk(n.children);
+        })(vnode);
+        return out;
+    }
+    function text(vnode) {
+        let parts = [];
+        (function walk(n) {
+            if (Array.isArray(n)) { n.forEach(walk); return; }
+            if (n == null || n === false) return;
+            if (typeof n === 'string' || typeof n === 'number') { parts.push(String(n)); return; }
+            if (n.children != null) walk(n.children);
+        })(vnode);
+        return parts.join('');
+    }
+
+    it('chapterSummaryState: problems/missing/cancelled → "with problems"; none of them → "finished", clean', () => {
+        expect(pb.chapterSummaryState({ saved: 2, total: 2, problems: ['x'], cancelled: false }))
+            .toEqual({ clean: false, headline: 'Extraction finished with problems: 2 of 2 chapters saved, 1 issue.' });
+        expect(pb.chapterSummaryState({ saved: 1, total: 2, problems: [], cancelled: false }))
+            .toEqual({ clean: false, headline: 'Extraction finished with problems: 1 of 2 chapters saved, 1 missing.' });
+        expect(pb.chapterSummaryState({ saved: 2, total: 2, problems: [], cancelled: true }))
+            .toEqual({ clean: false, headline: 'Extraction was cancelled: 2 of 2 chapters saved.' });
+        expect(pb.chapterSummaryState({ saved: 2, total: 2, problems: [], cancelled: false }))
+            .toEqual({ clean: true, headline: 'Extraction finished: 2 of 2 chapters saved.' });
+    });
+
+    it('renderChapterSummary re-renders green with the clean headline once a retry has cleared every problem', () => {
+        let summary = {
+            saved: 1, total: 2, cancelled: false,
+            problems: ['Chapter 2 (Two): no scenes were extracted.'],
+            chapters: [{ num: 1, title: 'One', bookOid: 'BK-1', persisted: true, problems: [], failed: [] },
+                       { num: 2, title: 'Two', bookOid: 'BK-2', persisted: false, problems: ['Chapter 2 (Two): no scenes were extracted.'], failed: [] }],
+            seriesObjectId: 'S1', seriesBookOid: 'BK-1'
+        };
+        pb.__setExtractStateForTest({ extractChapterSummary: summary });
+        let before = pb.renderChapterSummary();
+        expect(text(findAttr(before, 'data-pb-chapter-summary-headline')[0]))
+            .toBe('Extraction finished with problems: 1 of 2 chapters saved, 1 missing, 1 issue.');
+        expect(findAttr(before, 'data-pb-chapter-summary')[0].attrs['data-pb-chapter-summary-clean']).toBe('false');
+        expect(findAttr(before, 'data-pb-chapter-summary')[0].attrs.className).toMatch(/orange/);
+
+        // What doRetryFailedChapters does on a full recovery: in-place mutation of the same object.
+        summary.saved = 2;
+        summary.problems = [];
+        let after = pb.renderChapterSummary();
+        expect(text(findAttr(after, 'data-pb-chapter-summary-headline')[0])).toBe('Extraction finished: 2 of 2 chapters saved.');
+        let box = findAttr(after, 'data-pb-chapter-summary')[0];
+        expect(box.attrs['data-pb-chapter-summary-clean']).toBe('true');
+        expect(box.attrs.className).toMatch(/green/);
+        expect(box.attrs.className).not.toMatch(/orange/);
+        // The recovery affordances stay: the user still has to open the series.
+        expect(findAttr(after, 'data-pb-open-series')).toHaveLength(1);
+    });
+});
+
+// P1-12 §6.C 125a: a resumed book opens straight on Step 4 (prepare-images), never passing the
+// Step-1 chat-config picker, so the per-scene prompt LLM ran on whatever loadDefaults resolved
+// with no way to change it. Step 4 now carries its own picker bound to the same chatConfigRef.
+describe('Step 4 exposes the chat config that writes the per-scene image prompts', () => {
+    function findAttr(vnode, attr) {
+        let out = [];
+        (function walk(n) {
+            if (Array.isArray(n)) { n.forEach(walk); return; }
+            if (!n || typeof n !== 'object') return;
+            if (n.attrs && n.attrs[attr] !== undefined) out.push(n);
+            if (n.children) walk(n.children);
+        })(vnode);
+        return out;
+    }
+    function text(vnode) {
+        let parts = [];
+        (function walk(n) {
+            if (Array.isArray(n)) { n.forEach(walk); return; }
+            if (n == null || n === false) return;
+            if (typeof n === 'string' || typeof n === 'number') { parts.push(String(n)); return; }
+            if (n.children != null) walk(n.children);
+        })(vnode);
+        return parts.join('');
+    }
+
+    it('renders the picker showing the current chatConfigRef, and the picker rebinds chatConfigRef on select', async () => {
+        global.fetch = vi.fn(async () => jsonResponse(200, []));
+        const { ObjectPicker } = await import('../components/picker.js');
+        let opened = null;
+        let openLibrary = vi.spyOn(ObjectPicker, 'openLibrary').mockImplementation((opts) => { opened = opts; });
+
+        pb.__setExtractStateForTest({ step: 4, chatConfigRef: { name: 'contentAnalysis', objectId: 'cc-1' } });
+        let tree = pb.renderStep4();
+        let pickers = findAttr(tree, 'data-pb-step4-chatconfig');
+        expect(pickers).toHaveLength(1);
+        expect(text(pickers[0])).toContain('contentAnalysis');
+
+        pickers[0].attrs.onclick();
+        expect(openLibrary).toHaveBeenCalledTimes(1);
+        expect(opened.libraryType).toBe('chatConfig');
+        opened.onSelect({ name: 'dryad3-vision', objectId: 'cc-7' });
+        expect(pb.__extractStateForTest().chatConfigRef).toEqual({ name: 'dryad3-vision', objectId: 'cc-7' });
+
+        let tree2 = pb.renderStep4();
+        expect(text(findAttr(tree2, 'data-pb-step4-chatconfig')[0])).toContain('dryad3-vision');
+    });
+});

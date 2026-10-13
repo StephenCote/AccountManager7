@@ -150,7 +150,8 @@ public class PbNodeExecutor {
 	 * <p>
 	 * {@code book} and {@code workflow} must be the fully-loaded records from
 	 * {@link PbServiceFacade#requireBook} / {@link PbServiceFacade#requireWorkflow} — not the shallow FK
-	 * stubs that come back on the node. This is a requirement because {@link PbGraphUtil#markStaleDownstream}
+	 * stubs that come back on the node. This is a requirement because {@link PbGraphUtil#downstreamOf} (and
+	 * {@link PbPipelineUtil#completeNode}'s {@link PbGraphUtil#markStaleDownstream})
 	 * calls {@link PbGraphUtil#listNodes} which conditions on the workflow record and reads its {@code id}
 	 * via {@link org.cote.accountmanager.io.StatementUtil}.
 	 * <p>
@@ -505,10 +506,13 @@ public class PbNodeExecutor {
 		int[] wh = PbPipelineUtil.decodeDimensions(bytes);
 		PbArtifactUtil.recordImageMetrics(user, artifact, bytes, "image/png", wh[0], wh[1], null, sdu.getApiType(), callMs);
 
-		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, g.getWorkflow(), node);
-		PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
+		/// completeNode (not a bare persistStatus) so the node gets its inputHash/lastRunAt and counts on the
+		/// run: a node with inputHash == null is never current to the planner, so an un-forced re-render of a
+		/// finished landscape was accepted, and the drift scan never marks it.
+		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
+		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
 
-		return artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(bytes.length), marked, degradations);
+		return artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(bytes.length), downstream, degradations);
 	}
 
 	// ─── ChapBook page (LANDSCAPE node of a CHAPBOOK book; V3 §24, P1-9) ─────────
@@ -677,10 +681,10 @@ public class PbNodeExecutor {
 		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, role,
 			PbArtifactTypeEnumType.TEXT, g.getArtifactGroupPath(), null, promptText, null, null);
 
-		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, g.getWorkflow(), node);
-		PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
+		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
+		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
 
-		return artifactDto(node, "DONE_UNVERIFIED", artifact, null, marked, degradations);
+		return artifactDto(node, "DONE_UNVERIFIED", artifact, null, downstream, degradations);
 	}
 
 	// ─── reference strip ─────────────────────────────────────────────────────────
@@ -772,10 +776,10 @@ public class PbNodeExecutor {
 		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_REFERENCE_STRIP,
 			PbArtifactTypeEnumType.IMAGE_STRIP, artifactPath, createdData, null, null, null);
 
-		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, g.getWorkflow(), node);
-		PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
+		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
+		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
 
-		return artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(stripBytes.length), marked, degradations);
+		return artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(stripBytes.length), downstream, degradations);
 	}
 
 	// ─── composite ───────────────────────────────────────────────────────────────
@@ -901,10 +905,10 @@ public class PbNodeExecutor {
 		int[] wh = PbPipelineUtil.decodeDimensions(bytes);
 		PbArtifactUtil.recordImageMetrics(user, artifact, bytes, "image/png", wh[0], wh[1], null, sdu.getApiType(), callMs);
 
-		List<BaseRecord> marked = PbGraphUtil.markStaleDownstream(user, g.getWorkflow(), node);
-		PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
+		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
+		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
 
-		return artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(bytes.length), marked, degradations);
+		return artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(bytes.length), downstream, degradations);
 	}
 
 	// ─── portrait ────────────────────────────────────────────────────────────────

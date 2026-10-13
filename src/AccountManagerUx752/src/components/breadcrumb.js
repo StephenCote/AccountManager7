@@ -17,6 +17,16 @@ let showBreadcrumb = true; // default on for testing — Ux7 defaulted to false
 // on each hop.
 let lastRenderedPath = null;
 let _prevFetchOid = null;
+// Bumped every time a group context resolves. The nav subtree is behind a route-keyed
+// render guard (router.js NavGuard); a context fetch that completes after the route
+// settled changes nothing the guard compares, so the guard must also watch this.
+let contextVersion = 0;
+
+function _resolveContext(model, objectId, value) {
+    model.contextObjects[objectId] = value;
+    contextVersion++;
+    setTimeout(m.redraw, 0);
+}
 
 // Compute route params needed for context fetching (shared by _fetchContext and modelBreadCrumb).
 function _routeParams() {
@@ -42,23 +52,18 @@ function _fetchContext() {
     model.contextObjects[objectId] = 'pending';
     am7client.getFull(p.objType, objectId).then(function (v) {
         if (v && (v.path || v.groupPath)) {
-            model.contextObjects[objectId] = v;
-            setTimeout(m.redraw, 0);
+            _resolveContext(model, objectId, v);
         } else if (p.objType !== p.type) {
             am7client.getFull(p.type, objectId).then(function (v2) {
-                model.contextObjects[objectId] = (v2 && v2 != null) ? v2 : null;
-                setTimeout(m.redraw, 0);
+                _resolveContext(model, objectId, (v2 && v2 != null) ? v2 : null);
             }).catch(function () {
-                model.contextObjects[objectId] = null;
-                setTimeout(m.redraw, 0);
+                _resolveContext(model, objectId, null);
             });
         } else {
-            model.contextObjects[objectId] = null;
-            setTimeout(m.redraw, 0);
+            _resolveContext(model, objectId, null);
         }
     }).catch(function () {
-        model.contextObjects[objectId] = null;
-        setTimeout(m.redraw, 0);
+        _resolveContext(model, objectId, null);
     });
 }
 
@@ -238,6 +243,9 @@ const breadCrumb = {
     },
     isVisible: function () {
         return showBreadcrumb;
+    },
+    contextVersion: function () {
+        return contextVersion;
     },
     oninit: function () {
         _prevFetchOid = m.route.param("objectId");

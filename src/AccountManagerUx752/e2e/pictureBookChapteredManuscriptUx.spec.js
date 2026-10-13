@@ -251,6 +251,72 @@ test.describe('PictureBook chaptered manuscript — real browser flow on Docker'
         expect(ranges.filter(r => r.title == null).length, 'no untitled front-matter range expected').toBe(0);
     });
 
+    // Every run tears down what it created: each chapter book (reset, which also removes its world),
+    // then the series row, the run's extraction checkpoints, and the uploaded manuscript.
+    // Six HarlotsEight-UX-* series and three checkpoints had piled up on the shared user before this
+    // existed. Resume mode owns nothing, so it deletes nothing. A teardown failure is reported as its
+    // own assertion so it can never be mistaken for the extraction verdict.
+    test.afterAll(async ({ request }) => {
+        if (!LLM_ENABLED || EXISTING_SERIES || !creds || !docFileName) return;
+        const problems = [];
+        try {
+            await restLogin(request, creds);
+            // The series is looked up by name: the test may have failed before it resolved the id.
+            // Chapters go first, one by one, as the caller: DELETE /series/{id} alone 500s on a
+            // wizard-built series ("Chapter … could not be read as the olio principal", 2026-10-12,
+            // PbSeriesUtil.deleteSeries reads each chapter as the olio principal) — so the series call
+            // is left only the series row and its role pair to remove.
+            const allBooks = await getJson(request, PB_REST + '/books');
+            const mine = allBooks.filter(b => b.seriesName === docFileName);
+            for (const b of mine) {
+                const resp = await request.delete(PB_REST + '/' + b.objectId + '/reset', { headers: { Accept: 'application/json' }, timeout: 180000 });
+                const body = await resp.json().catch(() => null);
+                if (!resp.ok() || !body || body.reset !== true) {
+                    problems.push('chapter ' + b.chapter + ' ' + b.objectId + ' reset -> ' + resp.status() + ' ' + JSON.stringify(body));
+                } else {
+                    console.log('[ux-chapters] cleanup: chapter ' + b.chapter + ' book ' + b.objectId + ' deleted');
+                }
+            }
+            const seriesOids = [...new Set(mine.filter(b => b.seriesObjectId).map(b => b.seriesObjectId))];
+            for (const oid of seriesOids) {
+                const resp = await request.delete(PB_REST + '/series/' + oid, { headers: { Accept: 'application/json' }, timeout: 180000 });
+                const body = await resp.json().catch(() => null);
+                if (!resp.ok() || !body || body.deleted !== true) {
+                    problems.push('series ' + oid + ' -> ' + resp.status() + ' ' + JSON.stringify(body));
+                } else {
+                    console.log('[ux-chapters] cleanup: series ' + oid + ' deleted (' + body.chapters + ' chapter book(s) remained)');
+                }
+            }
+            if (docObjectId) {
+                // Whole-document checkpoint rows carry null offsets; chapter rows carry their range.
+                const ckpts = await getJson(request, PB_REST + '/extract-checkpoints');
+                for (const c of ckpts.filter(r => r.workObjectId === docObjectId)) {
+                    const qs = (c.startOffset != null && c.endOffset != null)
+                        ? '?startOffset=' + c.startOffset + '&endOffset=' + c.endOffset : '';
+                    const resp = await request.delete(PB_REST + '/' + docObjectId + '/extract-checkpoints' + qs, { headers: { Accept: 'application/json' } });
+                    const body = await resp.json().catch(() => null);
+                    if (!resp.ok()) problems.push('checkpoint ' + docObjectId + qs + ' -> ' + resp.status());
+                    else console.log('[ux-chapters] cleanup: checkpoint ' + docObjectId + qs + ' deleted=' + (body && body.deleted));
+                }
+                const del = await request.delete(REST + '/model/data.data/' + docObjectId);
+                if (!del.ok()) problems.push('manuscript ' + docObjectId + ' -> ' + del.status());
+                else console.log('[ux-chapters] cleanup: manuscript ' + docFileName + ' deleted');
+            }
+            // Prove it: nothing of this run is left behind on the shared user.
+            const after = await getJson(request, PB_REST + '/books');
+            const left = after.filter(b => b.seriesName === docFileName).map(b => b.objectId);
+            if (left.length) problems.push('books still listed for ' + docFileName + ': ' + JSON.stringify(left));
+            if (docObjectId) {
+                const ck = (await getJson(request, PB_REST + '/extract-checkpoints')).filter(r => r.workObjectId === docObjectId);
+                if (ck.length) problems.push(ck.length + ' checkpoint(s) still listed for ' + docObjectId);
+            }
+        } catch (e) {
+            problems.push('cleanup threw: ' + (e && e.message ? e.message : e));
+        }
+        console.log('[ux-chapters] cleanup ' + (problems.length ? 'PROBLEMS: ' + problems.join('; ') : 'complete for ' + docFileName));
+        expect(problems, 'run teardown left test data on the shared user').toEqual([]);
+    });
+
     test('wizard extracts every chapter, list bundles them, reader selects chapters, cast persisted with valid races',
         async ({ page, request }) => {
         test.skip(!LLM_ENABLED, 'PB_LLM_TESTS!=1 — skips the live-LLM chaptered extraction (run alone with --workers=1)');

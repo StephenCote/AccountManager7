@@ -1,10 +1,12 @@
 package org.cote.rest.services;
 
+import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
@@ -20,8 +22,6 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.LooseRecord;
-import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
@@ -29,11 +29,13 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.AuthenticationResponseEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.security.TokenService;
+import org.cote.accountmanager.security.WebAuthnUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 
 import jakarta.annotation.security.DeclareRoles;
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.ws.rs.Consumes;
@@ -56,6 +58,7 @@ public class WebAuthnService {
 	private static final String MODEL_WEBAUTHN_CREDENTIAL = "auth.webauthnCredential";
 	private static final String SESSION_CHALLENGE = "webauthn.challenge";
 	private static final String SESSION_USER_ID = "webauthn.userId";
+	private static final String RP_ID = "localhost";
 	private static final SecureRandom random = new SecureRandom();
 
 	@RolesAllowed({"user"})
@@ -91,7 +94,7 @@ public class WebAuthnService {
 
 		String userName = user.get(FieldNames.FIELD_NAME);
 		String json = "{" +
-			"\"rp\":{\"name\":\"AccountManager7\",\"id\":\"localhost\"}," +
+			"\"rp\":{\"name\":\"AccountManager7\",\"id\":\"" + RP_ID + "\"}," +
 			"\"user\":{\"id\":\"" + userIdB64 + "\",\"name\":\"" + escapeJson(userName) + "\",\"displayName\":\"" + escapeJson(userName) + "\"}," +
 			"\"challenge\":\"" + challengeB64 + "\"," +
 			"\"pubKeyCredParams\":[{\"type\":\"public-key\",\"alg\":-7},{\"type\":\"public-key\",\"alg\":-257}]," +
@@ -128,39 +131,57 @@ public class WebAuthnService {
 		session.removeAttribute(SESSION_CHALLENGE);
 		session.removeAttribute(SESSION_USER_ID);
 
-		BaseRecord regData = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		// The browser posts a plain DTO (no schema; publicKey is base64 text), not a model record.
+		Map<String, Object> regData = parseDto(json);
 		if (regData == null) {
 			return Response.status(400).entity("{\"error\":\"Invalid registration data\"}").build();
 		}
 
-		String credentialId = regData.get("credentialId");
-		String publicKeyB64 = regData.get("publicKey");
-		String clientDataJSON = regData.get("clientDataJSON");
-		String name = regData.get("name");
+		String credentialId = dtoString(regData, "credentialId");
+		String publicKeyB64 = dtoString(regData, "publicKey");
+		String clientDataJSON = dtoString(regData, "clientDataJSON");
+		String name = dtoString(regData, "name");
 
 		if (credentialId == null || publicKeyB64 == null || clientDataJSON == null) {
 			return Response.status(400).entity("{\"error\":\"Missing required fields: credentialId, publicKey, clientDataJSON\"}").build();
 		}
 
-		// Verify the challenge from clientDataJSON
+		WebAuthnUtil.ClientData clientData;
 		try {
-			String clientDataStr = new String(Base64.getUrlDecoder().decode(clientDataJSON));
-			if (!clientDataStr.contains(storedChallenge)) {
-				return Response.status(400).entity("{\"error\":\"Challenge mismatch\"}").build();
-			}
-		} catch (Exception e) {
+			clientData = WebAuthnUtil.parseClientData(Base64.getUrlDecoder().decode(clientDataJSON));
+		} catch (IllegalArgumentException e) {
+			clientData = null;
+		}
+		if (clientData == null) {
 			return Response.status(400).entity("{\"error\":\"Failed to parse clientDataJSON\"}").build();
+		}
+		if (!WebAuthnUtil.TYPE_CREATE.equals(clientData.type)) {
+			return Response.status(400).entity("{\"error\":\"Unexpected clientData type\"}").build();
+		}
+		if (!WebAuthnUtil.challengeMatches(clientData.challenge, storedChallenge)) {
+			return Response.status(400).entity("{\"error\":\"Challenge mismatch\"}").build();
+		}
+
+		byte[] publicKey;
+		try {
+			publicKey = Base64.getUrlDecoder().decode(publicKeyB64);
+		} catch (IllegalArgumentException e) {
+			publicKey = null;
+		}
+		PublicKey parsedKey = WebAuthnUtil.decodePublicKey(publicKey);
+		if (parsedKey == null) {
+			return Response.status(400).entity("{\"error\":\"Unsupported public key\"}").build();
 		}
 
 		try {
 			BaseRecord webauthnCred = RecordFactory.newInstance(MODEL_WEBAUTHN_CREDENTIAL);
 			webauthnCred.set(FieldNames.FIELD_NAME, name != null ? name : "Passkey " + System.currentTimeMillis());
 			webauthnCred.set("credentialId", credentialId);
-			webauthnCred.set("publicKey", Base64.getUrlDecoder().decode(publicKeyB64));
+			webauthnCred.set("publicKey", publicKey);
 			webauthnCred.set("counter", 0L);
-			webauthnCred.set("rpId", "localhost");
+			webauthnCred.set("rpId", RP_ID);
 			webauthnCred.set("origin", request.getHeader("Origin") != null ? request.getHeader("Origin") : "https://localhost");
-			webauthnCred.set("algorithm", -7);
+			webauthnCred.set("algorithm", WebAuthnUtil.algorithmFor(parsedKey));
 			webauthnCred.set("lastUsed", new Date());
 			webauthnCred.set("referenceType", ModelNames.MODEL_USER);
 			webauthnCred.set("referenceId", (long) user.get(FieldNames.FIELD_ID));
@@ -218,7 +239,7 @@ public class WebAuthnService {
 		String json = "{" +
 			"\"challenge\":\"" + challengeB64 + "\"," +
 			"\"timeout\":60000," +
-			"\"rpId\":\"localhost\"," +
+			"\"rpId\":\"" + RP_ID + "\"," +
 			"\"userVerification\":\"preferred\"," +
 			"\"allowCredentials\":" + allowJson.toString() +
 		"}";
@@ -242,29 +263,30 @@ public class WebAuthnService {
 		}
 		session.removeAttribute(SESSION_CHALLENGE);
 
-		BaseRecord authData = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		Map<String, Object> authData = parseDto(json);
 		if (authData == null) {
 			return Response.status(400).entity("{\"error\":\"Invalid authentication data\"}").build();
 		}
 
-		String credentialId = authData.get("credentialId");
-		String clientDataJSON = authData.get("clientDataJSON");
-		String authenticatorData = authData.get("authenticatorData");
-		String signature = authData.get("signature");
-		String organizationPath = authData.get("organizationPath");
+		String credentialId = dtoString(authData, "credentialId");
+		String clientDataJSON = dtoString(authData, "clientDataJSON");
+		String authenticatorData = dtoString(authData, "authenticatorData");
+		String signature = dtoString(authData, "signature");
+		String organizationPath = dtoString(authData, "organizationPath");
 
 		if (credentialId == null || clientDataJSON == null || authenticatorData == null || signature == null) {
 			return Response.status(400).entity("{\"error\":\"Missing required fields\"}").build();
 		}
 
-		// Verify challenge
+		byte[] clientDataBytes;
+		byte[] authenticatorDataBytes;
+		byte[] signatureBytes;
 		try {
-			String clientDataStr = new String(Base64.getUrlDecoder().decode(clientDataJSON));
-			if (!clientDataStr.contains(storedChallenge)) {
-				return Response.status(400).entity("{\"error\":\"Challenge mismatch\"}").build();
-			}
-		} catch (Exception e) {
-			return Response.status(400).entity("{\"error\":\"Failed to parse clientDataJSON\"}").build();
+			clientDataBytes = Base64.getUrlDecoder().decode(clientDataJSON);
+			authenticatorDataBytes = Base64.getUrlDecoder().decode(authenticatorData);
+			signatureBytes = Base64.getUrlDecoder().decode(signature);
+		} catch (IllegalArgumentException e) {
+			return Response.status(400).entity("{\"error\":\"Failed to parse assertion\"}").build();
 		}
 
 		// Look up credential by credentialId
@@ -280,6 +302,16 @@ public class WebAuthnService {
 			return Response.status(401).entity("{\"error\":\"Invalid credential reference\"}").build();
 		}
 
+		byte[] storedKey = webauthnCred.get("publicKey");
+		String storedRpId = webauthnCred.get("rpId");
+		String storedOrigin = webauthnCred.get("origin");
+		long storedCounter = webauthnCred.get("counter");
+		WebAuthnUtil.AssertionResult assertion = WebAuthnUtil.verifyAssertion(storedKey, storedRpId, storedOrigin, storedChallenge, authenticatorDataBytes, clientDataBytes, signatureBytes, storedCounter);
+		if (!assertion.verified) {
+			logger.warn("WebAuthn assertion rejected for credential " + credentialId + ": " + assertion.reason);
+			return Response.status(401).entity("{\"error\":\"Assertion verification failed\"}").build();
+		}
+
 		BaseRecord owner = null;
 		try {
 			owner = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_USER, refId);
@@ -290,14 +322,16 @@ public class WebAuthnService {
 			return Response.status(401).entity("{\"error\":\"Credential owner not found\"}").build();
 		}
 
-		// Update counter and lastUsed
 		try {
-			long currentCounter = webauthnCred.get("counter");
-			webauthnCred.set("counter", currentCounter + 1);
+			webauthnCred.set("counter", assertion.counter);
 			webauthnCred.set("lastUsed", new Date());
-			IOSystem.getActiveContext().getRecordUtil().updateRecord(webauthnCred);
+			if (!IOSystem.getActiveContext().getRecordUtil().updateRecord(webauthnCred)) {
+				logger.error("Failed to persist the signature counter for credential " + credentialId);
+				return Response.status(500).entity("{\"error\":\"Failed to update credential\"}").build();
+			}
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.warn("Failed to update counter", e);
+			logger.error(e);
+			return Response.status(500).entity("{\"error\":\"Failed to update credential\"}").build();
 		}
 
 		// Issue JWT
@@ -308,13 +342,17 @@ public class WebAuthnService {
 			toks.add(outToken);
 			outResp.set("response", AuthenticationResponseEnumType.AUTHENTICATED);
 
-			// Also login the session so cookie-based auth works
+			// The UI continues on the session cookie, not the token, so log the session in through
+			// JAAS the same way LoginService does; AM7LoginModule accepts "${jwt}" with the token as the password.
+			String orgPath = owner.hasField(FieldNames.FIELD_ORGANIZATION_PATH) ? owner.get(FieldNames.FIELD_ORGANIZATION_PATH) : null;
+			if (orgPath == null) {
+				orgPath = organizationPath != null ? organizationPath : "/Public";
+			}
 			try {
-				String orgPath = organizationPath != null ? organizationPath : "/Public";
-				// Build session login through JAAS to match LoginService pattern
 				request.getSession(true);
-			} catch (Exception e) {
-				logger.warn("Session login skipped: " + e.getMessage());
+				request.login(orgPath + "/${jwt}", outToken);
+			} catch (ServletException | IllegalStateException e) {
+				logger.warn("Session login failed after passkey authentication: " + e.getMessage());
 			}
 
 			return Response.status(200).entity(JSONUtil.exportObject(outResp, RecordSerializerConfig.getFilteredModule())).build();
@@ -373,6 +411,9 @@ public class WebAuthnService {
 			q.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_CREATED_DATE);
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING);
 			q.planMost(false);
+			// A create never invalidates CacheDBSearch, so a cached list would hide a just-registered passkey
+			// from both this list and the allowCredentials of GET /auth for the cache lifetime.
+			q.setCache(false);
 			QueryResult qr = IOSystem.getActiveContext().getSearch().find(q);
 			if (qr != null && qr.getResults() != null) {
 				for (BaseRecord r : qr.getResults()) {
@@ -417,5 +458,18 @@ public class WebAuthnService {
 	private String escapeJson(String s) {
 		if (s == null) return "";
 		return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> parseDto(String json) {
+		if (json == null || json.isBlank()) {
+			return null;
+		}
+		return JSONUtil.importObject(json, Map.class);
+	}
+
+	private static String dtoString(Map<String, Object> dto, String key) {
+		Object v = dto.get(key);
+		return (v instanceof String) ? (String) v : null;
 	}
 }

@@ -237,32 +237,33 @@ public class OlioService {
 			}
 		}
 
-		OlioContext octx = resolveOlioContext(user, request);
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
 		BaseRecord a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
-		if(a1 != null) {
-			String verb = imp.get("imageAction");
-			String bodyStyle = imp.get("bodyStyle");
-			String setting = imp.get("imageSetting");
-			/// Prefer the context of the BOOK THIS CHARACTER BELONGS TO, taken from the charPerson
-			/// itself (SDUtil.ATTR_IMAGE_GALLERY_PATH). Without this the request resolves the
-			/// DEFAULT grid context whenever it carries no universe/world ids, and then the two
-			/// halves disagree: resolveCharacterImagePath writes into the BOOK's gallery (it
-			/// prefers the attribute) while the grant below applies the DEFAULT world's role pair —
-			/// so the images land somewhere the book's own Writer role cannot read. Measured
-			/// 2026-09-14: .../the-big-way-out-pdf/Gallery/Characters/Darby had no entitlements at
-			/// all while its parent Gallery carried the book pair.
-			///
-			/// getCreateBookContext requires the caller to already hold that book's Writer/Admin
-			/// role, so this narrows authorization to the right book rather than widening it; a
-			/// non-book character or an unentitled caller simply keeps the resolved context.
-			OlioContext bookCtx = PbOlioContextUtil.resolveOwningBookContext(user,
-				context.getInitParameter("datagen.path"), a1, octx);
-			OlioContext genCtx = (bookCtx != null ? bookCtx : octx);
-			sdu.generateSDImages(genCtx, Arrays.asList(a1), imp, setting, bodyStyle, (verb != null && verb.length() > 0 ? verb : null), 1, false, imp.get("hires"), imp.get("seed"));
-			genCtx.scanNestedGroups(genCtx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
+		if(a1 == null) {
+			return Response.status(404).entity("{\"error\":\"Character not found or not readable\"}").build();
 		}
+		OlioContext octx = resolveOlioContext(user, request);
+		String verb = imp.get("imageAction");
+		String bodyStyle = imp.get("bodyStyle");
+		String setting = imp.get("imageSetting");
+		/// Prefer the context of the BOOK THIS CHARACTER BELONGS TO, taken from the charPerson
+		/// itself (SDUtil.ATTR_IMAGE_GALLERY_PATH). Without this the request resolves the
+		/// DEFAULT grid context whenever it carries no universe/world ids, and then the two
+		/// halves disagree: resolveCharacterImagePath writes into the BOOK's gallery (it
+		/// prefers the attribute) while the grant below applies the DEFAULT world's role pair —
+		/// so the images land somewhere the book's own Writer role cannot read. Measured
+		/// 2026-09-14: .../the-big-way-out-pdf/Gallery/Characters/Darby had no entitlements at
+		/// all while its parent Gallery carried the book pair.
+		///
+		/// getCreateBookContext requires the caller to already hold that book's Writer/Admin
+		/// role, so this narrows authorization to the right book rather than widening it; a
+		/// non-book character or an unentitled caller simply keeps the resolved context.
+		OlioContext bookCtx = PbOlioContextUtil.resolveOwningBookContext(user,
+			context.getInitParameter("datagen.path"), a1, octx);
+		OlioContext genCtx = (bookCtx != null ? bookCtx : octx);
+		sdu.generateSDImages(genCtx, Arrays.asList(a1), imp, setting, bodyStyle, (verb != null && verb.length() > 0 ? verb : null), 1, false, imp.get("hires"), imp.get("seed"));
+		genCtx.scanNestedGroups(genCtx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 		BaseRecord oi = a1.get("profile.portrait");
 		if (oi == null) {
 			logger.warn("reimageWithConfig: portrait is null after generation for " + objectId);
@@ -748,6 +749,7 @@ public class OlioService {
 		// For Books universe worlds: also wipe the associated PB2 book record and book group.
 		// The olio.pb.book is owned by the olio principal (not the request user), so the query
 		// must NOT filter by ownerId — slug + orgId is the unique constraint on olio.pb.book.
+		boolean bookWorld = false;
 		try {
 			String worldName = world.get(FieldNames.FIELD_NAME);
 			Query pbQ = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SLUG, worldName);
@@ -755,9 +757,14 @@ public class OlioService {
 			pbQ.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_SLUG });
 			BaseRecord pb2Book = IOSystem.getActiveContext().getAccessPoint().find(user, pbQ);
 			if (pb2Book != null) {
+				bookWorld = true;
 				String pb2BookOid = pb2Book.get(FieldNames.FIELD_OBJECT_ID);
 				try {
-					PictureBookUtil.reset(user, pb2BookOid);
+					PictureBookUtil.DeleteResult resetRes = PictureBookUtil.reset(user, pb2BookOid);
+					if (resetRes != null && !resetRes.deleted) {
+						logger.warn("deleteWorld: PictureBookUtil.reset reported deleted=false (" + resetRes.reason
+							+ ") steps=" + resetRes.steps + " — falling through to the world wipe");
+					}
 				} catch (Exception resetEx) {
 					// reset throws 404 when the PB1 book group (~/Data/PictureBooks/{slug}) does not
 					// exist — this is expected for pure PB2 books created via POST /chapter with no
@@ -772,9 +779,24 @@ public class OlioService {
 			logger.warn("deleteWorld: PB2 book cleanup failed (non-fatal): " + e.getMessage());
 		}
 
+		// PictureBookUtil.reset tears the book's world down itself (teardownBookFootprintAsOlio step 3), so
+		// a world that is already gone here was deleted, not failed to delete. "Gone" must hold for the olio
+		// principal too: reset's step 2 removes the request user's per-book Writer role, so a re-find as the
+		// request user alone returns null whether or not step 3 actually removed the olio-owned world.
+		if (bookWorld && worldGone(deleteAs, worldObjectId, orgId) && worldGone(user, worldObjectId, orgId)) {
+			return Response.ok("{\"deleted\":true}").build();
+		}
+
 		// Full world wipe: data records + group tree + world record.
 		boolean deleted = WorldUtil.deleteWorld(deleteAs, world);
 		return Response.ok("{\"deleted\":" + deleted + "}").build();
+	}
+
+	private static boolean worldGone(BaseRecord principal, String worldObjectId, long orgId) {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_WORLD, FieldNames.FIELD_OBJECT_ID, worldObjectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(principal, q) == null;
 	}
 
 	/**

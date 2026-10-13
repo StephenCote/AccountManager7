@@ -37,6 +37,17 @@ describe('client olio.sd.config mirrors the server configModel.json', () => {
         expect(Object.keys(cf).sort()).toEqual(Object.keys(sf).sort());
     });
 
+    it('inherits what the server inherits, so the client treats olio.sd.config as directory-scoped', () => {
+        // Without `inherits: ["data.directory"]` the client block had no groupId/groupPath/organizationId,
+        // am7model.isGroup() said false, and list queries went out without the organizationId condition
+        // PBAC requires for data.directory-derived types.
+        expect(client.inherits).toEqual(server.inherits);
+        expect(am7model.isGroup(client)).toBe(true);
+        expect(am7model.inherits(client, 'data.directory')).toBe(true);
+        let inherited = am7model.getModelFields('olio.sd.config').map(f => f.name);
+        expect(inherited).toEqual(expect.arrayContaining(['groupId', 'groupPath', 'organizationId', 'name']));
+    });
+
     it('agrees on type, default, bounds, baseModel and foreign for every field', () => {
         let diffs = [];
         Object.keys(sf).forEach(name => {

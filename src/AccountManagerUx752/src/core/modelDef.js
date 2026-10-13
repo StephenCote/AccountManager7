@@ -9993,6 +9993,9 @@
     },
        {
       "name": "olio.sd.config",
+      "inherits": [
+        "data.directory"
+      ],
       "fields": [
         {
           "name": "description",

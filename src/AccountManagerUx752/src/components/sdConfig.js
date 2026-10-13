@@ -74,7 +74,8 @@ const STYLE_FIELDS = [
 ];
 
 // ── Transient fields excluded from save/apply operations ─────────
-const SAVE_EXCLUDE = ["narration", "id", "objectId", "ownerId"];
+// saveConfig sets name/group from its own arguments; a config built from newPrimitive carries name:null, groupId:0
+const SAVE_EXCLUDE = ["narration", "id", "objectId", "ownerId", "name", "groupId", "organizationId", "groupPath", "organizationPath"];
 const APPLY_EXCLUDE = ["narration", "id", "objectId", "groupId", "organizationId", "ownerId", "groupPath", "organizationPath", "seed"];
 
 // ── Fallback data for style-specific fields ──

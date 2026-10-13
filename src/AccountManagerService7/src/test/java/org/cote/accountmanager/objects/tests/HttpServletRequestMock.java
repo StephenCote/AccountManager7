@@ -34,9 +34,21 @@ import jakarta.servlet.http.Part;
 public class HttpServletRequestMock implements HttpServletRequest {
 
 	private Principal principal;
+	private jakarta.servlet.http.HttpSession session;
 	private final Map<String, String> headers = new HashMap<>();
+	private String loginUsername;
+	private String loginPassword;
 
 	public HttpServletRequestMock() {
+	}
+
+	/** What the last {@link #login(String, String)} call received; null until a route calls it. */
+	public String getLoginUsername() {
+		return loginUsername;
+	}
+
+	public String getLoginPassword() {
+		return loginPassword;
 	}
 
 	public HttpServletRequestMock(Principal principal) {
@@ -45,6 +57,11 @@ public class HttpServletRequestMock implements HttpServletRequest {
 
 	public void setUserPrincipal(Principal principal) {
 		this.principal = principal;
+	}
+
+	/** Null (the default) models a request with no session, as before; set one for session-keyed routes. */
+	public void setSession(jakarta.servlet.http.HttpSession session) {
+		this.session = session;
 	}
 
 	public void setHeader(String name, String value) {
@@ -89,14 +106,14 @@ public class HttpServletRequestMock implements HttpServletRequest {
 	@Override public String getRequestURI() { return null; }
 	@Override public StringBuffer getRequestURL() { return new StringBuffer(); }
 	@Override public String getServletPath() { return ""; }
-	@Override public jakarta.servlet.http.HttpSession getSession(boolean create) { return null; }
-	@Override public jakarta.servlet.http.HttpSession getSession() { return null; }
+	@Override public jakarta.servlet.http.HttpSession getSession(boolean create) { return session; }
+	@Override public jakarta.servlet.http.HttpSession getSession() { return session; }
 	@Override public String changeSessionId() { return null; }
 	@Override public boolean isRequestedSessionIdValid() { return false; }
 	@Override public boolean isRequestedSessionIdFromCookie() { return false; }
 	@Override public boolean isRequestedSessionIdFromURL() { return false; }
 	@Override public boolean authenticate(HttpServletResponse response) throws IOException, ServletException { return false; }
-	@Override public void login(String username, String password) throws ServletException { }
+	@Override public void login(String username, String password) throws ServletException { loginUsername = username; loginPassword = password; }
 	@Override public void logout() throws ServletException { }
 	@Override public Collection<Part> getParts() throws IOException, ServletException { return Collections.emptyList(); }
 	@Override public Part getPart(String name) throws IOException, ServletException { return null; }
