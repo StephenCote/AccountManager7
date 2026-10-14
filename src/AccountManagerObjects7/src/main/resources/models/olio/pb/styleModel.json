@@ -1,0 +1,107 @@
+{
+	"name": "olio.pb.style",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "palette",
+	"label": "Book Style",
+	"group": "Book",
+	"dedicatedParticipation": true,
+	"constraints": ["name, groupId, organizationId"],
+	"hints": ["parent", "scope"],
+	"description": "PictureBook V3 §4 book style: the one place a book's look is declared, replacing the book.sdConfig / book.compositeSdConfig / meta-note drift. Resolved per §4.1 as deployment defaults -> style (book.style -> style.parent chain -> series.style) -> composition override -> attempt override; no step writes to its parent. No field carries a schema default (PB2 convention rule 3, TestPbModelSchema): enum columns read NULL as UNKNOWN, booleans materialise false, ints 0 (= unset). 'parent' is a self reference with no $notInParent rule, so depth capping and self-parent rejection belong to the resolver and the write path (P2-3), and every read projects it through PbStyleUtil.styleRequest() rather than planMost.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "description",
+			"type": "string",
+			"description": "The positive style text every compiler appends exactly once (§4)."
+		},
+		{
+			"name": "exclusions",
+			"type": "string",
+			"description": "Negative prompt / exclusions, applied by every compiler including ChapBook (G-25)."
+		},
+		{
+			"name": "sdConfig",
+			"baseModel": "olio.sd.config",
+			"type": "model",
+			"foreign": true,
+			"description": "Sampler/steps/cfg/LoRAs/hires: the existing canonical config record (KI-38)."
+		},
+		{
+			"name": "taskModels",
+			"type": "string",
+			"description": "JSON object of model per task, keyed by §16's names: portrait, location, sceneDirect, inpaint, harmonize, upscale. Resolved by ModelResolver (P2-2); a missing task falls back to the style default and then to the deployment default."
+		},
+		{
+			"name": "referenceImages",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.data",
+			"foreign": true,
+			"participantModel": "pb.style.referenceImage",
+			"description": "Style anchors (an approved scene, artwork) for strategies that support style references. Participation-backed and never projected on a style read: read on demand through PbStyleUtil.listReferenceImages (identity, name, contentType - never the bytes) and written through PbStyleUtil.addReferenceImage as the requesting user."
+		},
+		{
+			"name": "palette",
+			"type": "string",
+			"description": "Free-text palette / lighting direction, compiled into the prompt."
+		},
+		{
+			"name": "pageFormat",
+			"baseClass": "org.cote.accountmanager.schema.type.PbPageFormatEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "customWidth",
+			"type": "int",
+			"description": "Meaningful only when pageFormat is CUSTOM. The DDL default 0 means unset."
+		},
+		{
+			"name": "customHeight",
+			"type": "int",
+			"description": "Meaningful only when pageFormat is CUSTOM. The DDL default 0 means unset."
+		},
+		{
+			"name": "qualityPreset",
+			"baseClass": "org.cote.accountmanager.schema.type.PbQualityPresetEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"description": "DRAFT, STANDARD or FINAL (§18); the values live in olio/illustration/qualityPresets.json. UNKNOWN/null means the resource's defaultPreset."
+		},
+		{
+			"name": "photoreal",
+			"type": "boolean",
+			"description": "Whether compilers may emit realism boilerplate. False for comic/anime/art (G-16)."
+		},
+		{
+			"name": "locked",
+			"type": "boolean",
+			"description": "§4.1: when true, the style-field set is frozen. Enforced on the style write path (PUT /{book}/style refuses style-field edits to this style and to any style below it in the chain until unlocked; P2-3). Composition overrides (§4.1) are checked when compositions exist (Phase 4); node configOverride writes are not checked. This is only the flag."
+		},
+		{
+			"name": "scope",
+			"baseClass": "org.cote.accountmanager.schema.type.PbStyleScopeEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"description": "BOOK, SERIES or LIBRARY. A series style is inherited by its chapter books."
+		},
+		{
+			"name": "parent",
+			"baseModel": "olio.pb.style",
+			"type": "model",
+			"foreign": true,
+			"description": "The style this one inherits from (§4.1). Null for a root style."
+		}
+	]
+}

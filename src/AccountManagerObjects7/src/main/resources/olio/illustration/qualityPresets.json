@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "PictureBook V3 quality presets (design section 18). Edit this file to retune a preset - no Java",
+    "change is needed. Read through org.cote.accountmanager.olio.illustration.QualityPresets, which",
+    "keys on PbQualityPresetEnumType; the enum is only the key, these are the values.",
+    "",
+    "  resolutionScale  multiplier on the style's page format (0.5 = half-size draft).",
+    "  stepsMode        'low' | 'default' | 'high' - resolved against the model family's",
+    "                   recommendedSteps in capabilities.json (P2-2), never a fixed step count here.",
+    "  variants         images per stage.",
+    "  upscale          whether the plan appends an UPSCALE stage.",
+    "  qa               OFF | CANONICAL (the canonical variant only) | ALL.",
+    "",
+    "defaultPreset is the pre-selection for a new style and for a style whose qualityPreset reads",
+    "NULL/UNKNOWN (design section 34 item 7, recorded as a default in PictureBookV3Implementation.md",
+    "section 6.C 149 a). A book with NO style at all is a different case - section 29 says STANDARD -",
+    "and that lives in the resolver, not here."
+  ],
+
+  "defaultPreset": "DRAFT",
+
+  "presets": {
+    "DRAFT": {
+      "resolutionScale": 0.5,
+      "stepsMode": "low",
+      "variants": 1,
+      "upscale": false,
+      "qa": "OFF"
+    },
+    "STANDARD": {
+      "resolutionScale": 1.0,
+      "stepsMode": "default",
+      "variants": 2,
+      "upscale": false,
+      "qa": "CANONICAL"
+    },
+    "FINAL": {
+      "resolutionScale": 1.0,
+      "stepsMode": "high",
+      "variants": 4,
+      "upscale": true,
+      "qa": "ALL"
+    }
+  }
+}

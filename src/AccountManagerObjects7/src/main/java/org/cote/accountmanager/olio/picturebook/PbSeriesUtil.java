@@ -548,13 +548,14 @@ public class PbSeriesUtil {
 		return (name.startsWith(prefix) ? name.substring(prefix.length()) : name);
 	}
 
-	/** What to project on a series read. Includes {@code universe} (the shared world FK) and {@code bookCount}. */
+	/** What to project on a series read. Includes {@code universe} (the shared world FK), {@code bookCount} and the {@code style} FK (V3 §4). */
 	public static String[] seriesRequest() {
 		return new String[] {
 			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_URN,
 			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
 			FieldNames.FIELD_DESCRIPTION,
-			OlioFieldNames.FIELD_PB_UNIVERSE, OlioFieldNames.FIELD_PB_BOOK_COUNT
+			OlioFieldNames.FIELD_PB_UNIVERSE, OlioFieldNames.FIELD_PB_BOOK_COUNT,
+			OlioFieldNames.FIELD_STYLE
 		};
 	}
 }

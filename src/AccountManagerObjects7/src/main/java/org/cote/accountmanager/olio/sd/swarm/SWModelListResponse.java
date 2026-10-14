@@ -10,9 +10,20 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class SWModelListResponse {
 	private List<Map<String, Object>> files = new ArrayList<>();
 	private List<String> folders = new ArrayList<>();
+	/// Swarm reports failures (an expired session_id among them) as an HTTP 200 whose body carries
+	/// `error` instead of `files`; without this field such a body reads as "no models installed".
+	private String error;
 
 	public SWModelListResponse() {
 
+	}
+
+	public String getError() {
+		return error;
+	}
+
+	public void setError(String error) {
+		this.error = error;
 	}
 
 	public List<Map<String, Object>> getFiles() {

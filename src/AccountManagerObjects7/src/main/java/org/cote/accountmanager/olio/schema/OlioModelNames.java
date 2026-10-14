@@ -102,6 +102,8 @@ public class OlioModelNames extends ModelNames {
 	 * work; no factory or REST endpoint exists yet.
 	 */
 	public static final String MODEL_PB_CAST_GROUP = "olio.pb.castGroup";
+	/// V3 §4 book style: the single declaration of a book's look, inherited book.style -> style.parent -> series.style (§4.1)
+	public static final String MODEL_PB_STYLE = "olio.pb.style";
 
 	/// ChapBook models — poem library, sets, and the ChapBook variant of olio.pb.book
 	public static final String MODEL_CB_POEM = "olio.cb.poem";
@@ -137,6 +139,7 @@ public class OlioModelNames extends ModelNames {
 		MODEL_PB_RUN,
 		MODEL_PB_SCENE,
 		MODEL_PB_CAST_GROUP,
+		MODEL_PB_STYLE,
 		MODEL_CB_POEM,
 		MODEL_CB_SET
 		/// MODEL_CB_BOOK (olio.cb.book) removed from registration — superseded by olio.pb.book

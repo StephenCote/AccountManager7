@@ -182,7 +182,13 @@ public class TestPictureBookRestContract extends BaseTest {
 			{ "resumeRun", "POST" },
 			/// V3 Phase 1 impact read (P1-10 S0, 2026-10-11): what an edit to one bound record touches in a
 			/// book. A read behind requireBook, on the listStale pattern; not gated by the render-path switch.
-			{ "affectedByRecord", "GET" }
+			{ "affectedByRecord", "GET" },
+			/// V3 Phase 2 style (P2-3, 2026-10-13): the §4/§4.1 book style. GET behind requireBook; PUT and the
+			/// lock POST behind requireBookUpdate; neither gated by the render-path switch (the one model
+			/// policy applies the style's task pins to PB1 renders too).
+			{ "getStyle", "GET" },
+			{ "putStyle", "PUT" },
+			{ "lockStyle", "POST" }
 		};
 		for(String[] e : expected) {
 			Method found = null;
@@ -232,7 +238,11 @@ public class TestPictureBookRestContract extends BaseTest {
 			{ "readRun", "/run/{runObjectId:[0-9A-Za-z\\-]+}" },
 			{ "resumeRun", "/run/{runObjectId:[0-9A-Za-z\\-]+}/resume" },
 			/// P1-10 S0(d): the impact read is addressed by model name then objectId under the book.
-			{ "affectedByRecord", "/affected-by/{refModel:[a-z]+(\\.[A-Za-z0-9]+)+}/{refObjectId:[0-9A-Za-z\\-]+}" }
+			{ "affectedByRecord", "/affected-by/{refModel:[a-z]+(\\.[A-Za-z0-9]+)+}/{refObjectId:[0-9A-Za-z\\-]+}" },
+			/// P2-3: the book style lives under the book; GET and PUT share one path, the lock is a sub-resource.
+			{ "getStyle", "/style" },
+			{ "putStyle", "/style" },
+			{ "lockStyle", "/style/lock" }
 		};
 		for(String[] e : expected) {
 			Method found = null;

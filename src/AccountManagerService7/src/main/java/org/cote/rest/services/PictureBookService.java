@@ -124,6 +124,11 @@ import jakarta.ws.rs.core.Response;
  *   PUT  /{bookObjectId}/artifact/{artifactObjectId}/approve   — select + APPROVED (approvedBy = caller) + pin the node
  *   PUT  /{bookObjectId}/artifact/{artifactObjectId}/reject    — REJECTED and kept; selection falls back to the newest sibling
  *   GET  /{bookObjectId}/review-queue?filter=all|auto-approved — every artifact by node with its review state; bad filter → 400
+ *
+ * V3 Phase 2 style (design §4/§4.1; P2-3). All through PbServiceFacade; not gated on the render path:
+ *   GET  /{bookObjectId}/style                                 — own style + effective (inherited) values + chain; book 404
+ *   PUT  /{bookObjectId}/style                                 — sparse style fields; 403 → 400 unknown key/bad value → 409 locked → create-or-update the BOOK-scope style
+ *   POST /{bookObjectId}/style/lock                            — body { locked: true|false } (JSON boolean only); 404 when the book has no style of its own
  */
 @DeclareRoles({"admin", "user"})
 @Path("/olio/picture-book")
@@ -1987,6 +1992,96 @@ public class PictureBookService {
         try {
             return Response.status(200)
                 .entity(JSONUtil.exportObject(PbServiceFacade.setAutoApprove(user, bookObjectId, ((Boolean) value).booleanValue())))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /{bookObjectId}/style
+     * The book's style (V3 §4/§4.1): { bookObjectId, own, effective:{fields, taskModels, qualityPreset, pageFormat, sources},
+     * chain:[{objectId, name, scope, locked}], lockedBy, truncatedAt, cycleDetected, complete }. Book 404 only.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/style")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getStyle(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.getStyle(user, bookObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * PUT /{bookObjectId}/style
+     * Body: a sparse JSON object of PbServiceFacade.STYLE_PUT_FIELDS (description, exclusions, palette, sdConfig
+     * {objectId|id}, taskModels {task: checkpoint}, pageFormat, customWidth, customHeight, qualityPreset, photoreal,
+     * parent objectId); null clears a field. Creates the book's own BOOK-scope style when it has none. 403 when the
+     * caller cannot update the book; 400 for an unknown key or bad value; 404 for an unreadable sdConfig/parent;
+     * 409 when the effective chain is locked. Returns the same shape as GET, re-read after the write.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/style")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response putStyle(@PathParam("bookObjectId") String bookObjectId, String json,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = null;
+        if (json != null && !json.isBlank()) {
+            /// Read straight off the JSON, as setAutoApprove does: the body is a sparse map, not an
+            /// olio.pictureBookRequest, and the facade validates each key and value itself.
+            body = JSONUtil.getMap(json.getBytes(java.nio.charset.StandardCharsets.UTF_8), String.class, Object.class);
+            if (body == null) {
+                return Response.status(400).entity("{\"error\":true,\"message\":\"Malformed request body\"}").build();
+            }
+        }
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.putStyle(user, bookObjectId, body)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/style/lock
+     * Body: { locked: true|false } — a JSON boolean, nothing else (parsed exactly as setAutoApprove). 400 for a
+     * missing or non-boolean value; 403 when the caller cannot update the book; 404 when the book has no style of
+     * its own. Returns the same shape as GET, re-read after the write.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/style/lock")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response lockStyle(@PathParam("bookObjectId") String bookObjectId, String json,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Object value = null;
+        if (json != null && !json.isBlank()) {
+            Map<String, Object> body = JSONUtil.getMap(json.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    String.class, Object.class);
+            if (body == null) {
+                return Response.status(400).entity("{\"error\":true,\"message\":\"Malformed request body\"}").build();
+            }
+            value = body.get("locked");
+        }
+        if (!(value instanceof Boolean)) {
+            return Response.status(400).entity("{\"error\":true,\"message\":\"locked must be a JSON boolean\"}").build();
+        }
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.lockStyle(user, bookObjectId, ((Boolean) value).booleanValue())))
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);

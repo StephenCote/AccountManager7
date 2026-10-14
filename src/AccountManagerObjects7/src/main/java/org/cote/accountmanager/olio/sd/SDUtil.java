@@ -235,21 +235,42 @@ public class SDUtil {
 		return resp;
 	}
 
+	/// Installed checkpoints as the server lists them, or an empty list when the list could not be
+	/// read. Callers that must tell "nothing installed" from "could not ask" use listModelsOrNull().
 	public List<String> listModels() {
-		List<String> models = new ArrayList<>();
+		List<String> models = listModelsOrNull();
+		return (models != null ? models : new ArrayList<>());
+	}
+
+	/// Installed checkpoints as the server lists them, or NULL when the list could not be read: no
+	/// session, a non-200 / transport failure, or an `error` body. An empty non-null list is a real
+	/// answer (the server listed nothing). Null is what SwarmModelInventory turns into
+	/// ModelResolver.Reason.INVENTORY_UNAVAILABLE and never caches. A Swarm `error` body (typically
+	/// an expired cached session) is retried exactly once with a fresh session, as txt2img does.
+	public List<String> listModelsOrNull() {
 		try {
 			String sess = getOrCreateSession();
 			if (sess == null || sess.isEmpty()) {
 				logger.warn("Could not obtain anonymous session for listing models");
-				return models;
+				return null;
 			}
-			SWModelListResponse resp = ClientUtil.post(
-				SWModelListResponse.class,
-				ClientUtil.getResource(autoserver + "/API/ListModels"),
-				"{\"session_id\":\"" + sess + "\",\"path\":\"\",\"depth\":2}",
-				MediaType.APPLICATION_JSON_TYPE
-			);
-			if (resp != null && resp.getFiles() != null) {
+			SWModelListResponse resp = postListModels(sess);
+			if (resp != null && resp.getError() != null && !resp.getError().isEmpty()) {
+				logger.warn("ListModels error (\"" + resp.getError() + "\") — retrying once with a fresh session");
+				invalidateSession();
+				String freshSess = getOrCreateSession();
+				resp = (freshSess != null && !freshSess.isEmpty()) ? postListModels(freshSess) : null;
+			}
+			if (resp == null) {
+				logger.warn("Could not list models from SD server " + autoserver + ": no response");
+				return null;
+			}
+			if (resp.getError() != null && !resp.getError().isEmpty()) {
+				logger.warn("Could not list models from SD server " + autoserver + ": " + resp.getError());
+				return null;
+			}
+			List<String> models = new ArrayList<>();
+			if (resp.getFiles() != null) {
 				for (Map<String, Object> file : resp.getFiles()) {
 					Object name = file.get("name");
 					if (name != null) {
@@ -257,10 +278,20 @@ public class SDUtil {
 					}
 				}
 			}
+			return models;
 		} catch (Exception e) {
-			logger.warn("Could not list models from SD server: " + e.getMessage());
+			logger.warn("Could not list models from SD server " + autoserver + ": " + e.getMessage());
+			return null;
 		}
-		return models;
+	}
+
+	private SWModelListResponse postListModels(String sess) {
+		return ClientUtil.post(
+			SWModelListResponse.class,
+			ClientUtil.getResource(autoserver + "/API/ListModels"),
+			"{\"session_id\":\"" + sess + "\",\"path\":\"\",\"depth\":2}",
+			MediaType.APPLICATION_JSON_TYPE
+		);
 	}
 
 	public List<String> listLoras() {
@@ -1416,11 +1447,13 @@ public class SDUtil {
 		String prompt = NarrativeUtil.getLandscapePrompt(location, adjacentTerrains);
 		String negPrompt = NarrativeUtil.getLandscapeNegativePrompt();
 
-		// Initialize with defaults, merge any config overrides
+		// Initialize with defaults, merge any config overrides. The caller's model is honoured so a
+		// checkpoint the model policy (IllustrationModelPolicy) wrote onto sdConfig reaches Swarm.
 		BaseRecord config = randomSDConfig();
 		if(sdConfig != null) {
 			String style = sdConfig.get("style");
 			if(style != null) config.setValue("style", style);
+			copyModel(sdConfig, config);
 		}
 
 		// Get config values with fallbacks
@@ -1754,11 +1787,12 @@ public class SDUtil {
 		String prompt = NarrativeUtil.getAnimalPrompt(animal, landscapeSetting, sdConfig);
 		String negPrompt = NarrativeUtil.getAnimalNegativePrompt();
 
-		// Initialize with defaults
+		// Initialize with defaults; the caller's model is honoured (see generateLandscapeImage).
 		BaseRecord config = randomSDConfig();
 		if(sdConfig != null) {
 			String style = sdConfig.get("style");
 			if(style != null) config.setValue("style", style);
+			copyModel(sdConfig, config);
 		}
 
 		Integer cfgSteps = config.get("steps");
@@ -1942,6 +1976,17 @@ public class SDUtil {
 				+ "Swarm will return no images. Set the model on the config or configure a default.");
 		}
 		return m;
+	}
+
+	/// Copy a non-blank `model` from the caller's config onto the request config the landscape/animal
+	/// paths build from randomSDConfig(), so a policy-resolved checkpoint is not silently replaced by
+	/// the deployment default.
+	private static void copyModel(BaseRecord from, BaseRecord to) {
+		if (from == null || to == null || !from.hasField("model")) return;
+		Object m = from.get("model");
+		if (m instanceof String && !((String) m).isBlank()) {
+			to.setValue("model", m);
+		}
 	}
 
 	/// Classpath home of the mannequin base images. These are byte-identical copies of the two files

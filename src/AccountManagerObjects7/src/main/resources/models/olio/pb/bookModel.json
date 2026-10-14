@@ -75,6 +75,13 @@
 			"description": "Optional alternate config for the composite step only; falls back to sdConfig when absent. FK to an olio.sd.config row (promoted from non-foreign text column in S6)."
 		},
 		{
+			"name": "style",
+			"baseModel": "olio.pb.style",
+			"type": "model",
+			"foreign": true,
+			"description": "V3 §4: the book's style record. Null until a style is assigned; sdConfig/compositeSdConfig stay, read-only, until the §24 migration finishes. Projected as an id reference by bookRequest(), never as a nested plan."
+		},
+		{
 			"name": "bookStatus",
 			"baseClass": "org.cote.accountmanager.schema.type.PbBookStatusEnumType",
 			"type": "enum",

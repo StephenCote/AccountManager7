@@ -20,6 +20,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
@@ -153,6 +154,13 @@ public class PbStaleUtil {
 		 * cached, so a narrower viewer's result is never served to a user who could see or persist more.
 		 */
 		public final boolean complete;
+		/**
+		 * The style hop the scanning user could not read (or that exceeded {@link PbStyleResolver#MAX_DEPTH});
+		 * null when the chain resolved. A truncated chain makes every hashed node undetermined (§6.C 156 h).
+		 */
+		public final String styleTruncatedAt;
+		/** True when the book's style chain revisits a style - the same undetermined outcome as a truncation. */
+		public final boolean styleCycleDetected;
 
 		private final Map<Long, List<Long>> adjacency;
 		private final Map<Long, Integer> sceneIndexByEligibleSceneNode;
@@ -161,6 +169,16 @@ public class PbStaleUtil {
 		Scan(long at, long workflowId, Map<Long, Entry> entries, Map<Long, PbNodeStatusEnumType> statuses,
 				Set<String> refKeys, boolean markPersisted, Set<String> undeterminedRefs, Map<Long, List<Long>> adjacency,
 				Map<Long, Integer> sceneIndexByEligibleSceneNode, Map<String, Set<Long>> boundNodesByRef) {
+			this(at, workflowId, entries, statuses, refKeys, markPersisted, undeterminedRefs, adjacency,
+				sceneIndexByEligibleSceneNode, boundNodesByRef, null, false);
+		}
+
+		Scan(long at, long workflowId, Map<Long, Entry> entries, Map<Long, PbNodeStatusEnumType> statuses,
+				Set<String> refKeys, boolean markPersisted, Set<String> undeterminedRefs, Map<Long, List<Long>> adjacency,
+				Map<Long, Integer> sceneIndexByEligibleSceneNode, Map<String, Set<Long>> boundNodesByRef,
+				String styleTruncatedAt, boolean styleCycleDetected) {
+			this.styleTruncatedAt = styleTruncatedAt;
+			this.styleCycleDetected = styleCycleDetected;
 			this.at = at;
 			this.workflowId = workflowId;
 			this.entries = Collections.unmodifiableMap(entries);
@@ -281,12 +299,32 @@ public class PbStaleUtil {
 		Map<String, String> hashMemo = new HashMap<>();
 		Set<String> undetermined = new HashSet<>();
 
+		/// One style resolve per scan (⚠ §6.C 156 h). A chain this user cannot finish reading - or one
+		/// that cycles - gives no usable hash, so every hashed node keeps its stored status, nothing is
+		/// persisted, and the synthetic undetermined key keeps the scan out of the cache.
+		PbStyleResolver.EffectiveStyle style = PbStyleResolver.resolve(user, book);
+		boolean styleComplete = style.isComplete();
+		if(!styleComplete) {
+			String truncModel = (style.truncatedModel() != null ? style.truncatedModel() : OlioModelNames.MODEL_PB_STYLE);
+			String truncAt = (style.truncatedAt() != null ? style.truncatedAt() : "cycle");
+			undetermined.add(refKey(truncModel, truncAt));
+			logger.warn("Drift scan of workflow " + workflow.get(FieldNames.FIELD_NAME) + ": style chain "
+				+ (style.cycleDetected() ? "cycles" : "is truncated at " + truncModel + " " + truncAt)
+				+ " for " + user.get(FieldNames.FIELD_NAME) + "; hashed statuses are reported as stored, not recomputed or persisted");
+		}
+
 		for(Map.Entry<Long, BaseRecord> me : nodesById.entrySet()) {
 			Long id = me.getKey();
 			BaseRecord n = me.getValue();
 			List<BaseRecord> bs = bindingsByNode.get(id);
 			PbNodeStatusEnumType stored = n.getEnum(OlioFieldNames.FIELD_PB_NODE_STATUS);
-			PbNodeStatusEnumType status = PbGraphUtil.recomputeStatus(user, n, book, bs);
+			PbNodeStatusEnumType status;
+			if(!styleComplete && n.get(OlioFieldNames.FIELD_PB_INPUT_HASH) != null) {
+				status = (stored != null ? stored : PbNodeStatusEnumType.UNKNOWN);
+			}
+			else {
+				status = PbGraphUtil.recomputeStatus(user, n, book, bs, style);
+			}
 			statuses.put(id, status);
 
 			for(BaseRecord b : bs) {
@@ -344,7 +382,7 @@ public class PbStaleUtil {
 		/// Persist STALE on everything newly seen, as the acting user, stopping at the first denial so a
 		/// read-only viewer costs one WARN rather than one ERROR per node.
 		boolean markPersisted = true;
-		boolean persisting = true;
+		boolean persisting = styleComplete;
 		boolean wrote = false;
 		Map<Long, Entry> entries = new LinkedHashMap<>();
 		for(Map.Entry<Long, String> re : reasons.entrySet()) {
@@ -393,7 +431,7 @@ public class PbStaleUtil {
 			invalidate(wfId);
 		}
 		return new Scan(now, wfId, entries, statuses, refKeys, markPersisted, undetermined, adjacency,
-			sceneIndexByEligibleSceneNode, boundNodesByRef);
+			sceneIndexByEligibleSceneNode, boundNodesByRef, style.truncatedAt(), style.cycleDetected());
 	}
 
 	private static List<DriftedRef> driftedRefs(BaseRecord user, List<BaseRecord> bindings, Map<String, String> memo,

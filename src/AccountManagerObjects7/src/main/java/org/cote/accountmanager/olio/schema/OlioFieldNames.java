@@ -284,6 +284,7 @@ public class OlioFieldNames {
 	public static final String FIELD_SD_SAMPLER = "sampler";
 	public static final String FIELD_SD_SCHEDULER = "scheduler";
 	public static final String FIELD_SD_MODEL = "model";
+	public static final String FIELD_SD_FLUX2_MODEL = "flux2Model";
 	public static final String FIELD_SD_REFINER_MODEL = "refinerModel";
 	public static final String FIELD_SD_DENOISING_STRENGTH = "denoisingStrength";
 	public static final String FIELD_SD_LORAS = "loras";
@@ -433,5 +434,20 @@ public class OlioFieldNames {
 
 	/// olio.pb.castGroup — members participation list (participantModel pb.castGroup.member)
 	public static final String FIELD_PB_MEMBERS = "members";
+
+	/// olio.pb.style (V3 §4). The FK on olio.pb.book / olio.pb.series and style.sdConfig reuse FIELD_STYLE / FIELD_PB_SD_CONFIG;
+	/// style.scope reuses FIELD_PB_SCOPE (an enum here, a string on olio.pb.node).
+	public static final String FIELD_PB_EXCLUSIONS = "exclusions";
+	public static final String FIELD_PB_TASK_MODELS = "taskModels";
+	public static final String FIELD_PB_REFERENCE_IMAGES = "referenceImages";
+	public static final String FIELD_PB_PALETTE = "palette";
+	public static final String FIELD_PB_PAGE_FORMAT = "pageFormat";
+	public static final String FIELD_PB_CUSTOM_WIDTH = "customWidth";
+	public static final String FIELD_PB_CUSTOM_HEIGHT = "customHeight";
+	public static final String FIELD_PB_QUALITY_PRESET = "qualityPreset";
+	public static final String FIELD_PB_PHOTOREAL = "photoreal";
+	public static final String FIELD_PB_LOCKED = "locked";
+	/// olio.pb.style — self reference to the style this one inherits from; distinct from common.parent's parentId
+	public static final String FIELD_PB_PARENT = "parent";
 
 }

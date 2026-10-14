@@ -322,6 +322,19 @@ public class PbConfigUtil {
 	 * @param clientOverlay sparse per-request overrides - may be null (then identical to the 3-arg form)
 	 */
 	public static BaseRecord resolveEffectiveConfig(BaseRecord book, BaseRecord node, boolean composite, BaseRecord clientOverlay) {
+		return resolveEffectiveConfig(book, node, composite, clientOverlay, null);
+	}
+
+	/**
+	 * {@link #resolveEffectiveConfig(BaseRecord, BaseRecord, boolean, BaseRecord)} with the book's
+	 * resolved style chain (V3 §4.1, P2-3; ⚠ §6.C 156 b). When {@code style} carries an
+	 * {@code sdConfig} - the nearest hop of {@code book.style → parents → series.style → … → library}
+	 * that names one - <b>its values replace the legacy book tier</b> at the same position in the chain
+	 * (overlay and node override still above, FLUX.2 defaults still below). The legacy
+	 * {@code book.sdConfig}/{@code compositeSdConfig} columns are consulted only when no hop carries a
+	 * config. A null or empty {@code style} is the pre-P2-3 chain exactly.
+	 */
+	public static BaseRecord resolveEffectiveConfig(BaseRecord book, BaseRecord node, boolean composite, BaseRecord clientOverlay, PbStyleResolver.EffectiveStyle style) {
 		BaseRecord effective = null;
 		try {
 			effective = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
@@ -330,7 +343,7 @@ public class PbConfigUtil {
 			logger.error("Failed to instantiate " + OlioModelNames.MODEL_SD_CONFIG + ": " + e.getMessage(), e);
 			throw new PictureBookException(500, "Failed to instantiate " + OlioModelNames.MODEL_SD_CONFIG);
 		}
-		return mergeTiers(effective, book, clientOverlay, node, composite);
+		return mergeTiers(effective, book, clientOverlay, node, composite, style);
 	}
 
 	/**
@@ -350,6 +363,16 @@ public class PbConfigUtil {
 	 * @return a new, sparse {@code olio.sd.config}; never null
 	 */
 	public static BaseRecord resolveDeclaredConfig(BaseRecord book, BaseRecord node, boolean composite) {
+		return resolveDeclaredConfig(book, node, composite, null);
+	}
+
+	/**
+	 * {@link #resolveDeclaredConfig(BaseRecord, BaseRecord, boolean)} with the resolved style chain: the
+	 * style tier's config (see {@link #styleTierConfig}) is what gets declared and hashed, so moving a
+	 * book to a style with different config values re-renders exactly as editing the legacy book config
+	 * did. Null style = the legacy chain.
+	 */
+	public static BaseRecord resolveDeclaredConfig(BaseRecord book, BaseRecord node, boolean composite, PbStyleResolver.EffectiveStyle style) {
 		BaseRecord declared = null;
 		try {
 			/// newInstance with an EMPTY field array materialises every field; the six FLUX.2 names give
@@ -365,11 +388,28 @@ public class PbConfigUtil {
 			logger.error("Failed to instantiate a sparse " + OlioModelNames.MODEL_SD_CONFIG + ": " + e.getMessage(), e);
 			throw new PictureBookException(500, "Failed to instantiate " + OlioModelNames.MODEL_SD_CONFIG);
 		}
-		return mergeTiers(declared, book, null, node, composite);
+		return mergeTiers(declared, book, null, node, composite, style);
 	}
 
-	private static BaseRecord mergeTiers(BaseRecord base, BaseRecord book, BaseRecord clientOverlay, BaseRecord node, boolean composite) {
-		SDUtil.applyOverrides(base, bookConfig(book, composite));
+	/**
+	 * The config record that fills the "book defaults" position of the §2.4 chain (⚠ §6.C 156 b): the
+	 * style chain's nearest whole {@code sdConfig} when the resolved style carries one, else the legacy
+	 * {@link #bookConfig}. The same record is the STYLE_DEFAULT source for the model policy
+	 * ({@link PbModelPolicy}), so the checkpoint the policy considers "the style's" is the one whose
+	 * values are actually sent. A legacy book config therefore acts as the style tier for a book with no
+	 * style - one chain, not two.
+	 *
+	 * @return the tier's config record, or null when neither the chain nor the book carries one
+	 */
+	public static BaseRecord styleTierConfig(BaseRecord book, boolean composite, PbStyleResolver.EffectiveStyle style) {
+		if(style != null && style.sdConfig() != null) {
+			return style.sdConfig();
+		}
+		return bookConfig(book, composite);
+	}
+
+	private static BaseRecord mergeTiers(BaseRecord base, BaseRecord book, BaseRecord clientOverlay, BaseRecord node, boolean composite, PbStyleResolver.EffectiveStyle style) {
+		SDUtil.applyOverrides(base, styleTierConfig(book, composite, style));
 		if(clientOverlay != null) {
 			SDUtil.applyOverrides(base, clientOverlay);
 		}

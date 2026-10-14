@@ -1176,7 +1176,8 @@ public class PbBookUtil {
 			OlioFieldNames.FIELD_PB_SD_CONFIG, OlioFieldNames.FIELD_PB_COMPOSITE_SD_CONFIG,
 			OlioFieldNames.FIELD_PB_BOOK_STATUS, OlioFieldNames.FIELD_PB_COMPOSITION_CONTEXT,
 			OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID, OlioFieldNames.FIELD_PB_BOOK_TYPE,
-			OlioFieldNames.FIELD_PB_FIX_PAGE_HEIGHT, OlioFieldNames.FIELD_PB_AUTO_APPROVE
+			OlioFieldNames.FIELD_PB_FIX_PAGE_HEIGHT, OlioFieldNames.FIELD_PB_AUTO_APPROVE,
+			OlioFieldNames.FIELD_STYLE
 		};
 	}
 

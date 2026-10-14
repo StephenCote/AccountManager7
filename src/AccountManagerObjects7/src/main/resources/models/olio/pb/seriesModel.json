@@ -31,6 +31,13 @@
 			"description": "The Books universe this series belongs to."
 		},
 		{
+			"name": "style",
+			"baseModel": "olio.pb.style",
+			"type": "model",
+			"foreign": true,
+			"description": "V3 §4: a SERIES-scope style inherited by the chapter books of this series (§4.1). Null when the series declares none."
+		},
+		{
 			"name": "bookCount",
 			"type": "int"
 		}

@@ -1,6 +1,8 @@
 package org.cote.accountmanager.olio.picturebook;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -20,18 +22,30 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.illustration.DeploymentModelDefaults;
+import org.cote.accountmanager.olio.illustration.ModelInventory;
+import org.cote.accountmanager.olio.illustration.ModelResolver;
+import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
+import org.cote.accountmanager.olio.illustration.RendererCapabilities;
+import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OrderEnumType;
+import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
+import org.cote.accountmanager.schema.type.PbPageFormatEnumType;
+import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.schema.type.PbRunStatusEnumType;
+import org.cote.accountmanager.schema.type.PbStyleScopeEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
+import org.cote.accountmanager.util.JSONUtil;
 
 /**
  * The one resolution layer phase 4's REST endpoints delegate to - the PictureBook equivalent of
@@ -61,6 +75,12 @@ import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
  * widen the API and Service7 never has to know a projection. Mirrors
  * {@code PictureBookUtil.listScenes}/{@code listCharacters}, which already return
  * {@code List<Map<String, Object>>}.
+ * <p>
+ * <b>One bookless entry point: {@link #listModelsForTask}.</b> The illustration models-by-task read
+ * (V3 §16/§27, P2-2) has no book: its root is the <i>optional</i> style, authorized by identity through
+ * {@code AccessPoint.find} exactly as a book is, and with no style it reads only deployment config and the
+ * SD server's inventory. It reads no book and writes nothing, so the root-reference principle is kept in
+ * the only form it can take here.
  */
 public class PbServiceFacade {
 	public static final Logger logger = LogManager.getLogger(PbServiceFacade.class);
@@ -94,6 +114,114 @@ public class PbServiceFacade {
 		out.put("pb2BookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
 		out.put("slug", book.get(OlioFieldNames.FIELD_PB_SLUG));
 		out.put("bookName", groupName);
+		return out;
+	}
+
+	// ─────────────────────────────── illustration: models by task (V3 §16/§27) ───────────────────────────────
+
+	/**
+	 * The installed checkpoints the SD server reports, each with its renderer family and whether it can
+	 * serve {@code task}, plus what {@code ModelResolver} would pick for that task today — through the
+	 * optional style's {@code taskModels}/{@code sdConfig} (steps 2–3) and the boot-pinned deployment
+	 * defaults (step 4). There is no override step here: a per-request override is the render call's,
+	 * and this read reports the policy underneath it.
+	 * <p>
+	 * {@code sdApiType} and {@code sdServer} are the deployment's values, passed in by the caller
+	 * (Service7 reads them from its init-params and {@code ServerConfigUtil}); nothing here reads
+	 * process-global state. The inventory is a per-server snapshot with a TTL
+	 * ({@code SwarmModelInventory.TTL_MS}); a failed read is reported as {@code inventory.error} and
+	 * {@code resolution.reason = INVENTORY_UNAVAILABLE}, never as "nothing installed". The wire shape
+	 * omits the SD server URL on purpose (§6.C 152 f) - as a field and inside any error text; the URL
+	 * and the raw API-type init-param are logged, not returned.
+	 *
+	 * @throws PictureBookException 401 no principal; 400 unknown task; 404 the style does not exist or the
+	 *         caller may not read it; 500 the SD server is not configured or its API type is not recognised.
+	 */
+	public static Map<String, Object> listModelsForTask(BaseRecord user, String task, String sdApiType, String sdServer, String styleObjectId) {
+		if(user == null) throw new PictureBookException(401, "No authenticated principal");
+		PbModelTaskEnumType taskType = ModelTaskKeys.task(task);
+		if(taskType == PbModelTaskEnumType.UNKNOWN) {
+			throw new PictureBookException(400, "Unknown model task '" + task + "'");
+		}
+		if(sdServer == null || sdServer.isBlank()) {
+			throw new PictureBookException(500, "SD server is not configured");
+		}
+		SDAPIEnumType apiType;
+		try {
+			apiType = SDAPIEnumType.valueOf(sdApiType == null ? "" : sdApiType.trim().toUpperCase());
+		}
+		catch(IllegalArgumentException e) {
+			logger.error("SD server API type '" + sdApiType + "' is not recognised");
+			throw new PictureBookException(500, "SD server API type is not recognised");
+		}
+
+		ModelResolver.Request.Builder req = ModelResolver.Request.builder(taskType);
+		if(styleObjectId != null && !styleObjectId.isBlank()) {
+			BaseRecord style = PbStyleUtil.readStyle(user, styleObjectId, orgOf(user));
+			if(style == null) throw new PictureBookException(404, "Style not found");
+			req.taskModels(ModelTaskKeys.parseTaskModels(style.get(OlioFieldNames.FIELD_PB_TASK_MODELS)));
+			BaseRecord cfg = PbStyleUtil.readSdConfigModels(user, style);
+			if(cfg != null) {
+				req.styleModel(cfg.get(OlioFieldNames.FIELD_SD_MODEL));
+				req.styleFlux2Model(cfg.get(OlioFieldNames.FIELD_SD_FLUX2_MODEL));
+			}
+		}
+		DeploymentModelDefaults.Defaults defaults = DeploymentModelDefaults.current();
+		req.deploymentModel(defaults.getModel()).deploymentFlux2Model(defaults.getFlux2Model());
+
+		ModelInventory inventory = SwarmModelInventory.forServer(apiType, sdServer);
+		ModelResolver.Resolution resolution = ModelResolver.resolve(req.build(), inventory);
+
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("task", ModelTaskKeys.key(taskType));
+		Map<String, Object> inv = new LinkedHashMap<>();
+		inv.put("fetchedAt", inventory.fetchedAt());
+		inv.put("error", inventory.error());
+		inv.put("count", inventory.installedModels().size());
+		out.put("inventory", inv);
+		Map<String, Object> dep = new LinkedHashMap<>();
+		dep.put("model", defaults.getModel());
+		dep.put("flux2Model", defaults.getFlux2Model());
+		out.put("deploymentDefault", dep);
+		out.put("resolution", resolutionDto(resolution));
+		List<Map<String, Object>> models = new ArrayList<>();
+		for(String name : inventory.installedModels()) {
+			RendererCapabilities rc = RendererCapabilities.forModel(name);
+			ModelResolver.Reason reason = ModelResolver.supportsTask(rc, taskType, false);
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("listedName", name);
+			m.put("family", rc != null ? rc.getPattern() : null);
+			m.put("enabled", rc != null && rc.isEnabled());
+			m.put("supportedForTask", reason == ModelResolver.Reason.OK);
+			m.put("reason", reason.name());
+			models.add(m);
+		}
+		out.put("models", models);
+		return out;
+	}
+
+	private static Map<String, Object> resolutionDto(ModelResolver.Resolution r) {
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("model", r.getModel());
+		out.put("family", r.getFamily());
+		out.put("step", r.getStep() != null ? r.getStep().name() : null);
+		out.put("reason", r.getReason().name());
+		out.put("degraded", r.isDegraded());
+		out.put("degradationCode", r.getDegradationCode());
+		out.put("degradationText", r.getDegradationText());
+		out.put("inventoryFetchedAt", r.getInventoryFetchedAt());
+		out.put("inventoryError", r.getInventoryError());
+		List<Map<String, Object>> cands = new ArrayList<>();
+		for(ModelResolver.Candidate c : r.getCandidates()) {
+			Map<String, Object> cm = new LinkedHashMap<>();
+			cm.put("step", c.getStep().name());
+			cm.put("requested", c.getRequested());
+			cm.put("listedName", c.getListedName());
+			cm.put("family", c.getFamily());
+			cm.put("reason", c.getReason().name());
+			cands.add(cm);
+		}
+		out.put("candidates", cands);
 		return out;
 	}
 
@@ -250,6 +378,8 @@ public class PbServiceFacade {
 		out.put("staleMarkPersisted", scan.markPersisted);
 		out.put("staleUndeterminedRefs", scan.undeterminedRefs.size());
 		out.put("scanComplete", scan.complete);
+		out.put("styleTruncatedAt", scan.styleTruncatedAt);
+		out.put("styleCycleDetected", scan.styleCycleDetected);
 		out.put("scanAt", scan.at);
 		return out;
 	}
@@ -2197,6 +2327,585 @@ public class PbServiceFacade {
 		}
 		BaseRecord fresh = PbBookUtil.readBook(user, bookObjectId, orgOf(user));
 		return autoApproveResult(fresh != null ? fresh : book);
+	}
+
+	// ─────────────────────────────── style (V3 §4 / §4.1, P2-3) ───────────────────────────────
+
+	/**
+	 * The body keys {@code PUT /{book}/style} accepts: the §4.1 style-field set
+	 * ({@link PbStyleResolver#STYLE_FIELDS}) plus {@code parent}. Never {@code name}, {@code scope} or
+	 * {@code locked} - the first two are the book style's fixed identity ({@code <slug>-style}, BOOK) and the
+	 * lock has its own route.
+	 */
+	public static final List<String> STYLE_PUT_FIELDS;
+	static {
+		List<String> f = new ArrayList<>(PbStyleResolver.STYLE_FIELDS);
+		f.add(OlioFieldNames.FIELD_PB_PARENT);
+		STYLE_PUT_FIELDS = Collections.unmodifiableList(f);
+	}
+
+	/**
+	 * Read the book's style: its own {@code olio.pb.style} (null when it has none), the §4.1 effective
+	 * values with the hop that supplied each, and the chain that was walked. Book 404 only - any reader of the
+	 * book may see its look. Not gated on the render path: the one model policy (§16) applies the style's
+	 * task pins to PB1 renders too, so a PB1 book's style must be readable and editable.
+	 */
+	public static Map<String, Object> getStyle(BaseRecord user, String bookObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		return styleDto(user, book, PbStyleResolver.resolve(user, book));
+	}
+
+	/**
+	 * Create or update the book's own BOOK-scope style from a sparse body of {@link #STYLE_PUT_FIELDS} - the
+	 * single write path for book defaults (§4.1 "no step writes to its parent"). Gate order: book 404 →
+	 * {@link #requireBookUpdate} 403 → body validation 400 → lock 409 → write.
+	 * <p>
+	 * Body rules: unknown keys are a 400; a JSON {@code null} clears the field; {@code sdConfig} is
+	 * {@code {"objectId"}} / {@code {"id"}} of an {@code olio.sd.config} the caller can read (404 otherwise);
+	 * {@code parent} is the objectId of a readable style (404 otherwise) that is not the book's own style and
+	 * whose chain does not lead back to it (400), and whose own chain plus this style fits in
+	 * {@link PbStyleResolver#MAX_DEPTH}; {@code taskModels} is an object (or a JSON-object string) keyed by
+	 * §16 task names, canonicalised through {@code ModelTaskKeys} - an unknown task or a non-string value is a
+	 * 400; {@code pageFormat}/{@code qualityPreset} are enum names (case-insensitive); {@code customWidth}/
+	 * {@code customHeight} are non-negative integers (0 = unset); {@code photoreal} is a boolean.
+	 * <p>
+	 * Lock: when any hop of the effective chain is locked - the book's own style or an inherited one - the
+	 * write is refused with 409 naming that style, because the §4 table reads "Approved identity. Edits
+	 * require unlock" and a nearer hop overriding a locked ancestor would defeat the lock. {@code parent} is
+	 * covered by the same refusal (re-parenting is an edit).
+	 * <p>
+	 * Write: no {@code book.style} → a new style named {@code <slug>-style} in the book's own group
+	 * ({@code book.groupId}, which {@code PbBookUtil.createBook} placed at {@code bookGroupPath(slug)}),
+	 * {@code scope = BOOK}, created as the caller through {@code AccessPoint.create}, then the book FK patched
+	 * with {@code PbGraphUtil.patchOf}; otherwise a patch of exactly the changed fields on the existing style.
+	 * Every update result is asserted (500 on null). The workflow's cached scan is dropped afterwards so the
+	 * next read re-hashes against the new style (156 g). Clearing {@code book.style} itself is not routed; it
+	 * is the generic {@code PATCH /rest/model} seam (§10.1); the orphan it leaves behind is not re-adopted by
+	 * the next PUT (see {@link #createOwnStyle}).
+	 * <p>
+	 * The read → resolve → create/patch → FK sequence runs under {@link #styleWriteLock} for the book, so two
+	 * concurrent first PUTs cannot both create (the second sees the first's {@code book.style} and patches it)
+	 * and a PUT cannot slip between a concurrent lock's check and its write. In-process only: the generic
+	 * {@code PATCH /rest/model} seam and a second JVM are outside it (§6.C 161).
+	 */
+	public static Map<String, Object> putStyle(BaseRecord user, String bookObjectId, Map<String, Object> body) {
+		synchronized(styleWriteLock(bookObjectId)) {
+			return putStyleLocked(user, bookObjectId, body);
+		}
+	}
+
+	/// Striped so the table is bounded; an unrelated book on the same stripe waits for one short write.
+	private static final Object[] STYLE_WRITE_LOCKS = new Object[64];
+	static {
+		for(int i = 0; i < STYLE_WRITE_LOCKS.length; i++) {
+			STYLE_WRITE_LOCKS[i] = new Object();
+		}
+	}
+
+	private static Object styleWriteLock(String bookObjectId) {
+		int h = (bookObjectId == null ? 0 : bookObjectId.hashCode());
+		return STYLE_WRITE_LOCKS[Math.floorMod(h, STYLE_WRITE_LOCKS.length)];
+	}
+
+	private static Map<String, Object> putStyleLocked(BaseRecord user, String bookObjectId, Map<String, Object> body) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "edit the style");
+		if(body == null || body.isEmpty()) {
+			throw new PictureBookException(400, "A JSON object with at least one style field is required; accepted: " + STYLE_PUT_FIELDS);
+		}
+		for(String key : body.keySet()) {
+			if(!STYLE_PUT_FIELDS.contains(key)) {
+				throw new PictureBookException(400, "Unknown style field '" + key + "'; accepted: " + STYLE_PUT_FIELDS);
+			}
+		}
+		long orgId = orgOf(user);
+		Map<String, Object> values = new LinkedHashMap<>();
+		for(Map.Entry<String, Object> e : body.entrySet()) {
+			values.put(e.getKey(), styleValue(user, orgId, e.getKey(), e.getValue()));
+		}
+
+		PbStyleResolver.EffectiveStyle es = PbStyleResolver.resolve(user, book);
+		BaseRecord own = ownStyle(book, es);
+		BaseRecord lockedBy = es.lockedBy();
+		if(lockedBy != null) {
+			throw new PictureBookException(409, "Style '" + lockedBy.get(FieldNames.FIELD_NAME) + "' ("
+				+ enumString(lockedBy, OlioFieldNames.FIELD_PB_SCOPE) + ", " + lockedBy.get(FieldNames.FIELD_OBJECT_ID)
+				+ ") is locked - unlock it before editing" + (own != null && own == lockedBy ? " (POST /{book}/style/lock {\"locked\":false})" : ""));
+		}
+		if(values.containsKey(OlioFieldNames.FIELD_PB_PARENT)) {
+			requireValidParent(user, own, (BaseRecord) values.get(OlioFieldNames.FIELD_PB_PARENT));
+		}
+
+		if(own == null) {
+			createOwnStyle(user, book, orgId, values);
+		}
+		else {
+			BaseRecord patch = PbGraphUtil.patchOf(own, OlioModelNames.MODEL_PB_STYLE, values.keySet().toArray(new String[0]));
+			try {
+				for(Map.Entry<String, Object> e : values.entrySet()) {
+					patch.set(e.getKey(), e.getValue());
+				}
+			}
+			catch(Exception e) {
+				throw new PictureBookException(500, "Failed to assemble style patch: " + e.getMessage());
+			}
+			if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+				throw new PictureBookException(500, "Failed to update style " + own.get(FieldNames.FIELD_NAME)
+					+ " - AccessPoint.update returned null (PBAC denial or validation failure; check the audit log)");
+			}
+		}
+		PbStaleUtil.touchBook(user, book);
+		BaseRecord fresh = PbBookUtil.readBook(user, bookObjectId, orgId);
+		if(fresh == null) {
+			fresh = book;
+		}
+		return styleDto(user, fresh, PbStyleResolver.resolve(user, fresh));
+	}
+
+	/**
+	 * Set or clear the lock on the book's OWN style (§4.1). Gate order: book 404 → {@link #requireBookUpdate}
+	 * 403 → no own style 404 (an inherited style is locked from its own book or the library, never through a
+	 * chapter) → patch of {@code locked} alone, result asserted. Unlocking changes no value, so nothing goes
+	 * stale by itself; the first edit after it does, through the normal hash path. Runs under the book's
+	 * {@link #styleWriteLock} like {@link #putStyle}.
+	 */
+	public static Map<String, Object> lockStyle(BaseRecord user, String bookObjectId, boolean locked) {
+		synchronized(styleWriteLock(bookObjectId)) {
+			return lockStyleLocked(user, bookObjectId, locked);
+		}
+	}
+
+	private static Map<String, Object> lockStyleLocked(BaseRecord user, String bookObjectId, boolean locked) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "lock the style");
+		PbStyleResolver.EffectiveStyle es = PbStyleResolver.resolve(user, book);
+		BaseRecord own = ownStyle(book, es);
+		if(own == null) {
+			throw new PictureBookException(404, "The book has no style of its own to lock; PUT /{book}/style creates one");
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(own, OlioModelNames.MODEL_PB_STYLE, OlioFieldNames.FIELD_PB_LOCKED);
+		try {
+			patch.set(OlioFieldNames.FIELD_PB_LOCKED, Boolean.valueOf(locked));
+		}
+		catch(Exception e) {
+			throw new PictureBookException(500, "Failed to assemble lock patch: " + e.getMessage());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to persist locked=" + locked + " on style " + own.get(FieldNames.FIELD_NAME)
+				+ " - AccessPoint.update returned null (PBAC denial or validation failure; check the audit log)");
+		}
+		return styleDto(user, book, PbStyleResolver.resolve(user, book));
+	}
+
+	/**
+	 * The book's own style as the resolver read it: {@code book.style} matched against hop 0 of the chain.
+	 * Null when the book names no style. A named style the resolver could not read (hop 0 is the truncation)
+	 * is a 409, not "none": creating a second style over it would orphan the first and silently swap the
+	 * book's look, and the chain the caller sees is already flagged {@code truncatedAt}.
+	 */
+	private static BaseRecord ownStyle(BaseRecord book, PbStyleResolver.EffectiveStyle es) {
+		BaseRecord ref = (book.hasField(OlioFieldNames.FIELD_STYLE) ? book.get(OlioFieldNames.FIELD_STYLE) : null);
+		String key = PbStyleResolver.identity(ref);
+		if(key == null) {
+			return null;
+		}
+		if(!es.chain().isEmpty()) {
+			BaseRecord first = es.chain().get(0);
+			if(key.equals(first.get(FieldNames.FIELD_OBJECT_ID)) || key.equals(PbStyleResolver.identity(first))) {
+				return first;
+			}
+		}
+		throw new PictureBookException(409, "The book's style " + key + " could not be read"
+			+ (es.truncatedAt() != null ? " (chain truncated at " + es.truncatedAt() + ")" : "")
+			+ "; repair or clear book.style before editing");
+	}
+
+	/** One validated PUT value: the Java value to set on the style record (null clears), or a 400/404. */
+	private static Object styleValue(BaseRecord user, long orgId, String field, Object raw) {
+		if(raw == null) {
+			switch(field) {
+				case OlioFieldNames.FIELD_PB_CUSTOM_WIDTH:
+				case OlioFieldNames.FIELD_PB_CUSTOM_HEIGHT:
+					return Integer.valueOf(0);
+				case OlioFieldNames.FIELD_PB_PHOTOREAL:
+					return Boolean.FALSE;
+				default:
+					return null;
+			}
+		}
+		switch(field) {
+			case FieldNames.FIELD_DESCRIPTION:
+			case OlioFieldNames.FIELD_PB_EXCLUSIONS:
+			case OlioFieldNames.FIELD_PB_PALETTE:
+				if(!(raw instanceof String)) {
+					throw new PictureBookException(400, field + " must be a string");
+				}
+				return raw;
+			case OlioFieldNames.FIELD_PB_PHOTOREAL:
+				if(!(raw instanceof Boolean)) {
+					throw new PictureBookException(400, field + " must be a JSON boolean");
+				}
+				return raw;
+			case OlioFieldNames.FIELD_PB_CUSTOM_WIDTH:
+			case OlioFieldNames.FIELD_PB_CUSTOM_HEIGHT: {
+				if(!(raw instanceof Number) || ((Number) raw).doubleValue() != Math.floor(((Number) raw).doubleValue())
+					|| ((Number) raw).intValue() < 0) {
+					throw new PictureBookException(400, field + " must be a non-negative integer (0 = unset)");
+				}
+				return Integer.valueOf(((Number) raw).intValue());
+			}
+			case OlioFieldNames.FIELD_PB_PAGE_FORMAT: {
+				PbPageFormatEnumType v = PbStyleResolver.enumOf(PbPageFormatEnumType.class, raw);
+				if(v == null) {
+					throw new PictureBookException(400, field + " must be one of " + enumNames(PbPageFormatEnumType.values()));
+				}
+				return (v == PbPageFormatEnumType.UNKNOWN ? null : v.toString());
+			}
+			case OlioFieldNames.FIELD_PB_QUALITY_PRESET: {
+				PbQualityPresetEnumType v = PbStyleResolver.enumOf(PbQualityPresetEnumType.class, raw);
+				if(v == null) {
+					throw new PictureBookException(400, field + " must be one of " + enumNames(PbQualityPresetEnumType.values()));
+				}
+				return (v == PbQualityPresetEnumType.UNKNOWN ? null : v.toString());
+			}
+			case OlioFieldNames.FIELD_PB_TASK_MODELS:
+				return canonicalTaskModelsOf(raw);
+			case OlioFieldNames.FIELD_PB_SD_CONFIG:
+				return requireSdConfig(user, orgId, raw);
+			case OlioFieldNames.FIELD_PB_PARENT: {
+				String oid = refObjectId(raw);
+				if(oid == null) {
+					throw new PictureBookException(400, "parent must be a style objectId (string or {\"objectId\"}) or null");
+				}
+				BaseRecord parent = PbStyleUtil.readStyle(user, oid, orgId);
+				if(parent == null) {
+					throw new PictureBookException(404, "Parent style " + oid + " not found");
+				}
+				return parent;
+			}
+			default:
+				throw new PictureBookException(400, "Unknown style field '" + field + "'");
+		}
+	}
+
+	/** The objectId named by a JSON string or a {@code {"objectId": …}} object, else null. */
+	private static String refObjectId(Object raw) {
+		if(raw instanceof String) {
+			String s = ((String) raw).trim();
+			return (s.isEmpty() ? null : s);
+		}
+		if(raw instanceof Map) {
+			Object o = ((Map<?, ?>) raw).get(FieldNames.FIELD_OBJECT_ID);
+			return (o instanceof String && !((String) o).isBlank() ? ((String) o).trim() : null);
+		}
+		return null;
+	}
+
+	/**
+	 * The {@code olio.sd.config} a PUT names by {@code {"objectId"}} or {@code {"id"}}, read as the caller
+	 * (404 when absent or unreadable - a config the caller cannot read cannot become the book's default).
+	 */
+	private static BaseRecord requireSdConfig(BaseRecord user, long orgId, Object raw) {
+		String oid = refObjectId(raw);
+		Long id = null;
+		if(oid == null && raw instanceof Map) {
+			Object o = ((Map<?, ?>) raw).get(FieldNames.FIELD_ID);
+			if(o instanceof Number && ((Number) o).longValue() > 0L) {
+				id = Long.valueOf(((Number) o).longValue());
+			}
+		}
+		if(oid == null && id == null) {
+			throw new PictureBookException(400, "sdConfig must be {\"objectId\": …} or {\"id\": …} of an olio.sd.config, or null");
+		}
+		Query q = (oid != null
+			? QueryUtil.createQuery(OlioModelNames.MODEL_SD_CONFIG, FieldNames.FIELD_OBJECT_ID, oid)
+			: QueryUtil.createQuery(OlioModelNames.MODEL_SD_CONFIG, FieldNames.FIELD_ID, id));
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID});
+		q.setCache(false);
+		BaseRecord cfg = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		if(cfg == null) {
+			throw new PictureBookException(404, "sdConfig " + (oid != null ? oid : "#" + id) + " not found");
+		}
+		return cfg;
+	}
+
+	/**
+	 * {@code taskModels} from a PUT - a JSON object, or a string holding one - as the canonical JSON the
+	 * resolver stores. Every key must name a §16 task and every value must be a non-blank string; an empty
+	 * object clears the field.
+	 */
+	private static String canonicalTaskModelsOf(Object raw) {
+		Map<String, Object> map = null;
+		if(raw instanceof Map) {
+			@SuppressWarnings("unchecked")
+			Map<String, Object> m = (Map<String, Object>) raw;
+			map = m;
+		}
+		else if(raw instanceof String) {
+			try {
+				map = JSONUtil.getMap(((String) raw).getBytes(StandardCharsets.UTF_8), String.class, Object.class);
+			}
+			catch(Exception e) {
+				map = null;
+			}
+			if(map == null) {
+				throw new PictureBookException(400, "taskModels must be a JSON object keyed by task (" + taskKeyNames() + ")");
+			}
+		}
+		else {
+			throw new PictureBookException(400, "taskModels must be a JSON object keyed by task (" + taskKeyNames() + ") or null");
+		}
+		Map<PbModelTaskEnumType, String> tm = new HashMap<>();
+		for(Map.Entry<String, Object> e : map.entrySet()) {
+			PbModelTaskEnumType t = ModelTaskKeys.task(e.getKey());
+			if(t == PbModelTaskEnumType.UNKNOWN) {
+				throw new PictureBookException(400, "taskModels key '" + e.getKey() + "' is not a model task; accepted: " + taskKeyNames());
+			}
+			Object v = e.getValue();
+			if(v == null) {
+				continue;
+			}
+			if(!(v instanceof String) || ((String) v).isBlank()) {
+				throw new PictureBookException(400, "taskModels." + e.getKey() + " must be a non-blank checkpoint name or null");
+			}
+			tm.put(t, ((String) v).trim());
+		}
+		return PbStyleResolver.canonicalTaskModels(tm);
+	}
+
+	private static String taskKeyNames() {
+		List<String> keys = new ArrayList<>();
+		for(PbModelTaskEnumType t : PbModelTaskEnumType.values()) {
+			String k = ModelTaskKeys.key(t);
+			if(k != null) {
+				keys.add(k);
+			}
+		}
+		return String.join(", ", keys);
+	}
+
+	private static String enumNames(Enum<?>[] values) {
+		List<String> names = new ArrayList<>();
+		for(Enum<?> e : values) {
+			if(!"UNKNOWN".equals(e.name())) {
+				names.add(e.name());
+			}
+		}
+		return String.join(", ", names);
+	}
+
+	/**
+	 * A new {@code parent} must not be the book's own style, must not lead back to it, and must leave the
+	 * resulting chain (parent's complete chain + this style) within {@link PbStyleResolver#MAX_DEPTH}.
+	 * {@code parent == null} (clearing) is always valid.
+	 */
+	private static void requireValidParent(BaseRecord user, BaseRecord own, BaseRecord parent) {
+		if(parent == null) {
+			return;
+		}
+		String ownKey = (own != null ? PbStyleResolver.identity(own) : null);
+		if(ownKey != null && ownKey.equals(PbStyleResolver.identity(parent))) {
+			throw new PictureBookException(400, "A style cannot be its own parent");
+		}
+		PbStyleResolver.EffectiveStyle pes = PbStyleResolver.resolveFromStyle(user, parent);
+		if(!pes.isComplete()) {
+			throw new PictureBookException(400, "Parent style " + parent.get(FieldNames.FIELD_OBJECT_ID) + " has an unresolvable chain ("
+				+ (pes.cycleDetected() ? "cycle" : "truncated at " + pes.truncatedAt()) + ")");
+		}
+		if(ownKey != null) {
+			for(BaseRecord hop : pes.chain()) {
+				if(ownKey.equals(PbStyleResolver.identity(hop))) {
+					throw new PictureBookException(400, "Parent style " + parent.get(FieldNames.FIELD_OBJECT_ID) + " already inherits from this book's style - that would be a cycle");
+				}
+			}
+		}
+		if(pes.chain().size() + 1 > PbStyleResolver.MAX_DEPTH) {
+			throw new PictureBookException(400, "Parent style " + parent.get(FieldNames.FIELD_OBJECT_ID) + " would make the chain deeper than " + PbStyleResolver.MAX_DEPTH);
+		}
+	}
+
+	/**
+	 * The one authorized create: a BOOK-scope style named {@code <slug>-style} in the book's own group, as the
+	 * caller, then the book FK. {@code applyOwnership} rather than {@code applyNameGroupOwnership} because the
+	 * group already exists ({@code book.groupId}) and a facade write must not run a {@code makePath}.
+	 * <p>
+	 * {@code styleModel.json} constrains {@code (name, groupId, organizationId)}, and clearing {@code book.style}
+	 * through the generic {@code PATCH /rest/model} seam (§10.1) leaves the previous own style in the group as an
+	 * orphan under that very name. The orphan is never re-adopted (it may be locked, and the lock route can no
+	 * longer reach it once the FK is gone), so when a readable style already holds {@code <slug>-style} the new
+	 * one is named {@code <slug>-style-<8 hex>} instead (§6.C 160). The name check is a find-only read as the
+	 * caller; the one write stays {@code AccessPoint.create}.
+	 */
+	private static void createOwnStyle(BaseRecord user, BaseRecord book, long orgId, Map<String, Object> values) {
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+		Object groupId = book.get(FieldNames.FIELD_GROUP_ID);
+		if(slug == null || slug.isBlank() || groupId == null) {
+			throw new PictureBookException(500, "Book " + book.get(FieldNames.FIELD_NAME) + " carries no slug/groupId - read it through PbBookUtil.bookRequest()");
+		}
+		String name = slug + "-style";
+		BaseRecord taken = PbStyleUtil.findStyleByName(user, name, ((Number) groupId).longValue(), orgId);
+		if(taken != null) {
+			name = name + "-" + UUID.randomUUID().toString().substring(0, 8);
+			logger.info("Style '" + slug + "-style' already exists in the book's group as " + taken.get(FieldNames.FIELD_OBJECT_ID)
+				+ " (an orphan of a cleared book.style) - creating '" + name + "' instead");
+		}
+		BaseRecord style = null;
+		try {
+			style = RecordFactory.newInstance(OlioModelNames.MODEL_PB_STYLE);
+			style.set(FieldNames.FIELD_NAME, name);
+			style.set(FieldNames.FIELD_GROUP_ID, groupId);
+			IOSystem.getActiveContext().getRecordUtil().applyOwnership(user, style, orgId);
+			style.set(OlioFieldNames.FIELD_PB_SCOPE, PbStyleScopeEnumType.BOOK.toString());
+			for(Map.Entry<String, Object> e : values.entrySet()) {
+				style.set(e.getKey(), e.getValue());
+			}
+		}
+		catch(Exception e) {
+			throw new PictureBookException(500, "Failed to assemble the book style: " + e.getMessage());
+		}
+		BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, style);
+		if(created == null) {
+			throw new PictureBookException(500, "Failed to create style '" + name + "' in the book's group"
+				+ " - AccessPoint.create returned null (PBAC denial, validation failure, or a style this user cannot read"
+				+ " already holds that name in the group; check the audit log)");
+		}
+		String styleOid = created.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord fresh = PbStyleUtil.readStyle(user, styleOid, orgId);
+		if(fresh == null) {
+			throw new PictureBookException(500, "Style '" + name + "' was created as " + styleOid + " but cannot be read back");
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(book, OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_STYLE);
+		try {
+			patch.set(OlioFieldNames.FIELD_STYLE, fresh);
+		}
+		catch(Exception e) {
+			throw new PictureBookException(500, "Failed to assemble the book.style patch: " + e.getMessage());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Style " + styleOid + " was created but the book FK could not be written"
+				+ " - AccessPoint.update returned null (PBAC denial or validation failure; check the audit log)");
+		}
+	}
+
+	/**
+	 * The style DTO: {@code {bookObjectId, own, effective:{fields, taskModels, qualityPreset, pageFormat,
+	 * sources}, chain:[{objectId, name, scope, locked}], lockedBy, truncatedAt, truncatedModel, cycleDetected,
+	 * complete}}. {@code own} is the book's own style with its stored (not effective) values, or null;
+	 * {@code effective.sources} maps each resolved field to the objectId of the hop that supplied it, which is
+	 * what a style editor needs to show "inherited from …". Reference images are not included - they are a
+	 * participation list read on demand through {@code PbStyleUtil.listReferenceImages}.
+	 */
+	private static Map<String, Object> styleDto(BaseRecord user, BaseRecord book, PbStyleResolver.EffectiveStyle es) {
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+
+		BaseRecord own = null;
+		try {
+			own = ownStyle(book, es);
+		}
+		catch(PictureBookException e) {
+			/// Unreadable own style: reported through truncatedAt below, never as a read failure.
+			own = null;
+		}
+		out.put("own", (own != null ? ownStyleDto(own) : null));
+
+		Map<String, Object> effective = new LinkedHashMap<>();
+		Map<String, Object> fields = new LinkedHashMap<>();
+		Map<String, Object> sources = new LinkedHashMap<>();
+		for(String f : PbStyleResolver.STYLE_FIELDS) {
+			Object v;
+			if(OlioFieldNames.FIELD_PB_SD_CONFIG.equals(f)) {
+				BaseRecord cfg = es.sdConfig();
+				v = (cfg != null ? cfg.get(FieldNames.FIELD_OBJECT_ID) : null);
+			}
+			else if(OlioFieldNames.FIELD_PB_TASK_MODELS.equals(f)) {
+				continue;
+			}
+			else {
+				v = es.value(f);
+			}
+			fields.put(f, v);
+			BaseRecord src = es.source(f);
+			if(src != null) {
+				sources.put(f, src.get(FieldNames.FIELD_OBJECT_ID));
+			}
+		}
+		effective.put("fields", fields);
+		Map<String, Object> taskModels = new LinkedHashMap<>();
+		Map<String, Object> taskModelSources = new LinkedHashMap<>();
+		for(Map.Entry<PbModelTaskEnumType, String> e : es.taskModels().entrySet()) {
+			String k = ModelTaskKeys.key(e.getKey());
+			if(k == null) {
+				continue;
+			}
+			taskModels.put(k, e.getValue());
+			BaseRecord src = es.taskModelSource(e.getKey());
+			if(src != null) {
+				taskModelSources.put(k, src.get(FieldNames.FIELD_OBJECT_ID));
+			}
+		}
+		effective.put("taskModels", taskModels);
+		effective.put("taskModelSources", taskModelSources);
+		effective.put("qualityPreset", es.qualityPreset().toString());
+		effective.put("pageFormat", es.pageFormat().toString());
+		BaseRecord cfg = es.sdConfig();
+		effective.put("sdConfigName", (cfg != null ? cfg.get(FieldNames.FIELD_NAME) : null));
+		effective.put("sources", sources);
+		out.put("effective", effective);
+
+		List<Map<String, Object>> chain = new ArrayList<>();
+		for(BaseRecord s : es.chain()) {
+			Map<String, Object> hop = new LinkedHashMap<>();
+			hop.put("objectId", s.get(FieldNames.FIELD_OBJECT_ID));
+			hop.put("name", s.get(FieldNames.FIELD_NAME));
+			hop.put("scope", enumString(s, OlioFieldNames.FIELD_PB_SCOPE));
+			hop.put("locked", Boolean.valueOf(s.hasField(OlioFieldNames.FIELD_PB_LOCKED) && Boolean.TRUE.equals(s.get(OlioFieldNames.FIELD_PB_LOCKED))));
+			chain.add(hop);
+		}
+		out.put("chain", chain);
+		out.put("lockedBy", (es.lockedBy() != null ? es.lockedBy().get(FieldNames.FIELD_OBJECT_ID) : null));
+		out.put("truncatedAt", es.truncatedAt());
+		out.put("truncatedModel", es.truncatedModel());
+		out.put("cycleDetected", Boolean.valueOf(es.cycleDetected()));
+		out.put("complete", Boolean.valueOf(es.isComplete()));
+		return out;
+	}
+
+	/** The own style's identity, wiring and stored values - what a PUT edits, as distinct from what is in effect. */
+	private static Map<String, Object> ownStyleDto(BaseRecord own) {
+		Map<String, Object> o = new LinkedHashMap<>();
+		o.put("objectId", own.get(FieldNames.FIELD_OBJECT_ID));
+		o.put("name", own.get(FieldNames.FIELD_NAME));
+		o.put("scope", enumString(own, OlioFieldNames.FIELD_PB_SCOPE));
+		o.put("locked", Boolean.valueOf(own.hasField(OlioFieldNames.FIELD_PB_LOCKED) && Boolean.TRUE.equals(own.get(OlioFieldNames.FIELD_PB_LOCKED))));
+		o.put("parent", (own.hasField(OlioFieldNames.FIELD_PB_PARENT) ? fkObjectId(own, OlioFieldNames.FIELD_PB_PARENT, null) : null));
+		Map<String, Object> fields = new LinkedHashMap<>();
+		for(String f : PbStyleResolver.STYLE_FIELDS) {
+			if(!own.hasField(f)) {
+				fields.put(f, null);
+				continue;
+			}
+			if(OlioFieldNames.FIELD_PB_SD_CONFIG.equals(f)) {
+				fields.put(f, fkObjectId(own, f, null));
+			}
+			else if(OlioFieldNames.FIELD_PB_TASK_MODELS.equals(f)) {
+				Map<String, Object> tm = new LinkedHashMap<>();
+				for(Map.Entry<PbModelTaskEnumType, String> e : ModelTaskKeys.parseTaskModels((String) own.get(f)).entrySet()) {
+					tm.put(ModelTaskKeys.key(e.getKey()), e.getValue());
+				}
+				fields.put(f, tm);
+			}
+			else if(OlioFieldNames.FIELD_PB_PAGE_FORMAT.equals(f) || OlioFieldNames.FIELD_PB_QUALITY_PRESET.equals(f)) {
+				String s = enumString(own, f);
+				fields.put(f, (s != null && !"UNKNOWN".equalsIgnoreCase(s) ? s.toUpperCase() : null));
+			}
+			else {
+				fields.put(f, own.get(f));
+			}
+		}
+		o.put("fields", fields);
+		return o;
 	}
 
 	/**

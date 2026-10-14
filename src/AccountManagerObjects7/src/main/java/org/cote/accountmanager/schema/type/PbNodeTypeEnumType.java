@@ -27,7 +27,10 @@ public enum PbNodeTypeEnumType {
     COMPOSITE,
     PAGE,
     BOOK_ASSEMBLY,
-    STYLE_BIBLE
+    STYLE_BIBLE,
+    /// V3 §12: the node whose JSON artifact is the compiled render plan for a scene. Added in Phase 2
+    /// P2-1 as a vocabulary value only; it becomes executable in P2-5 (PbNodeExecutor.EXECUTABLE_TYPES).
+    RENDER_PLAN
     ;
 
     public String value() {

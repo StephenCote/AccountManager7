@@ -36,6 +36,8 @@ import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.PromptBuilderContext;
 import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.llm.TemplatePatternEnumType;
+import org.cote.accountmanager.olio.illustration.IllustrationModelPolicy;
+import org.cote.accountmanager.olio.picturebook.PbModelPolicy;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.sd.SceneCompositeUtil;
@@ -48,6 +50,7 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.thread.AsyncJob;
 import org.cote.accountmanager.thread.AsyncJobLimitException;
 import org.cote.accountmanager.thread.AsyncJobRegistry;
@@ -1421,13 +1424,18 @@ public class ChatService {
 				return Response.status(400).entity("{\"error\":\"Unsupported composite mode '" + escJson(requestedMode.trim())
 					+ "'; expected " + SceneCompositeUtil.SUPPORTED_MODES + "\"}").build();
 			}
-			if (sdConfig.get("model") == null) {
-				sdConfig.setValue("model", context.getInitParameter("sd.model"));
-			}
 			if (sdConfig.get("refinerModel") == null) {
 				sdConfig.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
 			}
 		}
+		/// P2-3 one model policy (V3 §16): no `sd.model` defaulting here any more - the checkpoint for
+		/// each pass is resolved by PbModelPolicy against the renderer's inventory right before the
+		/// pass, with the client's explicit field as the override tier. Both overrides are captured now,
+		/// before any pass rewrites the config, so a later pass never mistakes an earlier pick for the
+		/// client's request. A null body (no config) has nothing to write into and keeps SDUtil's own
+		/// default, exactly as before.
+		String clientModel = IllustrationModelPolicy.currentModel(sdConfig, PbModelTaskEnumType.LOCATION);
+		String clientFlux2Model = IllustrationModelPolicy.currentModel(sdConfig, PbModelTaskEnumType.SCENE_DIRECT);
 
 		/// 1. Load chat request — planMost(false) avoids recursive foreign-ref expansion
 		/// which exceeds PostgreSQL's 100-argument limit on chatRequest → chatConfig → charPerson chains.
@@ -1515,6 +1523,8 @@ public class ChatService {
 				landscapePrompt += ", cinematic lighting, wide angle, no people, no text";
 				logger.info("generateScene Stage 2: Generating landscape — " + landscapePrompt.substring(0, Math.min(100, landscapePrompt.length())));
 				WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Generating landscape..."});
+				PbModelPolicy.applyWithoutBook(PbModelTaskEnumType.LOCATION, sdConfig, clientModel,
+					sdu.getApiType(), sdu.getServer(), false);
 				landscapeBytes = sdu.generateLandscapeBytes(landscapePrompt, null, sdConfig);
 				if (landscapeBytes != null) {
 					logger.info("generateScene Stage 2: Landscape generated — " + landscapeBytes.length + " bytes");
@@ -1550,6 +1560,21 @@ public class ChatService {
 
 		WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Compositing scene..."});
 
+		/// One model policy (V3 §16): the scene pass resolves its checkpoint for the task the mode
+		/// actually runs - SCENE_DIRECT (flux2Model) when the flux2 reference pipeline is selected and
+		/// references are attached, LOCATION (model) for classic/kontext - against the renderer's
+		/// inventory. The classic fallback below re-resolves for LOCATION, so a flux2 pick never leaks
+		/// into the classic request.
+		boolean refsAttached = (sceneResult.sysPortraitBytes != null || sceneResult.usrPortraitBytes != null
+			|| landscapeBytes != null);
+		if (SceneCompositeUtil.MODE_FLUX2.equals(compositeMode)) {
+			PbModelPolicy.applyWithoutBook(PbModelTaskEnumType.SCENE_DIRECT, sdConfig, clientFlux2Model,
+				sdu.getApiType(), sdu.getServer(), refsAttached);
+		} else {
+			PbModelPolicy.applyWithoutBook(PbModelTaskEnumType.LOCATION, sdConfig, clientModel,
+				sdu.getApiType(), sdu.getServer(), false);
+		}
+
 		/// Request construction (mode branch, reference/init imagery) is Objects7's job — see
 		/// SceneCompositeUtil, which the picture book shares so the two features cannot drift again.
 		SWTxt2Img s2i = SceneCompositeUtil.buildSceneRequest(compositeMode,
@@ -1572,6 +1597,8 @@ public class ChatService {
 		/// rather than failing the scene outright. Unchanged behavior, just no longer mode-specific.
 		if (images.isEmpty() && !SceneCompositeUtil.MODE_CLASSIC.equals(compositeMode)) {
 			logger.warn("generateScene: " + compositeMode + " pipeline produced no images — falling back to classic");
+			PbModelPolicy.applyWithoutBook(PbModelTaskEnumType.LOCATION, sdConfig, clientModel,
+				sdu.getApiType(), sdu.getServer(), false);
 			SWTxt2Img fallback = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_CLASSIC,
 				sceneResult.sysCharDesc, sceneResult.usrCharDesc, sceneResult.sceneDesc, settingDesc, null,
 				sceneResult.prompt, sceneResult.negativePrompt,

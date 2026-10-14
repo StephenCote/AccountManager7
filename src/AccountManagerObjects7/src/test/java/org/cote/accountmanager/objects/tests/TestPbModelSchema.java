@@ -27,6 +27,9 @@ import java.util.stream.Collectors;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBUtil;
+import org.cote.accountmanager.olio.picturebook.PbBookUtil;
+import org.cote.accountmanager.olio.picturebook.PbSeriesUtil;
+import org.cote.accountmanager.olio.picturebook.PbStyleUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
@@ -38,6 +41,9 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
+import org.cote.accountmanager.schema.type.PbPageFormatEnumType;
+import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
+import org.cote.accountmanager.schema.type.PbStyleScopeEnumType;
 import org.cote.accountmanager.util.RecordUtil;
 import org.junit.Test;
 
@@ -60,7 +66,9 @@ public class TestPbModelSchema extends BaseTest {
 		OlioModelNames.MODEL_PB_NODE,
 		OlioModelNames.MODEL_PB_BINDING,
 		OlioModelNames.MODEL_PB_ARTIFACT,
-		OlioModelNames.MODEL_PB_RUN
+		OlioModelNames.MODEL_PB_RUN,
+		/// V3 Phase 2 P2-1: the style model follows the same conventions as the original eight
+		OlioModelNames.MODEL_PB_STYLE
 	);
 
 	/// CREATE [UNIQUE] INDEX <name> ON <schema>.<table> USING btree (<cols>)
@@ -747,6 +755,129 @@ public class TestPbModelSchema extends BaseTest {
 		String gotObjectId = got.get(FieldNames.FIELD_OBJECT_ID);
 		assertTrue("getOrDefaultConfig must return the persisted record (has objectId)",
 			gotObjectId != null && !gotObjectId.trim().isEmpty());
+	}
+
+	// ───────────────────────── V3 Phase 2, P2-1: olio.pb.style ─────────────────────────
+
+	/// Every field design §4 names, with the type, reference target and enum class it names.  The
+	/// participation-backed list is checked for the participantModel override, because that is what
+	/// ParticipationFactory writes into the row and what MemberUtil.findMembers filters on: a
+	/// mismatch between the two reads as "no reference images" rather than as an error.
+	///
+	@Test
+	public void TestStyleFieldsMatchDesignSection4() {
+		ModelSchema ms = RecordFactory.getSchema(OlioModelNames.MODEL_PB_STYLE);
+		assertNotNull("olio.pb.style schema must load", ms);
+
+		assertStyleField(ms, FieldNames.FIELD_NAME, "string", null, null);
+		assertEquals("name must be bounded for the unique index", 256, ms.getFieldSchema(FieldNames.FIELD_NAME).getMaxLength());
+		assertStyleField(ms, FieldNames.FIELD_DESCRIPTION, "string", null, null);
+		assertStyleField(ms, OlioFieldNames.FIELD_PB_EXCLUSIONS, "string", null, null);
+		assertStyleField(ms, OlioFieldNames.FIELD_PB_SD_CONFIG, "model", OlioModelNames.MODEL_SD_CONFIG, null);
+		assertStyleField(ms, OlioFieldNames.FIELD_PB_TASK_MODELS, "string", null, null);
+		assertStyleField(ms, OlioFieldNames.FIELD_PB_PALETTE, "string", null, null);
+		assertStyleField(ms, OlioFieldNames.FIELD_PB_PAGE_FORMAT, "enum", null, PbPageFormatEnumType.class.getName());
+		assertStyleField(ms, OlioFieldNames.FIELD_PB_CUSTOM_WIDTH, "int", null, null);
+		assertStyleField(ms, OlioFieldNames.FIELD_PB_CUSTOM_HEIGHT, "int", null, null);
+		assertStyleField(ms, OlioFieldNames.FIELD_PB_QUALITY_PRESET, "enum", null, PbQualityPresetEnumType.class.getName());
+		assertStyleField(ms, OlioFieldNames.FIELD_PB_PHOTOREAL, "boolean", null, null);
+		assertStyleField(ms, OlioFieldNames.FIELD_PB_LOCKED, "boolean", null, null);
+		assertStyleField(ms, OlioFieldNames.FIELD_PB_SCOPE, "enum", null, PbStyleScopeEnumType.class.getName());
+		assertStyleField(ms, OlioFieldNames.FIELD_PB_PARENT, "model", OlioModelNames.MODEL_PB_STYLE, null);
+
+		FieldSchema refs = ms.getFieldSchema(OlioFieldNames.FIELD_PB_REFERENCE_IMAGES);
+		assertNotNull("style.referenceImages is missing", refs);
+		assertEquals("referenceImages is a list", "list", refs.getType());
+		assertEquals("referenceImages is a list of models", "model", refs.getBaseType());
+		assertEquals("referenceImages holds data.data", ModelNames.MODEL_DATA, refs.getBaseModel());
+		assertTrue("referenceImages must be foreign (participation-backed)", refs.isForeign());
+		assertEquals("referenceImages must name its participantModel", "pb.style.referenceImage", refs.getParticipantModel());
+		assertFalse("A participation list is never a column - styleRequest() must not project it",
+			Arrays.asList(PbStyleUtil.styleRequest()).contains(OlioFieldNames.FIELD_PB_REFERENCE_IMAGES));
+
+		/// Every column-backed §4 field is in the one declared projection
+		List<String> projected = Arrays.asList(PbStyleUtil.styleRequest());
+		for(FieldSchema f : ms.getFields()) {
+			if(f.isInherited() || f.getName().equals(OlioFieldNames.FIELD_PB_REFERENCE_IMAGES)) {
+				continue;
+			}
+			assertTrue("styleRequest() must project " + f.getName(), projected.contains(f.getName()));
+		}
+
+		/// §4.1 resolves book.style -> style.parent chain -> series.style, so the parent walk and the
+		/// scope filter are each one indexed query
+		assertHintCovers(OlioModelNames.MODEL_PB_STYLE, OlioFieldNames.FIELD_PB_PARENT);
+		assertHintCovers(OlioModelNames.MODEL_PB_STYLE, OlioFieldNames.FIELD_PB_SCOPE);
+		List<String> constraints = RecordUtil.getConstraints(ms).stream()
+			.map(c -> c.replaceAll(" ", "")).collect(Collectors.toList());
+		assertTrue("Expected the (name, groupId, organizationId) constraint, got " + constraints,
+			constraints.contains("name,groupId,organizationId"));
+	}
+
+	private void assertStyleField(ModelSchema ms, String fieldName, String type, String baseModel, String baseClass) {
+		FieldSchema fs = ms.getFieldSchema(fieldName);
+		assertNotNull("olio.pb.style." + fieldName + " is missing", fs);
+		assertFalse("olio.pb.style." + fieldName + " must be declared by the style, not inherited", fs.isInherited());
+		assertEquals("olio.pb.style." + fieldName + " type", type, fs.getType());
+		if(baseModel != null) {
+			assertEquals("olio.pb.style." + fieldName + " must reference " + baseModel, baseModel, fs.getBaseModel());
+			assertTrue("olio.pb.style." + fieldName + " must be foreign", fs.isForeign());
+			assertEquals("olio.pb.style." + fieldName + " must emit a bigint FK column", "bigint",
+				ioContext.getDbUtil().getDataType(fs, fs.getFieldType()));
+		}
+		else {
+			assertFalse("olio.pb.style." + fieldName + " must not be foreign", fs.isForeign());
+		}
+		if(baseClass != null) {
+			assertEquals("olio.pb.style." + fieldName + " enum class", baseClass, fs.getBaseClass());
+			assertEquals("olio.pb.style." + fieldName + " enum column must be bounded", 32, fs.getMaxLength());
+		}
+		assertNull("olio.pb.style." + fieldName + " must carry no schema default (rule 3)", fs.getDefaultValue());
+	}
+
+	/// olio.pb.style owns a foreign list (referenceImages), so like olio.pb.scene it declares
+	/// dedicatedParticipation and gets its own participation table on the first IOSystem.open.
+	///
+	@Test
+	public void TestStyleParticipationTableExists() {
+		DBUtil dbUtil = ioContext.getDbUtil();
+		ModelSchema style = RecordFactory.getSchema(OlioModelNames.MODEL_PB_STYLE);
+		assertTrue("olio.pb.style owns a foreign list and must declare dedicatedParticipation",
+			style.isDedicatedParticipation());
+		assertTrue("Expected the dedicated participation table "
+			+ dbUtil.getTableName(style, ModelNames.MODEL_PARTICIPATION) + " for olio.pb.style",
+			dbUtil.haveTable(style, ModelNames.MODEL_PARTICIPATION));
+	}
+
+	/// book.style and series.style are the §4.1 entry points: nullable bigint FKs to olio.pb.style,
+	/// added by the Path 1 boot patch (no DDL default, so every pre-Phase-2 row reads NULL), outside
+	/// every unique constraint, and projected by the one declared request of each owner.
+	///
+	@Test
+	public void TestBookAndSeriesCarryNullableStyleFk() {
+		assertStyleFk(OlioModelNames.MODEL_PB_BOOK);
+		assertStyleFk(OlioModelNames.MODEL_PB_SERIES);
+		assertTrue("PbBookUtil.bookRequest() must project style",
+			Arrays.asList(PbBookUtil.bookRequest()).contains(OlioFieldNames.FIELD_STYLE));
+		assertTrue("PbSeriesUtil.seriesRequest() must project style",
+			Arrays.asList(PbSeriesUtil.seriesRequest()).contains(OlioFieldNames.FIELD_STYLE));
+	}
+
+	private void assertStyleFk(String modelName) {
+		ModelSchema ms = RecordFactory.getSchema(modelName);
+		FieldSchema fs = ms.getFieldSchema(OlioFieldNames.FIELD_STYLE);
+		assertNotNull(modelName + ".style is missing", fs);
+		assertFalse(modelName + ".style must be declared by the model itself", fs.isInherited());
+		assertEquals(modelName + ".style must reference olio.pb.style", OlioModelNames.MODEL_PB_STYLE, fs.getBaseModel());
+		assertEquals(modelName + ".style is a model reference", "model", fs.getType());
+		assertTrue(modelName + ".style must be foreign", fs.isForeign());
+		assertEquals(modelName + ".style must emit a bigint column", "bigint",
+			ioContext.getDbUtil().getDataType(fs, fs.getFieldType()));
+		assertNull(modelName + ".style must carry no schema default", fs.getDefaultValue());
+		for(String c : RecordUtil.getConstraints(ms)) {
+			assertFalse(modelName + " constraint '" + c + "' must not include style - a NULL FK defeats a unique index",
+				columnKey(c).contains(OlioFieldNames.FIELD_STYLE.toLowerCase()));
+		}
 	}
 
 	/// Normalize a comma-separated column list into a comparable key.  Lower-cased on purpose:

@@ -41,6 +41,7 @@ import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.illustration.IllustrationModelPolicy;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
@@ -67,6 +68,7 @@ import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
+import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
@@ -1607,6 +1609,23 @@ public class PictureBookUtil {
         // convenience for callers that only know the book group, and a slug that fails to resolve means
         // graph recording is SKIPPED (logged), never that a book is created on a render path.
         public String bookSlug;
+    }
+
+    /**
+     * The checkpoint the PB1 client explicitly asked for in {@code task}'s field - the model policy's
+     * OVERRIDE tier (P2-3). The per-scene override wins over the request config; the composite config is
+     * consulted first for the composite's own task. Null when the client named nothing, in which case the
+     * style chain and the deployment default decide.
+     */
+    static String explicitModel(SceneGenerationParams params, PbModelTaskEnumType task) {
+        if (params == null) return null;
+        String m = null;
+        if (task == PbModelTaskEnumType.SCENE_DIRECT) {
+            m = IllustrationModelPolicy.currentModel(params.compositeSdConfig, task);
+        }
+        if (m == null) m = IllustrationModelPolicy.currentModel(params.sdConfigOverride, task);
+        if (m == null) m = IllustrationModelPolicy.currentModel(params.sdConfig, task);
+        return m;
     }
 
     // ----- Helpers -------------------------------------------------------
@@ -9612,7 +9631,6 @@ public class PictureBookUtil {
         boolean hires = (hiresV != null) ? hiresV.booleanValue() : DEFAULT_HIRES;
         Integer seedV = common.get("seed");
         int seed = (seedV != null) ? seedV.intValue() : -1;
-        String sdModelName = common.get("model");
         String sdSampler = common.get("sampler");
         String sdScheduler = common.get("scheduler");
 
@@ -9779,6 +9797,35 @@ public class PictureBookUtil {
                         + " run the book health check (GET /olio/picture-book/{id}/health) and Repair.", pbe);
                 pbGraph = null;
             }
+
+            // P2-3 one model policy (V3 §16; ⚠ §6.C 157): the checkpoint every stage below sends is
+            // chosen by PbModelPolicy, not read off whichever config happened to arrive. The style
+            // chain is the book's (empty when there is no book - the ~/Chat fallback - so the policy
+            // reduces to override -> deployment default). The OVERRIDE is the client's explicit field
+            // (the per-scene override first, else the request config), never `common`'s own model,
+            // which already carries the book tier and would otherwise beat a style task pin. The style
+            // tier's config is the chain's nearest sdConfig, else the legacy book tier (`common`).
+            // LOCATION is applied to `common` here because the landscape (Stage 2) and the classic
+            // composite (Stage 3/4) both send `common.model`; PORTRAIT and SCENE_DIRECT are applied
+            // at their own sites below.
+            // `common` may BE params.sdConfig (an alias, not a copy), so every explicit value and the
+            // legacy style tier are captured BEFORE the first policy write: once the LOCATION pick lands
+            // in common.model, params.sdConfig.model reads back as that pick, not the client's request,
+            // and a later PORTRAIT pass would take it as its OVERRIDE (beating a portrait task pin).
+            PbStyleResolver.EffectiveStyle pbStyle = (pbGraph != null
+                    ? PbStyleResolver.resolve(user, pbGraph.getBook()) : PbStyleResolver.empty());
+            if (!pbStyle.isComplete()) {
+                // PB1 keeps its Phase 1 behaviour (renders anyway); the V3 executor refuses (409).
+                logger.warn("Style chain of book " + params.bookSlug + " is " + (pbStyle.cycleDetected() ? "cyclic"
+                        : "not readable at " + pbStyle.truncatedModel() + " " + pbStyle.truncatedAt())
+                        + "; PB1 renders against the partial style");
+            }
+            String explicitLocationModel = explicitModel(params, PbModelTaskEnumType.LOCATION);
+            String explicitPortraitModel = explicitModel(params, PbModelTaskEnumType.PORTRAIT);
+            String explicitSceneDirectModel = explicitModel(params, PbModelTaskEnumType.SCENE_DIRECT);
+            BaseRecord pbStyleTier = (pbStyle.sdConfig() != null ? pbStyle.sdConfig() : common.copyRecord());
+            PbModelPolicy.applyForStyle(pbStyle, pbStyleTier, PbModelTaskEnumType.LOCATION, common,
+                    explicitLocationModel, sdu.getApiType(), sdu.getServer(), false);
 
             // Stage 0's two prompt nodes. Recorded here, once the prompts are resolved, so the
             // artifact holds what was actually used rather than what was requested. Each carries a
@@ -9991,7 +10038,10 @@ public class PictureBookUtil {
                                 cp.get(FieldNames.FIELD_OBJECT_ID), common);
                         portCfg.set("description", buildPortraitDescription(portraitPrompt2, effStyleCfg));
                         portCfg.set("negativePrompt", NEG_PROMPT);
-                        if (sdModelName != null && !sdModelName.isEmpty()) portCfg.set("model", sdModelName);
+                        // P2-3: the portrait checkpoint comes from the one model policy (PORTRAIT task),
+                        // not from `common.model` read before the policy ran.
+                        PbModelPolicy.applyForStyle(pbStyle, pbStyleTier, PbModelTaskEnumType.PORTRAIT, portCfg,
+                                explicitPortraitModel, sdu.getApiType(), sdu.getServer(), false);
                         if (sdSampler != null && !sdSampler.isEmpty()) portCfg.set("sampler", sdSampler);
                         if (sdScheduler != null && !sdScheduler.isEmpty()) portCfg.set("scheduler", sdScheduler);
                         String portName = "portrait_" + cname.replace(" ", "_") + "_" + System.currentTimeMillis();
@@ -10236,6 +10286,11 @@ public class PictureBookUtil {
                 PictureBookProgressNotifier.getInstance().notifyProgress(user, "auto_awesome_mosaic", "Preparing references...");
                 BaseRecord flux2Cfg = (params.compositeSdConfig != null) ? params.compositeSdConfig : common;
                 if (params.compositeSdConfig != null) SDUtil.fillStyleDefaults(flux2Cfg);
+                // P2-3: the FLUX.2 checkpoint (flux2Model) comes from the one model policy (SCENE_DIRECT),
+                // with references requested whenever a portrait or landscape will be attached.
+                PbModelPolicy.applyForStyle(pbStyle, pbStyleTier, PbModelTaskEnumType.SCENE_DIRECT, flux2Cfg,
+                        explicitSceneDirectModel, sdu.getApiType(), sdu.getServer(),
+                        (leftBytes != null || centerBytes != null || landscapeBytes != null));
 
                 PictureBookProgressNotifier.getInstance().notifyProgress(user, "image", "Compositing scene...");
                 SWTxt2Img flux2Req = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_FLUX2,

@@ -32,6 +32,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
+import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
@@ -440,6 +441,36 @@ public class PbNodeExecutor {
 		return (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
 	}
 
+	// ─── style + model policy (P2-3) ─────────────────────────────────────────────
+
+	/**
+	 * The book's effective style chain, resolved once per node run as the acting user and shared by the
+	 * effective config and the model policy below. A chain this user cannot finish reading - or one that
+	 * cycles - is refused as a 409 rather than rendered: a partial chain yields a partial config and an
+	 * inputHash no complete reader would recognise (⚠ §6.C 157).
+	 */
+	private static PbStyleResolver.EffectiveStyle styleFor(SceneGraph g, BaseRecord node) {
+		PbStyleResolver.EffectiveStyle style = PbStyleResolver.resolve(g.getUser(), g.getBook());
+		if(!style.isComplete()) {
+			throw new PictureBookException(409, "Style chain of book " + g.getBook().get(OlioFieldNames.FIELD_PB_SLUG)
+				+ (style.cycleDetected() ? " cycles" : " is not readable at " + style.truncatedModel() + " " + style.truncatedAt())
+				+ "; node " + node.get(OlioFieldNames.FIELD_PB_HANDLE) + " cannot render against a partial style");
+		}
+		return style;
+	}
+
+	/**
+	 * Apply the one model policy for {@code task} to the node's effective config: the node's own sparse
+	 * {@code configOverride} checkpoint is the override, the style chain supplies the task pin and the
+	 * style-tier default, and the deployment default closes. The pick is written into
+	 * {@code effectiveConfig}; the returned Resolution is what a pre-render surface reports (P2-5).
+	 */
+	private static void applyModelPolicy(SceneGraph g, BaseRecord node, boolean composite, PbStyleResolver.EffectiveStyle style,
+			PbModelTaskEnumType task, BaseRecord effectiveConfig, SDUtil sdu, boolean referencesRequested) {
+		PbModelPolicy.applyForStyle(style, PbConfigUtil.styleTierConfig(g.getBook(), composite, style), task, effectiveConfig,
+			PbModelPolicy.nodeOverride(node, task), sdu.getApiType(), sdu.getServer(), referencesRequested);
+	}
+
 	// ─── landscape ───────────────────────────────────────────────────────────────
 
 	private static Map<String, Object> executeLandscape(SceneGraph g, BaseRecord node, SDUtil sdu) {
@@ -470,7 +501,9 @@ public class PbNodeExecutor {
 			degradations.add(PbPipelineUtil.ROLE_LANDSCAPE + ": scene has no sdPrompt; generic fallback prompt used");
 		}
 
-		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, false);
+		PbStyleResolver.EffectiveStyle style = styleFor(g, node);
+		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, false, null, style);
+		applyModelPolicy(g, node, false, style, PbModelTaskEnumType.LOCATION, effectiveConfig, sdu, false);
 		try {
 			effectiveConfig.set("description", sdPrompt);
 			effectiveConfig.set("hires", false);
@@ -574,7 +607,9 @@ public class PbNodeExecutor {
 		sdPrompt = sdPrompt.trim();
 
 		List<String> degradations = new ArrayList<>();
-		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, false);
+		PbStyleResolver.EffectiveStyle style = styleFor(g, node);
+		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, false, null, style);
+		applyModelPolicy(g, node, false, style, PbModelTaskEnumType.LOCATION, effectiveConfig, sdu, false);
 		try {
 			SDUtil.fillStyleDefaults(effectiveConfig);
 			effectiveConfig.set("description", SDUtil.applyConfigStyle(sdPrompt, effectiveConfig));
@@ -864,8 +899,13 @@ public class PbNodeExecutor {
 			}
 		}
 
-		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, true);
+		PbStyleResolver.EffectiveStyle style = styleFor(g, node);
+		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, true, null, style);
 		String mode = SceneCompositeUtil.resolveMode(effectiveConfig, false);
+		boolean flux2 = SceneCompositeUtil.MODE_FLUX2.equals(mode);
+		boolean hasRefs = (leftBytes != null || centerBytes != null || landscapeBytes != null);
+		applyModelPolicy(g, node, true, style, (flux2 ? PbModelTaskEnumType.SCENE_DIRECT : PbModelTaskEnumType.LOCATION),
+			effectiveConfig, sdu, flux2 && hasRefs);
 		double creativity = SceneCompositeUtil.defaultCreativity(mode);
 		String negPrompt = NarrativeUtil.getDefaultNegativePrompt();
 
@@ -970,7 +1010,9 @@ public class PbNodeExecutor {
 			}
 		}
 
-		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, false);
+		PbStyleResolver.EffectiveStyle style = styleFor(g, node);
+		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, false, null, style);
+		applyModelPolicy(g, node, false, style, PbModelTaskEnumType.PORTRAIT, effectiveConfig, sdu, false);
 		BaseRecord styleConfig = PictureBookUtil.resolveCharacterStyleConfig(user, bookGroupPath, cpOid, effectiveConfig);
 		String description = PictureBookUtil.buildPortraitDescription(portraitPrompt, styleConfig);
 		try {

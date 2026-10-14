@@ -25,6 +25,8 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.illustration.IllustrationModelPolicy;
+import org.cote.accountmanager.olio.picturebook.PbModelPolicy;
 import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
 import org.cote.accountmanager.olio.picturebook.PbSeriesUtil;
 import org.cote.accountmanager.olio.OlioUtil;
@@ -42,6 +44,7 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
@@ -181,18 +184,21 @@ public class OlioService {
 			logger.error("Invalid config");
 			return Response.status(200).entity(null).build();
 		}
-		if(imp.get("model") == null) {
-			imp.setValue("model", context.getInitParameter("sd.model"));
-		}
 		if(imp.get("refinerModel") == null) {
 			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
 		}
+		/// P2-3 one model policy (V3 §16): the checkpoint is resolved per task by PbModelPolicy against
+		/// the renderer's inventory, with the client's explicit `model` as the override tier. Captured
+		/// once, before any application rewrites imp.model, so the second task's override is still the
+		/// client's request and not the first task's pick.
+		String clientModel = IllustrationModelPolicy.currentModel(imp, PbModelTaskEnumType.PORTRAIT);
 
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server")));
 		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 		sdu.setImageAccessUser(user);
 
 		if(type.equals(ModelNames.MODEL_DATA)) {
+			PbModelPolicy.applyWithoutBook(PbModelTaskEnumType.LOCATION, imp, clientModel, sdu.getApiType(), sdu.getServer(), false);
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, objectId);
 			q.planMost(true);
 			BaseRecord sourceData = IOSystem.getActiveContext().getAccessPoint().find(user, q);
@@ -227,6 +233,7 @@ public class OlioService {
 		String landscapeSetting = imp.get("landscapeSetting");
 		String existingRefId = imp.get("referenceImageId");
 		if (landscapeSetting != null && !landscapeSetting.isBlank() && (existingRefId == null || existingRefId.isBlank())) {
+			PbModelPolicy.applyWithoutBook(PbModelTaskEnumType.LOCATION, imp, clientModel, sdu.getApiType(), sdu.getServer(), false);
 			String landscapeRefId = getOrCreateSettingLandscape(user, sdu, landscapeSetting, imp);
 			if (landscapeRefId != null) {
 				imp.setValue("referenceImageId", landscapeRefId);
@@ -262,6 +269,7 @@ public class OlioService {
 		OlioContext bookCtx = PbOlioContextUtil.resolveOwningBookContext(user,
 			context.getInitParameter("datagen.path"), a1, octx);
 		OlioContext genCtx = (bookCtx != null ? bookCtx : octx);
+		PbModelPolicy.applyWithoutBook(PbModelTaskEnumType.PORTRAIT, imp, clientModel, sdu.getApiType(), sdu.getServer(), false);
 		sdu.generateSDImages(genCtx, Arrays.asList(a1), imp, setting, bodyStyle, (verb != null && verb.length() > 0 ? verb : null), 1, false, imp.get("hires"), imp.get("seed"));
 		genCtx.scanNestedGroups(genCtx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 		BaseRecord oi = a1.get("profile.portrait");
@@ -290,9 +298,6 @@ public class OlioService {
 			logger.error("Failed to parse reimage config");
 			return Response.status(400).entity("{\"error\":\"Invalid JSON\"}").build();
 		}
-		if(imp.get("model") == null) {
-			imp.setValue("model", context.getInitParameter("sd.model"));
-		}
 		if(imp.get("refinerModel") == null) {
 			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
 		}
@@ -300,6 +305,9 @@ public class OlioService {
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server")));
 		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 		sdu.setImageAccessUser(user);
+		/// P2-3 one model policy: mannequin renders are PORTRAIT-task; the client's explicit model is the override.
+		PbModelPolicy.applyWithoutBook(PbModelTaskEnumType.PORTRAIT, imp,
+			IllustrationModelPolicy.currentModel(imp, PbModelTaskEnumType.PORTRAIT), sdu.getApiType(), sdu.getServer(), false);
 
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_APPAREL, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
@@ -473,9 +481,6 @@ public class OlioService {
 			if(imp == null) {
 				imp = RecordFactory.newInstance(ModelNames.MODEL_MODEL);
 			}
-			if(imp.get("model") == null) {
-				imp.setValue("model", context.getInitParameter("sd.model"));
-			}
 			if(imp.get("refinerModel") == null) {
 				imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
 			}
@@ -485,6 +490,9 @@ public class OlioService {
 		}
 
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server")));
+		/// P2-3 one model policy: a landscape is LOCATION-task; the client's explicit model is the override.
+		PbModelPolicy.applyWithoutBook(PbModelTaskEnumType.LOCATION, imp,
+			IllustrationModelPolicy.currentModel(imp, PbModelTaskEnumType.LOCATION), sdu.getApiType(), sdu.getServer(), false);
 
 		// Try to find location as geoLocation or location model
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_OBJECT_ID, locationId);
@@ -547,9 +555,6 @@ public class OlioService {
 			if(imp == null) {
 				imp = RecordFactory.newInstance(ModelNames.MODEL_MODEL);
 			}
-			if(imp.get("model") == null) {
-				imp.setValue("model", context.getInitParameter("sd.model"));
-			}
 			if(imp.get("refinerModel") == null) {
 				imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
 			}
@@ -559,6 +564,9 @@ public class OlioService {
 		}
 
 		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server")));
+		/// P2-3 one model policy: an animal render is PORTRAIT-task; the client's explicit model is the override.
+		PbModelPolicy.applyWithoutBook(PbModelTaskEnumType.PORTRAIT, imp,
+			IllustrationModelPolicy.currentModel(imp, PbModelTaskEnumType.PORTRAIT), sdu.getApiType(), sdu.getServer(), false);
 
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_ANIMAL, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
@@ -620,9 +628,6 @@ public class OlioService {
 			logger.error("generateArt: Invalid config");
 			return Response.status(400).entity("{\"error\":\"Invalid config\"}").build();
 		}
-		if(imp.get("model") == null) {
-			imp.setValue("model", context.getInitParameter("sd.model"));
-		}
 		if(imp.get("refinerModel") == null) {
 			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
 		}
@@ -641,6 +646,9 @@ public class OlioService {
 		try {
 			SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.server.apiType")), ServerConfigUtil.getServerUrl(ServerConfigUtil.SERVER_SD, context.getInitParameter("sd.server")));
 			sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+			/// P2-3 one model policy: card art is a LOCATION-task txt2img; the client's explicit model is the override.
+			PbModelPolicy.applyWithoutBook(PbModelTaskEnumType.LOCATION, imp,
+				IllustrationModelPolicy.currentModel(imp, PbModelTaskEnumType.LOCATION), sdu.getApiType(), sdu.getServer(), false);
 
 			List<BaseRecord> images = sdu.createImage(user, imagePath, imp, imageName, 1, imp.get("hires"), imp.get("seed"));
 			if(images.size() > 0) {

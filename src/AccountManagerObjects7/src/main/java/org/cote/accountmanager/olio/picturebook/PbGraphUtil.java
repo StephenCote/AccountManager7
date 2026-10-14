@@ -447,6 +447,15 @@ public class PbGraphUtil {
 	}
 
 	/**
+	 * {@link #computeInputHash(BaseRecord, BaseRecord, BaseRecord, List)} over a style chain the caller
+	 * already resolved ({@link PbStyleResolver#resolve}), so a whole-workflow pass resolves the book's
+	 * style once rather than once per node (⚠ §6.C 156 h).
+	 */
+	public static String computeInputHash(BaseRecord user, BaseRecord node, BaseRecord book, List<BaseRecord> bindings, PbStyleResolver.EffectiveStyle style) {
+		return PbConfigUtil.sha256Hex(canonicalInput(user, node, book, bindings, style));
+	}
+
+	/**
 	 * The exact string {@link #computeInputHash} hashes. Public so a checked-in golden vector can pin it
 	 * and so a mismatch can be diagnosed by diffing two strings rather than two digests.
 	 */
@@ -460,12 +469,31 @@ public class PbGraphUtil {
 	/**
 	 * {@link #canonicalInput(BaseRecord, BaseRecord, BaseRecord)} over bindings the caller already read,
 	 * so a whole-workflow pass ({@link PbStaleUtil}) reads each node's bindings once instead of once per
-	 * recompute. {@code bindings} must be exactly {@code node}'s bindings; order is irrelevant.
+	 * recompute. {@code bindings} must be exactly {@code node}'s bindings; order is irrelevant. The
+	 * book's style chain is resolved fresh as {@code user}.
 	 */
 	public static String canonicalInput(BaseRecord user, BaseRecord node, BaseRecord book, List<BaseRecord> bindings) {
 		if(node == null) {
 			throw new PictureBookException(400, "Cannot hash the inputs of a null node");
 		}
+		return canonicalInput(user, node, book, bindings, PbStyleResolver.resolve(user, book));
+	}
+
+	/**
+	 * {@link #canonicalInput(BaseRecord, BaseRecord, BaseRecord, List)} over an already-resolved style
+	 * chain (⚠ §6.C 156 g/h). The chain contributes in two places: its nearest {@code sdConfig} fills the
+	 * book-defaults position of the declared config, so it is inside {@code configHash}; and its
+	 * non-config fields ({@link PbStyleResolver.EffectiveStyle#canonicalStyle()}) form a {@code style=}
+	 * line that is present <b>only when the chain is non-empty</b> - a book with no style hashes exactly
+	 * as before P2-3, so the {@code pb2/3} golden vector and every stored hash of a style-less book are
+	 * untouched. The runtime checkpoint pick is never hashed; which style supplied a value is not hashed
+	 * (values only); a lock toggle moves nothing.
+	 */
+	public static String canonicalInput(BaseRecord user, BaseRecord node, BaseRecord book, List<BaseRecord> bindings, PbStyleResolver.EffectiveStyle style) {
+		if(node == null) {
+			throw new PictureBookException(400, "Cannot hash the inputs of a null node");
+		}
+		PbStyleResolver.EffectiveStyle es = (style != null ? style : PbStyleResolver.empty());
 		StringBuilder sb = new StringBuilder(PB_PIPELINE_VERSION);
 		sb.append(PbConfigUtil.PAIR_SEPARATOR).append("nodeType=")
 			.append(PbConfigUtil.token(node.hasField(OlioFieldNames.FIELD_PB_NODE_TYPE) ? node.get(OlioFieldNames.FIELD_PB_NODE_TYPE) : null));
@@ -477,8 +505,12 @@ public class PbGraphUtil {
 				.append(PbConfigUtil.PAIR_SEPARATOR).append("  source=").append(bindingSourceToken(user, b));
 		}
 
-		BaseRecord declared = PbConfigUtil.resolveDeclaredConfig(book, node, isCompositeNode(node));
+		BaseRecord declared = PbConfigUtil.resolveDeclaredConfig(book, node, isCompositeNode(node), es);
 		sb.append(PbConfigUtil.PAIR_SEPARATOR).append("configHash=").append(PbConfigUtil.token(PbConfigUtil.configHash(declared)));
+
+		if(!es.isEmpty()) {
+			sb.append(PbConfigUtil.PAIR_SEPARATOR).append("style=").append(PbConfigUtil.sha256Hex(es.canonicalStyle()));
+		}
 
 		String promptText = (node.hasField(OlioFieldNames.FIELD_PB_PROMPT_TEXT) ? node.get(OlioFieldNames.FIELD_PB_PROMPT_TEXT) : null);
 		sb.append(PbConfigUtil.PAIR_SEPARATOR).append("promptHash=")
@@ -577,6 +609,18 @@ public class PbGraphUtil {
 		if(node == null) {
 			return PbNodeStatusEnumType.UNKNOWN;
 		}
+		return recomputeStatus(user, node, book, bindings, PbStyleResolver.resolve(user, book));
+	}
+
+	/**
+	 * {@link #recomputeStatus(BaseRecord, BaseRecord, BaseRecord, List)} over a style chain the caller
+	 * already resolved - the once-per-scan form {@link PbStaleUtil} uses (⚠ §6.C 156 h). The caller is
+	 * responsible for refusing to act on an incomplete chain; this method only computes.
+	 */
+	public static PbNodeStatusEnumType recomputeStatus(BaseRecord user, BaseRecord node, BaseRecord book, List<BaseRecord> bindings, PbStyleResolver.EffectiveStyle style) {
+		if(node == null) {
+			return PbNodeStatusEnumType.UNKNOWN;
+		}
 		PbNodeStatusEnumType stored = node.getEnum(OlioFieldNames.FIELD_PB_NODE_STATUS);
 		if(stored == PbNodeStatusEnumType.FAILED || stored == PbNodeStatusEnumType.SKIPPED) {
 			return stored;
@@ -585,7 +629,7 @@ public class PbGraphUtil {
 		if(storedHash == null) {
 			return (requiredBindingsResolve(user, node, bindings) ? PbNodeStatusEnumType.READY : PbNodeStatusEnumType.PENDING);
 		}
-		String current = computeInputHash(user, node, book, bindings);
+		String current = computeInputHash(user, node, book, bindings, style);
 		if(!storedHash.equals(current)) {
 			return PbNodeStatusEnumType.STALE;
 		}
